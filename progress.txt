@@ -59,4 +59,12 @@
   - `ParseAndValidate` combines YAML parsing + validation in one call
   - Writer.retryWithFeedback sends schema errors back to LLM for correction
   - Store auto-initializes git repo on NewStore — best-effort git commit (won't fail writes)
+- Wired wiki store and Writer into Telegram bot and config
+- Added WIKI_PATH config field (default: ./wiki)
+- Bot's handleConversation now calls tryStoreWiki after LLM responses
+- tryStoreWiki checks if response looks like wiki YAML (has title:, content:, schema_version:) before attempting parse/store
+- Files changed: internal/config/config.go, internal/telegram/bot.go
+- **Learnings for future iterations:**
+  - Wiki Writer is nil when no LLM is configured (echo mode) — tryStoreWiki early-returns
+  - looksLikeWikiYAML is a simple heuristic check before heavier YAML parsing
 ---
