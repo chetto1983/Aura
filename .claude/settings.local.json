@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(bash *)",
-      "Bash(C:/Program Files/Git/usr/bin/bash.exe *)"
+      "Bash(C:/Program Files/Git/usr/bin/bash.exe *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
     ]
   }
 }
