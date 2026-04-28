@@ -52,6 +52,83 @@ func (c *Context) AddAssistantMessage(content string) {
 	c.transcript = append(c.transcript, "assistant: "+content)
 }
 
+// EnforceLimit ensures the context stays within MAX_CONTEXT_TOKENS.
+// If over 80%, it triggers summarization. If still over the hard limit,
+// it repeatedly trims oldest messages. As a last resort, it truncates
+// individual messages to fit within the limit.
+func (c *Context) EnforceLimit(ctx context.Context) error {
+	if !c.IsOverLimit() && !c.ShouldSummarize() {
+		return nil
+	}
+
+	// First attempt: summarize if we can
+	if c.ShouldSummarize() {
+		if err := c.Summarize(ctx); err != nil {
+			return err
+		}
+	}
+
+	// If still over the hard limit after summarization, trim aggressively
+	trimPasses := 0
+	prevTokenCount := c.EstimatedTokens()
+	for c.IsOverLimit() && trimPasses < 10 {
+		c.trimOldest()
+		trimPasses++
+		// If trimming made no progress, break to avoid infinite loop
+		currentTokens := c.EstimatedTokens()
+		if currentTokens == prevTokenCount {
+			break
+		}
+		prevTokenCount = currentTokens
+	}
+
+	// Last resort: truncate individual messages to fit within limit
+	if c.IsOverLimit() {
+		c.truncateMessages()
+	}
+
+	if trimPasses > 0 || c.IsOverLimit() {
+		c.logger.Info("enforced context limit",
+			"trim_passes", trimPasses,
+			"estimated_tokens", c.EstimatedTokens(),
+			"max_tokens", c.maxTokens,
+		)
+	}
+
+	return nil
+}
+
+// truncateMessages truncates individual messages to bring context under the limit.
+func (c *Context) truncateMessages() {
+	maxChars := c.maxTokens * 4
+	totalChars := 0
+	for _, m := range c.messages {
+		totalChars += len(m.Content)
+	}
+
+	// Proportionally truncate all non-system messages
+	for i, m := range c.messages {
+		if m.Role == "system" {
+			continue
+		}
+		if totalChars <= maxChars {
+			break
+		}
+		msgChars := len(m.Content)
+		if msgChars == 0 {
+			continue
+		}
+		// Calculate how many chars this message should keep
+		ratio := float64(maxChars) / float64(totalChars)
+		newLen := int(float64(msgChars) * ratio)
+		if newLen < 1 {
+			newLen = 1
+		}
+		c.messages[i].Content = m.Content[:newLen]
+		totalChars = totalChars - msgChars + newLen
+	}
+}
+
 // SetSystemMessage sets or replaces the system message at the start.
 func (c *Context) SetSystemMessage(content string) {
 	if len(c.messages) > 0 && c.messages[0].Role == "system" {
@@ -101,6 +178,16 @@ func (c *Context) TotalTokensUsed() int {
 func (c *Context) ShouldSummarize() bool {
 	threshold := float64(c.maxTokens) * 0.8
 	return float64(c.EstimatedTokens()) > threshold
+}
+
+// IsOverLimit returns true when context exceeds the hard token limit.
+func (c *Context) IsOverLimit() bool {
+	return c.EstimatedTokens() > c.maxTokens
+}
+
+// MaxTokens returns the configured max context token limit.
+func (c *Context) MaxTokens() int {
+	return c.maxTokens
 }
 
 // Summarize triggers rolling summarization using the LLM.

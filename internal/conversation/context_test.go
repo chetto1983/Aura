@@ -230,3 +230,121 @@ func (m *mockLLMClient) Stream(ctx context.Context, req llm.Request) (<-chan llm
 	close(ch)
 	return ch, nil
 }
+
+func TestIsOverLimit(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 20, Logger: slog.Default()})
+	ctx.AddUserMessage("Hi")
+	if ctx.IsOverLimit() {
+		t.Error("IsOverLimit() = true for short context, want false")
+	}
+
+	for i := 0; i < 20; i++ {
+		ctx.AddUserMessage("This is a longer message that adds tokens")
+	}
+	if !ctx.IsOverLimit() {
+		t.Error("IsOverLimit() = false for context over maxTokens, want true")
+	}
+}
+
+func TestMaxTokens(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
+	if ctx.MaxTokens() != 4000 {
+		t.Errorf("MaxTokens() = %d, want 4000", ctx.MaxTokens())
+	}
+}
+
+func TestEnforceLimitNoActionNeeded(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
+	ctx.AddUserMessage("Short message")
+
+	beforeCount := len(ctx.messages)
+	err := ctx.EnforceLimit(context.Background())
+	if err != nil {
+		t.Fatalf("EnforceLimit() error = %v", err)
+	}
+	if len(ctx.messages) != beforeCount {
+		t.Error("EnforceLimit should not modify context when under limits")
+	}
+}
+
+func TestEnforceLimitSummarizesWhenOver80Percent(t *testing.T) {
+	mock := &mockLLMClient{
+		response: llm.Response{Content: "Summary of conversation", Usage: llm.TokenUsage{TotalTokens: 10}},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:  20,
+		Summarizer: mock,
+		Logger:     logger,
+	})
+
+	// Add enough messages to exceed 80% of 20 tokens
+	for i := 0; i < 20; i++ {
+		ctx.AddUserMessage("This is a message with enough content to fill context")
+	}
+
+	msgCountBefore := len(ctx.messages)
+	err := ctx.EnforceLimit(context.Background())
+	if err != nil {
+		t.Fatalf("EnforceLimit() error = %v", err)
+	}
+
+	// Messages should have been reduced (summarized)
+	if len(ctx.messages) >= msgCountBefore {
+		t.Errorf("EnforceLimit should have reduced messages: before=%d, after=%d", msgCountBefore, len(ctx.messages))
+	}
+
+	// Summary should have been created
+	if ctx.summary == "" {
+		t.Error("EnforceLimit should have created a summary")
+	}
+}
+
+func TestEnforceLimitTrimsWhenOverHardLimit(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:  200,
+		Summarizer: nil, // no LLM, will force trimming
+		Logger:     logger,
+	})
+
+	// Add many messages to exceed the hard limit
+	for i := 0; i < 40; i++ {
+		ctx.AddUserMessage("Message with enough content to exceed the token limit when many are added")
+	}
+
+	err := ctx.EnforceLimit(context.Background())
+	if err != nil {
+		t.Fatalf("EnforceLimit() error = %v", err)
+	}
+
+	// Context should be reduced after enforcement
+	if ctx.IsOverLimit() {
+		est := ctx.EstimatedTokens()
+		t.Errorf("EnforceLimit should bring context under limit: estimated=%d, max=%d", est, ctx.maxTokens)
+	}
+}
+
+func TestEnforceLimitPreservesTranscript(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:  10,
+		Summarizer: nil,
+		Logger:     logger,
+	})
+
+	for i := 0; i < 20; i++ {
+		ctx.AddUserMessage("Message with content")
+	}
+
+	transcriptLen := len(ctx.Transcript())
+	_ = ctx.EnforceLimit(context.Background())
+
+	// Transcript should be preserved even after trimming active messages
+	if len(ctx.Transcript()) != transcriptLen {
+		t.Errorf("Transcript should be preserved: before=%d, after=%d", transcriptLen, len(ctx.Transcript()))
+	}
+}

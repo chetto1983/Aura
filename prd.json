@@ -84,7 +84,8 @@
         "Token usage tracked per conversation and globally",
         "Soft and hard budget limits are enforced",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-006",

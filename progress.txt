@@ -8,6 +8,9 @@
 - Slug function collapses consecutive hyphens in wiki page filenames
 - chromem-go uses `Similarity` (not Distance) on Result — range [-1, 1]
 - chromem-go embedding: use `NewEmbeddingFuncOpenAICompat` for OpenAI-compatible endpoints
+- Budget tracking: `budget.Tracker` in bot — check `CanAfford()` and `IsHardBudgetExceeded()` before LLM calls, `RecordUsage()` after
+- Context enforcement: `EnforceLimit()` replaces manual `ShouldSummarize()`+`Summarize()` — 3-tier: summarize → trim → truncate
+- `/status` Telegram command for budget and context visibility
 
 ---
 
@@ -69,4 +72,37 @@
 - **Learnings for future iterations:**
   - Wiki Writer is nil when no LLM is configured (echo mode) — tryStoreWiki early-returns
   - looksLikeWikiYAML is a simple heuristic check before heavier YAML parsing
+---
+
+## [2026-04-28] - US-004
+- Implemented vector search over wiki pages using chromem-go as primary engine
+- Search Engine with chromem-go backend: index wiki YAML files, query by similarity
+- pgvector fallback via PostgreSQL + pgvector extension (configured via PG_CONN_STRING)
+- Search results injected into conversation context before LLM calls via SetSystemMessage
+- Wiki pages re-indexed on write (ReindexWikiPage called after successful wiki store)
+- Config fields added: EMBEDDING_API_KEY, EMBEDDING_BASE_URL, EMBEDDING_MODEL, PG_CONN_STRING
+- Bot initializes search engine on startup, indexes existing wiki pages
+- FormatResults helper formats search results as context for LLM prompts
+- Files changed: internal/search/search.go, internal/search/pgvector.go, internal/search/search_test.go, internal/config/config.go, internal/telegram/bot.go
+- **Learnings for future iterations:**
+  - chromem-go Result uses `Similarity` field (float32, range [-1, 1]), not `Distance`
+  - chromem-go has no hash embedding — use `NewEmbeddingFuncOpenAICompat` for any OpenAI-compatible endpoint
+  - Search engine gracefully disabled if no API key is configured (embedding or LLM key)
+  - pgvector fallback uses text search (ts_rank_cd) when embeddings aren't available in PG
+  - `IndexWikiPages` extracts title from YAML for richer document content in index
+---
+## [2026-04-28] - US-005
+- Implemented context enforcement with EnforceLimit (summarize at 80%, trim at hard limit, truncate messages as last resort)
+- Wired budget.Tracker into Telegram bot: cost prediction check before LLM calls, hard budget halt, usage recording after calls
+- Added /status Telegram command showing budget and per-conversation context info
+- Added CostPerToken config field with env var COST_PER_TOKEN
+- Budget tests: record usage, accumulation, soft/hard budget, CanAfford, PredictCost, Status, default cost
+- Context enforcement tests: IsOverLimit, MaxTokens, EnforceLimit no-action/summarize/trim/transcript-preserve
+- Files changed: internal/conversation/context.go, internal/conversation/context_test.go, internal/budget/budget_test.go, internal/telegram/bot.go, internal/config/config.go, prd.json
+- **Learnings for future iterations:**
+  - EnforceLimit is a 3-tier approach: summarize first → trim oldest → truncate individual messages
+  - trimOldest stops at 2 messages (needs at least user+assistant); truncation handles remaining overflow
+  - Budget recording for streaming uses estimated tokens (chars/4) since streaming doesn't return TokenUsage
+  - /status command exposes both budget.Status and per-user conversation.Context stats
+  - Bot already had budget *budget.Tracker field but wasn't fully wired — check existing partial implementations
 ---

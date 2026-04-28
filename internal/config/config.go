@@ -11,6 +11,7 @@ type Config struct {
 	MaxContextTokens int      `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
 	SoftBudget       float64  `envconfig:"SOFT_BUDGET" default:"10.0"`
 	HardBudget       float64  `envconfig:"HARD_BUDGET" default:"20.0"`
+	CostPerToken     float64  `envconfig:"COST_PER_TOKEN" default:"0.00001"`
 	LogLevel         string   `envconfig:"LOG_LEVEL" default:"info"`
 	LLMAPIKey        string   `envconfig:"LLM_API_KEY"`
 	LLMBaseURL       string   `envconfig:"LLM_BASE_URL"`
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 	cfg.MaxContextTokens = getEnvInt("MAX_CONTEXT_TOKENS", 4000)
 	cfg.SoftBudget = getEnvFloat("SOFT_BUDGET", 10.0)
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
+	cfg.CostPerToken = getEnvFloat("COST_PER_TOKEN", 0.00001)
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
 
 	cfg.LLMAPIKey = getEnv("LLM_API_KEY", "")

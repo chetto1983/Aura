@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -27,6 +28,7 @@ type Bot struct {
 	llm    llm.Client
 	wiki   *wiki.Writer
 	search *search.Engine
+	budget *budget.Tracker
 	active sync.Map // maps userID string -> bool (active conversation tracking)
 	ctxMap sync.Map // maps userID string -> *conversation.Context
 }
@@ -98,6 +100,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		llm:    client,
 		wiki:   wikiWriter,
 		search: searchEngine,
+		budget: budget.NewTracker(budget.Config{
+			SoftBudget:   cfg.SoftBudget,
+			HardBudget:   cfg.HardBudget,
+			CostPerToken: cfg.CostPerToken,
+		}, logger),
 	}
 
 	b.registerHandlers()
@@ -117,6 +124,7 @@ func (b *Bot) Stop() {
 
 func (b *Bot) registerHandlers() {
 	b.bot.Handle(tele.OnText, b.onMessage)
+	b.bot.Handle("/status", b.onStatus)
 }
 
 func (b *Bot) onMessage(c tele.Context) error {
@@ -170,11 +178,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 	}
 
-	// Check if summarization is needed before sending
-	if convCtx.ShouldSummarize() {
-		if err := convCtx.Summarize(context.Background()); err != nil {
-			b.logger.Error("summarization failed", "user_id", userID, "error", err)
-		}
+	// Enforce context limits: summarize at 80%, trim at hard limit
+	if err := convCtx.EnforceLimit(context.Background()); err != nil {
+		b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
 	}
 
 	// No LLM configured — echo mode
@@ -184,6 +190,20 @@ func (b *Bot) handleConversation(c tele.Context) {
 			b.logger.Error("failed to send echo", "user_id", userID, "error", err)
 		}
 		convCtx.AddAssistantMessage(echo)
+		return
+	}
+
+	// Check hard budget before LLM call
+	if b.budget != nil && b.budget.IsHardBudgetExceeded() {
+		b.logger.Warn("hard budget exceeded, halting LLM call", "user_id", userID)
+		c.Send("Budget limit reached. LLM calls are temporarily halted.")
+		return
+	}
+
+	// Predict cost and check affordability
+	if b.budget != nil && !b.budget.CanAfford(convCtx.EstimatedTokens(), 500) {
+		b.logger.Warn("predicted cost exceeds hard budget, halting LLM call", "user_id", userID)
+		c.Send("Predicted cost would exceed budget. Please adjust your budget or wait.")
 		return
 	}
 
@@ -204,6 +224,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 		convCtx.AddAssistantMessage(resp.Content)
 		convCtx.TrackTokens(resp.Usage)
+		if b.budget != nil {
+			b.budget.RecordUsage(resp.Usage.TotalTokens)
+		}
 		c.Send(resp.Content)
 		b.tryStoreWiki(context.Background(), resp.Content, userID)
 		return
@@ -211,6 +234,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	// Collect streaming response
 	var sb strings.Builder
+	var streamTokenEstimate int
 	for token := range ch {
 		if token.Err != nil {
 			b.logger.Error("stream error", "user_id", userID, "error", token.Err)
@@ -220,6 +244,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 			break
 		}
 		sb.WriteString(token.Content)
+		streamTokenEstimate += len(token.Content) / 4
 	}
 
 	response := sb.String()
@@ -228,6 +253,11 @@ func (b *Bot) handleConversation(c tele.Context) {
 	}
 
 	convCtx.AddAssistantMessage(response)
+	// Record budget usage for streaming (estimated tokens: context + output)
+	if b.budget != nil {
+		totalEstimate := convCtx.EstimatedTokens() + streamTokenEstimate
+		b.budget.RecordUsage(totalEstimate)
+	}
 	c.Send(response)
 
 	// Attempt to store wiki knowledge from the response
@@ -289,4 +319,51 @@ func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
 
 	normalized := true
 	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, apiKey, model, &normalized)
+}
+
+// onStatus handles the /status command, returning budget and context info.
+func (b *Bot) onStatus(c tele.Context) error {
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	if !b.cfg.IsAllowlisted(userID) {
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Aura Status\n\n")
+
+	// Budget info
+	if b.budget != nil {
+		status := b.budget.Status()
+		sb.WriteString(fmt.Sprintf("Tokens used: %d\n", status.TotalTokens))
+		sb.WriteString(fmt.Sprintf("Estimated cost: $%.4f\n", status.TotalCost))
+		if status.SoftBudget > 0 {
+			sb.WriteString(fmt.Sprintf("Soft budget: $%.2f\n", status.SoftBudget))
+		}
+		if status.HardBudget > 0 {
+			sb.WriteString(fmt.Sprintf("Hard budget: $%.2f\n", status.HardBudget))
+		}
+		if status.BudgetExceeded {
+			sb.WriteString("Status: HARD BUDGET EXCEEDED\n")
+		}
+	} else {
+		sb.WriteString("Budget: not configured\n")
+	}
+
+	// Per-conversation context info
+	ctxVal, ok := b.ctxMap.Load(userID)
+	if ok {
+		convCtx := ctxVal.(*conversation.Context)
+		sb.WriteString(fmt.Sprintf("\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens()))
+		sb.WriteString(fmt.Sprintf("Conversation tokens used: %d\n", convCtx.TotalTokensUsed()))
+	}
+
+	return c.Send(sb.String())
+}
+
+// BudgetStatus returns the current budget status for external consumers.
+func (b *Bot) BudgetStatus() budget.Status {
+	if b.budget == nil {
+		return budget.Status{}
+	}
+	return b.budget.Status()
 }
