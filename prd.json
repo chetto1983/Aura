@@ -57,7 +57,8 @@
         "File-level mutex prevents concurrent write corruption",
         "Wiki changes are tracked via Git",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-004",

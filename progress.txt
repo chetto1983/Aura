@@ -3,6 +3,9 @@
 - Config uses manual env parsing (no envconfig dep yet) — `internal/config/env.go` has helpers
 - Telegram user IDs are strings (converted from int64 via strconv.FormatInt)
 - Conversation handling launched in goroutines via `go b.handleConversation(c)`
+- Wiki store uses `go-git/go-git/v5` for Git operations (not shell commands)
+- Wiki page YAML must include `schema_version: 1` and `prompt_version: vN|ingest_vN`
+- Slug function collapses consecutive hyphens in wiki page filenames
 
 ---
 
@@ -38,4 +41,22 @@
   - Token estimation is ~4 chars per token (rough heuristic)
   - When no LLM_API_KEY set, bot runs in echo mode (graceful degradation)
   - RetryClient wraps any Client — use for all LLM implementations
+---
+
+## [2026-04-28] - US-003
+- Implemented wiki storage with YAML schema validation (SCHEMA.md)
+- Atomic writes via temp file + rename pattern in Store.WritePage
+- File-level mutex (sync.Map of *sync.Mutex) prevents concurrent write corruption
+- Git versioning via go-git library (auto-init repo, commit on write/delete)
+- Schema validation: title, content, schema_version, prompt_version, timestamps, tags limits
+- Writer with LLM retry on schema validation failure (max 3 retries with error feedback)
+- YAML parser extracts from markdown code blocks (```yaml blocks)
+- Slug function with consecutive-hyphen collapsing and "untitled" fallback
+- Files changed: internal/wiki/schema.go, internal/wiki/store.go, internal/wiki/parser.go, internal/wiki/schema_test.go, internal/wiki/store_test.go, internal/wiki/wiki_test.go, wiki/SCHEMA.md, go.mod, go.sum
+- **Learnings for future iterations:**
+  - go-git is the Git library (github.com/go-git/go-git/v5) — use `git.PlainOpen`/`PlainInit`
+  - Schema validation returns `*ValidationError` with `Errors []string` (Go-idiomatic)
+  - `ParseAndValidate` combines YAML parsing + validation in one call
+  - Writer.retryWithFeedback sends schema errors back to LLM for correction
+  - Store auto-initializes git repo on NewStore — best-effort git commit (won't fail writes)
 ---
