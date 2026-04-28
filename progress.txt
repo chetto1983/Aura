@@ -20,4 +20,22 @@
   - Config loads from env vars manually (no envconfig lib yet) — helpers in env.go
   - `sync.Map` used for tracking active conversations (safe for concurrent goroutine access)
   - Project structure: cmd/aura/main.go for entry point, internal/ for packages
+
+---
+
+## [2026-04-28] - US-002
+- Implemented LLM client interface (Send + Stream) with OpenAI-compatible HTTP client
+- SSE-based streaming via token channel with proper [DONE] handling
+- Retry wrapper with exponential backoff (max 5 retries, configurable)
+- Conversation context management with rolling summarization at 80% threshold
+- Bot wired to LLM: streams responses, falls back to non-streaming on error
+- Config extended with LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_MAX_RETRIES
+- Files changed: internal/llm/client.go, internal/llm/openai.go, internal/llm/retry.go, internal/llm/client_test.go, internal/llm/openai_test.go, internal/conversation/context.go, internal/conversation/context_test.go, internal/config/config.go, internal/telegram/bot.go
+- **Learnings for future iterations:**
+  - LLM interface is `llm.Client` with `Send(ctx, Request)` and `Stream(ctx, Request)` methods
+  - OpenAI SSE streaming uses `data: [DONE]` sentinel — scanner-based parsing in openai.go
+  - Conversation context is per-user (stored in `sync.Map` via `ctxMap`)
+  - Token estimation is ~4 chars per token (rough heuristic)
+  - When no LLM_API_KEY set, bot runs in echo mode (graceful degradation)
+  - RetryClient wraps any Client — use for all LLM implementations
 ---

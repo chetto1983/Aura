@@ -43,7 +43,8 @@
         "Retry with exponential backoff on LLM failure (max 5 retries)",
         "Context window managed with rolling summarization at 80% threshold",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-003",
