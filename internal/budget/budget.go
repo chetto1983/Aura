@@ -8,14 +8,14 @@ import (
 
 // Tracker manages global token usage and budget enforcement.
 type Tracker struct {
-	mu              sync.Mutex
-	totalTokens     int
-	totalCost       float64
-	softBudget      float64
-	hardBudget      float64
-	costPerToken    float64
-	logger          *slog.Logger
-	hardBudgetHit   bool
+	mu            sync.Mutex
+	totalTokens   int
+	totalCost     float64
+	softBudget    float64
+	hardBudget    float64
+	costPerToken  float64
+	logger        *slog.Logger
+	hardBudgetHit bool
 }
 
 // Config holds budget configuration.
@@ -114,10 +114,10 @@ func (t *Tracker) Status() Status {
 	defer t.mu.Unlock()
 
 	return Status{
-		TotalTokens:   t.totalTokens,
-		TotalCost:     t.totalCost,
-		SoftBudget:    t.softBudget,
-		HardBudget:    t.hardBudget,
+		TotalTokens:    t.totalTokens,
+		TotalCost:      t.totalCost,
+		SoftBudget:     t.softBudget,
+		HardBudget:     t.hardBudget,
 		BudgetExceeded: t.hardBudgetHit,
 	}
 }
