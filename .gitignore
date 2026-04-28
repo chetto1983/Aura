@@ -1,0 +1,19 @@
+# Binaries
+/aura
+/cmd/aura/aura
+
+# Environment
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wiki data (tracked via git inside wiki dir)
+wiki/raw/
