@@ -12,6 +12,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/wiki"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -22,6 +23,7 @@ type Bot struct {
 	cfg    *config.Config
 	logger *slog.Logger
 	llm    llm.Client
+	wiki   *wiki.Writer
 	active sync.Map // maps userID string -> bool (active conversation tracking)
 	ctxMap sync.Map // maps userID string -> *conversation.Context
 }
@@ -54,11 +56,22 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		logger.Warn("LLM_API_KEY not set, bot will echo messages without LLM")
 	}
 
+	// Set up wiki store and writer
+	wikiStore, err := wiki.NewStore(cfg.WikiPath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating wiki store: %w", err)
+	}
+	var wikiWriter *wiki.Writer
+	if client != nil {
+		wikiWriter = wiki.NewWriter(wikiStore, client, logger)
+	}
+
 	b := &Bot{
 		bot:    tb,
 		cfg:    cfg,
 		logger: logger,
 		llm:    client,
+		wiki:   wikiWriter,
 	}
 
 	b.registerHandlers()
@@ -156,6 +169,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		convCtx.AddAssistantMessage(resp.Content)
 		convCtx.TrackTokens(resp.Usage)
 		c.Send(resp.Content)
+		b.tryStoreWiki(context.Background(), resp.Content, userID)
 		return
 	}
 
@@ -180,8 +194,41 @@ func (b *Bot) handleConversation(c tele.Context) {
 	convCtx.AddAssistantMessage(response)
 	c.Send(response)
 
+	// Attempt to store wiki knowledge from the response
+	b.tryStoreWiki(context.Background(), response, userID)
+
 	b.logger.Info("conversation complete",
 		"user_id", userID,
 		"tokens_used", convCtx.TotalTokensUsed(),
 	)
+}
+
+// tryStoreWiki attempts to parse an LLM response as wiki content and store it.
+// If the response doesn't look like YAML, this is a no-op.
+func (b *Bot) tryStoreWiki(ctx context.Context, response string, userID string) {
+	if b.wiki == nil {
+		return
+	}
+	if !looksLikeWikiYAML(response) {
+		return
+	}
+	page, err := b.wiki.WriteFromLLMOutput(ctx, response, "ingest_v1")
+	if err != nil {
+		b.logger.Warn("failed to store wiki page from LLM output",
+			"user_id", userID,
+			"error", err,
+		)
+		return
+	}
+	b.logger.Info("stored wiki page from conversation",
+		"user_id", userID,
+		"title", page.Title,
+	)
+}
+
+// looksLikeWikiYAML checks if a response might contain wiki YAML.
+func looksLikeWikiYAML(s string) bool {
+	return strings.Contains(s, "title:") &&
+		strings.Contains(s, "content:") &&
+		strings.Contains(s, "schema_version:")
 }

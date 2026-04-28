@@ -16,6 +16,7 @@ type Config struct {
 	LLMBaseURL       string   `envconfig:"LLM_BASE_URL"`
 	LLMModel         string   `envconfig:"LLM_MODEL"`
 	LLMMaxRetries    int      `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	WikiPath         string   `envconfig:"WIKI_PATH" default:"./wiki"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -53,6 +54,8 @@ func Load() (*Config, error) {
 	cfg.LLMBaseURL = getEnv("LLM_BASE_URL", "https://api.openai.com/v1")
 	cfg.LLMModel = getEnv("LLM_MODEL", "gpt-4")
 	cfg.LLMMaxRetries = getEnvInt("LLM_MAX_RETRIES", 5)
+
+	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
 
 	return cfg, nil
 }
