@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash *)",
+      "Bash(C:/Program Files/Git/usr/bin/bash.exe *)"
+    ]
+  }
+}

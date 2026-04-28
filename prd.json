@@ -1,0 +1,349 @@
+{
+  "title": "Aura — Personal AI Agent with Compounding Memory",
+  "version": "3.0",
+  "date": "2026-04-28",
+  "source": "tasks/prd-aura.md",
+  "introduction": "Aura is a local-first personal AI agent that accumulates knowledge over time through a structured wiki maintained by the model. Unlike traditional chatbots, Aura is built as a deterministic, observable, and secure system with strong emphasis on runtime reliability, cost control, execution safety, and incremental memory evolution. This PRD covers all four phases of Aura's development: core bot + wiki, deterministic memory, skill sandbox, and optional multi-agent capabilities. Version 3.0 simplifies the architecture from earlier versions, eliminating premature complexity and prioritizing determinism and testability.",
+  "goals": [
+    "Provide a reliable personal AI agent accessible via Telegram",
+    "Accumulate and retrieve knowledge through a structured wiki that compounds over time",
+    "Ensure deterministic behavior (temperature=0, versioned prompts and schemas)",
+    "Maintain strict cost control with token tracking and budget enforcement",
+    "Enable safe execution of skills with trust levels and resource constraints",
+    "Keep the system predictable, controllable, and debuggable at all times"
+  ],
+  "designPrinciples": [
+    "Determinism > Creativity",
+    "Simplicity > Premature Abstraction",
+    "File System > Distributed Systems",
+    "Explicit Control > Opaque Automation",
+    "Fallbacks Always Available"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Start a conversation via Telegram",
+      "description": "As a user, I want to send a message to Aura on Telegram so that I can interact with my personal AI agent.",
+      "acceptanceCriteria": [
+        "Telegram bot receives messages from allowlisted users",
+        "Bot ignores messages from non-allowlisted users",
+        "Each conversation runs in its own goroutine",
+        "Bot sends a confirmation when a conversation starts",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Exchange messages with the LLM",
+      "description": "As a user, I want to send messages and receive AI responses so that I can get answers and assistance.",
+      "acceptanceCriteria": [
+        "Messages are forwarded to the LLM client and responses returned to the user",
+        "Streaming responses are supported via token channel",
+        "Retry with exponential backoff on LLM failure (max 5 retries)",
+        "Context window managed with rolling summarization at 80% threshold",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Store and retrieve wiki knowledge",
+      "description": "As a user, I want Aura to remember information across conversations so that knowledge compounds over time.",
+      "acceptanceCriteria": [
+        "LLM output is parsed as YAML and validated against SCHEMA.md before writing",
+        "Invalid wiki writes trigger a retry with schema error feedback",
+        "Wiki files are stored under /wiki with atomic write (temp + rename)",
+        "File-level mutex prevents concurrent write corruption",
+        "Wiki changes are tracked via Git",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Search wiki with vector search",
+      "description": "As a user, I want Aura to search my wiki semantically so that relevant knowledge is surfaced in conversations.",
+      "acceptanceCriteria": [
+        "Vector search returns relevant wiki pages based on query",
+        "chromem-go is the primary search engine",
+        "pgvector serves as scalable fallback when configured",
+        "Search results are injected into conversation context",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Manage conversation context",
+      "description": "As the system, I need to manage conversation context so that token limits are respected and costs stay within budget.",
+      "acceptanceCriteria": [
+        "Active context, rolling summary, and transcript are maintained per conversation",
+        "MAX_CONTEXT_TOKENS limit is enforced",
+        "Summarization triggers at 80% of context window",
+        "Token usage tracked per conversation and globally",
+        "Soft and hard budget limits are enforced",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Predict and control costs",
+      "description": "As a user, I want cost controls so that I don't exceed my budget on LLM calls.",
+      "acceptanceCriteria": [
+        "Cost prediction calculated as context + expected_output before each call",
+        "Soft budget triggers a warning notification",
+        "Hard budget halts LLM calls and notifies user",
+        "Token usage visible via /status endpoint",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Execute skills in a sandbox",
+      "description": "As a user, I want Aura to execute skills/tools safely so that untrusted code cannot compromise my system.",
+      "acceptanceCriteria": [
+        "Skills are classified by trust level: local, verified, untrusted",
+        "Untrusted skills run with no network access by default",
+        "All skills have timeout, CPU limit, and memory limit constraints",
+        "Skill execution uses os/exec (containerd optional for advanced isolation)",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Validate wiki schema deterministically",
+      "description": "As the system, I want deterministic wiki writes so that memory evolution is predictable and debuggable.",
+      "acceptanceCriteria": [
+        "LLM runs with temperature=0 for wiki operations",
+        "Prompt versioning tracks which prompt generated each wiki page",
+        "Schema versioning tracks wiki page format versions",
+        "Each wiki page includes metadata: schema_version and prompt_version",
+        "Snapshot tests validate deterministic output for fixed inputs",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Fall back to alternative LLM providers",
+      "description": "As a user, I want Aura to work even if my primary LLM provider is unavailable.",
+      "acceptanceCriteria": [
+        "MCP Client is the primary LLM interface",
+        "OpenAI-compatible HTTP client serves as fallback",
+        "Ollama client enables offline mode",
+        "Failover between providers is automatic and transparent",
+        "Typecheck/lint passes"
+      ]
+    },
+    {
+      "id": "US-010",
+      "title": "Monitor system health and observability",
+      "description": "As a user, I want to monitor Aura's health and resource usage so that I can debug issues.",
+      "acceptanceCriteria": [
+        "/status endpoint returns system health",
+        "Structured logs via zap",
+        "OpenTelemetry traces for LLM calls and tool executions",
+        "No secrets appear in logs",
+        "Typecheck/lint passes"
+      ]
+    }
+  ],
+  "functionalRequirements": [
+    { "id": "FR-1", "description": "Telegram bot interface using telebot.v4 with allowlist-based access control" },
+    { "id": "FR-2", "description": "Orchestrator manages conversations sequentially (1 goroutine = 1 conversation, no DAG engine)" },
+    { "id": "FR-3", "description": "LLM client layer with interface supporting Send and Stream operations" },
+    { "id": "FR-4", "description": "Three LLM implementations: MCP Client (primary), OpenAI-compatible HTTP (fallback), Ollama (offline)" },
+    { "id": "FR-5", "description": "Wiki system with file system storage, Git versioning, atomic writes, and file-level mutex" },
+    { "id": "FR-6", "description": "Wiki schema validation: LLM output → Parse YAML → Validate → Write or Retry" },
+    { "id": "FR-7", "description": "Deterministic mode for wiki operations: temperature=0, prompt versioning, schema versioning" },
+    { "id": "FR-8", "description": "Vector search via chromem-go (primary) with pgvector fallback" },
+    { "id": "FR-9", "description": "PostgreSQL database using pgx driver with golang-migrate for migrations" },
+    { "id": "FR-10", "description": "Conversation context management with active context, rolling summary, and transcript" },
+    { "id": "FR-11", "description": "Context window enforcement: MAX_CONTEXT_TOKENS with 80% summarization threshold" },
+    { "id": "FR-12", "description": "Token tracking per conversation and globally with cost prediction before each call" },
+    { "id": "FR-13", "description": "Budget enforcement with soft (warning) and hard (halt) levels" },
+    { "id": "FR-14", "description": "Skill system with three trust levels: local, verified, untrusted" },
+    { "id": "FR-15", "description": "Skill execution constraints: no network (default), timeout, CPU limit, memory limit" },
+    { "id": "FR-16", "description": "HTTP server using chi router for /status and observability endpoints" },
+    { "id": "FR-17", "description": "Structured logging via zap with no secrets in log output" },
+    { "id": "FR-18", "description": "OpenTelemetry integration for distributed tracing" },
+    { "id": "FR-19", "description": "Configuration via envconfig" },
+    { "id": "FR-20", "description": "Docker deployment with multi-stage Alpine build, Linux-only target" }
+  ],
+  "nonGoals": [
+    "No distributed orchestration or DAG engine",
+    "No automatic priority assignment or notifications for wiki pages",
+    "No multi-agent coordination (Phase 4 is optional and out of scope for initial delivery)",
+    "No mobile or web UI — Telegram is the sole interface",
+    "No real-time collaboration features",
+    "No cloud-hosted wiki — local-first, file system only",
+    "No custom LLM training or fine-tuning"
+  ],
+  "designConsiderations": [
+    { "key": "Telegram-first interface", "value": "All user interaction flows through Telegram using telebot.v4 with inline keyboard support" },
+    { "key": "Local-first architecture", "value": "Wiki stored on file system with Git versioning; no cloud dependency for core functionality" },
+    { "key": "Deterministic memory", "value": "Wiki writes use temperature=0 with versioned prompts and schemas to ensure reproducibility" },
+    { "key": "Graceful degradation", "value": "Multiple LLM providers allow fallback; offline mode via Ollama" },
+    { "key": "Security by default", "value": "Skills run with no network access unless explicitly trusted; Telegram allowlist gates access" }
+  ],
+  "technicalConsiderations": [
+    { "key": "Language", "value": "Go — chosen for concurrency model (goroutines per conversation) and single-binary deployment" },
+    { "key": "Orchestration", "value": "No framework dependencies — custom orchestrator eliminates vendor lock-in and complexity" },
+    { "key": "Database", "value": "PostgreSQL with pgx driver; migrations via golang-migrate" },
+    { "key": "Vector search", "value": "chromem-go for local-first; pgvector for scalable deployment" },
+    { "key": "Wiki storage", "value": "File system + Git (go-git/go-git/v5) with atomic writes (temp + rename pattern)" },
+    { "key": "Schema validation", "value": "go-playground/validator + gopkg.in/yaml.v3" },
+    { "key": "Containerization", "value": "Multi-stage Docker build targeting Alpine Linux" },
+    { "key": "Retry strategy", "value": "Exponential backoff, max 5 retries for LLM calls" },
+    { "key": "Config", "value": "envconfig for environment-based configuration" }
+  ],
+  "successMetrics": [
+    { "metric": "Wiki write success rate", "target": ">99% of attempts succeed with valid schema (validation + retry)" },
+    { "metric": "LLM response latency", "target": "Under 5 seconds for 95th percentile" },
+    { "metric": "Data loss on wiki writes", "target": "Zero (atomic write + Git versioning)" },
+    { "metric": "Budget compliance", "target": "Cost stays within hard budget limit 100% of the time" },
+    { "metric": "Deterministic output", "target": "Identical results for identical inputs (snapshot tests pass)" },
+    { "metric": "Deployment time", "target": "Single Docker container deploys and starts serving in under 10 seconds" }
+  ],
+  "openQuestions": [
+    "Should the wiki support concurrent read access from multiple conversations?",
+    "What is the expected wiki page volume and how does it affect vector search performance?",
+    "How should the skill trust level be assigned — manual configuration or automated verification?",
+    "What metrics should trigger automatic failover between LLM providers?",
+    "Should Phase 4 (multi-agent) use a message-passing model or shared state?"
+  ],
+  "roadmap": {
+    "phase1": {
+      "name": "Core Bot + Wiki",
+      "items": [
+        "Telegram bot with allowlist",
+        "Orchestrator with sequential conversation loop",
+        "LLM client layer (MCP + fallback)",
+        "Wiki system with file storage, Git versioning, atomic writes",
+        "Basic vector search (chromem-go)"
+      ]
+    },
+    "phase2": {
+      "name": "Deterministic Memory",
+      "items": [
+        "Schema validation layer",
+        "Deterministic mode (temperature=0, prompt/schema versioning)",
+        "Context management with rolling summarization",
+        "Cost prediction and budget enforcement",
+        "Snapshot testing"
+      ]
+    },
+    "phase3": {
+      "name": "Skill Sandbox",
+      "items": [
+        "Trust level classification",
+        "Execution constraints (network, CPU, memory, timeout)",
+        "os/exec-based sandbox",
+        "Optional containerd isolation"
+      ]
+    },
+    "phase4": {
+      "name": "Multi-Agent (Optional)",
+      "items": [
+        "Agent-to-agent communication protocol",
+        "Shared workspace isolation",
+        "Coordinated task execution"
+      ]
+    }
+  },
+  "architecture": {
+    "coreModel": "User → Telegram → Orchestrator → LLM → Tools → Wiki",
+    "executionModel": "1 goroutine = 1 conversation, no DAG engine, no distributed orchestration, deterministic sequential loop",
+    "components": {
+      "orchestrator": {
+        "responsibilities": ["Conversation management", "LLM loop", "Simple retry", "Budget enforcement"],
+        "framework": "Custom implementation (no external framework)"
+      },
+      "llmClient": {
+        "interface": "Send(ctx, Request) (Response, error) | Stream(ctx, Request) (<-chan Token, error)",
+        "implementations": ["MCP Client (primary)", "OpenAI-compatible HTTP (fallback)", "Ollama (offline)"],
+        "packages": ["net/http (native)", "encoding/json"]
+      },
+      "wikiSystem": {
+        "storage": "File system + Git",
+        "structure": "/wiki → /raw, /wiki, SCHEMA.md",
+        "package": "go-git (github.com/go-git/go-git/v5)",
+        "writeSafety": ["File-level mutex", "Atomic write (temp + rename)"]
+      },
+      "schemaValidation": {
+        "packages": ["go-playground/validator", "gopkg.in/yaml.v3"],
+        "flow": "LLM output → Parse YAML → Validate → Write or Retry"
+      },
+      "vectorSearch": {
+        "primary": "chromem-go",
+        "fallback": "pgvector (PostgreSQL)"
+      },
+      "database": {
+        "primary": "PostgreSQL",
+        "driver": "pgx (github.com/jackc/pgx/v5)",
+        "migrations": "golang-migrate"
+      },
+      "telegram": {
+        "package": "telebot.v4",
+        "motivation": ["Stable API", "Middleware support", "Inline keyboard"]
+      },
+      "httpServer": { "package": "chi router" },
+      "logging": { "package": "zap" },
+      "config": { "package": "envconfig" },
+      "observability": { "package": "OpenTelemetry" }
+    }
+  },
+  "memoryModel": {
+    "layers": ["Raw", "Wiki", "Schema"],
+    "deterministicMode": {
+      "mandatory": true,
+      "temperature": 0,
+      "promptVersioning": true,
+      "schemaVersioning": true
+    },
+    "pageMetadata": {
+      "schema_version": 1,
+      "prompt_version": "ingest_v1"
+    }
+  },
+  "conversationModel": {
+    "components": ["active_context", "rolling_summary", "transcript"]
+  },
+  "contextManagement": {
+    "maxContextTokens": "MAX_CONTEXT_TOKENS",
+    "summarizationThreshold": "80%"
+  },
+  "skillSystem": {
+    "trustLevels": ["local", "verified", "untrusted"],
+    "executionConstraints": {
+      "network": "No network (default)",
+      "timeout": true,
+      "cpuLimit": true,
+      "memoryLimit": true
+    },
+    "packages": ["os/exec", "containerd (optional advanced)"]
+  },
+  "costControl": {
+    "tokenTracking": ["Per conversation", "Global"],
+    "costPrediction": "estimated = context + expected_output",
+    "budgetLevels": ["Soft", "Hard"]
+  },
+  "retryModel": {
+    "strategy": "Exponential backoff",
+    "maxRetries": 5
+  },
+  "persistence": {
+    "conversations": "JSON or PostgreSQL",
+    "wiki": "File system + Git"
+  },
+  "testingStrategy": {
+    "unit": ["validator", "workspace safety"],
+    "integration": ["DB", "wiki"],
+    "snapshot": "Deterministic outputs"
+  },
+  "deployment": {
+    "docker": "Multi-stage build, Alpine",
+    "target": "Linux only"
+  },
+  "security": {
+    "telegramAllowlist": true,
+    "workspaceIsolation": true,
+    "noSecretsInLogs": true
+  }
+}
