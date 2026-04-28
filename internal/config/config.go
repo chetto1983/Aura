@@ -12,6 +12,10 @@ type Config struct {
 	SoftBudget       float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
 	HardBudget       float64 `envconfig:"HARD_BUDGET" default:"20.0"`
 	LogLevel         string   `envconfig:"LOG_LEVEL" default:"info"`
+	LLMAPIKey        string   `envconfig:"LLM_API_KEY"`
+	LLMBaseURL       string   `envconfig:"LLM_BASE_URL"`
+	LLMModel         string   `envconfig:"LLM_MODEL"`
+	LLMMaxRetries    int      `envconfig:"LLM_MAX_RETRIES" default:"5"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -44,6 +48,11 @@ func Load() (*Config, error) {
 	cfg.SoftBudget = getEnvFloat("SOFT_BUDGET", 10.0)
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
+
+	cfg.LLMAPIKey = getEnv("LLM_API_KEY", "")
+	cfg.LLMBaseURL = getEnv("LLM_BASE_URL", "https://api.openai.com/v1")
+	cfg.LLMModel = getEnv("LLM_MODEL", "gpt-4")
+	cfg.LLMMaxRetries = getEnvInt("LLM_MAX_RETRIES", 5)
 
 	return cfg, nil
 }
