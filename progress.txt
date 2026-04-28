@@ -138,3 +138,15 @@
   - Network isolation for untrusted skills is env-based (restricted env vars) — OS-level isolation requires containerd
   - boundedBuffer.Write truncates output silently when limit is reached (acceptable for sandbox safety)
   - Exit code extraction uses exec.ExitError — returns 1 for non-exit errors (signal, context cancel)
+---
+## [2026-04-28] - US-008
+- Added Temperature field to llm.Request (0 = deterministic, >0 = creative)
+- OpenAI client passes temperature in both Send and Stream requests
+- Wiki Writer uses temperature=0 for all LLM-assisted wiki writes (deterministic mode)
+- Snapshot tests verify deterministic validation, schema versioning, prompt versioning, slug generation, YAML parsing
+- Existing schema_version and prompt_version metadata already on every wiki page
+- Files changed: internal/llm/client.go, internal/llm/openai.go, internal/wiki/parser.go, internal/wiki/snapshot_test.go, prd.json
+- **Learnings for future iterations:**
+  - Temperature is set per-request in llm.Request — wiki operations always use 0 for determinism
+  - Snapshot tests validate that validation errors are identical across multiple runs (deterministic error order)
+  - Prompt versioning format: `v{n}` or `ingest_v{n}` — enforced by regex in schema validation

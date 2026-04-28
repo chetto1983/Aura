@@ -124,7 +124,8 @@
         "Each wiki page includes metadata: schema_version and prompt_version",
         "Snapshot tests validate deterministic output for fixed inputs",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-009",
