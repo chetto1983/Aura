@@ -78,6 +78,7 @@ func (w *Writer) retryWithFeedback(ctx context.Context, originalOutput string, v
 				{Role: "system", Content: "You are a wiki editor. Output valid YAML conforming to the wiki schema."},
 				{Role: "user", Content: sb.String()},
 			},
+			Temperature: 0, // deterministic for wiki operations
 		}
 
 		resp, err := w.llm.Send(ctx, req)

@@ -4,8 +4,9 @@ import "context"
 
 // Request represents an LLM API request.
 type Request struct {
-	Messages []Message
-	Model    string
+	Messages    []Message
+	Model       string
+	Temperature float64 // 0 = deterministic, >0 = creative. Use 0 for wiki operations.
 }
 
 // Message represents a single message in a conversation.

@@ -38,9 +38,10 @@ func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 }
 
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Temperature float64       `json:"temperature,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
 }
 
 type chatMessage struct {
@@ -76,8 +77,9 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 	}
 
 	chatReq := chatRequest{
-		Model:  model,
-		Stream: false,
+		Model:       model,
+		Temperature: req.Temperature,
+		Stream:      false,
 	}
 	for _, m := range req.Messages {
 		chatReq.Messages = append(chatReq.Messages, chatMessage{
@@ -136,8 +138,9 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 	}
 
 	chatReq := chatRequest{
-		Model:  model,
-		Stream: true,
+		Model:       model,
+		Temperature: req.Temperature,
+		Stream:      true,
 	}
 	for _, m := range req.Messages {
 		chatReq.Messages = append(chatReq.Messages, chatMessage{
