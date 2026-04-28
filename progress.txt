@@ -121,3 +121,20 @@
   - Streaming path records estimated tokens (chars/4) — not ideal but acceptable for budget estimation
   - Hard-coded 500 expected output tokens in `CanAfford()` call — could be configurable later
 ---
+## [2026-04-28] - US-007
+- Implemented skill sandbox execution with three trust levels: local, verified, untrusted
+- TrustLevel enum with String() and TrustLevelFromString() parsing
+- DefaultConstraints per trust level: timeout, CPU limit, memory limit, network access, max output
+- Runner executes skills via os/exec with context timeout and bounded output capture
+- Untrusted skills get restricted environment (no HTTP_PROXY, minimal PATH, /tmp HOME)
+- Verified skills get limited env but retain network access
+- Local skills run with full system environment
+- boundedBuffer limits output size to prevent memory exhaustion
+- stringReader feeds stdin input to skill processes
+- Tests: trust levels, constraints, command execution, timeout, restricted env, exit codes, bounded buffer
+- Files changed: internal/skill/skill.go, internal/skill/skill_test.go, prd.json
+- **Learnings for future iterations:**
+  - os/exec.CommandContext handles timeout via context cancellation
+  - Network isolation for untrusted skills is env-based (restricted env vars) — OS-level isolation requires containerd
+  - boundedBuffer.Write truncates output silently when limit is reached (acceptable for sandbox safety)
+  - Exit code extraction uses exec.ExitError — returns 1 for non-exit errors (signal, context cancel)

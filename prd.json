@@ -110,7 +110,8 @@
         "All skills have timeout, CPU limit, and memory limit constraints",
         "Skill execution uses os/exec (containerd optional for advanced isolation)",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-008",
