@@ -1,0 +1,23 @@
+## Codebase Patterns
+- Use `slog` for structured logging throughout (not zap yet, will migrate later)
+- Config uses manual env parsing (no envconfig dep yet) — `internal/config/env.go` has helpers
+- Telegram user IDs are strings (converted from int64 via strconv.FormatInt)
+- Conversation handling launched in goroutines via `go b.handleConversation(c)`
+
+---
+
+## [2026-04-28] - US-001
+- Implemented Telegram bot with allowlist-based access control
+- Config package with environment variable loading (TELEGRAM_TOKEN, TELEGRAM_ALLOWLIST, etc.)
+- Bot ignores messages from non-allowlisted users
+- Each conversation runs in its own goroutine
+- Confirmation message sent when conversation starts
+- Tests for config package (IsAllowlisted, Load with missing/valid env vars)
+- Files changed: cmd/aura/main.go, internal/config/config.go, internal/config/env.go, internal/config/config_test.go, internal/telegram/bot.go, go.mod, go.sum, .gitignore
+- **Learnings for future iterations:**
+  - telebot.v4 uses `tele.Context` for handler pattern — all handlers take `(tele.Context) error`
+  - User ID is int64 in telebot — must convert to string for allowlist matching
+  - Config loads from env vars manually (no envconfig lib yet) — helpers in env.go
+  - `sync.Map` used for tracking active conversations (safe for concurrent goroutine access)
+  - Project structure: cmd/aura/main.go for entry point, internal/ for packages
+---

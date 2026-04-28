@@ -30,7 +30,8 @@
         "Each conversation runs in its own goroutine",
         "Bot sends a confirmation when a conversation starts",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-002",
