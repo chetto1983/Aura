@@ -137,7 +137,8 @@
         "Ollama client enables offline mode",
         "Failover between providers is automatic and transparent",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-010",

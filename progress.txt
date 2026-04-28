@@ -161,3 +161,20 @@
   - Temperature is set per-request in llm.Request — wiki operations always use 0 for determinism
   - Snapshot tests validate that validation errors are identical across multiple runs (deterministic error order)
   - Prompt versioning format: `v{n}` or `ingest_v{n}` — enforced by regex in schema validation
+---
+## [2026-04-28] - US-009
+- Added OllamaClient for local/offline LLM via OpenAI-compatible API (reuses OpenAIClient internally)
+- Added FailoverClient that tries providers in order: first success wins, errors trigger fallback
+- Bot creates LLM client chain with createLLMClient: OpenAI (primary) → Ollama (offline fallback)
+- Single provider returns directly (no failover wrapper); 2+ providers use FailoverClient
+- Added OLLAMA_BASE_URL and OLLAMA_MODEL config fields
+- Replaced go-libsql (CGo) with modernc.org/sqlite (pure Go) for SQLite FTS5 search backend
+- SQLite backend adds conversation storage and FTS5 full-text search over wiki documents
+- Platform-specific sandbox code added via build tags (Linux vs other)
+- Failover tests: first succeeds, fallback on error, all fail, stream fallback, context cancellation
+- Files changed: internal/llm/ollama.go, internal/llm/failover_test.go, internal/search/sqlite.go, internal/config/config.go, internal/telegram/bot.go, internal/skill/sandbox_linux.go, internal/skill/sandbox_other.go, internal/skill/skill.go, internal/skill/skill_test.go, go.mod, go.sum, prd.json
+- **Learnings for future iterations:**
+  - OllamaClient wraps OpenAIClient since Ollama exposes OpenAI-compatible API at /v1/chat/completions
+  - go-libsql requires CGo — use modernc.org/sqlite for Windows/pure-Go compatibility
+  - FailoverClient checks context.Err() before each provider attempt to avoid wasted calls
+  - Failover names are padded with "provider_N" when not enough names provided
