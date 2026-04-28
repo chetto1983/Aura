@@ -43,6 +43,9 @@ func TestSoftBudgetWarning(t *testing.T) {
 	tr := newTestTracker(1.0, 5.0, 0.001)
 	tr.RecordUsage(1000) // cost = 1.0, hits soft budget
 
+	if !tr.IsSoftBudgetExceeded() {
+		t.Error("soft budget should be exceeded")
+	}
 	// Should not be hard-exceeded yet
 	if tr.IsHardBudgetExceeded() {
 		t.Error("hard budget should not be exceeded at soft budget level")
@@ -105,6 +108,12 @@ func TestStatus(t *testing.T) {
 	if status.HardBudget != 5.0 {
 		t.Errorf("Status.HardBudget = %.4f, want 5.0", status.HardBudget)
 	}
+	if !status.SoftBudgetExceeded {
+		t.Error("Status.SoftBudgetExceeded should be true after hitting soft budget")
+	}
+	if status.BudgetExceeded {
+		t.Error("Status.BudgetExceeded should be false when only soft budget is hit")
+	}
 }
 
 func TestDefaultCostPerToken(t *testing.T) {
@@ -118,5 +127,25 @@ func TestDefaultCostPerToken(t *testing.T) {
 	tr.RecordUsage(1000)
 	if tr.TotalCost() <= 0 {
 		t.Errorf("TotalCost = %.6f, want > 0 with default cost", tr.TotalCost())
+	}
+}
+
+func TestShouldNotifySoftBudgetOnce(t *testing.T) {
+	tr := newTestTracker(1.0, 5.0, 0.001)
+	tr.RecordUsage(1000) // cost = 1.0, hits soft budget
+
+	if !tr.ShouldNotifySoftBudget() {
+		t.Error("ShouldNotifySoftBudget should return true on first call after soft budget hit")
+	}
+	if tr.ShouldNotifySoftBudget() {
+		t.Error("ShouldNotifySoftBudget should return false on second call (already notified)")
+	}
+}
+
+func TestShouldNotifySoftBudgetNotHit(t *testing.T) {
+	tr := newTestTracker(1.0, 5.0, 0.001)
+	// Don't record enough usage to hit soft budget
+	if tr.ShouldNotifySoftBudget() {
+		t.Error("ShouldNotifySoftBudget should return false when soft budget not exceeded")
 	}
 }

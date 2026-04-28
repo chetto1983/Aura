@@ -226,6 +226,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		convCtx.TrackTokens(resp.Usage)
 		if b.budget != nil {
 			b.budget.RecordUsage(resp.Usage.TotalTokens)
+			b.notifySoftBudget(c, userID)
 		}
 		c.Send(resp.Content)
 		b.tryStoreWiki(context.Background(), resp.Content, userID)
@@ -257,6 +258,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	if b.budget != nil {
 		totalEstimate := convCtx.EstimatedTokens() + streamTokenEstimate
 		b.budget.RecordUsage(totalEstimate)
+		b.notifySoftBudget(c, userID)
 	}
 	c.Send(response)
 
@@ -342,6 +344,9 @@ func (b *Bot) onStatus(c tele.Context) error {
 		if status.HardBudget > 0 {
 			sb.WriteString(fmt.Sprintf("Hard budget: $%.2f\n", status.HardBudget))
 		}
+		if status.SoftBudgetExceeded && !status.BudgetExceeded {
+			sb.WriteString("Status: SOFT BUDGET REACHED\n")
+		}
 		if status.BudgetExceeded {
 			sb.WriteString("Status: HARD BUDGET EXCEEDED\n")
 		}
@@ -355,9 +360,21 @@ func (b *Bot) onStatus(c tele.Context) error {
 		convCtx := ctxVal.(*conversation.Context)
 		sb.WriteString(fmt.Sprintf("\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens()))
 		sb.WriteString(fmt.Sprintf("Conversation tokens used: %d\n", convCtx.TotalTokensUsed()))
+		if b.budget != nil {
+			predictedCost := b.budget.PredictCost(convCtx.EstimatedTokens(), 500)
+			sb.WriteString(fmt.Sprintf("Next call est. cost: $%.4f\n", predictedCost))
+		}
 	}
 
 	return c.Send(sb.String())
+}
+
+// notifySoftBudget sends a one-time warning to the user when soft budget is first exceeded.
+func (b *Bot) notifySoftBudget(c tele.Context, userID string) {
+	if b.budget != nil && b.budget.ShouldNotifySoftBudget() {
+		status := b.budget.Status()
+		c.Send(fmt.Sprintf("Soft budget reached ($%.2f / $%.2f). LLM calls continue until hard budget is hit.", status.TotalCost, status.SoftBudget))
+	}
 }
 
 // BudgetStatus returns the current budget status for external consumers.

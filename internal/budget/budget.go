@@ -8,14 +8,16 @@ import (
 
 // Tracker manages global token usage and budget enforcement.
 type Tracker struct {
-	mu            sync.Mutex
-	totalTokens   int
-	totalCost     float64
-	softBudget    float64
-	hardBudget    float64
-	costPerToken  float64
-	logger        *slog.Logger
-	hardBudgetHit bool
+	mu                 sync.Mutex
+	totalTokens        int
+	totalCost          float64
+	softBudget         float64
+	hardBudget         float64
+	costPerToken       float64
+	logger             *slog.Logger
+	softBudgetHit      bool
+	hardBudgetHit      bool
+	softBudgetNotified bool
 }
 
 // Config holds budget configuration.
@@ -48,7 +50,8 @@ func (t *Tracker) RecordUsage(totalTokens int) {
 	t.totalCost = float64(t.totalTokens) * t.costPerToken
 
 	// Check soft budget
-	if t.softBudget > 0 && t.totalCost >= t.softBudget && t.totalCost < t.hardBudget {
+	if t.softBudget > 0 && t.totalCost >= t.softBudget && !t.softBudgetHit {
+		t.softBudgetHit = true
 		t.logger.Warn("soft budget limit reached",
 			"cost", fmt.Sprintf("%.4f", t.totalCost),
 			"soft_budget", t.softBudget,
@@ -73,6 +76,25 @@ func (t *Tracker) IsHardBudgetExceeded() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.hardBudgetHit
+}
+
+// IsSoftBudgetExceeded returns true if the soft budget has been exceeded.
+func (t *Tracker) IsSoftBudgetExceeded() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.softBudgetHit
+}
+
+// ShouldNotifySoftBudget returns true the first time soft budget is exceeded,
+// then returns false on subsequent calls. Used for one-time Telegram notifications.
+func (t *Tracker) ShouldNotifySoftBudget() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.softBudgetHit && !t.softBudgetNotified {
+		t.softBudgetNotified = true
+		return true
+	}
+	return false
 }
 
 // TotalTokens returns the cumulative token count.
@@ -114,19 +136,21 @@ func (t *Tracker) Status() Status {
 	defer t.mu.Unlock()
 
 	return Status{
-		TotalTokens:    t.totalTokens,
-		TotalCost:      t.totalCost,
-		SoftBudget:     t.softBudget,
-		HardBudget:     t.hardBudget,
-		BudgetExceeded: t.hardBudgetHit,
+		TotalTokens:        t.totalTokens,
+		TotalCost:          t.totalCost,
+		SoftBudget:         t.softBudget,
+		HardBudget:         t.hardBudget,
+		SoftBudgetExceeded: t.softBudgetHit,
+		BudgetExceeded:     t.hardBudgetHit,
 	}
 }
 
 // Status represents the current budget status.
 type Status struct {
-	TotalTokens    int
-	TotalCost      float64
-	SoftBudget     float64
-	HardBudget     float64
-	BudgetExceeded bool
+	TotalTokens        int
+	TotalCost          float64
+	SoftBudget         float64
+	HardBudget         float64
+	SoftBudgetExceeded bool
+	BudgetExceeded     bool
 }
