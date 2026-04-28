@@ -70,7 +70,8 @@
         "pgvector serves as scalable fallback when configured",
         "Search results are injected into conversation context",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-005",

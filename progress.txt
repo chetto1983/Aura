@@ -6,6 +6,8 @@
 - Wiki store uses `go-git/go-git/v5` for Git operations (not shell commands)
 - Wiki page YAML must include `schema_version: 1` and `prompt_version: vN|ingest_vN`
 - Slug function collapses consecutive hyphens in wiki page filenames
+- chromem-go uses `Similarity` (not Distance) on Result — range [-1, 1]
+- chromem-go embedding: use `NewEmbeddingFuncOpenAICompat` for OpenAI-compatible endpoints
 
 ---
 

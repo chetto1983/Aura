@@ -12,8 +12,10 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/wiki"
 
+	"github.com/philippgille/chromem-go"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -24,6 +26,7 @@ type Bot struct {
 	logger *slog.Logger
 	llm    llm.Client
 	wiki   *wiki.Writer
+	search *search.Engine
 	active sync.Map // maps userID string -> bool (active conversation tracking)
 	ctxMap sync.Map // maps userID string -> *conversation.Context
 }
@@ -66,12 +69,35 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		wikiWriter = wiki.NewWriter(wikiStore, client, logger)
 	}
 
+	// Set up search engine
+	var searchEngine *search.Engine
+	if cfg.EmbeddingAPIKey != "" || cfg.LLMAPIKey != "" {
+		embedFn := createEmbeddingFunc(cfg)
+		var se *search.Engine
+		var err error
+		if cfg.PgConnString != "" {
+			se, err = search.NewEngineWithFallback(cfg.WikiPath, embedFn, cfg.PgConnString, logger)
+		} else {
+			se, err = search.NewEngine(cfg.WikiPath, embedFn, logger)
+		}
+		if err != nil {
+			logger.Warn("failed to create search engine, search disabled", "error", err)
+		} else {
+			// Index existing wiki pages on startup
+			if err := se.IndexWikiPages(context.Background()); err != nil {
+				logger.Warn("failed to index wiki pages on startup", "error", err)
+			}
+			searchEngine = se
+		}
+	}
+
 	b := &Bot{
 		bot:    tb,
 		cfg:    cfg,
 		logger: logger,
 		llm:    client,
 		wiki:   wikiWriter,
+		search: searchEngine,
 	}
 
 	b.registerHandlers()
@@ -133,6 +159,16 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	// Add user message to context
 	convCtx.AddUserMessage(c.Text())
+
+	// Inject relevant wiki knowledge into context
+	if b.search != nil && b.search.IsIndexed() {
+		results, err := b.search.Search(context.Background(), c.Text(), 5)
+		if err != nil {
+			b.logger.Warn("wiki search failed", "user_id", userID, "error", err)
+		} else if len(results) > 0 {
+			convCtx.SetSystemMessage(search.FormatResults(results))
+		}
+	}
 
 	// Check if summarization is needed before sending
 	if convCtx.ShouldSummarize() {
@@ -224,6 +260,14 @@ func (b *Bot) tryStoreWiki(ctx context.Context, response string, userID string) 
 		"user_id", userID,
 		"title", page.Title,
 	)
+
+	// Re-index the newly written page
+	if b.search != nil {
+		slug := wiki.Slug(page.Title)
+		if err := b.search.ReindexWikiPage(ctx, slug); err != nil {
+			b.logger.Warn("failed to re-index wiki page", "slug", slug, "error", err)
+		}
+	}
 }
 
 // looksLikeWikiYAML checks if a response might contain wiki YAML.
@@ -231,4 +275,18 @@ func looksLikeWikiYAML(s string) bool {
 	return strings.Contains(s, "title:") &&
 		strings.Contains(s, "content:") &&
 		strings.Contains(s, "schema_version:")
+}
+
+// createEmbeddingFunc builds a chromem embedding function from config.
+// Falls back to LLM API key if no dedicated embedding key is set.
+func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
+	apiKey := cfg.EmbeddingAPIKey
+	if apiKey == "" {
+		apiKey = cfg.LLMAPIKey
+	}
+	baseURL := cfg.EmbeddingBaseURL
+	model := cfg.EmbeddingModel
+
+	normalized := true
+	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, apiKey, model, &normalized)
 }
