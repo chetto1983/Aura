@@ -9,8 +9,8 @@ type Config struct {
 	TelegramToken    string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
 	Allowlist        []string `envconfig:"TELEGRAM_ALLOWLIST" required:"true"`
 	MaxContextTokens int      `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
-	SoftBudget       float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
-	HardBudget       float64 `envconfig:"HARD_BUDGET" default:"20.0"`
+	SoftBudget       float64  `envconfig:"SOFT_BUDGET" default:"10.0"`
+	HardBudget       float64  `envconfig:"HARD_BUDGET" default:"20.0"`
 	LogLevel         string   `envconfig:"LOG_LEVEL" default:"info"`
 	LLMAPIKey        string   `envconfig:"LLM_API_KEY"`
 	LLMBaseURL       string   `envconfig:"LLM_BASE_URL"`

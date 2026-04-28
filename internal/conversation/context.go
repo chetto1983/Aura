@@ -11,12 +11,12 @@ import (
 
 // Context manages the conversation state for a single conversation.
 type Context struct {
-	messages       []llm.Message
-	summary        string
-	transcript     []string
-	maxTokens      int
-	summarizer     llm.Client
-	logger         *slog.Logger
+	messages        []llm.Message
+	summary         string
+	transcript      []string
+	maxTokens       int
+	summarizer      llm.Client
+	logger          *slog.Logger
 	totalTokensUsed int
 }
 

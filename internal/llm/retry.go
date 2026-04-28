@@ -8,7 +8,7 @@ import (
 
 // RetryClient wraps a Client with exponential backoff retry logic.
 type RetryClient struct {
-	inner  Client
+	inner      Client
 	maxRetries int
 	baseDelay  time.Duration
 	maxDelay   time.Duration

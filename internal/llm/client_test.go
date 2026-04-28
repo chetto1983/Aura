@@ -9,7 +9,7 @@ import (
 
 // mockClient implements Client for testing.
 type mockClient struct {
-	sendFn  func(ctx context.Context, req Request) (Response, error)
+	sendFn   func(ctx context.Context, req Request) (Response, error)
 	streamFn func(ctx context.Context, req Request) (<-chan Token, error)
 }
 
