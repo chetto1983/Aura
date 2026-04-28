@@ -106,3 +106,18 @@
   - /status command exposes both budget.Status and per-user conversation.Context stats
   - Bot already had budget *budget.Tracker field but wasn't fully wired — check existing partial implementations
 ---
+
+## [2026-04-28] - US-006
+- Verified cost prediction and control features already implemented from US-005 work
+- Cost prediction: `PredictCost(contextTokens, expectedOutputTokens)` + `CanAfford()` called before each LLM call
+- Soft budget: `ShouldNotifySoftBudget()` one-time flag + `notifySoftBudget()` sends Telegram warning to user
+- Hard budget: `IsHardBudgetExceeded()` check halts LLM calls, sends "Budget limit reached" message
+- Token usage visible via `/status` Telegram command (budget.Status + per-conversation context)
+- All quality checks pass: `go vet ./...` clean, `go test ./...` all pass
+- Files changed: prd.json
+- **Learnings for future iterations:**
+  - Budget features were implemented as part of US-005 context management — check existing implementations before assuming work is needed
+  - `ShouldNotifySoftBudget()` uses atomic check-and-set pattern (softBudgetHit && !softBudgetNotified) for one-time notifications
+  - Streaming path records estimated tokens (chars/4) — not ideal but acceptable for budget estimation
+  - Hard-coded 500 expected output tokens in `CanAfford()` call — could be configurable later
+---

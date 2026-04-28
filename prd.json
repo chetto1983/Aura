@@ -97,7 +97,8 @@
         "Hard budget halts LLM calls and notifies user",
         "Token usage visible via /status endpoint",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     },
     {
       "id": "US-007",
