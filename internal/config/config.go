@@ -17,11 +17,14 @@ type Config struct {
 	LLMBaseURL       string   `envconfig:"LLM_BASE_URL"`
 	LLMModel         string   `envconfig:"LLM_MODEL"`
 	LLMMaxRetries    int      `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	OllamaBaseURL    string   `envconfig:"OLLAMA_BASE_URL"`
+	OllamaModel      string   `envconfig:"OLLAMA_MODEL"`
 	WikiPath         string   `envconfig:"WIKI_PATH" default:"./wiki"`
 	EmbeddingAPIKey  string   `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL string   `envconfig:"EMBEDDING_BASE_URL"`
 	EmbeddingModel   string   `envconfig:"EMBEDDING_MODEL" default:"text-embedding-3-small"`
-	PgConnString     string   `envconfig:"PG_CONN_STRING"`
+	DBPath           string   `envconfig:"DB_PATH" default:"./aura.db"`
+	HTTPPort         string   `envconfig:"HTTP_PORT" default:":8080"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -61,12 +64,16 @@ func Load() (*Config, error) {
 	cfg.LLMModel = getEnv("LLM_MODEL", "gpt-4")
 	cfg.LLMMaxRetries = getEnvInt("LLM_MAX_RETRIES", 5)
 
+	cfg.OllamaBaseURL = getEnv("OLLAMA_BASE_URL", "")
+	cfg.OllamaModel = getEnv("OLLAMA_MODEL", "")
+
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.openai.com/v1")
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "text-embedding-3-small")
-	cfg.PgConnString = getEnv("PG_CONN_STRING", "")
+	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
+	cfg.HTTPPort = getEnv("HTTP_PORT", ":8080")
 
 	return cfg, nil
 }

@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -86,6 +87,38 @@ func DefaultConstraints(trust TrustLevel) Constraints {
 	}
 }
 
+// resolveConstraints merges skill-specific overrides with trust-level defaults.
+// Untrusted skills always have Network=false (security invariant).
+// Skills can only add restrictions, not remove them.
+func resolveConstraints(skill Skill) Constraints {
+	c := DefaultConstraints(skill.Trust)
+
+	if skill.Constraints.Timeout > 0 {
+		c.Timeout = skill.Constraints.Timeout
+	}
+	if skill.Constraints.CPULimit > 0 {
+		c.CPULimit = skill.Constraints.CPULimit
+	}
+	if skill.Constraints.MemoryMB > 0 {
+		c.MemoryMB = skill.Constraints.MemoryMB
+	}
+	if skill.Constraints.MaxOutput > 0 {
+		c.MaxOutput = skill.Constraints.MaxOutput
+	}
+
+	// Security invariant: untrusted skills never get network access
+	if skill.Trust == Untrusted {
+		c.Network = false
+	} else if !skill.Constraints.Network && skill.Constraints.MaxOutput > 0 {
+		// Skills can restrict themselves further (only when other constraints
+		// are explicitly set, indicating the Constraints struct was intentionally
+		// configured rather than zero-valued)
+		c.Network = false
+	}
+
+	return c
+}
+
 // Skill represents an executable skill with metadata.
 type Skill struct {
 	Name        string
@@ -101,6 +134,7 @@ type Result struct {
 	Stdout   string
 	Stderr   string
 	Duration time.Duration
+	TimedOut bool
 }
 
 // Runner executes skills in a sandboxed environment.
@@ -119,7 +153,9 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 		return nil, fmt.Errorf("skill %q has no command", skill.Name)
 	}
 
-	timeout := skill.Constraints.Timeout
+	c := resolveConstraints(skill)
+
+	timeout := c.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
@@ -127,24 +163,22 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, skill.Command, skill.Args...)
+	cmd := buildCommand(ctx, &skill, c, r.logger)
 
 	// Feed input via stdin
 	if input != "" {
 		cmd.Stdin = newStringReader(input)
 	}
 
-	// Capture output
+	// Capture output with bounded buffers
 	var out, serr boundedBuffer
-	out.limit = skill.Constraints.MaxOutput
-	serr.limit = skill.Constraints.MaxOutput
+	out.limit = c.MaxOutput
+	serr.limit = c.MaxOutput
 	cmd.Stdout = &out
 	cmd.Stderr = &serr
 
-	// Apply restrictions for untrusted/verified skills
+	// Set restricted environment for non-local skills
 	if skill.Trust != Local {
-		// Network isolation: clear environment network variables
-		// and set restrictive environment
 		cmd.Env = restrictedEnv(skill.Trust)
 	}
 
@@ -157,6 +191,7 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 		Stdout:   out.String(),
 		Stderr:   serr.String(),
 		Duration: duration,
+		TimedOut: ctx.Err() == context.DeadlineExceeded,
 	}
 
 	if ctx.Err() == context.DeadlineExceeded {
@@ -220,22 +255,27 @@ func exitCode(err error) int {
 
 // boundedBuffer is an io.Writer that limits output size.
 type boundedBuffer struct {
-	data  []byte
+	data  bytes.Buffer
 	limit int64
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
-	if b.limit > 0 && int64(len(b.data))+int64(len(p)) > b.limit {
-		n := copy(p, b.data[:b.limit-int64(len(b.data))])
-		b.data = append(b.data, p[:n]...)
-		return len(p), nil
+	if b.limit > 0 {
+		remaining := b.limit - int64(b.data.Len())
+		if remaining <= 0 {
+			return len(p), nil // Buffer full, discard
+		}
+		if int64(len(p)) > remaining {
+			b.data.Write(p[:remaining])
+			return len(p), nil
+		}
 	}
-	b.data = append(b.data, p...)
+	b.data.Write(p)
 	return len(p), nil
 }
 
 func (b *boundedBuffer) String() string {
-	return string(b.data)
+	return b.data.String()
 }
 
 // stringReader implements io.Reader for a string.

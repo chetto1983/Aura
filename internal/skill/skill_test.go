@@ -64,6 +64,9 @@ func TestDefaultConstraints(t *testing.T) {
 	if verified.CPULimit == 0 {
 		t.Error("Verified skills should have a CPU limit")
 	}
+	if verified.MemoryMB == 0 {
+		t.Error("Verified skills should have a memory limit")
+	}
 
 	untrusted := DefaultConstraints(Untrusted)
 	if untrusted.Network {
@@ -74,6 +77,84 @@ func TestDefaultConstraints(t *testing.T) {
 	}
 	if untrusted.MemoryMB == 0 {
 		t.Error("Untrusted skills should have a memory limit")
+	}
+}
+
+func TestResolveConstraintsDefaults(t *testing.T) {
+	// Skill with no overrides uses trust-level defaults
+	skill := Skill{
+		Name:    "test",
+		Command: "echo",
+		Trust:   Local,
+	}
+	c := resolveConstraints(skill)
+
+	if !c.Network {
+		t.Error("Local skill should have network access by default")
+	}
+	if c.Timeout != 30*time.Second {
+		t.Errorf("Local skill timeout = %v, want 30s", c.Timeout)
+	}
+}
+
+func TestResolveConstraintsOverrides(t *testing.T) {
+	// Skill with explicit overrides
+	skill := Skill{
+		Name:    "test",
+		Command: "echo",
+		Trust:   Local,
+		Constraints: Constraints{
+			Timeout:   60 * time.Second,
+			CPULimit:  20,
+			MaxOutput: 4096,
+		},
+	}
+	c := resolveConstraints(skill)
+
+	if c.Timeout != 60*time.Second {
+		t.Errorf("override timeout = %v, want 60s", c.Timeout)
+	}
+	if c.CPULimit != 20 {
+		t.Errorf("override CPULimit = %d, want 20", c.CPULimit)
+	}
+	if c.MaxOutput != 4096 {
+		t.Errorf("override MaxOutput = %d, want 4096", c.MaxOutput)
+	}
+}
+
+func TestResolveConstraintsUntrustedNetworkInvariant(t *testing.T) {
+	// Untrusted skills must NEVER have network access, even if explicitly set
+	skill := Skill{
+		Name:    "malicious",
+		Command: "curl",
+		Trust:   Untrusted,
+		Constraints: Constraints{
+			Network: true, // Should be ignored
+		},
+	}
+	c := resolveConstraints(skill)
+
+	if c.Network {
+		t.Error("untrusted skill should never have network access, even if explicitly set to true")
+	}
+}
+
+func TestResolveConstraintsVerifiedDefaults(t *testing.T) {
+	skill := Skill{
+		Name:    "verified-tool",
+		Command: "tool",
+		Trust:   Verified,
+	}
+	c := resolveConstraints(skill)
+
+	if !c.Network {
+		t.Error("Verified skill should have network access by default")
+	}
+	if c.CPULimit != 30 {
+		t.Errorf("Verified CPULimit = %d, want 30", c.CPULimit)
+	}
+	if c.MemoryMB != 256 {
+		t.Errorf("Verified MemoryMB = %d, want 256", c.MemoryMB)
 	}
 }
 
@@ -148,9 +229,12 @@ func TestRunTimeout(t *testing.T) {
 		},
 	}
 
-	_, err := runner.Run(context.Background(), skill, "")
+	result, err := runner.Run(context.Background(), skill, "")
 	if err == nil {
 		t.Error("expected timeout error, got nil")
+	}
+	if result != nil && !result.TimedOut {
+		t.Error("expected TimedOut to be true")
 	}
 }
 
@@ -201,8 +285,7 @@ func TestRestrictedEnv(t *testing.T) {
 		t.Error("untrusted env should not be empty")
 	}
 	for _, e := range env {
-		// Should not contain proxy or network-related variables
-		if len(e) > 10 && e[:10] == "HTTP_PROXY" {
+		if len(e) >= 10 && e[:10] == "HTTP_PROXY" {
 			t.Errorf("untrusted env should not contain HTTP_PROXY: %s", e)
 		}
 	}
@@ -217,6 +300,9 @@ func TestBoundedBuffer(t *testing.T) {
 	if len(result) > 10 {
 		t.Errorf("boundedBuffer should limit output: got %d bytes", len(result))
 	}
+	if result != "hello worl" {
+		t.Errorf("boundedBuffer content = %q, want %q", result, "hello worl")
+	}
 }
 
 func TestBoundedBufferNoLimit(t *testing.T) {
@@ -228,18 +314,23 @@ func TestBoundedBufferNoLimit(t *testing.T) {
 	}
 }
 
-func containsEnvVar(output, varName string) bool {
-	return len(output) >= len(varName) && output[:len(varName)] == varName ||
-		containsSubstring(output, varName+"=")
+func TestBoundedBufferExactLimit(t *testing.T) {
+	buf := &boundedBuffer{limit: 5}
+	buf.Write([]byte("12345"))
+
+	if buf.String() != "12345" {
+		t.Errorf("boundedBuffer at exact limit should not truncate: got %q", buf.String())
+	}
 }
 
-func containsSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
+func TestBoundedBufferOverLimit(t *testing.T) {
+	buf := &boundedBuffer{limit: 5}
+	buf.Write([]byte("1234567890"))
+
+	// Should only contain first 5 bytes
+	if len(buf.String()) > 5 {
+		t.Errorf("boundedBuffer should truncate at limit: got %d bytes", len(buf.String()))
 	}
-	return false
 }
 
 func TestExitCode(t *testing.T) {
@@ -282,6 +373,43 @@ func TestExitCode(t *testing.T) {
 	if result.ExitCode == 0 {
 		t.Error("exit code for 'false' should be non-zero")
 	}
+}
+
+func TestResolveConstraintsZeroValues(t *testing.T) {
+	// Skill with zero-value Constraints should use defaults
+	skill := Skill{
+		Name:    "test",
+		Command: "echo",
+		Trust:   Untrusted,
+	}
+	c := resolveConstraints(skill)
+
+	if c.Network {
+		t.Error("Untrusted skill should not have network access")
+	}
+	if c.Timeout != 10*time.Second {
+		t.Errorf("Untrusted timeout = %v, want 10s", c.Timeout)
+	}
+	if c.CPULimit != 10 {
+		t.Errorf("Untrusted CPULimit = %d, want 10", c.CPULimit)
+	}
+	if c.MemoryMB != 128 {
+		t.Errorf("Untrusted MemoryMB = %d, want 128", c.MemoryMB)
+	}
+}
+
+func containsEnvVar(output, varName string) bool {
+	return len(output) >= len(varName) && output[:len(varName)] == varName ||
+		containsSubstring(output, varName+"=")
+}
+
+func containsSubstring(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMain(m *testing.M) {

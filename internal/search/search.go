@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,10 +23,10 @@ type Result struct {
 }
 
 // Engine provides vector search over wiki pages, with chromem-go as primary
-// and pgvector as optional fallback.
+// and SQLite FTS5 as fallback.
 type Engine struct {
 	coll    *chromem.Collection
-	pg      *pgvectorSearcher // nil if not configured
+	sqlite  *sqliteSearcher // nil if not configured
 	wikiDir string
 	mu      sync.RWMutex
 	logger  *slog.Logger
@@ -49,21 +50,21 @@ func NewEngine(wikiDir string, embedFn chromem.EmbeddingFunc, logger *slog.Logge
 }
 
 // NewEngineWithFallback creates a search engine with chromem-go (primary) and
-// pgvector (fallback). If pgvector connection fails, falls back to chromem-only.
-func NewEngineWithFallback(wikiDir string, embedFn chromem.EmbeddingFunc, pgConnString string, logger *slog.Logger) (*Engine, error) {
+// SQLite FTS5 (fallback). If SQLite connection fails, falls back to chromem-only.
+func NewEngineWithFallback(wikiDir string, embedFn chromem.EmbeddingFunc, dbPath string, logger *slog.Logger) (*Engine, error) {
 	engine, err := NewEngine(wikiDir, embedFn, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	pg, err := newPgvectorSearcher(pgConnString, logger)
+	sq, err := newSqliteSearcher(dbPath, logger)
 	if err != nil {
-		logger.Warn("pgvector fallback unavailable, proceeding with chromem only", "error", err)
+		logger.Warn("sqlite fallback unavailable, proceeding with chromem only", "error", err)
 		return engine, nil
 	}
 
-	engine.pg = pg
-	logger.Info("pgvector fallback search enabled")
+	engine.sqlite = sq
+	logger.Info("sqlite fallback search enabled")
 	return engine, nil
 }
 
@@ -80,8 +81,8 @@ func (e *Engine) Index(ctx context.Context, id string, content string, metadata 
 		return fmt.Errorf("indexing document %s: %w", id, err)
 	}
 
-	if e.pg != nil {
-		if err := e.pg.indexDocument(ctx, id, content, metadata); err != nil {
+	if e.sqlite != nil {
+		if err := e.sqlite.indexDocument(ctx, id, content, metadata); err != nil {
 			e.logger.Warn("failed to index in pgvector fallback", "id", id, "error", err)
 		}
 	}
@@ -127,9 +128,9 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 			continue
 		}
 
-		if e.pg != nil {
-			if err := e.pg.indexDocument(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
-				e.logger.Warn("failed to index in pgvector", "slug", slug, "error", err)
+		if e.sqlite != nil {
+			if err := e.sqlite.indexDocument(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
+				e.logger.Warn("failed to index in sqlite", "slug", slug, "error", err)
 			}
 		}
 
@@ -161,18 +162,18 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, 
 		return results, nil
 	}
 
-	e.logger.Warn("chromem search failed, trying pgvector fallback", "error", err)
+	e.logger.Warn("chromem search failed, trying sqlite fallback", "error", err)
 
 	// Try fallback (pgvector) if available
-	if e.pg != nil {
-		results, pgErr := e.pg.search(ctx, query, topK)
+	if e.sqlite != nil {
+		results, pgErr := e.sqlite.search(ctx, query, topK)
 		if pgErr == nil {
 			return results, nil
 		}
-		e.logger.Warn("pgvector fallback also failed", "error", pgErr)
+		e.logger.Warn("sqlite fallback also failed", "error", pgErr)
 	}
 
-	return nil, fmt.Errorf("search failed: both chromem and pgvector unavailable")
+	return nil, fmt.Errorf("search failed: both chromem and sqlite unavailable")
 }
 
 // IsIndexed returns whether pages have been indexed.
@@ -219,6 +220,24 @@ func extractTitle(data []byte) string {
 		return ""
 	}
 	return partial.Title
+}
+
+// metadataToJSON serializes a metadata map to a JSON string.
+func metadataToJSON(metadata map[string]string) string {
+	b, err := json.Marshal(metadata)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+// extractMetaField extracts a field value from a JSON metadata string.
+func extractMetaField(metaJSON, field string) string {
+	var m map[string]string
+	if err := json.Unmarshal([]byte(metaJSON), &m); err != nil {
+		return ""
+	}
+	return m[field]
 }
 
 func (e *Engine) queryChromem(ctx context.Context, query string, topK int) ([]Result, error) {

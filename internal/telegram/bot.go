@@ -44,21 +44,12 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		return nil, fmt.Errorf("creating telegram bot: %w", err)
 	}
 
-	// Set up LLM client with retry
+	// Set up LLM client with retry and failover
 	var client llm.Client
-	if cfg.LLMAPIKey != "" {
-		openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
-			APIKey:  cfg.LLMAPIKey,
-			BaseURL: cfg.LLMBaseURL,
-			Model:   cfg.LLMModel,
-		})
-		client = llm.NewRetryClient(openaiClient, llm.RetryConfig{
-			MaxRetries: cfg.LLMMaxRetries,
-			BaseDelay:  time.Second,
-			MaxDelay:   30 * time.Second,
-		})
+	if cfg.LLMAPIKey != "" || cfg.OllamaBaseURL != "" {
+		client = createLLMClient(cfg, logger)
 	} else {
-		logger.Warn("LLM_API_KEY not set, bot will echo messages without LLM")
+		logger.Warn("no LLM provider configured, bot will echo messages without LLM")
 	}
 
 	// Set up wiki store and writer
@@ -77,8 +68,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		embedFn := createEmbeddingFunc(cfg)
 		var se *search.Engine
 		var err error
-		if cfg.PgConnString != "" {
-			se, err = search.NewEngineWithFallback(cfg.WikiPath, embedFn, cfg.PgConnString, logger)
+		if cfg.DBPath != "" {
+			se, err = search.NewEngineWithFallback(cfg.WikiPath, embedFn, cfg.DBPath, logger)
 		} else {
 			se, err = search.NewEngine(cfg.WikiPath, embedFn, logger)
 		}
@@ -311,6 +302,54 @@ func looksLikeWikiYAML(s string) bool {
 
 // createEmbeddingFunc builds a chromem embedding function from config.
 // Falls back to LLM API key if no dedicated embedding key is set.
+// createLLMClient builds the LLM client chain with failover:
+// 1. OpenAI-compatible (primary) → Ollama (offline fallback)
+// Each provider is wrapped with retry logic.
+func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
+	var providers []llm.Client
+	var names []string
+
+	if cfg.LLMAPIKey != "" {
+		openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
+			APIKey:  cfg.LLMAPIKey,
+			BaseURL: cfg.LLMBaseURL,
+			Model:   cfg.LLMModel,
+		})
+		retryClient := llm.NewRetryClient(openaiClient, llm.RetryConfig{
+			MaxRetries: cfg.LLMMaxRetries,
+			BaseDelay:  time.Second,
+			MaxDelay:   30 * time.Second,
+		})
+		providers = append(providers, retryClient)
+		names = append(names, "openai")
+	}
+
+	if cfg.OllamaBaseURL != "" {
+		ollamaClient := llm.NewOllamaClient(llm.OllamaConfig{
+			BaseURL: cfg.OllamaBaseURL,
+			Model:   cfg.OllamaModel,
+		})
+		retryClient := llm.NewRetryClient(ollamaClient, llm.RetryConfig{
+			MaxRetries: 2,
+			BaseDelay:  time.Second,
+			MaxDelay:   10 * time.Second,
+		})
+		providers = append(providers, retryClient)
+		names = append(names, "ollama")
+	}
+
+	if len(providers) == 1 {
+		return providers[0]
+	}
+
+	failover, err := llm.NewFailoverClient(providers, names)
+	if err != nil {
+		logger.Error("failed to create failover client, using first provider", "error", err)
+		return providers[0]
+	}
+	return failover
+}
+
 func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
 	apiKey := cfg.EmbeddingAPIKey
 	if apiKey == "" {

@@ -17,3 +17,4 @@ Thumbs.db
 
 # Wiki data (tracked via git inside wiki dir)
 wiki/raw/
+*.exe

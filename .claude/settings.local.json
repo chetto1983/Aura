@@ -4,7 +4,16 @@
       "Bash(bash *)",
       "Bash(C:/Program Files/Git/usr/bin/bash.exe *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(\"C:/Program Files/Git/usr/bin/bash.exe\" \"C:/Users/Davide/.claude/plugins/cache/ralph-marketplace/ralph-skills/1.0.0/ralph.sh\" --tool claude)",
+      "Bash(tasklist /FI \"IMAGENAME eq claude.exe\")",
+      "WebSearch",
+      "WebFetch(domain:docs.ollama.com)",
+      "WebFetch(domain:docs.mistral.ai)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "WebFetch(domain:github.com)",
+      "mcp__plugin_episodic-memory_episodic-memory__search"
     ]
   }
 }

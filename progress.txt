@@ -11,6 +11,10 @@
 - Budget tracking: `budget.Tracker` in bot — check `CanAfford()` and `IsHardBudgetExceeded()` before LLM calls, `RecordUsage()` after
 - Context enforcement: `EnforceLimit()` replaces manual `ShouldSummarize()`+`Summarize()` — 3-tier: summarize → trim → truncate
 - `/status` Telegram command for budget and context visibility
+- Skill sandbox: `skill.Runner` executes with `os/exec` — trust levels (Local/Verified/Untrusted) control constraints
+- Skill constraints: `resolveConstraints()` merges defaults with skill-specific overrides; untrusted Network=false is invariant
+- Platform-specific code uses `//go:build linux` / `//go:build !linux` build tags (see `sandbox_linux.go`)
+- Linux sandbox: CLONE_NEWNET for network isolation + ulimit wrapper for CPU/memory
 
 ---
 
@@ -125,19 +129,26 @@
 - Implemented skill sandbox execution with three trust levels: local, verified, untrusted
 - TrustLevel enum with String() and TrustLevelFromString() parsing
 - DefaultConstraints per trust level: timeout, CPU limit, memory limit, network access, max output
+- resolveConstraints merges skill-specific overrides with trust-level defaults (untrusted always Network=false)
 - Runner executes skills via os/exec with context timeout and bounded output capture
-- Untrusted skills get restricted environment (no HTTP_PROXY, minimal PATH, /tmp HOME)
-- Verified skills get limited env but retain network access
-- Local skills run with full system environment
-- boundedBuffer limits output size to prevent memory exhaustion
-- stringReader feeds stdin input to skill processes
-- Tests: trust levels, constraints, command execution, timeout, restricted env, exit codes, bounded buffer
-- Files changed: internal/skill/skill.go, internal/skill/skill_test.go, prd.json
+- Platform-specific sandbox: buildCommand uses sandbox_linux.go (CLONE_NEWNET + ulimit) and sandbox_other.go (warnings)
+- Untrusted skills: restricted env + CLONE_NEWNET network namespace isolation on Linux
+- Verified skills: restricted env + ulimit CPU/memory constraints on Linux
+- Local skills: full system environment, timeout only
+- boundedBuffer limits output size (fixed Write bug — was copying in wrong direction)
+- Result now includes TimedOut bool field for timeout detection
+- Tests: trust levels, constraints, resolve overrides, network invariant, bounded buffer, restricted env
+- Also fixed missing metadataToJSON/extractMetaField functions in search package (pre-existing build error)
+- Files changed: internal/skill/skill.go, internal/skill/skill_test.go, internal/skill/sandbox_linux.go, internal/skill/sandbox_other.go, internal/search/search.go, prd.json
 - **Learnings for future iterations:**
   - os/exec.CommandContext handles timeout via context cancellation
-  - Network isolation for untrusted skills is env-based (restricted env vars) — OS-level isolation requires containerd
-  - boundedBuffer.Write truncates output silently when limit is reached (acceptable for sandbox safety)
+  - Linux sandbox uses CLONE_NEWNET (0x40000000) via syscall.SysProcAttr for network namespace isolation
+  - CPU/memory limits enforced via `sh -c "ulimit -t ...; ulimit -v ...; exec ..."` wrapper on Linux
+  - Untrusted Network=false is a security invariant — can never be overridden to true
+  - Build tags `//go:build linux` and `//go:build !linux` for platform-specific sandbox code
+  - boundedBuffer uses bytes.Buffer internally (fixed from raw []byte with buggy Write)
   - Exit code extraction uses exec.ExitError — returns 1 for non-exit errors (signal, context cancel)
+  - Pre-existing search package had missing metadataToJSON/extractMetaField functions — added them
 ---
 ## [2026-04-28] - US-008
 - Added Temperature field to llm.Request (0 = deterministic, >0 = creative)
