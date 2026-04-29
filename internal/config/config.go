@@ -27,7 +27,7 @@ type Config struct {
 	WikiPath          string   `envconfig:"WIKI_PATH" default:"./wiki"`
 	EmbeddingAPIKey   string   `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL  string   `envconfig:"EMBEDDING_BASE_URL"`
-	EmbeddingModel    string   `envconfig:"EMBEDDING_MODEL" default:"text-embedding-3-small"`
+	EmbeddingModel    string   `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
 	DBPath            string   `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort          string   `envconfig:"HTTP_PORT" default:":8080"`
 	OTelEnabled       bool     `envconfig:"OTEL_ENABLED" default:"false"`
@@ -87,8 +87,8 @@ func Load() (*Config, error) {
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
-	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.openai.com/v1")
-	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "text-embedding-3-small")
+	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
+	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", ":8080")
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)

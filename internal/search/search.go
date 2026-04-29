@@ -242,7 +242,13 @@ func (e *Engine) ReindexWikiPage(ctx context.Context, slug string) error {
 		content = title + "\n" + string(data)
 	}
 
-	return e.Index(ctx, slug, content, map[string]string{"slug": slug, "title": title})
+	if err := e.Index(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	e.indexed = true
+	e.mu.Unlock()
+	return nil
 }
 
 // FormatResults formats search results as context for injection into LLM prompts.

@@ -60,6 +60,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("OLLAMA_WEB_BASE_URL")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
+	os.Unsetenv("EMBEDDING_BASE_URL")
+	os.Unsetenv("EMBEDDING_MODEL")
 
 	cfg, err := Load()
 	if err != nil {
@@ -79,5 +81,11 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
+	}
+	if cfg.EmbeddingBaseURL != "https://api.mistral.ai/v1" {
+		t.Errorf("EmbeddingBaseURL = %q, want Mistral API", cfg.EmbeddingBaseURL)
+	}
+	if cfg.EmbeddingModel != "mistral-embed" {
+		t.Errorf("EmbeddingModel = %q, want mistral-embed", cfg.EmbeddingModel)
 	}
 }

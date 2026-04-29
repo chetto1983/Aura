@@ -69,7 +69,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 
 	// Set up search engine
 	var searchEngine *search.Engine
-	if cfg.EmbeddingAPIKey != "" || cfg.LLMAPIKey != "" {
+	if cfg.EmbeddingAPIKey != "" {
 		embedFn := createEmbeddingFunc(cfg)
 		var se *search.Engine
 		var err error
@@ -324,10 +324,8 @@ func toolActivityMessage(name string) string {
 	return fmt.Sprintf("Running: %s", name)
 }
 
-// createEmbeddingFunc builds a chromem embedding function from config.
-// Falls back to LLM API key if no dedicated embedding key is set.
 // createLLMClient builds the LLM client chain with failover:
-// 1. OpenAI-compatible (primary) → Ollama (offline fallback)
+// 1. OpenAI-compatible (primary) -> Ollama (offline fallback)
 // Each provider is wrapped with retry logic.
 func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	var providers []llm.Client
@@ -374,16 +372,14 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	return failover
 }
 
+// createEmbeddingFunc builds a chromem embedding function from the dedicated
+// embedding provider config. Aura keeps embeddings separate from LLM chat keys.
 func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
-	apiKey := cfg.EmbeddingAPIKey
-	if apiKey == "" {
-		apiKey = cfg.LLMAPIKey
-	}
 	baseURL := cfg.EmbeddingBaseURL
 	model := cfg.EmbeddingModel
 
 	normalized := true
-	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, apiKey, model, &normalized)
+	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, cfg.EmbeddingAPIKey, model, &normalized)
 }
 
 // onStatus handles the /status command, returning budget and context info.
