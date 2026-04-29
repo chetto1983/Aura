@@ -49,20 +49,29 @@ func TestSanitizeHandlerPassesNonSecrets(t *testing.T) {
 
 func TestIsSecretKey(t *testing.T) {
 	tests := []struct {
-		key   string
+		key    string
 		secret bool
 	}{
 		{"api_key", true},
 		{"token", true},
 		{"password", true},
 		{"secret", true},
-		{"authorization", true},
 		{"cookie", true},
 		{"credential", true},
+		{"auth", true},
+		{"apikey", true},
+		{"api-key", true},
+		{"token_refresh", true},
+		{"auth_header", true},
+		{"secret_key", true},
 		{"user_id", false},
 		{"duration", false},
 		{"message", false},
 		{"status", false},
+		{"author", false},
+		{"authority", false},
+		{"authorized", false},
+		{"authentication", false},
 	}
 
 	for _, tt := range tests {

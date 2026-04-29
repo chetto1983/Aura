@@ -56,19 +56,32 @@ func sanitizeAttr(a slog.Attr) slog.Attr {
 
 // isSecretKey checks if a log attribute key likely contains a secret value.
 func isSecretKey(key string) bool {
-	secretPatterns := []string{
-		"password",
-		"secret",
-		"token",
-		"api_key",
-		"apikey",
-		"api-key",
-		"credential",
-		"auth",
-		"cookie",
+	// Exact matches — keys that are always secrets
+	exactMatches := map[string]bool{
+		"token":       true,
+		"auth":        true,
+		"cookie":      true,
+		"secret":      true,
+		"credential":  true,
+		"password":    true,
+		"apikey":      true,
+		"api_key":     true,
+		"api-key":     true,
 	}
-	for _, pattern := range secretPatterns {
-		if strings.Contains(key, pattern) {
+	if exactMatches[key] {
+		return true
+	}
+
+	// Prefix matches — keys that start with these are likely secrets
+	secretPrefixes := []string{
+		"token_",
+		"api_key_",
+		"auth_",
+		"secret_",
+		"password_",
+	}
+	for _, prefix := range secretPrefixes {
+		if strings.HasPrefix(key, prefix) {
 			return true
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -76,13 +77,18 @@ func (s *sqliteSearcher) indexDocument(ctx context.Context, id, content string, 
 }
 
 func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]Result, error) {
+	safeQuery := escapeFTS5Query(query)
+	if safeQuery == "" {
+		return nil, nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, content, metadata, title, rank
 		FROM wiki_documents
 		WHERE wiki_documents MATCH ?
 		ORDER BY rank
 		LIMIT ?
-	`, query, topK)
+	`, safeQuery, topK)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite FTS5 search: %w", err)
 	}
@@ -168,4 +174,25 @@ func (s *sqliteSearcher) createConversationsTable() error {
 		)
 	`)
 	return err
+}
+
+// escapeFTS5Query strips FTS5 special characters and operators from a query string.
+// FTS5 treats ?, *, ", (, ), {, } as special syntax which causes errors if unescaped.
+func escapeFTS5Query(query string) string {
+	replacer := strings.NewReplacer(
+		"?", " ",
+		"*", " ",
+		"\"", " ",
+		"(", " ",
+		")", " ",
+		"{", " ",
+		"}", " ",
+		":", " ",
+	)
+	escaped := replacer.Replace(query)
+	fields := strings.Fields(escaped)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Join(fields, " OR ")
 }

@@ -241,6 +241,15 @@ func extractMetaField(metaJSON, field string) string {
 }
 
 func (e *Engine) queryChromem(ctx context.Context, query string, topK int) ([]Result, error) {
+	if e.coll.Count() == 0 {
+		return nil, nil
+	}
+
+	// Clamp topK to collection size
+	if topK > e.coll.Count() {
+		topK = e.coll.Count()
+	}
+
 	results, err := e.coll.Query(ctx, query, topK, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("querying chromem: %w", err)
