@@ -11,7 +11,7 @@ import (
 func TestSnapshotValidPage(t *testing.T) {
 	page := &Page{
 		Title:         "Go Concurrency Patterns",
-		Content:       "Goroutines and channels are the building blocks of Go concurrency.",
+		Body:          "Goroutines and channels are the building blocks of Go concurrency.",
 		Tags:          []string{"go", "concurrency", "patterns"},
 		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "ingest_v1",
@@ -36,7 +36,7 @@ func TestSnapshotValidPage(t *testing.T) {
 func TestSnapshotInvalidPage(t *testing.T) {
 	page := &Page{
 		Title:         "",
-		Content:       "",
+		Body:          "",
 		SchemaVersion: 0,
 		PromptVersion: "",
 		CreatedAt:     "invalid-date",
@@ -57,9 +57,9 @@ func TestSnapshotInvalidPage(t *testing.T) {
 	// Expected error set for this input
 	expectedErrors := map[string]bool{
 		"title is required":           false,
-		"content is required":         false,
+		"body is required":            false,
 		"too many tags (max 10)":      false,
-		"schema_version must be 1":    false,
+		"schema_version must be 2":    false,
 		"prompt_version is required":  false,
 		"created_at must be ISO 8601": false,
 		"updated_at must be ISO 8601": false,
@@ -108,7 +108,7 @@ func TestSnapshotSchemaVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			page := &Page{
 				Title:         "Test Page",
-				Content:       "Test content",
+				Body:          "Test content",
 				SchemaVersion: tt.schemaVersion,
 				PromptVersion: "ingest_v1",
 				CreatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -145,7 +145,7 @@ func TestSnapshotPromptVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			page := &Page{
 				Title:         "Test Page",
-				Content:       "Test content",
+				Body:          "Test content",
 				SchemaVersion: CurrentSchemaVersion,
 				PromptVersion: tt.promptVersion,
 				CreatedAt:     time.Now().UTC().Format(time.RFC3339),

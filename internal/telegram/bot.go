@@ -57,6 +57,14 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating wiki store: %w", err)
 	}
+
+	// Migrate legacy .yaml pages to .md format
+	if migrated, err := wikiStore.MigrateYAMLToMD(context.Background()); err != nil {
+		logger.Warn("wiki migration failed", "error", err)
+	} else if migrated > 0 {
+		logger.Info("wiki migration completed", "pages_migrated", migrated)
+	}
+
 	var wikiWriter *wiki.Writer
 	if client != nil {
 		wikiWriter = wiki.NewWriter(wikiStore, client, logger)
@@ -298,7 +306,7 @@ func (b *Bot) tryStoreWiki(ctx context.Context, response string, userID string) 
 	if b.wiki == nil {
 		return
 	}
-	if !looksLikeWikiYAML(response) {
+	if !looksLikeWikiContent(response) {
 		return
 	}
 	page, err := b.wiki.WriteFromLLMOutput(ctx, response, "ingest_v1")
@@ -323,11 +331,16 @@ func (b *Bot) tryStoreWiki(ctx context.Context, response string, userID string) 
 	}
 }
 
-// looksLikeWikiYAML checks if a response might contain wiki YAML.
-func looksLikeWikiYAML(s string) bool {
-	return strings.Contains(s, "title:") &&
-		strings.Contains(s, "content:") &&
-		strings.Contains(s, "schema_version:")
+// looksLikeWikiContent checks if a response might contain wiki content.
+// Detects both markdown-with-frontmatter format and legacy YAML format.
+func looksLikeWikiContent(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	// MD format: starts with --- and has frontmatter
+	if strings.HasPrefix(trimmed, "---") {
+		return strings.Contains(s, "title:") && strings.Contains(s, "schema_version:")
+	}
+	// Legacy YAML format: has title and schema_version markers
+	return strings.Contains(s, "title:") && strings.Contains(s, "schema_version:")
 }
 
 // createEmbeddingFunc builds a chromem embedding function from config.

@@ -14,7 +14,7 @@ import (
 func buildCommand(ctx context.Context, skill *Skill, c Constraints, logger *slog.Logger) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, skill.Command, skill.Args...)
 
-	if !c.Network {
+	if !netAllowed(c.Network) {
 		logger.Warn("network isolation not available on this platform",
 			"skill", skill.Name,
 			"trust", skill.Trust.String(),

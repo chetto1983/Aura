@@ -40,8 +40,8 @@ func TestParseYAMLInvalid(t *testing.T) {
 func TestValidate(t *testing.T) {
 	validPage := &Page{
 		Title:         "Test",
-		Content:       "Content",
-		SchemaVersion: 1,
+		Body:          "Content",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "ingest_v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -53,8 +53,8 @@ func TestValidate(t *testing.T) {
 
 func TestValidateMissingTitle(t *testing.T) {
 	page := &Page{
-		Content:       "Content",
-		SchemaVersion: 1,
+		Body:          "Content",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -72,7 +72,7 @@ func TestValidateMissingTitle(t *testing.T) {
 	}
 }
 
-func TestValidateMissingContent(t *testing.T) {
+func TestValidateMissingBody(t *testing.T) {
 	page := &Page{
 		Title:         "Test",
 		SchemaVersion: 1,
@@ -81,14 +81,14 @@ func TestValidateMissingContent(t *testing.T) {
 		UpdatedAt:     "2026-04-28T10:00:00Z",
 	}
 	if err := Validate(page); err == nil {
-		t.Fatal("expected validation error for missing content")
+		t.Fatal("expected validation error for missing body")
 	}
 }
 
 func TestValidateWrongSchemaVersion(t *testing.T) {
 	page := &Page{
 		Title:         "Test",
-		Content:       "Content",
+		Body:          "Content",
 		SchemaVersion: 99,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
@@ -103,8 +103,8 @@ func TestValidateWrongSchemaVersion(t *testing.T) {
 func TestValidateBadPromptVersion(t *testing.T) {
 	page := &Page{
 		Title:         "Test",
-		Content:       "Content",
-		SchemaVersion: 1,
+		Body:          "Content",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "bad_format",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -118,8 +118,8 @@ func TestValidateBadPromptVersion(t *testing.T) {
 func TestValidateBadTimestamp(t *testing.T) {
 	page := &Page{
 		Title:         "Test",
-		Content:       "Content",
-		SchemaVersion: 1,
+		Body:          "Content",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "not-a-date",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -137,9 +137,9 @@ func TestValidateTooManyTags(t *testing.T) {
 	}
 	page := &Page{
 		Title:         "Test",
-		Content:       "Content",
+		Body:          "Content",
 		Tags:          tags,
-		SchemaVersion: 1,
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",

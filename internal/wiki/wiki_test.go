@@ -15,9 +15,9 @@ import (
 func validPage() *Page {
 	return &Page{
 		Title:         "Test Page",
-		Content:       "This is test content.",
+		Body:          "This is test content.",
 		Tags:          []string{"test"},
-		SchemaVersion: 1,
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -52,8 +52,8 @@ func TestStoreWriteAndRead(t *testing.T) {
 	if readPage.Title != page.Title {
 		t.Errorf("Title = %q, want %q", readPage.Title, page.Title)
 	}
-	if readPage.Content != page.Content {
-		t.Errorf("Content = %q, want %q", readPage.Content, page.Content)
+	if readPage.Body != page.Body {
+		t.Errorf("Body = %q, want %q", readPage.Body, page.Body)
 	}
 }
 
@@ -104,7 +104,7 @@ func TestStoreValidationBeforeWrite(t *testing.T) {
 
 	page := &Page{
 		Title:         "Bad Page",
-		Content:       "",
+		Body:          "",
 		SchemaVersion: 1,
 		PromptVersion: "v1",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -218,7 +218,7 @@ func TestParseYAMLWithCodeBlock(t *testing.T) {
 
 	raw := "Here is the page:\n```yaml\n" + string(data) + "\n```\n"
 
-	result, err := parseYAML(raw)
+	result, err := parseYAMLOutput(raw)
 	if err != nil {
 		t.Fatalf("parseYAML() error = %v", err)
 	}

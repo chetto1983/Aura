@@ -34,7 +34,7 @@ func buildCommand(ctx context.Context, skill *Skill, c Constraints, logger *slog
 	}
 
 	// Apply network namespace isolation for skills without network access
-	if !c.Network {
+	if !netAllowed(c.Network) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Cloneflags: cloneNewNet,
 		}

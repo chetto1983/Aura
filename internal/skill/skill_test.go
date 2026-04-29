@@ -2,9 +2,9 @@ package skill
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"runtime"
 	"testing"
 	"time"
@@ -50,7 +50,7 @@ func TestTrustLevelFromString(t *testing.T) {
 
 func TestDefaultConstraints(t *testing.T) {
 	local := DefaultConstraints(Local)
-	if !local.Network {
+	if !netAllowed(local.Network) {
 		t.Error("Local skills should have network access")
 	}
 	if local.Timeout == 0 {
@@ -58,7 +58,7 @@ func TestDefaultConstraints(t *testing.T) {
 	}
 
 	verified := DefaultConstraints(Verified)
-	if !verified.Network {
+	if !netAllowed(verified.Network) {
 		t.Error("Verified skills should have network access")
 	}
 	if verified.CPULimit == 0 {
@@ -69,7 +69,7 @@ func TestDefaultConstraints(t *testing.T) {
 	}
 
 	untrusted := DefaultConstraints(Untrusted)
-	if untrusted.Network {
+	if netAllowed(untrusted.Network) {
 		t.Error("Untrusted skills should NOT have network access")
 	}
 	if untrusted.CPULimit == 0 {
@@ -89,7 +89,7 @@ func TestResolveConstraintsDefaults(t *testing.T) {
 	}
 	c := resolveConstraints(skill)
 
-	if !c.Network {
+	if !netAllowed(c.Network) {
 		t.Error("Local skill should have network access by default")
 	}
 	if c.Timeout != 30*time.Second {
@@ -123,19 +123,36 @@ func TestResolveConstraintsOverrides(t *testing.T) {
 }
 
 func TestResolveConstraintsUntrustedNetworkInvariant(t *testing.T) {
-	// Untrusted skills must NEVER have network access, even if explicitly set
+	// Untrusted skills must NEVER have network access, even if explicitly set to true
 	skill := Skill{
 		Name:    "malicious",
 		Command: "curl",
 		Trust:   Untrusted,
 		Constraints: Constraints{
-			Network: true, // Should be ignored
+			Network: boolPtr(true), // Should be ignored
 		},
 	}
 	c := resolveConstraints(skill)
 
-	if c.Network {
+	if netAllowed(c.Network) {
 		t.Error("untrusted skill should never have network access, even if explicitly set to true")
+	}
+}
+
+func TestResolveConstraintsExplicitNoNetwork(t *testing.T) {
+	// Verified skill explicitly opts out of network
+	skill := Skill{
+		Name:    "offline-tool",
+		Command: "tool",
+		Trust:   Verified,
+		Constraints: Constraints{
+			Network: boolPtr(false),
+		},
+	}
+	c := resolveConstraints(skill)
+
+	if netAllowed(c.Network) {
+		t.Error("skill with explicit Network=false should not have network access")
 	}
 }
 
@@ -147,7 +164,7 @@ func TestResolveConstraintsVerifiedDefaults(t *testing.T) {
 	}
 	c := resolveConstraints(skill)
 
-	if !c.Network {
+	if !netAllowed(c.Network) {
 		t.Error("Verified skill should have network access by default")
 	}
 	if c.CPULimit != 30 {
@@ -289,6 +306,12 @@ func TestRestrictedEnv(t *testing.T) {
 			t.Errorf("untrusted env should not contain HTTP_PROXY: %s", e)
 		}
 	}
+
+	// Verified should have more env vars than untrusted
+	verifiedEnv := restrictedEnv(Verified)
+	if len(verifiedEnv) <= len(env) {
+		t.Error("verified env should be richer than untrusted env")
+	}
 }
 
 func TestBoundedBuffer(t *testing.T) {
@@ -303,6 +326,9 @@ func TestBoundedBuffer(t *testing.T) {
 	if result != "hello worl" {
 		t.Errorf("boundedBuffer content = %q, want %q", result, "hello worl")
 	}
+	if !buf.truncated {
+		t.Error("boundedBuffer should mark truncated when output exceeds limit")
+	}
 }
 
 func TestBoundedBufferNoLimit(t *testing.T) {
@@ -311,6 +337,9 @@ func TestBoundedBufferNoLimit(t *testing.T) {
 
 	if buf.String() != "hello world this is a longer string" {
 		t.Errorf("boundedBuffer without limit should not truncate")
+	}
+	if buf.truncated {
+		t.Error("boundedBuffer without limit should not mark truncated")
 	}
 }
 
@@ -321,6 +350,9 @@ func TestBoundedBufferExactLimit(t *testing.T) {
 	if buf.String() != "12345" {
 		t.Errorf("boundedBuffer at exact limit should not truncate: got %q", buf.String())
 	}
+	if buf.truncated {
+		t.Error("boundedBuffer at exact limit should not mark truncated")
+	}
 }
 
 func TestBoundedBufferOverLimit(t *testing.T) {
@@ -330,6 +362,9 @@ func TestBoundedBufferOverLimit(t *testing.T) {
 	// Should only contain first 5 bytes
 	if len(buf.String()) > 5 {
 		t.Errorf("boundedBuffer should truncate at limit: got %d bytes", len(buf.String()))
+	}
+	if !buf.truncated {
+		t.Error("boundedBuffer should mark truncated when single write exceeds limit")
 	}
 }
 
@@ -384,7 +419,7 @@ func TestResolveConstraintsZeroValues(t *testing.T) {
 	}
 	c := resolveConstraints(skill)
 
-	if c.Network {
+	if netAllowed(c.Network) {
 		t.Error("Untrusted skill should not have network access")
 	}
 	if c.Timeout != 10*time.Second {
@@ -395,6 +430,25 @@ func TestResolveConstraintsZeroValues(t *testing.T) {
 	}
 	if c.MemoryMB != 128 {
 		t.Errorf("Untrusted MemoryMB = %d, want 128", c.MemoryMB)
+	}
+}
+
+func TestStringReaderEOF(t *testing.T) {
+	r := newStringReader("hi")
+	buf := make([]byte, 10)
+	n, err := r.Read(buf)
+	if n != 2 {
+		t.Errorf("first read: n = %d, want 2", n)
+	}
+	if err != nil {
+		t.Errorf("first read: unexpected error %v", err)
+	}
+	n, err = r.Read(buf)
+	if n != 0 {
+		t.Errorf("second read: n = %d, want 0", n)
+	}
+	if err != io.EOF {
+		t.Errorf("second read: error = %v, want io.EOF", err)
 	}
 }
 
@@ -413,10 +467,5 @@ func containsSubstring(s, sub string) bool {
 }
 
 func TestMain(m *testing.M) {
-	// Skip tests if basic commands aren't available
-	if _, err := exec.LookPath("echo"); err != nil {
-		fmt := "echo not found, skipping skill tests"
-		_ = fmt
-	}
 	os.Exit(m.Run())
 }

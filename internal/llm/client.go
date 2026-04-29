@@ -2,11 +2,14 @@ package llm
 
 import "context"
 
+// Float64Ptr returns a pointer to the given float64 value.
+func Float64Ptr(v float64) *float64 { return &v }
+
 // Request represents an LLM API request.
 type Request struct {
 	Messages    []Message
 	Model       string
-	Temperature float64 // 0 = deterministic, >0 = creative. Use 0 for wiki operations.
+	Temperature *float64 // nil = API default, 0 = deterministic, >0 = creative. Use 0 for wiki operations.
 }
 
 // Message represents a single message in a conversation.

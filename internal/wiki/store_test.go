@@ -48,9 +48,9 @@ func TestWritePage(t *testing.T) {
 
 	page := &Page{
 		Title:         "Test Page",
-		Content:       "This is test content.",
+		Body:          "This is test content.",
 		Tags:          []string{"test"},
-		SchemaVersion: 1,
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -60,8 +60,8 @@ func TestWritePage(t *testing.T) {
 		t.Fatalf("WritePage failed: %v", err)
 	}
 
-	// Verify file exists
-	path := filepath.Join(dir, "test-page.yaml")
+	// Verify file exists as .md
+	path := filepath.Join(dir, "test-page.md")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("wiki file not created: %v", err)
 	}
@@ -74,8 +74,8 @@ func TestWritePage(t *testing.T) {
 	if readBack.Title != page.Title {
 		t.Errorf("title = %q, want %q", readBack.Title, page.Title)
 	}
-	if readBack.Content != page.Content {
-		t.Errorf("content = %q, want %q", readBack.Content, page.Content)
+	if readBack.Body != page.Body {
+		t.Errorf("body = %q, want %q", readBack.Body, page.Body)
 	}
 }
 
@@ -84,8 +84,8 @@ func TestWritePageAtomic(t *testing.T) {
 
 	page := &Page{
 		Title:         "Atomic Test",
-		Content:       "Initial content.",
-		SchemaVersion: 1,
+		Body:          "Initial content.",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -96,7 +96,7 @@ func TestWritePageAtomic(t *testing.T) {
 	}
 
 	// Update the page
-	page.Content = "Updated content."
+	page.Body = "Updated content."
 	page.UpdatedAt = "2026-04-28T11:00:00Z"
 	if err := store.WritePage(context.Background(), page); err != nil {
 		t.Fatalf("WritePage update failed: %v", err)
@@ -106,8 +106,8 @@ func TestWritePageAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadPage failed: %v", err)
 	}
-	if readBack.Content != "Updated content." {
-		t.Errorf("content = %q, want %q", readBack.Content, "Updated content.")
+	if readBack.Body != "Updated content." {
+		t.Errorf("body = %q, want %q", readBack.Body, "Updated content.")
 	}
 
 	// Verify no temp files left behind
@@ -127,8 +127,8 @@ func TestWritePageGitCommit(t *testing.T) {
 
 	page := &Page{
 		Title:         "Git Test",
-		Content:       "Git tracked content.",
-		SchemaVersion: 1,
+		Body:          "Git tracked content.",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -171,16 +171,16 @@ func TestListPages(t *testing.T) {
 
 	page1 := &Page{
 		Title:         "Page One",
-		Content:       "Content 1",
-		SchemaVersion: 1,
+		Body:          "Content 1",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
 	}
 	page2 := &Page{
 		Title:         "Page Two",
-		Content:       "Content 2",
-		SchemaVersion: 1,
+		Body:          "Content 2",
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",

@@ -91,7 +91,8 @@ func (e *Engine) Index(ctx context.Context, id string, content string, metadata 
 	return nil
 }
 
-// IndexWikiPages reads all wiki YAML files and indexes them.
+// IndexWikiPages reads all wiki .md files and indexes them.
+// Skips special files (index.md, log.md) and falls back to .yaml for legacy pages.
 func (e *Engine) IndexWikiPages(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -101,14 +102,41 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 		return fmt.Errorf("reading wiki directory: %w", err)
 	}
 
-	count := 0
+	// Build slug -> file mapping, preferring .md over .yaml
+	type fileInfo struct {
+		name string
+		ext  string
+	}
+	slugFiles := make(map[string]fileInfo)
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+		if entry.IsDir() {
 			continue
 		}
+		name := entry.Name()
+		var slug, ext string
+		if strings.HasSuffix(name, ".md") {
+			slug = strings.TrimSuffix(name, ".md")
+			ext = ".md"
+		} else if strings.HasSuffix(name, ".yaml") {
+			slug = strings.TrimSuffix(name, ".yaml")
+			ext = ".yaml"
+		} else {
+			continue
+		}
+		// Skip special files
+		if slug == "index" || slug == "log" {
+			continue
+		}
+		// Prefer .md over .yaml
+		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
+			continue
+		}
+		slugFiles[slug] = fileInfo{name: name, ext: ext}
+	}
 
-		slug := entry.Name()[:len(entry.Name())-5]
-		filePath := filepath.Join(e.wikiDir, entry.Name())
+	count := 0
+	for slug, fi := range slugFiles {
+		filePath := filepath.Join(e.wikiDir, fi.name)
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -116,8 +144,13 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 			continue
 		}
 
-		title := extractTitle(data)
-		content := title + "\n" + string(data)
+		var title, content string
+		if fi.ext == ".md" {
+			title, content = extractFromMD(data)
+		} else {
+			title = extractTitle(data)
+			content = title + "\n" + string(data)
+		}
 
 		if err := e.coll.AddDocument(ctx, chromem.Document{
 			ID:       slug,
@@ -185,19 +218,35 @@ func (e *Engine) IsIndexed() bool {
 
 // ReindexWikiPage removes and re-indexes a single wiki page.
 func (e *Engine) ReindexWikiPage(ctx context.Context, slug string) error {
-	filePath := filepath.Join(e.wikiDir, slug+".yaml")
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("reading wiki page %s: %w", slug, err)
+	// Try .md first, fall back to .yaml
+	var data []byte
+	var isMD bool
+	mdPath := filepath.Join(e.wikiDir, slug+".md")
+	yamlPath := filepath.Join(e.wikiDir, slug+".yaml")
+
+	if d, err := os.ReadFile(mdPath); err == nil {
+		data = d
+		isMD = true
+	} else if d, err := os.ReadFile(yamlPath); err == nil {
+		data = d
+		isMD = false
+	} else {
+		return fmt.Errorf("reading wiki page %s: file not found", slug)
 	}
 
-	title := extractTitle(data)
-	content := title + "\n" + string(data)
+	var title, content string
+	if isMD {
+		title, content = extractFromMD(data)
+	} else {
+		title = extractTitle(data)
+		content = title + "\n" + string(data)
+	}
 
 	return e.Index(ctx, slug, content, map[string]string{"slug": slug, "title": title})
 }
 
 // FormatResults formats search results as context for injection into LLM prompts.
+// Includes first 200 chars of content as excerpt.
 func FormatResults(results []Result) string {
 	if len(results) == 0 {
 		return ""
@@ -206,9 +255,76 @@ func FormatResults(results []Result) string {
 	var sb strings.Builder
 	sb.WriteString("Relevant wiki knowledge:\n")
 	for _, r := range results {
-		sb.WriteString(fmt.Sprintf("- [%s] %s\n", r.Slug, r.Title))
+		sb.WriteString(fmt.Sprintf("- [[%s]] %s\n", r.Slug, r.Title))
+		excerpt := truncateExcerpt(r.Content, 200)
+		if excerpt != "" {
+			sb.WriteString(fmt.Sprintf("  %s\n", excerpt))
+		}
 	}
 	return sb.String()
+}
+
+// truncateExcerpt returns the first n characters of content, cleaned for display.
+func truncateExcerpt(content string, n int) string {
+	// Strip frontmatter if present
+	if strings.HasPrefix(content, "---") {
+		if end := findMDBodyEnd(content); end != -1 {
+			content = content[end:]
+		}
+	}
+	content = strings.TrimSpace(content)
+	content = strings.ReplaceAll(content, "\n", " ")
+	content = strings.ReplaceAll(content, "  ", " ")
+	if len(content) > n {
+		content = content[:n] + "..."
+	}
+	return content
+}
+
+// findMDBodyEnd finds the position after the closing --- delimiter of frontmatter.
+func findMDBodyEnd(content string) int {
+	// Skip opening ---
+	if !strings.HasPrefix(content, "---") {
+		return -1
+	}
+	rest := content[3:]
+	// Skip newline after opening ---
+	if len(rest) > 0 && rest[0] == '\n' {
+		rest = rest[1:]
+	} else if len(rest) > 1 && rest[0] == '\r' && rest[1] == '\n' {
+		rest = rest[2:]
+	}
+	// Find closing ---
+	idx := strings.Index(rest, "\n---\n")
+	if idx == -1 {
+		idx = strings.Index(rest, "\n---\r\n")
+	}
+	if idx == -1 {
+		return -1
+	}
+	// Position after closing ---\n
+	return len(content) - len(rest) + idx + 5
+}
+
+// extractFromMD parses a markdown file with frontmatter and returns title and body content.
+func extractFromMD(data []byte) (title, content string) {
+	content = string(data)
+
+	// Extract title from frontmatter
+	if strings.HasPrefix(content, "---") {
+		end := findMDBodyEnd(content)
+		if end != -1 && end < len(content) {
+			body := strings.TrimSpace(content[end:])
+			content = strings.TrimSpace(body)
+		}
+		// Parse just the title from frontmatter
+		title = extractTitle(data)
+	} else {
+		title = extractTitle(data)
+	}
+
+	content = title + "\n" + content
+	return title, content
 }
 
 // extractTitle parses just the title field from YAML bytes.

@@ -13,7 +13,30 @@
       "Bash(go build *)",
       "Bash(go test *)",
       "WebFetch(domain:github.com)",
-      "mcp__plugin_episodic-memory_episodic-memory__search"
+      "mcp__plugin_episodic-memory_episodic-memory__search",
+      "Bash(./scripts/ralph/ralph.sh *)",
+      "Bash(go vet *)",
+      "Bash(git checkout *)",
+      "Bash(go list *)",
+      "Bash(GOPROXY=https://proxy.golang.org go list -m -json go.uber.org/zap/exp/zapslog@latest)",
+      "Bash(go get *)",
+      "Bash(go env *)",
+      "Bash(go mod *)",
+      "Bash(grep -n \"func Encode\\\\|RecoveryLevel\\\\|const\\\\|Medium\" \"$\\(go env GOMODCACHE\\)/github.com/skip2/go-qrcode@v0.0.0-20200617195104-da1b6568686e/qrcode.go\")",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(curl -s http://localhost:8080/status)",
+      "Bash(curl -s http://localhost:8080/invite)",
+      "Bash(curl *)",
+      "Bash(tasklist *)",
+      "mcp__plugin_episodic-memory_episodic-memory__read",
+      "Bash(cp prd.json \"/c/Users/Davide/.claude/plugins/marketplaces/ralph-marketplace/prd.json\")",
+      "Bash(cp progress.txt \"/c/Users/Davide/.claude/plugins/marketplaces/ralph-marketplace/progress.txt\")",
+      "Bash(pkill -f aura.exe)",
+      "Bash(xxd internal/search/sqlite.go)",
+      "Bash(python3 *)",
+      "Bash(taskkill.exe //F //IM aura.exe)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:gist.github.com)"
     ]
   }
 }

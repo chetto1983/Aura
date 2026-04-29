@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/exec"
 	"time"
@@ -50,12 +51,21 @@ func TrustLevelFromString(s string) (TrustLevel, error) {
 	}
 }
 
+// boolPtr returns a pointer to the given bool value.
+func boolPtr(b bool) *bool { return &b }
+
+// netAllowed returns true if the Network pointer is non-nil and true.
+func netAllowed(n *bool) bool { return n != nil && *n }
+
+// netDenied returns true if the Network pointer is non-nil and false.
+func netDenied(n *bool) bool { return n != nil && !*n }
+
 // Constraints define resource limits for skill execution.
 type Constraints struct {
 	Timeout   time.Duration // Maximum execution time
 	CPULimit  int           // CPU time limit in seconds (0 = unlimited)
 	MemoryMB  int           // Memory limit in MB (0 = unlimited)
-	Network   bool          // true = network access allowed
+	Network   *bool         // nil = use trust-level default, false = no network, true = network allowed
 	MaxOutput int64         // Maximum output bytes (0 = unlimited)
 }
 
@@ -65,7 +75,7 @@ func DefaultConstraints(trust TrustLevel) Constraints {
 	case Local:
 		return Constraints{
 			Timeout:   30 * time.Second,
-			Network:   true,
+			Network:   boolPtr(true),
 			MaxOutput: 1 << 20, // 1MB
 		}
 	case Verified:
@@ -73,7 +83,7 @@ func DefaultConstraints(trust TrustLevel) Constraints {
 			Timeout:   15 * time.Second,
 			CPULimit:  30,
 			MemoryMB:  256,
-			Network:   true,
+			Network:   boolPtr(true),
 			MaxOutput: 512 * 1024, // 512KB
 		}
 	case Untrusted:
@@ -81,7 +91,7 @@ func DefaultConstraints(trust TrustLevel) Constraints {
 			Timeout:   10 * time.Second,
 			CPULimit:  10,
 			MemoryMB:  128,
-			Network:   false,
+			Network:   boolPtr(false),
 			MaxOutput: 256 * 1024, // 256KB
 		}
 	default:
@@ -110,12 +120,10 @@ func resolveConstraints(skill Skill) Constraints {
 
 	// Security invariant: untrusted skills never get network access
 	if skill.Trust == Untrusted {
-		c.Network = false
-	} else if !skill.Constraints.Network && skill.Constraints.MaxOutput > 0 {
-		// Skills can restrict themselves further (only when other constraints
-		// are explicitly set, indicating the Constraints struct was intentionally
-		// configured rather than zero-valued)
-		c.Network = false
+		c.Network = boolPtr(false)
+	} else if netDenied(skill.Constraints.Network) {
+		// Skill explicitly opted out of network access
+		c.Network = boolPtr(false)
 	}
 
 	return c
@@ -132,11 +140,12 @@ type Skill struct {
 
 // Result holds the output of a skill execution.
 type Result struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Duration time.Duration
-	TimedOut bool
+	ExitCode  int
+	Stdout    string
+	Stderr    string
+	Duration  time.Duration
+	TimedOut  bool
+	Truncated bool // true if output was truncated due to MaxOutput limit
 }
 
 // Runner executes skills in a sandboxed environment.
@@ -191,11 +200,12 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 	duration := time.Since(start)
 
 	result := &Result{
-		ExitCode: exitCode(err),
-		Stdout:   out.String(),
-		Stderr:   serr.String(),
-		Duration: duration,
-		TimedOut: ctx.Err() == context.DeadlineExceeded,
+		ExitCode:  exitCode(err),
+		Stdout:    out.String(),
+		Stderr:    serr.String(),
+		Duration:  duration,
+		TimedOut:  ctx.Err() == context.DeadlineExceeded,
+		Truncated: out.truncated || serr.truncated,
 	}
 
 	if ctx.Err() == context.DeadlineExceeded {
@@ -215,6 +225,13 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 		return result, fmt.Errorf("skill %q failed: %w", skill.Name, err)
 	}
 
+	if result.Truncated {
+		r.logger.Warn("skill output truncated",
+			"skill", skill.Name,
+			"max_output", c.MaxOutput,
+		)
+	}
+
 	r.logger.Info("skill executed",
 		"skill", skill.Name,
 		"trust", skill.Trust,
@@ -226,14 +243,16 @@ func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, e
 }
 
 // restrictedEnv returns a minimal environment for untrusted/verified skills.
-// Untrusted skills get no network-related variables.
+// Verified skills get a richer environment than untrusted.
 func restrictedEnv(trust TrustLevel) []string {
 	switch trust {
 	case Verified:
 		return []string{
 			"PATH=/usr/local/bin:/usr/bin:/bin",
-			"HOME=/tmp",
+			"HOME=/home/verified",
 			"TMPDIR=/tmp",
+			"LANG=C.UTF-8",
+			"LC_ALL=C.UTF-8",
 		}
 	case Untrusted:
 		return []string{
@@ -259,18 +278,21 @@ func exitCode(err error) int {
 
 // boundedBuffer is an io.Writer that limits output size.
 type boundedBuffer struct {
-	data  bytes.Buffer
-	limit int64
+	data       bytes.Buffer
+	limit      int64
+	truncated  bool
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	if b.limit > 0 {
 		remaining := b.limit - int64(b.data.Len())
 		if remaining <= 0 {
-			return len(p), nil // Buffer full, discard
+			b.truncated = true
+			return len(p), nil
 		}
 		if int64(len(p)) > remaining {
 			b.data.Write(p[:remaining])
+			b.truncated = true
 			return len(p), nil
 		}
 	}
@@ -294,7 +316,7 @@ func newStringReader(s string) *stringReader {
 
 func (r *stringReader) Read(p []byte) (int, error) {
 	if r.offset >= len(r.data) {
-		return 0, fmt.Errorf("EOF")
+		return 0, io.EOF
 	}
 	n := copy(p, r.data[r.offset:])
 	r.offset += n

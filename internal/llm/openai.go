@@ -42,7 +42,7 @@ func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature,omitempty"`
+	Temperature *float64      `json:"temperature,omitempty"`
 	Stream      bool          `json:"stream,omitempty"`
 }
 

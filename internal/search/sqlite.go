@@ -125,14 +125,39 @@ func (s *sqliteSearcher) indexWikiDir(ctx context.Context, wikiDir string, logge
 		return 0, fmt.Errorf("reading wiki directory: %w", err)
 	}
 
-	count := 0
+	// Build slug -> file mapping, preferring .md over .yaml
+	type fileInfo struct {
+		name string
+		ext  string
+	}
+	slugFiles := make(map[string]fileInfo)
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+		if entry.IsDir() {
 			continue
 		}
+		name := entry.Name()
+		var slug, ext string
+		if strings.HasSuffix(name, ".md") {
+			slug = strings.TrimSuffix(name, ".md")
+			ext = ".md"
+		} else if strings.HasSuffix(name, ".yaml") {
+			slug = strings.TrimSuffix(name, ".yaml")
+			ext = ".yaml"
+		} else {
+			continue
+		}
+		if slug == "index" || slug == "log" {
+			continue
+		}
+		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
+			continue
+		}
+		slugFiles[slug] = fileInfo{name: name, ext: ext}
+	}
 
-		slug := entry.Name()[:len(entry.Name())-5]
-		filePath := filepath.Join(wikiDir, entry.Name())
+	count := 0
+	for slug, fi := range slugFiles {
+		filePath := filepath.Join(wikiDir, fi.name)
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -140,8 +165,13 @@ func (s *sqliteSearcher) indexWikiDir(ctx context.Context, wikiDir string, logge
 			continue
 		}
 
-		title := extractTitle(data)
-		content := title + "\n" + string(data)
+		var title, content string
+		if fi.ext == ".md" {
+			title, content = extractFromMD(data)
+		} else {
+			title = extractTitle(data)
+			content = title + "\n" + string(data)
+		}
 
 		if err := s.indexDocument(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
 			logger.Warn("failed to index in sqlite", "slug", slug, "error", err)
