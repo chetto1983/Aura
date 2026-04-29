@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"fmt"
+
+	"github.com/aura/aura/internal/tracing"
 )
 
 // OllamaClient implements Client for local Ollama instances.
@@ -62,6 +64,8 @@ func NewFailoverClient(providers []Client, names []string) (*FailoverClient, err
 
 // Send tries each provider in order until one succeeds.
 func (f *FailoverClient) Send(ctx context.Context, req Request) (Response, error) {
+	ctx, span := tracing.StartSpan(ctx, "llm", "failover.send")
+	defer span.End()
 	var lastErr error
 	for i, provider := range f.providers {
 		// Check context before attempting each provider
@@ -79,6 +83,8 @@ func (f *FailoverClient) Send(ctx context.Context, req Request) (Response, error
 
 // Stream tries each provider in order until one succeeds.
 func (f *FailoverClient) Stream(ctx context.Context, req Request) (<-chan Token, error) {
+	ctx, span := tracing.StartSpan(ctx, "llm", "failover.stream")
+	defer span.End()
 	var lastErr error
 	for i, provider := range f.providers {
 		ch, err := provider.Stream(ctx, req)

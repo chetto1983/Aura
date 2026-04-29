@@ -46,3 +46,15 @@ func (e missingEnvError) Error() string {
 func errMissing(key string) missingEnvError {
 	return missingEnvError(key)
 }
+
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}

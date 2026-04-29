@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/aura/aura/internal/tracing"
 )
 
 // OpenAIClient implements Client using an OpenAI-compatible HTTP API.
@@ -71,6 +73,9 @@ type streamChunk struct {
 
 // Send makes a non-streaming call to the LLM.
 func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) {
+	ctx, span := tracing.StartSpan(ctx, "llm", "openai.send")
+	defer span.End()
+
 	model := req.Model
 	if model == "" {
 		model = c.model
@@ -132,6 +137,9 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 
 // Stream makes a streaming call to the LLM, returning a channel of tokens.
 func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, error) {
+	ctx, span := tracing.StartSpan(ctx, "llm", "openai.stream")
+	defer span.End()
+
 	model := req.Model
 	if model == "" {
 		model = c.model

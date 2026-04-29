@@ -25,6 +25,7 @@ type Config struct {
 	EmbeddingModel   string   `envconfig:"EMBEDDING_MODEL" default:"text-embedding-3-small"`
 	DBPath           string   `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort         string   `envconfig:"HTTP_PORT" default:":8080"`
+	OTelEnabled      bool     `envconfig:"OTEL_ENABLED" default:"false"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -74,6 +75,7 @@ func Load() (*Config, error) {
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "text-embedding-3-small")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", ":8080")
+	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 
 	return cfg, nil
 }

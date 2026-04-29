@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os/exec"
 	"time"
+
+	"github.com/aura/aura/internal/tracing"
 )
 
 // TrustLevel classifies how much trust to place in a skill.
@@ -149,6 +151,8 @@ func NewRunner(logger *slog.Logger) *Runner {
 
 // Run executes a skill with the given constraints.
 func (r *Runner) Run(ctx context.Context, skill Skill, input string) (*Result, error) {
+	ctx, span := tracing.StartSpan(ctx, "skill", "run."+skill.Name)
+	defer span.End()
 	if skill.Command == "" {
 		return nil, fmt.Errorf("skill %q has no command", skill.Name)
 	}
