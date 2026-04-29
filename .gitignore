@@ -21,3 +21,4 @@ wiki/raw/
 *.exe*
 *.db
 .claude/*
+*.pdf
