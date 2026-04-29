@@ -33,7 +33,7 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | # | Slice | Status | Notes |
 | - | ----- | ------ | ----- |
 | 1 | Config (Mistral OCR) | done | Mistral OCR fields + defaults + tests. |
-| 2 | Source store | pending | |
+| 2 | Source store | done | `internal/source` with sha256 dedup, atomic source.json, per-id mutex, kind/status filter. |
 | 3 | OCR client | pending | |
 | 4 | Telegram PDF handler | pending | |
 | 5 | Source tools | pending | |
@@ -44,6 +44,17 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 10 | UI | pending | |
 
 ## Session Log
+
+### 2026-04-29 — Slice 2 complete
+
+- Slice 2 (source store) done:
+  - `internal/source/source.go`: `Kind` (pdf/text/url), `Status` (stored/ocr_complete/ingested/failed), `Source` struct matching PDR §4 schema.
+  - `internal/source/store.go`: `Store` rooted at `<wiki>/raw/`. `Put` (sha256 dedup + atomic write), `Get`, `List` (kind/status filter, sorted desc), `Update` (mutator pattern), `Path` (containment-checked join), `RawDir`. Per-id mutex via `sync.Map`. Atomic temp+rename copied from `internal/wiki/store.go`. Regex ID validation pattern adapted from picobot's `isValidMemoryFile`.
+  - `internal/source/store_test.go`: 10 test funcs — create, dedup, not-exist, invalid IDs (incl. traversal), list filters + bogus entries skipped, update persistence, mutator-error propagation, validation, path traversal rejection, all 3 kinds.
+- Source ID format: `src_<first 16 hex of sha256>` — stable, dedupable, filesystem-safe. External IDs validated against `^src_[a-f0-9]{16}$` before any path join.
+- Verification: `go test ./...` PASS (incl. `internal/source` 10 tests), `go build ./...` clean, `go vet ./...` clean.
+- Files touched: `internal/source/source.go` (new), `internal/source/store.go` (new), `internal/source/store_test.go` (new), `docs/implementation-tracker.md`.
+- Next slice: **3 — OCR client (`internal/ocr`)**. Mistral `/v1/ocr` request/response, base64 PDF path, fake-server tests. Integrates with `source.Store.Update` to flip status to `ocr_complete` and write `ocr.md` / `ocr.json` via `source.Store.Path`.
 
 ### 2026-04-29 — Slice 1 complete
 
