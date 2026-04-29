@@ -17,6 +17,7 @@ package ocr
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,73 @@ func firstChars(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// TestRerenderFromOCRJSON re-renders ocr.md from an existing ocr.json
+// (driven by RERENDER_DIRS, comma-separated absolute paths to source dirs
+// like wiki/raw/src_xxx). Use after fixing render.go to refresh on-disk
+// ocr.md files without paying for another Mistral OCR call.
+func TestRerenderFromOCRJSON(t *testing.T) {
+	dirs := os.Getenv("RERENDER_DIRS")
+	if dirs == "" {
+		t.Skip("RERENDER_DIRS not set")
+	}
+	for _, dir := range strings.Split(dirs, ",") {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, "ocr.json"))
+		if err != nil {
+			t.Errorf("%s: read ocr.json: %v", dir, err)
+			continue
+		}
+		var resp OCRResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			t.Errorf("%s: parse ocr.json: %v", dir, err)
+			continue
+		}
+		var meta struct {
+			ID       string `json:"id"`
+			Filename string `json:"filename"`
+		}
+		if mb, err := os.ReadFile(filepath.Join(dir, "source.json")); err == nil {
+			_ = json.Unmarshal(mb, &meta)
+		}
+		md := RenderMarkdown(RenderMeta{
+			SourceID: meta.ID,
+			Filename: meta.Filename,
+			Model:    resp.Model,
+		}, resp)
+		mdPath := filepath.Join(dir, "ocr.md")
+		if err := os.WriteFile(mdPath, []byte(md), 0o644); err != nil {
+			t.Errorf("%s: write ocr.md: %v", dir, err)
+			continue
+		}
+		t.Logf("re-rendered %s: %d bytes (tables=%d header=%d)",
+			mdPath, len(md),
+			countTables(resp.Pages),
+			countHeaders(resp.Pages),
+		)
+	}
+}
+
+func countTables(pages []Page) int {
+	n := 0
+	for _, p := range pages {
+		n += len(p.Tables)
+	}
+	return n
+}
+
+func countHeaders(pages []Page) int {
+	n := 0
+	for _, p := range pages {
+		if strings.TrimSpace(p.Header) != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // TestLiveE2E runs the full PDF → source → OCR → ocr.md/ocr.json pipeline

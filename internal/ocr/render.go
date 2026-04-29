@@ -53,12 +53,38 @@ func RenderMarkdown(meta RenderMeta, resp OCRResponse) string {
 			display = i + 1
 		}
 		fmt.Fprintf(&sb, "## Page %d\n\n", display)
-		body := strings.TrimRight(page.Markdown, "\n")
+
+		if h := strings.TrimSpace(page.Header); h != "" {
+			fmt.Fprintf(&sb, "*Header:* %s\n\n", h)
+		}
+
+		body := substituteTablePlaceholders(strings.TrimRight(page.Markdown, "\n"), page.Tables)
 		if body != "" {
 			sb.WriteString(body)
 			sb.WriteString("\n")
 		}
+
+		if f := strings.TrimSpace(page.Footer); f != "" {
+			fmt.Fprintf(&sb, "\n*Footer:* %s\n", f)
+		}
+
 		sb.WriteString("\n")
 	}
 	return strings.TrimRight(sb.String(), "\n") + "\n"
+}
+
+// substituteTablePlaceholders replaces Mistral's `[<id>](<id>)` table
+// references inside page markdown with the actual table content from the
+// page's Tables array. Without this, table content lives only in
+// ocr.json and never reaches ocr.md.
+func substituteTablePlaceholders(md string, tables []Table) string {
+	for _, t := range tables {
+		if t.ID == "" || t.Content == "" {
+			continue
+		}
+		placeholder := fmt.Sprintf("[%s](%s)", t.ID, t.ID)
+		replacement := "\n\n" + strings.TrimSpace(t.Content) + "\n\n"
+		md = strings.ReplaceAll(md, placeholder, replacement)
+	}
+	return md
 }

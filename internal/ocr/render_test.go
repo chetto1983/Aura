@@ -88,3 +88,86 @@ func TestRenderMarkdownMissingFilename(t *testing.T) {
 		t.Errorf("missing filename placeholder: %s", got)
 	}
 }
+
+func TestRenderMarkdownInlinesTablePlaceholders(t *testing.T) {
+	resp := OCRResponse{
+		Pages: []Page{{
+			Index:    0,
+			Markdown: "Intro paragraph.\n\n[tbl-0.md](tbl-0.md)\n\nTrailing line.",
+			Tables: []Table{
+				{ID: "tbl-0.md", Content: "| col | val |\n| --- | --- |\n| a | 1 |", Format: "markdown"},
+			},
+		}},
+	}
+	got := RenderMarkdown(RenderMeta{SourceID: "src_0", Filename: "x.pdf"}, resp)
+	if strings.Contains(got, "[tbl-0.md](tbl-0.md)") {
+		t.Errorf("placeholder still present:\n%s", got)
+	}
+	if !strings.Contains(got, "| col | val |") {
+		t.Errorf("table content missing:\n%s", got)
+	}
+	// Sanity: surrounding text preserved.
+	if !strings.Contains(got, "Intro paragraph.") || !strings.Contains(got, "Trailing line.") {
+		t.Errorf("surrounding text dropped:\n%s", got)
+	}
+}
+
+func TestRenderMarkdownEmitsHeaderAndFooter(t *testing.T) {
+	resp := OCRResponse{
+		Pages: []Page{{
+			Index:    0,
+			Markdown: "body content",
+			Header:   "REG. IMPR. CUNEO 01954950042",
+			Footer:   "page footer text",
+		}},
+	}
+	got := RenderMarkdown(RenderMeta{SourceID: "src_0", Filename: "x.pdf"}, resp)
+	if !strings.Contains(got, "*Header:* REG. IMPR. CUNEO 01954950042") {
+		t.Errorf("header missing:\n%s", got)
+	}
+	if !strings.Contains(got, "*Footer:* page footer text") {
+		t.Errorf("footer missing:\n%s", got)
+	}
+	// Header must appear before body, footer after.
+	hPos := strings.Index(got, "*Header:*")
+	bPos := strings.Index(got, "body content")
+	fPos := strings.Index(got, "*Footer:*")
+	if !(hPos > 0 && hPos < bPos && bPos < fPos) {
+		t.Errorf("ordering wrong: h=%d b=%d f=%d", hPos, bPos, fPos)
+	}
+}
+
+func TestRenderMarkdownIgnoresEmptyTables(t *testing.T) {
+	// Defensive: an empty Table entry should not crash or insert blanks.
+	resp := OCRResponse{
+		Pages: []Page{{
+			Index:    0,
+			Markdown: "body",
+			Tables:   []Table{{ID: "", Content: ""}, {ID: "tbl-x", Content: ""}},
+		}},
+	}
+	got := RenderMarkdown(RenderMeta{SourceID: "src_0", Filename: "x.pdf"}, resp)
+	if !strings.Contains(got, "body") {
+		t.Errorf("body lost:\n%s", got)
+	}
+}
+
+func TestRenderMarkdownMultipleTables(t *testing.T) {
+	resp := OCRResponse{
+		Pages: []Page{{
+			Index:    0,
+			Markdown: "[tbl-0.md](tbl-0.md)\n\nMiddle.\n\n[tbl-1.md](tbl-1.md)",
+			Tables: []Table{
+				{ID: "tbl-0.md", Content: "TABLE-A"},
+				{ID: "tbl-1.md", Content: "TABLE-B"},
+			},
+		}},
+	}
+	got := RenderMarkdown(RenderMeta{SourceID: "src_0", Filename: "x.pdf"}, resp)
+	if !strings.Contains(got, "TABLE-A") || !strings.Contains(got, "TABLE-B") {
+		t.Errorf("tables missing:\n%s", got)
+	}
+	if strings.Contains(got, "[tbl-0.md]") || strings.Contains(got, "[tbl-1.md]") {
+		t.Errorf("placeholders not substituted:\n%s", got)
+	}
+}

@@ -53,10 +53,21 @@ type OCRResponse struct {
 // Page captures the parts of a Mistral OCR page Aura needs. Index is 0-based
 // per the API; rendering converts to 1-based for human display.
 type Page struct {
-	Index    int    `json:"index"`
-	Markdown string `json:"markdown"`
-	Header   string `json:"header,omitempty"`
-	Footer   string `json:"footer,omitempty"`
+	Index    int     `json:"index"`
+	Markdown string  `json:"markdown"`
+	Header   string  `json:"header,omitempty"`
+	Footer   string  `json:"footer,omitempty"`
+	Tables   []Table `json:"tables,omitempty"`
+}
+
+// Table is a single extracted table. Mistral places a placeholder
+// [<id>](<id>) inside the page Markdown wherever the table belongs; the
+// renderer substitutes the placeholder with Content. Without this
+// substitution, table data is silently dropped from ocr.md.
+type Table struct {
+	ID      string `json:"id"`
+	Content string `json:"content"`
+	Format  string `json:"format,omitempty"`
 }
 
 // Usage is Mistral's per-call usage report.
