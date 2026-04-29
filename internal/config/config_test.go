@@ -62,6 +62,16 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("EMBEDDING_BASE_URL")
 	os.Unsetenv("EMBEDDING_MODEL")
+	os.Unsetenv("MISTRAL_API_KEY")
+	os.Unsetenv("MISTRAL_OCR_MODEL")
+	os.Unsetenv("MISTRAL_OCR_BASE_URL")
+	os.Unsetenv("MISTRAL_OCR_TABLE_FORMAT")
+	os.Unsetenv("MISTRAL_OCR_INCLUDE_IMAGES")
+	os.Unsetenv("MISTRAL_OCR_EXTRACT_HEADER")
+	os.Unsetenv("MISTRAL_OCR_EXTRACT_FOOTER")
+	os.Unsetenv("OCR_ENABLED")
+	os.Unsetenv("OCR_MAX_PAGES")
+	os.Unsetenv("OCR_MAX_FILE_MB")
 
 	cfg, err := Load()
 	if err != nil {
@@ -87,5 +97,32 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.EmbeddingModel != "mistral-embed" {
 		t.Errorf("EmbeddingModel = %q, want mistral-embed", cfg.EmbeddingModel)
+	}
+	if cfg.MistralOCRModel != "mistral-ocr-latest" {
+		t.Errorf("MistralOCRModel = %q, want mistral-ocr-latest", cfg.MistralOCRModel)
+	}
+	if cfg.MistralOCRBaseURL != "https://api.mistral.ai/v1" {
+		t.Errorf("MistralOCRBaseURL = %q, want Mistral API", cfg.MistralOCRBaseURL)
+	}
+	if cfg.MistralOCRTableFormat != "markdown" {
+		t.Errorf("MistralOCRTableFormat = %q, want markdown", cfg.MistralOCRTableFormat)
+	}
+	if cfg.MistralOCRIncludeImages {
+		t.Errorf("MistralOCRIncludeImages = true, want false by default")
+	}
+	if cfg.MistralOCRExtractHeader {
+		t.Errorf("MistralOCRExtractHeader = true, want false by default")
+	}
+	if cfg.MistralOCRExtractFooter {
+		t.Errorf("MistralOCRExtractFooter = true, want false by default")
+	}
+	if !cfg.OCREnabled {
+		t.Errorf("OCREnabled = false, want true by default")
+	}
+	if cfg.OCRMaxPages != 500 {
+		t.Errorf("OCRMaxPages = %d, want 500", cfg.OCRMaxPages)
+	}
+	if cfg.OCRMaxFileMB != 100 {
+		t.Errorf("OCRMaxFileMB = %d, want 100", cfg.OCRMaxFileMB)
 	}
 }

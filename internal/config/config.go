@@ -31,6 +31,20 @@ type Config struct {
 	DBPath            string   `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort          string   `envconfig:"HTTP_PORT" default:":8080"`
 	OTelEnabled       bool     `envconfig:"OTEL_ENABLED" default:"false"`
+
+	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
+	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
+	// and reusing chat/embedding keys would leak quota and access scope.
+	MistralAPIKey           string `envconfig:"MISTRAL_API_KEY"`
+	MistralOCRModel         string `envconfig:"MISTRAL_OCR_MODEL" default:"mistral-ocr-latest"`
+	MistralOCRBaseURL       string `envconfig:"MISTRAL_OCR_BASE_URL" default:"https://api.mistral.ai/v1"`
+	MistralOCRTableFormat   string `envconfig:"MISTRAL_OCR_TABLE_FORMAT" default:"markdown"`
+	MistralOCRIncludeImages bool   `envconfig:"MISTRAL_OCR_INCLUDE_IMAGES" default:"false"`
+	MistralOCRExtractHeader bool   `envconfig:"MISTRAL_OCR_EXTRACT_HEADER" default:"false"`
+	MistralOCRExtractFooter bool   `envconfig:"MISTRAL_OCR_EXTRACT_FOOTER" default:"false"`
+	OCREnabled              bool   `envconfig:"OCR_ENABLED" default:"true"`
+	OCRMaxPages             int    `envconfig:"OCR_MAX_PAGES" default:"500"`
+	OCRMaxFileMB            int    `envconfig:"OCR_MAX_FILE_MB" default:"100"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -92,6 +106,17 @@ func Load() (*Config, error) {
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", ":8080")
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
+
+	cfg.MistralAPIKey = getEnv("MISTRAL_API_KEY", "")
+	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
+	cfg.MistralOCRBaseURL = getEnv("MISTRAL_OCR_BASE_URL", "https://api.mistral.ai/v1")
+	cfg.MistralOCRTableFormat = getEnv("MISTRAL_OCR_TABLE_FORMAT", "markdown")
+	cfg.MistralOCRIncludeImages = getEnvBool("MISTRAL_OCR_INCLUDE_IMAGES", false)
+	cfg.MistralOCRExtractHeader = getEnvBool("MISTRAL_OCR_EXTRACT_HEADER", false)
+	cfg.MistralOCRExtractFooter = getEnvBool("MISTRAL_OCR_EXTRACT_FOOTER", false)
+	cfg.OCREnabled = getEnvBool("OCR_ENABLED", true)
+	cfg.OCRMaxPages = getEnvInt("OCR_MAX_PAGES", 500)
+	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
 
 	return cfg, nil
 }

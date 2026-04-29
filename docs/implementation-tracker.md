@@ -32,7 +32,7 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 | # | Slice | Status | Notes |
 | - | ----- | ------ | ----- |
-| 1 | Config (Mistral OCR) | in progress | This session. |
+| 1 | Config (Mistral OCR) | done | Mistral OCR fields + defaults + tests. |
 | 2 | Source store | pending | |
 | 3 | OCR client | pending | |
 | 4 | Telegram PDF handler | pending | |
@@ -45,7 +45,14 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
-### 2026-04-29 — Slice 1 kickoff
+### 2026-04-29 — Slice 1 complete
 
 - Created this tracker per `aura-implementation` skill First Actions.
-- Started slice 1: add Mistral OCR config fields.
+- Slice 1 (config) done:
+  - `internal/config/config.go`: added `MistralAPIKey`, `MistralOCRModel`, `MistralOCRBaseURL`, `MistralOCRTableFormat`, `MistralOCRIncludeImages`, `MistralOCRExtractHeader`, `MistralOCRExtractFooter`, `OCREnabled`, `OCRMaxPages`, `OCRMaxFileMB` with PDR §3 defaults. Keys deliberately separate from `LLM_API_KEY` and `EMBEDDING_API_KEY`.
+  - `internal/config/config_test.go`: extended `TestLoadSuccess` to assert OCR defaults and unset OCR env vars.
+  - `.env.example`: documented OCR section.
+- Verification: `go test ./...` (all packages PASS), `go build ./...` (clean), `go vet ./...` (clean).
+- Files touched: `internal/config/config.go`, `internal/config/config_test.go`, `.env.example`, `docs/implementation-tracker.md`.
+- Next slice: **2 — Source store (`internal/source`)**. Needs source ID generation (sha256 + ULID), `wiki/raw/<source_id>/` layout, atomic `source.json` write, listing, and tests for dedupe by sha256.
+- Pre-existing diagnostic noted (not introduced this slice): `internal/config/config.go:52` — `IsAllowlisted` loop could use `slices.Contains`. Out of scope.
