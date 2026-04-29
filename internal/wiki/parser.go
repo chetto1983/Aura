@@ -46,11 +46,13 @@ func (w *Writer) WriteFromLLMOutput(ctx context.Context, rawOutput string, promp
 	page.SchemaVersion = CurrentSchemaVersion
 	page.PromptVersion = promptVersion
 
-	if err := Validate(page); err == nil {
+	if validateErr := Validate(page); validateErr == nil {
 		if writeErr := w.store.WritePage(ctx, page); writeErr != nil {
 			return nil, fmt.Errorf("writing wiki page: %w", writeErr)
 		}
 		return page, nil
+	} else {
+		err = validateErr
 	}
 
 	w.logger.Info("schema validation failed, retrying with feedback",
@@ -162,17 +164,20 @@ func ParseMD(data []byte) (*Page, error) {
 	}
 
 	fmContent := rest[:closeIdx]
-	bodyStart := closeIdx + 3 // skip past ---
-	// Skip newline after closing ---
-	if bodyStart < len(content) && content[bodyStart] == '\n' {
-		bodyStart++
-	} else if bodyStart+1 < len(content) && content[bodyStart] == '\r' && content[bodyStart+1] == '\n' {
-		bodyStart += 2
+
+	// Compute body position relative to original content
+	// rest = content[offset:], closeIdx is within rest
+	// body starts after the closing --- delimiter + newline
+	bodyStartInRest := closeIdx + 3 // skip past ---
+	if bodyStartInRest < len(rest) && rest[bodyStartInRest] == '\n' {
+		bodyStartInRest++
+	} else if bodyStartInRest+1 < len(rest) && rest[bodyStartInRest] == '\r' && rest[bodyStartInRest+1] == '\n' {
+		bodyStartInRest += 2
 	}
 
 	body := ""
-	if bodyStart < len(content) {
-		body = content[bodyStart:]
+	if bodyStartInRest < len(rest) {
+		body = rest[bodyStartInRest:]
 	}
 
 	var page Page

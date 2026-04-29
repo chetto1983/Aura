@@ -48,7 +48,7 @@ func TestFormatResults(t *testing.T) {
 			results: []Result{
 				{Slug: "go-programming", Title: "Go Programming", Content: "Go is a statically typed language", Score: 0.9},
 			},
-			expected: "Relevant wiki knowledge:\n- [go-programming] Go Programming\n",
+			expected: "Relevant wiki knowledge:\n- [[go-programming]] Go Programming\n  Go is a statically typed language\n",
 		},
 		{
 			name: "multiple results",
@@ -56,7 +56,7 @@ func TestFormatResults(t *testing.T) {
 				{Slug: "go-programming", Title: "Go Programming", Content: "Go is a language", Score: 0.9},
 				{Slug: "rust-basics", Title: "Rust Basics", Content: "Rust is safe", Score: 0.8},
 			},
-			expected: "Relevant wiki knowledge:\n- [go-programming] Go Programming\n- [rust-basics] Rust Basics\n",
+			expected: "Relevant wiki knowledge:\n- [[go-programming]] Go Programming\n  Go is a language\n- [[rust-basics]] Rust Basics\n  Rust is safe\n",
 		},
 	}
 

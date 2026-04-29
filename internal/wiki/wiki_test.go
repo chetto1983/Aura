@@ -245,7 +245,7 @@ func TestWriteFromLLMOutput(t *testing.T) {
 	writer := NewWriter(store, mockLLM, logger)
 
 	page := validPage()
-	data, err := yaml.Marshal(page)
+	data, err := MarshalMD(page)
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestWriteFromLLMOutputInvalidYAML(t *testing.T) {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 
-	validData, _ := yaml.Marshal(validPage())
+	validData, _ := MarshalMD(validPage())
 	mockLLM := &wikiMockLLM{
 		response: string(validData),
 	}

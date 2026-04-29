@@ -10,7 +10,7 @@ title: "Test Page"
 content: "Some content here"
 tags:
   - test
-schema_version: 1
+schema_version: 2
 prompt_version: ingest_v1
 created_at: "2026-04-28T10:00:00Z"
 updated_at: "2026-04-28T10:00:00Z"
@@ -22,8 +22,8 @@ updated_at: "2026-04-28T10:00:00Z"
 	if page.Title != "Test Page" {
 		t.Errorf("title = %q, want %q", page.Title, "Test Page")
 	}
-	if page.SchemaVersion != 1 {
-		t.Errorf("schema_version = %d, want 1", page.SchemaVersion)
+	if page.SchemaVersion != 2 {
+		t.Errorf("schema_version = %d, want 2", page.SchemaVersion)
 	}
 	if len(page.Tags) != 1 || page.Tags[0] != "test" {
 		t.Errorf("tags = %v, want [test]", page.Tags)
@@ -75,7 +75,7 @@ func TestValidateMissingTitle(t *testing.T) {
 func TestValidateMissingBody(t *testing.T) {
 	page := &Page{
 		Title:         "Test",
-		SchemaVersion: 1,
+		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     "2026-04-28T10:00:00Z",
 		UpdatedAt:     "2026-04-28T10:00:00Z",
@@ -154,7 +154,7 @@ func TestParseAndValidate(t *testing.T) {
 	input := `
 title: "Test Page"
 content: "Some content"
-schema_version: 1
+schema_version: 2
 prompt_version: v1
 created_at: "2026-04-28T10:00:00Z"
 updated_at: "2026-04-28T10:00:00Z"

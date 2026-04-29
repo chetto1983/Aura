@@ -100,7 +100,7 @@ func TestSnapshotSchemaVersion(t *testing.T) {
 		wantValid     bool
 	}{
 		{"current version", CurrentSchemaVersion, true},
-		{"wrong version", 2, false},
+		{"wrong version", 99, false},
 		{"zero version", 0, false},
 	}
 
