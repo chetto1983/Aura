@@ -13,7 +13,9 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 
@@ -23,16 +25,19 @@ import (
 
 // Bot wraps the telebot instance with allowlist access control and LLM integration.
 type Bot struct {
-	bot    *tele.Bot
-	cfg    *config.Config
-	logger *slog.Logger
-	llm    llm.Client
-	wiki   *wiki.Store
-	search *search.Engine
-	tools  *tools.Registry
-	budget *budget.Tracker
-	active sync.Map // maps userID string -> bool (active conversation tracking)
-	ctxMap sync.Map // maps userID string -> *conversation.Context
+	bot     *tele.Bot
+	cfg     *config.Config
+	logger  *slog.Logger
+	llm     llm.Client
+	wiki    *wiki.Store
+	search  *search.Engine
+	tools   *tools.Registry
+	budget  *budget.Tracker
+	sources *source.Store
+	ocr     *ocr.Client
+	docs    *docHandler
+	active  sync.Map // maps userID string -> bool (active conversation tracking)
+	ctxMap  sync.Map // maps userID string -> *conversation.Context
 }
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
@@ -100,20 +105,58 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		toolRegistry.Register(tools.NewSearchWikiTool(searchEngine))
 	}
 
+	// Source store backs PDF uploads and OCR artifacts. Always create it —
+	// even when OCR is off, the bot still stores raw PDFs as immutable
+	// sources so a later /reocr can run.
+	sourceStore, err := source.NewStore(cfg.WikiPath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("creating source store: %w", err)
+	}
+
+	// OCR client is optional. Required env: MISTRAL_API_KEY + OCR_ENABLED.
+	var ocrClient *ocr.Client
+	if cfg.OCREnabled && cfg.MistralAPIKey != "" {
+		ocrClient = ocr.New(ocr.Config{
+			APIKey:        cfg.MistralAPIKey,
+			BaseURL:       cfg.MistralOCRBaseURL,
+			Model:         cfg.MistralOCRModel,
+			TableFormat:   cfg.MistralOCRTableFormat,
+			ExtractHeader: cfg.MistralOCRExtractHeader,
+			ExtractFooter: cfg.MistralOCRExtractFooter,
+		})
+	} else {
+		logger.Info("OCR disabled (set OCR_ENABLED=true and MISTRAL_API_KEY to enable)")
+	}
+
 	b := &Bot{
-		bot:    tb,
-		cfg:    cfg,
-		logger: logger,
-		llm:    client,
-		wiki:   wikiStore,
-		search: searchEngine,
-		tools:  toolRegistry,
+		bot:     tb,
+		cfg:     cfg,
+		logger:  logger,
+		llm:     client,
+		wiki:    wikiStore,
+		search:  searchEngine,
+		tools:   toolRegistry,
+		sources: sourceStore,
+		ocr:     ocrClient,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
 			CostPerToken: cfg.CostPerToken,
 		}, logger),
 	}
+
+	b.docs = newDocHandler(docHandlerConfig{
+		Bot:       tb,
+		Sources:   sourceStore,
+		OCR:       ocrClient,
+		MaxFileMB: cfg.OCRMaxFileMB,
+		Allowlist: cfg.IsAllowlisted,
+		Logger:    logger,
+		// AfterOCR is nil in slice 4. Slice 6 (ingest_source) wires the LLM
+		// compile step here so the same progress message can continue to
+		// "✅ Compiled into wiki: …" after OCR finishes.
+		AfterOCR: nil,
+	})
 
 	b.registerHandlers()
 	return b, nil
@@ -139,6 +182,9 @@ func (b *Bot) registerHandlers() {
 	b.bot.Handle("/start", b.onStart)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
+	if b.docs != nil {
+		b.bot.Handle(tele.OnDocument, b.docs.onDocument)
+	}
 }
 
 func (b *Bot) onMessage(c tele.Context) error {
