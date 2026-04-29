@@ -168,12 +168,17 @@ func (b *Bot) handleConversation(c tele.Context) {
 	defer b.active.Delete(userID)
 
 	// Get or create conversation context
-	ctxVal, _ := b.ctxMap.LoadOrStore(userID, conversation.NewContext(conversation.Config{
+	ctxVal, loaded := b.ctxMap.LoadOrStore(userID, conversation.NewContext(conversation.Config{
 		MaxTokens:  b.cfg.MaxContextTokens,
 		Summarizer: b.llm,
 		Logger:     b.logger,
 	}))
 	convCtx := ctxVal.(*conversation.Context)
+
+	// Set system prompt on first message (new context)
+	if !loaded {
+		convCtx.SetSystemMessage(conversation.DefaultSystemPrompt())
+	}
 
 	b.logger.Info("conversation started",
 		"user_id", userID,
@@ -190,7 +195,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		if err != nil {
 			b.logger.Warn("wiki search failed", "user_id", userID, "error", err)
 		} else if len(results) > 0 {
-			convCtx.SetSystemMessage(search.FormatResults(results))
+			convCtx.SetSearchContext(search.FormatResults(results))
 		}
 	}
 

@@ -72,6 +72,38 @@ func TestSetSystemMessage(t *testing.T) {
 	}
 }
 
+func TestSetSearchContext(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
+	ctx.SetSystemMessage("You are Aura.")
+
+	ctx.SetSearchContext("Relevant wiki knowledge:\n- test page")
+
+	msgs := ctx.Messages()
+	if msgs[0].Role != "system" {
+		t.Errorf("system message role = %q, want system", msgs[0].Role)
+	}
+	expected := "You are Aura.\n\nRelevant wiki knowledge:\n- test page"
+	if msgs[0].Content != expected {
+		t.Errorf("system message with search = %q, want %q", msgs[0].Content, expected)
+	}
+
+	// Search context is replaced (not accumulated) on each message
+	ctx.SetSearchContext("New search results:\n- different page")
+	msgs = ctx.Messages()
+	wantNew := "You are Aura.\n\nNew search results:\n- different page"
+	if msgs[0].Content != wantNew {
+		t.Errorf("refreshed search context = %q, want %q", msgs[0].Content, wantNew)
+	}
+
+	// SetSearchContext without prior system message creates one
+	ctx2 := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
+	ctx2.SetSearchContext("Wiki context here")
+	msgs2 := ctx2.Messages()
+	if msgs2[0].Content != "Wiki context here" {
+		t.Errorf("search context without base = %q, want %q", msgs2[0].Content, "Wiki context here")
+	}
+}
+
 func TestEstimatedTokens(t *testing.T) {
 	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
 	ctx.AddUserMessage("Hello world")

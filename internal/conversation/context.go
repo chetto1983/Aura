@@ -11,13 +11,15 @@ import (
 
 // Context manages the conversation state for a single conversation.
 type Context struct {
-	messages        []llm.Message
-	summary         string
-	transcript      []string
-	maxTokens       int
-	summarizer      llm.Client
-	logger          *slog.Logger
-	totalTokensUsed int
+	messages         []llm.Message
+	summary          string
+	transcript       []string
+	maxTokens        int
+	summarizer       llm.Client
+	logger           *slog.Logger
+	totalTokensUsed  int
+	baseSystemPrompt string
+	searchContext    string
 }
 
 // Config holds configuration for conversation context.
@@ -129,8 +131,33 @@ func (c *Context) truncateMessages() {
 	}
 }
 
-// SetSystemMessage sets or replaces the system message at the start.
+// SetSystemMessage sets the base system prompt. This is the fixed identity
+// part that persists across the conversation.
 func (c *Context) SetSystemMessage(content string) {
+	c.baseSystemPrompt = content
+	c.rebuildSystemMessage()
+}
+
+// SetSearchContext refreshes the dynamic search context appended to the system message.
+// Called on each message with new search results — replaces the previous search context.
+func (c *Context) SetSearchContext(content string) {
+	c.searchContext = content
+	c.rebuildSystemMessage()
+}
+
+// rebuildSystemMessage combines baseSystemPrompt + searchContext into the actual system message.
+func (c *Context) rebuildSystemMessage() {
+	var content string
+	if c.baseSystemPrompt != "" && c.searchContext != "" {
+		content = c.baseSystemPrompt + "\n\n" + c.searchContext
+	} else if c.baseSystemPrompt != "" {
+		content = c.baseSystemPrompt
+	} else if c.searchContext != "" {
+		content = c.searchContext
+	}
+	if content == "" {
+		return
+	}
 	if len(c.messages) > 0 && c.messages[0].Role == "system" {
 		c.messages[0].Content = content
 		return
