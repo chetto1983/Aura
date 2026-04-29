@@ -60,6 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	healthServer.SetBotUsername(bot.Username())
+
 	logger.Info("aura starting", "version", "3.0")
 
 	// Wait for interrupt signal

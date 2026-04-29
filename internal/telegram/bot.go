@@ -102,6 +102,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	return b, nil
 }
 
+// Username returns the bot's Telegram username.
+func (b *Bot) Username() string {
+	return b.bot.Me.Username
+}
+
 // Start begins polling for Telegram messages.
 func (b *Bot) Start() {
 	b.logger.Info("telegram bot started")
@@ -114,6 +119,7 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) registerHandlers() {
+	b.bot.Handle("/start", b.onStart)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
 }
@@ -131,6 +137,25 @@ func (b *Bot) onMessage(c tele.Context) error {
 
 	// Launch conversation in its own goroutine
 	go b.handleConversation(c)
+
+	return nil
+}
+
+// onStart handles the /start command. When a user opens the bot via the invite QR code
+// (t.me/bot?start=invite), they are automatically added to the allowlist.
+func (b *Bot) onStart(c tele.Context) error {
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+
+	if !b.cfg.IsAllowlisted(userID) {
+		b.cfg.AddToAllowlist(userID)
+		b.logger.Info("user auto-allowlisted via invite",
+			"user_id", userID,
+			"username", c.Sender().Username,
+		)
+		c.Send("Welcome to Aura! You've been granted access. Send me a message to start chatting.")
+	} else {
+		c.Send("Welcome back! Send me a message to continue.")
+	}
 
 	return nil
 }

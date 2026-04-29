@@ -150,7 +150,8 @@
         "OpenTelemetry traces for LLM calls and tool executions",
         "No secrets appear in logs",
         "Typecheck/lint passes"
-      ]
+      ],
+      "passes": true
     }
   ],
   "functionalRequirements": [

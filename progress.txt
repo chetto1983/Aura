@@ -1,5 +1,5 @@
 ## Codebase Patterns
-- Use `slog` for structured logging throughout (not zap yet, will migrate later)
+- Use `slog` for structured logging throughout (bridged to zap via internal/logging/zap_slog.go)
 - Config uses manual env parsing (no envconfig dep yet) — `internal/config/env.go` has helpers
 - Telegram user IDs are strings (converted from int64 via strconv.FormatInt)
 - Conversation handling launched in goroutines via `go b.handleConversation(c)`
@@ -177,4 +177,24 @@
   - OllamaClient wraps OpenAIClient since Ollama exposes OpenAI-compatible API at /v1/chat/completions
   - go-libsql requires CGo — use modernc.org/sqlite for Windows/pure-Go compatibility
   - FailoverClient checks context.Err() before each provider attempt to avoid wasted calls
+---
+## [2026-04-29] - US-010
+- Health server with /status (JSON component health), /health (liveness), and / (landing page with QR code invite)
+- Landing page: Telegram QR code invite, skills trust levels, MCP endpoint info, dark theme UI
+- Bot Username() method added; health server wired with SetBotUsername in main.go
+- /start handler auto-allowlists users arriving via invite QR (t.me/bot?start=invite)
+- Structured logging via zap: internal/logging/zap_slog.go bridges slog.Handler to zap Logger with JSON output
+- Secret sanitization: health.SanitizeHandler redacts API keys, tokens, passwords from all log output
+- OpenTelemetry tracing: internal/tracing package with Setup, SetupIfEnabled, Tracer, StartSpan
+- OTel spans integrated into LLM calls (openai.send, openai.stream, failover.send, failover.stream) and skill execution (skill.run)
+- Tracing is opt-in via OTEL_ENABLED env var (default false)
+- Config extended with OTelEnabled field and OTEL_ENABLED env var
+- Tests: health (status healthy/degraded, health alive, uptime, landing with/without username), logging (sanitizer redacts/passes), tracing (setup, enabled/disabled, tracer, startSpan, provider type)
+- Files changed: internal/health/server.go, internal/health/server_test.go, internal/health/sanitize.go, internal/health/sanitize_test.go, internal/logging/zap_slog.go, internal/logging/logging_test.go, internal/tracing/tracing.go, internal/tracing/tracing_test.go, internal/config/config.go, internal/telegram/bot.go, cmd/aura/main.go, go.mod, go.sum, prd.json
+- **Learnings for future iterations:**
+  - zap bridges via slog.Handler interface — zap_slog.go implements Enabled/Handle/WithAttrs/WithGroup
+  - SanitizeHandler wraps any slog.Handler, redacting patterns matching api_key, token, secret, password, authorization
+  - OTel stdout exporter used for initial setup; can swap to OTLP/Jaeger later via config
+  - go-qrcode generates PNG QR codes for Telegram invite links
+  - Config.AddToAllowlist enables auto-join via /start invite parameter
   - Failover names are padded with "provider_N" when not enough names provided

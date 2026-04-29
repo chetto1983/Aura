@@ -38,6 +38,14 @@ func (c *Config) IsAllowlisted(userID string) bool {
 	return false
 }
 
+// AddToAllowlist adds a user ID to the allowlist if not already present.
+func (c *Config) AddToAllowlist(userID string) {
+	if c.IsAllowlisted(userID) {
+		return
+	}
+	c.Allowlist = append(c.Allowlist, userID)
+}
+
 // Load reads configuration from environment variables using envconfig.
 func Load() (*Config, error) {
 	cfg := &Config{}
