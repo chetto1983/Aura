@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 
 	"github.com/philippgille/chromem-go"
@@ -26,8 +27,9 @@ type Bot struct {
 	cfg    *config.Config
 	logger *slog.Logger
 	llm    llm.Client
-	wiki   *wiki.Writer
+	wiki   *wiki.Store
 	search *search.Engine
+	tools  *tools.Registry
 	budget *budget.Tracker
 	active sync.Map // maps userID string -> bool (active conversation tracking)
 	ctxMap sync.Map // maps userID string -> *conversation.Context
@@ -65,11 +67,6 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		logger.Info("wiki migration completed", "pages_migrated", migrated)
 	}
 
-	var wikiWriter *wiki.Writer
-	if client != nil {
-		wikiWriter = wiki.NewWriter(wikiStore, client, logger)
-	}
-
 	// Set up search engine
 	var searchEngine *search.Engine
 	if cfg.EmbeddingAPIKey != "" || cfg.LLMAPIKey != "" {
@@ -92,13 +89,25 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}
 	}
 
+	toolRegistry := tools.NewRegistry(logger)
+	if cfg.OllamaAPIKey != "" {
+		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+		toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+	}
+	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
+	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))
+	if searchEngine != nil {
+		toolRegistry.Register(tools.NewSearchWikiTool(searchEngine))
+	}
+
 	b := &Bot{
 		bot:    tb,
 		cfg:    cfg,
 		logger: logger,
 		llm:    client,
-		wiki:   wikiWriter,
+		wiki:   wikiStore,
 		search: searchEngine,
+		tools:  toolRegistry,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
@@ -197,16 +206,6 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// Add user message to context
 	convCtx.AddUserMessage(c.Text())
 
-	// Inject relevant wiki knowledge into context
-	if b.search != nil && b.search.IsIndexed() {
-		results, err := b.search.Search(context.Background(), c.Text(), 5)
-		if err != nil {
-			b.logger.Warn("wiki search failed", "user_id", userID, "error", err)
-		} else if len(results) > 0 {
-			convCtx.SetSearchContext(search.FormatResults(results))
-		}
-	}
-
 	// Enforce context limits: summarize at 80%, trim at hard limit
 	if err := convCtx.EnforceLimit(context.Background()); err != nil {
 		b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
@@ -236,63 +235,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 		return
 	}
 
-	req := llm.Request{
-		Messages: convCtx.Messages(),
-		Model:    b.cfg.LLMModel,
+	response := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
+	if response != "" {
+		c.Send(response)
 	}
-
-	// Try streaming first, fall back to non-streaming
-	ch, err := b.llm.Stream(context.Background(), req)
-	if err != nil {
-		b.logger.Warn("streaming failed, falling back to send", "error", err)
-		resp, sendErr := b.llm.Send(context.Background(), req)
-		if sendErr != nil {
-			b.logger.Error("LLM send failed", "user_id", userID, "error", sendErr)
-			c.Send("Sorry, I couldn't process your message. Please try again.")
-			return
-		}
-		convCtx.AddAssistantMessage(resp.Content)
-		convCtx.TrackTokens(resp.Usage)
-		if b.budget != nil {
-			b.budget.RecordUsage(resp.Usage.TotalTokens)
-			b.notifySoftBudget(c, userID)
-		}
-		c.Send(resp.Content)
-		b.tryStoreWiki(context.Background(), resp.Content, userID)
-		return
-	}
-
-	// Collect streaming response
-	var sb strings.Builder
-	var streamTokenEstimate int
-	for token := range ch {
-		if token.Err != nil {
-			b.logger.Error("stream error", "user_id", userID, "error", token.Err)
-			break
-		}
-		if token.Done {
-			break
-		}
-		sb.WriteString(token.Content)
-		streamTokenEstimate += len(token.Content) / 4
-	}
-
-	response := sb.String()
-	if response == "" {
-		response = "I couldn't generate a response."
-	}
-
-	convCtx.AddAssistantMessage(response)
-	// Record budget usage for streaming (estimated tokens: context + output)
-	if b.budget != nil {
-		totalEstimate := convCtx.EstimatedTokens() + streamTokenEstimate
-		b.budget.RecordUsage(totalEstimate)
-		b.notifySoftBudget(c, userID)
-	}
-	c.Send(response)
-
-	// Attempt to store wiki knowledge from the response
-	b.tryStoreWiki(context.Background(), response, userID)
 
 	b.logger.Info("conversation complete",
 		"user_id", userID,
@@ -300,47 +246,82 @@ func (b *Bot) handleConversation(c tele.Context) {
 	)
 }
 
-// tryStoreWiki attempts to parse an LLM response as wiki content and store it.
-// If the response doesn't look like YAML, this is a no-op.
-func (b *Bot) tryStoreWiki(ctx context.Context, response string, userID string) {
-	if b.wiki == nil {
-		return
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string) string {
+	maxIterations := b.cfg.MaxToolIterations
+	if maxIterations <= 0 {
+		maxIterations = 10
 	}
-	if !looksLikeWikiContent(response) {
-		return
-	}
-	page, err := b.wiki.WriteFromLLMOutput(ctx, response, "ingest_v1")
-	if err != nil {
-		b.logger.Warn("failed to store wiki page from LLM output",
-			"user_id", userID,
-			"error", err,
-		)
-		return
-	}
-	b.logger.Info("stored wiki page from conversation",
-		"user_id", userID,
-		"title", page.Title,
-	)
 
-	// Re-index the newly written page
-	if b.search != nil {
-		slug := wiki.Slug(page.Title)
-		if err := b.search.ReindexWikiPage(ctx, slug); err != nil {
-			b.logger.Warn("failed to re-index wiki page", "slug", slug, "error", err)
+	var lastToolResult string
+	toolDefs := b.tools.Definitions()
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		if err := convCtx.EnforceLimit(ctx); err != nil {
+			b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
+		}
+
+		if b.budget != nil && b.budget.IsHardBudgetExceeded() {
+			b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
+			return "Budget limit reached. LLM calls are temporarily halted."
+		}
+
+		req := llm.Request{
+			Messages: convCtx.Messages(),
+			Model:    b.cfg.LLMModel,
+			Tools:    toolDefs,
+		}
+
+		resp, err := b.llm.Send(ctx, req)
+		if err != nil {
+			b.logger.Error("LLM send failed", "user_id", userID, "error", err)
+			return "Sorry, I couldn't process your message. Please try again."
+		}
+
+		convCtx.TrackTokens(resp.Usage)
+		if b.budget != nil {
+			b.budget.RecordUsage(resp.Usage.TotalTokens)
+		}
+
+		if !resp.HasToolCalls {
+			response := strings.TrimSpace(resp.Content)
+			if response == "" {
+				if lastToolResult != "" {
+					response = lastToolResult
+				} else {
+					response = "I completed the request but do not have anything else to add."
+				}
+			}
+			convCtx.AddAssistantMessage(response)
+			b.notifySoftBudget(c, userID)
+			return response
+		}
+
+		convCtx.AddAssistantToolCallMessage(resp.Content, resp.ToolCalls)
+		for _, tc := range resp.ToolCalls {
+			c.Send(toolActivityMessage(tc.Name))
+
+			result, err := b.tools.Execute(ctx, tc.Name, tc.Arguments)
+			if err != nil {
+				result = "(tool error) " + err.Error()
+				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
+			}
+			lastToolResult = result
+			convCtx.AddToolResultMessage(tc.ID, result)
 		}
 	}
+
+	fallback := "Tool loop stopped after reaching the maximum iteration limit."
+	if lastToolResult != "" {
+		fallback += "\n\nLast tool result:\n" + lastToolResult
+	}
+	convCtx.AddAssistantMessage(fallback)
+	return fallback
 }
 
-// looksLikeWikiContent checks if a response might contain wiki content.
-// Detects both markdown-with-frontmatter format and legacy YAML format.
-func looksLikeWikiContent(s string) bool {
-	trimmed := strings.TrimSpace(s)
-	// MD format: starts with --- and has frontmatter
-	if strings.HasPrefix(trimmed, "---") {
-		return strings.Contains(s, "title:") && strings.Contains(s, "schema_version:")
+func toolActivityMessage(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "Running tool"
 	}
-	// Legacy YAML format: has title and schema_version markers
-	return strings.Contains(s, "title:") && strings.Contains(s, "schema_version:")
+	return fmt.Sprintf("Running: %s", name)
 }
 
 // createEmbeddingFunc builds a chromem embedding function from config.

@@ -17,12 +17,12 @@ import (
 
 // Store manages wiki page storage with atomic writes and git tracking.
 type Store struct {
-	dir    string
-	mu     sync.Map   // per-file mutex: slug -> *sync.Mutex
-	gitMu  sync.Mutex // serializes git operations
+	dir     string
+	mu      sync.Map   // per-file mutex: slug -> *sync.Mutex
+	gitMu   sync.Mutex // serializes git operations
 	indexMu sync.Mutex // serializes index.md updates
 	logMu   sync.Mutex // serializes log.md updates
-	logger *slog.Logger
+	logger  *slog.Logger
 }
 
 // NewStore creates a wiki store rooted at the given directory.
@@ -30,6 +30,9 @@ type Store struct {
 func NewStore(dir string, logger *slog.Logger) (*Store, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("creating wiki dir: %w", err)
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	s := &Store{dir: dir, logger: logger}

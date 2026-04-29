@@ -21,18 +21,10 @@ func TestOpenAIClientSend(t *testing.T) {
 			t.Errorf("expected Bearer test-key, got %s", r.Header.Get("Authorization"))
 		}
 
-		resp := chatResponse{
-			Choices: []struct {
-				Message chatMessage `json:"message"`
-			}{
-				{Message: chatMessage{Role: "assistant", Content: "Hello from AI"}},
-			},
-		}
-		resp.Usage.PromptTokens = 10
-		resp.Usage.CompletionTokens = 5
-		resp.Usage.TotalTokens = 15
-
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{
+			"choices": [{"message": {"role": "assistant", "content": "Hello from AI"}}],
+			"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+		}`))
 	}))
 	defer server.Close()
 
@@ -87,14 +79,7 @@ func TestOpenAIClientSendModelOverride(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&req)
 		receivedModel = req.Model
 
-		resp := chatResponse{
-			Choices: []struct {
-				Message chatMessage `json:"message"`
-			}{
-				{Message: chatMessage{Role: "assistant", Content: "ok"}},
-			},
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{"choices": [{"message": {"role": "assistant", "content": "ok"}}]}`))
 	}))
 	defer server.Close()
 
@@ -125,6 +110,71 @@ func TestOpenAIClientSendModelOverride(t *testing.T) {
 	}
 	if receivedModel != "gpt-4" {
 		t.Errorf("model = %q, want %q", receivedModel, "gpt-4")
+	}
+}
+
+func TestOpenAIClientSendTools(t *testing.T) {
+	var received chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"role": "assistant",
+					"content": "",
+					"tool_calls": [{
+						"id": "call_1",
+						"type": "function",
+						"function": {
+							"name": "search_wiki",
+							"arguments": "{\"query\":\"aura\"}"
+						}
+					}]
+				},
+				"finish_reason": "tool_calls"
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Model:   "gpt-4",
+	})
+
+	result, err := client.Send(context.Background(), Request{
+		Messages: []Message{
+			{Role: "user", Content: "search memory"},
+		},
+		Tools: []ToolDefinition{
+			{
+				Name:        "search_wiki",
+				Description: "Search wiki",
+				Parameters: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"query": map[string]any{"type": "string"}},
+					"required":   []string{"query"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if len(received.Tools) != 1 || received.Tools[0].Function.Name != "search_wiki" {
+		t.Fatalf("tools not sent correctly: %+v", received.Tools)
+	}
+	if !result.HasToolCalls || len(result.ToolCalls) != 1 {
+		t.Fatalf("expected one tool call, got has=%v len=%d", result.HasToolCalls, len(result.ToolCalls))
+	}
+	if result.ToolCalls[0].Name != "search_wiki" {
+		t.Errorf("tool name = %q, want search_wiki", result.ToolCalls[0].Name)
+	}
+	if result.ToolCalls[0].Arguments["query"] != "aura" {
+		t.Errorf("query arg = %v, want aura", result.ToolCalls[0].Arguments["query"])
 	}
 }
 
@@ -220,12 +270,7 @@ func TestOpenAIClientStreamAPIError(t *testing.T) {
 
 func TestOpenAIClientSendNoChoices(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := chatResponse{
-			Choices: []struct {
-				Message chatMessage `json:"message"`
-			}{},
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{"choices": []}`))
 	}))
 	defer server.Close()
 
@@ -251,14 +296,7 @@ func TestRetryClientWithOpenAIClient(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		resp := chatResponse{
-			Choices: []struct {
-				Message chatMessage `json:"message"`
-			}{
-				{Message: chatMessage{Role: "assistant", Content: "Success"}},
-			},
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.Write([]byte(`{"choices": [{"message": {"role": "assistant", "content": "Success"}}]}`))
 	}))
 	defer server.Close()
 

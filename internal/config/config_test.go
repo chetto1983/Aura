@@ -58,6 +58,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("SOFT_BUDGET")
 	os.Unsetenv("HARD_BUDGET")
 	os.Unsetenv("LOG_LEVEL")
+	os.Unsetenv("OLLAMA_WEB_BASE_URL")
+	os.Unsetenv("MAX_TOOL_ITERATIONS")
 
 	cfg, err := Load()
 	if err != nil {
@@ -71,5 +73,11 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.MaxContextTokens != 4000 {
 		t.Errorf("MaxContextTokens = %d, want 4000", cfg.MaxContextTokens)
+	}
+	if cfg.OllamaWebBaseURL != DefaultOllamaWebBaseURL {
+		t.Errorf("OllamaWebBaseURL = %q, want %q", cfg.OllamaWebBaseURL, DefaultOllamaWebBaseURL)
+	}
+	if cfg.MaxToolIterations != 10 {
+		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
 	}
 }

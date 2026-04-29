@@ -54,6 +54,19 @@ func (c *Context) AddAssistantMessage(content string) {
 	c.transcript = append(c.transcript, "assistant: "+content)
 }
 
+// AddAssistantToolCallMessage appends an assistant message containing tool calls.
+func (c *Context) AddAssistantToolCallMessage(content string, toolCalls []llm.ToolCall) {
+	c.messages = append(c.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: toolCalls})
+	if content != "" {
+		c.transcript = append(c.transcript, "assistant: "+content)
+	}
+}
+
+// AddToolResultMessage appends a tool result correlated to an assistant tool call.
+func (c *Context) AddToolResultMessage(toolCallID string, content string) {
+	c.messages = append(c.messages, llm.Message{Role: "tool", Content: content, ToolCallID: toolCallID})
+}
+
 // EnforceLimit ensures the context stays within MAX_CONTEXT_TOKENS.
 // If over 80%, it triggers summarization. If still over the hard limit,
 // it repeatedly trims oldest messages. As a last resort, it truncates
@@ -110,7 +123,7 @@ func (c *Context) truncateMessages() {
 
 	// Proportionally truncate all non-system messages
 	for i, m := range c.messages {
-		if m.Role == "system" {
+		if m.Role == "system" || len(m.ToolCalls) > 0 {
 			continue
 		}
 		if totalChars <= maxChars {
@@ -237,7 +250,7 @@ func (c *Context) Summarize(ctx context.Context) error {
 	}
 
 	// Summarize roughly the first half of messages
-	split := len(toSummarize) / 2
+	split := toolSafeBoundary(toSummarize, len(toSummarize)/2)
 	if split == 0 {
 		split = 1
 	}
@@ -297,7 +310,7 @@ func (c *Context) trimOldest() {
 		return
 	}
 
-	split := len(toSummarize) / 2
+	split := toolSafeBoundary(toSummarize, len(toSummarize)/2)
 	newMessages := []llm.Message{}
 	if len(c.messages) > 0 && c.messages[0].Role == "system" {
 		newMessages = append(newMessages, c.messages[0])
@@ -305,6 +318,33 @@ func (c *Context) trimOldest() {
 	newMessages = append(newMessages, toSummarize[split:]...)
 	c.messages = newMessages
 	c.logger.Info("trimmed oldest messages", "remaining", len(toSummarize)-split)
+}
+
+func toolSafeBoundary(messages []llm.Message, split int) int {
+	if split <= 0 || split >= len(messages) {
+		return split
+	}
+
+	for split < len(messages) && messages[split].Role == "tool" {
+		split++
+	}
+	for split > 0 && split < len(messages) {
+		prev := messages[split-1]
+		if prev.Role != "assistant" || len(prev.ToolCalls) == 0 {
+			break
+		}
+		remainingResults := len(prev.ToolCalls)
+		for i := split; i < len(messages) && messages[i].Role == "tool" && remainingResults > 0; i++ {
+			remainingResults--
+			split = i + 1
+		}
+		if remainingResults > 0 {
+			split--
+			continue
+		}
+		break
+	}
+	return split
 }
 
 // Transcript returns the full conversation transcript.

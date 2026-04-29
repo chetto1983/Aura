@@ -44,22 +44,54 @@ type chatRequest struct {
 	Messages    []chatMessage `json:"messages"`
 	Temperature *float64      `json:"temperature,omitempty"`
 	Stream      bool          `json:"stream,omitempty"`
+	Tools       []toolWrapper `json:"tools,omitempty"`
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    *string        `json:"content,omitempty"`
+	ToolCalls  []toolCallJSON `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
 }
 
 type chatResponse struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message      messageResponseJSON `json:"message"`
+		FinishReason string              `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+type messageResponseJSON struct {
+	Role      string         `json:"role"`
+	Content   string         `json:"content"`
+	ToolCalls []toolCallJSON `json:"tool_calls,omitempty"`
+}
+
+type toolWrapper struct {
+	Type     string      `json:"type"`
+	Function functionDef `json:"function"`
+}
+
+type functionDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type toolCallJSON struct {
+	ID       string               `json:"id"`
+	Type     string               `json:"type"`
+	Function toolCallFunctionJSON `json:"function"`
+}
+
+type toolCallFunctionJSON struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type streamChunk struct {
@@ -86,11 +118,9 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		Temperature: req.Temperature,
 		Stream:      false,
 	}
+	chatReq.Tools = convertToolDefinitions(req.Tools)
 	for _, m := range req.Messages {
-		chatReq.Messages = append(chatReq.Messages, chatMessage{
-			Role:    m.Role,
-			Content: m.Content,
-		})
+		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
 	}
 
 	body, err := json.Marshal(chatReq)
@@ -125,8 +155,16 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		return Response{}, fmt.Errorf("no choices in response")
 	}
 
+	msg := chatResp.Choices[0].Message
+	toolCalls, err := parseToolCalls(msg.ToolCalls)
+	if err != nil {
+		return Response{}, err
+	}
+
 	return Response{
-		Content: chatResp.Choices[0].Message.Content,
+		Content:      msg.Content,
+		HasToolCalls: len(toolCalls) > 0,
+		ToolCalls:    toolCalls,
 		Usage: TokenUsage{
 			PromptTokens:     chatResp.Usage.PromptTokens,
 			CompletionTokens: chatResp.Usage.CompletionTokens,
@@ -151,10 +189,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 		Stream:      true,
 	}
 	for _, m := range req.Messages {
-		chatReq.Messages = append(chatReq.Messages, chatMessage{
-			Role:    m.Role,
-			Content: m.Content,
-		})
+		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
 	}
 
 	body, err := json.Marshal(chatReq)
@@ -184,6 +219,74 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 	go c.readSSEStream(resp.Body, ch)
 
 	return ch, nil
+}
+
+func convertToolDefinitions(defs []ToolDefinition) []toolWrapper {
+	if len(defs) == 0 {
+		return nil
+	}
+	tools := make([]toolWrapper, 0, len(defs))
+	for _, def := range defs {
+		tools = append(tools, toolWrapper{
+			Type: "function",
+			Function: functionDef{
+				Name:        def.Name,
+				Description: def.Description,
+				Parameters:  def.Parameters,
+			},
+		})
+	}
+	return tools
+}
+
+func convertMessage(m Message) chatMessage {
+	msg := chatMessage{
+		Role:       m.Role,
+		ToolCallID: m.ToolCallID,
+	}
+	if m.Content != "" || (m.Role != "assistant" && len(m.ToolCalls) == 0) {
+		content := m.Content
+		msg.Content = &content
+	}
+	if len(m.ToolCalls) > 0 {
+		msg.ToolCalls = make([]toolCallJSON, 0, len(m.ToolCalls))
+		for _, tc := range m.ToolCalls {
+			args, err := json.Marshal(tc.Arguments)
+			if err != nil {
+				args = []byte("{}")
+			}
+			msg.ToolCalls = append(msg.ToolCalls, toolCallJSON{
+				ID:   tc.ID,
+				Type: "function",
+				Function: toolCallFunctionJSON{
+					Name:      tc.Name,
+					Arguments: string(args),
+				},
+			})
+		}
+	}
+	return msg
+}
+
+func parseToolCalls(calls []toolCallJSON) ([]ToolCall, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	result := make([]ToolCall, 0, len(calls))
+	for _, call := range calls {
+		args := map[string]any{}
+		if strings.TrimSpace(call.Function.Arguments) != "" {
+			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+				return nil, fmt.Errorf("parsing tool call %s arguments: %w", call.Function.Name, err)
+			}
+		}
+		result = append(result, ToolCall{
+			ID:        call.ID,
+			Name:      call.Function.Name,
+			Arguments: args,
+		})
+	}
+	return result, nil
 }
 
 // readSSEStream reads Server-Sent Events from the response body.

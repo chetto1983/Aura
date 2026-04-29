@@ -46,6 +46,9 @@ func main() {
 
 	// Register component health providers
 	healthServer.RegisterProvider("config", &configHealthProvider{cfg: cfg})
+	if cfg.OllamaAPIKey != "" {
+		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
+	}
 
 	healthServer.Start()
 	defer func() {
@@ -84,5 +87,14 @@ func (p *configHealthProvider) HealthStatus() health.ComponentHealth {
 	return health.ComponentHealth{
 		Status: "ok",
 		Detail: "configuration loaded",
+	}
+}
+
+type webSearchHealthProvider struct{}
+
+func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
+	return health.ComponentHealth{
+		Status: "ok",
+		Detail: "Ollama web tools configured",
 	}
 }
