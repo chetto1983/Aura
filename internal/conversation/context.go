@@ -15,6 +15,7 @@ type Context struct {
 	summary          string
 	transcript       []string
 	maxTokens        int
+	maxMessages      int
 	summarizer       llm.Client
 	logger           *slog.Logger
 	totalTokensUsed  int
@@ -23,10 +24,17 @@ type Context struct {
 }
 
 // Config holds configuration for conversation context.
+//
+// MaxMessages caps the number of in-flight messages (Picobot-style hard cap).
+// When >0, the oldest non-system messages are trimmed before any token-based
+// summarization fires. This is cheap (no LLM call) and self-cleans stale tool
+// results so the wiki/sources tools — not the chat history — carry durable
+// memory. Set to 0 to disable and fall back to pure token-based limits.
 type Config struct {
-	MaxTokens  int
-	Summarizer llm.Client
-	Logger     *slog.Logger
+	MaxTokens   int
+	MaxMessages int
+	Summarizer  llm.Client
+	Logger      *slog.Logger
 }
 
 // NewContext creates a new conversation context.
@@ -36,9 +44,10 @@ func NewContext(cfg Config) *Context {
 		maxTokens = 4000
 	}
 	return &Context{
-		maxTokens:  maxTokens,
-		summarizer: cfg.Summarizer,
-		logger:     cfg.Logger,
+		maxTokens:   maxTokens,
+		maxMessages: cfg.MaxMessages,
+		summarizer:  cfg.Summarizer,
+		logger:      cfg.Logger,
 	}
 }
 
@@ -67,16 +76,27 @@ func (c *Context) AddToolResultMessage(toolCallID string, content string) {
 	c.messages = append(c.messages, llm.Message{Role: "tool", Content: content, ToolCallID: toolCallID})
 }
 
-// EnforceLimit ensures the context stays within MAX_CONTEXT_TOKENS.
-// If over 80%, it triggers summarization. If still over the hard limit,
-// it repeatedly trims oldest messages. As a last resort, it truncates
-// individual messages to fit within the limit.
+// EnforceLimit keeps the context bounded.
+//
+// Strategy (cheapest action first):
+//  1. If maxMessages>0 and we exceed it, drop oldest non-system messages
+//     down to the cap with a tool-safe boundary. No LLM call. This handles
+//     normal growth — tool blobs and chat turns from earlier sessions get
+//     evicted long before they cause trouble.
+//  2. If we're still over the token soft threshold (80%) AND a summarizer
+//     is configured, summarize. This is the slow path and is only reached
+//     when individual messages are pathologically large (e.g. a 30K-char
+//     wiki page pasted into context).
+//  3. If we're over the hard token limit, trim oldest until we fit.
+//  4. Last resort: truncate individual messages.
 func (c *Context) EnforceLimit(ctx context.Context) error {
+	c.enforceMessageCap()
+
 	if !c.IsOverLimit() && !c.ShouldSummarize() {
 		return nil
 	}
 
-	// First attempt: summarize if we can
+	// Soft threshold breached and a summarizer is configured: summarize.
 	if c.ShouldSummarize() {
 		if err := c.Summarize(ctx); err != nil {
 			return err
@@ -111,6 +131,54 @@ func (c *Context) EnforceLimit(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// enforceMessageCap drops the oldest non-system messages when the message
+// count exceeds maxMessages. The split point is moved through tool-call /
+// tool-result pairs so we never strand a tool result without its assistant
+// call (which makes the LLM API reject the next request).
+//
+// Picobot-equivalent: internal/session/manager.go:trim. The wiki/sources
+// tools provide durable memory, so dropping old in-flight history is safe.
+func (c *Context) enforceMessageCap() {
+	if c.maxMessages <= 0 {
+		return
+	}
+
+	// Don't count the system message against the cap — it's stable identity.
+	hasSystem := len(c.messages) > 0 && c.messages[0].Role == "system"
+	body := c.messages
+	if hasSystem {
+		body = body[1:]
+	}
+
+	if len(body) <= c.maxMessages {
+		return
+	}
+
+	// We want to keep the LAST maxMessages messages. The split point is the
+	// index in `body` of the first message we keep.
+	split := len(body) - c.maxMessages
+	split = toolSafeBoundary(body, split)
+	if split <= 0 {
+		return
+	}
+
+	dropped := split
+	kept := body[split:]
+	if hasSystem {
+		c.messages = append([]llm.Message{c.messages[0]}, kept...)
+	} else {
+		c.messages = append([]llm.Message{}, kept...)
+	}
+
+	if c.logger != nil {
+		c.logger.Info("trimmed by message cap",
+			"dropped", dropped,
+			"kept", len(kept),
+			"max_messages", c.maxMessages,
+		)
+	}
 }
 
 // truncateMessages truncates individual messages to bring context under the limit.

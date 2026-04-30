@@ -13,6 +13,7 @@ type Config struct {
 	Allowlist           []string `envconfig:"TELEGRAM_ALLOWLIST"`
 	AllowlistConfigured bool
 	MaxContextTokens    int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
+	MaxHistoryMessages  int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
 	SoftBudget          float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
 	HardBudget          float64 `envconfig:"HARD_BUDGET" default:"20.0"`
 	CostPerToken        float64 `envconfig:"COST_PER_TOKEN" default:"0.00001"`
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 	cfg.AllowlistConfigured = len(cfg.Allowlist) > 0
 
 	cfg.MaxContextTokens = getEnvInt("MAX_CONTEXT_TOKENS", 4000)
+	cfg.MaxHistoryMessages = getEnvInt("MAX_HISTORY_MESSAGES", 50)
 	cfg.SoftBudget = getEnvFloat("SOFT_BUDGET", 10.0)
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
 	cfg.CostPerToken = getEnvFloat("COST_PER_TOKEN", 0.00001)

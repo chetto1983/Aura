@@ -359,6 +359,117 @@ func TestEnforceLimitTrimsWhenOverHardLimit(t *testing.T) {
 	}
 }
 
+func TestEnforceLimitMessageCapDropsOldestNoLLMCall(t *testing.T) {
+	// Mock that fails if invoked — proves no summarization round-trip.
+	mock := &mockLLMClient{err: errMockSummarizerCalled}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:   1_000_000, // way above any real usage
+		MaxMessages: 5,
+		Summarizer:  mock,
+		Logger:      logger,
+	})
+	ctx.SetSystemMessage("system identity")
+
+	for i := 0; i < 12; i++ {
+		ctx.AddUserMessage("user " + string(rune('a'+i)))
+		ctx.AddAssistantMessage("asst " + string(rune('a'+i)))
+	}
+
+	if err := ctx.EnforceLimit(context.Background()); err != nil {
+		t.Fatalf("EnforceLimit error = %v", err)
+	}
+
+	msgs := ctx.Messages()
+	// system + 5 capped messages = 6
+	if len(msgs) != 6 {
+		t.Fatalf("got %d messages, want 6 (system + 5 capped)", len(msgs))
+	}
+	if msgs[0].Role != "system" {
+		t.Errorf("first message role = %q, want system", msgs[0].Role)
+	}
+	// Last message should be the last assistant we added.
+	if msgs[len(msgs)-1].Content != "asst l" {
+		t.Errorf("last message content = %q, want last asst", msgs[len(msgs)-1].Content)
+	}
+	// Transcript still has the full history.
+	if len(ctx.Transcript()) != 24 {
+		t.Errorf("transcript length = %d, want 24", len(ctx.Transcript()))
+	}
+}
+
+func TestEnforceLimitMessageCapPreservesToolCallPairs(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:   1_000_000,
+		MaxMessages: 3,
+		Logger:      logger,
+	})
+
+	ctx.AddUserMessage("u1")
+	ctx.AddAssistantMessage("a1")
+	ctx.AddUserMessage("u2")
+	// Assistant emits 2 tool calls — both tool results must remain attached.
+	ctx.AddAssistantToolCallMessage("", []llm.ToolCall{
+		{ID: "t1", Name: "x"},
+		{ID: "t2", Name: "y"},
+	})
+	ctx.AddToolResultMessage("t1", "r1")
+	ctx.AddToolResultMessage("t2", "r2")
+	ctx.AddAssistantMessage("a-final")
+
+	if err := ctx.EnforceLimit(context.Background()); err != nil {
+		t.Fatalf("EnforceLimit error = %v", err)
+	}
+
+	// We should never see an orphaned tool result. Walk and check invariant:
+	// every "tool" message must be preceded (within history) by an
+	// assistant tool-call message.
+	msgs := ctx.Messages()
+	sawAssistantWithCalls := false
+	for _, m := range msgs {
+		switch m.Role {
+		case "assistant":
+			sawAssistantWithCalls = len(m.ToolCalls) > 0
+		case "tool":
+			if !sawAssistantWithCalls {
+				t.Fatalf("orphan tool message after cap: %+v", m)
+			}
+		default:
+			sawAssistantWithCalls = false
+		}
+	}
+}
+
+func TestEnforceLimitMessageCapDisabledWhenZero(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	ctx := NewContext(Config{
+		MaxTokens:   1_000_000,
+		MaxMessages: 0, // disabled
+		Logger:      logger,
+	})
+
+	for i := 0; i < 100; i++ {
+		ctx.AddUserMessage("msg")
+	}
+
+	if err := ctx.EnforceLimit(context.Background()); err != nil {
+		t.Fatalf("EnforceLimit error = %v", err)
+	}
+	if len(ctx.messages) != 100 {
+		t.Errorf("with cap disabled expected 100 messages kept, got %d", len(ctx.messages))
+	}
+}
+
+var errMockSummarizerCalled = errMock("summarizer should not be called when message cap is sufficient")
+
+type errMock string
+
+func (e errMock) Error() string { return string(e) }
+
 func TestEnforceLimitPreservesTranscript(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 

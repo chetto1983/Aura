@@ -627,9 +627,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	// Get or create conversation context
 	ctxVal, loaded := b.ctxMap.LoadOrStore(userID, conversation.NewContext(conversation.Config{
-		MaxTokens:  b.cfg.MaxContextTokens,
-		Summarizer: b.llm,
-		Logger:     b.logger,
+		MaxTokens:   b.cfg.MaxContextTokens,
+		MaxMessages: b.cfg.MaxHistoryMessages,
+		Summarizer:  b.llm,
+		Logger:      b.logger,
 	}))
 	convCtx := ctxVal.(*conversation.Context)
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
@@ -707,9 +708,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	var lastToolResult string
 	toolDefs := b.tools.Definitions()
 	for iteration := 0; iteration < maxIterations; iteration++ {
-		if err := convCtx.EnforceLimit(ctx); err != nil {
-			b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
-		}
+		// Context bounding happens once at the start of handleConversation.
+		// Re-enforcing on every tool iteration triggered a summarizer LLM
+		// call mid-response, which both burned latency and degraded fidelity.
+		// MaxToolIterations already caps growth within a single user turn.
 
 		if b.budget != nil && b.budget.IsHardBudgetExceeded() {
 			b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
