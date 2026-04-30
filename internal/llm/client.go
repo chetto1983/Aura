@@ -51,10 +51,22 @@ type TokenUsage struct {
 }
 
 // Token represents a streaming response chunk.
+//
+// Content is a text delta — empty strings are valid (some providers emit
+// role-only chunks).
+//
+// ToolCalls is populated only on the final token (Done=true) when the
+// model decided to call tools. The streaming parser accumulates the
+// per-delta argument fragments internally and surfaces fully-formed
+// ToolCall objects here, so consumers don't need to track per-index
+// argument state. If ToolCalls is non-empty, callers should treat the
+// streamed Content as discardable scaffolding (most providers emit no
+// Content alongside tool calls) and route to the tool execution path.
 type Token struct {
-	Content string
-	Done    bool
-	Err     error
+	Content   string
+	ToolCalls []ToolCall
+	Done      bool
+	Err       error
 }
 
 // Client is the interface for LLM providers.

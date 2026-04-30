@@ -186,35 +186,20 @@ func TestOpenAIClientStream(t *testing.T) {
 		// Send SSE events
 		flusher, _ := w.(http.Flusher)
 
-		chunks := []struct {
-			content string
-			done    bool
-		}{
-			{"Hello", false},
-			{" world", false},
-			{"", true},
+		// Wire JSON written as strings rather than marshaling streamChunk
+		// so the test isn't coupled to the internal struct shape — slice
+		// 11s added a tool_calls delta field and used to break this.
+		chunks := []string{
+			`{"choices":[{"delta":{"content":"Hello"}}]}`,
+			`{"choices":[{"delta":{"content":" world"}}]}`,
+			`[DONE]`,
 		}
 
 		for _, chunk := range chunks {
-			if chunk.done {
-				w.Write([]byte("data: [DONE]\n\n"))
-			} else {
-				data, _ := json.Marshal(streamChunk{
-					Choices: []struct {
-						Delta struct {
-							Content string `json:"content"`
-						} `json:"delta"`
-						FinishReason *string `json:"finish_reason"`
-					}{
-						{Delta: struct {
-							Content string `json:"content"`
-						}{Content: chunk.content}},
-					},
-				})
-				w.Write([]byte("data: " + string(data) + "\n\n"))
-			}
+			w.Write([]byte("data: " + chunk + "\n\n"))
 			flusher.Flush()
 		}
+
 	}))
 	defer server.Close()
 
@@ -244,6 +229,74 @@ func TestOpenAIClientStream(t *testing.T) {
 
 	if result != "Hello world" {
 		t.Errorf("stream result = %q, want %q", result, "Hello world")
+	}
+}
+
+// TestOpenAIClientStreamWithToolCalls verifies slice 11s: tool-call
+// argument fragments arriving across multiple SSE chunks are accumulated
+// per-index and emitted as fully-formed ToolCall objects on the final
+// Done=true token. Stream consumers should never have to reassemble
+// partial JSON themselves.
+func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		// Realistic OpenAI streaming shape: id+name in first chunk,
+		// arguments built up in fragments, finish_reason on terminator.
+		chunks := []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"search_wiki","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"que"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ry\":"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"hi\"}"}}]}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			`[DONE]`,
+		}
+		for _, c := range chunks {
+			w.Write([]byte("data: " + c + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4"})
+	ch, err := client.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "search hi"}},
+		Tools:    []ToolDefinition{{Name: "search_wiki", Description: "search"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+
+	var content string
+	var toolCalls []ToolCall
+	for tok := range ch {
+		if tok.Err != nil {
+			t.Fatalf("token error: %v", tok.Err)
+		}
+		content += tok.Content
+		if tok.Done {
+			toolCalls = tok.ToolCalls
+			break
+		}
+	}
+
+	if content != "" {
+		t.Errorf("expected no streamed text content with tool call, got %q", content)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+	tc := toolCalls[0]
+	if tc.ID != "call_abc" {
+		t.Errorf("tool call ID = %q, want call_abc", tc.ID)
+	}
+	if tc.Name != "search_wiki" {
+		t.Errorf("tool call name = %q, want search_wiki", tc.Name)
+	}
+	if got, want := tc.Arguments["query"], "hi"; got != want {
+		t.Errorf("tool call arguments[query] = %v, want %q (full args: %#v)", got, want, tc.Arguments)
 	}
 }
 

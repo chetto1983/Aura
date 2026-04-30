@@ -97,10 +97,27 @@ type toolCallFunctionJSON struct {
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content   string              `json:"content"`
+			ToolCalls []toolCallDeltaJSON `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
+}
+
+// toolCallDeltaJSON is the per-chunk shape OpenAI emits for tool-call
+// streaming. The first chunk for a given index typically carries id,
+// type, function.name, and a (possibly empty) function.arguments prefix;
+// subsequent chunks carry only function.arguments fragments that the
+// reader concatenates. Multiple tool calls in the same response are
+// distinguished by `index`.
+type toolCallDeltaJSON struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 // Send makes a non-streaming call to the LLM.
@@ -188,6 +205,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 		Temperature: req.Temperature,
 		Stream:      true,
 	}
+	chatReq.Tools = convertToolDefinitions(req.Tools)
 	for _, m := range req.Messages {
 		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
 	}
@@ -290,11 +308,52 @@ func parseToolCalls(calls []toolCallJSON) ([]ToolCall, error) {
 }
 
 // readSSEStream reads Server-Sent Events from the response body.
+//
+// Tool-call streaming protocol (OpenAI-compat): the model emits a series
+// of delta chunks where the first chunk for each tool call slot carries
+// id/type/function.name and possibly a leading function.arguments
+// fragment, and subsequent chunks for the same `index` carry only
+// further function.arguments fragments. We accumulate per-index state
+// here so the caller never has to reassemble partial argument JSON.
+// On terminal chunk (FinishReason set or [DONE]) we materialize the
+// accumulated state as fully-parsed []ToolCall and emit it on the final
+// Done=true token.
 func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 	defer close(ch)
 	defer body.Close()
 
+	type accum struct {
+		id      string
+		name    string
+		argsBuf strings.Builder
+	}
+	toolBuf := map[int]*accum{}
+	var indices []int // preserve insertion order so emitted ToolCalls are stable
+
+	finish := func() {
+		if len(toolBuf) == 0 {
+			ch <- Token{Done: true}
+			return
+		}
+		calls := make([]ToolCall, 0, len(toolBuf))
+		for _, idx := range indices {
+			a := toolBuf[idx]
+			args := map[string]any{}
+			if s := strings.TrimSpace(a.argsBuf.String()); s != "" {
+				if err := json.Unmarshal([]byte(s), &args); err != nil {
+					ch <- Token{Err: fmt.Errorf("parsing tool call %s arguments: %w", a.name, err), Done: true}
+					return
+				}
+			}
+			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
+		}
+		ch <- Token{ToolCalls: calls, Done: true}
+	}
+
 	scanner := bufio.NewScanner(body)
+	// Default scanner buffer (64KB) is too small for chunked streams that
+	// occasionally land on a single oversized line.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -302,7 +361,7 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			ch <- Token{Done: true}
+			finish()
 			return
 		}
 
@@ -310,16 +369,34 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		choice := chunk.Choices[0]
 
-		if len(chunk.Choices) > 0 {
-			content := chunk.Choices[0].Delta.Content
-			if content != "" {
-				ch <- Token{Content: content}
+		if choice.Delta.Content != "" {
+			ch <- Token{Content: choice.Delta.Content}
+		}
+		for _, tc := range choice.Delta.ToolCalls {
+			a, ok := toolBuf[tc.Index]
+			if !ok {
+				a = &accum{}
+				toolBuf[tc.Index] = a
+				indices = append(indices, tc.Index)
 			}
-			if chunk.Choices[0].FinishReason != nil {
-				ch <- Token{Done: true}
-				return
+			if tc.ID != "" {
+				a.id = tc.ID
 			}
+			if tc.Function.Name != "" {
+				a.name = tc.Function.Name
+			}
+			if tc.Function.Arguments != "" {
+				a.argsBuf.WriteString(tc.Function.Arguments)
+			}
+		}
+		if choice.FinishReason != nil {
+			finish()
+			return
 		}
 	}
 
@@ -327,5 +404,5 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		ch <- Token{Err: fmt.Errorf("stream read: %w", err), Done: true}
 		return
 	}
-	ch <- Token{Done: true}
+	finish()
 }
