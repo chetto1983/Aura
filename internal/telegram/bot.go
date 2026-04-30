@@ -17,6 +17,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -31,24 +32,25 @@ import (
 
 // Bot wraps the telebot instance with allowlist access control and LLM integration.
 type Bot struct {
-	bot     *tele.Bot
-	cfg     *config.Config
-	logger  *slog.Logger
-	llm     llm.Client
-	wiki    *wiki.Store
-	search  *search.Engine
-	tools   *tools.Registry
-	budget  *budget.Tracker
-	sources *source.Store
-	ocr     *ocr.Client
-	skills  *auraskills.Loader
-	docs    *docHandler
-	sched   *scheduler.Scheduler
-	schedDB *scheduler.Store
-	authDB  *auth.Store  // dashboard bearer-token store (slice 10d)
-	api     http.Handler // read-only JSON API for the dashboard, mounted on the health server
-	active  sync.Map     // maps userID string -> bool (active conversation tracking)
-	ctxMap  sync.Map     // maps userID string -> *conversation.Context
+	bot        *tele.Bot
+	cfg        *config.Config
+	logger     *slog.Logger
+	llm        llm.Client
+	wiki       *wiki.Store
+	search     *search.Engine
+	tools      *tools.Registry
+	budget     *budget.Tracker
+	sources    *source.Store
+	ocr        *ocr.Client
+	skills     *auraskills.Loader
+	docs       *docHandler
+	sched      *scheduler.Scheduler
+	schedDB    *scheduler.Store
+	authDB     *auth.Store    // dashboard bearer-token store (slice 10d)
+	mcpClients []*mcp.Client  // active MCP server connections (slice 11a)
+	api        http.Handler   // read-only JSON API for the dashboard, mounted on the health server
+	active     sync.Map       // maps userID string -> bool (active conversation tracking)
+	ctxMap     sync.Map       // maps userID string -> *conversation.Context
 }
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
@@ -192,6 +194,36 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 
+	// Slice 11a: MCP servers. Each configured server is contacted on
+	// startup, its tools are discovered via tools/list and registered as
+	// `mcp_<server>_<tool>` so the LLM can call them like native tools.
+	// Connection failures are warned but never fatal — a flaky third-party
+	// MCP server should not stop the bot.
+	mcpServers, mcpErr := mcp.LoadServers(cfg.MCPServersPath)
+	if mcpErr != nil {
+		logger.Warn("MCP config load failed; continuing without MCP", "error", mcpErr, "path", cfg.MCPServersPath)
+	}
+	mcpClients := make([]*mcp.Client, 0, len(mcpServers))
+	for name, srv := range mcpServers {
+		var client *mcp.Client
+		var err error
+		switch {
+		case srv.Command != "":
+			client, err = mcp.NewStdioClient(name, srv.Command, srv.Args)
+		case srv.URL != "":
+			client, err = mcp.NewHTTPClient(name, srv.URL, srv.Headers)
+		}
+		if err != nil {
+			logger.Warn("MCP server unavailable", "server", name, "error", err)
+			continue
+		}
+		mcpClients = append(mcpClients, client)
+		for _, t := range client.Tools() {
+			toolRegistry.Register(tools.NewMCPTool(client, name, t))
+		}
+		logger.Info("MCP server registered", "server", name, "tools", len(client.Tools()))
+	}
+
 	// Slice 10d: dashboard auth. Open the api_tokens table on the same
 	// SQLite file the scheduler uses — saves a second file path config
 	// and keeps everything backup-able as a single artifact.
@@ -201,18 +233,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	}
 
 	b := &Bot{
-		bot:     tb,
-		cfg:     cfg,
-		logger:  logger,
-		llm:     client,
-		wiki:    wikiStore,
-		search:  searchEngine,
-		tools:   toolRegistry,
-		sources: sourceStore,
-		ocr:     ocrClient,
-		skills:  skillLoader,
-		schedDB: schedStore,
-		authDB:  authStore,
+		bot:        tb,
+		cfg:        cfg,
+		logger:     logger,
+		llm:        client,
+		wiki:       wikiStore,
+		search:     searchEngine,
+		tools:      toolRegistry,
+		sources:    sourceStore,
+		ocr:        ocrClient,
+		skills:     skillLoader,
+		schedDB:    schedStore,
+		authDB:     authStore,
+		mcpClients: mcpClients,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
@@ -343,6 +376,9 @@ func (b *Bot) Stop() {
 	}
 	if b.authDB != nil {
 		_ = b.authDB.Close()
+	}
+	for _, c := range b.mcpClients {
+		_ = c.Close()
 	}
 	b.bot.Stop()
 }
