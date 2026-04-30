@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/ocr"
@@ -34,10 +35,14 @@ type SourceStore interface {
 	Update(id string, mutator func(*source.Source) error) (*source.Source, error)
 }
 
-// SchedulerStore is the read-side surface for scheduler.Store.
+// SchedulerStore is the surface for scheduler.Store. Upsert/Cancel are used
+// only by the write endpoints (POST /tasks, POST /tasks/{name}/cancel); they
+// live in the same interface so Deps wiring stays a single field.
 type SchedulerStore interface {
 	List(ctx context.Context, statusFilter scheduler.Status) ([]*scheduler.Task, error)
 	GetByName(ctx context.Context, name string) (*scheduler.Task, error)
+	Upsert(ctx context.Context, t *scheduler.Task) (*scheduler.Task, error)
+	Cancel(ctx context.Context, name string) (bool, error)
 }
 
 // Deps is the set of stores the router handlers operate on.
@@ -45,6 +50,9 @@ type SchedulerStore interface {
 // OCR and Ingest are optional — when nil, the upload endpoint accepts the
 // file but stops at "stored" status. Bot.New populates them when
 // MISTRAL_API_KEY is configured.
+//
+// Location is used by POST /tasks to resolve daily HH:MM into the next UTC
+// run. Nil means time.Local — matching the LLM-facing schedule_task tool.
 type Deps struct {
 	Wiki        WikiStore
 	Sources     SourceStore
@@ -52,6 +60,7 @@ type Deps struct {
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100
+	Location    *time.Location
 	Logger      *slog.Logger
 }
 
@@ -79,6 +88,16 @@ func NewRouter(deps Deps) http.Handler {
 	// bearer auth, so a LAN-exposed listener (HTTP_PORT=:8080 etc) can't
 	// accept writes from other devices.
 	mux.Handle("POST /sources/upload", requireLoopback(deps.Logger, handleSourceUpload(deps)))
+
+	// Slice 10c: write endpoints. All loopback-gated for the same reason as
+	// /sources/upload. The dashboard uses these for ingest/reocr/cancel/
+	// rebuild/log/upsert actions.
+	mux.Handle("POST /sources/{id}/ingest", requireLoopback(deps.Logger, handleSourceIngest(deps)))
+	mux.Handle("POST /sources/{id}/reocr", requireLoopback(deps.Logger, handleSourceReocr(deps)))
+	mux.Handle("POST /wiki/index/rebuild", requireLoopback(deps.Logger, handleWikiRebuild(deps)))
+	mux.Handle("POST /wiki/log", requireLoopback(deps.Logger, handleWikiAppendLog(deps)))
+	mux.Handle("POST /tasks", requireLoopback(deps.Logger, handleTaskUpsert(deps)))
+	mux.Handle("POST /tasks/{name}/cancel", requireLoopback(deps.Logger, handleTaskCancel(deps)))
 
 	mux.HandleFunc("GET /tasks", handleTaskList(deps))
 	mux.HandleFunc("GET /tasks/{name}", handleTaskGet(deps))

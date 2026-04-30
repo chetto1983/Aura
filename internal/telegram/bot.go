@@ -259,6 +259,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		OCR:         ocrClient,
 		Ingest:      ingestPipeline,
 		MaxUploadMB: cfg.OCRMaxFileMB,
+		Location:    time.Local,
 		Logger:      logger,
 	})
 
