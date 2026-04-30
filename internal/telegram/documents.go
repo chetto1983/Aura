@@ -28,10 +28,12 @@ const docConcurrencyLimit = 2
 const docOCRTimeout = 5 * time.Minute
 
 // AfterOCRHook is invoked once a source reaches StatusOCRComplete on disk.
-// Slice 6 (ingest) wires the LLM compile step here. Returning an error is
-// logged but does not surface to the user — the OCR step is already
-// considered successful by then.
-type AfterOCRHook func(ctx context.Context, src *source.Source) error
+// Slice 6 wires the ingest pipeline here. The optional note (e.g.
+// "compiled as [[source-src-...]]") is appended to the final progress
+// message so the user sees the auto-ingest result without a follow-up
+// message. Returning an error is logged but the OCR result is already
+// durable on disk; the user falls back to "ready for ingest".
+type AfterOCRHook func(ctx context.Context, src *source.Source) (note string, err error)
 
 // docHandlerConfig is the per-Bot wiring for slice 4 (Telegram → OCR).
 type docHandlerConfig struct {
@@ -213,9 +215,6 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 		return
 	}
 
-	editor.set(fmt.Sprintf("✅ Done · %s · %d page%s · %s · ready for ingest",
-		src.ID, pageCount, pluralS(pageCount), formatDuration(duration)))
-
 	h.logger.Info("pdf processed",
 		"user_id", userID,
 		"source_id", src.ID,
@@ -225,15 +224,24 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 		"ocr_duration_ms", duration.Milliseconds(),
 	)
 
+	tail := "ready for ingest"
 	if h.afterOCR != nil {
-		// Hook for slice 6 (ingest_source). Errors are logged but not
-		// surfaced — OCR is already complete on disk.
+		// Slice 6 plugs the ingest pipeline here. Errors are logged but not
+		// surfaced — OCR is already complete on disk; the user falls back
+		// to "ready for ingest" so they can retry via ingest_source.
 		hookCtx, hookCancel := context.WithTimeout(ctx, docOCRTimeout)
-		defer hookCancel()
-		if err := h.afterOCR(hookCtx, updated); err != nil {
+		note, err := h.afterOCR(hookCtx, updated)
+		hookCancel()
+		switch {
+		case err != nil:
 			h.logger.Warn("afterOCR hook failed", "source_id", src.ID, "err", err)
+		case note != "":
+			tail = note
 		}
 	}
+
+	editor.set(fmt.Sprintf("✅ Done · %s · %d page%s · %s · %s",
+		src.ID, pageCount, pluralS(pageCount), formatDuration(duration), tail))
 }
 
 // validatePDF rejects non-PDF MIME types and oversized uploads up front. The

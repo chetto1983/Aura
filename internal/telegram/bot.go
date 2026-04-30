@@ -12,6 +12,7 @@ import (
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/search"
@@ -117,6 +118,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		logger.Info("OCR disabled (set OCR_ENABLED=true and MISTRAL_API_KEY to enable)")
 	}
 
+	// Ingest pipeline (slice 6) compiles ocr_complete sources into wiki
+	// summary pages. Always built — it has no external deps beyond the
+	// source and wiki stores, both of which are already present.
+	ingestPipeline, err := ingest.New(ingest.Config{
+		Sources: sourceStore,
+		Wiki:    wikiStore,
+		Search:  searchEngine,
+		Logger:  logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
+	}
+
 	toolRegistry := tools.NewRegistry(logger)
 	if cfg.OllamaAPIKey != "" {
 		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
@@ -138,6 +152,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	if ocrClient != nil {
 		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
 	}
+	toolRegistry.Register(tools.NewIngestSourceTool(ingestPipeline))
 
 	b := &Bot{
 		bot:     tb,
@@ -163,10 +178,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		MaxFileMB: cfg.OCRMaxFileMB,
 		Allowlist: cfg.IsAllowlisted,
 		Logger:    logger,
-		// AfterOCR is nil in slice 4. Slice 6 (ingest_source) wires the LLM
-		// compile step here so the same progress message can continue to
-		// "✅ Compiled into wiki: …" after OCR finishes.
-		AfterOCR: nil,
+		// Slice 6: auto-ingest hook. Compile every freshly-OCR'd source
+		// into a wiki summary page so the user sees a [[source-src-...]]
+		// link in the final progress message instead of "ready for ingest".
+		AfterOCR: ingestPipeline.AfterOCR,
 	})
 
 	b.registerHandlers()
