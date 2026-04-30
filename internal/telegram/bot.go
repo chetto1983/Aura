@@ -89,6 +89,18 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	var searchEngine *search.Engine
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn := createEmbeddingFunc(cfg)
+		// Slice 11h: wrap the upstream embedding fn with a SHA-keyed
+		// SQLite cache so unchanged wiki pages don't re-embed on every
+		// restart. Same cache also serves query embeddings, so repeat
+		// questions skip the Mistral round trip too.
+		if cfg.DBPath != "" {
+			cache, err := search.OpenEmbedCache(cfg.DBPath, cfg.EmbeddingModel, embedFn, logger)
+			if err != nil {
+				logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
+			} else {
+				embedFn = cache.EmbedFunc()
+			}
+		}
 		var se *search.Engine
 		var err error
 		if cfg.DBPath != "" {

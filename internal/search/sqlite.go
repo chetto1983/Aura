@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -117,70 +115,6 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 	}
 
 	return results, rows.Err()
-}
-
-func (s *sqliteSearcher) indexWikiDir(ctx context.Context, wikiDir string, logger *slog.Logger) (int, error) {
-	entries, err := os.ReadDir(wikiDir)
-	if err != nil {
-		return 0, fmt.Errorf("reading wiki directory: %w", err)
-	}
-
-	// Build slug -> file mapping, preferring .md over .yaml
-	type fileInfo struct {
-		name string
-		ext  string
-	}
-	slugFiles := make(map[string]fileInfo)
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		var slug, ext string
-		if strings.HasSuffix(name, ".md") {
-			slug = strings.TrimSuffix(name, ".md")
-			ext = ".md"
-		} else if strings.HasSuffix(name, ".yaml") {
-			slug = strings.TrimSuffix(name, ".yaml")
-			ext = ".yaml"
-		} else {
-			continue
-		}
-		if slug == "index" || slug == "log" {
-			continue
-		}
-		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
-			continue
-		}
-		slugFiles[slug] = fileInfo{name: name, ext: ext}
-	}
-
-	count := 0
-	for slug, fi := range slugFiles {
-		filePath := filepath.Join(wikiDir, fi.name)
-
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			logger.Warn("failed to read wiki page for sqlite indexing", "slug", slug, "error", err)
-			continue
-		}
-
-		var title, content string
-		if fi.ext == ".md" {
-			title, content = extractFromMD(data)
-		} else {
-			title = extractTitle(data)
-			content = title + "\n" + string(data)
-		}
-
-		if err := s.indexDocument(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
-			logger.Warn("failed to index in sqlite", "slug", slug, "error", err)
-			continue
-		}
-		count++
-	}
-
-	return count, nil
 }
 
 // StoreConversation saves a conversation message to SQLite.

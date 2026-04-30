@@ -10,28 +10,6 @@ import (
 	"github.com/philippgille/chromem-go"
 )
 
-func newTestEngine(t *testing.T) *Engine {
-	t.Helper()
-	// Use a simple hash-based embedding for tests — no external API needed
-	embedFn := chromem.NewEmbeddingFuncOpenAICompat("", "", "text-embedding-3-small", nil)
-	// For tests without an API key, chromem will fall back gracefully
-	// We use a persistent test directory with wiki files
-	tmpDir := t.TempDir()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	db := chromem.NewDB()
-	coll, err := db.CreateCollection("wiki", nil, embedFn)
-	if err != nil {
-		t.Skipf("skipping search test: cannot create chromem collection: %v", err)
-	}
-
-	return &Engine{
-		coll:    coll,
-		wikiDir: tmpDir,
-		logger:  logger,
-	}
-}
-
 func TestFormatResults(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -181,6 +159,9 @@ func TestResultStruct(t *testing.T) {
 	}
 	if r.Title != "Test Page" {
 		t.Errorf("expected Title 'Test Page', got %q", r.Title)
+	}
+	if r.Content != "Some content" {
+		t.Errorf("expected Content 'Some content', got %q", r.Content)
 	}
 	if r.Score != 0.95 {
 		t.Errorf("expected Score 0.95, got %f", r.Score)
