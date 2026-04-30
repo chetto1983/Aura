@@ -18,6 +18,7 @@ import type {
   SkillInstallRequest,
   SkillInstallResponse,
   SkillDeleteResponse,
+  MCPInvokeResponse,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -199,4 +200,11 @@ export const api = {
     post<SkillInstallResponse>('/skills/install', req),
   deleteSkill: (name: string) =>
     post<SkillDeleteResponse>(`/skills/${encodeURIComponent(name)}/delete`),
+
+  // ---- mcp tool invocation (slice 11d) ----
+  invokeMCPTool: (server: string, tool: string, args: Record<string, unknown>) =>
+    post<MCPInvokeResponse>(
+      `/mcp/${encodeURIComponent(server)}/tools/${encodeURIComponent(tool)}`,
+      args,
+    ),
 };

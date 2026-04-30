@@ -205,6 +205,17 @@ type SkillDeleteResponse struct {
 	Name string `json:"name"`
 }
 
+// MCPInvokeResponse is the body of POST /mcp/{server}/tools/{tool}.
+// OK=true means the server returned success. OK=false means either the
+// server returned isError:true (IsError=true), the request timed out,
+// or the transport failed (IsError=false).
+type MCPInvokeResponse struct {
+	OK      bool   `json:"ok"`
+	IsError bool   `json:"is_error,omitempty"`
+	Output  string `json:"output,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`

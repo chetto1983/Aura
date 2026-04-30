@@ -151,6 +151,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /skills/install", handleSkillInstall(deps))
 	mux.HandleFunc("POST /skills/{name}/delete", handleSkillDelete(deps))
 
+	// Slice 11d: invoke an MCP tool from the dashboard. Bearer auth is
+	// the gate — operators trust the servers they wired into mcp.json
+	// since the LLM can already call them, so no extra admin flag.
+	mux.HandleFunc("POST /mcp/{server}/tools/{tool}", handleMCPInvoke(deps))
+
 	// Slice 10d: auth endpoints. Both authed — there's intentionally no
 	// public /auth/login route. Tokens enter the dashboard through the
 	// Telegram bot, where the user is already authenticated.

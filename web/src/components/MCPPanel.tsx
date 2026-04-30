@@ -1,13 +1,14 @@
 import { useCallback, useState } from 'react';
-import { Plug, ChevronDown, ChevronRight, Server, Globe } from 'lucide-react';
+import { Plug, ChevronDown, ChevronRight, Server, Globe, Play, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { MCPServerSummary, MCPToolInfo } from '@/types/api';
+import type { MCPServerSummary, MCPToolInfo, MCPInvokeResponse } from '@/types/api';
 
-// MCPPanel surfaces every MCP (Model Context Protocol) server Aura
-// connected to at boot and the tools each one advertised. Read-only —
-// invocation from the dashboard arrives in slice 11d.
+// MCPPanel surfaces every MCP server Aura connected to at boot, the
+// tools they advertise, and (slice 11d) lets the operator invoke each
+// tool with a JSON argument body straight from the dashboard.
 export function MCPPanel() {
   const fetcher = useCallback(() => api.mcpServers(), []);
   const { data, error, loading, refetch } = useApi(fetcher);
@@ -121,32 +122,170 @@ function ServerCard({
 }
 
 function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
-  const [expanded, setExpanded] = useState(false);
+  const [showSchema, setShowSchema] = useState(false);
+  const [showRun, setShowRun] = useState(false);
+  const [args, setArgs] = useState<string>(() => seedArgsFromSchema(tool.input_schema));
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<MCPInvokeResponse | null>(null);
+  const [parseErr, setParseErr] = useState<string | null>(null);
+
   const hasSchema = tool.input_schema && Object.keys(tool.input_schema).length > 0;
+
+  const handleRun = useCallback(async () => {
+    setParseErr(null);
+    let parsed: Record<string, unknown> = {};
+    const trimmed = args.trim();
+    if (trimmed !== '') {
+      try {
+        const v = JSON.parse(trimmed);
+        if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+          setParseErr('arguments must be a JSON object');
+          return;
+        }
+        parsed = v as Record<string, unknown>;
+      } catch (e) {
+        setParseErr(e instanceof Error ? e.message : 'invalid JSON');
+        return;
+      }
+    }
+    setRunning(true);
+    setResult(null);
+    const toastId = toast.loading(`Invoking mcp_${server}_${tool.name}…`);
+    try {
+      const resp = await api.invokeMCPTool(server, tool.name, parsed);
+      setResult(resp);
+      if (resp.ok) {
+        toast.success(`mcp_${server}_${tool.name} returned`, { id: toastId });
+      } else if (resp.is_error) {
+        toast.error('Tool returned isError', { id: toastId, description: resp.error?.slice(0, 200) });
+      } else {
+        toast.error('Tool transport failed', { id: toastId, description: resp.error?.slice(0, 200) });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Invoke failed: ${msg}`, { id: toastId });
+      setResult({ ok: false, error: msg });
+    } finally {
+      setRunning(false);
+    }
+  }, [args, server, tool.name]);
+
   return (
     <div className="px-12 py-2.5">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="font-mono text-xs font-medium">mcp_{server}_{tool.name}</span>
         {hasSchema && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => setShowSchema((v) => !v)}
             className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
           >
-            {expanded ? 'hide schema' : 'show schema'}
+            {showSchema ? 'hide schema' : 'show schema'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setShowRun((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10"
+        >
+          <Play size={11} />
+          {showRun ? 'Hide' : 'Run'}
+        </button>
       </div>
       {tool.description && (
         <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p>
       )}
-      {expanded && hasSchema && (
+      {showSchema && hasSchema && (
         <pre className="mt-2 rounded-md border bg-background p-2 text-[10px] font-mono leading-relaxed overflow-x-auto">
           {JSON.stringify(tool.input_schema, null, 2)}
         </pre>
       )}
+      {showRun && (
+        <div className="mt-2 space-y-2 rounded-md border bg-muted/10 p-3">
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Arguments (JSON object)</label>
+          <textarea
+            value={args}
+            onChange={(e) => setArgs(e.target.value)}
+            spellCheck={false}
+            rows={Math.min(10, Math.max(3, args.split('\n').length))}
+            className="w-full rounded-md border bg-background p-2 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          {parseErr && (
+            <div className="flex items-center gap-1.5 text-[11px] text-destructive">
+              <AlertTriangle size={12} />
+              {parseErr}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleRun()}
+              disabled={running}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+              {running ? 'Calling…' : 'Invoke'}
+            </button>
+          </div>
+          {result && <ToolResult result={result} />}
+        </div>
+      )}
     </div>
   );
+}
+
+function ToolResult({ result }: { result: MCPInvokeResponse }) {
+  const tone =
+    result.ok ? 'border-emerald-500/30 bg-emerald-500/5' :
+    result.is_error ? 'border-amber-500/30 bg-amber-500/5' :
+    'border-destructive/30 bg-destructive/5';
+  const Icon = result.ok ? CheckCircle2 : AlertTriangle;
+  const iconColor = result.ok ? 'text-emerald-600 dark:text-emerald-400' : result.is_error ? 'text-amber-600 dark:text-amber-400' : 'text-destructive';
+  const title = result.ok ? 'success' : result.is_error ? 'tool returned isError' : 'transport / timeout';
+  const body = result.ok ? result.output : (result.error || result.output || '(no detail)');
+  return (
+    <div className={`rounded-md border ${tone} p-2`}>
+      <div className={`flex items-center gap-1.5 text-[11px] font-medium ${iconColor}`}>
+        <Icon size={12} />
+        {title}
+      </div>
+      {body && (
+        <pre className="mt-1.5 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-muted-foreground max-h-64 overflow-y-auto">
+          {body}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// seedArgsFromSchema produces a starter JSON body for the textarea so
+// the operator doesn't have to type out every property name. Reads
+// inputSchema.properties and emits zero-values per declared type.
+function seedArgsFromSchema(schema: Record<string, unknown> | undefined): string {
+  if (!schema) return '{}';
+  const props = schema.properties as Record<string, { type?: string }> | undefined;
+  if (!props || Object.keys(props).length === 0) return '{}';
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(props)) {
+    switch (v?.type) {
+      case 'integer':
+      case 'number':
+        out[k] = 0;
+        break;
+      case 'boolean':
+        out[k] = false;
+        break;
+      case 'array':
+        out[k] = [];
+        break;
+      case 'object':
+        out[k] = {};
+        break;
+      default:
+        out[k] = '';
+    }
+  }
+  return JSON.stringify(out, null, 2);
 }
 
 function MCPSkeleton() {

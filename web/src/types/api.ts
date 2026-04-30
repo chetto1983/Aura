@@ -163,6 +163,14 @@ export interface SkillDeleteResponse {
   name: string;
 }
 
+// Slice 11d — invoke MCP tools from the dashboard.
+export interface MCPInvokeResponse {
+  ok: boolean;
+  is_error?: boolean;
+  output?: string;
+  error?: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';
