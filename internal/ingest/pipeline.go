@@ -208,7 +208,10 @@ func buildSummaryBody(src *source.Source, preview string) string {
 	fmt.Fprintf(&sb, "- Source ID: `%s`\n", src.ID)
 	fmt.Fprintf(&sb, "- Filename: %s\n", src.Filename)
 	fmt.Fprintf(&sb, "- Kind: %s\n", src.Kind)
-	fmt.Fprintf(&sb, "- Status: %s\n", src.Status)
+	// Compile only renders on success and the status flip happens right after
+	// WritePage; render the post-flip value so the page never disagrees with
+	// source.json.
+	fmt.Fprintf(&sb, "- Status: %s\n", source.StatusIngested)
 	fmt.Fprintf(&sb, "- Size: %d bytes\n", src.SizeBytes)
 	fmt.Fprintf(&sb, "- SHA256: `%s`\n", src.SHA256)
 	if src.OCRModel != "" {

@@ -131,6 +131,9 @@ func TestCompile_HappyPath(t *testing.T) {
 		"Filename: paper.pdf",
 		"Pages: 1",
 		"OCR model: mistral-ocr-latest",
+		// Body must reflect the post-flip status, not the pre-flip value — a
+		// re-read of an ingested source page should never say ocr_complete.
+		"Status: ingested",
 		"## Raw OCR",
 		"## Preview",
 		"The quick brown fox",
