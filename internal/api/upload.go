@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -36,32 +34,6 @@ type UploadResponse struct {
 	IngestNote string   `json:"ingest_note,omitempty"`
 	OCRError   string   `json:"ocr_error,omitempty"`
 	Note       string   `json:"note,omitempty"` // human-friendly summary line
-}
-
-// requireLoopback gates a handler so only requests from 127.0.0.1 / ::1 /
-// loopback go through. Returns 403 otherwise. Used to keep write endpoints
-// safe on a LAN-exposed listener until slice 10d ships bearer auth.
-//
-// X-Forwarded-For is intentionally NOT honored: this is a direct-mount
-// behind no reverse proxy, so trusting the client header would defeat the
-// gate.
-func requireLoopback(logger *slog.Logger, h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			host = r.RemoteAddr
-		}
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			if logger != nil {
-				logger.Warn("api: write endpoint refused non-loopback request",
-					"remote_addr", r.RemoteAddr, "path", r.URL.Path)
-			}
-			writeError(w, logger, http.StatusForbidden, "write endpoints only accept loopback requests until auth ships")
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
 }
 
 // handleSourceUpload accepts a multipart PDF upload and runs the same

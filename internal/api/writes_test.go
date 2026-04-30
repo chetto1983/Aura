@@ -31,48 +31,6 @@ func (e *testEnv) doLocal(method, path string, body []byte) *httptest.ResponseRe
 	return rr
 }
 
-// doRemote is the negative-case sibling of doLocal — RemoteAddr stays at
-// the httptest default so requireLoopback rejects.
-func (e *testEnv) doRemote(method, path string, body []byte) *httptest.ResponseRecorder {
-	e.t.Helper()
-	var req *http.Request
-	if body == nil {
-		req = httptest.NewRequest(method, path, nil)
-	} else {
-		req = httptest.NewRequest(method, path, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rr := httptest.NewRecorder()
-	e.router.ServeHTTP(rr, req)
-	return rr
-}
-
-// ---- requireLoopback ----------------------------------------------------
-
-func TestWrite_RejectsNonLoopback(t *testing.T) {
-	e := newTestEnv(t)
-	cases := []struct {
-		method string
-		path   string
-		body   []byte
-	}{
-		{"POST", "/wiki/index/rebuild", nil},
-		{"POST", "/wiki/log", []byte(`{"action":"test"}`)},
-		{"POST", "/sources/src_0123456789abcdef/ingest", nil},
-		{"POST", "/sources/src_0123456789abcdef/reocr", nil},
-		{"POST", "/tasks", []byte(`{"name":"x","kind":"reminder"}`)},
-		{"POST", "/tasks/x/cancel", nil},
-	}
-	for _, c := range cases {
-		t.Run(c.method+" "+c.path, func(t *testing.T) {
-			rr := e.doRemote(c.method, c.path, c.body)
-			if rr.Code != http.StatusForbidden {
-				t.Errorf("status %d, want 403; body=%s", rr.Code, rr.Body)
-			}
-		})
-	}
-}
-
 // ---- POST /wiki/index/rebuild ------------------------------------------
 
 func TestWikiRebuild_OK(t *testing.T) {

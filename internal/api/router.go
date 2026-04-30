@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
@@ -59,14 +60,23 @@ type Deps struct {
 	Scheduler   SchedulerStore
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
+	Auth        *auth.Store
+	Allowlist   auth.AllowlistFunc
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100
 	Location    *time.Location
 	Logger      *slog.Logger
 }
 
-// NewRouter returns the read-only API as an http.Handler. Routes do not
-// include the /api prefix — callers should mount via http.StripPrefix so
-// the package stays mount-agnostic and tests can hit `/health` directly.
+// NewRouter returns the API as an http.Handler. Routes do not include
+// the /api prefix — callers should mount via http.StripPrefix so the
+// package stays mount-agnostic and tests can hit `/health` directly.
+//
+// When deps.Auth is non-nil the entire mux is wrapped in RequireBearer.
+// No /api/* route is publicly reachable; tokens are minted out-of-band
+// via the request_dashboard_token LLM tool and delivered through the
+// existing Telegram channel. When deps.Auth is nil (test fixtures) the
+// router is unwrapped so test cases don't have to mint a token to drive
+// the read endpoints.
 func NewRouter(deps Deps) http.Handler {
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
@@ -84,24 +94,32 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /sources/{id}/ocr", handleSourceOCR(deps))
 	mux.HandleFunc("GET /sources/{id}/raw", handleSourceRaw(deps))
 
-	// Slice 10b mini: browser PDF upload. Loopback-gated until 10d ships
-	// bearer auth, so a LAN-exposed listener (HTTP_PORT=:8080 etc) can't
-	// accept writes from other devices.
-	mux.Handle("POST /sources/upload", requireLoopback(deps.Logger, handleSourceUpload(deps)))
+	// Browser PDF upload — same write surface as Telegram. Auth-gated by
+	// the outer middleware below; the original requireLoopback gate from
+	// 10c.1 was retired when bearer auth landed.
+	mux.HandleFunc("POST /sources/upload", handleSourceUpload(deps))
 
-	// Slice 10c: write endpoints. All loopback-gated for the same reason as
-	// /sources/upload. The dashboard uses these for ingest/reocr/cancel/
-	// rebuild/log/upsert actions.
-	mux.Handle("POST /sources/{id}/ingest", requireLoopback(deps.Logger, handleSourceIngest(deps)))
-	mux.Handle("POST /sources/{id}/reocr", requireLoopback(deps.Logger, handleSourceReocr(deps)))
-	mux.Handle("POST /wiki/index/rebuild", requireLoopback(deps.Logger, handleWikiRebuild(deps)))
-	mux.Handle("POST /wiki/log", requireLoopback(deps.Logger, handleWikiAppendLog(deps)))
-	mux.Handle("POST /tasks", requireLoopback(deps.Logger, handleTaskUpsert(deps)))
-	mux.Handle("POST /tasks/{name}/cancel", requireLoopback(deps.Logger, handleTaskCancel(deps)))
+	// Slice 10c: write endpoints, also auth-gated.
+	mux.HandleFunc("POST /sources/{id}/ingest", handleSourceIngest(deps))
+	mux.HandleFunc("POST /sources/{id}/reocr", handleSourceReocr(deps))
+	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
+	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
+	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))
+	mux.HandleFunc("POST /tasks/{name}/cancel", handleTaskCancel(deps))
 
 	mux.HandleFunc("GET /tasks", handleTaskList(deps))
 	mux.HandleFunc("GET /tasks/{name}", handleTaskGet(deps))
 
+	// Slice 10d: auth endpoints. Both authed — there's intentionally no
+	// public /auth/login route. Tokens enter the dashboard through the
+	// Telegram bot's request_dashboard_token tool, where the user is
+	// already authenticated.
+	mux.HandleFunc("GET /auth/whoami", handleAuthWhoami(deps))
+	mux.HandleFunc("POST /auth/logout", handleAuthLogout(deps))
+
+	if deps.Auth != nil {
+		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)
+	}
 	return mux
 }
 

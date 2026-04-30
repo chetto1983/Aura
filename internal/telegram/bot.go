@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
@@ -42,6 +43,7 @@ type Bot struct {
 	docs    *docHandler
 	sched   *scheduler.Scheduler
 	schedDB *scheduler.Store
+	authDB  *auth.Store  // dashboard bearer-token store (slice 10d)
 	api     http.Handler // read-only JSON API for the dashboard, mounted on the health server
 	active  sync.Map     // maps userID string -> bool (active conversation tracking)
 	ctxMap  sync.Map     // maps userID string -> *conversation.Context
@@ -184,6 +186,14 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 
+	// Slice 10d: dashboard auth. Open the api_tokens table on the same
+	// SQLite file the scheduler uses — saves a second file path config
+	// and keeps everything backup-able as a single artifact.
+	authStore, err := auth.OpenStore(schedDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("creating auth store: %w", err)
+	}
+
 	b := &Bot{
 		bot:     tb,
 		cfg:     cfg,
@@ -195,6 +205,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		sources: sourceStore,
 		ocr:     ocrClient,
 		schedDB: schedStore,
+		authDB:  authStore,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
@@ -258,10 +269,21 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		Scheduler:   schedStore,
 		OCR:         ocrClient,
 		Ingest:      ingestPipeline,
+		Auth:        authStore,
+		Allowlist:   cfg.IsAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
 		Location:    time.Local,
 		Logger:      logger,
 	})
+
+	// Slice 10d: request_dashboard_token tool. Registered after b is
+	// constructed so the bot can satisfy tools.TokenSender via its own
+	// SendToUser method. The tool delivers the freshly-minted token over
+	// Telegram (not through the LLM result) so the plaintext stays out
+	// of conversation history.
+	if tokenTool := tools.NewRequestDashboardTokenTool(authStore, b, cfg.IsAllowlisted); tokenTool != nil {
+		toolRegistry.Register(tokenTool)
+	}
 
 	b.registerHandlers()
 	return b, nil
@@ -275,6 +297,21 @@ func (b *Bot) Username() string {
 // APIHandler returns the read-only JSON dashboard API. Caller is expected
 // to wrap with http.StripPrefix and mount under /api/ on the health server.
 func (b *Bot) APIHandler() http.Handler { return b.api }
+
+// SendToUser delivers a Telegram message to userID's direct chat. Used
+// by the request_dashboard_token tool to ship the bearer token out of
+// band so it never lands in LLM conversation history. Satisfies
+// tools.TokenSender.
+func (b *Bot) SendToUser(userID, message string) error {
+	chatID, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("send to user %q: %w", userID, err)
+	}
+	if _, err := b.bot.Send(tele.ChatID(chatID), message); err != nil {
+		return fmt.Errorf("send to user %s: %w", userID, err)
+	}
+	return nil
+}
 
 // Start begins polling for Telegram messages and the scheduler tick loop.
 func (b *Bot) Start() {
