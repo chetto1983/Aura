@@ -43,6 +43,7 @@ func TestStaticHandler_ServesIndexAndFallsBack(t *testing.T) {
 		{"reserved /api path is not shadowed", "/api/health", http.StatusNotFound, ""},
 		{"reserved /health is not shadowed", "/health", http.StatusNotFound, ""},
 		{"reserved /telegram is not shadowed", "/telegram", http.StatusNotFound, ""},
+		{"reserved /telegram children are not shadowed", "/telegram/qr.png", http.StatusNotFound, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

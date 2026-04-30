@@ -107,6 +107,9 @@ func TestTelegramEndpoint(t *testing.T) {
 	if resp.StartURL != "https://t.me/aura_test_bot?start=login" {
 		t.Errorf("start_url = %q", resp.StartURL)
 	}
+	if resp.QRURL != "/telegram/qr.png" {
+		t.Errorf("qr_url = %q", resp.QRURL)
+	}
 }
 
 func TestTelegramEndpointUnavailable(t *testing.T) {
@@ -118,6 +121,77 @@ func TestTelegramEndpointUnavailable(t *testing.T) {
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status code = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestTelegramEndpointRejectsInvalidUsername(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+	s.SetBotUsername("../bad")
+
+	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
+	w := httptest.NewRecorder()
+	s.handleTelegram(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestTelegramQREndpoint(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+	s.SetBotUsername("aura_test_bot")
+
+	req := httptest.NewRequest(http.MethodGet, "/telegram/qr.png", nil)
+	w := httptest.NewRecorder()
+	s.handleTelegramQR(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("content-type = %q, want image/png", got)
+	}
+	if body := w.Body.Bytes(); len(body) < 8 || string(body[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Fatalf("body is not a PNG, first bytes %q", body[:min(len(body), 8)])
+	}
+}
+
+func TestTelegramQREndpointHead(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+	s.SetBotUsername("aura_test_bot")
+
+	req := httptest.NewRequest(http.MethodHead, "/telegram/qr.png", nil)
+	w := httptest.NewRecorder()
+	s.handleTelegramQR(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("HEAD body length = %d, want 0", w.Body.Len())
+	}
+}
+
+func TestTelegramEndpointRejectsUnsupportedMethods(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+	s.SetBotUsername("aura_test_bot")
+
+	for _, tc := range []struct {
+		name    string
+		path    string
+		handler http.HandlerFunc
+	}{
+		{"metadata", "/telegram", s.handleTelegram},
+		{"qr", "/telegram/qr.png", s.handleTelegramQR},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, nil)
+			w := httptest.NewRecorder()
+			tc.handler(w, req)
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+			}
+		})
 	}
 }
 

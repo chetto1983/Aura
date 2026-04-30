@@ -39,7 +39,7 @@ func StaticHandler() (http.Handler, error) {
 		// /status, and /telegram are wired separately on the same mux; we only
 		// get here for paths the other handlers didn't claim.
 		clean := path.Clean(r.URL.Path)
-		if strings.HasPrefix(clean, "/api/") || clean == "/health" || clean == "/status" || clean == "/telegram" {
+		if strings.HasPrefix(clean, "/api/") || clean == "/health" || clean == "/status" || strings.HasPrefix(clean, "/telegram") {
 			http.NotFound(w, r)
 			return
 		}

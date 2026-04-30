@@ -6,8 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // StatusProvider supplies health data for a named component.
@@ -29,6 +32,7 @@ type TelegramInfo struct {
 	Username string `json:"username"`
 	URL      string `json:"url"`
 	StartURL string `json:"start_url"`
+	QRURL    string `json:"qr_url"`
 }
 
 // ComponentHealth represents the health of a single component.
@@ -54,6 +58,8 @@ type ServerConfig struct {
 	Version string
 }
 
+var telegramUsernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,32}$`)
+
 // NewServer creates a new health HTTP server.
 func NewServer(cfg ServerConfig, logger *slog.Logger) *Server {
 	mux := http.NewServeMux()
@@ -74,6 +80,7 @@ func NewServer(cfg ServerConfig, logger *slog.Logger) *Server {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/telegram", s.handleTelegram)
+	mux.HandleFunc("/telegram/qr.png", s.handleTelegramQR)
 	// Slice 10b: the / route is owned by the SPA static handler mounted by
 	// cmd/aura/main.go via Server.Mount. Leaving / unbound here means a
 	// fresh server (no static assets) returns 404 on /, which is fine.
@@ -96,7 +103,12 @@ func (s *Server) RegisterProvider(name string, provider StatusProvider) {
 // SetBotUsername lets the unauthenticated login page point the user at the
 // exact Telegram bot for first-run bootstrap and future /login tokens.
 func (s *Server) SetBotUsername(username string) {
-	s.botUsername = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	if !telegramUsernameRE.MatchString(username) {
+		s.botUsername = ""
+		return
+	}
+	s.botUsername = username
 }
 
 // Start starts the HTTP server in a goroutine.
@@ -157,7 +169,9 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if s.botUsername == "" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]string{"error": "telegram bot username unavailable"})
@@ -168,5 +182,33 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 		Username: s.botUsername,
 		URL:      url,
 		StartURL: url + "?start=login",
+		QRURL:    "/telegram/qr.png",
 	})
+}
+
+func (s *Server) handleTelegramQR(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.botUsername == "" {
+		http.Error(w, "telegram bot username unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	url := "https://t.me/" + s.botUsername + "?start=login"
+	png, err := qrcode.Encode(url, qrcode.Medium, 256)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("telegram qr generation failed", "error", err)
+		}
+		http.Error(w, "could not generate telegram qr", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(png)
+	}
 }

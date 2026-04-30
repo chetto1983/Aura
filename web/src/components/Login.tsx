@@ -8,6 +8,7 @@ interface TelegramInfo {
   username: string;
   url: string;
   start_url: string;
+  qr_url: string;
 }
 
 // Login is the dashboard's only unauthenticated view. The user pastes a
@@ -25,6 +26,7 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [telegram, setTelegram] = useState<TelegramInfo | null>(null);
+  const [telegramState, setTelegramState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
   // If the user already has a stored token, try it once; on success skip
   // the form and go home, on failure clear it so the form is rendered.
@@ -48,11 +50,19 @@ export function Login() {
     void (async () => {
       try {
         const res = await fetch('/telegram', { credentials: 'same-origin' });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setTelegramState('unavailable');
+          return;
+        }
         const info = (await res.json()) as TelegramInfo;
-        if (!cancelled && info.start_url) setTelegram(info);
+        if (!cancelled && info.start_url && info.qr_url) {
+          setTelegram(info);
+          setTelegramState('ready');
+        } else if (!cancelled) {
+          setTelegramState('unavailable');
+        }
       } catch {
-        // The manual /start and /login copy still gives a usable fallback.
+        if (!cancelled) setTelegramState('unavailable');
       }
     })();
     return () => { cancelled = true; };
@@ -116,7 +126,7 @@ export function Login() {
           </div>
         )}
 
-        <TelegramEntry telegram={telegram} />
+        <TelegramEntry telegram={telegram} state={telegramState} />
 
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <label className="block text-sm font-medium">
@@ -153,18 +163,22 @@ export function Login() {
   );
 }
 
-function TelegramEntry({ telegram }: { telegram: TelegramInfo | null }) {
+function TelegramEntry({
+  telegram,
+  state,
+}: {
+  telegram: TelegramInfo | null;
+  state: 'loading' | 'ready' | 'unavailable';
+}) {
   if (!telegram) {
     return (
       <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-3 text-center text-sm text-muted-foreground">
-        Telegram link will appear when the bot is running.
+        {state === 'loading'
+          ? 'Finding your Telegram bot...'
+          : 'Start Aura, then refresh this page to show the Telegram QR and link.'}
       </div>
     );
   }
-
-  const qrURL =
-    'https://api.qrserver.com/v1/create-qr-code/?size=176x176&margin=10&data=' +
-    encodeURIComponent(telegram.start_url);
 
   return (
     <div className="grid gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 sm:grid-cols-[176px_1fr] sm:items-center">
@@ -176,7 +190,7 @@ function TelegramEntry({ telegram }: { telegram: TelegramInfo | null }) {
         aria-label={`Open Telegram bot @${telegram.username}`}
       >
         <img
-          src={qrURL}
+          src={telegram.qr_url}
           alt={`QR code for Telegram bot @${telegram.username}`}
           width="160"
           height="160"
