@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Sparkles,
   ChevronDown,
@@ -20,7 +21,11 @@ import type { SkillDetail, SkillSummary, SkillCatalogItem } from '@/types/api';
 type Tab = 'local' | 'catalog';
 
 export function SkillsPanel() {
-  const [tab, setTab] = useState<Tab>('local');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = (searchParams.get('tab') as Tab) || 'local';
+  const setTab = useCallback((t: Tab) => {
+    setSearchParams((prev) => { prev.set('tab', t); return prev; }, { replace: true });
+  }, [setSearchParams]);
   // adminUnknown stays true until we attempt a write — at that point, a 403
   // tells us SKILLS_ADMIN is off and we surface the instructions banner.
   const [adminGated, setAdminGated] = useState(false);

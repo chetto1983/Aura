@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Upload, Play, RefreshCcw } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { ErrorCard } from '@/components/common/ErrorCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { SourceSummary, UploadResponse } from '@/types/api';
 
@@ -95,7 +96,7 @@ export function SourceInbox() {
   }, [refetch]);
 
   if (loading && !data) return <SourceInboxSkeleton />;
-  if (error && !data) return <ErrorCard error={error} />;
+  if (error && !data) return <ErrorCard error={error} title="Failed to load sources" onRetry={refetch} />;
   if (!data) return null;
 
   const grouped: Record<string, SourceSummary[]> = {};
@@ -157,8 +158,8 @@ export function SourceInbox() {
             <h2 className="text-sm font-medium text-muted-foreground mb-2">
               {STATUS_LABEL[status]} <span className="ml-1 tabular-nums">({rows.length})</span>
             </h2>
-            <div className="rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm min-w-[600px]">
                 <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="text-left py-2 px-3 font-medium">Filename</th>
@@ -297,9 +298,6 @@ function formatUploadSummary(filename: string, res: UploadResponse): string {
 function StalePill() {
   return <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>;
 }
-function ErrorCard({ error }: { error: Error }) {
-  return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
-}
 function shortDate(iso: string): string {
   if (!iso || iso.startsWith('0001')) return '—';
   const d = new Date(iso);
@@ -314,7 +312,7 @@ function SourceInboxSkeleton() {
       {[0, 1].map((i) => (
         <div key={i} className="space-y-2">
           <Skeleton className="h-4 w-40" />
-          <div className="rounded-lg border overflow-hidden">
+          <div className="rounded-lg border overflow-x-auto">
             {[0, 1].map((j) => (
               <div key={j} className="border-t first:border-t-0 px-3 py-3 flex items-center gap-3">
                 <Skeleton className="h-4 flex-1" />

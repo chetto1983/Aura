@@ -168,9 +168,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
 	toolRegistry.Register(tools.NewReadSkillTool(skillLoader))
-	if cfg.OllamaAPIKey != "" {
-		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
-		toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+	// web_search / web_fetch are backed by Ollama's hosted web API, which
+	// authenticates with the same credential as Ollama Cloud's chat API.
+	// If the operator only set LLM_API_KEY (because Ollama Cloud is their
+	// chat provider too) we transparently reuse it for the web tools, so
+	// the model doesn't have to truthfully report "no web search" when in
+	// fact a single key would have unlocked both surfaces.
+	ollamaWebKey := cfg.OllamaAPIKey
+	if ollamaWebKey == "" && strings.Contains(cfg.LLMBaseURL, "ollama.com") {
+		ollamaWebKey = cfg.LLMAPIKey
+	}
+	if ollamaWebKey != "" {
+		toolRegistry.Register(tools.NewWebSearchTool(ollamaWebKey, cfg.OllamaWebBaseURL))
+		toolRegistry.Register(tools.NewWebFetchTool(ollamaWebKey, cfg.OllamaWebBaseURL))
 	}
 	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
 	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))

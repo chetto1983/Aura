@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorCard } from '@/components/common/ErrorCard';
 
 const POLL_MS = 5000;
 
@@ -10,7 +11,7 @@ export function HealthDashboard() {
   const { data, error, loading, stale } = useApi(fetcher, POLL_MS);
 
   if (loading && !data) return <DashboardSkeleton />;
-  if (error && !data) return <ErrorCard error={error} />;
+  if (error && !data) return <ErrorCard error={error} title="Failed to load dashboard" onRetry={refetch} />;
   if (!data) return null;
 
   return (
@@ -149,7 +150,11 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
   };
   return (
     <div className="space-y-2">
-      <div className="flex h-3 overflow-hidden rounded bg-muted">
+      <div
+        className="flex h-3 overflow-hidden rounded bg-muted"
+        role="img"
+        aria-label={order.map((k) => `${k.replace('_', ' ')}: ${buckets[k] ?? 0}`).join(', ')}
+      >
         {order.map((k) => {
           const v = buckets[k] ?? 0;
           if (v === 0) return null;
@@ -181,17 +186,6 @@ function StalePill() {
     <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
       ⚠ stale
     </span>
-  );
-}
-
-function ErrorCard({ error }: { error: Error }) {
-  return (
-    <div className="p-6">
-      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-        <h2 className="text-base font-semibold">Failed to load dashboard</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
-      </div>
-    </div>
   );
 }
 

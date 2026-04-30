@@ -239,7 +239,7 @@ html, body, #root {
   margin: 0;
   padding: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -675,7 +675,7 @@ a:hover { text-decoration: underline; }
 .sacchi-app-shell {
   display: flex;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
 }
@@ -817,7 +817,7 @@ a:hover { text-decoration: underline; }
   top: 0;
   right: 0;
   width: 360px;
-  height: 100vh;
+  height: 100dvh;
   background: var(--surface);
   border-left: 1px solid var(--border);
   z-index: 60;

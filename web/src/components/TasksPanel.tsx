@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Plus, X, Calendar } from 'lucide-react';
+import { ErrorCard } from '@/components/common/ErrorCard';
 import {
   Dialog,
   DialogContent,
@@ -68,7 +69,7 @@ export function TasksPanel() {
   }, [refetch]);
 
   if (loading && !data) return <TasksSkeleton />;
-  if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
+  if (error && !data) return <ErrorCard error={error} title="Failed to load tasks" onRetry={refetch} />;
   if (!data) return null;
 
   const grouped: Record<string, Task[]> = {};
@@ -116,8 +117,8 @@ export function TasksPanel() {
             <h2 className="text-sm font-medium text-muted-foreground mb-2">
               {STATUS_LABEL[s]} <span className="ml-1 tabular-nums">({rows.length})</span>
             </h2>
-            <div className="rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="text-left py-2 px-3 font-medium">Name</th>
@@ -252,7 +253,7 @@ function NewTaskForm({
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <label className="block text-sm">
-            Name
+            Name <span className="text-destructive">*</span>
             <input
               type="text"
               required
@@ -260,6 +261,8 @@ function NewTaskForm({
               onChange={(e) => setName(e.target.value)}
               pattern="[A-Za-z0-9_.\-]{1,64}"
               placeholder="e.g. weekly-cleanup"
+              autoComplete="off"
+              spellCheck={false}
               className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
             />
             <span className="mt-1 block text-xs text-muted-foreground">
@@ -281,14 +284,20 @@ function NewTaskForm({
 
           {kind === 'reminder' && (
             <label className="block text-sm">
-              Recipient (Telegram user ID)
+              Recipient (Telegram user ID) <span className="text-destructive">*</span>
               <input
                 type="text"
                 required
                 value={recipientId}
                 onChange={(e) => setRecipientId(e.target.value)}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 123456789"
                 className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
               />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Numeric ID — message @userinfobot on Telegram to find yours.
+              </span>
             </label>
           )}
 

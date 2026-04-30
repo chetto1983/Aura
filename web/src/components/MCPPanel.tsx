@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorCard } from '@/components/common/ErrorCard';
 import type { MCPServerSummary, MCPToolInfo, MCPInvokeResponse } from '@/types/api';
 
 // MCPPanel surfaces every MCP server Aura connected to at boot, the
@@ -25,7 +26,7 @@ export function MCPPanel() {
 
   if (loading && !data) return <MCPSkeleton />;
   if (error && !data) {
-    return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
+    return <ErrorCard error={error} title="Failed to load MCP servers" onRetry={refetch} />;
   }
   if (!data) return null;
 
@@ -178,7 +179,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
           <button
             type="button"
             onClick={() => setShowSchema((v) => !v)}
-            className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+            className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline min-h-[28px] px-1"
           >
             {showSchema ? 'hide schema' : 'show schema'}
           </button>
@@ -186,7 +187,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
         <button
           type="button"
           onClick={() => setShowRun((v) => !v)}
-          className="ml-auto inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/10"
+          className="ml-auto inline-flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] text-primary hover:bg-primary/10 min-h-[36px]"
         >
           <Play size={11} />
           {showRun ? 'Hide' : 'Run'}
@@ -221,7 +222,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
               type="button"
               onClick={() => void handleRun()}
               disabled={running}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 min-h-[36px]"
             >
               {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
               {running ? 'Calling…' : 'Invoke'}

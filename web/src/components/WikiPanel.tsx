@@ -1,17 +1,27 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RefreshCw, BookText } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorCard } from '@/components/common/ErrorCard';
 
 export function WikiPanel() {
   const fetcher = useCallback(() => api.wikiPages(), []);
   const { data, error, loading, stale, refetch } = useApi(fetcher);
-  const [filter, setFilter] = useState('');
-  const [category, setCategory] = useState<string>('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = searchParams.get('q') ?? '';
+  const category = searchParams.get('cat') ?? '';
   const [rebuilding, setRebuilding] = useState(false);
+
+  const setFilter = useCallback((q: string) => {
+    setSearchParams((prev) => { if (q) prev.set('q', q); else prev.delete('q'); return prev; }, { replace: true });
+  }, [setSearchParams]);
+
+  const setCategory = useCallback((cat: string) => {
+    setSearchParams((prev) => { if (cat) prev.set('cat', cat); else prev.delete('cat'); return prev; }, { replace: true });
+  }, [setSearchParams]);
 
   const handleRebuild = useCallback(async () => {
     setRebuilding(true);
@@ -44,7 +54,7 @@ export function WikiPanel() {
   }, [data, filter, category]);
 
   if (loading && !data) return <WikiSkeleton />;
-  if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
+  if (error && !data) return <ErrorCard error={error} title="Failed to load wiki" onRetry={refetch} />;
   if (!data) return null;
 
   return (
@@ -77,7 +87,7 @@ export function WikiPanel() {
         <button
           type="button"
           onClick={() => setCategory('')}
-          className={`rounded-full px-2 py-0.5 text-xs ${category === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+          className={`rounded-full px-3 py-1.5 text-xs min-h-[32px] inline-flex items-center ${category === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
         >
           all
         </button>
@@ -86,15 +96,15 @@ export function WikiPanel() {
             key={c}
             type="button"
             onClick={() => setCategory(c)}
-            className={`rounded-full px-2 py-0.5 text-xs ${category === c ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+            className={`rounded-full px-3 py-1.5 text-xs min-h-[32px] inline-flex items-center ${category === c ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
           >
             {c}
           </button>
         ))}
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border overflow-x-auto">
+        <table className="w-full text-sm min-w-[500px]">
           <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
               <th className="text-left py-2 px-3 font-medium">Title</th>

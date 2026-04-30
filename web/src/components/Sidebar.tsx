@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
 import { LayoutDashboard, BookText, Network, Inbox, Calendar, Sparkles, Plug, ShieldCheck, Sun, Moon, Contrast, LogOut } from 'lucide-react';
@@ -71,8 +72,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { theme, cycleTheme } = useAppTheme();
   const ThemeIcon = THEME_ICON[theme];
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     // Best-effort revoke. If the API call fails, the token is still
     // cleared client-side so the user can't keep using the dashboard
     // — server-side revoke is a hardening, not a correctness gate.
@@ -128,12 +132,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         </button>
         <button
           type="button"
+          disabled={loggingOut}
           onClick={() => void handleLogout()}
-          className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent/50 text-muted-foreground"
+          className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent/50 text-muted-foreground disabled:opacity-50 disabled:cursor-wait"
           title="Revoke this token and return to login"
         >
           <LogOut size={16} />
-          Sign out
+          {loggingOut ? 'Signing out…' : 'Sign out'}
         </button>
       </div>
     </aside>

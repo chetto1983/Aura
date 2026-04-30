@@ -15,7 +15,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   useKeyboardShortcuts({ onShowHelp: () => setHelpOpen(true) });
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="flex h-[100dvh] w-screen overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden md:flex">
         <Sidebar />

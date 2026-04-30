@@ -36,7 +36,10 @@
       "Bash(python3 *)",
       "Bash(taskkill.exe //F //IM aura.exe)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:gist.github.com)"
+      "WebFetch(domain:gist.github.com)",
+      "Bash(mv D:/Aura/skills/.claude/skills/marketing-psychology D:/Aura/.claude/skills/marketing-psychology)",
+      "Bash(rmdir D:/Aura/skills/.claude/skills D:/Aura/skills/.claude)",
+      "Bash(npm run *)"
     ]
   }
 }
