@@ -4,6 +4,7 @@ package tray
 
 import (
 	_ "embed"
+	"os/exec"
 
 	"fyne.io/systray"
 )
@@ -25,6 +26,14 @@ func run(opts Options) error {
 			header.Disable()
 			systray.AddSeparator()
 		}
+		if opts.DashboardURL != "" {
+			mDash := systray.AddMenuItem("Open Dashboard", "Open the Aura dashboard in your browser")
+			go func() {
+				for range mDash.ClickedCh {
+					openBrowser(opts.DashboardURL)
+				}
+			}()
+		}
 		mQuit := systray.AddMenuItem("Quit Aura", "Stop the bot and exit")
 		go func() {
 			<-mQuit.ClickedCh
@@ -36,3 +45,7 @@ func run(opts Options) error {
 }
 
 func stop() { systray.Quit() }
+
+func openBrowser(url string) {
+	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
@@ -73,6 +74,18 @@ func main() {
 	// the /api prefix so api.NewRouter sees /health, /wiki/..., /sources/...
 	healthServer.Mount("/api/", http.StripPrefix("/api", bot.APIHandler()))
 
+	// Slice 10b: serve the embedded SPA at /. The static handler also handles
+	// SPA fallback for deep links like /wiki/:slug. Register *after* /api/ so
+	// Go's ServeMux routes the longer prefix first.
+	if static, err := api.StaticHandler(); err == nil {
+		healthServer.Mount("/", static)
+	} else if errors.Is(err, api.ErrNoStaticAssets) {
+		logger.Warn("dashboard SPA unavailable — run `make web-build`",
+			"detail", "internal/api/dist is empty; /api still works, only / is missing")
+	} else {
+		logger.Error("failed to mount dashboard SPA", "error", err)
+	}
+
 	healthServer.Start()
 
 	logger.Info("aura starting", "version", auraVersion)
@@ -91,9 +104,10 @@ func main() {
 	// Run tray on the main goroutine. Blocks until the user clicks Quit or a
 	// signal triggers tray.Stop above.
 	if err := tray.Run(tray.Options{
-		Title:   "Aura",
-		Tooltip: "Aura — running on " + cfg.HTTPPort,
-		Version: auraVersion,
+		Title:        "Aura",
+		Tooltip:      "Aura — running on " + cfg.HTTPPort,
+		Version:      auraVersion,
+		DashboardURL: "http://" + dashboardHost(cfg.HTTPPort),
 	}); err != nil {
 		logger.Warn("tray exited with error", "error", err)
 	}
@@ -124,6 +138,19 @@ func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
 		Status: "ok",
 		Detail: "Ollama web tools configured",
 	}
+}
+
+// dashboardHost translates the HTTP_PORT bind string into a browseable URL
+// host. ":8080" -> "localhost:8080"; "127.0.0.1:8080" -> "127.0.0.1:8080";
+// "0.0.0.0:8080" -> "localhost:8080" (the user opens locally even when bound LAN-wide).
+func dashboardHost(port string) string {
+	if strings.HasPrefix(port, ":") {
+		return "localhost" + port
+	}
+	if strings.HasPrefix(port, "0.0.0.0") {
+		return "localhost" + strings.TrimPrefix(port, "0.0.0.0")
+	}
+	return port
 }
 
 // loadDotEnv reads KEY=VALUE pairs from the given file and sets them in the

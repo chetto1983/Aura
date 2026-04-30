@@ -8,9 +8,10 @@ package tray
 
 // Options configures the tray icon and menu.
 type Options struct {
-	Title   string // short label, shown next to the icon on some OSes
-	Tooltip string // hover text
-	Version string // displayed in a disabled menu header when non-empty
+	Title        string // short label, shown next to the icon on some OSes
+	Tooltip      string // hover text
+	Version      string // displayed in a disabled menu header when non-empty
+	DashboardURL string // when non-empty, an "Open Dashboard" menu item opens this URL in the default browser
 }
 
 // Run starts the tray on the calling goroutine. Returns when the user clicks

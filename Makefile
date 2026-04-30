@@ -1,4 +1,4 @@
-.PHONY: all build test run debug-llm fmt vet clean
+.PHONY: all build test run debug-llm fmt vet clean web web-build ui-dev
 
 all: test build
 
@@ -22,3 +22,13 @@ vet:
 
 clean:
 	go clean ./...
+
+# Slice 10b — frontend dashboard
+web:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm install && npm run build
+
+ui-dev:
+	$(MAKE) -j2 web run
