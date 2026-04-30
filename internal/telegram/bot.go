@@ -856,7 +856,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
 	if response != "" {
-		c.Send(response)
+		b.sendAssistant(c, response)
 	}
 
 	// Slice 11r: per-turn telemetry. elapsed_ms is wall-clock from
@@ -958,6 +958,19 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	return fallback, stats
 }
 
+// sendAssistant delivers an LLM-generated message to the user with
+// Markdown rendered to Telegram's HTML subset. Plain operator strings
+// (auth errors, bootstrap messages) keep using c.Send directly so we
+// don't double-escape them. If HTML send fails (e.g. malformed render),
+// fall back to a plain c.Send so the user still sees the response.
+func (b *Bot) sendAssistant(c tele.Context, text string) {
+	rendered := renderForTelegram(text)
+	if err := c.Send(rendered, tele.ModeHTML); err != nil {
+		b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
+		_ = c.Send(text)
+	}
+}
+
 // streamingMinThreshold is the buffered-content size at which we stop
 // hiding and send the placeholder Telegram message. Below this the
 // model may still be deciding whether to call tools (in which case
@@ -984,12 +997,12 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) 
 	var resp llm.Response
 
 	flush := func() {
-		text := sb.String()
+		text := renderForTelegram(sb.String())
 		if msg == nil {
-			if len(text) < streamingMinThreshold {
+			if sb.Len() < streamingMinThreshold {
 				return
 			}
-			sent, err := c.Bot().Send(c.Recipient(), text)
+			sent, err := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
 			if err != nil {
 				b.logger.Warn("streaming initial send failed", "user_id", userID, "error", err)
 				return
@@ -1001,7 +1014,7 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) 
 		if time.Since(lastEdit) < streamingEditThrottle {
 			return
 		}
-		if _, err := c.Bot().Edit(msg, text); err != nil {
+		if _, err := c.Bot().Edit(msg, text, tele.ModeHTML); err != nil {
 			// Rate limit or transient: skip this edit, the next one will retry.
 			b.logger.Debug("streaming edit failed", "user_id", userID, "error", err)
 			return
@@ -1027,7 +1040,8 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) 
 			// Final edit so the message reflects the complete text even
 			// if the throttle skipped the last delta.
 			if msg != nil && !resp.HasToolCalls {
-				if _, err := c.Bot().Edit(msg, sb.String()); err != nil {
+				rendered := renderForTelegram(sb.String())
+				if _, err := c.Bot().Edit(msg, rendered, tele.ModeHTML); err != nil {
 					b.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
 				}
 			}
