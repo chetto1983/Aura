@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import type { Location } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { api, ApiError } from '@/api';
 import { setToken, getToken, clearToken } from '@/lib/auth';
@@ -21,7 +22,9 @@ interface TelegramInfo {
 // returning users see a hint rather than a blank "please log in" page.
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [params] = useSearchParams();
+  const returnTo = (location.state as { from?: Location } | null)?.from?.pathname ?? '/';
   const [token, setTokenInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +40,13 @@ export function Login() {
     void (async () => {
       try {
         await api.whoami();
-        if (!cancelled) navigate('/', { replace: true });
+        if (!cancelled) navigate(returnTo, { replace: true });
       } catch {
         if (!cancelled) clearToken();
       }
     })();
     return () => { cancelled = true; };
-  }, [navigate]);
+  }, [navigate, returnTo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +83,7 @@ export function Login() {
     setToken(trimmed);
     try {
       await api.whoami();
-      navigate('/', { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (err) {
       clearToken();
       if (err instanceof ApiError && err.status === 401) {
