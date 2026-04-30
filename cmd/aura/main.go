@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/aura/aura/internal/config"
@@ -19,6 +22,10 @@ const auraVersion = "3.0"
 func main() {
 	// Initialize structured logger with zap backend and secret sanitization
 	logger := logging.Setup("info")
+
+	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Warn("could not load .env", "error", err)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -115,4 +122,36 @@ func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
 		Status: "ok",
 		Detail: "Ollama web tools configured",
 	}
+}
+
+// loadDotEnv reads KEY=VALUE pairs from the given file and sets them in the
+// process environment. Mirrors the helper used by cmd/debug_tools and
+// cmd/debug_ingest so all entrypoints honor the same .env. Lines starting
+// with `#` and blank lines are ignored. Surrounding single/double quotes are
+// stripped. Existing env values are overwritten so .env is the source of
+// truth during local runs.
+func loadDotEnv(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		if key != "" {
+			os.Setenv(key, value)
+		}
+	}
+	return scanner.Err()
 }
