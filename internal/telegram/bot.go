@@ -20,6 +20,7 @@ import (
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
+	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
@@ -40,6 +41,7 @@ type Bot struct {
 	budget  *budget.Tracker
 	sources *source.Store
 	ocr     *ocr.Client
+	skills  *auraskills.Loader
 	docs    *docHandler
 	sched   *scheduler.Scheduler
 	schedDB *scheduler.Store
@@ -140,6 +142,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	}
 
 	toolRegistry := tools.NewRegistry(logger)
+	skillLoader := auraskills.NewLoader(cfg.SkillsPath)
+	toolRegistry.Register(tools.NewSearchSkillCatalogTool(auraskills.NewCatalogClient(cfg.SkillsCatalogURL)))
+	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
+	toolRegistry.Register(tools.NewReadSkillTool(skillLoader))
 	if cfg.OllamaAPIKey != "" {
 		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
 		toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
@@ -204,6 +210,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		tools:   toolRegistry,
 		sources: sourceStore,
 		ocr:     ocrClient,
+		skills:  skillLoader,
 		schedDB: schedStore,
 		authDB:  authStore,
 		budget: budget.NewTracker(budget.Config{
@@ -525,7 +532,16 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// (current time + timezone) stays accurate. The LLM uses these values
 	// when scheduling reminders, so a stale snapshot is worse than the
 	// per-turn cost of re-rendering a few hundred bytes.
-	convCtx.SetSystemMessage(conversation.RenderSystemPrompt(time.Now(), time.Local))
+	systemPrompt := conversation.RenderSystemPrompt(time.Now(), time.Local)
+	if b.skills != nil {
+		loadedSkills, err := b.skills.LoadAll()
+		if err != nil {
+			b.logger.Warn("failed to load local skills", "error", err)
+		} else if block := auraskills.PromptBlock(loadedSkills); block != "" {
+			systemPrompt += "\n\n" + block
+		}
+	}
+	convCtx.SetSystemMessage(systemPrompt)
 
 	b.logger.Info("conversation started",
 		"user_id", userID,

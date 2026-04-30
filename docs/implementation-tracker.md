@@ -51,6 +51,13 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-04-30 - Skills discovery and local skill loading
+
+- Added read-only Aura skills support using Picobot's `skills/<name>/SKILL.md` pattern: `internal/skills` loads validated local skills from `SKILLS_PATH`, skips broken drafts, and renders a bounded prompt block on every Telegram turn.
+- Added `search_skill_catalog`, a read-only skills.sh catalog search tool. `list_skills` / `read_skill` inspect only locally installed skills; installation/mutation remains deferred behind a future admin/review flow.
+- Config now includes `SKILLS_PATH=./skills` and `SKILLS_CATALOG_URL=https://skills.sh/`. Added `skills/README.md` with the local skill format.
+- Verification: live `skills.sh` parser check found catalog entries; `go test ./internal/skills ./internal/tools ./internal/config ./internal/telegram ./internal/conversation`, `go test ./...`, `go build ./...`, and `go vet ./...` passed.
+
 ### 2026-04-30 - Polish and harden Telegram login
 
 - Hardened the Telegram login surface by removing the external QR image dependency. Aura now serves `GET /telegram/qr.png` locally as a generated PNG for `https://t.me/<bot>?start=login`.

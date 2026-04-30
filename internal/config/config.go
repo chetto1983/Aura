@@ -27,6 +27,8 @@ type Config struct {
 	OllamaWebBaseURL    string  `envconfig:"OLLAMA_WEB_BASE_URL"`
 	MaxToolIterations   int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath            string  `envconfig:"WIKI_PATH" default:"./wiki"`
+	SkillsPath          string  `envconfig:"SKILLS_PATH" default:"./skills"`
+	SkillsCatalogURL    string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
 	EmbeddingAPIKey     string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL    string  `envconfig:"EMBEDDING_BASE_URL"`
 	EmbeddingModel      string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
@@ -99,6 +101,8 @@ func Load() (*Config, error) {
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
+	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
+	cfg.SkillsCatalogURL = getEnv("SKILLS_CATALOG_URL", "https://skills.sh/")
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")

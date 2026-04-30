@@ -67,6 +67,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("OLLAMA_WEB_BASE_URL")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
+	os.Unsetenv("SKILLS_PATH")
+	os.Unsetenv("SKILLS_CATALOG_URL")
 	os.Unsetenv("EMBEDDING_BASE_URL")
 	os.Unsetenv("EMBEDDING_MODEL")
 	os.Unsetenv("MISTRAL_API_KEY")
@@ -102,6 +104,12 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
+	}
+	if cfg.SkillsPath != "./skills" {
+		t.Errorf("SkillsPath = %q, want ./skills", cfg.SkillsPath)
+	}
+	if cfg.SkillsCatalogURL != "https://skills.sh/" {
+		t.Errorf("SkillsCatalogURL = %q, want https://skills.sh/", cfg.SkillsCatalogURL)
 	}
 	if cfg.EmbeddingBaseURL != "https://api.mistral.ai/v1" {
 		t.Errorf("EmbeddingBaseURL = %q, want Mistral API", cfg.EmbeddingBaseURL)

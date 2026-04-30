@@ -155,10 +155,12 @@ Full audit: `docs/picobot-tools-audit.md`.
 | `message` | Send a message to current chat | Missing | Implement only if tool loop needs multi-message progress; Telegram currently sends final responses directly. |
 | `spawn` | Spawn background subagent stub | Missing | Defer; Aura should first use deterministic jobs before subagents. |
 | `create_skill` | Create local skill | Missing | Defer or implement under admin-only skill management. |
-| `list_skills` | List local skills | Missing | Defer or implement admin-only. |
-| `read_skill` | Read local skill | Missing | Defer or implement admin-only. |
+| `list_skills` | List local skills | Exists | Read-only local `SKILLS_PATH` inspection. No mutation rights. |
+| `read_skill` | Read local skill | Exists | Read-only local `SKILLS_PATH` inspection with name validation. |
 | `delete_skill` | Delete local skill | Missing | Defer; destructive and needs review gate. |
 | `mcp_<server>_<tool>` | Delegate to MCP server tools | Missing | Implement generic MCP adapter after core source/wiki tools. |
+
+Aura also exposes `search_skill_catalog` as a read-only discovery tool backed by https://skills.sh/. Installation and mutation remain deferred until an admin/review flow exists.
 
 Aura-only tools required by the second-brain design:
 
