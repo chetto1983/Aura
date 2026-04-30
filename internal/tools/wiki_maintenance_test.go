@@ -270,7 +270,7 @@ func TestAppendLogTool_WithSlug(t *testing.T) {
 }
 
 func TestAppendLogTool_EmptySlug(t *testing.T) {
-	store, _ := newTestWikiStore(t)
+	store, dir := newTestWikiStore(t)
 	tool := NewAppendLogTool(store)
 
 	out, err := tool.Execute(context.Background(), map[string]any{"action": "summary"})
@@ -282,6 +282,20 @@ func TestAppendLogTool_EmptySlug(t *testing.T) {
 	}
 	if strings.Contains(out, "[[") {
 		t.Errorf("empty slug should not produce wiki-link in response: %q", out)
+	}
+
+	logBytes, err := os.ReadFile(filepath.Join(dir, "log.md"))
+	if err != nil {
+		t.Fatalf("read log.md: %v", err)
+	}
+	body := string(logBytes)
+	// Empty slug must render as a blank cell, never as the literal "[[]]"
+	// (which would appear as a broken wiki-link in the rendered table).
+	if strings.Contains(body, "[[]]") {
+		t.Errorf("log.md should not contain literal [[]] for empty slug:\n%s", body)
+	}
+	if !strings.Contains(body, "| summary |  |") {
+		t.Errorf("log.md should have empty page cell:\n%s", body)
 	}
 }
 

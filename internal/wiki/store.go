@@ -342,7 +342,11 @@ func (s *Store) appendLog(ctx context.Context, action, slug string) {
 	}
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	row := fmt.Sprintf("| %s | %s | [[%s]] |\n", timestamp, action, slug)
+	pageCell := ""
+	if slug != "" {
+		pageCell = "[[" + slug + "]]"
+	}
+	row := fmt.Sprintf("| %s | %s | %s |\n", timestamp, action, pageCell)
 
 	// Append row before trailing newline
 	existing = strings.TrimRight(existing, "\n") + "\n" + row
