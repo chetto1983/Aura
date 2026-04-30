@@ -87,6 +87,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 
 	// Set up search engine
 	var searchEngine *search.Engine
+	var embedCache *search.EmbedCache
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn := createEmbeddingFunc(cfg)
 		// Slice 11h: wrap the upstream embedding fn with a SHA-keyed
@@ -99,6 +100,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 				logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
 			} else {
 				embedFn = cache.EmbedFunc()
+				embedCache = cache
 			}
 		}
 		var se *search.Engine
@@ -363,6 +365,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		SkillsInstaller: skillsInstaller,
 		SkillsDeleter:   skillsDeleterAdapter{inner: skillsDeleter},
 		SkillsAdmin:     cfg.SkillsAdmin,
+		// Slice 11j: surface cache hit/miss counters in /api/health.
+		EmbedCache: embedCache,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

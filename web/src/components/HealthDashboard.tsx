@@ -49,10 +49,28 @@ export function HealthDashboard() {
           </div>
           <div className="text-xs text-muted-foreground">active tasks</div>
         </Card>
+
+        <EmbedCacheCard cache={data.embed_cache} />
       </div>
 
       <ProcessFooter process={data.process} />
     </div>
+  );
+}
+
+function EmbedCacheCard({ cache }: { cache: { hits: number; misses: number } }) {
+  const total = cache.hits + cache.misses;
+  const hitRate = total === 0 ? null : Math.round((cache.hits / total) * 100);
+  const subtitle = total === 0
+    ? 'no embeds yet'
+    : `${hitRate}% hit rate`;
+  return (
+    <Card title="Embed cache" subtitle={subtitle}>
+      <div className="text-3xl font-bold tabular-nums">{cache.hits.toLocaleString()}</div>
+      <div className="text-xs text-muted-foreground">
+        hits <span className="opacity-50">/</span> {cache.misses.toLocaleString()} miss{cache.misses === 1 ? '' : 'es'}
+      </div>
+    </Card>
   );
 }
 

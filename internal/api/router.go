@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
@@ -91,6 +92,11 @@ type Deps struct {
 	SkillsCatalog   *skills.CatalogClient
 	SkillsInstaller SkillInstaller
 	SkillsDeleter   SkillDeleter
+
+	// Slice 11j: embedding cache for /health stats. Optional — nil
+	// when EMBEDDING_API_KEY or DB_PATH is unset, in which case the
+	// EmbeddingCache health block stays zero.
+	EmbedCache *search.EmbedCache
 	SkillsAdmin     bool
 }
 

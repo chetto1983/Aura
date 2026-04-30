@@ -88,6 +88,14 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			deps.Logger.Warn("api: health tasks list", "error", err)
 		}
 
+		// Slice 11j: embed cache stats. Stays at zero when no cache is
+		// wired (e.g. EMBEDDING_API_KEY unset).
+		if deps.EmbedCache != nil {
+			hits, misses := deps.EmbedCache.Stats()
+			rollup.EmbedCache.Hits = hits
+			rollup.EmbedCache.Misses = misses
+		}
+
 		writeJSON(w, deps.Logger, http.StatusOK, rollup)
 	}
 }

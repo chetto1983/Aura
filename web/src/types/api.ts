@@ -13,6 +13,9 @@ export interface HealthRollup {
   sources: { by_status: Record<string, number> };
   tasks: { by_status: Record<string, number> };
   scheduler: { next_run: string | null };
+  // Slice 11j — embedding cache hit/miss counters since process start.
+  // Both zero when no cache is wired.
+  embed_cache: { hits: number; misses: number };
 }
 
 export interface WikiPageSummary {

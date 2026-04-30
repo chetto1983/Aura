@@ -19,6 +19,17 @@ type HealthRollup struct {
 	Sources   SourcesHealth   `json:"sources"`
 	Tasks     TasksHealth     `json:"tasks"`
 	Scheduler SchedulerHealth `json:"scheduler"`
+	// Slice 11j: embedding cache hit/miss counters. Zero when no
+	// cache is wired (no EMBEDDING_API_KEY or no DB_PATH).
+	EmbedCache EmbedCacheHealth `json:"embed_cache"`
+}
+
+// EmbedCacheHealth reports SHA-keyed embedding cache stats. Hits are
+// reads that skipped the upstream Mistral round trip; misses are
+// reads that fell through and called Mistral.
+type EmbedCacheHealth struct {
+	Hits   uint64 `json:"hits"`
+	Misses uint64 `json:"misses"`
 }
 
 // ProcessHealth surfaces process-level metadata that the dashboard footer
