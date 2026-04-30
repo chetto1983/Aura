@@ -251,7 +251,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		Sources:   sourceStore,
 		OCR:       ocrClient,
 		MaxFileMB: cfg.OCRMaxFileMB,
-		Allowlist: cfg.IsAllowlisted,
+		Allowlist: b.isAllowlisted,
 		Logger:    logger,
 		// Slice 6: auto-ingest hook. Compile every freshly-OCR'd source
 		// into a wiki summary page so the user sees a [[source-src-...]]
@@ -270,14 +270,14 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		OCR:         ocrClient,
 		Ingest:      ingestPipeline,
 		Auth:        authStore,
-		Allowlist:   cfg.IsAllowlisted,
+		Allowlist:   b.isAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
 		Location:    time.Local,
 		// Keep in sync with cmd/aura/main.go's auraVersion. Hardcoded
 		// here because cmd/aura is not importable.
 		Version:   "3.0",
 		StartedAt: time.Now().UTC(),
-		Logger:      logger,
+		Logger:    logger,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
@@ -285,7 +285,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	// SendToUser method. The tool delivers the freshly-minted token over
 	// Telegram (not through the LLM result) so the plaintext stays out
 	// of conversation history.
-	if tokenTool := tools.NewRequestDashboardTokenTool(authStore, b, cfg.IsAllowlisted); tokenTool != nil {
+	if tokenTool := tools.NewRequestDashboardTokenTool(authStore, b, b.isAllowlisted); tokenTool != nil {
 		toolRegistry.Register(tokenTool)
 	}
 
@@ -333,6 +333,9 @@ func (b *Bot) Stop() {
 	}
 	if b.schedDB != nil {
 		_ = b.schedDB.Close()
+	}
+	if b.authDB != nil {
+		_ = b.authDB.Close()
 	}
 	b.bot.Stop()
 }
@@ -400,6 +403,8 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 
 func (b *Bot) registerHandlers() {
 	b.bot.Handle("/start", b.onStart)
+	b.bot.Handle("/login", b.onLogin)
+	b.bot.Handle("/token", b.onLogin)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
 	if b.docs != nil {
@@ -410,7 +415,7 @@ func (b *Bot) registerHandlers() {
 func (b *Bot) onMessage(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 
-	if !b.cfg.IsAllowlisted(userID) {
+	if !b.isAllowlisted(userID) {
 		b.logger.Warn("message from non-allowlisted user",
 			"user_id", userID,
 			"username", c.Sender().Username,
@@ -424,23 +429,80 @@ func (b *Bot) onMessage(c tele.Context) error {
 	return nil
 }
 
-// onStart handles the /start command. When a user opens the bot via the invite QR code
-// (t.me/bot?start=invite), they are automatically added to the allowlist.
+// onStart handles the /start command. On a blank first-run allowlist, the
+// first Telegram user to start the bot claims the private bootstrap slot.
+// After that, normal allowlist checks apply.
 func (b *Bot) onStart(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 
-	if !b.cfg.IsAllowlisted(userID) {
-		b.cfg.AddToAllowlist(userID)
-		b.logger.Info("user auto-allowlisted via invite",
+	if !b.isAllowlisted(userID) {
+		if claimed, err := b.tryBootstrapUser(userID); err != nil {
+			b.logger.Error("bootstrap allowlist failed", "user_id", userID, "error", err)
+			return c.Send("Aura could not complete first-time setup. Check the app logs and try /start again.")
+		} else if !claimed {
+			b.logger.Warn("start from non-allowlisted user",
+				"user_id", userID,
+				"username", c.Sender().Username,
+			)
+			return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
+		}
+
+		b.logger.Info("first-run telegram user bootstrapped",
 			"user_id", userID,
 			"username", c.Sender().Username,
 		)
-		c.Send("Welcome to Aura! You've been granted access. Send me a message to start chatting.")
-	} else {
-		c.Send("Welcome back! Send me a message to continue.")
+		return b.sendLoginToken(c, userID, "Welcome to Aura. You claimed this first-run install.")
 	}
 
-	return nil
+	return b.sendLoginToken(c, userID, "Welcome back to Aura.")
+}
+
+func (b *Bot) onLogin(c tele.Context) error {
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	if !b.isAllowlisted(userID) {
+		b.logger.Warn("login token requested by non-allowlisted user",
+			"user_id", userID,
+			"username", c.Sender().Username,
+		)
+		return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
+	}
+	return b.sendLoginToken(c, userID, "Here is a fresh dashboard token.")
+}
+
+func (b *Bot) tryBootstrapUser(userID string) (bool, error) {
+	if b.cfg.AllowlistConfigured || b.authDB == nil {
+		return false, nil
+	}
+	return b.authDB.BootstrapUser(context.Background(), userID)
+}
+
+func (b *Bot) isAllowlisted(userID string) bool {
+	if b.cfg != nil && b.cfg.IsAllowlisted(userID) {
+		return true
+	}
+	if b.cfg == nil || b.cfg.AllowlistConfigured || b.authDB == nil {
+		return false
+	}
+	ok, err := b.authDB.IsUserAllowed(context.Background(), userID)
+	if err != nil {
+		b.logger.Warn("bootstrap allowlist lookup failed", "user_id", userID, "error", err)
+		return false
+	}
+	return ok
+}
+
+func (b *Bot) sendLoginToken(c tele.Context, userID, prefix string) error {
+	if b.authDB == nil {
+		return c.Send(prefix + "\n\nDashboard auth is not available in this run.")
+	}
+	token, err := b.authDB.Issue(context.Background(), userID)
+	if err != nil {
+		b.logger.Error("dashboard token issue failed", "user_id", userID, "error", err)
+		return c.Send("I could not create a dashboard token. Check the app logs and try /login again.")
+	}
+	body := prefix + "\n\nDashboard token (paste into the Aura web login):\n\n" +
+		token + "\n\nKeep this private. You can ask /login anytime for a fresh token."
+	return c.Send(body)
 }
 
 func (b *Bot) handleConversation(c tele.Context) {
@@ -657,7 +719,7 @@ func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
 // onStatus handles the /status command, returning budget and context info.
 func (b *Bot) onStatus(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
-	if !b.cfg.IsAllowlisted(userID) {
+	if !b.isAllowlisted(userID) {
 		return nil
 	}
 

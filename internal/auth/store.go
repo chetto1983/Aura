@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     revoked_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS allowed_users (
+    user_id    TEXT PRIMARY KEY,
+    source     TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 `
 
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
@@ -186,6 +192,52 @@ func (s *Store) Revoke(ctx context.Context, token string) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+// BootstrapUser claims the first-run allowlist for userID. It inserts the
+// user only when no persisted bootstrap user exists yet.
+func (s *Store) BootstrapUser(ctx context.Context, userID string) (bool, error) {
+	if userID == "" {
+		return false, errors.New("auth: user id required")
+	}
+	now := s.now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO allowed_users (user_id, source, created_at)
+		SELECT ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM allowed_users)
+	`, userID, "telegram_bootstrap", now)
+	if err != nil {
+		return false, fmt.Errorf("auth bootstrap: insert: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("auth bootstrap: rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+	return s.IsUserAllowed(ctx, userID)
+}
+
+// IsUserAllowed reports whether userID has been persisted by BootstrapUser.
+func (s *Store) IsUserAllowed(ctx context.Context, userID string) (bool, error) {
+	if userID == "" {
+		return false, nil
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM allowed_users WHERE user_id = ?`, userID).Scan(&count); err != nil {
+		return false, fmt.Errorf("auth allowed user lookup: %w", err)
+	}
+	return count > 0, nil
+}
+
+// AllowedUserCount returns the number of persisted bootstrap users.
+func (s *Store) AllowedUserCount(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM allowed_users`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("auth allowed user count: %w", err)
+	}
+	return count, nil
 }
 
 // hashToken returns the lowercase hex SHA-256 of token. The hash is the

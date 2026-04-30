@@ -51,6 +51,15 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-04-30 - Bootstrap login fix
+
+- Fixed the first-run auth trap introduced by slice 10d: Aura can now start with `TELEGRAM_ALLOWLIST` blank.
+- Blank allowlist mode is one-user bootstrap mode. The first Telegram user who sends `/start` is persisted in the existing SQLite auth DB (`allowed_users`) and receives a dashboard token immediately. Later `/start`, `/login`, or `/token` requests from that same user mint fresh tokens without going through the LLM.
+- If `TELEGRAM_ALLOWLIST` is configured, bootstrap mode is disabled and the env allowlist remains the source of truth.
+- Login page copy now tells users to use `/start` for first setup or `/login` for a fresh token.
+- Verification: `go test ./...`, `go build ./...`, `go vet ./...`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` all passed.
+- Files touched: `internal/config/config.go`, `internal/config/config_test.go`, `internal/auth/store.go`, `internal/auth/store_test.go`, `internal/telegram/bot.go`, `internal/telegram/bot_test.go`, `web/src/components/Login.tsx`, `.env.example`, `docs/implementation-tracker.md`, plus rebuilt `internal/api/dist/*`.
+
 ### 2026-04-30 — Slice 10e complete (polish + theme redesign)
 
 - Single atomic commit. Phase 10 (UI) is now fully landed.

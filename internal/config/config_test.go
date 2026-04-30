@@ -15,6 +15,7 @@ func TestIsAllowlisted(t *testing.T) {
 		want   bool
 	}{
 		{"123456", true},
+		{" 123456 ", true},
 		{"789012", true},
 		{"999999", false},
 		{"", false},
@@ -38,14 +39,20 @@ func TestLoadMissingToken(t *testing.T) {
 	}
 }
 
-func TestLoadMissingAllowlist(t *testing.T) {
+func TestLoadAllowsEmptyAllowlistForFirstRunBootstrap(t *testing.T) {
 	os.Setenv("TELEGRAM_TOKEN", "test-token")
 	defer os.Unsetenv("TELEGRAM_TOKEN")
 	os.Unsetenv("TELEGRAM_ALLOWLIST")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing TELEGRAM_ALLOWLIST")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AllowlistConfigured {
+		t.Fatal("AllowlistConfigured = true, want false")
+	}
+	if len(cfg.Allowlist) != 0 {
+		t.Fatalf("Allowlist = %v, want empty", cfg.Allowlist)
 	}
 }
 
@@ -83,6 +90,9 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if len(cfg.Allowlist) != 2 || cfg.Allowlist[0] != "123" || cfg.Allowlist[1] != "456" {
 		t.Errorf("Allowlist = %v, want [123 456]", cfg.Allowlist)
+	}
+	if !cfg.AllowlistConfigured {
+		t.Error("AllowlistConfigured = false, want true")
 	}
 	if cfg.MaxContextTokens != 4000 {
 		t.Errorf("MaxContextTokens = %d, want 4000", cfg.MaxContextTokens)

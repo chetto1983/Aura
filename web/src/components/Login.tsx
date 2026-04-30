@@ -4,10 +4,10 @@ import { api, ApiError } from '@/api';
 import { setToken, getToken, clearToken } from '@/lib/auth';
 
 // Login is the dashboard's only unauthenticated view. The user pastes a
-// token they got from Telegram (via the request_dashboard_token tool)
-// and we verify it by calling /auth/whoami. If valid, the token is
-// stashed in localStorage and we navigate home; if not, the input
-// remains and an error is shown.
+// token they got from Telegram (/start on first run, /login after that)
+// and we verify it by calling /auth/whoami. If valid, the token is stashed
+// in localStorage and we navigate home; if not, the input remains and an
+// error is shown.
 //
 // The "expired=1" query param is set by api.ts's handle401 redirect so
 // returning users see a hint rather than a blank "please log in" page.
@@ -82,8 +82,8 @@ export function Login() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Aura dashboard</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Paste your dashboard token to sign in. Ask the bot in Telegram
-            <br />for a token if you don&apos;t have one.
+            Paste your dashboard token to sign in. In Telegram, send
+            <br />/start for first setup or /login for a fresh token.
           </p>
         </div>
 
@@ -121,7 +121,7 @@ export function Login() {
         </form>
 
         <div className="text-center text-xs text-muted-foreground">
-          <p>Tip: in Telegram, ask &quot;give me a dashboard token&quot;.</p>
+          <p>Tip: tokens are delivered only through your private Telegram chat.</p>
         </div>
       </div>
     </div>

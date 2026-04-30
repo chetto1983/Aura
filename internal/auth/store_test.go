@@ -130,3 +130,51 @@ func TestMultipleUsers_Isolated(t *testing.T) {
 		t.Errorf("bob's token broke after alice revoke: %v", err)
 	}
 }
+
+func TestBootstrapUser_ClaimsEmptyAllowlist(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	claimed, err := s.BootstrapUser(ctx, "u1")
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if !claimed {
+		t.Fatal("claimed = false, want true")
+	}
+	ok, err := s.IsUserAllowed(ctx, "u1")
+	if err != nil {
+		t.Fatalf("allowed lookup: %v", err)
+	}
+	if !ok {
+		t.Fatal("u1 not allowed after bootstrap")
+	}
+	count, err := s.AllowedUserCount(ctx)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("allowed user count = %d, want 1", count)
+	}
+}
+
+func TestBootstrapUser_OnlyFirstUserWins(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if claimed, err := s.BootstrapUser(ctx, "u1"); err != nil || !claimed {
+		t.Fatalf("first bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
+	if claimed, err := s.BootstrapUser(ctx, "u2"); err != nil || claimed {
+		t.Fatalf("second bootstrap claimed=%v err=%v, want false nil", claimed, err)
+	}
+	ok, err := s.IsUserAllowed(ctx, "u2")
+	if err != nil {
+		t.Fatalf("allowed lookup: %v", err)
+	}
+	if ok {
+		t.Fatal("second user should not be allowed")
+	}
+	if claimed, err := s.BootstrapUser(ctx, "u1"); err != nil || !claimed {
+		t.Fatalf("same bootstrap user claimed=%v err=%v, want true nil", claimed, err)
+	}
+}

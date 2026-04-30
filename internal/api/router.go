@@ -80,8 +80,8 @@ type Deps struct {
 //
 // When deps.Auth is non-nil the entire mux is wrapped in RequireBearer.
 // No /api/* route is publicly reachable; tokens are minted out-of-band
-// via the request_dashboard_token LLM tool and delivered through the
-// existing Telegram channel. When deps.Auth is nil (test fixtures) the
+// via the Telegram /start or /login commands, or by the LLM-backed
+// request_dashboard_token tool. When deps.Auth is nil (test fixtures) the
 // router is unwrapped so test cases don't have to mint a token to drive
 // the read endpoints.
 func NewRouter(deps Deps) http.Handler {
@@ -119,8 +119,7 @@ func NewRouter(deps Deps) http.Handler {
 
 	// Slice 10d: auth endpoints. Both authed — there's intentionally no
 	// public /auth/login route. Tokens enter the dashboard through the
-	// Telegram bot's request_dashboard_token tool, where the user is
-	// already authenticated.
+	// Telegram bot, where the user is already authenticated.
 	mux.HandleFunc("GET /auth/whoami", handleAuthWhoami(deps))
 	mux.HandleFunc("POST /auth/logout", handleAuthLogout(deps))
 
