@@ -6,10 +6,14 @@ const STORAGE_KEY = "sacchi-ui-theme";
 const THEMES: AppTheme[] = ["light", "dark", "contrast"];
 
 function readInitialTheme(): AppTheme {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "dark";
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (saved === "light" || saved === "dark" || saved === "contrast") return saved;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  // 10e: dark by default. Honor an explicit OS preference for light, but
+  // when the OS is set to dark or has no preference, use Aura's dark theme
+  // (the dashboard was designed dark-first).
+  if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "light";
+  return "dark";
 }
 
 function applyTheme(theme: AppTheme) {

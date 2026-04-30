@@ -2,10 +2,38 @@ package api
 
 import (
 	"net/http"
+	"runtime/debug"
+	"sync"
+	"time"
 
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/source"
 )
+
+// gitRevision is read once via debug.ReadBuildInfo. The result depends
+// only on the binary so caching is safe across goroutines.
+var (
+	gitRevisionOnce sync.Once
+	gitRevisionVal  string
+)
+
+func gitRevision() string {
+	gitRevisionOnce.Do(func() {
+		info, ok := debug.ReadBuildInfo()
+		if !ok {
+			return
+		}
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+				// Short hash for human display; full SHA available via
+				// `git rev-parse HEAD` if anyone needs it.
+				gitRevisionVal = s.Value[:7]
+				return
+			}
+		}
+	})
+	return gitRevisionVal
+}
 
 func handleHealth(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -14,6 +42,15 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			Sources:   SourcesHealth{ByStatus: map[string]int{}},
 			Tasks:     TasksHealth{ByStatus: map[string]int{}},
 			Scheduler: SchedulerHealth{},
+		}
+
+		// Process rollup
+		rollup.Process.Version = deps.Version
+		rollup.Process.GitRevision = gitRevision()
+		if !deps.StartedAt.IsZero() {
+			started := deps.StartedAt.UTC()
+			rollup.Process.StartedAt = started
+			rollup.Process.UptimeSeconds = int64(time.Since(started).Seconds())
 		}
 
 		// Wiki rollup

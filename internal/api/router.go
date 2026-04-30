@@ -65,6 +65,13 @@ type Deps struct {
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100
 	Location    *time.Location
 	Logger      *slog.Logger
+
+	// Slice 10e: process metadata for /health. Version is the human label
+	// (e.g. "3.0"); StartedAt is captured at bot startup so /health can
+	// report uptime. Both are optional — empty/zero values just elide the
+	// fields from the JSON response.
+	Version   string
+	StartedAt time.Time
 }
 
 // NewRouter returns the API as an http.Handler. Routes do not include

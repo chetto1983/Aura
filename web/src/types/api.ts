@@ -3,6 +3,12 @@
 // endpoint. If drift becomes painful, swap in tygo Go→TS codegen.
 
 export interface HealthRollup {
+  process: {
+    version: string;
+    git_revision?: string;
+    started_at: string;
+    uptime_seconds: number;
+  };
   wiki: { pages: number; last_update: string };
   sources: { by_status: Record<string, number> };
   tasks: { by_status: Record<string, number> };

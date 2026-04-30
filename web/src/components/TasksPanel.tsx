@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Calendar } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import type { Task, UpsertTaskRequest } from '@/types/api';
@@ -66,7 +67,7 @@ export function TasksPanel() {
     }
   }, [refetch]);
 
-  if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (loading && !data) return <TasksSkeleton />;
   if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
   if (!data) return null;
 
@@ -95,7 +96,14 @@ export function TasksPanel() {
       </header>
 
       {data.length === 0 && (
-        <p className="text-sm text-muted-foreground">No scheduled tasks.</p>
+        <div className="rounded-lg border border-dashed p-12 flex flex-col items-center gap-2 text-muted-foreground">
+          <Calendar size={32} className="opacity-40" />
+          <p className="text-sm font-medium">No scheduled tasks yet</p>
+          <p className="text-xs text-center max-w-xs">
+            Use &quot;+ New task&quot; above for a one-time reminder or daily wiki
+            maintenance, or ask the bot to schedule one in chat.
+          </p>
+        </div>
       )}
 
       <NewTaskDialog open={dialogOpen} onOpenChange={setDialogOpen} onSubmit={handleCreate} />
@@ -374,4 +382,29 @@ function Countdown({ iso }: { iso: string }) {
 function shortDate(iso: string): string {
   if (!iso || iso.startsWith('0001')) return '—';
   return new Date(iso).toLocaleString();
+}
+
+function TasksSkeleton() {
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-9 w-28" />
+      </div>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <div className="rounded-lg border overflow-hidden">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="border-t first:border-t-0 px-3 py-3 flex items-center gap-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 flex-1" />
+              <Skeleton className="h-7 w-20" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }

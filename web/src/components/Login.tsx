@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Key } from 'lucide-react';
 import { api, ApiError } from '@/api';
 import { setToken, getToken, clearToken } from '@/lib/auth';
 
@@ -65,14 +64,24 @@ export function Login() {
   };
 
   return (
-    <div className="flex h-full items-center justify-center p-6">
+    <div className="relative flex h-full items-center justify-center overflow-hidden p-6">
+      {/* Ambient brand glow (decorative; the body gradient is also active) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            'radial-gradient(600px 400px at 50% 35%, rgba(77, 168, 255, 0.18), transparent 65%)',
+        }}
+      />
+
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <div className="mx-auto mb-3 inline-flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Key size={20} />
+          <div className="mx-auto mb-4 flex justify-center">
+            <LoginBrandMark />
           </div>
-          <h1 className="text-2xl font-semibold">Aura dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight">Aura dashboard</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             Paste your dashboard token to sign in. Ask the bot in Telegram
             <br />for a token if you don&apos;t have one.
           </p>
@@ -116,5 +125,37 @@ export function Login() {
         </div>
       </div>
     </div>
+  );
+}
+
+// LoginBrandMark is a larger version of the sidebar BrandMark with a
+// stronger outer halo — sets the tone for the unauth'd entry point.
+function LoginBrandMark() {
+  return (
+    <svg
+      width="64"
+      height="64"
+      viewBox="0 0 40 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <radialGradient id="aura-orb-lg" cx="50%" cy="40%" r="65%">
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.85" />
+          <stop offset="55%" stopColor="var(--primary)" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="20" cy="20" r="19" fill="url(#aura-orb-lg)" />
+      <circle cx="20" cy="20" r="14" stroke="var(--primary)" strokeOpacity="0.55" strokeWidth="1.4" />
+      <path
+        d="M12 28 L20 11 L28 28 M16.5 22 L24 22 M24 11 L28 11 L28 15"
+        stroke="var(--primary)"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

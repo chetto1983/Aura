@@ -14,10 +14,22 @@ import "time"
 // subsystem state in one round-trip so the dashboard can render the home
 // page from a single fetch.
 type HealthRollup struct {
+	Process   ProcessHealth   `json:"process"`
 	Wiki      WikiHealth      `json:"wiki"`
 	Sources   SourcesHealth   `json:"sources"`
 	Tasks     TasksHealth     `json:"tasks"`
 	Scheduler SchedulerHealth `json:"scheduler"`
+}
+
+// ProcessHealth surfaces process-level metadata that the dashboard footer
+// can show (version + git rev + uptime). All fields are best-effort —
+// GitRevision is populated from runtime/debug.ReadBuildInfo when the
+// binary was built inside a git tree, otherwise empty.
+type ProcessHealth struct {
+	Version       string    `json:"version"`
+	GitRevision   string    `json:"git_revision,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
 }
 
 // WikiHealth summarizes wiki state.

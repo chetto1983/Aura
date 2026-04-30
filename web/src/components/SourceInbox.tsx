@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Upload, Play, RefreshCcw } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
@@ -93,7 +94,7 @@ export function SourceInbox() {
     }
   }, [refetch]);
 
-  if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (loading && !data) return <SourceInboxSkeleton />;
   if (error && !data) return <ErrorCard error={error} />;
   if (!data) return null;
 
@@ -303,4 +304,28 @@ function shortDate(iso: string): string {
   if (!iso || iso.startsWith('0001')) return '—';
   const d = new Date(iso);
   return d.toLocaleString();
+}
+
+function SourceInboxSkeleton() {
+  return (
+    <div className="p-6 space-y-6">
+      <Skeleton className="h-8 w-32" />
+      <Skeleton className="h-32 w-full" />
+      {[0, 1].map((i) => (
+        <div key={i} className="space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <div className="rounded-lg border overflow-hidden">
+            {[0, 1].map((j) => (
+              <div key={j} className="border-t first:border-t-0 px-3 py-3 flex items-center gap-3">
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="h-7 w-20" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { toast } from 'sonner';
 
 interface Props { children: ReactNode }
 interface State { error: Error | null }
@@ -12,6 +13,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught', error, info);
+    // 10e: surface the failure as a toast too — the inline error card
+    // is easy to miss on tall pages, while a toast pops above all
+    // content. Title is short so the toast doesn't dominate.
+    toast.error(error.message || 'Something went wrong', {
+      description: 'Check the console for the full stack.',
+      duration: 6000,
+    });
   }
 
   render() {

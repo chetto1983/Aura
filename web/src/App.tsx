@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { Sidebar } from '@/components/Sidebar';
+import { Shell } from '@/components/Shell';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { HealthDashboard } from '@/components/HealthDashboard';
 import { WikiPanel } from '@/components/WikiPanel';
@@ -36,26 +36,23 @@ export default function App() {
           path="*"
           element={
             <RequireAuth>
-              <div className="flex h-screen w-screen overflow-hidden">
-                <Sidebar />
-                <main className="flex-1 overflow-auto">
-                  <ErrorBoundary>
-                    <Routes>
-                      <Route path="/" element={<HealthDashboard />} />
-                      <Route path="/wiki" element={<WikiPanel />} />
-                      <Route path="/wiki/:slug" element={<WikiPageView />} />
-                      <Route path="/graph" element={
-                        <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading graph…</div>}>
-                          <WikiGraphView />
-                        </Suspense>
-                      } />
-                      <Route path="/sources" element={<SourceInbox />} />
-                      <Route path="/tasks" element={<TasksPanel />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                  </ErrorBoundary>
-                </main>
-              </div>
+              <Shell>
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/" element={<HealthDashboard />} />
+                    <Route path="/wiki" element={<WikiPanel />} />
+                    <Route path="/wiki/:slug" element={<WikiPageView />} />
+                    <Route path="/graph" element={
+                      <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading graph…</div>}>
+                        <WikiGraphView />
+                      </Suspense>
+                    } />
+                    <Route path="/sources" element={<SourceInbox />} />
+                    <Route path="/tasks" element={<TasksPanel />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </ErrorBoundary>
+              </Shell>
             </RequireAuth>
           }
         />

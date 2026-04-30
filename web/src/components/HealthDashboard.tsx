@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const POLL_MS = 5000;
 
@@ -8,14 +9,17 @@ export function HealthDashboard() {
   const fetcher = useCallback(() => api.health(), []);
   const { data, error, loading, stale } = useApi(fetcher, POLL_MS);
 
-  if (loading && !data) return <Loading />;
+  if (loading && !data) return <DashboardSkeleton />;
   if (error && !data) return <ErrorCard error={error} />;
   if (!data) return null;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Live health rollup · refreshes every 5s</p>
+        </div>
         {stale && <StalePill />}
       </header>
 
@@ -46,15 +50,67 @@ export function HealthDashboard() {
           <div className="text-xs text-muted-foreground">active tasks</div>
         </Card>
       </div>
+
+      <ProcessFooter process={data.process} />
     </div>
   );
 }
 
+function ProcessFooter({ process: p }: { process: { version: string; git_revision?: string; started_at: string; uptime_seconds: number } }) {
+  if (!p?.version && !p?.git_revision) return null;
+  return (
+    <footer className="pt-4 mt-2 border-t flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+      <span>v{p.version || '?'}</span>
+      {p.git_revision && <span className="font-mono">{p.git_revision}</span>}
+      <span>uptime {formatUptime(p.uptime_seconds)}</span>
+      {p.started_at && !p.started_at.startsWith('0001') && (
+        <span>started {new Date(p.started_at).toLocaleString()}</span>
+      )}
+    </footer>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="p-6 space-y-4">
+      <Skeleton className="h-8 w-40" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-baseline justify-between">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-3 w-12" />
+            </div>
+            <Skeleton className="h-9 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatUptime(seconds: number): string {
+  if (!seconds || seconds < 1) return '—';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${seconds}s`;
+}
+
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="group relative rounded-xl border bg-card p-5 transition-colors hover:border-primary/30">
+      {/* Subtle top-left accent stripe — picks up the brand color on hover */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-primary/40 via-primary/10 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+      />
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
         {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
       </div>
       <div className="mt-3">{children}</div>
@@ -68,9 +124,9 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
     return <div className="text-sm text-muted-foreground">No sources yet</div>;
   }
   const colors: Record<string, string> = {
-    stored: 'bg-zinc-400',
-    ocr_complete: 'bg-blue-500',
-    ingested: 'bg-emerald-500',
+    stored: 'bg-slate-400/80',
+    ocr_complete: 'bg-sky-400',
+    ingested: 'bg-primary',
     failed: 'bg-rose-500',
   };
   return (
@@ -110,9 +166,6 @@ function StalePill() {
   );
 }
 
-function Loading() {
-  return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
-}
 function ErrorCard({ error }: { error: Error }) {
   return (
     <div className="p-6">

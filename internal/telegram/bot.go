@@ -273,6 +273,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		Allowlist:   cfg.IsAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
 		Location:    time.Local,
+		// Keep in sync with cmd/aura/main.go's auraVersion. Hardcoded
+		// here because cmd/aura is not importable.
+		Version:   "3.0",
+		StartedAt: time.Now().UTC(),
 		Logger:      logger,
 	})
 

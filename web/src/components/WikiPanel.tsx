@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, BookText } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export function WikiPanel() {
   const fetcher = useCallback(() => api.wikiPages(), []);
@@ -42,7 +43,7 @@ export function WikiPanel() {
     );
   }, [data, filter, category]);
 
-  if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (loading && !data) return <WikiSkeleton />;
   if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
   if (!data) return null;
 
@@ -118,7 +119,19 @@ export function WikiPanel() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={4} className="py-6 text-center text-sm text-muted-foreground">No matching pages</td></tr>
+              <tr>
+                <td colSpan={4} className="py-12 text-center">
+                  {data.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <BookText size={32} className="opacity-40" />
+                      <p className="text-sm font-medium">No wiki pages yet</p>
+                      <p className="text-xs">Drop a PDF on /sources or chat with the bot — pages appear after the first ingest.</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No pages match your filter</p>
+                  )}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -130,4 +143,26 @@ export function WikiPanel() {
 function shortDate(iso: string): string {
   if (!iso || iso.startsWith('0001')) return '—';
   return new Date(iso).toLocaleDateString();
+}
+
+function WikiSkeleton() {
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-8 w-24" />
+        <Skeleton className="h-9 w-32" />
+      </div>
+      <Skeleton className="h-9 w-full" />
+      <div className="rounded-lg border overflow-hidden">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="border-t first:border-t-0 px-3 py-3 flex items-center gap-3">
+            <Skeleton className="h-4 flex-1" />
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-12" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
