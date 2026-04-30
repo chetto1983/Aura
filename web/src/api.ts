@@ -6,6 +6,7 @@ import type {
   SourceSummary,
   SourceDetail,
   Task,
+  UploadResponse,
 } from '@/types/api';
 
 const BASE = '/api';
@@ -69,6 +70,28 @@ export const api = {
   source: (id: string) => get<SourceDetail>(`/sources/${id}`),
   sourceOCR: (id: string) =>
     get<{ markdown: string }>(`/sources/${id}/ocr`),
+  uploadSource: async (file: File): Promise<UploadResponse> => {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    // Multipart uploads can take minutes for OCR; bypass the 8s GET timeout.
+    const res = await fetch(BASE + '/sources/upload', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let msg = text.slice(0, 200);
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed.error === 'string') msg = parsed.error;
+      } catch {
+        // not JSON
+      }
+      throw new ApiError(res.status, msg || res.statusText);
+    }
+    return (await res.json()) as UploadResponse;
+  },
   tasks: (q?: { status?: string }) =>
     get<Task[]>('/tasks' + qs(q)),
   task: (name: string) => get<Task>(`/tasks/${name}`),

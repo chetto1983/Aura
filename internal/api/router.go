@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
@@ -21,11 +23,15 @@ type WikiStore interface {
 	Dir() string // for last-update mtime walks
 }
 
-// SourceStore is the read-side surface for source.Store.
+// SourceStore is the read-side surface for source.Store. The two write
+// methods (Put + Update) are used only by the upload endpoint; they're
+// included in the same interface to keep Deps wiring simple.
 type SourceStore interface {
 	Get(id string) (*source.Source, error)
 	List(filter source.ListFilter) ([]*source.Source, error)
 	Path(id, name string) string
+	Put(ctx context.Context, in source.PutInput) (*source.Source, bool, error)
+	Update(id string, mutator func(*source.Source) error) (*source.Source, error)
 }
 
 // SchedulerStore is the read-side surface for scheduler.Store.
@@ -35,11 +41,18 @@ type SchedulerStore interface {
 }
 
 // Deps is the set of stores the router handlers operate on.
+//
+// OCR and Ingest are optional — when nil, the upload endpoint accepts the
+// file but stops at "stored" status. Bot.New populates them when
+// MISTRAL_API_KEY is configured.
 type Deps struct {
-	Wiki      WikiStore
-	Sources   SourceStore
-	Scheduler SchedulerStore
-	Logger    *slog.Logger
+	Wiki        WikiStore
+	Sources     SourceStore
+	Scheduler   SchedulerStore
+	OCR         *ocr.Client
+	Ingest      *ingest.Pipeline
+	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100
+	Logger      *slog.Logger
 }
 
 // NewRouter returns the read-only API as an http.Handler. Routes do not
@@ -61,6 +74,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /sources/{id}", handleSourceGet(deps))
 	mux.HandleFunc("GET /sources/{id}/ocr", handleSourceOCR(deps))
 	mux.HandleFunc("GET /sources/{id}/raw", handleSourceRaw(deps))
+
+	// Slice 10b mini: browser PDF upload. Loopback-gated until 10d ships
+	// bearer auth, so a LAN-exposed listener (HTTP_PORT=:8080 etc) can't
+	// accept writes from other devices.
+	mux.Handle("POST /sources/upload", requireLoopback(deps.Logger, handleSourceUpload(deps)))
 
 	mux.HandleFunc("GET /tasks", handleTaskList(deps))
 	mux.HandleFunc("GET /tasks/{name}", handleTaskGet(deps))

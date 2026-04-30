@@ -59,6 +59,18 @@ export interface SourceDetail extends SourceSummary {
   error?: string;
 }
 
+export interface UploadResponse {
+  id: string;
+  status: SourceSummary['status'];
+  duplicate: boolean;
+  filename: string;
+  page_count?: number;
+  wiki_pages?: string[];
+  ingest_note?: string;
+  ocr_error?: string;
+  note?: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';

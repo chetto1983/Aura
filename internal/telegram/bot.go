@@ -253,10 +253,13 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	// /health, /wiki/..., /sources/..., /tasks/... — so callers wrap with
 	// http.StripPrefix.
 	b.api = api.NewRouter(api.Deps{
-		Wiki:      wikiStore,
-		Sources:   sourceStore,
-		Scheduler: schedStore,
-		Logger:    logger,
+		Wiki:        wikiStore,
+		Sources:     sourceStore,
+		Scheduler:   schedStore,
+		OCR:         ocrClient,
+		Ingest:      ingestPipeline,
+		MaxUploadMB: cfg.OCRMaxFileMB,
+		Logger:      logger,
 	})
 
 	b.registerHandlers()
