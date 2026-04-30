@@ -750,21 +750,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 
 		convCtx.AddAssistantToolCallMessage(resp.Content, resp.ToolCalls)
-		for _, tc := range resp.ToolCalls {
-			c.Send(toolActivityMessage(tc.Name))
-
-			// schedule_task (and any future user-aware tool) needs the
-			// caller's Telegram ID so reminders go back to the right
-			// chat. tools.WithUserID is a no-op for tools that ignore it.
-			toolCtx := tools.WithUserID(ctx, userID)
-			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
-			if err != nil {
-				result = "(tool error) " + err.Error()
-				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
-			}
-			lastToolResult = result
-			convCtx.AddToolResultMessage(tc.ID, result)
-		}
+		lastToolResult = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls)
 	}
 
 	fallback := "Tool loop stopped after reaching the maximum iteration limit."
@@ -773,6 +759,57 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	}
 	convCtx.AddAssistantMessage(fallback)
 	return fallback
+}
+
+// executeToolCalls runs an assistant turn's tool calls concurrently and
+// appends results in original order. The LLM batches independent calls into
+// one assistant turn (e.g. search_wiki + web_search side-by-side); running
+// them sequentially serialized N round-trips of latency for no reason.
+//
+// Concurrency safety: Registry.Execute is RWMutex-guarded for lookup, and
+// individual tools run outside the lock. Wiki/source writes serialize on
+// SQLite at the storage layer. Activity pings are emitted up-front so the
+// user sees all running tools immediately rather than drip-fed.
+//
+// Returns the last result content (in original order), used by the caller
+// as a fallback when the model returns an empty final response.
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+
+	for _, tc := range calls {
+		c.Send(toolActivityMessage(tc.Name))
+	}
+
+	type outcome struct {
+		id      string
+		content string
+	}
+	results := make([]outcome, len(calls))
+
+	var wg sync.WaitGroup
+	for i, tc := range calls {
+		wg.Add(1)
+		go func(i int, tc llm.ToolCall) {
+			defer wg.Done()
+			toolCtx := tools.WithUserID(ctx, userID)
+			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
+			if err != nil {
+				result = "(tool error) " + err.Error()
+				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
+			}
+			results[i] = outcome{id: tc.ID, content: result}
+		}(i, tc)
+	}
+	wg.Wait()
+
+	var lastToolResult string
+	for _, r := range results {
+		convCtx.AddToolResultMessage(r.id, r.content)
+		lastToolResult = r.content
+	}
+	return lastToolResult
 }
 
 func toolActivityMessage(name string) string {
