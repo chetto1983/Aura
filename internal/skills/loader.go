@@ -12,8 +12,15 @@ import (
 )
 
 const (
-	maxSkillPromptChars = 4000
-	maxSkillsBlockChars = 12000
+	// maxManifestDescChars caps a single skill's description in the
+	// system-prompt manifest. The description is the routing signal
+	// (Anthropic's skill format embeds TRIGGER/SKIP rules there) so we
+	// don't want to truncate it aggressively, but a runaway description
+	// shouldn't crowd out the rest of the manifest either.
+	maxManifestDescChars = 1500
+	// maxSkillsBlockChars bounds the entire manifest. At 8 KiB this
+	// fits ~30 skills with full descriptions before truncation kicks in.
+	maxSkillsBlockChars = 8000
 )
 
 var skillNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -166,7 +173,19 @@ func parseSkill(data []byte) (Skill, error) {
 	}, nil
 }
 
-// PromptBlock renders loaded skills for the system prompt.
+// PromptBlock renders a manifest of loaded skills for the system
+// prompt. Anthropic's skill format is built around progressive
+// disclosure: the description carries the trigger conditions, the
+// body carries the full instructions. Dumping every body into every
+// turn's system prompt — what Picobot and earlier Aura did — wastes
+// 20+ KiB of context per turn even on small-talk turns where no skill
+// applies.
+//
+// Instead we emit a tiny manifest (`- name — description`) plus a
+// directive telling the LLM to call `read_skill(name)` when a
+// description matches before acting on its instructions. The body
+// only enters the conversation context on turns that actually need
+// it, and stays cached for the remainder of the tool loop.
 func PromptBlock(loaded []Skill) string {
 	if len(loaded) == 0 {
 		return ""
@@ -174,24 +193,22 @@ func PromptBlock(loaded []Skill) string {
 
 	var sb strings.Builder
 	sb.WriteString("## Available Skills\n\n")
-	sb.WriteString("These are local user-authored operating instructions. Apply the relevant skill when the user's request matches its description.\n")
+	sb.WriteString("Aura has the local skills listed below. Each entry's description states when it applies. ")
+	sb.WriteString("Before following a skill's guidance, call the `read_skill` tool with the skill name to load its full instructions, then act on them. ")
+	sb.WriteString("Skip skills whose description does not match the user's request.\n\n")
 	for _, skill := range loaded {
 		if skill.Name == "" {
 			continue
 		}
-		fmt.Fprintf(&sb, "\n### %s\n", skill.Name)
-		if skill.Description != "" {
-			fmt.Fprintf(&sb, "Description: %s\n\n", skill.Description)
+		desc := strings.TrimSpace(skill.Description)
+		if desc == "" {
+			desc = "(no description)"
+		} else if len(desc) > maxManifestDescChars {
+			desc = desc[:maxManifestDescChars] + "…[truncated]"
 		}
-		content := skill.Content
-		if len(content) > maxSkillPromptChars {
-			content = content[:maxSkillPromptChars] + "\n[skill content truncated]"
-		}
-		sb.WriteString(content)
-		sb.WriteString("\n")
+		fmt.Fprintf(&sb, "- **%s** — %s\n", skill.Name, desc)
 		if sb.Len() > maxSkillsBlockChars {
-			out := sb.String()
-			return out[:maxSkillsBlockChars] + "\n[skills block truncated]"
+			return sb.String()[:maxSkillsBlockChars] + "\n[manifest truncated]"
 		}
 	}
 	return strings.TrimSpace(sb.String())

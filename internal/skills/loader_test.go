@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,8 +165,42 @@ func TestPromptBlock(t *testing.T) {
 	if !strings.Contains(block, "## Available Skills") {
 		t.Fatalf("PromptBlock() missing heading:\n%s", block)
 	}
-	if !strings.Contains(block, "### alpha") || !strings.Contains(block, "Use alpha carefully.") {
-		t.Fatalf("PromptBlock() missing skill content:\n%s", block)
+	// Manifest mode: name + description present, body content NOT.
+	if !strings.Contains(block, "**alpha** — Alpha skill") {
+		t.Fatalf("PromptBlock() missing manifest line for alpha:\n%s", block)
+	}
+	if strings.Contains(block, "Use alpha carefully.") {
+		t.Fatalf("PromptBlock() unexpectedly leaked body content:\n%s", block)
+	}
+	if !strings.Contains(block, "read_skill") {
+		t.Fatalf("PromptBlock() missing read_skill instruction:\n%s", block)
+	}
+}
+
+func TestPromptBlockTruncatesLongDescription(t *testing.T) {
+	huge := strings.Repeat("x", maxManifestDescChars+500)
+	block := PromptBlock([]Skill{{Name: "alpha", Description: huge}})
+	if !strings.Contains(block, "[truncated]") {
+		t.Fatalf("expected truncation marker in oversized description:\n%s", block)
+	}
+}
+
+func TestPromptBlockBoundsTotalSize(t *testing.T) {
+	// 50 skills × ~200 bytes per manifest line should stay under the
+	// 8 KiB cap so the cap is a safety net, not a normal path.
+	skills := make([]Skill, 0, 50)
+	for i := 0; i < 50; i++ {
+		skills = append(skills, Skill{
+			Name:        fmt.Sprintf("skill-%02d", i),
+			Description: "Apply when condition is met.",
+		})
+	}
+	block := PromptBlock(skills)
+	if len(block) >= maxSkillsBlockChars {
+		t.Fatalf("manifest unexpectedly truncated at 50 small skills (len=%d)", len(block))
+	}
+	if !strings.Contains(block, "**skill-49**") {
+		t.Errorf("expected last skill present in manifest")
 	}
 }
 
