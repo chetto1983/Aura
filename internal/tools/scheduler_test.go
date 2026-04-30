@@ -114,11 +114,16 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 	}{
 		{"missing kind", map[string]any{"name": "a"}, "kind"},
 		{"unknown kind", map[string]any{"name": "a", "kind": "foo"}, "unknown kind"},
-		{"missing schedule", map[string]any{"name": "a", "kind": "reminder"}, "either at"},
+		{"missing schedule", map[string]any{"name": "a", "kind": "reminder"}, "provide one of"},
 		{"both schedules", map[string]any{
 			"name": "a", "kind": "reminder",
 			"at":    time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
 			"daily": "03:00",
+		}, "mutually exclusive"},
+		{"in plus at_local", map[string]any{
+			"name": "a", "kind": "reminder",
+			"in":       "5m",
+			"at_local": "2026-04-30T17:00:00",
 		}, "mutually exclusive"},
 		{"past at", map[string]any{
 			"name": "a", "kind": "reminder",
@@ -127,6 +132,15 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 		{"bad daily", map[string]any{
 			"name": "a", "kind": "wiki_maintenance", "daily": "3am",
 		}, ""}, // ParseDailyTime emits its own message
+		{"bad in", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "in": "soon",
+		}, "parse in"},
+		{"non-positive in", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "in": "-5m",
+		}, "must be positive"},
+		{"bad at_local format", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "at_local": "domani alle 5",
+		}, "parse at_local"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,6 +150,140 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 			}
 			if tc.hint != "" && !strings.Contains(err.Error(), tc.hint) {
 				t.Errorf("error %q should contain %q", err.Error(), tc.hint)
+			}
+		})
+	}
+}
+
+func TestScheduleTaskTool_RelativeIn(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+	ctx := WithUserID(t.Context(), "u")
+
+	before := time.Now().UTC()
+	out, err := tool.Execute(ctx, map[string]any{
+		"name":    "ciao-mondo",
+		"kind":    "reminder",
+		"payload": "ciao mondo",
+		"in":      "60s",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "Scheduled reminder task") {
+		t.Errorf("response = %q", out)
+	}
+
+	got, err := store.GetByName(ctx, "ciao-mondo")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	// next_run_at must be ~60s after the call. Allow a 5s window for
+	// scheduling + db round-trip.
+	delta := got.NextRunAt.Sub(before)
+	if delta < 55*time.Second || delta > 75*time.Second {
+		t.Errorf("next_run_at delta = %v, want ~60s", delta)
+	}
+	if got.ScheduleKind != scheduler.ScheduleAt {
+		t.Errorf("ScheduleKind = %q, want at (in resolves to absolute)", got.ScheduleKind)
+	}
+}
+
+func TestScheduleTaskTool_AtLocal(t *testing.T) {
+	// Pin the location so the test is deterministic regardless of
+	// where the test runs.
+	rome, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		t.Skipf("Europe/Rome tzdata unavailable: %v", err)
+	}
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, rome)
+	ctx := WithUserID(t.Context(), "u")
+
+	// Pick "tomorrow at 17:00 local" so we know it's strictly in the
+	// future in Rome regardless of CET/CEST.
+	tomorrow := time.Now().In(rome).AddDate(0, 0, 1)
+	atLocal := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 17, 0, 0, 0, rome).
+		Format("2006-01-02T15:04:05")
+
+	out, err := tool.Execute(ctx, map[string]any{
+		"name":     "compra-pane",
+		"kind":     "reminder",
+		"payload":  "compra il pane",
+		"at_local": atLocal,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "Scheduled reminder task") {
+		t.Errorf("response = %q", out)
+	}
+
+	got, err := store.GetByName(ctx, "compra-pane")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	want := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 17, 0, 0, 0, rome).UTC()
+	if !got.NextRunAt.Equal(want) {
+		t.Errorf("next_run_at = %v, want %v (17:00 Rome → UTC)", got.NextRunAt, want)
+	}
+}
+
+func TestScheduleTaskTool_AtLocalRejectsPast(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+	ctx := WithUserID(t.Context(), "u")
+
+	// 1970 is comfortably in the past for any test environment.
+	_, err := tool.Execute(ctx, map[string]any{
+		"name":     "x",
+		"kind":     "reminder",
+		"at_local": "1970-01-01T00:00:00",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not in the future") {
+		t.Errorf("expected past-time error, got: %v", err)
+	}
+}
+
+func TestParseLocalWallClock_AcceptsCommonShapes(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		t.Skipf("Europe/Rome tzdata unavailable: %v", err)
+	}
+	for _, in := range []string{
+		"2026-04-30T17:00:00",
+		"2026-04-30T17:00",
+		"2026-04-30 17:00:00",
+		"2026-04-30 17:00",
+	} {
+		t.Run(in, func(t *testing.T) {
+			ts, err := parseLocalWallClock(in, loc)
+			if err != nil {
+				t.Fatalf("parseLocalWallClock(%q): %v", in, err)
+			}
+			zone, _ := ts.Zone()
+			if !strings.HasPrefix(zone, "CE") {
+				// Rome uses CET/CEST depending on DST; either is fine.
+				t.Errorf("zone = %q, want CET or CEST", zone)
+			}
+			if ts.Hour() != 17 || ts.Minute() != 0 {
+				t.Errorf("got %v, want 17:00 in Rome", ts)
+			}
+		})
+	}
+}
+
+func TestParseLocalWallClock_RejectsTimezoneSuffixes(t *testing.T) {
+	loc := time.UTC
+	for _, in := range []string{
+		"2026-04-30T17:00:00Z",          // explicit UTC — at_local must not accept
+		"2026-04-30T17:00:00+02:00",     // explicit offset — same
+		"2026-04-30",                    // missing time
+		"domani alle 5",                 // not a timestamp at all
+	} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseLocalWallClock(in, loc); err == nil {
+				t.Errorf("expected error for %q", in)
 			}
 		})
 	}

@@ -35,7 +35,7 @@ func NewScheduleTaskTool(store *scheduler.Store, loc *time.Location) *ScheduleTa
 func (t *ScheduleTaskTool) Name() string { return "schedule_task" }
 
 func (t *ScheduleTaskTool) Description() string {
-	return "Schedule a one-shot or daily task. Two kinds: \"reminder\" (sends payload to the user at fire time) and \"wiki_maintenance\" (runs the autonomous wiki pass). Schedule with at=ISO8601-UTC for one-shot, or daily=HH:MM (local time) for recurring."
+	return "Schedule a one-shot or daily task. Two kinds: \"reminder\" (sends payload to the user at fire time) and \"wiki_maintenance\" (runs the autonomous wiki pass). Pick one schedule field — prefer \"in\" for relative (\"60s\", \"5m\", \"2h\") and \"at_local\" for wall-clock times in the user's timezone."
 }
 
 func (t *ScheduleTaskTool) Parameters() map[string]any {
@@ -55,13 +55,21 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Task body. For reminder: the message text. For wiki_maintenance: ignored.",
 			},
+			"in": map[string]any{
+				"type":        "string",
+				"description": "One-shot relative duration (e.g. \"60s\", \"5m\", \"2h\", \"1d\"). Server resolves to absolute UTC. Use this when the user says \"in N seconds/minutes/hours\".",
+			},
+			"at_local": map[string]any{
+				"type":        "string",
+				"description": "One-shot wall-clock time in the user's timezone, no offset (e.g. \"2026-04-30T17:00:00\" for 5pm local). Use this when the user names a specific clock time.",
+			},
 			"at": map[string]any{
 				"type":        "string",
-				"description": "One-shot ISO8601 UTC timestamp (e.g. 2026-04-30T22:30:00Z). Mutually exclusive with daily.",
+				"description": "One-shot absolute ISO8601 UTC (e.g. \"2026-04-30T15:00:00Z\"). Use only when the user is explicit about UTC.",
 			},
 			"daily": map[string]any{
 				"type":        "string",
-				"description": "Recurring local-time HH:MM (e.g. 03:00). Mutually exclusive with at.",
+				"description": "Recurring local-time HH:MM (e.g. \"03:00\").",
 			},
 		},
 		"required": []string{"name", "kind"},
@@ -89,13 +97,21 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 
 	payload := stringArg(args, "payload")
 	at := strings.TrimSpace(stringArg(args, "at"))
+	atLocal := strings.TrimSpace(stringArg(args, "at_local"))
+	in := strings.TrimSpace(stringArg(args, "in"))
 	daily := strings.TrimSpace(stringArg(args, "daily"))
 
-	if at == "" && daily == "" {
-		return "", errors.New("schedule_task: provide either at (ISO8601 UTC) or daily (HH:MM)")
+	scheduleFields := 0
+	for _, v := range []string{at, atLocal, in, daily} {
+		if v != "" {
+			scheduleFields++
+		}
 	}
-	if at != "" && daily != "" {
-		return "", errors.New("schedule_task: at and daily are mutually exclusive")
+	if scheduleFields == 0 {
+		return "", errors.New("schedule_task: provide one of in (relative), at_local (wall-clock), at (UTC), or daily (HH:MM)")
+	}
+	if scheduleFields > 1 {
+		return "", errors.New("schedule_task: in / at_local / at / daily are mutually exclusive — pick one")
 	}
 
 	task := &scheduler.Task{Name: name, Kind: kind, Payload: payload}
@@ -112,6 +128,32 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	now := time.Now().UTC()
 	switch {
+	case in != "":
+		d, err := time.ParseDuration(in)
+		if err != nil {
+			return "", fmt.Errorf("schedule_task: parse in: %w", err)
+		}
+		if d <= 0 {
+			return "", fmt.Errorf("schedule_task: in %q must be positive", in)
+		}
+		ts := now.Add(d)
+		task.ScheduleKind = scheduler.ScheduleAt
+		task.ScheduleAt = ts
+		task.NextRunAt = ts
+	case atLocal != "":
+		// Accept either "2026-04-30T17:00:00" or "2026-04-30 17:00" so
+		// the LLM doesn't need to be picky about the separator.
+		ts, err := parseLocalWallClock(atLocal, t.loc)
+		if err != nil {
+			return "", fmt.Errorf("schedule_task: parse at_local: %w", err)
+		}
+		ts = ts.UTC()
+		if !ts.After(now) {
+			return "", fmt.Errorf("schedule_task: at_local %s is not in the future (current local time: %s)", atLocal, now.In(t.loc).Format("2006-01-02 15:04:05"))
+		}
+		task.ScheduleKind = scheduler.ScheduleAt
+		task.ScheduleAt = ts
+		task.NextRunAt = ts
 	case at != "":
 		ts, err := time.Parse(time.RFC3339, at)
 		if err != nil {
@@ -119,7 +161,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 		}
 		ts = ts.UTC()
 		if !ts.After(now) {
-			return "", fmt.Errorf("schedule_task: at %s is not in the future", at)
+			return "", fmt.Errorf("schedule_task: at %s is not in the future (current UTC: %s)", at, now.Format(time.RFC3339))
 		}
 		task.ScheduleKind = scheduler.ScheduleAt
 		task.ScheduleAt = ts
@@ -279,4 +321,25 @@ func (t *CancelTaskTool) Execute(ctx context.Context, args map[string]any) (stri
 		return fmt.Sprintf("No active task named %q.", name), nil
 	}
 	return fmt.Sprintf("Cancelled task %q.", name), nil
+}
+
+// parseLocalWallClock parses an ISO-ish wall-clock string in the given
+// location. Accepts both "2006-01-02T15:04:05" and "2006-01-02 15:04",
+// with or without seconds, so the LLM doesn't need to be precise about
+// formatting. Times are interpreted as wall-clock in loc — never UTC.
+func parseLocalWallClock(s string, loc *time.Location) (time.Time, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	for _, layout := range []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+	} {
+		if ts, err := time.ParseInLocation(layout, s, loc); err == nil {
+			return ts, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("expected YYYY-MM-DDTHH:MM[:SS] (no timezone), got %q", s)
 }

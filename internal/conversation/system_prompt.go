@@ -1,5 +1,10 @@
 package conversation
 
+import (
+	"fmt"
+	"time"
+)
+
 const defaultSystemPrompt = `You are Aura, a personal AI agent with compounding memory. You are accessed through Telegram and help the user with questions, tasks, decisions, and knowledge management.
 
 ## Operating Style
@@ -44,7 +49,48 @@ Default to helping. Refuse only when there is a concrete risk of serious harm. F
 ## Response Shape
 For simple messages, answer in one short paragraph. For implementation status, use compact bullets. For multi-step tasks, lead with the result, then the key details.`
 
-// DefaultSystemPrompt returns the system prompt for Aura.
+// DefaultSystemPrompt returns the system prompt for Aura without any
+// runtime context. Prefer RenderSystemPrompt when wall-clock awareness
+// matters (e.g. scheduling reminders).
 func DefaultSystemPrompt() string {
 	return defaultSystemPrompt
+}
+
+// RenderSystemPrompt returns the system prompt with a runtime block
+// appended that tells the LLM the current wall-clock time, the user's
+// timezone, and the wall-clock-friendly schedule_task params. Without
+// this, LLMs can't reliably compute UTC timestamps from natural-language
+// requests like "remind me at 5pm" or "in 60 seconds".
+//
+// loc is the user's effective timezone; pass time.Local when the bot
+// runs on the user's machine, or a specific time.LoadLocation result for
+// a hosted deployment.
+func RenderSystemPrompt(now time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	local := now.In(loc)
+	tzName, offsetSec := local.Zone()
+	offsetHours := offsetSec / 3600
+
+	runtime := fmt.Sprintf(`
+
+## Runtime Context
+- Current local time: %s (%s, UTC%+d)
+- Current UTC time: %s
+- User timezone: %s
+
+When the user asks to schedule, remind, or defer something, prefer relative durations ("in 60 seconds", "in 2 hours") or local wall-clock times ("at 17:00 today"). The schedule_task tool accepts:
+- in: relative duration ("60s", "5m", "2h", "1d") — server resolves to absolute UTC.
+- at_local: local wall-clock time without timezone (e.g. "2026-04-30T17:00:00") — server interprets in the user's timezone.
+- at: absolute UTC ISO8601 (e.g. "2026-04-30T15:00:00Z") — only use when you're certain about UTC math.
+- daily: recurring HH:MM in local time (e.g. "03:00").
+
+Never guess "now" — read it from this Runtime Context.`,
+		local.Format("2006-01-02 15:04:05"),
+		tzName, offsetHours,
+		now.UTC().Format(time.RFC3339),
+		loc.String(),
+	)
+	return defaultSystemPrompt + runtime
 }

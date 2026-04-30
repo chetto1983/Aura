@@ -394,11 +394,13 @@ func (b *Bot) handleConversation(c tele.Context) {
 		Logger:     b.logger,
 	}))
 	convCtx := ctxVal.(*conversation.Context)
+	_ = loaded // kept for clarity; system prompt now refreshes every turn
 
-	// Set system prompt on first message (new context)
-	if !loaded {
-		convCtx.SetSystemMessage(conversation.DefaultSystemPrompt())
-	}
+	// Refresh the system prompt on every turn so the Runtime Context
+	// (current time + timezone) stays accurate. The LLM uses these values
+	// when scheduling reminders, so a stale snapshot is worse than the
+	// per-turn cost of re-rendering a few hundred bytes.
+	convCtx.SetSystemMessage(conversation.RenderSystemPrompt(time.Now(), time.Local))
 
 	b.logger.Info("conversation started",
 		"user_id", userID,
