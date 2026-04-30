@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -49,12 +50,7 @@ type Config struct {
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
 func (c *Config) IsAllowlisted(userID string) bool {
-	for _, id := range c.Allowlist {
-		if id == userID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Allowlist, userID)
 }
 
 // AddToAllowlist adds a user ID to the allowlist if not already present.

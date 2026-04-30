@@ -194,10 +194,10 @@ func (s *Store) ListPages() ([]string, error) {
 		}
 		name := e.Name()
 		var slug string
-		if strings.HasSuffix(name, ".md") {
-			slug = strings.TrimSuffix(name, ".md")
-		} else if strings.HasSuffix(name, ".yaml") {
-			slug = strings.TrimSuffix(name, ".yaml")
+		if rest, ok := strings.CutSuffix(name, ".md"); ok {
+			slug = rest
+		} else if rest, ok := strings.CutSuffix(name, ".yaml"); ok {
+			slug = rest
 		} else {
 			continue
 		}
@@ -213,7 +213,10 @@ func (s *Store) ListPages() ([]string, error) {
 	return slugs, nil
 }
 
-func (s *Store) gitCommit(ctx context.Context, filename, action string) error {
+// gitCommit ignores ctx because go-git's Worktree API is synchronous; we
+// keep the parameter so callers don't need a special case in the wiki
+// write path.
+func (s *Store) gitCommit(_ context.Context, filename, action string) error {
 	s.gitMu.Lock()
 	defer s.gitMu.Unlock()
 
@@ -299,9 +302,9 @@ func (s *Store) updateIndex(ctx context.Context) {
 
 	for _, cat := range sortedCategoryKeys(byCategory) {
 		entries := byCategory[cat]
-		sb.WriteString(fmt.Sprintf("## %s\n\n", cat))
+		fmt.Fprintf(&sb, "## %s\n\n", cat)
 		for _, e := range entries {
-			sb.WriteString(fmt.Sprintf("- [[%s]] %s\n", e.Slug, e.Title))
+			fmt.Fprintf(&sb, "- [[%s]] %s\n", e.Slug, e.Title)
 		}
 		sb.WriteString("\n")
 	}

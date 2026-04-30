@@ -474,13 +474,13 @@ func (b *Bot) onStatus(c tele.Context) error {
 	// Budget info
 	if b.budget != nil {
 		status := b.budget.Status()
-		sb.WriteString(fmt.Sprintf("Tokens used: %d\n", status.TotalTokens))
-		sb.WriteString(fmt.Sprintf("Estimated cost: $%.4f\n", status.TotalCost))
+		fmt.Fprintf(&sb, "Tokens used: %d\n", status.TotalTokens)
+		fmt.Fprintf(&sb, "Estimated cost: $%.4f\n", status.TotalCost)
 		if status.SoftBudget > 0 {
-			sb.WriteString(fmt.Sprintf("Soft budget: $%.2f\n", status.SoftBudget))
+			fmt.Fprintf(&sb, "Soft budget: $%.2f\n", status.SoftBudget)
 		}
 		if status.HardBudget > 0 {
-			sb.WriteString(fmt.Sprintf("Hard budget: $%.2f\n", status.HardBudget))
+			fmt.Fprintf(&sb, "Hard budget: $%.2f\n", status.HardBudget)
 		}
 		if status.SoftBudgetExceeded && !status.BudgetExceeded {
 			sb.WriteString("Status: SOFT BUDGET REACHED\n")
@@ -496,19 +496,21 @@ func (b *Bot) onStatus(c tele.Context) error {
 	ctxVal, ok := b.ctxMap.Load(userID)
 	if ok {
 		convCtx := ctxVal.(*conversation.Context)
-		sb.WriteString(fmt.Sprintf("\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens()))
-		sb.WriteString(fmt.Sprintf("Conversation tokens used: %d\n", convCtx.TotalTokensUsed()))
+		fmt.Fprintf(&sb, "\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens())
+		fmt.Fprintf(&sb, "Conversation tokens used: %d\n", convCtx.TotalTokensUsed())
 		if b.budget != nil {
 			predictedCost := b.budget.PredictCost(convCtx.EstimatedTokens(), 500)
-			sb.WriteString(fmt.Sprintf("Next call est. cost: $%.4f\n", predictedCost))
+			fmt.Fprintf(&sb, "Next call est. cost: $%.4f\n", predictedCost)
 		}
 	}
 
 	return c.Send(sb.String())
 }
 
-// notifySoftBudget sends a one-time warning to the user when soft budget is first exceeded.
-func (b *Bot) notifySoftBudget(c tele.Context, userID string) {
+// notifySoftBudget sends a one-time warning to the user when soft budget
+// is first exceeded. userID is kept on the signature so future per-user
+// throttling has a hook without changing call sites.
+func (b *Bot) notifySoftBudget(c tele.Context, _ string) {
 	if b.budget != nil && b.budget.ShouldNotifySoftBudget() {
 		status := b.budget.Status()
 		c.Send(fmt.Sprintf("Soft budget reached ($%.2f / $%.2f). LLM calls continue until hard budget is hit.", status.TotalCost, status.SoftBudget))
