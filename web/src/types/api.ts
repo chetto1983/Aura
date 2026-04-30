@@ -137,6 +137,32 @@ export interface MCPServerSummary {
   tools: MCPToolInfo[];
 }
 
+// Slice 11c — skills.sh catalog + admin-gated install/delete.
+
+export interface SkillCatalogItem {
+  source: string;
+  skill_id?: string;
+  name: string;
+  installs: number;
+  install_command?: string;
+}
+
+export interface SkillInstallRequest {
+  source: string;
+  skill_id?: string;
+}
+
+export interface SkillInstallResponse {
+  ok: boolean;
+  output?: string;
+  error?: string;
+}
+
+export interface SkillDeleteResponse {
+  ok: boolean;
+  name: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';

@@ -14,6 +14,10 @@ import type {
   SkillSummary,
   SkillDetail,
   MCPServerSummary,
+  SkillCatalogItem,
+  SkillInstallRequest,
+  SkillInstallResponse,
+  SkillDeleteResponse,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -187,4 +191,12 @@ export const api = {
   skill: (name: string) =>
     get<SkillDetail>(`/skills/${encodeURIComponent(name)}`),
   mcpServers: () => get<MCPServerSummary[]>(`/mcp/servers`),
+
+  // ---- skills.sh catalog + admin install/delete (slice 11c) ----
+  skillsCatalog: (q?: string, limit?: number) =>
+    get<SkillCatalogItem[]>('/skills/catalog' + qs({ q, limit: limit?.toString() })),
+  installSkill: (req: SkillInstallRequest) =>
+    post<SkillInstallResponse>('/skills/install', req),
+  deleteSkill: (name: string) =>
+    post<SkillDeleteResponse>(`/skills/${encodeURIComponent(name)}/delete`),
 };

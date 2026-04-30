@@ -181,6 +181,30 @@ type MCPServerSummary struct {
 	Tools     []MCPToolInfo `json:"tools"`
 }
 
+// Slice 11c — skills.sh catalog + admin-gated install/delete.
+
+// SkillCatalogItem is one row from GET /skills/catalog (proxies skills.sh).
+type SkillCatalogItem struct {
+	Source         string `json:"source"`
+	SkillID        string `json:"skill_id,omitempty"`
+	Name           string `json:"name"`
+	Installs       int    `json:"installs"`
+	InstallCommand string `json:"install_command,omitempty"`
+}
+
+// SkillInstallResponse is the body of POST /skills/install.
+type SkillInstallResponse struct {
+	OK     bool   `json:"ok"`
+	Output string `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// SkillDeleteResponse is the body of POST /skills/{name}/delete.
+type SkillDeleteResponse struct {
+	OK   bool   `json:"ok"`
+	Name string `json:"name"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`

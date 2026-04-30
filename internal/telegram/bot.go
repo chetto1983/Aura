@@ -145,7 +145,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 
 	toolRegistry := tools.NewRegistry(logger)
 	skillLoader := auraskills.NewLoader(cfg.SkillsPath)
-	toolRegistry.Register(tools.NewSearchSkillCatalogTool(auraskills.NewCatalogClient(cfg.SkillsCatalogURL)))
+	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
+	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
 	toolRegistry.Register(tools.NewReadSkillTool(skillLoader))
 	if cfg.OllamaAPIKey != "" {
@@ -303,6 +304,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	// health server at /api/. The router is mount-agnostic — its routes are
 	// /health, /wiki/..., /sources/..., /tasks/... — so callers wrap with
 	// http.StripPrefix.
+	// Slice 11c: skill install/delete adapters. Constructed unconditionally
+	// — the SkillsAdmin gate is the actual write guard inside the api
+	// package, so even when the gate is off we still wire the deps so
+	// flipping SKILLS_ADMIN=true requires only a restart, not a rebuild.
+	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath)
+	if err != nil {
+		logger.Warn("skills installer unavailable", "error", err)
+	}
+	skillsDeleter, err := auraskills.NewFSDeleter(cfg.SkillsPath)
+	if err != nil {
+		logger.Warn("skills deleter unavailable", "error", err)
+	}
+
 	b.api = api.NewRouter(api.Deps{
 		Wiki:        wikiStore,
 		Sources:     sourceStore,
@@ -321,6 +335,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		// Slice 11b: skills + MCP dashboard panels read off these.
 		Skills: skillLoader,
 		MCP:    mcpClients,
+		// Slice 11c: skills.sh catalog + admin-gated install/delete.
+		SkillsCatalog:   skillsCatalog,
+		SkillsInstaller: skillsInstaller,
+		SkillsDeleter:   skillsDeleterAdapter{inner: skillsDeleter},
+		SkillsAdmin:     cfg.SkillsAdmin,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
@@ -384,6 +403,27 @@ func (b *Bot) Stop() {
 		_ = c.Close()
 	}
 	b.bot.Stop()
+}
+
+// skillsDeleterAdapter bridges auraskills.FSDeleter (which surfaces a
+// package-internal not-found sentinel) to api.SkillDeleter (which
+// expects api.ErrSkillNotFound for 404 routing). Keeping the cycle out
+// of the two packages costs us this 8-line shim.
+type skillsDeleterAdapter struct {
+	inner *auraskills.FSDeleter
+}
+
+func (a skillsDeleterAdapter) Delete(name string) error {
+	if a.inner == nil {
+		return api.ErrSkillNotFound
+	}
+	if err := a.inner.Delete(name); err != nil {
+		if auraskills.IsSkillNotFound(err) {
+			return api.ErrSkillNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // dispatchTask is the scheduler.Dispatcher implementation. It routes a

@@ -29,6 +29,7 @@ type Config struct {
 	WikiPath            string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	SkillsPath          string  `envconfig:"SKILLS_PATH" default:"./skills"`
 	SkillsCatalogURL    string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
+	SkillsAdmin         bool    `envconfig:"SKILLS_ADMIN" default:"false"`
 	MCPServersPath      string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
 	EmbeddingAPIKey     string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL    string  `envconfig:"EMBEDDING_BASE_URL"`
@@ -104,6 +105,7 @@ func Load() (*Config, error) {
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
 	cfg.SkillsCatalogURL = getEnv("SKILLS_CATALOG_URL", "https://skills.sh/")
+	cfg.SkillsAdmin = getEnvBool("SKILLS_ADMIN", false)
 	cfg.MCPServersPath = getEnv("MCP_SERVERS_PATH", "./mcp.json")
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")

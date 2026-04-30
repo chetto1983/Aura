@@ -81,7 +81,22 @@ type Deps struct {
 	// MCP-server snapshot are available.
 	Skills *skills.Loader
 	MCP    []*mcp.Client
+
+	// Slice 11c: skills.sh catalog + admin-gated install/delete.
+	// SkillsCatalog is the same client the LLM-facing search tool uses;
+	// SkillsInstaller and SkillsDeleter wrap the filesystem mutation
+	// boundary so tests can swap fakes; SkillsAdmin gates both write
+	// endpoints (read endpoints, including the catalog passthrough,
+	// remain available regardless).
+	SkillsCatalog   *skills.CatalogClient
+	SkillsInstaller SkillInstaller
+	SkillsDeleter   SkillDeleter
+	SkillsAdmin     bool
 }
+
+// installTimeout caps how long a single skills install (npx skills add)
+// can run. npm cold cache + github clone fits comfortably under this.
+const installTimeout = 90 * time.Second
 
 // NewRouter returns the API as an http.Handler. Routes do not include
 // the /api prefix — callers should mount via http.StripPrefix so the
@@ -130,6 +145,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /skills", handleSkillsList(deps))
 	mux.HandleFunc("GET /skills/{name}", handleSkillGet(deps))
 	mux.HandleFunc("GET /mcp/servers", handleMCPServers(deps))
+
+	// Slice 11c: skills.sh catalog passthrough + admin-gated install/delete.
+	mux.HandleFunc("GET /skills/catalog", handleSkillsCatalog(deps))
+	mux.HandleFunc("POST /skills/install", handleSkillInstall(deps))
+	mux.HandleFunc("POST /skills/{name}/delete", handleSkillDelete(deps))
 
 	// Slice 10d: auth endpoints. Both authed — there's intentionally no
 	// public /auth/login route. Tokens enter the dashboard through the
