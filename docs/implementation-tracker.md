@@ -45,6 +45,29 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-04-30 — Multipage debug for `src_437ecedcb716dbbf`
+
+- Symptom: 2-page Italian PMS PDF produced an `ocr.md` where `## Page 2` body is just `.`.
+- Investigation:
+  - `pdftotext -f 2 -l 2 wiki/raw/src_437ecedcb716dbbf/original.pdf` → empty output.
+  - `pypdf` page 2: `extract_text() == ''`, no `/XObject`, no `/Resources`. Fully blank page in the source PDF.
+  - `ocr.json` page 2: `markdown: "."`, empty `images`, `tables`, `hyperlinks`, header/footer null. Mistral correctly reported a near-empty page.
+- Cause: not a flag interaction, not a Mistral bug — the source PDF really has a blank page 2. The flag re-test (`EXTRACT_HEADER=false EXTRACT_FOOTER=false INCLUDE_IMAGES=false`) would have shown the same `.` because those flags only affect header/footer/image extraction, never page-body text.
+- No code change in this session; finding is for the renderer backlog.
+- **Renderer follow-up (deferred, not slice 5):** detect "near-empty" pages (`strings.TrimSpace(body)` matches `.` or is empty) and render `## Page N (blank)` with no body, instead of literal `.`. This is a `internal/ocr/render.go` change only; leaves `ocr.json` untouched.
+- **Re-render recipe (cheap, no new OCR calls):** since `ocr.json` is the raw Mistral response and `ocr.md` is a pure derivation, any renderer fix can be replayed against existing sources without API cost:
+
+  ```go
+  // pseudocode for a future cmd/rerender_ocr or similar
+  for each dir in wiki/raw/*/:
+      raw := read("ocr.json") // unmarshal into ocr.OCRResponse
+      meta := ocr.RenderMeta{SourceID: id, Filename: source.Filename, Model: source.OCRModel}
+      md   := ocr.RenderMarkdown(meta, raw)
+      atomicWrite(dir/"ocr.md", md)
+  ```
+
+  Constraints: must reuse `internal/source.Store.Path` for containment, must atomic-rename, must skip dirs missing `ocr.json` (status=stored or failed). Add a `--dry-run` diff mode.
+
 ### 2026-04-29 — Slice 4 complete
 
 - Slice 4 (Telegram PDF handler) done:
