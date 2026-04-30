@@ -1,0 +1,86 @@
+version: 2
+
+project_name: aura
+
+before:
+  hooks:
+    - go mod tidy
+    - bash -c "cd web && npm ci && npm run build"
+
+builds:
+  - id: aura
+    main: ./cmd/aura
+    binary: aura
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.auraVersion={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: aura
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macos
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - INSTALL.md
+      - .env.example
+      - mcp.example.json
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - 'Merge pull request'
+      - 'Merge branch'
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "Aura v{{ .Version }}"
+  header: |
+    ## Aura v{{ .Version }}
+
+    See [INSTALL.md](https://github.com/{{ .Env.GITHUB_REPOSITORY }}/blob/v{{ .Version }}/INSTALL.md) for end-user setup instructions.
+
+    ### Downloads
+    Pick the binary for your OS:
+    - **Windows**: `aura_{{ .Version }}_windows_x86_64.zip`
+    - **macOS Intel**: `aura_{{ .Version }}_macos_x86_64.tar.gz`
+    - **macOS Apple Silicon**: `aura_{{ .Version }}_macos_arm64.tar.gz`
+    - **Linux x86_64**: `aura_{{ .Version }}_linux_x86_64.tar.gz`
+    - **Linux ARM64**: `aura_{{ .Version }}_linux_arm64.tar.gz`
+  footer: |
+    ---
+    **Verify your download**: `sha256sum -c checksums.txt`

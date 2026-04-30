@@ -19,7 +19,11 @@ import (
 	"github.com/aura/aura/internal/tray"
 )
 
-const auraVersion = "3.0"
+var (
+	auraVersion = "3.0"
+	commit      = "dev"
+	date        = "unknown"
+)
 
 func main() {
 	// Initialize structured logger with zap backend and secret sanitization
@@ -88,7 +92,7 @@ func main() {
 
 	healthServer.Start()
 
-	logger.Info("aura starting", "version", auraVersion)
+	logger.Info("aura starting", "version", auraVersion, "commit", commit, "date", date)
 
 	go bot.Start()
 
