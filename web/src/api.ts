@@ -19,6 +19,8 @@ import type {
   SkillInstallResponse,
   SkillDeleteResponse,
   MCPInvokeResponse,
+  PendingUserSummary,
+  PendingDecisionResponse,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -207,4 +209,11 @@ export const api = {
       `/mcp/${encodeURIComponent(server)}/tools/${encodeURIComponent(tool)}`,
       args,
     ),
+
+  // ---- pending access requests ----
+  pendingUsers: () => get<PendingUserSummary[]>('/pending-users'),
+  approvePendingUser: (id: string) =>
+    post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/approve`),
+  denyPendingUser: (id: string) =>
+    post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/deny`),
 };

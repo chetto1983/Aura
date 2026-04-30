@@ -98,6 +98,11 @@ type Deps struct {
 	// EmbeddingCache health block stays zero.
 	EmbedCache *search.EmbedCache
 	SkillsAdmin     bool
+
+	// Pending-approval pipeline. Bot wires the real implementation;
+	// when nil, the approve/deny endpoints respond 503 — the GET list
+	// stays operable since it only needs deps.Auth.
+	PendingApprover PendingApprover
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -167,6 +172,14 @@ func NewRouter(deps Deps) http.Handler {
 	// Telegram bot, where the user is already authenticated.
 	mux.HandleFunc("GET /auth/whoami", handleAuthWhoami(deps))
 	mux.HandleFunc("POST /auth/logout", handleAuthLogout(deps))
+
+	// Pending access requests. Sits behind the same bearer middleware as
+	// the rest of the dashboard — only an already-allowlisted user can
+	// list/approve/deny strangers, which is the inversion of the old TOFU
+	// bootstrap behavior.
+	mux.HandleFunc("GET /pending-users", handlePendingList(deps))
+	mux.HandleFunc("POST /pending-users/{id}/approve", handlePendingApprove(deps))
+	mux.HandleFunc("POST /pending-users/{id}/deny", handlePendingDeny(deps))
 
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)

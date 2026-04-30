@@ -10,6 +10,7 @@ import { SourceInbox } from '@/components/SourceInbox';
 import { TasksPanel } from '@/components/TasksPanel';
 import { SkillsPanel } from '@/components/SkillsPanel';
 import { MCPPanel } from '@/components/MCPPanel';
+import { PendingUsersPanel } from '@/components/PendingUsersPanel';
 import { Login } from '@/components/Login';
 import { getToken } from '@/lib/auth';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -53,6 +54,7 @@ export default function App() {
                     <Route path="/tasks" element={<TasksPanel />} />
                     <Route path="/skills" element={<SkillsPanel />} />
                     <Route path="/mcp" element={<MCPPanel />} />
+                    <Route path="/pending" element={<PendingUsersPanel />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </ErrorBoundary>

@@ -55,6 +55,44 @@ func TestIsAllowlisted_UsesBootstrapStoreWhenAllowlistBlank(t *testing.T) {
 	}
 }
 
+func TestCollectOwnerIDs_UnionsEnvAndDB(t *testing.T) {
+	store := newTelegramTestAuthStore(t)
+	ctx := context.Background()
+	if claimed, err := store.BootstrapUser(ctx, "bootstrap-id"); err != nil || !claimed {
+		t.Fatalf("bootstrap claimed=%v err=%v", claimed, err)
+	}
+	if _, err := store.RequestAccess(ctx, "approved-id", "guest"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Approve(ctx, "approved-id"); err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{
+		cfg: &config.Config{
+			Allowlist: []string{"env-id", "bootstrap-id"}, // intentional overlap
+		},
+		authDB: store,
+	}
+	got := b.collectOwnerIDs()
+	want := map[string]struct{}{"env-id": {}, "bootstrap-id": {}, "approved-id": {}}
+	if len(got) != len(want) {
+		t.Fatalf("got %d ids, want %d (got=%v)", len(got), len(want), got)
+	}
+	for _, id := range got {
+		if _, ok := want[id]; !ok {
+			t.Errorf("unexpected id %q in result", id)
+		}
+		delete(want, id) // catch duplicates by emptying as we go
+	}
+}
+
+func TestCollectOwnerIDs_EmptyWhenNothingConfigured(t *testing.T) {
+	b := &Bot{cfg: &config.Config{}}
+	if got := b.collectOwnerIDs(); len(got) != 0 {
+		t.Errorf("got %v, want empty slice", got)
+	}
+}
+
 func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 	t.Helper()
 	store, err := auth.OpenStore(filepath.Join(t.TempDir(), "auth.db"))

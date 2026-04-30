@@ -174,6 +174,20 @@ export interface MCPInvokeResponse {
   error?: string;
 }
 
+// Pending access requests. The list endpoint is gated by the dashboard
+// bearer token, so by the time the frontend sees these the requester has
+// already been queued by the bot's /start handler.
+export interface PendingUserSummary {
+  user_id: string;
+  username?: string;
+  requested_at: string;
+}
+
+export interface PendingDecisionResponse {
+  ok: boolean;
+  user_id: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';
