@@ -51,6 +51,12 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-04-30 - Fix mobile sheet trigger crash
+
+- Fixed a dashboard crash where Radix threw ``DialogTrigger` must be used within `Dialog``. Root cause: `Shell.tsx` rendered `SheetTrigger` outside its `<Sheet>` provider. Since the sheet is already controlled by React state, the mobile hamburger now opens it directly with `setMobileOpen(true)`.
+- Rebuilt embedded dashboard assets.
+- Verification: `npm run lint`, `npx tsc --noEmit`, `npm run build`, `go test ./...`, `go build ./...`, and `go vet ./...` passed.
+
 ### 2026-04-30 - Telegram QR/link on login
 
 - Restored the missing Telegram entry point on the dashboard login screen: it now shows the running bot handle, a clickable `t.me` link, and a QR code for `https://t.me/<bot>?start=login`.
