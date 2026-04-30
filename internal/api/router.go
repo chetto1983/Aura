@@ -10,8 +10,10 @@ import (
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
 )
@@ -72,6 +74,13 @@ type Deps struct {
 	// fields from the JSON response.
 	Version   string
 	StartedAt time.Time
+
+	// Slice 11b: skills + MCP read surfaces. Both optional — when nil,
+	// the corresponding endpoints return empty lists (skills) or 404
+	// (skill detail). Bot wiring populates them when the loader and the
+	// MCP-server snapshot are available.
+	Skills *skills.Loader
+	MCP    []*mcp.Client
 }
 
 // NewRouter returns the API as an http.Handler. Routes do not include
@@ -116,6 +125,11 @@ func NewRouter(deps Deps) http.Handler {
 
 	mux.HandleFunc("GET /tasks", handleTaskList(deps))
 	mux.HandleFunc("GET /tasks/{name}", handleTaskGet(deps))
+
+	// Slice 11b: skills + MCP read surfaces.
+	mux.HandleFunc("GET /skills", handleSkillsList(deps))
+	mux.HandleFunc("GET /skills/{name}", handleSkillGet(deps))
+	mux.HandleFunc("GET /mcp/servers", handleMCPServers(deps))
 
 	// Slice 10d: auth endpoints. Both authed — there's intentionally no
 	// public /auth/login route. Tokens enter the dashboard through the

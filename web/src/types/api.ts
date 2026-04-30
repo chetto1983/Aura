@@ -110,6 +110,33 @@ export interface WhoamiResponse {
   user_id: string;
 }
 
+// Slice 11b — skills + MCP read surfaces.
+
+export interface SkillSummary {
+  name: string;
+  description?: string;
+}
+
+export interface SkillDetail {
+  name: string;
+  description?: string;
+  content: string;
+  truncated?: boolean;
+}
+
+export interface MCPToolInfo {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+}
+
+export interface MCPServerSummary {
+  name: string;
+  transport: 'stdio' | 'http';
+  tool_count: number;
+  tools: MCPToolInfo[];
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';

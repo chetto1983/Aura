@@ -146,6 +146,41 @@ type Task struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// SkillSummary is one row of GET /skills.
+type SkillSummary struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// SkillDetail is the response of GET /skills/{name}. Truncated is true when
+// Content was clipped at maxSkillBodyChars; the dashboard shows a banner so
+// the user knows the full SKILL.md is on disk.
+type SkillDetail struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Content     string `json:"content"`
+	Truncated   bool   `json:"truncated,omitempty"`
+}
+
+// MCPToolInfo is one tool advertised by an MCP server. InputSchema is the
+// raw JSON Schema map returned from tools/list — not normalized so the
+// dashboard can render whatever the upstream server emits.
+type MCPToolInfo struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
+}
+
+// MCPServerSummary is one row of GET /mcp/servers. Only servers that
+// connected successfully at boot show up here; failed connections are
+// warned in logs but not yet surfaced to the dashboard (deferred to 11d).
+type MCPServerSummary struct {
+	Name      string        `json:"name"`
+	Transport string        `json:"transport"` // "stdio" or "http"
+	ToolCount int           `json:"tool_count"`
+	Tools     []MCPToolInfo `json:"tools"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`

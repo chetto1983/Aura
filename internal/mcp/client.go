@@ -24,6 +24,12 @@ const (
 	clientName    = "aura"
 	clientVersion = "3.0"
 	protoVersion  = "2025-03-26"
+
+	// TransportStdio and TransportHTTP are the two supported transport
+	// labels. Surfaced via Client.Transport so the dashboard can show
+	// which connection style each server uses.
+	TransportStdio = "stdio"
+	TransportHTTP  = "http"
 )
 
 // Tool describes a tool exposed by an MCP server.
@@ -35,10 +41,11 @@ type Tool struct {
 
 // Client connects to a single MCP server and exposes its tools.
 type Client struct {
-	name      string
-	transport transport
-	nextID    atomic.Int64
-	tools     []Tool
+	name          string
+	transportKind string
+	transport     transport
+	nextID        atomic.Int64
+	tools         []Tool
 }
 
 // NewStdioClient creates a client that spawns a child process and
@@ -48,7 +55,7 @@ func NewStdioClient(name, command string, args []string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mcp %s: %w", name, err)
 	}
-	c := &Client{name: name, transport: t}
+	c := &Client{name: name, transportKind: TransportStdio, transport: t}
 	if err := c.bootstrap(); err != nil {
 		_ = t.close()
 		return nil, fmt.Errorf("mcp %s: %w", name, err)
@@ -59,7 +66,7 @@ func NewStdioClient(name, command string, args []string) (*Client, error) {
 // NewHTTPClient creates a client that communicates via Streamable HTTP.
 func NewHTTPClient(name, url string, headers map[string]string) (*Client, error) {
 	t := newHTTPTransport(url, headers)
-	c := &Client{name: name, transport: t}
+	c := &Client{name: name, transportKind: TransportHTTP, transport: t}
 	if err := c.bootstrap(); err != nil {
 		_ = t.close()
 		return nil, fmt.Errorf("mcp %s: %w", name, err)
@@ -69,6 +76,9 @@ func NewHTTPClient(name, url string, headers map[string]string) (*Client, error)
 
 // Name returns the configured server name.
 func (c *Client) Name() string { return c.name }
+
+// Transport returns the transport label ("stdio" or "http").
+func (c *Client) Transport() string { return c.transportKind }
 
 // Tools returns the tools discovered from this server.
 func (c *Client) Tools() []Tool { return c.tools }

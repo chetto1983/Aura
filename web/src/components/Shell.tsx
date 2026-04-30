@@ -89,6 +89,8 @@ function useKeyboardShortcuts({ onShowHelp }: { onShowHelp: () => void }) {
           case 'g': dest = '/graph'; break;
           case 's': dest = '/sources'; break;
           case 't': dest = '/tasks'; break;
+          case 'k': dest = '/skills'; break;
+          case 'm': dest = '/mcp'; break;
         }
         pendingG = false;
         if (timer) { clearTimeout(timer); timer = null; }
@@ -143,6 +145,8 @@ function ShortcutHelpDialog({
             <Row keys={['g', 'g']} desc="Graph" />
             <Row keys={['g', 's']} desc="Sources" />
             <Row keys={['g', 't']} desc="Tasks" />
+            <Row keys={['g', 'k']} desc="Skills" />
+            <Row keys={['g', 'm']} desc="MCP" />
           </tbody>
         </table>
         <div className="mt-4 flex justify-end">

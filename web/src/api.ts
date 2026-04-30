@@ -11,6 +11,9 @@ import type {
   ReocrResponse,
   UpsertTaskRequest,
   WhoamiResponse,
+  SkillSummary,
+  SkillDetail,
+  MCPServerSummary,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -178,4 +181,10 @@ export const api = {
   // ---- auth (slice 10d) ----
   whoami: () => get<WhoamiResponse>(`/auth/whoami`),
   logout: () => post<{ ok: boolean }>(`/auth/logout`),
+
+  // ---- skills + MCP (slice 11b) ----
+  skills: () => get<SkillSummary[]>(`/skills`),
+  skill: (name: string) =>
+    get<SkillDetail>(`/skills/${encodeURIComponent(name)}`),
+  mcpServers: () => get<MCPServerSummary[]>(`/mcp/servers`),
 };

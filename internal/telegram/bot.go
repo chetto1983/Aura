@@ -318,6 +318,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		Version:   "3.0",
 		StartedAt: time.Now().UTC(),
 		Logger:    logger,
+		// Slice 11b: skills + MCP dashboard panels read off these.
+		Skills: skillLoader,
+		MCP:    mcpClients,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
