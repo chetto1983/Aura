@@ -239,13 +239,13 @@ func TestPromptBlockBoundsTotalSize(t *testing.T) {
 	}
 }
 
-func writeSkill(t *testing.T, root, dirName, name, description, content string) {
+func writeSkill(t testing.TB, root, dirName, name, description, content string) {
 	t.Helper()
 	body := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n" + content
 	writeFile(t, filepath.Join(root, dirName, "SKILL.md"), body)
 }
 
-func writeFile(t *testing.T, path, body string) {
+func writeFile(t testing.TB, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
