@@ -7,6 +7,9 @@ import type {
   SourceDetail,
   Task,
   UploadResponse,
+  IngestResponse,
+  ReocrResponse,
+  UpsertTaskRequest,
 } from '@/types/api';
 
 const BASE = '/api';
@@ -44,6 +47,39 @@ async function get<T>(path: string): Promise<T> {
       if (parsed && typeof parsed.error === 'string') msg = parsed.error;
     } catch {
       // not JSON; use raw text
+    }
+    throw new ApiError(res.status, msg || res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
+// post sends a JSON or empty body to a write endpoint and parses the
+// response. Bypasses the 8s GET timeout because some endpoints (ingest,
+// reocr) run OCR which can take minutes. Errors surface as ApiError
+// with the server's `error` field when present.
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const init: RequestInit = {
+    method: 'POST',
+    credentials: 'same-origin',
+  };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, init);
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : 'network error');
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let msg = text.slice(0, 200);
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.error === 'string') msg = parsed.error;
+    } catch {
+      // not JSON
     }
     throw new ApiError(res.status, msg || res.statusText);
   }
@@ -95,4 +131,18 @@ export const api = {
   tasks: (q?: { status?: string }) =>
     get<Task[]>('/tasks' + qs(q)),
   task: (name: string) => get<Task>(`/tasks/${name}`),
+
+  // ---- write actions (slice 10c, loopback-gated until 10d ships auth) ----
+  ingestSource: (id: string) =>
+    post<IngestResponse>(`/sources/${id}/ingest`),
+  reocrSource: (id: string) =>
+    post<ReocrResponse>(`/sources/${id}/reocr`),
+  rebuildWikiIndex: () =>
+    post<{ ok: boolean }>(`/wiki/index/rebuild`),
+  appendWikiLog: (action: string, slug?: string) =>
+    post<{ ok: boolean }>(`/wiki/log`, { action, slug }),
+  upsertTask: (req: UpsertTaskRequest) =>
+    post<Task>(`/tasks`, req),
+  cancelTask: (name: string) =>
+    post<Task>(`/tasks/${name}/cancel`),
 };

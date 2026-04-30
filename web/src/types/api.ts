@@ -71,6 +71,35 @@ export interface UploadResponse {
   note?: string;
 }
 
+export interface IngestResponse {
+  id: string;
+  status: SourceSummary['status'];
+  filename: string;
+  wiki_pages?: string[];
+  ingest_note?: string;
+  note?: string;
+}
+
+export interface ReocrResponse {
+  id: string;
+  status: SourceSummary['status'];
+  filename: string;
+  page_count?: number;
+  wiki_pages?: string[];
+  ingest_note?: string;
+  ocr_error?: string;
+  note?: string;
+}
+
+export interface UpsertTaskRequest {
+  name: string;
+  kind: Task['kind'];
+  payload?: string;
+  recipient_id?: string;
+  at?: string; // RFC3339 UTC
+  daily?: string; // HH:MM (bot's local TZ)
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';

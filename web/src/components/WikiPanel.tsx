@@ -1,13 +1,31 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { RefreshCw } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 
 export function WikiPanel() {
   const fetcher = useCallback(() => api.wikiPages(), []);
-  const { data, error, loading, stale } = useApi(fetcher);
+  const { data, error, loading, stale, refetch } = useApi(fetcher);
   const [filter, setFilter] = useState('');
   const [category, setCategory] = useState<string>('');
+  const [rebuilding, setRebuilding] = useState(false);
+
+  const handleRebuild = useCallback(async () => {
+    setRebuilding(true);
+    const id = toast.loading('Rebuilding wiki index…');
+    try {
+      await api.rebuildWikiIndex();
+      toast.success('Wiki index rebuilt', { id });
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Rebuild failed: ${msg}`, { id });
+    } finally {
+      setRebuilding(false);
+    }
+  }, [refetch]);
 
   const categories = useMemo(() => {
     if (!data) return [] as string[];
@@ -31,8 +49,20 @@ export function WikiPanel() {
   return (
     <div className="p-6 space-y-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Wiki</h1>
-        {stale && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>}
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">Wiki</h1>
+          {stale && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>}
+        </div>
+        <button
+          type="button"
+          disabled={rebuilding}
+          onClick={() => void handleRebuild()}
+          className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          title="Regenerate wiki/index.md from current pages"
+        >
+          <RefreshCw size={14} />
+          Rebuild index
+        </button>
       </header>
 
       <div className="flex flex-wrap items-center gap-2">

@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Plus, X } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
-import type { Task } from '@/types/api';
+import type { Task, UpsertTaskRequest } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: Task['status'][] = ['active', 'done', 'cancelled', 'failed'];
@@ -14,7 +24,47 @@ const STATUS_LABEL: Record<Task['status'], string> = {
 
 export function TasksPanel() {
   const fetcher = useCallback(() => api.tasks(), []);
-  const { data, error, loading, stale } = useApi(fetcher, POLL_MS);
+  const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
+  const [busyNames, setBusyNames] = useState<Set<string>>(new Set());
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const setBusy = useCallback((name: string, on: boolean) => {
+    setBusyNames((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+  }, []);
+
+  const handleCancel = useCallback(async (t: Task) => {
+    setBusy(t.name, true);
+    const id = toast.loading(`Cancelling ${t.name}…`);
+    try {
+      await api.cancelTask(t.name);
+      toast.success(`Cancelled ${t.name}`, { id });
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Cancel failed: ${t.name}\n${msg}`, { id });
+    } finally {
+      setBusy(t.name, false);
+    }
+  }, [refetch, setBusy]);
+
+  const handleCreate = useCallback(async (req: UpsertTaskRequest) => {
+    const id = toast.loading(`Scheduling ${req.name}…`);
+    try {
+      const saved = await api.upsertTask(req);
+      toast.success(`Scheduled ${saved.name} (${saved.next_run_at})`, { id });
+      refetch();
+      setDialogOpen(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Schedule failed: ${msg}`, { id });
+      // Keep the dialog open so the user can fix the input.
+    }
+  }, [refetch]);
 
   if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
@@ -26,17 +76,29 @@ export function TasksPanel() {
   return (
     <div className="p-6 space-y-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
-        {stale && (
-          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
-            ⚠ stale
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
+          {stale && (
+            <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
+              ⚠ stale
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setDialogOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+        >
+          <Plus size={14} />
+          New task
+        </button>
       </header>
 
       {data.length === 0 && (
         <p className="text-sm text-muted-foreground">No scheduled tasks.</p>
       )}
+
+      <NewTaskDialog open={dialogOpen} onOpenChange={setDialogOpen} onSubmit={handleCreate} />
 
       {STATUS_ORDER.map((s) => {
         const rows = grouped[s];
@@ -55,6 +117,7 @@ export function TasksPanel() {
                     <th className="text-left py-2 px-3 font-medium">Schedule</th>
                     <th className="text-left py-2 px-3 font-medium">Next run</th>
                     <th className="text-left py-2 px-3 font-medium">Last run / error</th>
+                    <th className="text-right py-2 px-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -77,6 +140,22 @@ export function TasksPanel() {
                           <span className="text-muted-foreground">{shortDate(t.last_run_at)}</span>
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
+                      <td className="py-2 px-3 text-right">
+                        {t.status === 'active' ? (
+                          <button
+                            type="button"
+                            disabled={busyNames.has(t.name)}
+                            onClick={() => void handleCancel(t)}
+                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+                            title="Cancel this task"
+                          >
+                            <X size={12} />
+                            Cancel
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -86,6 +165,192 @@ export function TasksPanel() {
         );
       })}
     </div>
+  );
+}
+
+// NewTaskDialog is a minimal "+ New task" form. Mirrors the schedule_task
+// LLM tool: a name, a kind (reminder | wiki_maintenance), payload, and one
+// of `at` (RFC3339 UTC) or `daily` (HH:MM in the bot's local TZ).
+//
+// Reminders require a recipient_id; the field is shown only when kind is
+// reminder. The form submits a UpsertTaskRequest unchanged — server-side
+// validation surfaces clear messages back through the toast.
+function NewTaskDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSubmit: (req: UpsertTaskRequest) => Promise<void>;
+}) {
+  // Keying the form on `open` means each open mounts a fresh form with
+  // default useState values — no setState-in-effect dance to clear state.
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New scheduled task</DialogTitle>
+          <DialogDescription>
+            One-time (specific date/time) or daily recurring. Names must be unique;
+            scheduling a name that already exists overwrites it.
+          </DialogDescription>
+        </DialogHeader>
+        {open && <NewTaskForm key={String(open)} onCancel={() => onOpenChange(false)} onSubmit={onSubmit} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NewTaskForm({
+  onCancel,
+  onSubmit,
+}: {
+  onCancel: () => void;
+  onSubmit: (req: UpsertTaskRequest) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<Task['kind']>('wiki_maintenance');
+  const [payload, setPayload] = useState('');
+  const [recipientId, setRecipientId] = useState('');
+  const [scheduleMode, setScheduleMode] = useState<'at' | 'daily'>('daily');
+  const [at, setAt] = useState('');
+  const [daily, setDaily] = useState('03:00');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const req: UpsertTaskRequest = { name: name.trim(), kind };
+      if (payload.trim()) req.payload = payload.trim();
+      if (kind === 'reminder' && recipientId.trim()) req.recipient_id = recipientId.trim();
+      if (scheduleMode === 'at') {
+        // <input type="datetime-local"> emits "YYYY-MM-DDTHH:MM" in local
+        // time. Convert to UTC RFC3339 for the wire.
+        const localDate = new Date(at);
+        if (!isNaN(localDate.getTime())) {
+          req.at = localDate.toISOString();
+        }
+      } else {
+        req.daily = daily.trim();
+      }
+      await onSubmit(req);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => void submit(e)} className="space-y-3">
+          <label className="block text-sm">
+            Name
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              pattern="[A-Za-z0-9_.\-]{1,64}"
+              placeholder="e.g. weekly-cleanup"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              1-64 chars, letters / digits / _ . -
+            </span>
+          </label>
+
+          <label className="block text-sm">
+            Kind
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as Task['kind'])}
+              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="wiki_maintenance">wiki_maintenance — runs lint + rebuild + log</option>
+              <option value="reminder">reminder — sends a Telegram message</option>
+            </select>
+          </label>
+
+          {kind === 'reminder' && (
+            <label className="block text-sm">
+              Recipient (Telegram user ID)
+              <input
+                type="text"
+                required
+                value={recipientId}
+                onChange={(e) => setRecipientId(e.target.value)}
+                className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              />
+            </label>
+          )}
+
+          <label className="block text-sm">
+            Payload (optional)
+            <input
+              type="text"
+              value={payload}
+              onChange={(e) => setPayload(e.target.value)}
+              placeholder={kind === 'reminder' ? 'reminder text' : ''}
+              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            />
+          </label>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Schedule</legend>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="schedule"
+                checked={scheduleMode === 'daily'}
+                onChange={() => setScheduleMode('daily')}
+              />
+              Daily
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm ml-4">
+              <input
+                type="radio"
+                name="schedule"
+                checked={scheduleMode === 'at'}
+                onChange={() => setScheduleMode('at')}
+              />
+              Once at
+            </label>
+            {scheduleMode === 'daily' ? (
+              <input
+                type="time"
+                required
+                value={daily}
+                onChange={(e) => setDaily(e.target.value)}
+                className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              />
+            ) : (
+              <input
+                type="datetime-local"
+                required
+                value={at}
+                onChange={(e) => setAt(e.target.value)}
+                className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              />
+            )}
+          </fieldset>
+
+      <DialogFooter className="pt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {submitting ? 'Scheduling…' : 'Schedule'}
+        </button>
+      </DialogFooter>
+    </form>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Upload } from 'lucide-react';
+import { Upload, Play, RefreshCcw } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import type { SourceSummary, UploadResponse } from '@/types/api';
@@ -19,7 +19,48 @@ export function SourceInbox() {
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // Per-row in-flight tracking so the same button can't be double-clicked.
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const setBusy = useCallback((id: string, on: boolean) => {
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleIngest = useCallback(async (s: SourceSummary) => {
+    setBusy(s.id, true);
+    const toastId = toast.loading(`Ingesting ${s.filename}…`);
+    try {
+      const res = await api.ingestSource(s.id);
+      toast.success(`${s.filename} · ${res.note ?? 'ingested'}`, { id: toastId });
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Ingest failed: ${s.filename}\n${msg}`, { id: toastId });
+    } finally {
+      setBusy(s.id, false);
+    }
+  }, [refetch, setBusy]);
+
+  const handleReocr = useCallback(async (s: SourceSummary) => {
+    setBusy(s.id, true);
+    const toastId = toast.loading(`Re-OCRing ${s.filename}…`);
+    try {
+      const res = await api.reocrSource(s.id);
+      toast.success(`${s.filename} · ${res.note ?? 'OCR redone'}`, { id: toastId });
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Re-OCR failed: ${s.filename}\n${msg}`, { id: toastId });
+    } finally {
+      setBusy(s.id, false);
+    }
+  }, [refetch, setBusy]);
 
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
@@ -123,6 +164,7 @@ export function SourceInbox() {
                     <th className="text-left py-2 px-3 font-medium">Created</th>
                     <th className="text-right py-2 px-3 font-medium">Pages</th>
                     <th className="text-left py-2 px-3 font-medium">Wiki</th>
+                    <th className="text-right py-2 px-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,6 +179,14 @@ export function SourceInbox() {
                               <code key={p} className="text-xs">[[{p}]]</code>
                             ))
                           : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <SourceActions
+                          source={s}
+                          busy={busyIds.has(s.id)}
+                          onIngest={() => void handleIngest(s)}
+                          onReocr={() => void handleReocr(s)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -178,6 +228,60 @@ function DropZone({
         Same pipeline as Telegram: stored → OCR → auto-ingested into the wiki.
       </p>
     </button>
+  );
+}
+
+// SourceActions renders the per-row Ingest / Re-OCR buttons. The set of
+// available actions depends on the source's lifecycle status:
+//   - stored:        OCR hasn't run; reocr button (re-runs Mistral OCR)
+//   - failed:        OCR or ingest failed; both reocr + ingest available
+//   - ocr_complete:  OCR done but ingest hasn't run; ingest button only
+//   - ingested:      no actions (re-running ingest is a no-op; reocr is
+//                    available only if the user explicitly wants to
+//                    refresh the OCR — surface it via re-upload instead)
+function SourceActions({
+  source: s,
+  busy,
+  onIngest,
+  onReocr,
+}: {
+  source: SourceSummary;
+  busy: boolean;
+  onIngest: () => void;
+  onReocr: () => void;
+}) {
+  const showIngest = s.status === 'ocr_complete' || s.status === 'failed';
+  const showReocr = s.status === 'stored' || s.status === 'failed';
+  if (!showIngest && !showReocr) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="inline-flex gap-1">
+      {showReocr && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onReocr}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          title="Re-run Mistral OCR on this PDF"
+        >
+          <RefreshCcw size={12} />
+          Re-OCR
+        </button>
+      )}
+      {showIngest && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onIngest}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          title="Compile OCR markdown into a wiki summary page"
+        >
+          <Play size={12} />
+          Ingest
+        </button>
+      )}
+    </div>
   );
 }
 
