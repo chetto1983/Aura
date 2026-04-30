@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -93,7 +94,11 @@ type Result struct {
 // without rewriting the page.
 //
 // Errors out when the source is missing, status != ocr_complete (and not
-// already ingested), or ocr.md is missing.
+// already ingested at the same slug), or ocr.md is missing. When the
+// source is already ingested but the freshly-computed slug differs from
+// what's stored (e.g. the renderer slug rule changed, or the source was
+// renamed), the page is rewritten at the new slug and the old slug is
+// best-effort deleted so the wiki doesn't accumulate dead pages.
 func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error) {
 	src, err := p.sources.Get(sourceID)
 	if err != nil {
@@ -103,16 +108,23 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		return Result{}, fmt.Errorf("ingest: %w", err)
 	}
 
-	if src.Status == source.StatusIngested && len(src.WikiPages) > 0 {
-		slug := src.WikiPages[0]
+	if src.Status != source.StatusOCRComplete && src.Status != source.StatusIngested {
+		return Result{}, fmt.Errorf("ingest: source %s status is %s, want ocr_complete", sourceID, src.Status)
+	}
+
+	// Collision-aware: when a different source already owns the candidate
+	// slug, the title gets a short id suffix so the slug derived from it
+	// stays unique. Slug is always wiki.Slug(title) so wiki.Store.WritePage
+	// (which keys off the title) and our recorded slug never disagree.
+	title := p.resolveTitle(buildTitle(src, sourceID), sourceID)
+	slug := wiki.Slug(title)
+
+	if src.Status == source.StatusIngested && len(src.WikiPages) == 1 && src.WikiPages[0] == slug {
 		return Result{
 			Slug:     slug,
 			Created:  false,
 			PageNote: fmt.Sprintf("already compiled as [[%s]]", slug),
 		}, nil
-	}
-	if src.Status != source.StatusOCRComplete {
-		return Result{}, fmt.Errorf("ingest: source %s status is %s, want ocr_complete", sourceID, src.Status)
 	}
 
 	mdPath := p.sources.Path(sourceID, "ocr.md")
@@ -128,10 +140,6 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	}
 
 	preview := buildPreview(string(rawMD), previewMaxChars)
-
-	// Title is keyed off the source ID so two PDFs with the same display
-	// filename can't collide. The human-readable filename lives in the body.
-	title := "Source " + sourceID
 	body := buildSummaryBody(src, preview)
 
 	now := p.now().UTC().Format(time.RFC3339)
@@ -151,7 +159,7 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		return Result{}, fmt.Errorf("ingest: write page: %w", err)
 	}
 
-	slug := wiki.Slug(title)
+	staleSlugs := staleSlugsToDelete(src.WikiPages, slug)
 
 	if _, err := p.sources.Update(sourceID, func(s *source.Source) error {
 		s.Status = source.StatusIngested
@@ -165,6 +173,12 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		return Result{Slug: slug, Created: true}, fmt.Errorf("ingest: update source status: %w", err)
 	}
 
+	for _, old := range staleSlugs {
+		if err := p.wiki.DeletePage(ctx, old); err != nil {
+			p.logger.Warn("ingest: deleting stale wiki page failed", "slug", old, "err", err)
+		}
+	}
+
 	if p.search != nil {
 		if err := p.search.ReindexWikiPage(ctx, slug); err != nil {
 			p.logger.Warn("ingest: reindex failed; page is still readable", "slug", slug, "err", err)
@@ -176,6 +190,7 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		"slug", slug,
 		"page_count", src.PageCount,
 		"preview_chars", len(preview),
+		"stale_slugs_removed", len(staleSlugs),
 	)
 
 	return Result{
@@ -183,6 +198,81 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		Created:  true,
 		PageNote: fmt.Sprintf("compiled as [[%s]]", slug),
 	}, nil
+}
+
+// resolveTitle returns the title to use for this source's wiki page,
+// disambiguating with a short id suffix when the candidate slug is
+// already owned by a different source. Returning a title (rather than a
+// slug) keeps page.Title and the on-disk filename in sync since
+// wiki.Store.WritePage keys off the title.
+func (p *Pipeline) resolveTitle(candidate, sourceID string) string {
+	existing, err := p.wiki.ReadPage(wiki.Slug(candidate))
+	if err != nil {
+		// Not found / unreadable / parse error → slug is free. Read errors
+		// are rare and the WritePage call later will surface real problems.
+		return candidate
+	}
+	if pageBelongsTo(existing, sourceID) {
+		return candidate
+	}
+	suffix := shortID(sourceID)
+	if suffix == "" {
+		return candidate
+	}
+	return candidate + " " + suffix
+}
+
+// pageBelongsTo reports whether a wiki page's frontmatter sources list
+// already references sourceID. Used so re-running Compile on the same
+// source reuses the existing slug instead of generating a new one.
+func pageBelongsTo(page *wiki.Page, sourceID string) bool {
+	if page == nil {
+		return false
+	}
+	return slices.Contains(page.Sources, "source:"+sourceID)
+}
+
+// shortID returns the first 6 hex chars after the "src_" prefix so the
+// disambiguating suffix stays human-readable. Empty when the id doesn't
+// fit the expected shape.
+func shortID(sourceID string) string {
+	const prefix = "src_"
+	if !strings.HasPrefix(sourceID, prefix) {
+		return ""
+	}
+	rest := sourceID[len(prefix):]
+	if len(rest) < 6 {
+		return rest
+	}
+	return rest[:6]
+}
+
+// staleSlugsToDelete returns the previously-recorded slugs that no longer
+// match the freshly-computed slug. Used to clean up after a slug-rule
+// change or filename rename so the wiki doesn't accumulate dead pages.
+func staleSlugsToDelete(prev []string, current string) []string {
+	out := make([]string, 0, len(prev))
+	for _, s := range prev {
+		if s != "" && s != current {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// buildTitle returns a human-readable wiki title derived from the source's
+// display filename, falling back to the source ID when no filename is
+// available. The "Source: " prefix keeps source pages clustered under a
+// predictable namespace in graph and search views.
+func buildTitle(src *source.Source, sourceID string) string {
+	name := strings.TrimSpace(src.Filename)
+	if ext := strings.LastIndex(name, "."); ext > 0 {
+		name = strings.TrimSpace(name[:ext])
+	}
+	if name == "" {
+		return "Source: " + sourceID
+	}
+	return "Source: " + name
 }
 
 // AfterOCR adapts Compile to the telegram.AfterOCRHook signature so the bot

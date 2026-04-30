@@ -52,11 +52,19 @@ func newTestPipeline(t *testing.T) testEnv {
 // mimicking what the slice-4 Telegram pipeline produces on disk.
 func putOCRComplete(t *testing.T, store *source.Store, ocrBody string) *source.Source {
 	t.Helper()
+	return putOCRCompleteAs(t, store, "paper.pdf", "%PDF-1.4 fake "+t.Name(), ocrBody)
+}
+
+// putOCRCompleteAs lets a test pin both filename and content so collision
+// scenarios (same filename, different bytes → different source IDs, same
+// candidate slug) are reproducible.
+func putOCRCompleteAs(t *testing.T, store *source.Store, filename, content, ocrBody string) *source.Source {
+	t.Helper()
 	src, _, err := store.Put(context.Background(), source.PutInput{
 		Kind:     source.KindPDF,
-		Filename: "paper.pdf",
+		Filename: filename,
 		MimeType: "application/pdf",
-		Bytes:    []byte("%PDF-1.4 fake " + t.Name()),
+		Bytes:    []byte(content),
 	})
 	if err != nil {
 		t.Fatalf("Put: %v", err)
@@ -103,7 +111,9 @@ func TestCompile_HappyPath(t *testing.T) {
 	if !res.Created {
 		t.Errorf("Created = false, want true on first compile")
 	}
-	wantSlug := wiki.Slug("Source " + src.ID)
+	// Slug derives from the display filename (sans extension) so the wiki
+	// graph view shows readable nodes, not opaque source IDs.
+	wantSlug := "source-paper"
 	if res.Slug != wantSlug {
 		t.Errorf("Slug = %q, want %q", res.Slug, wantSlug)
 	}
@@ -116,8 +126,8 @@ func TestCompile_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadPage: %v", err)
 	}
-	if page.Title != "Source "+src.ID {
-		t.Errorf("title = %q", page.Title)
+	if page.Title != "Source: paper" {
+		t.Errorf("title = %q, want %q", page.Title, "Source: paper")
 	}
 	if page.Category != "sources" {
 		t.Errorf("category = %q, want sources", page.Category)
@@ -340,5 +350,183 @@ func TestCompile_WikiFilesOnDisk(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(env.dir, name)); err != nil {
 			t.Errorf("wiki %s missing: %v", name, err)
 		}
+	}
+}
+
+// TestCompile_FilenameCollision: two sources with the same display
+// filename (different bytes → different IDs) must end up at different
+// slugs. The second source gets a short-id suffix so it doesn't silently
+// overwrite the first page.
+func TestCompile_FilenameCollision(t *testing.T) {
+	env := newTestPipeline(t)
+	a := putOCRCompleteAs(t, env.sources, "uta.pdf", "%PDF-A", "## Page 1\n\nfirst")
+	b := putOCRCompleteAs(t, env.sources, "uta.pdf", "%PDF-B", "## Page 1\n\nsecond")
+
+	first, err := env.pipeline.Compile(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("Compile a: %v", err)
+	}
+	if first.Slug != "source-uta" {
+		t.Errorf("first slug = %q, want source-uta", first.Slug)
+	}
+
+	second, err := env.pipeline.Compile(context.Background(), b.ID)
+	if err != nil {
+		t.Fatalf("Compile b: %v", err)
+	}
+	if second.Slug == first.Slug {
+		t.Fatalf("colliding slug: a=%s b=%s", first.Slug, second.Slug)
+	}
+	if !strings.HasPrefix(second.Slug, "source-uta-") {
+		t.Errorf("second slug = %q, want source-uta-<short> prefix", second.Slug)
+	}
+	// Both pages must remain readable — the disambiguator must not have
+	// rewritten the first page in place.
+	if _, err := env.wiki.ReadPage(first.Slug); err != nil {
+		t.Errorf("first page lost: %v", err)
+	}
+	if _, err := env.wiki.ReadPage(second.Slug); err != nil {
+		t.Errorf("second page missing: %v", err)
+	}
+}
+
+// TestCompile_MigratesStaleSlug: a source already ingested at an old slug
+// (e.g. before the renderer slug rule changed) gets rewritten at the new
+// slug on next Compile, and the old wiki page is deleted so the wiki
+// doesn't accumulate orphan slugs.
+func TestCompile_MigratesStaleSlug(t *testing.T) {
+	env := newTestPipeline(t)
+	src := putOCRCompleteAs(t, env.sources, "report.pdf", "%PDF-mig", "## Page 1\n\nbody")
+
+	// Plant a stale page at the old "Source <id>" slug rule.
+	staleSlug := wiki.Slug("Source " + src.ID)
+	stalePage := &wiki.Page{
+		Title:         "Source " + src.ID,
+		Body:          "stale",
+		Category:      "sources",
+		Tags:          []string{"source", "pdf"},
+		Sources:       []string{"source:" + src.ID},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "ingest_v1",
+		CreatedAt:     "2026-04-29T00:00:00Z",
+		UpdatedAt:     "2026-04-29T00:00:00Z",
+	}
+	if err := env.wiki.WritePage(context.Background(), stalePage); err != nil {
+		t.Fatalf("seed stale page: %v", err)
+	}
+	if _, err := env.sources.Update(src.ID, func(s *source.Source) error {
+		s.Status = source.StatusIngested
+		s.WikiPages = []string{staleSlug}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed source state: %v", err)
+	}
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if res.Slug != "source-report" {
+		t.Errorf("new slug = %q, want source-report", res.Slug)
+	}
+	if !res.Created {
+		t.Errorf("Created = false, want true on slug rewrite")
+	}
+
+	// New page exists, old page deleted.
+	if _, err := env.wiki.ReadPage("source-report"); err != nil {
+		t.Errorf("new page missing: %v", err)
+	}
+	if _, err := env.wiki.ReadPage(staleSlug); err == nil {
+		t.Errorf("stale page %q still exists; should have been deleted", staleSlug)
+	}
+
+	// source.json now points only at the new slug.
+	post, err := env.sources.Get(src.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(post.WikiPages) != 1 || post.WikiPages[0] != "source-report" {
+		t.Errorf("wiki_pages = %v, want [source-report]", post.WikiPages)
+	}
+}
+
+// TestCompile_EmptyFilenameFallback: missing filename → title falls back
+// to "Source: <id>" so we still produce a valid slug.
+func TestCompile_EmptyFilenameFallback(t *testing.T) {
+	env := newTestPipeline(t)
+	src := putOCRCompleteAs(t, env.sources, "  ", "%PDF-noname", "## Page 1\n\nbody")
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if res.Slug != wiki.Slug("Source: "+src.ID) {
+		t.Errorf("slug = %q, want fallback derived from id", res.Slug)
+	}
+}
+
+func TestBuildTitle(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		want     string
+	}{
+		{"strips .pdf", "uta.pdf", "Source: uta"},
+		{"trims whitespace", "  uta.pdf  ", "Source: uta"},
+		{"keeps spaces inside name", "MARCHETTO DAVIDE_DDT N. 90.pdf", "Source: MARCHETTO DAVIDE_DDT N. 90"},
+		{"empty falls back to id", "", "Source: src_FALLBACK"},
+		{"whitespace falls back to id", "   ", "Source: src_FALLBACK"},
+		{"strips only final extension", "report.v2.pdf", "Source: report.v2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildTitle(&source.Source{Filename: tc.filename, ID: "src_FALLBACK"}, "src_FALLBACK")
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShortID(t *testing.T) {
+	cases := map[string]string{
+		"src_24abf740febd9eac": "24abf7",
+		"src_abc":              "abc",
+		"src_":                 "",
+		"not_a_source_id":      "",
+		"":                     "",
+	}
+	for in, want := range cases {
+		if got := shortID(in); got != want {
+			t.Errorf("shortID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestStaleSlugsToDelete(t *testing.T) {
+	cases := []struct {
+		name    string
+		prev    []string
+		current string
+		want    []string
+	}{
+		{"none stale when matches", []string{"source-uta"}, "source-uta", []string{}},
+		{"all stale when differs", []string{"source-old"}, "source-uta", []string{"source-old"}},
+		{"empty entries dropped", []string{"", "source-old", ""}, "source-uta", []string{"source-old"}},
+		{"nil prev", nil, "source-uta", []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := staleSlugsToDelete(tc.prev, tc.current)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }
