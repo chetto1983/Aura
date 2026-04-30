@@ -6,196 +6,231 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Sacchi brand — green on white industrial palette (sacchi.it) */
-  --bg: #ffffff;
-  --surface: #ffffff;
-  --surface-raised: #f7f8fa;
-  --surface-sunken: #f1f3f5;
-  --border: oklch(0.922 0 0);
-  --border-strong: #d1d5db;
+  /* Aura — logo-derived blue palette, light mode.
+   * Logo: deep navy disc with electric cyan-blue arrow A.
+   * Light mode keeps a clean off-white canvas with the same cyan-blue
+   * as the only saturated accent. Both `--brand*` (legacy hand-rolled
+   * CSS) and `--primary*` (shadcn) are tied to the same hue family so
+   * the page can never split into two color systems again.
+   */
 
-  --text: #374151;
-  --text-strong: #111827;
-  --text-dim: #4b5563;       /* gray-600 — AA on #f7f8fa (was #6b7280, 4.62:1 borderline) */
-  --text-muted: #6b7280;     /* gray-500 — was #9ca3af (2.85:1 fail) */
+  /* Surfaces — white canvas with subtle cool tint */
+  --bg: oklch(0.99 0.004 240);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.975 0.006 240);
+  --surface-sunken: oklch(0.955 0.008 240);
+  --border: oklch(0.91 0.012 240);
+  --border-strong: oklch(0.84 0.014 240);
 
-  --brand: #00a651;          /* Sacchi green */
-  --brand-strong: #008a44;   /* hover/active */
-  --brand-soft: #e6f6ec;     /* tinted background */
-  --brand-tint: #f1faf4;
-  --brand-ring: rgba(0, 166, 81, 0.18);
+  /* Text — deep navy heads, calmer body, all AA on white */
+  --text: oklch(0.32 0.025 250);
+  --text-strong: oklch(0.18 0.04 250);
+  --text-dim: oklch(0.46 0.025 245);
+  --text-muted: oklch(0.58 0.02 240);
 
-  --user-bubble: #00a651;
+  /* Brand — electric logo blue */
+  --brand: oklch(0.62 0.17 245);
+  --brand-strong: oklch(0.54 0.18 245);
+  --brand-soft: oklch(0.93 0.04 245);
+  --brand-tint: oklch(0.97 0.018 245);
+  --brand-ring: oklch(0.62 0.17 245 / 0.22);
+
+  --user-bubble: oklch(0.62 0.17 245);
   --user-text: #ffffff;
-  --assistant-bubble: #f7f8fa;
-  --assistant-text: #111827;
-  --tool-bubble: #fffbeb;
-  --tool-border: #fde68a;
+  --assistant-bubble: oklch(0.975 0.006 240);
+  --assistant-text: oklch(0.18 0.04 250);
+  --tool-bubble: oklch(0.97 0.025 245);
+  --tool-border: oklch(0.85 0.05 245);
 
-  --success: #00a651;
-  --error: #dc2626;
-  --warning: #d97706;
+  --success: oklch(0.62 0.15 155);
+  --error: oklch(0.6 0.2 25);
+  --warning: oklch(0.7 0.16 75);
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08);
-  --shadow-xl: 0 24px 80px rgba(15, 23, 42, 0.18);
-  --skeleton-base: #edf1f4;
-  --skeleton-highlight: #f8fafc;
+  /* Soft, blue-tinted shadows (not pure black) */
+  --shadow-sm: 0 1px 2px oklch(0.18 0.04 250 / 0.06);
+  --shadow-md: 0 6px 20px oklch(0.18 0.04 250 / 0.08);
+  --shadow-lg: 0 16px 40px oklch(0.18 0.04 250 / 0.10);
+  --shadow-xl: 0 32px 90px oklch(0.18 0.04 250 / 0.18);
+  --skeleton-base: oklch(0.94 0.01 240);
+  --skeleton-highlight: oklch(0.985 0.004 240);
 
-  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Inter', system-ui, sans-serif;
+  --font-body: 'Geist Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Geist Variable', 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius: 0.625rem;
-  --radius-lg: 14px;
+  /* 2026: more generous corners — softer cards, no harsh angles */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
 
-  /* ----- 10e: Aura logo-derived palette (light mode) -----
-   * Logo: deep navy disc with an electric cyan-blue arrow A.
-   * Light mode reads as a clean white-paper surface with the same
-   * cyan-blue as the only saturated accent — keeps brand recognition
-   * across themes without flooding the page in color.
-   */
-  --background: oklch(0.99 0.004 240);
-  --foreground: oklch(0.18 0.04 250);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.04 250);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.04 250);
-  --primary: oklch(0.62 0.16 245);            /* electric blue ≈ #2A7CE0 */
+  /* shadcn parity tokens — same hue family as --brand above */
+  --background: var(--bg);
+  --foreground: var(--text-strong);
+  --card: var(--surface);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--brand);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 240);
-  --secondary-foreground: oklch(0.22 0.04 250);
-  --muted: oklch(0.96 0.01 240);
-  --muted-foreground: oklch(0.5 0.03 245);
-  --accent: oklch(0.94 0.03 240);
-  --accent-foreground: oklch(0.22 0.04 250);
-  --destructive: oklch(0.6 0.2 25);
-  --input: oklch(0.9 0.01 240);
-  --ring: oklch(0.62 0.16 245);
-  --chart-1: oklch(0.62 0.16 245);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--text-strong);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--text-dim);
+  --accent: var(--brand-tint);
+  --accent-foreground: var(--brand-strong);
+  --destructive: var(--error);
+  --input: var(--border);
+  --ring: var(--brand);
+  --chart-1: oklch(0.62 0.17 245);
   --chart-2: oklch(0.7 0.14 200);
   --chart-3: oklch(0.55 0.18 270);
   --chart-4: oklch(0.65 0.18 320);
   --chart-5: oklch(0.6 0.18 30);
-  --sidebar: oklch(0.98 0.005 240);
-  --sidebar-foreground: oklch(0.18 0.04 250);
-  --sidebar-primary: oklch(0.62 0.16 245);
+  --sidebar: oklch(0.98 0.006 240);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.94 0.03 240);
-  --sidebar-accent-foreground: oklch(0.22 0.04 250);
-  --sidebar-border: oklch(0.9 0.01 240);
-  --sidebar-ring: oklch(0.62 0.16 245);
+  --sidebar-accent: var(--brand-tint);
+  --sidebar-accent-foreground: var(--brand-strong);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--brand);
 }
 
-[data-theme="dark"] {
-  /* ----- 10e: Aura logo-derived palette (dark mode, default) -----
-   * Pulled directly from the new orb logo:
-   *   - background = the deep navy disc backdrop
-   *   - card / sidebar = the slightly raised disc inside
-   *   - primary = the electric cyan-blue arrow A
-   *   - ring = a brighter saturated cyan for focus glow
-   * 2026 patterns at play: dark-first surface, narrow chroma range,
-   * single bold accent, subtle aurora gradient under <body>, soft
-   * blue-tinted neutrals (not pure gray).
+[data-theme="dark"],
+.dark {
+  /* Aura — logo-derived blue palette, dark mode (default).
+   * Pulled directly from the orb logo: deep navy disc canvas, slightly
+   * raised disc surfaces, electric cyan-blue arrow as the only bold
+   * accent. 2026 cues: narrow chroma range, single saturated accent,
+   * blue-tinted neutrals (not pure gray), generous radii, ambient
+   * aurora gradient on <body>.
    */
-  --bg: #0a1124;
-  --surface: #111a33;
-  --surface-raised: #15203f;
-  --surface-sunken: #0c1530;
-  --border: #1f2c50;
-  --border-strong: #324168;
 
-  --text: #cdd6e8;
-  --text-strong: #f0f4ff;
-  --text-dim: #93a0bf;
-  --text-muted: #6a7596;
+  --bg: oklch(0.16 0.03 250);
+  --surface: oklch(0.21 0.035 250);
+  --surface-raised: oklch(0.245 0.04 250);
+  --surface-sunken: oklch(0.135 0.025 250);
+  --border: oklch(0.32 0.04 250 / 0.55);
+  --border-strong: oklch(0.42 0.05 250 / 0.65);
 
-  --brand: #4da8ff;             /* logo arrow */
-  --brand-strong: #6ec1ff;
-  --brand-soft: rgba(77, 168, 255, 0.18);
-  --brand-tint: rgba(77, 168, 255, 0.10);
-  --brand-ring: rgba(77, 168, 255, 0.28);
+  --text: oklch(0.85 0.015 240);
+  --text-strong: oklch(0.97 0.008 240);
+  --text-dim: oklch(0.68 0.025 245);
+  --text-muted: oklch(0.55 0.03 245);
 
-  --user-bubble: #2563eb;
+  --brand: oklch(0.72 0.17 240);
+  --brand-strong: oklch(0.8 0.16 240);
+  --brand-soft: oklch(0.72 0.17 240 / 0.18);
+  --brand-tint: oklch(0.72 0.17 240 / 0.10);
+  --brand-ring: oklch(0.72 0.17 240 / 0.32);
+
+  --user-bubble: oklch(0.62 0.18 245);
   --user-text: #ffffff;
-  --assistant-bubble: #15203f;
-  --assistant-text: #f0f4ff;
-  --tool-bubble: #1c2548;
-  --tool-border: #3b4a7a;
+  --assistant-bubble: oklch(0.245 0.04 250);
+  --assistant-text: oklch(0.97 0.008 240);
+  --tool-bubble: oklch(0.28 0.05 250);
+  --tool-border: oklch(0.4 0.06 250 / 0.5);
 
-  --success: #34d399;
-  --error: #f87171;
-  --warning: #fbbf24;
+  --success: oklch(0.78 0.15 155);
+  --error: oklch(0.72 0.18 25);
+  --warning: oklch(0.82 0.15 75);
 
-  --shadow-sm: 0 1px 2px rgba(0, 8, 32, 0.5);
-  --shadow-md: 0 8px 28px rgba(0, 8, 32, 0.5);
-  --shadow-lg: 0 18px 48px rgba(0, 8, 32, 0.6);
-  --shadow-xl: 0 28px 90px rgba(0, 8, 32, 0.7);
-  --skeleton-base: #15203f;
-  --skeleton-highlight: #21305a;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.5);
+  --shadow-md: 0 10px 30px oklch(0 0 0 / 0.45);
+  --shadow-lg: 0 22px 60px oklch(0 0 0 / 0.55);
+  --shadow-xl: 0 36px 100px oklch(0 0 0 / 0.7);
+  --skeleton-base: oklch(0.245 0.04 250);
+  --skeleton-highlight: oklch(0.32 0.05 250);
 
-  --background: oklch(0.16 0.03 250);
-  --foreground: oklch(0.95 0.01 240);
-  --card: oklch(0.21 0.035 250);
-  --card-foreground: oklch(0.95 0.01 240);
-  --popover: oklch(0.21 0.035 250);
-  --popover-foreground: oklch(0.95 0.01 240);
-  --primary: oklch(0.7 0.18 240);              /* electric cyan-blue */
+  --background: var(--bg);
+  --foreground: var(--text-strong);
+  --card: var(--surface);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--brand);
   --primary-foreground: oklch(0.16 0.03 250);
-  --secondary: oklch(0.27 0.03 250);
-  --secondary-foreground: oklch(0.95 0.01 240);
-  --muted: oklch(0.24 0.025 250);
-  --muted-foreground: oklch(0.65 0.025 240);
-  --accent: oklch(0.32 0.06 245);
-  --accent-foreground: oklch(0.95 0.01 240);
-  --destructive: oklch(0.65 0.2 25);
-  --input: oklch(0.3 0.03 250 / 80%);
-  --border: oklch(0.32 0.04 250 / 60%);
-  --ring: oklch(0.75 0.2 235);                 /* brighter glow */
-  --chart-1: oklch(0.7 0.18 240);
+  --secondary: oklch(0.27 0.04 250);
+  --secondary-foreground: var(--text-strong);
+  --muted: oklch(0.24 0.03 250);
+  --muted-foreground: var(--text-dim);
+  --accent: var(--brand-soft);
+  --accent-foreground: var(--text-strong);
+  --destructive: var(--error);
+  --input: oklch(0.3 0.03 250 / 0.8);
+  --ring: oklch(0.78 0.18 235);
+  --chart-1: oklch(0.72 0.17 240);
   --chart-2: oklch(0.78 0.16 200);
   --chart-3: oklch(0.65 0.2 280);
   --chart-4: oklch(0.7 0.2 320);
   --chart-5: oklch(0.72 0.18 30);
-  --sidebar: oklch(0.18 0.035 250);
-  --sidebar-foreground: oklch(0.95 0.01 240);
-  --sidebar-primary: oklch(0.7 0.18 240);
+  --sidebar: oklch(0.185 0.035 250);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: oklch(0.16 0.03 250);
-  --sidebar-accent: oklch(0.32 0.06 245);
-  --sidebar-accent-foreground: oklch(0.95 0.01 240);
-  --sidebar-border: oklch(0.32 0.04 250 / 60%);
-  --sidebar-ring: oklch(0.75 0.2 235);
+  --sidebar-accent: var(--brand-soft);
+  --sidebar-accent-foreground: var(--text-strong);
+  --sidebar-border: var(--border);
+  --sidebar-ring: oklch(0.78 0.18 235);
 }
 
 [data-theme="contrast"] {
+  /* High-contrast variant — same blue family, pumped chroma + harder
+   * borders for low-vision use. Stays light-canvas (deep blue accent
+   * on white reads cleanest at high contrast).
+   */
   --bg: #ffffff;
   --surface: #ffffff;
-  --surface-raised: #f4f6f8;
-  --surface-sunken: #e8edf2;
-  --border: #7b8794;
-  --border-strong: #334155;
+  --surface-raised: oklch(0.96 0.01 240);
+  --surface-sunken: oklch(0.92 0.012 240);
+  --border: oklch(0.55 0.02 240);
+  --border-strong: oklch(0.32 0.03 240);
 
-  --text: #0f172a;
-  --text-strong: #020617;
-  --text-dim: #334155;
-  --text-muted: #475569;
+  --text: oklch(0.18 0.04 250);
+  --text-strong: oklch(0.08 0.03 250);
+  --text-dim: oklch(0.28 0.04 250);
+  --text-muted: oklch(0.4 0.03 250);
 
-  --brand: #007a3d;
-  --brand-strong: #005f30;
-  --brand-soft: #bcebd1;
-  --brand-tint: #e6f8ee;
-  --brand-ring: rgba(0, 122, 61, 0.36);
+  --brand: oklch(0.42 0.22 250);
+  --brand-strong: oklch(0.32 0.22 250);
+  --brand-soft: oklch(0.86 0.06 250);
+  --brand-tint: oklch(0.94 0.03 250);
+  --brand-ring: oklch(0.42 0.22 250 / 0.4);
 
+  --user-bubble: oklch(0.42 0.22 250);
+  --user-text: #ffffff;
   --assistant-bubble: #ffffff;
-  --assistant-text: #020617;
-  --tool-bubble: #fff7d6;
-  --tool-border: #b7791f;
-  --skeleton-base: #d9e2ea;
+  --assistant-text: oklch(0.08 0.03 250);
+  --tool-bubble: oklch(0.96 0.06 90);
+  --tool-border: oklch(0.55 0.14 75);
+
+  --success: oklch(0.42 0.18 150);
+  --error: oklch(0.5 0.22 25);
+  --warning: oklch(0.55 0.18 65);
+
+  --skeleton-base: oklch(0.88 0.012 240);
   --skeleton-highlight: #ffffff;
 
-  --ring: oklch(0.42 0.16 150);
+  --background: var(--bg);
+  --foreground: var(--text-strong);
+  --card: var(--surface);
+  --card-foreground: var(--text-strong);
+  --primary: var(--brand);
+  --primary-foreground: #ffffff;
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--text-dim);
+  --accent: var(--brand-tint);
+  --accent-foreground: var(--brand-strong);
+  --ring: var(--brand);
+  --sidebar: oklch(0.97 0.008 240);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--brand-tint);
+  --sidebar-accent-foreground: var(--brand-strong);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--brand);
 }
 
 * { box-sizing: border-box; }
@@ -215,17 +250,25 @@ html, body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 10e: ambient aurora — two soft radial spotlights anchored top-right
- * and bottom-left in the brand cyan, baked into the body of dark mode.
- * Adds depth without hurting readability (low alpha + no blur). Only
- * applies to dark/contrast where the canvas is dim enough to show it.
- */
-.dark body,
-[data-theme="contrast"] body {
+/* 2026 ambient aurora — soft radial accents anchored to the corners,
+ * tuned per theme so the page never feels flat. Light mode gets a
+ * whisper-soft blue wash; dark mode gets two stronger logo-blue
+ * spotlights; contrast mode stays clean (no aurora). */
+body {
   background:
-    radial-gradient(1200px 600px at 100% 0%, rgba(77, 168, 255, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 0% 100%, rgba(99, 102, 241, 0.06), transparent 60%),
+    radial-gradient(1100px 540px at 100% 0%, oklch(0.62 0.17 245 / 0.05), transparent 60%),
+    radial-gradient(900px 480px at 0% 100%, oklch(0.62 0.17 245 / 0.035), transparent 60%),
     var(--bg);
+}
+.dark body,
+[data-theme="dark"] body {
+  background:
+    radial-gradient(1200px 600px at 100% 0%, oklch(0.72 0.17 240 / 0.12), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, oklch(0.55 0.18 270 / 0.08), transparent 60%),
+    var(--bg);
+}
+[data-theme="contrast"] body {
+  background: var(--bg);
 }
 
 input, textarea, button {
@@ -380,12 +423,14 @@ a:hover { text-decoration: underline; }
   width: auto;
 }
 
-/* ---------- Backdrop (solo mobile) ---------- */
+/* ---------- Backdrop (mobile only) ---------- */
 .sacchi-backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: oklch(0.16 0.03 250 / 0.5);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   z-index: 40;
   animation: sacchi-fade-in 180ms ease-out;
 }
@@ -514,7 +559,7 @@ a:hover { text-decoration: underline; }
   inset: 0;
   display: grid;
   place-items: center;
-  color: #ef5350;
+  color: var(--error);
 }
 
 .sacchi-graph__product-list {
@@ -681,7 +726,7 @@ a:hover { text-decoration: underline; }
 }
 .sacchi-event-strip__item--error {
   color: var(--error);
-  background: rgba(220, 38, 38, 0.08);
+  background: oklch(from var(--error) l c h / 0.1);
 }
 .sacchi-event-strip__item--tool {
   color: var(--warning);
@@ -694,12 +739,14 @@ a:hover { text-decoration: underline; }
   max-width: 720px;
 }
 .sacchi-spike__log {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  border: 1px solid var(--border);
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   min-height: 120px;
   white-space: pre-wrap;
+  font-family: var(--font-mono);
 }
 
 /* ---------- Generic artifact ---------- */
@@ -1809,20 +1856,22 @@ a:hover { text-decoration: underline; }
 .md code {
   font-family: var(--font-mono);
   font-size: 12.5px;
-  background: rgba(0, 166, 81, 0.08);
+  background: var(--brand-soft);
   color: var(--brand-strong);
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
 }
 .md pre {
   font-family: var(--font-mono);
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 12px 14px;
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
   border-radius: var(--radius);
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 10px 0;
   font-size: 12.5px;
+  line-height: 1.6;
 }
 .md pre code { background: transparent; color: inherit; padding: 0; }
 .md table {
@@ -1974,44 +2023,9 @@ a:focus-visible {
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-.dark {
-  /* Aura dark palette — mirrors [data-theme="dark"] above. Both selectors
-   * fire when dark mode is active (useAppTheme sets both data-theme and
-   * the .dark class); .dark loads later, so this is the authoritative
-   * shadcn variable set. Keep in sync if either changes.
-   */
-  --background: oklch(0.16 0.03 250);
-  --foreground: oklch(0.95 0.01 240);
-  --card: oklch(0.21 0.035 250);
-  --card-foreground: oklch(0.95 0.01 240);
-  --popover: oklch(0.21 0.035 250);
-  --popover-foreground: oklch(0.95 0.01 240);
-  --primary: oklch(0.7 0.18 240);
-  --primary-foreground: oklch(0.16 0.03 250);
-  --secondary: oklch(0.27 0.03 250);
-  --secondary-foreground: oklch(0.95 0.01 240);
-  --muted: oklch(0.24 0.025 250);
-  --muted-foreground: oklch(0.65 0.025 240);
-  --accent: oklch(0.32 0.06 245);
-  --accent-foreground: oklch(0.95 0.01 240);
-  --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.32 0.04 250 / 60%);
-  --input: oklch(0.3 0.03 250 / 80%);
-  --ring: oklch(0.75 0.2 235);
-  --chart-1: oklch(0.7 0.18 240);
-  --chart-2: oklch(0.78 0.16 200);
-  --chart-3: oklch(0.65 0.2 280);
-  --chart-4: oklch(0.7 0.2 320);
-  --chart-5: oklch(0.72 0.18 30);
-  --sidebar: oklch(0.18 0.035 250);
-  --sidebar-foreground: oklch(0.95 0.01 240);
-  --sidebar-primary: oklch(0.7 0.18 240);
-  --sidebar-primary-foreground: oklch(0.16 0.03 250);
-  --sidebar-accent: oklch(0.32 0.06 245);
-  --sidebar-accent-foreground: oklch(0.95 0.01 240);
-  --sidebar-border: oklch(0.32 0.04 250 / 60%);
-  --sidebar-ring: oklch(0.75 0.2 235);
-}
+/* The previous duplicate `.dark { ... }` block was removed: the dark
+ * palette is now defined once at the top under `[data-theme="dark"], .dark`,
+ * which keeps both selector variants in sync without drift. */
 
 @layer base {
   * {

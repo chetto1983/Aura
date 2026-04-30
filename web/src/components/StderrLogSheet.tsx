@@ -24,7 +24,7 @@ export function StderrLogSheet({ open, onOpenChange, skillName, source, exitCode
             Comando: npx skills add {source} · Exit code {exitCode}
           </SheetDescription>
         </SheetHeader>
-        <pre className="flex-1 overflow-auto mx-6 p-3 bg-[#0f172a] text-[#e2e8f0] text-[12.5px] font-mono rounded">
+        <pre className="flex-1 overflow-auto mx-6 p-3 bg-[--surface-sunken] text-[--text-strong] border border-[--border] text-[12.5px] font-mono rounded-[var(--radius)]">
           {stderrTail || "(nessun output)"}
         </pre>
         <div className="p-4 flex justify-end">
