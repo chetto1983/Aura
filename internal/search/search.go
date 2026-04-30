@@ -14,6 +14,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// indexConcurrency caps how many wiki pages are embedded in parallel
+// during IndexWikiPages. 4 is a sweet spot: cuts cold-start time ~4x
+// over serial without hitting Mistral's free-tier rate limits.
+// Each goroutine still hits the embed cache first (slice 11h), so
+// warm restarts make this constant moot.
+const indexConcurrency = 4
+
 // Result represents a search result with relevance score.
 type Result struct {
 	Slug    string
@@ -134,7 +141,12 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 		slugFiles[slug] = fileInfo{name: name, ext: ext}
 	}
 
-	count := 0
+	// Slice 11i: switch from a serial AddDocument loop to chromem-go's
+	// AddDocuments(concurrency=indexConcurrency) so the per-page Mistral
+	// round trips run in parallel goroutines. With 8 wiki pages × ~1 s
+	// per embed serial = ~8 s; concurrency=4 = ~2 s. Higher concurrency
+	// risks Mistral rate-limit pushback on free tiers.
+	docs := make([]chromem.Document, 0, len(slugFiles))
 	for slug, fi := range slugFiles {
 		filePath := filepath.Join(e.wikiDir, fi.name)
 
@@ -151,27 +163,43 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 			title = extractTitle(data)
 			content = title + "\n" + string(data)
 		}
-
-		if err := e.coll.AddDocument(ctx, chromem.Document{
+		docs = append(docs, chromem.Document{
 			ID:       slug,
 			Content:  content,
 			Metadata: map[string]string{"slug": slug, "title": title},
-		}); err != nil {
-			e.logger.Warn("failed to index wiki page", "slug", slug, "error", err)
-			continue
+		})
+	}
+
+	count := 0
+	if len(docs) > 0 {
+		if err := e.coll.AddDocuments(ctx, docs, indexConcurrency); err != nil {
+			// Atomic failure on the batch — fall back to serial so a
+			// single bad doc doesn't lose the rest of the index.
+			e.logger.Warn("batch index failed, falling back to serial", "error", err, "docs", len(docs))
+			for _, doc := range docs {
+				if addErr := e.coll.AddDocument(ctx, doc); addErr != nil {
+					e.logger.Warn("failed to index wiki page", "slug", doc.ID, "error", addErr)
+					continue
+				}
+				count++
+			}
+		} else {
+			count = len(docs)
 		}
 
+		// SQLite full-text mirror: keep this serial — local SQLite writes
+		// are cheap and concurrent inserts on the same FTS table fight.
 		if e.sqlite != nil {
-			if err := e.sqlite.indexDocument(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
-				e.logger.Warn("failed to index in sqlite", "slug", slug, "error", err)
+			for _, doc := range docs {
+				if err := e.sqlite.indexDocument(ctx, doc.ID, doc.Content, doc.Metadata); err != nil {
+					e.logger.Warn("failed to index in sqlite", "slug", doc.ID, "error", err)
+				}
 			}
 		}
-
-		count++
 	}
 
 	e.indexed = true
-	e.logger.Info("wiki pages indexed", "count", count)
+	e.logger.Info("wiki pages indexed", "count", count, "concurrency", indexConcurrency)
 	return nil
 }
 
