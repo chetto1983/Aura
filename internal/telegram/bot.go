@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
@@ -37,6 +38,8 @@ type Bot struct {
 	sources *source.Store
 	ocr     *ocr.Client
 	docs    *docHandler
+	sched   *scheduler.Scheduler
+	schedDB *scheduler.Store
 	active  sync.Map // maps userID string -> bool (active conversation tracking)
 	ctxMap  sync.Map // maps userID string -> *conversation.Context
 }
@@ -161,6 +164,23 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	toolRegistry.Register(tools.NewRebuildIndexTool(wikiStore))
 	toolRegistry.Register(tools.NewAppendLogTool(wikiStore))
 
+	// Scheduler (slice 8). Persistent SQLite-backed task queue with one
+	// goroutine ticking every DefaultTickInterval. Two task kinds ship:
+	// reminder (delivered to the LLM-call's user via Telegram) and
+	// wiki_maintenance (autonomous nightly pass). Three LLM tools wrap
+	// the queue: schedule_task / list_tasks / cancel_task.
+	schedDBPath := cfg.DBPath
+	if schedDBPath == "" {
+		schedDBPath = "./aura.db"
+	}
+	schedStore, err := scheduler.OpenStore(schedDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("creating scheduler store: %w", err)
+	}
+	toolRegistry.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
+	toolRegistry.Register(tools.NewListTasksTool(schedStore))
+	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
+
 	b := &Bot{
 		bot:     tb,
 		cfg:     cfg,
@@ -171,11 +191,45 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		tools:   toolRegistry,
 		sources: sourceStore,
 		ocr:     ocrClient,
+		schedDB: schedStore,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
 			CostPerToken: cfg.CostPerToken,
 		}, logger),
+	}
+
+	// Scheduler dispatcher closes over b so reminder/wiki_maintenance
+	// tasks can invoke the bot's send + the wiki store. Built after b
+	// is initialized.
+	sched, err := scheduler.New(scheduler.Config{
+		Store:      schedStore,
+		Dispatcher: b.dispatchTask,
+		Logger:     logger,
+		Location:   time.Local,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating scheduler: %w", err)
+	}
+	b.sched = sched
+
+	// Bootstrap the autonomous nightly wiki-maintenance task. Idempotent
+	// upsert keyed by name so restarting the bot won't duplicate it. The
+	// LLM can override the schedule with schedule_task using the same
+	// name, or cancel it with cancel_task.
+	nightlyAt, err := scheduler.NextDailyRun("03:00", time.Local, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("computing nightly run: %w", err)
+	}
+	if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
+		Name:          "nightly-wiki-maintenance",
+		Kind:          scheduler.KindWikiMaintenance,
+		ScheduleKind:  scheduler.ScheduleDaily,
+		ScheduleDaily: "03:00",
+		NextRunAt:     nightlyAt,
+		Status:        scheduler.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
 
 	b.docs = newDocHandler(docHandlerConfig{
@@ -200,15 +254,85 @@ func (b *Bot) Username() string {
 	return b.bot.Me.Username
 }
 
-// Start begins polling for Telegram messages.
+// Start begins polling for Telegram messages and the scheduler tick loop.
 func (b *Bot) Start() {
 	b.logger.Info("telegram bot started")
+	if b.sched != nil {
+		b.sched.Start(context.Background())
+	}
 	b.bot.Start()
 }
 
-// Stop gracefully stops the bot.
+// Stop gracefully stops the bot and the scheduler.
 func (b *Bot) Stop() {
+	if b.sched != nil {
+		b.sched.Stop()
+	}
+	if b.schedDB != nil {
+		_ = b.schedDB.Close()
+	}
 	b.bot.Stop()
+}
+
+// dispatchTask is the scheduler.Dispatcher implementation. It routes a
+// fired task to the right side-effect: reminders go to Telegram via the
+// stored RecipientID, wiki_maintenance runs the autonomous pass.
+// Errors are returned so the scheduler records last_error; the row is
+// always persisted regardless of outcome so the LLM can introspect.
+func (b *Bot) dispatchTask(ctx context.Context, task *scheduler.Task) error {
+	switch task.Kind {
+	case scheduler.KindReminder:
+		return b.dispatchReminder(task)
+	case scheduler.KindWikiMaintenance:
+		return b.dispatchWikiMaintenance(ctx)
+	default:
+		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
+	}
+}
+
+func (b *Bot) dispatchReminder(task *scheduler.Task) error {
+	if task.RecipientID == "" {
+		return fmt.Errorf("reminder %q has no recipient", task.Name)
+	}
+	chatID, err := strconv.ParseInt(task.RecipientID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse recipient %q: %w", task.RecipientID, err)
+	}
+	body := task.Payload
+	if body == "" {
+		body = "Reminder: " + task.Name
+	} else {
+		body = "⏰ " + body
+	}
+	if _, err := b.bot.Send(tele.ChatID(chatID), body); err != nil {
+		return fmt.Errorf("send reminder: %w", err)
+	}
+	return nil
+}
+
+// dispatchWikiMaintenance runs the autonomous nightly wiki pass:
+// regenerate index.md, lint for broken links / missing categories, and
+// append a log entry summarizing the result. Pure deterministic; no
+// LLM round-trip. Logs lint findings so the operator can spot drift
+// without checking log.md by hand.
+func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
+	if b.wiki == nil {
+		return fmt.Errorf("wiki maintenance: wiki store unavailable")
+	}
+	b.wiki.RebuildIndex(ctx)
+	issues, err := b.wiki.Lint(ctx)
+	if err != nil {
+		return fmt.Errorf("wiki lint: %w", err)
+	}
+	if len(issues) > 0 {
+		b.logger.Warn("nightly wiki maintenance found issues", "count", len(issues))
+		for _, issue := range issues {
+			b.logger.Warn("wiki lint issue", "slug", issue.Slug, "msg", issue.Message)
+		}
+	}
+	b.wiki.AppendLog(ctx, "nightly-maintenance", "")
+	b.logger.Info("nightly wiki maintenance complete", "lint_issues", len(issues))
+	return nil
 }
 
 func (b *Bot) registerHandlers() {
@@ -378,7 +502,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		for _, tc := range resp.ToolCalls {
 			c.Send(toolActivityMessage(tc.Name))
 
-			result, err := b.tools.Execute(ctx, tc.Name, tc.Arguments)
+			// schedule_task (and any future user-aware tool) needs the
+			// caller's Telegram ID so reminders go back to the right
+			// chat. tools.WithUserID is a no-op for tools that ignore it.
+			toolCtx := tools.WithUserID(ctx, userID)
+			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
 			if err != nil {
 				result = "(tool error) " + err.Error()
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
