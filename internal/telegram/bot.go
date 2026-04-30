@@ -798,6 +798,24 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// Add user message to context
 	convCtx.AddUserMessage(c.Text())
 
+	// Slice 11p: speculative wiki retrieval. The model used to discover
+	// durable memory only by emitting a search_wiki tool call, which cost
+	// a full extra LLM round-trip per turn ("reason → emit tool call →
+	// read result → re-reason → answer"). We now run the search up-front
+	// and inject the top hits into the system prompt so the very first
+	// inference already has relevant context. The embedding cache (slice
+	// 11h) makes repeat queries effectively free; cold queries pay one
+	// embed call but save the round-trip. The explicit search_wiki tool
+	// stays available for follow-up queries the model wants to refine.
+	// Picobot equivalent: internal/agent/context.go ranker injection.
+	if b.search != nil && b.search.IsIndexed() {
+		if results, err := b.search.Search(context.Background(), c.Text(), 5); err == nil && len(results) > 0 {
+			convCtx.SetSearchContext(search.FormatResults(results))
+		} else if err != nil {
+			b.logger.Debug("speculative wiki search failed", "user_id", userID, "error", err)
+		}
+	}
+
 	// Enforce context limits: summarize at 80%, trim at hard limit
 	if err := convCtx.EnforceLimit(context.Background()); err != nil {
 		b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
