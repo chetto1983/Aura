@@ -30,6 +30,41 @@ func TestLoaderLoadAll(t *testing.T) {
 	}
 }
 
+func TestLoaderLoadAllCachesResults(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "alpha", "alpha", "Alpha skill", "Alpha body")
+
+	loader := NewLoader(dir)
+	first, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll() error = %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("first LoadAll length = %d, want 1", len(first))
+	}
+
+	// Add a new skill on disk; without invalidation the cache should
+	// still return the previous result for the TTL window.
+	writeSkill(t, dir, "beta", "beta", "Beta skill", "Beta body")
+	cached, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll() second error = %v", err)
+	}
+	if len(cached) != 1 {
+		t.Fatalf("cached LoadAll length = %d, want 1 (cache should still be valid)", len(cached))
+	}
+
+	// Explicit Invalidate forces a fresh read, picking up the new skill.
+	loader.Invalidate()
+	fresh, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll() after invalidate error = %v", err)
+	}
+	if len(fresh) != 2 {
+		t.Fatalf("post-invalidate LoadAll length = %d, want 2", len(fresh))
+	}
+}
+
 func TestLoaderLoadAllMissingDir(t *testing.T) {
 	loader := NewLoader(filepath.Join(t.TempDir(), "missing"))
 	got, err := loader.LoadAll()

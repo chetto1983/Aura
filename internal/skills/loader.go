@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -37,9 +39,23 @@ type Skill struct {
 // ./skills) coexist with catalog-installed skills, which the skills.sh
 // CLI writes to <project>/.claude/skills/. Earlier dirs win when the
 // same skill name appears in two roots.
+//
+// LoadAll caches its result for cacheTTL to avoid re-reading every
+// SKILL.md on every conversation turn. Skill files only change when
+// admin install/delete runs, which is rare; a sub-second TTL means
+// dashboard mutations reflect on the very next turn.
 type Loader struct {
 	dirs []string
+
+	cacheMu  sync.RWMutex
+	cached   []Skill
+	cachedAt time.Time
 }
+
+// cacheTTL bounds how long a stale skill manifest can be served. 1s is
+// short enough that admin operations feel instantaneous in interactive
+// use, long enough that back-to-back chat turns hit the cache.
+const cacheTTL = 1 * time.Second
 
 // NewLoader creates a loader rooted at dir plus any extra search
 // paths. Empty strings are skipped; an empty primary dir falls back to
@@ -65,11 +81,47 @@ func NewLoader(dir string, extra ...string) *Loader {
 // loader read it from.
 func (l *Loader) Dirs() []string { return append([]string(nil), l.dirs...) }
 
+// Invalidate clears the LoadAll cache. Call after admin install/delete
+// when you need the next LoadAll to reflect the change immediately
+// instead of after the cacheTTL window.
+func (l *Loader) Invalidate() {
+	l.cacheMu.Lock()
+	l.cached = nil
+	l.cachedAt = time.Time{}
+	l.cacheMu.Unlock()
+}
+
 // LoadAll loads every valid skill across all roots. Invalid skill
 // folders are skipped so one broken local draft cannot remove all
 // skills from the prompt. When the same skill name appears in two
 // roots, the first one wins (matching LoadByName precedence).
+//
+// Results are memoized for cacheTTL — Aura's hot path (handleConversation
+// on every Telegram message) was re-reading and re-parsing every
+// SKILL.md per turn even though skills only change on admin actions.
 func (l *Loader) LoadAll() ([]Skill, error) {
+	l.cacheMu.RLock()
+	if l.cached != nil && time.Since(l.cachedAt) < cacheTTL {
+		out := append([]Skill(nil), l.cached...)
+		l.cacheMu.RUnlock()
+		return out, nil
+	}
+	l.cacheMu.RUnlock()
+
+	loaded, err := l.loadAllUncached()
+	if err != nil {
+		return nil, err
+	}
+
+	l.cacheMu.Lock()
+	l.cached = append([]Skill(nil), loaded...)
+	l.cachedAt = time.Now()
+	l.cacheMu.Unlock()
+
+	return loaded, nil
+}
+
+func (l *Loader) loadAllUncached() ([]Skill, error) {
 	seen := make(map[string]struct{})
 	loaded := make([]Skill, 0)
 	for _, dir := range l.dirs {
