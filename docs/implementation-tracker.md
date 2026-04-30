@@ -40,10 +40,31 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 6 | Ingestion | done | `internal/ingest` pipeline + `ingest_source` tool. Auto-ingest wired via `docHandler.AfterOCR`; emits source summary page with [[wiki-link]] note in final Telegram progress message. 10 test funcs (15 cases) + `live_ingest` catch-up test. Live-tested end-to-end via Telegram + catch-up on three sources. |
 | 7 | Wiki maintenance | done | `list_wiki`, `lint_wiki`, `rebuild_index`, `append_log` LLM tools wrapping the existing `wiki.Store` primitives. Exported `RebuildIndex`/`AppendLog`. 15 unit tests. |
 | 8 | Reminder/scheduler | done | SQLite-backed scheduler with at/daily kinds, reminder + wiki_maintenance task kinds, bootstrapped 03:00 nightly job. Tools: schedule_task, list_tasks, cancel_task. Autonomous goroutine + 4 autonomy tests. |
-| 9 | Natural prompt tests for OCR/ingest | pending | |
+| 9 | Natural prompt tests for OCR/ingest | done | `cmd/debug_ingest` — 10 LLM-driven scenarios covering source/ingest/wiki-maintenance/scheduler tools. Hermetic temp wiki + temp SQLite. All passing live. |
 | 10 | UI | pending | |
 
 ## Session Log
+
+### 2026-04-30 — Slice 9 complete (cmd/debug_ingest)
+
+- `cmd/debug_ingest/main.go` — natural-prompt smoke harness mirroring `cmd/debug_tools` but for the source / ingest / wiki-maintenance / scheduler tools shipped in slices 5–8. Hermetic: temp wiki dir + temp SQLite scheduler DB. Reads LLM_API_KEY + EMBEDDING_API_KEY from `.env`.
+- Pre-seeds two sources before the LLM run: a stored text source (`smoke-note.txt`, status=stored) and an ocr_complete PDF source with a hand-written `ocr.md` (so `ingest_source` has something real to compile without needing a live Mistral OCR call).
+- 10 scenarios — one tool per scenario, each asserting the LLM picked the right tool and the final text contains expected markers:
+  - `list_sources` (sees both seeded IDs)
+  - `read_source` (filename round-trip)
+  - `lint_sources` (correctly buckets the ocr_complete source as awaiting-ingest)
+  - `ingest_source` (compiles the fixture into `source-aura-debug-ingest-fixture`)
+  - `list_wiki` post-ingest (finds the new page)
+  - `lint_wiki` (clean wiki passes)
+  - `append_log` (writes a `smoke-test` entry to `log.md`)
+  - `schedule_task` with `in: 90s` (relative duration, exercises the slice-8 follow-up path)
+  - `list_tasks` (surfaces the scheduled task)
+  - `cancel_task` (flips it to cancelled)
+- Uses `RenderSystemPrompt(now, time.Local)` so the LLM sees the runtime time block (slice-8 follow-up). Threads a synthetic user ID via `tools.WithUserID` so the reminder branch of `schedule_task` works uniformly even though we only test wiki_maintenance kind here (which doesn't need a recipient).
+- Live run on `glm-5.1:cloud`: **all 10 scenarios PASS first try**. The LLM picked the relative `in` field for the scheduler scenario (no UTC math) — the slice-8 follow-up is now battle-tested through a different model (Telegram run was on the user's primary model).
+- Verification: `go build ./...` clean, `go vet ./...` clean, `go run ./cmd/debug_ingest` PASS 10/10.
+- Files touched: `cmd/debug_ingest/main.go` (new), `docs/implementation-tracker.md`.
+- Next slice: **10 — UI** (last remaining item; everything 1–9 is now done and exercised).
 
 ### 2026-04-30 — Slice 8 follow-up (current-time prompt + in/at_local)
 
