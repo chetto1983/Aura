@@ -17,8 +17,8 @@
 Thumbs.db
 
 # Wiki data (tracked via git inside wiki dir)
-wiki/raw/
 *.exe*
 *.db
 .claude/*
 *.pdf
+wiki/*
