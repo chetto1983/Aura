@@ -30,7 +30,7 @@ type Config struct {
 	EmbeddingBaseURL  string   `envconfig:"EMBEDDING_BASE_URL"`
 	EmbeddingModel    string   `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
 	DBPath            string   `envconfig:"DB_PATH" default:"./aura.db"`
-	HTTPPort          string   `envconfig:"HTTP_PORT" default:":8080"`
+	HTTPPort          string   `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	OTelEnabled       bool     `envconfig:"OTEL_ENABLED" default:"false"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
@@ -100,7 +100,7 @@ func Load() (*Config, error) {
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
-	cfg.HTTPPort = getEnv("HTTP_PORT", ":8080")
+	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 
 	cfg.MistralAPIKey = getEnv("MISTRAL_API_KEY", "")

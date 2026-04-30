@@ -72,6 +72,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_ENABLED")
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
+	os.Unsetenv("HTTP_PORT")
 
 	cfg, err := Load()
 	if err != nil {
@@ -124,5 +125,8 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.OCRMaxFileMB != 100 {
 		t.Errorf("OCRMaxFileMB = %d, want 100", cfg.OCRMaxFileMB)
+	}
+	if cfg.HTTPPort != "127.0.0.1:8080" {
+		t.Errorf("HTTPPort = %q, want 127.0.0.1:8080 (slice 10b: localhost-only by default)", cfg.HTTPPort)
 	}
 }
