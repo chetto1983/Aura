@@ -153,6 +153,13 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
 	}
 	toolRegistry.Register(tools.NewIngestSourceTool(ingestPipeline))
+	// Wiki maintenance (slice 7). list_wiki/lint_wiki give the LLM
+	// introspection over the page catalog; rebuild_index/append_log are
+	// the explicit knobs that bypass the auto-maintained side files.
+	toolRegistry.Register(tools.NewListWikiTool(wikiStore))
+	toolRegistry.Register(tools.NewLintWikiTool(wikiStore))
+	toolRegistry.Register(tools.NewRebuildIndexTool(wikiStore))
+	toolRegistry.Register(tools.NewAppendLogTool(wikiStore))
 
 	b := &Bot{
 		bot:     tb,

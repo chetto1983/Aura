@@ -253,6 +253,20 @@ func (s *Store) gitCommit(ctx context.Context, filename, action string) error {
 }
 
 // updateIndex regenerates index.md grouped by category.
+// RebuildIndex regenerates index.md from the current set of wiki pages
+// and commits the result to git. Safe to call after manual edits or
+// disk-level changes that bypassed WritePage / DeletePage.
+func (s *Store) RebuildIndex(ctx context.Context) {
+	s.updateIndex(ctx)
+}
+
+// AppendLog appends a single chronological entry (timestamp, action,
+// slug) to log.md and commits it to git. Use slug="" for actions that
+// don't pertain to a specific page (e.g. "lint", "query").
+func (s *Store) AppendLog(ctx context.Context, action, slug string) {
+	s.appendLog(ctx, action, slug)
+}
+
 func (s *Store) updateIndex(ctx context.Context) {
 	s.indexMu.Lock()
 	defer s.indexMu.Unlock()
