@@ -35,6 +35,7 @@ type ComponentHealth struct {
 // Server provides an HTTP health endpoint.
 type Server struct {
 	server      *http.Server
+	mux         *http.ServeMux
 	logger      *slog.Logger
 	providers   map[string]StatusProvider
 	startTime   time.Time
@@ -58,6 +59,7 @@ func NewServer(cfg ServerConfig, logger *slog.Logger) *Server {
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},
+		mux:       mux,
 		logger:    logger,
 		providers: make(map[string]StatusProvider),
 		startTime: time.Now(),
@@ -69,6 +71,13 @@ func NewServer(cfg ServerConfig, logger *slog.Logger) *Server {
 	mux.HandleFunc("/health", s.handleHealth)
 
 	return s
+}
+
+// Mount registers a sub-handler at the given prefix. Used by the API
+// (internal/api) to attach JSON routes under /api/ alongside the existing
+// /, /status, /health endpoints.
+func (s *Server) Mount(prefix string, handler http.Handler) {
+	s.mux.Handle(prefix, handler)
 }
 
 // RegisterProvider adds a named component for health reporting.

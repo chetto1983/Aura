@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
@@ -40,8 +42,9 @@ type Bot struct {
 	docs    *docHandler
 	sched   *scheduler.Scheduler
 	schedDB *scheduler.Store
-	active  sync.Map // maps userID string -> bool (active conversation tracking)
-	ctxMap  sync.Map // maps userID string -> *conversation.Context
+	api     http.Handler // read-only JSON API for the dashboard, mounted on the health server
+	active  sync.Map     // maps userID string -> bool (active conversation tracking)
+	ctxMap  sync.Map     // maps userID string -> *conversation.Context
 }
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
@@ -245,6 +248,17 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		AfterOCR: ingestPipeline.AfterOCR,
 	})
 
+	// Slice 10a: build the read-only HTTP API. Mounted by main.go onto the
+	// health server at /api/. The router is mount-agnostic — its routes are
+	// /health, /wiki/..., /sources/..., /tasks/... — so callers wrap with
+	// http.StripPrefix.
+	b.api = api.NewRouter(api.Deps{
+		Wiki:      wikiStore,
+		Sources:   sourceStore,
+		Scheduler: schedStore,
+		Logger:    logger,
+	})
+
 	b.registerHandlers()
 	return b, nil
 }
@@ -253,6 +267,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 func (b *Bot) Username() string {
 	return b.bot.Me.Username
 }
+
+// APIHandler returns the read-only JSON dashboard API. Caller is expected
+// to wrap with http.StripPrefix and mount under /api/ on the health server.
+func (b *Bot) APIHandler() http.Handler { return b.api }
 
 // Start begins polling for Telegram messages and the scheduler tick loop.
 func (b *Bot) Start() {

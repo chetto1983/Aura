@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -60,18 +61,19 @@ func main() {
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
 
-	healthServer.Start()
-
 	bot, err := telegram.New(cfg, logger)
 	if err != nil {
 		logger.Error("failed to create telegram bot", "error", err)
-		if shutdownErr := healthServer.Shutdown(context.Background()); shutdownErr != nil {
-			logger.Warn("health server shutdown failed", "error", shutdownErr)
-		}
 		os.Exit(1)
 	}
 
 	healthServer.SetBotUsername(bot.Username())
+
+	// Slice 10a: mount the read-only JSON API on the health server. Strip
+	// the /api prefix so api.NewRouter sees /health, /wiki/..., /sources/...
+	healthServer.Mount("/api/", http.StripPrefix("/api", bot.APIHandler()))
+
+	healthServer.Start()
 
 	logger.Info("aura starting", "version", auraVersion)
 

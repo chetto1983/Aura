@@ -255,6 +255,11 @@ func (s *Store) gitCommit(_ context.Context, filename, action string) error {
 	return nil
 }
 
+// Dir returns the absolute directory the store reads from. Useful for
+// callers (currently internal/api) that need to walk the wiki tree for
+// metadata like file mtimes without going through ReadPage.
+func (s *Store) Dir() string { return s.dir }
+
 // updateIndex regenerates index.md grouped by category.
 // RebuildIndex regenerates index.md from the current set of wiki pages
 // and commits the result to git. Safe to call after manual edits or
