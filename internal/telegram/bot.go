@@ -759,6 +759,7 @@ func (b *Bot) sendLoginToken(c tele.Context, userID, prefix string) error {
 
 func (b *Bot) handleConversation(c tele.Context) {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
+	turnStart := time.Now()
 
 	// Track active conversation
 	b.active.Store(userID, true)
@@ -853,23 +854,39 @@ func (b *Bot) handleConversation(c tele.Context) {
 		return
 	}
 
-	response := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
 	if response != "" {
 		c.Send(response)
 	}
 
+	// Slice 11r: per-turn telemetry. elapsed_ms is wall-clock from
+	// receive to "ready to send"; llm_calls and tool_calls expose where
+	// time went so we can correlate slow turns to the responsible
+	// subsystem without sprinkling timers everywhere.
 	b.logger.Info("conversation complete",
 		"user_id", userID,
 		"tokens_used", convCtx.TotalTokensUsed(),
+		"elapsed_ms", time.Since(turnStart).Milliseconds(),
+		"llm_calls", stats.llmCalls,
+		"tool_calls", stats.toolCalls,
 	)
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string) string {
+// turnStats aggregates per-turn counters returned from runToolCallingLoop
+// so handleConversation can emit a single structured log line covering
+// total latency, LLM round-trips, and tool calls.
+type turnStats struct {
+	llmCalls  int
+	toolCalls int
+}
+
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string) (string, turnStats) {
 	maxIterations := b.cfg.MaxToolIterations
 	if maxIterations <= 0 {
 		maxIterations = 10
 	}
 
+	var stats turnStats
 	var lastToolResult string
 	toolDefs := b.tools.Definitions()
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -880,7 +897,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 
 		if b.budget != nil && b.budget.IsHardBudgetExceeded() {
 			b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
-			return "Budget limit reached. LLM calls are temporarily halted."
+			return "Budget limit reached. LLM calls are temporarily halted.", stats
 		}
 
 		req := llm.Request{
@@ -889,10 +906,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			Tools:    toolDefs,
 		}
 
+		stats.llmCalls++
 		resp, err := b.llm.Send(ctx, req)
 		if err != nil {
 			b.logger.Error("LLM send failed", "user_id", userID, "error", err)
-			return "Sorry, I couldn't process your message. Please try again."
+			return "Sorry, I couldn't process your message. Please try again.", stats
 		}
 
 		convCtx.TrackTokens(resp.Usage)
@@ -911,10 +929,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			}
 			convCtx.AddAssistantMessage(response)
 			b.notifySoftBudget(c, userID)
-			return response
+			return response, stats
 		}
 
 		convCtx.AddAssistantToolCallMessage(resp.Content, resp.ToolCalls)
+		stats.toolCalls += len(resp.ToolCalls)
 		lastToolResult = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls)
 	}
 
@@ -923,7 +942,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		fallback += "\n\nLast tool result:\n" + lastToolResult
 	}
 	convCtx.AddAssistantMessage(fallback)
-	return fallback
+	return fallback, stats
 }
 
 // executeToolCalls runs an assistant turn's tool calls concurrently and
