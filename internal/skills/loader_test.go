@@ -50,6 +50,85 @@ func TestLoaderLoadByNameRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestLoaderMultiRootMerges(t *testing.T) {
+	primary := t.TempDir()
+	secondary := t.TempDir()
+	writeSkill(t, primary, "alpha", "alpha", "Primary alpha", "alpha body")
+	writeSkill(t, secondary, "bravo", "bravo", "Secondary bravo", "bravo body")
+
+	loader := NewLoader(primary, secondary)
+	got, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 skills across roots, got %d", len(got))
+	}
+	if got[0].Name != "alpha" || got[1].Name != "bravo" {
+		t.Fatalf("ordering: got %q,%q want alpha,bravo", got[0].Name, got[1].Name)
+	}
+
+	bravo, err := loader.LoadByName("bravo")
+	if err != nil {
+		t.Fatalf("LoadByName(bravo): %v (expected to find via secondary root)", err)
+	}
+	if bravo.Description != "Secondary bravo" {
+		t.Errorf("description = %q", bravo.Description)
+	}
+}
+
+func TestLoaderMultiRootPrimaryWinsOnDuplicate(t *testing.T) {
+	primary := t.TempDir()
+	secondary := t.TempDir()
+	writeSkill(t, primary, "shared", "shared", "Primary version", "primary body")
+	writeSkill(t, secondary, "shared", "shared", "Secondary version", "secondary body")
+
+	loader := NewLoader(primary, secondary)
+	got, err := loader.LoadByName("shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != "Primary version" {
+		t.Errorf("expected primary to win, got description=%q", got.Description)
+	}
+
+	all, _ := loader.LoadAll()
+	if len(all) != 1 {
+		t.Errorf("expected dedupe to 1 entry, got %d", len(all))
+	}
+}
+
+func TestFSDeleterMultiRootDeletesFromSecondary(t *testing.T) {
+	primary := t.TempDir()
+	secondary := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(secondary, "claude-api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secondary, "claude-api", "SKILL.md"), []byte("---\nname: claude-api\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := NewFSDeleter(primary, secondary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Delete("claude-api"); err != nil {
+		t.Fatalf("Delete should find claude-api in secondary: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(secondary, "claude-api")); !os.IsNotExist(err) {
+		t.Fatalf("expected secondary entry removed, stat err = %v", err)
+	}
+}
+
+func TestFSDeleterMultiRootNotFound(t *testing.T) {
+	d, err := NewFSDeleter(t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Delete("missing"); !IsSkillNotFound(err) {
+		t.Fatalf("want not-found, got %v", err)
+	}
+}
+
 func TestParseSkillFrontmatter(t *testing.T) {
 	skill, err := parseSkill([]byte("---\nname: test-skill\ndescription: Test skill\n---\n\n# Body\n"))
 	if err != nil {

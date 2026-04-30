@@ -10,6 +10,9 @@
 # MCP runtime config (template tracked as mcp.example.json)
 /mcp.json
 
+# skills.sh CLI lockfile (per-install metadata, not source)
+/skills-lock.json
+
 # IDE
 .idea/
 .vscode/

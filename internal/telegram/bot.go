@@ -144,7 +144,12 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	}
 
 	toolRegistry := tools.NewRegistry(logger)
-	skillLoader := auraskills.NewLoader(cfg.SkillsPath)
+	// Loader scans both the operator-curated SKILLS_PATH (./skills by
+	// default) and `.claude/skills`, where `npx skills add … --agent
+	// claude-code` writes catalog installs. Catalog flow stays
+	// transparent: install via dashboard → file lands in .claude/skills
+	// → loader picks it up on the next chat turn / dashboard refresh.
+	skillLoader := auraskills.NewLoader(cfg.SkillsPath, ".claude/skills")
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
 	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
@@ -312,7 +317,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	if err != nil {
 		logger.Warn("skills installer unavailable", "error", err)
 	}
-	skillsDeleter, err := auraskills.NewFSDeleter(cfg.SkillsPath)
+	// Deleter mirrors the loader's roots so catalog-installed skills
+	// (in .claude/skills) are deletable too.
+	skillsDeleter, err := auraskills.NewFSDeleter(cfg.SkillsPath, ".claude/skills")
 	if err != nil {
 		logger.Warn("skills deleter unavailable", "error", err)
 	}

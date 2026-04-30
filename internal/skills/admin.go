@@ -47,7 +47,14 @@ func (i *NPXInstaller) Install(ctx context.Context, source, skillID string) (str
 	if i == nil {
 		return "", errors.New("installer not configured")
 	}
-	args := []string{"--yes", "skills", "add", source}
+	// `--yes` to npx auto-accepts npm's "install this package?" prompt;
+	// `--agent claude-code` AND the trailing `-y` are needed by the
+	// skills CLI itself: without them it asks "Which agents do you want
+	// to install to?" interactively and the request hangs until the
+	// caller's timeout fires. Pinning --agent claude-code makes the
+	// install land at <project>/.claude/skills/<name>/, which is one of
+	// the loader's search roots.
+	args := []string{"--yes", "skills", "add", source, "--agent", "claude-code", "-y"}
 	if skillID != "" {
 		args = append(args, "--skill", skillID)
 	}
@@ -57,62 +64,86 @@ func (i *NPXInstaller) Install(ctx context.Context, source, skillID string) (str
 	// without breaking npm/node lookup. Specifically: keep PATH and
 	// HOME/USERPROFILE so npx can find the skills binary, drop the rest.
 	cmd.Env = sanitizedEnv(os.Environ())
+	// Closed stdin so the CLI can't fall back to "press enter to continue"
+	// even on prompts we forgot to suppress.
+	cmd.Stdin = nil
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// FSDeleter removes a single skill directory under the configured
-// skills root. Path containment is enforced so a malicious name (e.g.
-// `..`, an absolute path, or a symlink) can't reach outside dir.
+// FSDeleter removes a single skill directory from one of several
+// configured skills roots (matches the loader's multi-root model so
+// catalog-installed skills under .claude/skills are deletable too).
+// Path containment is enforced so a malicious name can't escape.
 type FSDeleter struct {
-	dir string
+	dirs []string
 }
 
-// NewFSDeleter pins the deleter to dir.
-func NewFSDeleter(dir string) (*FSDeleter, error) {
-	if strings.TrimSpace(dir) == "" {
-		dir = "./skills"
+// NewFSDeleter pins the deleter to the same set of roots the loader
+// scans. The first dir is the primary; extras are tried in order. An
+// empty primary falls back to "./skills".
+func NewFSDeleter(dir string, extra ...string) (*FSDeleter, error) {
+	primary := strings.TrimSpace(dir)
+	if primary == "" {
+		primary = "./skills"
 	}
-	abs, err := filepath.Abs(dir)
+	roots := make([]string, 0, 1+len(extra))
+	primaryAbs, err := filepath.Abs(primary)
 	if err != nil {
 		return nil, fmt.Errorf("resolve skills dir: %w", err)
 	}
-	return &FSDeleter{dir: abs}, nil
+	roots = append(roots, primaryAbs)
+	for _, p := range extra {
+		t := strings.TrimSpace(p)
+		if t == "" {
+			continue
+		}
+		abs, err := filepath.Abs(t)
+		if err != nil {
+			return nil, fmt.Errorf("resolve extra skills dir: %w", err)
+		}
+		if abs == primaryAbs {
+			continue
+		}
+		roots = append(roots, abs)
+	}
+	return &FSDeleter{dirs: roots}, nil
 }
 
-// Delete removes the skills/<name> directory. The api layer validates
-// name against skillNameRe before this is called; we re-check
-// containment defensively because the regex doesn't catch every
-// platform-specific edge (Windows path separators, etc.).
+// Delete removes <root>/<name> from the first root that contains it.
+// The api layer validates name against skillNameRe before this is
+// called; we re-check containment defensively because the regex
+// doesn't catch every platform-specific edge.
 func (d *FSDeleter) Delete(name string) error {
-	if d == nil {
+	if d == nil || len(d.dirs) == 0 {
 		return errors.New("deleter not configured")
 	}
 	if strings.TrimSpace(name) == "" {
 		return errors.New("empty name")
 	}
-	target := filepath.Join(d.dir, name)
-	// Re-check containment: filepath.Join collapses traversal segments
-	// (e.g. "..") so the final path may escape the parent. Refuse if so.
-	if rel, err := filepath.Rel(d.dir, target); err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return errors.New("invalid skill path")
-	}
-	info, err := os.Lstat(target)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return errSkillNotFoundSentinel
+	for _, root := range d.dirs {
+		target := filepath.Join(root, name)
+		// Re-check containment: filepath.Join collapses traversal
+		// segments (e.g. "..") so the final path may escape the parent.
+		if rel, err := filepath.Rel(root, target); err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return errors.New("invalid skill path")
 		}
-		return err
+		info, err := os.Lstat(target)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // try the next root
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("skill is a symlink — refusing to follow")
+		}
+		if !info.IsDir() {
+			return errors.New("skill path is not a directory")
+		}
+		return os.RemoveAll(target)
 	}
-	// Refuse symlinks: a malicious skill could symlink elsewhere and
-	// trick the deleter into removing unrelated files.
-	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("skill is a symlink — refusing to follow")
-	}
-	if !info.IsDir() {
-		return errors.New("skill path is not a directory")
-	}
-	return os.RemoveAll(target)
+	return errSkillNotFoundSentinel
 }
 
 // errSkillNotFoundSentinel matches api.ErrSkillNotFound by value so the
