@@ -28,6 +28,7 @@ type Config struct {
 	OllamaWebBaseURL    string  `envconfig:"OLLAMA_WEB_BASE_URL"`
 	MaxToolIterations   int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath            string  `envconfig:"WIKI_PATH" default:"./wiki"`
+	PromptOverlayPath   string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
 	SkillsPath          string  `envconfig:"SKILLS_PATH" default:"./skills"`
 	SkillsCatalogURL    string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
 	SkillsAdmin         bool    `envconfig:"SKILLS_ADMIN" default:"false"`
@@ -105,6 +106,7 @@ func Load() (*Config, error) {
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
+	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
 	cfg.SkillsCatalogURL = getEnv("SKILLS_CATALOG_URL", "https://skills.sh/")
 	cfg.SkillsAdmin = getEnvBool("SKILLS_ADMIN", false)

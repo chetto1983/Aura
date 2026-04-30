@@ -779,6 +779,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// when scheduling reminders, so a stale snapshot is worse than the
 	// per-turn cost of re-rendering a few hundred bytes.
 	systemPrompt := conversation.RenderSystemPrompt(time.Now(), time.Local)
+	// Slice 11q: read SOUL.md / AGENTS.md / USER.md / TOOLS.md from the
+	// configured overlay dir. Picobot pattern: lets the operator tune
+	// personality, durable user facts, and tool guidance by editing a
+	// file — the next user turn picks up the change with no recompile or
+	// restart. Files are optional; missing ones are skipped silently.
+	if overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath); overlay != "" {
+		systemPrompt += "\n\n" + overlay
+	}
 	if b.skills != nil {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
