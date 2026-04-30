@@ -94,17 +94,6 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}
 	}
 
-	toolRegistry := tools.NewRegistry(logger)
-	if cfg.OllamaAPIKey != "" {
-		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
-		toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
-	}
-	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
-	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))
-	if searchEngine != nil {
-		toolRegistry.Register(tools.NewSearchWikiTool(searchEngine))
-	}
-
 	// Source store backs PDF uploads and OCR artifacts. Always create it —
 	// even when OCR is off, the bot still stores raw PDFs as immutable
 	// sources so a later /reocr can run.
@@ -126,6 +115,28 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		})
 	} else {
 		logger.Info("OCR disabled (set OCR_ENABLED=true and MISTRAL_API_KEY to enable)")
+	}
+
+	toolRegistry := tools.NewRegistry(logger)
+	if cfg.OllamaAPIKey != "" {
+		toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+		toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+	}
+	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
+	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))
+	if searchEngine != nil {
+		toolRegistry.Register(tools.NewSearchWikiTool(searchEngine))
+	}
+	// Source tools (slice 5). store_source/read_source/list_sources/lint_sources
+	// are always registered. ocr_source only when OCR is configured — otherwise
+	// the LLM gets a clearer "OCR disabled" error from the tool itself, which
+	// is better than tempting it to call a tool we can never satisfy.
+	toolRegistry.Register(tools.NewStoreSourceTool(sourceStore))
+	toolRegistry.Register(tools.NewReadSourceTool(sourceStore))
+	toolRegistry.Register(tools.NewListSourcesTool(sourceStore))
+	toolRegistry.Register(tools.NewLintSourcesTool(sourceStore))
+	if ocrClient != nil {
+		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
 	}
 
 	b := &Bot{
