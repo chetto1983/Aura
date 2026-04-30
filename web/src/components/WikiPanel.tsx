@@ -1,71 +1,103 @@
-/** @ts-nocheck */
-import { useState, useEffect } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '@/api';
+import { useApi } from '@/hooks/useApi';
 
-interface Node {
-  id: string;
-  title: string;
-  path: string;
-  type: string;
-}
-
-export function WikiPanel({ onClose }: { onClose: () => void }) {
-  const [nodes, setNodes] = useState<Node[]>([]);
+export function WikiPanel() {
+  const fetcher = useCallback(() => api.wikiPages(), []);
+  const { data, error, loading, stale } = useApi(fetcher);
   const [filter, setFilter] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState<string>('');
 
-  useEffect(() => {
-    fetch('/api/tools/wiki/pages')
-      .then(r => r.json())
-      .then((data: Node[]) => { setNodes(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+  const categories = useMemo(() => {
+    if (!data) return [] as string[];
+    return Array.from(new Set(data.map((p) => p.category).filter((c): c is string => !!c))).sort();
+  }, [data]);
 
-  const filtered = nodes.filter(n =>
-    n.title.toLowerCase().includes(filter.toLowerCase()) ||
-    n.id.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    const f = filter.toLowerCase();
+    return data.filter(
+      (p) =>
+        (!category || p.category === category) &&
+        (f === '' || p.title.toLowerCase().includes(f) || p.slug.includes(f))
+    );
+  }, [data, filter, category]);
+
+  if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;
+  if (!data) return null;
 
   return (
-    <div className="sacchi-wiki-panel">
-      <div className="sacchi-wiki-panel__header">
-        <h3 className="sacchi-wiki-panel__title">Wiki Explorer</h3>
+    <div className="p-6 space-y-4">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Wiki</h1>
+        {stale && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>}
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          placeholder="Search title or slug…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="flex-1 min-w-[12rem] rounded-md border bg-background px-3 py-1.5 text-sm"
+        />
         <button
           type="button"
-          onClick={onClose}
-          aria-label="Chiudi Wiki Explorer"
-          className="sacchi-wiki-panel__close"
+          onClick={() => setCategory('')}
+          className={`rounded-full px-2 py-0.5 text-xs ${category === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
         >
-          <span aria-hidden="true">✕</span>
+          all
         </button>
-      </div>
-      <input
-        type="search"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="Cerca pagina..."
-        aria-label="Cerca pagina wiki"
-        className="sacchi-wiki-panel__search"
-      />
-      <div className="sacchi-wiki-panel__list">
-        {loading && <div className="sacchi-wiki-panel__loading">Caricamento...</div>}
-        {filtered.map(n => (
-          <a
-            key={n.id}
-            href={`/api/tools/wiki/page?id=${encodeURIComponent(n.id)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="sacchi-wiki-panel__item"
+        {categories.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCategory(c)}
+            className={`rounded-full px-2 py-0.5 text-xs ${category === c ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
           >
-            <div className="sacchi-wiki-panel__item-title">{n.title}</div>
-            <div className="sacchi-wiki-panel__item-meta">{n.type} · {n.id}</div>
-          </a>
+            {c}
+          </button>
         ))}
-        {!loading && filtered.length === 0 && (
-          <div className="sacchi-wiki-panel__empty">Nessuna pagina trovata.</div>
-        )}
+      </div>
+
+      <div className="rounded-lg border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="text-left py-2 px-3 font-medium">Title</th>
+              <th className="text-left py-2 px-3 font-medium">Category</th>
+              <th className="text-left py-2 px-3 font-medium">Tags</th>
+              <th className="text-left py-2 px-3 font-medium">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p) => (
+              <tr key={p.slug} className="border-t hover:bg-muted/30">
+                <td className="py-2 px-3">
+                  <Link to={`/wiki/${p.slug}`} className="text-primary underline-offset-2 hover:underline">
+                    {p.title}
+                  </Link>
+                </td>
+                <td className="py-2 px-3 text-muted-foreground">{p.category ?? '—'}</td>
+                <td className="py-2 px-3 text-xs text-muted-foreground">
+                  {p.tags?.length ? p.tags.map((t) => `#${t}`).join(' ') : '—'}
+                </td>
+                <td className="py-2 px-3 text-xs text-muted-foreground">{shortDate(p.updated_at)}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={4} className="py-6 text-center text-sm text-muted-foreground">No matching pages</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-export default WikiPanel;
+function shortDate(iso: string): string {
+  if (!iso || iso.startsWith('0001')) return '—';
+  return new Date(iso).toLocaleDateString();
+}

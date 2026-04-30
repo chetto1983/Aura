@@ -90,13 +90,15 @@ export function TasksPanel() {
 }
 
 function Countdown({ iso }: { iso: string }) {
-  const [, setTick] = useState(0);
+  // Capture `now` in state — calling Date.now() during render violates the
+  // react-hooks/purity rule because re-renders happen unpredictably.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
   const target = new Date(iso).getTime();
-  const diff = Math.max(0, Math.round((target - Date.now()) / 1000));
+  const diff = Math.max(0, Math.round((target - now) / 1000));
   if (diff <= 0) return <span className="text-xs text-muted-foreground">due</span>;
   const h = Math.floor(diff / 3600);
   const m = Math.floor((diff % 3600) / 60);
