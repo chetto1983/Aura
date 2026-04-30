@@ -10,7 +10,9 @@ import type {
   IngestResponse,
   ReocrResponse,
   UpsertTaskRequest,
+  WhoamiResponse,
 } from '@/types/api';
+import { getToken, clearToken } from '@/lib/auth';
 
 const BASE = '/api';
 const TIMEOUT_MS = 8000;
@@ -22,6 +24,42 @@ export class ApiError extends Error {
   }
 }
 
+// authHeaders attaches the bearer token, when present, to every outbound
+// request. The login flow is the only path that doesn't go through this —
+// since /api/auth/login doesn't exist (tokens are minted via Telegram),
+// the Login UI just stores the pasted token then calls /auth/whoami to
+// confirm it's valid.
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const tok = getToken();
+  const base: Record<string, string> = {};
+  if (tok) base.Authorization = `Bearer ${tok}`;
+  if (!extra) return base;
+  return { ...base, ...(extra as Record<string, string>) };
+}
+
+// handle401 is called when a request returns 401. Clears the stored
+// token and bounces the user to /login. Also accepts a hint param so
+// the login screen can explain why the user landed there.
+function handle401(): void {
+  clearToken();
+  // Avoid a redirect loop if we're already on /login.
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login?expired=1';
+  }
+}
+
+async function readError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '');
+  let msg = text.slice(0, 200);
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.error === 'string') msg = parsed.error;
+  } catch {
+    // not JSON; fall through with raw text
+  }
+  return msg || res.statusText;
+}
+
 async function get<T>(path: string): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -29,6 +67,7 @@ async function get<T>(path: string): Promise<T> {
   try {
     res = await fetch(BASE + path, {
       credentials: 'same-origin',
+      headers: authHeaders(),
       signal: ctrl.signal,
     });
   } catch (err) {
@@ -39,32 +78,29 @@ async function get<T>(path: string): Promise<T> {
     throw new ApiError(0, err instanceof Error ? err.message : 'network error');
   }
   clearTimeout(timer);
+  if (res.status === 401) {
+    handle401();
+    throw new ApiError(401, 'unauthorized');
+  }
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let msg = text.slice(0, 200);
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.error === 'string') msg = parsed.error;
-    } catch {
-      // not JSON; use raw text
-    }
-    throw new ApiError(res.status, msg || res.statusText);
+    throw new ApiError(res.status, await readError(res));
   }
   return res.json() as Promise<T>;
 }
 
 // post sends a JSON or empty body to a write endpoint and parses the
 // response. Bypasses the 8s GET timeout because some endpoints (ingest,
-// reocr) run OCR which can take minutes. Errors surface as ApiError
-// with the server's `error` field when present.
+// reocr) run OCR which can take minutes.
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const init: RequestInit = {
     method: 'POST',
     credentials: 'same-origin',
   };
   if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' };
+    init.headers = authHeaders({ 'Content-Type': 'application/json' });
     init.body = JSON.stringify(body);
+  } else {
+    init.headers = authHeaders();
   }
   let res: Response;
   try {
@@ -72,16 +108,12 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   } catch (err) {
     throw new ApiError(0, err instanceof Error ? err.message : 'network error');
   }
+  if (res.status === 401) {
+    handle401();
+    throw new ApiError(401, 'unauthorized');
+  }
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let msg = text.slice(0, 200);
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.error === 'string') msg = parsed.error;
-    } catch {
-      // not JSON
-    }
-    throw new ApiError(res.status, msg || res.statusText);
+    throw new ApiError(res.status, await readError(res));
   }
   return res.json() as Promise<T>;
 }
@@ -114,17 +146,14 @@ export const api = {
       method: 'POST',
       body: fd,
       credentials: 'same-origin',
+      headers: authHeaders(),
     });
+    if (res.status === 401) {
+      handle401();
+      throw new ApiError(401, 'unauthorized');
+    }
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      let msg = text.slice(0, 200);
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed.error === 'string') msg = parsed.error;
-      } catch {
-        // not JSON
-      }
-      throw new ApiError(res.status, msg || res.statusText);
+      throw new ApiError(res.status, await readError(res));
     }
     return (await res.json()) as UploadResponse;
   },
@@ -132,7 +161,7 @@ export const api = {
     get<Task[]>('/tasks' + qs(q)),
   task: (name: string) => get<Task>(`/tasks/${name}`),
 
-  // ---- write actions (slice 10c, loopback-gated until 10d ships auth) ----
+  // ---- write actions (slice 10c) ----
   ingestSource: (id: string) =>
     post<IngestResponse>(`/sources/${id}/ingest`),
   reocrSource: (id: string) =>
@@ -145,4 +174,8 @@ export const api = {
     post<Task>(`/tasks`, req),
   cancelTask: (name: string) =>
     post<Task>(`/tasks/${name}/cancel`),
+
+  // ---- auth (slice 10d) ----
+  whoami: () => get<WhoamiResponse>(`/auth/whoami`),
+  logout: () => post<{ ok: boolean }>(`/auth/logout`),
 };

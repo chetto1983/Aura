@@ -100,6 +100,10 @@ export interface UpsertTaskRequest {
   daily?: string; // HH:MM (bot's local TZ)
 }
 
+export interface WhoamiResponse {
+  user_id: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';
