@@ -13,29 +13,49 @@ import (
 )
 
 // NPXInstaller installs skills from the skills.sh catalog by shelling
-// out to `npx skills add <source> [--skill <id>]` from inside the
-// configured skills directory. Slice 11c only invokes this behind the
-// SKILLS_ADMIN gate; do not call it without that check upstream.
+// out to `npx skills add <source> --agent claude-code -y [--skill <id>]`
+// from the project root. The skills.sh CLI uses cwd as its
+// project-detection anchor and writes the resulting SKILL.md tree to
+// `<cwd>/.claude/skills/<name>/`. Setting cwd to the project root keeps
+// installs in `<project>/.claude/skills/` — one of the loader's
+// configured roots — instead of nesting them under `<project>/skills/
+// .claude/skills/` which the loader doesn't scan.
+//
+// Slice 11c gates this behind SKILLS_ADMIN.
 type NPXInstaller struct {
-	dir string
+	skillsDir  string // SKILLS_PATH, kept so we can ensure it exists
+	projectDir string // working dir for npx; install lands at <projectDir>/.claude/skills
 }
 
-// NewNPXInstaller pins the install command's working directory to dir
-// (the configured SKILLS_PATH). The directory is expanded to an
-// absolute path so a relative working dir at process start can't shift
-// later if cwd changes.
-func NewNPXInstaller(dir string) (*NPXInstaller, error) {
-	if strings.TrimSpace(dir) == "" {
-		dir = "./skills"
+// NewNPXInstaller resolves both the configured skills dir (so we can
+// create it eagerly) and the install cwd (project root). projectDir
+// falls back to os.Getwd() — i.e., wherever Aura was started from —
+// which is the project root for any standard layout.
+func NewNPXInstaller(skillsDir, projectDir string) (*NPXInstaller, error) {
+	if strings.TrimSpace(skillsDir) == "" {
+		skillsDir = "./skills"
 	}
-	abs, err := filepath.Abs(dir)
+	skillsAbs, err := filepath.Abs(skillsDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve skills dir: %w", err)
 	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
+	if err := os.MkdirAll(skillsAbs, 0o755); err != nil {
 		return nil, fmt.Errorf("create skills dir: %w", err)
 	}
-	return &NPXInstaller{dir: abs}, nil
+	projectAbs := strings.TrimSpace(projectDir)
+	if projectAbs == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve project dir: %w", err)
+		}
+		projectAbs = cwd
+	} else {
+		projectAbs, err = filepath.Abs(projectAbs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve project dir: %w", err)
+		}
+	}
+	return &NPXInstaller{skillsDir: skillsAbs, projectDir: projectAbs}, nil
 }
 
 // Install runs `npx skills add <source> [--skill <id>]` with cwd =
@@ -59,7 +79,10 @@ func (i *NPXInstaller) Install(ctx context.Context, source, skillID string) (str
 		args = append(args, "--skill", skillID)
 	}
 	cmd := exec.CommandContext(ctx, npxBinary(), args...)
-	cmd.Dir = i.dir
+	// Critical: cwd is the project root, NOT the skills dir. The skills
+	// CLI uses cwd as its anchor and writes to <cwd>/.claude/skills.
+	// If we set cwd=skillsDir, we'd get nested skills/.claude/skills/.
+	cmd.Dir = i.projectDir
 	// Hide the inherited environment from the child as much as we can
 	// without breaking npm/node lookup. Specifically: keep PATH and
 	// HOME/USERPROFILE so npx can find the skills binary, drop the rest.

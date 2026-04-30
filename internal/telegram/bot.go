@@ -313,7 +313,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 	// — the SkillsAdmin gate is the actual write guard inside the api
 	// package, so even when the gate is off we still wire the deps so
 	// flipping SKILLS_ADMIN=true requires only a restart, not a rebuild.
-	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath)
+	// Empty projectDir → installer falls back to os.Getwd() (the bot's
+	// cwd at startup), which is the project root for any standard layout.
+	// Prevents the regression where cwd=cfg.SkillsPath caused skills to
+	// nest under skills/.claude/skills/ instead of <project>/.claude/skills/.
+	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, "")
 	if err != nil {
 		logger.Warn("skills installer unavailable", "error", err)
 	}
