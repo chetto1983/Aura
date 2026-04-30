@@ -907,9 +907,15 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 
 		stats.llmCalls++
-		resp, err := b.llm.Send(ctx, req)
+		ch, err := b.llm.Stream(ctx, req)
 		if err != nil {
-			b.logger.Error("LLM send failed", "user_id", userID, "error", err)
+			b.logger.Error("LLM stream failed", "user_id", userID, "error", err)
+			return "Sorry, I couldn't process your message. Please try again.", stats
+		}
+
+		resp, delivered, err := b.consumeStream(c, ch, userID)
+		if err != nil {
+			b.logger.Error("LLM stream read failed", "user_id", userID, "error", err)
 			return "Sorry, I couldn't process your message. Please try again.", stats
 		}
 
@@ -929,6 +935,13 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			}
 			convCtx.AddAssistantMessage(response)
 			b.notifySoftBudget(c, userID)
+			// If consumeStream already progressively edited a Telegram
+			// message with the full content, suppress the caller's
+			// c.Send to avoid double-delivery. Empty response signals
+			// "already delivered" to handleConversation.
+			if delivered {
+				return "", stats
+			}
 			return response, stats
 		}
 
@@ -943,6 +956,85 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	}
 	convCtx.AddAssistantMessage(fallback)
 	return fallback, stats
+}
+
+// streamingMinThreshold is the buffered-content size at which we stop
+// hiding and send the placeholder Telegram message. Below this the
+// model may still be deciding whether to call tools (in which case
+// any text would be a discardable preface), so we wait until we have
+// enough text that progressive display is clearly worth it.
+const streamingMinThreshold = 30
+
+// streamingEditThrottle bounds how often we call Telegram's editMessage
+// API. Telegram rate-limits edits to ~1/sec per chat; 800ms keeps us
+// safely under the limit while still feeling responsive.
+const streamingEditThrottle = 800 * time.Millisecond
+
+// consumeStream reads tokens from ch and progressively edits a Telegram
+// message as text accumulates. Returns an llm.Response shaped like the
+// one Send would have produced plus a flag indicating whether a
+// Telegram message has already been delivered for this iteration. When
+// delivered=true, the caller should suppress c.Send to avoid double-
+// posting. Slice 11s populates Token.Usage and Token.ToolCalls only on
+// the final Done token, so we can build a complete Response here.
+func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) (llm.Response, bool, error) {
+	var sb strings.Builder
+	var msg *tele.Message
+	var lastEdit time.Time
+	var resp llm.Response
+
+	flush := func() {
+		text := sb.String()
+		if msg == nil {
+			if len(text) < streamingMinThreshold {
+				return
+			}
+			sent, err := c.Bot().Send(c.Recipient(), text)
+			if err != nil {
+				b.logger.Warn("streaming initial send failed", "user_id", userID, "error", err)
+				return
+			}
+			msg = sent
+			lastEdit = time.Now()
+			return
+		}
+		if time.Since(lastEdit) < streamingEditThrottle {
+			return
+		}
+		if _, err := c.Bot().Edit(msg, text); err != nil {
+			// Rate limit or transient: skip this edit, the next one will retry.
+			b.logger.Debug("streaming edit failed", "user_id", userID, "error", err)
+			return
+		}
+		lastEdit = time.Now()
+	}
+
+	for tok := range ch {
+		if tok.Err != nil {
+			return llm.Response{}, msg != nil, tok.Err
+		}
+		if tok.Content != "" {
+			sb.WriteString(tok.Content)
+			flush()
+		}
+		if tok.Done {
+			resp = llm.Response{
+				Content:      sb.String(),
+				HasToolCalls: len(tok.ToolCalls) > 0,
+				ToolCalls:    tok.ToolCalls,
+				Usage:        tok.Usage,
+			}
+			// Final edit so the message reflects the complete text even
+			// if the throttle skipped the last delta.
+			if msg != nil && !resp.HasToolCalls {
+				if _, err := c.Bot().Edit(msg, sb.String()); err != nil {
+					b.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
+				}
+			}
+			break
+		}
+	}
+	return resp, msg != nil && !resp.HasToolCalls, nil
 }
 
 // executeToolCalls runs an assistant turn's tool calls concurrently and

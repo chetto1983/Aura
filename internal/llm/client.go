@@ -62,9 +62,14 @@ type TokenUsage struct {
 // argument state. If ToolCalls is non-empty, callers should treat the
 // streamed Content as discardable scaffolding (most providers emit no
 // Content alongside tool calls) and route to the tool execution path.
+//
+// Usage is populated only on the final token when the provider honors
+// stream_options.include_usage. Providers that don't (some Ollama
+// builds, older compats) leave it zero — callers must tolerate that.
 type Token struct {
 	Content   string
 	ToolCalls []ToolCall
+	Usage     TokenUsage
 	Done      bool
 	Err       error
 }

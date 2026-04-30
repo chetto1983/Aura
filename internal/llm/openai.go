@@ -40,11 +40,20 @@ func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
-	Tools       []toolWrapper `json:"tools,omitempty"`
+	Model         string             `json:"model"`
+	Messages      []chatMessage      `json:"messages"`
+	Temperature   *float64           `json:"temperature,omitempty"`
+	Stream        bool               `json:"stream,omitempty"`
+	StreamOptions *streamOptionsJSON `json:"stream_options,omitempty"`
+	Tools         []toolWrapper      `json:"tools,omitempty"`
+}
+
+// streamOptionsJSON enables the OpenAI 1.0+ usage-in-stream feature.
+// Without it, streaming responses omit token counts entirely, which
+// breaks budget tracking. Providers that don't recognize the field
+// ignore it (we degrade to missing-usage in that case).
+type streamOptionsJSON struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type chatMessage struct {
@@ -102,6 +111,14 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
+	// Usage chunk arrives at end-of-stream when stream_options.include_usage
+	// is set. Empty Choices in that final chunk signals it's the usage
+	// summary, not a content delta.
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // toolCallDeltaJSON is the per-chunk shape OpenAI emits for tool-call
@@ -201,9 +218,10 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 	}
 
 	chatReq := chatRequest{
-		Model:       model,
-		Temperature: req.Temperature,
-		Stream:      true,
+		Model:         model,
+		Temperature:   req.Temperature,
+		Stream:        true,
+		StreamOptions: &streamOptionsJSON{IncludeUsage: true},
 	}
 	chatReq.Tools = convertToolDefinitions(req.Tools)
 	for _, m := range req.Messages {
@@ -329,10 +347,11 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 	}
 	toolBuf := map[int]*accum{}
 	var indices []int // preserve insertion order so emitted ToolCalls are stable
+	var usage TokenUsage
 
 	finish := func() {
 		if len(toolBuf) == 0 {
-			ch <- Token{Done: true}
+			ch <- Token{Done: true, Usage: usage}
 			return
 		}
 		calls := make([]ToolCall, 0, len(toolBuf))
@@ -347,7 +366,7 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 			}
 			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
 		}
-		ch <- Token{ToolCalls: calls, Done: true}
+		ch <- Token{ToolCalls: calls, Usage: usage, Done: true}
 	}
 
 	scanner := bufio.NewScanner(body)
@@ -368,6 +387,14 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		// End-of-stream usage chunk: empty Choices, populated Usage.
+		if chunk.Usage != nil {
+			usage = TokenUsage{
+				PromptTokens:     chunk.Usage.PromptTokens,
+				CompletionTokens: chunk.Usage.CompletionTokens,
+				TotalTokens:      chunk.Usage.TotalTokens,
+			}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
