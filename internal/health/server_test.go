@@ -82,6 +82,45 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestTelegramEndpoint(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+	s.SetBotUsername("@aura_test_bot")
+
+	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
+	w := httptest.NewRecorder()
+	s.handleTelegram(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp TelegramInfo
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Username != "aura_test_bot" {
+		t.Errorf("username = %q, want aura_test_bot", resp.Username)
+	}
+	if resp.URL != "https://t.me/aura_test_bot" {
+		t.Errorf("url = %q", resp.URL)
+	}
+	if resp.StartURL != "https://t.me/aura_test_bot?start=login" {
+		t.Errorf("start_url = %q", resp.StartURL)
+	}
+}
+
+func TestTelegramEndpointUnavailable(t *testing.T) {
+	s := NewServer(ServerConfig{Addr: ":0"}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
+	w := httptest.NewRecorder()
+	s.handleTelegram(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestUptimeInStatus(t *testing.T) {
 	s := NewServer(ServerConfig{Addr: ":0"}, nil)
 	time.Sleep(10 * time.Millisecond) // small delay to ensure uptime > 0

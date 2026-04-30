@@ -51,6 +51,13 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-04-30 - Telegram QR/link on login
+
+- Restored the missing Telegram entry point on the dashboard login screen: it now shows the running bot handle, a clickable `t.me` link, and a QR code for `https://t.me/<bot>?start=login`.
+- Added public `GET /telegram` on the health server. It exposes only bot link metadata (`username`, `url`, `start_url`) and does not mint or validate dashboard tokens.
+- Reserved `/telegram` in the embedded SPA fallback so the React app does not shadow the JSON endpoint.
+- Verification: `go test ./...`, `go build ./...`, `go vet ./...`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` all passed.
+
 ### 2026-04-30 - Bootstrap login fix
 
 - Fixed the first-run auth trap introduced by slice 10d: Aura can now start with `TELEGRAM_ALLOWLIST` blank.

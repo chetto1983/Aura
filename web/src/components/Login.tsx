@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ExternalLink } from 'lucide-react';
 import { api, ApiError } from '@/api';
 import { setToken, getToken, clearToken } from '@/lib/auth';
+
+interface TelegramInfo {
+  username: string;
+  url: string;
+  start_url: string;
+}
 
 // Login is the dashboard's only unauthenticated view. The user pastes a
 // token they got from Telegram (/start on first run, /login after that)
@@ -17,6 +24,7 @@ export function Login() {
   const [token, setTokenInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [telegram, setTelegram] = useState<TelegramInfo | null>(null);
 
   // If the user already has a stored token, try it once; on success skip
   // the form and go home, on failure clear it so the form is rendered.
@@ -34,6 +42,21 @@ export function Login() {
     })();
     return () => { cancelled = true; };
   }, [navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/telegram', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const info = (await res.json()) as TelegramInfo;
+        if (!cancelled && info.start_url) setTelegram(info);
+      } catch {
+        // The manual /start and /login copy still gives a usable fallback.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +116,8 @@ export function Login() {
           </div>
         )}
 
+        <TelegramEntry telegram={telegram} />
+
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <label className="block text-sm font-medium">
             Token
@@ -123,6 +148,65 @@ export function Login() {
         <div className="text-center text-xs text-muted-foreground">
           <p>Tip: tokens are delivered only through your private Telegram chat.</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TelegramEntry({ telegram }: { telegram: TelegramInfo | null }) {
+  if (!telegram) {
+    return (
+      <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-3 text-center text-sm text-muted-foreground">
+        Telegram link will appear when the bot is running.
+      </div>
+    );
+  }
+
+  const qrURL =
+    'https://api.qrserver.com/v1/create-qr-code/?size=176x176&margin=10&data=' +
+    encodeURIComponent(telegram.start_url);
+
+  return (
+    <div className="grid gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 sm:grid-cols-[176px_1fr] sm:items-center">
+      <a
+        href={telegram.start_url}
+        target="_blank"
+        rel="noreferrer"
+        className="mx-auto block size-44 overflow-hidden rounded-md bg-white p-2 shadow-[0_0_24px_-14px_var(--primary)]"
+        aria-label={`Open Telegram bot @${telegram.username}`}
+      >
+        <img
+          src={qrURL}
+          alt={`QR code for Telegram bot @${telegram.username}`}
+          width="160"
+          height="160"
+          className="size-40"
+        />
+      </a>
+      <div className="space-y-3 text-center sm:text-left">
+        <div>
+          <p className="text-sm font-medium text-foreground">Telegram bot</p>
+          <a
+            href={telegram.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-primary underline-offset-4 hover:underline"
+          >
+            @{telegram.username}
+          </a>
+        </div>
+        <a
+          href={telegram.start_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Open Telegram
+          <ExternalLink size={14} aria-hidden="true" />
+        </a>
+        <p className="text-xs leading-5 text-muted-foreground">
+          Send /start once, then paste the token Aura sends back here.
+        </p>
       </div>
     </div>
   );

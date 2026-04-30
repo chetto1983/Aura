@@ -42,6 +42,7 @@ func TestStaticHandler_ServesIndexAndFallsBack(t *testing.T) {
 		{"unknown asset falls back to index", "/totally-fake.js", http.StatusOK, "<!doctype html"},
 		{"reserved /api path is not shadowed", "/api/health", http.StatusNotFound, ""},
 		{"reserved /health is not shadowed", "/health", http.StatusNotFound, ""},
+		{"reserved /telegram is not shadowed", "/telegram", http.StatusNotFound, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
