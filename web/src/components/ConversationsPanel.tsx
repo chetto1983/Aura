@@ -27,9 +27,9 @@ export function ConversationsPanel() {
     [numericChatId, hasTools],
   );
 
-  const { data, error, loading, refetch } = useApi<{ turns: ConversationTurn[] }>(fetcher);
+  const { data, error, loading, refetch } = useApi<ConversationTurn[]>(fetcher);
 
-  const turns = data?.turns ?? [];
+  const turns = data ?? [];
 
   const filtered = turns.filter((t) => {
     if (dateFrom) {

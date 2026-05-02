@@ -223,7 +223,7 @@ export const api = {
 
   // ---- conversation archive (slice 12j) ----
   conversations: (chatId?: number, limit?: number, hasTools?: boolean) =>
-    get<{ turns: ConversationTurn[] }>(
+    get<ConversationTurn[]>(
       '/conversations' +
         qs({
           chat_id: chatId !== undefined ? String(chatId) : undefined,
