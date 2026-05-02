@@ -80,6 +80,13 @@ func (r *Runner) MaybeExtract(ctx context.Context, chatID int64) (bool, *Extract
 	if !r.cfg.Enabled || r.cfg.TurnInterval <= 0 {
 		return false, nil, nil
 	}
+	// Short-circuit when OffApplier is wired: scoring is the expensive LLM
+	// call and OffApplier discards results, so paying for it every interval
+	// would be a silent cost leak. Nil applier (legacy 12e log-only path)
+	// still runs so existing tests that exercise pure trigger logic work.
+	if _, isOff := r.applier.(*OffApplier); isOff {
+		return false, nil, nil
+	}
 
 	// Count turns for this chat to check the interval.
 	turns, err := r.archive.ListByChat(ctx, chatID, 100000)

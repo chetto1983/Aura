@@ -212,3 +212,33 @@ func TestRunner_ZeroCooldownAlwaysTriggers(t *testing.T) {
 		t.Fatal("want triggered=true after cooldown window passed")
 	}
 }
+
+// TestRunner_OffApplierSkipsScorer covers HR-05: when the wired applier is
+// OffApplier (SUMMARIZER_MODE=off), the runner must short-circuit before
+// the LLM scorer call so production doesn't pay for tokens it discards.
+func TestRunner_OffApplierSkipsScorer(t *testing.T) {
+	archive := newRunnerTestArchive(t)
+	scorer := &countingScorer{}
+	deduper := &noopDeduper{}
+
+	cfg := summarizer.RunnerConfig{
+		Enabled:       true,
+		TurnInterval:  5,
+		LookbackTurns: 10,
+		CooldownSecs:  60,
+		Applier:       summarizer.NewOffApplier(),
+	}
+	runner := summarizer.NewRunner(cfg, archive, scorer, deduper)
+	seedTurns(t, archive, 77, 5)
+
+	triggered, _, err := runner.MaybeExtract(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("MaybeExtract: %v", err)
+	}
+	if triggered {
+		t.Fatal("want triggered=false when OffApplier is wired")
+	}
+	if scorer.calls != 0 {
+		t.Fatalf("want scorer not called when mode=off, got %d", scorer.calls)
+	}
+}
