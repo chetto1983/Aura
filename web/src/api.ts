@@ -21,6 +21,8 @@ import type {
   MCPInvokeResponse,
   PendingUserSummary,
   PendingDecisionResponse,
+  ConversationTurn,
+  ConversationDetail,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -216,4 +218,17 @@ export const api = {
     post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/approve`),
   denyPendingUser: (id: string) =>
     post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/deny`),
+
+  // ---- conversation archive (slice 12j) ----
+  conversations: (chatId?: number, limit?: number, hasTools?: boolean) =>
+    get<{ turns: ConversationTurn[] }>(
+      '/conversations' +
+        qs({
+          chat_id: chatId !== undefined ? String(chatId) : undefined,
+          limit: limit !== undefined ? String(limit) : undefined,
+          has_tools: hasTools ? 'true' : undefined,
+        }),
+    ),
+  conversation: (id: number) =>
+    get<ConversationDetail>(`/conversations/${id}`),
 };

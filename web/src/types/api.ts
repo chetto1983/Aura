@@ -188,6 +188,42 @@ export interface PendingDecisionResponse {
   user_id: string;
 }
 
+// Slice 12j — conversation archive read surface.
+
+export interface ConversationTurn {
+  id: number;
+  chat_id: number;
+  user_id: number;
+  turn_index: number;
+  role: string;
+  content: string;
+  tool_calls?: string;
+  tool_call_id?: string;
+  llm_calls?: number;
+  tool_calls_count?: number;
+  elapsed_ms?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  id: number;
+  chat_id: number;
+  user_id: number;
+  turn_index: number;
+  role: string;
+  content: string;
+  tool_calls?: string;
+  tool_call_id?: string;
+  llm_calls?: number;
+  tool_calls_count?: number;
+  elapsed_ms?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+  created_at: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';
