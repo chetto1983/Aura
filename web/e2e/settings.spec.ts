@@ -71,4 +71,31 @@ test.describe('settings page (14d)', () => {
     });
     expect(reset.status()).toBe(200);
   });
+
+  test('boolean fields render as a switch and toggle marks dirty', async ({ authedPage: page }) => {
+    await page.goto('/settings');
+    // OCR_ENABLED is a bool in the catalog — should render with role="switch".
+    const sw = page.locator('button[role="switch"]#OCR_ENABLED');
+    await expect(sw).toBeVisible({ timeout: 5_000 });
+
+    const before = await sw.getAttribute('aria-checked');
+    await sw.click();
+    const after = await sw.getAttribute('aria-checked');
+    expect(after).not.toBe(before);
+
+    // Save activates.
+    await expect(page.getByRole('button', { name: /save \(\d+\)/i })).toBeEnabled();
+    // Revert without saving so we don't leave OCR flipped on the running bot.
+    await page.getByRole('button', { name: /revert/i }).first().click();
+    await expect(page.getByRole('button', { name: /^save$/i })).toBeDisabled();
+  });
+
+  test('enum fields render as a dropdown with the catalog options', async ({ authedPage: page }) => {
+    await page.goto('/settings');
+    // SUMMARIZER_MODE is an enum — should be a <select> with off/review/auto.
+    const select = page.locator('select#SUMMARIZER_MODE');
+    await expect(select).toBeVisible({ timeout: 5_000 });
+    const optionTexts = await select.locator('option').allTextContents();
+    expect(optionTexts).toEqual(expect.arrayContaining(['off', 'review', 'auto']));
+  });
 });

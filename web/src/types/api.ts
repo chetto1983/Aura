@@ -278,10 +278,24 @@ export interface Task {
 }
 
 // Slice 14d — runtime settings page.
+//
+// `source` tells the UI where the effective `value` came from:
+//   - "db"      : a row exists in aura.db (this is what the dashboard owns).
+//   - "env"     : the bot loaded it from .env at startup; saving here
+//                  promotes it to a DB row that overrides env on next boot.
+//   - "default" : neither set; the bot is using the in-code default.
+//
+// `kind` hints which input control to render. Defaults to "text".
+export type SettingKind = 'text' | 'bool' | 'int' | 'float' | 'enum' | 'url';
+
 export interface SettingItem {
   key: string;
   value: string;
+  source: 'db' | 'env' | 'default';
   is_secret: boolean;
+  kind?: SettingKind;
+  options?: string[]; // present when kind === 'enum'
   label?: string;
+  hint?: string;
   group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'other';
 }

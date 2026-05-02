@@ -50,6 +50,9 @@ func TestSettingsList_HappyPath(t *testing.T) {
 			if it.Value != "sk-test" {
 				t.Errorf("LLM_API_KEY value = %q, want sk-test", it.Value)
 			}
+			if it.Source != "db" {
+				t.Errorf("LLM_API_KEY source = %q, want db", it.Source)
+			}
 			if !it.IsSecret {
 				t.Errorf("LLM_API_KEY should be marked is_secret")
 			}
@@ -57,6 +60,80 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("LLM_API_KEY not in items")
+	}
+}
+
+func TestSettingsList_FallsBackToEnv(t *testing.T) {
+	// Settings store has no row for LLM_BASE_URL, but the bot is running
+	// with an env value. The dashboard should show that effective value
+	// with source="env" so the operator can see what's actually loaded
+	// before deciding whether to override it.
+	t.Setenv(settings.KeyLLMBaseURL, "https://from.env.example/v1")
+	router, _ := newSettingsEnv(t)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	for _, it := range resp.Items {
+		if it.Key == settings.KeyLLMBaseURL {
+			if it.Value != "https://from.env.example/v1" {
+				t.Errorf("env fallback value = %q", it.Value)
+			}
+			if it.Source != "env" {
+				t.Errorf("env fallback source = %q, want env", it.Source)
+			}
+			return
+		}
+	}
+	t.Errorf("LLM_BASE_URL not in items")
+}
+
+func TestSettingsList_DBOverridesEnv(t *testing.T) {
+	t.Setenv(settings.KeyLLMBaseURL, "https://from.env.example/v1")
+	router, store := newSettingsEnv(t)
+	_ = store.Set(context.Background(), settings.KeyLLMBaseURL, "https://from.db.example/v1")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	for _, it := range resp.Items {
+		if it.Key == settings.KeyLLMBaseURL {
+			if it.Value != "https://from.db.example/v1" {
+				t.Errorf("DB-wins value = %q", it.Value)
+			}
+			if it.Source != "db" {
+				t.Errorf("DB-wins source = %q, want db", it.Source)
+			}
+			return
+		}
+	}
+}
+
+func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
+	// Make sure no leaked env var fights us.
+	for _, k := range []string{settings.KeyLLMBaseURL, settings.KeyLLMAPIKey, settings.KeyLLMModel} {
+		t.Setenv(k, "")
+	}
+	router, _ := newSettingsEnv(t)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	for _, it := range resp.Items {
+		if it.Key == settings.KeyLLMBaseURL {
+			if it.Source != "default" {
+				t.Errorf("source = %q, want default", it.Source)
+			}
+			if it.Value != "" {
+				t.Errorf("value = %q, want empty", it.Value)
+			}
+		}
 	}
 }
 

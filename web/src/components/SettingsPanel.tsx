@@ -200,33 +200,37 @@ function SettingRow({
   onRevert: () => void;
   onToggleReveal: () => void;
 }) {
-  const inputType = item.is_secret && !revealed ? 'password' : 'text';
+  const sourceBadge = (() => {
+    if (dirty) return { label: 'edited', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' };
+    switch (item.source) {
+      case 'db':
+        return { label: 'saved', cls: 'bg-primary/15 text-primary border-primary/30' };
+      case 'env':
+        return { label: 'from .env', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/30' };
+      default:
+        return { label: 'default', cls: 'bg-muted/40 text-muted-foreground border-border' };
+    }
+  })();
   return (
     <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_auto] gap-2 md:items-center">
       <label className="text-xs text-muted-foreground" htmlFor={item.key}>
-        <div className="font-medium text-foreground/90">{item.label ?? item.key}</div>
+        <div className="font-medium text-foreground/90 flex items-center gap-1.5 flex-wrap">
+          {item.label ?? item.key}
+          <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceBadge.cls}`}>
+            {sourceBadge.label}
+          </span>
+        </div>
         <div className="text-[10px] font-mono opacity-60">{item.key}</div>
+        {item.hint && <div className="text-[11px] text-muted-foreground/80 mt-1">{item.hint}</div>}
       </label>
-      <div className="flex gap-1.5 min-w-0">
-        <input
-          id={item.key}
-          type={inputType}
+      <div className="flex gap-1.5 min-w-0 items-center">
+        <Control
+          item={item}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-          className="w-full text-sm font-mono rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          revealed={revealed}
+          onChange={onChange}
+          onToggleReveal={onToggleReveal}
         />
-        {item.is_secret && (
-          <button
-            type="button"
-            onClick={onToggleReveal}
-            title={revealed ? 'Hide' : 'Reveal'}
-            className="rounded-md px-2 bg-secondary hover:bg-secondary/80 border border-border"
-          >
-            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        )}
       </div>
       {dirty ? (
         <button
@@ -241,5 +245,96 @@ function SettingRow({
         <span className="text-xs text-muted-foreground/40 px-2">·</span>
       )}
     </div>
+  );
+}
+
+function Control({
+  item, value, revealed, onChange, onToggleReveal,
+}: {
+  item: SettingItem;
+  value: string;
+  revealed: boolean;
+  onChange: (v: string) => void;
+  onToggleReveal: () => void;
+}) {
+  const kind = item.kind ?? 'text';
+
+  if (kind === 'bool') {
+    const on = value === 'true' || value === '1';
+    return (
+      <button
+        id={item.key}
+        type="button"
+        role="switch"
+        aria-checked={on ? 'true' : 'false'}
+        onClick={() => onChange(on ? 'false' : 'true')}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors border ${
+          on ? 'bg-primary border-primary' : 'bg-muted/40 border-border'
+        }`}
+        title={on ? 'Click to disable' : 'Click to enable'}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform ${
+            on ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
+        <span className="sr-only">{on ? 'enabled' : 'disabled'}</span>
+      </button>
+    );
+  }
+
+  if (kind === 'enum') {
+    return (
+      <select
+        id={item.key}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-sm rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+      >
+        {!item.options?.includes(value) && value !== '' && <option value={value}>{value}</option>}
+        {item.options?.map((opt) => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+    );
+  }
+
+  if (kind === 'int' || kind === 'float') {
+    return (
+      <input
+        id={item.key}
+        type="number"
+        step={kind === 'float' ? 'any' : '1'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-sm font-mono rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+      />
+    );
+  }
+
+  // text / url / secret
+  const inputType = item.is_secret && !revealed ? 'password' : (kind === 'url' ? 'url' : 'text');
+  return (
+    <>
+      <input
+        id={item.key}
+        type={inputType}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        className="w-full text-sm font-mono rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+      />
+      {item.is_secret && (
+        <button
+          type="button"
+          onClick={onToggleReveal}
+          title={revealed ? 'Hide' : 'Reveal'}
+          className="rounded-md px-2 bg-secondary hover:bg-secondary/80 border border-border"
+        >
+          {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      )}
+    </>
   );
 }

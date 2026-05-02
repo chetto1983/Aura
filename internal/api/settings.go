@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/aura/aura/internal/settings"
@@ -11,12 +12,30 @@ import (
 )
 
 // SettingItem is one row in the GET /settings response.
+//
+// Value is what the user should see in the form input — the effective
+// value the bot is currently using. Source explains where it came from
+// so the UI can label rows that are still env-controlled vs. dashboard
+// controlled. Saving a non-empty Value via POST /settings always lands
+// in the DB and flips Source to "db".
+//
+// Kind hints the UI which input control to render:
+//   - "text"   (default) — text input
+//   - "bool"   — toggle switch; value is "true" / "false"
+//   - "int"    — number input
+//   - "float"  — number input with decimals
+//   - "enum"   — dropdown; Options carries the choices
+//   - "url"    — text input with type="url"
 type SettingItem struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`              // empty when not set
-	IsSecret bool   `json:"is_secret"`          // hint for the UI input type
-	Label    string `json:"label,omitempty"`    // human-friendly label
-	Group    string `json:"group,omitempty"`    // ui section: provider | budget | embeddings | ocr | summarizer | other
+	Key      string   `json:"key"`
+	Value    string   `json:"value"`            // effective value (DB row, else env, else blank)
+	Source   string   `json:"source"`           // "db" | "env" | "default"
+	IsSecret bool     `json:"is_secret"`        // hint for the UI input type
+	Kind     string   `json:"kind,omitempty"`   // text | bool | int | float | enum | url (default "text")
+	Options  []string `json:"options,omitempty"` // populated only when kind=enum
+	Label    string   `json:"label,omitempty"`
+	Hint     string   `json:"hint,omitempty"`   // optional one-line help under the input
+	Group    string   `json:"group,omitempty"`
 }
 
 // SettingsListResponse is the GET /settings body.
@@ -51,41 +70,41 @@ type SettingsTestRequest struct {
 // here; LLM_MAX_RETRIES and other fine-tuning knobs stay overridable
 // programmatically but aren't surfaced in the dashboard form.
 var settingsCatalog = []SettingItem{
-	{Key: settings.KeyLLMBaseURL, Group: "provider", Label: "LLM base URL"},
-	{Key: settings.KeyLLMModel, Group: "provider", Label: "LLM model"},
-	{Key: settings.KeyLLMAPIKey, Group: "provider", Label: "LLM API key", IsSecret: true},
-	{Key: settings.KeyOllamaBaseURL, Group: "provider", Label: "Ollama base URL (failover)"},
-	{Key: settings.KeyOllamaModel, Group: "provider", Label: "Ollama model"},
-	{Key: settings.KeyOllamaAPIKey, Group: "provider", Label: "Ollama API key", IsSecret: true},
+	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
+	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
+	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
+	{Key: settings.KeyOllamaBaseURL, Group: "provider", Kind: "url", Label: "Ollama base URL (failover)", Hint: "Bare host, e.g. http://localhost:11434"},
+	{Key: settings.KeyOllamaModel, Group: "provider", Kind: "text", Label: "Ollama model"},
+	{Key: settings.KeyOllamaAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "Ollama API key (rarely needed)"},
 
-	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Label: "Embeddings base URL"},
-	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Label: "Embeddings model"},
-	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Label: "Embeddings API key", IsSecret: true},
+	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
+	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
+	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
 
-	{Key: settings.KeyMistralAPIKey, Group: "ocr", Label: "Mistral OCR API key", IsSecret: true},
-	{Key: settings.KeyMistralOCRModel, Group: "ocr", Label: "OCR model"},
-	{Key: settings.KeyOCREnabled, Group: "ocr", Label: "OCR enabled (true/false)"},
-	{Key: settings.KeyOCRMaxPages, Group: "ocr", Label: "OCR max pages"},
-	{Key: settings.KeyOCRMaxFileMB, Group: "ocr", Label: "OCR max file MB"},
+	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
+	{Key: settings.KeyMistralOCRModel, Group: "ocr", Kind: "text", Label: "OCR model"},
+	{Key: settings.KeyOCREnabled, Group: "ocr", Kind: "bool", Label: "OCR enabled"},
+	{Key: settings.KeyOCRMaxPages, Group: "ocr", Kind: "int", Label: "OCR max pages", Hint: "Aura refuses PDFs longer than this"},
+	{Key: settings.KeyOCRMaxFileMB, Group: "ocr", Kind: "int", Label: "OCR max file size (MB)"},
 
-	{Key: settings.KeySoftBudget, Group: "budget", Label: "Soft budget (USD)"},
-	{Key: settings.KeyHardBudget, Group: "budget", Label: "Hard budget (USD)"},
-	{Key: settings.KeyCostPerToken, Group: "budget", Label: "Cost per token (USD)"},
-	{Key: settings.KeyMaxContextTokens, Group: "budget", Label: "Max context tokens"},
-	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Label: "Max in-flight messages"},
-	{Key: settings.KeyMaxToolIterations, Group: "budget", Label: "Max tool iterations / turn"},
+	{Key: settings.KeySoftBudget, Group: "budget", Kind: "float", Label: "Soft budget (USD)", Hint: "Telegram warning fires once this is crossed"},
+	{Key: settings.KeyHardBudget, Group: "budget", Kind: "float", Label: "Hard budget (USD)", Hint: "Bot refuses LLM calls past this"},
+	{Key: settings.KeyCostPerToken, Group: "budget", Kind: "float", Label: "Cost per token (USD)", Hint: "Used to estimate spend; provider-specific"},
+	{Key: settings.KeyMaxContextTokens, Group: "budget", Kind: "int", Label: "Max context tokens", Hint: "Summarization fires at 80% of this"},
+	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Label: "Max in-flight messages", Hint: "Hard cap; oldest evicted first"},
+	{Key: settings.KeyMaxToolIterations, Group: "budget", Kind: "int", Label: "Max tool iterations / turn"},
 
-	{Key: settings.KeySummarizerEnabled, Group: "summarizer", Label: "Summarizer enabled"},
-	{Key: settings.KeySummarizerMode, Group: "summarizer", Label: "Summarizer mode (off/review/auto)"},
-	{Key: settings.KeySummarizerTurnInterval, Group: "summarizer", Label: "Summarizer turn interval"},
-	{Key: settings.KeySummarizerMinSalience, Group: "summarizer", Label: "Min salience"},
-	{Key: settings.KeySummarizerLookbackTurns, Group: "summarizer", Label: "Lookback turns"},
-	{Key: settings.KeySummarizerCooldownSeconds, Group: "summarizer", Label: "Cooldown seconds"},
+	{Key: settings.KeySummarizerEnabled, Group: "summarizer", Kind: "bool", Label: "Summarizer enabled"},
+	{Key: settings.KeySummarizerMode, Group: "summarizer", Kind: "enum", Options: []string{"off", "review", "auto"}, Label: "Summarizer mode", Hint: "review = queue for dashboard approval; auto = direct wiki write"},
+	{Key: settings.KeySummarizerTurnInterval, Group: "summarizer", Kind: "int", Label: "Run every N turns"},
+	{Key: settings.KeySummarizerMinSalience, Group: "summarizer", Kind: "float", Label: "Min salience"},
+	{Key: settings.KeySummarizerLookbackTurns, Group: "summarizer", Kind: "int", Label: "Lookback turns"},
+	{Key: settings.KeySummarizerCooldownSeconds, Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
 
-	{Key: settings.KeyConvArchiveEnabled, Group: "other", Label: "Conversation archive enabled"},
-	{Key: settings.KeyOTelEnabled, Group: "other", Label: "OpenTelemetry tracing enabled"},
-	{Key: settings.KeySkillsAdmin, Group: "other", Label: "Skills admin (catalog install/delete)"},
-	{Key: settings.KeyAllowlist, Group: "other", Label: "Telegram allowlist (comma-separated IDs)"},
+	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
+	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
+	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
+	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
 }
 
 func handleSettingsList(deps Deps) http.HandlerFunc {
@@ -98,8 +117,17 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 		items := make([]SettingItem, 0, len(settingsCatalog))
 		for _, meta := range settingsCatalog {
 			it := meta
-			if v, err := deps.Settings.Get(ctx, meta.Key); err == nil {
+			// DB row wins. Else fall back to the env value the bot
+			// loaded at startup so the form reflects effective state.
+			// Source flag tells the UI which it is.
+			if v, err := deps.Settings.Get(ctx, meta.Key); err == nil && v != "" {
 				it.Value = v
+				it.Source = "db"
+			} else if envVal := os.Getenv(meta.Key); envVal != "" {
+				it.Value = envVal
+				it.Source = "env"
+			} else {
+				it.Source = "default"
 			}
 			items = append(items, it)
 		}
