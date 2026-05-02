@@ -224,6 +224,20 @@ export interface ConversationDetail {
   created_at: string;
 }
 
+// Slice 12l — wiki maintenance issue queue.
+
+export interface WikiIssue {
+  id: number;
+  kind: string;
+  severity: 'high' | 'medium' | 'low';
+  slug?: string;
+  broken_link?: string;
+  message?: string;
+  status: 'open' | 'resolved';
+  created_at: string;
+  resolved_at?: string;
+}
+
 // Slice 12k — summarizer proposed updates review queue.
 
 export interface ProposedUpdate {

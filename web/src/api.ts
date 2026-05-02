@@ -24,6 +24,7 @@ import type {
   ConversationTurn,
   ConversationDetail,
   ProposedUpdate,
+  WikiIssue,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -240,4 +241,10 @@ export const api = {
     post<ProposedUpdate>(`/summaries/${id}/approve`),
   rejectSummary: (id: number) =>
     post<ProposedUpdate>(`/summaries/${id}/reject`),
+
+  // ---- maintenance issue queue (slice 12l) ----
+  maintenanceIssues: (status?: string, severity?: string) =>
+    get<WikiIssue[]>('/maintenance/issues' + qs({ status, severity })),
+  resolveIssue: (id: number) =>
+    post<WikiIssue>(`/maintenance/issues/${id}/resolve`),
 };

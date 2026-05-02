@@ -13,6 +13,7 @@ import { MCPPanel } from '@/components/MCPPanel';
 import { PendingUsersPanel } from '@/components/PendingUsersPanel';
 import { ConversationsPanel } from '@/components/ConversationsPanel';
 import { SummariesPanel } from '@/components/SummariesPanel';
+import { MaintenancePanel } from '@/components/MaintenancePanel';
 import { Login } from '@/components/Login';
 import { getToken } from '@/lib/auth';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -59,6 +60,7 @@ export default function App() {
                     <Route path="/pending" element={<PendingUsersPanel />} />
                     <Route path="/conversations" element={<ConversationsPanel />} />
                     <Route path="/summaries" element={<SummariesPanel />} />
+                    <Route path="/maintenance" element={<MaintenancePanel />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </ErrorBoundary>
