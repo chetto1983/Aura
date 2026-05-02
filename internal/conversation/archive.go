@@ -127,6 +127,24 @@ func (s *ArchiveStore) ListAll(ctx context.Context, limit int) ([]Turn, error) {
 	return out, rows.Err()
 }
 
+// MaxTurnIndex returns the highest turn_index stored for chatID, or -1 if
+// no rows exist. Used by the bot to allocate monotonic turn indexes
+// independently of in-memory conversation state (which the context-limit
+// enforcer can trim).
+func (s *ArchiveStore) MaxTurnIndex(ctx context.Context, chatID int64) (int64, error) {
+	var maxIdx sql.NullInt64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT MAX(turn_index) FROM conversations WHERE chat_id = ?`, chatID).
+		Scan(&maxIdx)
+	if err != nil {
+		return -1, fmt.Errorf("conversation max turn_index: %w", err)
+	}
+	if !maxIdx.Valid {
+		return -1, nil
+	}
+	return maxIdx.Int64, nil
+}
+
 // Get returns a single Turn by its primary key, or sql.ErrNoRows if absent.
 func (s *ArchiveStore) Get(ctx context.Context, id int64) (Turn, error) {
 	const q = `

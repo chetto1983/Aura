@@ -883,11 +883,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"message", c.Text(),
 	)
 
-	// Capture message index before this turn so we can archive only new messages.
-	turnMsgIdx := convCtx.MessageCount()
-
-	// Add user message to context
-	convCtx.AddUserMessage(c.Text())
+	// Capture the user text locally so we can always archive it even if
+	// EnforceLimit (below) trims it out of convCtx.
+	userText := c.Text()
+	convCtx.AddUserMessage(userText)
 
 	// Slice 11p: speculative wiki retrieval. The model used to discover
 	// durable memory only by emitting a search_wiki tool call, which cost
@@ -911,6 +910,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 	if err := convCtx.EnforceLimit(context.Background()); err != nil {
 		b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
 	}
+
+	// Snapshot count AFTER EnforceLimit so any trimming is already absorbed.
+	// Loop messages added by runToolCallingLoop occupy [preLoopIdx, end).
+	preLoopIdx := convCtx.MessageCount()
 
 	// No LLM configured — echo mode
 	if b.llm == nil {
@@ -941,19 +944,45 @@ func (b *Bot) handleConversation(c tele.Context) {
 		b.sendAssistant(c, response)
 	}
 
-	// Slice 12b: archive new messages produced during this turn. Per-turn
-	// telemetry (12u.6: HR-03 fix) is attached to the assistant message
-	// row at the tail of the slice; tool_calls JSON and tool_call_id are
-	// preserved per message so the dashboard drawer can expand them.
-	if b.archiver != nil {
+	// Slice 12b + 12u.7 (HR-04): archive the user message and every
+	// message produced during this turn. turn_index is allocated from the
+	// archive's MAX(turn_index) for this chat so it stays correct even
+	// when EnforceLimit trims convCtx (which would have made an
+	// in-memory MessageCount snapshot unreliable). The user message is
+	// captured locally above so we always have the original even if
+	// EnforceLimit dropped it from convCtx.
+	if b.archiver != nil && b.archiveDB != nil {
 		chatID := c.Chat().ID
-		newMsgs := convCtx.MessagesSince(turnMsgIdx)
+		ctx := context.Background()
+
+		nextIdx := int64(0)
+		if maxIdx, err := b.archiveDB.MaxTurnIndex(ctx, chatID); err == nil {
+			nextIdx = maxIdx + 1
+		} else {
+			b.logger.Warn("archive: max turn_index lookup failed",
+				"chat_id", chatID, "error", err)
+		}
+
+		// User message: archived first from the locally-captured text.
+		_ = b.archiver.Append(ctx, conversation.Turn{
+			ChatID:    chatID,
+			UserID:    c.Sender().ID,
+			TurnIndex: nextIdx,
+			Role:      "user",
+			Content:   userText,
+		})
+		nextIdx++
+
+		// Loop messages: assistant tool-calls, tool results, final answer.
+		// Snapshot taken after EnforceLimit so the slice is the messages
+		// runToolCallingLoop appended this turn.
+		loopMsgs := convCtx.MessagesSince(preLoopIdx)
 		elapsedMS := time.Since(turnStart).Milliseconds()
-		for i, msg := range newMsgs {
+		for i, msg := range loopMsgs {
 			turn := conversation.Turn{
 				ChatID:     chatID,
 				UserID:     c.Sender().ID,
-				TurnIndex:  int64(turnMsgIdx + i),
+				TurnIndex:  nextIdx,
 				Role:       msg.Role,
 				Content:    msg.Content,
 				ToolCallID: msg.ToolCallID,
@@ -963,22 +992,22 @@ func (b *Bot) handleConversation(c tele.Context) {
 					turn.ToolCalls = string(raw)
 				} else {
 					b.logger.Warn("archive: tool_calls marshal failed",
-						"chat_id", chatID, "turn_index", turn.TurnIndex, "error", err)
+						"chat_id", chatID, "turn_index", nextIdx, "error", err)
 				}
 			}
-			// Telemetry attaches to the assistant row that closes the turn.
-			if msg.Role == "assistant" && i == len(newMsgs)-1 {
+			if msg.Role == "assistant" && i == len(loopMsgs)-1 {
 				turn.LLMCalls = stats.llmCalls
 				turn.ToolCallsCount = stats.toolCalls
 				turn.ElapsedMS = elapsedMS
 				turn.TokensIn = convCtx.TotalTokensUsed()
 			}
-			_ = b.archiver.Append(context.Background(), turn)
+			_ = b.archiver.Append(ctx, turn)
+			nextIdx++
 		}
 
 		// Slice 12e: post-turn summarizer extraction (log-only; apply in 12f).
 		if b.summRunner != nil {
-			if _, _, err := b.summRunner.MaybeExtract(context.Background(), chatID); err != nil {
+			if _, _, err := b.summRunner.MaybeExtract(ctx, chatID); err != nil {
 				b.logger.Warn("summarizer extraction failed", "chat_id", chatID, "error", err)
 			}
 		}
