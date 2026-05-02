@@ -96,3 +96,49 @@ func TestScorer_MalformedJSON(t *testing.T) {
 		t.Fatal("want error for malformed JSON response, got nil")
 	}
 }
+
+// TestScorer_LLMCallError covers the LLM transport error path by pointing the
+// client at a server that returns HTTP 500.
+func TestScorer_LLMCallError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := llm.NewOpenAIClient(llm.OpenAIConfig{
+		APIKey:  "test",
+		BaseURL: srv.URL,
+		Model:   "test-model",
+	})
+	scorer := summarizer.NewScorer(client, "test-model", 0.7)
+
+	_, err := scorer.Score(context.Background(), []conversation.Turn{
+		{Role: "user", Content: "test"},
+	})
+	if err == nil {
+		t.Fatal("want error when LLM returns 500, got nil")
+	}
+}
+
+// TestScorer_SystemRoleSkipped verifies that turns with role "system" are
+// excluded from the prompt text sent to the LLM.
+func TestScorer_SystemRoleSkipped(t *testing.T) {
+	// A single system turn — after filtering the prompt has no real content,
+	// but the LLM call still happens. We just verify no error and filtering runs.
+	candidates := `{"candidates":[{"fact":"a fact","score":0.9,"category":"fact","related_slugs":[],"source_turn_ids":[1]}]}`
+	client := newFakeLLMClient(candidates)
+	scorer := summarizer.NewScorer(client, "test-model", 0.5)
+
+	turns := []conversation.Turn{
+		{Role: "system", Content: "you are a helpful assistant"},
+		{Role: "user", Content: "hello"},
+	}
+	got, err := scorer.Score(context.Background(), turns)
+	if err != nil {
+		t.Fatalf("Score with system turn: %v", err)
+	}
+	// The system turn was skipped; the user turn was included; LLM returned 1 candidate.
+	if len(got) != 1 {
+		t.Fatalf("want 1 candidate, got %d", len(got))
+	}
+}

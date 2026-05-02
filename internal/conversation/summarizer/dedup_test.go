@@ -2,6 +2,7 @@ package summarizer_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -11,10 +12,11 @@ import (
 // mockSearchEngine satisfies summarizer.WikiSearcher with fixed results.
 type mockSearchEngine struct {
 	results []search.Result
+	err     error
 }
 
 func (m *mockSearchEngine) Search(_ context.Context, _ string, _ int) ([]search.Result, error) {
-	return m.results, nil
+	return m.results, m.err
 }
 
 func TestDeduper_HighSim_Skip(t *testing.T) {
@@ -113,5 +115,57 @@ func TestDeduper_EmptyWiki(t *testing.T) {
 	}
 	if dec.Action != summarizer.ActionNew {
 		t.Fatalf("want ActionNew (empty wiki), got %s", dec.Action)
+	}
+}
+
+// TestDeduper_SearchError covers the search engine error return path.
+func TestDeduper_SearchError(t *testing.T) {
+	engine := &mockSearchEngine{err: errors.New("search unavailable")}
+	d := summarizer.NewDeduper(engine, 0.85, 0.5)
+	c := summarizer.Candidate{Fact: "some fact", Score: 0.8}
+
+	_, err := d.Deduplicate(context.Background(), c)
+	if err == nil {
+		t.Fatal("want error when search engine fails, got nil")
+	}
+}
+
+// TestDeduper_MultipleResults_TopUsed verifies that only the top result's
+// similarity drives the decision when multiple candidates are returned.
+func TestDeduper_MultipleResults_TopUsed(t *testing.T) {
+	engine := &mockSearchEngine{results: []search.Result{
+		{Slug: "top-page", Score: 0.92},    // skip
+		{Slug: "second-page", Score: 0.6},  // would be patch
+		{Slug: "third-page", Score: 0.1},   // would be new
+	}}
+	d := summarizer.NewDeduper(engine, 0.85, 0.5)
+	c := summarizer.Candidate{Fact: "well-covered fact", Score: 0.9}
+
+	dec, err := d.Deduplicate(context.Background(), c)
+	if err != nil {
+		t.Fatalf("Deduplicate: %v", err)
+	}
+	if dec.Action != summarizer.ActionSkip {
+		t.Fatalf("want ActionSkip (top result 0.92 > 0.85), got %s", dec.Action)
+	}
+	if dec.TargetSlug != "top-page" {
+		t.Fatalf("want TargetSlug=top-page, got %q", dec.TargetSlug)
+	}
+}
+
+// TestAction_String covers the Action.String() method on types.go.
+func TestAction_String(t *testing.T) {
+	cases := []struct {
+		action summarizer.Action
+		want   string
+	}{
+		{summarizer.ActionSkip, "skip"},
+		{summarizer.ActionPatch, "patch"},
+		{summarizer.ActionNew, "new"},
+	}
+	for _, tc := range cases {
+		if got := tc.action.String(); got != tc.want {
+			t.Errorf("Action(%q).String() = %q, want %q", tc.action, got, tc.want)
+		}
 	}
 }
