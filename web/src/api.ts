@@ -23,6 +23,7 @@ import type {
   PendingDecisionResponse,
   ConversationTurn,
   ConversationDetail,
+  ProposedUpdate,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -231,4 +232,12 @@ export const api = {
     ),
   conversation: (id: number) =>
     get<ConversationDetail>(`/conversations/${id}`),
+
+  // ---- summaries review queue (slice 12k) ----
+  summaries: (status?: string) =>
+    get<ProposedUpdate[]>('/summaries' + qs({ status })),
+  approveSummary: (id: number) =>
+    post<ProposedUpdate>(`/summaries/${id}/approve`),
+  rejectSummary: (id: number) =>
+    post<ProposedUpdate>(`/summaries/${id}/reject`),
 };

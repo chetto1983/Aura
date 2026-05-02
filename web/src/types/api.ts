@@ -224,6 +224,20 @@ export interface ConversationDetail {
   created_at: string;
 }
 
+// Slice 12k — summarizer proposed updates review queue.
+
+export interface ProposedUpdate {
+  id: number;
+  chat_id: number;
+  fact: string;
+  action: 'new' | 'patch' | 'skip';
+  target_slug?: string;
+  similarity: number;
+  source_turn_ids: number[];
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance';
