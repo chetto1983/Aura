@@ -11,6 +11,31 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// conversationsSchemaSQL creates the conversations archive table used by
+// internal/conversation.ArchiveStore. Kept here so the shared SQLite DB is
+// fully migrated whenever a Store is opened, regardless of call order.
+const conversationsSchemaSQL = `
+CREATE TABLE IF NOT EXISTS conversations (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id           INTEGER NOT NULL,
+  user_id           INTEGER NOT NULL,
+  turn_index        INTEGER NOT NULL,
+  role              TEXT    NOT NULL,
+  content           TEXT    NOT NULL,
+  tool_calls        TEXT,
+  tool_call_id      TEXT,
+  llm_calls         INTEGER NOT NULL DEFAULT 0,
+  tool_calls_count  INTEGER NOT NULL DEFAULT 0,
+  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
+  tokens_in         INTEGER NOT NULL DEFAULT 0,
+  tokens_out        INTEGER NOT NULL DEFAULT 0,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(chat_id, turn_index)
+);
+CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversations(chat_id, turn_index);
+CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, created_at);
+`
+
 // schemaSQL bootstraps the scheduled_tasks table and its index. Idempotent;
 // safe to run on every startup.
 const schemaSQL = `
@@ -81,6 +106,9 @@ func (s *Store) Close() error {
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate: %w", err)
+	}
+	if _, err := s.db.Exec(conversationsSchemaSQL); err != nil {
+		return fmt.Errorf("scheduler migrate conversations: %w", err)
 	}
 	return nil
 }
