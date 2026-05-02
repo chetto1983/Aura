@@ -276,13 +276,15 @@ func extForKind(k Kind) string {
 		return ".url"
 	case KindXLSX:
 		return ".xlsx"
+	case KindDOCX:
+		return ".docx"
 	}
 	return ".bin"
 }
 
 func validatePutInput(in PutInput) error {
 	switch in.Kind {
-	case KindPDF, KindText, KindURL, KindXLSX:
+	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX:
 	default:
 		return fmt.Errorf("source: invalid kind %q", in.Kind)
 	}

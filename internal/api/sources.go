@@ -126,6 +126,11 @@ var rawAssets = map[source.Kind]rawAsset{
 		contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		disposition: "attachment",
 	},
+	source.KindDOCX: {
+		filename:    "original.docx",
+		contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		disposition: "attachment",
+	},
 }
 
 func handleSourceRaw(deps Deps) http.HandlerFunc {
@@ -180,7 +185,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 
 func validKind(k source.Kind) bool {
 	switch k {
-	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX:
+	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX:
 		return true
 	}
 	return false

@@ -35,6 +35,15 @@ export default function WikiGraphView() {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const measure = () => {
+      if (!containerRef.current) return;
+      const r = containerRef.current.getBoundingClientRect();
+      setSize({
+        width: Math.max(0, Math.floor(r.width)),
+        height: Math.max(360, Math.floor(r.height)),
+      });
+    };
+    measure();
     const obs = new ResizeObserver((entries) => {
       const r = entries[0].contentRect;
       setSize({
@@ -43,8 +52,12 @@ export default function WikiGraphView() {
       });
     });
     obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
+    const raf = requestAnimationFrame(measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      obs.disconnect();
+    };
+  }, [data]);
 
   if (loading && !data) return <div className="p-6 text-sm text-muted-foreground">Loading graph…</div>;
   if (error && !data) return <div className="p-6 text-sm text-destructive">Error: {error.message}</div>;

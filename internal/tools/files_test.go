@@ -202,6 +202,123 @@ func TestCreateXLSXTool_DedupsSecondCall(t *testing.T) {
 	}
 }
 
+func newCreateDOCXTest(t *testing.T) (*CreateDOCXTool, *stubDocSender, *source.Store) {
+	t.Helper()
+	store, err := source.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("source.NewStore: %v", err)
+	}
+	sender := &stubDocSender{}
+	tool := NewCreateDOCXTool(store, sender)
+	if tool == nil {
+		t.Fatal("NewCreateDOCXTool returned nil")
+	}
+	return tool, sender, store
+}
+
+func TestCreateDOCXTool_HappyPath_DeliversAndPersists(t *testing.T) {
+	tool, sender, store := newCreateDOCXTest(t)
+	ctx := WithUserID(context.Background(), "12345")
+	args := map[string]any{
+		"filename": "memo",
+		"title":    "Quarterly Memo",
+		"blocks": []any{
+			map[string]any{"kind": "paragraph", "text": "Summary follows."},
+			map[string]any{"kind": "heading", "level": 2.0, "text": "Highlights"},
+			map[string]any{"kind": "bullet", "text": "Revenue up 12%"},
+			map[string]any{"kind": "bullet", "text": "Two new customers"},
+			map[string]any{"kind": "table", "rows": []any{
+				[]any{"month", "revenue"},
+				[]any{"jan", 100.0},
+			}},
+		},
+		"caption": "Q1 memo",
+	}
+	out, err := tool.Execute(ctx, args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["filename"] != "memo.docx" {
+		t.Errorf("filename = %v, want memo.docx", resp["filename"])
+	}
+	if resp["delivered"] != true {
+		t.Errorf("delivered = %v, want true", resp["delivered"])
+	}
+	if len(sender.calls) != 1 {
+		t.Fatalf("sender called %d times, want 1", len(sender.calls))
+	}
+	if sender.calls[0].filename != "memo.docx" || sender.calls[0].caption != "Q1 memo" {
+		t.Errorf("sender call wrong: %+v", sender.calls[0])
+	}
+
+	// Persisted with KindDOCX + StatusIngested.
+	id := resp["source_id"].(string)
+	rec, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
+	if rec.Kind != source.KindDOCX {
+		t.Errorf("kind = %q, want docx", rec.Kind)
+	}
+	if rec.Status != source.StatusIngested {
+		t.Errorf("status = %q, want ingested", rec.Status)
+	}
+}
+
+func TestCreateDOCXTool_TitleOnly_NoBlocks(t *testing.T) {
+	tool, _, _ := newCreateDOCXTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "tiny",
+		"title":    "Just a title",
+		"deliver":  false,
+	}
+	if _, err := tool.Execute(ctx, args); err != nil {
+		t.Errorf("title-only spec should succeed: %v", err)
+	}
+}
+
+func TestCreateDOCXTool_RejectsEmpty(t *testing.T) {
+	tool, _, _ := newCreateDOCXTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{"filename": "x", "deliver": false}
+	if _, err := tool.Execute(ctx, args); err == nil {
+		t.Error("expected error for empty spec (no title, no blocks)")
+	}
+}
+
+func TestCreateDOCXTool_DeliverFalse_PersistsOnly(t *testing.T) {
+	tool, sender, _ := newCreateDOCXTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "silent",
+		"title":    "x",
+		"deliver":  false,
+	}
+	if _, err := tool.Execute(ctx, args); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(sender.calls) != 0 {
+		t.Errorf("sender invoked despite deliver=false")
+	}
+}
+
+func TestCreateDOCXTool_RejectsBlockMissingKind(t *testing.T) {
+	tool, _, _ := newCreateDOCXTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "x",
+		"blocks":   []any{map[string]any{"text": "no kind here"}},
+	}
+	if _, err := tool.Execute(ctx, args); err == nil {
+		t.Error("expected error for block with empty kind")
+	}
+}
+
 func TestStringifyCell(t *testing.T) {
 	cases := []struct {
 		in   any

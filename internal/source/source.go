@@ -30,6 +30,9 @@ const (
 	// the same raw/<id>/ layout but never OCR'd; status stays "ingested"
 	// because there's no compile step to run.
 	KindXLSX Kind = "xlsx"
+	// KindDOCX is an Aura-generated Word document (slice 15b). Same
+	// generated-artifact lifecycle as KindXLSX.
+	KindDOCX Kind = "docx"
 )
 
 // Status tracks where a source is in the OCR/ingest pipeline.

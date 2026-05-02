@@ -28,7 +28,6 @@ Thumbs.db
 .claude/*
 *.pdf
 wiki/*
-skills/.claude/skills/*
 .claude/settings.json
 
 # Playwright (E2E artifacts and locally-resolved browsers)

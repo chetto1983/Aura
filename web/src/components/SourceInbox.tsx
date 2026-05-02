@@ -289,7 +289,7 @@ function SourceActions({
 }) {
   // PDF/XLSX kinds are downloadable via /sources/<id>/raw (slice 15d).
   // Other kinds (text/url) have no on-disk binary worth downloading.
-  const showDownload = s.kind === 'pdf' || s.kind === 'xlsx';
+  const showDownload = s.kind === 'pdf' || s.kind === 'xlsx' || s.kind === 'docx';
   // Re-OCR / Ingest only make sense for OCR-driven kinds (PDFs).
   // Generated artifacts (xlsx) skip the OCR pipeline entirely.
   const ocrEligible = s.kind === 'pdf';

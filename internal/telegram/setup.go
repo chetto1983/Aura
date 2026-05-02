@@ -440,6 +440,11 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		toolRegistry.Register(xlsxTool)
 	}
 
+	// Slice 15b: create_docx tool. Same wiring as create_xlsx.
+	if docxTool := tools.NewCreateDOCXTool(sourceStore, b); docxTool != nil {
+		toolRegistry.Register(docxTool)
+	}
+
 	b.registerHandlers()
 	return b, nil
 }

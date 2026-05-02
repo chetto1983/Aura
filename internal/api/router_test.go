@@ -417,10 +417,11 @@ func TestSourceOCR_PresentAndMissing(t *testing.T) {
 	}
 }
 
-func TestSourceRaw_PDFAndXLSX(t *testing.T) {
+func TestSourceRaw_PDFAndXLSXAndDOCX(t *testing.T) {
 	e := newTestEnv(t)
 	pdf := e.seedSource([]byte("%PDF-1.4 fake content"), source.KindPDF, "doc.pdf")
 	xlsx := e.seedSource([]byte("PK\x03\x04 fake xlsx zip"), source.KindXLSX, "report.xlsx")
+	docx := e.seedSource([]byte("PK\x03\x04 fake docx zip"), source.KindDOCX, "memo.docx")
 	txt := e.seedSource([]byte("hello text"), source.KindText, "note.txt")
 
 	// PDF: inline disposition, application/pdf content type.
@@ -457,6 +458,22 @@ func TestSourceRaw_PDFAndXLSX(t *testing.T) {
 	body, _ = io.ReadAll(rr.Body)
 	if !strings.HasPrefix(string(body), "PK") {
 		t.Errorf("body did not stream xlsx zip header: %q", string(body[:min(8, len(body))]))
+	}
+
+	// DOCX: attachment disposition, wordprocessingml content type. Slice 15b.
+	rr = e.do("GET", "/sources/"+docx.ID+"/raw")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("docx status %d", rr.Code)
+	}
+	wantDocxCT := "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	if ct := rr.Header().Get("Content-Type"); ct != wantDocxCT {
+		t.Errorf("docx content-type = %q, want %q", ct, wantDocxCT)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") {
+		t.Errorf("docx content-disposition = %q, want attachment;...", cd)
+	}
+	if !strings.Contains(rr.Header().Get("Content-Disposition"), `memo.docx`) {
+		t.Errorf("docx filename not in content-disposition: %q", rr.Header().Get("Content-Disposition"))
 	}
 
 	// Text source must not expose a raw endpoint.
