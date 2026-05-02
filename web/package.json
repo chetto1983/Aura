@@ -9,7 +9,11 @@
     "build": "vite build",
     "analyze": "cross-env ANALYZE=true vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:debug": "playwright test --debug",
+    "e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
@@ -37,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.2.4",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",

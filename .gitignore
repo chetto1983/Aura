@@ -30,3 +30,14 @@ Thumbs.db
 wiki/*
 skills/.claude/skills/*
 .claude/settings.json
+
+# Playwright (E2E artifacts and locally-resolved browsers)
+/web/playwright-report/
+/web/test-results/
+/web/blob-report/
+/web/playwright/.cache/
+/web/.e2e-token
+
+# Coverage artifacts (Q&A session output, not source of truth)
+/cover.out
+/cover.html
