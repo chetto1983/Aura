@@ -52,17 +52,18 @@ func handleTaskGet(deps Deps) http.HandlerFunc {
 
 func taskDTO(t *scheduler.Task) Task {
 	dto := Task{
-		Name:          t.Name,
-		Kind:          string(t.Kind),
-		Payload:       t.Payload,
-		RecipientID:   t.RecipientID,
-		ScheduleKind:  string(t.ScheduleKind),
-		ScheduleDaily: t.ScheduleDaily,
-		NextRunAt:     t.NextRunAt.UTC(),
-		LastError:     t.LastError,
-		Status:        string(t.Status),
-		CreatedAt:     t.CreatedAt.UTC(),
-		UpdatedAt:     t.UpdatedAt.UTC(),
+		Name:                 t.Name,
+		Kind:                 string(t.Kind),
+		Payload:              t.Payload,
+		RecipientID:          t.RecipientID,
+		ScheduleKind:         string(t.ScheduleKind),
+		ScheduleDaily:        t.ScheduleDaily,
+		ScheduleEveryMinutes: t.ScheduleEveryMinutes,
+		NextRunAt:            t.NextRunAt.UTC(),
+		LastError:            t.LastError,
+		Status:               string(t.Status),
+		CreatedAt:            t.CreatedAt.UTC(),
+		UpdatedAt:            t.UpdatedAt.UTC(),
 	}
 	if !t.ScheduleAt.IsZero() {
 		at := t.ScheduleAt.UTC()

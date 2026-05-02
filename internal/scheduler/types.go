@@ -6,10 +6,13 @@
 //                      lint_wiki + rebuild_index + append_log so the
 //                      wiki stays healthy without user intervention.
 //
-// Two schedule kinds:
+// Three schedule kinds:
 //   - at    fires once at an absolute UTC timestamp; status flips to done.
 //   - daily fires every day at HH:MM in the bot's local timezone; the
 //           scheduler reschedules itself after each run.
+//   - every fires every N minutes; the first fire is N minutes from
+//           creation, then continues at that cadence. Covers hourly,
+//           weekly, and custom intervals (every 30/120/10080 minutes).
 //
 // All tasks survive process restarts because state lives in SQLite. The
 // tick loop wakes every TickInterval, picks up rows where status='active'
@@ -34,6 +37,7 @@ type ScheduleKind string
 const (
 	ScheduleAt    ScheduleKind = "at"
 	ScheduleDaily ScheduleKind = "daily"
+	ScheduleEvery ScheduleKind = "every"
 )
 
 // Status enumerates the lifecycle of a task row.
@@ -47,27 +51,29 @@ const (
 )
 
 // Task is the on-disk + in-memory representation of a scheduled job.
-// Exactly one of ScheduleAt / ScheduleDaily is non-zero, matched by
-// ScheduleKind. NextRunAt is what the tick loop actually consults; it's
-// derived from the schedule and updated after each fire.
+// Exactly one of ScheduleAt / ScheduleDaily / ScheduleEveryMinutes is the
+// active field, matched by ScheduleKind. NextRunAt is what the tick loop
+// actually consults; it's derived from the schedule and updated after
+// each fire.
 type Task struct {
-	ID            int64
-	Name          string // unique; bootstrap jobs use this for idempotent UPSERT
-	Kind          TaskKind
-	Payload       string // task-specific body — for reminder, the message text
-	RecipientID   string // Telegram user ID for reminder delivery; empty for system jobs
-	ScheduleKind  ScheduleKind
-	ScheduleAt    time.Time // populated when ScheduleKind == ScheduleAt (UTC)
-	ScheduleDaily string    // populated when ScheduleKind == ScheduleDaily ("HH:MM" local)
-	NextRunAt     time.Time // UTC
-	LastRunAt     time.Time // zero until first fire
-	LastError     string    // set when the dispatcher returns an error
-	Status        Status
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID                   int64
+	Name                 string // unique; bootstrap jobs use this for idempotent UPSERT
+	Kind                 TaskKind
+	Payload              string // task-specific body — for reminder, the message text
+	RecipientID          string // Telegram user ID for reminder delivery; empty for system jobs
+	ScheduleKind         ScheduleKind
+	ScheduleAt           time.Time // populated when ScheduleKind == ScheduleAt (UTC)
+	ScheduleDaily        string    // populated when ScheduleKind == ScheduleDaily ("HH:MM" local)
+	ScheduleEveryMinutes int       // populated when ScheduleKind == ScheduleEvery (minutes between fires)
+	NextRunAt            time.Time // UTC
+	LastRunAt            time.Time // zero until first fire
+	LastError            string    // set when the dispatcher returns an error
+	Status               Status
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // IsRecurring reports whether the task should be rescheduled after firing.
 func (t *Task) IsRecurring() bool {
-	return t.ScheduleKind == ScheduleDaily
+	return t.ScheduleKind == ScheduleDaily || t.ScheduleKind == ScheduleEvery
 }

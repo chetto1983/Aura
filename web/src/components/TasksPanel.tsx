@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, X, Calendar } from 'lucide-react';
+import { Plus, X, Calendar, Trash2 } from 'lucide-react';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import {
   Dialog,
@@ -49,6 +49,24 @@ export function TasksPanel() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`Cancel failed: ${t.name}\n${msg}`, { id });
+    } finally {
+      setBusy(t.name, false);
+    }
+  }, [refetch, setBusy]);
+
+  const handleDelete = useCallback(async (t: Task) => {
+    if (!window.confirm(`Permanently delete task "${t.name}"? This removes the row entirely; cancel keeps the audit trail.`)) {
+      return;
+    }
+    setBusy(t.name, true);
+    const id = toast.loading(`Deleting ${t.name}…`);
+    try {
+      await api.deleteTask(t.name);
+      toast.success(`Deleted ${t.name}`, { id });
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Delete failed: ${t.name}\n${msg}`, { id });
     } finally {
       setBusy(t.name, false);
     }
@@ -135,7 +153,9 @@ export function TasksPanel() {
                       <td className="py-2 px-3 font-mono text-xs">{t.name}</td>
                       <td className="py-2 px-3">{t.kind}</td>
                       <td className="py-2 px-3 text-xs">
-                        {t.schedule_kind === 'daily' ? `daily ${t.schedule_daily}` : t.schedule_at}
+                        {t.schedule_kind === 'daily' && `daily ${t.schedule_daily}`}
+                        {t.schedule_kind === 'every' && `every ${t.schedule_every_minutes}m`}
+                        {t.schedule_kind === 'at' && t.schedule_at}
                       </td>
                       <td className="py-2 px-3">
                         {t.status === 'active'
@@ -150,20 +170,30 @@ export function TasksPanel() {
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        {t.status === 'active' ? (
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {t.status === 'active' && (
+                            <button
+                              type="button"
+                              disabled={busyNames.has(t.name)}
+                              onClick={() => void handleCancel(t)}
+                              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+                              title="Mark cancelled (keeps audit trail)"
+                            >
+                              <X size={12} />
+                              Cancel
+                            </button>
+                          )}
                           <button
                             type="button"
                             disabled={busyNames.has(t.name)}
-                            onClick={() => void handleCancel(t)}
-                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
-                            title="Cancel this task"
+                            onClick={() => void handleDelete(t)}
+                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-wait"
+                            title="Permanently remove the row"
                           >
-                            <X size={12} />
-                            Cancel
+                            <Trash2 size={12} />
+                            Delete
                           </button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -222,9 +252,10 @@ function NewTaskForm({
   const [kind, setKind] = useState<Task['kind']>('wiki_maintenance');
   const [payload, setPayload] = useState('');
   const [recipientId, setRecipientId] = useState('');
-  const [scheduleMode, setScheduleMode] = useState<'at' | 'daily'>('daily');
+  const [scheduleMode, setScheduleMode] = useState<'at' | 'daily' | 'every'>('daily');
   const [at, setAt] = useState('');
   const [daily, setDaily] = useState('03:00');
+  const [everyMinutes, setEveryMinutes] = useState(60);
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -241,8 +272,10 @@ function NewTaskForm({
         if (!isNaN(localDate.getTime())) {
           req.at = localDate.toISOString();
         }
-      } else {
+      } else if (scheduleMode === 'daily') {
         req.daily = daily.trim();
+      } else {
+        req.every_minutes = Math.max(1, Math.floor(everyMinutes));
       }
       await onSubmit(req);
     } finally {
@@ -314,38 +347,68 @@ function NewTaskForm({
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Schedule</legend>
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="schedule"
-                checked={scheduleMode === 'daily'}
-                onChange={() => setScheduleMode('daily')}
-              />
-              Daily
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm ml-4">
-              <input
-                type="radio"
-                name="schedule"
-                checked={scheduleMode === 'at'}
-                onChange={() => setScheduleMode('at')}
-              />
-              Once at
-            </label>
-            {scheduleMode === 'daily' ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="schedule"
+                  checked={scheduleMode === 'daily'}
+                  onChange={() => setScheduleMode('daily')}
+                />
+                Daily at HH:MM
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="schedule"
+                  checked={scheduleMode === 'every'}
+                  onChange={() => setScheduleMode('every')}
+                />
+                Every N minutes
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="schedule"
+                  checked={scheduleMode === 'at'}
+                  onChange={() => setScheduleMode('at')}
+                />
+                Once at
+              </label>
+            </div>
+            {scheduleMode === 'daily' && (
               <input
                 type="time"
                 required
                 value={daily}
                 onChange={(e) => setDaily(e.target.value)}
+                aria-label="Daily HH:MM"
                 className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
               />
-            ) : (
+            )}
+            {scheduleMode === 'every' && (
+              <div className="space-y-1">
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={everyMinutes}
+                  onChange={(e) => setEveryMinutes(parseInt(e.target.value, 10) || 1)}
+                  aria-label="Interval in minutes"
+                  className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Examples: 60 = hourly · 1440 = daily · 10080 = weekly. First fire is N minutes from now.
+                </p>
+              </div>
+            )}
+            {scheduleMode === 'at' && (
               <input
                 type="datetime-local"
                 required
                 value={at}
                 onChange={(e) => setAt(e.target.value)}
+                aria-label="Run at"
                 className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
               />
             )}

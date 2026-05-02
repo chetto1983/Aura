@@ -18,6 +18,8 @@ Aura should feel less like “a bot that replies” and more like “an operator
 - **Composability**: Each capability (LLM, wiki, search, budget tracking, skills, tasks) is modular, so you can enable only what you need.[page:1]
 - **Transparency**: Behavior should be debuggable and observable through logs, health endpoints, and simple configuration.[page:1]
 - **Pragmatism**: Prefer simple, reliable solutions over overly complex architectures. The project should be approachable for contributors.
+- **No hand-edit installs**: A non-developer should be able to install Aura, point it at an LLM, and start chatting in under five minutes — without ever opening `.env` or restarting the bot to change a setting.
+- **Bounded growth**: Anything Aura writes to disk (conversation archive, wiki sources, embed cache, scheduled tasks) must be inspectable and pruneable from the dashboard. Nothing grows unbounded without a visible control.
 
 ## What Aura should feel like
 

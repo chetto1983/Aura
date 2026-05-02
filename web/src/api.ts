@@ -189,6 +189,8 @@ export const api = {
     post<Task>(`/tasks`, req),
   cancelTask: (name: string) =>
     post<Task>(`/tasks/${name}/cancel`),
+  deleteTask: (name: string) =>
+    post<{ ok: boolean; name: string; deleted: boolean }>(`/tasks/${name}/delete`),
 
   // ---- auth (slice 10d) ----
   whoami: () => get<WhoamiResponse>(`/auth/whoami`),
@@ -248,6 +250,19 @@ export const api = {
     get<WikiIssue[]>('/maintenance/issues' + qs({ status, severity })),
   resolveIssue: (id: number) =>
     post<WikiIssue>(`/maintenance/issues/${id}/resolve`),
+
+  // ---- conversation cleanup (slice 14) ----
+  conversationStats: () =>
+    get<{ total_rows: number; oldest_at?: string; newest_at?: string; distinct_chats: number }>(
+      '/conversations/stats',
+    ),
+  cleanupConversations: (sel: { chat_id?: number; older_than_days?: number; all?: boolean }) => {
+    const q: Record<string, string> = {};
+    if (sel.chat_id !== undefined) q.chat_id = String(sel.chat_id);
+    if (sel.older_than_days !== undefined) q.older_than_days = String(sel.older_than_days);
+    if (sel.all) q.all = 'true';
+    return post<{ ok: boolean; deleted: number }>('/conversations/cleanup' + qs(q));
+  },
 
   // ---- runtime settings (slice 14d) ----
   settings: () => get<{ items: SettingItem[] }>(`/settings`),

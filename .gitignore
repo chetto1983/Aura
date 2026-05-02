@@ -41,3 +41,4 @@ skills/.claude/skills/*
 # Coverage artifacts (Q&A session output, not source of truth)
 /cover.out
 /cover.html
+.codex-*

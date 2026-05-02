@@ -18,12 +18,13 @@ import (
 // reminder-from-user-context shortcut. Reminders posted via the API
 // require recipient_id explicitly.
 type UpsertTaskRequest struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	Payload     string `json:"payload,omitempty"`
-	RecipientID string `json:"recipient_id,omitempty"`
-	At          string `json:"at,omitempty"`    // RFC3339 UTC
-	Daily       string `json:"daily,omitempty"` // HH:MM, local TZ
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	Payload      string `json:"payload,omitempty"`
+	RecipientID  string `json:"recipient_id,omitempty"`
+	At           string `json:"at,omitempty"`            // RFC3339 UTC
+	Daily        string `json:"daily,omitempty"`         // HH:MM, local TZ
+	EveryMinutes int    `json:"every_minutes,omitempty"` // interval recurrence (>=1)
 }
 
 func handleTaskUpsert(deps Deps) http.HandlerFunc {
@@ -51,8 +52,19 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "kind must be reminder or wiki_maintenance")
 			return
 		}
-		if (req.At == "") == (req.Daily == "") {
-			writeError(w, deps.Logger, http.StatusBadRequest, "set exactly one of at (RFC3339 UTC) or daily (HH:MM)")
+		// Exactly one of at / daily / every_minutes must be set.
+		populated := 0
+		if req.At != "" {
+			populated++
+		}
+		if req.Daily != "" {
+			populated++
+		}
+		if req.EveryMinutes > 0 {
+			populated++
+		}
+		if populated != 1 {
+			writeError(w, deps.Logger, http.StatusBadRequest, "set exactly one of at (RFC3339 UTC), daily (HH:MM), or every_minutes (>=1)")
 			return
 		}
 		if kind == scheduler.KindReminder && strings.TrimSpace(req.RecipientID) == "" {
@@ -74,7 +86,8 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			Status:      scheduler.StatusActive,
 		}
 
-		if req.At != "" {
+		switch {
+		case req.At != "":
 			ts, err := time.Parse(time.RFC3339, req.At)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, "parse at: "+err.Error())
@@ -88,7 +101,7 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			task.ScheduleKind = scheduler.ScheduleAt
 			task.ScheduleAt = ts
 			task.NextRunAt = ts
-		} else {
+		case req.Daily != "":
 			next, err := scheduler.NextDailyRun(req.Daily, loc, now)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
@@ -97,6 +110,13 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			task.ScheduleKind = scheduler.ScheduleDaily
 			task.ScheduleDaily = req.Daily
 			task.NextRunAt = next
+		default: // EveryMinutes branch — populated > 0 enforced above
+			task.ScheduleKind = scheduler.ScheduleEvery
+			task.ScheduleEveryMinutes = req.EveryMinutes
+			// First fire is one interval from now so the user gets a
+			// predictable "starting in N minutes" feel rather than an
+			// immediate burst.
+			task.NextRunAt = now.Add(time.Duration(req.EveryMinutes) * time.Minute)
 		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -108,6 +128,36 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, taskDTO(saved))
+	}
+}
+
+// handleTaskDelete hard-removes a task row. Cancel preserves audit
+// history; Delete is the user-driven cleanup path for tasks they no
+// longer want surfaced.
+func handleTaskDelete(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !taskNameRe.MatchString(name) {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid task name")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		// Pre-check so a missing row returns 404 instead of silent success.
+		if _, err := deps.Scheduler.GetByName(ctx, name); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, deps.Logger, http.StatusNotFound, "task not found")
+				return
+			}
+			writeError(w, deps.Logger, http.StatusInternalServerError, "lookup failed: "+err.Error())
+			return
+		}
+		if err := deps.Scheduler.Delete(ctx, name); err != nil {
+			deps.Logger.Warn("api: delete task", "name", name, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "delete failed: "+err.Error())
+			return
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"ok": true, "name": name, "deleted": true})
 	}
 }
 

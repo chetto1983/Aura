@@ -145,6 +145,78 @@ func (s *ArchiveStore) MaxTurnIndex(ctx context.Context, chatID int64) (int64, e
 	return maxIdx.Int64, nil
 }
 
+// DeleteByChat removes every turn for chatID. Returns rows affected.
+// Used by the dashboard's "wipe this chat's history" button.
+func (s *ArchiveStore) DeleteByChat(ctx context.Context, chatID int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM conversations WHERE chat_id = ?`, chatID)
+	if err != nil {
+		return 0, fmt.Errorf("conversation delete by chat: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// DeleteOlderThan removes turns whose created_at is strictly older than
+// the cutoff. Used by the dashboard's retention controls and by an
+// optional auto-purge job. Returns rows affected.
+func (s *ArchiveStore) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	// SQLite stores created_at via DEFAULT CURRENT_TIMESTAMP which is UTC
+	// "YYYY-MM-DD HH:MM:SS". Compare against the same format.
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM conversations WHERE created_at < ?`,
+		cutoff.UTC().Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return 0, fmt.Errorf("conversation delete older than: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// DeleteAll empties the conversations table. Used by the dashboard's
+// "wipe everything" button — confirmed via UI, not exposed to the LLM.
+func (s *ArchiveStore) DeleteAll(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM conversations`)
+	if err != nil {
+		return 0, fmt.Errorf("conversation delete all: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// Stats returns row count + DB size estimate for the dashboard.
+type ArchiveStats struct {
+	TotalRows   int64
+	OldestAt    time.Time // zero when TotalRows == 0
+	NewestAt    time.Time
+	DistinctChats int64
+}
+
+// Stats summarizes the conversations table for the dashboard's retention
+// controls. Cheap — three indexed aggregates.
+func (s *ArchiveStore) Stats(ctx context.Context) (ArchiveStats, error) {
+	var stats ArchiveStats
+	var oldest, newest sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*),
+			MIN(created_at),
+			MAX(created_at),
+			(SELECT COUNT(DISTINCT chat_id) FROM conversations)
+		FROM conversations
+	`).Scan(&stats.TotalRows, &oldest, &newest, &stats.DistinctChats)
+	if err != nil {
+		return ArchiveStats{}, fmt.Errorf("conversation stats: %w", err)
+	}
+	if oldest.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", oldest.String); err == nil {
+			stats.OldestAt = t.UTC()
+		}
+	}
+	if newest.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", newest.String); err == nil {
+			stats.NewestAt = t.UTC()
+		}
+	}
+	return stats, nil
+}
+
 // Get returns a single Turn by its primary key, or sql.ErrNoRows if absent.
 func (s *ArchiveStore) Get(ctx context.Context, id int64) (Turn, error) {
 	const q = `

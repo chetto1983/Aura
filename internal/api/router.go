@@ -42,14 +42,16 @@ type SourceStore interface {
 	Update(id string, mutator func(*source.Source) error) (*source.Source, error)
 }
 
-// SchedulerStore is the surface for scheduler.Store. Upsert/Cancel are used
-// only by the write endpoints (POST /tasks, POST /tasks/{name}/cancel); they
-// live in the same interface so Deps wiring stays a single field.
+// SchedulerStore is the surface for scheduler.Store. Upsert/Cancel/Delete
+// are used by the write endpoints (POST /tasks, /tasks/{name}/cancel,
+// /tasks/{name}/delete); they live in the same interface so Deps wiring
+// stays a single field.
 type SchedulerStore interface {
 	List(ctx context.Context, statusFilter scheduler.Status) ([]*scheduler.Task, error)
 	GetByName(ctx context.Context, name string) (*scheduler.Task, error)
 	Upsert(ctx context.Context, t *scheduler.Task) (*scheduler.Task, error)
 	Cancel(ctx context.Context, name string) (bool, error)
+	Delete(ctx context.Context, name string) error
 }
 
 // Deps is the set of stores the router handlers operate on.
@@ -171,6 +173,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))
 	mux.HandleFunc("POST /tasks/{name}/cancel", handleTaskCancel(deps))
+	mux.HandleFunc("POST /tasks/{name}/delete", handleTaskDelete(deps))
 
 	mux.HandleFunc("GET /tasks", handleTaskList(deps))
 	mux.HandleFunc("GET /tasks/{name}", handleTaskGet(deps))
@@ -207,6 +210,9 @@ func NewRouter(deps Deps) http.Handler {
 	// Slice 12c: conversation archive endpoints.
 	mux.HandleFunc("GET /conversations", handleConversationList(deps))
 	mux.HandleFunc("GET /conversations/{id}", handleConversationDetail(deps))
+	// Slice 14: retention controls — stats + scoped cleanup.
+	mux.HandleFunc("GET /conversations/stats", handleConversationStats(deps))
+	mux.HandleFunc("POST /conversations/cleanup", handleConversationCleanup(deps))
 
 	// Slice 12k.1: summaries review queue.
 	mux.HandleFunc("GET /summaries", handleSummariesList(deps))

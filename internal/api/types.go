@@ -153,19 +153,20 @@ type SourceOCR struct {
 
 // Task is the response shape for /tasks endpoints.
 type Task struct {
-	Name          string     `json:"name"`
-	Kind          string     `json:"kind"`
-	Payload       string     `json:"payload,omitempty"`
-	RecipientID   string     `json:"recipient_id,omitempty"`
-	ScheduleKind  string     `json:"schedule_kind"`
-	ScheduleAt    *time.Time `json:"schedule_at,omitempty"`
-	ScheduleDaily string     `json:"schedule_daily,omitempty"`
-	NextRunAt     time.Time  `json:"next_run_at"`
-	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
-	LastError     string     `json:"last_error,omitempty"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	Name                 string     `json:"name"`
+	Kind                 string     `json:"kind"`
+	Payload              string     `json:"payload,omitempty"`
+	RecipientID          string     `json:"recipient_id,omitempty"`
+	ScheduleKind         string     `json:"schedule_kind"`
+	ScheduleAt           *time.Time `json:"schedule_at,omitempty"`
+	ScheduleDaily        string     `json:"schedule_daily,omitempty"`
+	ScheduleEveryMinutes int        `json:"schedule_every_minutes,omitempty"`
+	NextRunAt            time.Time  `json:"next_run_at"`
+	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
+	LastError            string     `json:"last_error,omitempty"`
+	Status               string     `json:"status"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // SkillSummary is one row of GET /skills.

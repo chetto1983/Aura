@@ -116,6 +116,7 @@ export interface UpsertTaskRequest {
   recipient_id?: string;
   at?: string; // RFC3339 UTC
   daily?: string; // HH:MM (bot's local TZ)
+  every_minutes?: number; // recurrence: fires every N minutes (>=1)
 }
 
 export interface WhoamiResponse {
@@ -266,9 +267,10 @@ export interface Task {
   kind: 'reminder' | 'wiki_maintenance';
   payload?: string;
   recipient_id?: string;
-  schedule_kind: 'at' | 'daily';
+  schedule_kind: 'at' | 'daily' | 'every';
   schedule_at?: string;
   schedule_daily?: string;
+  schedule_every_minutes?: number;
   next_run_at: string;
   last_run_at?: string;
   last_error?: string;

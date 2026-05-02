@@ -118,6 +118,29 @@ Most edits take effect on the next conversation turn — no restart. Bootstrap f
 
 You can also click **Test connection** in Settings to validate a new provider before saving.
 
+## Managing scheduled tasks
+
+The **Tasks** sidebar entry lists every scheduled job. Three recurrence modes are supported:
+
+- **Daily at HH:MM** — runs every day at the same local time. Used for the nightly wiki maintenance pass.
+- **Every N minutes** — fires on a fixed interval. Examples: 60 = hourly, 1440 = daily, 10080 = weekly.
+- **Once at** — one-shot reminder at a specific UTC timestamp.
+
+Each row has two cleanup actions:
+
+- **Cancel** marks the row as cancelled but keeps it in the table (audit trail).
+- **Delete** permanently removes the row.
+
+## Managing the conversation archive
+
+The bot archives every Telegram turn to `aura.db` so the dashboard can show history and the summarizer can surface recurring facts. The **Conversations** page shows total row count + oldest entry next to the title and gives you three cleanup buttons:
+
+- **Purge older than…** prompts for a number of days and deletes anything older.
+- **Wipe this chat** appears when you have a `chat_id` filter set; deletes only that chat's history.
+- **Wipe all** drops every archived turn (confirm prompt; can't be undone).
+
+Set `CONV_ARCHIVE_ENABLED=false` in Settings to stop the bot from archiving in the first place — wiki/source memory still works since those are independent.
+
 ---
 
 ## Keeping Aura running

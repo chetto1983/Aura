@@ -71,8 +71,41 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 10e | UI: polish + theme redesign | done | Two waves: **(A) polish** — dark mode default, shadcn `Skeleton` placeholders replace "Loading…" across HealthDashboard / WikiPanel / SourceInbox / TasksPanel; stronger empty-state CTAs (BookText / Calendar icons + helpful copy); ErrorBoundary fires a `sonner.error` toast on top of the inline card; `Shell` component splits desktop sidebar from a mobile slide-over (radix Sheet, < md); global keyboard shortcuts via `useKeyboardShortcuts` (`?` opens help dialog, `g h/w/g/s/t` chord navigation). Backend `/api/health` extended with `process` block (version, git_revision, started_at, uptime_seconds) — git revision read once via `runtime/debug.ReadBuildInfo`. **(B) theme redesign from logo** — palette derived from the new orb logo (deep navy disc, electric cyan-blue arrow A); rewrote light + dark + contrast shadcn token blocks in oklch; ambient aurora radial-gradient on dark/contrast bodies; new inline-SVG `BrandMark` (sidebar) + larger glowing `LoginBrandMark` (login page); active-nav items get a brand glow (`bg-primary/10 ring-primary/20 shadow-[0_0_20px_-8px_var(--primary)]`); cards gain a hover top-stripe gradient + `hover:border-primary/30`. Bundle: 521 KB JS / 161 KB gz, 105 KB CSS / 18 KB gz. |
 | 12a–12u | Phase 12 — Compounding Memory | done | Conversation archive (12a–12c), summarizer pipeline (12d–12f, 12k.1), wiki maintenance (12g–12h, 12l.1), compounding metric (12i, 12m), dashboard routes (12j, 12k, 12l, 12n), Q&A coverage (12o–12r), live E2E checklist + coverage report (12s–12t), Opus 4.7 review (12u). Executed by a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6, 21 atomic commits + 1 lead cleanup + 1 applier hotfix. v0.12.0. |
 | 12u.1–12u.7 | Phase 12 follow-ups (post-review) | done | CR-01 + CR-02 (broken /conversations route, chat_id required) and HR-03/04/05/06/07 (archive drops tool_calls + telemetry, turnMsgIdx staleness silent data loss, OffApplier cost leak, fresh-IssuesStore-per-run, Resolve swallows DB errors). HR-01 (RepairLink partial-commit) + HR-02 (Category lost on review-approve) deferred to v0.12.1. |
+| 14a | Settings store + DB-overrides-env applier | done | `internal/settings` SQLite KV store on `cfg.DBPath`. `ApplyToConfig` overlays DB rows on top of env-loaded config; bootstrap fields (TelegramToken, HTTPPort, DBPath, LogLevel, paths) excluded. Empty DB = identical behavior. 23 unit tests. |
+| 14b+c | First-run setup wizard with provider presets + live probe | done | `internal/setup` package: server-rendered HTML form at `cfg.HTTPPort` (loopback-forced, no auth) when `TELEGRAM_TOKEN` is blank. 8 LLM provider presets, live `/v1/models` probe, Ollama auto-detect via `/api/tags`. On Save: writes `TELEGRAM_TOKEN` to `.env` (atomic temp+rename), LLM_* to settings DB; main.go re-loads cfg without restart. 18 unit tests + 4 Playwright specs. |
+| 14d | Auth'd /settings dashboard page | done | `GET /api/settings` returns 30-key catalog with `value` (effective: DB \| env \| default), `source`, `kind` (text/bool/int/float/enum/url), `is_secret`, `hint`. `POST /api/settings` bulk-upserts; `IsOverridable` rejects bootstrap keys at the API layer. `POST /api/settings/test` reuses the wizard probe. Frontend: grouped form (provider/embeddings/ocr/budget/summarizer/other), bool→toggle switch, enum→select, int/float→number input, url→type=url. Per-row dirty state + revert. 8 backend tests + 6 E2E. |
+| 14d-redesign | 2026 polish (Geist/Linear/Stripe patterns) | done | Small-caps section labels with 0.08em tracking, hairline divider headers, `divide-y` rows, 3px tinted focus halo via `oklch(from var(--primary) ...)`, 13/12.5/11px type ramp. Switch contrast hardened with inline styles after the global `button { background: none; border: none }` reset killed Tailwind utilities. |
+| 14d-followup | SPA code-split | done | App.tsx route elements lazy-loaded. Main bundle 580 KB → 353 KB; each panel 5–12 KB on first navigation. WikiGraphView (189 KB) + WikiPageView (141 KB markdown renderer) only download when their routes are visited. |
+| 14e | Slim .env.example + INSTALL.md rewrite | done | Required env shrunk to TELEGRAM_TOKEN + HTTP_PORT + DB_PATH + 4 paths + LOG_LEVEL. INSTALL.md flows: BotFather → run binary → wizard → /start. |
+| 14.delete | Tasks delete (user "/tasks can not delete task") | done | New `POST /api/tasks/{name}/delete` hard-removes rows; Cancel still flips status to preserve audit trail. Frontend Delete button next to Cancel with `window.confirm`. SchedulerStore interface gained `Delete(ctx, name)`. |
+| 14.recurrence | Recurring tasks (user "can not schedule recurrent task") | done | New `ScheduleEvery` kind + `schedule_every_minutes INTEGER` column with idempotent `ALTER TABLE` migration on existing aura.db files. API accepts `every_minutes` (>=1); validateScheduleFields enforces exclusivity with at/daily; advance-after-fire computes `firedAt + N*time.Minute`. UI: "Every N minutes" radio in NewTaskDialog with hint ("60 = hourly, 1440 = daily, 10080 = weekly"). |
+| 14.cleanup | Conversation archive cleanup (user "db will be full with no control") | done | `ArchiveStore` gained `DeleteByChat`, `DeleteOlderThan`, `DeleteAll`, `Stats`. New endpoints: `GET /api/conversations/stats` (row count + oldest + distinct chats), `POST /api/conversations/cleanup?chat_id=X` / `?older_than_days=N` / `?all=true` with mutually-exclusive validation. Frontend toolbar: stats badge in header, "Purge older than…" prompt, "Wipe this chat" (visible when chat_id filter set), "Wipe all" — all confirm-gated. 6 E2E specs. |
 
 ## Session Log
+
+### 2026-05-02 — Slice 14 (Onboarding overhaul + retention controls)
+
+Replaces the hand-edit-`.env` install path with a first-run wizard, adds a runtime `/settings` page so most config can change without restart, and gives the operator explicit control over scheduled-task lifecycle and conversation-archive growth.
+
+**Atomic commits in order**:
+1. `fdc6f25` 14a — settings store + applier (no behavior change)
+2. `830a17e` 14b+c — first-run wizard with provider presets + live probe
+3. `f2c07ca` 14d — auth'd /settings dashboard page
+4. `485cf51` 14e — slim .env.example + rewrite INSTALL.md
+5. `4913249` 14d-followup — SPA code-split (580 → 353 KB main)
+6. `f1d1fa6` E2E + debug_settings helper
+7. `c964e5b` switch contrast fix + Go embed cache gotcha doc
+8. `6e748f4` 2026 redesign (Geist/Linear/Stripe patterns)
+9. (this commit) — task delete + recurrence (every_minutes) + conversation cleanup + docs
+
+**User-driven follow-ups** (this commit):
+1. `/tasks` had no row deletion — only Cancel which flipped status. Added `POST /api/tasks/{name}/delete` + UI button. Cancel kept for audit trail; Delete is the user-driven cleanup.
+2. `/conversations` archive grew unbounded with no UI control. Added `Stats`, `DeleteByChat`, `DeleteOlderThan`, `DeleteAll` to ArchiveStore. Three confirm-gated buttons in the panel header: "Purge older than…", "Wipe this chat" (visible when chat_id filter active), "Wipe all". Stats badge shows total rows + distinct chats + oldest entry.
+3. Recurring tasks were limited to "daily HH:MM" — couldn't schedule hourly/weekly/custom intervals. Added `ScheduleEvery` kind backed by a new `schedule_every_minutes` column with idempotent migration. UI form gained a third radio with hint copy ("60 = hourly, 1440 = daily, 10080 = weekly").
+
+**Quality gates**: 28 / 28 Playwright specs green (11 dashboard + 6 settings + 11 new tasks/cleanup). 12 new Go API tests, all passing. `go build`, `go vet`, `go test ./...` all clean.
+
+**Docs**: VISION.md picks up two new principles ("No hand-edit installs" + "Bounded growth"). INSTALL.md rewritten around the wizard flow with new sections on managing tasks (3 recurrence modes) and conversation cleanup (3 cleanup buttons).
 
 ### 2026-05-02 — Phase 13 (Telegram bot god-file refactor)
 

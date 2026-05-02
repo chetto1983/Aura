@@ -174,16 +174,26 @@ func (s *Scheduler) advance(task *Task, firedAt time.Time, dispatchErr error) (n
 	}
 
 	if task.IsRecurring() {
-		next, err := NextDailyRun(task.ScheduleDaily, s.loc, firedAt)
-		if err != nil {
-			// Schedule string corrupted on disk — surface and keep the
-			// task active so a future fix doesn't require a manual
-			// re-schedule. Use a far-future next_run so we don't busy-
-			// loop on the bad row.
-			return firedAt.Add(24 * time.Hour), StatusFailed,
-				fmt.Sprintf("compute next_run failed: %v", err)
+		switch task.ScheduleKind {
+		case ScheduleDaily:
+			next, err := NextDailyRun(task.ScheduleDaily, s.loc, firedAt)
+			if err != nil {
+				// Schedule string corrupted on disk — surface and keep
+				// the task active so a future fix doesn't require a
+				// manual re-schedule. Use a far-future next_run so we
+				// don't busy-loop on the bad row.
+				return firedAt.Add(24 * time.Hour), StatusFailed,
+					fmt.Sprintf("compute next_run failed: %v", err)
+			}
+			return next, StatusActive, lastErr
+		case ScheduleEvery:
+			interval := time.Duration(task.ScheduleEveryMinutes) * time.Minute
+			if interval <= 0 {
+				return firedAt.Add(24 * time.Hour), StatusFailed,
+					"compute next_run failed: schedule_every_minutes <= 0"
+			}
+			return firedAt.Add(interval), StatusActive, lastErr
 		}
-		return next, StatusActive, lastErr
 	}
 
 	// at-schedule: one-shot. Mark done (or failed) and freeze next_run

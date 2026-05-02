@@ -70,23 +70,27 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
 `
 
 // schemaSQL bootstraps the scheduled_tasks table and its index. Idempotent;
-// safe to run on every startup.
+// safe to run on every startup. The schedule_every_minutes column is the
+// 14-era addition for arbitrary-interval recurrence (every N minutes —
+// covers hourly, weekly, custom). Older DBs that pre-date the column get
+// the row added by addEveryMinutesColumn during migrate().
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL UNIQUE,
-    kind            TEXT NOT NULL,
-    payload         TEXT NOT NULL DEFAULT '',
-    recipient_id    TEXT NOT NULL DEFAULT '',
-    schedule_kind   TEXT NOT NULL,
-    schedule_at     TEXT,
-    schedule_daily  TEXT,
-    next_run_at     TEXT NOT NULL,
-    last_run_at     TEXT,
-    last_error      TEXT NOT NULL DEFAULT '',
-    status          TEXT NOT NULL DEFAULT 'active',
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                   TEXT NOT NULL UNIQUE,
+    kind                   TEXT NOT NULL,
+    payload                TEXT NOT NULL DEFAULT '',
+    recipient_id           TEXT NOT NULL DEFAULT '',
+    schedule_kind          TEXT NOT NULL,
+    schedule_at            TEXT,
+    schedule_daily         TEXT,
+    schedule_every_minutes INTEGER NOT NULL DEFAULT 0,
+    next_run_at            TEXT NOT NULL,
+    last_run_at            TEXT,
+    last_error             TEXT NOT NULL DEFAULT '',
+    status                 TEXT NOT NULL DEFAULT 'active',
+    created_at             TEXT NOT NULL,
+    updated_at             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
     ON scheduled_tasks(status, next_run_at);
@@ -146,6 +150,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate: %w", err)
 	}
+	if err := addEveryMinutesColumn(s.db); err != nil {
+		return fmt.Errorf("scheduler migrate every_minutes: %w", err)
+	}
 	if err := dropLegacyConversations(s.db); err != nil {
 		return fmt.Errorf("scheduler drop legacy conversations: %w", err)
 	}
@@ -159,6 +166,34 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("scheduler migrate wiki_issues: %w", err)
 	}
 	return nil
+}
+
+// addEveryMinutesColumn back-fills the schedule_every_minutes column on
+// pre-existing aura.db files that were created before slice 14.
+// Idempotent — checks PRAGMA table_info before issuing the ALTER.
+func addEveryMinutesColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(scheduled_tasks)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "schedule_every_minutes" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_every_minutes INTEGER NOT NULL DEFAULT 0`)
+	return err
 }
 
 // dropLegacyConversations removes a pre-Phase-12 `conversations` table that
@@ -222,22 +257,24 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 	const q = `
 		INSERT INTO scheduled_tasks
 			(name, kind, payload, recipient_id, schedule_kind, schedule_at, schedule_daily,
+			 schedule_every_minutes,
 			 next_run_at, last_run_at, last_error, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
-			kind            = excluded.kind,
-			payload         = excluded.payload,
-			recipient_id    = excluded.recipient_id,
-			schedule_kind   = excluded.schedule_kind,
-			schedule_at     = excluded.schedule_at,
-			schedule_daily  = excluded.schedule_daily,
-			next_run_at     = excluded.next_run_at,
-			status          = excluded.status,
-			updated_at      = excluded.updated_at
+			kind                   = excluded.kind,
+			payload                = excluded.payload,
+			recipient_id           = excluded.recipient_id,
+			schedule_kind          = excluded.schedule_kind,
+			schedule_at            = excluded.schedule_at,
+			schedule_daily         = excluded.schedule_daily,
+			schedule_every_minutes = excluded.schedule_every_minutes,
+			next_run_at            = excluded.next_run_at,
+			status                 = excluded.status,
+			updated_at             = excluded.updated_at
 	`
 	if _, err := s.db.ExecContext(ctx, q,
 		t.Name, string(t.Kind), t.Payload, t.RecipientID, string(t.ScheduleKind),
-		scheduleAt, scheduleDaily,
+		scheduleAt, scheduleDaily, t.ScheduleEveryMinutes,
 		t.NextRunAt.UTC().Format(time.RFC3339), lastRunAt, t.LastError,
 		string(t.Status), t.CreatedAt.UTC().Format(time.RFC3339), t.UpdatedAt.UTC().Format(time.RFC3339),
 	); err != nil {
@@ -362,6 +399,11 @@ func (s *Store) Delete(ctx context.Context, name string) error {
 }
 
 // validateScheduleFields enforces the at/daily exclusivity invariant.
+// minEveryMinutes caps interval-recurrence at 1 minute. Tighter bursts
+// would race the tick loop; the bot is happy to run every minute on the
+// nose. Operators can set higher values freely.
+const minEveryMinutes = 1
+
 func validateScheduleFields(t *Task) error {
 	switch t.ScheduleKind {
 	case ScheduleAt:
@@ -371,6 +413,9 @@ func validateScheduleFields(t *Task) error {
 		if t.ScheduleDaily != "" {
 			return errors.New("scheduler: schedule_daily must be empty when ScheduleKind=at")
 		}
+		if t.ScheduleEveryMinutes != 0 {
+			return errors.New("scheduler: schedule_every_minutes must be 0 when ScheduleKind=at")
+		}
 	case ScheduleDaily:
 		if t.ScheduleDaily == "" {
 			return errors.New("scheduler: schedule_daily required when ScheduleKind=daily")
@@ -378,8 +423,21 @@ func validateScheduleFields(t *Task) error {
 		if !t.ScheduleAt.IsZero() {
 			return errors.New("scheduler: schedule_at must be empty when ScheduleKind=daily")
 		}
+		if t.ScheduleEveryMinutes != 0 {
+			return errors.New("scheduler: schedule_every_minutes must be 0 when ScheduleKind=daily")
+		}
 		if _, _, err := ParseDailyTime(t.ScheduleDaily); err != nil {
 			return err
+		}
+	case ScheduleEvery:
+		if t.ScheduleEveryMinutes < minEveryMinutes {
+			return fmt.Errorf("scheduler: schedule_every_minutes must be >= %d when ScheduleKind=every", minEveryMinutes)
+		}
+		if !t.ScheduleAt.IsZero() {
+			return errors.New("scheduler: schedule_at must be empty when ScheduleKind=every")
+		}
+		if t.ScheduleDaily != "" {
+			return errors.New("scheduler: schedule_daily must be empty when ScheduleKind=every")
 		}
 	default:
 		return fmt.Errorf("scheduler: unknown schedule_kind %q", t.ScheduleKind)
@@ -402,7 +460,8 @@ func nullStringFromTask(t *Task) sql.NullString {
 }
 
 const selectColumns = `id, name, kind, payload, recipient_id, schedule_kind,
-	schedule_at, schedule_daily, next_run_at, last_run_at, last_error, status,
+	schedule_at, schedule_daily, schedule_every_minutes,
+	next_run_at, last_run_at, last_error, status,
 	created_at, updated_at`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows so scanTask can
@@ -426,7 +485,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	)
 	if err := r.Scan(
 		&t.ID, &t.Name, &kindRaw, &t.Payload, &t.RecipientID, &scheduleKind,
-		&scheduleAt, &scheduleDaily,
+		&scheduleAt, &scheduleDaily, &t.ScheduleEveryMinutes,
 		&nextRun, &lastRunAt, &t.LastError, &statusRaw,
 		&createdAt, &updatedAt,
 	); err != nil {
