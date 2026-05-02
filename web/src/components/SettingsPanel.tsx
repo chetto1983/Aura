@@ -261,22 +261,52 @@ function Control({
 
   if (kind === 'bool') {
     const on = value === 'true' || value === '1';
+    // index.css has a global `button { background: none; border: none; }`
+    // reset that defeats Tailwind utilities AND any inline borderColor
+    // (because border-style: none stays applied). Set everything via
+    // inline shorthand so all three border sub-properties + background
+    // + box-shadow override the reset cleanly.
+    const trackOn = 'var(--primary, #06b6d4)';
+    const trackOff = '#a1a1aa'; // zinc-400 — readable on both light card AND dark card
+    const borderOn = 'var(--primary, #0891b2)';
+    const borderOff = '#71717a'; // zinc-500
     return (
       <button
         id={item.key}
         type="button"
         role="switch"
-        aria-checked={on ? 'true' : 'false'}
+        aria-checked={on}
+        data-state={on ? 'checked' : 'unchecked'}
         onClick={() => onChange(on ? 'false' : 'true')}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors border ${
-          on ? 'bg-primary border-primary' : 'bg-muted/40 border-border'
-        }`}
         title={on ? 'Click to disable' : 'Click to enable'}
+        style={{
+          height: 24,
+          width: 44,
+          borderRadius: 9999,
+          background: on ? trackOn : trackOff,
+          border: `1px solid ${on ? borderOn : borderOff}`,
+          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.35)',
+          transition: 'background 120ms ease, border-color 120ms ease',
+          position: 'relative',
+          padding: 0,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform ${
-            on ? 'translate-x-6' : 'translate-x-1'
-          }`}
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: 2,
+            left: 2,
+            width: 18,
+            height: 18,
+            borderRadius: 9999,
+            background: '#ffffff',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.18)',
+            transform: `translateX(${on ? 20 : 0}px)`,
+            transition: 'transform 120ms ease',
+          }}
         />
         <span className="sr-only">{on ? 'enabled' : 'disabled'}</span>
       </button>
