@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
-import { LayoutDashboard, BookText, Network, Inbox, Calendar, Sparkles, Plug, ShieldCheck, Sun, Moon, Contrast, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookText, Network, Inbox, Calendar, Sparkles, Plug, ShieldCheck, MessagesSquare, FileCheck, Wrench, Sun, Moon, Contrast, LogOut } from 'lucide-react';
 import { useAppTheme, type AppTheme } from '@/hooks/useAppTheme';
 import { api } from '@/api';
 import { clearToken } from '@/lib/auth';
@@ -15,6 +15,9 @@ const ITEMS = [
   { to: '/skills', label: 'Skills', icon: Sparkles },
   { to: '/mcp', label: 'MCP', icon: Plug },
   { to: '/pending', label: 'Pending', icon: ShieldCheck },
+  { to: '/conversations', label: 'Conversations', icon: MessagesSquare },
+  { to: '/summaries', label: 'Summaries', icon: FileCheck },
+  { to: '/maintenance', label: 'Maintenance', icon: Wrench },
 ];
 
 const THEME_ICON: Record<AppTheme, typeof Sun> = {
