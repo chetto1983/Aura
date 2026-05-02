@@ -417,24 +417,49 @@ func TestSourceOCR_PresentAndMissing(t *testing.T) {
 	}
 }
 
-func TestSourceRaw_PDFOnly(t *testing.T) {
+func TestSourceRaw_PDFAndXLSX(t *testing.T) {
 	e := newTestEnv(t)
 	pdf := e.seedSource([]byte("%PDF-1.4 fake content"), source.KindPDF, "doc.pdf")
+	xlsx := e.seedSource([]byte("PK\x03\x04 fake xlsx zip"), source.KindXLSX, "report.xlsx")
 	txt := e.seedSource([]byte("hello text"), source.KindText, "note.txt")
 
+	// PDF: inline disposition, application/pdf content type.
 	rr := e.do("GET", "/sources/"+pdf.ID+"/raw")
 	if rr.Code != http.StatusOK {
-		t.Fatalf("status %d", rr.Code)
+		t.Fatalf("pdf status %d", rr.Code)
 	}
 	if ct := rr.Header().Get("Content-Type"); ct != "application/pdf" {
-		t.Errorf("content-type = %q, want application/pdf", ct)
+		t.Errorf("pdf content-type = %q, want application/pdf", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "inline;") {
+		t.Errorf("pdf content-disposition = %q, want inline;...", cd)
 	}
 	body, _ := io.ReadAll(rr.Body)
 	if !strings.HasPrefix(string(body), "%PDF") {
 		t.Errorf("body did not stream PDF: %q", string(body[:min(20, len(body))]))
 	}
 
-	// Text source must not expose a raw PDF endpoint.
+	// XLSX: attachment disposition, openxml content type. Slice 15d.
+	rr = e.do("GET", "/sources/"+xlsx.ID+"/raw")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xlsx status %d", rr.Code)
+	}
+	wantCT := "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	if ct := rr.Header().Get("Content-Type"); ct != wantCT {
+		t.Errorf("xlsx content-type = %q, want %q", ct, wantCT)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") {
+		t.Errorf("xlsx content-disposition = %q, want attachment;...", cd)
+	}
+	if !strings.Contains(rr.Header().Get("Content-Disposition"), `report.xlsx`) {
+		t.Errorf("xlsx filename not in content-disposition: %q", rr.Header().Get("Content-Disposition"))
+	}
+	body, _ = io.ReadAll(rr.Body)
+	if !strings.HasPrefix(string(body), "PK") {
+		t.Errorf("body did not stream xlsx zip header: %q", string(body[:min(8, len(body))]))
+	}
+
+	// Text source must not expose a raw endpoint.
 	rr = e.do("GET", "/sources/"+txt.ID+"/raw")
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("text raw status %d, want 404", rr.Code)

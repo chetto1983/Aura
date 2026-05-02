@@ -82,8 +82,36 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 14.cleanup | Conversation archive cleanup (user "db will be full with no control") | done | `ArchiveStore` gained `DeleteByChat`, `DeleteOlderThan`, `DeleteAll`, `Stats`. New endpoints: `GET /api/conversations/stats` (row count + oldest + distinct chats), `POST /api/conversations/cleanup?chat_id=X` / `?older_than_days=N` / `?all=true` with mutually-exclusive validation. Frontend toolbar: stats badge in header, "Purge older than…" prompt, "Wipe this chat" (visible when chat_id filter set), "Wipe all" — all confirm-gated. 6 E2E specs. |
 | 14.5 | Dashboard UX hardening | done | Mobile cards on WikiPanel/SourceInbox/TasksPanel/ConversationsPanel; WikiGraph mobile fallback; 44px touch targets; AA contrast on metadata text; auth-expiry returnTo across query/state/sessionStorage; custom ConfirmModal replaces window.confirm/prompt. New `e2e/confirm-modal.spec.ts`. Closes `docs/dashboard-ux-audit-2026-05-02.md`. |
 | 15a | `create_xlsx` tool + Telegram delivery | done | New `internal/files` pkg with `BuildXLSX` using `xuri/excelize/v2`; formula-injection sanitization (CWE-1236) via leading apostrophe on `=`/`+`/`-`/`@`/`\t`/`\r`. Caps: 16 sheets · 10 000 rows/sheet · 100 cols/row · 200 000 cells · 25 MB serialized · 80-char filename. New `source.KindXLSX` (.xlsx ext). New `tools.CreateXLSXTool` persisting via the existing source store (sha256 dedup → "show me last week's invoice" for free). New `tools.DocumentSender` interface satisfied by `Bot.SendDocumentToUser` (mirrors `SendToUser` pattern from slice 10d's `request_dashboard_token`). Tool wired post-construction in `setup.go`. New `cmd/debug_xlsx` 5-scenario hermetic harness (happy path + injection neutralized + dedup + path-traversal blocked + caps). 19 unit tests (12 xlsx + 7 tool). |
+| 15a-livetest | Telegram E2E smoke for slice 15a | done | Real Telegram bot run with the user. Three real `create_xlsx` calls fired naturally from prompts (no prompt engineering): `expenses.xlsx`, `wiki-pages.xlsx` (LLM chained `list_wiki` then `create_xlsx`), `budget.xlsx`. All persisted with `kind=xlsx`/`status=ingested`/correct openxml mime, 127–400 ms generate, delivered via `tele.Document`. Manifest description was sufficient for tool selection. |
+| 15d | Dashboard download endpoint + button | done | `GET /api/sources/{id}/raw` generalized via a kind→asset table (`rawAssets[Kind] → {filename, contentType, disposition}`); PDFs render `inline`, XLSX forces `attachment`. Adding 15b/15c is one row each — no router change. `validKind` accepts `xlsx`. `SourceSummary` TS kind union extended. `SourceInbox` row gains a Download button (PDF + XLSX); fetch with bearer header → blob URL → trigger download (auth-gated `<a href>` doesn't work because Authorization headers don't tag along on link clicks). Re-OCR / Ingest buttons now hidden for non-PDF kinds — XLSX skips OCR entirely. New router test covers PDF (inline), XLSX (attachment), text (404). |
 
 ## Session Log
+
+### 2026-05-02 — Phase 15 slice 15d (Dashboard download endpoint + button)
+
+Closes the dashboard loop for `KindXLSX` sources from 15a — non-Telegram users (and the operator inspecting past generations) can now download generated workbooks straight from `/sources`. Generalizes `handleSourceRaw` so 15b (`docx`) and 15c (`pdf`) only need to add a `rawAssets[Kind]` row.
+
+**Backend** (`internal/api/sources.go`):
+
+- New `rawAssets` table: `Kind → {filename, contentType, disposition}`. PDFs use `inline` (browsers preview natively); XLSX uses `attachment` (no browser previews .xlsx).
+- `handleSourceRaw` now: lookup record → resolve asset row → 404 if kind has no asset → stream via `http.ServeContent` with the right `Content-Type` + `Content-Disposition`.
+- `validKind` accepts `xlsx` so `GET /sources?kind=xlsx` filtering works.
+
+**Frontend** (`web/src/components/SourceInbox.tsx`, `web/src/types/api.ts`):
+
+- `SourceSummary.kind` union extended to `'pdf' | 'text' | 'url' | 'xlsx'`.
+- `SourceActions` gains a Download button (shown for PDF + XLSX). Re-OCR / Ingest are now gated behind `kind === 'pdf'` so XLSX rows don't expose OCR-only actions that would 4xx.
+- `downloadSource(s)` helper: `fetch('/api/sources/<id>/raw', { Authorization: Bearer ... })` → `Blob` → `URL.createObjectURL` → `<a download>`. The auth-gated endpoint can't be hit via plain `<a href>` (Authorization headers don't ride link clicks).
+
+**Files**:
+
+- `internal/api/sources.go` — generalized raw handler.
+- `internal/api/router_test.go` — `TestSourceRaw_PDFAndXLSX` replaces `TestSourceRaw_PDFOnly`. Asserts content-type + content-disposition + body bytes for both PDF and XLSX, plus 404 for text.
+- `web/src/types/api.ts` — kind union.
+- `web/src/components/SourceInbox.tsx` — Download button, kind-gated actions, `downloadSource` helper.
+- regenerated `internal/api/dist/`.
+
+**Quality gates**: `go build/vet/test ./...` green. `npx tsc --noEmit` clean. `npx vite build` clean (358 KB main / 112 KB gz, no regression). Will live-test the Download path on the next bot run alongside 15b/15c.
 
 ### 2026-05-02 — Phase 15 slice 15a (`create_xlsx` tool + Telegram delivery)
 

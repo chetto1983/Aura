@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Upload, Play, RefreshCcw } from 'lucide-react';
+import { Upload, Play, RefreshCcw, Download } from 'lucide-react';
+import { getToken } from '@/lib/auth';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { ErrorCard } from '@/components/common/ErrorCard';
@@ -286,13 +287,30 @@ function SourceActions({
   onIngest: () => void;
   onReocr: () => void;
 }) {
-  const showIngest = s.status === 'ocr_complete' || s.status === 'failed';
-  const showReocr = s.status === 'stored' || s.status === 'failed';
-  if (!showIngest && !showReocr) {
+  // PDF/XLSX kinds are downloadable via /sources/<id>/raw (slice 15d).
+  // Other kinds (text/url) have no on-disk binary worth downloading.
+  const showDownload = s.kind === 'pdf' || s.kind === 'xlsx';
+  // Re-OCR / Ingest only make sense for OCR-driven kinds (PDFs).
+  // Generated artifacts (xlsx) skip the OCR pipeline entirely.
+  const ocrEligible = s.kind === 'pdf';
+  const showIngest = ocrEligible && (s.status === 'ocr_complete' || s.status === 'failed');
+  const showReocr = ocrEligible && (s.status === 'stored' || s.status === 'failed');
+  if (!showIngest && !showReocr && !showDownload) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
   return (
     <div className="inline-flex flex-wrap justify-end gap-1">
+      {showDownload && (
+        <button
+          type="button"
+          onClick={() => void downloadSource(s)}
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+          title={`Download ${s.filename}`}
+        >
+          <Download size={14} />
+          Download
+        </button>
+      )}
       {showReocr && (
         <button
           type="button"
@@ -319,6 +337,34 @@ function SourceActions({
       )}
     </div>
   );
+}
+
+// downloadSource fetches the binary via /api/sources/<id>/raw with the
+// bearer token header and triggers a browser download. We can't use a
+// plain <a href> because the endpoint is auth-gated and Authorization
+// headers don't tag along on link clicks. Toast surfaces failures so
+// 401s and 404s aren't silent.
+async function downloadSource(s: SourceSummary): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    toast.error('Not signed in.');
+    return;
+  }
+  const res = await fetch(`/api/sources/${encodeURIComponent(s.id)}/raw`, {
+    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    toast.error(`Download failed: ${res.status} ${res.statusText}`);
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = s.filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatUploadSummary(filename: string, res: UploadResponse): string {

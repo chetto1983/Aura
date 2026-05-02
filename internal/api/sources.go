@@ -104,6 +104,30 @@ func handleSourceOCR(deps Deps) http.HandlerFunc {
 	}
 }
 
+// rawAsset maps a source kind to its on-disk filename and download
+// content-type. PDFs render inline (browsers handle them); xlsx forces
+// an attachment because no browser previews .xlsx natively. Kept as a
+// table so adding KindDOCX / KindPDFGen in slices 15b/15c is one row
+// each — no router change.
+type rawAsset struct {
+	filename    string // original.<ext>
+	contentType string
+	disposition string // "inline" or "attachment"
+}
+
+var rawAssets = map[source.Kind]rawAsset{
+	source.KindPDF: {
+		filename:    "original.pdf",
+		contentType: "application/pdf",
+		disposition: "inline",
+	},
+	source.KindXLSX: {
+		filename:    "original.xlsx",
+		contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		disposition: "attachment",
+	},
+}
+
 func handleSourceRaw(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -121,11 +145,12 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
 			return
 		}
-		if rec.Kind != source.KindPDF {
-			writeError(w, deps.Logger, http.StatusNotFound, "raw endpoint only supports PDF sources")
+		asset, ok := rawAssets[rec.Kind]
+		if !ok {
+			writeError(w, deps.Logger, http.StatusNotFound, "raw endpoint not supported for this source kind")
 			return
 		}
-		path := deps.Sources.Path(id, "original.pdf")
+		path := deps.Sources.Path(id, asset.filename)
 		if path == "" {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid source path")
 			return
@@ -133,29 +158,29 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 		f, err := os.Open(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "original.pdf not found")
+				writeError(w, deps.Logger, http.StatusNotFound, asset.filename+" not found")
 				return
 			}
-			deps.Logger.Warn("api: open original.pdf", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read original.pdf")
+			deps.Logger.Warn("api: open raw file", "id", id, "file", asset.filename, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read "+asset.filename)
 			return
 		}
 		defer f.Close()
 		stat, err := f.Stat()
 		if err != nil {
-			deps.Logger.Warn("api: stat original.pdf", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to stat original.pdf")
+			deps.Logger.Warn("api: stat raw file", "id", id, "file", asset.filename, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to stat "+asset.filename)
 			return
 		}
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `inline; filename="`+rec.Filename+`"`)
+		w.Header().Set("Content-Type", asset.contentType)
+		w.Header().Set("Content-Disposition", asset.disposition+`; filename="`+rec.Filename+`"`)
 		http.ServeContent(w, r, rec.Filename, stat.ModTime(), f)
 	}
 }
 
 func validKind(k source.Kind) bool {
 	switch k {
-	case source.KindPDF, source.KindText, source.KindURL:
+	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX:
 		return true
 	}
 	return false
