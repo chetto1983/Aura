@@ -60,13 +60,15 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	page := &wiki.Page{
-		Title:     title,
-		Category:  d.Candidate.Category,
-		Tags:      []string{"auto-added"},
-		Sources:   sources,
-		CreatedAt: now,
-		UpdatedAt: now,
-		Body:      fmt.Sprintf("%s\n\n*Auto-extracted by Aura summarizer.*", d.Candidate.Fact),
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "summarizer_v1",
+		Title:         title,
+		Category:      d.Candidate.Category,
+		Tags:          []string{"auto-added"},
+		Sources:       sources,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Body:          fmt.Sprintf("%s\n\n*Auto-extracted by Aura summarizer.*", d.Candidate.Fact),
 	}
 	if err := a.wiki.WritePage(ctx, page); err != nil {
 		return fmt.Errorf("auto applier new: %w", err)

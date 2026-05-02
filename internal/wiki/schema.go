@@ -11,7 +11,7 @@ import (
 
 const CurrentSchemaVersion = 2
 
-var promptVersionRe = regexp.MustCompile(`^(v[0-9]+|ingest_v[0-9]+)$`)
+var promptVersionRe = regexp.MustCompile(`^(v[0-9]+|ingest_v[0-9]+|summarizer_v[0-9]+)$`)
 var wikiLinkRe = regexp.MustCompile(`\[\[([a-z0-9-]+)\]\]`)
 
 // Page represents a wiki page with YAML frontmatter and markdown body.
@@ -106,7 +106,7 @@ func Validate(page *Page) error {
 	if page.PromptVersion == "" {
 		errs = append(errs, "prompt_version is required")
 	} else if !promptVersionRe.MatchString(page.PromptVersion) {
-		errs = append(errs, "prompt_version must match v{n} or ingest_v{n}")
+		errs = append(errs, "prompt_version must match v{n}, ingest_v{n}, or summarizer_v{n}")
 	}
 
 	if page.CreatedAt == "" {
