@@ -417,11 +417,12 @@ func TestSourceOCR_PresentAndMissing(t *testing.T) {
 	}
 }
 
-func TestSourceRaw_PDFAndXLSXAndDOCX(t *testing.T) {
+func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 	e := newTestEnv(t)
 	pdf := e.seedSource([]byte("%PDF-1.4 fake content"), source.KindPDF, "doc.pdf")
 	xlsx := e.seedSource([]byte("PK\x03\x04 fake xlsx zip"), source.KindXLSX, "report.xlsx")
 	docx := e.seedSource([]byte("PK\x03\x04 fake docx zip"), source.KindDOCX, "memo.docx")
+	pdfgen := e.seedSource([]byte("%PDF-1.4 generated content"), source.KindPDFGen, "invoice.pdf")
 	txt := e.seedSource([]byte("hello text"), source.KindText, "note.txt")
 
 	// PDF: inline disposition, application/pdf content type.
@@ -474,6 +475,22 @@ func TestSourceRaw_PDFAndXLSXAndDOCX(t *testing.T) {
 	}
 	if !strings.Contains(rr.Header().Get("Content-Disposition"), `memo.docx`) {
 		t.Errorf("docx filename not in content-disposition: %q", rr.Header().Get("Content-Disposition"))
+	}
+
+	// Generated PDF (KindPDFGen): inline disposition (browsers can preview),
+	// same application/pdf content type as uploaded PDFs. Slice 15c.
+	rr = e.do("GET", "/sources/"+pdfgen.ID+"/raw")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("pdfgen status %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Errorf("pdfgen content-type = %q, want application/pdf", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "inline;") {
+		t.Errorf("pdfgen content-disposition = %q, want inline;...", cd)
+	}
+	if !strings.Contains(rr.Header().Get("Content-Disposition"), `invoice.pdf`) {
+		t.Errorf("pdfgen filename not in content-disposition: %q", rr.Header().Get("Content-Disposition"))
 	}
 
 	// Text source must not expose a raw endpoint.

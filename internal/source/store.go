@@ -278,13 +278,17 @@ func extForKind(k Kind) string {
 		return ".xlsx"
 	case KindDOCX:
 		return ".docx"
+	case KindPDFGen:
+		// Generated PDFs share the .pdf extension with uploads. The Kind
+		// alone disambiguates; the on-disk file is a real PDF either way.
+		return ".pdf"
 	}
 	return ".bin"
 }
 
 func validatePutInput(in PutInput) error {
 	switch in.Kind {
-	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX:
+	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX, KindPDFGen:
 	default:
 		return fmt.Errorf("source: invalid kind %q", in.Kind)
 	}

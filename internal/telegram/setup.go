@@ -445,6 +445,11 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		toolRegistry.Register(docxTool)
 	}
 
+	// Slice 15c: create_pdf tool. Same wiring as create_xlsx / create_docx.
+	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
+		toolRegistry.Register(pdfTool)
+	}
+
 	b.registerHandlers()
 	return b, nil
 }

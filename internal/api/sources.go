@@ -131,6 +131,15 @@ var rawAssets = map[source.Kind]rawAsset{
 		contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		disposition: "attachment",
 	},
+	// Generated PDFs use the same on-disk filename + browser preview as
+	// uploaded PDFs (the file IS a PDF either way); only the source.Kind
+	// distinguishes them so the OCR pipeline + dashboard actions can
+	// branch correctly elsewhere.
+	source.KindPDFGen: {
+		filename:    "original.pdf",
+		contentType: "application/pdf",
+		disposition: "inline",
+	},
 }
 
 func handleSourceRaw(deps Deps) http.HandlerFunc {
@@ -185,7 +194,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 
 func validKind(k source.Kind) bool {
 	switch k {
-	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX:
+	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX, source.KindPDFGen:
 		return true
 	}
 	return false

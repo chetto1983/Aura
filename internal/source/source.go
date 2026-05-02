@@ -33,6 +33,11 @@ const (
 	// KindDOCX is an Aura-generated Word document (slice 15b). Same
 	// generated-artifact lifecycle as KindXLSX.
 	KindDOCX Kind = "docx"
+	// KindPDFGen is an Aura-generated PDF (slice 15c). Distinct from
+	// KindPDF (which marks user-uploaded PDFs that get OCR'd) so the
+	// LLM never tries to ingest_source a doc that has no ocr.md and so
+	// the dashboard can hide OCR-only actions cleanly.
+	KindPDFGen Kind = "pdf_generated"
 )
 
 // Status tracks where a source is in the OCR/ingest pipeline.

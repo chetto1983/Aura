@@ -319,6 +319,121 @@ func TestCreateDOCXTool_RejectsBlockMissingKind(t *testing.T) {
 	}
 }
 
+func newCreatePDFTest(t *testing.T) (*CreatePDFTool, *stubDocSender, *source.Store) {
+	t.Helper()
+	store, err := source.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("source.NewStore: %v", err)
+	}
+	sender := &stubDocSender{}
+	tool := NewCreatePDFTool(store, sender)
+	if tool == nil {
+		t.Fatal("NewCreatePDFTool returned nil")
+	}
+	return tool, sender, store
+}
+
+func TestCreatePDFTool_HappyPath_DeliversAndPersists(t *testing.T) {
+	tool, sender, store := newCreatePDFTest(t)
+	ctx := WithUserID(context.Background(), "12345")
+	args := map[string]any{
+		"filename": "report",
+		"title":    "Quarterly Report",
+		"blocks": []any{
+			map[string]any{"kind": "paragraph", "text": "Summary follows."},
+			map[string]any{"kind": "heading", "level": 2.0, "text": "Highlights"},
+			map[string]any{"kind": "bullet", "text": "Revenue up"},
+			map[string]any{"kind": "table", "rows": []any{
+				[]any{"month", "revenue"},
+				[]any{"jan", 100.0},
+			}},
+		},
+		"caption": "Q1",
+	}
+	out, err := tool.Execute(ctx, args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["filename"] != "report.pdf" {
+		t.Errorf("filename = %v, want report.pdf", resp["filename"])
+	}
+	if resp["delivered"] != true {
+		t.Errorf("delivered = %v, want true", resp["delivered"])
+	}
+	if len(sender.calls) != 1 {
+		t.Fatalf("sender called %d times, want 1", len(sender.calls))
+	}
+	if sender.calls[0].filename != "report.pdf" || sender.calls[0].caption != "Q1" {
+		t.Errorf("sender call wrong: %+v", sender.calls[0])
+	}
+
+	id := resp["source_id"].(string)
+	rec, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
+	if rec.Kind != source.KindPDFGen {
+		t.Errorf("kind = %q, want pdf_generated", rec.Kind)
+	}
+	if rec.Status != source.StatusIngested {
+		t.Errorf("status = %q, want ingested", rec.Status)
+	}
+}
+
+func TestCreatePDFTool_TitleOnly(t *testing.T) {
+	tool, _, _ := newCreatePDFTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "tiny",
+		"title":    "Just a title",
+		"deliver":  false,
+	}
+	if _, err := tool.Execute(ctx, args); err != nil {
+		t.Errorf("title-only spec should succeed: %v", err)
+	}
+}
+
+func TestCreatePDFTool_RejectsEmpty(t *testing.T) {
+	tool, _, _ := newCreatePDFTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{"filename": "x", "deliver": false}
+	if _, err := tool.Execute(ctx, args); err == nil {
+		t.Error("expected error for empty spec")
+	}
+}
+
+func TestCreatePDFTool_DeliverFalse_PersistsOnly(t *testing.T) {
+	tool, sender, _ := newCreatePDFTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "silent",
+		"title":    "x",
+		"deliver":  false,
+	}
+	if _, err := tool.Execute(ctx, args); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(sender.calls) != 0 {
+		t.Errorf("sender invoked despite deliver=false")
+	}
+}
+
+func TestCreatePDFTool_RejectsBlockMissingKind(t *testing.T) {
+	tool, _, _ := newCreatePDFTest(t)
+	ctx := WithUserID(context.Background(), "1")
+	args := map[string]any{
+		"filename": "x",
+		"blocks":   []any{map[string]any{"text": "no kind"}},
+	}
+	if _, err := tool.Execute(ctx, args); err == nil {
+		t.Error("expected error for block with empty kind")
+	}
+}
+
 func TestStringifyCell(t *testing.T) {
 	cases := []struct {
 		in   any

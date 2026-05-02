@@ -409,6 +409,215 @@ func parseCreateDOCXArgs(args map[string]any) (files.DOCXSpec, bool, string, err
 	return files.DOCXSpec{Filename: filename, Title: title, Blocks: blocks}, deliver, caption, nil
 }
 
+// CreatePDFTool generates a PDF document from a structured spec
+// (title + heading/paragraph/bullet/table blocks), persists it via the
+// source store with sha256 dedup, and optionally ships it via Telegram.
+//
+// PDR §15c: file creation milestone — pdf as third file format. Same
+// block grammar as create_docx so the LLM only has to learn one DSL.
+type CreatePDFTool struct {
+	store  *source.Store
+	sender DocumentSender
+}
+
+// NewCreatePDFTool builds the tool. Same nil-tolerance as
+// NewCreateXLSXTool / NewCreateDOCXTool.
+func NewCreatePDFTool(store *source.Store, sender DocumentSender) *CreatePDFTool {
+	if store == nil {
+		return nil
+	}
+	return &CreatePDFTool{store: store, sender: sender}
+}
+
+func (t *CreatePDFTool) Name() string { return "create_pdf" }
+
+func (t *CreatePDFTool) Description() string {
+	return "Generate a PDF document (.pdf) from structured blocks (heading/paragraph/bullet/table) and persist it as a source. Optionally deliver the file to the user's Telegram chat. Use when the user asks for a printable report, invoice, contract draft, or any document that should be PDF rather than editable Word format."
+}
+
+func (t *CreatePDFTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"filename": map[string]any{
+				"type":        "string",
+				"description": "User-visible filename. .pdf suffix is appended if missing. Path separators are stripped.",
+			},
+			"title": map[string]any{
+				"type":        "string",
+				"description": "Optional H1 rendered at the top of the PDF. Leave empty to start with the first block.",
+			},
+			"blocks": map[string]any{
+				"type":        "array",
+				"description": "Body blocks in order. At least one block (or a non-empty title) is required.",
+				"maxItems":    files.MaxPDFBlocks,
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"kind": map[string]any{
+							"type":        "string",
+							"enum":        []string{"heading", "paragraph", "bullet", "table"},
+							"description": "Block type. Same grammar as create_docx.",
+						},
+						"level": map[string]any{
+							"type":        "integer",
+							"description": "Heading level 1..6 (clamped). Ignored for non-heading kinds.",
+							"minimum":     1,
+							"maximum":     6,
+						},
+						"text": map[string]any{
+							"type":        "string",
+							"description": "Text content for heading/paragraph/bullet. Ignored for table.",
+						},
+						"rows": map[string]any{
+							"type":        "array",
+							"description": "Table rows: array of arrays of strings. Required for kind=table. Cap is 20 cols/row (narrower than docx).",
+							"items": map[string]any{
+								"type":  "array",
+								"items": map[string]any{"type": "string"},
+							},
+						},
+					},
+					"required": []string{"kind"},
+				},
+			},
+			"deliver": map[string]any{
+				"type":        "boolean",
+				"description": "If true (default), also send the generated file to the user's Telegram chat. Set false to persist without delivery.",
+				"default":     true,
+			},
+			"caption": map[string]any{
+				"type":        "string",
+				"description": "Optional one-line caption sent with the document on delivery. Ignored when deliver=false.",
+			},
+		},
+		"required": []string{"filename"},
+	}
+}
+
+func (t *CreatePDFTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	spec, deliver, caption, err := parseCreatePDFArgs(args)
+	if err != nil {
+		return "", err
+	}
+
+	body, name, err := files.BuildPDF(spec)
+	if err != nil {
+		return "", err
+	}
+
+	src, dup, err := t.store.Put(ctx, source.PutInput{
+		Kind:     source.KindPDFGen,
+		Filename: name,
+		MimeType: "application/pdf",
+		Bytes:    body,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create_pdf: persist: %w", err)
+	}
+	if src.Status != source.StatusIngested {
+		updated, err := t.store.Update(src.ID, func(s *source.Source) error {
+			s.Status = source.StatusIngested
+			return nil
+		})
+		if err == nil {
+			src = updated
+		}
+	}
+
+	if deliver {
+		userID := UserIDFromContext(ctx)
+		if userID == "" {
+			return "", errors.New("create_pdf: deliver=true but no user context (call from Telegram or set deliver=false)")
+		}
+		if t.sender == nil {
+			return "", errors.New("create_pdf: deliver=true but no DocumentSender configured")
+		}
+		if err := t.sender.SendDocumentToUser(userID, name, body, caption); err != nil {
+			return "", fmt.Errorf("create_pdf: persisted as %s but delivery failed: %w", src.ID, err)
+		}
+	}
+
+	resp := map[string]any{
+		"source_id":  src.ID,
+		"filename":   name,
+		"size_bytes": src.SizeBytes,
+		"sha256":     src.SHA256,
+		"duplicate":  dup,
+		"delivered":  deliver,
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return "", fmt.Errorf("create_pdf: marshal response: %w", err)
+	}
+	return string(out), nil
+}
+
+// parseCreatePDFArgs mirrors parseCreateDOCXArgs since the PDFSpec block
+// grammar is identical. Kept as a separate function (rather than a
+// shared helper that returns generics) because the spec structs are
+// distinct types per format and Go generics on structs would clutter
+// readability for a 60-line function.
+func parseCreatePDFArgs(args map[string]any) (files.PDFSpec, bool, string, error) {
+	filename, _ := args["filename"].(string)
+	if filename == "" {
+		return files.PDFSpec{}, false, "", errors.New("create_pdf: filename is required")
+	}
+
+	title, _ := args["title"].(string)
+
+	var blocks []files.PDFBlock
+	if raw, ok := args["blocks"].([]any); ok {
+		blocks = make([]files.PDFBlock, 0, len(raw))
+		for i, rb := range raw {
+			obj, ok := rb.(map[string]any)
+			if !ok {
+				return files.PDFSpec{}, false, "", fmt.Errorf("create_pdf: blocks[%d] is not an object", i)
+			}
+			block := files.PDFBlock{}
+			if v, ok := obj["kind"].(string); ok {
+				block.Kind = v
+			}
+			if block.Kind == "" {
+				return files.PDFSpec{}, false, "", fmt.Errorf("create_pdf: blocks[%d].kind is required", i)
+			}
+			if v, ok := obj["text"].(string); ok {
+				block.Text = v
+			}
+			if v, ok := obj["level"].(float64); ok {
+				block.Level = int(v)
+			}
+			if rawRows, ok := obj["rows"].([]any); ok {
+				block.Rows = make([][]string, 0, len(rawRows))
+				for j, rr := range rawRows {
+					rawCells, ok := rr.([]any)
+					if !ok {
+						return files.PDFSpec{}, false, "", fmt.Errorf("create_pdf: blocks[%d].rows[%d] must be an array", i, j)
+					}
+					cells := make([]string, 0, len(rawCells))
+					for _, c := range rawCells {
+						cells = append(cells, stringifyCell(c))
+					}
+					block.Rows = append(block.Rows, cells)
+				}
+			}
+			blocks = append(blocks, block)
+		}
+	}
+
+	if title == "" && len(blocks) == 0 {
+		return files.PDFSpec{}, false, "", errors.New("create_pdf: provide a title, at least one block, or both")
+	}
+
+	deliver := true
+	if v, ok := args["deliver"].(bool); ok {
+		deliver = v
+	}
+	caption, _ := args["caption"].(string)
+
+	return files.PDFSpec{Filename: filename, Title: title, Blocks: blocks}, deliver, caption, nil
+}
+
 // stringifyCell coerces whatever the LLM put in a cell slot to a string.
 // Numbers come through as float64 from encoding/json; we render them
 // without trailing decimal noise for integer values. Booleans render as
