@@ -28,5 +28,8 @@ func NewTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(conversationsSchemaSQL); err != nil {
 		t.Fatalf("NewTestDB migrate conversations: %v", err)
 	}
+	if _, err := db.Exec(proposedUpdatesSchemaSQL); err != nil {
+		t.Fatalf("NewTestDB migrate proposed_updates: %v", err)
+	}
 	return db
 }

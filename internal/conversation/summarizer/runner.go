@@ -34,19 +34,20 @@ type Extraction struct {
 // RunnerConfig holds the operational parameters for the Runner.
 type RunnerConfig struct {
 	Enabled       bool
-	TurnInterval  int // extract every N turns (0 = disabled)
-	LookbackTurns int // how many recent turns to pass to scorer
-	CooldownSecs  int // minimum seconds between extractions per chat (0 = no cooldown)
+	TurnInterval  int     // extract every N turns (0 = disabled)
+	LookbackTurns int     // how many recent turns to pass to scorer
+	CooldownSecs  int     // minimum seconds between extractions per chat (0 = no cooldown)
+	Applier       Applier // nil = log-only (12e behaviour)
 }
 
 // Runner checks after each turn whether a summarization extraction should run
 // and, if so, scores + dedups the last LookbackTurns for the given chat.
-// In slice 12e it only logs decisions; applying them is slice 12f's job.
 type Runner struct {
 	cfg     RunnerConfig
 	archive TurnArchive
 	scorer  ScorerI
 	deduper DeduperI
+	applier Applier // nil → log-only
 	logger  *slog.Logger
 
 	mu        sync.Mutex
@@ -60,6 +61,7 @@ func NewRunner(cfg RunnerConfig, archive TurnArchive, scorer ScorerI, deduper De
 		archive:   archive,
 		scorer:    scorer,
 		deduper:   deduper,
+		applier:   cfg.Applier,
 		logger:    slog.Default(),
 		lastRunAt: make(map[int64]time.Time),
 	}
@@ -130,7 +132,6 @@ func (r *Runner) MaybeExtract(ctx context.Context, chatID int64) (bool, *Extract
 			continue
 		}
 		decisions = append(decisions, dec)
-		// Slice 12e: log only; apply paths land in 12f.
 		r.logger.Info("summarizer decision",
 			"chat_id", chatID,
 			"action", dec.Action,
@@ -139,6 +140,11 @@ func (r *Runner) MaybeExtract(ctx context.Context, chatID int64) (bool, *Extract
 			"similarity", dec.Similarity,
 			"target_slug", dec.TargetSlug,
 		)
+		if r.applier != nil {
+			if err := r.applier.Apply(ctx, dec); err != nil {
+				r.logger.Warn("runner apply failed", "fact", c.Fact, "error", err)
+			}
+		}
 	}
 
 	return true, &Extraction{ChatID: chatID, Decisions: decisions}, nil

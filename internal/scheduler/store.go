@@ -36,6 +36,22 @@ CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversations(chat_id, turn_index);
 CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, created_at);
 `
 
+// proposedUpdatesSchemaSQL creates the proposed_updates table used by the
+// review-mode summarizer applier. Idempotent via IF NOT EXISTS.
+const proposedUpdatesSchemaSQL = `
+CREATE TABLE IF NOT EXISTS proposed_updates (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id         INTEGER NOT NULL,
+  fact            TEXT    NOT NULL,
+  action          TEXT    NOT NULL,
+  target_slug     TEXT    NOT NULL DEFAULT '',
+  similarity      REAL    NOT NULL DEFAULT 0,
+  source_turn_ids TEXT    NOT NULL DEFAULT '',
+  status          TEXT    NOT NULL DEFAULT 'pending',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`
+
 // schemaSQL bootstraps the scheduled_tasks table and its index. Idempotent;
 // safe to run on every startup.
 const schemaSQL = `
@@ -115,6 +131,9 @@ func (s *Store) migrate() error {
 	}
 	if _, err := s.db.Exec(conversationsSchemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate conversations: %w", err)
+	}
+	if _, err := s.db.Exec(proposedUpdatesSchemaSQL); err != nil {
+		return fmt.Errorf("scheduler migrate proposed_updates: %w", err)
 	}
 	return nil
 }

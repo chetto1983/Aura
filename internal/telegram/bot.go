@@ -301,19 +301,35 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}
 	}
 
-	// Slice 12e: summarizer runner. Requires archive and a live LLM client.
-	// Gated on SUMMARIZER_ENABLED; scorer is wired with the same LLM client
-	// used for chat. No search engine at construction time — dedup search
-	// uses the same engine already on Bot; passed nil here means ActionNew
-	// for all decisions (dedup is a no-op until 12f wires the real engine).
+	// Slice 12e/12f: summarizer runner with real deduper + mode-based applier.
 	if cfg.SummarizerEnabled && b.archiveDB != nil && client != nil {
 		sc := summarizer.NewScorer(client, cfg.LLMModel, cfg.SummarizerMinSalience)
-		dd := summarizer.NewDeduper(noopWikiSearcher{}, 0.85, 0.5)
+		// Use real wiki search engine if available, fall back to noop.
+		var ws summarizer.WikiSearcher = noopWikiSearcher{}
+		if searchEngine != nil {
+			ws = searchEngine
+		}
+		dd := summarizer.NewDeduper(ws, 0.85, 0.5)
+		var applier summarizer.Applier
+		switch cfg.SummarizerMode {
+		case "auto":
+			applier = summarizer.NewAutoApplier(wikiStore)
+		case "review":
+			ra, err := summarizer.NewReviewApplier(schedStore.DB())
+			if err != nil {
+				logger.Warn("review applier unavailable", "error", err)
+			} else {
+				applier = ra
+			}
+		default:
+			applier = summarizer.NewOffApplier()
+		}
 		b.summRunner = summarizer.NewRunner(summarizer.RunnerConfig{
 			Enabled:       true,
 			TurnInterval:  cfg.SummarizerTurnInterval,
 			LookbackTurns: cfg.SummarizerLookbackTurns,
 			CooldownSecs:  cfg.SummarizerCooldownSeconds,
+			Applier:       applier,
 		}, b.archiveDB, sc, dd)
 	}
 
