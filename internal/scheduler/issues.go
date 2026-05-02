@@ -78,6 +78,21 @@ func (s *IssuesStore) List(ctx context.Context, status string) ([]Issue, error) 
 	return out, rows.Err()
 }
 
+// Get returns a single issue by ID, or ErrIssueNotFound.
+func (s *IssuesStore) Get(ctx context.Context, id int64) (Issue, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, kind, severity, slug, broken_link, message, status, created_at, resolved_at
+		 FROM wiki_issues WHERE id = ?`, id)
+	issue, err := scanIssue(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Issue{}, ErrIssueNotFound
+		}
+		return Issue{}, fmt.Errorf("issues get: %w", err)
+	}
+	return issue, nil
+}
+
 // Resolve marks an issue as resolved. Returns ErrIssueNotFound if no such row.
 func (s *IssuesStore) Resolve(ctx context.Context, id int64) error {
 	now := time.Now().UTC().Format(time.RFC3339)

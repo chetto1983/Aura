@@ -436,6 +436,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		// Slice 12k.1: summaries review queue.
 		Summaries:     summarizer.NewSummariesStore(schedStore.DB()),
 		SummariesWiki: wikiStore,
+		// Slice 12l.1: wiki maintenance issue queue.
+		Issues: scheduler.NewIssuesStore(schedStore.DB()),
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

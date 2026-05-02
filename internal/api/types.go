@@ -250,6 +250,19 @@ type ConversationTurn struct {
 	CreatedAt      string `json:"created_at"`
 }
 
+// WikiIssue is one row of GET /maintenance/issues (mirrors wiki_issues table).
+type WikiIssue struct {
+	ID         int64  `json:"id"`
+	Kind       string `json:"kind"`
+	Severity   string `json:"severity"`
+	Slug       string `json:"slug,omitempty"`
+	BrokenLink string `json:"broken_link,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	ResolvedAt string `json:"resolved_at,omitempty"`
+}
+
 // ProposedUpdate is one row of GET /summaries (mirrors proposed_updates table).
 type ProposedUpdate struct {
 	ID            int64   `json:"id"`

@@ -115,6 +115,10 @@ type Deps struct {
 	// decisions; when nil, approve still flips status but skips wiki mutation.
 	Summaries     *summarizer.SummariesStore
 	SummariesWiki summarizer.WikiWriter
+
+	// Slice 12l.1: wiki maintenance issue queue. Optional — when nil, list
+	// returns empty array and resolve returns 404.
+	Issues *scheduler.IssuesStore
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -201,6 +205,10 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /summaries", handleSummariesList(deps))
 	mux.HandleFunc("POST /summaries/{id}/approve", handleSummariesApprove(deps))
 	mux.HandleFunc("POST /summaries/{id}/reject", handleSummariesReject(deps))
+
+	// Slice 12l.1: wiki maintenance issue queue.
+	mux.HandleFunc("GET /maintenance/issues", handleMaintenanceList(deps))
+	mux.HandleFunc("POST /maintenance/issues/{id}/resolve", handleMaintenanceResolve(deps))
 
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)
