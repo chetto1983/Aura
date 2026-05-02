@@ -1,7 +1,9 @@
 # Picobot Tools Audit for Aura
 
-Date: 2026-04-29  
+Date: 2026-04-29
 Reference path: `D:\tmp\picobot\internal\agent\tools`
+
+> **STATUS — 2026-05-02: DECISIONS APPLIED.** All P0/P1 tools have shipped (source/wiki/scheduler/web). MCP adapter shipped in slice 11a; skills install/delete shipped in slice 11c (admin-gated). Picobot patterns adopted across the codebase: tool registry, parallel tool execution (slice 11l), prompt overlay files (slice 11q), history cap (slice 11k), speculative search (slice 11p). Deferred surfaces (filesystem/exec/spawn) remain intentionally absent. This document is preserved as the original audit + decision record. Current tool registry lives in [`internal/tools/`](../internal/tools/) and is reflected in [`prd.md`](../prd.md) §4.5.
 
 ## Summary
 

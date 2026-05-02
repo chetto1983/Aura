@@ -1,222 +1,274 @@
 # PRD: Aura — Personal AI Agent with Compounding Memory
 
+**Version:** 4.0
+**Date:** 2026-05-02
+**Status:** reflects shipped state through slice 11u (Phase 11 complete; cross-platform binaries via GoReleaser).
+
 ## Introduction
 
-Aura is a local-first personal AI agent that accumulates knowledge over time through a structured wiki maintained by the model. Unlike traditional chatbots, Aura is built as a deterministic, observable, and secure system with strong emphasis on runtime reliability, cost control, execution safety, and incremental memory evolution.
+Aura è un agente AI personale local-first accessibile via Telegram. Accumula conoscenza in una **wiki markdown maintained-by-the-LLM** (frontmatter + `[[wiki-links]]`) e si estende con tool agentici discreti: source/PDF ingestion via Mistral OCR, web search/fetch, scheduler persistito, skills (Anthropic format + skills.sh catalog), MCP servers (stdio + HTTP). Una **dashboard web embedded** offre osservabilità e write actions, gateway dietro bearer-token emessi via Telegram.
 
-This PRD covers all four phases of Aura's development: core bot + wiki, deterministic memory, skill sandbox, and optional multi-agent capabilities. Version 3.0 simplifies the architecture from earlier versions, eliminating premature complexity and prioritizing determinism and testability.
+Rispetto alla v3.0 questa PRD documenta lo stato realmente in produzione: SQLite invece di PostgreSQL, OpenAI-compat HTTP come client primario, dashboard React embedded nel binario, streaming Telegram con markdown→HTML, /start approval queue, embedding cache.
 
 ## Goals
 
-- Provide a reliable personal AI agent accessible via Telegram
-- Accumulate and retrieve knowledge through a structured wiki that compounds over time
-- Ensure deterministic behavior (temperature=0, versioned prompts and schemas)
-- Maintain strict cost control with token tracking and budget enforcement
-- Enable safe execution of skills with trust levels and resource constraints
-- Keep the system predictable, controllable, and debuggable at all times
+- Agente AI personale affidabile via Telegram con tool calling agentico.
+- Memoria compounding via wiki markdown maintained-by-LLM, versionata in Git.
+- Ingestione automatica di PDF in source store + wiki via Mistral OCR.
+- Determinismo per scritture wiki (temperature=0, prompt/schema versioning).
+- Cost control con token tracking, budget soft/hard.
+- Dashboard web per osservabilità e azioni di amministrazione.
+- Estensione tramite skills (Anthropic format) e MCP servers, sempre opt-in.
+- Latenza percepita bassa: streaming + progressive Telegram edit + cache + parallelism.
 
 ## User Stories
 
-### US-001: Start a conversation via Telegram
-**Description:** As a user, I want to send a message to Aura on Telegram so that I can interact with my personal AI agent.
+### US-001: Conversazione via Telegram con tool calling
+**Description:** Come utente, mando messaggi al bot Telegram e ricevo risposte usando tool che il modello sceglie automaticamente.
 
 **Acceptance Criteria:**
-- [ ] Telegram bot receives messages from allowlisted users
-- [ ] Bot ignores messages from non-allowlisted users
-- [ ] Each conversation runs in its own goroutine
-- [ ] Bot sends a confirmation when a conversation starts
-- [ ] Typecheck/lint passes
+- [x] Bot riceve solo da utenti allowlistati (env + `allowed_users` SQLite).
+- [x] /start sconosciuto → `pending_users` queue con notifica fan-out agli owner.
+- [x] Una goroutine per conversazione.
+- [x] Tool calls indipendenti nello stesso turn eseguite in parallelo.
+- [x] Streaming LLM con progressive Telegram edit (placeholder a 30 char, edit ogni 800 ms).
+- [x] Markdown LLM convertito al subset HTML supportato da Telegram.
 
-### US-002: Exchange messages with the LLM
-**Description:** As a user, I want to send messages and receive AI responses so that I can get answers and assistance.
-
-**Acceptance Criteria:**
-- [ ] Messages are forwarded to the LLM client and responses returned to the user
-- [ ] Streaming responses are supported via token channel
-- [ ] Retry with exponential backoff on LLM failure (max 5 retries)
-- [ ] Context window managed with rolling summarization at 80% threshold
-- [ ] Typecheck/lint passes
-
-### US-003: Store and retrieve wiki knowledge
-**Description:** As a user, I want Aura to remember information across conversations so that knowledge compounds over time.
+### US-002: Memoria wiki compounding
+**Description:** Come utente, voglio che Aura ricordi e colleghi conoscenza tra conversazioni in una wiki ispezionabile.
 
 **Acceptance Criteria:**
-- [ ] LLM output is parsed as YAML and validated against SCHEMA.md before writing
-- [ ] Invalid wiki writes trigger a retry with schema error feedback
-- [ ] Wiki files are stored under /wiki with atomic write (temp + rename)
-- [ ] File-level mutex prevents concurrent write corruption
-- [ ] Wiki changes are tracked via Git
-- [ ] Typecheck/lint passes
+- [x] Wiki in markdown con frontmatter YAML (`schema_version`, `prompt_version`, `category`, `related`, `sources`).
+- [x] Link `[[slug]]` parsati in `ExtractWikiLinks`.
+- [x] `index.md` auto-generato per categoria, `log.md` append-only audit.
+- [x] Schema validation prima di scrivere; retry con feedback.
+- [x] Atomic write (temp + rename) + Git versioning.
+- [x] File-level mutex contro corruzione.
 
-### US-004: Search wiki with vector search
-**Description:** As a user, I want Aura to search my wiki semantically so that relevant knowledge is surfaced in conversations.
-
-**Acceptance Criteria:**
-- [ ] Vector search returns relevant wiki pages based on query
-- [ ] chromem-go is the primary search engine
-- [ ] pgvector serves as scalable fallback when configured
-- [ ] Search results are injected into conversation context
-- [ ] Typecheck/lint passes
-
-### US-005: Manage conversation context
-**Description:** As the system, I need to manage conversation context so that token limits are respected and costs stay within budget.
+### US-003: Ingestione PDF via OCR
+**Description:** Come utente, carico un PDF su Telegram e Aura lo OCR-izza, lo conserva come source, e lo ingerisce nella wiki.
 
 **Acceptance Criteria:**
-- [ ] Active context, rolling summary, and transcript are maintained per conversation
-- [ ] MAX_CONTEXT_TOKENS limit is enforced
-- [ ] Summarization triggers at 80% of context window
-- [ ] Token usage tracked per conversation and globally
-- [ ] Soft and hard budget limits are enforced
-- [ ] Typecheck/lint passes
+- [x] Validazione MIME/size contro `OCR_MAX_FILE_MB`.
+- [x] Bounded concurrency (2 OCR simultanee).
+- [x] Single-message progress UX (initial → edit a ogni step → finale ✅/❌).
+- [x] Sha256 dedup; layout `wiki/raw/src_<id>/{original.pdf, source.json, ocr.md, ocr.json}`.
+- [x] Mistral OCR (`/v1/ocr`) con `table_format`, `extract_header`, `extract_footer`.
+- [x] Auto-ingest via `AfterOCRHook` — produce source summary page con `[[wiki-link]]`.
+- [x] Catch-up tool `ingest_source` per source pre-hook.
+- [x] Browser upload via dashboard `POST /api/sources/upload` (stesso pipeline).
 
-### US-006: Predict and control costs
-**Description:** As a user, I want cost controls so that I don't exceed my budget on LLM calls.
-
-**Acceptance Criteria:**
-- [ ] Cost prediction calculated as context + expected_output before each call
-- [ ] Soft budget triggers a warning notification
-- [ ] Hard budget halts LLM calls and notifies user
-- [ ] Token usage visible via /status endpoint
-- [ ] Typecheck/lint passes
-
-### US-007: Execute skills in a sandbox
-**Description:** As a user, I want Aura to execute skills/tools safely so that untrusted code cannot compromise my system.
+### US-004: Search wiki ibrido
+**Description:** Come sistema, voglio combinare vector search e FTS sulla wiki.
 
 **Acceptance Criteria:**
-- [ ] Skills are classified by trust level: local, verified, untrusted
-- [ ] Untrusted skills run with no network access by default
-- [ ] All skills have timeout, CPU limit, and memory limit constraints
-- [ ] Skill execution uses os/exec (containerd optional for advanced isolation)
-- [ ] Typecheck/lint passes
+- [x] Primary: chromem-go (vector) con embedding Mistral.
+- [x] Mirror: SQLite FTS per fallback testuale.
+- [x] **Embedding cache** SHA-keyed in SQLite — warm restart skippa Mistral round-trip.
+- [x] **Concurrent indexing** con `coll.AddDocuments` (`indexConcurrency=4`).
+- [x] **Speculative retrieval** (slice 11p): `search_wiki` chiamato prima del primo LLM call.
+- [x] Cache stats (`hits`/`misses`) esposti su `/api/health`.
 
-### US-008: Validate wiki schema deterministically
-**Description:** As the system, I want deterministic wiki writes so that memory evolution is predictable and debuggable.
-
-**Acceptance Criteria:**
-- [ ] LLM runs with temperature=0 for wiki operations
-- [ ] Prompt versioning tracks which prompt generated each wiki page
-- [ ] Schema versioning tracks wiki page format versions
-- [ ] Each wiki page includes metadata: schema_version and prompt_version
-- [ ] Snapshot tests validate deterministic output for fixed inputs
-- [ ] Typecheck/lint passes
-
-### US-009: Fall back to alternative LLM providers
-**Description:** As a user, I want Aura to work even if my primary LLM provider is unavailable.
+### US-005: Scheduler persistito
+**Description:** Come utente, voglio che Aura mi ricordi cose e mantenga job di manutenzione anche dopo restart.
 
 **Acceptance Criteria:**
-- [ ] MCP Client is the primary LLM interface
-- [ ] OpenAI-compatible HTTP client serves as fallback
-- [ ] Ollama client enables offline mode
-- [ ] Failover between providers is automatic and transparent
-- [ ] Typecheck/lint passes
+- [x] SQLite `scheduled_tasks` table.
+- [x] Kinds: `reminder`, `wiki_maintenance`.
+- [x] Schedule: `at` (one-shot), `daily HH:MM`, `in <duration>`, `at_local HH:MM`.
+- [x] Goroutine autonoma con bootstrap nightly 03:00.
+- [x] Tools: `schedule_task`, `list_tasks`, `cancel_task`.
+- [x] Runtime time context iniettato nel system prompt.
+- [x] Dashboard `/tasks` con New / Cancel.
 
-### US-010: Monitor system health and observability
-**Description:** As a user, I want to monitor Aura's health and resource usage so that I can debug issues.
+### US-006: Cost control
+**Description:** Come utente voglio limiti di budget per non sforare.
 
 **Acceptance Criteria:**
-- [ ] /status endpoint returns system health
-- [ ] Structured logs via zap
-- [ ] OpenTelemetry traces for LLM calls and tool executions
-- [ ] No secrets appear in logs
-- [ ] Typecheck/lint passes
+- [x] Token tracking per conversazione + globale.
+- [x] Cost prediction prima di ogni LLM call.
+- [x] Soft budget → warning. Hard budget → halt.
+- [x] Per-turn telemetry: `elapsed_ms`, `llm_calls`, `tool_calls`.
+- [x] Embedding cache hit-rate visibile su dashboard.
+
+### US-007: Skills system
+**Description:** Come utente, voglio attivare skills (Anthropic format) con progressive disclosure.
+
+**Acceptance Criteria:**
+- [x] Loader multi-root: `SKILLS_PATH` + `.claude/skills`.
+- [x] Manifest `- **name** — description` nel system prompt; body fetched on-demand via `read_skill`.
+- [x] Loader memoizzato 1s.
+- [x] Catalog browse via skills.sh; install/delete dietro `SKILLS_ADMIN=true`.
+- [x] Install: `npx skills add` con env sanitizzato (drop secrets), 90s timeout.
+- [x] Delete: containment + symlink refusal.
+- [x] Dashboard `/skills` con Local + Catalog tabs.
+
+### US-008: MCP integration
+**Description:** Come utente, voglio collegare MCP server e usare i loro tool.
+
+**Acceptance Criteria:**
+- [x] Stdio + Streamable-HTTP transports.
+- [x] JSON-RPC 2.0; init flow: `initialize` → `tools/list` → `tools/call`.
+- [x] Config via `mcp.json` (gitignored runtime, `mcp.example.json` tracked).
+- [x] Boot non-fatale; failure di server → warning.
+- [x] Tools registrati come `mcp_<server>_<tool>` nel registry standard.
+- [x] Dashboard `/mcp` con per-tool Run + JSON form auto-seedato dallo schema.
+- [x] `POST /api/mcp/{server}/tools/{tool}` con 60s timeout, 64 KiB body/output cap.
+
+### US-009: Dashboard con bearer auth
+**Description:** Come utente, voglio una dashboard web sicura per ispezionare e amministrare Aura.
+
+**Acceptance Criteria:**
+- [x] React 19 + Vite, embedded nel binario via `//go:embed all:dist`.
+- [x] Bearer token in header; storage hashed (SHA-256) in `api_tokens`.
+- [x] Token emessi via tool `request_dashboard_token` → consegna out-of-band via Telegram.
+- [x] Sign-out + 401 redirect con `?expired=1`.
+- [x] Tema light/dark/contrast con palette derivata dal logo.
+- [x] Mobile drawer, keyboard chord shortcuts (`g h/w/g/s/t/k/m`), help (`?`).
+- [x] Routes: health / wiki / wiki graph / sources / tasks / skills / mcp / pending.
+
+### US-010: Pending /start approval
+**Description:** Come owner, voglio approvare manualmente nuovi utenti che fanno /start dopo bootstrap.
+
+**Acceptance Criteria:**
+- [x] Unknown /start → `pending_users` + Telegram fan-out a tutti gli owner.
+- [x] Dashboard `/pending` polled ogni 8s con Approve/Deny.
+- [x] Approve mint un fresh token e lo invia via Telegram out-of-band.
+- [x] Spam `/start` non re-pinga gli owner finché la richiesta è pending.
+- [x] TOFU bootstrap conservato per il primo /start su install vergine.
+
+### US-011: Cross-platform deployment
+**Description:** Come utente, voglio binari pronti per Linux/macOS/Windows.
+
+**Acceptance Criteria:**
+- [x] GoReleaser config per linux/darwin/windows × amd64/arm64.
+- [x] Tray icon Windows con "Open Dashboard" + Quit.
+- [x] Tray no-op su altre piattaforme (`tray_other.go`).
+- [x] Single binary embed dashboard.
+- [x] `cmd/aura` carica `.env` esplicitamente al boot.
+
+### US-012: Prompt overlay files
+**Description:** Come utente, voglio tunare personality / norme / fatti utente / tool guidance senza recompile.
+
+**Acceptance Criteria:**
+- [x] `PROMPT_OVERLAY_PATH` (default `.`) scansionato ogni turn.
+- [x] File opzionali: `SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`.
+- [x] Cambi raccolti al turn successivo, no restart.
 
 ## Functional Requirements
 
-- FR-1: Telegram bot interface using telebot.v4 with allowlist-based access control
-- FR-2: Orchestrator manages conversations sequentially (1 goroutine = 1 conversation, no DAG engine)
-- FR-3: LLM client layer with interface supporting Send and Stream operations
-- FR-4: Three LLM implementations: MCP Client (primary), OpenAI-compatible HTTP (fallback), Ollama (offline)
-- FR-5: Wiki system with file system storage, Git versioning, atomic writes, and file-level mutex
-- FR-6: Wiki schema validation: LLM output → Parse YAML → Validate → Write or Retry
-- FR-7: Deterministic mode for wiki operations: temperature=0, prompt versioning, schema versioning
-- FR-8: Vector search via chromem-go (primary) with pgvector fallback
-- FR-9: PostgreSQL database using pgx driver with golang-migrate for migrations
-- FR-10: Conversation context management with active context, rolling summary, and transcript
-- FR-11: Context window enforcement: MAX_CONTEXT_TOKENS with 80% summarization threshold
-- FR-12: Token tracking per conversation and globally with cost prediction before each call
-- FR-13: Budget enforcement with soft (warning) and hard (halt) levels
-- FR-14: Skill system with three trust levels: local, verified, untrusted
-- FR-15: Skill execution constraints: no network (default), timeout, CPU limit, memory limit
-- FR-16: HTTP server using chi router for /status and observability endpoints
-- FR-17: Structured logging via zap with no secrets in log output
-- FR-18: OpenTelemetry integration for distributed tracing
-- FR-19: Configuration via envconfig
-- FR-20: Docker deployment with multi-stage Alpine build, Linux-only target
+- FR-1: Telegram bot con allowlist (env + `allowed_users` SQLite) e /start approval queue.
+- FR-2: Orchestrator sequenziale (1 goroutine per conversazione), no DAG.
+- FR-3: LLM client interface con `Send` + `Stream`; OpenAI-compatible HTTP primary, Ollama fallback.
+- FR-4: Tool registry con execution parallela per tool indipendenti nello stesso turn.
+- FR-5: Wiki MD + frontmatter, `[[links]]`, `index.md`, `log.md`, schema validation, atomic write, Git versioning.
+- FR-6: Source store con sha256 dedup e per-id mutex.
+- FR-7: Mistral OCR client con base64 PDF, render in `ocr.md` PDR §4.
+- FR-8: Ingestion pipeline LLM-driven con auto-trigger via `AfterOCR`.
+- FR-9: Embedding via Mistral con SHA-keyed cache in SQLite.
+- FR-10: Scheduler SQLite-backed con kinds `reminder` / `wiki_maintenance`.
+- FR-11: Skills loader multi-root con progressive disclosure manifest e cache 1s.
+- FR-12: MCP client stdio + HTTP, tools come `mcp_<server>_<tool>`.
+- FR-13: Web dashboard React 19 embedded, bearer auth, write actions gated.
+- FR-14: Streaming Telegram con progressive edit (30 char threshold, 800 ms rate).
+- FR-15: Markdown → HTML renderer per Telegram (subset b/i/s/u/code/pre/a/blockquote).
+- FR-16: Token tracking + budget enforcement (soft warning, hard halt).
+- FR-17: Per-turn telemetry: `elapsed_ms`, `llm_calls`, `tool_calls`.
+- FR-18: Conversation history cap a `MAX_HISTORY_MESSAGES` (Picobot pattern).
+- FR-19: Speculative `search_wiki` prima del primo LLM call.
+- FR-20: Prompt overlay files letti ogni turn da `PROMPT_OVERLAY_PATH`.
+- FR-21: Tray icon Windows con "Open Dashboard"; no-op altrove.
+- FR-22: GoReleaser cross-platform binaries.
 
 ## Non-Goals
 
-- No distributed orchestration or DAG engine
-- No automatic priority assignment or notifications for wiki pages
-- No multi-agent coordination (Phase 4 is optional and out of scope for initial delivery)
-- No mobile or web UI — Telegram is the sole interface
-- No real-time collaboration features
-- No cloud-hosted wiki — local-first, file system only
-- No custom LLM training or fine-tuning
+- No DAG engine o orchestrazione distribuita.
+- No multi-agent coordination.
+- No fine-tuning o training custom.
+- No collaborazione real-time multi-utente.
+- No cloud-hosted wiki (local-first only).
+- No Postgres (rimosso a favore di SQLite per persistence runtime).
+- No mobile app nativa — dashboard web responsive copre il caso.
 
 ## Design Considerations
 
-- **Telegram-first interface:** All user interaction flows through Telegram using telebot.v4 with inline keyboard support
-- **Local-first architecture:** Wiki stored on file system with Git versioning; no cloud dependency for core functionality
-- **Deterministic memory:** Wiki writes use temperature=0 with versioned prompts and schemas to ensure reproducibility
-- **Graceful degradation:** Multiple LLM providers allow fallback; offline mode via Ollama
-- **Security by default:** Skills run with no network access unless explicitly trusted; Telegram allowlist gates access
+- **Telegram-first ma non-only**: dashboard web è first-class, non secondaria.
+- **Local-first**: file system + SQLite + Git; nessuna dipendenza cloud per il core.
+- **Determinismo wiki**: temperature=0 + prompt/schema versioning su scritture.
+- **Progressive disclosure**: skills/MCP/sources caricano in contesto solo quando il modello li chiede; manifest in system prompt resta tight.
+- **Streaming-first UX**: progressive edit Telegram + spinner/skeleton dashboard.
+- **Picobot patterns**: history cap, tool registry, prompt overlay files, parallel tool calls.
+- **Sicurezza by default**: bearer auth dashboard, MCP/skills opt-in, admin gates su install/delete, no secrets nei log o nei tool args visibili.
 
 ## Technical Considerations
 
-- **Language:** Go — chosen for concurrency model (goroutines per conversation) and single-binary deployment
-- **No framework dependencies for orchestration:** Custom orchestrator eliminates vendor lock-in and complexity
-- **Database:** PostgreSQL with pgx driver; migrations via golang-migrate
-- **Vector search:** chromem-go for local-first; pgvector for scalable deployment
-- **Wiki storage:** File system + Git (go-git/go-git/v5) with atomic writes (temp + rename pattern)
-- **Schema validation:** go-playground/validator + gopkg.in/yaml.v3
-- **Containerization:** Multi-stage Docker build targeting Alpine Linux
-- **Retry strategy:** Exponential backoff, max 5 retries for LLM calls
-- **Config:** envconfig for environment-based configuration
+- **Language**: Go (single binary, goroutine-per-conversation).
+- **HTTP server**: chi router.
+- **Telegram**: telebot.v4.
+- **DB**: SQLite via `database/sql` (no CGO requirement per chromem-go).
+- **Vector search**: chromem-go con embedding Mistral + SHA cache.
+- **OCR**: Mistral Document AI (`/v1/ocr`).
+- **Wiki Git**: `go-git/go-git/v5`.
+- **MCP**: implementazione custom Picobot-port.
+- **Frontend**: React 19 + Vite + react-router-dom v7 + shadcn/ui + Tailwind, build embedded via `//go:embed`.
+- **Logging**: zap.
+- **Tracing**: OpenTelemetry opt-in.
+- **Config**: envconfig + `.env` loader esplicito al boot.
+- **Distribuzione**: GoReleaser multi-arch.
 
 ## Success Metrics
 
-- Wiki writes succeed with valid schema on >99% of attempts (schema validation + retry)
-- LLM response latency under 5 seconds for 95th percentile
-- Zero data loss on wiki writes (atomic write + Git versioning)
-- Cost stays within hard budget limit 100% of the time
-- Deterministic wiki outputs produce identical results for identical inputs (snapshot tests pass)
-- Single Docker container deploys and starts serving in under 10 seconds
+- Wiki writes con schema valida >99% (validation + retry).
+- Tool argument logging zero-leak: nessun secret/contenuto raw nei log.
+- Embedding cache hit-rate >80% dopo warm-up su wiki stabile.
+- Per-turn latency p50 (no tool call) < 5s con streaming attivo.
+- Cost dentro hard budget 100% del tempo.
+- Tutti i test green (`go test ./...`) su ogni commit di slice.
+- Single binary deploy starts in <10s.
 
 ## Open Questions
 
-- Should the wiki support concurrent read access from multiple conversations?
-- What is the expected wiki page volume and how does it affect vector search performance?
-- How should the skill trust level be assigned — manual configuration or automated verification?
-- What metrics should trigger automatic failover between LLM providers?
-- Should Phase 4 (multi-agent) use a message-passing model or shared state?
+- Quando passare a `sqlite-vector` (CGO) per evitare round-trip embedding remoto in tutti i casi?
+- File creation milestone (xlsx/docx/pdf): persistenza in source store o ephemeral tmp?
+- Trust level di MCP servers — necessario un secondo gate oltre a `mcp.json` opt-in?
+- Backup automatico SQLite + wiki/raw/ — strategia (Git LFS? rsync schedulato?).
 
 ## Roadmap
 
-### Phase 1: Core Bot + Wiki
-- Telegram bot with allowlist
-- Orchestrator with sequential conversation loop
-- LLM client layer (MCP + fallback)
-- Wiki system with file storage, Git versioning, atomic writes
-- Basic vector search (chromem-go)
+### Phase 1 — Core bot + wiki MD migration ✅
+- Bot Telegram, orchestrator, LLM client.
+- Migrazione wiki da YAML a MD + frontmatter.
 
-### Phase 2: Deterministic Memory
-- Schema validation layer
-- Deterministic mode (temperature=0, prompt/schema versioning)
-- Context management with rolling summarization
-- Cost prediction and budget enforcement
-- Snapshot testing
+### Phase 2 — PDF/OCR + source store + ingestion ✅
+- Slices 1–6: config, source store, OCR client, Telegram PDF handler, source tools, ingestion pipeline.
 
-### Phase 3: Skill Sandbox
-- Trust level classification
-- Execution constraints (network, CPU, memory, timeout)
-- os/exec-based sandbox
-- Optional containerd isolation
+### Phase 3 — Wiki maintenance + scheduler + natural-prompt tests ✅
+- Slices 7–9: wiki tools, SQLite scheduler, cmd/debug_ingest.
 
-### Phase 4: Multi-Agent (Optional)
-- Agent-to-agent communication protocol
-- Shared workspace isolation
-- Coordinated task execution
+### Phase 4 — Web dashboard ✅
+- Slices 10a–10e + browser upload: read API, frontend scaffold, write actions, bearer auth, polish + theme.
+
+### Phase 5 — MCP + skills + dashboard panels + admin install ✅
+- Slices 11a–11e: MCP client, skills/MCP panels, install/delete admin gate, multi-root loader.
+
+### Phase 6 — Skill format hardening + embed cache + concurrent indexing ✅
+- Slices 11f–11j: progressive-disclosure manifest, install cwd fix, SHA-keyed embed cache, parallel index, health stats.
+
+### Phase 7 — Smart-and-fast ✅
+- Slices 11k–11n, 11r: history cap, parallel tools, skills cache, benchmarks, latency telemetry.
+
+### Phase 8 — Pending-user gate + speculative wiki + prompt overlay ✅
+- Slices 11o–11q.
+
+### Phase 9 — Streaming end-to-end + Markdown→HTML ✅
+- Slices 11s–11u.
+
+### Phase 10 — File creation milestone (next)
+- `create_xlsx` tool con `xuri/excelize/v2`.
+- `send_document` wrapper Telegram (`tele.Document{File: tele.FromReader(...)}`).
+- Persistenza in sources store.
+- docx / pdf in slice successive.
 
 ---
 
-**End of PRD v3.0 — Restructured**
+**End of PRD v4.0**

@@ -57,9 +57,143 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 11f | Progressive-disclosure skill prompt | done | Picobot and earlier Aura both dumped every skill's full body into the system prompt every turn — at 28 KiB for `claude-api` × N skills, that's 100+ KiB injected into small-talk turns where no skill applies. Anthropic's skill format was designed for progressive disclosure: descriptions are the routing signal (with TRIGGER/SKIP rules embedded), bodies live on disk and load on demand. `auraskills.PromptBlock` now emits a tight manifest (`- **name** — description`) plus a directive telling the LLM to call `read_skill(name)` before acting on a matched skill's instructions. The body only enters the conversation context on turns that actually need it, and stays cached for the rest of the tool loop. New caps: descriptions truncate at 1500 chars (`maxManifestDescChars`); total manifest at 8 KiB (`maxSkillsBlockChars`, down from 12 KiB). 3 new tests (manifest format / leak-check on body / per-description truncation / 50-skill bounded total). |
 | 11e | Make catalog installs visible to the loader | done | Two-bug fix discovered when the user installed `claude-api`: (1) the dashboard install was hanging on `npx skills add`'s "Which agents do you want to install to?" prompt until the 90 s ceiling fired (the Anthropics' skills CLI is interactive even with `--yes` to npx); (2) when it does work, skills.sh writes to `<project>/.claude/skills/<name>/SKILL.md`, but Aura's loader only scanned `./skills/`. Fixes: `NPXInstaller.Install()` now passes `--agent claude-code -y` and closes stdin so the install is fully non-interactive; `Loader` and `FSDeleter` both became multi-root, scanning `SKILLS_PATH` first and `.claude/skills` second. Variadic signatures keep existing tests passing without a churn-y rewrite. 4 new tests cover the multi-root paths (load merge, primary-wins-on-duplicate, delete from secondary, multi-root not-found). Verified live by reading the in-place `.claude/skills/claude-api/` install we'd done manually during diagnosis. |
 | 11d | Invoke MCP tools from dashboard | done | `POST /api/mcp/{server}/tools/{tool}` — bearer-authed (no extra admin gate; the operator already trusts everything in `mcp.json` because the LLM can call those servers). 60 s context timeout, 64 KiB body cap, 64 KiB output cap. Validates `server` against the loaded MCP-client list and `tool` against the server's advertised tools (404 on unknown). Body: arbitrary JSON object → forwarded as `arguments`; empty body / `null` → `{}`. Tool errors (`isError:true`) come back as `200 {ok:false, is_error:true, error}` so the UI can render them inline; transport / timeout failures arrive as `200 {ok:false, is_error:false, error}`. Frontend: each tool row in `MCPPanel` gains a Run button revealing a JSON textarea (seeded from `input_schema.properties` when available), Invoke action with sonner progress toast, color-coded result panel (success/tool-error/transport). 8 new Go tests (happy path with arg-passthrough verification, empty body, 5 bad-body variants, unknown server, unknown tool, bad tool name, server tool error, transport error, large output truncation). |
+| 11k | History cap (Picobot pattern) | done | Active conversation was unboundedly sticky and re-enforced its token budget on every tool iteration — both made the agent slow (extra summarizer LLM calls mid-response) and dumb (lossy summarization overwriting recent reasoning). Adopt Picobot strategy: cap in-flight messages at `MAX_HISTORY_MESSAGES` (default 50) with a tool-safe trim boundary. Wiki/sources tools carry durable memory so chat history can evict. Summarization fallback only for pathologically large single messages. Inner-loop `EnforceLimit` removed from `runToolCallingLoop` since `MaxToolIterations` already bounds per-turn growth. |
+| 11l | Parallel tool calls within a turn | done | Model frequently emits multiple independent tool calls (e.g. `search_wiki + web_search + read_wiki`); running serially burned N round-trips of latency for no reason. Each call already uses its own ctx and the registry is RWMutex-guarded. New `executeToolCalls`: emit all activity pings up front, fan out one goroutine per call, join, then append results in original order. Deterministic message ordering preserved. |
+| 11m | Cache skills loader 1s | done | `handleConversation` called `skillLoader.LoadAll()` on every Telegram message to render the manifest — walked `SKILLS_PATH` + `.claude/skills`, opened and YAML-parsed every SKILL.md per turn. Memoize `LoadAll` for `cacheTTL=1s`: short enough that admin install/delete reflects on the next user turn, long enough that back-to-back chat turns hit the cache. `Invalidate()` exposed for callers wanting immediate consistency. |
+| 11n | Latency benchmarks | done | Quantified slice 11k/l/m wins: `BenchmarkLoaderLoadAllCached` 339 ns/op vs `Uncached` 3.69 ms/op (slice 11m hot path), `BenchmarkRegistryExecuteSequential` 41 ms vs `Parallel` 10 ms (slice 11l). `writeFile`/`writeSkill` helpers narrowed to `testing.TB` so `*testing.B` can call them. New `internal/skills/loader_bench_test.go`, `internal/tools/registry_bench_test.go`. |
+| 11o | Gate /start behind frontend approval queue | done | Closes the TOFU bootstrap window: once an owner exists, unknown /start no longer auto-rejects — queues into `pending_users`, pings every allowlisted user via Telegram, waits for explicit approve/deny from the dashboard. Approval mints a fresh token shipped over Telegram so plaintext never round-trips through the dashboard. New `internal/api/pending.go` + `internal/auth/store.go`. Dashboard `/pending` panel polled every 8s. Spam /start preserves `requested_at` while pending — no pingstorm. TOFU bootstrap intentionally kept for first-owner onboarding on a virgin install. |
+| 11p | Speculative wiki retrieval | done | Pre-11p the model only saw durable wiki memory after explicitly emitting `search_wiki` — full extra LLM round-trip per turn. Picobot's `agent/context.go` injects ranked memories into the system prompt before the first inference; we now do the same. `handleConversation` runs `search.Search(userText, 5)` right after `AddUserMessage` and pipes the results through `convCtx.SetSearchContext`. Embedding cache (slice 11h) makes repeat queries free; cold queries pay one embed call but save the round-trip. `search_wiki` tool stays available for refinement. |
+| 11q | Bootstrap prompt overlay files | done | Picobot pattern from `internal/agent/context.go`: read a fixed set of optional MD files from a configured dir on every conversation turn and append to the system prompt. Operator tunes personality (`SOUL.md`), collaboration norms (`AGENTS.md`), durable user facts (`USER.md`), tool guidance (`TOOLS.md`) by editing files — the next user turn picks the change up with no recompile or restart. `PROMPT_OVERLAY_PATH` defaults to `.`. All 4 files optional; missing/blank skipped silently. 4 file reads per turn negligible vs the LLM round-trip. |
+| 11r | Per-turn latency telemetry | done | Slice 11n's benchmarks proved the smart-and-fast wins in microbenchmarks (skills cache 10000x, parallel tools 4x). This adds the runtime counterpart: every conversation turn now logs `elapsed_ms`, `llm_calls`, `tool_calls` so real Telegram latency is measurable without sprinkling per-subsystem timers. `runToolCallingLoop` returns `turnStats{llmCalls, toolCalls}` alongside the response. `handleConversation` captures `turnStart` at the top and emits the structured "conversation complete" line on the way out. |
+| 11s | Stream tool-call deltas through llm.Token | done | Tool-call streaming was the missing piece for slice 11t. `Stream()` returned only text deltas; if the model emitted tool calls during a streamed response we silently dropped them, making streaming unusable for any tool-calling turn. `Token` now carries an optional `ToolCalls` slice populated on the final `Done=true` token. The SSE reader accumulates per-index `function.arguments` fragments internally so consumers never see partial JSON. `Stream()` also forwards `Request.Tools` — previously streaming requests omitted the tools array entirely, so the model had no way to call a tool from a streamed call. `OllamaClient.Stream` forwards to `OpenAIClient` and inherits the new behavior. New `TestOpenAIClientStreamWithToolCalls` exercises the multi-fragment accumulation path. |
+| 11t | Progressive Telegram edit while streaming | done | Final-response latency was the last big perceived-latency lever — slice 11l/m/p cut server-side wall clock, but the user still saw nothing until the full assistant message landed. Now the bot opens a placeholder message once 30 chars of streamed text accumulate (avoids displaying discardable prefaces) and edits it every 800ms (Telegram's safe rate limit per chat) until the stream completes. The tool loop swaps `Send` for `Stream`. `consumeStream` rebuilds an equivalent `llm.Response` from the token stream, so all downstream code (token tracking, budget tracking, tool execution) is unchanged. When the model emits tool calls, the streamed text becomes the assistant's "Let me search…" preface; tool execution proceeds as before. When text-only, the progressively-edited message *is* the final delivery — `runToolCallingLoop` returns `""` so `handleConversation` skips its `c.Send` to avoid double-posting. Slice 11s wired `stream_options.include_usage` and `Usage` on the final Token, so budget tracking still works under streaming. Providers that ignore `stream_options` leave `Usage` zero — caller tolerates that. |
+| 11u | Render assistant Markdown into Telegram HTML | done | Telegram's default parse mode treats Markdown as literal text, so the LLM's `**bold**`, `## headers`, `- bullets`, `[link](url)` output arrived in chat as raw chars. Aura now converts the LLM's Markdown to the small HTML subset Telegram supports (`b/i/s/u, code, pre, a, blockquote`) and sends with `tele.ModeHTML`. Headings degrade to `<b>` (Telegram doesn't render `<h1>`); bullets degrade to `•` (no `<ul>/<li>`); links restricted to http(s)/tg schemes to block `javascript:` smuggling. HTML reserved chars in plain text are escaped; chars inside `<code>/<pre>` are preserved correctly. Wired through both delivery paths: `handleConversation`'s final `c.Send` (non-streamed turns) via `sendAssistant`, and `consumeStream`'s progressive `Send/Edit` (streamed turns). Operator-facing strings (auth errors, bootstrap messages) keep raw `c.Send` to avoid double-escaping. |
 | 10e | UI: polish + theme redesign | done | Two waves: **(A) polish** — dark mode default, shadcn `Skeleton` placeholders replace "Loading…" across HealthDashboard / WikiPanel / SourceInbox / TasksPanel; stronger empty-state CTAs (BookText / Calendar icons + helpful copy); ErrorBoundary fires a `sonner.error` toast on top of the inline card; `Shell` component splits desktop sidebar from a mobile slide-over (radix Sheet, < md); global keyboard shortcuts via `useKeyboardShortcuts` (`?` opens help dialog, `g h/w/g/s/t` chord navigation). Backend `/api/health` extended with `process` block (version, git_revision, started_at, uptime_seconds) — git revision read once via `runtime/debug.ReadBuildInfo`. **(B) theme redesign from logo** — palette derived from the new orb logo (deep navy disc, electric cyan-blue arrow A); rewrote light + dark + contrast shadcn token blocks in oklch; ambient aurora radial-gradient on dark/contrast bodies; new inline-SVG `BrandMark` (sidebar) + larger glowing `LoginBrandMark` (login page); active-nav items get a brand glow (`bg-primary/10 ring-primary/20 shadow-[0_0_20px_-8px_var(--primary)]`); cards gain a hover top-stripe gradient + `hover:border-primary/30`. Bundle: 521 KB JS / 161 KB gz, 105 KB CSS / 18 KB gz. |
 
 ## Session Log
+
+### 2026-04-30 — Slice 11u (Render assistant Markdown into Telegram HTML)
+
+- One atomic commit (`284d59b`).
+- Telegram's default parse mode rendered LLM Markdown as literal text — `**bold**`, `## headers`, `- bullets`, `[link](url)` arrived raw.
+- Added `internal/telegram/markdown.go` (245 LOC, 68 LOC tests): converts to Telegram's HTML subset (`b/i/s/u/code/pre/a/blockquote`) and sends with `tele.ModeHTML`. Headings degrade to `<b>`, bullets to `•`. Links restricted to `http(s)`/`tg` schemes to block `javascript:` smuggling. Plain-text reserved chars escaped; `<code>`/`<pre>` content preserved.
+- Wired through both delivery paths: `handleConversation` final `c.Send` (non-streamed) via new `sendAssistant`, and `consumeStream` progressive `Send`/`Edit` (streamed). Operator-facing strings (auth errors, bootstrap) keep raw `c.Send` to avoid double-escaping.
+- Files: `internal/telegram/bot.go`, `internal/telegram/markdown.go` (new), `internal/telegram/markdown_test.go` (new).
+- Verification: `go build ./...`, `go vet ./...`, `go test ./internal/telegram/...` pass.
+
+### 2026-04-30 — Slice 11t (Progressive Telegram edit while streaming LLM response)
+
+- One atomic commit (`d78a932`).
+- Final-response latency was the last big perceived-latency lever; slice 11l/m/p cut server-side wall clock but the user still saw nothing until the full assistant message landed.
+- Bot now opens a placeholder Telegram message once 30 chars of streamed text accumulate (avoids displaying discardable prefaces) and edits it every 800 ms (Telegram safe rate-limit per chat) until the stream completes.
+- Tool loop swapped `Send` → `Stream`. `consumeStream` rebuilds an equivalent `llm.Response` from the token stream so all downstream code (token tracking, budget tracking, tool execution) is unchanged.
+- Tool-call turns: streamed text becomes the assistant's "Let me search…" preface; tool execution proceeds as before. Text-only turns: the progressively-edited message *is* the final delivery — `runToolCallingLoop` returns `""` so `handleConversation` skips its `c.Send` to avoid double-posting.
+- Slice 11s wired `stream_options.include_usage` and `Usage` on the final Token so budget tracking still works under streaming. Providers that ignore `stream_options` leave `Usage` zero — caller tolerates.
+- Files: `internal/llm/client.go`, `internal/llm/openai.go`, `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11s (Stream tool-call deltas through llm.Token)
+
+- One atomic commit (`2ea45e3`). Prerequisite for slice 11t.
+- Pre-11s `Stream()` returned only text deltas; if the model emitted tool calls during a streamed response we silently dropped them — making streaming unusable for any tool-calling turn.
+- `Token` gained an optional `ToolCalls` slice populated on the final `Done=true` token. SSE reader accumulates per-index `function.arguments` fragments internally so consumers never see partial JSON.
+- `Stream()` now also forwards `Request.Tools` — previously streaming requests omitted the tools array entirely so the model had no way to call a tool from a streamed call.
+- `OllamaClient.Stream` forwards to `OpenAIClient` and inherits the new behavior automatically.
+- `TestOpenAIClientStream` still passes; new `TestOpenAIClientStreamWithToolCalls` exercises the multi-fragment accumulation path.
+- Files: `internal/llm/client.go`, `internal/llm/openai.go`, `internal/llm/openai_test.go`.
+
+### 2026-04-30 — Slice 11r (Per-turn latency telemetry)
+
+- One atomic commit (`885fef5`).
+- Slice 11n's benchmarks proved smart-and-fast wins in microbenchmarks (skills cache 10000×, parallel tools 4×). This adds the runtime counterpart so real Telegram latency is measurable without sprinkling per-subsystem timers.
+- Every conversation turn now logs structured `elapsed_ms`, `llm_calls`, `tool_calls`.
+- `runToolCallingLoop` returns `turnStats{llmCalls, toolCalls}` alongside the response string. `handleConversation` captures `turnStart` at the top and emits the structured "conversation complete" line on the way out.
+- Files: `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11q (Bootstrap prompt overlay files)
+
+- One atomic commit (`8102143`). Picobot pattern from `internal/agent/context.go`.
+- Reads a fixed set of optional MD files from `PROMPT_OVERLAY_PATH` (default `.`) on every conversation turn and appends to the system prompt: `SOUL.md` (personality), `AGENTS.md` (collaboration norms), `USER.md` (durable user facts), `TOOLS.md` (tool guidance).
+- Operator tunes any of the four by editing the file — the next user turn picks the change up with no recompile or restart. All files optional; missing/blank skipped silently.
+- 4 file reads per turn negligible vs the LLM round-trip.
+- Files: `.env.example`, `internal/config/config.go`, `internal/conversation/overlay.go` (new), `internal/conversation/overlay_test.go` (new), `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11p (Speculative wiki retrieval before first LLM call)
+
+- One atomic commit (`900ec71`).
+- Pre-11p the model only saw durable wiki memory after explicitly emitting `search_wiki` — a full extra LLM round-trip per turn ("reason → emit call → read result → re-reason → answer").
+- Picobot's `agent/context.go` injects ranked memories into the system prompt before the first inference; we now do the same. `handleConversation` runs `search.Search(userText, 5)` right after `AddUserMessage` and pipes results through `convCtx.SetSearchContext`.
+- Embedding cache (slice 11h) makes repeat queries free; cold queries pay one embed call but save the round-trip. The explicit `search_wiki` tool stays available for follow-up refinement.
+- Files: `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11o (Gate /start behind frontend approval queue)
+
+- One atomic commit (`5bdaeb0`).
+- Closes the TOFU bootstrap window: once an owner exists, an unknown /start no longer auto-rejects with the user's Telegram ID echoed back — it queues into `pending_users`, pings every allowlisted user via Telegram, and waits for an explicit approve/deny decision from the dashboard.
+- Approval mints a fresh token and ships it over Telegram so the plaintext never round-trips through the dashboard.
+- New `internal/api/pending.go` + `internal/auth/store.go` + `internal/api/pending_test.go` + `internal/auth/pending_test.go`. Dashboard `/pending` panel polled every 8 s (`PendingUsersPanel.tsx`).
+- Spam `/start` preserves `requested_at` while pending — no pingstorm on the owner. Only a prior `decision` (approved/denied) resets the row.
+- TOFU bootstrap intentionally kept for first-owner onboarding on a virgin install (otherwise the dashboard has nobody to log in and approve).
+- Files: 18 changed, 1138 +/103 -. Backend, auth store, frontend route, sidebar nav.
+
+### 2026-04-30 — Slice 11n (Latency benchmarks for slices 11k–11m)
+
+- One atomic commit (`d83dd61`).
+- Quantified the smart-and-fast wins:
+  - `BenchmarkLoaderLoadAllCached` 339 ns/op vs `Uncached` 3.69 ms/op (slice 11m).
+  - `BenchmarkRegistryExecuteSequential` 41 ms/op vs `Parallel` 10 ms/op (slice 11l).
+- Skills bench needed `writeFile`/`writeSkill` to accept `testing.TB` so a `*testing.B` can call them — narrowed helper signature accordingly, no behavior change for existing tests.
+- Files: `internal/skills/loader_bench_test.go` (new), `internal/skills/loader_test.go`, `internal/tools/registry_bench_test.go` (new).
+
+### 2026-04-30 — Slice 11m (Cache skills loader output for 1s)
+
+- One atomic commit (`8aa0f15`).
+- `handleConversation` called `skillLoader.LoadAll()` on every Telegram message to render the system-prompt manifest — walked `SKILLS_PATH` plus `.claude/skills`, opened and YAML-parsed each `SKILL.md` every turn. Pure waste when skills only change on rare admin install/delete.
+- Memoize `LoadAll` for `cacheTTL=1s`. Window short enough that admin operations reflect on the next user turn but long enough that back-to-back chat turns hit the cache (typical case). `Invalidate()` exposed for callers wanting immediate consistency.
+- Files: `internal/skills/loader.go`, `internal/skills/loader_test.go`.
+
+### 2026-04-30 — Slice 11l (Parallelize tool calls within an assistant turn)
+
+- One atomic commit (`b46b9ba`).
+- Model frequently emits multiple independent tool calls in a single response (e.g. `search_wiki + web_search + read_wiki`). Running them sequentially serialized N round-trips of latency for no reason — each call already uses its own ctx and the registry is RWMutex-guarded.
+- Extracted `executeToolCalls`: emit all activity pings up front, fan out one goroutine per call, join, then append results in original order. Ordering loop after `wg.Wait` preserves deterministic message ordering in conversation history.
+- Files: `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11k (Picobot-style message-count cap, drop summarizer from tool loop)
+
+- One atomic commit (`0f16509`).
+- The active conversation was unboundedly sticky and re-enforced its token budget on every tool iteration — both made the agent slow (extra summarizer LLM calls mid-response) and dumb (lossy summarization overwriting recent reasoning).
+- Adopt Picobot strategy: cap in-flight messages at `MAX_HISTORY_MESSAGES` (default 50) and trim oldest with a tool-safe boundary. The wiki/sources tools already carry durable memory so chat history is allowed to evict.
+- `EnforceLimit` now applies the cheap message cap first; summarization only fires as a fallback for pathologically large single messages. The inner-loop `EnforceLimit` call in `runToolCallingLoop` is removed — `MaxToolIterations` already bounds per-turn growth.
+- Files: `.env.example`, `internal/config/config.go`, `internal/conversation/context.go`, `internal/conversation/context_test.go`, `internal/telegram/bot.go`.
+
+### 2026-04-30 — Slice 11j (Surface embed cache stats on /api/health)
+
+- One atomic commit (`1bac86d`). Bridge between slice 11h (cache) and the dashboard.
+- `EmbedCache.Stats()` is now plumbed into `Deps.EmbedCache` and the health rollup. New `EmbedCacheHealth{hits, misses}` block on `GET /api/health`.
+- Frontend: dashboard gains a fourth status card showing `<hits>` as the headline number with subtitle = computed hit-rate percentage (or "no embeds yet" before the first call). Stays at 0/0 when no cache is wired (no `EMBEDDING_API_KEY` or `DB_PATH`).
+
+### 2026-04-30 — Slice 11i (Concurrent wiki indexing)
+
+- One atomic commit (`0501db6`).
+- `IndexWikiPages` previously called `coll.AddDocument` serially in a per-page loop — 8 pages × ~1 s per Mistral round trip = ~8 s cold start.
+- Switched to chromem-go's already-supported `coll.AddDocuments(ctx, docs, indexConcurrency)` which spawns parallel goroutines. New `indexConcurrency = 4` constant: ~4× faster cold start, well under Mistral free-tier rate limits.
+- Atomic-failure fallback path serializes if the batch fails so one bad page doesn't lose the whole index. SQLite FTS mirror stays serial (cheap local writes; concurrent FTS inserts contend).
+- Stacks on 11h: warm starts still hit the cache and pay nothing.
+
+### 2026-04-30 — Slice 11h (SHA-keyed embedding cache)
+
+- One atomic commit. Wraps `chromem.EmbeddingFunc` with a SQLite-backed cache (`embedding_cache` table, composite key `(content_sha, model)`).
+- Cold start unchanged; warm starts hit the cache and skip the Mistral round trip entirely for unchanged wiki pages — 30 wiki pages × ~1 s per embed = ~30 s saved per restart. Same path serves query embeddings, so repeat questions skip the round trip too.
+- Robustness: corrupt blob detection (length-not-multiple-of-4 → re-embed + delete row), upstream-error propagation, model-key isolation (changing `EMBEDDING_MODEL` invalidates entries automatically), nil-upstream errors cleanly on miss.
+- Kept chromem-go in place vs swapping to `sqlite-vector` because the latter would force CGO + native extension loading; this fix gets ~99% of the win with 150 LOC.
+- **Bundled cleanups**: deleted dead `sqliteSearcher.indexWikiDir` method (and the now-unused `os` + `filepath` imports), removed unused `newTestEngine` helper, added missing `Content` assertion in `TestResultStruct`. 8 cache tests + 1 strengthened test. Race-clean.
+
+### 2026-04-30 — Slice 11g (Pin install cwd to project root)
+
+- One atomic commit. Hot-fix from a real install bug.
+- Bug: `marketing-psychology` install landed at `D:\Aura\skills\.claude\skills\` (nested) instead of `D:\Aura\.claude\skills\`, so the loader missed it.
+- Cause: `NPXInstaller.Install()` used `cmd.Dir = cfg.SkillsPath`; the skills.sh CLI uses cwd as its project-detection anchor and writes to `<cwd>/.claude/skills/`.
+- Fix: `NewNPXInstaller(skillsDir, projectDir)` now takes a separate project-root parameter; bot passes `""` which falls back to `os.Getwd()` (Aura's cwd at startup = project root). Existing nested install was relocated by hand.
 
 ### 2026-04-30 — Slice 11f (Progressive-disclosure skill prompt)
 

@@ -2,9 +2,20 @@
 
 ## Project
 
-Aura is a Go Telegram assistant. The main binary is `./cmd/aura`; `./cmd/debug_llm` is a small LLM smoke-test utility.
+Aura is a Go Telegram assistant with an embedded React dashboard. The main binary is `./cmd/aura`; `./cmd/debug_llm`, `./cmd/debug_tools`, and `./cmd/debug_ingest` are smoke-test utilities. `./cmd/build_icon` generates the tray icon.
 
-The product direction is a standalone second brain: merge Picobot-style agent tools with the LLM Wiki pattern from `docs/llm-wiki.md`. Aura should maintain its own source inbox, wiki, search, graph, review queue, and audit log instead of relying on Obsidian as the UI.
+The product direction is a standalone second brain: Picobot-style agent tools merged with the LLM Wiki pattern from `docs/llm-wiki.md`. Aura maintains its own source inbox, wiki, search, graph, review queue, and audit log instead of relying on Obsidian.
+
+Current shipped surfaces (see `prd.md` v4.0 + `docs/implementation-tracker.md` for detail):
+
+- `internal/source` + `internal/ocr` + `internal/ingest` — Mistral OCR PDF pipeline with sha256 dedup and auto-ingest.
+- `internal/scheduler` — SQLite-backed reminders + nightly maintenance jobs.
+- `internal/skills` — Anthropic skill format with progressive-disclosure manifest, multi-root loader (`SKILLS_PATH` + `.claude/skills`), and skills.sh catalog install/delete behind `SKILLS_ADMIN`.
+- `internal/mcp` — stdio + Streamable-HTTP MCP client; tools auto-register as `mcp_<server>_<tool>`.
+- `internal/api` + `web/` — React 19 dashboard embedded via `//go:embed all:dist`. Bearer auth via tokens minted with the `request_dashboard_token` LLM tool and shipped over Telegram.
+- `internal/auth` — `api_tokens`, `pending_users`, `allowed_users` SQLite tables (auth + /start approval queue).
+- `internal/tray` — Windows tray icon with "Open Dashboard"; no-op on other platforms.
+- `internal/telegram/markdown.go` — LLM Markdown → Telegram HTML subset renderer (slice 11u).
 
 ## Commands
 

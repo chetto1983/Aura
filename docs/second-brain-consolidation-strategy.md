@@ -1,6 +1,8 @@
 # Aura Second Brain Consolidation Strategy
 
-Last updated: 2026-04-29
+Last updated: 2026-04-29 — strategy. **Implementation status updated 2026-05-02.**
+
+> **STATUS — 2026-05-02: STRATEGY EXECUTED.** Most "Next Aura-native tools" have shipped: `ingest_source`, `list_wiki`, `lint_wiki`, `lint_sources`, `append_log`, `rebuild_index`, plus the source store (slice 5) and ingestion pipeline (slice 6). Web dashboard with source inbox, wiki browser, graph view, pending-user queue, tasks, skills, and MCP panels shipped in slices 10a–10e + 11a–11d + 11o. **Still to do**: `update_wiki`, `propose_wiki_change` / `apply_wiki_change` (review queue), `link_wiki`, `graph_query`, scheduled lint passes ("autonomous maintenance"). This document remains the north-star strategy; concrete state lives in [`prd.md`](../prd.md) and [`docs/implementation-tracker.md`](implementation-tracker.md).
 
 Aura's direction is a standalone second brain that combines:
 

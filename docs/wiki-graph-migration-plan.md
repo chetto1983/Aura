@@ -1,5 +1,7 @@
 # Wiki Graph Migration Plan
 
+> **STATUS — 2026-05-02: IMPLEMENTED & MIGRATED.** YAML → MD+frontmatter migration complete. `[[wiki-links]]`, `index.md`, `log.md`, schema validation, atomic writes, and Git versioning are all live. The `MigrateYAMLToMD` one-shot has run on every existing install. This document is preserved for historical context. Current wiki contract lives in [`wiki/SCHEMA.md`](../wiki/SCHEMA.md) and the source code under [`internal/wiki/`](../internal/wiki/).
+
 ## Context
 Aura currently stores wiki pages as flat YAML files (`.yaml`) with a `Page` struct containing `title`, `content`, `tags`, etc. The Karpathy wiki pattern calls for a compounding knowledge graph: markdown files with YAML frontmatter, `[[wiki-links]]` between pages, auto-generated `index.md` for routing, and `log.md` for audit trail. This makes the LLM smarter because it can explore the graph instead of doing flat RAG retrieval.
 

@@ -1,211 +1,302 @@
 # Aura — Personal AI Agent with Compounding Memory
 
-**Product Requirements Document — Version 3.0 (Production-Ready)**
-**Date:** 2026-04-28
+**Product Requirements Document — Version 4.0**
+**Date:** 2026-05-02
+**Status:** reflects shipped state through slice 11u (Phase 11 complete; cross-platform binaries via GoReleaser).
 
 ---
 
 # 1. Executive Summary
 
-Aura è un agente AI personale, local-first, progettato per accumulare conoscenza nel tempo attraverso una wiki strutturata mantenuta dal modello. A differenza dei chatbot tradizionali, Aura è costruito come un sistema deterministico, osservabile e sicuro, con forte enfasi su:
+Aura è un agente AI personale, local-first, accessibile via Telegram, che accumula conoscenza in una **wiki markdown maintained-by-the-LLM** e si estende con **tool agentici** (source ingestion, web, scheduler, skills, MCP). Una **dashboard web embedded** offre osservabilità e controllo (sources, wiki/graph, tasks, skills, MCP, pending users) protetta da bearer-token emessi via Telegram.
 
-* Affidabilità runtime
-* Controllo dei costi
-* Sicurezza delle esecuzioni
-* Evoluzione incrementale della memoria
+Rispetto alla v3.0 (planning-only) la v4.0 documenta lo stato realmente in produzione: SQLite invece di PostgreSQL, OpenAI-compat HTTP come client primario, pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
 
-Questa versione (v3.0) introduce un'architettura semplificata ma robusta, eliminando complessità premature e privilegiando determinismo e testabilità.
+Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, fallback sempre disponibili**.
 
 ---
 
 # 2. Design Principles
 
-1. **Determinismo > Creatività**
-2. **Semplicità > Astrazione prematura**
-3. **File system > sistemi distribuiti**
-4. **Controllo esplicito > automazione opaca**
-5. **Fallback sempre disponibili**
+1. **Determinismo > Creatività** — temperature=0 per scritture wiki, prompt/schema versioning.
+2. **Semplicità > Astrazione prematura** — nessun DAG, 1 goroutine = 1 conversazione.
+3. **File system + SQLite > sistemi distribuiti** — wiki su disco + Git, stato runtime in SQLite locale.
+4. **Controllo esplicito > automazione opaca** — feature flag, allowlist, admin gates per operazioni privilegiate.
+5. **Fallback sempre disponibili** — Ollama offline, embedding cache, single-message progress.
+6. **Progressive disclosure** — skills/MCP/sources caricano in contesto solo quando il modello li richiede.
 
 ---
 
-# 3. System Architecture (Simplified)
+# 3. System Architecture
 
-## 3.1 Core Model
+## 3.1 Core Loop
 
 ```
-User → Telegram → Orchestrator → LLM → Tools → Wiki
+User → Telegram → Orchestrator → LLM (streaming + tool calls)
+                                    ↓
+                         ┌──────────┴──────────┐
+                         │  Tool Registry       │
+                         │  - source/wiki/tasks │
+                         │  - web search/fetch  │
+                         │  - skills/MCP        │
+                         └──────────┬──────────┘
+                                    ↓
+                Wiki (MD + frontmatter + [[links]])
+                Sources (raw PDF + ocr.json + ocr.md)
+                SQLite (auth, scheduler, embed cache)
 ```
+
+In parallelo gira la **Web Dashboard** (`internal/api`) embedded nel binario via `//go:embed`, e il **Tray icon** (Windows) per aprire la dashboard.
 
 ## 3.2 Execution Model
 
-* 1 goroutine = 1 conversation
-* Nessun DAG engine
-* Nessuna orchestrazione distribuita
-* Loop sequenziale deterministico
+* 1 goroutine = 1 conversazione (Telegram).
+* Tool-calling loop con `MAX_TOOL_ITERATIONS` (default 10).
+* Tool calls indipendenti nello stesso turn vengono **eseguite in parallelo** (slice 11l).
+* Streaming LLM con **progressive edit Telegram** (slice 11t): placeholder dopo 30 char, edit ogni 800 ms.
+* Cap di history a `MAX_HISTORY_MESSAGES` (default 50) — Picobot pattern, slice 11k. Summarization solo come fallback.
+* Speculative wiki retrieval (slice 11p): `search_wiki` viene già fatto prima del primo round LLM e iniettato nel system prompt.
 
 ---
 
 # 4. Core Components
 
-## 4.1 Orchestrator
+## 4.1 Orchestrator (`internal/orchestrator`)
 
-Responsabilità:
+* Gestione conversazioni (1 per chat).
+* Loop tool-calling deterministico.
+* Retry con exponential backoff (max `LLM_MAX_RETRIES`).
+* Budget enforcement (soft warning + hard halt).
+* Per-turn telemetry: `elapsed_ms`, `llm_calls`, `tool_calls` (slice 11r).
 
-* Gestione conversazioni
-* Loop LLM
-* Retry semplice
-* Budget enforcement
+## 4.2 LLM Client Layer (`internal/llm`)
 
-### Scelta package
-
-* **Nessun framework orchestrator esterno**
-* Implementazione custom
-
-Motivo:
-
-* Riduzione complessità
-* Eliminazione rischio dependency
-
----
-
-## 4.2 LLM Client Layer
-
-### Interfaccia
+### Interface
 
 ```go
-type LLMClient interface {
-    Send(ctx context.Context, req Request) (Response, error)
-    Stream(ctx context.Context, req Request) (<-chan Token, error)
+type Client interface {
+    Send(ctx, Request) (Response, error)
+    Stream(ctx, Request) (<-chan Token, error)
 }
 ```
 
-### Implementazioni
+### Implementations
 
-* MCP Client (primary)
-* OpenAI-compatible HTTP client (fallback)
-* Ollama client (offline mode)
+* **OpenAI-compatible HTTP client** (primary) — `LLM_BASE_URL` + `LLM_API_KEY`.
+* **Ollama client** (fallback / offline) — `OLLAMA_BASE_URL` + `OLLAMA_MODEL`.
 
-### Package consigliati
+`Stream()` supporta tool-calls via `stream_options.include_usage` e accumula i frammenti `function.arguments` per indice (slice 11s) — i consumer non vedono mai JSON parziale.
 
-* net/http (native)
-* encoding/json
+### Embedding (separato dal chat model)
 
-Motivo: zero vendor lock-in
+* `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`, `EMBEDDING_API_KEY` dedicata. Nessun fallback automatico verso `LLM_API_KEY`.
 
 ---
 
-## 4.3 Wiki System
+## 4.3 Wiki System (`internal/wiki`)
 
 ### Storage
 
-* File system + Git
+* File system + Git (`go-git/go-git/v5`).
+* Path: `WIKI_PATH` (default `./wiki`).
 
-### Structure
+### Format
 
-```
-/wiki
-  /raw
-  /wiki
-  SCHEMA.md
-```
+Markdown con YAML frontmatter (migrazione completata da `.yaml` → `.md`):
 
-### Package
-
-* go-git (github.com/go-git/go-git/v5)
-
-### Write Safety
-
-* File-level mutex
-* Atomic write (temp + rename)
-
+```markdown
 ---
-
-## 4.4 Schema Validation Layer (NEW)
-
-### Package
-
-* go-playground/validator
-* gopkg.in/yaml.v3
-
-### Flow
-
-```
-LLM output → Parse YAML → Validate → Write or Retry
+title: ...
+slug: ...
+schema_version: 2
+prompt_version: ingest_v1
+category: ...
+tags: [...]
+related: [other-slug, another-slug]
+sources: [src_<id>]
+---
+Body markdown con [[wiki-links]] in stile Obsidian.
 ```
 
----
+### Special files
 
-## 4.5 Vector Search
+* `index.md` — auto-generato per categoria.
+* `log.md` — append-only audit trail (azione, slug, timestamp).
+* `SCHEMA.md` — documentazione formato.
 
-### Primary
+### Write safety
 
-* chromem-go
-
-### Scalable fallback
-
-* pgvector (PostgreSQL)
-
----
-
-## 4.6 Database
-
-### Primary
-
-* PostgreSQL
-
-### Driver
-
-* pgx (github.com/jackc/pgx/v5)
-
-### Migrations
-
-* golang-migrate
+* File-level mutex.
+* Atomic write (temp + rename).
+* `MigrateYAMLToMD` one-shot al boot.
 
 ---
 
-## 4.7 Telegram Interface
+## 4.4 Source Store + OCR (`internal/source`, `internal/ocr`, `internal/ingest`)
 
-### Package
+### Source
 
-* telebot.v4
+* Layout: `wiki/raw/src_<sha256-16hex>/{original.pdf, source.json, ocr.json, ocr.md}`.
+* Sha256-based dedup, atomic `source.json` write, per-id mutex.
+* Stati: `stored | ocr_complete | ingested | failed`.
 
-### Motivazione
+### OCR
 
-* API stabile
-* Middleware support
-* Inline keyboard
+* Mistral Document AI (`/v1/ocr`), bearer auth, base64 PDF.
+* Wire flags: `table_format`, `extract_header`, `extract_footer`, `include_image_base64`.
+* Render in `ocr.md` con layout PDR §4 (`# Source OCR: <filename>`, `## Page N`).
+* Cap: `OCR_MAX_PAGES`, `OCR_MAX_FILE_MB`.
 
----
+### Ingestion
 
-## 4.8 HTTP Server
-
-### Package
-
-* chi router
-
----
-
-## 4.9 Logging
-
-### Package
-
-* zap
+* Pipeline `internal/ingest.Pipeline.Compile` — LLM-driven, produce summary page con `[[wiki-link]]`.
+* Auto-trigger via `docHandler.AfterOCR` (Telegram upload) o `POST /api/sources/upload` (browser).
+* Catch-up via tool `ingest_source` per source pre-hook.
 
 ---
 
-## 4.10 Config
+## 4.5 Tools (`internal/tools`)
 
-### Package
+Registry condiviso con il modello. Ogni tool implementa `Name/Description/Parameters/Execute`. Le tool-call concorrenti vengono parallelizzate (slice 11l).
 
-* envconfig
+### Built-in tools
+
+| Categoria | Tool |
+| --------- | ---- |
+| Web | `web_search`, `web_fetch` (Ollama API) |
+| Wiki | `write_wiki`, `read_wiki`, `search_wiki`, `list_wiki`, `lint_wiki`, `rebuild_index`, `append_log` |
+| Source | `store_source`, `ocr_source`, `read_source`, `list_sources`, `lint_sources`, `ingest_source` |
+| Scheduler | `schedule_task`, `list_tasks`, `cancel_task` |
+| Skills | `read_skill` (progressive disclosure body fetch) |
+| Auth | `request_dashboard_token` (out-of-band token via Telegram) |
+| MCP | `mcp_<server>_<tool>` (registrato dinamicamente) |
+
+### Argument logging policy
+
+Solo nomi tool e chiavi degli argomenti vengono loggati (slice 5/registry). Mai contenuto raw, URL con token, base64, o testo source.
 
 ---
 
-## 4.11 Observability
+## 4.6 Scheduler (`internal/scheduler`)
 
-### Package
+* SQLite-backed (`scheduled_tasks` table).
+* Kinds: `reminder`, `wiki_maintenance`.
+* Schedule fields: `at` (one-shot), `daily HH:MM`, `in <duration>`, `at_local HH:MM`.
+* Goroutine autonoma con bootstrap di un job nightly 03:00.
+* Runtime time context iniettato nel system prompt.
 
-* OpenTelemetry
+---
+
+## 4.7 Skills (`internal/skills`)
+
+* Anthropic skill format: `skills/<name>/SKILL.md` con frontmatter (`name`, `description`).
+* Multi-root loader: `SKILLS_PATH` (default `./skills`) + `.claude/skills` (priorità a primario).
+* **Progressive disclosure** (slice 11f): system prompt include solo manifest `- **name** — description`. Body caricato on-demand via `read_skill`.
+* Loader memoizzato per 1s (slice 11m).
+* Catalogo: `SKILLS_CATALOG_URL=https://skills.sh/`.
+* Admin install/delete dietro `SKILLS_ADMIN=true` (default off): `npx skills add` con env sanitizzato (drop secrets), 90s timeout, containment + symlink refusal.
+
+---
+
+## 4.8 MCP (`internal/mcp`)
+
+* Picobot-port: stdio + Streamable-HTTP transports, JSON-RPC 2.0.
+* Init flow: `initialize` → `tools/list` → `tools/call`.
+* Config: `MCP_SERVERS_PATH=./mcp.json` (`mcp.example.json` tracked).
+* Boot non-fatale: failure di un server è warning, mai abort.
+* Tool wrapper espone come `mcp_<server>_<tool>` nel registry standard.
+* Dashboard `/mcp` + `POST /api/mcp/{server}/tools/{tool}` per invocazione manuale (60s timeout, 64 KiB body/output cap).
+
+---
+
+## 4.9 Web Dashboard (`internal/api` + `web/`)
+
+* React 19 + Vite + react-router-dom v7.
+* Build → `internal/api/dist/`, embedded via `//go:embed all:dist`.
+* Listener: `HTTP_PORT` (default `127.0.0.1:8080`).
+* Routes: `/` health, `/wiki`, `/wiki/:slug`, `/wiki/graph`, `/sources`, `/tasks`, `/skills`, `/mcp`, `/pending`, `/login`.
+* Theme: palette derivata dal logo (deep navy + electric cyan), light/dark/contrast in oklch, ambient aurora background, brand glow su nav attivo.
+* UX: skeleton placeholders, mobile drawer, keyboard chord shortcuts (`g h/w/g/s/t/k/m`), help dialog (`?`).
+
+### Auth
+
+* Bearer token in header `Authorization: Bearer <token>`.
+* Tokens hashed (SHA-256) in `api_tokens` (SQLite).
+* Emessi via tool `request_dashboard_token` → consegnati out-of-band via Telegram (`Bot.SendToUser`). Plaintext mai nei log.
+* Endpoints: `GET /api/auth/whoami`, `POST /api/auth/logout`.
+* Sign-out in sidebar; 401 → redirect `/login?expired=1`.
+
+### Write actions
+
+* Sources: ingest, re-OCR, upload (PDF drop-zone).
+* Wiki: rebuild index, append log.
+* Tasks: schedule one-time / daily, cancel.
+* Skills (admin-gated): install, delete.
+* MCP: invoke tool con form auto-seedato dallo schema.
+
+---
+
+## 4.10 Tray Icon (`internal/tray`, Windows)
+
+* Multi-resolution `.ico` con weighted centroid + circular mask.
+* Voce "Open Dashboard" lancia browser su `HTTP_PORT`.
+* Quit pulisce shutdown.
+
+---
+
+## 4.11 Telegram Interface (`internal/telegram`)
+
+* `telebot.v4`.
+* PDF handler: validate + bounded concurrency (2), single-message progress edit.
+* /start approval queue (slice 11o): unknown user → `pending_users` + fan-out notifica agli owner; approve/deny dalla dashboard. TOFU bootstrap conservato per il primo /start su install vergine.
+* Markdown → HTML renderer (slice 11u): converte `**`/`##`/`-`/`[link]` nel sottoinsieme Telegram (`b/i/s/u/code/pre/a/blockquote`). Headings → `<b>`, bullets → `•`. Schema URL ristretto a http(s)/tg.
+* Streaming: progressive edit con rate-limit 800 ms.
+
+---
+
+## 4.12 Conversation Context (`internal/conversation`)
+
+* `active_context` (sliding window) + `rolling_summary` + `transcript`.
+* Cap principale: `MAX_HISTORY_MESSAGES` (Picobot pattern). Summarization solo per messaggi singoli patologicamente grandi.
+* Tool-result messages mantenuti accoppiati ai relativi assistant-tool-call durante trim.
+* Speculative search: `SetSearchContext` chiamato prima del primo LLM call.
+
+### Prompt overlay files (slice 11q)
+
+Letti ogni turn da `PROMPT_OVERLAY_PATH` (default `.`):
+* `SOUL.md` — personality.
+* `AGENTS.md` — collaboration norms.
+* `USER.md` — durable user facts.
+* `TOOLS.md` — tool guidance.
+
+Tutti opzionali; modificabili a runtime senza recompile.
+
+---
+
+## 4.13 Search (`internal/search`)
+
+* Primary: chromem-go (vector search) sulla wiki indicizzata.
+* Mirror: SQLite FTS per fallback testuale.
+* **Embedding cache** SHA-keyed (slice 11h): `embedding_cache(content_sha, model)` in SQLite. Cold start invariato; warm restart skippa Mistral round-trip per pagine immutate.
+* **Concurrent indexing** (slice 11i): `coll.AddDocuments` parallelo (`indexConcurrency=4`).
+* Stats esposte su `/api/health` (`hits`/`misses`/`hit-rate`).
+
+---
+
+## 4.14 Health & Observability (`internal/health`, `internal/tracing`, `internal/logging`)
+
+* `GET /api/health`: process block (version, git_revision, started_at, uptime_seconds), embed cache stats, scheduler status.
+* Logging strutturato via `zap`. Nessun secret nei log.
+* OpenTelemetry opt-in (`OTEL_ENABLED`).
+* Per-turn structured log "conversation complete" (slice 11r).
+
+---
+
+## 4.15 Config (`internal/config`)
+
+* `envconfig`.
+* `.env.example` tracked, `.env` gitignored runtime.
+* Caricato esplicitamente all'avvio di `cmd/aura` (no shell env required).
 
 ---
 
@@ -213,185 +304,104 @@ LLM output → Parse YAML → Validate → Write or Retry
 
 ## 5.1 Layers
 
-* Raw
-* Wiki
-* Schema
+* **Raw** — `wiki/raw/<source_id>/` (PDF originale + OCR durabile).
+* **Wiki** — `wiki/<slug>.md` (markdown maintained dal modello).
+* **Schema** — `wiki/SCHEMA.md` + frontmatter validation.
+* **Conversation** — in-memory + summary, cap a 50 messaggi.
+* **Embedding cache** — SQLite, riusa embed tra restart.
 
-## 5.2 Deterministic Mode (MANDATORY)
+## 5.2 Deterministic Mode (MANDATORY per wiki writes)
 
-* temperature = 0
-* prompt versioning
-* schema versioning
-
-### Page metadata
-
-```yaml
-schema_version: 1
-prompt_version: ingest_v1
-```
+* `temperature = 0`.
+* `prompt_version`, `schema_version` su ogni pagina.
+* Atomic write + Git commit per ogni cambio.
 
 ---
 
-# 6. Conversation Model
+# 6. Persistence
 
-```
-conversation/
-  active_context
-  rolling_summary
-  transcript
-```
-
----
-
-# 7. Context Management
-
-* MAX_CONTEXT_TOKENS
-* Summarization threshold: 80%
+* **SQLite** (`DB_PATH`, default `./aura.db`):
+  * `api_tokens` (auth dashboard)
+  * `pending_users` (queue /start)
+  * `allowed_users` (allowlist runtime)
+  * `scheduled_tasks` (scheduler)
+  * `embedding_cache` (search)
+* **File system** (wiki/raw + wiki/<slug>.md + index/log) versionato in Git.
+* **Conversations**: in-memory (history cap), summary durabile via wiki tools quando rilevante.
 
 ---
 
-# 8. Skill System (Hardened)
+# 7. Cost Control
 
-## 8.1 Security Model
-
-### Trust Levels
-
-* local
-* verified
-* untrusted
-
-## 8.2 Execution Constraints
-
-* No network (default)
-* Timeout
-* CPU limit
-* Memory limit
-
-## 8.3 Package
-
-* os/exec
-* containerd (optional advanced)
+* Token tracking per conversazione + globale.
+* Cost prediction prima di ogni LLM call.
+* Soft budget → warning Telegram. Hard budget → halt.
+* `/api/health` espone cache hit-rate per monitorare risparmio embedding.
 
 ---
 
-# 9. Cost Control
+# 8. Security
 
-## 9.1 Token Tracking
-
-* Per conversation
-* Global
-
-## 9.2 Cost Prediction (NEW)
-
-```
-estimated = context + expected_output
-```
-
-## 9.3 Budget Levels
-
-* Soft
-* Hard
+* Telegram allowlist (env + `allowed_users` SQLite).
+* /start approval queue post-bootstrap.
+* Dashboard bearer-only, token mai nei response body.
+* MCP servers opt-in; skills install dietro `SKILLS_ADMIN`.
+* Tool argument logging: solo chiavi.
+* No secrets nei log.
+* Path containment + symlink refusal per file-system mutations.
+* Markdown→HTML renderer rifiuta schemi `javascript:` ecc.
 
 ---
 
-# 10. Retry Model
+# 9. Deployment
 
-* Exponential backoff
-* Max 5 retries
-
----
-
-# 11. Persistence
-
-## 11.1 Conversations
-
-* JSON or PostgreSQL
-
-## 11.2 Wiki
-
-* File system + Git
+* **Cross-platform binari** via GoReleaser (linux/darwin/windows × amd64/arm64).
+* Docker multi-stage Alpine (server-only path).
+* Tray icon su Windows; headless su altre piattaforme (`tray_other.go` no-op).
+* Web dashboard embedded nel binario — single artifact.
 
 ---
 
-# 12. Testing Strategy
+# 10. Testing Strategy
 
-## 12.1 Unit
-
-* validator
-* workspace safety
-
-## 12.2 Integration
-
-* DB
-* wiki
-
-## 12.3 Snapshot Testing (CRITICAL)
-
-* deterministic outputs
+* **Unit**: `go test ./...` deve restare verde su ogni slice.
+* **Integration**: `cmd/debug_ingest`, `cmd/debug_tools`, `cmd/debug_llm` per smoke test naturali.
+* **Live OCR**: build tag `live_ocr` per round-trip Mistral reali (`RERENDER_DIRS` per re-render hermetico).
+* **Race-clean**: `go test -race ./internal/{api,auth,mcp,skills,...}` su PR critiche.
+* **Benchmarks** (slice 11n): skills loader cached/uncached, registry sequential/parallel.
 
 ---
 
-# 13. Deployment
+# 11. Observability
 
-## 13.1 Docker
-
-* Multi-stage build
-* Alpine
-
-## 13.2 Target
-
-* Linux only
+* `/api/health` — rollup health.
+* Process info via `runtime/debug.ReadBuildInfo` (version, git revision).
+* Structured per-turn telemetry.
+* Embed-cache stats card su dashboard.
 
 ---
 
-# 14. Security
+# 12. Roadmap (storica)
 
-* Telegram allowlist
-* Workspace isolation
-* No secrets in logs
-
----
-
-# 15. Observability
-
-* /status
-* structured logs
-
----
-
-# 16. Roadmap
-
-## Phase 1
-
-* Core bot
-* Wiki base
-
-## Phase 2
-
-* Deterministic memory
-
-## Phase 3
-
-* Skill sandbox
-
-## Phase 4
-
-* Multi-agent (optional)
+| Phase | Stato | Note |
+| ----- | ----- | ---- |
+| 1 — Core bot + wiki MD migration | done | Slices preliminari, migrazione YAML→MD. |
+| 2 — PDF/OCR + source store + ingestion | done | Slices 1–6. |
+| 3 — Wiki maintenance + scheduler + natural-prompt tests | done | Slices 7–9. |
+| 4 — Web dashboard (read+write+auth+polish) | done | Slices 10a–10e + browser upload. |
+| 5 — MCP + skills + dashboard panels + admin install | done | Slices 11a–11e. |
+| 6 — Skill format hardening + embed cache + concurrent indexing | done | Slices 11f–11j. |
+| 7 — Smart-and-fast (history cap, parallel tools, skills cache, benchmarks, latency telemetry) | done | Slices 11k–11n, 11r. |
+| 8 — Pending-user gate + speculative wiki + prompt overlay | done | Slices 11o–11q. |
+| 9 — Streaming end-to-end + progressive Telegram edit + Markdown→HTML | done | Slices 11s–11u. |
+| **Next** — File creation milestone | not started | xlsx/docx/pdf generation tools, Telegram delivery. |
 
 ---
 
-# 17. Final Notes
+# 13. Final Notes
 
-Aura non deve essere un sistema complesso.
-
-Deve essere:
-
-* prevedibile
-* controllabile
-* debuggabile
-
-Tutto il resto è secondario.
+Aura non è un sistema complesso: è una pipeline deterministica con tool agentici discreti e una memoria che si compone nel tempo. La v4.0 documenta lo stato vivo. Ogni nuovo slice deve poter essere descritto in una riga in tabella e in un commit atomico.
 
 ---
 
-**End of PRD v3.0**
+**End of PRD v4.0**
