@@ -49,7 +49,7 @@ test.describe('settings page (14d)', () => {
 
     await input.fill(probe);
     // Dirty: revert affordance appears, Save gains a count.
-    await expect(page.getByRole('button', { name: /save \(\d+\)/i })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /save\s+(\(\d+\)|·\s*\d+)/i })).toBeEnabled();
 
     // Save and wait for the request to settle.
     await Promise.all([
@@ -84,7 +84,7 @@ test.describe('settings page (14d)', () => {
     expect(after).not.toBe(before);
 
     // Save activates.
-    await expect(page.getByRole('button', { name: /save \(\d+\)/i })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /save\s+(\(\d+\)|·\s*\d+)/i })).toBeEnabled();
     // Revert without saving so we don't leave OCR flipped on the running bot.
     await page.getByRole('button', { name: /revert/i }).first().click();
     await expect(page.getByRole('button', { name: /^save$/i })).toBeDisabled();

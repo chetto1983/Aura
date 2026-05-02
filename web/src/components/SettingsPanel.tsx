@@ -127,21 +127,21 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <header className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <SettingsIcon size={20} /> Settings
+    <div className="mx-auto max-w-4xl px-6 py-8 space-y-8">
+      <header className="flex items-start justify-between gap-4 flex-wrap pb-6 border-b border-border/60">
+        <div className="space-y-1.5 max-w-xl">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2.5">
+            <SettingsIcon size={22} className="text-muted-foreground" /> Settings
           </h1>
-          <p className="text-xs text-muted-foreground mt-1">
-            Tunable values applied on top of <code>.env</code>. Edits persist in <code>aura.db</code> and take effect on the next conversation turn — no restart needed for most fields. Bootstrap settings (Telegram token, dashboard port, file paths) stay in <code>.env</code>.
+          <p className="text-[13px] text-muted-foreground leading-relaxed">
+            Tunable values applied on top of <code className="text-[12px] font-mono">.env</code>. Edits persist in <code className="text-[12px] font-mono">aura.db</code> and take effect on the next conversation turn. Bootstrap settings (Telegram token, dashboard port, file paths) stay in <code className="text-[12px] font-mono">.env</code>.
           </p>
         </div>
         <div className="flex gap-2 items-center">
           <button
             onClick={testProvider}
             disabled={testing || !valueOf('LLM_BASE_URL')}
-            className="text-sm rounded-md px-3 py-1.5 bg-secondary hover:bg-secondary/80 border border-border flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 text-[13px] rounded-md px-3 bg-secondary/60 hover:bg-secondary border border-border/80 flex items-center gap-1.5 disabled:opacity-40 transition-colors"
           >
             {testing ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
             Test connection
@@ -149,24 +149,28 @@ export function SettingsPanel() {
           <button
             onClick={save}
             disabled={!hasChanges || saving}
-            className="text-sm rounded-md px-3 py-1.5 bg-primary text-primary-foreground hover:brightness-110 flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 text-[13px] rounded-md px-3.5 bg-primary text-primary-foreground hover:brightness-105 active:brightness-95 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-[filter,opacity]"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save {hasChanges ? `(${dirtyKeys.length})` : ''}
+            Save {hasChanges ? `· ${dirtyKeys.length}` : ''}
           </button>
         </div>
       </header>
 
-      {!loaded && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {!loaded && <p className="text-[13px] text-muted-foreground">Loading…</p>}
 
       {loaded && GROUP_ORDER.map((group) => {
         const groupItems = groups[group];
         if (!groupItems || groupItems.length === 0) return null;
         return (
-          <section key={group} className="rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold mb-1">{GROUP_LABEL[group]}</h2>
-            <p className="text-xs text-muted-foreground mb-4">{GROUP_HINT[group]}</p>
-            <div className="space-y-3">
+          <section key={group} className="rounded-lg border border-border/80 bg-card overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/60 bg-card">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {GROUP_LABEL[group]}
+              </h2>
+              <p className="text-[12.5px] text-muted-foreground/90 mt-1">{GROUP_HINT[group]}</p>
+            </div>
+            <div className="divide-y divide-border/40">
               {groupItems.map((it) => (
                 <SettingRow
                   key={it.key}
@@ -201,27 +205,27 @@ function SettingRow({
   onToggleReveal: () => void;
 }) {
   const sourceBadge = (() => {
-    if (dirty) return { label: 'edited', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' };
+    if (dirty) return { label: 'edited', cls: 'bg-amber-500/12 text-amber-500 dark:text-amber-300 border-amber-500/40' };
     switch (item.source) {
       case 'db':
-        return { label: 'saved', cls: 'bg-primary/15 text-primary border-primary/30' };
+        return { label: 'saved', cls: 'bg-primary/12 text-primary border-primary/40' };
       case 'env':
-        return { label: 'from .env', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/30' };
+        return { label: '.env', cls: 'bg-sky-500/12 text-sky-600 dark:text-sky-300 border-sky-500/40' };
       default:
-        return { label: 'default', cls: 'bg-muted/40 text-muted-foreground border-border' };
+        return { label: 'unset', cls: 'bg-muted/50 text-muted-foreground border-border' };
     }
   })();
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_auto] gap-2 md:items-center">
-      <label className="text-xs text-muted-foreground" htmlFor={item.key}>
-        <div className="font-medium text-foreground/90 flex items-center gap-1.5 flex-wrap">
-          {item.label ?? item.key}
-          <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceBadge.cls}`}>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-x-5 gap-y-1.5 md:items-center px-5 py-3.5">
+      <label className="min-w-0" htmlFor={item.key}>
+        <div className="text-[13px] font-medium text-foreground flex items-center gap-1.5 flex-wrap">
+          <span className="truncate">{item.label ?? item.key}</span>
+          <span className={`text-[9.5px] font-medium uppercase tracking-[0.06em] px-1.5 py-px rounded-[4px] border whitespace-nowrap ${sourceBadge.cls}`}>
             {sourceBadge.label}
           </span>
         </div>
-        <div className="text-[10px] font-mono opacity-60">{item.key}</div>
-        {item.hint && <div className="text-[11px] text-muted-foreground/80 mt-1">{item.hint}</div>}
+        <div className="text-[10.5px] font-mono text-muted-foreground/70 mt-0.5 truncate">{item.key}</div>
+        {item.hint && <div className="text-[12px] text-muted-foreground/80 mt-1.5 leading-snug">{item.hint}</div>}
       </label>
       <div className="flex gap-1.5 min-w-0 items-center">
         <Control
@@ -232,18 +236,18 @@ function SettingRow({
           onToggleReveal={onToggleReveal}
         />
       </div>
-      {dirty ? (
-        <button
-          type="button"
-          onClick={onRevert}
-          className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1"
-          title="Discard this change"
-        >
-          revert
-        </button>
-      ) : (
-        <span className="text-xs text-muted-foreground/40 px-2">·</span>
-      )}
+      <div className="flex items-center justify-end">
+        {dirty ? (
+          <button
+            type="button"
+            onClick={onRevert}
+            className="text-[11px] uppercase tracking-[0.06em] text-amber-500 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 px-2 py-1 rounded transition-colors"
+            title="Discard this change"
+          >
+            revert
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -313,13 +317,24 @@ function Control({
     );
   }
 
+  // 2026 input styling: 36px height, 6px radius, 3px tinted focus halo,
+  // hover lifts the border alpha. Tailwind `border-border` was too
+  // light in light mode (hairline against white card looked invisible),
+  // so pin to a stronger token via inline style on the input itself.
+  const fieldCls = 'h-9 w-full text-[13px] font-mono rounded-md bg-background px-3 transition-[border-color,box-shadow] duration-[120ms] focus:outline-none';
+  const fieldStyle: React.CSSProperties = {
+    border: '1px solid var(--border, oklch(0.85 0.01 240))',
+    boxShadow: 'inset 0 0 0 1px transparent',
+  };
+
   if (kind === 'enum') {
     return (
       <select
         id={item.key}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-sm rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+        style={fieldStyle}
+        className={`${fieldCls} pr-8 cursor-pointer`}
       >
         {!item.options?.includes(value) && value !== '' && <option value={value}>{value}</option>}
         {item.options?.map((opt) => (
@@ -337,7 +352,8 @@ function Control({
         step={kind === 'float' ? 'any' : '1'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-sm font-mono rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+        style={fieldStyle}
+        className={fieldCls}
       />
     );
   }
@@ -353,14 +369,16 @@ function Control({
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
         spellCheck={false}
-        className="w-full text-sm font-mono rounded-md bg-background border border-border px-2.5 py-1.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+        style={fieldStyle}
+        className={fieldCls}
       />
       {item.is_secret && (
         <button
           type="button"
           onClick={onToggleReveal}
           title={revealed ? 'Hide' : 'Reveal'}
-          className="rounded-md px-2 bg-secondary hover:bg-secondary/80 border border-border"
+          style={{ border: '1px solid var(--border, oklch(0.85 0.01 240))', background: 'var(--secondary, oklch(0.92 0.01 240))' }}
+          className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
         >
           {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
