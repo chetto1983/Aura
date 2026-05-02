@@ -85,17 +85,17 @@ test.describe('/conversations route (12c, 12j, 12u.1, 12u.2)', () => {
   test('clicking a turn row opens the drawer (when seeded data exists)', async ({ authedPage: page }) => {
     test.skip(
       !process.env.AURA_E2E_CHAT_ID,
-      'AURA_E2E_CHAT_ID not set — drawer test needs at least one seeded turn',
+      'AURA_E2E_CHAT_ID not set — drawer test needs at least one archived turn',
     );
     await page.goto('/conversations');
-    const filter = page.getByPlaceholder(/chat[ _-]?id/i);
-    await filter.fill(process.env.AURA_E2E_CHAT_ID!);
-    // Wait for at least one turn row.
-    const firstRow = page.getByRole('row').nth(1); // row 0 is header
+    // Per CR-02 fix the panel renders the most-recent turns with no
+    // filter, so we can find a row directly. The first <tr> is the
+    // header; nth(1) is the first data row.
+    const firstRow = page.getByRole('row').nth(1);
     await expect(firstRow).toBeVisible({ timeout: 5_000 });
     await firstRow.click();
-    // Drawer/sheet shows turn detail.
-    await expect(page.getByRole('dialog')).toBeVisible();
+    // ConversationDrawer is a shadcn Sheet, which renders with role="dialog".
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
   });
 });
 
