@@ -69,28 +69,8 @@ func TestBufferedAppender_DrainAll(t *testing.T) {
 // TestBufferedAppender_DropOnFull verifies that when the buffer is full,
 // excess turns are dropped (not blocking) and no error is returned.
 func TestBufferedAppender_DropOnFull(t *testing.T) {
-	// blockingStore holds the drain goroutine so the buffer fills up.
-	type blockingStore struct {
-		mu      sync.Mutex
-		count   int
-		release chan struct{}
-	}
-	bs := &blockingStore{release: make(chan struct{})}
-	bs.mu.Lock() // hold the lock so Append blocks until we release
-
-	appendStore := &struct {
-		conversation.TurnAppender
-		mu      sync.Mutex
-		count   int
-		blocked bool
-		release chan struct{}
-	}{
-		release: make(chan struct{}),
-	}
-	_ = bs
-	_ = appendStore
-
-	// Use a simpler approach: size-1 buffer, pre-fill it, then send one more.
+	// Size-1 buffer, slow drain: pre-fill it, then send one more so the
+	// channel is full when the third Append fires the drop branch.
 	blockCh := make(chan struct{})
 	slowStore := &slowMockStore{block: blockCh}
 
@@ -116,16 +96,11 @@ func TestBufferedAppender_DropOnFull(t *testing.T) {
 
 // slowMockStore blocks on Append until block is closed.
 type slowMockStore struct {
-	mu    sync.Mutex
-	count int
 	block chan struct{}
 }
 
 func (s *slowMockStore) Append(_ context.Context, _ conversation.Turn) error {
 	<-s.block
-	s.mu.Lock()
-	s.count++
-	s.mu.Unlock()
 	return nil
 }
 
