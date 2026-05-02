@@ -74,6 +74,22 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-05-02 — Phase 13 (Telegram bot god-file refactor)
+
+Split `internal/telegram/bot.go` from a 1,281-line mixed-responsibility file into focused package files while preserving behavior:
+
+- `bot.go`: core `Bot` type plus lifecycle/public helpers.
+- `setup.go`: construction and wiring.
+- `access.go`: `/start`, `/login`, allowlist, pending approval, and dashboard-token delivery.
+- `handlers.go`: Telegram handler registration and text entrypoint.
+- `conversation.go`: conversation turn orchestration, tool loop, and tool execution.
+- `streaming.go`: assistant delivery and progressive Telegram stream editing.
+- `scheduler_handlers.go`: reminder and wiki-maintenance dispatch.
+- `status.go`: `/status` and budget status helpers.
+- `adapters.go`: API/skills adapter shim.
+
+No behavior changes intended; this is an ownership-boundary refactor to make future Phase 12 follow-ups smaller and safer. Verification: `go test ./...`, `go build ./...`, and `go vet ./...` all pass.
+
 ### 2026-05-02 — Phase 12 (Compounding Memory) v0.12.0
 
 Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6 against `docs/plans/2026-05-02-phase-12-compounding-memory-plan.md`. 21 atomic slices (12a–12u) + 7 post-review follow-ups (12u.1–12u.7) + 2 lead infra commits (12.cleanup, 12.fix-applier).
@@ -89,7 +105,7 @@ Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend /
 
 **Quality gates**: 289 tests across 6 packages green. `go vet` clean. `staticcheck -checks U1000` zero findings. Frontend lint + tsc + build clean. Coverage: archive.go / maintenance.go / issues.go / scorer.go / dedup.go / types.go all 100% per function. Race detector deferred to Linux CI (Windows linker conflict with HMITool7.0).
 
-**Deferred work** (v0.12.1): HR-01 RepairLink partial-commit (collect multi-error instead of bail-on-first), HR-02 Category/RelatedSlugs lost on `proposed_updates` round-trip (schema migration). **Phase 13**: `internal/telegram/bot.go` is 1394 LOC / 33 functions — flagged as a god class for refactor as its own milestone with its own design pass + agent-team execution.
+**Deferred work** (v0.12.1): HR-01 RepairLink partial-commit (collect multi-error instead of bail-on-first), HR-02 Category/RelatedSlugs lost on `proposed_updates` round-trip (schema migration).
 
 ### 2026-04-30 — Slice 11u (Render assistant Markdown into Telegram HTML)
 
