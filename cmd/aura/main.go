@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
+	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tracing"
 	"github.com/aura/aura/internal/tray"
@@ -37,6 +38,19 @@ func main() {
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
+	}
+
+	// Slice 14a: overlay user-tunable settings from the SQLite settings
+	// table on top of the env-loaded config. Bootstrap fields
+	// (TelegramToken / HTTPPort / DBPath / LogLevel and the path roots)
+	// stay env-only — see internal/settings/applier.go. Empty store is a
+	// no-op, so this is safe before the dashboard ever writes a setting.
+	settingsStore, err := settings.OpenStore(cfg.DBPath)
+	if err != nil {
+		logger.Warn("settings store unavailable, using env only", "error", err)
+	} else {
+		settings.ApplyToConfig(context.Background(), settingsStore, cfg)
+		defer settingsStore.Close()
 	}
 
 	// Set log level from config
