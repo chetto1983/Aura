@@ -103,6 +103,12 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying *sql.DB so other subsystems (e.g. the
+// conversation archive) can share the same SQLite connection.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate: %w", err)

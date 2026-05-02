@@ -46,11 +46,12 @@ type Bot struct {
 	docs       *docHandler
 	sched      *scheduler.Scheduler
 	schedDB    *scheduler.Store
-	authDB     *auth.Store    // dashboard bearer-token store (slice 10d)
-	mcpClients []*mcp.Client  // active MCP server connections (slice 11a)
-	api        http.Handler   // read-only JSON API for the dashboard, mounted on the health server
-	active     sync.Map       // maps userID string -> bool (active conversation tracking)
-	ctxMap     sync.Map       // maps userID string -> *conversation.Context
+	authDB     *auth.Store                    // dashboard bearer-token store (slice 10d)
+	mcpClients []*mcp.Client                  // active MCP server connections (slice 11a)
+	archiver   *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
+	api        http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
+	active     sync.Map                       // maps userID string -> bool (active conversation tracking)
+	ctxMap     sync.Map                       // maps userID string -> *conversation.Context
 }
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
@@ -283,6 +284,18 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}, logger),
 	}
 
+	// Slice 12b: conversation archive. Open the ArchiveStore on the same
+	// SQLite file as the scheduler (migration is idempotent). Wrap with a
+	// BufferedAppender so hot conversation paths stay non-blocking.
+	if cfg.ConvArchiveEnabled {
+		archiveStore, err := conversation.NewArchiveStore(schedStore.DB())
+		if err != nil {
+			logger.Warn("conversation archive unavailable", "error", err)
+		} else {
+			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
+		}
+	}
+
 	// Scheduler dispatcher closes over b so reminder/wiki_maintenance
 	// tasks can invoke the bot's send + the wiki store. Built after b
 	// is initialized.
@@ -431,6 +444,9 @@ func (b *Bot) Start() {
 
 // Stop gracefully stops the bot and the scheduler.
 func (b *Bot) Stop() {
+	if b.archiver != nil {
+		_ = b.archiver.Close(context.Background())
+	}
 	if b.sched != nil {
 		b.sched.Stop()
 	}
@@ -814,6 +830,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"message", c.Text(),
 	)
 
+	// Capture message index before this turn so we can archive only new messages.
+	turnMsgIdx := convCtx.MessageCount()
+
 	// Add user message to context
 	convCtx.AddUserMessage(c.Text())
 
@@ -867,6 +886,20 @@ func (b *Bot) handleConversation(c tele.Context) {
 	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
 	if response != "" {
 		b.sendAssistant(c, response)
+	}
+
+	// Slice 12b: archive new messages produced during this turn.
+	if b.archiver != nil {
+		chatID := c.Chat().ID
+		for i, msg := range convCtx.MessagesSince(turnMsgIdx) {
+			_ = b.archiver.Append(context.Background(), conversation.Turn{
+				ChatID:    chatID,
+				UserID:    c.Sender().ID,
+				TurnIndex: int64(turnMsgIdx + i),
+				Role:      msg.Role,
+				Content:   msg.Content,
+			})
+		}
 	}
 
 	// Slice 11r: per-turn telemetry. elapsed_ms is wall-clock from

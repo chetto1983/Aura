@@ -419,3 +419,21 @@ func toolSafeBoundary(messages []llm.Message, split int) int {
 func (c *Context) Transcript() []string {
 	return c.transcript
 }
+
+// MessageCount returns the current number of messages in the context
+// (including any system message). Use this before a turn to capture a
+// baseline index, then call MessagesSince to retrieve only the new messages.
+func (c *Context) MessageCount() int {
+	return len(c.messages)
+}
+
+// MessagesSince returns the messages appended after the given baseline index.
+// Safe to call with any index; out-of-range values return an empty slice.
+func (c *Context) MessagesSince(fromIndex int) []llm.Message {
+	if fromIndex >= len(c.messages) || fromIndex < 0 {
+		return nil
+	}
+	out := make([]llm.Message, len(c.messages)-fromIndex)
+	copy(out, c.messages[fromIndex:])
+	return out
+}

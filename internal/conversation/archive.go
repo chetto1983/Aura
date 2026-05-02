@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -173,6 +175,67 @@ func scanTurn(r turnScanner) (Turn, error) {
 	}
 	t.CreatedAt = ts.UTC()
 	return t, nil
+}
+
+// TurnAppender is the write side of ArchiveStore — satisfied by *ArchiveStore
+// and by mock implementations in tests.
+type TurnAppender interface {
+	Append(ctx context.Context, t Turn) error
+}
+
+// BufferedAppender wraps a TurnAppender with a buffered channel and a single
+// drain goroutine so hot conversation paths are non-blocking. Turns that
+// arrive when the buffer is full are dropped and logged.
+type BufferedAppender struct {
+	store  TurnAppender
+	ch     chan Turn
+	logger *slog.Logger
+	wg     sync.WaitGroup
+}
+
+// NewBufferedAppender starts the drain goroutine. bufSize should be 100 for
+// production; tests may use smaller values.
+func NewBufferedAppender(store TurnAppender, bufSize int) *BufferedAppender {
+	a := &BufferedAppender{
+		store:  store,
+		ch:     make(chan Turn, bufSize),
+		logger: slog.Default(),
+	}
+	a.wg.Add(1)
+	go a.drain()
+	return a
+}
+
+// Append enqueues a Turn non-blocking. If the buffer is full the turn is
+// dropped and a warning is logged (archive_dropped_total).
+func (a *BufferedAppender) Append(_ context.Context, t Turn) error {
+	select {
+	case a.ch <- t:
+	default:
+		a.logger.Warn("archive_dropped_total: buffer full, turn dropped",
+			"chat_id", t.ChatID, "turn_index", t.TurnIndex)
+	}
+	return nil
+}
+
+// Close signals the drain goroutine to flush remaining turns and waits for it
+// to finish. ctx is reserved for future timeout support.
+func (a *BufferedAppender) Close(_ context.Context) error {
+	close(a.ch)
+	a.wg.Wait()
+	return nil
+}
+
+func (a *BufferedAppender) drain() {
+	defer a.wg.Done()
+	for t := range a.ch {
+		if err := a.store.Append(context.Background(), t); err != nil {
+			if !errors.Is(err, ErrDuplicateTurn) {
+				a.logger.Warn("archive drain: append failed",
+					"chat_id", t.ChatID, "turn_index", t.TurnIndex, "error", err)
+			}
+		}
+	}
 }
 
 // isDuplicateError reports whether err is a SQLite unique-constraint violation.

@@ -53,6 +53,9 @@ type Config struct {
 	OCREnabled              bool   `envconfig:"OCR_ENABLED" default:"true"`
 	OCRMaxPages             int    `envconfig:"OCR_MAX_PAGES" default:"500"`
 	OCRMaxFileMB            int    `envconfig:"OCR_MAX_FILE_MB" default:"100"`
+
+	// Conversation archive (Phase 12a/12b)
+	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -129,6 +132,8 @@ func Load() (*Config, error) {
 	cfg.OCREnabled = getEnvBool("OCR_ENABLED", true)
 	cfg.OCRMaxPages = getEnvInt("OCR_MAX_PAGES", 500)
 	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
+
+	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 
 	return cfg, nil
 }
