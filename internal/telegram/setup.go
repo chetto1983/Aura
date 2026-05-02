@@ -19,6 +19,7 @@ import (
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/settings"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
@@ -29,7 +30,12 @@ import (
 )
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
-func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
+//
+// settingsStore is the runtime configuration store opened by main.go on
+// cfg.DBPath. It's threaded through so the dashboard's /settings page
+// can persist edits without re-opening the SQLite file. May be nil
+// (tests) — in that case the dashboard /settings endpoints respond 503.
+func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger) (*Bot, error) {
 	pref := tele.Settings{
 		Token: cfg.TelegramToken,
 	}
@@ -414,6 +420,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		// Slice 12l.1: wiki maintenance issue queue (shared with the
 		// nightly maintenance dispatch).
 		Issues: b.issues,
+		// Slice 14d: runtime settings page surface.
+		Settings: settingsStore,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

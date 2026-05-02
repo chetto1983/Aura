@@ -16,6 +16,7 @@ import (
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
@@ -119,6 +120,12 @@ type Deps struct {
 	// Slice 12l.1: wiki maintenance issue queue. Optional — when nil, list
 	// returns empty array and resolve returns 404.
 	Issues *scheduler.IssuesStore
+
+	// Slice 14d: runtime settings store. Backs GET /settings (list
+	// current values) and POST /settings (bulk upsert) so the dashboard
+	// can edit operator-tunable config without a restart. Optional —
+	// when nil, the endpoints return 503.
+	Settings *settings.Store
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -209,6 +216,11 @@ func NewRouter(deps Deps) http.Handler {
 	// Slice 12l.1: wiki maintenance issue queue.
 	mux.HandleFunc("GET /maintenance/issues", handleMaintenanceList(deps))
 	mux.HandleFunc("POST /maintenance/issues/{id}/resolve", handleMaintenanceResolve(deps))
+
+	// Slice 14d: runtime settings page.
+	mux.HandleFunc("GET /settings", handleSettingsList(deps))
+	mux.HandleFunc("POST /settings", handleSettingsUpdate(deps))
+	mux.HandleFunc("POST /settings/test", handleSettingsTest(deps))
 
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)

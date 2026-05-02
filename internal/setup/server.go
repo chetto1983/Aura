@@ -102,7 +102,7 @@ func Run(cfg Config) (telegramToken string, err error) {
 				probePath = "/models"
 			}
 		}
-		result := probeProvider(r.Context(), req.BaseURL, req.APIKey, probePath)
+		result := ProbeProvider(r.Context(), req.BaseURL, req.APIKey, probePath)
 		writeJSON(w, http.StatusOK, result)
 	})
 

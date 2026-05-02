@@ -90,7 +90,7 @@ func TestWriteDotEnvKeyAtomicCreatesNewFile(t *testing.T) {
 }
 
 func TestProbeProviderConnectFailure(t *testing.T) {
-	res := probeProvider(context.Background(), "http://127.0.0.1:1", "key", "/models")
+	res := ProbeProvider(context.Background(), "http://127.0.0.1:1", "key", "/models")
 	if res.OK {
 		t.Errorf("expected OK=false on bad port, got %+v", res)
 	}
@@ -104,7 +104,7 @@ func TestProbeProvider401(t *testing.T) {
 		w.WriteHeader(401)
 	}))
 	defer srv.Close()
-	res := probeProvider(context.Background(), srv.URL, "wrong-key", "/v1/models")
+	res := ProbeProvider(context.Background(), srv.URL, "wrong-key", "/v1/models")
 	if res.OK {
 		t.Errorf("expected OK=false on 401, got %+v", res)
 	}
@@ -124,7 +124,7 @@ func TestProbeProviderHappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := probeProvider(context.Background(), srv.URL, "sk-x", "/v1/models")
+	res := ProbeProvider(context.Background(), srv.URL, "sk-x", "/v1/models")
 	if !res.OK {
 		t.Errorf("expected OK=true, got %+v", res)
 	}
@@ -134,7 +134,7 @@ func TestProbeProviderHappyPath(t *testing.T) {
 }
 
 func TestProbeProviderNoBaseURL(t *testing.T) {
-	res := probeProvider(context.Background(), "  ", "k", "/v1/models")
+	res := ProbeProvider(context.Background(), "  ", "k", "/v1/models")
 	if res.OK || res.Error == "" {
 		t.Errorf("expected error for blank base URL, got %+v", res)
 	}
@@ -149,7 +149,7 @@ func TestProbeProviderNonStandardResponseStillOK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res := probeProvider(context.Background(), srv.URL, "k", "/v1/models")
+	res := ProbeProvider(context.Background(), srv.URL, "k", "/v1/models")
 	if !res.OK {
 		t.Errorf("expected OK=true for connect-but-unparseable, got %+v", res)
 	}

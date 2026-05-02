@@ -276,3 +276,12 @@ export interface Task {
   created_at: string;
   updated_at: string;
 }
+
+// Slice 14d — runtime settings page.
+export interface SettingItem {
+  key: string;
+  value: string;
+  is_secret: boolean;
+  label?: string;
+  group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'other';
+}

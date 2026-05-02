@@ -115,7 +115,7 @@ func main() {
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
 
-	bot, err := telegram.New(cfg, logger)
+	bot, err := telegram.New(cfg, settingsStore, logger)
 	if err != nil {
 		logger.Error("failed to create telegram bot", "error", err)
 		os.Exit(1)

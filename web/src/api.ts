@@ -25,6 +25,7 @@ import type {
   ConversationDetail,
   ProposedUpdate,
   WikiIssue,
+  SettingItem,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -247,4 +248,15 @@ export const api = {
     get<WikiIssue[]>('/maintenance/issues' + qs({ status, severity })),
   resolveIssue: (id: number) =>
     post<WikiIssue>(`/maintenance/issues/${id}/resolve`),
+
+  // ---- runtime settings (slice 14d) ----
+  settings: () => get<{ items: SettingItem[] }>(`/settings`),
+  updateSettings: (updates: Record<string, string>) =>
+    post<{ ok: boolean; applied?: string[]; errors?: string[] }>(`/settings`, { updates }),
+  testProvider: (baseURL: string, apiKey: string, probePath?: string) =>
+    post<{ ok: boolean; error?: string; models?: string[] }>(`/settings/test`, {
+      base_url: baseURL,
+      api_key: apiKey,
+      probe_path: probePath,
+    }),
 };

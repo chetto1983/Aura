@@ -20,11 +20,14 @@ type ProbeResult struct {
 	Models []string `json:"models,omitempty"`
 }
 
-// probeProvider hits an OpenAI-compatible /models endpoint to validate
+// ProbeProvider hits an OpenAI-compatible /models endpoint to validate
 // (base_url, api_key) before we save them. Times out at 6s — providers
 // that take longer than that aren't usable for chat anyway. Returns the
 // model list so the wizard can offer it as a dropdown.
-func probeProvider(ctx context.Context, baseURL, apiKey, probePath string) ProbeResult {
+//
+// Exported so the dashboard's POST /settings/test (slice 14d) can reuse
+// the same probe semantics as the first-run wizard.
+func ProbeProvider(ctx context.Context, baseURL, apiKey, probePath string) ProbeResult {
 	if strings.TrimSpace(baseURL) == "" {
 		return ProbeResult{Error: "base URL is required"}
 	}

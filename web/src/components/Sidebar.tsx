@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
-import { LayoutDashboard, BookText, Network, Inbox, Calendar, Sparkles, Plug, ShieldCheck, MessagesSquare, FileCheck, Wrench, Sun, Moon, Contrast, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookText, Network, Inbox, Calendar, Sparkles, Plug, ShieldCheck, MessagesSquare, FileCheck, Wrench, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
 import { useAppTheme, type AppTheme } from '@/hooks/useAppTheme';
 import { api } from '@/api';
 import { clearToken } from '@/lib/auth';
@@ -18,6 +18,7 @@ const ITEMS = [
   { to: '/conversations', label: 'Conversations', icon: MessagesSquare },
   { to: '/summaries', label: 'Summaries', icon: FileCheck },
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const THEME_ICON: Record<AppTheme, typeof Sun> = {
