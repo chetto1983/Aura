@@ -36,6 +36,23 @@ CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversations(chat_id, turn_index);
 CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, created_at);
 `
 
+// wikiIssuesSchemaSQL creates the wiki_issues table used by IssuesStore.
+const wikiIssuesSchemaSQL = `
+CREATE TABLE IF NOT EXISTS wiki_issues (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT    NOT NULL,
+  severity    TEXT    NOT NULL,
+  slug        TEXT    NOT NULL DEFAULT '',
+  broken_link TEXT    NOT NULL DEFAULT '',
+  message     TEXT    NOT NULL DEFAULT '',
+  status      TEXT    NOT NULL DEFAULT 'open',
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at DATETIME
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_issues_key
+  ON wiki_issues(kind, slug, broken_link);
+`
+
 // proposedUpdatesSchemaSQL creates the proposed_updates table used by the
 // review-mode summarizer applier. Idempotent via IF NOT EXISTS.
 const proposedUpdatesSchemaSQL = `
@@ -137,6 +154,9 @@ func (s *Store) migrate() error {
 	}
 	if _, err := s.db.Exec(proposedUpdatesSchemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate proposed_updates: %w", err)
+	}
+	if _, err := s.db.Exec(wikiIssuesSchemaSQL); err != nil {
+		return fmt.Errorf("scheduler migrate wiki_issues: %w", err)
 	}
 	return nil
 }

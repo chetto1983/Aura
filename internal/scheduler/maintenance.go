@@ -16,13 +16,20 @@ type WikiMaintainer interface {
 	RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error
 }
 
+// OwnerNotifier is called when high-severity issues are found. Passed as a
+// function to avoid an import cycle between scheduler and telegram packages.
+type OwnerNotifier func(ctx context.Context, msg string)
+
 // MaintenanceJob runs the nightly wiki maintenance pass.
 type MaintenanceJob struct {
-	wiki   WikiMaintainer
-	logger *slog.Logger
+	wiki     WikiMaintainer
+	issues   *IssuesStore // nil → skip enqueue (pre-12h behaviour)
+	notifier OwnerNotifier // nil → skip notifications
+	logger   *slog.Logger
 }
 
-// NewMaintenanceJob returns a MaintenanceJob. logger may be nil (uses default).
+// NewMaintenanceJob returns a MaintenanceJob. logger, issues, and notifier may
+// be nil (issues/notifier = no DB enqueue / no Telegram notification).
 func NewMaintenanceJob(w WikiMaintainer, logger *slog.Logger) *MaintenanceJob {
 	if logger == nil {
 		logger = slog.Default()
@@ -30,11 +37,24 @@ func NewMaintenanceJob(w WikiMaintainer, logger *slog.Logger) *MaintenanceJob {
 	return &MaintenanceJob{wiki: w, logger: logger}
 }
 
+// WithIssuesStore configures the IssuesStore used to persist deferred issues.
+func (j *MaintenanceJob) WithIssuesStore(s *IssuesStore) *MaintenanceJob {
+	j.issues = s
+	return j
+}
+
+// WithOwnerNotifier configures the callback for high-severity notifications.
+func (j *MaintenanceJob) WithOwnerNotifier(n OwnerNotifier) *MaintenanceJob {
+	j.notifier = n
+	return j
+}
+
 // Run executes the maintenance pass and returns (fixed, deferred, err).
 // fixed: number of broken links auto-repaired.
-// deferred: number of issues that could not be auto-fixed (queued by 12h).
+// deferred: number of issues persisted to wiki_issues (or just logged when
+// no IssuesStore is wired).
 func (j *MaintenanceJob) Run(ctx context.Context) (fixed, deferred int, err error) {
-	issues, err := j.wiki.Lint(ctx)
+	lintIssues, err := j.wiki.Lint(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("maintenance lint: %w", err)
 	}
@@ -44,12 +64,21 @@ func (j *MaintenanceJob) Run(ctx context.Context) (fixed, deferred int, err erro
 		return 0, 0, fmt.Errorf("maintenance list pages: %w", err)
 	}
 
-	for _, issue := range issues {
-		brokenSlug, ok := parseBrokenLink(issue.Message)
+	var highCount int
+
+	for _, li := range lintIssues {
+		brokenSlug, ok := parseBrokenLink(li.Message)
 		if !ok {
-			// Not a broken-link issue (e.g. missing category, orphan) — defer.
+			// Non-broken-link issue (missing category, orphan, etc.)
+			severity := classifyNonLink(li.Message)
 			j.logger.Info("maintenance: non-link issue deferred",
-				"page", issue.Slug, "msg", issue.Message)
+				"page", li.Slug, "msg", li.Message, "severity", severity)
+			j.enqueue(ctx, Issue{
+				Kind:     classifyKind(li.Message),
+				Severity: severity,
+				Slug:     li.Slug,
+				Message:  li.Message,
+			}, &highCount)
 			deferred++
 			continue
 		}
@@ -59,19 +88,66 @@ func (j *MaintenanceJob) Run(ctx context.Context) (fixed, deferred int, err erro
 			if repErr := j.wiki.RepairLink(ctx, brokenSlug, candidates[0]); repErr != nil {
 				j.logger.Warn("maintenance: repair failed",
 					"broken", brokenSlug, "candidate", candidates[0], "error", repErr)
+				j.enqueue(ctx, Issue{
+					Kind: "broken_link", Severity: "high",
+					Slug: li.Slug, BrokenLink: brokenSlug, Message: li.Message,
+				}, &highCount)
 				deferred++
 			} else {
 				j.logger.Info("maintenance: auto-fixed broken link",
-					"page", issue.Slug, "broken", brokenSlug, "fixed", candidates[0])
+					"page", li.Slug, "broken", brokenSlug, "fixed", candidates[0])
 				fixed++
 			}
 		} else {
 			j.logger.Info("maintenance: ambiguous broken link, deferring",
-				"page", issue.Slug, "broken", brokenSlug, "candidates", len(candidates))
+				"page", li.Slug, "broken", brokenSlug, "candidates", len(candidates))
+			j.enqueue(ctx, Issue{
+				Kind: "broken_link", Severity: "high",
+				Slug: li.Slug, BrokenLink: brokenSlug, Message: li.Message,
+			}, &highCount)
 			deferred++
 		}
 	}
+
+	if highCount > 0 && j.notifier != nil {
+		msg := fmt.Sprintf("Aura wiki maintenance: %d high-severity issue(s) found. Check the dashboard /maintenance.", highCount)
+		j.notifier(ctx, msg)
+	}
+
 	return fixed, deferred, nil
+}
+
+func (j *MaintenanceJob) enqueue(ctx context.Context, issue Issue, highCount *int) {
+	if j.issues != nil {
+		if err := j.issues.Enqueue(ctx, issue); err != nil {
+			j.logger.Warn("maintenance: enqueue failed", "error", err)
+		}
+	}
+	if issue.Severity == "high" {
+		*highCount++
+	}
+}
+
+// classifyKind maps a lint message to an issue kind string.
+func classifyKind(msg string) string {
+	switch {
+	case strings.Contains(msg, "broken link") || strings.Contains(msg, "broken related"):
+		return "broken_link"
+	case strings.Contains(msg, "missing category"):
+		return "missing_category"
+	default:
+		return "orphan"
+	}
+}
+
+// classifyNonLink assigns severity to non-broken-link issues.
+func classifyNonLink(msg string) string {
+	switch {
+	case strings.Contains(msg, "missing category"):
+		return "low"
+	default:
+		return "medium"
+	}
 }
 
 // parseBrokenLink extracts the slug from a LintIssue message like

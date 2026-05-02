@@ -569,7 +569,15 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 		return fmt.Errorf("wiki maintenance: wiki store unavailable")
 	}
 	b.wiki.RebuildIndex(ctx)
-	job := scheduler.NewMaintenanceJob(b.wiki, b.logger)
+	job := scheduler.NewMaintenanceJob(b.wiki, b.logger).
+		WithIssuesStore(scheduler.NewIssuesStore(b.schedDB.DB())).
+		WithOwnerNotifier(func(ctx context.Context, msg string) {
+			for _, ownerID := range b.collectOwnerIDs() {
+				if err := b.SendToUser(ownerID, msg); err != nil {
+					b.logger.Warn("maintenance notify failed", "owner", ownerID, "error", err)
+				}
+			}
+		})
 	fixed, deferred, err := job.Run(ctx)
 	if err != nil {
 		return fmt.Errorf("wiki maintenance: %w", err)

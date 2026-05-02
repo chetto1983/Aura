@@ -31,5 +31,8 @@ func NewTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(proposedUpdatesSchemaSQL); err != nil {
 		t.Fatalf("NewTestDB migrate proposed_updates: %v", err)
 	}
+	if _, err := db.Exec(wikiIssuesSchemaSQL); err != nil {
+		t.Fatalf("NewTestDB migrate wiki_issues: %v", err)
+	}
 	return db
 }
