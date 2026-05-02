@@ -10,6 +10,7 @@ import (
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
@@ -108,6 +109,12 @@ type Deps struct {
 	// Slice 12c: conversation archive. Optional — when nil, list returns
 	// an empty array and detail returns 404.
 	Archive *conversation.ArchiveStore
+
+	// Slice 12k.1: summaries review queue. Optional — when nil, list returns
+	// empty array. SummariesWiki is the WikiWriter used to apply approved
+	// decisions; when nil, approve still flips status but skips wiki mutation.
+	Summaries     *summarizer.SummariesStore
+	SummariesWiki summarizer.WikiWriter
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -189,6 +196,11 @@ func NewRouter(deps Deps) http.Handler {
 	// Slice 12c: conversation archive endpoints.
 	mux.HandleFunc("GET /conversations", handleConversationList(deps))
 	mux.HandleFunc("GET /conversations/{id}", handleConversationDetail(deps))
+
+	// Slice 12k.1: summaries review queue.
+	mux.HandleFunc("GET /summaries", handleSummariesList(deps))
+	mux.HandleFunc("POST /summaries/{id}/approve", handleSummariesApprove(deps))
+	mux.HandleFunc("POST /summaries/{id}/reject", handleSummariesReject(deps))
 
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)

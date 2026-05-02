@@ -433,6 +433,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		PendingApprover: b,
 		// Slice 12c: conversation archive read API.
 		Archive: b.archiveDB,
+		// Slice 12k.1: summaries review queue.
+		Summaries:     summarizer.NewSummariesStore(schedStore.DB()),
+		SummariesWiki: wikiStore,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
