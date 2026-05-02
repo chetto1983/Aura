@@ -1,8 +1,8 @@
 # Aura — Personal AI Agent with Compounding Memory
 
-**Product Requirements Document — Version 4.0**
+**Product Requirements Document — Version 4.1**
 **Date:** 2026-05-02
-**Status:** reflects shipped state through slice 11u (Phase 11 complete; cross-platform binaries via GoReleaser).
+**Status:** reflects shipped state through slice 12u (Phase 12 complete; compounding memory: conversation archive + auto-summarization + wiki maintenance).
 
 ---
 
@@ -307,14 +307,43 @@ Tutti opzionali; modificabili a runtime senza recompile.
 * **Raw** — `wiki/raw/<source_id>/` (PDF originale + OCR durabile).
 * **Wiki** — `wiki/<slug>.md` (markdown maintained dal modello).
 * **Schema** — `wiki/SCHEMA.md` + frontmatter validation.
-* **Conversation** — in-memory + summary, cap a 50 messaggi.
+* **Conversation (in-memory)** — cap a 50 messaggi, summary durabile via wiki.
+* **Conversation archive (SQLite, slice 12a–12c)** — ogni turno persistito su `conversations` table; tool_calls JSON + per-turn telemetry sul ruolo assistant.
 * **Embedding cache** — SQLite, riusa embed tra restart.
 
 ## 5.2 Deterministic Mode (MANDATORY per wiki writes)
 
 * `temperature = 0`.
-* `prompt_version`, `schema_version` su ogni pagina.
+* `prompt_version`, `schema_version` su ogni pagina (regex: `v{n}` | `ingest_v{n}` | `summarizer_v{n}`).
 * Atomic write + Git commit per ogni cambio.
+
+## 5.3 Compounding Memory (Phase 12)
+
+La memoria si compone automaticamente: ogni conversazione contribuisce conoscenza durevole, la wiki si manutiene da sola, la dashboard espone le superfici nuove.
+
+### Pipeline
+
+1. **Archive** (slice 12a–12c). `BufferedAppender` (chan 100, drain goroutine, drop-on-full warn) archivia ogni messaggio nel `conversations` table dietro `CONV_ARCHIVE_ENABLED=true`. `turn_index` allocato monotonicamente da `MAX(turn_index) WHERE chat_id = ?` per resistere ai trim di `EnforceLimit`. API: `GET /api/conversations[?chat_id]&limit=`, `GET /api/conversations/{id}`. Dashboard route: `/conversations` con drawer per turno + tool_calls expanded.
+2. **Summarize** (slice 12d–12f, 12k.1). Dopo ogni `SUMMARIZER_INTERVAL=5` turni un `Runner` chiama lo `LLMScorer` (temperature=0) sui `SUMMARIZER_LOOKBACK=10` turni più recenti, filtra per `SUMMARIZER_MIN_SALIENCE`, dedup contro la wiki via similarity (>0.85 skip, ≥0.5 patch, <0.5 new). Apply paths via `SUMMARIZER_MODE`: `auto` scrive direttamente la wiki con `prompt_version=summarizer_v1`; `review` insert in `proposed_updates` per approvazione dashboard (`/summaries`); `off` no-op (early-return prima del LLM call per evitare cost leak). Cooldown per-chat in-process map.
+3. **Maintain** (slice 12g–12h, 12l.1). `MaintenanceJob` notturno chiama `wiki.Lint`, computa Levenshtein vs slug esistenti; un solo candidato ≤2 → auto-fix via `RepairLink`; ambigui → enqueue in `wiki_issues` (severity policy: `broken_link_unfixable=high, orphan=med, missing_category=low`). High-severity → `notifyOwner` via `Bot.SendToOwner`. API: `GET /api/maintenance/issues[?status,severity]`, `POST /api/maintenance/issues/{id}/resolve`. Dashboard route: `/maintenance` raggruppato per severity.
+4. **Compounding rate** (slice 12i, 12m). `/api/health` espone `compounding_rate { auto_added_7d, total_pages, rate_pct }` calcolato da `[auto-sum]` lines in `wiki/log.md` ultimi 7d / `wiki.Store.ListPages`. Dashboard: 5° card `HealthDashboard` con `TrendingUp` icon.
+5. **Nav** (slice 12n). Sidebar items + chord shortcuts: `g v` /conversations, `g u` /summaries, `g x` /maintenance.
+
+### Configurazione
+
+```env
+CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
+SUMMARIZER_ENABLED=true                # post-turn extraction
+SUMMARIZER_MODE=off                    # off | review | auto
+SUMMARIZER_INTERVAL=5                  # extract every N turns
+SUMMARIZER_LOOKBACK=10                 # turns passed to scorer
+SUMMARIZER_MIN_SALIENCE=0.5            # filter threshold
+SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per chat
+```
+
+### Migrazioni / dati legacy
+
+`scheduler.Store.migrate` esegue `dropLegacyConversations` come passo idempotente: rileva un eventuale `conversations` table preesistente (privo di colonna `chat_id`, residuo di `internal/search/sqlite.go` rimosso in 12.cleanup) e la rimuove prima di applicare lo schema Phase 12. Una sola corsa, silente.
 
 ---
 
@@ -394,7 +423,10 @@ Tutti opzionali; modificabili a runtime senza recompile.
 | 7 — Smart-and-fast (history cap, parallel tools, skills cache, benchmarks, latency telemetry) | done | Slices 11k–11n, 11r. |
 | 8 — Pending-user gate + speculative wiki + prompt overlay | done | Slices 11o–11q. |
 | 9 — Streaming end-to-end + progressive Telegram edit + Markdown→HTML | done | Slices 11s–11u. |
+| 12 — Compounding memory (archive + summarizer + maintenance) | done | Slices 12a–12u + 12u.1–12u.7 follow-ups. v0.12.0. |
+| **Next — Phase 13** — `internal/telegram/bot.go` god-class refactor | not started | bot.go a 1394 LOC / 33 funzioni; estrai handler/wiring submodules. |
 | **Next** — File creation milestone | not started | xlsx/docx/pdf generation tools, Telegram delivery. |
+| **Backlog** — REVIEW.md HR-01, HR-02 (RepairLink partial-commit, Category/RelatedSlugs lost on review-approve) | not started | v0.12.1. |
 
 ---
 
@@ -404,4 +436,4 @@ Aura non è un sistema complesso: è una pipeline deterministica con tool agenti
 
 ---
 
-**End of PRD v4.0**
+**End of PRD v4.1**

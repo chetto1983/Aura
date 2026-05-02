@@ -155,6 +155,29 @@ Rispetto alla v3.0 questa PRD documenta lo stato realmente in produzione: SQLite
 - [x] File opzionali: `SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`.
 - [x] Cambi raccolti al turn successivo, no restart.
 
+### US-013: Compounding Memory (Phase 12)
+**Description:** Come utente, voglio che ogni conversazione contribuisca conoscenza durevole alla wiki, che la wiki si manutenga da sola, e che la dashboard mostri lo stato del compounding.
+
+**Acceptance Criteria:**
+- [x] Ogni turno Telegram archiviato in SQLite (`conversations` table) con tool_calls JSON e telemetry per-turn.
+- [x] `BufferedAppender` non blocca l'hot path; drop-on-full warn invece di stallare.
+- [x] `turn_index` allocato monotonicamente da `MAX(turn_index)` per chat — niente data loss anche se `EnforceLimit` trim.
+- [x] `GET /api/conversations[?chat_id]&limit=` lista (chat_id opzionale → ultimi turni globali); `GET /api/conversations/{id}` detail con tool_calls.
+- [x] Dashboard `/conversations` con drawer per turno, filtro chat_id/date/has_tools, JSON export.
+- [x] Post-turn `Runner.MaybeExtract` ogni `SUMMARIZER_INTERVAL` turni, scoring temperature=0, dedup similarity (>0.85 skip / ≥0.5 patch / <0.5 new).
+- [x] Apply paths gated by `SUMMARIZER_MODE`: `auto` writes wiki direttamente; `review` insert in `proposed_updates`; `off` no-op (early-return prima del LLM call).
+- [x] Wiki pages auto-create con `prompt_version=summarizer_v1`, `tags: [auto-added]`, `sources: [turn:N]`.
+- [x] Dashboard `/summaries` con cards approvabili/rejectabili (sonner toasts).
+- [x] `MaintenanceJob` notturno: lint + Levenshtein auto-fix single-match; ambigui → `wiki_issues` queue con severity policy.
+- [x] High-severity → owner DM via `Bot.SendToOwner` (single-fire per batch).
+- [x] Dashboard `/maintenance` raggruppato per severity, resolve action.
+- [x] `/api/health` espone `compounding_rate { auto_added_7d, total_pages, rate_pct }`.
+- [x] Dashboard 5° HealthDashboard card "Compounding rate".
+- [x] Sidebar nav + chord shortcuts: `g v`/`g u`/`g x`.
+- [x] `dropLegacyConversations` migration idempotente per DB esistenti.
+- [x] Test suite: 289 tests green; staticcheck U1000 zero findings; coverage core data-layer 100% per function.
+- [x] Live E2E checklist drafted in `docs/plans/2026-05-02-phase-12-e2e-checklist.md`.
+
 ## Functional Requirements
 
 - FR-1: Telegram bot con allowlist (env + `allowed_users` SQLite) e /start approval queue.
