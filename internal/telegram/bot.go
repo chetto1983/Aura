@@ -48,6 +48,7 @@ type Bot struct {
 	schedDB    *scheduler.Store
 	authDB     *auth.Store                    // dashboard bearer-token store (slice 10d)
 	mcpClients []*mcp.Client                  // active MCP server connections (slice 11a)
+	archiveDB  *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false
 	archiver   *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
 	api        http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
 	active     sync.Map                       // maps userID string -> bool (active conversation tracking)
@@ -284,14 +285,16 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}, logger),
 	}
 
-	// Slice 12b: conversation archive. Open the ArchiveStore on the same
-	// SQLite file as the scheduler (migration is idempotent). Wrap with a
-	// BufferedAppender so hot conversation paths stay non-blocking.
+	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
+	// SQLite file as the scheduler (migration is idempotent). Store the
+	// *ArchiveStore directly for API reads, and wrap with a BufferedAppender
+	// for non-blocking writes from the hot conversation path.
 	if cfg.ConvArchiveEnabled {
 		archiveStore, err := conversation.NewArchiveStore(schedStore.DB())
 		if err != nil {
 			logger.Warn("conversation archive unavailable", "error", err)
 		} else {
+			b.archiveDB = archiveStore
 			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
 		}
 	}
@@ -394,6 +397,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		// transition + Telegram delivery), so the api package just sees
 		// the interface.
 		PendingApprover: b,
+		// Slice 12c: conversation archive read API.
+		Archive: b.archiveDB,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

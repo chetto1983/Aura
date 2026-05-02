@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
@@ -103,6 +104,10 @@ type Deps struct {
 	// when nil, the approve/deny endpoints respond 503 — the GET list
 	// stays operable since it only needs deps.Auth.
 	PendingApprover PendingApprover
+
+	// Slice 12c: conversation archive. Optional — when nil, list returns
+	// an empty array and detail returns 404.
+	Archive *conversation.ArchiveStore
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -180,6 +185,10 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /pending-users", handlePendingList(deps))
 	mux.HandleFunc("POST /pending-users/{id}/approve", handlePendingApprove(deps))
 	mux.HandleFunc("POST /pending-users/{id}/deny", handlePendingDeny(deps))
+
+	// Slice 12c: conversation archive endpoints.
+	mux.HandleFunc("GET /conversations", handleConversationList(deps))
+	mux.HandleFunc("GET /conversations/{id}", handleConversationDetail(deps))
 
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)

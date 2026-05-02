@@ -231,3 +231,40 @@ type MCPInvokeResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// ConversationTurn is one row of GET /conversations.
+type ConversationTurn struct {
+	ID             int64  `json:"id"`
+	ChatID         int64  `json:"chat_id"`
+	UserID         int64  `json:"user_id"`
+	TurnIndex      int64  `json:"turn_index"`
+	Role           string `json:"role"`
+	Content        string `json:"content"`
+	ToolCalls      string `json:"tool_calls,omitempty"`
+	ToolCallID     string `json:"tool_call_id,omitempty"`
+	LLMCalls       int    `json:"llm_calls,omitempty"`
+	ToolCallsCount int    `json:"tool_calls_count,omitempty"`
+	ElapsedMS      int64  `json:"elapsed_ms,omitempty"`
+	TokensIn       int    `json:"tokens_in,omitempty"`
+	TokensOut      int    `json:"tokens_out,omitempty"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// ConversationDetail is the response of GET /conversations/{id}. ToolCalls
+// is the raw JSON string from the DB so the frontend can parse/expand it.
+type ConversationDetail struct {
+	ID             int64  `json:"id"`
+	ChatID         int64  `json:"chat_id"`
+	UserID         int64  `json:"user_id"`
+	TurnIndex      int64  `json:"turn_index"`
+	Role           string `json:"role"`
+	Content        string `json:"content"`
+	ToolCalls      string `json:"tool_calls,omitempty"`
+	ToolCallID     string `json:"tool_call_id,omitempty"`
+	LLMCalls       int    `json:"llm_calls,omitempty"`
+	ToolCallsCount int    `json:"tool_calls_count,omitempty"`
+	ElapsedMS      int64  `json:"elapsed_ms,omitempty"`
+	TokensIn       int    `json:"tokens_in,omitempty"`
+	TokensOut      int    `json:"tokens_out,omitempty"`
+	CreatedAt      string `json:"created_at"`
+}
