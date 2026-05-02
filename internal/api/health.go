@@ -1,8 +1,12 @@
 package api
 
 import (
+	"bufio"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +100,58 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			rollup.EmbedCache.Misses = misses
 		}
 
+		// Slice 12i: compounding-rate metric.
+		rollup.CompoundingRate = computeCompoundingRate(deps.Wiki.Dir(), rollup.Wiki.Pages)
+
 		writeJSON(w, deps.Logger, http.StatusOK, rollup)
+	}
+}
+
+// computeCompoundingRate counts [auto-sum] entries in wiki/log.md from the
+// last 7 days and computes the rate as a percentage of total pages.
+func computeCompoundingRate(wikiDir string, totalPages int) CompoundingRate {
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	logPath := filepath.Join(wikiDir, "log.md")
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		return CompoundingRate{TotalPages: totalPages}
+	}
+	defer f.Close()
+
+	var count int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Log table rows: | timestamp | action | page |
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			continue
+		}
+		action := strings.TrimSpace(parts[2])
+		if !strings.HasPrefix(action, "auto-sum") {
+			continue
+		}
+		tsStr := strings.TrimSpace(parts[1])
+		ts, err := time.Parse(time.RFC3339, tsStr)
+		if err != nil {
+			continue
+		}
+		if ts.UTC().After(cutoff) {
+			count++
+		}
+	}
+
+	rate := 0.0
+	if totalPages > 0 {
+		rate = float64(count) / float64(totalPages) * 100
+	}
+	return CompoundingRate{
+		AutoAdded7d: count,
+		TotalPages:  totalPages,
+		RatePct:     rate,
 	}
 }
