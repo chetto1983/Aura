@@ -56,6 +56,14 @@ type Config struct {
 
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
+
+	// Auto-summarization (Phase 12e+)
+	SummarizerEnabled         bool    `envconfig:"SUMMARIZER_ENABLED" default:"true"`
+	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"off"`
+	SummarizerTurnInterval    int     `envconfig:"SUMMARIZER_TURN_INTERVAL" default:"5"`
+	SummarizerMinSalience     float64 `envconfig:"SUMMARIZER_MIN_SALIENCE" default:"0.5"`
+	SummarizerLookbackTurns   int     `envconfig:"SUMMARIZER_LOOKBACK_TURNS" default:"10"`
+	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -134,6 +142,13 @@ func Load() (*Config, error) {
 	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
+
+	cfg.SummarizerEnabled = getEnvBool("SUMMARIZER_ENABLED", true)
+	cfg.SummarizerMode = getEnv("SUMMARIZER_MODE", "off")
+	cfg.SummarizerTurnInterval = getEnvInt("SUMMARIZER_TURN_INTERVAL", 5)
+	cfg.SummarizerMinSalience = getEnvFloat("SUMMARIZER_MIN_SALIENCE", 0.5)
+	cfg.SummarizerLookbackTurns = getEnvInt("SUMMARIZER_LOOKBACK_TURNS", 10)
+	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", 60)
 
 	return cfg, nil
 }

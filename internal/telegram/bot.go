@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
@@ -50,6 +51,7 @@ type Bot struct {
 	mcpClients []*mcp.Client                  // active MCP server connections (slice 11a)
 	archiveDB  *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false
 	archiver   *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
+	summRunner *summarizer.Runner             // nil when SUMMARIZER_ENABLED=false
 	api        http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
 	active     sync.Map                       // maps userID string -> bool (active conversation tracking)
 	ctxMap     sync.Map                       // maps userID string -> *conversation.Context
@@ -297,6 +299,22 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 			b.archiveDB = archiveStore
 			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
 		}
+	}
+
+	// Slice 12e: summarizer runner. Requires archive and a live LLM client.
+	// Gated on SUMMARIZER_ENABLED; scorer is wired with the same LLM client
+	// used for chat. No search engine at construction time — dedup search
+	// uses the same engine already on Bot; passed nil here means ActionNew
+	// for all decisions (dedup is a no-op until 12f wires the real engine).
+	if cfg.SummarizerEnabled && b.archiveDB != nil && client != nil {
+		sc := summarizer.NewScorer(client, cfg.LLMModel, cfg.SummarizerMinSalience)
+		dd := summarizer.NewDeduper(noopWikiSearcher{}, 0.85, 0.5)
+		b.summRunner = summarizer.NewRunner(summarizer.RunnerConfig{
+			Enabled:       true,
+			TurnInterval:  cfg.SummarizerTurnInterval,
+			LookbackTurns: cfg.SummarizerLookbackTurns,
+			CooldownSecs:  cfg.SummarizerCooldownSeconds,
+		}, b.archiveDB, sc, dd)
 	}
 
 	// Scheduler dispatcher closes over b so reminder/wiki_maintenance
@@ -905,6 +923,13 @@ func (b *Bot) handleConversation(c tele.Context) {
 				Content:   msg.Content,
 			})
 		}
+
+		// Slice 12e: post-turn summarizer extraction (log-only; apply in 12f).
+		if b.summRunner != nil {
+			if _, _, err := b.summRunner.MaybeExtract(context.Background(), chatID); err != nil {
+				b.logger.Warn("summarizer extraction failed", "chat_id", chatID, "error", err)
+			}
+		}
 	}
 
 	// Slice 11r: per-turn telemetry. elapsed_ms is wall-clock from
@@ -1277,4 +1302,12 @@ func (b *Bot) BudgetStatus() budget.Status {
 		return budget.Status{}
 	}
 	return b.budget.Status()
+}
+
+// noopWikiSearcher satisfies summarizer.WikiSearcher with an always-empty result.
+// Used when the search engine is not yet wired (slice 12e); 12f replaces it.
+type noopWikiSearcher struct{}
+
+func (noopWikiSearcher) Search(_ context.Context, _ string, _ int) ([]search.Result, error) {
+	return nil, nil
 }
