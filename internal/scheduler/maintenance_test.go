@@ -2,6 +2,7 @@ package scheduler_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,5 +108,213 @@ func TestMaintenanceJob_NoBrokenLinks(t *testing.T) {
 	}
 	if fixed != 0 || deferred != 0 {
 		t.Fatalf("want 0/0, got fixed=%d deferred=%d", fixed, deferred)
+	}
+}
+
+// mockWiki is a controllable WikiMaintainer for branch coverage tests.
+type mockWiki struct {
+	lintIssues  []wiki.LintIssue
+	lintErr     error
+	slugs       []string
+	listErr     error
+	repairErr   error
+	repairCalls int
+}
+
+func (m *mockWiki) Lint(_ context.Context) ([]wiki.LintIssue, error) {
+	return m.lintIssues, m.lintErr
+}
+func (m *mockWiki) ListPages() ([]string, error) {
+	return m.slugs, m.listErr
+}
+func (m *mockWiki) RepairLink(_ context.Context, _, _ string) error {
+	m.repairCalls++
+	return m.repairErr
+}
+
+// TestMaintenanceJob_LintError covers the lint failure return path.
+func TestMaintenanceJob_LintError(t *testing.T) {
+	w := &mockWiki{lintErr: errors.New("lint unavailable")}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	_, _, err := job.Run(context.Background())
+	if err == nil {
+		t.Fatal("want error when Lint fails, got nil")
+	}
+}
+
+// TestMaintenanceJob_ListPagesError covers the ListPages failure return path.
+func TestMaintenanceJob_ListPagesError(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{},
+		listErr:    errors.New("list unavailable"),
+	}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	_, _, err := job.Run(context.Background())
+	if err == nil {
+		t.Fatal("want error when ListPages fails, got nil")
+	}
+}
+
+// TestMaintenanceJob_RepairFails_Enqueues covers the repair-fails rollback path:
+// RepairLink returns an error → issue is enqueued as high-severity deferred.
+func TestMaintenanceJob_RepairFails_Enqueues(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "page-a", Message: "broken link: [[missing-slug]]"},
+		},
+		slugs:     []string{"missing-sluf"}, // distance 1 → single candidate
+		repairErr: errors.New("repair failure"),
+	}
+	db := scheduler.NewTestDB(t)
+	issuesStore := scheduler.NewIssuesStore(db)
+
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithIssuesStore(issuesStore)
+
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fixed != 0 {
+		t.Fatalf("want 0 fixed (repair failed), got %d", fixed)
+	}
+	if deferred != 1 {
+		t.Fatalf("want 1 deferred, got %d", deferred)
+	}
+
+	// Verify the issue was persisted.
+	rows, err := issuesStore.List(context.Background(), "open")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 issue in store, got %d", len(rows))
+	}
+}
+
+// TestMaintenanceJob_NoCandidates_Enqueues covers the no-match deferred path:
+// broken link with no slugs within distance 2 → enqueued.
+func TestMaintenanceJob_NoCandidates_Enqueues(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "page-x", Message: "broken link: [[zzzzz]]"},
+		},
+		slugs: []string{"aaa", "bbb"}, // all far from "zzzzz"
+	}
+	db := scheduler.NewTestDB(t)
+	issuesStore := scheduler.NewIssuesStore(db)
+
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithIssuesStore(issuesStore)
+
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fixed != 0 {
+		t.Fatalf("want 0 fixed, got %d", fixed)
+	}
+	if deferred != 1 {
+		t.Fatalf("want 1 deferred, got %d", deferred)
+	}
+}
+
+// TestMaintenanceJob_NonLinkIssue covers the non-broken-link branch
+// (missing category and orphan issues → classifyKind + classifyNonLink).
+func TestMaintenanceJob_NonLinkIssue(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "page-a", Message: "missing category"},
+			{Slug: "page-b", Message: "orphan page"},
+		},
+		slugs: []string{"page-a", "page-b"},
+	}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fixed != 0 {
+		t.Fatalf("want 0 fixed, got %d", fixed)
+	}
+	if deferred != 2 {
+		t.Fatalf("want 2 deferred (non-link issues), got %d", deferred)
+	}
+}
+
+// TestMaintenanceJob_OwnerNotifier_CalledOnce verifies that when multiple
+// high-severity issues are found, the notifier is called exactly once.
+func TestMaintenanceJob_OwnerNotifier_CalledOnce(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "p1", Message: "broken link: [[aaa]]"},
+			{Slug: "p2", Message: "broken link: [[bbb]]"},
+		},
+		slugs: []string{}, // no candidates → both deferred as high-severity
+	}
+
+	notifyCalls := 0
+	notifier := func(_ context.Context, _ string) { notifyCalls++ }
+
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithOwnerNotifier(notifier)
+
+	_, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if deferred != 2 {
+		t.Fatalf("want 2 deferred, got %d", deferred)
+	}
+	if notifyCalls != 1 {
+		t.Fatalf("want notifier called once for batch of high issues, got %d", notifyCalls)
+	}
+}
+
+// TestMaintenanceJob_WithIssuesStore_EnqueueFailure covers the enqueue-failed
+// warn path (IssuesStore.Enqueue returns error → logged, not propagated).
+func TestMaintenanceJob_WithIssuesStore_EnqueueFailure(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "p1", Message: "broken link: [[zzz]]"},
+		},
+		slugs: []string{}, // no candidates → deferred
+	}
+	db := scheduler.NewTestDB(t)
+	issuesStore := scheduler.NewIssuesStore(db)
+	db.Close() // close DB so Enqueue fails
+
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithIssuesStore(issuesStore)
+
+	// Should not return error — enqueue failure is logged and swallowed.
+	_, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run should not propagate enqueue error, got %v", err)
+	}
+	if deferred != 1 {
+		t.Fatalf("want 1 deferred counted even on enqueue failure, got %d", deferred)
+	}
+}
+
+// TestMaintenanceJob_Levenshtein2Boundary covers the distance-exactly-2 boundary:
+// a slug at distance 2 is still a candidate; distance 3 is not.
+func TestMaintenanceJob_Levenshtein2Boundary(t *testing.T) {
+	// "fooo" is distance 2 from "fo" (delete 2 chars). It should be a candidate.
+	// "foooo" is distance 3 from "fo". It should not be a candidate.
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "page", Message: "broken link: [[fo]]"},
+		},
+		slugs: []string{"fooo", "foooo"}, // only "fooo" within distance 2
+	}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Single candidate "fooo" (distance 2) → auto-fixed (repairErr nil by default).
+	if fixed != 1 {
+		t.Fatalf("want 1 fixed (distance-2 candidate), got %d (deferred=%d)", fixed, deferred)
 	}
 }
