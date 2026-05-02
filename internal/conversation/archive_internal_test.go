@@ -9,9 +9,30 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// testConversationsSchema mirrors scheduler.conversationsSchemaSQL. Used only
+// by internal tests in this package, which cannot import scheduler without an
+// import cycle. Keep in sync with the canonical schema in scheduler/store.go.
+const testConversationsSchema = `
+CREATE TABLE IF NOT EXISTS conversations (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id           INTEGER NOT NULL,
+  user_id           INTEGER NOT NULL,
+  turn_index        INTEGER NOT NULL,
+  role              TEXT    NOT NULL,
+  content           TEXT    NOT NULL,
+  tool_calls        TEXT,
+  tool_call_id      TEXT,
+  llm_calls         INTEGER NOT NULL DEFAULT 0,
+  tool_calls_count  INTEGER NOT NULL DEFAULT 0,
+  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
+  tokens_in         INTEGER NOT NULL DEFAULT 0,
+  tokens_out        INTEGER NOT NULL DEFAULT 0,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(chat_id, turn_index)
+);`
+
 // openTestDB opens a fresh SQLite DB, applies the conversations migration, and
-// registers cleanup. Used by internal tests that need to bypass the scheduler
-// package to avoid an import cycle.
+// registers cleanup. Bypasses the scheduler package to avoid an import cycle.
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -20,7 +41,7 @@ func openTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("openTestDB: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if _, err := db.Exec(migrationCreateConversationsTable); err != nil {
+	if _, err := db.Exec(testConversationsSchema); err != nil {
 		t.Fatalf("openTestDB migrate: %v", err)
 	}
 	return db

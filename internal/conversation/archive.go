@@ -14,28 +14,6 @@ import (
 // (chat_id, turn_index) already exists.
 var ErrDuplicateTurn = errors.New("conversation: duplicate (chat_id, turn_index)")
 
-const migrationCreateConversationsTable = `
-CREATE TABLE IF NOT EXISTS conversations (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id           INTEGER NOT NULL,
-  user_id           INTEGER NOT NULL,
-  turn_index        INTEGER NOT NULL,
-  role              TEXT    NOT NULL,
-  content           TEXT    NOT NULL,
-  tool_calls        TEXT,
-  tool_call_id      TEXT,
-  llm_calls         INTEGER NOT NULL DEFAULT 0,
-  tool_calls_count  INTEGER NOT NULL DEFAULT 0,
-  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
-  tokens_in         INTEGER NOT NULL DEFAULT 0,
-  tokens_out        INTEGER NOT NULL DEFAULT 0,
-  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(chat_id, turn_index)
-);
-CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversations(chat_id, turn_index);
-CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, created_at);
-`
-
 // Turn is a single archived message from a conversation.
 type Turn struct {
 	ID             int64
@@ -59,12 +37,12 @@ type ArchiveStore struct {
 	db *sql.DB
 }
 
-// NewArchiveStore wraps an existing *sql.DB and applies the conversations
-// migration. The DB is owned by the caller.
+// NewArchiveStore wraps an existing *sql.DB. The conversations table
+// migration is owned by scheduler.Store (single source of truth for the
+// shared DB schema); callers must open a scheduler.Store on the same DB
+// before constructing an ArchiveStore. Returns an error only if a future
+// per-store migration fails — currently never errors.
 func NewArchiveStore(db *sql.DB) (*ArchiveStore, error) {
-	if _, err := db.Exec(migrationCreateConversationsTable); err != nil {
-		return nil, fmt.Errorf("conversation archive migrate: %w", err)
-	}
 	return &ArchiveStore{db: db}, nil
 }
 

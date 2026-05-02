@@ -2,18 +2,14 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/scheduler"
-
-	_ "modernc.org/sqlite"
 )
 
 // newConvTestEnv extends testEnv with an ArchiveStore seeded in a temp DB.
@@ -93,12 +89,7 @@ func TestHandleConversationList_NilArchive(t *testing.T) {
 }
 
 func TestHandleConversationList_Pagination(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := scheduler.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -125,12 +116,7 @@ func TestHandleConversationList_Pagination(t *testing.T) {
 }
 
 func TestHandleConversationDetail_HappyPath(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := scheduler.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -164,12 +150,7 @@ func TestHandleConversationDetail_HappyPath(t *testing.T) {
 }
 
 func TestHandleConversationDetail_NotFound(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := scheduler.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)

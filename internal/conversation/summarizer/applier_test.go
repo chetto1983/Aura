@@ -4,15 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/wiki"
-
-	_ "modernc.org/sqlite"
 )
 
 // --- fake wiki store ---
@@ -217,18 +214,3 @@ func TestOffApplier_ActionSkip_NoSideEffects(t *testing.T) {
 	}
 }
 
-// NewReviewApplier needs DB from a path for the migration. Use a temp file.
-func newReviewApplierWithTempDB(t *testing.T) (*summarizer.ReviewApplier, *sql.DB) {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "review.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	a, err := summarizer.NewReviewApplier(db)
-	if err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-	return a, db
-}

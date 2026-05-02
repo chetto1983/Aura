@@ -123,17 +123,6 @@ func TestArchiveStore_AppendWithToolCalls(t *testing.T) {
 	}
 }
 
-// TestArchiveStore_NewArchiveStore_ClosedDB verifies that NewArchiveStore
-// returns an error when the underlying database is closed.
-func TestArchiveStore_NewArchiveStore_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
-	db.Close()
-	_, err := conversation.NewArchiveStore(db)
-	if err == nil {
-		t.Fatal("want error from closed DB, got nil")
-	}
-}
-
 // TestArchiveStore_Append_ClosedDB covers the non-duplicate error wrap in Append.
 func TestArchiveStore_Append_ClosedDB(t *testing.T) {
 	db := scheduler.NewTestDB(t)

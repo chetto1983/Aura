@@ -35,11 +35,6 @@ func newSqliteSearcher(dbPath string, logger *slog.Logger) (*sqliteSearcher, err
 
 	s := &sqliteSearcher{db: db, logger: logger}
 
-	if err := s.createConversationsTable(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("creating conversations table: %w", err)
-	}
-
 	return s, nil
 }
 
@@ -115,29 +110,6 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 	}
 
 	return results, rows.Err()
-}
-
-// StoreConversation saves a conversation message to SQLite.
-func (s *sqliteSearcher) StoreConversation(ctx context.Context, userID, role, content string) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO conversations (user_id, role, content)
-		VALUES (?, ?, ?)
-	`, userID, role, content)
-	return err
-}
-
-// createConversationsTable ensures the conversations table exists.
-func (s *sqliteSearcher) createConversationsTable() error {
-	_, err := s.db.Exec(`
-		CREATE TABLE IF NOT EXISTS conversations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id TEXT NOT NULL,
-			role TEXT NOT NULL,
-			content TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	return err
 }
 
 // escapeFTS5Query strips FTS5 special characters and operators from a query string.

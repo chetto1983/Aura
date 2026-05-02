@@ -129,6 +129,9 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate: %w", err)
 	}
+	if err := dropLegacyConversations(s.db); err != nil {
+		return fmt.Errorf("scheduler drop legacy conversations: %w", err)
+	}
 	if _, err := s.db.Exec(conversationsSchemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate conversations: %w", err)
 	}
@@ -136,6 +139,37 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("scheduler migrate proposed_updates: %w", err)
 	}
 	return nil
+}
+
+// dropLegacyConversations removes a pre-Phase-12 `conversations` table that
+// older builds created in internal/search/sqlite.go (since deleted). Detected
+// by the absence of a chat_id column. Existing data was never written or read,
+// so dropping is safe.
+func dropLegacyConversations(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(conversations)`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	hasAny, hasChatID := false, false
+	for rows.Next() {
+		hasAny = true
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "chat_id" {
+			hasChatID = true
+		}
+	}
+	if !hasAny || hasChatID {
+		return nil
+	}
+	_, err = db.Exec(`DROP TABLE conversations`)
+	return err
 }
 
 // Upsert inserts a task or, if a task with the same name exists, updates
