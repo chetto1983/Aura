@@ -29,13 +29,30 @@ func TestIsAllowlisted(t *testing.T) {
 	}
 }
 
-func TestLoadMissingToken(t *testing.T) {
+func TestLoadMissingTokenIsAllowedForFirstRunSetup(t *testing.T) {
+	// Slice 14b: blank TELEGRAM_TOKEN is no longer an error — it signals
+	// first-run state so cmd/aura can launch the setup wizard.
 	os.Unsetenv("TELEGRAM_TOKEN")
 	os.Unsetenv("TELEGRAM_ALLOWLIST")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing TELEGRAM_TOKEN")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("blank token should not error: %v", err)
+	}
+	if cfg.IsBootstrapped() {
+		t.Errorf("IsBootstrapped() = true with blank token, want false")
+	}
+}
+
+func TestIsBootstrapped(t *testing.T) {
+	if (&Config{TelegramToken: ""}).IsBootstrapped() {
+		t.Errorf("blank token = bootstrapped")
+	}
+	if (&Config{TelegramToken: "   "}).IsBootstrapped() {
+		t.Errorf("whitespace token = bootstrapped")
+	}
+	if !(&Config{TelegramToken: "abc:def"}).IsBootstrapped() {
+		t.Errorf("real token != bootstrapped")
 	}
 }
 

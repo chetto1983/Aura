@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Aura — first-run setup</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: oklch(0.16 0.03 250);
+    --surface: oklch(0.21 0.035 250);
+    --surface-2: oklch(0.18 0.035 250);
+    --fg: oklch(0.96 0.01 250);
+    --muted: oklch(0.7 0.02 250);
+    --border: oklch(0.32 0.03 250);
+    --primary: oklch(0.7 0.18 240);
+    --primary-fg: oklch(0.16 0.03 250);
+    --danger: oklch(0.7 0.2 25);
+    --success: oklch(0.7 0.18 145);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 80% 0%, oklch(0.7 0.18 240 / 0.06), transparent),
+      radial-gradient(ellipse 80% 50% at 20% 100%, oklch(0.55 0.18 290 / 0.05), transparent);
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); margin: 0 0 32px; line-height: 1.5; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 18px; }
+  .card .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; font-weight: 500; }
+  input, select, textarea {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 120ms ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px oklch(0.7 0.18 240 / 0.2);
+  }
+  input[type="password"], input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row > div { min-width: 0; }
+  button {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 120ms;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.secondary {
+    background: var(--surface-2);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  .status { font-size: 13px; min-height: 18px; }
+  .status.ok { color: var(--success); }
+  .status.err { color: var(--danger); }
+  .preset-desc { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    background: linear-gradient(to top, var(--bg), oklch(0.16 0.03 250 / 0.8));
+    padding: 16px 0 8px;
+    margin-top: 16px;
+  }
+  .footnote { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  details { margin-top: 16px; }
+  details summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    user-select: none;
+  }
+  details summary:hover { color: var(--fg); }
+  .ollama-hint { color: var(--success); font-size: 12px; margin-top: 4px; display: none; }
+  .ollama-hint.shown { display: block; }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .logo svg { width: 40px; height: 40px; }
+  .logo span { font-size: 13px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="32" cy="32" r="30" fill="oklch(0.16 0.03 250)" stroke="var(--primary)" stroke-width="2"/>
+      <path d="M20 44 L32 18 L44 44 M25 36 L39 36" fill="none" stroke="var(--primary)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div style="font-weight:700;font-size:16px;">Aura</div>
+      <span>Second brain · setup</span>
+    </div>
+  </div>
+
+  <h1>Welcome. Let's get you running.</h1>
+  <p class="lede">
+    A few values and you're done. Aura saves them locally — your token and keys never leave this machine.
+    {{- if .OllamaDetected }}
+    <br><span style="color: var(--success);">✓ Detected Ollama running on localhost — pick that preset for free, local mode.</span>
+    {{- end }}
+  </p>
+
+  <form id="setup-form" method="POST" action="/save">
+    <div class="card">
+      <h2>1. Telegram bot token</h2>
+      <p class="hint">Get one in 30 seconds: open Telegram, message <strong>@BotFather</strong>, send <code>/newbot</code>, follow the prompts. It looks like <code>123456:ABC...</code>.</p>
+      <label for="telegram_token">TELEGRAM_TOKEN</label>
+      <input type="password" id="telegram_token" name="telegram_token" required autocomplete="off" placeholder="123456789:ABCdef..." class="mono">
+    </div>
+
+    <div class="card">
+      <h2>2. Language model</h2>
+      <p class="hint">Pick a provider. Aura works with any OpenAI-compatible endpoint. <strong>Ollama is free</strong> and runs on your machine.</p>
+
+      <label for="llm_preset">Provider</label>
+      <select id="llm_preset" name="llm_preset">
+        {{- range .Presets }}
+        <option value="{{.ID}}">{{.Label}}</option>
+        {{- end }}
+      </select>
+      <p class="preset-desc" id="preset-desc"></p>
+
+      <div class="row">
+        <div>
+          <label for="llm_base_url">Base URL</label>
+          <input type="text" id="llm_base_url" name="llm_base_url" required class="mono">
+        </div>
+        <div>
+          <label for="llm_model">Model</label>
+          <input type="text" id="llm_model" name="llm_model" required class="mono" list="model-suggestions">
+          <datalist id="model-suggestions"></datalist>
+        </div>
+      </div>
+
+      <label for="llm_api_key" id="llm_api_key_label">API key</label>
+      <input type="password" id="llm_api_key" name="llm_api_key" autocomplete="off" class="mono" placeholder="sk-...">
+
+      <div class="btn-row">
+        <button type="button" class="secondary" id="btn-test">Test connection</button>
+        <span class="status" id="probe-status"></span>
+      </div>
+    </div>
+
+    <details>
+      <summary>Optional — wiki search (embeddings) and PDF OCR</summary>
+      <div class="card" style="margin-top: 12px;">
+        <p class="hint">Skip these for now if you're not sure. You can enable them later from the dashboard's Settings page.</p>
+        <label for="embedding_api_key">Embeddings API key (Mistral free tier works well)</label>
+        <input type="password" id="embedding_api_key" name="embedding_api_key" autocomplete="off" class="mono">
+        <label for="mistral_api_key">Mistral OCR key (PDF ingestion)</label>
+        <input type="password" id="mistral_api_key" name="mistral_api_key" autocomplete="off" class="mono">
+      </div>
+    </details>
+
+    <div class="save-bar">
+      <div class="btn-row">
+        <button type="submit" id="btn-save">Save and start Aura</button>
+        <span class="status" id="save-status"></span>
+      </div>
+      <p class="footnote">Saves <code>TELEGRAM_TOKEN</code> to <code>.env</code> and the rest to <code>aura.db</code>'s settings table. You can edit anything later from the dashboard.</p>
+    </div>
+  </form>
+</div>
+
+<script>
+  const presets = {{.PresetsJSON}};
+  const presetDesc = document.getElementById('preset-desc');
+  const baseURL = document.getElementById('llm_base_url');
+  const model = document.getElementById('llm_model');
+  const apiKey = document.getElementById('llm_api_key');
+  const apiKeyLabel = document.getElementById('llm_api_key_label');
+  const probeStatus = document.getElementById('probe-status');
+  const saveStatus = document.getElementById('save-status');
+  const modelSuggestions = document.getElementById('model-suggestions');
+
+  function applyPreset(id) {
+    const p = presets.find(x => x.id === id);
+    if (!p) return;
+    if (p.base_url) baseURL.value = p.base_url;
+    if (p.model) model.value = p.model;
+    presetDesc.textContent = p.description;
+    if (p.needs_key) {
+      apiKey.required = true;
+      apiKey.placeholder = 'sk-...';
+      apiKeyLabel.textContent = 'API key';
+    } else {
+      apiKey.required = false;
+      apiKey.placeholder = '(leave blank for Ollama)';
+      apiKeyLabel.textContent = 'API key (optional for Ollama)';
+    }
+  }
+
+  document.getElementById('llm_preset').addEventListener('change', e => applyPreset(e.target.value));
+  applyPreset(document.getElementById('llm_preset').value);
+
+  document.getElementById('btn-test').addEventListener('click', async () => {
+    probeStatus.textContent = 'Testing...';
+    probeStatus.className = 'status';
+    const presetID = document.getElementById('llm_preset').value;
+    const body = {
+      preset: presetID,
+      base_url: baseURL.value,
+      api_key: apiKey.value,
+    };
+    try {
+      const res = await fetch('/test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        probeStatus.textContent = data.models && data.models.length > 0
+          ? '✓ Connected. ' + data.models.length + ' models available.'
+          : '✓ Connected (model list not exposed).';
+        probeStatus.className = 'status ok';
+        modelSuggestions.innerHTML = '';
+        if (data.models) {
+          for (const m of data.models) {
+            const opt = document.createElement('option');
+            opt.value = m;
+            modelSuggestions.appendChild(opt);
+          }
+        }
+      } else {
+        probeStatus.textContent = '✗ ' + (data.error || 'failed');
+        probeStatus.className = 'status err';
+      }
+    } catch (err) {
+      probeStatus.textContent = '✗ ' + err.message;
+      probeStatus.className = 'status err';
+    }
+  });
+
+  document.getElementById('setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    saveStatus.textContent = 'Saving...';
+    saveStatus.className = 'status';
+    const data = new FormData(e.target);
+    const body = {};
+    for (const [k, v] of data.entries()) body[k] = v;
+    try {
+      const res = await fetch('/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (j.ok) {
+        saveStatus.textContent = '✓ Saved. Aura is starting now — open the dashboard...';
+        saveStatus.className = 'status ok';
+        setTimeout(() => { window.location.href = '/'; }, 2500);
+      } else {
+        saveStatus.textContent = '✗ ' + (j.error || 'save failed');
+        saveStatus.className = 'status err';
+        btn.disabled = false;
+      }
+    } catch (err) {
+      saveStatus.textContent = '✗ ' + err.message;
+      saveStatus.className = 'status err';
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

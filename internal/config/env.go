@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 )
@@ -35,16 +34,6 @@ func getEnvFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return f
-}
-
-type missingEnvError string
-
-func (e missingEnvError) Error() string {
-	return fmt.Sprintf("required environment variable %s is not set", string(e))
-}
-
-func errMissing(key string) missingEnvError {
-	return missingEnvError(key)
 }
 
 func getEnvBool(key string, fallback bool) bool {

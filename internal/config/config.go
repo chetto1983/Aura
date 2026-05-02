@@ -84,15 +84,26 @@ func (c *Config) AddToAllowlist(userID string) {
 	c.AllowlistConfigured = true
 }
 
+// IsBootstrapped reports whether enough config exists for the bot to run.
+// Returns false on a fresh install (blank TelegramToken), which the
+// startup path uses to invoke the first-run setup wizard. The LLM key is
+// not required: the bot still starts in echo mode and the user can chat
+// with it for setup feedback even before configuring an LLM.
+func (c *Config) IsBootstrapped() bool {
+	return strings.TrimSpace(c.TelegramToken) != ""
+}
+
 // Load reads configuration from environment variables using envconfig.
+//
+// Slice 14b: TelegramToken is no longer a hard requirement. When it's
+// blank, the caller (cmd/aura/main.go) is expected to launch the
+// first-run setup wizard, which mints the token and writes it to .env
+// before re-loading. Callers that need the token populated should check
+// (*Config).IsBootstrapped() after Load.
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	token := getEnv("TELEGRAM_TOKEN", "")
-	if token == "" {
-		return nil, errMissing("TELEGRAM_TOKEN")
-	}
-	cfg.TelegramToken = token
+	cfg.TelegramToken = getEnv("TELEGRAM_TOKEN", "")
 
 	allowlistStr := getEnv("TELEGRAM_ALLOWLIST", "")
 	cfg.Allowlist = parseAllowlist(allowlistStr)

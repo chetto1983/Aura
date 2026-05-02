@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/settings"
+	"github.com/aura/aura/internal/setup"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tracing"
 	"github.com/aura/aura/internal/tray"
@@ -51,6 +52,40 @@ func main() {
 	} else {
 		settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 		defer settingsStore.Close()
+	}
+
+	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
+	// env + settings overlay, the install is fresh. Open a loopback-only
+	// HTTP server with a setup form, block until the user submits, then
+	// re-load .env + settings so the saved values flow back into cfg.
+	if !cfg.IsBootstrapped() {
+		if settingsStore == nil {
+			logger.Error("first-run setup needs a writable DB; check DB_PATH and disk permissions", "db_path", cfg.DBPath)
+			os.Exit(1)
+		}
+		token, err := setup.Run(setup.Config{
+			Listen:        cfg.HTTPPort,
+			DotEnvPath:    ".env",
+			SettingsStore: settingsStore,
+			Logger:        logger,
+		})
+		if err != nil {
+			logger.Error("setup wizard failed", "error", err)
+			os.Exit(1)
+		}
+		// Re-load: .env now has TELEGRAM_TOKEN, settings DB now has
+		// LLM_*, etc. Replace cfg in place with the fresh values.
+		os.Setenv("TELEGRAM_TOKEN", token)
+		if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.Warn("re-load .env after setup", "error", err)
+		}
+		newCfg, err := config.Load()
+		if err != nil {
+			logger.Error("post-setup config load", "error", err)
+			os.Exit(1)
+		}
+		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
+		cfg = newCfg
 	}
 
 	// Set log level from config
