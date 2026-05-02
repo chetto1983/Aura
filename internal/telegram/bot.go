@@ -561,28 +561,22 @@ func (b *Bot) dispatchReminder(task *scheduler.Task) error {
 	return nil
 }
 
-// dispatchWikiMaintenance runs the autonomous nightly wiki pass:
-// regenerate index.md, lint for broken links / missing categories, and
-// append a log entry summarizing the result. Pure deterministic; no
-// LLM round-trip. Logs lint findings so the operator can spot drift
-// without checking log.md by hand.
+// dispatchWikiMaintenance runs the autonomous nightly wiki pass via
+// MaintenanceJob: rebuilds index, lints, auto-fixes single-candidate
+// broken links (Levenshtein ≤ 2), and defers the rest to 12h.
 func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 	if b.wiki == nil {
 		return fmt.Errorf("wiki maintenance: wiki store unavailable")
 	}
 	b.wiki.RebuildIndex(ctx)
-	issues, err := b.wiki.Lint(ctx)
+	job := scheduler.NewMaintenanceJob(b.wiki, b.logger)
+	fixed, deferred, err := job.Run(ctx)
 	if err != nil {
-		return fmt.Errorf("wiki lint: %w", err)
-	}
-	if len(issues) > 0 {
-		b.logger.Warn("nightly wiki maintenance found issues", "count", len(issues))
-		for _, issue := range issues {
-			b.logger.Warn("wiki lint issue", "slug", issue.Slug, "msg", issue.Message)
-		}
+		return fmt.Errorf("wiki maintenance: %w", err)
 	}
 	b.wiki.AppendLog(ctx, "nightly-maintenance", "")
-	b.logger.Info("nightly wiki maintenance complete", "lint_issues", len(issues))
+	b.logger.Info("nightly wiki maintenance complete",
+		"auto_fixed", fixed, "deferred", deferred)
 	return nil
 }
 

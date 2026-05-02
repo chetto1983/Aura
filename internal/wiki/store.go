@@ -489,6 +489,35 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 	return issues, nil
 }
 
+// RepairLink replaces all occurrences of [[brokenSlug]] with [[fixedSlug]]
+// in the body of every page that references brokenSlug. Pages without the
+// broken link are not modified. Commits each repaired page to git.
+func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error {
+	slugs, err := s.ListPages()
+	if err != nil {
+		return fmt.Errorf("repair link list: %w", err)
+	}
+	old := "[[" + brokenSlug + "]]"
+	replacement := "[[" + fixedSlug + "]]"
+	for _, slug := range slugs {
+		page, err := s.ReadPage(slug)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(page.Body, old) {
+			continue
+		}
+		page.Body = strings.ReplaceAll(page.Body, old, replacement)
+		page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.WritePage(ctx, page); err != nil {
+			return fmt.Errorf("repair link write %s: %w", slug, err)
+		}
+		s.logger.Info("auto-fixed broken link", "page", slug, "broken", brokenSlug, "fixed", fixedSlug)
+	}
+	s.AppendLog(ctx, "auto-fix", brokenSlug+"->"+fixedSlug)
+	return nil
+}
+
 func sortedCategoryKeys(m map[string][]indexEntry) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
