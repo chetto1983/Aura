@@ -68,11 +68,14 @@ func handleMaintenanceResolve(deps Deps) http.HandlerFunc {
 		}
 
 		if err := deps.Issues.Resolve(r.Context(), id); err != nil {
-			if errors.Is(err, scheduler.ErrIssueNotFound) {
+			switch {
+			case errors.Is(err, scheduler.ErrIssueNotFound):
 				writeError(w, deps.Logger, http.StatusNotFound, "issue not found")
-				return
+			case errors.Is(err, scheduler.ErrIssueAlreadyResolved):
+				writeError(w, deps.Logger, http.StatusConflict, "issue already resolved")
+			default:
+				writeError(w, deps.Logger, http.StatusInternalServerError, "failed to resolve issue")
 			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to resolve issue")
 			return
 		}
 		issue.Status = "resolved"

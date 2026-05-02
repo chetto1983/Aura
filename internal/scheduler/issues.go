@@ -11,6 +11,10 @@ import (
 // ErrIssueNotFound is returned when a wiki_issues row doesn't exist.
 var ErrIssueNotFound = errors.New("scheduler: wiki issue not found")
 
+// ErrIssueAlreadyResolved is returned when Resolve targets an already-resolved
+// issue. API layer maps to 409.
+var ErrIssueAlreadyResolved = errors.New("scheduler: wiki issue already resolved")
+
 // Issue is one row from wiki_issues.
 type Issue struct {
 	ID         int64
@@ -93,7 +97,8 @@ func (s *IssuesStore) Get(ctx context.Context, id int64) (Issue, error) {
 	return issue, nil
 }
 
-// Resolve marks an issue as resolved. Returns ErrIssueNotFound if no such row.
+// Resolve marks an issue as resolved. Returns ErrIssueNotFound if no such
+// row exists, or ErrIssueAlreadyResolved if the row is not in status=open.
 func (s *IssuesStore) Resolve(ctx context.Context, id int64) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx,
@@ -102,16 +107,24 @@ func (s *IssuesStore) Resolve(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("issues resolve: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		// Check whether row exists at all (vs already resolved).
-		var count int
-		s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM wiki_issues WHERE id = ?`, id).Scan(&count)
-		if count == 0 {
-			return ErrIssueNotFound
-		}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("issues resolve rows affected: %w", err)
 	}
-	return nil
+	if n > 0 {
+		return nil
+	}
+	// UPDATE matched zero rows: distinguish not-found from already-resolved.
+	var status string
+	switch err := s.db.QueryRowContext(ctx,
+		`SELECT status FROM wiki_issues WHERE id = ?`, id).Scan(&status); {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrIssueNotFound
+	case err != nil:
+		return fmt.Errorf("issues resolve lookup: %w", err)
+	default:
+		return ErrIssueAlreadyResolved
+	}
 }
 
 type issueScanner interface {

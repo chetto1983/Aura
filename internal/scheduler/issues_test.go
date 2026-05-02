@@ -125,7 +125,9 @@ func TestIssuesStore_Resolve_NotFound(t *testing.T) {
 	}
 }
 
-// TestIssuesStore_Resolve_AlreadyResolved covers the n==0-but-row-exists path.
+// TestIssuesStore_Resolve_AlreadyResolved covers the row-exists-but-not-open
+// path. After HR-07, this returns ErrIssueAlreadyResolved (was nil) so the
+// API layer can map cleanly to 409 even under a race.
 func TestIssuesStore_Resolve_AlreadyResolved(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
@@ -141,9 +143,8 @@ func TestIssuesStore_Resolve_AlreadyResolved(t *testing.T) {
 	if err := store.Resolve(ctx, id); err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
-	// Row exists but already resolved → n==0, count>0 → returns nil.
-	if err := store.Resolve(ctx, id); err != nil {
-		t.Fatalf("second Resolve (already resolved) should return nil, got %v", err)
+	if err := store.Resolve(ctx, id); !errors.Is(err, scheduler.ErrIssueAlreadyResolved) {
+		t.Fatalf("second Resolve should return ErrIssueAlreadyResolved, got %v", err)
 	}
 }
 
