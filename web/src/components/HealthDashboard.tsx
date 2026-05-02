@@ -1,14 +1,16 @@
 import { useCallback } from 'react';
+import { TrendingUp } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
+import type { CompoundingRate } from '@/types/api';
 
 const POLL_MS = 5000;
 
 export function HealthDashboard() {
   const fetcher = useCallback(() => api.health(), []);
-  const { data, error, loading, stale } = useApi(fetcher, POLL_MS);
+  const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
 
   if (loading && !data) return <DashboardSkeleton />;
   if (error && !data) return <ErrorCard error={error} title="Failed to load dashboard" onRetry={refetch} />;
@@ -52,6 +54,9 @@ export function HealthDashboard() {
         </Card>
 
         <EmbedCacheCard cache={data.embed_cache} />
+        {data.compounding_rate && (
+          <CompoundingRateCard rate={data.compounding_rate} />
+        )}
       </div>
 
       <ProcessFooter process={data.process} />
@@ -71,6 +76,26 @@ function EmbedCacheCard({ cache }: { cache: { hits: number; misses: number } }) 
       <div className="text-xs text-muted-foreground">
         hits <span className="opacity-50">/</span> {cache.misses.toLocaleString()} miss{cache.misses === 1 ? '' : 'es'}
       </div>
+    </Card>
+  );
+}
+
+function CompoundingRateCard({ rate }: { rate: CompoundingRate }) {
+  const pct = rate.rate_pct;
+  const formatted = pct < 1 && pct > 0
+    ? `${pct.toFixed(1)}%`
+    : `${Math.round(pct)}%`;
+  const subtitle = `${rate.auto_added_7d} pages auto-added this week / ${rate.total_pages} total`;
+  return (
+    <Card title="Compounding rate" subtitle={subtitle}>
+      <div
+        className="flex items-center gap-2"
+        title="Pages added by Aura's auto-summarizer in the last 7 days"
+      >
+        <TrendingUp size={20} className="text-primary/70 shrink-0" />
+        <div className="text-3xl font-bold tabular-nums">{formatted}</div>
+      </div>
+      <div className="text-xs text-muted-foreground">auto-summarizer growth</div>
     </Card>
   );
 }

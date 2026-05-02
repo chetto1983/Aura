@@ -2,6 +2,13 @@
 // — runtime parsing failures are visible because polling exercises every
 // endpoint. If drift becomes painful, swap in tygo Go→TS codegen.
 
+// Slice 12m — compounding-rate metric.
+export interface CompoundingRate {
+  auto_added_7d: number;
+  total_pages: number;
+  rate_pct: number;
+}
+
 export interface HealthRollup {
   process: {
     version: string;
@@ -16,6 +23,8 @@ export interface HealthRollup {
   // Slice 11j — embedding cache hit/miss counters since process start.
   // Both zero when no cache is wired.
   embed_cache: { hits: number; misses: number };
+  // Slice 12m — optional: zero-value struct always present in 12i+ builds.
+  compounding_rate?: CompoundingRate;
 }
 
 export interface WikiPageSummary {
