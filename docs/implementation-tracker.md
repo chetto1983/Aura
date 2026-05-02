@@ -84,8 +84,36 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 15a | `create_xlsx` tool + Telegram delivery | done | New `internal/files` pkg with `BuildXLSX` using `xuri/excelize/v2`; formula-injection sanitization (CWE-1236) via leading apostrophe on `=`/`+`/`-`/`@`/`\t`/`\r`. Caps: 16 sheets · 10 000 rows/sheet · 100 cols/row · 200 000 cells · 25 MB serialized · 80-char filename. New `source.KindXLSX` (.xlsx ext). New `tools.CreateXLSXTool` persisting via the existing source store (sha256 dedup → "show me last week's invoice" for free). New `tools.DocumentSender` interface satisfied by `Bot.SendDocumentToUser` (mirrors `SendToUser` pattern from slice 10d's `request_dashboard_token`). Tool wired post-construction in `setup.go`. New `cmd/debug_xlsx` 5-scenario hermetic harness (happy path + injection neutralized + dedup + path-traversal blocked + caps). 19 unit tests (12 xlsx + 7 tool). |
 | 15a-livetest | Telegram E2E smoke for slice 15a | done | Real Telegram bot run with the user. Three real `create_xlsx` calls fired naturally from prompts (no prompt engineering): `expenses.xlsx`, `wiki-pages.xlsx` (LLM chained `list_wiki` then `create_xlsx`), `budget.xlsx`. All persisted with `kind=xlsx`/`status=ingested`/correct openxml mime, 127–400 ms generate, delivered via `tele.Document`. Manifest description was sufficient for tool selection. |
 | 15d | Dashboard download endpoint + button | done | `GET /api/sources/{id}/raw` generalized via a kind→asset table (`rawAssets[Kind] → {filename, contentType, disposition}`); PDFs render `inline`, XLSX forces `attachment`. Adding 15b/15c is one row each — no router change. `validKind` accepts `xlsx`. `SourceSummary` TS kind union extended. `SourceInbox` row gains a Download button (PDF + XLSX); fetch with bearer header → blob URL → trigger download (auth-gated `<a href>` doesn't work because Authorization headers don't tag along on link clicks). Re-OCR / Ingest buttons now hidden for non-PDF kinds — XLSX skips OCR entirely. New router test covers PDF (inline), XLSX (attachment), text (404). |
+| 15b | `create_docx` tool + Telegram delivery | done | New `internal/files/docx.go` — pure-Go OOXML zip writer (no third-party dep); the three required parts (`[Content_Types].xml`, `_rels/.rels`, `word/document.xml`) emit at ~1.4 KB for a multi-block memo. Block kinds: `heading` (level 1–6 clamped, rendered as bold + half-point-size run formatting so we don't need a /word/styles.xml), `paragraph`, `bullet` (rendered with a `•` + space prefix to avoid a numbering definition), `table` (bordered, 5000 pct width). XML reserved chars escaped via `xml.EscapeText` (rejects raw `<script>` etc. — DOCX consumers refuse files with raw `<` or `&` in `<w:t>`). Caps: 1000 blocks · 500 rows/table · 50 cols/row · 50 000 chars/block · 25 MB · 80-char filename. New `source.KindDOCX` (.docx ext). New `tools.CreateDOCXTool` reuses the slice 15a `DocumentSender` interface; same persist + sha256-dedup + auto-`StatusIngested` flow. `rawAssets[KindDOCX]` row + `validKind` extension wire dashboard download. Frontend kind union + `SourceInbox` Download gate extended. New `cmd/debug_docx` 5-scenario hermetic harness. 8 docx tests (`internal/files`) + 5 docx tool tests (`internal/tools`) + extended router test (PDF + XLSX + DOCX + text 404). |
 
 ## Session Log
+
+### 2026-05-02 — Phase 15 slice 15b (`create_docx` tool + Telegram delivery)
+
+Second slice of Phase 15. Aura now produces both spreadsheets and Word documents. Same surfaces as 15a (Telegram delivery + dashboard download) — every plumbing detail except the format-specific generator was already in place.
+
+**Why pure-Go OOXML over a library**: `unidoc/unioffice` requires UNI Cloud API keys for some flows; other DOCX libs are template-driven (need a base .docx with placeholders), which doesn't fit Aura's "LLM authors structured content from JSON" shape. A basic DOCX is just a ZIP with three small XML parts — `~250 LOC` here gets us heading/paragraph/bullet/table without any dep risk and identical security posture (no embedded macros possible because we never write a `vbaProject.bin`).
+
+**Visual styling without /word/styles.xml**: heading blocks use direct run formatting (`<w:b/>` + `<w:sz w:val="36"/>` for H1=18pt, down to `<w:sz w:val="22"/>` for H6=11pt). Word still recognizes the result as semantic headings on copy/paste. Avoids needing a styles.xml part.
+
+**Bullets without /word/numbering.xml**: bullets render with a literal `•` + space prefix on a normal paragraph. Real numbering definitions can come later if anyone asks; for now the simple approach is enough and keeps the part count at 3.
+
+**Files**:
+
+- `internal/files/docx.go`, `internal/files/docx_test.go` (new — 8 tests).
+- `internal/tools/files.go` — `CreateDOCXTool` next to `CreateXLSXTool` (reuses `DocumentSender` interface from 15a). Modest duplication of persist+deliver logic; will refactor into a helper if 15c adds a third format.
+- `internal/tools/files_test.go` — 5 docx tool tests (happy path + title-only + reject-empty + deliver-false + reject-block-missing-kind).
+- `internal/source/source.go`, `internal/source/store.go` — `KindDOCX` constant + `.docx` extension.
+- `internal/api/sources.go` — `rawAssets[KindDOCX]` row + `validKind` extension.
+- `internal/api/router_test.go` — `TestSourceRaw_PDFAndXLSXAndDOCX` extends slice 15d's test.
+- `internal/telegram/setup.go` — `CreateDOCXTool` registration after `CreateXLSXTool`.
+- `web/src/types/api.ts` — kind union extended to `'pdf' | 'text' | 'url' | 'xlsx' | 'docx'`.
+- `web/src/components/SourceInbox.tsx` — Download button shows for docx too.
+- `cmd/debug_docx/main.go` (new) — 5-scenario hermetic harness mirroring `cmd/debug_xlsx`. `go run ./cmd/debug_docx` runs all in <1 s; `-out <path>` writes the workbook to disk for visual inspection.
+
+**Quality gates**: `go build/vet/test ./...` all green. `go run ./cmd/debug_docx` 5/5. Visual check: opened `D:/tmp/aura-debug-memo.docx` (1412 bytes) — 2-sheet structure rendered with title + paragraphs + bullets + table, no XML parser errors. tsc + vite build clean (358 KB main / 112 KB gz, no regression).
+
+**Deferred**: 15c `create_pdf` (gofpdf for simple text-only or headless-Chrome for HTML-rendered), 15e LLM-driven natural-prompt tests in the debug harnesses.
 
 ### 2026-05-02 — Phase 15 slice 15d (Dashboard download endpoint + button)
 
