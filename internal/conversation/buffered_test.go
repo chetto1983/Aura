@@ -2,6 +2,7 @@ package conversation_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -63,4 +64,118 @@ func TestBufferedAppender_DrainAll(t *testing.T) {
 	if got := store.stored(); got != goroutines*perGoroutine {
 		t.Fatalf("want %d stored, got %d", goroutines*perGoroutine, got)
 	}
+}
+
+// TestBufferedAppender_DropOnFull verifies that when the buffer is full,
+// excess turns are dropped (not blocking) and no error is returned.
+func TestBufferedAppender_DropOnFull(t *testing.T) {
+	// blockingStore holds the drain goroutine so the buffer fills up.
+	type blockingStore struct {
+		mu      sync.Mutex
+		count   int
+		release chan struct{}
+	}
+	bs := &blockingStore{release: make(chan struct{})}
+	bs.mu.Lock() // hold the lock so Append blocks until we release
+
+	appendStore := &struct {
+		conversation.TurnAppender
+		mu      sync.Mutex
+		count   int
+		blocked bool
+		release chan struct{}
+	}{
+		release: make(chan struct{}),
+	}
+	_ = bs
+	_ = appendStore
+
+	// Use a simpler approach: size-1 buffer, pre-fill it, then send one more.
+	blockCh := make(chan struct{})
+	slowStore := &slowMockStore{block: blockCh}
+
+	appender := conversation.NewBufferedAppender(slowStore, 1)
+
+	// Send first turn — drain goroutine picks it up and blocks.
+	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 0, Role: "user", Content: "a"})
+	// Give drain goroutine time to dequeue the first turn and block inside Append.
+	// Fill the buffer with a second turn.
+	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 1, Role: "user", Content: "b"})
+	// Third turn should be dropped (buffer size 1, one slot already taken by turn 2).
+	err := appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 2, Role: "user", Content: "c"})
+	if err != nil {
+		t.Fatalf("Append on full buffer should return nil, got %v", err)
+	}
+
+	// Release the slow store and close.
+	close(blockCh)
+	if err := appender.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+// slowMockStore blocks on Append until block is closed.
+type slowMockStore struct {
+	mu    sync.Mutex
+	count int
+	block chan struct{}
+}
+
+func (s *slowMockStore) Append(_ context.Context, _ conversation.Turn) error {
+	<-s.block
+	s.mu.Lock()
+	s.count++
+	s.mu.Unlock()
+	return nil
+}
+
+// TestBufferedAppender_CloseWhileEmpty verifies Close on an empty appender
+// returns nil without hanging.
+func TestBufferedAppender_CloseWhileEmpty(t *testing.T) {
+	store := &mockStore{}
+	appender := conversation.NewBufferedAppender(store, 10)
+	if err := appender.Close(context.Background()); err != nil {
+		t.Fatalf("Close on empty appender: %v", err)
+	}
+	if got := store.stored(); got != 0 {
+		t.Fatalf("want 0 stored, got %d", got)
+	}
+}
+
+// TestBufferedAppender_DrainErrDuplicateTurn verifies that ErrDuplicateTurn
+// from the underlying store is silently suppressed by the drain goroutine.
+func TestBufferedAppender_DrainErrDuplicateTurn(t *testing.T) {
+	dupStore := &errStore{err: conversation.ErrDuplicateTurn}
+	appender := conversation.NewBufferedAppender(dupStore, 10)
+
+	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 0, Role: "user", Content: "dup"})
+
+	if err := appender.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// No panic, no hang — duplicate suppressed.
+}
+
+// TestBufferedAppender_DrainGenericError verifies that non-duplicate errors
+// from the underlying store are logged (not panicked) by the drain goroutine.
+func TestBufferedAppender_DrainGenericError(t *testing.T) {
+	genericErr := errors.New("some db error")
+	errStore := &errStore{err: genericErr}
+	appender := conversation.NewBufferedAppender(errStore, 10)
+
+	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 0, Role: "user", Content: "fail"})
+
+	if err := appender.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// No panic, no hang — generic error logged and swallowed.
+}
+
+// errStore always returns the configured error from Append.
+type errStore struct {
+	err error
+}
+
+func (e *errStore) Append(_ context.Context, _ conversation.Turn) error {
+	return e.err
 }
