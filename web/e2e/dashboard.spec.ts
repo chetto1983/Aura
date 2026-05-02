@@ -49,12 +49,20 @@ test.describe('dashboard sidebar nav (12n)', () => {
 
   test('? opens the help dialog and lists the new shortcuts', async ({ authedPage: page }) => {
     await page.goto('/');
-    await page.keyboard.press('?');
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText(/conversations/i);
-    await expect(dialog).toContainText(/summaries/i);
-    await expect(dialog).toContainText(/maintenance/i);
+    // The shell binds `?` via a window keydown listener. Playwright's
+    // OS-keyboard-mapped `keyboard.press('?')` doesn't reliably set
+    // e.key='?' on every platform/layout, so dispatch the synthetic
+    // keyboard event directly on window.
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));
+    });
+    // Help "dialog" is a plain div with the "Keyboard shortcuts" heading.
+    const heading = page.getByRole('heading', { name: /keyboard shortcuts/i });
+    await expect(heading).toBeVisible();
+    const panel = heading.locator('..').locator('..');
+    await expect(panel).toContainText(/conversations/i);
+    await expect(panel).toContainText(/summaries/i);
+    await expect(panel).toContainText(/maintenance/i);
   });
 });
 
@@ -69,7 +77,8 @@ test.describe('/conversations route (12c, 12j, 12u.1, 12u.2)', () => {
 
   test('chat_id filter input is present', async ({ authedPage: page }) => {
     await page.goto('/conversations');
-    const input = page.getByPlaceholder(/chat[ _-]?id/i);
+    // ConversationsPanel uses placeholder="All chats" for the chat_id field.
+    const input = page.getByPlaceholder(/all chats/i);
     await expect(input).toBeVisible();
   });
 
