@@ -2,7 +2,7 @@
 
 Aura is your **personal Telegram second brain** — it remembers what you tell it, ingests PDFs and notes, and chats with you through your own private Telegram bot. Everything runs on your own machine. Your data never leaves it.
 
-This guide walks a non-developer through getting Aura running from scratch in about **15 minutes**.
+This guide gets a non-developer running in **about 5 minutes**, no `.env` editing required.
 
 ---
 
@@ -10,7 +10,7 @@ This guide walks a non-developer through getting Aura running from scratch in ab
 
 - A private Telegram bot (only you can talk to it).
 - A self-hosted server running on your computer (or a small VPS).
-- A web dashboard at `http://localhost:8081` to browse your wiki, sources, tasks, and skills.
+- A web dashboard at `http://localhost:8080` to browse your wiki, sources, tasks, settings, and skills.
 - A local SQLite database (`aura.db`) and a `wiki/` folder — both on your disk, both yours.
 
 ## What it costs
@@ -20,59 +20,31 @@ This guide walks a non-developer through getting Aura running from scratch in ab
 | Aura itself | Free (open source) |
 | Telegram bot | Free |
 | Hosting on your own machine | Free |
-| LLM API (OpenAI / Anthropic / Mistral) | Pay-per-message — typically $1–10/month for personal use |
+| LLM API (OpenAI / Mistral / Anthropic) | Pay-per-message — typically $1–10/month for personal use |
 | LLM API (local Ollama instead) | Free (your electricity only) |
 | PDF OCR (Mistral, optional) | ~$0.001 per page |
 
-You can run Aura **100% free** by pointing it at a local Ollama install instead of a cloud LLM. See the "Free local mode" section at the end.
+You can run Aura **100% free** by pointing it at a local Ollama install. The setup wizard auto-detects Ollama if it's running.
 
 ---
 
-## Step 1 — Create your Telegram bot (2 minutes)
+## Step 1 — Create your Telegram bot (1 minute)
 
-Each Aura install needs its own Telegram bot. Bots are free and take 30 seconds to create.
+Each Aura install needs its own bot. Bots are free and take 30 seconds.
 
 1. Open Telegram and search for **@BotFather**. Start a chat.
 2. Send `/newbot`.
 3. Pick a display name (e.g. *My Aura*).
-4. Pick a username ending in `bot` (e.g. `yourname_aura_bot`). It must be globally unique.
-5. BotFather replies with a token that looks like:
-   ```
-   123456789:ABCdefGhIJKlmNoPQRstuVWXyz
-   ```
-6. **Copy this token somewhere safe.** You'll paste it in Step 4.
+4. Pick a username ending in `bot` (e.g. `yourname_aura_bot`).
+5. BotFather replies with a token like `123456789:ABCdef...`. Copy it.
 
-> Why one bot per person? Aura is a personal second brain — wiki, notes, budget, and ownership are tied to a single bot. Sharing a bot would mean sharing your brain.
+> Why one bot per person? Aura is a personal second brain — wiki, notes, budget, and ownership are tied to a single bot.
 
 ---
 
-## Step 2 — Get an LLM API key (3 minutes)
+## Step 2 — Download Aura (1 minute)
 
-Aura needs a large language model to think. Pick **one** of these providers — any OpenAI-compatible API works.
-
-### Option A — OpenAI (most popular)
-1. Go to <https://platform.openai.com/api-keys>.
-2. Sign up, add a payment method, set a usage cap (e.g. $10/month).
-3. Click **Create new secret key**, copy the `sk-...` value.
-
-### Option B — Mistral (cheaper, EU-based)
-1. Go to <https://console.mistral.ai/api-keys>.
-2. Sign up and create a key.
-
-### Option C — Anthropic (Claude)
-1. Go to <https://console.anthropic.com/settings/keys>.
-2. Create a key. Note: Anthropic's API is Claude-native; it works through Aura's OpenAI-compatible client via a proxy or direct support.
-
-### Option D — Free local mode (Ollama)
-Skip this step. See "Free local mode" at the bottom of this guide.
-
-> Tip: Set a **monthly spending cap** on your provider's dashboard. Aura also has its own `SOFT_BUDGET` and `HARD_BUDGET` env vars as a second safety net.
-
----
-
-## Step 3 — Download Aura (1 minute)
-
-Go to the [Releases page](https://github.com/chetto1983/Aura/releases) and download the file matching your operating system:
+Grab the binary for your OS from the [Releases page](https://github.com/chetto1983/Aura/releases):
 
 | OS | File |
 |---|---|
@@ -81,112 +53,79 @@ Go to the [Releases page](https://github.com/chetto1983/Aura/releases) and downl
 | macOS (Apple Silicon) | `aura_darwin_arm64` |
 | Linux | `aura_linux_amd64` |
 
-Put it in a folder you'll remember, e.g. `~/aura/` or `C:\Aura\`.
+Drop it in a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`).
 
-**On macOS / Linux** make it executable:
-```bash
-chmod +x aura_darwin_arm64
-```
+**On macOS / Linux:** `chmod +x aura_*`
 
-**On macOS** the first run may be blocked by Gatekeeper. Right-click the binary → **Open** → confirm. You only do this once.
+**On macOS:** the first run may be blocked by Gatekeeper. Right-click → Open → confirm.
 
 ---
 
-## Step 4 — Configure Aura (3 minutes)
+## Step 3 — Run Aura (30 seconds)
 
-In the same folder as the binary, create a file called `.env` (note the leading dot). Paste this template and fill in the two `***FILL IN***` lines:
+Open a terminal in the same folder and run the binary:
 
-```env
-# Required — from Step 1
-TELEGRAM_TOKEN=***FILL IN***
+**Windows (PowerShell):** `.\aura_windows_amd64.exe`
+**macOS / Linux:** `./aura_*`
 
-# Leave blank on first run. The first /start message claims this Aura as yours.
-TELEGRAM_ALLOWLIST=
+You'll see something like:
 
-# Required — from Step 2
-LLM_API_KEY=***FILL IN***
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-
-# Budget guardrails (USD)
-SOFT_BUDGET=10.0
-HARD_BUDGET=25.0
-
-# Storage paths (defaults are fine)
-WIKI_PATH=./wiki
-DB_PATH=./aura.db
-SKILLS_PATH=./skills
-
-# Web dashboard binds to localhost only.
-HTTP_PORT=127.0.0.1:8080
+```
+INFO  setup wizard listening url=http://127.0.0.1:8080
+INFO  open the URL above in your browser to finish setup
 ```
 
-### If you picked Mistral (Option B) instead of OpenAI:
-```env
-LLM_BASE_URL=https://api.mistral.ai/v1
-LLM_MODEL=mistral-large-latest
-```
-
-### Optional — PDF OCR
-If you want Aura to ingest PDFs you send through Telegram:
-```env
-MISTRAL_API_KEY=***FILL IN — same or different Mistral key***
-OCR_ENABLED=true
-```
-
-### Optional — better wiki search via embeddings
-```env
-EMBEDDING_API_KEY=***FILL IN — Mistral key works***
-EMBEDDING_BASE_URL=https://api.mistral.ai/v1
-EMBEDDING_MODEL=mistral-embed
-```
-
-> The full list of options lives in [`.env.example`](.env.example) — copy from there if you want to tweak more.
+Leave the terminal open. Aura runs as long as the terminal is open.
 
 ---
 
-## Step 5 — Run Aura (30 seconds)
+## Step 4 — Finish setup in the browser (2 minutes)
 
-Open a terminal in the folder containing the binary and `.env`.
+1. Open <http://127.0.0.1:8080> in your browser.
+2. The **first-run wizard** asks for two things:
+   - **Telegram bot token** — paste the token from Step 1.
+   - **LLM provider** — pick a preset (OpenAI / Mistral / Anthropic / Ollama / Groq / DeepSeek / Together / Custom). Each preset fills the URL and a sensible default model. Paste your API key (or skip the key for Ollama).
+3. Click **Test connection** to verify the URL + key. You'll see "✓ Connected — N models available" if it works.
+4. Optional: open the **Embeddings** and **OCR** sections to add a Mistral key for wiki vector search and PDF ingestion. You can do this later instead.
+5. Click **Save and start Aura**. The wizard writes the token to `.env`, everything else to `aura.db`, and starts the bot.
 
-**Windows (PowerShell):**
-```powershell
-.\aura_windows_amd64.exe
-```
-
-**macOS / Linux:**
-```bash
-./aura_darwin_arm64
-```
-
-You should see log lines like:
-```
-INFO  starting telegram polling
-INFO  http server listening on 127.0.0.1:8080
-```
-
-Leave this terminal open. Aura runs as long as the terminal is open.
+> Free local mode: install [Ollama](https://ollama.com), `ollama pull llama3.1:8b`, run Aura. The wizard auto-detects Ollama on `localhost:11434` and shows a one-line hint at the top of the page.
 
 ---
 
-## Step 6 — Claim your bot (1 minute)
+## Step 5 — Claim your bot (30 seconds)
 
 1. Open Telegram and search for the bot username you picked in Step 1.
-2. Open the chat and tap **Start** (or send `/start`).
-3. Aura replies and remembers you as the owner. From now on, only you can talk to it; new users are queued for your approval.
+2. Tap **Start** (or send `/start`).
+3. Aura remembers you as the owner. From now on, only you can talk to it; new users get queued for your approval at <http://localhost:8080/pending>.
 
 Send any message — "hello" — and you should get a reply within a few seconds.
 
-Open <http://localhost:8080> in your browser to see the dashboard.
+---
+
+## Editing settings later
+
+Open the dashboard at <http://localhost:8080> and click **Settings** in the sidebar.
+
+You can change:
+
+- LLM provider, model, base URL, API key
+- Embeddings + OCR keys
+- Soft / hard budget caps
+- Summarizer mode, allowlist, OCR page limits, etc.
+
+Most edits take effect on the next conversation turn — no restart. Bootstrap fields (Telegram token, dashboard port, file paths) live in `.env` and need a restart to change.
+
+You can also click **Test connection** in Settings to validate a new provider before saving.
 
 ---
 
 ## Keeping Aura running
 
-Aura stops when you close the terminal. To keep it always-on, pick one:
+Aura stops when you close the terminal. To keep it always-on:
 
-### macOS — `launchd` (built in, recommended)
-Create `~/Library/LaunchAgents/com.aura.plist` with the standard `KeepAlive=true` template pointing at the binary. Load with `launchctl load`.
+### macOS — `launchd`
+Create `~/Library/LaunchAgents/com.aura.plist` with `KeepAlive=true` pointing at the binary. `launchctl load`.
 
 ### Linux — `systemd`
 Create `~/.config/systemd/user/aura.service`:
@@ -203,13 +142,13 @@ Restart=always
 [Install]
 WantedBy=default.target
 ```
-Then: `systemctl --user enable --now aura`.
+Then `systemctl --user enable --now aura`.
 
 ### Windows — Task Scheduler
-Create a task that runs the `.exe` "At log on" with "Restart on failure".
+Run the `.exe` "At log on" with "Restart on failure".
 
-### Any OS — small VPS
-A $5/month Linux VPS (Hetzner, DigitalOcean, Vultr) runs Aura 24/7 without using your laptop. Same install steps; the dashboard becomes accessible only through SSH tunnel by default (`HTTP_PORT=127.0.0.1:8080`).
+### VPS
+A $5/month Linux box (Hetzner / DigitalOcean / Vultr) runs Aura 24/7. Same install steps; SSH-tunnel the dashboard since `HTTP_PORT=127.0.0.1:8080` stays loopback-only.
 
 ---
 
@@ -219,78 +158,57 @@ Everything is in the folder where you ran the binary:
 
 | File / folder | What it is |
 |---|---|
-| `aura.db` | SQLite database — chat history, tasks, budget, skills |
+| `aura.db` | SQLite — settings, chat history, tasks, budget, auth, embeddings cache |
 | `wiki/` | Markdown notes Aura builds about your topics |
 | `skills/` | Installed skills (capabilities) |
-| `.env` | Your config and API keys (back this up; never commit it anywhere) |
+| `.env` | Bootstrap-only config: Telegram token, dashboard port, paths |
 
-**Backups:** zip these four items. That's a complete backup. Restoring = unzip into a new install.
+**Backups:** zip these four. Restore = unzip into a fresh install.
 
 ---
 
 ## Updating
 
-1. Stop Aura (Ctrl+C in the terminal, or stop the service).
-2. Download the new binary from Releases.
-3. Replace the old one.
-4. Start Aura again.
+1. Stop Aura (Ctrl+C, or stop the service).
+2. Download the new binary, replace the old.
+3. Start Aura.
 
 Your `.env`, `aura.db`, `wiki/`, and `skills/` are untouched.
 
 ---
 
-## Free local mode (no API costs)
-
-Run a local LLM with [Ollama](https://ollama.com) — Aura works fully offline.
-
-1. Install Ollama from <https://ollama.com>.
-2. Pull a model: `ollama pull llama3.1:8b` (or any model you like).
-3. In `.env`, set:
-   ```env
-   LLM_BASE_URL=
-   LLM_API_KEY=
-   OLLAMA_BASE_URL=http://localhost:11434
-   OLLAMA_MODEL=llama3.1:8b
-   ```
-4. (Optional) disable OCR and embeddings — `OCR_ENABLED=false` and leave `EMBEDDING_API_KEY` blank.
-
-Quality is lower than GPT-4 but it's free and private. A 16GB Mac or a machine with an 8GB+ GPU runs an 8B model comfortably.
-
----
-
 ## Troubleshooting
 
+**Setup wizard doesn't appear**
+The wizard only runs when `TELEGRAM_TOKEN` is blank in `.env`. Open `.env`, clear the `TELEGRAM_TOKEN=` line, restart.
+
 **Bot doesn't reply after `/start`**
-- Check the terminal — Aura logs every Telegram update. Look for errors.
-- Verify `TELEGRAM_TOKEN` is correct and has no spaces or quotes.
-- Make sure you're messaging the bot username from Step 1, not a different bot.
+Check the terminal for errors. Verify the token is correct (no spaces, no quotes). Make sure you're messaging the right bot.
 
 **`unauthorized` from the LLM**
-- Your `LLM_API_KEY` is wrong, expired, or out of credits.
+Open `/settings` in the dashboard, click **Test connection**, fix the URL or key, save.
 
 **Dashboard at localhost:8080 shows blank page**
-- The binary should have the dashboard built in. If you built from source, run `make web-build` first.
+The binary should have the dashboard built in. If you built from source, `cd web && npm run build`.
 
-**"budget exceeded" errors**
-- Aura hit `SOFT_BUDGET` or `HARD_BUDGET`. Raise them in `.env` and restart.
+**Budget exceeded errors**
+`/settings` → Budget section → raise `SOFT_BUDGET` / `HARD_BUDGET`.
 
 **macOS: "cannot be opened because the developer cannot be verified"**
-- Right-click the binary → **Open** → confirm. One-time prompt.
+Right-click → Open → confirm. One-time.
 
 **Windows: Defender flags the binary**
-- Unsigned binaries from GitHub Releases trigger this. Click **More info** → **Run anyway**.
+Unsigned binaries from Releases trigger this. Click More info → Run anyway.
 
 ---
 
-## Building from source (developers only)
-
-If you'd rather build instead of using a Release binary:
+## Building from source
 
 ```bash
 git clone https://github.com/chetto1983/Aura
 cd aura
-make web-build   # builds the React dashboard
-make build       # builds the Go binary
+make web-build
+make build
 ./aura
 ```
 
@@ -300,6 +218,6 @@ Requires Go 1.25+ and Node 20+.
 
 ## Getting help
 
-- Logs: the terminal running `aura` shows everything. `LOG_LEVEL=debug` for more detail.
-- Issues: open a GitHub issue with the relevant log lines (redact your token).
-- Health check: `curl http://localhost:8080/health` should return JSON with `"status":"ok"`.
+- Logs: terminal running `aura` shows everything. Set `LOG_LEVEL=debug` for more.
+- Issues: open a GitHub issue with relevant log lines (redact your token).
+- Health check: `curl http://localhost:8080/api/health` should return JSON with the rollup.
