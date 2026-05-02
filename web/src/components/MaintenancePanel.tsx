@@ -66,7 +66,7 @@ export function MaintenancePanel() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           >
             <option value="open">Open</option>
             <option value="resolved">Resolved</option>
@@ -75,7 +75,7 @@ export function MaintenancePanel() {
           <select
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           >
             <option value="all">All severities</option>
             <option value="high">High</option>
@@ -168,7 +168,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
             type="button"
             disabled={resolving}
             onClick={() => void handleResolve()}
-            className="rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
+            className="min-h-11 rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
           >
             {resolving ? 'Resolving…' : 'Mark resolved'}
           </button>
@@ -176,7 +176,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
         {issue.slug && (
           <a
             href={`/wiki/${encodeURIComponent(issue.slug)}`}
-            className="inline-flex items-center gap-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-1.5 text-xs font-medium transition-colors"
+            className="inline-flex min-h-11 items-center gap-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-2 text-sm font-medium transition-colors"
           >
             Open page
             <ExternalLink size={10} />
@@ -195,7 +195,7 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
       <Wrench size={40} className="text-muted-foreground/40" />
       <p className="text-sm font-medium text-muted-foreground">All clean — no maintenance issues.</p>
-      <p className="text-xs text-muted-foreground/70">The wiki maintenance scheduler will populate this queue when issues are detected.</p>
+      <p className="text-sm text-muted-foreground">The wiki maintenance scheduler will populate this queue when issues are detected.</p>
     </div>
   );
 }

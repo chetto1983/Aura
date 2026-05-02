@@ -177,8 +177,7 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
     <div className="space-y-2">
       <div
         className="flex h-3 overflow-hidden rounded bg-muted"
-        role="img"
-        aria-label={order.map((k) => `${k.replace('_', ' ')}: ${buckets[k] ?? 0}`).join(', ')}
+        aria-hidden="true"
       >
         {order.map((k) => {
           const v = buckets[k] ?? 0;
@@ -193,11 +192,14 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
           );
         })}
       </div>
+      <span className="sr-only">
+        {order.map((k) => `${k.replace('_', ' ')}: ${buckets[k] ?? 0}`).join(', ')}
+      </span>
       <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
         {order.map((k) => (
           <li key={k} className="flex items-center gap-2">
-            <span className={`inline-block w-2 h-2 rounded-sm ${colors[k] ?? 'bg-muted-foreground'}`} />
-            <span className="text-muted-foreground">{k.replace('_', ' ')}</span>
+            <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-sm ${colors[k] ?? 'bg-muted-foreground'}`} />
+            <span className="text-foreground">{k.replace('_', ' ')}</span>
             <span className="ml-auto tabular-nums">{buckets[k] ?? 0}</span>
           </li>
         ))}

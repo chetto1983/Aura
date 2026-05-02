@@ -209,7 +209,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
             onChange={(e) => setArgs(e.target.value)}
             spellCheck={false}
             rows={Math.min(10, Math.max(3, args.split('\n').length))}
-            className="w-full rounded-md border bg-background p-2 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="min-h-24 w-full rounded-md border bg-background p-2 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           {parseErr && (
             <div className="flex items-center gap-1.5 text-[11px] text-destructive">
@@ -222,7 +222,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
               type="button"
               onClick={() => void handleRun()}
               disabled={running}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 min-h-[36px]"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
               {running ? 'Calling…' : 'Invoke'}

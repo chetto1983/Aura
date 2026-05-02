@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import { ConversationDrawer } from '@/components/ConversationDrawer';
+import { confirm as confirmModal, prompt as promptModal } from '@/lib/confirmModal';
 import { api, ApiError } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import type { ConversationTurn } from '@/types/api';
@@ -65,8 +66,18 @@ export function ConversationsPanel() {
   }, []);
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
-  const runCleanup = useCallback(async (sel: { chat_id?: number; older_than_days?: number; all?: boolean }, label: string) => {
-    if (!window.confirm(`${label}\n\nThis cannot be undone. Continue?`)) return;
+  const runCleanup = useCallback(async (
+    sel: { chat_id?: number; older_than_days?: number; all?: boolean },
+    title: string,
+    description: string,
+  ) => {
+    const ok = await confirmModal({
+      title,
+      description,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     setCleaning(true);
     const id = toast.loading('Cleaning…');
     try {
@@ -82,15 +93,28 @@ export function ConversationsPanel() {
     }
   }, [refetch, refreshStats]);
 
-  const handleCleanupOlder = useCallback(() => {
-    const ans = window.prompt('Delete turns older than how many days? (e.g. 30)', '30');
+  const handleCleanupOlder = useCallback(async () => {
+    const ans = await promptModal({
+      title: 'Purge older turns',
+      description: 'Delete every archived turn older than the entered number of days.',
+      label: 'Days',
+      placeholder: 'e.g. 30',
+      defaultValue: '30',
+      inputMode: 'numeric',
+      confirmLabel: 'Continue',
+      validate: (v) => {
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n) || n < 1) return 'Enter a positive integer.';
+        return null;
+      },
+    });
     if (!ans) return;
     const days = parseInt(ans, 10);
-    if (!Number.isFinite(days) || days < 1) {
-      toast.error('Enter a positive integer.');
-      return;
-    }
-    runCleanup({ older_than_days: days }, `Delete every turn older than ${days} day${days === 1 ? '' : 's'}.`);
+    runCleanup(
+      { older_than_days: days },
+      `Delete turns older than ${days} day${days === 1 ? '' : 's'}?`,
+      'This permanently removes archived conversation turns and cannot be undone.',
+    );
   }, [runCleanup]);
 
   const handleCleanupChat = useCallback(() => {
@@ -98,11 +122,19 @@ export function ConversationsPanel() {
       toast.error('Set a chat_id filter first.');
       return;
     }
-    runCleanup({ chat_id: numericChatId }, `Delete every archived turn for chat ${numericChatId}.`);
+    runCleanup(
+      { chat_id: numericChatId },
+      `Wipe all turns for chat ${numericChatId}?`,
+      'This permanently removes every archived turn for the selected chat and cannot be undone.',
+    );
   }, [numericChatId, runCleanup]);
 
   const handleCleanupAll = useCallback(() => {
-    runCleanup({ all: true }, 'Delete every archived conversation turn (all chats).');
+    runCleanup(
+      { all: true },
+      'Wipe every archived conversation turn?',
+      'This permanently deletes all archived turns across every chat and cannot be undone.',
+    );
   }, [runCleanup]);
 
   if (loading && !data) return <PanelSkeleton />;
@@ -136,7 +168,7 @@ export function ConversationsPanel() {
             type="button"
             onClick={handleCleanupOlder}
             disabled={cleaning || !stats || stats.total_rows === 0}
-            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title="Delete turns older than N days"
           >
             <Trash2 size={14} />
@@ -147,7 +179,7 @@ export function ConversationsPanel() {
               type="button"
               onClick={handleCleanupChat}
               disabled={cleaning}
-              className="flex items-center gap-1.5 rounded-md border border-amber-500/40 px-3 py-1.5 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex min-h-11 items-center gap-1.5 rounded-md border border-amber-500/40 px-3 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title={`Delete all turns for chat ${numericChatId}`}
             >
               <Trash2 size={14} />
@@ -158,7 +190,7 @@ export function ConversationsPanel() {
             type="button"
             onClick={handleCleanupAll}
             disabled={cleaning || !stats || stats.total_rows === 0}
-            className="flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex min-h-11 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title="Delete every archived turn"
           >
             <Trash2 size={14} />
@@ -168,12 +200,18 @@ export function ConversationsPanel() {
             type="button"
             onClick={handleExport}
             disabled={filtered.length === 0}
-            className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title="Download filtered turns as JSON"
+            className="flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={filtered.length === 0 ? 'No conversation rows match the current filters' : 'Download filtered turns as JSON'}
+            aria-describedby={filtered.length === 0 ? 'conversation-export-hint' : undefined}
           >
             <Download size={14} />
             Export JSON
           </button>
+          {filtered.length === 0 && (
+            <span id="conversation-export-hint" className="sr-only">
+              No conversation rows match the current filters.
+            </span>
+          )}
         </div>
       </header>
 
@@ -185,7 +223,7 @@ export function ConversationsPanel() {
             value={chatId}
             onChange={(e) => setChatId(e.target.value)}
             placeholder="All chats"
-            className="rounded-md border bg-background px-3 py-1.5 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -194,7 +232,7 @@ export function ConversationsPanel() {
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -203,10 +241,10 @@ export function ConversationsPanel() {
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
-        <label className="flex items-end gap-2 pb-1.5">
+        <label className="flex min-h-11 items-center gap-2 pb-0">
           <input
             type="checkbox"
             checked={hasTools}
@@ -214,7 +252,7 @@ export function ConversationsPanel() {
             className="rounded"
             id="has-tools"
           />
-          <span className="text-sm select-none cursor-pointer" onClick={() => setHasTools((v) => !v)}>
+          <span className="text-sm select-none cursor-pointer">
             Has tool calls
           </span>
         </label>
@@ -223,7 +261,31 @@ export function ConversationsPanel() {
       {filtered.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <>
+        <div className="space-y-2 md:hidden">
+          {filtered.map((turn) => (
+            <button
+              key={turn.id}
+              type="button"
+              onClick={() => setSelectedId(turn.id)}
+              className="w-full rounded-lg border bg-card p-3 text-left hover:bg-accent/30"
+            >
+              <div className="flex min-h-11 items-center justify-between gap-3">
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">#{turn.id}</span>
+                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${ROLE_BADGE[turn.role] ?? 'bg-muted text-muted-foreground'}`}>
+                  {turn.role}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{turn.content}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="tabular-nums">Chat {turn.chat_id}</span>
+                <span>{new Date(turn.created_at).toLocaleString()}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="hidden rounded-xl border overflow-hidden md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
@@ -259,6 +321,7 @@ export function ConversationsPanel() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <ConversationDrawer turnId={selectedId} onClose={() => setSelectedId(null)} />
@@ -271,7 +334,7 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
       <MessageSquare size={40} className="text-muted-foreground/40" />
       <p className="text-sm font-medium text-muted-foreground">No conversations found</p>
-      <p className="text-xs text-muted-foreground/70">Start a conversation in Telegram to see turns archived here</p>
+      <p className="text-xs text-muted-foreground">Start a conversation in Telegram to see turns archived here</p>
     </div>
   );
 }

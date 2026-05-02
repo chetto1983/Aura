@@ -134,7 +134,7 @@ function ProposalCard({ update, onDismiss }: { update: ProposedUpdate; onDismiss
           type="button"
           disabled={acting !== null}
           onClick={() => void handleApprove()}
-          className="rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
+          className="min-h-11 rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
         >
           {acting === 'approve' ? 'Approving…' : 'Approve'}
         </button>
@@ -142,7 +142,7 @@ function ProposalCard({ update, onDismiss }: { update: ProposedUpdate; onDismiss
           type="button"
           disabled={acting !== null}
           onClick={() => void handleReject()}
-          className="rounded-md bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
+          className="min-h-11 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
         >
           {acting === 'reject' ? 'Rejecting…' : 'Reject'}
         </button>
@@ -156,7 +156,7 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
       <FileCheck size={40} className="text-muted-foreground/40" />
       <p className="text-sm font-medium text-muted-foreground">No pending proposals</p>
-      <p className="text-xs text-muted-foreground/70">
+      <p className="text-xs text-muted-foreground">
         Review mode disabled or no proposals yet. Set{' '}
         <code className="rounded bg-muted px-1 py-0.5 font-mono">SUMMARIZER_MODE=review</code>{' '}
         in .env to enable.

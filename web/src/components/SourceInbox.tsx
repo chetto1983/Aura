@@ -125,7 +125,7 @@ export function SourceInbox() {
         void handleFiles(e.dataTransfer.files);
       }}
     >
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Sources</h1>
         {stale && <StalePill />}
       </header>
@@ -158,7 +158,28 @@ export function SourceInbox() {
             <h2 className="text-sm font-medium text-muted-foreground mb-2">
               {STATUS_LABEL[status]} <span className="ml-1 tabular-nums">({rows.length})</span>
             </h2>
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="space-y-2 md:hidden">
+              {rows.map((s) => (
+                <article key={s.id} className="rounded-lg border bg-card p-3">
+                  <p className="break-words font-mono text-xs font-medium">{s.filename}</p>
+                  <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                    <p>Created {shortDate(s.created_at)}</p>
+                    <p>{s.page_count ? `${s.page_count} page${s.page_count === 1 ? '' : 's'}` : 'Pages unknown'}</p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <WikiRefs pages={s.wiki_pages} />
+                    <SourceActions
+                      source={s}
+                      busy={busyIds.has(s.id)}
+                      onIngest={() => void handleIngest(s)}
+                      onReocr={() => void handleReocr(s)}
+                    />
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden rounded-lg border overflow-x-auto md:block">
               <table className="w-full text-sm min-w-[600px]">
                 <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>
@@ -233,6 +254,19 @@ function DropZone({
   );
 }
 
+function WikiRefs({ pages }: { pages?: string[] }) {
+  if (!pages?.length) {
+    return <span className="text-xs text-muted-foreground">No wiki page</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {pages.map((p) => (
+        <code key={p} className="rounded bg-muted px-1.5 py-1 text-xs">[[{p}]]</code>
+      ))}
+    </div>
+  );
+}
+
 // SourceActions renders the per-row Ingest / Re-OCR buttons. The set of
 // available actions depends on the source's lifecycle status:
 //   - stored:        OCR hasn't run; reocr button (re-runs Mistral OCR)
@@ -258,16 +292,16 @@ function SourceActions({
     return <span className="text-xs text-muted-foreground">—</span>;
   }
   return (
-    <div className="inline-flex gap-1">
+    <div className="inline-flex flex-wrap justify-end gap-1">
       {showReocr && (
         <button
           type="button"
           disabled={busy}
           onClick={onReocr}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
           title="Re-run Mistral OCR on this PDF"
         >
-          <RefreshCcw size={12} />
+          <RefreshCcw size={14} />
           Re-OCR
         </button>
       )}
@@ -276,10 +310,10 @@ function SourceActions({
           type="button"
           disabled={busy}
           onClick={onIngest}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
           title="Compile OCR markdown into a wiki summary page"
         >
-          <Play size={12} />
+          <Play size={14} />
           Ingest
         </button>
       )}

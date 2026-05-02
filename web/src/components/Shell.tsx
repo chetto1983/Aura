@@ -35,7 +35,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="rounded-md p-2 hover:bg-accent"
+            className="inline-flex size-11 items-center justify-center rounded-md hover:bg-accent"
             aria-label="Open navigation"
           >
             <Menu size={18} />

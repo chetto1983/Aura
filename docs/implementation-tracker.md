@@ -83,6 +83,23 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-05-02 — Phase 14.5 (Dashboard UX hardening)
+
+Closes the high/medium findings from `docs/dashboard-ux-audit-2026-05-02.md`. One atomic commit. No backend or schema changes.
+
+**Audit fixes**:
+
+1. **Mobile data overflow** (audit High #1) — `WikiPanel`, `SourceInbox`, `TasksPanel`, `ConversationsPanel` gained mobile card stacks (`md:hidden`) paired with the existing tables (`hidden md:block`). Tables no longer overflow `390px` viewports.
+2. **Graph canvas mobile** (audit High #2) — `WikiGraphView` initial size changed from fixed `{800,600}` to `{0,0}` with a "Measuring graph space..." fallback until `ResizeObserver` reports a real container width; mobile gains a searchable node list below the canvas.
+3. **Touch targets ≥44px** (audit Medium #3) — applied `min-h-11` + `px-3 py-2` to filter pills, action buttons, form inputs, mobile hamburger (`size-11`), MCP Invoke + JSON textarea, PendingUsers Approve/Deny.
+4. **AA contrast in metadata text** (audit Medium #4) — `text-muted-foreground/70` removed from `MaintenancePanel`, `SummariesPanel`, `ConversationsPanel` empty states; `SettingsPanel` source badges bumped from `*-500/600` to `*-700/300` with `12%` tinted backgrounds; `HealthDashboard` legend label switched from `text-muted-foreground` to `text-foreground` and the decorative bar got `aria-hidden` paired with an `sr-only` summary.
+5. **Auth-expiry returnTo** (audit Medium #5) — `api.ts`'s `handle401` now stashes `pathname+search+hash` to `sessionStorage` and appends it to the redirect as `?returnTo=…`; `Login.tsx` reads in this priority order: query param → router state → sessionStorage → `/`, with a `safeReturnTo` guard against `//` and `/login` recursion.
+6. **Native confirm/prompt → custom modal** (audit Low #6) — new `web/src/components/common/ConfirmModal.tsx` (Radix Dialog host) + `web/src/lib/confirmModal.ts` (imperative `confirm()`/`prompt()` API), `<ConfirmHost />` mounted at the app root. Replaces `window.confirm` in `TasksPanel.handleDelete`, `SkillsPanel.handleDelete`, and `ConversationsPanel`'s three cleanup buttons; replaces `window.prompt` in `handleCleanupOlder`. Destructive confirms focus Cancel by default; prompts auto-focus + select the input. `web/e2e/confirm-modal.spec.ts` covers the open/cancel/validation paths without touching live data.
+
+**Quality gates**: `npx tsc --noEmit` clean. `npx vite build` clean (358 KB main / 112 KB gz — no regression vs the 14d-followup baseline). `go build ./...`, `go vet ./...`, `go test ./...` all green.
+
+**Files**: `web/src/api.ts`, `web/src/App.tsx`, `web/src/components/{Login,Shell,HealthDashboard,WikiPanel,SourceInbox,TasksPanel,ConversationsPanel,WikiGraphView,SkillsPanel,MCPPanel,PendingUsersPanel,SettingsPanel,MaintenancePanel,SummariesPanel}.tsx`, `web/src/components/common/ConfirmModal.tsx` (new), `web/src/lib/confirmModal.ts` (new), `web/e2e/confirm-modal.spec.ts` (new), regenerated `internal/api/dist/`.
+
 ### 2026-05-02 — Slice 14 (Onboarding overhaul + retention controls)
 
 Replaces the hand-edit-`.env` install path with a first-run wizard, adds a runtime `/settings` page so most config can change without restart, and gives the operator explicit control over scheduled-task lifecycle and conversation-archive growth.

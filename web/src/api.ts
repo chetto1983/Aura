@@ -53,14 +53,22 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
 }
 
 // handle401 is called when a request returns 401. Clears the stored
-// token and bounces the user to /login. Also accepts a hint param so
-// the login screen can explain why the user landed there.
+// token and bounces the user to /login. Stashes the current location
+// in sessionStorage so Login can restore the user there after sign-in.
 function handle401(): void {
   clearToken();
-  // Avoid a redirect loop if we're already on /login.
-  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-    window.location.href = '/login?expired=1';
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname.startsWith('/login')) return;
+  try {
+    const returnTo = window.location.pathname + window.location.search + window.location.hash;
+    if (returnTo && returnTo !== '/') {
+      window.sessionStorage.setItem('aura_return_to', returnTo);
+    }
+  } catch {
+    // sessionStorage unavailable (private mode, quota); fall through.
   }
+  const encodedReturnTo = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  window.location.href = `/login?expired=1&returnTo=${encodedReturnTo}`;
 }
 
 async function readError(res: Response): Promise<string> {

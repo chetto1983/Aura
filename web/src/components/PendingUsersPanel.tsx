@@ -112,20 +112,20 @@ export function PendingUsersPanel() {
                       type="button"
                       disabled={busy.has(p.user_id)}
                       onClick={() => void handleApprove(p)}
-                      className="inline-flex items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-wait dark:text-emerald-400"
+                      className="inline-flex min-h-11 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-wait dark:text-emerald-400"
                       title="Approve and send a Telegram login token"
                     >
-                      <Check size={12} />
+                      <Check size={14} />
                       Approve
                     </button>
                     <button
                       type="button"
                       disabled={busy.has(p.user_id)}
                       onClick={() => void handleDeny(p)}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+                      className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
                       title="Deny this request"
                     >
-                      <X size={12} />
+                      <X size={14} />
                       Deny
                     </button>
                   </td>

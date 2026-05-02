@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { api, ApiError } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
+import { confirm as confirmModal } from '@/lib/confirmModal';
 import type { SkillDetail, SkillSummary, SkillCatalogItem } from '@/types/api';
 
 type Tab = 'local' | 'catalog';
@@ -85,7 +86,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
+      className={`-mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
         active
           ? 'border-primary text-primary font-medium'
           : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -124,7 +125,13 @@ function LocalSkillsView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
   }, [open]);
 
   const handleDelete = useCallback(async (name: string) => {
-    if (!window.confirm(`Delete skill "${name}"? This removes the local SKILL.md file.`)) return;
+    const ok = await confirmModal({
+      title: `Delete skill "${name}"?`,
+      description: 'This removes the local SKILL.md file from disk.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     setDeletingNames((prev) => new Set(prev).add(name));
     const id = toast.loading(`Deleting ${name}…`);
     try {
@@ -212,9 +219,9 @@ function LocalSkillRow({
           onClick={onDelete}
           disabled={deleting}
           title="Delete this skill"
-          className="my-2 mr-2 inline-flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+          className="my-2 mr-2 inline-flex min-h-11 items-center gap-1 rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
         >
-          {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+          {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
           Delete
         </button>
       </div>
@@ -294,7 +301,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
           placeholder="Search skills.sh…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full rounded-md border bg-background pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="min-h-11 w-full rounded-md border bg-background pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
@@ -331,7 +338,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
                   type="button"
                   onClick={() => void handleInstall(item)}
                   disabled={installing === key}
-                  className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 disabled:opacity-50 shrink-0"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary hover:bg-primary/10 disabled:opacity-50 shrink-0"
                 >
                   {installing === key ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                   Install

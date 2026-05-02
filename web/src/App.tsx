@@ -5,6 +5,7 @@ import { Shell } from '@/components/Shell';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { HealthDashboard } from '@/components/HealthDashboard';
 import { Login } from '@/components/Login';
+import { ConfirmHost } from '@/components/common/ConfirmModal';
 import { getToken } from '@/lib/auth';
 import { useAppTheme } from '@/hooks/useAppTheme';
 
@@ -79,6 +80,7 @@ export default function App() {
         />
       </Routes>
       <Toaster position="bottom-right" />
+      <ConfirmHost />
     </BrowserRouter>
   );
 }

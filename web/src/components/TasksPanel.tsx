@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { confirm as confirmModal } from '@/lib/confirmModal';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import type { Task, UpsertTaskRequest } from '@/types/api';
@@ -55,9 +56,13 @@ export function TasksPanel() {
   }, [refetch, setBusy]);
 
   const handleDelete = useCallback(async (t: Task) => {
-    if (!window.confirm(`Permanently delete task "${t.name}"? This removes the row entirely; cancel keeps the audit trail.`)) {
-      return;
-    }
+    const ok = await confirmModal({
+      title: `Delete task "${t.name}"?`,
+      description: 'This removes the row entirely. Cancelling instead keeps the audit trail.',
+      confirmLabel: 'Delete permanently',
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(t.name, true);
     const id = toast.loading(`Deleting ${t.name}…`);
     try {
@@ -95,7 +100,7 @@ export function TasksPanel() {
 
   return (
     <div className="p-6 space-y-6">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
           {stale && (
@@ -107,7 +112,7 @@ export function TasksPanel() {
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
         >
           <Plus size={14} />
           New task
@@ -135,7 +140,32 @@ export function TasksPanel() {
             <h2 className="text-sm font-medium text-muted-foreground mb-2">
               {STATUS_LABEL[s]} <span className="ml-1 tabular-nums">({rows.length})</span>
             </h2>
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="space-y-2 md:hidden">
+              {rows.map((t) => (
+                <article key={t.name} className="rounded-lg border bg-card p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-mono text-xs font-medium">{t.name}</p>
+                      <p className="mt-1 text-sm">{t.kind}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{t.status}</span>
+                  </div>
+                  <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+                    <p>Schedule: {formatSchedule(t)}</p>
+                    <p>Next: {t.status === 'active' ? <Countdown iso={t.next_run_at} /> : shortDate(t.next_run_at)}</p>
+                    <p>Last: {t.last_error || shortDate(t.last_run_at)}</p>
+                  </div>
+                  <TaskActions
+                    task={t}
+                    busy={busyNames.has(t.name)}
+                    onCancel={() => void handleCancel(t)}
+                    onDelete={() => void handleDelete(t)}
+                  />
+                </article>
+              ))}
+            </div>
+
+            <div className="hidden rounded-lg border overflow-x-auto md:block">
               <table className="w-full text-sm min-w-[700px]">
                 <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>
@@ -170,30 +200,12 @@ export function TasksPanel() {
                         ) : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        <div className="inline-flex items-center gap-1.5 justify-end">
-                          {t.status === 'active' && (
-                            <button
-                              type="button"
-                              disabled={busyNames.has(t.name)}
-                              onClick={() => void handleCancel(t)}
-                              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
-                              title="Mark cancelled (keeps audit trail)"
-                            >
-                              <X size={12} />
-                              Cancel
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            disabled={busyNames.has(t.name)}
-                            onClick={() => void handleDelete(t)}
-                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-wait"
-                            title="Permanently remove the row"
-                          >
-                            <Trash2 size={12} />
-                            Delete
-                          </button>
-                        </div>
+                        <TaskActions
+                          task={t}
+                          busy={busyNames.has(t.name)}
+                          onCancel={() => void handleCancel(t)}
+                          onDelete={() => void handleDelete(t)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -239,6 +251,51 @@ function NewTaskDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function TaskActions({
+  task,
+  busy,
+  onCancel,
+  onDelete,
+}: {
+  task: Task;
+  busy: boolean;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="mt-3 inline-flex flex-wrap items-center justify-end gap-1.5 md:mt-0">
+      {task.status === 'active' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onCancel}
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          title="Mark cancelled (keeps audit trail)"
+        >
+          <X size={14} />
+          Cancel
+        </button>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onDelete}
+        className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-wait"
+        title="Permanently remove the row"
+      >
+        <Trash2 size={14} />
+        Delete
+      </button>
+    </div>
+  );
+}
+
+function formatSchedule(t: Task): string {
+  if (t.schedule_kind === 'daily') return `daily ${t.schedule_daily}`;
+  if (t.schedule_kind === 'every') return `every ${t.schedule_every_minutes}m`;
+  return t.schedule_at || 'not scheduled';
 }
 
 function NewTaskForm({
@@ -296,7 +353,7 @@ function NewTaskForm({
               placeholder="e.g. weekly-cleanup"
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
             <span className="mt-1 block text-xs text-muted-foreground">
               1-64 chars, letters / digits / _ . -
@@ -308,7 +365,7 @@ function NewTaskForm({
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value as Task['kind'])}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
             >
               <option value="wiki_maintenance">wiki_maintenance — runs lint + rebuild + log</option>
               <option value="reminder">reminder — sends a Telegram message</option>
@@ -326,7 +383,7 @@ function NewTaskForm({
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="e.g. 123456789"
-                className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
               />
               <span className="mt-1 block text-xs text-muted-foreground">
                 Numeric ID — message @userinfobot on Telegram to find yours.
@@ -341,14 +398,14 @@ function NewTaskForm({
               value={payload}
               onChange={(e) => setPayload(e.target.value)}
               placeholder={kind === 'reminder' ? 'reminder text' : ''}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
           </label>
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Schedule</legend>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              <label className="inline-flex items-center gap-2 text-sm">
+              <label className="inline-flex min-h-11 items-center gap-2 text-sm">
                 <input
                   type="radio"
                   name="schedule"
@@ -357,7 +414,7 @@ function NewTaskForm({
                 />
                 Daily at HH:MM
               </label>
-              <label className="inline-flex items-center gap-2 text-sm">
+              <label className="inline-flex min-h-11 items-center gap-2 text-sm">
                 <input
                   type="radio"
                   name="schedule"
@@ -366,7 +423,7 @@ function NewTaskForm({
                 />
                 Every N minutes
               </label>
-              <label className="inline-flex items-center gap-2 text-sm">
+              <label className="inline-flex min-h-11 items-center gap-2 text-sm">
                 <input
                   type="radio"
                   name="schedule"
@@ -383,7 +440,7 @@ function NewTaskForm({
                 value={daily}
                 onChange={(e) => setDaily(e.target.value)}
                 aria-label="Daily HH:MM"
-                className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
               />
             )}
             {scheduleMode === 'every' && (
@@ -395,7 +452,7 @@ function NewTaskForm({
                   value={everyMinutes}
                   onChange={(e) => setEveryMinutes(parseInt(e.target.value, 10) || 1)}
                   aria-label="Interval in minutes"
-                  className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
                   Examples: 60 = hourly · 1440 = daily · 10080 = weekly. First fire is N minutes from now.
@@ -409,7 +466,7 @@ function NewTaskForm({
                 value={at}
                 onChange={(e) => setAt(e.target.value)}
                 aria-label="Run at"
-                className="block w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
               />
             )}
           </fieldset>
@@ -418,14 +475,14 @@ function NewTaskForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+          className="min-h-11 rounded-md border px-3 py-2 text-sm hover:bg-muted"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="min-h-11 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {submitting ? 'Scheduling…' : 'Schedule'}
         </button>

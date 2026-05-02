@@ -24,7 +24,30 @@ export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const returnTo = (location.state as { from?: Location } | null)?.from?.pathname ?? '/';
+  // Prefer router-state (set by ProtectedRoute on first navigation) → then
+  // sessionStorage (set by api.ts handle401 on hard redirects) → then home.
+  const safeReturnTo = (value?: string | null) => {
+    if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/login')) return undefined;
+    return value;
+  };
+  const stateFrom = (location.state as { from?: Location } | null)?.from;
+  const stateReturnTo = stateFrom ? `${stateFrom.pathname}${stateFrom.search}${stateFrom.hash}` : undefined;
+  const queryReturnTo = params.get('returnTo');
+  const stashedReturnTo = (() => {
+    try {
+      return window.sessionStorage.getItem('aura_return_to') ?? undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const returnTo = safeReturnTo(queryReturnTo) ?? safeReturnTo(stateReturnTo) ?? safeReturnTo(stashedReturnTo) ?? '/';
+  const clearStashedReturnTo = () => {
+    try {
+      window.sessionStorage.removeItem('aura_return_to');
+    } catch {
+      // sessionStorage unavailable; nothing to clear.
+    }
+  };
   const [token, setTokenInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +63,10 @@ export function Login() {
     void (async () => {
       try {
         await api.whoami();
-        if (!cancelled) navigate(returnTo, { replace: true });
+        if (!cancelled) {
+          clearStashedReturnTo();
+          navigate(returnTo, { replace: true });
+        }
       } catch {
         if (!cancelled) clearToken();
       }
@@ -83,6 +109,7 @@ export function Login() {
     setToken(trimmed);
     try {
       await api.whoami();
+      clearStashedReturnTo();
       navigate(returnTo, { replace: true });
     } catch (err) {
       clearToken();

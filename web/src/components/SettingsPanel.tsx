@@ -137,11 +137,13 @@ export function SettingsPanel() {
             Tunable values applied on top of <code className="text-[12px] font-mono">.env</code>. Edits persist in <code className="text-[12px] font-mono">aura.db</code> and take effect on the next conversation turn. Bootstrap settings (Telegram token, dashboard port, file paths) stay in <code className="text-[12px] font-mono">.env</code>.
           </p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center">
           <button
             onClick={testProvider}
             disabled={testing || !valueOf('LLM_BASE_URL')}
-            className="h-9 text-[13px] rounded-md px-3 bg-secondary/60 hover:bg-secondary border border-border/80 flex items-center gap-1.5 disabled:opacity-40 transition-colors"
+            aria-describedby={!valueOf('LLM_BASE_URL') ? 'settings-test-disabled' : undefined}
+            title={!valueOf('LLM_BASE_URL') ? 'Add an LLM base URL to test the provider.' : 'Test provider connection'}
+            className="min-h-11 text-[13px] rounded-md px-3 bg-secondary/60 hover:bg-secondary border border-border/80 flex items-center gap-1.5 disabled:opacity-40 transition-colors"
           >
             {testing ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
             Test connection
@@ -149,11 +151,15 @@ export function SettingsPanel() {
           <button
             onClick={save}
             disabled={!hasChanges || saving}
-            className="h-9 text-[13px] rounded-md px-3.5 bg-primary text-primary-foreground hover:brightness-105 active:brightness-95 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-[filter,opacity]"
+            aria-describedby={!hasChanges ? 'settings-save-disabled' : undefined}
+            title={!hasChanges ? 'Change at least one setting to save.' : 'Save pending settings'}
+            className="min-h-11 text-[13px] rounded-md px-3.5 bg-primary text-primary-foreground hover:brightness-105 active:brightness-95 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-[filter,opacity]"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             Save {hasChanges ? `· ${dirtyKeys.length}` : ''}
           </button>
+          <span id="settings-test-disabled" className="sr-only">Add an LLM base URL to test the provider.</span>
+          <span id="settings-save-disabled" className="sr-only">Change at least one setting to save.</span>
         </div>
       </header>
 
@@ -205,14 +211,14 @@ function SettingRow({
   onToggleReveal: () => void;
 }) {
   const sourceBadge = (() => {
-    if (dirty) return { label: 'edited', cls: 'bg-amber-500/12 text-amber-500 dark:text-amber-300 border-amber-500/40' };
+    if (dirty) return { label: 'edited', cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
     switch (item.source) {
       case 'db':
-        return { label: 'saved', cls: 'bg-primary/12 text-primary border-primary/40' };
+        return { label: 'saved', cls: 'bg-primary/12 text-cyan-700 dark:text-cyan-300 border-primary/40' };
       case 'env':
-        return { label: '.env', cls: 'bg-sky-500/12 text-sky-600 dark:text-sky-300 border-sky-500/40' };
+        return { label: '.env', cls: 'bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/40' };
       default:
-        return { label: 'unset', cls: 'bg-muted/50 text-muted-foreground border-border' };
+        return { label: 'unset', cls: 'bg-muted/50 text-foreground border-border' };
     }
   })();
   return (
@@ -224,8 +230,8 @@ function SettingRow({
             {sourceBadge.label}
           </span>
         </div>
-        <div className="text-[10.5px] font-mono text-muted-foreground/70 mt-0.5 truncate">{item.key}</div>
-        {item.hint && <div className="text-[12px] text-muted-foreground/80 mt-1.5 leading-snug">{item.hint}</div>}
+        <div className="text-[10.5px] font-mono text-muted-foreground mt-0.5 truncate">{item.key}</div>
+        {item.hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{item.hint}</div>}
       </label>
       <div className="flex gap-1.5 min-w-0 items-center">
         <Control
@@ -284,8 +290,8 @@ function Control({
         onClick={() => onChange(on ? 'false' : 'true')}
         title={on ? 'Click to disable' : 'Click to enable'}
         style={{
-          height: 24,
-          width: 44,
+          height: 32,
+          width: 52,
           borderRadius: 9999,
           background: on ? trackOn : trackOff,
           border: `1px solid ${on ? borderOn : borderOff}`,
@@ -303,8 +309,8 @@ function Control({
             position: 'absolute',
             top: 2,
             left: 2,
-            width: 18,
-            height: 18,
+            width: 26,
+            height: 26,
             borderRadius: 9999,
             background: '#ffffff',
             boxShadow: '0 1px 3px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.18)',
@@ -321,7 +327,7 @@ function Control({
   // hover lifts the border alpha. Tailwind `border-border` was too
   // light in light mode (hairline against white card looked invisible),
   // so pin to a stronger token via inline style on the input itself.
-  const fieldCls = 'h-9 w-full text-[13px] font-mono rounded-md bg-background px-3 transition-[border-color,box-shadow] duration-[120ms] focus:outline-none';
+  const fieldCls = 'min-h-11 w-full text-[13px] font-mono rounded-md bg-background px-3 transition-[border-color,box-shadow] duration-[120ms] focus:outline-none';
   const fieldStyle: React.CSSProperties = {
     border: '1px solid var(--border, oklch(0.85 0.01 240))',
     boxShadow: 'inset 0 0 0 1px transparent',
@@ -378,7 +384,7 @@ function Control({
           onClick={onToggleReveal}
           title={revealed ? 'Hide' : 'Reveal'}
           style={{ border: '1px solid var(--border, oklch(0.85 0.01 240))', background: 'var(--secondary, oklch(0.92 0.01 240))' }}
-          className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
+          className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
         >
           {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
