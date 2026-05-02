@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -940,17 +941,39 @@ func (b *Bot) handleConversation(c tele.Context) {
 		b.sendAssistant(c, response)
 	}
 
-	// Slice 12b: archive new messages produced during this turn.
+	// Slice 12b: archive new messages produced during this turn. Per-turn
+	// telemetry (12u.6: HR-03 fix) is attached to the assistant message
+	// row at the tail of the slice; tool_calls JSON and tool_call_id are
+	// preserved per message so the dashboard drawer can expand them.
 	if b.archiver != nil {
 		chatID := c.Chat().ID
-		for i, msg := range convCtx.MessagesSince(turnMsgIdx) {
-			_ = b.archiver.Append(context.Background(), conversation.Turn{
-				ChatID:    chatID,
-				UserID:    c.Sender().ID,
-				TurnIndex: int64(turnMsgIdx + i),
-				Role:      msg.Role,
-				Content:   msg.Content,
-			})
+		newMsgs := convCtx.MessagesSince(turnMsgIdx)
+		elapsedMS := time.Since(turnStart).Milliseconds()
+		for i, msg := range newMsgs {
+			turn := conversation.Turn{
+				ChatID:     chatID,
+				UserID:     c.Sender().ID,
+				TurnIndex:  int64(turnMsgIdx + i),
+				Role:       msg.Role,
+				Content:    msg.Content,
+				ToolCallID: msg.ToolCallID,
+			}
+			if len(msg.ToolCalls) > 0 {
+				if raw, err := json.Marshal(msg.ToolCalls); err == nil {
+					turn.ToolCalls = string(raw)
+				} else {
+					b.logger.Warn("archive: tool_calls marshal failed",
+						"chat_id", chatID, "turn_index", turn.TurnIndex, "error", err)
+				}
+			}
+			// Telemetry attaches to the assistant row that closes the turn.
+			if msg.Role == "assistant" && i == len(newMsgs)-1 {
+				turn.LLMCalls = stats.llmCalls
+				turn.ToolCallsCount = stats.toolCalls
+				turn.ElapsedMS = elapsedMS
+				turn.TokensIn = convCtx.TotalTokensUsed()
+			}
+			_ = b.archiver.Append(context.Background(), turn)
 		}
 
 		// Slice 12e: post-turn summarizer extraction (log-only; apply in 12f).
