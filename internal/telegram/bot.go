@@ -52,6 +52,7 @@ type Bot struct {
 	archiveDB  *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false
 	archiver   *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
 	summRunner *summarizer.Runner             // nil when SUMMARIZER_ENABLED=false
+	issues     *scheduler.IssuesStore         // wiki_issues queue, shared by API + maintenance
 	api        http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
 	active     sync.Map                       // maps userID string -> bool (active conversation tracking)
 	ctxMap     sync.Map                       // maps userID string -> *conversation.Context
@@ -301,6 +302,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		}
 	}
 
+	// Slice 12h/12l.1: shared wiki_issues store. Both the API maintenance
+	// handlers and the nightly maintenance job read/write the same queue.
+	b.issues = scheduler.NewIssuesStore(schedStore.DB())
+
 	// Slice 12e/12f: summarizer runner with real deduper + mode-based applier.
 	if cfg.SummarizerEnabled && b.archiveDB != nil && client != nil {
 		sc := summarizer.NewScorer(client, cfg.LLMModel, cfg.SummarizerMinSalience)
@@ -436,8 +441,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*Bot, error) {
 		// Slice 12k.1: summaries review queue.
 		Summaries:     summarizer.NewSummariesStore(schedStore.DB()),
 		SummariesWiki: wikiStore,
-		// Slice 12l.1: wiki maintenance issue queue.
-		Issues: scheduler.NewIssuesStore(schedStore.DB()),
+		// Slice 12l.1: wiki maintenance issue queue (shared with the
+		// nightly maintenance dispatch).
+		Issues: b.issues,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
@@ -572,7 +578,7 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 	}
 	b.wiki.RebuildIndex(ctx)
 	job := scheduler.NewMaintenanceJob(b.wiki, b.logger).
-		WithIssuesStore(scheduler.NewIssuesStore(b.schedDB.DB())).
+		WithIssuesStore(b.issues).
 		WithOwnerNotifier(func(ctx context.Context, msg string) {
 			for _, ownerID := range b.collectOwnerIDs() {
 				if err := b.SendToUser(ownerID, msg); err != nil {
