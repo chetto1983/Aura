@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -73,6 +74,30 @@ func (b *Bot) SendToUser(userID, message string) error {
 	}
 	if _, err := b.bot.Send(tele.ChatID(chatID), message); err != nil {
 		return fmt.Errorf("send to user %s: %w", userID, err)
+	}
+	return nil
+}
+
+// SendDocumentToUser delivers a generated file to userID's direct
+// Telegram chat. Used by the create_xlsx tool (slice 15a) to ship
+// LLM-authored spreadsheets back to the user. Satisfies
+// tools.DocumentSender.
+//
+// Telegram caps non-premium bot documents at 50 MB; the generator
+// already enforces a tighter cap, but we surface the upstream error
+// when present so the user knows why delivery failed.
+func (b *Bot) SendDocumentToUser(userID, filename string, body []byte, caption string) error {
+	chatID, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("send document to user %q: %w", userID, err)
+	}
+	doc := &tele.Document{
+		File:     tele.FromReader(bytes.NewReader(body)),
+		FileName: filename,
+		Caption:  caption,
+	}
+	if _, err := b.bot.Send(tele.ChatID(chatID), doc); err != nil {
+		return fmt.Errorf("send document to user %s: %w", userID, err)
 	}
 	return nil
 }

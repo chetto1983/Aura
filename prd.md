@@ -424,8 +424,11 @@ SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per cha
 | 8 — Pending-user gate + speculative wiki + prompt overlay | done | Slices 11o–11q. |
 | 9 — Streaming end-to-end + progressive Telegram edit + Markdown→HTML | done | Slices 11s–11u. |
 | 12 — Compounding memory (archive + summarizer + maintenance) | done | Slices 12a–12u + 12u.1–12u.7 follow-ups. v0.12.0. |
-| **Next — Phase 13** — `internal/telegram/bot.go` god-class refactor | not started | bot.go a 1394 LOC / 33 funzioni; estrai handler/wiring submodules. |
-| **Next** — File creation milestone | not started | xlsx/docx/pdf generation tools, Telegram delivery. |
+| 13 — Telegram bot god-file refactor | done | Split `internal/telegram/bot.go` into focused package files. |
+| 14 — Onboarding overhaul + retention controls | done | First-run wizard, runtime `/settings`, task delete + every-N recurrence + conversation cleanup. |
+| 14.5 — Dashboard UX hardening | done | Mobile cards, 44px touch targets, AA contrast, returnTo across auth expiry, custom confirm/prompt modal. Closes 2026-05-02 audit. |
+| **Phase 15 — File creation milestone** — slice 15a `create_xlsx` | done | xuri/excelize/v2 generator with formula-injection sanitization, sources-store persistence (KindXLSX), Telegram delivery via `SendDocumentToUser`, `cmd/debug_xlsx` harness. |
+| Phase 15 follow-ups | not started | 15b `create_docx`, 15c `create_pdf`, 15d dashboard download endpoint + UI, 15e LLM-driven natural-prompt tests in cmd/debug_xlsx. |
 | **Backlog** — REVIEW.md HR-01, HR-02 (RepairLink partial-commit, Category/RelatedSlugs lost on review-approve) | not started | v0.12.1. |
 
 ---

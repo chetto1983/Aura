@@ -26,6 +26,10 @@ const (
 	KindPDF  Kind = "pdf"
 	KindText Kind = "text"
 	KindURL  Kind = "url"
+	// KindXLSX is an Aura-generated spreadsheet (slice 15a). Persisted in
+	// the same raw/<id>/ layout but never OCR'd; status stays "ingested"
+	// because there's no compile step to run.
+	KindXLSX Kind = "xlsx"
 )
 
 // Status tracks where a source is in the OCR/ingest pipeline.

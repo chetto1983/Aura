@@ -80,8 +80,51 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 14.delete | Tasks delete (user "/tasks can not delete task") | done | New `POST /api/tasks/{name}/delete` hard-removes rows; Cancel still flips status to preserve audit trail. Frontend Delete button next to Cancel with `window.confirm`. SchedulerStore interface gained `Delete(ctx, name)`. |
 | 14.recurrence | Recurring tasks (user "can not schedule recurrent task") | done | New `ScheduleEvery` kind + `schedule_every_minutes INTEGER` column with idempotent `ALTER TABLE` migration on existing aura.db files. API accepts `every_minutes` (>=1); validateScheduleFields enforces exclusivity with at/daily; advance-after-fire computes `firedAt + N*time.Minute`. UI: "Every N minutes" radio in NewTaskDialog with hint ("60 = hourly, 1440 = daily, 10080 = weekly"). |
 | 14.cleanup | Conversation archive cleanup (user "db will be full with no control") | done | `ArchiveStore` gained `DeleteByChat`, `DeleteOlderThan`, `DeleteAll`, `Stats`. New endpoints: `GET /api/conversations/stats` (row count + oldest + distinct chats), `POST /api/conversations/cleanup?chat_id=X` / `?older_than_days=N` / `?all=true` with mutually-exclusive validation. Frontend toolbar: stats badge in header, "Purge older than…" prompt, "Wipe this chat" (visible when chat_id filter set), "Wipe all" — all confirm-gated. 6 E2E specs. |
+| 14.5 | Dashboard UX hardening | done | Mobile cards on WikiPanel/SourceInbox/TasksPanel/ConversationsPanel; WikiGraph mobile fallback; 44px touch targets; AA contrast on metadata text; auth-expiry returnTo across query/state/sessionStorage; custom ConfirmModal replaces window.confirm/prompt. New `e2e/confirm-modal.spec.ts`. Closes `docs/dashboard-ux-audit-2026-05-02.md`. |
+| 15a | `create_xlsx` tool + Telegram delivery | done | New `internal/files` pkg with `BuildXLSX` using `xuri/excelize/v2`; formula-injection sanitization (CWE-1236) via leading apostrophe on `=`/`+`/`-`/`@`/`\t`/`\r`. Caps: 16 sheets · 10 000 rows/sheet · 100 cols/row · 200 000 cells · 25 MB serialized · 80-char filename. New `source.KindXLSX` (.xlsx ext). New `tools.CreateXLSXTool` persisting via the existing source store (sha256 dedup → "show me last week's invoice" for free). New `tools.DocumentSender` interface satisfied by `Bot.SendDocumentToUser` (mirrors `SendToUser` pattern from slice 10d's `request_dashboard_token`). Tool wired post-construction in `setup.go`. New `cmd/debug_xlsx` 5-scenario hermetic harness (happy path + injection neutralized + dedup + path-traversal blocked + caps). 19 unit tests (12 xlsx + 7 tool). |
 
 ## Session Log
+
+### 2026-05-02 — Phase 15 slice 15a (`create_xlsx` tool + Telegram delivery)
+
+First slice of Phase 15 (file creation milestone). Aura goes from "knowledge & conversation agent" to "produces files for me" — this slice ships the smallest valuable wedge: structured-rows → xlsx workbook → Telegram document, persisted in the existing sources store so "show me last week's invoice" works for free via sha256 dedup.
+
+**Architecture**:
+
+- `internal/files` (new): pure generator package. `BuildXLSX(spec) → (bytes, filename, error)`. No Telegram or source-store coupling — same pattern as `internal/ocr` returning markdown without writing.
+- `internal/source.KindXLSX` (extension): `.xlsx` extension wired into `extForKind` and `validatePutInput`. Generated artifacts persist in the same `wiki/raw/<id>/` layout as user-uploaded PDFs.
+- `internal/tools.CreateXLSXTool` (new): LLM-facing wrapper. Persists via `store.Put` (sha256 dedup), marks `StatusIngested` (no compile step to run), and optionally invokes `DocumentSender.SendDocumentToUser` when `deliver=true` (default). Refuses delivery when there's no user context or no sender configured — the LLM gets a clear retry message instead of a silent drop.
+- `internal/tools.DocumentSender` (new interface, mirrors `TokenSender`): `SendDocumentToUser(userID, filename, body, caption)`. Bot satisfies it; tests stub it.
+- `Bot.SendDocumentToUser` (new method, mirrors `SendToUser`): wraps `tele.Document{File: tele.FromReader(bytes.NewReader(body))}`. Telegram caps non-premium bot documents at 50 MB; the generator's `MaxBytes=25 MB` keeps us comfortably below.
+- Tool registration: post-`b` construction in `setup.go`, same place as `request_dashboard_token`.
+
+**Security posture (`SanitizeCell` + `SanitizeFilename`)**:
+
+- Excel formula injection (CWE-1236): cells starting with `=`, `+`, `-`, `@`, `\t` (0x09), or `\r` (0x0D) get a leading apostrophe so Excel treats the value as a literal string. OWASP CSV-injection mitigation guidance.
+- Filename sanitization: extracts basename FIRST (so `path/to/file` → `file`, not `pathtofile`), strips Windows-reserved chars (`<>:"/\|?*` + 0x00–0x1F), trims trailing dots/spaces, forces `.xlsx`, caps at 80 chars while preserving the suffix.
+- Sheet name sanitization: 31-char cap, replaces `:\\/?*[]` with `_`, dedups duplicate names with `_2`/`_3` suffixes.
+- Hard caps on sheet count, rows, cols, cells, and serialized bytes block both runaway LLM output and Telegram's document cap.
+
+**Files**:
+
+- `internal/files/xlsx.go`, `internal/files/xlsx_test.go` (new package, 12 tests).
+- `internal/tools/files.go`, `internal/tools/files_test.go` (new, 7 tests).
+- `internal/source/source.go` — `KindXLSX` constant.
+- `internal/source/store.go` — `extForKind` + `validatePutInput` accept `KindXLSX`.
+- `internal/telegram/bot.go` — `SendDocumentToUser` method (mirrors `SendToUser`).
+- `internal/telegram/setup.go` — `CreateXLSXTool` registration.
+- `cmd/debug_xlsx/main.go` (new) — 5-scenario hermetic E2E harness. `go run ./cmd/debug_xlsx` runs all in <1 s; `-out <path>` additionally drops the workbook to disk for visual inspection in Excel/LibreOffice.
+- `go.mod` / `go.sum` — `github.com/xuri/excelize/v2 v2.10.1` plus transitive deps (`mscfb`, `msoleps`, `efp`, `nfp`, `go-deepcopy`).
+
+**Quality gates**: `go build ./...`, `go vet ./...`, `go test ./...` all green. `go run ./cmd/debug_xlsx` all 5 scenarios pass. Verified visually by writing `D:/tmp/aura-debug-q1-report.xlsx` and opening — two sheets ("Q1", "summary"), correct values, no formula injection.
+
+**Deferred to follow-up slices**:
+
+- 15b `create_docx` — docx-in-Go (likely `unidoc/unioffice` or `nguyenthenguyen/docx`).
+- 15c `create_pdf` — best via headless-chrome or `gofpdf`.
+- 15d dashboard download endpoint (`GET /api/sources/<id>/raw`) + Sources panel "Download" button on `KindXLSX` rows.
+- 15e LLM-driven natural-prompt tests in `cmd/debug_xlsx` (today's harness only exercises tool-call shape, not LLM tool selection).
+- Re-OCR / re-ingest buttons hidden for KindXLSX rows in the dashboard (currently they'd 4xx since the kind has no OCR pipeline).
 
 ### 2026-05-02 — Phase 14.5 (Dashboard UX hardening)
 

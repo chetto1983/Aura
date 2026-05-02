@@ -433,6 +433,13 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		toolRegistry.Register(tokenTool)
 	}
 
+	// Slice 15a: create_xlsx tool. Same post-construction registration
+	// pattern as request_dashboard_token — bot satisfies tools.DocumentSender
+	// via its own SendDocumentToUser method, so we wait until b exists.
+	if xlsxTool := tools.NewCreateXLSXTool(sourceStore, b); xlsxTool != nil {
+		toolRegistry.Register(xlsxTool)
+	}
+
 	b.registerHandlers()
 	return b, nil
 }
