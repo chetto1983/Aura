@@ -13,15 +13,18 @@ import (
 
 func handleConversationList(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		chatIDStr := r.URL.Query().Get("chat_id")
-		if chatIDStr == "" {
-			writeError(w, deps.Logger, http.StatusBadRequest, "chat_id is required")
-			return
-		}
-		chatID, err := strconv.ParseInt(chatIDStr, 10, 64)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, "chat_id must be an integer")
-			return
+		var (
+			chatID    int64
+			hasChatID bool
+		)
+		if chatIDStr := r.URL.Query().Get("chat_id"); chatIDStr != "" {
+			parsed, err := strconv.ParseInt(chatIDStr, 10, 64)
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusBadRequest, "chat_id must be an integer")
+				return
+			}
+			chatID = parsed
+			hasChatID = true
 		}
 
 		limit := 50
@@ -36,7 +39,15 @@ func handleConversationList(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		turns, err := deps.Archive.ListByChat(r.Context(), chatID, limit)
+		var (
+			turns []conversation.Turn
+			err   error
+		)
+		if hasChatID {
+			turns, err = deps.Archive.ListByChat(r.Context(), chatID, limit)
+		} else {
+			turns, err = deps.Archive.ListAll(r.Context(), limit)
+		}
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to list conversations")
 			return

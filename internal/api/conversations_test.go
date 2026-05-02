@@ -59,14 +59,35 @@ func TestHandleConversationList_HappyPath(t *testing.T) {
 	}
 }
 
-func TestHandleConversationList_MissingChatID(t *testing.T) {
-	router := NewRouter(Deps{Archive: nil})
+func TestHandleConversationList_NoChatID_ListsAll(t *testing.T) {
+	env, store := newConvTestEnv(t)
+	seedTurn(t, store, conversation.Turn{ChatID: 7, UserID: 1, TurnIndex: 0, Role: "user", Content: "from-7"})
+	seedTurn(t, store, conversation.Turn{ChatID: 9, UserID: 2, TurnIndex: 0, Role: "user", Content: "from-9"})
+
 	req := httptest.NewRequest("GET", "/conversations", nil)
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body []ConversationTurn
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) != 2 {
+		t.Fatalf("want 2 turns across all chats, got %d", len(body))
+	}
+}
+
+func TestHandleConversationList_MalformedChatID(t *testing.T) {
+	router := NewRouter(Deps{Archive: nil})
+	req := httptest.NewRequest("GET", "/conversations?chat_id=notanint", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("want 400, got %d", w.Code)
+		t.Fatalf("want 400 for malformed chat_id, got %d", w.Code)
 	}
 }
 

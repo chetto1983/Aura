@@ -99,6 +99,34 @@ func (s *ArchiveStore) ListByChat(ctx context.Context, chatID int64, limit int) 
 	return out, rows.Err()
 }
 
+// ListAll returns the most recent `limit` turns across all chats, newest
+// first. Used by the dashboard's global archive browser when no chat_id
+// filter is specified.
+func (s *ArchiveStore) ListAll(ctx context.Context, limit int) ([]Turn, error) {
+	const q = `
+		SELECT id, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
+		       llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out, created_at
+		FROM conversations
+		ORDER BY created_at DESC
+		LIMIT ?`
+
+	rows, err := s.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("conversation list all: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Turn{}
+	for rows.Next() {
+		t, err := scanTurn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // Get returns a single Turn by its primary key, or sql.ErrNoRows if absent.
 func (s *ArchiveStore) Get(ctx context.Context, id int64) (Turn, error) {
 	const q = `
