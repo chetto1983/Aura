@@ -7,6 +7,7 @@ import { ConversationDrawer } from '@/components/ConversationDrawer';
 import { confirm as confirmModal, prompt as promptModal } from '@/lib/confirmModal';
 import { api, ApiError } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import type { ConversationTurn } from '@/types/api';
 
 const ROLE_BADGE: Record<string, string> = {
@@ -16,6 +17,7 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 export function ConversationsPanel() {
+  const { t, formatDate } = useLocale();
   const [chatId, setChatId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -74,37 +76,37 @@ export function ConversationsPanel() {
     const ok = await confirmModal({
       title,
       description,
-      confirmLabel: 'Delete',
+      confirmLabel: t('common.delete'),
       destructive: true,
     });
     if (!ok) return;
     setCleaning(true);
-    const id = toast.loading('Cleaning…');
+    const id = toast.loading(t('conversations.toast.cleaning'));
     try {
       const res = await api.cleanupConversations(sel);
-      toast.success(`Deleted ${res.deleted} turns.`, { id });
+      toast.success(t('conversations.toast.deleted', { deleted: res.deleted }), { id });
       refetch();
       refreshStats();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : String(err);
-      toast.error(`Cleanup failed: ${msg}`, { id });
+      toast.error(t('conversations.toast.cleanupFailed', { msg }), { id });
     } finally {
       setCleaning(false);
     }
-  }, [refetch, refreshStats]);
+  }, [refetch, refreshStats, t]);
 
   const handleCleanupOlder = useCallback(async () => {
     const ans = await promptModal({
-      title: 'Purge older turns',
-      description: 'Delete every archived turn older than the entered number of days.',
-      label: 'Days',
-      placeholder: 'e.g. 30',
+      title: t('conversations.purgeDialog.title'),
+      description: t('conversations.purgeDialog.description'),
+      label: t('conversations.purgeDialog.label'),
+      placeholder: t('conversations.purgeDialog.placeholder'),
       defaultValue: '30',
       inputMode: 'numeric',
-      confirmLabel: 'Continue',
+      confirmLabel: t('conversations.purgeDialog.confirm'),
       validate: (v) => {
         const n = parseInt(v, 10);
-        if (!Number.isFinite(n) || n < 1) return 'Enter a positive integer.';
+        if (!Number.isFinite(n) || n < 1) return t('conversations.purgeDialog.validate');
         return null;
       },
     });
@@ -112,51 +114,53 @@ export function ConversationsPanel() {
     const days = parseInt(ans, 10);
     runCleanup(
       { older_than_days: days },
-      `Delete turns older than ${days} day${days === 1 ? '' : 's'}?`,
-      'This permanently removes archived conversation turns and cannot be undone.',
+      days === 1
+        ? t('conversations.purgeConfirm.title', { days })
+        : t('conversations.purgeConfirm.title_plural', { days }),
+      t('conversations.purgeConfirm.description'),
     );
-  }, [runCleanup]);
+  }, [runCleanup, t]);
 
   const handleCleanupChat = useCallback(() => {
     if (numericChatId === undefined) {
-      toast.error('Set a chat_id filter first.');
+      toast.error(t('conversations.toast.setChatId'));
       return;
     }
     runCleanup(
       { chat_id: numericChatId },
-      `Wipe all turns for chat ${numericChatId}?`,
-      'This permanently removes every archived turn for the selected chat and cannot be undone.',
+      t('conversations.wipeChatConfirm.title', { chatId: numericChatId }),
+      t('conversations.wipeChatConfirm.description'),
     );
-  }, [numericChatId, runCleanup]);
+  }, [numericChatId, runCleanup, t]);
 
   const handleCleanupAll = useCallback(() => {
     runCleanup(
       { all: true },
-      'Wipe every archived conversation turn?',
-      'This permanently deletes all archived turns across every chat and cannot be undone.',
+      t('conversations.wipeAllConfirm.title'),
+      t('conversations.wipeAllConfirm.description'),
     );
-  }, [runCleanup]);
+  }, [runCleanup, t]);
 
   if (loading && !data) return <PanelSkeleton />;
-  if (error && !data) return <ErrorCard error={error} title="Failed to load conversations" onRetry={refetch} />;
+  if (error && !data) return <ErrorCard error={error} title={t('conversations.errorTitle')} onRetry={refetch} />;
 
   return (
     <div className="p-6 space-y-4">
       <header className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Conversations</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('conversations.title')}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Archived Telegram conversation turns
+            {t('conversations.subtitle')}
             {stats && stats.total_rows > 0 && (
               <span className="ml-2 inline-flex items-center gap-2">
                 ·
-                <span className="tabular-nums">{stats.total_rows.toLocaleString()} rows</span>
+                <span className="tabular-nums">{stats.total_rows.toLocaleString()} {t('conversations.rowsLabel')}</span>
                 <span>·</span>
-                <span className="tabular-nums">{stats.distinct_chats} chat{stats.distinct_chats === 1 ? '' : 's'}</span>
+                <span className="tabular-nums">{stats.distinct_chats} {stats.distinct_chats === 1 ? t('conversations.chatLabel') : t('conversations.chatsLabel')}</span>
                 {stats.oldest_at && (
                   <>
                     <span>·</span>
-                    <span>oldest {new Date(stats.oldest_at).toLocaleDateString()}</span>
+                    <span>{t('conversations.oldestLabel')} {formatDate(stats.oldest_at, { dateStyle: 'short' })}</span>
                   </>
                 )}
               </span>
@@ -169,10 +173,10 @@ export function ConversationsPanel() {
             onClick={handleCleanupOlder}
             disabled={cleaning || !stats || stats.total_rows === 0}
             className="flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title="Delete turns older than N days"
+            title={t('conversations.purgeOlderTitle')}
           >
             <Trash2 size={14} />
-            Purge older than…
+            {t('conversations.purgeOlder')}
           </button>
           {numericChatId !== undefined && (
             <button
@@ -180,10 +184,10 @@ export function ConversationsPanel() {
               onClick={handleCleanupChat}
               disabled={cleaning}
               className="flex min-h-11 items-center gap-1.5 rounded-md border border-amber-500/40 px-3 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title={`Delete all turns for chat ${numericChatId}`}
+              title={t('conversations.wipeChatTitle', { chatId: numericChatId })}
             >
               <Trash2 size={14} />
-              Wipe this chat
+              {t('conversations.wipeChat')}
             </button>
           )}
           <button
@@ -191,25 +195,25 @@ export function ConversationsPanel() {
             onClick={handleCleanupAll}
             disabled={cleaning || !stats || stats.total_rows === 0}
             className="flex min-h-11 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title="Delete every archived turn"
+            title={t('conversations.wipeAllTitle')}
           >
             <Trash2 size={14} />
-            Wipe all
+            {t('conversations.wipeAll')}
           </button>
           <button
             type="button"
             onClick={handleExport}
             disabled={filtered.length === 0}
             className="flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title={filtered.length === 0 ? 'No conversation rows match the current filters' : 'Download filtered turns as JSON'}
+            title={filtered.length === 0 ? t('conversations.exportHintNoMatch') : t('conversations.exportHintDownload')}
             aria-describedby={filtered.length === 0 ? 'conversation-export-hint' : undefined}
           >
             <Download size={14} />
-            Export JSON
+            {t('conversations.exportJson')}
           </button>
           {filtered.length === 0 && (
             <span id="conversation-export-hint" className="sr-only">
-              No conversation rows match the current filters.
+              {t('conversations.srHint')}
             </span>
           )}
         </div>
@@ -217,17 +221,17 @@ export function ConversationsPanel() {
 
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Chat ID</span>
+          <span className="text-xs text-muted-foreground">{t('conversations.filterChatId')}</span>
           <input
             type="number"
             value={chatId}
             onChange={(e) => setChatId(e.target.value)}
-            placeholder="All chats"
+            placeholder={t('conversations.filterAllChats')}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">From</span>
+          <span className="text-xs text-muted-foreground">{t('conversations.filterFrom')}</span>
           <input
             type="date"
             value={dateFrom}
@@ -236,7 +240,7 @@ export function ConversationsPanel() {
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">To</span>
+          <span className="text-xs text-muted-foreground">{t('conversations.filterTo')}</span>
           <input
             type="date"
             value={dateTo}
@@ -253,7 +257,7 @@ export function ConversationsPanel() {
             id="has-tools"
           />
           <span className="text-sm select-none cursor-pointer">
-            Has tool calls
+            {t('conversations.filterHasTools')}
           </span>
         </label>
       </div>
@@ -278,8 +282,8 @@ export function ConversationsPanel() {
               </div>
               <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{turn.content}</p>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="tabular-nums">Chat {turn.chat_id}</span>
-                <span>{new Date(turn.created_at).toLocaleString()}</span>
+                <span className="tabular-nums">{t('conversations.table.chat')} {turn.chat_id}</span>
+                <span>{formatDate(turn.created_at, { dateStyle: 'short', timeStyle: 'medium' })}</span>
               </div>
             </button>
           ))}
@@ -289,11 +293,11 @@ export function ConversationsPanel() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
-                <th className="px-4 py-2.5 text-left font-medium w-12">ID</th>
-                <th className="px-4 py-2.5 text-left font-medium w-20">Chat</th>
-                <th className="px-4 py-2.5 text-left font-medium w-20">Role</th>
-                <th className="px-4 py-2.5 text-left font-medium">Content</th>
-                <th className="px-4 py-2.5 text-left font-medium w-36">Date</th>
+                <th className="px-4 py-2.5 text-left font-medium w-12">{t('conversations.table.id')}</th>
+                <th className="px-4 py-2.5 text-left font-medium w-20">{t('conversations.table.chat')}</th>
+                <th className="px-4 py-2.5 text-left font-medium w-20">{t('conversations.table.role')}</th>
+                <th className="px-4 py-2.5 text-left font-medium">{t('conversations.table.content')}</th>
+                <th className="px-4 py-2.5 text-left font-medium w-36">{t('conversations.table.date')}</th>
               </tr>
             </thead>
             <tbody>
@@ -314,7 +318,7 @@ export function ConversationsPanel() {
                   </td>
                   <td className="px-4 py-2.5 max-w-xs truncate text-muted-foreground">{turn.content}</td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                    {new Date(turn.created_at).toLocaleString()}
+                    {formatDate(turn.created_at, { dateStyle: 'short', timeStyle: 'medium' })}
                   </td>
                 </tr>
               ))}
@@ -330,11 +334,12 @@ export function ConversationsPanel() {
 }
 
 function EmptyState() {
+  const { t } = useLocale();
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
       <MessageSquare size={40} className="text-muted-foreground/40" />
-      <p className="text-sm font-medium text-muted-foreground">No conversations found</p>
-      <p className="text-xs text-muted-foreground">Start a conversation in Telegram to see turns archived here</p>
+      <p className="text-sm font-medium text-muted-foreground">{t('conversations.emptyTitle')}</p>
+      <p className="text-xs text-muted-foreground">{t('conversations.emptyHint')}</p>
     </div>
   );
 }
