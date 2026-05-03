@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/aura/aura/internal/health"
 	"go.uber.org/zap"
@@ -19,26 +20,45 @@ type zapHandler struct {
 }
 
 // Setup initializes zap as the structured logger with secret sanitization.
-func Setup(level string) *slog.Logger {
+// Logs are written to stdout (JSON) and to a daily-rotating file under logDir
+// that keeps one day of logs.
+// The returned cleanup closes the log file; call it on shutdown.
+func Setup(level, logDir string) (*slog.Logger, func()) {
 	zapLevel := zapLevel(level)
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.TimeKey = "ts"
 	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
 
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderCfg),
-		zapcore.AddSync(os.Stdout),
-		zapLevel,
-	)
+	encoder := zapcore.NewJSONEncoder(encoderCfg)
+	stdoutCore := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), zapLevel)
+
+	var core zapcore.Core
+	var dw *dailyWriter
+	dw, err := newDailyWriter(logDir, 24*time.Hour)
+	if err != nil {
+		os.Stderr.WriteString("logging: could not open daily log file: " + err.Error() + "\n")
+		core = stdoutCore
+	} else {
+		core = zapcore.NewTee(
+			stdoutCore,
+			zapcore.NewCore(encoder, zapcore.AddSync(dw), zapLevel),
+		)
+	}
+
 	zapLogger := zap.New(core, zap.AddCaller())
 
 	handler := &zapHandler{core: core, logger: zapLogger}
-	// Wrap with sanitize handler to redact secrets
 	sanitized := health.NewSanitizeHandler(handler)
 
 	logger := slog.New(sanitized)
 	slog.SetDefault(logger)
-	return logger
+
+	cleanup := func() {
+		if dw != nil {
+			dw.Close()
+		}
+	}
+	return logger, cleanup
 }
 
 func (h *zapHandler) Enabled(ctx context.Context, level slog.Level) bool {

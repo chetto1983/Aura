@@ -18,6 +18,7 @@ type Config struct {
 	HardBudget          float64 `envconfig:"HARD_BUDGET" default:"20.0"`
 	CostPerToken        float64 `envconfig:"COST_PER_TOKEN" default:"0.00001"`
 	LogLevel            string  `envconfig:"LOG_LEVEL" default:"info"`
+	LogDir              string  `envconfig:"LOG_DIR" default:"./logs"`
 	LLMAPIKey           string  `envconfig:"LLM_API_KEY"`
 	LLMBaseURL          string  `envconfig:"LLM_BASE_URL"`
 	LLMModel            string  `envconfig:"LLM_MODEL"`
@@ -115,6 +116,7 @@ func Load() (*Config, error) {
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
 	cfg.CostPerToken = getEnvFloat("COST_PER_TOKEN", 0.00001)
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
+	cfg.LogDir = getEnv("LOG_DIR", "./logs")
 
 	cfg.LLMAPIKey = getEnv("LLM_API_KEY", "")
 	cfg.LLMBaseURL = getEnv("LLM_BASE_URL", "https://api.openai.com/v1")

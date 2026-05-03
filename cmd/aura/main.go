@@ -29,7 +29,8 @@ var (
 
 func main() {
 	// Initialize structured logger with zap backend and secret sanitization
-	logger := logging.Setup("info")
+	logger, cleanupLog := logging.Setup("info", "./logs")
+	defer cleanupLog()
 
 	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		logger.Warn("could not load .env", "error", err)
@@ -88,8 +89,10 @@ func main() {
 		cfg = newCfg
 	}
 
-	// Set log level from config
-	logger = logging.Setup(cfg.LogLevel)
+	// Set log level from config (replaces the early logger)
+	cleanupLog()
+	logger, cleanupLog = logging.Setup(cfg.LogLevel, cfg.LogDir)
+	defer cleanupLog()
 
 	// Initialize OpenTelemetry tracing (disabled unless OTEL_ENABLED is set)
 	shutdown, err := tracing.SetupIfEnabled("aura", auraVersion, cfg.OTelEnabled, logger)

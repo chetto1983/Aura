@@ -10,7 +10,8 @@ import (
 )
 
 func TestSetupCreatesLogger(t *testing.T) {
-	logger := Setup("info")
+	logger, cleanup := Setup("info", t.TempDir())
+	defer cleanup()
 	if logger == nil {
 		t.Fatal("expected non-nil logger")
 	}
@@ -18,7 +19,8 @@ func TestSetupCreatesLogger(t *testing.T) {
 
 func TestSetupLevels(t *testing.T) {
 	for _, level := range []string{"debug", "info", "warn", "error"} {
-		logger := Setup(level)
+		logger, cleanup := Setup(level, t.TempDir())
+		defer cleanup()
 		if logger == nil {
 			t.Errorf("expected non-nil logger for level %q", level)
 		}

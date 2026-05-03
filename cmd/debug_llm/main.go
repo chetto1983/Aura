@@ -11,7 +11,8 @@ import (
 )
 
 func main() {
-	logger := logging.Setup("debug")
+	logger, cleanup := logging.Setup("debug", "./logs")
+	defer cleanup()
 
 	apiKey := os.Getenv("LLM_API_KEY")
 	baseURL := os.Getenv("LLM_BASE_URL")
