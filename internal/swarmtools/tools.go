@@ -17,6 +17,98 @@ type SpawnAuraBotTool struct {
 	manager *swarm.Manager
 }
 
+type RunAuraBotSwarmTool struct {
+	manager *swarm.Manager
+}
+
+func NewRunAuraBotSwarmTool(manager *swarm.Manager) *RunAuraBotSwarmTool {
+	if manager == nil {
+		return nil
+	}
+	return &RunAuraBotSwarmTool{manager: manager}
+}
+
+func (t *RunAuraBotSwarmTool) Name() string { return "run_aurabot_swarm" }
+
+func (t *RunAuraBotSwarmTool) Description() string {
+	return "Run a bounded read-only AuraBot team for a higher-level second-brain goal. Plans multiple roles, executes them in parallel, and returns a deterministic synthesis with metrics. MVP supports mode=wait only and cannot write wiki pages, sources, skills, settings, or files."
+}
+
+func (t *RunAuraBotSwarmTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"goal": map[string]any{
+				"type":        "string",
+				"description": "Higher-level read-only investigation goal for the AuraBot team.",
+			},
+			"roles": map[string]any{
+				"type":        "array",
+				"description": "Optional subset of read-only roles. Defaults to librarian, critic, researcher, skillsmith, synthesizer.",
+				"items": map[string]any{
+					"type": "string",
+					"enum": []string{"librarian", "critic", "researcher", "skillsmith", "synthesizer"},
+				},
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"wait"},
+				"description": "Execution mode. MVP supports wait only.",
+			},
+		},
+		"required": []string{"goal"},
+	}
+}
+
+func (t *RunAuraBotSwarmTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t.manager == nil {
+		return "", errors.New("run_aurabot_swarm: swarm manager unavailable")
+	}
+	goal, err := requiredString(args, "goal")
+	if err != nil {
+		return "", err
+	}
+	mode := strings.TrimSpace(stringArg(args, "mode"))
+	if mode == "" {
+		mode = "wait"
+	}
+	if mode != "wait" {
+		return "", fmt.Errorf("run_aurabot_swarm: unsupported mode %q (MVP supports wait)", mode)
+	}
+
+	plan, err := swarm.BuildPlan(goal, swarm.PlanOptions{
+		Roles:  stringSliceArg(args, "roles"),
+		UserID: tools.UserIDFromContext(ctx),
+	})
+	if err != nil {
+		return "", err
+	}
+	run, runErr := t.manager.Run(ctx, swarm.RunRequest{
+		Goal:        plan.Goal,
+		CreatedBy:   tools.UserIDFromContext(ctx),
+		Assignments: plan.Assignments,
+	})
+	synthesis := swarm.SynthesizeRunResult(run)
+	resp := runSwarmResponse{
+		OK:        runErr == nil,
+		Goal:      plan.Goal,
+		Roles:     plan.Roles,
+		RunID:     synthesis.RunID,
+		Status:    string(synthesis.Status),
+		Summary:   synthesis.Summary,
+		Metrics:   synthesis.Metrics,
+		Tasks:     synthesis.Tasks,
+		LastError: "",
+	}
+	if run.Run != nil {
+		resp.LastError = run.Run.LastError
+	}
+	if runErr != nil && resp.LastError == "" {
+		resp.LastError = runErr.Error()
+	}
+	return marshal(resp)
+}
+
 func NewSpawnAuraBotTool(manager *swarm.Manager) *SpawnAuraBotTool {
 	if manager == nil {
 		return nil
@@ -232,6 +324,18 @@ type spawnResponse struct {
 	TokensPrompt     int    `json:"tokens_prompt"`
 	TokensCompletion int    `json:"tokens_completion"`
 	TokensTotal      int    `json:"tokens_total"`
+}
+
+type runSwarmResponse struct {
+	OK        bool                      `json:"ok"`
+	Goal      string                    `json:"goal"`
+	Roles     []string                  `json:"roles"`
+	RunID     string                    `json:"run_id,omitempty"`
+	Status    string                    `json:"status,omitempty"`
+	Summary   string                    `json:"summary,omitempty"`
+	Metrics   swarm.RunSynthesisMetrics `json:"metrics"`
+	Tasks     []swarm.TaskSynthesis     `json:"tasks"`
+	LastError string                    `json:"last_error,omitempty"`
 }
 
 type taskSummary struct {

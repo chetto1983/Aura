@@ -30,28 +30,51 @@ type config struct {
 }
 
 type metrics struct {
-	RunID               string        `json:"run_id"`
-	Status              string        `json:"status"`
-	TasksTotal          int           `json:"tasks_total"`
-	TasksCompleted      int           `json:"tasks_completed"`
-	TasksFailed         int           `json:"tasks_failed"`
-	WallMS              int64         `json:"wall_ms"`
-	TaskElapsedMS       int64         `json:"task_elapsed_ms"`
-	Speedup             float64       `json:"speedup"`
-	MaxActive           int           `json:"max_active"`
-	MaxDepth            int           `json:"max_depth"`
-	LLMCalls            int           `json:"llm_calls"`
-	ToolCalls           int           `json:"tool_calls"`
-	TokensPrompt        int           `json:"tokens_prompt"`
-	TokensCompletion    int           `json:"tokens_completion"`
-	TokensTotal         int           `json:"tokens_total"`
-	DBPath              string        `json:"db_path"`
-	SpawnAuraBotJSON    bool          `json:"spawn_aurabot_json"`
-	ListSwarmTasksJSON  bool          `json:"list_swarm_tasks_json"`
-	ReadSwarmResultJSON bool          `json:"read_swarm_result_json"`
-	Tasks               []taskMetrics `json:"tasks"`
-	Error               string        `json:"error,omitempty"`
-	Elapsed             time.Duration `json:"-"`
+	RunID               string          `json:"run_id"`
+	Status              string          `json:"status"`
+	PlannerAvailable    bool            `json:"planner_available"`
+	TasksTotal          int             `json:"tasks_total"`
+	TasksCompleted      int             `json:"tasks_completed"`
+	TasksFailed         int             `json:"tasks_failed"`
+	WallMS              int64           `json:"wall_ms"`
+	TaskElapsedMS       int64           `json:"task_elapsed_ms"`
+	Speedup             float64         `json:"speedup"`
+	MaxActive           int             `json:"max_active"`
+	MaxDepth            int             `json:"max_depth"`
+	LLMCalls            int             `json:"llm_calls"`
+	ToolCalls           int             `json:"tool_calls"`
+	TokensPrompt        int             `json:"tokens_prompt"`
+	TokensCompletion    int             `json:"tokens_completion"`
+	TokensTotal         int             `json:"tokens_total"`
+	DBPath              string          `json:"db_path"`
+	SpawnAuraBotJSON    bool            `json:"spawn_aurabot_json"`
+	ListSwarmTasksJSON  bool            `json:"list_swarm_tasks_json"`
+	ReadSwarmResultJSON bool            `json:"read_swarm_result_json"`
+	ToolPath            toolPathMetrics `json:"tool_path"`
+	Tasks               []taskMetrics   `json:"tasks"`
+	Error               string          `json:"error,omitempty"`
+	Elapsed             time.Duration   `json:"-"`
+}
+
+type toolPathMetrics struct {
+	Status           string   `json:"status"`
+	Final            string   `json:"final,omitempty"`
+	LLMCalls         int      `json:"llm_calls"`
+	ToolCalls        int      `json:"tool_calls"`
+	SpawnCalls       int      `json:"spawn_calls"`
+	TeamCalls        int      `json:"team_calls"`
+	ListCalls        int      `json:"list_calls"`
+	ReadCalls        int      `json:"read_calls"`
+	Runs             int      `json:"runs"`
+	TasksTotal       int      `json:"tasks_total"`
+	TasksCompleted   int      `json:"tasks_completed"`
+	TasksFailed      int      `json:"tasks_failed"`
+	TokensPrompt     int      `json:"tokens_prompt"`
+	TokensCompletion int      `json:"tokens_completion"`
+	TokensTotal      int      `json:"tokens_total"`
+	RunIDs           []string `json:"run_ids"`
+	TaskIDs          []string `json:"task_ids"`
+	Error            string   `json:"error,omitempty"`
 }
 
 type taskMetrics struct {
@@ -146,19 +169,27 @@ func run(cfg config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.timeoutSec)*time.Second)
 	defer cancel()
 
-	assignments := debugAssignments()
+	plan, err := swarm.BuildPlan("debug hermetic AuraBot swarm", swarm.PlanOptions{
+		UserID:         "debug-user",
+		MaxAssignments: 6,
+	})
+	if err != nil {
+		return err
+	}
 	start := time.Now()
 	result, runErr := manager.Run(ctx, swarm.RunRequest{
-		Goal:        "debug hermetic AuraBot swarm",
+		Goal:        plan.Goal,
 		CreatedBy:   "debug_swarm",
-		Assignments: assignments,
+		Assignments: plan.Assignments,
 	})
 	wall := time.Since(start).Round(time.Millisecond)
 
 	out := collectMetrics(result, dbPath, wall, metered)
+	out.PlannerAvailable = true
 	out.SpawnAuraBotJSON = smokeSpawnTool(ctx, manager)
 	out.ListSwarmTasksJSON = smokeListTool(ctx, store, out.RunID)
 	out.ReadSwarmResultJSON = smokeReadTool(ctx, store, out.Tasks)
+	out.ToolPath = runToolPath(ctx, manager, store, logger, cfg.timeoutSec)
 	if runErr != nil {
 		out.Error = runErr.Error()
 	}
@@ -317,12 +348,93 @@ func smokeSpawnTool(ctx context.Context, manager *swarm.Manager) bool {
 	return err == nil && json.Valid([]byte(out))
 }
 
+func runToolPath(ctx context.Context, manager *swarm.Manager, store *swarm.Store, logger *slog.Logger, timeoutSec int) toolPathMetrics {
+	reg := tools.NewRegistry(logger)
+	reg.Register(swarmtools.NewSpawnAuraBotTool(manager))
+	reg.Register(swarmtools.NewRunAuraBotSwarmTool(manager))
+	reg.Register(swarmtools.NewListSwarmTasksTool(store))
+	reg.Register(swarmtools.NewReadSwarmResultTool(store))
+
+	planner := &fakePlannerLLM{}
+	runner, err := agent.NewRunner(agent.Config{
+		LLM:           planner,
+		Tools:         reg,
+		Model:         "debug-fake-planner",
+		MaxIterations: 5,
+		Timeout:       time.Duration(timeoutSec) * time.Second,
+		ToolTimeout:   5 * time.Second,
+		Logger:        logger,
+	})
+	if err != nil {
+		return toolPathMetrics{Status: "failed", Error: err.Error()}
+	}
+
+	result, err := runner.Run(ctx, agent.Task{
+		SystemPrompt: "You are a hermetic debug planner. Exercise the AuraBot swarm tools only; do not use network tools.",
+		Prompt:       "Run a small multi-agent AuraBot team, inspect the persisted task rows, read each result, and summarize metrics.",
+		ToolAllowlist: []string{
+			"run_aurabot_swarm",
+			"spawn_aurabot",
+			"list_swarm_tasks",
+			"read_swarm_result",
+		},
+		UserID: "debug-swarm-planner",
+	})
+
+	out := toolPathMetrics{
+		Status:           "completed",
+		Final:            trim(result.Content, 220),
+		LLMCalls:         result.LLMCalls,
+		ToolCalls:        result.ToolCalls,
+		SpawnCalls:       planner.spawnCalls(),
+		TeamCalls:        planner.teamCalls(),
+		ListCalls:        planner.listCalls(),
+		ReadCalls:        planner.readCalls(),
+		TokensPrompt:     result.Tokens.PromptTokens,
+		TokensCompletion: result.Tokens.CompletionTokens,
+		TokensTotal:      result.Tokens.TotalTokens,
+	}
+	out.RunIDs, out.TaskIDs = planner.ids()
+	out.Runs = len(out.RunIDs)
+	out.TasksTotal = len(out.TaskIDs)
+	out.TasksCompleted, out.TasksFailed = countToolPathTaskStatuses(ctx, store, out.TaskIDs)
+	if err != nil {
+		out.Status = "failed"
+		out.Error = err.Error()
+	}
+	return out
+}
+
+func countToolPathTaskStatuses(ctx context.Context, store *swarm.Store, taskIDs []string) (completed, failed int) {
+	for _, id := range taskIDs {
+		task, err := store.GetTask(ctx, id)
+		if err != nil {
+			continue
+		}
+		switch task.Status {
+		case swarm.TaskCompleted:
+			completed++
+		case swarm.TaskFailed:
+			failed++
+		}
+	}
+	return completed, failed
+}
+
 func printText(m metrics) {
 	fmt.Printf("run_id=%s status=%s db_path=%s\n", m.RunID, m.Status, m.DBPath)
 	fmt.Printf("tasks_total=%d completed=%d failed=%d\n", m.TasksTotal, m.TasksCompleted, m.TasksFailed)
 	fmt.Printf("wall_ms=%d task_elapsed_ms=%d speedup=%.2fx max_active=%d max_depth=%d\n", m.WallMS, m.TaskElapsedMS, m.Speedup, m.MaxActive, m.MaxDepth)
 	fmt.Printf("llm_calls=%d tool_calls=%d tokens_prompt=%d tokens_completion=%d tokens_total=%d\n", m.LLMCalls, m.ToolCalls, m.TokensPrompt, m.TokensCompletion, m.TokensTotal)
 	fmt.Printf("spawn_aurabot_json=%t swarmtools_list_json=%t swarmtools_read_json=%t\n", m.SpawnAuraBotJSON, m.ListSwarmTasksJSON, m.ReadSwarmResultJSON)
+	fmt.Printf("planner_available=%t tool_path_status=%s teams=%d spawns=%d list_calls=%d read_calls=%d runs=%d tasks=%d completed=%d failed=%d llm_calls=%d tool_calls=%d tokens_total=%d\n",
+		m.PlannerAvailable, m.ToolPath.Status, m.ToolPath.TeamCalls, m.ToolPath.SpawnCalls, m.ToolPath.ListCalls, m.ToolPath.ReadCalls, m.ToolPath.Runs, m.ToolPath.TasksTotal, m.ToolPath.TasksCompleted, m.ToolPath.TasksFailed, m.ToolPath.LLMCalls, m.ToolPath.ToolCalls, m.ToolPath.TokensTotal)
+	if m.ToolPath.Final != "" {
+		fmt.Printf("tool_path_final=%s\n", m.ToolPath.Final)
+	}
+	if m.ToolPath.Error != "" {
+		fmt.Printf("tool_path_error=%s\n", m.ToolPath.Error)
+	}
 	if m.Error != "" {
 		fmt.Printf("error=%s\n", m.Error)
 	}
@@ -428,6 +540,170 @@ func (f *fakeLLM) Stream(ctx context.Context, req llm.Request) (<-chan llm.Token
 	ch <- llm.Token{Content: resp.Content, ToolCalls: resp.ToolCalls, Usage: resp.Usage, Done: true}
 	close(ch)
 	return ch, nil
+}
+
+type fakePlannerLLM struct {
+	mu      sync.Mutex
+	seq     int
+	team    int
+	spawn   int
+	list    int
+	read    int
+	runIDs  []string
+	taskIDs []string
+}
+
+func (f *fakePlannerLLM) Send(ctx context.Context, req llm.Request) (llm.Response, error) {
+	if err := sleepContext(ctx, 40*time.Millisecond); err != nil {
+		return llm.Response{}, err
+	}
+	f.mu.Lock()
+	f.seq++
+	seq := f.seq
+	f.captureToolResultsLocked(req.Messages)
+	usage := llm.TokenUsage{
+		PromptTokens:     estimateTokens(req.Messages) + len(req.Tools)*3,
+		CompletionTokens: 20,
+	}
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	switch {
+	case f.team == 0:
+		calls := []llm.ToolCall{plannerTeamCall(seq)}
+		f.team += len(calls)
+		f.mu.Unlock()
+		return llm.Response{Content: "Running hermetic AuraBot team.", Usage: usage, HasToolCalls: true, ToolCalls: calls}, nil
+	case len(f.runIDs) > 0 && f.list == 0:
+		calls := make([]llm.ToolCall, 0, len(f.runIDs))
+		for i, runID := range f.runIDs {
+			calls = append(calls, llm.ToolCall{
+				ID:        fmt.Sprintf("planner_%03d_list_%02d", seq, i),
+				Name:      "list_swarm_tasks",
+				Arguments: map[string]any{"run_id": runID},
+			})
+		}
+		f.list += len(calls)
+		f.mu.Unlock()
+		return llm.Response{Content: "Listing persisted swarm task rows.", Usage: usage, HasToolCalls: true, ToolCalls: calls}, nil
+	case len(f.taskIDs) > 0 && f.read == 0:
+		calls := make([]llm.ToolCall, 0, len(f.taskIDs))
+		for i, taskID := range f.taskIDs {
+			calls = append(calls, llm.ToolCall{
+				ID:        fmt.Sprintf("planner_%03d_read_%02d", seq, i),
+				Name:      "read_swarm_result",
+				Arguments: map[string]any{"task_id": taskID},
+			})
+		}
+		f.read += len(calls)
+		f.mu.Unlock()
+		return llm.Response{Content: "Reading each AuraBot result.", Usage: usage, HasToolCalls: true, ToolCalls: calls}, nil
+	default:
+		content := fmt.Sprintf("planner-shaped tool path complete: teams=%d spawns=%d runs=%d tasks=%d list_calls=%d read_calls=%d.", f.team, f.spawn, len(f.runIDs), len(f.taskIDs), f.list, f.read)
+		usage.CompletionTokens = estimateStringTokens(content)
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		f.mu.Unlock()
+		return llm.Response{Content: content, Usage: usage}, nil
+	}
+}
+
+func (f *fakePlannerLLM) Stream(ctx context.Context, req llm.Request) (<-chan llm.Token, error) {
+	ch := make(chan llm.Token, 1)
+	resp, err := f.Send(ctx, req)
+	if err != nil {
+		ch <- llm.Token{Done: true, Err: err}
+		close(ch)
+		return ch, nil
+	}
+	ch <- llm.Token{Content: resp.Content, ToolCalls: resp.ToolCalls, Usage: resp.Usage, Done: true}
+	close(ch)
+	return ch, nil
+}
+
+func (f *fakePlannerLLM) teamCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.team
+}
+
+func (f *fakePlannerLLM) spawnCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.spawn
+}
+
+func (f *fakePlannerLLM) listCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.list
+}
+
+func (f *fakePlannerLLM) readCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.read
+}
+
+func (f *fakePlannerLLM) ids() ([]string, []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	runIDs := append([]string(nil), f.runIDs...)
+	taskIDs := append([]string(nil), f.taskIDs...)
+	return runIDs, taskIDs
+}
+
+func (f *fakePlannerLLM) captureToolResultsLocked(messages []llm.Message) {
+	for _, msg := range messages {
+		if msg.Role != "tool" || !json.Valid([]byte(msg.Content)) {
+			continue
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(msg.Content), &data); err != nil {
+			continue
+		}
+		if runID, ok := data["run_id"].(string); ok && runID != "" {
+			f.runIDs = appendUnique(f.runIDs, runID)
+		}
+		if taskID, ok := data["task_id"].(string); ok && taskID != "" {
+			f.taskIDs = appendUnique(f.taskIDs, taskID)
+		}
+		if taskID, ok := data["id"].(string); ok && taskID != "" {
+			f.taskIDs = appendUnique(f.taskIDs, taskID)
+		}
+		rawTasks, ok := data["tasks"].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawTask := range rawTasks {
+			task, ok := rawTask.(map[string]any)
+			if !ok {
+				continue
+			}
+			if taskID, ok := task["id"].(string); ok && taskID != "" {
+				f.taskIDs = appendUnique(f.taskIDs, taskID)
+			}
+		}
+	}
+}
+
+func plannerTeamCall(seq int) llm.ToolCall {
+	return llm.ToolCall{
+		ID:   fmt.Sprintf("planner_%03d_team_00", seq),
+		Name: "run_aurabot_swarm",
+		Arguments: map[string]any{
+			"goal":  "Use the allowed hermetic debug tools and return concise evidence for wiki/source/skill health.",
+			"roles": []any{"librarian", "critic", "synthesizer"},
+			"mode":  "wait",
+		},
+	}
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func fakeRegistry(logger *slog.Logger) *tools.Registry {

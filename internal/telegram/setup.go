@@ -250,6 +250,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 			if tool := swarmtools.NewSpawnAuraBotTool(swarmManager); tool != nil {
 				toolRegistry.Register(tool)
 			}
+			if tool := swarmtools.NewRunAuraBotSwarmTool(swarmManager); tool != nil {
+				toolRegistry.Register(tool)
+			}
 			if tool := swarmtools.NewListSwarmTasksTool(swarmStore); tool != nil {
 				toolRegistry.Register(tool)
 			}

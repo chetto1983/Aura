@@ -97,8 +97,41 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17b | AuraBot swarm store + manager | done | New `internal/swarm` package: SQLite `swarm_runs` / `swarm_tasks` store plus `Manager` that persists assignments, fans out bounded parallel `agent.Task` runs, enforces `MaxActive` and `MaxDepth`, marks task/run success or failure, and returns audit-ready task results. SQLite writes are serialized with one connection + busy timeout. 8 unit tests. |
 | 17c | AuraBot LLM tools + debug metrics | done | `AURABOT_*` config/settings gate, bot wiring, `spawn_aurabot` / `list_swarm_tasks` / `read_swarm_result`, token metrics persisted on tasks, and `cmd/debug_swarm` hermetic E2E harness with wall/task/token/tool/speedup metrics. |
 | 17d | AuraBot swarm observability | done | Read-only API + dashboard panel for swarm runs/tasks, aggregate counts, wall/task elapsed, speedup, LLM/tool/token telemetry, and per-task results/errors. |
+| 17e | AuraBot planner + synthesis | done | Deterministic read-only planner builds role assignments from a goal, `run_aurabot_swarm` executes the team in parallel, and synthesis rolls up worker results/metrics without an extra LLM call. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17e (AuraBot planner + synthesis)
+
+Implementation slice using this chat as orchestrator with parallel worker agents.
+
+**Implementation**:
+
+- Added `internal/swarm/plan.go`: deterministic read-only planner with `BuildPlan`, `PlanAssignments`, and `SynthesizeRunResult`.
+- Planner roles: `librarian`, `critic`, `researcher`, `skillsmith`, `synthesizer`.
+- Planner behavior: trims/dedupes roles, rejects unknown roles, caps assignment count, creates focused prompts/system prompts, and uses read-only allowlists only.
+- Added deterministic synthesis: task counts, LLM/tool calls, prompt/completion/total tokens, task elapsed, wall time, speedup, task previews, and a compact summary string. No second LLM call required.
+- Added public LLM tool `run_aurabot_swarm`: accepts a high-level goal plus optional role subset, builds the plan, executes assignments via `swarm.Manager`, and returns synthesis JSON.
+- Kept `spawn_aurabot` intact as the single-worker primitive.
+- Registered `run_aurabot_swarm` behind the same `AURABOT_ENABLED && client != nil` gate.
+- Updated `cmd/debug_swarm` to use `swarm.BuildPlan` for its main run and to exercise the public team tool path: `run_aurabot_swarm` → `list_swarm_tasks` → `read_swarm_result`.
+- Added `*.log` to `.gitignore` so local runtime logs from debug/dev runs do not appear as untracked worktree noise.
+
+**Debug metrics**:
+
+- `go run ./cmd/debug_swarm -json`: main planner run completed `5/5` tasks with `speedup≈2.18x`; public tool path completed `team_calls=1`, `runs=1`, `tasks=3`, `completed=3`, `failed=0`, `list_calls=1`, `read_calls=3`.
+
+**Verification**:
+
+- `go test ./internal/swarm ./internal/swarmtools ./internal/telegram ./cmd/debug_swarm`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+
+**Next work**:
+
+- Slice 17f: proposal queue for wiki/skill mutations. Keep actual writes review-gated; no autonomous file/wiki/skill writes yet.
 
 ### 2026-05-03 - Slice 17d (AuraBot swarm observability)
 
