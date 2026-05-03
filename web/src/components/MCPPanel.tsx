@@ -3,6 +3,7 @@ import { Plug, ChevronDown, ChevronRight, Server, Globe, Play, Loader2, AlertTri
 import { toast } from 'sonner';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import type { MCPServerSummary, MCPToolInfo, MCPInvokeResponse } from '@/types/api';
@@ -11,6 +12,7 @@ import type { MCPServerSummary, MCPToolInfo, MCPInvokeResponse } from '@/types/a
 // tools they advertise, and (slice 11d) lets the operator invoke each
 // tool with a JSON argument body straight from the dashboard.
 export function MCPPanel() {
+  const { t } = useLocale();
   const fetcher = useCallback(() => api.mcpServers(), []);
   const { data, error, loading, refetch } = useApi(fetcher);
   const [openServers, setOpenServers] = useState<Set<string>>(new Set());
@@ -26,7 +28,7 @@ export function MCPPanel() {
 
   if (loading && !data) return <MCPSkeleton />;
   if (error && !data) {
-    return <ErrorCard error={error} title="Failed to load MCP servers" onRetry={refetch} />;
+    return <ErrorCard error={error} title={t('mcp.errorTitle')} onRetry={refetch} />;
   }
   if (!data) return null;
 
@@ -36,17 +38,15 @@ export function MCPPanel() {
     <div className="p-6 space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">MCP Servers</h1>
-          <p className="text-xs text-muted-foreground mt-1">
-            Tools advertised by external MCP servers, mounted as <code className="font-mono">mcp_&lt;server&gt;_&lt;tool&gt;</code>. Configure in <code className="font-mono">mcp.json</code>.
-          </p>
+          <h1 className="text-2xl font-semibold">{t('mcp.title')}</h1>
+          <p className="text-xs text-muted-foreground mt-1" dangerouslySetInnerHTML={{ __html: t('mcp.subtitle') }} />
         </div>
         <button
           type="button"
           onClick={refetch}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
-          {data.length} server{data.length !== 1 ? 's' : ''} · {totalTools} tool{totalTools !== 1 ? 's' : ''}
+          {t('mcp.serverCount', { count: data.length })} · {t('mcp.toolCount', { count: totalTools })}
         </button>
       </header>
 
@@ -54,10 +54,8 @@ export function MCPPanel() {
         <div className="rounded-lg border border-dashed py-12 text-center">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Plug size={32} className="opacity-40" />
-            <p className="text-sm font-medium">No MCP servers connected</p>
-            <p className="text-xs max-w-md mx-auto">
-              Copy <code className="font-mono">mcp.example.json</code> to <code className="font-mono">mcp.json</code> at the repo root and restart Aura. Each entry needs either <code className="font-mono">command</code>+<code className="font-mono">args</code> (stdio) or <code className="font-mono">url</code>+<code className="font-mono">headers</code> (HTTP).
-            </p>
+            <p className="text-sm font-medium">{t('mcp.emptyTitle')}</p>
+            <p className="text-xs max-w-md mx-auto" dangerouslySetInnerHTML={{ __html: t('mcp.emptyHint') }} />
           </div>
         </div>
       ) : (
@@ -85,6 +83,7 @@ function ServerCard({
   isOpen: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useLocale();
   const TransportIcon = server.transport === 'stdio' ? Server : Globe;
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
@@ -102,14 +101,14 @@ function ServerCard({
           </div>
         </div>
         <span className="text-xs text-muted-foreground">
-          {server.tool_count} tool{server.tool_count !== 1 ? 's' : ''}
+          {t('mcp.toolCount', { count: server.tool_count })}
         </span>
       </button>
       {isOpen && (
         <div className="border-t bg-muted/10 divide-y">
           {server.tools.length === 0 ? (
             <div className="px-12 py-3 text-xs text-muted-foreground">
-              No tools advertised by this server.
+              {t('mcp.noTools')}
             </div>
           ) : (
             server.tools.map((tool) => (
@@ -123,6 +122,7 @@ function ServerCard({
 }
 
 function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
+  const { t } = useLocale();
   const [showSchema, setShowSchema] = useState(false);
   const [showRun, setShowRun] = useState(false);
   const [args, setArgs] = useState<string>(() => seedArgsFromSchema(tool.input_schema));
@@ -131,6 +131,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
   const [parseErr, setParseErr] = useState<string | null>(null);
 
   const hasSchema = tool.input_schema && Object.keys(tool.input_schema).length > 0;
+  const toolFQN = `mcp_${server}_${tool.name}`;
 
   const handleRun = useCallback(async () => {
     setParseErr(null);
@@ -140,7 +141,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
       try {
         const v = JSON.parse(trimmed);
         if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-          setParseErr('arguments must be a JSON object');
+          setParseErr(t('mcp.argsObjectError'));
           return;
         }
         parsed = v as Record<string, unknown>;
@@ -151,37 +152,37 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
     }
     setRunning(true);
     setResult(null);
-    const toastId = toast.loading(`Invoking mcp_${server}_${tool.name}…`);
+    const toastId = toast.loading(t('mcp.invoking', { tool: toolFQN }));
     try {
       const resp = await api.invokeMCPTool(server, tool.name, parsed);
       setResult(resp);
       if (resp.ok) {
-        toast.success(`mcp_${server}_${tool.name} returned`, { id: toastId });
+        toast.success(t('mcp.returned', { tool: toolFQN }), { id: toastId });
       } else if (resp.is_error) {
-        toast.error('Tool returned isError', { id: toastId, description: resp.error?.slice(0, 200) });
+        toast.error(t('mcp.isError'), { id: toastId, description: resp.error?.slice(0, 200) });
       } else {
-        toast.error('Tool transport failed', { id: toastId, description: resp.error?.slice(0, 200) });
+        toast.error(t('mcp.transportFailed'), { id: toastId, description: resp.error?.slice(0, 200) });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Invoke failed: ${msg}`, { id: toastId });
+      toast.error(t('mcp.invokeFailed', { msg }), { id: toastId });
       setResult({ ok: false, error: msg });
     } finally {
       setRunning(false);
     }
-  }, [args, server, tool.name]);
+  }, [args, server, tool.name, t, toolFQN]);
 
   return (
     <div className="px-12 py-2.5">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-mono text-xs font-medium">mcp_{server}_{tool.name}</span>
+        <span className="font-mono text-xs font-medium">{toolFQN}</span>
         {hasSchema && (
           <button
             type="button"
             onClick={() => setShowSchema((v) => !v)}
             className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline min-h-[28px] px-1"
           >
-            {showSchema ? 'hide schema' : 'show schema'}
+            {showSchema ? t('mcp.hideSchema') : t('mcp.showSchema')}
           </button>
         )}
         <button
@@ -190,7 +191,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
           className="ml-auto inline-flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] text-primary hover:bg-primary/10 min-h-[36px]"
         >
           <Play size={11} />
-          {showRun ? 'Hide' : 'Run'}
+          {showRun ? t('mcp.hideRun') : t('mcp.run')}
         </button>
       </div>
       {tool.description && (
@@ -203,7 +204,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
       )}
       {showRun && (
         <div className="mt-2 space-y-2 rounded-md border bg-muted/10 p-3">
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Arguments (JSON object)</label>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('mcp.argsLabel')}</label>
           <textarea
             value={args}
             onChange={(e) => setArgs(e.target.value)}
@@ -225,7 +226,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
               className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-              {running ? 'Calling…' : 'Invoke'}
+              {running ? t('mcp.calling') : t('mcp.invoke')}
             </button>
           </div>
           {result && <ToolResult result={result} />}
@@ -236,14 +237,15 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
 }
 
 function ToolResult({ result }: { result: MCPInvokeResponse }) {
+  const { t } = useLocale();
   const tone =
     result.ok ? 'border-emerald-500/30 bg-emerald-500/5' :
     result.is_error ? 'border-amber-500/30 bg-amber-500/5' :
     'border-destructive/30 bg-destructive/5';
   const Icon = result.ok ? CheckCircle2 : AlertTriangle;
   const iconColor = result.ok ? 'text-emerald-600 dark:text-emerald-400' : result.is_error ? 'text-amber-600 dark:text-amber-400' : 'text-destructive';
-  const title = result.ok ? 'success' : result.is_error ? 'tool returned isError' : 'transport / timeout';
-  const body = result.ok ? result.output : (result.error || result.output || '(no detail)');
+  const title = result.ok ? t('mcp.success') : result.is_error ? t('mcp.isErrorTitle') : t('mcp.transportTimeout');
+  const body = result.ok ? result.output : (result.error || result.output || t('mcp.noDetail'));
   return (
     <div className={`rounded-md border ${tone} p-2`}>
       <div className={`flex items-center gap-1.5 text-[11px] font-medium ${iconColor}`}>
