@@ -106,6 +106,15 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-05-03 - Inventory: Aura + Picobot + Hermes
+
+Decision record for the next proactivity phase: compare Aura's current standalone second-brain implementation with Picobot's local-agent runtime patterns and Hermes Agent's self-improving skills/cron/subagent model.
+
+- Added `docs/aura-picobot-hermes-inventory-2026-05-03.md`.
+- Conclusion: keep Aura as the product core; adapt Picobot's stateless background-context and runtime guardrails; adapt Hermes' skill-backed jobs, isolated subagents, and procedural-memory loop through Aura's review queue.
+- Recommended next slice: `search_memory` unified evidence search across wiki + sources + archive, followed by proposal provenance/batch review, then review-gated `propose_skill_change`.
+- No code changes in this inventory slice.
+
 ### 2026-05-03 - Slice 17j (Daily briefing utility check)
 
 Implementation slice to make the "real daily questions" audit executable instead of just a product note.
