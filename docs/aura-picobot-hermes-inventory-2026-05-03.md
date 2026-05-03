@@ -207,3 +207,31 @@ Second slice: proposal provenance + batch review.
 Third slice: `propose_skill_change`.
 
 This sequence keeps Aura useful and trustworthy while it becomes more proactive.
+
+## Implementation Tool Choice
+
+For implementation work, use a project-local Ralph-style loop pack instead of adopting a heavyweight external orchestrator.
+
+Selected tool:
+
+- `loops/aura-implementation/RALPH.md`
+
+Why:
+
+- It matches the Ralph Loops portable package model: one `RALPH.md` entrypoint plus bundled scripts.
+- It keeps Aura local-first and inspectable.
+- It works with Codex today, and can be read by Claude/goose/Ralph-compatible runtimes later.
+- It avoids SaaS/backlog auto-merge behavior until Aura's review and verification loops are stronger.
+- It bakes in Aura-specific guardrails: explicit staging, no `.env`, no raw wiki data, no broad mutation, review-gated skills, propose-only scheduled jobs.
+
+External references considered:
+
+- Ralph Loops open format: https://ralphloops.io/specification/
+- Claude Ralph Loop plugin: https://claude.com/plugins/ralph-loop
+- PageAI Ralph loop script/runtime: https://github.com/PageAI-Pro/ralph-loop
+- Goose Ralph Loop recipe: https://goose-docs.ai/docs/tutorials/ralph-loop/
+- Wiggum CLI: https://wiggum.app/
+
+Decision:
+
+Use `loops/aura-implementation` as the implementation harness now. Revisit Wiggum/PageAI/goose only if Aura needs unattended backlog execution across many issues. For the next few slices, the bottleneck is not orchestration software; it is crisp specs, strong verification, and evidence/provenance features.

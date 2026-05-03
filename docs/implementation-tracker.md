@@ -106,6 +106,18 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 
 ## Session Log
 
+### 2026-05-03 - Implementation loop tool
+
+Added a project-local Ralph-style loop pack for Aura implementation work.
+
+- New loop package: `loops/aura-implementation/RALPH.md`.
+- New verification scripts:
+  - `loops/aura-implementation/scripts/status.ps1`
+  - `loops/aura-implementation/scripts/verify-go.ps1`
+  - `loops/aura-implementation/scripts/verify-web.ps1`
+- Decision: use a local, inspectable Ralph-style package rather than adopting a heavyweight orchestrator. It keeps each slice fresh-context, verified, tracked, and atomically committed while preserving Aura's existing workflow.
+- Verification: `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\status.ps1`; `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`.
+
 ### 2026-05-03 - Inventory: Aura + Picobot + Hermes
 
 Decision record for the next proactivity phase: compare Aura's current standalone second-brain implementation with Picobot's local-agent runtime patterns and Hermes Agent's self-improving skills/cron/subagent model.
