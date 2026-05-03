@@ -84,6 +84,21 @@ func TestScorer_EmptyCandidates(t *testing.T) {
 	}
 }
 
+func TestScorer_AcceptsFencedJSON(t *testing.T) {
+	client := newFakeLLMClient("```json\n{\"candidates\":[{\"fact\":\"User tracks BTC/USD\",\"score\":0.9,\"category\":\"preference\",\"related_slugs\":[\"trading-signals\"],\"source_turn_ids\":[4]}]}\n```")
+	scorer := summarizer.NewScorer(client, "test-model", 0.7)
+
+	got, err := scorer.Score(context.Background(), []conversation.Turn{
+		{ID: 4, Role: "user", Content: "Track BTC/USD too."},
+	})
+	if err != nil {
+		t.Fatalf("Score fenced JSON: %v", err)
+	}
+	if len(got) != 1 || got[0].Fact != "User tracks BTC/USD" {
+		t.Fatalf("candidates = %+v", got)
+	}
+}
+
 func TestScorer_MalformedJSON(t *testing.T) {
 	// LLM returns non-JSON content
 	client := newFakeLLMClient(`this is not json`)

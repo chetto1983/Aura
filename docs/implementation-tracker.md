@@ -104,8 +104,34 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17i | Scheduled agent jobs | done | New `agent_job` task kind runs bounded propose-only routines through the Aura runner; `schedule_task`, API/dashboard, dispatcher, and natural-prompt E2E can schedule recurring agent jobs. |
 | 17j | Daily briefing tool | done | New read-only `daily_briefing` tool composes today's tasks, pending wiki proposals, open wiki issues, recent sources, and conversation signals; natural-prompt E2E verifies an Italian daily-briefing prompt selects the tool. |
 | 17k | Unified memory evidence search | done | New read-only `search_memory` tool searches wiki index, source inbox/OCR, and conversation archive with compact evidence snippets, source IDs, conversation turn IDs, and OCR page numbers; agent jobs and AuraBot read-only roles can use it before broader reads. |
+| 17k.1 | Log-driven agent drift fixes | done | Runtime logs showed scheduled-job testing drifting into `spawn_aurabot` + repeated web searches, fenced summarizer JSON being rejected, and `write_wiki` retries delayed by generic tag-limit guidance. Fixed fenced JSON parsing and made wiki tag/source limits explicit in tool schema/error hints. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17k.1 (Log-driven agent drift fixes)
+
+Audit of `logs/aura-2026-05-03.log` from the user's live tests.
+
+Findings:
+
+- `Prova ad eseguirlo adesso` after scheduling a job routed to `spawn_aurabot`, not to the scheduled job. The spawned researcher issued repeated parallel `web_search` calls and hit the 90s AuraBot timeout.
+- `Si ma dovrebbe mandare il riepilogo quando termina` scheduled two independent tasks instead of linking completion notification to the agent job.
+- The summarizer extracted useful trading facts, but dropped them because the LLM returned valid JSON wrapped in a ```json fence.
+- `write_wiki` failed once with `too many tags (max 10)`, then recovered only after a long retry.
+- The app logs did not show `search_memory`, which means the running bot had not yet picked up slice 17k.
+
+Implementation:
+
+- `internal/conversation/summarizer/scorer.go` now strips a single fenced JSON wrapper before parsing.
+- Added a regression test for fenced summarizer JSON.
+- `write_wiki` tool schema now advertises `maxItems: 10` for tags and sources.
+- Structured tool errors now give a specific retry hint for too many wiki tags/sources.
+
+Verification:
+
+- `go test ./internal/conversation/summarizer ./internal/tools ./internal/wiki`
+
+Next slice: add a real `run_task_now` / `run_agent_job_now` path so "eseguilo adesso" runs the saved scheduled routine and can notify on completion instead of improvising with `spawn_aurabot`.
 
 ### 2026-05-03 - Slice 17k (Unified memory evidence search)
 

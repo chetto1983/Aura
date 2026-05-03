@@ -40,7 +40,8 @@ func (t *WriteWikiTool) Parameters() map[string]any {
 			},
 			"tags": map[string]any{
 				"type":        "array",
-				"description": "Optional tags.",
+				"description": "Optional tags. Use at most 10 short tags.",
+				"maxItems":    10,
 				"items":       map[string]any{"type": "string"},
 			},
 			"category": map[string]any{
@@ -54,7 +55,8 @@ func (t *WriteWikiTool) Parameters() map[string]any {
 			},
 			"sources": map[string]any{
 				"type":        "array",
-				"description": "Optional source URLs or references.",
+				"description": "Optional source URLs or references. Use at most 10.",
+				"maxItems":    10,
 				"items":       map[string]any{"type": "string"},
 			},
 		},

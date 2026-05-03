@@ -66,6 +66,15 @@ func TestFormatToolError_HintForTooLarge(t *testing.T) {
 	}
 }
 
+func TestFormatToolError_HintForTooManyTags(t *testing.T) {
+	result := FormatToolError(errors.New("write_wiki: validation failed: wiki validation failed: too many tags (max 10)"))
+	var te ToolError
+	json.Unmarshal([]byte(result), &te)
+	if te.Hint != "Retry with at most 10 short tags" {
+		t.Fatalf("hint = %q", te.Hint)
+	}
+}
+
 func TestFormatToolError_GenericHint(t *testing.T) {
 	result := FormatToolError(errors.New("something unexpected happened"))
 	var te ToolError

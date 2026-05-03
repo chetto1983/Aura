@@ -46,6 +46,10 @@ func FormatFatalToolError(err error) string {
 func hintForError(msg string) string {
 	lower := strings.ToLower(msg)
 	switch {
+	case strings.Contains(lower, "too many tags"):
+		return "Retry with at most 10 short tags"
+	case strings.Contains(lower, "too many sources"):
+		return "Retry with at most 10 source URLs or references"
 	case strings.Contains(lower, "missing") || strings.Contains(lower, "required"):
 		return "Provide the required field mentioned in the error"
 	case strings.Contains(lower, "invalid") || strings.Contains(lower, "malformed"):

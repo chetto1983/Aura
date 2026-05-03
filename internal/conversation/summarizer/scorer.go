@@ -83,8 +83,9 @@ func (s *LLMScorer) Score(ctx context.Context, turns []conversation.Turn) ([]Can
 		return nil, fmt.Errorf("scorer llm call: %w", err)
 	}
 
+	content := stripJSONFence(resp.Content)
 	var parsed scorerResponse
-	if err := json.Unmarshal([]byte(resp.Content), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return nil, fmt.Errorf("scorer parse response: %w (content: %q)", err, resp.Content)
 	}
 
@@ -95,4 +96,22 @@ func (s *LLMScorer) Score(ctx context.Context, turns []conversation.Turn) ([]Can
 		}
 	}
 	return out, nil
+}
+
+func stripJSONFence(content string) string {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "```") {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 {
+		return content
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
+		return content
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) != "```" {
+		return content
+	}
+	return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
 }
