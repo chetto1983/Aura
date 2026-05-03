@@ -88,12 +88,8 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 	}
 
-	// Enforce context limits: summarize at 80%, trim at hard limit
-	if err := convCtx.EnforceLimit(context.Background()); err != nil {
-		b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
-	}
-
-	// Snapshot count AFTER EnforceLimit so any trimming is already absorbed.
+	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
+	// completes so summarizer latency doesn't add to perceived wait time.
 	// Loop messages added by runToolCallingLoop occupy [preLoopIdx, end).
 	preLoopIdx := convCtx.MessageCount()
 
@@ -203,6 +199,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 			}
 		}
 	}
+
+	// Slice 16d: context enforcement runs after the user has seen the
+	// response so summarizer latency doesn't add to perceived wait time.
+	go func() {
+		if err := convCtx.EnforceLimit(context.Background()); err != nil {
+			b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
+		}
+	}()
 
 	// Slice 11r: per-turn telemetry. elapsed_ms is wall-clock from
 	// receive to "ready to send"; llm_calls and tool_calls expose where
