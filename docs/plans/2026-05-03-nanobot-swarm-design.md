@@ -22,13 +22,13 @@ swarm {id}
   │   ├─ conversation.Context isolato
   │   ├─ mini tool-loop (max 5 iterazioni, timeout 60s)
   │   ├─ tutti i tool del coordinatore (allowlist opzionale)
-  │   ├─ non può spawnare nanobot figli
+  │   ├─ puo' spawnare nanobot figli (ricorsione libera)
   │   └─ restituisce risultato via channel
   ├─ nanobot-2 (goroutine, parallelo a nanobot-1)
   └─ nanobot-N ...
 ```
 
-Ogni nanobot ha piena libertà: scrivere/eseguire codice nella sandbox, invocare MCP server, creare skill al volo, leggere/scrivere file. Nessuna limitazione predefinita.
+Ogni nanobot ha piena liberta': scrivere/eseguire codice nella sandbox, invocare MCP server, creare skill al volo, leggere/scrivere file. Nessuna limitazione predefinita.
 
 ## Contenimento
 
@@ -42,7 +42,7 @@ Ogni nanobot ha piena libertà: scrivere/eseguire codice nella sandbox, invocare
 - Directory: `~/.aura/swarms/{swarm-id}/tasks/`
 - File JSON per task: `{id, subject, status, owner, blockedBy}`
 - File locking (flock) per prevenire race condition sui claim
-- Dipendenze: un task `blockedBy: ["1"]` non è claimable finché il task 1 è `completed`
+- Dipendenze: un task `blockedBy: ["1"]` non e' claimable finche' il task 1 e' `completed`
 
 ## Messaggistica
 
