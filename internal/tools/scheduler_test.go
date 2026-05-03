@@ -102,6 +102,62 @@ func TestScheduleTaskTool_DailyWikiMaintenance(t *testing.T) {
 	}
 }
 
+func TestScheduleTaskTool_DailyWeekdays(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+	ctx := WithUserID(t.Context(), "u")
+
+	out, err := tool.Execute(ctx, map[string]any{
+		"name":     "weekday-briefing",
+		"kind":     "reminder",
+		"payload":  "briefing",
+		"daily":    "10:00",
+		"weekdays": []any{"mon", "tue", "wed", "thu", "fri"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "on mon,tue,wed,thu,fri") {
+		t.Errorf("response should mention weekdays: %q", out)
+	}
+	got, err := store.GetByName(ctx, "weekday-briefing")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.ScheduleKind != scheduler.ScheduleDaily || got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
+		t.Errorf("schedule = %s/%q, want daily weekdays", got.ScheduleKind, got.ScheduleWeekdays)
+	}
+}
+
+func TestScheduleTaskTool_EveryMinutes(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+
+	before := time.Now().UTC()
+	out, err := tool.Execute(t.Context(), map[string]any{
+		"name":          "hourly-maintenance",
+		"kind":          "wiki_maintenance",
+		"every_minutes": float64(60),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "every 60 minutes") {
+		t.Errorf("response should mention interval: %q", out)
+	}
+	got, err := store.GetByName(t.Context(), "hourly-maintenance")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.ScheduleKind != scheduler.ScheduleEvery || got.ScheduleEveryMinutes != 60 {
+		t.Errorf("schedule = %s/%d, want every 60", got.ScheduleKind, got.ScheduleEveryMinutes)
+	}
+	delta := got.NextRunAt.Sub(before)
+	if delta < 55*time.Minute || delta > 65*time.Minute {
+		t.Errorf("next_run_at delta = %v, want ~60m", delta)
+	}
+}
+
 func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 	store := newTestSchedStore(t)
 	tool := NewScheduleTaskTool(store, time.UTC)
@@ -132,6 +188,21 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 		{"bad daily", map[string]any{
 			"name": "a", "kind": "wiki_maintenance", "daily": "3am",
 		}, ""}, // ParseDailyTime emits its own message
+		{"bad every", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "every_minutes": float64(0),
+		}, "every_minutes must be >= 1"},
+		{"fractional every", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "every_minutes": 1.5,
+		}, "every_minutes must be an integer"},
+		{"daily plus every", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "daily": "03:00", "every_minutes": float64(60),
+		}, "mutually exclusive"},
+		{"weekdays without daily", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "every_minutes": float64(60), "weekdays": []any{"mon"},
+		}, "weekdays can only be used with daily"},
+		{"bad weekday", map[string]any{
+			"name": "a", "kind": "wiki_maintenance", "daily": "03:00", "weekdays": []any{"moonday"},
+		}, "invalid weekday"},
 		{"bad in", map[string]any{
 			"name": "a", "kind": "wiki_maintenance", "in": "soon",
 		}, "parse in"},
@@ -276,10 +347,10 @@ func TestParseLocalWallClock_AcceptsCommonShapes(t *testing.T) {
 func TestParseLocalWallClock_RejectsTimezoneSuffixes(t *testing.T) {
 	loc := time.UTC
 	for _, in := range []string{
-		"2026-04-30T17:00:00Z",          // explicit UTC — at_local must not accept
-		"2026-04-30T17:00:00+02:00",     // explicit offset — same
-		"2026-04-30",                    // missing time
-		"domani alle 5",                 // not a timestamp at all
+		"2026-04-30T17:00:00Z",      // explicit UTC — at_local must not accept
+		"2026-04-30T17:00:00+02:00", // explicit offset — same
+		"2026-04-30",                // missing time
+		"domani alle 5",             // not a timestamp at all
 	} {
 		t.Run(in, func(t *testing.T) {
 			if _, err := parseLocalWallClock(in, loc); err == nil {
@@ -324,6 +395,17 @@ func TestListTasksTool_GroupsByStatus(t *testing.T) {
 		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
 		Status: scheduler.StatusDone,
 	})
+	mustSchedUpsert(t, store, &scheduler.Task{
+		Name: "weekday-1", Kind: scheduler.KindReminder,
+		ScheduleKind: scheduler.ScheduleDaily, ScheduleDaily: "10:00",
+		ScheduleWeekdays: "mon,tue,wed,thu,fri", NextRunAt: at,
+		Status: scheduler.StatusActive,
+	})
+	mustSchedUpsert(t, store, &scheduler.Task{
+		Name: "every-1", Kind: scheduler.KindWikiMaintenance,
+		ScheduleKind: scheduler.ScheduleEvery, ScheduleEveryMinutes: 60,
+		NextRunAt: at, Status: scheduler.StatusActive,
+	})
 
 	tool := NewListTasksTool(store)
 	out, err := tool.Execute(ctx, map[string]any{})
@@ -331,11 +413,15 @@ func TestListTasksTool_GroupsByStatus(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	for _, want := range []string{
-		"2 task(s)",
+		"4 task(s)",
 		"## active",
 		"## done",
 		"`active-1`",
 		"`done-1`",
+		"`weekday-1`",
+		"daily at 10:00 on mon,tue,wed,thu,fri",
+		"`every-1`",
+		"every 60 minutes",
 		"\"remember to test\"",
 	} {
 		if !strings.Contains(out, want) {

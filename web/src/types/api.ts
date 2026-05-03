@@ -120,6 +120,7 @@ export interface UpsertTaskRequest {
   recipient_id?: string;
   at?: string; // RFC3339 UTC
   daily?: string; // HH:MM (bot's local TZ)
+  weekdays?: string; // optional daily filter: mon,tue,wed,thu,fri,sat,sun
   every_minutes?: number; // recurrence: fires every N minutes (>=1)
 }
 
@@ -276,6 +277,7 @@ export interface Task {
   schedule_kind: 'at' | 'daily' | 'every';
   schedule_at?: string;
   schedule_daily?: string;
+  schedule_weekdays?: string;
   schedule_every_minutes?: number;
   next_run_at: string;
   last_run_at?: string;

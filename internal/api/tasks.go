@@ -58,6 +58,7 @@ func taskDTO(t *scheduler.Task) Task {
 		RecipientID:          t.RecipientID,
 		ScheduleKind:         string(t.ScheduleKind),
 		ScheduleDaily:        t.ScheduleDaily,
+		ScheduleWeekdays:     t.ScheduleWeekdays,
 		ScheduleEveryMinutes: t.ScheduleEveryMinutes,
 		NextRunAt:            t.NextRunAt.UTC(),
 		LastError:            t.LastError,

@@ -152,7 +152,7 @@ func TestTaskUpsert_HappyPath_At(t *testing.T) {
 
 func TestTaskUpsert_HappyPath_Daily(t *testing.T) {
 	e := newTestEnv(t)
-	body := `{"name":"daily-task","kind":"wiki_maintenance","daily":"03:00"}`
+	body := `{"name":"daily-task","kind":"wiki_maintenance","daily":"03:00","weekdays":"mon,tue,wed,thu,fri"}`
 	rr := e.doLocal("POST", "/tasks", []byte(body))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
@@ -166,6 +166,28 @@ func TestTaskUpsert_HappyPath_Daily(t *testing.T) {
 	}
 	if got.ScheduleKind != string(scheduler.ScheduleDaily) {
 		t.Errorf("schedule_kind = %q, want daily", got.ScheduleKind)
+	}
+	if got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
+		t.Errorf("schedule_weekdays = %q", got.ScheduleWeekdays)
+	}
+}
+
+func TestTaskUpsert_HappyPath_EveryMinutes(t *testing.T) {
+	e := newTestEnv(t)
+	body := `{"name":"every-task","kind":"wiki_maintenance","every_minutes":60}`
+	rr := e.doLocal("POST", "/tasks", []byte(body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got Task
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ScheduleKind != string(scheduler.ScheduleEvery) {
+		t.Errorf("schedule_kind = %q, want every", got.ScheduleKind)
+	}
+	if got.ScheduleEveryMinutes != 60 {
+		t.Errorf("schedule_every_minutes = %d, want 60", got.ScheduleEveryMinutes)
 	}
 }
 
@@ -182,7 +204,10 @@ func TestTaskUpsert_RejectsBadInput(t *testing.T) {
 		{"bad name", `{"name":"bad name","kind":"reminder","recipient_id":"u","at":"` + at + `"}`, http.StatusBadRequest},
 		{"bad kind", `{"name":"x","kind":"unknown","recipient_id":"u","at":"` + at + `"}`, http.StatusBadRequest},
 		{"both at and daily", `{"name":"x","kind":"wiki_maintenance","at":"` + at + `","daily":"03:00"}`, http.StatusBadRequest},
+		{"daily and every", `{"name":"x","kind":"wiki_maintenance","daily":"03:00","every_minutes":60}`, http.StatusBadRequest},
 		{"neither at nor daily", `{"name":"x","kind":"wiki_maintenance"}`, http.StatusBadRequest},
+		{"weekdays without daily", `{"name":"x","kind":"wiki_maintenance","every_minutes":60,"weekdays":"mon"}`, http.StatusBadRequest},
+		{"bad weekday", `{"name":"x","kind":"wiki_maintenance","daily":"03:00","weekdays":"moonday"}`, http.StatusBadRequest},
 		{"reminder without recipient", `{"name":"x","kind":"reminder","at":"` + at + `"}`, http.StatusBadRequest},
 		{"past at", `{"name":"x","kind":"wiki_maintenance","at":"` + past + `"}`, http.StatusBadRequest},
 		{"bad daily format", `{"name":"x","kind":"wiki_maintenance","daily":"3am"}`, http.StatusBadRequest},

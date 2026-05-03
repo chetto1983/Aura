@@ -176,7 +176,7 @@ func (s *Scheduler) advance(task *Task, firedAt time.Time, dispatchErr error) (n
 	if task.IsRecurring() {
 		switch task.ScheduleKind {
 		case ScheduleDaily:
-			next, err := NextDailyRun(task.ScheduleDaily, s.loc, firedAt)
+			next, err := NextDailyRunOnWeekdays(task.ScheduleDaily, task.ScheduleWeekdays, s.loc, firedAt)
 			if err != nil {
 				// Schedule string corrupted on disk — surface and keep
 				// the task active so a future fix doesn't require a

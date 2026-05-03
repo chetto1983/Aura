@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     schedule_kind          TEXT NOT NULL,
     schedule_at            TEXT,
     schedule_daily         TEXT,
+    schedule_weekdays      TEXT NOT NULL DEFAULT '',
     schedule_every_minutes INTEGER NOT NULL DEFAULT 0,
     next_run_at            TEXT NOT NULL,
     last_run_at            TEXT,
@@ -155,6 +156,9 @@ func (s *Store) migrate() error {
 	if err := addEveryMinutesColumn(s.db); err != nil {
 		return fmt.Errorf("scheduler migrate every_minutes: %w", err)
 	}
+	if err := addScheduleWeekdaysColumn(s.db); err != nil {
+		return fmt.Errorf("scheduler migrate schedule_weekdays: %w", err)
+	}
 	if err := dropLegacyConversations(s.db); err != nil {
 		return fmt.Errorf("scheduler drop legacy conversations: %w", err)
 	}
@@ -217,27 +221,28 @@ func tableInfoColumns(db *sql.DB, table string) (map[string]bool, error) {
 // pre-existing aura.db files that were created before slice 14.
 // Idempotent — checks PRAGMA table_info before issuing the ALTER.
 func addEveryMinutesColumn(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(scheduled_tasks)`)
+	cols, err := tableInfoColumns(db, "scheduled_tasks")
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "schedule_every_minutes" {
-			return nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
+	if cols["schedule_every_minutes"] {
+		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_every_minutes INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+// addScheduleWeekdaysColumn back-fills the optional daily weekday filter on
+// existing aura.db files. Empty preserves legacy "every day" behavior.
+func addScheduleWeekdaysColumn(db *sql.DB) error {
+	cols, err := tableInfoColumns(db, "scheduled_tasks")
+	if err != nil {
+		return err
+	}
+	if cols["schedule_weekdays"] {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_weekdays TEXT NOT NULL DEFAULT ''`)
 	return err
 }
 
@@ -302,9 +307,9 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 	const q = `
 		INSERT INTO scheduled_tasks
 			(name, kind, payload, recipient_id, schedule_kind, schedule_at, schedule_daily,
-			 schedule_every_minutes,
+			 schedule_weekdays, schedule_every_minutes,
 			 next_run_at, last_run_at, last_error, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			kind                   = excluded.kind,
 			payload                = excluded.payload,
@@ -312,6 +317,7 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 			schedule_kind          = excluded.schedule_kind,
 			schedule_at            = excluded.schedule_at,
 			schedule_daily         = excluded.schedule_daily,
+			schedule_weekdays      = excluded.schedule_weekdays,
 			schedule_every_minutes = excluded.schedule_every_minutes,
 			next_run_at            = excluded.next_run_at,
 			status                 = excluded.status,
@@ -319,7 +325,7 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 	`
 	if _, err := s.db.ExecContext(ctx, q,
 		t.Name, string(t.Kind), t.Payload, t.RecipientID, string(t.ScheduleKind),
-		scheduleAt, scheduleDaily, t.ScheduleEveryMinutes,
+		scheduleAt, scheduleDaily, t.ScheduleWeekdays, t.ScheduleEveryMinutes,
 		t.NextRunAt.UTC().Format(time.RFC3339), lastRunAt, t.LastError,
 		string(t.Status), t.CreatedAt.UTC().Format(time.RFC3339), t.UpdatedAt.UTC().Format(time.RFC3339),
 	); err != nil {
@@ -461,6 +467,9 @@ func validateScheduleFields(t *Task) error {
 		if t.ScheduleEveryMinutes != 0 {
 			return errors.New("scheduler: schedule_every_minutes must be 0 when ScheduleKind=at")
 		}
+		if t.ScheduleWeekdays != "" {
+			return errors.New("scheduler: schedule_weekdays must be empty when ScheduleKind=at")
+		}
 	case ScheduleDaily:
 		if t.ScheduleDaily == "" {
 			return errors.New("scheduler: schedule_daily required when ScheduleKind=daily")
@@ -474,6 +483,13 @@ func validateScheduleFields(t *Task) error {
 		if _, _, err := ParseDailyTime(t.ScheduleDaily); err != nil {
 			return err
 		}
+		if t.ScheduleWeekdays != "" {
+			normalized, err := NormalizeWeekdays(t.ScheduleWeekdays)
+			if err != nil {
+				return err
+			}
+			t.ScheduleWeekdays = normalized
+		}
 	case ScheduleEvery:
 		if t.ScheduleEveryMinutes < minEveryMinutes {
 			return fmt.Errorf("scheduler: schedule_every_minutes must be >= %d when ScheduleKind=every", minEveryMinutes)
@@ -483,6 +499,9 @@ func validateScheduleFields(t *Task) error {
 		}
 		if t.ScheduleDaily != "" {
 			return errors.New("scheduler: schedule_daily must be empty when ScheduleKind=every")
+		}
+		if t.ScheduleWeekdays != "" {
+			return errors.New("scheduler: schedule_weekdays must be empty when ScheduleKind=every")
 		}
 	default:
 		return fmt.Errorf("scheduler: unknown schedule_kind %q", t.ScheduleKind)
@@ -505,7 +524,7 @@ func nullStringFromTask(t *Task) sql.NullString {
 }
 
 const selectColumns = `id, name, kind, payload, recipient_id, schedule_kind,
-	schedule_at, schedule_daily, schedule_every_minutes,
+	schedule_at, schedule_daily, schedule_weekdays, schedule_every_minutes,
 	next_run_at, last_run_at, last_error, status,
 	created_at, updated_at`
 
@@ -517,20 +536,21 @@ type rowScanner interface {
 
 func scanTask(r rowScanner) (*Task, error) {
 	var (
-		t              Task
-		scheduleAt     sql.NullString
-		scheduleDaily  sql.NullString
-		lastRunAt      sql.NullString
-		nextRun        string
-		createdAt      string
-		updatedAt      string
-		kindRaw        string
-		scheduleKind   string
-		statusRaw      string
+		t             Task
+		scheduleAt    sql.NullString
+		scheduleDaily sql.NullString
+		scheduleDays  string
+		lastRunAt     sql.NullString
+		nextRun       string
+		createdAt     string
+		updatedAt     string
+		kindRaw       string
+		scheduleKind  string
+		statusRaw     string
 	)
 	if err := r.Scan(
 		&t.ID, &t.Name, &kindRaw, &t.Payload, &t.RecipientID, &scheduleKind,
-		&scheduleAt, &scheduleDaily, &t.ScheduleEveryMinutes,
+		&scheduleAt, &scheduleDaily, &scheduleDays, &t.ScheduleEveryMinutes,
 		&nextRun, &lastRunAt, &t.LastError, &statusRaw,
 		&createdAt, &updatedAt,
 	); err != nil {
@@ -549,6 +569,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	if scheduleDaily.Valid {
 		t.ScheduleDaily = scheduleDaily.String
 	}
+	t.ScheduleWeekdays = scheduleDays
 	if lastRunAt.Valid {
 		ts, err := time.Parse(time.RFC3339, lastRunAt.String)
 		if err != nil {
@@ -594,7 +615,18 @@ func ParseDailyTime(s string) (hour, minute int, err error) {
 // strictly after `after`. Used both at task creation (to set initial
 // next_run_at) and after firing (to advance).
 func NextDailyRun(daily string, loc *time.Location, after time.Time) (time.Time, error) {
+	return NextDailyRunOnWeekdays(daily, "", loc, after)
+}
+
+// NextDailyRunOnWeekdays computes the next daily run, optionally limited to
+// selected weekdays. weekdays is a comma-separated list using mon,tue,wed,
+// thu,fri,sat,sun; empty means every day.
+func NextDailyRunOnWeekdays(daily, weekdays string, loc *time.Location, after time.Time) (time.Time, error) {
 	hour, minute, err := ParseDailyTime(daily)
+	if err != nil {
+		return time.Time{}, err
+	}
+	allowed, err := parseWeekdaySet(weekdays)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -603,8 +635,92 @@ func NextDailyRun(daily string, loc *time.Location, after time.Time) (time.Time,
 	}
 	afterLocal := after.In(loc)
 	candidate := time.Date(afterLocal.Year(), afterLocal.Month(), afterLocal.Day(), hour, minute, 0, 0, loc)
-	if !candidate.After(afterLocal) {
+	if !candidate.After(afterLocal) || !weekdayAllowed(candidate.Weekday(), allowed) {
 		candidate = candidate.AddDate(0, 0, 1)
+		for i := 0; i < 7 && !weekdayAllowed(candidate.Weekday(), allowed); i++ {
+			candidate = candidate.AddDate(0, 0, 1)
+		}
 	}
 	return candidate.UTC(), nil
+}
+
+// NormalizeWeekdays validates and canonicalizes selected weekdays. It accepts
+// compact day names plus common "weekdays/business/feriali" and "weekend"
+// shortcuts. Empty returns empty.
+func NormalizeWeekdays(in string) (string, error) {
+	set, err := parseWeekdaySet(in)
+	if err != nil {
+		return "", err
+	}
+	if len(set) == 0 {
+		return "", nil
+	}
+	ordered := []struct {
+		day  time.Weekday
+		name string
+	}{
+		{time.Monday, "mon"},
+		{time.Tuesday, "tue"},
+		{time.Wednesday, "wed"},
+		{time.Thursday, "thu"},
+		{time.Friday, "fri"},
+		{time.Saturday, "sat"},
+		{time.Sunday, "sun"},
+	}
+	out := make([]string, 0, len(set))
+	for _, item := range ordered {
+		if set[item.day] {
+			out = append(out, item.name)
+		}
+	}
+	return strings.Join(out, ","), nil
+}
+
+func parseWeekdaySet(in string) (map[time.Weekday]bool, error) {
+	in = strings.TrimSpace(strings.ToLower(in))
+	out := map[time.Weekday]bool{}
+	if in == "" {
+		return out, nil
+	}
+	parts := strings.FieldsFunc(in, func(r rune) bool {
+		return r == ',' || r == ';' || r == '|' || r == ' '
+	})
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		switch part {
+		case "weekday", "weekdays", "business", "business_days", "workdays", "feriali":
+			out[time.Monday] = true
+			out[time.Tuesday] = true
+			out[time.Wednesday] = true
+			out[time.Thursday] = true
+			out[time.Friday] = true
+		case "weekend", "weekends", "fine-settimana":
+			out[time.Saturday] = true
+			out[time.Sunday] = true
+		case "mon", "monday", "lun", "lunedi", "lunedi'":
+			out[time.Monday] = true
+		case "tue", "tuesday", "mar", "martedi", "martedi'":
+			out[time.Tuesday] = true
+		case "wed", "wednesday", "mer", "mercoledi", "mercoledi'":
+			out[time.Wednesday] = true
+		case "thu", "thursday", "gio", "giovedi", "giovedi'":
+			out[time.Thursday] = true
+		case "fri", "friday", "ven", "venerdi", "venerdi'":
+			out[time.Friday] = true
+		case "sat", "saturday", "sab", "sabato":
+			out[time.Saturday] = true
+		case "sun", "sunday", "dom", "domenica":
+			out[time.Sunday] = true
+		default:
+			return nil, fmt.Errorf("scheduler: invalid weekday %q", part)
+		}
+	}
+	return out, nil
+}
+
+func weekdayAllowed(day time.Weekday, allowed map[time.Weekday]bool) bool {
+	return len(allowed) == 0 || allowed[day]
 }

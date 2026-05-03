@@ -24,6 +24,7 @@ type UpsertTaskRequest struct {
 	RecipientID  string `json:"recipient_id,omitempty"`
 	At           string `json:"at,omitempty"`            // RFC3339 UTC
 	Daily        string `json:"daily,omitempty"`         // HH:MM, local TZ
+	Weekdays     string `json:"weekdays,omitempty"`      // optional daily filter: mon,tue,...
 	EveryMinutes int    `json:"every_minutes,omitempty"` // interval recurrence (>=1)
 }
 
@@ -41,6 +42,7 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		req.Name = strings.TrimSpace(req.Name)
 		req.At = strings.TrimSpace(req.At)
 		req.Daily = strings.TrimSpace(req.Daily)
+		req.Weekdays = strings.TrimSpace(req.Weekdays)
 		if !taskNameRe.MatchString(req.Name) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "name must be 1-64 chars [A-Za-z0-9_.-]")
 			return
@@ -65,6 +67,10 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		}
 		if populated != 1 {
 			writeError(w, deps.Logger, http.StatusBadRequest, "set exactly one of at (RFC3339 UTC), daily (HH:MM), or every_minutes (>=1)")
+			return
+		}
+		if req.Weekdays != "" && req.Daily == "" {
+			writeError(w, deps.Logger, http.StatusBadRequest, "weekdays can only be used with daily")
 			return
 		}
 		if kind == scheduler.KindReminder && strings.TrimSpace(req.RecipientID) == "" {
@@ -102,13 +108,19 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			task.ScheduleAt = ts
 			task.NextRunAt = ts
 		case req.Daily != "":
-			next, err := scheduler.NextDailyRun(req.Daily, loc, now)
+			weekdays, err := scheduler.NormalizeWeekdays(req.Weekdays)
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+				return
+			}
+			next, err := scheduler.NextDailyRunOnWeekdays(req.Daily, weekdays, loc, now)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 				return
 			}
 			task.ScheduleKind = scheduler.ScheduleDaily
 			task.ScheduleDaily = req.Daily
+			task.ScheduleWeekdays = weekdays
 			task.NextRunAt = next
 		default: // EveryMinutes branch — populated > 0 enforced above
 			task.ScheduleKind = scheduler.ScheduleEvery

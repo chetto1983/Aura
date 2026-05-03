@@ -100,8 +100,45 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17e | AuraBot planner + synthesis | done | Deterministic read-only planner builds role assignments from a goal, `run_aurabot_swarm` executes the team in parallel, and synthesis rolls up worker results/metrics without an extra LLM call. |
 | 17f | AuraBot conservative routing | done | Telegram prompt now exposes swarm routing only when `run_aurabot_swarm` is actually registered, adds a per-turn hint for broad read-only second-brain work, and keeps mutations on explicit write/admin tools. |
 | 17g | Proactive wiki proposals | done | New `propose_wiki_change` LLM tool writes pending wiki proposals into the existing dashboard Summaries review queue, letting Aura suggest durable second-brain growth without mutating wiki files directly. |
+| 17h | Daily recurrence parity | done | `schedule_task` now exposes `every_minutes` and daily `weekdays`; scheduler persists weekday filters, API/dashboard surface them, and natural-prompt E2E verifies hourly + business-day scheduling. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17h (Daily recurrence parity)
+
+Implementation slice from `docs/daily-questions-gap-audit-2026-05-03.md` to fix the real "giorni feriali alle 10" gap without introducing full cron or autonomous agent jobs yet.
+
+**Implementation**:
+
+- Added `schedule_weekdays` to `scheduled_tasks` with idempotent migration and in-memory `Task.ScheduleWeekdays`.
+- Added weekday parsing/canonicalization: `mon,tue,wed,thu,fri,sat,sun`, plus shortcuts like `weekdays`, `business`, `feriali`, and `weekend`.
+- Added `NextDailyRunOnWeekdays`; legacy `NextDailyRun` remains the every-day wrapper.
+- Scheduler recurrence advancement now respects weekday filters for daily tasks.
+- `schedule_task` now supports `every_minutes` and optional `weekdays` with `daily`.
+- API `POST /tasks` and task DTOs now accept/return weekday filters.
+- Dashboard Tasks panel can create and display daily tasks narrowed to selected weekdays.
+- `cmd/debug_ingest` now includes natural-prompt scenarios for `every_minutes` and business-day scheduling, and prints `elapsed_ms` + `tool_calls` per scenario.
+
+**E2E metrics**:
+
+- `schedule_task_every_minutes`: PASS, `elapsed_ms=2960`, `tool_calls=1`, created `slice17-every-smoke` every 60 minutes.
+- `schedule_task_weekdays`: PASS, `elapsed_ms=18788`, `tool_calls=1`, created `slice17-weekday-smoke` with `mon,tue,wed,thu,fri`.
+- Full `cmd/debug_ingest`: 12/12 scenarios passed against `glm-5.1:cloud` via `https://ollama.com/v1`.
+
+**Verification**:
+
+- `go test ./internal/scheduler ./internal/tools ./internal/api ./internal/conversation ./cmd/debug_ingest`
+- `npm run build`
+- `npx eslint src/components/TasksPanel.tsx src/types/api.ts`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+- Note: global `npm run lint -- --max-warnings=0` still fails on pre-existing files `web/e2e/fixtures.ts` and `web/src/components/SwarmPanel.tsx`; modified frontend files lint clean.
+
+**Next work**:
+
+- Slice 17i: `agent_job` scheduled task kind, propose-only write policy, and metrics. This is the actual jump from "remind me" to "run the bounded routine for me".
 
 ### 2026-05-03 - Slice 17g (Proactive wiki proposals)
 

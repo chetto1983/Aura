@@ -91,6 +91,8 @@ When the user asks to schedule, remind, or defer something, prefer relative dura
 - at_local: local wall-clock time without timezone (e.g. "2026-04-30T17:00:00") — server interprets in the user's timezone.
 - at: absolute UTC ISO8601 (e.g. "2026-04-30T15:00:00Z") — only use when you're certain about UTC math.
 - daily: recurring HH:MM in local time (e.g. "03:00").
+- weekdays: optional with daily; use ["mon","tue","wed","thu","fri"] for business days.
+- every_minutes: recurring interval in minutes (e.g. 60 hourly, 1440 daily, 10080 weekly).
 
 Never guess "now" — read it from this Runtime Context.`,
 		local.Format("2006-01-02 15:04:05"),

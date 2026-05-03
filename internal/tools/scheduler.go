@@ -35,7 +35,7 @@ func NewScheduleTaskTool(store *scheduler.Store, loc *time.Location) *ScheduleTa
 func (t *ScheduleTaskTool) Name() string { return "schedule_task" }
 
 func (t *ScheduleTaskTool) Description() string {
-	return "Schedule a one-shot or daily task. Two kinds: \"reminder\" (sends payload to the user at fire time) and \"wiki_maintenance\" (runs the autonomous wiki pass). Pick one schedule field — prefer \"in\" for relative (\"60s\", \"5m\", \"2h\") and \"at_local\" for wall-clock times in the user's timezone."
+	return "Schedule a one-shot or recurring task. Two kinds: \"reminder\" (sends payload to the user at fire time) and \"wiki_maintenance\" (runs the autonomous wiki pass). Pick one schedule field: in, at_local, at, daily, or every_minutes. Use daily with weekdays for business-day schedules."
 }
 
 func (t *ScheduleTaskTool) Parameters() map[string]any {
@@ -69,7 +69,19 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"daily": map[string]any{
 				"type":        "string",
-				"description": "Recurring local-time HH:MM (e.g. \"03:00\").",
+				"description": "Recurring local-time HH:MM (e.g. \"03:00\"). Can be narrowed with weekdays.",
+			},
+			"weekdays": map[string]any{
+				"type":        "array",
+				"description": "Optional filter for daily schedules. Use mon,tue,wed,thu,fri,sat,sun. For business days use [\"mon\",\"tue\",\"wed\",\"thu\",\"fri\"].",
+				"items": map[string]any{
+					"type": "string",
+					"enum": []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"},
+				},
+			},
+			"every_minutes": map[string]any{
+				"type":        "integer",
+				"description": "Recurring interval in minutes (>=1), e.g. 60 hourly, 1440 daily, 10080 weekly. First fire is N minutes from now.",
 			},
 		},
 		"required": []string{"name", "kind"},
@@ -100,6 +112,11 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	atLocal := strings.TrimSpace(stringArg(args, "at_local"))
 	in := strings.TrimSpace(stringArg(args, "in"))
 	daily := strings.TrimSpace(stringArg(args, "daily"))
+	weekdays := strings.TrimSpace(weekdayArg(args, "weekdays"))
+	everyMinutes, hasEveryMinutes, err := positiveIntArg(args, "every_minutes")
+	if err != nil {
+		return "", err
+	}
 
 	scheduleFields := 0
 	for _, v := range []string{at, atLocal, in, daily} {
@@ -107,11 +124,17 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 			scheduleFields++
 		}
 	}
+	if hasEveryMinutes {
+		scheduleFields++
+	}
 	if scheduleFields == 0 {
-		return "", errors.New("schedule_task: provide one of in (relative), at_local (wall-clock), at (UTC), or daily (HH:MM)")
+		return "", errors.New("schedule_task: provide one of in (relative), at_local (wall-clock), at (UTC), daily (HH:MM), or every_minutes (>=1)")
 	}
 	if scheduleFields > 1 {
-		return "", errors.New("schedule_task: in / at_local / at / daily are mutually exclusive — pick one")
+		return "", errors.New("schedule_task: in / at_local / at / daily / every_minutes are mutually exclusive; pick one")
+	}
+	if weekdays != "" && daily == "" {
+		return "", errors.New("schedule_task: weekdays can only be used with daily")
 	}
 
 	task := &scheduler.Task{Name: name, Kind: kind, Payload: payload}
@@ -167,13 +190,22 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 		task.ScheduleAt = ts
 		task.NextRunAt = ts
 	case daily != "":
-		next, err := scheduler.NextDailyRun(daily, t.loc, now)
+		normalizedWeekdays, err := scheduler.NormalizeWeekdays(weekdays)
+		if err != nil {
+			return "", fmt.Errorf("schedule_task: %w", err)
+		}
+		next, err := scheduler.NextDailyRunOnWeekdays(daily, normalizedWeekdays, t.loc, now)
 		if err != nil {
 			return "", fmt.Errorf("schedule_task: %w", err)
 		}
 		task.ScheduleKind = scheduler.ScheduleDaily
 		task.ScheduleDaily = daily
+		task.ScheduleWeekdays = normalizedWeekdays
 		task.NextRunAt = next
+	case hasEveryMinutes:
+		task.ScheduleKind = scheduler.ScheduleEvery
+		task.ScheduleEveryMinutes = everyMinutes
+		task.NextRunAt = now.Add(time.Duration(everyMinutes) * time.Minute)
 	}
 
 	saved, err := t.store.Upsert(ctx, task)
@@ -183,7 +215,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 
 	when := saved.NextRunAt.Format(time.RFC3339)
 	if saved.IsRecurring() {
-		return fmt.Sprintf("Scheduled %s task %q daily at %s (next run %s).", saved.Kind, saved.Name, saved.ScheduleDaily, when), nil
+		return fmt.Sprintf("Scheduled %s task %q %s.", saved.Kind, saved.Name, formatScheduleForUser(saved, when)), nil
 	}
 	return fmt.Sprintf("Scheduled %s task %q for %s.", saved.Kind, saved.Name, when), nil
 }
@@ -260,7 +292,7 @@ func formatTaskLine(task *scheduler.Task) string {
 	when := task.NextRunAt.Format(time.RFC3339)
 	scheduleNote := when
 	if task.IsRecurring() {
-		scheduleNote = fmt.Sprintf("daily %s (next %s)", task.ScheduleDaily, when)
+		scheduleNote = formatScheduleForUser(task, when)
 	}
 	parts := []string{
 		fmt.Sprintf("`%s`", task.Name),
@@ -274,6 +306,20 @@ func formatTaskLine(task *scheduler.Task) string {
 		parts = append(parts, fmt.Sprintf("last_error=%q", truncateForToolContext(task.LastError, 80)))
 	}
 	return strings.Join(parts, " · ")
+}
+
+func formatScheduleForUser(task *scheduler.Task, when string) string {
+	switch task.ScheduleKind {
+	case scheduler.ScheduleDaily:
+		if task.ScheduleWeekdays != "" {
+			return fmt.Sprintf("daily at %s on %s (next run %s)", task.ScheduleDaily, task.ScheduleWeekdays, when)
+		}
+		return fmt.Sprintf("daily at %s (next run %s)", task.ScheduleDaily, when)
+	case scheduler.ScheduleEvery:
+		return fmt.Sprintf("every %d minutes (next run %s)", task.ScheduleEveryMinutes, when)
+	default:
+		return when
+	}
 }
 
 // CancelTaskTool flips an active task to status='cancelled' so the
@@ -342,4 +388,40 @@ func parseLocalWallClock(s string, loc *time.Location) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("expected YYYY-MM-DDTHH:MM[:SS] (no timezone), got %q", s)
+}
+
+func positiveIntArg(args map[string]any, key string) (int, bool, error) {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return 0, false, nil
+	}
+	var n int
+	switch x := v.(type) {
+	case int:
+		n = x
+	case int64:
+		n = int(x)
+	case float64:
+		if x != float64(int(x)) {
+			return 0, true, fmt.Errorf("schedule_task: %s must be an integer", key)
+		}
+		n = int(x)
+	default:
+		return 0, true, fmt.Errorf("schedule_task: %s must be an integer", key)
+	}
+	if n < 1 {
+		return 0, true, fmt.Errorf("schedule_task: %s must be >= 1", key)
+	}
+	return n, true, nil
+}
+
+func weekdayArg(args map[string]any, key string) string {
+	if v := strings.TrimSpace(stringArg(args, key)); v != "" {
+		return v
+	}
+	values := stringSliceArg(args, key)
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.Join(values, ",")
 }

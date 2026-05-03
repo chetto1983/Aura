@@ -18,6 +18,15 @@ import type { Task, UpsertTaskRequest } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: Task['status'][] = ['active', 'done', 'cancelled', 'failed'];
+const WEEKDAYS = [
+  ['mon', 'Mon'],
+  ['tue', 'Tue'],
+  ['wed', 'Wed'],
+  ['thu', 'Thu'],
+  ['fri', 'Fri'],
+  ['sat', 'Sat'],
+  ['sun', 'Sun'],
+] as const;
 const STATUS_LABEL: Record<Task['status'], string> = {
   active: '🔴 Active',
   done: '✅ Done',
@@ -183,7 +192,7 @@ export function TasksPanel() {
                       <td className="py-2 px-3 font-mono text-xs">{t.name}</td>
                       <td className="py-2 px-3">{t.kind}</td>
                       <td className="py-2 px-3 text-xs">
-                        {t.schedule_kind === 'daily' && `daily ${t.schedule_daily}`}
+                        {t.schedule_kind === 'daily' && formatSchedule(t)}
                         {t.schedule_kind === 'every' && `every ${t.schedule_every_minutes}m`}
                         {t.schedule_kind === 'at' && t.schedule_at}
                       </td>
@@ -293,7 +302,10 @@ function TaskActions({
 }
 
 function formatSchedule(t: Task): string {
-  if (t.schedule_kind === 'daily') return `daily ${t.schedule_daily}`;
+  if (t.schedule_kind === 'daily') {
+    const days = t.schedule_weekdays ? ` on ${t.schedule_weekdays}` : '';
+    return `daily ${t.schedule_daily}${days}`;
+  }
   if (t.schedule_kind === 'every') return `every ${t.schedule_every_minutes}m`;
   return t.schedule_at || 'not scheduled';
 }
@@ -312,6 +324,7 @@ function NewTaskForm({
   const [scheduleMode, setScheduleMode] = useState<'at' | 'daily' | 'every'>('daily');
   const [at, setAt] = useState('');
   const [daily, setDaily] = useState('03:00');
+  const [weekdays, setWeekdays] = useState<string[]>([]);
   const [everyMinutes, setEveryMinutes] = useState(60);
   const [submitting, setSubmitting] = useState(false);
 
@@ -331,6 +344,7 @@ function NewTaskForm({
         }
       } else if (scheduleMode === 'daily') {
         req.daily = daily.trim();
+        if (weekdays.length > 0) req.weekdays = weekdays.join(',');
       } else {
         req.every_minutes = Math.max(1, Math.floor(everyMinutes));
       }
@@ -434,14 +448,38 @@ function NewTaskForm({
               </label>
             </div>
             {scheduleMode === 'daily' && (
-              <input
-                type="time"
-                required
-                value={daily}
-                onChange={(e) => setDaily(e.target.value)}
-                aria-label="Daily HH:MM"
-                className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
-              />
+              <div className="space-y-2">
+                <input
+                  type="time"
+                  required
+                  value={daily}
+                  onChange={(e) => setDaily(e.target.value)}
+                  aria-label="Daily HH:MM"
+                  className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+                <div className="grid grid-cols-4 gap-1 sm:grid-cols-7">
+                  {WEEKDAYS.map(([value, label]) => (
+                    <label
+                      key={value}
+                      className="inline-flex min-h-11 items-center justify-center gap-1 rounded-md border px-2 text-xs"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={weekdays.includes(value)}
+                        onChange={(e) => {
+                          setWeekdays((prev) => e.target.checked
+                            ? [...prev, value]
+                            : prev.filter((day) => day !== value));
+                        }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Leave all days unchecked to run every day. Select Mon-Fri for business days.
+                </p>
+              </div>
             )}
             {scheduleMode === 'every' && (
               <div className="space-y-1">

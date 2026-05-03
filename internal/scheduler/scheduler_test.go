@@ -31,7 +31,7 @@ func TestParseDailyTime(t *testing.T) {
 		{"03:00", 3, 0, false},
 		{"23:59", 23, 59, false},
 		{"24:00", 0, 0, true},
-		{"3:00", 0, 0, true},   // not zero-padded
+		{"3:00", 0, 0, true}, // not zero-padded
 		{"03:60", 0, 0, true},
 		{"abc", 0, 0, true},
 		{"", 0, 0, true},
@@ -86,6 +86,59 @@ func TestNextDailyRun(t *testing.T) {
 	}
 }
 
+func TestNormalizeWeekdays(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"fri,mon,wed", "mon,wed,fri"},
+		{"weekdays", "mon,tue,wed,thu,fri"},
+		{"feriali", "mon,tue,wed,thu,fri"},
+		{"weekend", "sat,sun"},
+		{"lun,ven", "mon,fri"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := NormalizeWeekdays(tc.in)
+			if err != nil {
+				t.Fatalf("NormalizeWeekdays: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if _, err := NormalizeWeekdays("moonday"); err == nil {
+		t.Fatal("expected invalid weekday error")
+	}
+}
+
+func TestNextDailyRunOnWeekdays(t *testing.T) {
+	loc := time.UTC
+
+	// Friday after the scheduled time should skip the weekend.
+	after := time.Date(2026, 5, 1, 11, 0, 0, 0, loc) // Friday
+	got, err := NextDailyRunOnWeekdays("10:00", "mon,tue,wed,thu,fri", loc, after)
+	if err != nil {
+		t.Fatalf("NextDailyRunOnWeekdays: %v", err)
+	}
+	want := time.Date(2026, 5, 4, 10, 0, 0, 0, loc) // Monday
+	if !got.Equal(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	// Friday before the scheduled time is still allowed.
+	after = time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
+	got, err = NextDailyRunOnWeekdays("10:00", "mon,tue,wed,thu,fri", loc, after)
+	if err != nil {
+		t.Fatalf("NextDailyRunOnWeekdays: %v", err)
+	}
+	want = time.Date(2026, 5, 1, 10, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestStore_UpsertAndGet(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -132,6 +185,23 @@ func TestStore_UpsertAndGet(t *testing.T) {
 	if got.ID != out.ID {
 		t.Errorf("ID changed across upsert: %d → %d", out.ID, got.ID)
 	}
+
+	dailyAt := time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC)
+	if _, err := store.Upsert(ctx, &Task{
+		Name: "business-days", Kind: KindReminder,
+		ScheduleKind: ScheduleDaily, ScheduleDaily: "10:00",
+		ScheduleWeekdays: "fri,mon,tue,wed,thu",
+		NextRunAt:        dailyAt,
+	}); err != nil {
+		t.Fatalf("daily weekdays Upsert: %v", err)
+	}
+	got, err = store.GetByName(ctx, "business-days")
+	if err != nil {
+		t.Fatalf("GetByName business-days: %v", err)
+	}
+	if got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
+		t.Errorf("ScheduleWeekdays = %q, want canonical weekdays", got.ScheduleWeekdays)
+	}
 }
 
 func TestStore_RejectsInvalidSchedule(t *testing.T) {
@@ -149,10 +219,10 @@ func TestStore_RejectsInvalidSchedule(t *testing.T) {
 	// at kind with both fields
 	if _, err := store.Upsert(ctx, &Task{
 		Name: "bad", Kind: KindReminder,
-		ScheduleKind: ScheduleAt,
-		ScheduleAt:   time.Now().Add(time.Hour),
+		ScheduleKind:  ScheduleAt,
+		ScheduleAt:    time.Now().Add(time.Hour),
 		ScheduleDaily: "03:00",
-		NextRunAt:    time.Now().UTC(),
+		NextRunAt:     time.Now().UTC(),
 	}); err == nil {
 		t.Error("expected error: both schedule fields populated")
 	}
@@ -172,6 +242,23 @@ func TestStore_RejectsInvalidSchedule(t *testing.T) {
 		NextRunAt: time.Now().UTC(),
 	}); err == nil {
 		t.Error("expected error: bad daily string")
+	}
+
+	// weekdays are only valid with daily
+	if _, err := store.Upsert(ctx, &Task{
+		Name: "bad", Kind: KindReminder,
+		ScheduleKind: ScheduleEvery, ScheduleEveryMinutes: 60,
+		ScheduleWeekdays: "mon", NextRunAt: time.Now().UTC(),
+	}); err == nil {
+		t.Error("expected error: weekdays with every")
+	}
+
+	if _, err := store.Upsert(ctx, &Task{
+		Name: "bad", Kind: KindReminder,
+		ScheduleKind: ScheduleDaily, ScheduleDaily: "03:00",
+		ScheduleWeekdays: "moonday", NextRunAt: time.Now().UTC(),
+	}); err == nil {
+		t.Error("expected error: bad weekday")
 	}
 }
 
@@ -340,6 +427,26 @@ func TestScheduler_AdvanceForDaily(t *testing.T) {
 	}
 	if lastErr != "boom" {
 		t.Errorf("lastErr = %q, want boom", lastErr)
+	}
+}
+
+func TestScheduler_AdvanceForDailyWeekdays(t *testing.T) {
+	store := newTestStore(t)
+	s, _ := New(Config{Store: store, Dispatcher: noopDispatcher, Location: time.UTC})
+	at := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC) // Friday
+	task := &Task{
+		Name: "market-watch", Kind: KindReminder,
+		ScheduleKind: ScheduleDaily, ScheduleDaily: "10:00",
+		ScheduleWeekdays: "mon,tue,wed,thu,fri",
+		NextRunAt:        at,
+	}
+	next, status, _ := s.advance(task, at, nil)
+	if status != StatusActive {
+		t.Errorf("status = %q, want active", status)
+	}
+	want := time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC) // Monday
+	if !next.Equal(want) {
+		t.Errorf("next = %v, want %v", next, want)
 	}
 }
 

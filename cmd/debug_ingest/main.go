@@ -194,10 +194,22 @@ func main() {
 			wantText:  []string{"slice9-smoke"},
 		},
 		{
+			name:      "schedule_task_every_minutes",
+			prompt:    "Schedule a wiki maintenance pass every 60 minutes. Name it slice17-every-smoke.",
+			wantTools: []string{"schedule_task"},
+			wantText:  []string{"slice17-every-smoke", "every 60 minutes"},
+		},
+		{
+			name:      "schedule_task_weekdays",
+			prompt:    "Schedule a reminder every business day at 10:00 local time. Name it slice17-weekday-smoke and set the reminder text to weekday smoke.",
+			wantTools: []string{"schedule_task"},
+			wantText:  []string{"slice17-weekday-smoke", "mon,tue,wed,thu,fri"},
+		},
+		{
 			name:      "list_tasks",
 			prompt:    "List every scheduled task you currently know about.",
 			wantTools: []string{"list_tasks"},
-			wantText:  []string{"slice9-smoke"},
+			wantText:  []string{"slice9-smoke", "slice17-every-smoke", "slice17-weekday-smoke"},
 		},
 		{
 			name:      "cancel_task",
@@ -213,7 +225,9 @@ func main() {
 
 	failures := 0
 	for _, sc := range scenarios {
+		started := time.Now()
 		called, final, toolResults, err := runScenario(ctx, client, reg, model, sc.prompt)
+		elapsed := time.Since(started)
 		text := final + "\n" + strings.Join(toolResults, "\n")
 		ok := err == nil &&
 			containsTools(called, sc.wantTools) &&
@@ -226,6 +240,7 @@ func main() {
 			failures++
 		}
 		fmt.Printf("[%s] %s\n", status, sc.name)
+		fmt.Printf("  elapsed_ms: %d tool_calls: %d\n", elapsed.Milliseconds(), len(called))
 		fmt.Printf("  wanted: %s\n", strings.Join(sc.wantTools, ", "))
 		fmt.Printf("  called: %s\n", strings.Join(called, ", "))
 		if len(sc.wantText) > 0 {

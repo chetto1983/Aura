@@ -160,6 +160,7 @@ type Task struct {
 	ScheduleKind         string     `json:"schedule_kind"`
 	ScheduleAt           *time.Time `json:"schedule_at,omitempty"`
 	ScheduleDaily        string     `json:"schedule_daily,omitempty"`
+	ScheduleWeekdays     string     `json:"schedule_weekdays,omitempty"`
 	ScheduleEveryMinutes int        `json:"schedule_every_minutes,omitempty"`
 	NextRunAt            time.Time  `json:"next_run_at"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
