@@ -39,7 +39,9 @@ func TestStaticHandler_ServesIndexAndFallsBack(t *testing.T) {
 	}{
 		{"root serves index", "/", http.StatusOK, "<!doctype html"},
 		{"deep link falls back to index", "/wiki/some-slug", http.StatusOK, "<!doctype html"},
-		{"unknown asset falls back to index", "/totally-fake.js", http.StatusOK, "<!doctype html"},
+		{"unknown app route falls back to index", "/totally/fake/route", http.StatusOK, "<!doctype html"},
+		{"unknown root asset is not shadowed", "/totally-fake.js", http.StatusNotFound, ""},
+		{"unknown nested asset is not shadowed", "/assets/old-chunk.js", http.StatusNotFound, ""},
 		{"reserved /api path is not shadowed", "/api/health", http.StatusNotFound, ""},
 		{"reserved /health is not shadowed", "/health", http.StatusNotFound, ""},
 		{"reserved /telegram is not shadowed", "/telegram", http.StatusNotFound, ""},

@@ -50,14 +50,35 @@ func StaticHandler() (http.Handler, error) {
 			rel = "index.html"
 		}
 		if _, err := fs.Stat(sub, rel); err == nil {
+			setStaticCacheHeaders(w, rel)
 			fileServer.ServeHTTP(w, r)
 			return
 		}
+		if isStaticAssetPath(clean) {
+			http.NotFound(w, r)
+			return
+		}
 		// Fallback: serve index.html so the SPA can route client-side.
+		setStaticCacheHeaders(w, "index.html")
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"
 		fileServer.ServeHTTP(w, r2)
 	}), nil
+}
+
+func isStaticAssetPath(cleanPath string) bool {
+	if strings.HasPrefix(cleanPath, "/assets/") {
+		return true
+	}
+	return path.Ext(cleanPath) != ""
+}
+
+func setStaticCacheHeaders(w http.ResponseWriter, rel string) {
+	if rel == "index.html" {
+		w.Header().Set("Cache-Control", "no-cache")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 }
 
 // ErrNoStaticAssets is returned by StaticHandler when dist/ has not been
