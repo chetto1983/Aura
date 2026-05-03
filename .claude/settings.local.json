@@ -41,7 +41,14 @@
       "Bash(rmdir D:/Aura/skills/.claude/skills D:/Aura/skills/.claude)",
       "Bash(npm run *)",
       "Bash(Get-Content *)",
-      "Bash(powershell.exe *)"
+      "Bash(powershell.exe *)",
+      "Bash(Get-ChildItem D:\\\\tmp\\\\picobot -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name, Length)",
+      "PowerShell(Get-ChildItem -Path D:\\\\Aura -Depth 0 | Where-Object { $_.Name -notin @\\('node_modules', '.git'\\) } | ForEach-Object { if \\($_.PSIsContainer\\) { \"DIR  $\\($_.Name\\)\" } else { \"FILE $\\($_.Name\\)\" } })",
+      "PowerShell(Get-ChildItem -Path D:\\\\Aura\\\\web -Depth 0 | Where-Object { $_.Name -ne 'node_modules' } | ForEach-Object { if \\($_.PSIsContainer\\) { \"DIR  $\\($_.Name\\)\" } else { \"FILE $\\($_.Name\\)\" } })",
+      "PowerShell(Get-ChildItem -Path D:\\\\Aura\\\\web\\\\src -Recurse -Depth 3 | Where-Object { $_.Name -ne 'node_modules' } | ForEach-Object { $_.FullName.Replace\\('D:\\\\Aura\\\\web\\\\src\\\\', 'src\\\\'\\) })",
+      "PowerShell(git *)",
+      "Bash(git *)"
     ]
   }
 }
