@@ -105,8 +105,28 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17j | Daily briefing tool | done | New read-only `daily_briefing` tool composes today's tasks, pending wiki proposals, open wiki issues, recent sources, and conversation signals; natural-prompt E2E verifies an Italian daily-briefing prompt selects the tool. |
 | 17k | Unified memory evidence search | done | New read-only `search_memory` tool searches wiki index, source inbox/OCR, and conversation archive with compact evidence snippets, source IDs, conversation turn IDs, and OCR page numbers; agent jobs and AuraBot read-only roles can use it before broader reads. |
 | 17k.1 | Log-driven agent drift fixes | done | Runtime logs showed scheduled-job testing drifting into `spawn_aurabot` + repeated web searches, fenced summarizer JSON being rejected, and `write_wiki` retries delayed by generic tag-limit guidance. Fixed fenced JSON parsing and made wiki tag/source limits explicit in tool schema/error hints. |
+| 17l | Run scheduled routines now | planned | Add a calm, explicit `run_task_now` / `run_agent_job_now` path so "eseguilo adesso" executes the saved scheduled routine by name, reuses its normalized payload/tool allowlist, records metrics, and sends the completion summary when `notify=true` instead of improvising with `spawn_aurabot`. |
 
 ## Session Log
+
+### 2026-05-03 - Planned Slice 17l (Run scheduled routines now)
+
+Goal: fix the live-test drift where "Prova ad eseguirlo adesso" after scheduling an `agent_job` routed to `spawn_aurabot` and repeated web searches instead of executing the saved routine.
+
+Acceptance:
+
+- Add a tool or command path named `run_task_now` / `run_agent_job_now` that accepts a scheduled task name.
+- For `agent_job`, load the stored task, normalize its existing payload, run it through the same bounded `agent.Runner` path used by the scheduler dispatcher, and preserve propose-only write policy.
+- Respect the task's existing `notify` behavior: if enabled and a recipient is known, send the completion summary at the end.
+- Return clear status, elapsed time, LLM/tool counts, token metrics, and any last error.
+- Natural-prompt smoke: "esegui adesso <task-name>" must select this path, not `spawn_aurabot`.
+- Keep the first slice backend/Telegram/tool-only; dashboard buttons can follow after the behavior is proven.
+
+Non-goals for the first pass:
+
+- Do not redesign the scheduler.
+- Do not add direct wiki writes for jobs.
+- Do not broaden AuraBot permissions beyond the saved job's safe allowlist.
 
 ### 2026-05-03 - Slice 17k.1 (Log-driven agent drift fixes)
 
