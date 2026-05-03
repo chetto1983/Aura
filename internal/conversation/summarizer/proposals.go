@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -35,10 +36,74 @@ type SummariesStore struct {
 	db *sql.DB
 }
 
+// ProposalInput is a manually-created wiki proposal. It uses the same
+// proposed_updates queue as review-mode summarization so dashboard approval
+// remains the single mutation gate.
+type ProposalInput struct {
+	ChatID        int64
+	Fact          string
+	Action        string
+	TargetSlug    string
+	Similarity    float64
+	SourceTurnIDs []int64
+	Category      string
+	RelatedSlugs  []string
+}
+
 // NewSummariesStore wraps an existing *sql.DB. The migration must already
 // have been applied (scheduler.OpenStore handles this).
 func NewSummariesStore(db *sql.DB) *SummariesStore {
 	return &SummariesStore{db: db}
+}
+
+// Propose inserts a pending wiki update without mutating the wiki.
+func (s *SummariesStore) Propose(ctx context.Context, in ProposalInput) (ProposedUpdate, error) {
+	fact := strings.TrimSpace(in.Fact)
+	if fact == "" {
+		return ProposedUpdate{}, errors.New("summaries propose: fact is required")
+	}
+	action := strings.TrimSpace(in.Action)
+	switch action {
+	case string(ActionNew):
+		in.TargetSlug = ""
+	case string(ActionPatch):
+		in.TargetSlug = strings.TrimSpace(in.TargetSlug)
+		if in.TargetSlug == "" {
+			return ProposedUpdate{}, errors.New("summaries propose: target_slug is required for patch")
+		}
+	default:
+		return ProposedUpdate{}, fmt.Errorf("summaries propose: unsupported action %q", action)
+	}
+	similarity := in.Similarity
+	if similarity <= 0 {
+		similarity = 1
+	}
+	if similarity > 1 {
+		similarity = 1
+	}
+	ids, _ := json.Marshal(in.SourceTurnIDs)
+	related, _ := json.Marshal(cleanProposalStrings(in.RelatedSlugs))
+
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+		in.ChatID,
+		fact,
+		action,
+		strings.TrimSpace(in.TargetSlug),
+		similarity,
+		string(ids),
+		strings.TrimSpace(in.Category),
+		string(related),
+	)
+	if err != nil {
+		return ProposedUpdate{}, fmt.Errorf("summaries propose: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return ProposedUpdate{}, fmt.Errorf("summaries propose last id: %w", err)
+	}
+	return s.Get(ctx, id)
 }
 
 // List returns proposed updates, optionally filtered by status (empty = all).
@@ -148,4 +213,24 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	}
 	p.CreatedAt = ts.UTC()
 	return p, nil
+}
+
+func cleanProposalStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

@@ -52,6 +52,59 @@ func insertProposal(t *testing.T, db *sql.DB, status string) int64 {
 	return id
 }
 
+func TestSummariesStorePropose_New(t *testing.T) {
+	_, store := newProposalStore(t)
+
+	got, err := store.Propose(context.Background(), ProposalInput{
+		ChatID:        42,
+		Fact:          "Create a page about proactive AuraBot proposals.",
+		Action:        "new",
+		TargetSlug:    "ignored-for-new",
+		Similarity:    1.4,
+		SourceTurnIDs: []int64{10, 11},
+		Category:      "project",
+		RelatedSlugs:  []string{"aurabot", "aurabot", " "},
+	})
+	if err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if got.Status != "pending" || got.Action != "new" || got.TargetSlug != "" {
+		t.Fatalf("proposal = %#v", got)
+	}
+	if got.ChatID != 42 || got.Category != "project" || got.Similarity != 1 {
+		t.Fatalf("proposal fields = %#v", got)
+	}
+	if len(got.SourceTurnIDs) != 2 || got.SourceTurnIDs[0] != 10 || got.SourceTurnIDs[1] != 11 {
+		t.Fatalf("source turn ids = %#v", got.SourceTurnIDs)
+	}
+	if len(got.RelatedSlugs) != 1 || got.RelatedSlugs[0] != "aurabot" {
+		t.Fatalf("related slugs = %#v", got.RelatedSlugs)
+	}
+}
+
+func TestSummariesStorePropose_PatchRequiresTarget(t *testing.T) {
+	_, store := newProposalStore(t)
+
+	_, err := store.Propose(context.Background(), ProposalInput{
+		Fact:   "Append this to an existing page.",
+		Action: "patch",
+	})
+	if err == nil {
+		t.Fatal("expected target_slug validation error")
+	}
+}
+
+func TestSummariesStorePropose_RejectsInvalidInput(t *testing.T) {
+	_, store := newProposalStore(t)
+
+	if _, err := store.Propose(context.Background(), ProposalInput{Action: "new"}); err == nil {
+		t.Fatal("expected fact validation error")
+	}
+	if _, err := store.Propose(context.Background(), ProposalInput{Fact: "x", Action: "delete"}); err == nil {
+		t.Fatal("expected action validation error")
+	}
+}
+
 func TestSummariesStoreSetStatus_UpdatesPending(t *testing.T) {
 	db, store := newProposalStore(t)
 	id := insertProposal(t, db, "pending")

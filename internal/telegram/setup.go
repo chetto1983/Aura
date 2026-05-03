@@ -207,6 +207,10 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	toolRegistry.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
+	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
+	if tool := tools.NewProposeWikiChangeTool(summariesStore); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	swarmStore, err := swarm.NewStoreWithDB(schedStore.DB())
 	if err != nil {
@@ -477,7 +481,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		// Slice 12c: conversation archive read API.
 		Archive: b.archiveDB,
 		// Slice 12k.1: summaries review queue.
-		Summaries:     summarizer.NewSummariesStore(schedStore.DB()),
+		Summaries:     summariesStore,
 		SummariesWiki: wikiStore,
 		// Slice 12l.1: wiki maintenance issue queue (shared with the
 		// nightly maintenance dispatch).

@@ -113,6 +113,19 @@ func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {
 	}
 }
 
+func TestProposalToolsAvailableRequiresRegisteredTool(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	b := &Bot{tools: reg}
+	if b.proposalToolsAvailable() {
+		t.Fatal("proposal tools should be unavailable without propose_wiki_change")
+	}
+
+	reg.Register(fakeTelegramTool{name: "propose_wiki_change"})
+	if !b.proposalToolsAvailable() {
+		t.Fatal("proposal tools should be available with registered proposal tool")
+	}
+}
+
 type fakeTelegramTool struct {
 	name string
 }

@@ -64,6 +64,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 			systemPrompt += "\n\n" + hint
 		}
 	}
+	if b.proposalToolsAvailable() {
+		systemPrompt += "\n\n" + conversation.WikiProposalPrompt()
+	}
 	convCtx.SetSystemMessage(systemPrompt)
 
 	b.logger.Info("conversation started",
@@ -229,6 +232,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 func (b *Bot) swarmToolsAvailable() bool {
 	return b.swarmMgr != nil && b.tools != nil && b.tools.Get("run_aurabot_swarm") != nil
+}
+
+func (b *Bot) proposalToolsAvailable() bool {
+	return b.tools != nil && b.tools.Get("propose_wiki_change") != nil
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop

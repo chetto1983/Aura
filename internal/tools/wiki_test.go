@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/conversation/summarizer"
+	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -69,5 +72,59 @@ func TestSearchWikiToolMetadata(t *testing.T) {
 	searchTool := NewSearchWikiTool(nil)
 	if searchTool.Name() != "search_wiki" || searchTool.Description() == "" || searchTool.Parameters()["type"] != "object" {
 		t.Fatal("search_wiki metadata is incomplete")
+	}
+}
+
+func TestProposeWikiChangeTool(t *testing.T) {
+	db := scheduler.NewTestDB(t)
+	store := summarizer.NewSummariesStore(db)
+	tool := NewProposeWikiChangeTool(store)
+	if tool.Name() != "propose_wiki_change" || tool.Description() == "" || tool.Parameters()["type"] != "object" {
+		t.Fatal("propose_wiki_change metadata is incomplete")
+	}
+
+	out, err := tool.Execute(WithUserID(t.Context(), "12345"), map[string]any{
+		"action":          "patch",
+		"fact":            "Add a note about proactive review-gated wiki proposals.",
+		"target_slug":     "aurabot-swarm",
+		"category":        "project",
+		"related":         []any{"aurabot", "second-brain"},
+		"source_turn_ids": []any{float64(7), float64(8)},
+		"confidence":      0.8,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var resp proposeWikiChangeResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("response JSON: %v", err)
+	}
+	if !resp.OK || resp.ID == 0 || resp.Status != "pending" || resp.TargetSlug != "aurabot-swarm" {
+		t.Fatalf("response = %+v", resp)
+	}
+	got, err := store.Get(t.Context(), resp.ID)
+	if err != nil {
+		t.Fatalf("Get proposal: %v", err)
+	}
+	if got.ChatID != 12345 || got.Action != "patch" || got.Category != "project" || got.Similarity != 0.8 {
+		t.Fatalf("proposal = %+v", got)
+	}
+	if len(got.RelatedSlugs) != 2 || got.RelatedSlugs[0] != "aurabot" || got.RelatedSlugs[1] != "second-brain" {
+		t.Fatalf("related = %+v", got.RelatedSlugs)
+	}
+	if len(got.SourceTurnIDs) != 2 || got.SourceTurnIDs[0] != 7 || got.SourceTurnIDs[1] != 8 {
+		t.Fatalf("turn ids = %+v", got.SourceTurnIDs)
+	}
+}
+
+func TestProposeWikiChangeToolValidation(t *testing.T) {
+	db := scheduler.NewTestDB(t)
+	tool := NewProposeWikiChangeTool(summarizer.NewSummariesStore(db))
+
+	if _, err := tool.Execute(t.Context(), map[string]any{"action": "new"}); err == nil {
+		t.Fatal("expected missing fact error")
+	}
+	if _, err := tool.Execute(t.Context(), map[string]any{"action": "patch", "fact": "missing target"}); err == nil {
+		t.Fatal("expected missing target error")
 	}
 }

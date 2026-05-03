@@ -99,8 +99,34 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17d | AuraBot swarm observability | done | Read-only API + dashboard panel for swarm runs/tasks, aggregate counts, wall/task elapsed, speedup, LLM/tool/token telemetry, and per-task results/errors. |
 | 17e | AuraBot planner + synthesis | done | Deterministic read-only planner builds role assignments from a goal, `run_aurabot_swarm` executes the team in parallel, and synthesis rolls up worker results/metrics without an extra LLM call. |
 | 17f | AuraBot conservative routing | done | Telegram prompt now exposes swarm routing only when `run_aurabot_swarm` is actually registered, adds a per-turn hint for broad read-only second-brain work, and keeps mutations on explicit write/admin tools. |
+| 17g | Proactive wiki proposals | done | New `propose_wiki_change` LLM tool writes pending wiki proposals into the existing dashboard Summaries review queue, letting Aura suggest durable second-brain growth without mutating wiki files directly. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17g (Proactive wiki proposals)
+
+Implementation slice to make Aura more proactive while preserving human review for durable mutations.
+
+**Implementation**:
+
+- Added `SummariesStore.Propose`: validated insert into the existing `proposed_updates` review queue.
+- Added LLM tool `propose_wiki_change`: creates `new` or `patch` wiki proposals with category, related slugs, optional source turn IDs, confidence, and current user/chat ID when available.
+- Wired `propose_wiki_change` in Telegram on the shared scheduler SQLite DB, reusing the same store as dashboard `/summaries`.
+- Added a conditional proactive prompt block: shown only when `propose_wiki_change` is registered, encouraging compact reviewable proposals after useful discoveries while avoiding secrets/raw logs/temporary state.
+- Kept direct wiki mutation unchanged: `write_wiki` still exists for explicit user save/remember requests; proactive growth goes through review.
+
+**Verification**:
+
+- `go test ./internal/conversation ./internal/conversation/summarizer ./internal/tools ./internal/telegram`
+- `go run ./cmd/debug_swarm -json`: main planner run completed `5/5` tasks with `speedup≈1.99x`; public tool path completed `team_calls=1`, `runs=1`, `tasks=3`, `completed=3`, `failed=0`, `list_calls=1`, `read_calls=3`.
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+
+**Next work**:
+
+- Slice 17h: optionally surface proposal origin/run metadata in the dashboard so swarm-generated proposals are easy to trace back to the run/task that suggested them.
 
 ### 2026-05-03 - Slice 17f (AuraBot conservative routing)
 
