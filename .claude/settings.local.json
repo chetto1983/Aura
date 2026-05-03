@@ -39,7 +39,9 @@
       "WebFetch(domain:gist.github.com)",
       "Bash(mv D:/Aura/skills/.claude/skills/marketing-psychology D:/Aura/.claude/skills/marketing-psychology)",
       "Bash(rmdir D:/Aura/skills/.claude/skills D:/Aura/skills/.claude)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(Get-Content *)",
+      "Bash(powershell.exe *)"
     ]
   }
 }
