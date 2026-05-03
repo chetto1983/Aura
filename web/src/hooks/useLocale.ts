@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import type { TranslationKey } from '@/i18n/types';
 import type { SupportedLang } from '@/i18n';
 
 export function useLocale() {

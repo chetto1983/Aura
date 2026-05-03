@@ -17,11 +17,13 @@ import { api, ApiError } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { Skeleton } from '@/components/ui/skeleton';
 import { confirm as confirmModal } from '@/lib/confirmModal';
+import { useLocale } from '@/hooks/useLocale';
 import type { SkillDetail, SkillSummary, SkillCatalogItem } from '@/types/api';
 
 type Tab = 'local' | 'catalog';
 
 export function SkillsPanel() {
+  const { t } = useLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get('tab') as Tab) || 'local';
   const setTab = useCallback((t: Tab) => {
@@ -35,17 +37,17 @@ export function SkillsPanel() {
     <div className="p-6 space-y-4">
       <header className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Skills</h1>
+          <h1 className="text-2xl font-semibold">{t('skills.title')}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Local SKILL.md playbooks the LLM sees on every turn — plus the public skills.sh catalog for one-click installs.
+            {t('skills.subtitle')}
           </p>
         </div>
         <div className="flex gap-1 border-b">
           <TabButton active={tab === 'local'} onClick={() => setTab('local')} icon={<Sparkles size={14} />}>
-            Local
+            {t('skills.tab.local')}
           </TabButton>
           <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')} icon={<Store size={14} />}>
-            Catalog
+            {t('skills.tab.catalog')}
           </TabButton>
         </div>
       </header>
@@ -54,10 +56,8 @@ export function SkillsPanel() {
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
           <Lock size={14} className="mt-0.5 shrink-0" />
           <div>
-            <p className="font-medium">Admin actions disabled</p>
-            <p className="opacity-90 mt-0.5">
-              Set <code className="font-mono">SKILLS_ADMIN=true</code> in <code className="font-mono">.env</code> and restart Aura to enable installing and deleting skills from the dashboard.
-            </p>
+            <p className="font-medium">{t('skills.adminDisabled')}</p>
+            <p className="opacity-90 mt-0.5" dangerouslySetInnerHTML={{ __html: t('skills.adminDisabledHint') }} />
           </div>
         </div>
       )}
@@ -99,6 +99,7 @@ function TabButton({
 }
 
 function LocalSkillsView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
+  const { t } = useLocale();
   const fetcher = useCallback(() => api.skills(), []);
   const { data, error, loading, refetch } = useApi(fetcher);
   const [open, setOpen] = useState<Record<string, SkillDetail | 'loading' | 'error' | undefined>>({});
@@ -126,25 +127,25 @@ function LocalSkillsView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
 
   const handleDelete = useCallback(async (name: string) => {
     const ok = await confirmModal({
-      title: `Delete skill "${name}"?`,
-      description: 'This removes the local SKILL.md file from disk.',
-      confirmLabel: 'Delete',
+      title: t('skills.confirmDelete.title', { name }),
+      description: t('skills.confirmDelete.description'),
+      confirmLabel: t('common.delete'),
       destructive: true,
     });
     if (!ok) return;
     setDeletingNames((prev) => new Set(prev).add(name));
-    const id = toast.loading(`Deleting ${name}…`);
+    const id = toast.loading(t('skills.toast.deleting', { name }));
     try {
       await api.deleteSkill(name);
-      toast.success(`Deleted ${name}`, { id });
+      toast.success(t('skills.toast.deleted', { name }), { id });
       refetch();
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         onAdminBlocked();
-        toast.error('Delete blocked: SKILLS_ADMIN=false', { id });
+        toast.error(t('skills.toast.deleteBlocked'), { id });
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`Delete failed: ${msg}`, { id });
+        toast.error(t('skills.toast.deleteFailed', { msg }), { id });
       }
     } finally {
       setDeletingNames((prev) => {
@@ -153,16 +154,16 @@ function LocalSkillsView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
         return next;
       });
     }
-  }, [refetch, onAdminBlocked]);
+  }, [refetch, onAdminBlocked, t]);
 
   if (loading && !data) return <LocalSkeleton />;
-  if (error && !data) return <div className="text-sm text-destructive">Error: {error.message}</div>;
+  if (error && !data) return <div className="text-sm text-destructive">{t('skills.errorLoad', { error: error.message })}</div>;
   if (!data) return null;
 
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
-        <span className="text-xs text-muted-foreground">{data.length} loaded</span>
+        <span className="text-xs text-muted-foreground">{t('skills.loadedCount', { count: data.length })}</span>
       </div>
       {data.length === 0 ? (
         <EmptyLocal />
@@ -197,6 +198,7 @@ function LocalSkillRow({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const { t } = useLocale();
   const isOpen = detail !== undefined;
   return (
     <div className="border-b last:border-b-0">
@@ -218,11 +220,11 @@ function LocalSkillRow({
           type="button"
           onClick={onDelete}
           disabled={deleting}
-          title="Delete this skill"
+          title={t('skills.deleteHint')}
           className="my-2 mr-2 inline-flex min-h-11 items-center gap-1 rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
         >
           {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-          Delete
+          {t('skills.deleteSkill')}
         </button>
       </div>
       {isOpen && (
@@ -231,14 +233,14 @@ function LocalSkillRow({
           {detail === 'error' && (
             <div className="flex items-center gap-2 text-sm text-destructive">
               <AlertTriangle size={14} />
-              Failed to load SKILL.md
+              {t('skills.loadFailed')}
             </div>
           )}
           {typeof detail === 'object' && detail && (
             <>
               {detail.truncated && (
                 <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-                  Content truncated for the dashboard. Open the file on disk for the full body.
+                  {t('skills.truncatedHint')}
                 </div>
               )}
               <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed text-muted-foreground">
@@ -253,6 +255,7 @@ function LocalSkillRow({
 }
 
 function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
+  const { t } = useLocale();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const fetcher = useCallback(() => api.skillsCatalog(debounced || undefined), [debounced]);
@@ -265,32 +268,33 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
   const handleInstall = useCallback(async (item: SkillCatalogItem) => {
     const key = `${item.source}::${item.skill_id ?? ''}`;
     setInstalling(key);
-    const id = toast.loading(`Installing ${item.name}…`, {
-      description: 'npx skills add ' + item.source + (item.skill_id ? ` --skill ${item.skill_id}` : ''),
+    const skillPart = item.skill_id ? ` --skill ${item.skill_id}` : '';
+    const id = toast.loading(t('skills.catalog.toast.installing', { name: item.name }), {
+      description: t('skills.catalog.toast.installingDesc', { source: item.source, skill: skillPart }),
     });
     try {
       const resp = await api.installSkill({ source: item.source, skill_id: item.skill_id });
       if (resp.ok) {
-        toast.success(`Installed ${item.name}`, { id, description: 'Restart not required — the loader picks up new skills on the next chat turn.' });
+        toast.success(t('skills.catalog.toast.installed', { name: item.name }), { id, description: t('skills.catalog.toast.installedDesc') });
       } else {
-        toast.error(`Install failed`, {
+        toast.error(t('skills.catalog.toast.installFailed'), {
           id,
-          description: resp.error ?? 'See dashboard logs for details.',
+          description: resp.error ?? t('skills.catalog.toast.installFailedDesc'),
           duration: 8000,
         });
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         onAdminBlocked();
-        toast.error('Install blocked: SKILLS_ADMIN=false', { id });
+        toast.error(t('skills.catalog.toast.installBlocked'), { id });
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`Install failed: ${msg}`, { id });
+        toast.error(t('skills.catalog.toast.installFailedMsg', { msg }), { id });
       }
     } finally {
       setInstalling(null);
     }
-  }, [onAdminBlocked]);
+  }, [onAdminBlocked, t]);
 
   return (
     <div className="space-y-3">
@@ -298,7 +302,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search skills.sh…"
+          placeholder={t('skills.catalog.searchPlaceholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="min-h-11 w-full rounded-md border bg-background pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -307,12 +311,12 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
 
       {loading && !data && <CatalogSkeleton />}
       {error && !data && (
-        <div className="text-sm text-destructive">Catalog unavailable: {error.message}</div>
+        <div className="text-sm text-destructive">{t('skills.catalog.unavailable', { error: error.message })}</div>
       )}
       {data && data.length === 0 && (
         <div className="rounded-lg border border-dashed py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            {debounced ? `No catalog matches for "${debounced}".` : 'Catalog returned no entries.'}
+            {debounced ? t('skills.catalog.noMatch', { query: debounced }) : t('skills.catalog.noEntries')}
           </p>
         </div>
       )}
@@ -331,7 +335,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-mono truncate">{item.source}</span>
-                    <span className="shrink-0">↓ {item.installs.toLocaleString()}</span>
+                    <span className="shrink-0">{'↓'} {item.installs.toLocaleString()}</span>
                   </div>
                 </div>
                 <button
@@ -341,7 +345,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
                   className="inline-flex min-h-11 items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary hover:bg-primary/10 disabled:opacity-50 shrink-0"
                 >
                   {installing === key ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                  Install
+                  {t('skills.catalog.install')}
                 </button>
               </div>
             );
@@ -361,14 +365,13 @@ function useDebounce<T>(value: T, delay: number, setOut: (v: T) => void) {
 }
 
 function EmptyLocal() {
+  const { t } = useLocale();
   return (
     <div className="rounded-lg border border-dashed py-12 text-center">
       <div className="flex flex-col items-center gap-2 text-muted-foreground">
         <Sparkles size={32} className="opacity-40" />
-        <p className="text-sm font-medium">No local skills</p>
-        <p className="text-xs max-w-md mx-auto">
-          Browse the <span className="text-foreground">Catalog</span> tab to install one from skills.sh, or drop a folder under <code className="font-mono">skills/&lt;name&gt;/SKILL.md</code> with <code className="font-mono">name</code> + <code className="font-mono">description</code> frontmatter.
-        </p>
+        <p className="text-sm font-medium">{t('skills.emptyLocalTitle')}</p>
+        <p className="text-xs max-w-md mx-auto" dangerouslySetInnerHTML={{ __html: t('skills.emptyLocalHint') }} />
       </div>
     </div>
   );

@@ -101,14 +101,15 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeySummarizerLookbackTurns, Group: "summarizer", Kind: "int", Label: "Lookback turns"},
 	{Key: settings.KeySummarizerCooldownSeconds, Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
 
+	{Key: settings.KeyAuraBotEnabled, Value: "false", Group: "aurabot", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and swarm tools. Restart Aura after changing."},
+	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Higher values cost more and can stress providers."},
+	{Key: settings.KeyAuraBotMaxDepth, Value: "1", Group: "aurabot", Kind: "int", Label: "Max delegation depth", Hint: "Current safe default is 1: manager plus direct workers."},
+	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Saved dashboard values override .env on restart."},
+	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops."},
+
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
-	{Key: settings.KeyAuraBotEnabled, Group: "other", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and spawn_aurabot tools"},
-	{Key: settings.KeyAuraBotMaxActive, Group: "other", Kind: "int", Label: "AuraBot max active"},
-	{Key: settings.KeyAuraBotMaxDepth, Group: "other", Kind: "int", Label: "AuraBot max depth"},
-	{Key: settings.KeyAuraBotTimeoutSec, Group: "other", Kind: "int", Label: "AuraBot timeout (seconds)"},
-	{Key: settings.KeyAuraBotMaxIterations, Group: "other", Kind: "int", Label: "AuraBot max iterations"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
 }
 
@@ -131,6 +132,8 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 			} else if envVal := os.Getenv(meta.Key); envVal != "" {
 				it.Value = envVal
 				it.Source = "env"
+			} else if meta.Value != "" {
+				it.Source = "default"
 			} else {
 				it.Source = "default"
 			}

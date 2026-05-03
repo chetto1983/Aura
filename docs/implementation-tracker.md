@@ -108,8 +108,32 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17l | Run scheduled routines now | done | Added `run_task_now` so "eseguilo adesso" executes the saved scheduled `agent_job` by name, reuses its normalized payload/tool allowlist, records metrics, and sends the completion summary when `notify=true` instead of improvising with `spawn_aurabot`. |
 | 17m | AuraBot completion guardrails | done | Live `/swarm` run showed a researcher issuing repeated web searches, filling context, and failing after 90s with zero UI metrics. AuraBot tasks now have per-role tool budgets, compact tool-result clipping, a forced final synthesis turn with tools disabled, and deadline partial completion after evidence has been gathered. |
 | 17n | AuraBot value timeout | done | Raised AuraBot timeout default and local runtime value from 90s to 300s. The longer wall clock is paired with slice 17m's tool budgets/finalization guardrails, so agents have time for useful work without unbounded search loops. |
+| 17o | Dashboard AuraBot settings | done | `/settings` now exposes AuraBot in its own group with editable defaults for enabled/max-active/depth/timeout/iterations, explains DB-over-`.env` precedence, and lets operators save overrides to `aura.db` instead of editing `.env`. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17o (Dashboard AuraBot settings)
+
+Goal: make AuraBot tuning, especially timeout, manageable from the dashboard so the operator does not edit `.env` for normal changes.
+
+Implementation:
+
+- Moved `AURABOT_*` rows into a dedicated `aurabot` settings group.
+- Added visible default values for AuraBot settings when neither DB nor env has a row: enabled=false, max_active=4, max_depth=1, timeout=300, max_iterations=5.
+- Updated AuraBot hints to explain restart semantics and DB override behavior.
+- Settings UI now shows source guidance for `.env` and default rows: edit + save stores a dashboard override in `aura.db`.
+- Header copy now says settings in `aura.db` override `.env` on Aura restart, which matches the runtime config lifecycle.
+- Removed one stale i18n type import that was blocking `npm run lint`.
+
+Verification:
+
+- `go test ./internal/api ./internal/settings ./internal/config`
+- `npm run lint`
+- `npm run build`
+
+Note: `npm run build` refreshed `internal/api/dist`, but those generated assets were already dirty from the parallel frontend/i18n work and were intentionally left unstaged in this slice.
+
+Next slice: add a dashboard restart/reload affordance or effective-runtime diagnostics so the user can see whether saved settings are already active in the running process.
 
 ### 2026-05-03 - Slice 17n (AuraBot value timeout)
 

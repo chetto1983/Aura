@@ -137,6 +137,47 @@ func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
 	}
 }
 
+func TestSettingsList_AuraBotShowsEditableDefaults(t *testing.T) {
+	for _, k := range []string{
+		settings.KeyAuraBotEnabled,
+		settings.KeyAuraBotMaxActive,
+		settings.KeyAuraBotMaxDepth,
+		settings.KeyAuraBotTimeoutSec,
+		settings.KeyAuraBotMaxIterations,
+	} {
+		t.Setenv(k, "")
+	}
+	router, _ := newSettingsEnv(t)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	want := map[string]string{
+		settings.KeyAuraBotEnabled:       "false",
+		settings.KeyAuraBotMaxActive:     "4",
+		settings.KeyAuraBotMaxDepth:      "1",
+		settings.KeyAuraBotTimeoutSec:    "300",
+		settings.KeyAuraBotMaxIterations: "5",
+	}
+	for key, value := range want {
+		var found bool
+		for _, it := range resp.Items {
+			if it.Key != key {
+				continue
+			}
+			found = true
+			if it.Value != value || it.Source != "default" || it.Group != "aurabot" {
+				t.Fatalf("%s = value:%q source:%q group:%q, want value:%q source:default group:aurabot", key, it.Value, it.Source, it.Group, value)
+			}
+		}
+		if !found {
+			t.Fatalf("%s not in settings catalog", key)
+		}
+	}
+}
+
 func TestSettingsList_NoStore503(t *testing.T) {
 	router := NewRouter(Deps{})
 	rr := httptest.NewRecorder()

@@ -6,9 +6,9 @@ import { api, ApiError } from '@/api';
 import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
-type Group = 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'other';
+type Group = 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 
-const GROUP_ORDER: Group[] = ['provider', 'embeddings', 'ocr', 'budget', 'summarizer', 'other'];
+const GROUP_ORDER: Group[] = ['provider', 'embeddings', 'ocr', 'budget', 'summarizer', 'aurabot', 'other'];
 
 export function SettingsPanel() {
   const { t } = useLocale();
@@ -116,6 +116,7 @@ export function SettingsPanel() {
       case 'ocr': return t('settings.group.ocr');
       case 'budget': return t('settings.group.budget');
       case 'summarizer': return t('settings.group.summarizer');
+      case 'aurabot': return t('settings.group.aurabot');
       case 'other': return t('settings.group.other');
     }
   };
@@ -127,6 +128,7 @@ export function SettingsPanel() {
       case 'ocr': return t('settings.hint.ocr');
       case 'budget': return t('settings.hint.budget');
       case 'summarizer': return t('settings.hint.summarizer');
+      case 'aurabot': return t('settings.hint.aurabot');
       case 'other': return t('settings.hint.other');
     }
   };
@@ -239,6 +241,12 @@ function SettingRow({
         return { label: t('settings.badge.unset'), cls: 'bg-muted/50 text-foreground border-border' };
     }
   })();
+  const sourceHint = (() => {
+    if (dirty || item.source === 'db') return '';
+    if (item.source === 'env') return t('settings.source.envHint');
+    if (item.source === 'default') return t('settings.source.defaultHint');
+    return '';
+  })();
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-x-5 gap-y-1.5 md:items-center px-5 py-3.5">
       <label className="min-w-0" htmlFor={item.key}>
@@ -250,6 +258,7 @@ function SettingRow({
         </div>
         <div className="text-[10.5px] font-mono text-muted-foreground mt-0.5 truncate">{item.key}</div>
         {item.hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{item.hint}</div>}
+        {sourceHint && <div className="text-[12px] text-muted-foreground/80 mt-1 leading-snug">{sourceHint}</div>}
       </label>
       <div className="flex gap-1.5 min-w-0 items-center">
         <Control
