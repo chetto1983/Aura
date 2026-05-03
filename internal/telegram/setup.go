@@ -347,6 +347,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
 		}
 	}
+	if tool := tools.NewSearchMemoryTool(searchEngine, sourceStore, b.archiveDB); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	// Slice 12h/12l.1: shared wiki_issues store. Both the API maintenance
 	// handlers and the nightly maintenance job read/write the same queue.

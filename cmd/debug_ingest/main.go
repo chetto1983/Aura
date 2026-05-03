@@ -143,6 +143,9 @@ func main() {
 	reg.Register(tools.NewListSourcesTool(srcStore))
 	reg.Register(tools.NewLintSourcesTool(srcStore))
 	reg.Register(tools.NewIngestSourceTool(pipeline))
+	if tool := tools.NewSearchMemoryTool(engine, srcStore, archiveStore); tool != nil {
+		reg.Register(tool)
+	}
 	reg.Register(tools.NewListWikiTool(wikiStore))
 	reg.Register(tools.NewLintWikiTool(wikiStore))
 	reg.Register(tools.NewRebuildIndexTool(wikiStore))
@@ -207,6 +210,12 @@ func main() {
 			prompt:    "Dammi il briefing di oggi in 5 punti. Usa il briefing giornaliero se disponibile.",
 			wantTools: []string{"daily_briefing"},
 			wantText:  []string{"Daily briefing", "smoke-briefing", "briefing smoke issue", "aura-debug-ingest-fixture.pdf"},
+		},
+		{
+			name:      "search_memory",
+			prompt:    "Cerca nella memoria locale di Aura il marker gold-742 e dimmi quali evidenze trovi. Usa search_memory.",
+			wantTools: []string{"search_memory"},
+			wantText:  []string{"Memory evidence", "gold-742", ocrID, "page=1"},
 		},
 		{
 			name:      "schedule_task_in",

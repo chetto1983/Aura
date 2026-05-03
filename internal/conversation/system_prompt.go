@@ -20,7 +20,8 @@ If a tool result is a JSON object with "ok":false, it means the tool call failed
 - If retryable is true, correct your arguments using the hint and call the same tool again once. Do not apologize.
 - If retryable is false or the retry also fails, briefly explain the problem to the user (in Italian if the user writes in Italian) and stop.
 
-- search_wiki: search saved wiki knowledge when the user asks what is known, refers to memory, asks about prior context, or when saved knowledge would materially improve the answer.
+- search_memory: search the full local second brain across wiki pages, source inbox/OCR, and conversation archive. Prefer this for "what do you know/remember?", prior context, source-backed answers, and evidence gathering before agent/swarm work.
+- search_wiki: search saved wiki knowledge when the user needs a narrower wiki-only lookup.
 - read_wiki: read a specific wiki page when you know or discover its slug.
 - write_wiki: save durable knowledge. Use this instead of writing YAML or markdown files in the chat response.
 - web_search: search the web for current, external, obscure, or source-sensitive information.

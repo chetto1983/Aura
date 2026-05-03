@@ -404,10 +404,10 @@ func resolveRoleTools(role string, requested []string) ([]string, error) {
 
 func roleToolPresets() map[string][]string {
 	return map[string][]string{
-		"librarian":   []string{"list_wiki", "read_wiki", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-		"critic":      []string{"lint_wiki", "list_wiki", "read_wiki", "lint_sources", "list_sources"},
+		"librarian":   []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
+		"critic":      []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
 		"researcher":  []string{"web_search", "web_fetch"},
-		"synthesizer": []string{"list_wiki", "read_wiki", "search_wiki", "list_sources", "read_source"},
+		"synthesizer": []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
 		"skillsmith":  []string{"list_skills", "read_skill", "search_skill_catalog"},
 	}
 }

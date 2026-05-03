@@ -14,6 +14,7 @@ const (
 var DefaultAgentJobTools = []string{
 	"list_wiki",
 	"read_wiki",
+	"search_memory",
 	"search_wiki",
 	"list_sources",
 	"read_source",

@@ -47,11 +47,11 @@ func TestBuildPlanMatchesSwarmToolsReadOnlyPresets(t *testing.T) {
 	}
 
 	want := map[string][]string{
-		"librarian":   {"list_wiki", "read_wiki", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-		"critic":      {"lint_wiki", "list_wiki", "read_wiki", "lint_sources", "list_sources"},
+		"librarian":   {"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
+		"critic":      {"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
 		"researcher":  {"web_search", "web_fetch"},
 		"skillsmith":  {"list_skills", "read_skill", "search_skill_catalog"},
-		"synthesizer": {"list_wiki", "read_wiki", "search_wiki", "list_sources", "read_source"},
+		"synthesizer": {"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
 	}
 	for _, assignment := range plan.Assignments {
 		if !reflect.DeepEqual(assignment.ToolAllowlist, want[assignment.Role]) {

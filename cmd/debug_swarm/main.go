@@ -216,7 +216,7 @@ func debugAssignments() []swarm.Assignment {
 			Subject:       "wiki index scan",
 			Prompt:        "List wiki pages and read the index page.",
 			SystemPrompt:  "You are an AuraBot librarian. Use read-only wiki tools and report concise evidence.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
+			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
 			Depth:         0,
 			UserID:        "debug-user",
 		},
@@ -225,7 +225,7 @@ func debugAssignments() []swarm.Assignment {
 			Subject:       "wiki lint check",
 			Prompt:        "Check the wiki and source inbox for obvious structural issues.",
 			SystemPrompt:  "You are an AuraBot critic. Prefer lint tools and keep the result short.",
-			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "lint_sources", "list_sources"},
+			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
 			Depth:         0,
 			UserID:        "debug-user",
 		},
@@ -234,7 +234,7 @@ func debugAssignments() []swarm.Assignment {
 			Subject:       "second brain synthesis",
 			Prompt:        "Read available wiki/source context and synthesize one operational takeaway.",
 			SystemPrompt:  "You are an AuraBot synthesizer. Combine read-only context into a concise answer.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_wiki", "list_sources", "read_source"},
+			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
 			Depth:         1,
 			UserID:        "debug-user",
 		},
@@ -243,7 +243,7 @@ func debugAssignments() []swarm.Assignment {
 			Subject:       "source inbox scan",
 			Prompt:        "List source inbox entries and report one useful item.",
 			SystemPrompt:  "You are an AuraBot librarian. Use read-only source tools and report concise evidence.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
+			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
 			Depth:         0,
 			UserID:        "debug-user",
 		},
@@ -252,7 +252,7 @@ func debugAssignments() []swarm.Assignment {
 			Subject:       "link hygiene",
 			Prompt:        "Check whether wiki links and source state look structurally healthy.",
 			SystemPrompt:  "You are an AuraBot critic. Prefer lint tools and keep the result short.",
-			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "lint_sources", "list_sources"},
+			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
 			Depth:         0,
 			UserID:        "debug-user",
 		},
@@ -709,7 +709,7 @@ func appendUnique(values []string, value string) []string {
 func fakeRegistry(logger *slog.Logger) *tools.Registry {
 	reg := tools.NewRegistry(logger)
 	for _, name := range []string{
-		"list_wiki", "read_wiki", "search_wiki", "lint_wiki",
+		"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki",
 		"list_sources", "read_source", "lint_sources",
 		"web_search", "web_fetch",
 		"list_skills", "read_skill", "search_skill_catalog",
@@ -754,7 +754,7 @@ func (t fakeTool) Execute(ctx context.Context, args map[string]any) (string, err
 }
 
 func preferredTool(defs []llm.ToolDefinition) string {
-	preferred := []string{"list_wiki", "read_wiki", "lint_wiki", "search_wiki", "list_sources", "read_source", "list_skills", "web_search", "web_fetch"}
+	preferred := []string{"search_memory", "list_wiki", "read_wiki", "lint_wiki", "search_wiki", "list_sources", "read_source", "list_skills", "web_search", "web_fetch"}
 	for _, want := range preferred {
 		for _, def := range defs {
 			if def.Name == want {
@@ -773,7 +773,7 @@ func fakeArgs(tool string) map[string]any {
 		return map[string]any{"source": "source-inbox"}
 	case "read_skill":
 		return map[string]any{"name": "aura-implementation"}
-	case "search_wiki", "web_search", "search_skill_catalog":
+	case "search_memory", "search_wiki", "web_search", "search_skill_catalog":
 		return map[string]any{"query": "Aura second brain"}
 	default:
 		return map[string]any{}

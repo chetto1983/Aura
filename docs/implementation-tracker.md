@@ -103,8 +103,30 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17h | Daily recurrence parity | done | `schedule_task` now exposes `every_minutes` and daily `weekdays`; scheduler persists weekday filters, API/dashboard surface them, and natural-prompt E2E verifies hourly + business-day scheduling. |
 | 17i | Scheduled agent jobs | done | New `agent_job` task kind runs bounded propose-only routines through the Aura runner; `schedule_task`, API/dashboard, dispatcher, and natural-prompt E2E can schedule recurring agent jobs. |
 | 17j | Daily briefing tool | done | New read-only `daily_briefing` tool composes today's tasks, pending wiki proposals, open wiki issues, recent sources, and conversation signals; natural-prompt E2E verifies an Italian daily-briefing prompt selects the tool. |
+| 17k | Unified memory evidence search | done | New read-only `search_memory` tool searches wiki index, source inbox/OCR, and conversation archive with compact evidence snippets, source IDs, conversation turn IDs, and OCR page numbers; agent jobs and AuraBot read-only roles can use it before broader reads. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17k (Unified memory evidence search)
+
+Implementation slice to make Aura answer real daily questions from the full local second brain instead of forcing the model to guess which store to inspect first.
+
+- Added `search_memory`, a read-only evidence tool across:
+  - wiki vector search when the wiki index is ready;
+  - source inbox text/OCR with local lexical ranking;
+  - conversation archive, optionally restricted by `chat_id`.
+- Evidence items include typed identifiers (`[[slug]]`, `src_*`, `conversation:<id>`), compact snippets, scores, and `page=N` when the source OCR heading identifies a matching PDF page.
+- Wired the tool after the conversation archive is opened so it can still work with sources/wiki when archive is disabled.
+- Added `search_memory` to scheduled agent-job defaults/safe allowlist and AuraBot librarian/critic/synthesizer read-only presets.
+- Updated the system prompt to prefer `search_memory` for "what do you know/remember?", prior-context, and source-backed questions while keeping `search_wiki` for wiki-only lookup.
+- Extended `cmd/debug_ingest` with a natural-prompt `search_memory` scenario for OCR evidence (`gold-742`, `page=1`).
+- Live E2E result: PASS, `search_memory` selected, `elapsed_ms=7970`, `tool_calls=1`; full `cmd/debug_ingest` passed 15/15 scenarios.
+- Verification:
+  - `go test ./internal/tools ./internal/swarm ./internal/swarmtools ./internal/scheduler ./internal/telegram ./cmd/debug_ingest ./cmd/debug_swarm`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+  - `go run ./cmd/debug_ingest`
+
+Next slice: proposal provenance and batch review so evidence found by `search_memory` can become review-gated wiki growth with visible source links.
 
 ### 2026-05-03 - Implementation loop tool
 
