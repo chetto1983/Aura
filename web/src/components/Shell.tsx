@@ -89,6 +89,7 @@ function useKeyboardShortcuts({ onShowHelp }: { onShowHelp: () => void }) {
           case 'g': dest = '/graph'; break;
           case 's': dest = '/sources'; break;
           case 't': dest = '/tasks'; break;
+          case 'a': dest = '/swarm'; break;
           case 'k': dest = '/skills'; break;
           case 'm': dest = '/mcp'; break;
           case 'v': dest = '/conversations'; break;
@@ -148,6 +149,7 @@ function ShortcutHelpDialog({
             <Row keys={['g', 'g']} desc="Graph" />
             <Row keys={['g', 's']} desc="Sources" />
             <Row keys={['g', 't']} desc="Tasks" />
+            <Row keys={['g', 'a']} desc="Swarm" />
             <Row keys={['g', 'k']} desc="Skills" />
             <Row keys={['g', 'm']} desc="MCP" />
             <Row keys={['g', 'v']} desc="Conversations" />

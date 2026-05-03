@@ -290,6 +290,70 @@ type ProposedUpdate struct {
 	CreatedAt     string   `json:"created_at"`
 }
 
+// SwarmRunSummary is one row of GET /swarm/runs.
+type SwarmRunSummary struct {
+	ID          string     `json:"id"`
+	Goal        string     `json:"goal"`
+	Status      string     `json:"status"`
+	CreatedBy   string     `json:"created_by,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	TaskCounts  TaskCounts `json:"task_counts"`
+	Metrics     RunMetrics `json:"metrics"`
+}
+
+// SwarmRunDetail is GET /swarm/runs/{id}.
+type SwarmRunDetail struct {
+	SwarmRunSummary
+	Tasks []SwarmTask `json:"tasks"`
+}
+
+type TaskCounts struct {
+	Total     int `json:"total"`
+	Pending   int `json:"pending"`
+	Running   int `json:"running"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+}
+
+type RunMetrics struct {
+	LLMCalls         int     `json:"llm_calls"`
+	ToolCalls        int     `json:"tool_calls"`
+	TokensPrompt     int     `json:"tokens_prompt"`
+	TokensCompletion int     `json:"tokens_completion"`
+	TokensTotal      int     `json:"tokens_total"`
+	TaskElapsedMS    int64   `json:"task_elapsed_ms"`
+	WallMS           int64   `json:"wall_ms"`
+	Speedup          float64 `json:"speedup"`
+}
+
+// SwarmTask is one AuraBot worker task.
+type SwarmTask struct {
+	ID               string     `json:"id"`
+	RunID            string     `json:"run_id"`
+	ParentID         string     `json:"parent_id,omitempty"`
+	Role             string     `json:"role"`
+	Subject          string     `json:"subject,omitempty"`
+	Status           string     `json:"status"`
+	Depth            int        `json:"depth"`
+	Attempts         int        `json:"attempts"`
+	ToolAllowlist    []string   `json:"tool_allowlist,omitempty"`
+	BlockedBy        []string   `json:"blocked_by,omitempty"`
+	Result           string     `json:"result,omitempty"`
+	LastError        string     `json:"last_error,omitempty"`
+	LLMCalls         int        `json:"llm_calls"`
+	ToolCalls        int        `json:"tool_calls"`
+	TokensPrompt     int        `json:"tokens_prompt"`
+	TokensCompletion int        `json:"tokens_completion"`
+	TokensTotal      int        `json:"tokens_total"`
+	ElapsedMS        int64      `json:"elapsed_ms"`
+	CreatedAt        time.Time  `json:"created_at"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+}
+
 // ConversationDetail is the response of GET /conversations/{id}. ToolCalls
 // is the raw JSON string from the DB so the frontend can parse/expand it.
 type ConversationDetail struct {

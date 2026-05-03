@@ -26,6 +26,7 @@ const ConversationsPanel = lazy(() => import('@/components/ConversationsPanel').
 const SummariesPanel = lazy(() => import('@/components/SummariesPanel').then((m) => ({ default: m.SummariesPanel })));
 const MaintenancePanel = lazy(() => import('@/components/MaintenancePanel').then((m) => ({ default: m.MaintenancePanel })));
 const SettingsPanel = lazy(() => import('@/components/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
+const SwarmPanel = lazy(() => import('@/components/SwarmPanel').then((m) => ({ default: m.SwarmPanel })));
 
 // RequireAuth gates everything except /login. If no token is present we
 // redirect — api.ts also handles 401 redirects, but this gate avoids an
@@ -69,6 +70,7 @@ export default function App() {
                       <Route path="/conversations" element={<ConversationsPanel />} />
                       <Route path="/summaries" element={<SummariesPanel />} />
                       <Route path="/maintenance" element={<MaintenancePanel />} />
+                      <Route path="/swarm" element={<SwarmPanel />} />
                       <Route path="/settings" element={<SettingsPanel />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

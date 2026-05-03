@@ -208,16 +208,15 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 
-	var swarmStore *swarm.Store
+	swarmStore, err := swarm.NewStoreWithDB(schedStore.DB())
+	if err != nil {
+		return nil, fmt.Errorf("creating swarm store: %w", err)
+	}
 	var swarmManager *swarm.Manager
 	if cfg.AuraBotEnabled {
 		if client == nil {
 			logger.Warn("AuraBot swarm enabled but no LLM provider configured; swarm tools disabled")
 		} else {
-			swarmStore, err = swarm.NewStoreWithDB(schedStore.DB())
-			if err != nil {
-				return nil, fmt.Errorf("creating swarm store: %w", err)
-			}
 			timeoutSec := cfg.AuraBotTimeoutSec
 			if timeoutSec <= 0 {
 				timeoutSec = 90
@@ -482,6 +481,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		Issues: b.issues,
 		// Slice 14d: runtime settings page surface.
 		Settings: settingsStore,
+		// Slice 17d: AuraBot swarm observability.
+		Swarm: swarmStore,
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

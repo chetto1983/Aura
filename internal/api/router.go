@@ -19,6 +19,7 @@ import (
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -52,6 +53,14 @@ type SchedulerStore interface {
 	Upsert(ctx context.Context, t *scheduler.Task) (*scheduler.Task, error)
 	Cancel(ctx context.Context, name string) (bool, error)
 	Delete(ctx context.Context, name string) error
+}
+
+// SwarmStore is the read-side surface for AuraBot run/task observability.
+type SwarmStore interface {
+	ListRuns(ctx context.Context, limit int) ([]swarm.Run, error)
+	GetRun(ctx context.Context, id string) (*swarm.Run, error)
+	ListTasks(ctx context.Context, runID string) ([]swarm.Task, error)
+	GetTask(ctx context.Context, id string) (*swarm.Task, error)
 }
 
 // Deps is the set of stores the router handlers operate on.
@@ -101,8 +110,8 @@ type Deps struct {
 	// Slice 11j: embedding cache for /health stats. Optional — nil
 	// when EMBEDDING_API_KEY or DB_PATH is unset, in which case the
 	// EmbeddingCache health block stays zero.
-	EmbedCache *search.EmbedCache
-	SkillsAdmin     bool
+	EmbedCache  *search.EmbedCache
+	SkillsAdmin bool
 
 	// Pending-approval pipeline. Bot wires the real implementation;
 	// when nil, the approve/deny endpoints respond 503 — the GET list
@@ -128,6 +137,10 @@ type Deps struct {
 	// can edit operator-tunable config without a restart. Optional —
 	// when nil, the endpoints return 503.
 	Settings *settings.Store
+
+	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
+	// dashboard returns empty run lists and 404s for details.
+	Swarm SwarmStore
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -228,6 +241,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /settings", handleSettingsUpdate(deps))
 	mux.HandleFunc("POST /settings/test", handleSettingsTest(deps))
 
+	// Slice 17d: AuraBot swarm observability.
+	mux.HandleFunc("GET /swarm/runs", handleSwarmRunList(deps))
+	mux.HandleFunc("GET /swarm/runs/{id}", handleSwarmRunGet(deps))
+	mux.HandleFunc("GET /swarm/tasks/{id}", handleSwarmTaskGet(deps))
+
 	if deps.Auth != nil {
 		return auth.RequireBearer(deps.Auth, deps.Allowlist, deps.Logger, mux)
 	}
@@ -241,6 +259,8 @@ var sourceIDRe = regexp.MustCompile(`^src_[a-f0-9]{16}$`)
 // taskNameRe restricts to a conservative shell-safe character set so a
 // malicious name in the URL can't break out of the path or a log line.
 var taskNameRe = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,64}$`)
+var swarmRunIDRe = regexp.MustCompile(`^swarm_[a-f0-9]{16}$`)
+var swarmTaskIDRe = regexp.MustCompile(`^task_[a-f0-9]{16}$`)
 
 // writeJSON serializes v as JSON with the given status code. Errors during
 // encoding are logged but not surfaced — the response is already partially

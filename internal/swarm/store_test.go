@@ -125,6 +125,38 @@ func TestStoreReopenPersistsRows(t *testing.T) {
 	}
 }
 
+func TestStoreListRunsNewestFirstAndClampsLimit(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return base }
+	first, err := store.CreateRun(ctx, "first", "user")
+	if err != nil {
+		t.Fatalf("CreateRun first: %v", err)
+	}
+	store.now = func() time.Time { return base.Add(time.Minute) }
+	second, err := store.CreateRun(ctx, "second", "user")
+	if err != nil {
+		t.Fatalf("CreateRun second: %v", err)
+	}
+
+	runs, err := store.ListRuns(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != 1 || runs[0].ID != second.ID {
+		t.Fatalf("runs = %+v, want newest %s", runs, second.ID)
+	}
+
+	runs, err = store.ListRuns(ctx, 500)
+	if err != nil {
+		t.Fatalf("ListRuns clamp: %v", err)
+	}
+	if len(runs) != 2 || runs[0].ID != second.ID || runs[1].ID != first.ID {
+		t.Fatalf("runs order = %+v", runs)
+	}
+}
+
 func TestNewStoreWithDBDoesNotOwnDB(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "shared.db"))
 	if err != nil {

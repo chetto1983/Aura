@@ -96,8 +96,34 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17a | AuraBot bounded runner | done | New `internal/agent.Runner`: Telegram-free mini LLM/tool loop for future AuraBot workers. Uses `llm.Send`, explicit per-task tool allowlists, execution-time allowlist enforcement, structured tool errors, per-run timeout, per-tool timeout, concurrent tool calls with deterministic result ordering, user-id context propagation, token/tool/LLM telemetry. 7 unit tests. |
 | 17b | AuraBot swarm store + manager | done | New `internal/swarm` package: SQLite `swarm_runs` / `swarm_tasks` store plus `Manager` that persists assignments, fans out bounded parallel `agent.Task` runs, enforces `MaxActive` and `MaxDepth`, marks task/run success or failure, and returns audit-ready task results. SQLite writes are serialized with one connection + busy timeout. 8 unit tests. |
 | 17c | AuraBot LLM tools + debug metrics | done | `AURABOT_*` config/settings gate, bot wiring, `spawn_aurabot` / `list_swarm_tasks` / `read_swarm_result`, token metrics persisted on tasks, and `cmd/debug_swarm` hermetic E2E harness with wall/task/token/tool/speedup metrics. |
+| 17d | AuraBot swarm observability | done | Read-only API + dashboard panel for swarm runs/tasks, aggregate counts, wall/task elapsed, speedup, LLM/tool/token telemetry, and per-task results/errors. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17d (AuraBot swarm observability)
+
+Follow-up slice after `slice 17: add AuraBot swarm MVP` commit `32abb88`.
+
+**Implementation**:
+
+- Added `Store.ListRuns(ctx, limit)` to `internal/swarm`, returning newest runs first with a 200-row hard cap.
+- Added read-only API routes:
+  - `GET /swarm/runs?limit=50`
+  - `GET /swarm/runs/{id}`
+  - `GET /swarm/tasks/{id}`
+- Added API DTOs for run summaries/details and task rows, including task counts, wall time, summed task elapsed, speedup, LLM/tool calls, token totals, per-task allowlists, result text, and errors.
+- Wired `api.Deps.Swarm` from `telegram.New`. The swarm store now opens on the shared SQLite DB even when `AURABOT_ENABLED=false`; only runner/tools stay gated. This keeps historical observability available without enabling new workers.
+- Added dashboard route `/swarm`, sidebar entry, keyboard shortcut `g a`, typed API client methods, and `SwarmPanel`.
+- Rebuilt the embedded React dashboard into `internal/api/dist`.
+
+**Verification**:
+
+- `go test ./internal/swarm ./internal/api ./internal/telegram`
+- `npm run build` from `web/`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
 
 ### 2026-05-03 - Slice 17c (AuraBot LLM tools + E2E metrics)
 

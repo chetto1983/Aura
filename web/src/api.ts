@@ -26,6 +26,9 @@ import type {
   ProposedUpdate,
   WikiIssue,
   SettingItem,
+  SwarmRunDetail,
+  SwarmRunSummary,
+  SwarmTask,
 } from '@/types/api';
 import { getToken, clearToken } from '@/lib/auth';
 
@@ -282,4 +285,12 @@ export const api = {
       api_key: apiKey,
       probe_path: probePath,
     }),
+
+  // ---- AuraBot swarm observability (slice 17d) ----
+  swarmRuns: (limit?: number) =>
+    get<SwarmRunSummary[]>('/swarm/runs' + qs({ limit: limit?.toString() })),
+  swarmRun: (id: string) =>
+    get<SwarmRunDetail>(`/swarm/runs/${encodeURIComponent(id)}`),
+  swarmTask: (id: string) =>
+    get<SwarmTask>(`/swarm/tasks/${encodeURIComponent(id)}`),
 };

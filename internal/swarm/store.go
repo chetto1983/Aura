@@ -225,6 +225,34 @@ FROM swarm_runs WHERE id = ?`, id)
 	return scanRun(row)
 }
 
+func (s *Store) ListRuns(ctx context.Context, limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, goal, status, created_by, created_at, updated_at, completed_at, last_error
+FROM swarm_runs
+ORDER BY created_at DESC, id DESC
+LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list swarm runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []Run
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *run)
+	}
+	return runs, rows.Err()
+}
+
 func (s *Store) CreateTask(ctx context.Context, runID string, a Assignment) (*Task, error) {
 	id, err := s.newID("task")
 	if err != nil {

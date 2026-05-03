@@ -285,6 +285,66 @@ export interface Task {
   updated_at: string;
 }
 
+export interface TaskCounts {
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+}
+
+export interface RunMetrics {
+  llm_calls: number;
+  tool_calls: number;
+  tokens_prompt: number;
+  tokens_completion: number;
+  tokens_total: number;
+  task_elapsed_ms: number;
+  wall_ms: number;
+  speedup: number;
+}
+
+export interface SwarmRunSummary {
+  id: string;
+  goal: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+  last_error?: string;
+  task_counts: TaskCounts;
+  metrics: RunMetrics;
+}
+
+export interface SwarmTask {
+  id: string;
+  run_id: string;
+  parent_id?: string;
+  role: string;
+  subject?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  depth: number;
+  attempts: number;
+  tool_allowlist?: string[];
+  blocked_by?: string[];
+  result?: string;
+  last_error?: string;
+  llm_calls: number;
+  tool_calls: number;
+  tokens_prompt: number;
+  tokens_completion: number;
+  tokens_total: number;
+  elapsed_ms: number;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface SwarmRunDetail extends SwarmRunSummary {
+  tasks: SwarmTask[];
+}
+
 // Slice 14d — runtime settings page.
 //
 // `source` tells the UI where the effective `value` came from:
