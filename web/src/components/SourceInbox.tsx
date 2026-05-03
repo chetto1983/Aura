@@ -4,20 +4,16 @@ import { Upload, Play, RefreshCcw, Download } from 'lucide-react';
 import { getToken } from '@/lib/auth';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'ocr_complete', 'ingested'];
-const STATUS_LABEL: Record<SourceSummary['status'], string> = {
-  failed: '❌ Failed',
-  stored: '📄 Stored (awaiting OCR)',
-  ocr_complete: '✅ OCR complete (awaiting ingest)',
-  ingested: '📚 Ingested',
-};
 
 export function SourceInbox() {
+  const { t, formatDate } = useLocale();
   const fetcher = useCallback(() => api.sources(), []);
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
   const [uploading, setUploading] = useState(false);
@@ -25,6 +21,20 @@ export function SourceInbox() {
   // Per-row in-flight tracking so the same button can't be double-clicked.
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const statusLabel = (s: SourceSummary['status']): string => {
+    switch (s) {
+      case 'failed': return t('sources.status.failed');
+      case 'stored': return t('sources.status.stored');
+      case 'ocr_complete': return t('sources.status.ocrComplete');
+      case 'ingested': return t('sources.status.ingested');
+    }
+  };
+
+  const fmtDate = (iso: string): string => {
+    if (!iso || iso.startsWith('0001')) return '—';
+    return formatDate(iso, { dateStyle: 'short', timeStyle: 'short' });
+  };
 
   const setBusy = useCallback((id: string, on: boolean) => {
     setBusyIds((prev) => {
@@ -37,33 +47,33 @@ export function SourceInbox() {
 
   const handleIngest = useCallback(async (s: SourceSummary) => {
     setBusy(s.id, true);
-    const toastId = toast.loading(`Ingesting ${s.filename}…`);
+    const toastId = toast.loading(t('sources.toast.ingesting', { filename: s.filename }));
     try {
       const res = await api.ingestSource(s.id);
-      toast.success(`${s.filename} · ${res.note ?? 'ingested'}`, { id: toastId });
+      toast.success(t('sources.toast.ingested', { filename: s.filename, note: res.note ?? 'ingested' }), { id: toastId });
       refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Ingest failed: ${s.filename}\n${msg}`, { id: toastId });
+      toast.error(`${t('sources.toast.ingestFailed', { filename: s.filename })}\n${msg}`, { id: toastId });
     } finally {
       setBusy(s.id, false);
     }
-  }, [refetch, setBusy]);
+  }, [refetch, setBusy, t]);
 
   const handleReocr = useCallback(async (s: SourceSummary) => {
     setBusy(s.id, true);
-    const toastId = toast.loading(`Re-OCRing ${s.filename}…`);
+    const toastId = toast.loading(t('sources.toast.reocring', { filename: s.filename }));
     try {
       const res = await api.reocrSource(s.id);
-      toast.success(`${s.filename} · ${res.note ?? 'OCR redone'}`, { id: toastId });
+      toast.success(t('sources.toast.reocred', { filename: s.filename, note: res.note ?? 'OCR redone' }), { id: toastId });
       refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Re-OCR failed: ${s.filename}\n${msg}`, { id: toastId });
+      toast.error(`${t('sources.toast.reocrFailed', { filename: s.filename })}\n${msg}`, { id: toastId });
     } finally {
       setBusy(s.id, false);
     }
-  }, [refetch, setBusy]);
+  }, [refetch, setBusy, t]);
 
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
@@ -71,20 +81,20 @@ export function SourceInbox() {
     const pdfs = list.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
     const skipped = list.length - pdfs.length;
     if (skipped > 0) {
-      toast.warning(`Skipped ${skipped} non-PDF file${skipped === 1 ? '' : 's'}`);
+      toast.warning(t('sources.toast.uploadSkipped', { count: skipped }));
     }
     if (pdfs.length === 0) return;
 
     setUploading(true);
     try {
       for (const f of pdfs) {
-        const id = toast.loading(`Uploading ${f.name}…`);
+        const toastId = toast.loading(t('sources.toast.uploading', { filename: f.name }));
         try {
           const res: UploadResponse = await api.uploadSource(f);
-          toast.success(formatUploadSummary(f.name, res), { id });
+          toast.success(formatUploadSummary(f.name, res, t), { id: toastId });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          toast.error(`Upload failed: ${f.name}\n${msg}`, { id });
+          toast.error(`${t('sources.toast.uploadFailed', { filename: f.name })}\n${msg}`, { id: toastId });
         }
         // Poll-friendly: each upload triggers a refresh so the table updates
         // without waiting for the 5s tick.
@@ -94,10 +104,10 @@ export function SourceInbox() {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [refetch]);
+  }, [refetch, t]);
 
   if (loading && !data) return <SourceInboxSkeleton />;
-  if (error && !data) return <ErrorCard error={error} title="Failed to load sources" onRetry={refetch} />;
+  if (error && !data) return <ErrorCard error={error} title={t('sources.errorTitle')} onRetry={refetch} />;
   if (!data) return null;
 
   const grouped: Record<string, SourceSummary[]> = {};
@@ -127,8 +137,12 @@ export function SourceInbox() {
       }}
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Sources</h1>
-        {stale && <StalePill />}
+        <h1 className="text-2xl font-semibold">{t('sources.title')}</h1>
+        {stale && (
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
+            {t('common.stale')}
+          </span>
+        )}
       </header>
 
       <DropZone
@@ -147,7 +161,7 @@ export function SourceInbox() {
 
       {isEmpty && (
         <p className="text-sm text-muted-foreground">
-          No sources yet — drop a PDF above, or upload one in Telegram.
+          {t('sources.emptyHint')}
         </p>
       )}
 
@@ -157,15 +171,15 @@ export function SourceInbox() {
         return (
           <section key={status}>
             <h2 className="text-sm font-medium text-muted-foreground mb-2">
-              {STATUS_LABEL[status]} <span className="ml-1 tabular-nums">({rows.length})</span>
+              {statusLabel(status)} <span className="ml-1 tabular-nums">({rows.length})</span>
             </h2>
             <div className="space-y-2 md:hidden">
               {rows.map((s) => (
                 <article key={s.id} className="rounded-lg border bg-card p-3">
                   <p className="break-words font-mono text-xs font-medium">{s.filename}</p>
                   <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-                    <p>Created {shortDate(s.created_at)}</p>
-                    <p>{s.page_count ? `${s.page_count} page${s.page_count === 1 ? '' : 's'}` : 'Pages unknown'}</p>
+                    <p>{t('sources.mobile.created')} {fmtDate(s.created_at)}</p>
+                    <p>{s.page_count ? t('sources.pageCount', { count: s.page_count }) : t('sources.pagesUnknown')}</p>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     <WikiRefs pages={s.wiki_pages} />
@@ -184,25 +198,25 @@ export function SourceInbox() {
               <table className="w-full text-sm min-w-[600px]">
                 <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>
-                    <th className="text-left py-2 px-3 font-medium">Filename</th>
-                    <th className="text-left py-2 px-3 font-medium">Created</th>
-                    <th className="text-right py-2 px-3 font-medium">Pages</th>
-                    <th className="text-left py-2 px-3 font-medium">Wiki</th>
-                    <th className="text-right py-2 px-3 font-medium">Actions</th>
+                    <th className="text-left py-2 px-3 font-medium">{t('sources.table.filename')}</th>
+                    <th className="text-left py-2 px-3 font-medium">{t('sources.table.created')}</th>
+                    <th className="text-right py-2 px-3 font-medium">{t('sources.table.pages')}</th>
+                    <th className="text-left py-2 px-3 font-medium">{t('sources.table.wiki')}</th>
+                    <th className="text-right py-2 px-3 font-medium">{t('sources.table.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((s) => (
                     <tr key={s.id} className="border-t hover:bg-muted/30">
                       <td className="py-2 px-3 font-mono text-xs">{s.filename}</td>
-                      <td className="py-2 px-3 text-muted-foreground">{shortDate(s.created_at)}</td>
+                      <td className="py-2 px-3 text-muted-foreground">{fmtDate(s.created_at)}</td>
                       <td className="py-2 px-3 text-right tabular-nums">{s.page_count ?? '—'}</td>
                       <td className="py-2 px-3">
                         {s.wiki_pages?.length
                           ? s.wiki_pages.map((p) => (
                               <code key={p} className="text-xs">[[{p}]]</code>
                             ))
-                          : <span className="text-muted-foreground">—</span>}
+                          : <span className="text-muted-foreground">{'—'}</span>}
                       </td>
                       <td className="py-2 px-3 text-right">
                         <SourceActions
@@ -233,6 +247,7 @@ function DropZone({
   uploading: boolean;
   onPick: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <button
       type="button"
@@ -246,18 +261,19 @@ function DropZone({
     >
       <Upload size={28} className="mx-auto mb-2 text-muted-foreground" />
       <p className="text-sm font-medium">
-        {uploading ? 'Uploading…' : active ? 'Drop your PDF to upload' : 'Drag PDFs here, or click to browse'}
+        {uploading ? t('sources.drop.uploading') : active ? t('sources.drop.active') : t('sources.drop.idle')}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Same pipeline as Telegram: stored → OCR → auto-ingested into the wiki.
+        {t('sources.drop.hint')}
       </p>
     </button>
   );
 }
 
 function WikiRefs({ pages }: { pages?: string[] }) {
+  const { t } = useLocale();
   if (!pages?.length) {
-    return <span className="text-xs text-muted-foreground">No wiki page</span>;
+    return <span className="text-xs text-muted-foreground">{t('sources.noWikiPage')}</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
@@ -287,6 +303,31 @@ function SourceActions({
   onIngest: () => void;
   onReocr: () => void;
 }) {
+  const { t } = useLocale();
+
+  const handleDownload = async () => {
+    const token = getToken();
+    if (!token) {
+      toast.error(t('sources.toast.notSignedIn'));
+      return;
+    }
+    const res = await fetch(`/api/sources/${encodeURIComponent(s.id)}/raw`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      toast.error(t('sources.toast.downloadFailed', { status: res.status, statusText: res.statusText }));
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = s.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // PDF/XLSX kinds are downloadable via /sources/<id>/raw (slice 15d).
   // Other kinds (text/url) have no on-disk binary worth downloading.
   const showDownload = s.kind === 'pdf' || s.kind === 'xlsx' || s.kind === 'docx' || s.kind === 'pdf_generated';
@@ -296,19 +337,19 @@ function SourceActions({
   const showIngest = ocrEligible && (s.status === 'ocr_complete' || s.status === 'failed');
   const showReocr = ocrEligible && (s.status === 'stored' || s.status === 'failed');
   if (!showIngest && !showReocr && !showDownload) {
-    return <span className="text-xs text-muted-foreground">—</span>;
+    return <span className="text-xs text-muted-foreground">{'—'}</span>;
   }
   return (
     <div className="inline-flex flex-wrap justify-end gap-1">
       {showDownload && (
         <button
           type="button"
-          onClick={() => void downloadSource(s)}
+          onClick={() => void handleDownload()}
           className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-          title={`Download ${s.filename}`}
+          title={t('sources.action.downloadHint', { filename: s.filename })}
         >
           <Download size={14} />
-          Download
+          {t('sources.action.download')}
         </button>
       )}
       {showReocr && (
@@ -317,10 +358,10 @@ function SourceActions({
           disabled={busy}
           onClick={onReocr}
           className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
-          title="Re-run Mistral OCR on this PDF"
+          title={t('sources.action.reocrHint')}
         >
           <RefreshCcw size={14} />
-          Re-OCR
+          {t('sources.action.reocr')}
         </button>
       )}
       {showIngest && (
@@ -329,59 +370,29 @@ function SourceActions({
           disabled={busy}
           onClick={onIngest}
           className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
-          title="Compile OCR markdown into a wiki summary page"
+          title={t('sources.action.ingestHint')}
         >
           <Play size={14} />
-          Ingest
+          {t('sources.action.ingest')}
         </button>
       )}
     </div>
   );
 }
 
-// downloadSource fetches the binary via /api/sources/<id>/raw with the
-// bearer token header and triggers a browser download. We can't use a
-// plain <a href> because the endpoint is auth-gated and Authorization
-// headers don't tag along on link clicks. Toast surfaces failures so
-// 401s and 404s aren't silent.
-async function downloadSource(s: SourceSummary): Promise<void> {
-  const token = getToken();
-  if (!token) {
-    toast.error('Not signed in.');
-    return;
-  }
-  const res = await fetch(`/api/sources/${encodeURIComponent(s.id)}/raw`, {
-    headers: { Authorization: `Bearer ${token}` },
-    credentials: 'same-origin',
-  });
-  if (!res.ok) {
-    toast.error(`Download failed: ${res.status} ${res.statusText}`);
-    return;
-  }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = s.filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// downloadSource is now inlined inside SourceActions so it has access to t().
+// Kept as a standalone comment for documentation purposes — the function
+// fetches the binary via /api/sources/<id>/raw with the bearer token header
+// and triggers a browser download. We can't use a plain <a href> because the
+// endpoint is auth-gated and Authorization headers don't tag along on link
+// clicks. Toast surfaces failures so 401s and 404s aren't silent.
 
-function formatUploadSummary(filename: string, res: UploadResponse): string {
-  if (res.duplicate) return `Duplicate: ${filename} already stored as ${res.id}`;
+function formatUploadSummary(filename: string, res: UploadResponse, t: ReturnType<typeof useLocale>['t']): string {
+  if (res.duplicate) return t('sources.toast.uploadDuplicate', { filename, id: res.id });
   const parts = [filename, res.id];
-  if (res.page_count) parts.push(`${res.page_count} page${res.page_count === 1 ? '' : 's'}`);
+  if (res.page_count) parts.push(t('sources.pageCount', { count: res.page_count }));
   if (res.note) parts.push(res.note);
   return parts.join(' · ');
-}
-
-function StalePill() {
-  return <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>;
-}
-function shortDate(iso: string): string {
-  if (!iso || iso.startsWith('0001')) return '—';
-  const d = new Date(iso);
-  return d.toLocaleString();
 }
 
 function SourceInboxSkeleton() {
