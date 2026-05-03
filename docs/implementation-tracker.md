@@ -102,8 +102,31 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17g | Proactive wiki proposals | done | New `propose_wiki_change` LLM tool writes pending wiki proposals into the existing dashboard Summaries review queue, letting Aura suggest durable second-brain growth without mutating wiki files directly. |
 | 17h | Daily recurrence parity | done | `schedule_task` now exposes `every_minutes` and daily `weekdays`; scheduler persists weekday filters, API/dashboard surface them, and natural-prompt E2E verifies hourly + business-day scheduling. |
 | 17i | Scheduled agent jobs | done | New `agent_job` task kind runs bounded propose-only routines through the Aura runner; `schedule_task`, API/dashboard, dispatcher, and natural-prompt E2E can schedule recurring agent jobs. |
+| 17j | Daily briefing tool | done | New read-only `daily_briefing` tool composes today's tasks, pending wiki proposals, open wiki issues, recent sources, and conversation signals; natural-prompt E2E verifies an Italian daily-briefing prompt selects the tool. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17j (Daily briefing utility check)
+
+Implementation slice to make the "real daily questions" audit executable instead of just a product note.
+
+- Added `daily_briefing`, a read-only tool for "what needs attention today?" that composes:
+  - active tasks due before end-of-day, including overdue labels;
+  - pending wiki proposals from the review queue;
+  - open wiki maintenance issues;
+  - recent source inbox rows and failures;
+  - recent conversation archive turns from the current day.
+- Wired the tool into the Telegram registry after scheduler/source/summaries/issues/archive stores are available.
+- Updated the system prompt so "briefing / oggi / cosa devo fare" routes to the dedicated tool.
+- Extended `cmd/debug_ingest` with a seeded, realistic daily-briefing scenario:
+  - Prompt: `Dammi il briefing di oggi in 5 punti. Usa il briefing giornaliero se disponibile.`
+  - Live result: PASS, `daily_briefing` selected, `elapsed_ms=9759`, `tool_calls=1`.
+- Verification:
+  - `go test ./internal/tools ./internal/conversation ./internal/telegram ./cmd/debug_ingest`
+  - `go test ./...`
+  - `go run ./cmd/debug_ingest` (14/14 scenarios PASS)
+
+Next slice: scorecard/harness for the remaining daily questions, then skill-draft proposals in the Hermes style.
 
 ### 2026-05-03 - Slice 17i (Scheduled agent jobs + lint cleanup)
 

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
@@ -115,6 +116,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer schedStore.Close()
+	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
+	issuesStore := scheduler.NewIssuesStore(schedStore.DB())
+	archiveStore, err := conversation.NewArchiveStore(schedStore.DB())
+	if err != nil {
+		fmt.Printf("FAIL: conversation.NewArchiveStore: %v\n", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -122,6 +130,10 @@ func main() {
 	storedID, ocrID, err := seed(ctx, srcStore)
 	if err != nil {
 		fmt.Printf("FAIL: seed: %v\n", err)
+		os.Exit(1)
+	}
+	if err := seedBriefing(ctx, schedStore, summariesStore, issuesStore, archiveStore); err != nil {
+		fmt.Printf("FAIL: seed briefing: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -138,6 +150,9 @@ func main() {
 	reg.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
 	reg.Register(tools.NewListTasksTool(schedStore))
 	reg.Register(tools.NewCancelTaskTool(schedStore))
+	if tool := tools.NewDailyBriefingTool(schedStore, srcStore, summariesStore, issuesStore, archiveStore, time.Local); tool != nil {
+		reg.Register(tool)
+	}
 
 	client := llm.NewOpenAIClient(llm.OpenAIConfig{
 		APIKey:  apiKey,
@@ -186,6 +201,12 @@ func main() {
 			prompt:    "Append a log entry with action \"smoke-test\" so we have a record this run happened.",
 			wantTools: []string{"append_log"},
 			wantText:  []string{"smoke-test"},
+		},
+		{
+			name:      "daily_briefing",
+			prompt:    "Dammi il briefing di oggi in 5 punti. Usa il briefing giornaliero se disponibile.",
+			wantTools: []string{"daily_briefing"},
+			wantText:  []string{"Daily briefing", "smoke-briefing", "briefing smoke issue", "aura-debug-ingest-fixture.pdf"},
 		},
 		{
 			name:      "schedule_task_in",
@@ -308,6 +329,53 @@ func seed(ctx context.Context, store *source.Store) (storedID, ocrID string, err
 		return "", "", fmt.Errorf("flip ocr_complete: %w", err)
 	}
 	return stored.ID, ocrSrc.ID, nil
+}
+
+func seedBriefing(
+	ctx context.Context,
+	schedStore *scheduler.Store,
+	summariesStore *summarizer.SummariesStore,
+	issuesStore *scheduler.IssuesStore,
+	archiveStore *conversation.ArchiveStore,
+) error {
+	now := time.Now().UTC()
+	_, err := schedStore.Upsert(ctx, &scheduler.Task{
+		Name:         "smoke-briefing-task",
+		Kind:         scheduler.KindReminder,
+		Payload:      "review today's Aura usefulness smoke test",
+		ScheduleKind: scheduler.ScheduleAt,
+		ScheduleAt:   now.Add(2 * time.Hour),
+		NextRunAt:    now.Add(2 * time.Hour),
+		Status:       scheduler.StatusActive,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert briefing task: %w", err)
+	}
+	if _, err := summariesStore.Propose(ctx, summarizer.ProposalInput{
+		Fact:       "Create [[smoke-briefing]] to track whether daily briefings are useful.",
+		Action:     string(summarizer.ActionNew),
+		Similarity: 0.9,
+	}); err != nil {
+		return fmt.Errorf("proposal: %w", err)
+	}
+	if err := issuesStore.Enqueue(ctx, scheduler.Issue{
+		Kind:     "missing_category",
+		Severity: "medium",
+		Slug:     "smoke-briefing",
+		Message:  "briefing smoke issue: add category before this becomes real knowledge.",
+	}); err != nil {
+		return fmt.Errorf("issue: %w", err)
+	}
+	if err := archiveStore.Append(ctx, conversation.Turn{
+		ChatID:    1,
+		UserID:    1,
+		TurnIndex: 1,
+		Role:      "user",
+		Content:   "We need Aura to answer real daily questions, not just pass technical demos.",
+	}); err != nil {
+		return fmt.Errorf("archive: %w", err)
+	}
+	return nil
 }
 
 func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, model, prompt string) ([]string, string, []string, error) {

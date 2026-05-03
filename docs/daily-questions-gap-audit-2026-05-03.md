@@ -18,7 +18,7 @@ Goal: build a realistic set of daily user questions and check what Aura can do t
 | 8 | Ho mandato un PDF: cosa contiene e cosa devo farci? | OCR, ingest, summary page, action items, links. | Good: PDF upload, OCR, ingest, sources, wiki page. | Action-item extraction and follow-up task proposals. |
 | 9 | Trova nei miei documenti la clausola/prezzo/scadenza X. | Search sources + wiki, read exact evidence, cite source/page. | Partial: source read/list + wiki search. | Unified source search over OCR text with page-level citations. |
 | 10 | Crea un file Excel/Word/PDF con questi dati. | Generate file, store source, send over Telegram. | Good: `create_xlsx`, `create_docx`, `create_pdf` shipped. | Templates/styles and "reuse previous document format". |
-| 11 | Dammi un briefing mattutino. | Calendar/tasks/wiki/recent changes/news, concise agenda. | Weak: pieces exist, no briefing orchestrator. | Briefing job/tool with sections, preferences, and reviewable outputs. |
+| 11 | Dammi un briefing mattutino. | Calendar/tasks/wiki/recent changes/news, concise agenda. | Good first slice: `daily_briefing` composes tasks, proposals, sources, wiki issues, and recent conversation signals. | Preferences, relevance ranking, and scheduled briefing job. |
 | 12 | Che decisioni abbiamo preso su Aura questa settimana? | Search archive/wiki, group decisions, link evidence. | Partial: archive + wiki. | Dedicated decision extraction/index and date-range filters. |
 | 13 | Quali pagine wiki sono rotte o obsolete? | Lint wiki, graph health, propose fixes. | Good for lint/maintenance. | Obsolescence detection based on age, contradictions, and low confidence. |
 | 14 | Collega queste note tra loro. | Find related pages, suggest links, update review queue. | Partial: wiki related fields + proposals. | Link-suggestion engine and approval flow that patches related slugs. |
@@ -111,7 +111,7 @@ Goal: build a realistic set of daily user questions and check what Aura can do t
 | Evidence/citations | Medium | Tool outputs have references, but answers do not consistently preserve them. | Internal evidence envelope and "show sources" response mode. |
 | Skills | Medium-strong | Catalog/install/read exist. | Skill creation workflow and smoke tests. |
 | Dashboard review | Medium | Pending proposals, tasks, sources, swarm panels exist. | Better proposal provenance, batch approve/reject, relation patching. |
-| Daily command center | Weak | The stores exist but no single daily view/tool. | `daily_briefing` tool and scheduled briefing job. |
+| Daily command center | Medium | `daily_briefing` now composes the key local stores into a single read-only answer. | Add preferences, ranking, and scheduled briefing job. |
 
 ## Workable Product Epics
 
@@ -220,7 +220,7 @@ First acceptance prompts:
 
 ## Prioritized Backlog From This Audit
 
-Status note: slice 17h closed the recurrence parity part of this backlog. `schedule_task` now exposes `every_minutes`, daily `weekdays`, and dashboard/API/backend parity for business-day schedules. Slice 17i added the first bounded `agent_job` task kind with propose-only writes. The remaining P0 is live-runtime activation sanity for AuraBot/proposals.
+Status note: slice 17h closed the recurrence parity part of this backlog. `schedule_task` now exposes `every_minutes`, daily `weekdays`, and dashboard/API/backend parity for business-day schedules. Slice 17i added the first bounded `agent_job` task kind with propose-only writes. Slice 17j added the first `daily_briefing` read-only command center and verified it with an Italian natural-prompt E2E.
 
 | Priority | Slice | Why first | Risk |
 | -------- | ----- | --------- | ---- |
@@ -228,7 +228,7 @@ Status note: slice 17h closed the recurrence parity part of this backlog. `sched
 | Done | Expose `every_minutes` in `schedule_task` or align tool/API recurrence | Shipped in slice 17h. | Low |
 | Done | Add weekday recurrence | Shipped in slice 17h. | Medium |
 | Done | Add `agent_job` scheduler kind, propose-only | Shipped in slice 17i. | Medium-high |
-| P1 | Add `daily_briefing` read-only tool | High daily value, low mutation risk. | Medium |
+| Done | Add `daily_briefing` read-only tool | Shipped in slice 17j; live E2E prompt selected the tool. | Medium |
 | P1 | Add source/wiki unified search | Unlocks document Q&A with evidence. | Medium |
 | P2 | Evidence envelope | Improves trust across all answers. | Medium |
 | P2 | Proposal provenance + batch review | Makes proactivity manageable. | Medium |
@@ -256,7 +256,7 @@ Use these as repeatable natural-language smoke tests:
 - External lookup: web search and fetch when Ollama web credentials are available.
 - Document ingestion: PDF OCR, source inbox, auto-ingest into wiki.
 - File generation: XLSX, DOCX, PDF creation and Telegram delivery.
-- Reminders and maintenance: one-shot/daily reminders and nightly wiki maintenance.
+- Reminders and maintenance: one-shot/daily reminders, nightly wiki maintenance, and read-only daily briefing.
 - Review-gated growth: pending wiki proposals exist in code.
 - Read-only parallel investigation: AuraBot swarm exists in code with metrics and dashboard.
 

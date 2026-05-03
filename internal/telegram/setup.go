@@ -351,6 +351,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	// Slice 12h/12l.1: shared wiki_issues store. Both the API maintenance
 	// handlers and the nightly maintenance job read/write the same queue.
 	b.issues = scheduler.NewIssuesStore(schedStore.DB())
+	if tool := tools.NewDailyBriefingTool(schedStore, sourceStore, summariesStore, b.issues, b.archiveDB, time.Local); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	// Slice 12e/12f: summarizer runner with real deduper + mode-based applier.
 	if cfg.SummarizerEnabled && b.archiveDB != nil && client != nil {
