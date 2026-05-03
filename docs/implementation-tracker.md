@@ -107,8 +107,27 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17k.1 | Log-driven agent drift fixes | done | Runtime logs showed scheduled-job testing drifting into `spawn_aurabot` + repeated web searches, fenced summarizer JSON being rejected, and `write_wiki` retries delayed by generic tag-limit guidance. Fixed fenced JSON parsing and made wiki tag/source limits explicit in tool schema/error hints. |
 | 17l | Run scheduled routines now | done | Added `run_task_now` so "eseguilo adesso" executes the saved scheduled `agent_job` by name, reuses its normalized payload/tool allowlist, records metrics, and sends the completion summary when `notify=true` instead of improvising with `spawn_aurabot`. |
 | 17m | AuraBot completion guardrails | done | Live `/swarm` run showed a researcher issuing repeated web searches, filling context, and failing after 90s with zero UI metrics. AuraBot tasks now have per-role tool budgets, compact tool-result clipping, a forced final synthesis turn with tools disabled, and deadline partial completion after evidence has been gathered. |
+| 17n | AuraBot value timeout | done | Raised AuraBot timeout default and local runtime value from 90s to 300s. The longer wall clock is paired with slice 17m's tool budgets/finalization guardrails, so agents have time for useful work without unbounded search loops. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17n (AuraBot value timeout)
+
+Follow-up to the live `/swarm` failure: 90 seconds is too small for valuable external research and synthesis.
+
+Implementation:
+
+- Raised `AURABOT_TIMEOUT_SEC` default from 90 to 300 seconds.
+- Updated `.env.example` and the local gitignored `.env` runtime value to 300.
+- Made Telegram setup fall back to `config.DefaultAuraBotTimeoutSec` instead of a duplicated literal.
+- Updated the original AuraBot swarm design doc timeout example.
+
+Verification:
+
+- `go test ./internal/config ./internal/telegram ./internal/agent ./internal/swarm ./internal/swarmtools`
+- `go run ./cmd/debug_swarm -json`
+
+Next slice: run a live `trading-signals-test` again after restart and inspect `/swarm` metrics to tune whether 300s is enough or if background jobs need asynchronous completion notifications.
 
 ### 2026-05-03 - Slice 17m (AuraBot completion guardrails)
 

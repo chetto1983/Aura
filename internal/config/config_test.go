@@ -142,8 +142,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.AuraBotMaxDepth != 1 {
 		t.Errorf("AuraBotMaxDepth = %d, want 1", cfg.AuraBotMaxDepth)
 	}
-	if cfg.AuraBotTimeoutSec != 90 {
-		t.Errorf("AuraBotTimeoutSec = %d, want 90", cfg.AuraBotTimeoutSec)
+	if cfg.AuraBotTimeoutSec != DefaultAuraBotTimeoutSec {
+		t.Errorf("AuraBotTimeoutSec = %d, want %d", cfg.AuraBotTimeoutSec, DefaultAuraBotTimeoutSec)
 	}
 	if cfg.AuraBotMaxIterations != 5 {
 		t.Errorf("AuraBotMaxIterations = %d, want 5", cfg.AuraBotMaxIterations)

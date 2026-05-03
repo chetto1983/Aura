@@ -218,7 +218,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	}
 	timeoutSec := cfg.AuraBotTimeoutSec
 	if timeoutSec <= 0 {
-		timeoutSec = 90
+		timeoutSec = config.DefaultAuraBotTimeoutSec
 	}
 	maxIterations := cfg.AuraBotMaxIterations
 	if maxIterations <= 0 {

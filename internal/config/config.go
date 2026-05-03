@@ -6,6 +6,7 @@ import (
 )
 
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
+const DefaultAuraBotTimeoutSec = 300
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
@@ -37,7 +38,7 @@ type Config struct {
 	AuraBotEnabled       bool    `envconfig:"AURABOT_ENABLED" default:"false"`
 	AuraBotMaxActive     int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
 	AuraBotMaxDepth      int     `envconfig:"AURABOT_MAX_DEPTH" default:"1"`
-	AuraBotTimeoutSec    int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"90"`
+	AuraBotTimeoutSec    int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
 	AuraBotMaxIterations int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
 	EmbeddingAPIKey      string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL     string  `envconfig:"EMBEDDING_BASE_URL"`
@@ -143,7 +144,7 @@ func Load() (*Config, error) {
 	cfg.AuraBotEnabled = getEnvBool("AURABOT_ENABLED", false)
 	cfg.AuraBotMaxActive = getEnvInt("AURABOT_MAX_ACTIVE", 4)
 	cfg.AuraBotMaxDepth = getEnvInt("AURABOT_MAX_DEPTH", 1)
-	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", 90)
+	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
 	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 5)
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
