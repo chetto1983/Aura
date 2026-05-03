@@ -119,6 +119,36 @@ func TestManagerRespectsMaxActive(t *testing.T) {
 	}
 }
 
+func TestManagerUpdateLimitsAffectsNextRun(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	runner := &fakeRunner{delay: 25 * time.Millisecond}
+	manager, err := NewManager(ManagerConfig{Runner: runner, Store: store, MaxActive: 1, MaxDepth: 1})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	manager.UpdateLimits(3, 2)
+	maxActive, maxDepth := manager.Limits()
+	if maxActive != 3 || maxDepth != 2 {
+		t.Fatalf("limits = active:%d depth:%d", maxActive, maxDepth)
+	}
+
+	assignments := make([]Assignment, 6)
+	for i := range assignments {
+		assignments[i] = Assignment{Role: "librarian", Prompt: "work", Depth: 2}
+	}
+	if _, err := manager.Run(ctx, RunRequest{Goal: "updated limits", Assignments: assignments}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	calls, observedMaxActive := runner.stats()
+	if calls != 6 {
+		t.Fatalf("runner calls = %d, want 6", calls)
+	}
+	if observedMaxActive > 3 {
+		t.Fatalf("observed max active = %d, want <= 3", observedMaxActive)
+	}
+}
+
 func TestManagerDepthLimitFailsTaskWithoutRunning(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

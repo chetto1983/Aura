@@ -371,3 +371,11 @@ export interface SettingItem {
   hint?: string;
   group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 }
+
+export interface SettingsUpdateResponse {
+  ok: boolean;
+  applied?: string[];
+  errors?: string[];
+  runtime_applied?: boolean;
+  runtime_error?: string;
+}

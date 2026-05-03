@@ -57,9 +57,11 @@ type SettingsUpdateRequest struct {
 
 // SettingsUpdateResponse is the POST /settings body.
 type SettingsUpdateResponse struct {
-	OK      bool     `json:"ok"`
-	Applied []string `json:"applied,omitempty"`
-	Errors  []string `json:"errors,omitempty"`
+	OK             bool     `json:"ok"`
+	Applied        []string `json:"applied,omitempty"`
+	Errors         []string `json:"errors,omitempty"`
+	RuntimeApplied bool     `json:"runtime_applied,omitempty"`
+	RuntimeError   string   `json:"runtime_error,omitempty"`
 }
 
 // SettingsTestRequest is the POST /settings/test body.
@@ -106,10 +108,10 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeySummarizerCooldownSeconds, Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
 
 	{Key: settings.KeyAuraBotEnabled, Value: "false", Group: "aurabot", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and swarm tools. Restart Aura after changing."},
-	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Higher values cost more and can stress providers."},
-	{Key: settings.KeyAuraBotMaxDepth, Value: "1", Group: "aurabot", Kind: "int", Label: "Max delegation depth", Hint: "Current safe default is 1: manager plus direct workers."},
-	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Saved dashboard values override .env on restart."},
-	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops."},
+	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Applies to new runs when AuraBot is already enabled."},
+	{Key: settings.KeyAuraBotMaxDepth, Value: "1", Group: "aurabot", Kind: "int", Label: "Max delegation depth", Hint: "Current safe default is 1: manager plus direct workers. Applies to new runs."},
+	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Applies to new workers when AuraBot is already enabled."},
+	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops. Applies to new workers."},
 
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
@@ -295,12 +297,33 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 			}
 			applied = append(applied, k)
 		}
+		var runtimeApplied bool
+		var runtimeErr string
+		if len(errs) == 0 && deps.ApplyRuntimeSettings != nil && touchesLiveRuntimeSetting(applied) {
+			if err := deps.ApplyRuntimeSettings(ctx); err != nil {
+				runtimeErr = err.Error()
+			} else {
+				runtimeApplied = true
+			}
+		}
 		writeJSON(w, deps.Logger, http.StatusOK, SettingsUpdateResponse{
-			OK:      len(errs) == 0,
-			Applied: applied,
-			Errors:  errs,
+			OK:             len(errs) == 0,
+			Applied:        applied,
+			Errors:         errs,
+			RuntimeApplied: runtimeApplied,
+			RuntimeError:   runtimeErr,
 		})
 	}
+}
+
+func touchesLiveRuntimeSetting(keys []string) bool {
+	for _, key := range keys {
+		switch key {
+		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations:
+			return true
+		}
+	}
+	return false
 }
 
 func handleSettingsTest(deps Deps) http.HandlerFunc {

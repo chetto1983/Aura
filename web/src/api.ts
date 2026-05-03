@@ -26,6 +26,7 @@ import type {
   ProposedUpdate,
   WikiIssue,
   SettingItem,
+  SettingsUpdateResponse,
   SwarmRunDetail,
   SwarmRunSummary,
   SwarmTask,
@@ -278,7 +279,7 @@ export const api = {
   // ---- runtime settings (slice 14d) ----
   settings: () => get<{ items: SettingItem[] }>(`/settings`),
   updateSettings: (updates: Record<string, string>) =>
-    post<{ ok: boolean; applied?: string[]; errors?: string[] }>(`/settings`, { updates }),
+    post<SettingsUpdateResponse>(`/settings`, { updates }),
   testProvider: (baseURL: string, apiKey: string, probePath?: string) =>
     post<{ ok: boolean; error?: string; models?: string[] }>(`/settings/test`, {
       base_url: baseURL,

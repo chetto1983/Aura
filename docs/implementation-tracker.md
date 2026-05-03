@@ -110,8 +110,27 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17n | AuraBot value timeout | done | Raised AuraBot timeout default and local runtime value from 90s to 300s. The longer wall clock is paired with slice 17m's tool budgets/finalization guardrails, so agents have time for useful work without unbounded search loops. |
 | 17o | Dashboard AuraBot settings | done | `/settings` now exposes AuraBot in its own group with editable defaults for enabled/max-active/depth/timeout/iterations, explains DB-over-`.env` precedence, and lets operators save overrides to `aura.db` instead of editing `.env`. |
 | 17p | Settings active-vs-saved diagnostics | done | `/settings` now returns the running process value for each row plus `restart_required`; the dashboard highlights rows where a saved DB override differs from the active config, so users know when a restart is needed. |
+| 17q | Live AuraBot settings apply | done | Saving AuraBot max-active/max-depth/timeout/max-iterations in `/settings` now updates the in-process runner/manager for subsequent swarm runs when AuraBot is already enabled. Enabling/disabling the swarm still requires restart because it changes registered tools. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17q (Live AuraBot settings apply)
+
+Goal: reduce restart friction after slice 17p by applying safe AuraBot runtime settings immediately.
+
+Implementation:
+
+- `agent.Runner` now exposes thread-safe `Limits` / `UpdateLimits` for max iterations and deadlines.
+- `swarm.Manager` now exposes thread-safe `Limits` / `UpdateLimits` for max active workers and depth.
+- `POST /settings` can invoke a runtime settings hook after successful persistence.
+- Telegram wiring applies AuraBot max-active/max-depth/timeout/max-iterations to the live runner/manager when AuraBot is already enabled.
+- `AURABOT_ENABLED` remains restart-required because it changes whether swarm tools are registered.
+
+Verification:
+
+- `go test ./internal/agent ./internal/swarm ./internal/api ./internal/telegram`
+
+Next slice: add a small `/settings` UX hint/toast for “applied live” vs “restart still required”, then run an E2E swarm from the dashboard with changed timeout/max-active.
 
 ### 2026-05-03 - Slice 17p (Settings active-vs-saved diagnostics)
 

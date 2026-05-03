@@ -22,6 +22,7 @@ type AgentRunner interface {
 type Manager struct {
 	runner    AgentRunner
 	store     *Store
+	mu        sync.RWMutex
 	maxActive int
 	maxDepth  int
 	logger    *slog.Logger
@@ -53,14 +54,7 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	if cfg.Store == nil {
 		return nil, errors.New("swarm manager: store required")
 	}
-	maxActive := cfg.MaxActive
-	if maxActive <= 0 {
-		maxActive = defaultMaxActive
-	}
-	maxDepth := cfg.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = defaultMaxDepth
-	}
+	maxActive, maxDepth := normalizeLimits(cfg.MaxActive, cfg.MaxDepth)
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -74,10 +68,37 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	}, nil
 }
 
+func normalizeLimits(maxActive, maxDepth int) (int, int) {
+	if maxActive <= 0 {
+		maxActive = defaultMaxActive
+	}
+	if maxDepth <= 0 {
+		maxDepth = defaultMaxDepth
+	}
+	return maxActive, maxDepth
+}
+
+// Limits returns the concurrency/delegation limits used for new runs.
+func (m *Manager) Limits() (maxActive int, maxDepth int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.maxActive, m.maxDepth
+}
+
+// UpdateLimits changes the concurrency/delegation limits used by subsequent runs.
+func (m *Manager) UpdateLimits(maxActive, maxDepth int) {
+	maxActive, maxDepth = normalizeLimits(maxActive, maxDepth)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maxActive = maxActive
+	m.maxDepth = maxDepth
+}
+
 func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(req.Assignments) == 0 {
 		return RunResult{}, errors.New("swarm manager: at least one assignment required")
 	}
+	maxActive, maxDepth := m.Limits()
 	run, err := m.store.CreateRun(ctx, req.Goal, req.CreatedBy)
 	if err != nil {
 		return RunResult{}, err
@@ -96,7 +117,7 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		taskRows = append(taskRows, task)
 	}
 
-	sem := make(chan struct{}, m.maxActive)
+	sem := make(chan struct{}, maxActive)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var failed []error
@@ -106,8 +127,8 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		wg.Add(1)
 		go func(task *Task, assignment Assignment) {
 			defer wg.Done()
-			if assignment.Depth > m.maxDepth {
-				err := fmt.Errorf("task depth %d exceeds max depth %d", assignment.Depth, m.maxDepth)
+			if assignment.Depth > maxDepth {
+				err := fmt.Errorf("task depth %d exceeds max depth %d", assignment.Depth, maxDepth)
 				if markErr := m.store.FailTask(context.Background(), task.ID, err.Error()); markErr != nil {
 					err = errors.Join(err, markErr)
 				}

@@ -144,6 +144,30 @@ func TestRunnerTextOnly(t *testing.T) {
 	}
 }
 
+func TestRunnerUpdateLimitsAffectsSnapshot(t *testing.T) {
+	runner, err := NewRunner(Config{
+		LLM:           &fakeLLM{},
+		MaxIterations: 1,
+		Timeout:       time.Second,
+		ToolTimeout:   2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+
+	runner.UpdateLimits(7, 3*time.Second, 4*time.Second)
+	maxIterations, timeout, toolTimeout := runner.Limits()
+	if maxIterations != 7 || timeout != 3*time.Second || toolTimeout != 4*time.Second {
+		t.Fatalf("limits = iterations:%d timeout:%s tool:%s", maxIterations, timeout, toolTimeout)
+	}
+
+	runner.UpdateLimits(0, 0, 0)
+	maxIterations, timeout, toolTimeout = runner.Limits()
+	if maxIterations != defaultMaxIterations || timeout != defaultTimeout || toolTimeout != defaultToolTimeout {
+		t.Fatalf("defaulted limits = iterations:%d timeout:%s tool:%s", maxIterations, timeout, toolTimeout)
+	}
+}
+
 func TestRunnerToolLoop(t *testing.T) {
 	client := &fakeLLM{resps: []llm.Response{
 		{

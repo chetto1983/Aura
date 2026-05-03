@@ -23,6 +23,7 @@ const (
 // Runner executes a bounded LLM/tool loop without Telegram coupling. It is the
 // small reusable core future AuraBot workers can use inside SwarmManager.
 type Runner struct {
+	mu            sync.RWMutex
 	llm           llm.Client
 	tools         *tools.Registry
 	model         string
@@ -98,11 +99,38 @@ func NewRunner(cfg Config) (*Runner, error) {
 	}, nil
 }
 
+// Limits returns the runtime loop/deadline limits currently used for new runs.
+func (r *Runner) Limits() (maxIterations int, timeout time.Duration, toolTimeout time.Duration) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.maxIterations, r.timeout, r.toolTimeout
+}
+
+// UpdateLimits changes the loop/deadline limits used by subsequent runs.
+// Non-positive inputs fall back to the same defaults used by NewRunner.
+func (r *Runner) UpdateLimits(maxIterations int, timeout time.Duration, toolTimeout time.Duration) {
+	if maxIterations <= 0 {
+		maxIterations = defaultMaxIterations
+	}
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+	if toolTimeout <= 0 {
+		toolTimeout = defaultToolTimeout
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.maxIterations = maxIterations
+	r.timeout = timeout
+	r.toolTimeout = toolTimeout
+}
+
 func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	start := time.Now()
-	if r.timeout > 0 {
+	maxIterations, timeout, toolTimeout := r.Limits()
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 
@@ -118,7 +146,7 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	var lastToolResult string
 	maxToolCalls := task.MaxToolCalls
 	finalizing := false
-	for i := 0; i < r.maxIterations; i++ {
+	for i := 0; i < maxIterations; i++ {
 		turnTools := toolDefs
 		if finalizing {
 			turnTools = nil
@@ -166,7 +194,7 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 
 		toolCalls, skipped := splitToolCalls(resp.ToolCalls, maxToolCalls, result.ToolCalls)
 		result.ToolCalls += len(toolCalls)
-		toolResults := r.executeToolCalls(ctx, task.UserID, allowlist, toolCalls, task.MaxToolResultChars)
+		toolResults := r.executeToolCalls(ctx, task.UserID, allowlist, toolCalls, task.MaxToolResultChars, toolTimeout)
 		toolResults = append(toolResults, skippedToolOutcomes(skipped, maxToolCalls)...)
 		for _, tr := range toolResults {
 			messages = append(messages, llm.Message{
@@ -230,21 +258,21 @@ type toolOutcome struct {
 	content string
 }
 
-func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist []string, calls []llm.ToolCall, maxChars int) []toolOutcome {
+func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist []string, calls []llm.ToolCall, maxChars int, toolTimeout time.Duration) []toolOutcome {
 	results := make([]toolOutcome, len(calls))
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			results[i] = toolOutcome{id: call.ID, content: limitToolContent(r.executeOneTool(ctx, userID, allowlist, call), maxChars)}
+			results[i] = toolOutcome{id: call.ID, content: limitToolContent(r.executeOneTool(ctx, userID, allowlist, call, toolTimeout), maxChars)}
 		}(i, call)
 	}
 	wg.Wait()
 	return results
 }
 
-func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []string, call llm.ToolCall) string {
+func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []string, call llm.ToolCall, toolTimeout time.Duration) string {
 	if len(allowlist) == 0 || !slices.Contains(allowlist, call.Name) {
 		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name))
 	}
@@ -253,8 +281,8 @@ func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []
 	}
 	toolCtx := ctx
 	var cancel context.CancelFunc
-	if r.toolTimeout > 0 {
-		toolCtx, cancel = context.WithTimeout(toolCtx, r.toolTimeout)
+	if toolTimeout > 0 {
+		toolCtx, cancel = context.WithTimeout(toolCtx, toolTimeout)
 		defer cancel()
 	}
 	if strings.TrimSpace(userID) != "" {

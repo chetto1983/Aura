@@ -137,8 +137,9 @@ type Deps struct {
 	// current values) and POST /settings (bulk upsert) so the dashboard
 	// can edit operator-tunable config without a restart. Optional —
 	// when nil, the endpoints return 503.
-	Settings      *settings.Store
-	RuntimeConfig *config.Config
+	Settings             *settings.Store
+	RuntimeConfig        *config.Config
+	ApplyRuntimeSettings func(context.Context) error
 
 	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
 	// dashboard returns empty run lists and 404s for details.

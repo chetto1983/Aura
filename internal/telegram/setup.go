@@ -502,6 +502,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		// Slice 14d: runtime settings page surface.
 		Settings:      settingsStore,
 		RuntimeConfig: cfg,
+		ApplyRuntimeSettings: func(ctx context.Context) error {
+			return applyAuraBotRuntimeSettings(ctx, settingsStore, cfg, auraRunner, swarmManager, logger)
+		},
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
 	})

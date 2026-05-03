@@ -240,6 +240,70 @@ func TestSettingsUpdate_HappyPath(t *testing.T) {
 	}
 }
 
+func TestSettingsUpdate_AppliesRuntimeSettingsHook(t *testing.T) {
+	router, store := newSettingsEnv(t)
+	cfg := &config.Config{AuraBotTimeoutSec: 300}
+	var calls int
+	router = NewRouter(Deps{
+		Settings:      store,
+		RuntimeConfig: cfg,
+		ApplyRuntimeSettings: func(ctx context.Context) error {
+			calls++
+			cfg.AuraBotTimeoutSec = store.GetInt(ctx, settings.KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
+			return nil
+		},
+	})
+
+	body := `{"updates":{"AURABOT_TIMEOUT_SEC":"600"}}`
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var update SettingsUpdateResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &update)
+	if !update.OK || !update.RuntimeApplied || calls != 1 {
+		t.Fatalf("update = %+v calls=%d", update, calls)
+	}
+
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var list SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &list)
+	for _, it := range list.Items {
+		if it.Key != settings.KeyAuraBotTimeoutSec {
+			continue
+		}
+		if it.Value != "600" || it.ActiveValue != "600" || it.RestartRequired {
+			t.Fatalf("timeout row = value:%q active:%q restart:%v", it.Value, it.ActiveValue, it.RestartRequired)
+		}
+		return
+	}
+	t.Fatal("AURABOT_TIMEOUT_SEC not in items")
+}
+
+func TestSettingsUpdate_DoesNotApplyRuntimeHookForRestartOnlyAuraBotEnable(t *testing.T) {
+	_, store := newSettingsEnv(t)
+	var calls int
+	router := NewRouter(Deps{
+		Settings: store,
+		ApplyRuntimeSettings: func(context.Context) error {
+			calls++
+			return nil
+		},
+	})
+
+	body := `{"updates":{"AURABOT_ENABLED":"true"}}`
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if calls != 0 {
+		t.Fatalf("runtime hook calls = %d, want 0 for restart-only enable toggle", calls)
+	}
+}
+
 func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
 	router, store := newSettingsEnv(t)
 	_ = store.Set(context.Background(), "LLM_API_KEY", "sk-old")
