@@ -329,7 +329,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			toolCtx := tools.WithUserID(ctx, userID)
 			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
 			if err != nil {
-				result = "(tool error) " + err.Error()
+				result = tools.FormatToolError(err)
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
 			}
 			results[i] = outcome{id: tc.ID, content: result}
