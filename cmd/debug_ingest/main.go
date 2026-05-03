@@ -124,7 +124,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
 	storedID, ocrID, err := seed(ctx, srcStore)
@@ -153,6 +153,9 @@ func main() {
 	reg.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
 	reg.Register(tools.NewListTasksTool(schedStore))
 	reg.Register(tools.NewCancelTaskTool(schedStore))
+	if tool := tools.NewRunTaskNowTool(debugRunTaskNowRunner{store: schedStore}); tool != nil {
+		reg.Register(tool)
+	}
 	if tool := tools.NewDailyBriefingTool(schedStore, srcStore, summariesStore, issuesStore, archiveStore, time.Local); tool != nil {
 		reg.Register(tool)
 	}
@@ -240,6 +243,12 @@ func main() {
 			prompt:    "Schedule a propose-only agent job every 60 minutes. Name it slice17-agent-smoke. Its goal is to check Aura sources and propose useful wiki updates.",
 			wantTools: []string{"schedule_task"},
 			wantText:  []string{"slice17-agent-smoke", "agent_job", "every 60 minutes"},
+		},
+		{
+			name:      "run_task_now",
+			prompt:    "Esegui adesso il task schedulato slice17-agent-smoke. Usa run_task_now, non creare un nuovo swarm.",
+			wantTools: []string{"run_task_now"},
+			wantText:  []string{"slice17-agent-smoke", "completed", "debug run_task_now"},
 		},
 		{
 			name:      "list_tasks",
@@ -385,6 +394,34 @@ func seedBriefing(
 		return fmt.Errorf("archive: %w", err)
 	}
 	return nil
+}
+
+type debugRunTaskNowRunner struct {
+	store *scheduler.Store
+}
+
+func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
+	task, err := r.store.GetByName(ctx, name)
+	if err != nil {
+		return tools.RunTaskNowResult{}, err
+	}
+	if task.Kind != scheduler.KindAgentJob {
+		return tools.RunTaskNowResult{}, fmt.Errorf("debug run_task_now: task %q is kind %s", task.Name, task.Kind)
+	}
+	if err := r.store.RecordManualRun(ctx, task.ID, time.Now().UTC(), ""); err != nil {
+		return tools.RunTaskNowResult{}, err
+	}
+	return tools.RunTaskNowResult{
+		OK:        true,
+		Name:      task.Name,
+		Kind:      string(task.Kind),
+		Status:    "completed",
+		Summary:   "debug run_task_now completed for saved agent_job",
+		LLMCalls:  1,
+		ToolCalls: 1,
+		ElapsedMS: 25,
+		Notified:  true,
+	}, nil
 }
 
 func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, model, prompt string) ([]string, string, []string, error) {

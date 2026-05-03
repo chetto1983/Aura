@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultTimeout    = 5 * time.Minute
-	errorSnippetLimit = 256              // chars from non-2xx body included in the error message
+	errorSnippetLimit = 256               // chars from non-2xx body included in the error message
 	responseHardCap   = 256 * 1024 * 1024 // 256 MiB read cap on response body
 )
 

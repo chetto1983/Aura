@@ -286,4 +286,3 @@ func (t *AppendLogTool) Execute(ctx context.Context, args map[string]any) (strin
 	}
 	return fmt.Sprintf("Logged: %s [[%s]]", action, slug), nil
 }
-

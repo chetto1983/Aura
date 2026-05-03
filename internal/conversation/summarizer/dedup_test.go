@@ -134,9 +134,9 @@ func TestDeduper_SearchError(t *testing.T) {
 // similarity drives the decision when multiple candidates are returned.
 func TestDeduper_MultipleResults_TopUsed(t *testing.T) {
 	engine := &mockSearchEngine{results: []search.Result{
-		{Slug: "top-page", Score: 0.92},    // skip
-		{Slug: "second-page", Score: 0.6},  // would be patch
-		{Slug: "third-page", Score: 0.1},   // would be new
+		{Slug: "top-page", Score: 0.92},   // skip
+		{Slug: "second-page", Score: 0.6}, // would be patch
+		{Slug: "third-page", Score: 0.1},  // would be new
 	}}
 	d := summarizer.NewDeduper(engine, 0.85, 0.5)
 	c := summarizer.Candidate{Fact: "well-covered fact", Score: 0.9}

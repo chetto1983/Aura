@@ -333,6 +333,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 			CostPerToken: cfg.CostPerToken,
 		}, logger),
 	}
+	if tool := tools.NewRunTaskNowTool(b); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the

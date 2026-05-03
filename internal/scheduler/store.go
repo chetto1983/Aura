@@ -417,6 +417,27 @@ func (s *Store) MarkFired(ctx context.Context, id int64, lastRun, nextRun time.T
 	return nil
 }
 
+// RecordManualRun records an explicit "run now" attempt without changing the
+// task's schedule or lifecycle. Manual runs are extra executions; recurring
+// tasks should keep their next_run_at exactly as scheduled.
+func (s *Store) RecordManualRun(ctx context.Context, id int64, lastRun time.Time, lastErr string) error {
+	const q = `
+		UPDATE scheduled_tasks
+		SET last_run_at = ?, last_error = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := s.db.ExecContext(ctx, q,
+		lastRun.UTC().Format(time.RFC3339),
+		lastErr,
+		time.Now().UTC().Format(time.RFC3339),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("scheduler record manual run: %w", err)
+	}
+	return nil
+}
+
 // Cancel flips a task to status='cancelled' so the tick loop ignores it.
 // Returns false if no task with that name exists.
 func (s *Store) Cancel(ctx context.Context, name string) (bool, error) {

@@ -23,7 +23,7 @@ type OwnerNotifier func(ctx context.Context, msg string)
 // MaintenanceJob runs the nightly wiki maintenance pass.
 type MaintenanceJob struct {
 	wiki     WikiMaintainer
-	issues   *IssuesStore // nil → skip enqueue (pre-12h behaviour)
+	issues   *IssuesStore  // nil → skip enqueue (pre-12h behaviour)
 	notifier OwnerNotifier // nil → skip notifications
 	logger   *slog.Logger
 }

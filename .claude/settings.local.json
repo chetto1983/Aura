@@ -48,7 +48,13 @@
       "PowerShell(Get-ChildItem -Path D:\\\\Aura\\\\web -Depth 0 | Where-Object { $_.Name -ne 'node_modules' } | ForEach-Object { if \\($_.PSIsContainer\\) { \"DIR  $\\($_.Name\\)\" } else { \"FILE $\\($_.Name\\)\" } })",
       "PowerShell(Get-ChildItem -Path D:\\\\Aura\\\\web\\\\src -Recurse -Depth 3 | Where-Object { $_.Name -ne 'node_modules' } | ForEach-Object { $_.FullName.Replace\\('D:\\\\Aura\\\\web\\\\src\\\\', 'src\\\\'\\) })",
       "PowerShell(git *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Aura\\\\web\\\\src\" -Recurse -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "Bash(npm install *)",
+      "PowerShell(New-Item *)",
+      "Bash(npx tsc *)",
+      "PowerShell(cd D:\\\\Aura\\\\web; npx tsc --noEmit; Write-Output \"Exit code: $LASTEXITCODE\")"
     ]
   }
 }

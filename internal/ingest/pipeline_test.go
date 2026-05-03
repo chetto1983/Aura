@@ -15,10 +15,10 @@ import (
 // testEnv bundles the temp dir + stores so individual tests can poke at side
 // files (index.md, log.md) without re-deriving paths.
 type testEnv struct {
-	dir       string
-	pipeline  *Pipeline
-	sources   *source.Store
-	wiki      *wiki.Store
+	dir      string
+	pipeline *Pipeline
+	sources  *source.Store
+	wiki     *wiki.Store
 }
 
 // newTestPipeline wires a fresh source.Store + wiki.Store rooted in t.TempDir().

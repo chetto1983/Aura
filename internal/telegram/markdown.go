@@ -11,8 +11,9 @@ import (
 // and bullets to a "•" prefix so the output is still readable.
 //
 // Supported (per https://core.telegram.org/bots/api#html-style):
-//   <b> <strong> <i> <em> <u> <ins> <s> <strike> <del>
-//   <a href="url"> <code> <pre> <blockquote>
+//
+//	<b> <strong> <i> <em> <u> <ins> <s> <strike> <del>
+//	<a href="url"> <code> <pre> <blockquote>
 //
 // Conversion rules (applied in this order so escaping doesn't trample
 // our own tags):

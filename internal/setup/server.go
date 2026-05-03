@@ -112,13 +112,13 @@ func Run(cfg Config) (telegramToken string, err error) {
 			return
 		}
 		var req struct {
-			TelegramToken    string `json:"telegram_token"`
-			LLMPreset        string `json:"llm_preset"`
-			LLMBaseURL       string `json:"llm_base_url"`
-			LLMModel         string `json:"llm_model"`
-			LLMAPIKey        string `json:"llm_api_key"`
-			EmbeddingAPIKey  string `json:"embedding_api_key"`
-			MistralAPIKey    string `json:"mistral_api_key"`
+			TelegramToken   string `json:"telegram_token"`
+			LLMPreset       string `json:"llm_preset"`
+			LLMBaseURL      string `json:"llm_base_url"`
+			LLMModel        string `json:"llm_model"`
+			LLMAPIKey       string `json:"llm_api_key"`
+			EmbeddingAPIKey string `json:"embedding_api_key"`
+			MistralAPIKey   string `json:"mistral_api_key"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid JSON"})

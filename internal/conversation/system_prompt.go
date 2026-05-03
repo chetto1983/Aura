@@ -29,6 +29,7 @@ If a tool result is a JSON object with "ok":false, it means the tool call failed
 - search_skill_catalog: search skills.sh for installable agent skills when the user asks what skills exist or wants to add capabilities.
 - list_skills/read_skill: inspect locally installed Aura skills. Skills are instructions, not permission to bypass tool safety.
 - daily_briefing: build a read-only "what needs attention today?" briefing from tasks, pending wiki proposals, source inbox, wiki issues, and recent conversation archive. Prefer this when the user asks what to do today, what changed today, or asks for a morning/daily briefing.
+- run_task_now: run an existing scheduled agent_job immediately by task name. Prefer this when the user says "eseguilo adesso", "provalo ora", "run it now", or wants to test a saved scheduled routine; do not substitute spawn_aurabot for a saved scheduled job.
 
 Prefer using a tool over guessing when the answer depends on current facts, saved memory, or a specific source. Do not call tools just to look busy.
 

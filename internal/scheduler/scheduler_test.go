@@ -334,6 +334,40 @@ func TestStore_Cancel(t *testing.T) {
 	}
 }
 
+func TestStore_RecordManualRunPreservesSchedule(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	next := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	task, err := store.Upsert(ctx, &Task{
+		Name:                 "manual",
+		Kind:                 KindAgentJob,
+		Payload:              "check sources",
+		ScheduleKind:         ScheduleEvery,
+		ScheduleEveryMinutes: 60,
+		NextRunAt:            next,
+	})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	ranAt := time.Now().UTC().Truncate(time.Second)
+	if err := store.RecordManualRun(ctx, task.ID, ranAt, ""); err != nil {
+		t.Fatalf("RecordManualRun: %v", err)
+	}
+	got, err := store.GetByName(ctx, "manual")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.LastRunAt.IsZero() {
+		t.Fatal("last_run_at not recorded")
+	}
+	if !got.NextRunAt.Equal(next) {
+		t.Fatalf("next_run_at = %v, want preserved %v", got.NextRunAt, next)
+	}
+	if got.Status != StatusActive {
+		t.Fatalf("status = %s, want active", got.Status)
+	}
+}
+
 func TestStore_List(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

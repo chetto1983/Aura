@@ -195,15 +195,15 @@ func npxBinary() string {
 // MISTRAL_API_KEY can't leak into the install subprocess's logs.
 func sanitizedEnv(env []string) []string {
 	keep := map[string]bool{
-		"PATH":         true,
-		"PATHEXT":      true,
-		"HOME":         true,
-		"USERPROFILE":  true,
-		"APPDATA":      true,
-		"LOCALAPPDATA": true,
-		"TEMP":         true,
-		"TMP":          true,
-		"NODE_PATH":    true,
+		"PATH":                  true,
+		"PATHEXT":               true,
+		"HOME":                  true,
+		"USERPROFILE":           true,
+		"APPDATA":               true,
+		"LOCALAPPDATA":          true,
+		"TEMP":                  true,
+		"TMP":                   true,
+		"NODE_PATH":             true,
 		"NPM_CONFIG_USERCONFIG": true,
 		"NPM_CONFIG_PREFIX":     true,
 	}

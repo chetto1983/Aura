@@ -49,12 +49,12 @@ func TestRequireBearer_BadHeaderShape(t *testing.T) {
 	s := newTestStore(t)
 	h := RequireBearer(s, nil, nil, okHandler())
 	cases := []string{
-		"",                  // missing
-		"Token abc",         // wrong scheme
-		"Bearer",            // no value
-		"Bearer  ",          // whitespace only
-		"basic abc:def",     // wrong scheme
-		"abc",               // no scheme
+		"",              // missing
+		"Token abc",     // wrong scheme
+		"Bearer",        // no value
+		"Bearer  ",      // whitespace only
+		"basic abc:def", // wrong scheme
+		"abc",           // no scheme
 	}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {

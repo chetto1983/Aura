@@ -131,7 +131,7 @@ func run() error {
 		&controlledSearcher{
 			rules: map[string]float32{
 				"Marco lives in Bologna and works in fintech": 0.10, // new (sim < 0.5)
-				"Backend uses Go 1.22+":                      0.91, // skip (sim > 0.85)
+				"Backend uses Go 1.22+":                       0.91, // skip (sim > 0.85)
 			},
 			defaultSlug: "aura-architecture",
 		},

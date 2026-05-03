@@ -169,13 +169,13 @@ func TestPresetByID(t *testing.T) {
 
 func TestLoopbackOnly(t *testing.T) {
 	tests := map[string]string{
-		"":                   "127.0.0.1:8080",
-		":8081":              "127.0.0.1:8081",
-		"0.0.0.0:8081":       "127.0.0.1:8081",
-		"127.0.0.1:8090":     "127.0.0.1:8090",
-		"192.168.1.5:8081":   "192.168.1.5:8081", // explicit non-loopback host preserved (operator's choice)
-		"::":                 "127.0.0.1:8080",
-		"garbage-no-port":    "127.0.0.1:8080",
+		"":                 "127.0.0.1:8080",
+		":8081":            "127.0.0.1:8081",
+		"0.0.0.0:8081":     "127.0.0.1:8081",
+		"127.0.0.1:8090":   "127.0.0.1:8090",
+		"192.168.1.5:8081": "192.168.1.5:8081", // explicit non-loopback host preserved (operator's choice)
+		"::":               "127.0.0.1:8080",
+		"garbage-no-port":  "127.0.0.1:8080",
 	}
 	for in, want := range tests {
 		got := loopbackOnly(in)

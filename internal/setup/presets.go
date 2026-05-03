@@ -9,7 +9,7 @@ type Preset struct {
 	BaseURL     string `json:"base_url"`
 	Model       string `json:"model"`
 	NeedsKey    bool   `json:"needs_key"`
-	ProbePath   string `json:"probe_path"`   // appended to base_url for /v1/models style listing
+	ProbePath   string `json:"probe_path"` // appended to base_url for /v1/models style listing
 	Description string `json:"description"`
 }
 

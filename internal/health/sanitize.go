@@ -58,15 +58,15 @@ func sanitizeAttr(a slog.Attr) slog.Attr {
 func isSecretKey(key string) bool {
 	// Exact matches — keys that are always secrets
 	exactMatches := map[string]bool{
-		"token":       true,
-		"auth":        true,
-		"cookie":      true,
-		"secret":      true,
-		"credential":  true,
-		"password":    true,
-		"apikey":      true,
-		"api_key":     true,
-		"api-key":     true,
+		"token":      true,
+		"auth":       true,
+		"cookie":     true,
+		"secret":     true,
+		"credential": true,
+		"password":   true,
+		"apikey":     true,
+		"api_key":    true,
+		"api-key":    true,
 	}
 	if exactMatches[key] {
 		return true

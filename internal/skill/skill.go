@@ -278,9 +278,9 @@ func exitCode(err error) int {
 
 // boundedBuffer is an io.Writer that limits output size.
 type boundedBuffer struct {
-	data       bytes.Buffer
-	limit      int64
-	truncated  bool
+	data      bytes.Buffer
+	limit     int64
+	truncated bool
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {

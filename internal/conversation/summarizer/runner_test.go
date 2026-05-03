@@ -65,10 +65,10 @@ func TestRunner_TriggersAfterInterval(t *testing.T) {
 	deduper := &noopDeduper{}
 
 	cfg := summarizer.RunnerConfig{
-		Enabled:        true,
-		TurnInterval:   5,
-		LookbackTurns:  10,
-		CooldownSecs:   60,
+		Enabled:       true,
+		TurnInterval:  5,
+		LookbackTurns: 10,
+		CooldownSecs:  60,
 	}
 	runner := summarizer.NewRunner(cfg, archive, scorer, deduper)
 

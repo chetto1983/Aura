@@ -120,14 +120,14 @@ func TestBuildPDF_HeadingLevelClamped(t *testing.T) {
 func TestLatin1Sanitize(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"hello", "hello"},
-		{"“quoted”", `"quoted"`},                  // curly doubles → straight
-		{"can’t", "can't"},                             // curly single → straight
-		{"em—dash", "em-dash"},                         // em-dash → hyphen
-		{"en–dash", "en-dash"},                         // en-dash → hyphen
-		{"and…", "and..."},                             // ellipsis → three dots
-		{"non breaking", "non breaking"},               // NBSP → space
-		{"emoji \U0001F600", "emoji ?"},                     // out-of-range → ?
-		{"Latin-1 café", "Latin-1 café"},          // accented chars in cp1252 stay
+		{"“quoted”", `"quoted"`},         // curly doubles → straight
+		{"can’t", "can't"},               // curly single → straight
+		{"em—dash", "em-dash"},           // em-dash → hyphen
+		{"en–dash", "en-dash"},           // en-dash → hyphen
+		{"and…", "and..."},               // ellipsis → three dots
+		{"non breaking", "non breaking"}, // NBSP → space
+		{"emoji \U0001F600", "emoji ?"},  // out-of-range → ?
+		{"Latin-1 café", "Latin-1 café"}, // accented chars in cp1252 stay
 	}
 	for _, tc := range cases {
 		got := latin1Sanitize(tc.in)

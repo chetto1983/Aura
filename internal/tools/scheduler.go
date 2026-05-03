@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -15,6 +16,76 @@ import (
 // tools do. List output can grow with task count; truncate before
 // dumping into context.
 const schedulerToolMaxChars = 8000
+
+type RunTaskNowResult struct {
+	OK               bool     `json:"ok"`
+	Name             string   `json:"name"`
+	Kind             string   `json:"kind"`
+	Status           string   `json:"status"`
+	Summary          string   `json:"summary,omitempty"`
+	LastError        string   `json:"last_error,omitempty"`
+	LLMCalls         int      `json:"llm_calls"`
+	ToolCalls        int      `json:"tool_calls"`
+	TokensPrompt     int      `json:"tokens_prompt"`
+	TokensCompletion int      `json:"tokens_completion"`
+	TokensTotal      int      `json:"tokens_total"`
+	ElapsedMS        int64    `json:"elapsed_ms"`
+	Notified         bool     `json:"notified"`
+	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
+}
+
+type ScheduledTaskRunner interface {
+	RunTaskNow(ctx context.Context, name string) (RunTaskNowResult, error)
+}
+
+type RunTaskNowTool struct {
+	runner ScheduledTaskRunner
+}
+
+func NewRunTaskNowTool(runner ScheduledTaskRunner) *RunTaskNowTool {
+	if runner == nil {
+		return nil
+	}
+	return &RunTaskNowTool{runner: runner}
+}
+
+func (t *RunTaskNowTool) Name() string { return "run_task_now" }
+
+func (t *RunTaskNowTool) Description() string {
+	return "Run a saved scheduled task immediately by name. Use this when the user says to execute a scheduled agent job now, test a saved routine, or run an existing scheduled routine without changing its future schedule. MVP supports agent_job tasks."
+}
+
+func (t *RunTaskNowTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Name of the saved scheduled task to run now.",
+			},
+		},
+		"required": []string{"name"},
+	}
+}
+
+func (t *RunTaskNowTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t.runner == nil {
+		return "", errors.New("run_task_now: runner unavailable")
+	}
+	name, err := requiredString(args, "name")
+	if err != nil {
+		return "", fmt.Errorf("run_task_now: %w", err)
+	}
+	result, err := t.runner.RunTaskNow(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("run_task_now: %w", err)
+	}
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("run_task_now: marshal result: %w", err)
+	}
+	return string(data), nil
+}
 
 // ScheduleTaskTool lets the LLM persist a one-shot or daily-recurring
 // task. Recognized kinds: reminder (sends payload as a Telegram message),

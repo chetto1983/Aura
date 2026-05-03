@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,25 @@ import (
 
 	"github.com/aura/aura/internal/scheduler"
 )
+
+type fakeRunTaskNowRunner struct {
+	name string
+}
+
+func (r *fakeRunTaskNowRunner) RunTaskNow(_ context.Context, name string) (RunTaskNowResult, error) {
+	r.name = name
+	return RunTaskNowResult{
+		OK:        true,
+		Name:      name,
+		Kind:      string(scheduler.KindAgentJob),
+		Status:    "completed",
+		Summary:   "checked saved routine",
+		LLMCalls:  1,
+		ToolCalls: 2,
+		ElapsedMS: 123,
+		Notified:  true,
+	}, nil
+}
 
 func newTestSchedStore(t *testing.T) *scheduler.Store {
 	t.Helper()
@@ -18,6 +38,28 @@ func newTestSchedStore(t *testing.T) *scheduler.Store {
 	}
 	t.Cleanup(func() { store.Close() })
 	return store
+}
+
+func TestRunTaskNowTool_ExecutesNamedTask(t *testing.T) {
+	runner := &fakeRunTaskNowRunner{}
+	tool := NewRunTaskNowTool(runner)
+	if tool.Name() != "run_task_now" || tool.Description() == "" {
+		t.Fatal("run_task_now metadata is incomplete")
+	}
+	out, err := tool.Execute(context.Background(), map[string]any{"name": "morning-watch"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if runner.name != "morning-watch" {
+		t.Fatalf("runner name = %q", runner.name)
+	}
+	var result RunTaskNowResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("json: %v\n%s", err, out)
+	}
+	if !result.OK || result.Name != "morning-watch" || result.Status != "completed" || !result.Notified {
+		t.Fatalf("result = %+v", result)
+	}
 }
 
 func TestScheduleTaskTool_OneShotReminder(t *testing.T) {

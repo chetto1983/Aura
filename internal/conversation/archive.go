@@ -182,9 +182,9 @@ func (s *ArchiveStore) DeleteAll(ctx context.Context) (int64, error) {
 
 // Stats returns row count + DB size estimate for the dashboard.
 type ArchiveStats struct {
-	TotalRows   int64
-	OldestAt    time.Time // zero when TotalRows == 0
-	NewestAt    time.Time
+	TotalRows     int64
+	OldestAt      time.Time // zero when TotalRows == 0
+	NewestAt      time.Time
 	DistinctChats int64
 }
 

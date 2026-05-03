@@ -15,9 +15,9 @@ type sleepTool struct {
 	delay time.Duration
 }
 
-func (s *sleepTool) Name() string                  { return s.name }
-func (s *sleepTool) Description() string           { return "sleep" }
-func (s *sleepTool) Parameters() map[string]any    { return map[string]any{} }
+func (s *sleepTool) Name() string               { return s.name }
+func (s *sleepTool) Description() string        { return "sleep" }
+func (s *sleepTool) Parameters() map[string]any { return map[string]any{} }
 func (s *sleepTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
 	select {
 	case <-ctx.Done():
