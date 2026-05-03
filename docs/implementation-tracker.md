@@ -120,7 +120,7 @@ Fixes `docs/REVIEW.md` HR-01. `wiki.Store.RepairLink` no longer aborts the whole
 - Added `TestRepairLinkContinuesAfterWriteFailure`.
 - The test creates three pages referencing `[[broken-link]]`, corrupts the middle page so it is readable but invalid on rewrite, runs `RepairLink`, and verifies the first and third pages are repaired while the returned error names the bad page and `log.md` includes `auto-fix`.
 
-**Next work**: HR-02 (`proposed_updates` loses category/related slugs on review approval).
+**Follow-up**: HR-02 landed immediately after as 12u.9.
 
 ### 2026-05-03 - Phase 15 slice 15e (natural file-creation smoke)
 
@@ -136,7 +136,7 @@ Closes the file-creation milestone's remaining validation gap. The earlier `cmd/
 
 **Live smoke**: `go run ./cmd/debug_files` passed all 3 scenarios on 2026-05-03 using `glm-5.1:cloud` via `https://ollama.com/v1`.
 
-**Next work**: Phase 15 MVP is now closed. The next implementation target is the v0.12.1 review backlog in `docs/REVIEW.md`: HR-01 (`RepairLink` partial-commit) and HR-02 (`proposed_updates` loses category/related slugs).
+**Follow-up**: Phase 15 MVP is closed. The v0.12.1 review backlog was also closed in 12u.8/12u.9; next implementation work should use the current product backlog.
 
 ### 2026-05-02 — Phase 15 slice 15c (`create_pdf` tool + Telegram delivery)
 
@@ -164,7 +164,7 @@ Closes the file-creation milestone's MVP. Aura now produces three formats from o
 
 **Quality gates**: `go build/vet/test ./...` all green. `go run ./cmd/debug_pdf` 5/5. Visual check: `D:/tmp/aura-debug-q1-report.pdf` (1602 bytes) opens cleanly with title + paragraphs + headings + bullets + 3-row table. tsc + vite build clean (358 KB main / 112 KB gz).
 
-**Phase 15 MVP complete**: three file-creation tools (xlsx + docx + pdf), shared `DocumentSender` interface, dashboard download, sha256 dedup. Deferred: 15e LLM-driven natural-prompt tests, optional `persistAndDeliver` helper if a 4th format adds more duplication, optional 15c.2 HTML-rendered PDFs via headless Chrome.
+**Phase 15 MVP + 15e complete**: three file-creation tools (xlsx + docx + pdf), shared `DocumentSender` interface, dashboard download, sha256 dedup, and natural-prompt smoke coverage. Remaining optional follow-ups: `persistAndDeliver` helper if a 4th format adds more duplication, optional 15c.2 HTML-rendered PDFs via headless Chrome.
 
 ### 2026-05-02 — Phase 15 slice 15b (`create_docx` tool + Telegram delivery)
 
@@ -191,7 +191,7 @@ Second slice of Phase 15. Aura now produces both spreadsheets and Word documents
 
 **Quality gates**: `go build/vet/test ./...` all green. `go run ./cmd/debug_docx` 5/5. Visual check: opened `D:/tmp/aura-debug-memo.docx` (1412 bytes) — 2-sheet structure rendered with title + paragraphs + bullets + table, no XML parser errors. tsc + vite build clean (358 KB main / 112 KB gz, no regression).
 
-**Deferred**: 15c `create_pdf` (gofpdf for simple text-only or headless-Chrome for HTML-rendered), 15e LLM-driven natural-prompt tests in the debug harnesses.
+**Follow-ups landed**: 15c `create_pdf`, 15d dashboard download, and 15e natural-prompt smoke are complete.
 
 ### 2026-05-02 — Phase 15 slice 15d (Dashboard download endpoint + button)
 
@@ -252,13 +252,13 @@ First slice of Phase 15 (file creation milestone). Aura goes from "knowledge & c
 
 **Quality gates**: `go build ./...`, `go vet ./...`, `go test ./...` all green. `go run ./cmd/debug_xlsx` all 5 scenarios pass. Verified visually by writing `D:/tmp/aura-debug-q1-report.xlsx` and opening — two sheets ("Q1", "summary"), correct values, no formula injection.
 
-**Deferred to follow-up slices**:
+**Follow-ups since landed**:
 
-- 15b `create_docx` — docx-in-Go (likely `unidoc/unioffice` or `nguyenthenguyen/docx`).
-- 15c `create_pdf` — best via headless-chrome or `gofpdf`.
-- 15d dashboard download endpoint (`GET /api/sources/<id>/raw`) + Sources panel "Download" button on `KindXLSX` rows.
-- 15e LLM-driven natural-prompt tests in `cmd/debug_xlsx` (today's harness only exercises tool-call shape, not LLM tool selection).
-- Re-OCR / re-ingest buttons hidden for KindXLSX rows in the dashboard (currently they'd 4xx since the kind has no OCR pipeline).
+- 15b `create_docx` — done.
+- 15c `create_pdf` — done.
+- 15d dashboard download endpoint (`GET /api/sources/<id>/raw`) + Sources panel Download button — done.
+- 15e LLM-driven natural-prompt tests via `cmd/debug_files` — done.
+- Re-OCR / re-ingest buttons are hidden for generated artifact rows in the dashboard — done.
 
 ### 2026-05-02 — Phase 14.5 (Dashboard UX hardening)
 
@@ -319,7 +319,7 @@ No behavior changes intended; this is an ownership-boundary refactor to make fut
 
 ### 2026-05-02 — Phase 12 (Compounding Memory) v0.12.0
 
-Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6 against `docs/plans/2026-05-02-phase-12-compounding-memory-plan.md`. 21 atomic slices (12a–12u) + 7 post-review follow-ups (12u.1–12u.7) + 2 lead infra commits (12.cleanup, 12.fix-applier).
+Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6 against `docs/plans/2026-05-02-phase-12-compounding-memory-plan.md`. 21 atomic slices (12a–12u) + 9 post-review follow-ups (12u.1–12u.9) + 2 lead infra commits (12.cleanup, 12.fix-applier).
 
 **Architecture**: SQLite `conversations` archive (write side: `BufferedAppender` chan-100, drain goroutine, drop-on-full slog warn; read side: `ArchiveStore.ListByChat/ListAll/Get/MaxTurnIndex`). `summarizer` package: `LLMScorer` temperature=0 → `Deduper` (sim>0.85 skip / ≥0.5 patch / <0.5 new) → 3 `Applier` impls (Auto/Review/Off) gated by `SUMMARIZER_MODE`. `MaintenanceJob` Levenshtein auto-fix + `wiki_issues` queue with severity policy. `compounding_rate` metric on `/api/health`. Dashboard: `/conversations`, `/summaries`, `/maintenance` routes + 5th `HealthDashboard` card + sidebar nav with `g v / g u / g x` chords.
 
@@ -328,11 +328,11 @@ Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend /
 2. Q&A's debug_summarizer integration harness (slice 12r) caught `AutoApplier.applyNew` constructing `wiki.Page` without `SchemaVersion` / `PromptVersion` — every `ActionNew` write would silently fail validation in production auto mode. Fix in 12.fix-applier: set versions + extend `promptVersionRe` regex to accept `summarizer_v{n}`.
 3. Two cross-teammate staging collisions (Frontend's `git add` swept Backend's uncommitted untracked files into combined commits). Lead resolved with `git reset --soft HEAD~N` + atomic re-commits. After the second collision, Backend was shut down (queue complete) to eliminate the risk for the remainder.
 
-**Opus 4.7 review (slice 12u, gsd-code-reviewer)**: 2 CRITICAL + 7 HIGH + 8 MEDIUM + 6 LOW findings. Both CRITICALs (CR-01 frontend response shape mismatch breaking `/conversations`; CR-02 chat_id forced 400 on initial mount) fixed as 12u.1 + 12u.2. 5 of 7 HIGHs landed (HR-03 archive dropping tool_calls + telemetry; HR-04 `turnMsgIdx` staleness causing silent data loss when `EnforceLimit` trims mid-turn — fixed via DB-monotonic `MaxTurnIndex`; HR-05 OffApplier still paying scorer LLM cost — early-return; HR-06 fresh-`IssuesStore`-per-run anti-pattern — single shared store; HR-07 `Resolve` swallowing DB errors — surface real errors via `ErrIssueAlreadyResolved`). HR-01 + HR-02 deferred to v0.12.1.
+**Opus 4.7 review (slice 12u, gsd-code-reviewer)**: 2 CRITICAL + 7 HIGH + 8 MEDIUM + 6 LOW findings. Both CRITICALs (CR-01 frontend response shape mismatch breaking `/conversations`; CR-02 chat_id forced 400 on initial mount) fixed as 12u.1 + 12u.2. All 7 HIGHs landed: HR-03 archive dropping tool_calls + telemetry; HR-04 `turnMsgIdx` staleness causing silent data loss when `EnforceLimit` trims mid-turn (fixed via DB-monotonic `MaxTurnIndex`); HR-05 OffApplier still paying scorer LLM cost (early-return); HR-06 fresh-`IssuesStore`-per-run anti-pattern (single shared store); HR-07 `Resolve` swallowing DB errors (surface real errors via `ErrIssueAlreadyResolved`); HR-01 `RepairLink` partial-commit (continue + joined per-page errors); HR-02 proposal category/related-slug round-trip (schema migration + approval restore).
 
 **Quality gates**: 289 tests across 6 packages green. `go vet` clean. `staticcheck -checks U1000` zero findings. Frontend lint + tsc + build clean. Coverage: archive.go / maintenance.go / issues.go / scorer.go / dedup.go / types.go all 100% per function. Race detector deferred to Linux CI (Windows linker conflict with HMITool7.0).
 
-**Deferred work** (v0.12.1): HR-01 RepairLink partial-commit (collect multi-error instead of bail-on-first), HR-02 Category/RelatedSlugs lost on `proposed_updates` round-trip (schema migration).
+**Post-review closure**: HR-01 and HR-02 landed as 12u.8 and 12u.9. No HIGH findings remain open; MEDIUM/LOW items remain backlog candidates.
 
 ### 2026-04-30 — Slice 11u (Render assistant Markdown into Telegram HTML)
 

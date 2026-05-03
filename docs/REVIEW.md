@@ -3,7 +3,8 @@
 **Reviewer:** Claude Opus 4.7 (1M context)
 **Reviewed:** 2026-05-02
 **Scope:** all source modified or created in 280ef8b..23f56a4
-**Verdict:** **BLOCK — 2 CRITICAL bugs prevent v0.12.0 tag.**
+**Original verdict:** **BLOCK — 2 CRITICAL bugs prevent v0.12.0 tag.**
+**Current status (2026-05-03):** CRITICAL and HIGH findings are closed through follow-up slices 12u.1-12u.9.
 
 ---
 
@@ -22,7 +23,27 @@ The shipping pipeline is in good shape — concurrency primitives are sound, SQL
 1. **CR-01** — `ConversationsPanel` reads `data.turns` from a Go endpoint that returns a bare array, so the entire Conversations route is stuck on its empty state regardless of archived data.
 2. **CR-02** — `ConversationsPanel` requires a chat_id at the API layer but the panel is rendered with chat_id empty by default; opening `/conversations` without typing a chat ID hits HTTP 400 immediately.
 
-The remaining HIGH items (partial-commit on RepairLink, lost Category on review-approve, archived turns missing tool_calls, summarizer LLM cost when mode=off) are real production correctness issues but won't crash the tag — they should land as 12u.N atomic commits in the same window.
+The remaining HIGH items (partial-commit on RepairLink, lost Category on review-approve, archived turns missing tool_calls, summarizer LLM cost when mode=off) were real production correctness issues but did not crash the tag. They were handled as 12u.N atomic follow-ups; see the resolution update below.
+
+---
+
+## Resolution Update (2026-05-03)
+
+Original findings are retained below for audit history. Current closure:
+
+| Finding | Status | Slice |
+|---|---|---|
+| CR-01 | fixed | 12u.1 |
+| CR-02 | fixed | 12u.2 |
+| HR-03 | fixed | 12u.3 |
+| HR-04 | fixed | 12u.4 |
+| HR-05 | fixed | 12u.5 |
+| HR-06 | fixed | 12u.6 |
+| HR-07 | fixed | 12u.7 |
+| HR-01 | fixed | 12u.8 |
+| HR-02 | fixed | 12u.9 |
+
+No CRITICAL or HIGH findings remain open. MEDIUM and LOW items remain backlog candidates.
 
 ---
 
@@ -53,6 +74,7 @@ The Go handler returns a bare array (`[]ConversationTurn`), but `api.ts` types t
 ### HR-01: `RepairLink` partial-commit leaves wiki inconsistent on mid-loop failure
 
 - **File:** [`internal/wiki/store.go`](internal/wiki/store.go#L495-L519)
+- **Status:** fixed in slice 12u.8. `RepairLink` now continues across per-page failures, writes the audit log, and returns joined per-page errors.
 
 `RepairLink` iterates pages, mutates `page.Body`, calls `WritePage` (which commits to git), and bails on the first `WritePage` error with `return fmt.Errorf(...)`. If page 3 of 5 fails, pages 1 and 2 are already mutated, written, and committed; pages 4 and 5 still contain `[[broken]]`; and `AppendLog` at line 517 never runs so the audit trail is missing the auto-fix entry. `MaintenanceJob` then logs the error at the broken-link severity but the wiki is in an indeterminate state — the slug is partially renamed.
 
@@ -65,6 +87,7 @@ The Go handler returns a bare array (`[]ConversationTurn`), but `api.ts` types t
 ### HR-02: `Category` and `RelatedSlugs` lost when proposal is approved
 
 - **Files:** [`internal/conversation/summarizer/applier.go`](internal/conversation/summarizer/applier.go#L141-L154), [`internal/api/summaries.go`](internal/api/summaries.go#L70-L86), [`internal/scheduler/store.go`](internal/scheduler/store.go#L58-L70)
+- **Status:** fixed in slice 12u.9. `proposed_updates` now stores category and related slugs, and approval reconstructs the full candidate metadata.
 
 `ReviewApplier.Apply` writes only `chat_id, fact, action, target_slug, similarity, source_turn_ids` to `proposed_updates` — it drops `Candidate.Category` and `Candidate.RelatedSlugs` entirely. On approval, `handleSummariesApprove` rebuilds a `Candidate` with `Category: "fact"` hardcoded (`internal/api/summaries.go:75`). So a "person" or "project" candidate that was scored at 0.92 in auto mode and would land in the right category is silently downgraded to "fact" if review mode is enabled. This subtly corrupts the wiki's category index over time.
 
@@ -241,9 +264,9 @@ Header color is derived by `SEVERITY_COLOR[sev].split(' ')[1]` which depends on 
 - [x] Frontend uses the existing api.ts client (no hardcoded `/api/...` URLs in the new panels).
 - [x] No TODO/FIXME/XXX added in production paths beyond the BufferedAppender.Close ctx note (MR-05).
 - [ ] `-race` not run on dev (Windows linker conflict — to verify on Linux CI before tag).
-- [ ] CR-01 + CR-02 fixes — required before tag.
+- [x] CR-01 + CR-02 fixes — landed as 12u.1 and 12u.2.
 
-**Recommendation:** Land CR-01 and CR-02 as 12u.1 and 12u.2 atomic commits, run E2E against a populated archive to confirm Conversations panel works, then tag v0.12.0. The HIGH items can either land in the same window (preferred — they're all small) or roll into a 12u.cleanup pass tagged as v0.12.1. Do not tag with the CRITICALs open.
+**Resolution:** The original recommendation is satisfied. CR-01/CR-02 landed as 12u.1/12u.2; HR-03-HR-07 landed as 12u.3-12u.7; HR-01/HR-02 landed as 12u.8/12u.9. Remaining MEDIUM/LOW items are backlog candidates, not tag blockers.
 
 ---
 
