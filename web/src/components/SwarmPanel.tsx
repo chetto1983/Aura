@@ -5,6 +5,7 @@ import { ErrorCard } from '@/components/common/ErrorCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import type { SwarmRunDetail, SwarmRunSummary, SwarmTask } from '@/types/api';
 
 const POLL_MS = 5000;
@@ -17,6 +18,7 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export function SwarmPanel() {
+  const { t, formatDate } = useLocale();
   const fetchRuns = useCallback(() => api.swarmRuns(50), []);
   const { data: runs, error, loading, stale, refetch } = useApi(fetchRuns, POLL_MS);
   const [selectedID, setSelectedID] = useState<string>('');
@@ -37,7 +39,7 @@ export function SwarmPanel() {
   const { data: detail, error: detailError, loading: detailLoading, refetch: refetchDetail } = useApi(fetchDetail, effectiveSelectedID ? POLL_MS : undefined);
 
   if (loading && !runs) return <PanelSkeleton />;
-  if (error && !runs) return <ErrorCard error={error} title="Failed to load swarm runs" onRetry={refetch} />;
+  if (error && !runs) return <ErrorCard error={error} title={t('swarm.errorTitle')} onRetry={refetch} />;
 
   const safeRuns = runs ?? [];
 
@@ -49,12 +51,12 @@ export function SwarmPanel() {
             <Bot size={18} />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">AuraBot swarm</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">Worker runs and execution metrics</p>
+            <h1 className="text-2xl font-semibold tracking-tight">{t('swarm.title')}</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('swarm.subtitle')}</p>
           </div>
           {stale && (
             <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
-              stale
+              {t('swarm.stale')}
             </span>
           )}
         </div>
@@ -67,7 +69,7 @@ export function SwarmPanel() {
           <RunList runs={safeRuns} selectedID={effectiveSelectedID} onSelect={setSelectedID} />
           <section className="min-w-0">
             {detailError && !detail ? (
-              <ErrorCard error={detailError} title="Failed to load swarm detail" onRetry={refetchDetail} />
+              <ErrorCard error={detailError} title={t('swarm.errorDetailTitle')} onRetry={refetchDetail} />
             ) : detailLoading && !detail ? (
               <DetailSkeleton />
             ) : detail && selected ? (
@@ -89,6 +91,7 @@ function RunList({
   selectedID: string;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useLocale();
   return (
     <section className="space-y-2">
       {runs.map((run) => (
@@ -108,9 +111,9 @@ function RunList({
             <StatusBadge status={run.status} />
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-            <Metric label="tasks" value={run.task_counts.total.toString()} />
-            <Metric label="tokens" value={compact(run.metrics.tokens_total)} />
-            <Metric label="speed" value={`${run.metrics.speedup.toFixed(1)}x`} />
+            <Metric label={t('swarm.metric.tasks')} value={run.task_counts.total.toString()} />
+            <Metric label={t('swarm.metric.tokens')} value={compact(run.metrics.tokens_total)} />
+            <Metric label={t('swarm.metric.speed')} value={`${run.metrics.speedup.toFixed(1)}x`} />
           </div>
         </button>
       ))}
@@ -119,13 +122,14 @@ function RunList({
 }
 
 function RunDetail({ run }: { run: SwarmRunDetail }) {
+  const { t, formatDate } = useLocale();
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Activity} label="Tasks" value={`${run.task_counts.completed}/${run.task_counts.total}`} />
-        <Stat icon={Cpu} label="LLM calls" value={run.metrics.llm_calls.toString()} />
-        <Stat icon={Database} label="Tokens" value={compact(run.metrics.tokens_total)} />
-        <Stat icon={Clock3} label="Speedup" value={`${run.metrics.speedup.toFixed(2)}x`} />
+        <Stat icon={Activity} label={t('swarm.stat.tasks')} value={`${run.task_counts.completed}/${run.task_counts.total}`} />
+        <Stat icon={Cpu} label={t('swarm.stat.llmCalls')} value={run.metrics.llm_calls.toString()} />
+        <Stat icon={Database} label={t('swarm.stat.tokens')} value={compact(run.metrics.tokens_total)} />
+        <Stat icon={Clock3} label={t('swarm.stat.speedup')} value={`${run.metrics.speedup.toFixed(2)}x`} />
       </div>
 
       <div className="rounded-md border bg-card">
@@ -138,8 +142,8 @@ function RunDetail({ run }: { run: SwarmRunDetail }) {
             <p className="mt-1 font-mono text-xs text-muted-foreground">{run.id}</p>
           </div>
           <div className="text-right text-xs text-muted-foreground">
-            <p>{new Date(run.created_at).toLocaleString()}</p>
-            {run.completed_at && <p>{run.metrics.wall_ms} ms wall</p>}
+            <p>{formatDate(run.created_at, { dateStyle: 'short', timeStyle: 'medium' })}</p>
+            {run.completed_at && <p>{run.metrics.wall_ms} {t('swarm.stat.wallMs')}</p>}
           </div>
         </div>
         {run.last_error && (
@@ -158,6 +162,7 @@ function RunDetail({ run }: { run: SwarmRunDetail }) {
 }
 
 function TaskRow({ task }: { task: SwarmTask }) {
+  const { t } = useLocale();
   return (
     <article className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -165,15 +170,15 @@ function TaskRow({ task }: { task: SwarmTask }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={task.status} />
             <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">{task.role}</span>
-            <span className="text-xs text-muted-foreground">depth {task.depth}</span>
+            <span className="text-xs text-muted-foreground">{t('swarm.task.depth')} {task.depth}</span>
           </div>
           <h3 className="mt-2 text-sm font-medium">{task.subject || task.id}</h3>
           <p className="mt-1 font-mono text-[11px] text-muted-foreground">{task.id}</p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-right text-xs">
-          <Metric label="llm" value={task.llm_calls.toString()} />
-          <Metric label="tools" value={task.tool_calls.toString()} />
-          <Metric label="ms" value={task.elapsed_ms.toString()} />
+          <Metric label={t('swarm.task.llmCalls')} value={task.llm_calls.toString()} />
+          <Metric label={t('swarm.task.toolCalls')} value={task.tool_calls.toString()} />
+          <Metric label={t('swarm.task.elapsedMs')} value={task.elapsed_ms.toString()} />
         </div>
       </div>
       {task.tool_allowlist && task.tool_allowlist.length > 0 && (
@@ -226,11 +231,12 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function EmptyState() {
+  const { t } = useLocale();
   return (
     <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
       <Bot size={36} className="mx-auto opacity-40" />
-      <p className="mt-3 text-sm font-medium">No swarm runs yet</p>
-      <p className="mx-auto mt-1 max-w-sm text-xs">Runs appear here after `spawn_aurabot` executes with `AURABOT_ENABLED=true`.</p>
+      <p className="mt-3 text-sm font-medium">{t('swarm.emptyTitle')}</p>
+      <p className="mx-auto mt-1 max-w-sm text-xs">{t('swarm.emptyHint')}</p>
     </div>
   );
 }
