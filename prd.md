@@ -428,7 +428,7 @@ SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per cha
 | 14 — Onboarding overhaul + retention controls | done | First-run wizard, runtime `/settings`, task delete + every-N recurrence + conversation cleanup. |
 | 14.5 — Dashboard UX hardening | done | Mobile cards, 44px touch targets, AA contrast, returnTo across auth expiry, custom confirm/prompt modal. Closes 2026-05-02 audit. |
 | **Phase 15 — File creation milestone** — slice 15a `create_xlsx` | done | xuri/excelize/v2 generator with formula-injection sanitization, sources-store persistence (KindXLSX), Telegram delivery via `SendDocumentToUser`, `cmd/debug_xlsx` harness. |
-| Phase 15 follow-ups | not started | 15b `create_docx`, 15c `create_pdf`, 15d dashboard download endpoint + UI, 15e LLM-driven natural-prompt tests in cmd/debug_xlsx. |
+| Phase 15 follow-ups | done | 15b `create_docx`, 15c `create_pdf`, 15d dashboard download endpoint + UI, and 15e LLM-driven natural-prompt tests via `cmd/debug_files`. |
 | **Backlog** — REVIEW.md HR-01, HR-02 (RepairLink partial-commit, Category/RelatedSlugs lost on review-approve) | not started | v0.12.1. |
 
 ---

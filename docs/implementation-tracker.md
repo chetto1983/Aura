@@ -87,8 +87,25 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 15b | `create_docx` tool + Telegram delivery | done | New `internal/files/docx.go` — pure-Go OOXML zip writer (no third-party dep); the three required parts (`[Content_Types].xml`, `_rels/.rels`, `word/document.xml`) emit at ~1.4 KB for a multi-block memo. Block kinds: `heading` (level 1–6 clamped, rendered as bold + half-point-size run formatting so we don't need a /word/styles.xml), `paragraph`, `bullet` (rendered with a `•` + space prefix to avoid a numbering definition), `table` (bordered, 5000 pct width). XML reserved chars escaped via `xml.EscapeText` (rejects raw `<script>` etc. — DOCX consumers refuse files with raw `<` or `&` in `<w:t>`). Caps: 1000 blocks · 500 rows/table · 50 cols/row · 50 000 chars/block · 25 MB · 80-char filename. New `source.KindDOCX` (.docx ext). New `tools.CreateDOCXTool` reuses the slice 15a `DocumentSender` interface; same persist + sha256-dedup + auto-`StatusIngested` flow. `rawAssets[KindDOCX]` row + `validKind` extension wire dashboard download. Frontend kind union + `SourceInbox` Download gate extended. New `cmd/debug_docx` 5-scenario hermetic harness. 8 docx tests (`internal/files`) + 5 docx tool tests (`internal/tools`) + extended router test (PDF + XLSX + DOCX + text 404). |
 | 15b-livetest | Telegram E2E smoke for slice 15b | done | Three real `create_docx` calls: `Quarterly Highlights Memo.docx`, `Project Status.docx`, `Wiki Pages Summary.docx`. The wiki-summary call exercised the full ecosystem: `list_wiki` → 3 **parallel** `read_wiki` calls (slice 11l fan-out, all started within 1 ms) → `create_docx`. 162–286 ms per generate, all delivered via `tele.Document`. |
 | 15c | `create_pdf` tool + Telegram delivery | done | New `internal/files/pdf.go` — pure-Go via `github.com/go-pdf/fpdf` (single dep, no transitive). Same block grammar as create_docx (heading / paragraph / bullet / table) so the LLM only learns one DSL across the three formats. A4 + 15 mm margins + Helvetica family (one of fpdf's 14 base fonts → no font-subset embedding, fully self-contained). Headings: bold + ramped sizes 18→10pt for H1→H6. Tables: bordered, auto-sized cell width across the printable width, first row bolded as a header treatment. **Latin-1 sanitization**: fpdf's standard fonts only support cp1252; curly quotes / em-dashes / ellipses / NBSP / tabs in LLM output would crash at write time. `latin1Sanitize` maps the common offenders to ASCII equivalents (apostrophe, straight quote, hyphen, three dots, plain space) and drops anything else outside cp1252 to a literal question mark. New `source.KindPDFGen` (`pdf_generated`) — distinct from `KindPDF` (uploads) so OCR-only UI actions hide cleanly and `ingest_source` never tries to compile a generated PDF that has no `ocr.md`. Same on-disk filename + content-type as KindPDF (`original.pdf` + `application/pdf` + `inline` disposition) — the file IS a PDF either way; only the source.Kind disambiguates. New `tools.CreatePDFTool` reuses `DocumentSender`. Tool registration alongside xlsx/docx in `setup.go`. New `cmd/debug_pdf` 5-scenario hermetic harness (happy path + Latin-1 sanitization + dedup + path-traversal blocked + caps). 9 pdf tests in `internal/files` + 5 pdf tool tests in `internal/tools` + extended router test (5 kinds: PDF + XLSX + DOCX + PDFGen + text 404). |
+| 15e | Natural-prompt file creation smoke | done | New `cmd/debug_files` harness registers the real `create_xlsx`, `create_docx`, and `create_pdf` tools against a hermetic temp source store and a `DocumentSender` stub. Three ordinary prompts verify model tool selection, persisted source kind/status, file asset bytes, and delivery. Live run on 2026-05-03 with `LLM_MODEL=glm-5.1:cloud` passed all 3 scenarios. |
 
 ## Session Log
+
+### 2026-05-03 - Phase 15 slice 15e (natural file-creation smoke)
+
+Closes the file-creation milestone's remaining validation gap. The earlier `cmd/debug_xlsx`, `cmd/debug_docx`, and `cmd/debug_pdf` harnesses prove each tool when called directly; `cmd/debug_files` proves the LLM can choose the right tool from normal user language.
+
+**Implementation**:
+
+- Added `cmd/debug_files/main.go`.
+- Loads `.env`, requires `LLM_API_KEY`, and respects `LLM_BASE_URL` / `LLM_MODEL`.
+- Creates a hermetic temp wiki/source store and registers only `create_xlsx`, `create_docx`, and `create_pdf`.
+- Runs three natural prompts: spreadsheet budget, editable Word memo, printable PDF invoice summary.
+- Verifies each scenario called the expected tool, returned JSON with `source_id`, wrote the expected `original.*` asset, marked the source `ingested`, and invoked the delivery stub exactly once.
+
+**Live smoke**: `go run ./cmd/debug_files` passed all 3 scenarios on 2026-05-03 using `glm-5.1:cloud` via `https://ollama.com/v1`.
+
+**Next work**: Phase 15 MVP is now closed. The next implementation target is the v0.12.1 review backlog in `docs/REVIEW.md`: HR-01 (`RepairLink` partial-commit) and HR-02 (`proposed_updates` loses category/related slugs).
 
 ### 2026-05-02 — Phase 15 slice 15c (`create_pdf` tool + Telegram delivery)
 
