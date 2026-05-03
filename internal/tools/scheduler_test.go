@@ -158,6 +158,46 @@ func TestScheduleTaskTool_EveryMinutes(t *testing.T) {
 	}
 }
 
+func TestScheduleTaskTool_AgentJob(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+	ctx := WithUserID(t.Context(), "12345")
+
+	out, err := tool.Execute(ctx, map[string]any{
+		"name":     "morning-watch",
+		"kind":     "agent_job",
+		"payload":  "Check project news and propose useful wiki updates.",
+		"daily":    "10:00",
+		"weekdays": []any{"mon", "tue", "wed", "thu", "fri"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "Scheduled agent_job task \"morning-watch\"") {
+		t.Errorf("response = %q", out)
+	}
+	got, err := store.GetByName(ctx, "morning-watch")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.Kind != scheduler.KindAgentJob {
+		t.Errorf("Kind = %q, want agent_job", got.Kind)
+	}
+	if got.RecipientID != "12345" {
+		t.Errorf("RecipientID = %q, want caller id", got.RecipientID)
+	}
+	payload, err := scheduler.NormalizeAgentJobPayload(got.Payload)
+	if err != nil {
+		t.Fatalf("NormalizeAgentJobPayload: %v", err)
+	}
+	if payload.Goal != "Check project news and propose useful wiki updates." {
+		t.Errorf("goal = %q", payload.Goal)
+	}
+	if payload.WritePolicy != scheduler.AgentJobWritePolicyProposeOnly {
+		t.Errorf("write policy = %q", payload.WritePolicy)
+	}
+}
+
 func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 	store := newTestSchedStore(t)
 	tool := NewScheduleTaskTool(store, time.UTC)
@@ -188,6 +228,9 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 		{"bad daily", map[string]any{
 			"name": "a", "kind": "wiki_maintenance", "daily": "3am",
 		}, ""}, // ParseDailyTime emits its own message
+		{"agent job missing goal", map[string]any{
+			"name": "a", "kind": "agent_job", "daily": "03:00",
+		}, "agent_job payload goal required"},
 		{"bad every", map[string]any{
 			"name": "a", "kind": "wiki_maintenance", "every_minutes": float64(0),
 		}, "every_minutes must be >= 1"},

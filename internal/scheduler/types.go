@@ -1,10 +1,12 @@
 // Package scheduler runs background tasks on a SQLite-backed schedule.
 //
-// Two task kinds ship in slice 8:
+// Task kinds:
 //   - reminder         a Telegram message dispatched to a user/chat.
 //   - wiki_maintenance the autonomous nightly pass that runs list_wiki +
 //     lint_wiki + rebuild_index + append_log so the
 //     wiki stays healthy without user intervention.
+//   - agent_job        a bounded scheduled agent routine with propose-only
+//     memory growth by default.
 //
 // Three schedule kinds:
 //   - at    fires once at an absolute UTC timestamp; status flips to done.
@@ -29,6 +31,7 @@ type TaskKind string
 const (
 	KindReminder        TaskKind = "reminder"
 	KindWikiMaintenance TaskKind = "wiki_maintenance"
+	KindAgentJob        TaskKind = "agent_job"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.

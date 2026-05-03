@@ -206,10 +206,16 @@ func main() {
 			wantText:  []string{"slice17-weekday-smoke", "mon,tue,wed,thu,fri"},
 		},
 		{
+			name:      "schedule_agent_job",
+			prompt:    "Schedule a propose-only agent job every 60 minutes. Name it slice17-agent-smoke. Its goal is to check Aura sources and propose useful wiki updates.",
+			wantTools: []string{"schedule_task"},
+			wantText:  []string{"slice17-agent-smoke", "agent_job", "every 60 minutes"},
+		},
+		{
 			name:      "list_tasks",
 			prompt:    "List every scheduled task you currently know about.",
 			wantTools: []string{"list_tasks"},
-			wantText:  []string{"slice9-smoke", "slice17-every-smoke", "slice17-weekday-smoke"},
+			wantText:  []string{"slice9-smoke", "slice17-every-smoke", "slice17-weekday-smoke", "slice17-agent-smoke"},
 		},
 		{
 			name:      "cancel_task",

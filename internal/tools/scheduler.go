@@ -17,9 +17,9 @@ import (
 const schedulerToolMaxChars = 8000
 
 // ScheduleTaskTool lets the LLM persist a one-shot or daily-recurring
-// task. Recognized kinds: reminder (sends payload as a Telegram
-// message at fire time), wiki_maintenance (runs the autonomous wiki
-// pass).
+// task. Recognized kinds: reminder (sends payload as a Telegram message),
+// wiki_maintenance (runs the autonomous wiki pass), and agent_job (runs a
+// bounded propose-only agent routine).
 type ScheduleTaskTool struct {
 	store *scheduler.Store
 	loc   *time.Location
@@ -35,7 +35,7 @@ func NewScheduleTaskTool(store *scheduler.Store, loc *time.Location) *ScheduleTa
 func (t *ScheduleTaskTool) Name() string { return "schedule_task" }
 
 func (t *ScheduleTaskTool) Description() string {
-	return "Schedule a one-shot or recurring task. Two kinds: \"reminder\" (sends payload to the user at fire time) and \"wiki_maintenance\" (runs the autonomous wiki pass). Pick one schedule field: in, at_local, at, daily, or every_minutes. Use daily with weekdays for business-day schedules."
+	return "Schedule a one-shot or recurring task. Kinds: \"reminder\" (sends payload to the user), \"wiki_maintenance\" (runs the autonomous wiki pass), and \"agent_job\" (runs a bounded propose-only agent routine). Pick one schedule field: in, at_local, at, daily, or every_minutes. Use daily with weekdays for business-day schedules."
 }
 
 func (t *ScheduleTaskTool) Parameters() map[string]any {
@@ -48,12 +48,12 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"kind": map[string]any{
 				"type":        "string",
-				"description": "Either \"reminder\" or \"wiki_maintenance\".",
-				"enum":        []string{"reminder", "wiki_maintenance"},
+				"description": "Either \"reminder\", \"wiki_maintenance\", or \"agent_job\".",
+				"enum":        []string{"reminder", "wiki_maintenance", "agent_job"},
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "Task body. For reminder: the message text. For wiki_maintenance: ignored.",
+				"description": "Task body. For reminder: message text. For wiki_maintenance: ignored. For agent_job: the goal to run, or JSON with goal/tool_allowlist/write_policy.",
 			},
 			"in": map[string]any{
 				"type":        "string",
@@ -102,7 +102,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	kind := scheduler.TaskKind(kindStr)
 	switch kind {
-	case scheduler.KindReminder, scheduler.KindWikiMaintenance:
+	case scheduler.KindReminder, scheduler.KindWikiMaintenance, scheduler.KindAgentJob:
 	default:
 		return "", fmt.Errorf("schedule_task: unknown kind %q", kindStr)
 	}
@@ -148,6 +148,18 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 			return "", errors.New("schedule_task: reminder requires an authenticated user context")
 		}
 		task.RecipientID = uid
+	}
+	if kind == scheduler.KindAgentJob {
+		agentPayload, err := scheduler.NormalizeAgentJobPayload(payload)
+		if err != nil {
+			return "", fmt.Errorf("schedule_task: %w", err)
+		}
+		normalized, err := agentPayload.JSON()
+		if err != nil {
+			return "", fmt.Errorf("schedule_task: %w", err)
+		}
+		task.Payload = normalized
+		task.RecipientID = UserIDFromContext(ctx)
 	}
 	now := time.Now().UTC()
 	switch {

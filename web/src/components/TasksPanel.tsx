@@ -229,7 +229,7 @@ export function TasksPanel() {
 }
 
 // NewTaskDialog is a minimal "+ New task" form. Mirrors the schedule_task
-// LLM tool: a name, a kind (reminder | wiki_maintenance), payload, and one
+// LLM tool: a name, a kind (reminder | wiki_maintenance | agent_job), payload, and one
 // of `at` (RFC3339 UTC) or `daily` (HH:MM in the bot's local TZ).
 //
 // Reminders require a recipient_id; the field is shown only when kind is
@@ -383,6 +383,7 @@ function NewTaskForm({
             >
               <option value="wiki_maintenance">wiki_maintenance — runs lint + rebuild + log</option>
               <option value="reminder">reminder — sends a Telegram message</option>
+              <option value="agent_job">agent_job — runs a bounded propose-only agent</option>
             </select>
           </label>
 
@@ -411,7 +412,8 @@ function NewTaskForm({
               type="text"
               value={payload}
               onChange={(e) => setPayload(e.target.value)}
-              placeholder={kind === 'reminder' ? 'reminder text' : ''}
+              placeholder={kind === 'reminder' ? 'reminder text' : kind === 'agent_job' ? 'agent goal' : ''}
+              required={kind === 'agent_job'}
               className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
           </label>

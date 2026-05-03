@@ -28,10 +28,10 @@ async function loginViaLocalStorage(page: Page, token: string) {
 }
 
 export const test = base.extend<{ authedPage: Page }>({
-  authedPage: async ({ page }, use) => {
+  authedPage: async ({ page }, fixtureUse) => {
     const token = readToken();
     await loginViaLocalStorage(page, token);
-    await use(page);
+    await fixtureUse(page);
   },
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Activity, Bot, Clock3, Cpu, Database } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ErrorCard } from '@/components/common/ErrorCard';
@@ -21,25 +21,20 @@ export function SwarmPanel() {
   const { data: runs, error, loading, stale, refetch } = useApi(fetchRuns, POLL_MS);
   const [selectedID, setSelectedID] = useState<string>('');
 
-  useEffect(() => {
-    if (!runs || runs.length === 0) {
-      setSelectedID('');
-      return;
-    }
-    if (!selectedID || !runs.some((run) => run.id === selectedID)) {
-      setSelectedID(runs[0].id);
-    }
+  const effectiveSelectedID = useMemo(() => {
+    if (!runs || runs.length === 0) return '';
+    if (selectedID && runs.some((run) => run.id === selectedID)) return selectedID;
+    return runs[0].id;
   }, [runs, selectedID]);
-
   const selected = useMemo(
-    () => runs?.find((run) => run.id === selectedID),
-    [runs, selectedID],
+    () => runs?.find((run) => run.id === effectiveSelectedID),
+    [runs, effectiveSelectedID],
   );
   const fetchDetail = useCallback(
-    () => selectedID ? api.swarmRun(selectedID) : Promise.resolve(undefined as unknown as SwarmRunDetail),
-    [selectedID],
+    () => effectiveSelectedID ? api.swarmRun(effectiveSelectedID) : Promise.resolve(undefined as unknown as SwarmRunDetail),
+    [effectiveSelectedID],
   );
-  const { data: detail, error: detailError, loading: detailLoading, refetch: refetchDetail } = useApi(fetchDetail, selectedID ? POLL_MS : undefined);
+  const { data: detail, error: detailError, loading: detailLoading, refetch: refetchDetail } = useApi(fetchDetail, effectiveSelectedID ? POLL_MS : undefined);
 
   if (loading && !runs) return <PanelSkeleton />;
   if (error && !runs) return <ErrorCard error={error} title="Failed to load swarm runs" onRetry={refetch} />;
@@ -69,7 +64,7 @@ export function SwarmPanel() {
         <EmptyState />
       ) : (
         <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_1fr]">
-          <RunList runs={safeRuns} selectedID={selectedID} onSelect={setSelectedID} />
+          <RunList runs={safeRuns} selectedID={effectiveSelectedID} onSelect={setSelectedID} />
           <section className="min-w-0">
             {detailError && !detail ? (
               <ErrorCard error={detailError} title="Failed to load swarm detail" onRetry={refetchDetail} />

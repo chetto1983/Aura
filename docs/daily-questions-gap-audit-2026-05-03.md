@@ -220,14 +220,14 @@ First acceptance prompts:
 
 ## Prioritized Backlog From This Audit
 
-Status note: slice 17h closed the recurrence parity part of this backlog. `schedule_task` now exposes `every_minutes`, daily `weekdays`, and dashboard/API/backend parity for business-day schedules. The remaining P0 is live-runtime activation sanity for AuraBot/proposals.
+Status note: slice 17h closed the recurrence parity part of this backlog. `schedule_task` now exposes `every_minutes`, daily `weekdays`, and dashboard/API/backend parity for business-day schedules. Slice 17i added the first bounded `agent_job` task kind with propose-only writes. The remaining P0 is live-runtime activation sanity for AuraBot/proposals.
 
 | Priority | Slice | Why first | Risk |
 | -------- | ----- | --------- | ---- |
 | P0 | Restart/settings sanity for AuraBot + `propose_wiki_change` | New code is useless if the live bot does not load it. | Low |
 | Done | Expose `every_minutes` in `schedule_task` or align tool/API recurrence | Shipped in slice 17h. | Low |
 | Done | Add weekday recurrence | Shipped in slice 17h. | Medium |
-| P1 | Add `agent_job` scheduler kind, propose-only | Converts reminders into autonomous bounded routines. | Medium-high |
+| Done | Add `agent_job` scheduler kind, propose-only | Shipped in slice 17i. | Medium-high |
 | P1 | Add `daily_briefing` read-only tool | High daily value, low mutation risk. | Medium |
 | P1 | Add source/wiki unified search | Unlocks document Q&A with evidence. | Medium |
 | P2 | Evidence envelope | Improves trust across all answers. | Medium |

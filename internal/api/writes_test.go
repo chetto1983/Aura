@@ -191,6 +191,28 @@ func TestTaskUpsert_HappyPath_EveryMinutes(t *testing.T) {
 	}
 }
 
+func TestTaskUpsert_HappyPath_AgentJob(t *testing.T) {
+	e := newTestEnv(t)
+	body := `{"name":"agent-job","kind":"agent_job","recipient_id":"u123","payload":"Check Aura sources and propose useful wiki updates.","daily":"10:00","weekdays":"weekdays"}`
+	rr := e.doLocal("POST", "/tasks", []byte(body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got Task
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != string(scheduler.KindAgentJob) {
+		t.Errorf("kind = %q, want agent_job", got.Kind)
+	}
+	if got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
+		t.Errorf("schedule_weekdays = %q", got.ScheduleWeekdays)
+	}
+	if !strings.Contains(got.Payload, `"write_policy":"propose_only"`) {
+		t.Errorf("payload not normalized: %s", got.Payload)
+	}
+}
+
 func TestTaskUpsert_RejectsBadInput(t *testing.T) {
 	e := newTestEnv(t)
 	at := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
@@ -203,6 +225,7 @@ func TestTaskUpsert_RejectsBadInput(t *testing.T) {
 		{"missing name", `{"kind":"reminder","recipient_id":"u","at":"` + at + `"}`, http.StatusBadRequest},
 		{"bad name", `{"name":"bad name","kind":"reminder","recipient_id":"u","at":"` + at + `"}`, http.StatusBadRequest},
 		{"bad kind", `{"name":"x","kind":"unknown","recipient_id":"u","at":"` + at + `"}`, http.StatusBadRequest},
+		{"agent job missing payload", `{"name":"x","kind":"agent_job","daily":"03:00"}`, http.StatusBadRequest},
 		{"both at and daily", `{"name":"x","kind":"wiki_maintenance","at":"` + at + `","daily":"03:00"}`, http.StatusBadRequest},
 		{"daily and every", `{"name":"x","kind":"wiki_maintenance","daily":"03:00","every_minutes":60}`, http.StatusBadRequest},
 		{"neither at nor daily", `{"name":"x","kind":"wiki_maintenance"}`, http.StatusBadRequest},

@@ -101,8 +101,47 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17f | AuraBot conservative routing | done | Telegram prompt now exposes swarm routing only when `run_aurabot_swarm` is actually registered, adds a per-turn hint for broad read-only second-brain work, and keeps mutations on explicit write/admin tools. |
 | 17g | Proactive wiki proposals | done | New `propose_wiki_change` LLM tool writes pending wiki proposals into the existing dashboard Summaries review queue, letting Aura suggest durable second-brain growth without mutating wiki files directly. |
 | 17h | Daily recurrence parity | done | `schedule_task` now exposes `every_minutes` and daily `weekdays`; scheduler persists weekday filters, API/dashboard surface them, and natural-prompt E2E verifies hourly + business-day scheduling. |
+| 17i | Scheduled agent jobs | done | New `agent_job` task kind runs bounded propose-only routines through the Aura runner; `schedule_task`, API/dashboard, dispatcher, and natural-prompt E2E can schedule recurring agent jobs. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17i (Scheduled agent jobs + lint cleanup)
+
+Implementation slice to convert "remind me to do the routine" into "run a bounded routine for me" while keeping durable writes review-gated.
+
+**Implementation**:
+
+- Added scheduler task kind `agent_job`.
+- Added normalized `AgentJobPayload`: accepts a plain-text goal or JSON with `goal`, `tool_allowlist`, `write_policy`, and `notify`.
+- Default write policy is `propose_only`; unsupported direct-write policies are rejected.
+- Default agent-job tools are read/proposal oriented: wiki/source read tools, web read tools, and `propose_wiki_change`.
+- `schedule_task` now accepts `kind="agent_job"` and stores normalized payload JSON; Telegram user ID is captured for optional completion notifications.
+- API `POST /tasks` and dashboard task creation now accept `agent_job`.
+- Telegram scheduler dispatcher runs `agent_job` through the shared bounded `agent.Runner`, logs LLM/tool/token/elapsed metrics, filters unsafe requested tools such as `write_wiki`, and notifies the recipient when configured.
+- Fixed global frontend lint:
+  - Renamed Playwright fixture callback parameter so React Hooks lint no longer sees it as a `use` hook.
+  - Removed synchronous `setState` effect in `SwarmPanel` by deriving the effective selected run ID.
+- Rebuilt embedded dashboard assets.
+
+**E2E metrics**:
+
+- `schedule_agent_job`: PASS, `elapsed_ms=3085`, `tool_calls=1`, scheduled `slice17-agent-smoke` as `agent_job` every 60 minutes.
+- Full `cmd/debug_ingest`: 13/13 scenarios passed against `glm-5.1:cloud` via `https://ollama.com/v1`.
+
+**Verification**:
+
+- `npm run lint -- --max-warnings=0`
+- `npm run build`
+- `go test ./internal/scheduler ./internal/tools ./internal/api ./internal/telegram ./cmd/debug_ingest`
+- `go run ./cmd/debug_ingest`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+
+**Next work**:
+
+- Slice 17j: runtime activation sanity. Restart Aura, verify boot log shows `AuraBot swarm enabled`, and add an effective-settings/debug check if DB overrides still do not match runtime.
 
 ### 2026-05-03 - Slice 17h (Daily recurrence parity)
 

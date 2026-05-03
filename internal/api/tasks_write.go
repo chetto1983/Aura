@@ -49,9 +49,9 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		}
 		kind := scheduler.TaskKind(strings.TrimSpace(req.Kind))
 		switch kind {
-		case scheduler.KindReminder, scheduler.KindWikiMaintenance:
+		case scheduler.KindReminder, scheduler.KindWikiMaintenance, scheduler.KindAgentJob:
 		default:
-			writeError(w, deps.Logger, http.StatusBadRequest, "kind must be reminder or wiki_maintenance")
+			writeError(w, deps.Logger, http.StatusBadRequest, "kind must be reminder, wiki_maintenance, or agent_job")
 			return
 		}
 		// Exactly one of at / daily / every_minutes must be set.
@@ -76,6 +76,18 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		if kind == scheduler.KindReminder && strings.TrimSpace(req.RecipientID) == "" {
 			writeError(w, deps.Logger, http.StatusBadRequest, "reminder kind requires recipient_id")
 			return
+		}
+		if kind == scheduler.KindAgentJob {
+			payload, err := scheduler.NormalizeAgentJobPayload(req.Payload)
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+				return
+			}
+			req.Payload, err = payload.JSON()
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 
 		loc := deps.Location

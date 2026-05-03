@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
@@ -30,31 +31,32 @@ import (
 
 // Bot wraps the telebot instance with allowlist access control and LLM integration.
 type Bot struct {
-	bot        *tele.Bot
-	cfg        *config.Config
-	logger     *slog.Logger
-	llm        llm.Client
-	wiki       *wiki.Store
-	search     *search.Engine
-	tools      *tools.Registry
-	budget     *budget.Tracker
-	sources    *source.Store
-	ocr        *ocr.Client
-	skills     *auraskills.Loader
-	docs       *docHandler
-	sched      *scheduler.Scheduler
-	schedDB    *scheduler.Store
-	swarmStore *swarm.Store
-	swarmMgr   *swarm.Manager
-	authDB     *auth.Store                    // dashboard bearer-token store (slice 10d)
-	mcpClients []*mcp.Client                  // active MCP server connections (slice 11a)
-	archiveDB  *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false
-	archiver   *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
-	summRunner *summarizer.Runner             // nil when SUMMARIZER_ENABLED=false
-	issues     *scheduler.IssuesStore         // wiki_issues queue, shared by API + maintenance
-	api        http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
-	active     sync.Map                       // maps userID string -> bool (active conversation tracking)
-	ctxMap     sync.Map                       // maps userID string -> *conversation.Context
+	bot         *tele.Bot
+	cfg         *config.Config
+	logger      *slog.Logger
+	llm         llm.Client
+	wiki        *wiki.Store
+	search      *search.Engine
+	tools       *tools.Registry
+	budget      *budget.Tracker
+	sources     *source.Store
+	ocr         *ocr.Client
+	skills      *auraskills.Loader
+	docs        *docHandler
+	sched       *scheduler.Scheduler
+	schedDB     *scheduler.Store
+	agentRunner *agent.Runner
+	swarmStore  *swarm.Store
+	swarmMgr    *swarm.Manager
+	authDB      *auth.Store                    // dashboard bearer-token store (slice 10d)
+	mcpClients  []*mcp.Client                  // active MCP server connections (slice 11a)
+	archiveDB   *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false
+	archiver    *conversation.BufferedAppender // nil when CONV_ARCHIVE_ENABLED=false
+	summRunner  *summarizer.Runner             // nil when SUMMARIZER_ENABLED=false
+	issues      *scheduler.IssuesStore         // wiki_issues queue, shared by API + maintenance
+	api         http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
+	active      sync.Map                       // maps userID string -> bool (active conversation tracking)
+	ctxMap      sync.Map                       // maps userID string -> *conversation.Context
 }
 
 // Username returns the bot's Telegram username.

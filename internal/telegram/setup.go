@@ -216,31 +216,34 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("creating swarm store: %w", err)
 	}
+	timeoutSec := cfg.AuraBotTimeoutSec
+	if timeoutSec <= 0 {
+		timeoutSec = 90
+	}
+	maxIterations := cfg.AuraBotMaxIterations
+	if maxIterations <= 0 {
+		maxIterations = 5
+	}
+	var auraRunner *agent.Runner
+	if client != nil {
+		auraRunner, err = agent.NewRunner(agent.Config{
+			LLM:           client,
+			Tools:         toolRegistry,
+			Model:         cfg.LLMModel,
+			MaxIterations: maxIterations,
+			Timeout:       time.Duration(timeoutSec) * time.Second,
+			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+			Logger:        logger,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating aurabot runner: %w", err)
+		}
+	}
 	var swarmManager *swarm.Manager
 	if cfg.AuraBotEnabled {
 		if client == nil {
 			logger.Warn("AuraBot swarm enabled but no LLM provider configured; swarm tools disabled")
 		} else {
-			timeoutSec := cfg.AuraBotTimeoutSec
-			if timeoutSec <= 0 {
-				timeoutSec = 90
-			}
-			maxIterations := cfg.AuraBotMaxIterations
-			if maxIterations <= 0 {
-				maxIterations = 5
-			}
-			auraRunner, err := agent.NewRunner(agent.Config{
-				LLM:           client,
-				Tools:         toolRegistry,
-				Model:         cfg.LLMModel,
-				MaxIterations: maxIterations,
-				Timeout:       time.Duration(timeoutSec) * time.Second,
-				ToolTimeout:   time.Duration(timeoutSec) * time.Second,
-				Logger:        logger,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("creating aurabot runner: %w", err)
-			}
 			swarmManager, err = swarm.NewManager(swarm.ManagerConfig{
 				Runner:    auraRunner,
 				Store:     swarmStore,
@@ -308,21 +311,22 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	}
 
 	b := &Bot{
-		bot:        tb,
-		cfg:        cfg,
-		logger:     logger,
-		llm:        client,
-		wiki:       wikiStore,
-		search:     searchEngine,
-		tools:      toolRegistry,
-		sources:    sourceStore,
-		ocr:        ocrClient,
-		skills:     skillLoader,
-		schedDB:    schedStore,
-		swarmStore: swarmStore,
-		swarmMgr:   swarmManager,
-		authDB:     authStore,
-		mcpClients: mcpClients,
+		bot:         tb,
+		cfg:         cfg,
+		logger:      logger,
+		llm:         client,
+		wiki:        wikiStore,
+		search:      searchEngine,
+		tools:       toolRegistry,
+		sources:     sourceStore,
+		ocr:         ocrClient,
+		skills:      skillLoader,
+		schedDB:     schedStore,
+		agentRunner: auraRunner,
+		swarmStore:  swarmStore,
+		swarmMgr:    swarmManager,
+		authDB:      authStore,
+		mcpClients:  mcpClients,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,

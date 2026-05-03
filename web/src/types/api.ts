@@ -271,7 +271,7 @@ export interface ProposedUpdate {
 
 export interface Task {
   name: string;
-  kind: 'reminder' | 'wiki_maintenance';
+  kind: 'reminder' | 'wiki_maintenance' | 'agent_job';
   payload?: string;
   recipient_id?: string;
   schedule_kind: 'at' | 'daily' | 'every';
