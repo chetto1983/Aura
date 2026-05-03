@@ -16,6 +16,7 @@ type fakeLLM struct {
 	mu       sync.Mutex
 	requests []llm.Request
 	resps    []llm.Response
+	errs     []error
 	err      error
 }
 
@@ -23,6 +24,13 @@ func (f *fakeLLM) Send(_ context.Context, req llm.Request) (llm.Response, error)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, req)
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		if err != nil {
+			return llm.Response{}, err
+		}
+	}
 	if f.err != nil {
 		return llm.Response{}, f.err
 	}
@@ -210,6 +218,86 @@ func TestRunnerToolTimeout(t *testing.T) {
 	}
 	if !strings.Contains(res.Messages[2].Content, "context deadline exceeded") {
 		t.Fatalf("tool timeout result = %q", res.Messages[2].Content)
+	}
+}
+
+func TestRunnerToolBudgetForcesFinalTurn(t *testing.T) {
+	client := &fakeLLM{resps: []llm.Response{
+		{
+			HasToolCalls: true,
+			ToolCalls: []llm.ToolCall{
+				{ID: "call_1", Name: "lookup"},
+				{ID: "call_2", Name: "lookup"},
+				{ID: "call_3", Name: "lookup"},
+			},
+		},
+		{Content: "final from compact evidence"},
+	}}
+	reg := tools.NewRegistry(nil)
+	lookup := &fakeTool{name: "lookup", result: "0123456789abcdefghijklmnopqrstuvwxyz"}
+	reg.Register(lookup)
+
+	runner, err := NewRunner(Config{LLM: client, Tools: reg})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	res, err := runner.Run(context.Background(), Task{
+		Prompt:             "research",
+		ToolAllowlist:      []string{"lookup"},
+		MaxToolCalls:       2,
+		MaxToolResultChars: 12,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Content != "final from compact evidence" {
+		t.Fatalf("Content = %q", res.Content)
+	}
+	if lookup.callCount() != 2 || res.ToolCalls != 2 {
+		t.Fatalf("tool calls executed=%d recorded=%d", lookup.callCount(), res.ToolCalls)
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("llm requests = %d", len(client.requests))
+	}
+	if len(client.requests[1].Tools) != 0 {
+		t.Fatalf("finalizing turn exposed tools: %+v", client.requests[1].Tools)
+	}
+	if !strings.Contains(res.Messages[len(res.Messages)-2].Content, "Tool budget reached") {
+		t.Fatalf("missing budget instruction in messages: %+v", res.Messages)
+	}
+	if got := res.Messages[2].Content; strings.Contains(got, "abcdefghijklmnopqrstuvwxyz") {
+		t.Fatalf("tool result was not clipped: %q", got)
+	}
+}
+
+func TestRunnerCompletesWithPartialOnDeadlineAfterTools(t *testing.T) {
+	client := &fakeLLM{
+		resps: []llm.Response{{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "call_1", Name: "lookup"}},
+		}},
+		errs: []error{nil, context.DeadlineExceeded},
+	}
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "lookup", result: "evidence"})
+
+	runner, err := NewRunner(Config{LLM: client, Tools: reg})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	res, err := runner.Run(context.Background(), Task{
+		Prompt:             "research",
+		ToolAllowlist:      []string{"lookup"},
+		CompleteOnDeadline: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(res.Content, "interrupted") || !strings.Contains(res.Content, "evidence") {
+		t.Fatalf("partial content = %q", res.Content)
+	}
+	if res.LLMCalls != 2 || res.ToolCalls != 1 {
+		t.Fatalf("stats = llm:%d tools:%d", res.LLMCalls, res.ToolCalls)
 	}
 }
 

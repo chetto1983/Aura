@@ -186,13 +186,16 @@ func (t *SpawnAuraBotTool) Execute(ctx context.Context, args map[string]any) (st
 		Goal:      subject,
 		CreatedBy: tools.UserIDFromContext(ctx),
 		Assignments: []swarm.Assignment{{
-			Role:          role,
-			Subject:       subject,
-			Prompt:        prompt,
-			SystemPrompt:  roleSystemPrompt(role),
-			ToolAllowlist: allowlist,
-			Depth:         0,
-			UserID:        tools.UserIDFromContext(ctx),
+			Role:               role,
+			Subject:            subject,
+			Prompt:             prompt,
+			SystemPrompt:       roleSystemPrompt(role),
+			ToolAllowlist:      allowlist,
+			Depth:              0,
+			UserID:             tools.UserIDFromContext(ctx),
+			MaxToolCalls:       roleMaxToolCalls(role),
+			MaxToolResultChars: roleMaxToolResultChars(role),
+			CompleteOnDeadline: true,
 		}},
 	})
 	resp := spawnResponse{OK: runErr == nil}
@@ -413,7 +416,27 @@ func roleToolPresets() map[string][]string {
 }
 
 func roleSystemPrompt(role string) string {
-	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available allowed tools. Return a concise result with useful evidence and metrics-friendly structure."
+	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available allowed tools. Keep tool use selective, avoid repeated equivalent searches, and always finish with a concise result containing evidence, gaps, and the next useful action."
+}
+
+func roleMaxToolCalls(role string) int {
+	switch role {
+	case "researcher":
+		return 3
+	case "librarian", "synthesizer":
+		return 4
+	case "critic", "skillsmith":
+		return 3
+	default:
+		return 3
+	}
+}
+
+func roleMaxToolResultChars(role string) int {
+	if role == "researcher" {
+		return 1800
+	}
+	return 2400
 }
 
 func requiredString(args map[string]any, key string) (string, error) {

@@ -105,11 +105,40 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17j | Daily briefing tool | done | New read-only `daily_briefing` tool composes today's tasks, pending wiki proposals, open wiki issues, recent sources, and conversation signals; natural-prompt E2E verifies an Italian daily-briefing prompt selects the tool. |
 | 17k | Unified memory evidence search | done | New read-only `search_memory` tool searches wiki index, source inbox/OCR, and conversation archive with compact evidence snippets, source IDs, conversation turn IDs, and OCR page numbers; agent jobs and AuraBot read-only roles can use it before broader reads. |
 | 17k.1 | Log-driven agent drift fixes | done | Runtime logs showed scheduled-job testing drifting into `spawn_aurabot` + repeated web searches, fenced summarizer JSON being rejected, and `write_wiki` retries delayed by generic tag-limit guidance. Fixed fenced JSON parsing and made wiki tag/source limits explicit in tool schema/error hints. |
-| 17l | Run scheduled routines now | planned | Add a calm, explicit `run_task_now` / `run_agent_job_now` path so "eseguilo adesso" executes the saved scheduled routine by name, reuses its normalized payload/tool allowlist, records metrics, and sends the completion summary when `notify=true` instead of improvising with `spawn_aurabot`. |
+| 17l | Run scheduled routines now | done | Added `run_task_now` so "eseguilo adesso" executes the saved scheduled `agent_job` by name, reuses its normalized payload/tool allowlist, records metrics, and sends the completion summary when `notify=true` instead of improvising with `spawn_aurabot`. |
+| 17m | AuraBot completion guardrails | done | Live `/swarm` run showed a researcher issuing repeated web searches, filling context, and failing after 90s with zero UI metrics. AuraBot tasks now have per-role tool budgets, compact tool-result clipping, a forced final synthesis turn with tools disabled, and deadline partial completion after evidence has been gathered. |
 
 ## Session Log
 
-### 2026-05-03 - Planned Slice 17l (Run scheduled routines now)
+### 2026-05-03 - Slice 17m (AuraBot completion guardrails)
+
+Live `/swarm` diagnosis from `logs/aura-2026-05-03.log` and the dashboard screenshot:
+
+- `trading-signals-test` failed after `90021 ms wall`.
+- The task was a single `researcher` worker.
+- Logs showed two waves of repeated parallel `web_search` calls before the final `agent runner: llm send: context deadline exceeded`.
+- Because the runner returned an error, the store only preserved `last_error`; UI metrics stayed at `llm=0`, `tools=0`, `ms=0`, hiding the work that had actually happened.
+
+Implementation:
+
+- `internal/agent.Runner` now supports per-task `MaxToolCalls`, `MaxToolResultChars`, and `CompleteOnDeadline`.
+- When a worker reaches its tool budget, the next LLM turn is forced to synthesize with no tools exposed.
+- Tool results can be clipped per task, so a researcher cannot push many 8KB search outputs back into the final context.
+- If a deadline still happens after evidence was gathered, AuraBot returns a partial evidence report and metrics instead of failing the task to zero.
+- `swarm.BuildPlan` and `spawn_aurabot` assign conservative role budgets; the researcher is capped at 3 tool calls and 1800 chars per tool result.
+- Researcher prompts now explicitly prefer at most two targeted searches before deciding whether one fetch is worth it.
+
+Verification:
+
+- `go test ./internal/agent ./internal/swarm ./internal/swarmtools`
+- `go run ./cmd/debug_swarm -json`: completed `5/5`, failed `0`, `wall_ms=769`, `task_elapsed_ms=1658`, `speedup=2.16`, `llm_calls=10`, `tool_calls=5`, `tokens_total=1293`; public tool path completed `3/3`, failed `0`.
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+
+Next slice: add a user-facing completion notification path for AuraBot runs so scheduled/background swarm work tells the user when the dashboard result is ready.
+
+### 2026-05-03 - Slice 17l (Run scheduled routines now)
 
 Goal: fix the live-test drift where "Prova ad eseguirlo adesso" after scheduling an `agent_job` routed to `spawn_aurabot` and repeated web searches instead of executing the saved routine.
 
@@ -127,6 +156,22 @@ Non-goals for the first pass:
 - Do not redesign the scheduler.
 - Do not add direct wiki writes for jobs.
 - Do not broaden AuraBot permissions beyond the saved job's safe allowlist.
+
+Implementation:
+
+- Added `run_task_now`, backed by `Bot.RunTaskNow`, for saved scheduled tasks.
+- MVP supports `agent_job` tasks only and rejects cancelled/non-agent rows with clear errors.
+- Reuses the stored `agent_job` payload, normalized safe allowlist, propose-only write policy, and existing notification behavior.
+- Records manual run time and last error without disturbing the future schedule.
+- Extended `cmd/debug_ingest` with a natural prompt that selects `run_task_now` after creating a scheduled agent job.
+
+Verification:
+
+- `go test ./internal/scheduler ./internal/tools ./internal/telegram ./cmd/debug_ingest`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `go run ./cmd/debug_ingest`: passed all 16 scenarios; `run_task_now` selected, `tool_calls=1`, `elapsed_ms=8859`.
 
 ### 2026-05-03 - Slice 17k.1 (Log-driven agent drift fixes)
 

@@ -86,13 +86,16 @@ func BuildPlan(goal string, opts PlanOptions) (Plan, error) {
 	assignments := make([]Assignment, 0, len(roles))
 	for _, role := range roles {
 		assignments = append(assignments, Assignment{
-			Role:          role,
-			Subject:       roleSubject(role, goal),
-			Prompt:        rolePrompt(role, goal),
-			SystemPrompt:  rolePlanSystemPrompt(role),
-			ToolAllowlist: cloneStrings(roleReadOnlyTools(role)),
-			Depth:         0,
-			UserID:        opts.UserID,
+			Role:               role,
+			Subject:            roleSubject(role, goal),
+			Prompt:             rolePrompt(role, goal),
+			SystemPrompt:       rolePlanSystemPrompt(role),
+			ToolAllowlist:      cloneStrings(roleReadOnlyTools(role)),
+			Depth:              0,
+			UserID:             opts.UserID,
+			MaxToolCalls:       roleMaxToolCalls(role),
+			MaxToolResultChars: roleMaxToolResultChars(role),
+			CompleteOnDeadline: true,
 		})
 	}
 
@@ -229,7 +232,7 @@ func roleSubject(role, goal string) string {
 }
 
 func rolePlanSystemPrompt(role string) string {
-	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available read-only tools. Do not mutate files, wiki pages, skills, settings, or external state. Return concise findings with evidence and metrics-friendly structure."
+	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available read-only tools. Do not mutate files, wiki pages, skills, settings, or external state. Keep tool use selective, avoid repeated equivalent searches, and always finish with a concise result containing evidence, gaps, and the next useful action."
 }
 
 func rolePrompt(role, goal string) string {
@@ -239,13 +242,35 @@ func rolePrompt(role, goal string) string {
 	case "critic":
 		return "Goal: " + goal + "\n\nFocus: look for contradictions, stale assumptions, missing evidence, and quality risks in existing wiki/source material. Return the strongest concerns first. Do not write or modify anything."
 	case "researcher":
-		return "Goal: " + goal + "\n\nFocus: gather current external context only when it directly helps the goal. Return source URLs, dates when relevant, and a compact evidence summary. Do not perform actions beyond read-only search/fetch."
+		return "Goal: " + goal + "\n\nFocus: gather current external context only when it directly helps the goal. Use at most two targeted searches before deciding whether one fetch is worth it. Return source URLs, dates when relevant, and a compact evidence summary. Do not perform actions beyond read-only search/fetch."
 	case "skillsmith":
 		return "Goal: " + goal + "\n\nFocus: inspect available skills and skill catalog entries that could help execute the goal. Return matching skill names, why they matter, and gaps. Do not install, delete, or edit skills."
 	case "synthesizer":
 		return "Goal: " + goal + "\n\nFocus: prepare a concise integration brief from available wiki/source context and likely worker findings. Identify the answer shape, unresolved questions, and final-response outline. Do not write or modify anything."
 	default:
 		return "Goal: " + goal + "\n\nFocus: complete the assigned read-only investigation and return concise evidence."
+	}
+}
+
+func roleMaxToolCalls(role string) int {
+	switch role {
+	case "researcher":
+		return 3
+	case "librarian", "synthesizer":
+		return 4
+	case "critic", "skillsmith":
+		return 3
+	default:
+		return 3
+	}
+}
+
+func roleMaxToolResultChars(role string) int {
+	switch role {
+	case "researcher":
+		return 1800
+	default:
+		return 2400
 	}
 }
 

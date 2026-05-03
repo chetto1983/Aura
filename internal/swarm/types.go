@@ -61,23 +61,29 @@ type Task struct {
 }
 
 type Assignment struct {
-	ParentID      string
-	Role          string
-	Subject       string
-	Prompt        string
-	SystemPrompt  string
-	ToolAllowlist []string
-	Depth         int
-	UserID        string
-	Temperature   *float64
+	ParentID           string
+	Role               string
+	Subject            string
+	Prompt             string
+	SystemPrompt       string
+	ToolAllowlist      []string
+	Depth              int
+	UserID             string
+	Temperature        *float64
+	MaxToolCalls       int
+	MaxToolResultChars int
+	CompleteOnDeadline bool
 }
 
 func (a Assignment) AgentTask() agent.Task {
 	return agent.Task{
-		SystemPrompt:  a.SystemPrompt,
-		Prompt:        a.Prompt,
-		ToolAllowlist: a.ToolAllowlist,
-		UserID:        a.UserID,
-		Temperature:   a.Temperature,
+		SystemPrompt:       a.SystemPrompt,
+		Prompt:             a.Prompt,
+		ToolAllowlist:      a.ToolAllowlist,
+		UserID:             a.UserID,
+		Temperature:        a.Temperature,
+		MaxToolCalls:       a.MaxToolCalls,
+		MaxToolResultChars: a.MaxToolResultChars,
+		CompleteOnDeadline: a.CompleteOnDeadline,
 	}
 }

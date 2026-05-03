@@ -45,12 +45,15 @@ type Config struct {
 
 // Task is one isolated background-agent assignment.
 type Task struct {
-	SystemPrompt  string
-	Prompt        string
-	Messages      []llm.Message
-	ToolAllowlist []string
-	UserID        string
-	Temperature   *float64
+	SystemPrompt       string
+	Prompt             string
+	Messages           []llm.Message
+	ToolAllowlist      []string
+	UserID             string
+	Temperature        *float64
+	MaxToolCalls       int
+	MaxToolResultChars int
+	CompleteOnDeadline bool
 }
 
 // Result captures the final response and enough telemetry for SwarmManager to
@@ -113,18 +116,29 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 
 	var result Result
 	var lastToolResult string
+	maxToolCalls := task.MaxToolCalls
+	finalizing := false
 	for i := 0; i < r.maxIterations; i++ {
+		turnTools := toolDefs
+		if finalizing {
+			turnTools = nil
+		}
 		resp, err := r.llm.Send(ctx, llm.Request{
 			Messages:    messages,
 			Model:       r.model,
 			Temperature: task.Temperature,
-			Tools:       toolDefs,
+			Tools:       turnTools,
 		})
 		result.LLMCalls++
 		addUsage(&result.Tokens, resp.Usage)
 		if err != nil {
+			result.Content = interruptedContent(err, lastToolResult, result)
 			result.Messages = messages
 			result.Elapsed = time.Since(start).Round(time.Millisecond)
+			if task.CompleteOnDeadline && errors.Is(err, context.DeadlineExceeded) && result.ToolCalls > 0 {
+				result.Messages = append(result.Messages, llm.Message{Role: "assistant", Content: result.Content})
+				return result, nil
+			}
 			return result, fmt.Errorf("agent runner: llm send: %w", err)
 		}
 
@@ -149,9 +163,11 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 			Content:   resp.Content,
 			ToolCalls: resp.ToolCalls,
 		})
-		result.ToolCalls += len(resp.ToolCalls)
 
-		toolResults := r.executeToolCalls(ctx, task.UserID, allowlist, resp.ToolCalls)
+		toolCalls, skipped := splitToolCalls(resp.ToolCalls, maxToolCalls, result.ToolCalls)
+		result.ToolCalls += len(toolCalls)
+		toolResults := r.executeToolCalls(ctx, task.UserID, allowlist, toolCalls, task.MaxToolResultChars)
+		toolResults = append(toolResults, skippedToolOutcomes(skipped, maxToolCalls)...)
 		for _, tr := range toolResults {
 			messages = append(messages, llm.Message{
 				Role:       "tool",
@@ -159,6 +175,10 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 				ToolCallID: tr.id,
 			})
 			lastToolResult = tr.content
+		}
+		if maxToolCalls > 0 && result.ToolCalls >= maxToolCalls {
+			messages = append(messages, llm.Message{Role: "user", Content: toolBudgetFinalInstruction(maxToolCalls)})
+			finalizing = true
 		}
 	}
 
@@ -210,14 +230,14 @@ type toolOutcome struct {
 	content string
 }
 
-func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist []string, calls []llm.ToolCall) []toolOutcome {
+func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist []string, calls []llm.ToolCall, maxChars int) []toolOutcome {
 	results := make([]toolOutcome, len(calls))
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			results[i] = toolOutcome{id: call.ID, content: r.executeOneTool(ctx, userID, allowlist, call)}
+			results[i] = toolOutcome{id: call.ID, content: limitToolContent(r.executeOneTool(ctx, userID, allowlist, call), maxChars)}
 		}(i, call)
 	}
 	wg.Wait()
@@ -268,4 +288,56 @@ func addUsage(total *llm.TokenUsage, usage llm.TokenUsage) {
 	total.PromptTokens += usage.PromptTokens
 	total.CompletionTokens += usage.CompletionTokens
 	total.TotalTokens += usage.TotalTokens
+}
+
+func splitToolCalls(calls []llm.ToolCall, maxToolCalls, alreadyUsed int) ([]llm.ToolCall, []llm.ToolCall) {
+	if maxToolCalls <= 0 {
+		return calls, nil
+	}
+	remaining := maxToolCalls - alreadyUsed
+	if remaining <= 0 {
+		return nil, calls
+	}
+	if len(calls) <= remaining {
+		return calls, nil
+	}
+	return calls[:remaining], calls[remaining:]
+}
+
+func skippedToolOutcomes(calls []llm.ToolCall, maxToolCalls int) []toolOutcome {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]toolOutcome, 0, len(calls))
+	msg := fmt.Sprintf("Tool call skipped: this AuraBot worker reached its tool budget (%d). Return a concise partial result from the evidence already gathered.", maxToolCalls)
+	for _, call := range calls {
+		out = append(out, toolOutcome{id: call.ID, content: msg})
+	}
+	return out
+}
+
+func toolBudgetFinalInstruction(maxToolCalls int) string {
+	return fmt.Sprintf("Tool budget reached (%d calls). Do not call tools again. Finish the assigned work now with a concise final report from the evidence above: answer, evidence/URLs when available, gaps, and next action.", maxToolCalls)
+}
+
+func interruptedContent(err error, lastToolResult string, result Result) string {
+	content := fmt.Sprintf("AuraBot worker interrupted before a final answer: %v. Partial metrics: llm_calls=%d tool_calls=%d tokens=%d.", err, result.LLMCalls, result.ToolCalls, result.Tokens.TotalTokens)
+	if strings.TrimSpace(lastToolResult) != "" {
+		content += "\n\nLast tool result:\n" + lastToolResult
+	}
+	return content
+}
+
+func limitToolContent(content string, maxChars int) string {
+	if maxChars <= 0 {
+		return content
+	}
+	runes := []rune(content)
+	if len(runes) <= maxChars {
+		return content
+	}
+	if maxChars <= 16 {
+		return string(runes[:maxChars])
+	}
+	return string(runes[:maxChars-15]) + "\n...[truncated]"
 }
