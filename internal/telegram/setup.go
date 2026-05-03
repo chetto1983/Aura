@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
@@ -22,6 +23,8 @@ import (
 	"github.com/aura/aura/internal/settings"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/swarm"
+	"github.com/aura/aura/internal/swarmtools"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 
@@ -205,6 +208,61 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 
+	var swarmStore *swarm.Store
+	var swarmManager *swarm.Manager
+	if cfg.AuraBotEnabled {
+		if client == nil {
+			logger.Warn("AuraBot swarm enabled but no LLM provider configured; swarm tools disabled")
+		} else {
+			swarmStore, err = swarm.NewStoreWithDB(schedStore.DB())
+			if err != nil {
+				return nil, fmt.Errorf("creating swarm store: %w", err)
+			}
+			timeoutSec := cfg.AuraBotTimeoutSec
+			if timeoutSec <= 0 {
+				timeoutSec = 90
+			}
+			maxIterations := cfg.AuraBotMaxIterations
+			if maxIterations <= 0 {
+				maxIterations = 5
+			}
+			auraRunner, err := agent.NewRunner(agent.Config{
+				LLM:           client,
+				Tools:         toolRegistry,
+				Model:         cfg.LLMModel,
+				MaxIterations: maxIterations,
+				Timeout:       time.Duration(timeoutSec) * time.Second,
+				ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+				Logger:        logger,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("creating aurabot runner: %w", err)
+			}
+			swarmManager, err = swarm.NewManager(swarm.ManagerConfig{
+				Runner:    auraRunner,
+				Store:     swarmStore,
+				MaxActive: cfg.AuraBotMaxActive,
+				MaxDepth:  cfg.AuraBotMaxDepth,
+				Logger:    logger,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("creating swarm manager: %w", err)
+			}
+			if tool := swarmtools.NewSpawnAuraBotTool(swarmManager); tool != nil {
+				toolRegistry.Register(tool)
+			}
+			if tool := swarmtools.NewListSwarmTasksTool(swarmStore); tool != nil {
+				toolRegistry.Register(tool)
+			}
+			if tool := swarmtools.NewReadSwarmResultTool(swarmStore); tool != nil {
+				toolRegistry.Register(tool)
+			}
+			logger.Info("AuraBot swarm enabled", "max_active", cfg.AuraBotMaxActive, "max_depth", cfg.AuraBotMaxDepth, "timeout_sec", timeoutSec)
+		}
+	} else {
+		logger.Info("AuraBot swarm disabled (set AURABOT_ENABLED=true to enable)")
+	}
+
 	// Slice 11a: MCP servers. Each configured server is contacted on
 	// startup, its tools are discovered via tools/list and registered as
 	// `mcp_<server>_<tool>` so the LLM can call them like native tools.
@@ -255,6 +313,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		ocr:        ocrClient,
 		skills:     skillLoader,
 		schedDB:    schedStore,
+		swarmStore: swarmStore,
+		swarmMgr:   swarmManager,
 		authDB:     authStore,
 		mcpClients: mcpClients,
 		budget: budget.NewTracker(budget.Config{

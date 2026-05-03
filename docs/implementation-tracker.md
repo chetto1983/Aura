@@ -93,8 +93,152 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 16c | Immediate Telegram placeholder | done | `handleConversation` sends a "⏳" placeholder via `c.Bot().Send` before entering `runToolCallingLoop`. Signature changes thread `*tele.Message` through `runToolCallingLoop` → `consumeStream`. `consumeStream` edits the existing placeholder instead of creating a new message; falls back to `Send` if edit fails. Non-streamed delivery deletes the placeholder and sends the real response. |
 | 16d | Defer EnforceLimit to background | done | Moved `convCtx.EnforceLimit` from before `runToolCallingLoop` to a fire-and-forget goroutine after the archiver block, so summarizer latency doesn't block the user seeing the response. |
 | 16e | Throttle 800ms → 600ms | done | `streamingEditThrottle` tightened from 800ms to 600ms. Still safe under Telegram's ~1/sec edit rate limit. |
+| 17a | AuraBot bounded runner | done | New `internal/agent.Runner`: Telegram-free mini LLM/tool loop for future AuraBot workers. Uses `llm.Send`, explicit per-task tool allowlists, execution-time allowlist enforcement, structured tool errors, per-run timeout, per-tool timeout, concurrent tool calls with deterministic result ordering, user-id context propagation, token/tool/LLM telemetry. 7 unit tests. |
+| 17b | AuraBot swarm store + manager | done | New `internal/swarm` package: SQLite `swarm_runs` / `swarm_tasks` store plus `Manager` that persists assignments, fans out bounded parallel `agent.Task` runs, enforces `MaxActive` and `MaxDepth`, marks task/run success or failure, and returns audit-ready task results. SQLite writes are serialized with one connection + busy timeout. 8 unit tests. |
+| 17c | AuraBot LLM tools + debug metrics | done | `AURABOT_*` config/settings gate, bot wiring, `spawn_aurabot` / `list_swarm_tasks` / `read_swarm_result`, token metrics persisted on tasks, and `cmd/debug_swarm` hermetic E2E harness with wall/task/token/tool/speedup metrics. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17c (AuraBot LLM tools + E2E metrics)
+
+Third implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+
+**Implementation**:
+
+- Added `AURABOT_ENABLED`, `AURABOT_MAX_ACTIVE`, `AURABOT_MAX_DEPTH`, `AURABOT_TIMEOUT_SEC`, and `AURABOT_MAX_ITERATIONS` to env config, runtime settings, and the dashboard settings catalog.
+- Wired AuraBot behind `AURABOT_ENABLED`: when enabled and an LLM client exists, `telegram.New` creates a shared-DB `swarm.Store`, bounded `agent.Runner`, and `swarm.Manager`, then registers `spawn_aurabot`, `list_swarm_tasks`, and `read_swarm_result`.
+- Added `internal/swarmtools`, keeping the public LLM tools out of `internal/tools` to avoid an import cycle. MVP role presets are read-only (`librarian`, `critic`, `researcher`, `synthesizer`, `skillsmith`) and `spawn_aurabot` supports `mode=wait`.
+- Extended `swarm_tasks` with token telemetry columns (`tokens_prompt`, `tokens_completion`, `tokens_total`) and an idempotent migration for existing DBs.
+- Added `cmd/debug_swarm`, a hermetic no-network E2E harness that drives the real runner/manager/tool path with fake read-only wiki/source/skill tools and fake LLM responses.
+- Updated `.env.example` and local `.env` with the new gate defaults.
+
+**Debug metrics**:
+
+- `go run ./cmd/debug_swarm`: 6 tasks completed, `wall_ms=824`, `task_elapsed_ms=1994`, `speedup=2.42x`, `max_active=3`, `llm_calls=12`, `tool_calls=6`, `tokens_total=792`, `spawn_aurabot_json=true`, `swarmtools_list_json=true`, `swarmtools_read_json=true`.
+- `go run ./cmd/debug_swarm -max-active 1`: 6 tasks completed serially, `wall_ms=2176`, `speedup=0.90x`, `max_active=1`. This confirms the harness can see the parallelism delta.
+- `go run ./cmd/debug_swarm -json`: emitted the same metrics as structured JSON for future CI/log scraping.
+
+**Verification**:
+
+- `go test ./cmd/debug_swarm ./internal/config ./internal/settings ./internal/api ./internal/agent ./internal/swarm ./internal/swarmtools ./internal/telegram`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./internal/agent ./internal/swarm ./internal/swarmtools`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+
+**Files touched**:
+
+- `.env.example`
+- `.env` (gitignored runtime config)
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `internal/settings/applier.go`
+- `internal/api/settings.go`
+- `internal/telegram/bot.go`
+- `internal/telegram/setup.go`
+- `internal/swarm/types.go`
+- `internal/swarm/store.go`
+- `internal/swarm/store_test.go`
+- `internal/swarmtools/tools.go`
+- `internal/swarmtools/tools_test.go`
+- `cmd/debug_swarm/main.go`
+- `docs/implementation-tracker.md`
+
+**Next work**:
+
+- Slice 17d: dashboard observability for swarm runs/tasks plus review/approval controls before any write-capable role.
+- Later: durable skill proposals and skill creation workflows, still gated behind review/admin paths.
+
+### 2026-05-03 - Slice 17b (AuraBot swarm store + manager)
+
+Second implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+
+**Implementation**:
+
+- Added `internal/swarm` with typed run/task statuses and assignment models.
+- Added SQLite-backed `Store` with `OpenStore`, `NewStoreWithDB`, run lifecycle, task lifecycle, and list/read helpers.
+- Store uses the same shared-DB style as other Aura packages: `NewStoreWithDB(db *sql.DB)` does not own/close the DB, while `OpenStore(path)` does.
+- SQLite writes are serialized via `SetMaxOpenConns(1)` plus `PRAGMA busy_timeout = 5000`, so parallel AuraBot execution does not create `SQLITE_BUSY` churn.
+- Added `Manager` that persists a run, persists all assignments, executes valid assignments concurrently behind `MaxActive`, rejects over-depth assignments without running them, and marks the run failed if any task fails.
+- No Telegram wiring, env config, public `spawn_aurabot`, or dashboard surface yet.
+
+**Test coverage**:
+
+- Store run/task lifecycle including telemetry persistence.
+- Reopen persistence.
+- Shared DB close ownership.
+- Manager executes multiple assignments and persists completed results.
+- `MaxActive` caps concurrent runner calls.
+- `MaxDepth` rejects too-deep assignments without running them.
+- Runner errors mark task and run failed.
+- Manager constructor and empty assignment validation.
+
+**Verification**:
+
+- `go test ./internal/agent ./internal/swarm`
+- `go test ./internal/swarm`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./internal/agent ./internal/swarm`
+
+**Files touched**:
+
+- `internal/swarm/types.go`
+- `internal/swarm/store.go`
+- `internal/swarm/manager.go`
+- `internal/swarm/store_test.go`
+- `internal/swarm/manager_test.go`
+- `docs/implementation-tracker.md`
+
+**Next work**:
+
+- Slice 17c: add config gates and LLM-facing tools `spawn_aurabot`, `list_swarm_tasks`, `read_swarm_result` behind `AURABOT_ENABLED`.
+- Slice 17d: role presets (`librarian`, `critic`, `researcher`) with read-only tool allowlists.
+
+### 2026-05-03 - Slice 17a (AuraBot bounded runner)
+
+First implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+
+**Implementation**:
+
+- Added `internal/agent.Runner`, a small background-agent loop that is deliberately independent from Telegram streaming, placeholders, archiving, and budget UI.
+- Runner accepts isolated prompts/messages, model, temperature, timeout, tool allowlist, and optional user id.
+- Tool definitions are filtered before the LLM call, and tool execution re-checks the allowlist so hallucinated hidden tools are blocked.
+- Tool calls execute concurrently but tool result messages are appended in original order, matching the production Telegram loop's pairing discipline.
+- Empty allowlist means no tools. There is no default "all tools" path.
+- Added per-tool timeout so a slow MCP/web-style call cannot stall the whole worker.
+
+**Test coverage**:
+
+- Text-only final response.
+- One tool-call loop with user-id propagation.
+- Tool definition filtering and blocked disallowed execution.
+- Per-tool timeout returns structured error content.
+- Max-iteration fallback includes last tool result.
+- Prompt/messages validation.
+- Constructor rejects nil LLM.
+
+**Verification**:
+
+- `go test ./internal/agent`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./internal/agent`
+
+**Files touched**:
+
+- `internal/agent/runner.go`
+- `internal/agent/runner_test.go`
+- `docs/plans/2026-05-03-AuraBot-swarm-design.md`
+- `docs/implementation-tracker.md`
+
+**Next work**:
+
+- Slice 17b: SQLite `swarm_runs` / `swarm_tasks` store plus `SwarmManager` active/depth limits.
+- Slice 17c: `spawn_aurabot`, `list_swarm_tasks`, `read_swarm_result` behind `AURABOT_ENABLED`.
 
 ### 2026-05-03 — Phase 16: Engine Quality & Performance
 

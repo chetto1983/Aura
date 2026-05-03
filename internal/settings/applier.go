@@ -33,6 +33,11 @@ const (
 	KeyMaxToolIterations         = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL          = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin               = "SKILLS_ADMIN"
+	KeyAuraBotEnabled            = "AURABOT_ENABLED"
+	KeyAuraBotMaxActive          = "AURABOT_MAX_ACTIVE"
+	KeyAuraBotMaxDepth           = "AURABOT_MAX_DEPTH"
+	KeyAuraBotTimeoutSec         = "AURABOT_TIMEOUT_SEC"
+	KeyAuraBotMaxIterations      = "AURABOT_MAX_ITERATIONS"
 	KeyEmbeddingAPIKey           = "EMBEDDING_API_KEY"
 	KeyEmbeddingBaseURL          = "EMBEDDING_BASE_URL"
 	KeyEmbeddingModel            = "EMBEDDING_MODEL"
@@ -68,6 +73,8 @@ func OverridableKeys() []string {
 		KeyOllamaBaseURL, KeyOllamaModel, KeyOllamaAPIKey, KeyOllamaWebBaseURL,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
+		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
+		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
 		KeyOTelEnabled,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
@@ -121,6 +128,11 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 
 	cfg.SkillsCatalogURL = s.GetString(ctx, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
 	cfg.SkillsAdmin = s.GetBool(ctx, KeySkillsAdmin, cfg.SkillsAdmin)
+	cfg.AuraBotEnabled = s.GetBool(ctx, KeyAuraBotEnabled, cfg.AuraBotEnabled)
+	cfg.AuraBotMaxActive = s.GetInt(ctx, KeyAuraBotMaxActive, cfg.AuraBotMaxActive)
+	cfg.AuraBotMaxDepth = s.GetInt(ctx, KeyAuraBotMaxDepth, cfg.AuraBotMaxDepth)
+	cfg.AuraBotTimeoutSec = s.GetInt(ctx, KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
+	cfg.AuraBotMaxIterations = s.GetInt(ctx, KeyAuraBotMaxIterations, cfg.AuraBotMaxIterations)
 
 	cfg.EmbeddingAPIKey = s.GetString(ctx, KeyEmbeddingAPIKey, cfg.EmbeddingAPIKey)
 	cfg.EmbeddingBaseURL = s.GetString(ctx, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)

@@ -21,6 +21,7 @@ import (
 	"github.com/aura/aura/internal/search"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 
@@ -43,6 +44,8 @@ type Bot struct {
 	docs       *docHandler
 	sched      *scheduler.Scheduler
 	schedDB    *scheduler.Store
+	swarmStore *swarm.Store
+	swarmMgr   *swarm.Manager
 	authDB     *auth.Store                    // dashboard bearer-token store (slice 10d)
 	mcpClients []*mcp.Client                  // active MCP server connections (slice 11a)
 	archiveDB  *conversation.ArchiveStore     // nil when CONV_ARCHIVE_ENABLED=false

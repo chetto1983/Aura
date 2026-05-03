@@ -28,13 +28,13 @@ import (
 //   - "url"    — text input with type="url"
 type SettingItem struct {
 	Key      string   `json:"key"`
-	Value    string   `json:"value"`            // effective value (DB row, else env, else blank)
-	Source   string   `json:"source"`           // "db" | "env" | "default"
-	IsSecret bool     `json:"is_secret"`        // hint for the UI input type
-	Kind     string   `json:"kind,omitempty"`   // text | bool | int | float | enum | url (default "text")
+	Value    string   `json:"value"`             // effective value (DB row, else env, else blank)
+	Source   string   `json:"source"`            // "db" | "env" | "default"
+	IsSecret bool     `json:"is_secret"`         // hint for the UI input type
+	Kind     string   `json:"kind,omitempty"`    // text | bool | int | float | enum | url (default "text")
 	Options  []string `json:"options,omitempty"` // populated only when kind=enum
 	Label    string   `json:"label,omitempty"`
-	Hint     string   `json:"hint,omitempty"`   // optional one-line help under the input
+	Hint     string   `json:"hint,omitempty"` // optional one-line help under the input
 	Group    string   `json:"group,omitempty"`
 }
 
@@ -104,6 +104,11 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
+	{Key: settings.KeyAuraBotEnabled, Group: "other", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and spawn_aurabot tools"},
+	{Key: settings.KeyAuraBotMaxActive, Group: "other", Kind: "int", Label: "AuraBot max active"},
+	{Key: settings.KeyAuraBotMaxDepth, Group: "other", Kind: "int", Label: "AuraBot max depth"},
+	{Key: settings.KeyAuraBotTimeoutSec, Group: "other", Kind: "int", Label: "AuraBot timeout (seconds)"},
+	{Key: settings.KeyAuraBotMaxIterations, Group: "other", Kind: "int", Label: "AuraBot max iterations"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
 }
 

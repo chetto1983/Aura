@@ -9,37 +9,42 @@ const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	TelegramToken       string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
-	Allowlist           []string `envconfig:"TELEGRAM_ALLOWLIST"`
-	AllowlistConfigured bool
-	MaxContextTokens    int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
-	MaxHistoryMessages  int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
-	SoftBudget          float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
-	HardBudget          float64 `envconfig:"HARD_BUDGET" default:"20.0"`
-	CostPerToken        float64 `envconfig:"COST_PER_TOKEN" default:"0.00001"`
-	LogLevel            string  `envconfig:"LOG_LEVEL" default:"info"`
-	LogDir              string  `envconfig:"LOG_DIR" default:"./logs"`
-	LLMAPIKey           string  `envconfig:"LLM_API_KEY"`
-	LLMBaseURL          string  `envconfig:"LLM_BASE_URL"`
-	LLMModel            string  `envconfig:"LLM_MODEL"`
-	LLMMaxRetries       int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
-	OllamaBaseURL       string  `envconfig:"OLLAMA_BASE_URL"`
-	OllamaModel         string  `envconfig:"OLLAMA_MODEL"`
-	OllamaAPIKey        string  `envconfig:"OLLAMA_API_KEY"`
-	OllamaWebBaseURL    string  `envconfig:"OLLAMA_WEB_BASE_URL"`
-	MaxToolIterations   int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
-	WikiPath            string  `envconfig:"WIKI_PATH" default:"./wiki"`
-	PromptOverlayPath   string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
-	SkillsPath          string  `envconfig:"SKILLS_PATH" default:"./skills"`
-	SkillsCatalogURL    string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
-	SkillsAdmin         bool    `envconfig:"SKILLS_ADMIN" default:"false"`
-	MCPServersPath      string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
-	EmbeddingAPIKey     string  `envconfig:"EMBEDDING_API_KEY"`
-	EmbeddingBaseURL    string  `envconfig:"EMBEDDING_BASE_URL"`
-	EmbeddingModel      string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
-	DBPath              string  `envconfig:"DB_PATH" default:"./aura.db"`
-	HTTPPort            string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
-	OTelEnabled         bool    `envconfig:"OTEL_ENABLED" default:"false"`
+	TelegramToken        string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
+	Allowlist            []string `envconfig:"TELEGRAM_ALLOWLIST"`
+	AllowlistConfigured  bool
+	MaxContextTokens     int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
+	MaxHistoryMessages   int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
+	SoftBudget           float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
+	HardBudget           float64 `envconfig:"HARD_BUDGET" default:"20.0"`
+	CostPerToken         float64 `envconfig:"COST_PER_TOKEN" default:"0.00001"`
+	LogLevel             string  `envconfig:"LOG_LEVEL" default:"info"`
+	LogDir               string  `envconfig:"LOG_DIR" default:"./logs"`
+	LLMAPIKey            string  `envconfig:"LLM_API_KEY"`
+	LLMBaseURL           string  `envconfig:"LLM_BASE_URL"`
+	LLMModel             string  `envconfig:"LLM_MODEL"`
+	LLMMaxRetries        int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	OllamaBaseURL        string  `envconfig:"OLLAMA_BASE_URL"`
+	OllamaModel          string  `envconfig:"OLLAMA_MODEL"`
+	OllamaAPIKey         string  `envconfig:"OLLAMA_API_KEY"`
+	OllamaWebBaseURL     string  `envconfig:"OLLAMA_WEB_BASE_URL"`
+	MaxToolIterations    int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
+	WikiPath             string  `envconfig:"WIKI_PATH" default:"./wiki"`
+	PromptOverlayPath    string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
+	SkillsPath           string  `envconfig:"SKILLS_PATH" default:"./skills"`
+	SkillsCatalogURL     string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
+	SkillsAdmin          bool    `envconfig:"SKILLS_ADMIN" default:"false"`
+	MCPServersPath       string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
+	AuraBotEnabled       bool    `envconfig:"AURABOT_ENABLED" default:"false"`
+	AuraBotMaxActive     int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
+	AuraBotMaxDepth      int     `envconfig:"AURABOT_MAX_DEPTH" default:"1"`
+	AuraBotTimeoutSec    int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"90"`
+	AuraBotMaxIterations int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
+	EmbeddingAPIKey      string  `envconfig:"EMBEDDING_API_KEY"`
+	EmbeddingBaseURL     string  `envconfig:"EMBEDDING_BASE_URL"`
+	EmbeddingModel       string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
+	DBPath               string  `envconfig:"DB_PATH" default:"./aura.db"`
+	HTTPPort             string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
+	OTelEnabled          bool    `envconfig:"OTEL_ENABLED" default:"false"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -135,6 +140,11 @@ func Load() (*Config, error) {
 	cfg.SkillsCatalogURL = getEnv("SKILLS_CATALOG_URL", "https://skills.sh/")
 	cfg.SkillsAdmin = getEnvBool("SKILLS_ADMIN", false)
 	cfg.MCPServersPath = getEnv("MCP_SERVERS_PATH", "./mcp.json")
+	cfg.AuraBotEnabled = getEnvBool("AURABOT_ENABLED", false)
+	cfg.AuraBotMaxActive = getEnvInt("AURABOT_MAX_ACTIVE", 4)
+	cfg.AuraBotMaxDepth = getEnvInt("AURABOT_MAX_DEPTH", 1)
+	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", 90)
+	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 5)
 
 	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")

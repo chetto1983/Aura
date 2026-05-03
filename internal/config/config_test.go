@@ -86,6 +86,11 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_CATALOG_URL")
+	os.Unsetenv("AURABOT_ENABLED")
+	os.Unsetenv("AURABOT_MAX_ACTIVE")
+	os.Unsetenv("AURABOT_MAX_DEPTH")
+	os.Unsetenv("AURABOT_TIMEOUT_SEC")
+	os.Unsetenv("AURABOT_MAX_ITERATIONS")
 	os.Unsetenv("EMBEDDING_BASE_URL")
 	os.Unsetenv("EMBEDDING_MODEL")
 	os.Unsetenv("MISTRAL_API_KEY")
@@ -127,6 +132,21 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SkillsCatalogURL != "https://skills.sh/" {
 		t.Errorf("SkillsCatalogURL = %q, want https://skills.sh/", cfg.SkillsCatalogURL)
+	}
+	if cfg.AuraBotEnabled {
+		t.Errorf("AuraBotEnabled = true, want false by default")
+	}
+	if cfg.AuraBotMaxActive != 4 {
+		t.Errorf("AuraBotMaxActive = %d, want 4", cfg.AuraBotMaxActive)
+	}
+	if cfg.AuraBotMaxDepth != 1 {
+		t.Errorf("AuraBotMaxDepth = %d, want 1", cfg.AuraBotMaxDepth)
+	}
+	if cfg.AuraBotTimeoutSec != 90 {
+		t.Errorf("AuraBotTimeoutSec = %d, want 90", cfg.AuraBotTimeoutSec)
+	}
+	if cfg.AuraBotMaxIterations != 5 {
+		t.Errorf("AuraBotMaxIterations = %d, want 5", cfg.AuraBotMaxIterations)
 	}
 	if cfg.EmbeddingBaseURL != "https://api.mistral.ai/v1" {
 		t.Errorf("EmbeddingBaseURL = %q, want Mistral API", cfg.EmbeddingBaseURL)
