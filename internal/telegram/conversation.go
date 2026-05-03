@@ -121,10 +121,19 @@ func (b *Bot) handleConversation(c tele.Context) {
 		return
 	}
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID)
+	// Slice 16c: send an immediate placeholder so the user knows we received
+	// their message. consumeStream edits this instead of creating a new one.
+	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
+
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder)
 	if response != "" {
+		// Non-streamed delivery: delete the placeholder, send the real response.
+		if placeholder != nil {
+			_ = c.Bot().Delete(placeholder)
+		}
 		b.sendAssistant(c, response)
 	}
+	// When response == "", streaming edited the placeholder in place — nothing to do.
 
 	// Slice 12b + 12u.7 (HR-04): archive the user message and every
 	// message produced during this turn. turn_index is allocated from the
@@ -216,7 +225,7 @@ type turnStats struct {
 	toolCalls int
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string) (string, turnStats) {
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message) (string, turnStats) {
 	maxIterations := b.cfg.MaxToolIterations
 	if maxIterations <= 0 {
 		maxIterations = 10
@@ -249,7 +258,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			return "Sorry, I couldn't process your message. Please try again.", stats
 		}
 
-		resp, delivered, err := b.consumeStream(c, ch, userID)
+		resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
 		if err != nil {
 			b.logger.Error("LLM stream read failed", "user_id", userID, "error", err)
 			return "Sorry, I couldn't process your message. Please try again.", stats

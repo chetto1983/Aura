@@ -40,7 +40,7 @@ const streamingEditThrottle = 800 * time.Millisecond
 // delivered=true, the caller should suppress c.Send to avoid double-
 // posting. Slice 11s populates Token.Usage and Token.ToolCalls only on
 // the final Done token, so we can build a complete Response here.
-func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) (llm.Response, bool, error) {
+func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string, placeholder *tele.Message) (llm.Response, bool, error) {
 	var sb strings.Builder
 	var msg *tele.Message
 	var lastEdit time.Time
@@ -48,16 +48,30 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string) 
 
 	flush := func() {
 		text := renderForTelegram(sb.String())
+		if sb.Len() < streamingMinThreshold {
+			return
+		}
 		if msg == nil {
-			if sb.Len() < streamingMinThreshold {
-				return
+			if placeholder != nil {
+				// Edit the pre-existing placeholder instead of sending a new message.
+				if _, err := c.Bot().Edit(placeholder, text, tele.ModeHTML); err != nil {
+					b.logger.Debug("placeholder edit failed, falling back to new message", "user_id", userID, "error", err)
+					sent, sendErr := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
+					if sendErr != nil {
+						return
+					}
+					msg = sent
+				} else {
+					msg = placeholder
+				}
+			} else {
+				sent, err := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
+				if err != nil {
+					b.logger.Warn("streaming initial send failed", "user_id", userID, "error", err)
+					return
+				}
+				msg = sent
 			}
-			sent, err := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
-			if err != nil {
-				b.logger.Warn("streaming initial send failed", "user_id", userID, "error", err)
-				return
-			}
-			msg = sent
 			lastEdit = time.Now()
 			return
 		}
