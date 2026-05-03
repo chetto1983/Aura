@@ -3,24 +3,41 @@ import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
 import { LayoutDashboard, BookText, Network, Inbox, Calendar, Bot, Sparkles, Plug, ShieldCheck, MessagesSquare, FileCheck, Wrench, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
 import { useAppTheme, type AppTheme } from '@/hooks/useAppTheme';
+import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/api';
 import { clearToken } from '@/lib/auth';
 
 const ITEMS = [
-  { to: '/', label: 'Home', icon: LayoutDashboard },
-  { to: '/wiki', label: 'Wiki', icon: BookText },
-  { to: '/graph', label: 'Graph', icon: Network },
-  { to: '/sources', label: 'Sources', icon: Inbox },
-  { to: '/tasks', label: 'Tasks', icon: Calendar },
-  { to: '/swarm', label: 'Swarm', icon: Bot },
-  { to: '/skills', label: 'Skills', icon: Sparkles },
-  { to: '/mcp', label: 'MCP', icon: Plug },
-  { to: '/pending', label: 'Pending', icon: ShieldCheck },
-  { to: '/conversations', label: 'Conversations', icon: MessagesSquare },
-  { to: '/summaries', label: 'Summaries', icon: FileCheck },
-  { to: '/maintenance', label: 'Maintenance', icon: Wrench },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/', icon: LayoutDashboard },
+  { to: '/wiki', icon: BookText },
+  { to: '/graph', icon: Network },
+  { to: '/sources', icon: Inbox },
+  { to: '/tasks', icon: Calendar },
+  { to: '/swarm', icon: Bot },
+  { to: '/skills', icon: Sparkles },
+  { to: '/mcp', icon: Plug },
+  { to: '/pending', icon: ShieldCheck },
+  { to: '/conversations', icon: MessagesSquare },
+  { to: '/summaries', icon: FileCheck },
+  { to: '/maintenance', icon: Wrench },
+  { to: '/settings', icon: SettingsIcon },
 ];
+
+const ROUTE_LABELS: Record<string, string> = {
+  '/': 'sidebar.home',
+  '/wiki': 'sidebar.wiki',
+  '/graph': 'sidebar.graph',
+  '/sources': 'sidebar.sources',
+  '/tasks': 'sidebar.tasks',
+  '/swarm': 'sidebar.swarm',
+  '/skills': 'sidebar.skills',
+  '/mcp': 'sidebar.mcp',
+  '/pending': 'sidebar.pending',
+  '/conversations': 'sidebar.conversations',
+  '/summaries': 'sidebar.summaries',
+  '/maintenance': 'sidebar.maintenance',
+  '/settings': 'sidebar.settings',
+};
 
 const THEME_ICON: Record<AppTheme, typeof Sun> = {
   light: Sun,
@@ -28,9 +45,9 @@ const THEME_ICON: Record<AppTheme, typeof Sun> = {
   contrast: Contrast,
 };
 const THEME_LABEL: Record<AppTheme, string> = {
-  light: 'Light theme',
-  dark: 'Dark theme',
-  contrast: 'High contrast',
+  light: 'sidebar.lightTheme',
+  dark: 'sidebar.darkTheme',
+  contrast: 'sidebar.highContrast',
 };
 
 // BrandMark is a stylized rendition of the Aura orb: a glowing disc
@@ -74,6 +91,7 @@ function BrandMark() {
 // passed it fires after each NavLink click + after Sign out, so the
 // mobile shell can close the drawer once the user picks a destination.
 export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
+  const { t } = useLocale();
   const { theme, cycleTheme } = useAppTheme();
   const ThemeIcon = THEME_ICON[theme];
   const navigate = useNavigate();
@@ -91,7 +109,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
       // ignore — fall through to client-side cleanup
     }
     clearToken();
-    toast.success('Signed out.');
+    toast.success(t('sidebar.signedOut'));
     onNavigate?.();
     navigate('/login', { replace: true });
   };
@@ -102,11 +120,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         <BrandMark />
         <div>
           <h1 className="text-lg font-semibold leading-none tracking-tight">Aura</h1>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Second brain</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{t('sidebar.tagline')}</p>
         </div>
       </div>
       <nav className="flex-1 p-2 space-y-1">
-        {ITEMS.map(({ to, label, icon: Icon }) => (
+        {ITEMS.map(({ to, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -121,7 +139,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
             }
           >
             <Icon size={16} />
-            {label}
+            {t(ROUTE_LABELS[to])}
           </NavLink>
         ))}
       </nav>
@@ -130,20 +148,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           type="button"
           onClick={cycleTheme}
           className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent/50 text-muted-foreground"
-          title="Cycle light → dark → contrast"
+          title={t('sidebar.cycleTheme')}
         >
           <ThemeIcon size={16} />
-          {THEME_LABEL[theme]}
+          {t(THEME_LABEL[theme])}
         </button>
         <button
           type="button"
           disabled={loggingOut}
           onClick={() => void handleLogout()}
           className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent/50 text-muted-foreground disabled:opacity-50 disabled:cursor-wait"
-          title="Revoke this token and return to login"
+          title={t('sidebar.revokeToken')}
         >
           <LogOut size={16} />
-          {loggingOut ? 'Signing out…' : 'Sign out'}
+          {loggingOut ? t('sidebar.signingOut') : t('sidebar.signOut')}
         </button>
       </div>
     </aside>

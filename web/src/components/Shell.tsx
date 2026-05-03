@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Menu, Keyboard } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Sidebar } from '@/components/Sidebar';
+import { useLocale } from '@/hooks/useLocale';
 
 // Shell wraps the auth'd dashboard pages. On md+ the sidebar is always
 // visible to the left; under md it collapses to a button-triggered
@@ -10,6 +11,7 @@ import { Sidebar } from '@/components/Sidebar';
 // keyboard shortcut handler — `?` opens the help dialog and `g X`
 // chords navigate.
 export function Shell({ children }: { children: React.ReactNode }) {
+  const { t } = useLocale();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   useKeyboardShortcuts({ onShowHelp: () => setHelpOpen(true) });
@@ -24,7 +26,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* Mobile sidebar drawer */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-72 p-0 [&>button]:hidden">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <SheetTitle className="sr-only">{t('shell.navigation')}</SheetTitle>
           <Sidebar onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
@@ -36,7 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileOpen(true)}
             className="inline-flex size-11 items-center justify-center rounded-md hover:bg-accent"
-            aria-label="Open navigation"
+            aria-label={t('shell.openNav')}
           >
             <Menu size={18} />
           </button>
@@ -46,7 +48,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
 
-      <ShortcutHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <ShortcutHelpDialog open={helpOpen} onOpenChange={setHelpOpen} t={t} />
     </div>
   );
 }
@@ -123,9 +125,11 @@ function useKeyboardShortcuts({ onShowHelp }: { onShowHelp: () => void }) {
 function ShortcutHelpDialog({
   open,
   onOpenChange,
+  t,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  t: ReturnType<typeof useLocale>['t'];
 }) {
   if (!open) return null;
   return (
@@ -139,22 +143,22 @@ function ShortcutHelpDialog({
       >
         <div className="flex items-center gap-2 mb-3">
           <Keyboard size={18} />
-          <h2 className="text-base font-semibold">Keyboard shortcuts</h2>
+          <h2 className="text-base font-semibold">{t('shell.keyboardShortcuts')}</h2>
         </div>
         <table className="w-full text-sm">
           <tbody>
-            <Row keys={['?']} desc="Show this help" />
-            <Row keys={['g', 'h']} desc="Home" />
-            <Row keys={['g', 'w']} desc="Wiki" />
-            <Row keys={['g', 'g']} desc="Graph" />
-            <Row keys={['g', 's']} desc="Sources" />
-            <Row keys={['g', 't']} desc="Tasks" />
-            <Row keys={['g', 'a']} desc="Swarm" />
-            <Row keys={['g', 'k']} desc="Skills" />
-            <Row keys={['g', 'm']} desc="MCP" />
-            <Row keys={['g', 'v']} desc="Conversations" />
-            <Row keys={['g', 'u']} desc="Summaries" />
-            <Row keys={['g', 'x']} desc="Maintenance" />
+            <Row keys={['?']} desc={t('shell.showHelp')} />
+            <Row keys={['g', 'h']} desc={t('sidebar.home')} />
+            <Row keys={['g', 'w']} desc={t('sidebar.wiki')} />
+            <Row keys={['g', 'g']} desc={t('sidebar.graph')} />
+            <Row keys={['g', 's']} desc={t('sidebar.sources')} />
+            <Row keys={['g', 't']} desc={t('sidebar.tasks')} />
+            <Row keys={['g', 'a']} desc={t('sidebar.swarm')} />
+            <Row keys={['g', 'k']} desc={t('sidebar.skills')} />
+            <Row keys={['g', 'm']} desc={t('sidebar.mcp')} />
+            <Row keys={['g', 'v']} desc={t('sidebar.conversations')} />
+            <Row keys={['g', 'u']} desc={t('sidebar.summaries')} />
+            <Row keys={['g', 'x']} desc={t('sidebar.maintenance')} />
           </tbody>
         </table>
         <div className="mt-4 flex justify-end">
@@ -163,7 +167,7 @@ function ShortcutHelpDialog({
             onClick={() => onOpenChange(false)}
             className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </div>

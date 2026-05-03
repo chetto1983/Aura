@@ -4,6 +4,7 @@ import type { Location } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { api, ApiError } from '@/api';
 import { setToken, getToken, clearToken } from '@/lib/auth';
+import { useLocale } from '@/hooks/useLocale';
 
 interface TelegramInfo {
   username: string;
@@ -21,6 +22,7 @@ interface TelegramInfo {
 // The "expired=1" query param is set by api.ts's handle401 redirect so
 // returning users see a hint rather than a blank "please log in" page.
 export function Login() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -101,7 +103,7 @@ export function Login() {
     e.preventDefault();
     const trimmed = token.trim();
     if (!trimmed) {
-      setError('Paste the token from Telegram first.');
+      setError(t('login.emptyToken'));
       return;
     }
     setSubmitting(true);
@@ -116,7 +118,7 @@ export function Login() {
       if (err instanceof ApiError && err.status === 401) {
         // api.ts already redirected via handle401; reset the message in
         // case we beat the redirect.
-        setError('That token was rejected. Ask the bot for a fresh one.');
+        setError(t('login.rejected'));
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
@@ -143,16 +145,16 @@ export function Login() {
           <div className="mx-auto mb-4 flex justify-center">
             <LoginBrandMark />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Aura dashboard</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('login.title')}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Paste your dashboard token to sign in. In Telegram, send
-            <br />/start for first setup or /login for a fresh token.
+            {t('login.instructions')}
+            <br />{t('login.startHint')}
           </p>
         </div>
 
         {params.get('expired') === '1' && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-            Your session expired or was revoked. Paste a fresh token below.
+            {t('login.expired')}
           </div>
         )}
 
@@ -160,14 +162,14 @@ export function Login() {
 
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
           <label className="block text-sm font-medium">
-            Token
+            {t('login.tokenLabel')}
             <input
               type="password"
               autoFocus
               autoComplete="off"
               value={token}
               onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="paste here"
+              placeholder={t('login.tokenPlaceholder')}
               className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
             />
           </label>
@@ -181,12 +183,12 @@ export function Login() {
             disabled={submitting}
             className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {submitting ? 'Verifying…' : 'Sign in'}
+            {submitting ? t('login.verifying') : t('login.signIn')}
           </button>
         </form>
 
         <div className="text-center text-xs text-muted-foreground">
-          <p>Tip: tokens are delivered only through your private Telegram chat.</p>
+          <p>{t('login.tip')}</p>
         </div>
       </div>
     </div>
@@ -200,12 +202,14 @@ function TelegramEntry({
   telegram: TelegramInfo | null;
   state: 'loading' | 'ready' | 'unavailable';
 }) {
+  const { t } = useLocale();
+
   if (!telegram) {
     return (
       <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-3 text-center text-sm text-muted-foreground">
         {state === 'loading'
-          ? 'Finding your Telegram bot...'
-          : 'Start Aura, then refresh this page to show the Telegram QR and link.'}
+          ? t('login.findingBot')
+          : t('login.botUnavailable')}
       </div>
     );
   }
@@ -217,11 +221,11 @@ function TelegramEntry({
         target="_blank"
         rel="noreferrer"
         className="mx-auto block size-44 overflow-hidden rounded-md bg-white p-2 shadow-[0_0_24px_-14px_var(--primary)]"
-        aria-label={`Open Telegram bot @${telegram.username}`}
+        aria-label={t('login.openBotAlt', { username: telegram.username })}
       >
         <img
           src={telegram.qr_url}
-          alt={`QR code for Telegram bot @${telegram.username}`}
+          alt={t('login.qrAlt', { username: telegram.username })}
           width="160"
           height="160"
           className="size-40"
@@ -229,7 +233,7 @@ function TelegramEntry({
       </a>
       <div className="space-y-3 text-center sm:text-left">
         <div>
-          <p className="text-sm font-medium text-foreground">Telegram bot</p>
+          <p className="text-sm font-medium text-foreground">{t('login.telegramBot')}</p>
           <a
             href={telegram.url}
             target="_blank"
@@ -245,11 +249,11 @@ function TelegramEntry({
           rel="noreferrer"
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          Open Telegram
+          {t('login.openTelegram')}
           <ExternalLink size={14} aria-hidden="true" />
         </a>
         <p className="text-xs leading-5 text-muted-foreground">
-          Send /start once, then paste the token Aura sends back here.
+          {t('login.sendStart')}
         </p>
       </div>
     </div>
