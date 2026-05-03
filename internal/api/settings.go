@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
 )
@@ -27,15 +29,17 @@ import (
 //   - "enum"   — dropdown; Options carries the choices
 //   - "url"    — text input with type="url"
 type SettingItem struct {
-	Key      string   `json:"key"`
-	Value    string   `json:"value"`             // effective value (DB row, else env, else blank)
-	Source   string   `json:"source"`            // "db" | "env" | "default"
-	IsSecret bool     `json:"is_secret"`         // hint for the UI input type
-	Kind     string   `json:"kind,omitempty"`    // text | bool | int | float | enum | url (default "text")
-	Options  []string `json:"options,omitempty"` // populated only when kind=enum
-	Label    string   `json:"label,omitempty"`
-	Hint     string   `json:"hint,omitempty"` // optional one-line help under the input
-	Group    string   `json:"group,omitempty"`
+	Key             string   `json:"key"`
+	Value           string   `json:"value"`             // saved/effective-on-next-start value (DB row, else env/default)
+	Source          string   `json:"source"`            // "db" | "env" | "default"
+	ActiveValue     string   `json:"active_value"`      // value used by this running process after startup config overlay
+	RestartRequired bool     `json:"restart_required"`  // true when Value differs from ActiveValue
+	IsSecret        bool     `json:"is_secret"`         // hint for the UI input type
+	Kind            string   `json:"kind,omitempty"`    // text | bool | int | float | enum | url (default "text")
+	Options         []string `json:"options,omitempty"` // populated only when kind=enum
+	Label           string   `json:"label,omitempty"`
+	Hint            string   `json:"hint,omitempty"` // optional one-line help under the input
+	Group           string   `json:"group,omitempty"`
 }
 
 // SettingsListResponse is the GET /settings body.
@@ -137,9 +141,115 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 			} else {
 				it.Source = "default"
 			}
+			activeValue := activeSettingValue(deps.RuntimeConfig, meta.Key, it.Value)
+			it.RestartRequired = activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)
+			it.ActiveValue = activeValue
+			if it.IsSecret && activeValue != "" {
+				it.ActiveValue = "(configured)"
+			}
 			items = append(items, it)
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SettingsListResponse{Items: items})
+	}
+}
+
+func normalizeSettingValue(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func activeSettingValue(cfg *config.Config, key, fallback string) string {
+	if cfg == nil {
+		return fallback
+	}
+	switch key {
+	case settings.KeyAllowlist:
+		return strings.Join(cfg.Allowlist, ",")
+	case settings.KeyMaxContextTokens:
+		return strconv.Itoa(cfg.MaxContextTokens)
+	case settings.KeyMaxHistoryMessages:
+		return strconv.Itoa(cfg.MaxHistoryMessages)
+	case settings.KeySoftBudget:
+		return strconv.FormatFloat(cfg.SoftBudget, 'f', -1, 64)
+	case settings.KeyHardBudget:
+		return strconv.FormatFloat(cfg.HardBudget, 'f', -1, 64)
+	case settings.KeyCostPerToken:
+		return strconv.FormatFloat(cfg.CostPerToken, 'f', -1, 64)
+	case settings.KeyLLMAPIKey:
+		return cfg.LLMAPIKey
+	case settings.KeyLLMBaseURL:
+		return cfg.LLMBaseURL
+	case settings.KeyLLMModel:
+		return cfg.LLMModel
+	case settings.KeyLLMMaxRetries:
+		return strconv.Itoa(cfg.LLMMaxRetries)
+	case settings.KeyOllamaBaseURL:
+		return cfg.OllamaBaseURL
+	case settings.KeyOllamaModel:
+		return cfg.OllamaModel
+	case settings.KeyOllamaAPIKey:
+		return cfg.OllamaAPIKey
+	case settings.KeyOllamaWebBaseURL:
+		return cfg.OllamaWebBaseURL
+	case settings.KeyMaxToolIterations:
+		return strconv.Itoa(cfg.MaxToolIterations)
+	case settings.KeySkillsCatalogURL:
+		return cfg.SkillsCatalogURL
+	case settings.KeySkillsAdmin:
+		return strconv.FormatBool(cfg.SkillsAdmin)
+	case settings.KeyAuraBotEnabled:
+		return strconv.FormatBool(cfg.AuraBotEnabled)
+	case settings.KeyAuraBotMaxActive:
+		return strconv.Itoa(cfg.AuraBotMaxActive)
+	case settings.KeyAuraBotMaxDepth:
+		return strconv.Itoa(cfg.AuraBotMaxDepth)
+	case settings.KeyAuraBotTimeoutSec:
+		return strconv.Itoa(cfg.AuraBotTimeoutSec)
+	case settings.KeyAuraBotMaxIterations:
+		return strconv.Itoa(cfg.AuraBotMaxIterations)
+	case settings.KeyEmbeddingAPIKey:
+		return cfg.EmbeddingAPIKey
+	case settings.KeyEmbeddingBaseURL:
+		return cfg.EmbeddingBaseURL
+	case settings.KeyEmbeddingModel:
+		return cfg.EmbeddingModel
+	case settings.KeyOTelEnabled:
+		return strconv.FormatBool(cfg.OTelEnabled)
+	case settings.KeyMistralAPIKey:
+		return cfg.MistralAPIKey
+	case settings.KeyMistralOCRModel:
+		return cfg.MistralOCRModel
+	case settings.KeyMistralOCRBaseURL:
+		return cfg.MistralOCRBaseURL
+	case settings.KeyMistralOCRTableFormat:
+		return cfg.MistralOCRTableFormat
+	case settings.KeyMistralOCRIncludeImages:
+		return strconv.FormatBool(cfg.MistralOCRIncludeImages)
+	case settings.KeyMistralOCRExtractHeader:
+		return strconv.FormatBool(cfg.MistralOCRExtractHeader)
+	case settings.KeyMistralOCRExtractFooter:
+		return strconv.FormatBool(cfg.MistralOCRExtractFooter)
+	case settings.KeyOCREnabled:
+		return strconv.FormatBool(cfg.OCREnabled)
+	case settings.KeyOCRMaxPages:
+		return strconv.Itoa(cfg.OCRMaxPages)
+	case settings.KeyOCRMaxFileMB:
+		return strconv.Itoa(cfg.OCRMaxFileMB)
+	case settings.KeyConvArchiveEnabled:
+		return strconv.FormatBool(cfg.ConvArchiveEnabled)
+	case settings.KeySummarizerEnabled:
+		return strconv.FormatBool(cfg.SummarizerEnabled)
+	case settings.KeySummarizerMode:
+		return cfg.SummarizerMode
+	case settings.KeySummarizerTurnInterval:
+		return strconv.Itoa(cfg.SummarizerTurnInterval)
+	case settings.KeySummarizerMinSalience:
+		return strconv.FormatFloat(cfg.SummarizerMinSalience, 'f', -1, 64)
+	case settings.KeySummarizerLookbackTurns:
+		return strconv.Itoa(cfg.SummarizerLookbackTurns)
+	case settings.KeySummarizerCooldownSeconds:
+		return strconv.Itoa(cfg.SummarizerCooldownSeconds)
+	default:
+		return fallback
 	}
 }
 

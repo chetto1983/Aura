@@ -500,7 +500,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		// nightly maintenance dispatch).
 		Issues: b.issues,
 		// Slice 14d: runtime settings page surface.
-		Settings: settingsStore,
+		Settings:      settingsStore,
+		RuntimeConfig: cfg,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
 	})

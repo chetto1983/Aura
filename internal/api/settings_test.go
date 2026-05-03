@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/settings"
 )
 
@@ -176,6 +177,34 @@ func TestSettingsList_AuraBotShowsEditableDefaults(t *testing.T) {
 			t.Fatalf("%s not in settings catalog", key)
 		}
 	}
+}
+
+func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing.T) {
+	router, store := newSettingsEnv(t)
+	ctx := context.Background()
+	if err := store.Set(ctx, settings.KeyAuraBotTimeoutSec, "600"); err != nil {
+		t.Fatalf("set timeout: %v", err)
+	}
+	router = NewRouter(Deps{
+		Settings:      store,
+		RuntimeConfig: &config.Config{AuraBotTimeoutSec: 300},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	for _, it := range resp.Items {
+		if it.Key != settings.KeyAuraBotTimeoutSec {
+			continue
+		}
+		if it.Value != "600" || it.ActiveValue != "300" || !it.RestartRequired {
+			t.Fatalf("timeout row = value:%q active:%q restart:%v", it.Value, it.ActiveValue, it.RestartRequired)
+		}
+		return
+	}
+	t.Fatal("AURABOT_TIMEOUT_SEC not in items")
 }
 
 func TestSettingsList_NoStore503(t *testing.T) {

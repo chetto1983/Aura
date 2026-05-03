@@ -232,6 +232,7 @@ function SettingRow({
   const { t } = useLocale();
   const sourceBadge = (() => {
     if (dirty) return { label: t('settings.badge.edited'), cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
+    if (item.restart_required) return { label: t('settings.badge.restart'), cls: 'bg-orange-500/12 text-orange-700 dark:text-orange-300 border-orange-500/40' };
     switch (item.source) {
       case 'db':
         return { label: t('settings.badge.saved'), cls: 'bg-primary/12 text-cyan-700 dark:text-cyan-300 border-primary/40' };
@@ -247,6 +248,9 @@ function SettingRow({
     if (item.source === 'default') return t('settings.source.defaultHint');
     return '';
   })();
+  const activeHint = item.restart_required
+    ? t('settings.source.activeHint', { value: item.active_value || t('settings.source.emptyValue') })
+    : '';
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-x-5 gap-y-1.5 md:items-center px-5 py-3.5">
       <label className="min-w-0" htmlFor={item.key}>
@@ -259,6 +263,7 @@ function SettingRow({
         <div className="text-[10.5px] font-mono text-muted-foreground mt-0.5 truncate">{item.key}</div>
         {item.hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{item.hint}</div>}
         {sourceHint && <div className="text-[12px] text-muted-foreground/80 mt-1 leading-snug">{sourceHint}</div>}
+        {activeHint && <div className="text-[12px] text-orange-600 dark:text-orange-300 mt-1 leading-snug">{activeHint}</div>}
       </label>
       <div className="flex gap-1.5 min-w-0 items-center">
         <Control

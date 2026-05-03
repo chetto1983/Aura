@@ -18,7 +18,7 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export function SwarmPanel() {
-  const { t, formatDate } = useLocale();
+  const { t } = useLocale();
   const fetchRuns = useCallback(() => api.swarmRuns(50), []);
   const { data: runs, error, loading, stale, refetch } = useApi(fetchRuns, POLL_MS);
   const [selectedID, setSelectedID] = useState<string>('');

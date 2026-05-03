@@ -362,10 +362,12 @@ export interface SettingItem {
   key: string;
   value: string;
   source: 'db' | 'env' | 'default';
+  active_value: string;
+  restart_required: boolean;
   is_secret: boolean;
   kind?: SettingKind;
   options?: string[]; // present when kind === 'enum'
   label?: string;
   hint?: string;
-  group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'other';
+  group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 }

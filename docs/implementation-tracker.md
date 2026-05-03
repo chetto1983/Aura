@@ -109,8 +109,28 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17m | AuraBot completion guardrails | done | Live `/swarm` run showed a researcher issuing repeated web searches, filling context, and failing after 90s with zero UI metrics. AuraBot tasks now have per-role tool budgets, compact tool-result clipping, a forced final synthesis turn with tools disabled, and deadline partial completion after evidence has been gathered. |
 | 17n | AuraBot value timeout | done | Raised AuraBot timeout default and local runtime value from 90s to 300s. The longer wall clock is paired with slice 17m's tool budgets/finalization guardrails, so agents have time for useful work without unbounded search loops. |
 | 17o | Dashboard AuraBot settings | done | `/settings` now exposes AuraBot in its own group with editable defaults for enabled/max-active/depth/timeout/iterations, explains DB-over-`.env` precedence, and lets operators save overrides to `aura.db` instead of editing `.env`. |
+| 17p | Settings active-vs-saved diagnostics | done | `/settings` now returns the running process value for each row plus `restart_required`; the dashboard highlights rows where a saved DB override differs from the active config, so users know when a restart is needed. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17p (Settings active-vs-saved diagnostics)
+
+Goal: after moving AuraBot tuning into `/settings`, make the page show whether a saved value is actually active in the current process.
+
+Implementation:
+
+- API `SettingItem` now includes `active_value` and `restart_required`.
+- `api.Deps` carries the process `RuntimeConfig` snapshot from `telegram.New`.
+- `/settings` compares saved/effective-on-next-start values against the current runtime config.
+- Settings UI shows a `restart` badge and the active value when a saved DB override differs from the running process.
+
+Verification:
+
+- `go test ./internal/api ./internal/settings ./internal/config ./internal/telegram`
+- `npm run lint`
+- `npm run build`
+
+Next slice: add an operator-friendly restart/reload action if we want the dashboard to apply restart-required settings without leaving the UI.
 
 ### 2026-05-03 - Slice 17o (Dashboard AuraBot settings)
 

@@ -15,7 +15,7 @@ const ACTION_BADGE: Record<string, string> = {
 };
 
 export function SummariesPanel() {
-  const { t, formatDate } = useLocale();
+  const { t } = useLocale();
   const fetcher = useCallback(() => api.summaries('pending'), []);
   const { data, error, loading, refetch } = useApi<ProposedUpdate[]>(fetcher);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
