@@ -72,7 +72,8 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			dec := summarizer.Decision{
 				Candidate: summarizer.Candidate{
 					Fact:          proposal.Fact,
-					Category:      "fact",
+					Category:      proposalCategory(proposal.Category),
+					RelatedSlugs:  proposal.RelatedSlugs,
 					SourceTurnIDs: proposal.SourceTurnIDs,
 				},
 				Action:     summarizer.Action(proposal.Action),
@@ -140,6 +141,10 @@ func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {
 	if ids == nil {
 		ids = []int64{}
 	}
+	related := p.RelatedSlugs
+	if related == nil {
+		related = []string{}
+	}
 	return ProposedUpdate{
 		ID:            p.ID,
 		ChatID:        p.ChatID,
@@ -148,7 +153,16 @@ func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {
 		TargetSlug:    p.TargetSlug,
 		Similarity:    p.Similarity,
 		SourceTurnIDs: ids,
+		Category:      p.Category,
+		RelatedSlugs:  related,
 		Status:        p.Status,
 		CreatedAt:     p.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func proposalCategory(category string) string {
+	if category == "" {
+		return "fact"
+	}
+	return category
 }

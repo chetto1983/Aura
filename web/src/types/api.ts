@@ -262,6 +262,8 @@ export interface ProposedUpdate {
   target_slug?: string;
   similarity: number;
   source_turn_ids: number[];
+  category?: string;
+  related_slugs: string[];
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
 }

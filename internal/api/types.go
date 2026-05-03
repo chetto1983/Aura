@@ -277,15 +277,17 @@ type WikiIssue struct {
 
 // ProposedUpdate is one row of GET /summaries (mirrors proposed_updates table).
 type ProposedUpdate struct {
-	ID            int64   `json:"id"`
-	ChatID        int64   `json:"chat_id"`
-	Fact          string  `json:"fact"`
-	Action        string  `json:"action"`
-	TargetSlug    string  `json:"target_slug,omitempty"`
-	Similarity    float64 `json:"similarity"`
-	SourceTurnIDs []int64 `json:"source_turn_ids"`
-	Status        string  `json:"status"`
-	CreatedAt     string  `json:"created_at"`
+	ID            int64    `json:"id"`
+	ChatID        int64    `json:"chat_id"`
+	Fact          string   `json:"fact"`
+	Action        string   `json:"action"`
+	TargetSlug    string   `json:"target_slug,omitempty"`
+	Similarity    float64  `json:"similarity"`
+	SourceTurnIDs []int64  `json:"source_turn_ids"`
+	Category      string   `json:"category,omitempty"`
+	RelatedSlugs  []string `json:"related_slugs"`
+	Status        string   `json:"status"`
+	CreatedAt     string   `json:"created_at"`
 }
 
 // ConversationDetail is the response of GET /conversations/{id}. ToolCalls

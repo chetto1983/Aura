@@ -64,6 +64,7 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 		PromptVersion: "summarizer_v1",
 		Title:         title,
 		Category:      d.Candidate.Category,
+		Related:       uniqueNonEmpty(d.Candidate.RelatedSlugs),
 		Tags:          []string{"auto-added"},
 		Sources:       sources,
 		CreatedAt:     now,
@@ -90,6 +91,11 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 		ref := fmt.Sprintf("turn:%d", id)
 		if !containsStr(page.Sources, ref) {
 			page.Sources = append(page.Sources, ref)
+		}
+	}
+	for _, slug := range d.Candidate.RelatedSlugs {
+		if slug != "" && !containsStr(page.Related, slug) {
+			page.Related = append(page.Related, slug)
 		}
 	}
 	page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -120,6 +126,8 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   target_slug     TEXT    NOT NULL DEFAULT '',
   similarity      REAL    NOT NULL DEFAULT 0,
   source_turn_ids TEXT    NOT NULL DEFAULT '',
+  category        TEXT    NOT NULL DEFAULT '',
+  related_slugs   TEXT    NOT NULL DEFAULT '',
   status          TEXT    NOT NULL DEFAULT 'pending',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -135,6 +143,9 @@ func NewReviewApplier(db *sql.DB) (*ReviewApplier, error) {
 	if _, err := db.Exec(reviewMigrationSQL); err != nil {
 		return nil, fmt.Errorf("review applier migrate: %w", err)
 	}
+	if err := ensureReviewColumns(db); err != nil {
+		return nil, fmt.Errorf("review applier migrate columns: %w", err)
+	}
 	return &ReviewApplier{db: db}, nil
 }
 
@@ -143,14 +154,53 @@ func (r *ReviewApplier) Apply(ctx context.Context, d Decision) error {
 		return nil
 	}
 	ids, _ := json.Marshal(d.Candidate.SourceTurnIDs)
-	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, status)
-		VALUES (0, ?, ?, ?, ?, ?, 'pending')`
+	related, _ := json.Marshal(d.Candidate.RelatedSlugs)
+	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
+		VALUES (0, ?, ?, ?, ?, ?, ?, ?, 'pending')`
 	_, err := r.db.ExecContext(ctx, q,
-		d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids))
+		d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related))
 	if err != nil {
 		return fmt.Errorf("review applier insert: %w", err)
 	}
 	return nil
+}
+
+func ensureReviewColumns(db *sql.DB) error {
+	cols, err := tableColumns(db, "proposed_updates")
+	if err != nil {
+		return err
+	}
+	if !cols["category"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !cols["related_slugs"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
 }
 
 // ---- OffApplier ----
@@ -162,3 +212,19 @@ type OffApplier struct{}
 func NewOffApplier() *OffApplier { return &OffApplier{} }
 
 func (o *OffApplier) Apply(_ context.Context, _ Decision) error { return nil }
+
+func uniqueNonEmpty(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}

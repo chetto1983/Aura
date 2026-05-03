@@ -50,6 +50,7 @@ func makeDecision(action summarizer.Action, slug string) summarizer.Decision {
 			Fact:          "Marco lives in Bologna",
 			Score:         0.9,
 			Category:      "person",
+			RelatedSlugs:  []string{"bologna", "marco"},
 			SourceTurnIDs: []int64{1, 2},
 		},
 		Action:     action,
@@ -79,6 +80,9 @@ func TestAutoApplier_ActionNew_WritesPage(t *testing.T) {
 	if len(p.Sources) == 0 {
 		t.Fatal("want sources (evidence) set")
 	}
+	if len(p.Related) != 2 || p.Related[0] != "bologna" || p.Related[1] != "marco" {
+		t.Fatalf("related = %#v, want [bologna marco]", p.Related)
+	}
 }
 
 func TestAutoApplier_ActionPatch_AppendsToBody(t *testing.T) {
@@ -100,6 +104,9 @@ func TestAutoApplier_ActionPatch_AppendsToBody(t *testing.T) {
 	body := ws.written[0].Body
 	if !strings.Contains(body, "[auto-sum") {
 		t.Fatalf("want [auto-sum] block in body, got: %q", body)
+	}
+	if len(ws.written[0].Related) != 2 || ws.written[0].Related[0] != "bologna" || ws.written[0].Related[1] != "marco" {
+		t.Fatalf("related = %#v, want [bologna marco]", ws.written[0].Related)
 	}
 }
 
@@ -135,7 +142,7 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	rows, err := db.QueryContext(context.Background(), "SELECT status FROM proposed_updates WHERE action='new'")
+	rows, err := db.QueryContext(context.Background(), "SELECT status, category, related_slugs FROM proposed_updates WHERE action='new'")
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -143,15 +150,55 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 	var count int
 	for rows.Next() {
 		var status string
-		rows.Scan(&status)
+		var category string
+		var related string
+		rows.Scan(&status, &category, &related)
 		if status != "pending" {
 			t.Fatalf("want status=pending, got %q", status)
+		}
+		if category != "person" {
+			t.Fatalf("want category=person, got %q", category)
+		}
+		if related != `["bologna","marco"]` {
+			t.Fatalf("want related slugs JSON, got %q", related)
 		}
 		count++
 	}
 	if count != 1 {
 		t.Fatalf("want 1 row, got %d", count)
 	}
+}
+
+func TestReviewApplier_MigratesLegacyProposalColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE proposed_updates (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id         INTEGER NOT NULL,
+  fact            TEXT    NOT NULL,
+  action          TEXT    NOT NULL,
+  target_slug     TEXT    NOT NULL DEFAULT '',
+  similarity      REAL    NOT NULL DEFAULT 0,
+  source_turn_ids TEXT    NOT NULL DEFAULT '',
+  status          TEXT    NOT NULL DEFAULT 'pending',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`)
+	if err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	if _, err := summarizer.NewReviewApplier(db); err != nil {
+		t.Fatalf("NewReviewApplier: %v", err)
+	}
+	rows, err := db.Query(`SELECT category, related_slugs FROM proposed_updates LIMIT 0`)
+	if err != nil {
+		t.Fatalf("new columns not queryable: %v", err)
+	}
+	rows.Close()
 }
 
 func TestReviewApplier_ActionPatch_InsertsProposal(t *testing.T) {
@@ -213,4 +260,3 @@ func TestOffApplier_ActionSkip_NoSideEffects(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 }
-

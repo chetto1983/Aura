@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   target_slug     TEXT    NOT NULL DEFAULT '',
   similarity      REAL    NOT NULL DEFAULT 0,
   source_turn_ids TEXT    NOT NULL DEFAULT '',
+  category        TEXT    NOT NULL DEFAULT '',
+  related_slugs   TEXT    NOT NULL DEFAULT '',
   status          TEXT    NOT NULL DEFAULT 'pending',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -162,10 +164,53 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(proposedUpdatesSchemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate proposed_updates: %w", err)
 	}
+	if err := addProposedUpdateReviewColumns(s.db); err != nil {
+		return fmt.Errorf("scheduler migrate proposed_updates review columns: %w", err)
+	}
 	if _, err := s.db.Exec(wikiIssuesSchemaSQL); err != nil {
 		return fmt.Errorf("scheduler migrate wiki_issues: %w", err)
 	}
 	return nil
+}
+
+// addProposedUpdateReviewColumns back-fills category and related_slugs on
+// DBs created before HR-02. Idempotent via PRAGMA table_info checks.
+func addProposedUpdateReviewColumns(db *sql.DB) error {
+	cols, err := tableInfoColumns(db, "proposed_updates")
+	if err != nil {
+		return err
+	}
+	if !cols["category"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !cols["related_slugs"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tableInfoColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
 }
 
 // addEveryMinutesColumn back-fills the schedule_every_minutes column on

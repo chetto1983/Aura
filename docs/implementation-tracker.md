@@ -70,7 +70,7 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 11u | Render assistant Markdown into Telegram HTML | done | Telegram's default parse mode treats Markdown as literal text, so the LLM's `**bold**`, `## headers`, `- bullets`, `[link](url)` output arrived in chat as raw chars. Aura now converts the LLM's Markdown to the small HTML subset Telegram supports (`b/i/s/u, code, pre, a, blockquote`) and sends with `tele.ModeHTML`. Headings degrade to `<b>` (Telegram doesn't render `<h1>`); bullets degrade to `•` (no `<ul>/<li>`); links restricted to http(s)/tg schemes to block `javascript:` smuggling. HTML reserved chars in plain text are escaped; chars inside `<code>/<pre>` are preserved correctly. Wired through both delivery paths: `handleConversation`'s final `c.Send` (non-streamed turns) via `sendAssistant`, and `consumeStream`'s progressive `Send/Edit` (streamed turns). Operator-facing strings (auth errors, bootstrap messages) keep raw `c.Send` to avoid double-escaping. |
 | 10e | UI: polish + theme redesign | done | Two waves: **(A) polish** — dark mode default, shadcn `Skeleton` placeholders replace "Loading…" across HealthDashboard / WikiPanel / SourceInbox / TasksPanel; stronger empty-state CTAs (BookText / Calendar icons + helpful copy); ErrorBoundary fires a `sonner.error` toast on top of the inline card; `Shell` component splits desktop sidebar from a mobile slide-over (radix Sheet, < md); global keyboard shortcuts via `useKeyboardShortcuts` (`?` opens help dialog, `g h/w/g/s/t` chord navigation). Backend `/api/health` extended with `process` block (version, git_revision, started_at, uptime_seconds) — git revision read once via `runtime/debug.ReadBuildInfo`. **(B) theme redesign from logo** — palette derived from the new orb logo (deep navy disc, electric cyan-blue arrow A); rewrote light + dark + contrast shadcn token blocks in oklch; ambient aurora radial-gradient on dark/contrast bodies; new inline-SVG `BrandMark` (sidebar) + larger glowing `LoginBrandMark` (login page); active-nav items get a brand glow (`bg-primary/10 ring-primary/20 shadow-[0_0_20px_-8px_var(--primary)]`); cards gain a hover top-stripe gradient + `hover:border-primary/30`. Bundle: 521 KB JS / 161 KB gz, 105 KB CSS / 18 KB gz. |
 | 12a–12u | Phase 12 — Compounding Memory | done | Conversation archive (12a–12c), summarizer pipeline (12d–12f, 12k.1), wiki maintenance (12g–12h, 12l.1), compounding metric (12i, 12m), dashboard routes (12j, 12k, 12l, 12n), Q&A coverage (12o–12r), live E2E checklist + coverage report (12s–12t), Opus 4.7 review (12u). Executed by a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6, 21 atomic commits + 1 lead cleanup + 1 applier hotfix. v0.12.0. |
-| 12u.1–12u.8 | Phase 12 follow-ups (post-review) | done | CR-01 + CR-02 (broken /conversations route, chat_id required) and HR-01/03/04/05/06/07. HR-01 fixed `RepairLink` partial-commit by continuing after per-page failures and always writing the auto-fix audit log. HR-02 (Category lost on review-approve) remains deferred to v0.12.1. |
+| 12u.1–12u.9 | Phase 12 follow-ups (post-review) | done | CR-01 + CR-02 and HR-01/02/03/04/05/06/07. HR-01 fixed `RepairLink` partial-commit; HR-02 preserves summarizer proposal category + related slugs through review approval. |
 | 14a | Settings store + DB-overrides-env applier | done | `internal/settings` SQLite KV store on `cfg.DBPath`. `ApplyToConfig` overlays DB rows on top of env-loaded config; bootstrap fields (TelegramToken, HTTPPort, DBPath, LogLevel, paths) excluded. Empty DB = identical behavior. 23 unit tests. |
 | 14b+c | First-run setup wizard with provider presets + live probe | done | `internal/setup` package: server-rendered HTML form at `cfg.HTTPPort` (loopback-forced, no auth) when `TELEGRAM_TOKEN` is blank. 8 LLM provider presets, live `/v1/models` probe, Ollama auto-detect via `/api/tags`. On Save: writes `TELEGRAM_TOKEN` to `.env` (atomic temp+rename), LLM_* to settings DB; main.go re-loads cfg without restart. 18 unit tests + 4 Playwright specs. |
 | 14d | Auth'd /settings dashboard page | done | `GET /api/settings` returns 30-key catalog with `value` (effective: DB \| env \| default), `source`, `kind` (text/bool/int/float/enum/url), `is_secret`, `hint`. `POST /api/settings` bulk-upserts; `IsOverridable` rejects bootstrap keys at the API layer. `POST /api/settings/test` reuses the wizard probe. Frontend: grouped form (provider/embeddings/ocr/budget/summarizer/other), bool→toggle switch, enum→select, int/float→number input, url→type=url. Per-row dirty state + revert. 8 backend tests + 6 E2E. |
@@ -90,6 +90,26 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 15e | Natural-prompt file creation smoke | done | New `cmd/debug_files` harness registers the real `create_xlsx`, `create_docx`, and `create_pdf` tools against a hermetic temp source store and a `DocumentSender` stub. Three ordinary prompts verify model tool selection, persisted source kind/status, file asset bytes, and delivery. Live run on 2026-05-03 with `LLM_MODEL=glm-5.1:cloud` passed all 3 scenarios. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 12u.9 (HR-02 proposal category + related slugs)
+
+Fixes `docs/REVIEW.md` HR-02. Review-mode summarizer proposals now round-trip `Candidate.Category` and `Candidate.RelatedSlugs` through `proposed_updates` and restore them when approving a proposal.
+
+**Implementation**:
+
+- Added `category` and `related_slugs` columns to `proposed_updates`, with idempotent backfill migrations for both scheduler startup and direct `NewReviewApplier` use.
+- `ReviewApplier.Apply` persists category and JSON-encoded related slugs.
+- `SummariesStore` scans the new fields; API DTOs and TS types expose them.
+- `handleSummariesApprove` reconstructs the `Decision` with the proposal category and related slugs instead of hardcoding category `fact`.
+- `AutoApplier` now writes related slugs to new pages and merges them into patched pages.
+
+**Test coverage**:
+
+- Extended review applier tests to assert category/related persistence and legacy-table migration.
+- Extended approve tests to assert the wiki page receives the original category and related slugs.
+- Added scheduler migration coverage for legacy `proposed_updates` tables.
+
+**Next work**: no HIGH items from the Phase 12 review backlog remain open; next slice should come from the current product backlog rather than `docs/REVIEW.md`.
 
 ### 2026-05-03 - Slice 12u.8 (HR-01 RepairLink partial-commit)
 

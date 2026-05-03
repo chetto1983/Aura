@@ -34,6 +34,8 @@ func newSummariesDB(t *testing.T) (*sql.DB, *summarizer.SummariesStore) {
 		target_slug TEXT NOT NULL DEFAULT '',
 		similarity REAL NOT NULL DEFAULT 0,
 		source_turn_ids TEXT NOT NULL DEFAULT '',
+		category TEXT NOT NULL DEFAULT '',
+		related_slugs TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'pending',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -46,8 +48,8 @@ func newSummariesDB(t *testing.T) (*sql.DB, *summarizer.SummariesStore) {
 func seedProposal(t *testing.T, db *sql.DB, action, status string) int64 {
 	t.Helper()
 	res, err := db.ExecContext(context.Background(),
-		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, status)
-		 VALUES (1, 'test fact', ?, 'slug', 0.5, '[1,2]', ?)`,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
+		 VALUES (1, 'test fact', ?, 'slug', 0.5, '[1,2]', 'project', '["aura"]', ?)`,
 		action, status)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -131,6 +133,12 @@ func TestHandleSummariesApprove_HappyPath(t *testing.T) {
 	}
 	if len(ws.written) == 0 {
 		t.Fatal("want wiki mutation on approve new")
+	}
+	if got := ws.written[0].Category; got != "project" {
+		t.Fatalf("written category = %q, want project", got)
+	}
+	if len(ws.written[0].Related) != 1 || ws.written[0].Related[0] != "aura" {
+		t.Fatalf("written related = %#v, want [aura]", ws.written[0].Related)
 	}
 }
 

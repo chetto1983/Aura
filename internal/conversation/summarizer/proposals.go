@@ -24,6 +24,8 @@ type ProposedUpdate struct {
 	TargetSlug    string    `json:"target_slug,omitempty"`
 	Similarity    float64   `json:"similarity"`
 	SourceTurnIDs []int64   `json:"source_turn_ids"`
+	Category      string    `json:"category,omitempty"`
+	RelatedSlugs  []string  `json:"related_slugs"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -49,12 +51,12 @@ func (s *SummariesStore) List(ctx context.Context, status string, limit int) ([]
 	var err error
 	if status != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, status, created_at
+			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
 			 FROM proposed_updates WHERE status = ? ORDER BY created_at DESC LIMIT ?`,
 			status, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, status, created_at
+			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
 			 FROM proposed_updates ORDER BY created_at DESC LIMIT ?`,
 			limit)
 	}
@@ -77,7 +79,7 @@ func (s *SummariesStore) List(ctx context.Context, status string, limit int) ([]
 // Get returns a single proposal by ID, or ErrProposalNotFound.
 func (s *SummariesStore) Get(ctx context.Context, id int64) (ProposedUpdate, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, status, created_at
+		`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
 		 FROM proposed_updates WHERE id = ?`, id)
 	p, err := scanProposal(row)
 	if err != nil {
@@ -114,10 +116,11 @@ type proposalScanner interface {
 func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	var p ProposedUpdate
 	var idsJSON string
+	var relatedJSON string
 	var createdAt string
 	if err := r.Scan(
 		&p.ID, &p.ChatID, &p.Fact, &p.Action, &p.TargetSlug,
-		&p.Similarity, &idsJSON, &p.Status, &createdAt,
+		&p.Similarity, &idsJSON, &p.Category, &relatedJSON, &p.Status, &createdAt,
 	); err != nil {
 		return ProposedUpdate{}, err
 	}
@@ -126,6 +129,12 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	}
 	if p.SourceTurnIDs == nil {
 		p.SourceTurnIDs = []int64{}
+	}
+	if relatedJSON != "" && relatedJSON != "null" {
+		_ = json.Unmarshal([]byte(relatedJSON), &p.RelatedSlugs)
+	}
+	if p.RelatedSlugs == nil {
+		p.RelatedSlugs = []string{}
 	}
 	ts, err := time.Parse("2006-01-02 15:04:05", createdAt)
 	if err != nil {
