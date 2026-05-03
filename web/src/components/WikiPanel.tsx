@@ -4,10 +4,12 @@ import { toast } from 'sonner';
 import { RefreshCw, BookText } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
 
 export function WikiPanel() {
+  const { t, formatDate } = useLocale();
   const fetcher = useCallback(() => api.wikiPages(), []);
   const { data, error, loading, stale, refetch } = useApi(fetcher);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -25,18 +27,18 @@ export function WikiPanel() {
 
   const handleRebuild = useCallback(async () => {
     setRebuilding(true);
-    const id = toast.loading('Rebuilding wiki index…');
+    const id = toast.loading(t('wiki.toast.rebuilding'));
     try {
       await api.rebuildWikiIndex();
-      toast.success('Wiki index rebuilt', { id });
+      toast.success(t('wiki.toast.rebuilt'), { id });
       refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Rebuild failed: ${msg}`, { id });
+      toast.error(`${t('wiki.toast.rebuildFailed')}: ${msg}`, { id });
     } finally {
       setRebuilding(false);
     }
-  }, [refetch]);
+  }, [refetch, t]);
 
   const categories = useMemo(() => {
     if (!data) return [] as string[];
@@ -53,33 +55,38 @@ export function WikiPanel() {
     );
   }, [data, filter, category]);
 
+  const fmtDate = (iso: string): string => {
+    if (!iso || iso.startsWith('0001')) return '—';
+    return formatDate(iso, { dateStyle: 'short' });
+  };
+
   if (loading && !data) return <WikiSkeleton />;
-  if (error && !data) return <ErrorCard error={error} title="Failed to load wiki" onRetry={refetch} />;
+  if (error && !data) return <ErrorCard error={error} title={t('wiki.errorTitle')} onRetry={refetch} />;
   if (!data) return null;
 
   return (
     <div className="p-6 space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">Wiki</h1>
-          {stale && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">⚠ stale</span>}
+          <h1 className="text-2xl font-semibold">{t('wiki.title')}</h1>
+          {stale && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">{t('common.stale')}</span>}
         </div>
         <button
           type="button"
           disabled={rebuilding}
           onClick={() => void handleRebuild()}
           className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
-          title="Regenerate wiki/index.md from current pages"
+          title={t('wiki.rebuildHint')}
         >
           <RefreshCw size={14} />
-          Rebuild index
+          {t('wiki.rebuildIndex')}
         </button>
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
-          placeholder="Search title or slug…"
+          placeholder={t('wiki.searchPlaceholder')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="min-h-11 flex-1 min-w-[12rem] rounded-md border bg-background px-3 py-2 text-sm"
@@ -89,7 +96,7 @@ export function WikiPanel() {
           onClick={() => setCategory('')}
           className={`inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm ${category === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
         >
-          all
+          {t('wiki.filterAll')}
         </button>
         {categories.map((c) => (
           <button
@@ -113,9 +120,9 @@ export function WikiPanel() {
               {p.title}
             </Link>
             <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-              <p>{p.category ?? 'No category'}</p>
-              <p>{p.tags?.length ? p.tags.map((t) => `#${t}`).join(' ') : 'No tags'}</p>
-              <p>Updated {shortDate(p.updated_at)}</p>
+              <p>{p.category ?? t('wiki.noCategory')}</p>
+              <p>{p.tags?.length ? p.tags.map((tg) => `#${tg}`).join(' ') : t('wiki.noTags')}</p>
+              <p>{t('wiki.updated')} {fmtDate(p.updated_at)}</p>
             </div>
           </article>
         ))}
@@ -124,11 +131,11 @@ export function WikiPanel() {
             {data.length === 0 ? (
               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                 <BookText size={32} className="opacity-40" />
-                <p className="text-sm font-medium">No wiki pages yet</p>
-                <p className="text-xs">Drop a PDF on /sources or chat with the bot - pages appear after the first ingest.</p>
+                <p className="text-sm font-medium">{t('wiki.emptyTitle')}</p>
+                <p className="text-xs">{t('wiki.emptyHint')}</p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No pages match your filter</p>
+              <p className="text-sm text-muted-foreground">{t('wiki.noMatch')}</p>
             )}
           </div>
         )}
@@ -138,10 +145,10 @@ export function WikiPanel() {
         <table className="w-full text-sm min-w-[500px]">
           <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="text-left py-2 px-3 font-medium">Title</th>
-              <th className="text-left py-2 px-3 font-medium">Category</th>
-              <th className="text-left py-2 px-3 font-medium">Tags</th>
-              <th className="text-left py-2 px-3 font-medium">Updated</th>
+              <th className="text-left py-2 px-3 font-medium">{t('wiki.table.title')}</th>
+              <th className="text-left py-2 px-3 font-medium">{t('wiki.table.category')}</th>
+              <th className="text-left py-2 px-3 font-medium">{t('wiki.table.tags')}</th>
+              <th className="text-left py-2 px-3 font-medium">{t('wiki.table.updated')}</th>
             </tr>
           </thead>
           <tbody>
@@ -154,9 +161,9 @@ export function WikiPanel() {
                 </td>
                 <td className="py-2 px-3 text-muted-foreground">{p.category ?? '—'}</td>
                 <td className="py-2 px-3 text-xs text-muted-foreground">
-                  {p.tags?.length ? p.tags.map((t) => `#${t}`).join(' ') : '—'}
+                  {p.tags?.length ? p.tags.map((tg) => `#${tg}`).join(' ') : '—'}
                 </td>
-                <td className="py-2 px-3 text-xs text-muted-foreground">{shortDate(p.updated_at)}</td>
+                <td className="py-2 px-3 text-xs text-muted-foreground">{fmtDate(p.updated_at)}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -165,11 +172,11 @@ export function WikiPanel() {
                   {data.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <BookText size={32} className="opacity-40" />
-                      <p className="text-sm font-medium">No wiki pages yet</p>
-                      <p className="text-xs">Drop a PDF on /sources or chat with the bot — pages appear after the first ingest.</p>
+                      <p className="text-sm font-medium">{t('wiki.emptyTitle')}</p>
+                      <p className="text-xs">{t('wiki.emptyHint')}</p>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No pages match your filter</p>
+                    <p className="text-sm text-muted-foreground">{t('wiki.noMatch')}</p>
                   )}
                 </td>
               </tr>
@@ -179,11 +186,6 @@ export function WikiPanel() {
       </div>
     </div>
   );
-}
-
-function shortDate(iso: string): string {
-  if (!iso || iso.startsWith('0001')) return '—';
-  return new Date(iso).toLocaleDateString();
 }
 
 function WikiSkeleton() {
