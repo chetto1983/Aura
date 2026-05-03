@@ -29,9 +29,9 @@ func (b *Bot) sendAssistant(c tele.Context, text string) {
 const streamingMinThreshold = 30
 
 // streamingEditThrottle bounds how often we call Telegram's editMessage
-// API. Telegram rate-limits edits to ~1/sec per chat; 800ms keeps us
-// safely under the limit while still feeling responsive.
-const streamingEditThrottle = 800 * time.Millisecond
+// API. Telegram rate-limits edits to ~1/sec per chat; 600ms keeps us
+// safely under the limit while feeling more responsive.
+const streamingEditThrottle = 600 * time.Millisecond
 
 // consumeStream reads tokens from ch and progressively edits a Telegram
 // message as text accumulates. Returns an llm.Response shaped like the
