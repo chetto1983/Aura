@@ -1,30 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Settings as SettingsIcon, Save, FlaskConical, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Trans } from 'react-i18next';
 import { api, ApiError } from '@/api';
+import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
 type Group = 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'other';
 
 const GROUP_ORDER: Group[] = ['provider', 'embeddings', 'ocr', 'budget', 'summarizer', 'other'];
-const GROUP_LABEL: Record<Group, string> = {
-  provider: 'LLM provider',
-  embeddings: 'Wiki search (embeddings)',
-  ocr: 'PDF OCR',
-  budget: 'Budget & context',
-  summarizer: 'Summarizer',
-  other: 'Other',
-};
-const GROUP_HINT: Record<Group, string> = {
-  provider: 'The model the bot uses for chat. Test the connection before saving.',
-  embeddings: 'Optional. Powers wiki search. Mistral free tier is enough for personal use.',
-  ocr: 'Optional. Lets the bot ingest PDFs you send through Telegram.',
-  budget: 'Spend caps and conversation sizing. Defaults are conservative.',
-  summarizer: 'Auto-distills chat into wiki memory. Off by default; review mode is the safe pick.',
-  other: 'Misc settings.',
-};
 
 export function SettingsPanel() {
+  const { t } = useLocale();
   const [items, setItems] = useState<SettingItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,9 +74,14 @@ export function SettingsPanel() {
         const fresh = await api.settings();
         setItems(fresh.items);
         setPending({});
-        toast.success(`Saved ${res.applied?.length ?? dirtyKeys.length} setting${(res.applied?.length ?? 0) === 1 ? '' : 's'}.`);
+        const count = res.applied?.length ?? dirtyKeys.length;
+        toast.success(
+          count === 1
+            ? t('settings.toast.saved_one')
+            : t('settings.toast.saved_other', { count }),
+        );
       } else {
-        toast.error(`Save partially failed: ${(res.errors ?? []).join('; ')}`);
+        toast.error(t('settings.toast.partialFail', { errors: (res.errors ?? []).join('; ') }));
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
@@ -106,9 +98,9 @@ export function SettingsPanel() {
       const res = await api.testProvider(baseURL, apiKey, '/models');
       if (res.ok) {
         const detail = res.models && res.models.length > 0 ? `${res.models.length} models available` : 'connected';
-        toast.success(`✓ ${detail}`);
+        toast.success(t('settings.testSuccess', { detail }));
       } else {
-        toast.error(`✗ ${res.error ?? 'failed'}`);
+        toast.error(t('settings.testFailed', { error: res.error ?? 'failed' }));
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
@@ -117,11 +109,33 @@ export function SettingsPanel() {
     }
   }
 
+  const groupLabel = (g: Group): string => {
+    switch (g) {
+      case 'provider': return t('settings.group.provider');
+      case 'embeddings': return t('settings.group.embeddings');
+      case 'ocr': return t('settings.group.ocr');
+      case 'budget': return t('settings.group.budget');
+      case 'summarizer': return t('settings.group.summarizer');
+      case 'other': return t('settings.group.other');
+    }
+  };
+
+  const groupHint = (g: Group): string => {
+    switch (g) {
+      case 'provider': return t('settings.hint.provider');
+      case 'embeddings': return t('settings.hint.embeddings');
+      case 'ocr': return t('settings.hint.ocr');
+      case 'budget': return t('settings.hint.budget');
+      case 'summarizer': return t('settings.hint.summarizer');
+      case 'other': return t('settings.hint.other');
+    }
+  };
+
   if (error) {
     return (
       <div className="p-6">
-        <h1 className="text-2xl font-semibold mb-2">Settings</h1>
-        <p className="text-sm text-rose-400">Failed to load settings: {error}</p>
+        <h1 className="text-2xl font-semibold mb-2">{t('settings.title')}</h1>
+        <p className="text-sm text-rose-400">{t('settings.errorLoading')}: {error}</p>
       </div>
     );
   }
@@ -131,10 +145,13 @@ export function SettingsPanel() {
       <header className="flex items-start justify-between gap-4 flex-wrap pb-6 border-b border-border/60">
         <div className="space-y-1.5 max-w-xl">
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2.5">
-            <SettingsIcon size={22} className="text-muted-foreground" /> Settings
+            <SettingsIcon size={22} className="text-muted-foreground" /> {t('settings.title')}
           </h1>
           <p className="text-[13px] text-muted-foreground leading-relaxed">
-            Tunable values applied on top of <code className="text-[12px] font-mono">.env</code>. Edits persist in <code className="text-[12px] font-mono">aura.db</code> and take effect on the next conversation turn. Bootstrap settings (Telegram token, dashboard port, file paths) stay in <code className="text-[12px] font-mono">.env</code>.
+            <Trans
+              i18nKey="settings.description"
+              components={{ code: <code className="text-[12px] font-mono" /> }}
+            />
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
@@ -142,28 +159,28 @@ export function SettingsPanel() {
             onClick={testProvider}
             disabled={testing || !valueOf('LLM_BASE_URL')}
             aria-describedby={!valueOf('LLM_BASE_URL') ? 'settings-test-disabled' : undefined}
-            title={!valueOf('LLM_BASE_URL') ? 'Add an LLM base URL to test the provider.' : 'Test provider connection'}
+            title={!valueOf('LLM_BASE_URL') ? t('settings.testDisabled') : t('settings.testHint')}
             className="min-h-11 text-[13px] rounded-md px-3 bg-secondary/60 hover:bg-secondary border border-border/80 flex items-center gap-1.5 disabled:opacity-40 transition-colors"
           >
             {testing ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
-            Test connection
+            {t('settings.testConnection')}
           </button>
           <button
             onClick={save}
             disabled={!hasChanges || saving}
             aria-describedby={!hasChanges ? 'settings-save-disabled' : undefined}
-            title={!hasChanges ? 'Change at least one setting to save.' : 'Save pending settings'}
+            title={!hasChanges ? t('settings.saveDisabled') : t('settings.saveHint')}
             className="min-h-11 text-[13px] rounded-md px-3.5 bg-primary text-primary-foreground hover:brightness-105 active:brightness-95 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-[filter,opacity]"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save {hasChanges ? `· ${dirtyKeys.length}` : ''}
+            {hasChanges ? t('settings.saveCount', { count: dirtyKeys.length }) : t('settings.save')}
           </button>
-          <span id="settings-test-disabled" className="sr-only">Add an LLM base URL to test the provider.</span>
-          <span id="settings-save-disabled" className="sr-only">Change at least one setting to save.</span>
+          <span id="settings-test-disabled" className="sr-only">{t('settings.testDisabled')}</span>
+          <span id="settings-save-disabled" className="sr-only">{t('settings.saveDisabled')}</span>
         </div>
       </header>
 
-      {!loaded && <p className="text-[13px] text-muted-foreground">Loading…</p>}
+      {!loaded && <p className="text-[13px] text-muted-foreground">{t('common.loading')}</p>}
 
       {loaded && GROUP_ORDER.map((group) => {
         const groupItems = groups[group];
@@ -172,9 +189,9 @@ export function SettingsPanel() {
           <section key={group} className="rounded-lg border border-border/80 bg-card overflow-hidden">
             <div className="px-5 py-4 border-b border-border/60 bg-card">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                {GROUP_LABEL[group]}
+                {groupLabel(group)}
               </h2>
-              <p className="text-[12.5px] text-muted-foreground/90 mt-1">{GROUP_HINT[group]}</p>
+              <p className="text-[12.5px] text-muted-foreground/90 mt-1">{groupHint(group)}</p>
             </div>
             <div className="divide-y divide-border/40">
               {groupItems.map((it) => (
@@ -210,15 +227,16 @@ function SettingRow({
   onRevert: () => void;
   onToggleReveal: () => void;
 }) {
+  const { t } = useLocale();
   const sourceBadge = (() => {
-    if (dirty) return { label: 'edited', cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
+    if (dirty) return { label: t('settings.badge.edited'), cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
     switch (item.source) {
       case 'db':
-        return { label: 'saved', cls: 'bg-primary/12 text-cyan-700 dark:text-cyan-300 border-primary/40' };
+        return { label: t('settings.badge.saved'), cls: 'bg-primary/12 text-cyan-700 dark:text-cyan-300 border-primary/40' };
       case 'env':
-        return { label: '.env', cls: 'bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/40' };
+        return { label: t('settings.badge.env'), cls: 'bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/40' };
       default:
-        return { label: 'unset', cls: 'bg-muted/50 text-foreground border-border' };
+        return { label: t('settings.badge.unset'), cls: 'bg-muted/50 text-foreground border-border' };
     }
   })();
   return (
@@ -248,9 +266,9 @@ function SettingRow({
             type="button"
             onClick={onRevert}
             className="text-[11px] uppercase tracking-[0.06em] text-amber-500 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 px-2 py-1 rounded transition-colors"
-            title="Discard this change"
+            title={t('settings.action.discardHint')}
           >
-            revert
+            {t('settings.action.revert')}
           </button>
         ) : null}
       </div>
@@ -267,6 +285,7 @@ function Control({
   onChange: (v: string) => void;
   onToggleReveal: () => void;
 }) {
+  const { t } = useLocale();
   const kind = item.kind ?? 'text';
 
   if (kind === 'bool') {
@@ -288,7 +307,7 @@ function Control({
         aria-checked={on}
         data-state={on ? 'checked' : 'unchecked'}
         onClick={() => onChange(on ? 'false' : 'true')}
-        title={on ? 'Click to disable' : 'Click to enable'}
+        title={on ? t('settings.action.disable') : t('settings.action.enable')}
         style={{
           height: 32,
           width: 52,
@@ -318,7 +337,7 @@ function Control({
             transition: 'transform 120ms ease',
           }}
         />
-        <span className="sr-only">{on ? 'enabled' : 'disabled'}</span>
+        <span className="sr-only">{on ? t('settings.status.enabled') : t('settings.status.disabled')}</span>
       </button>
     );
   }
@@ -382,7 +401,7 @@ function Control({
         <button
           type="button"
           onClick={onToggleReveal}
-          title={revealed ? 'Hide' : 'Reveal'}
+          title={revealed ? t('settings.action.hide') : t('settings.action.reveal')}
           style={{ border: '1px solid var(--border, oklch(0.85 0.01 240))', background: 'var(--secondary, oklch(0.92 0.01 240))' }}
           className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
         >
