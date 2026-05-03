@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -492,6 +493,10 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 // RepairLink replaces all occurrences of [[brokenSlug]] with [[fixedSlug]]
 // in the body of every page that references brokenSlug. Pages without the
 // broken link are not modified. Commits each repaired page to git.
+//
+// Per-page failures are accumulated rather than aborting the scan. That
+// keeps a single malformed page from preventing later pages from being
+// repaired, and guarantees the audit log records that an auto-fix pass ran.
 func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error {
 	slugs, err := s.ListPages()
 	if err != nil {
@@ -499,9 +504,11 @@ func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) er
 	}
 	old := "[[" + brokenSlug + "]]"
 	replacement := "[[" + fixedSlug + "]]"
+	var failures []error
 	for _, slug := range slugs {
 		page, err := s.ReadPage(slug)
 		if err != nil {
+			failures = append(failures, fmt.Errorf("read %s: %w", slug, err))
 			continue
 		}
 		if !strings.Contains(page.Body, old) {
@@ -510,11 +517,15 @@ func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) er
 		page.Body = strings.ReplaceAll(page.Body, old, replacement)
 		page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := s.WritePage(ctx, page); err != nil {
-			return fmt.Errorf("repair link write %s: %w", slug, err)
+			failures = append(failures, fmt.Errorf("write %s: %w", slug, err))
+			continue
 		}
 		s.logger.Info("auto-fixed broken link", "page", slug, "broken", brokenSlug, "fixed", fixedSlug)
 	}
 	s.AppendLog(ctx, "auto-fix", brokenSlug+"->"+fixedSlug)
+	if len(failures) > 0 {
+		return fmt.Errorf("repair link completed with %d failed page(s): %w", len(failures), errors.Join(failures...))
+	}
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -195,5 +196,92 @@ func TestListPages(t *testing.T) {
 	}
 	if len(slugs) != 2 {
 		t.Errorf("ListPages returned %d slugs, want 2", len(slugs))
+	}
+}
+
+func TestRepairLinkContinuesAfterWriteFailure(t *testing.T) {
+	store, dir := newTestStore(t)
+	ctx := context.Background()
+	now := "2026-04-28T10:00:00Z"
+
+	pages := []*Page{
+		{
+			Title:         "Alpha Page",
+			Body:          "Alpha points to [[broken-link]].",
+			Category:      "debug",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		{
+			Title:         "Bad Page",
+			Body:          "Bad points to [[broken-link]].",
+			Category:      "debug",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		{
+			Title:         "Zulu Page",
+			Body:          "Zulu points to [[broken-link]].",
+			Category:      "debug",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+	}
+	for _, page := range pages {
+		if err := store.WritePage(ctx, page); err != nil {
+			t.Fatalf("WritePage(%q) failed: %v", page.Title, err)
+		}
+	}
+
+	// Make the middle page readable but invalid on rewrite. Older
+	// RepairLink returned on this write failure, leaving zulu-page
+	// unrepaired and skipping the auto-fix audit log.
+	badPath := filepath.Join(dir, "bad-page.md")
+	badBytes, err := os.ReadFile(badPath)
+	if err != nil {
+		t.Fatalf("read bad-page.md: %v", err)
+	}
+	badText := strings.Replace(string(badBytes), "schema_version: 2", "schema_version: 1", 1)
+	if err := os.WriteFile(badPath, []byte(badText), 0o644); err != nil {
+		t.Fatalf("corrupt bad-page.md: %v", err)
+	}
+
+	err = store.RepairLink(ctx, "broken-link", "fixed-link")
+	if err == nil {
+		t.Fatal("RepairLink returned nil, want partial-failure error")
+	}
+	if !strings.Contains(err.Error(), "bad-page") {
+		t.Fatalf("RepairLink error = %q, want bad-page context", err)
+	}
+
+	alpha, err := store.ReadPage("alpha-page")
+	if err != nil {
+		t.Fatalf("ReadPage(alpha-page): %v", err)
+	}
+	if strings.Contains(alpha.Body, "[[broken-link]]") || !strings.Contains(alpha.Body, "[[fixed-link]]") {
+		t.Fatalf("alpha-page body not repaired: %q", alpha.Body)
+	}
+
+	zulu, err := store.ReadPage("zulu-page")
+	if err != nil {
+		t.Fatalf("ReadPage(zulu-page): %v", err)
+	}
+	if strings.Contains(zulu.Body, "[[broken-link]]") || !strings.Contains(zulu.Body, "[[fixed-link]]") {
+		t.Fatalf("zulu-page body not repaired after middle failure: %q", zulu.Body)
+	}
+
+	logBytes, err := os.ReadFile(filepath.Join(dir, "log.md"))
+	if err != nil {
+		t.Fatalf("read log.md: %v", err)
+	}
+	logText := string(logBytes)
+	if !strings.Contains(logText, "auto-fix") || !strings.Contains(logText, "broken-link-&gt;fixed-link") && !strings.Contains(logText, "broken-link->fixed-link") {
+		t.Fatalf("log.md missing auto-fix entry: %s", logText)
 	}
 }
