@@ -7,6 +7,8 @@ import (
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/swarm"
+	"github.com/aura/aura/internal/tools"
 )
 
 func TestToolActivityMessageDoesNotExposeArgs(t *testing.T) {
@@ -92,6 +94,36 @@ func TestCollectOwnerIDs_EmptyWhenNothingConfigured(t *testing.T) {
 		t.Errorf("got %v, want empty slice", got)
 	}
 }
+
+func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	b := &Bot{tools: reg}
+	if b.swarmToolsAvailable() {
+		t.Fatal("swarm tools should be unavailable without manager")
+	}
+
+	b.swarmMgr = &swarm.Manager{}
+	if b.swarmToolsAvailable() {
+		t.Fatal("swarm tools should be unavailable without run_aurabot_swarm")
+	}
+
+	reg.Register(fakeTelegramTool{name: "run_aurabot_swarm"})
+	if !b.swarmToolsAvailable() {
+		t.Fatal("swarm tools should be available with manager and registered team tool")
+	}
+}
+
+type fakeTelegramTool struct {
+	name string
+}
+
+func (t fakeTelegramTool) Name() string { return t.name }
+
+func (fakeTelegramTool) Description() string { return "fake tool" }
+
+func (fakeTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+
+func (fakeTelegramTool) Execute(context.Context, map[string]any) (string, error) { return "{}", nil }
 
 func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 	t.Helper()

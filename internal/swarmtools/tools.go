@@ -31,7 +31,7 @@ func NewRunAuraBotSwarmTool(manager *swarm.Manager) *RunAuraBotSwarmTool {
 func (t *RunAuraBotSwarmTool) Name() string { return "run_aurabot_swarm" }
 
 func (t *RunAuraBotSwarmTool) Description() string {
-	return "Run a bounded read-only AuraBot team for a higher-level second-brain goal. Plans multiple roles, executes them in parallel, and returns a deterministic synthesis with metrics. MVP supports mode=wait only and cannot write wiki pages, sources, skills, settings, or files."
+	return "Run a bounded read-only AuraBot team for broad second-brain reading, audit, cross-checking, planning, or synthesis. It plans multiple roles, executes them in parallel, and returns deterministic synthesis with metrics. Prefer this over manual spawn_aurabot calls for multi-page wiki/source/skill investigation. MVP supports mode=wait only and cannot write wiki pages, sources, skills, settings, tasks, or files."
 }
 
 func (t *RunAuraBotSwarmTool) Parameters() map[string]any {
@@ -40,7 +40,7 @@ func (t *RunAuraBotSwarmTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"goal": map[string]any{
 				"type":        "string",
-				"description": "Higher-level read-only investigation goal for the AuraBot team.",
+				"description": "Higher-level read-only investigation goal for the AuraBot team. Keep it compact and in the user's language.",
 			},
 			"roles": map[string]any{
 				"type":        "array",
@@ -119,7 +119,7 @@ func NewSpawnAuraBotTool(manager *swarm.Manager) *SpawnAuraBotTool {
 func (t *SpawnAuraBotTool) Name() string { return "spawn_aurabot" }
 
 func (t *SpawnAuraBotTool) Description() string {
-	return "Run one bounded AuraBot worker for a focused background task. Roles have hardcoded read-only tool presets. Returns run/task metrics and result. MVP supports mode=wait only."
+	return "Run one bounded AuraBot worker for a focused read-only task. Roles have hardcoded read-only tool presets. For broad multi-role second-brain goals, prefer run_aurabot_swarm. Returns run/task metrics and result. MVP supports mode=wait only."
 }
 
 func (t *SpawnAuraBotTool) Parameters() map[string]any {
@@ -245,7 +245,7 @@ func (t *ListSwarmTasksTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"run_id": map[string]any{
 				"type":        "string",
-				"description": "Swarm run ID returned by spawn_aurabot.",
+				"description": "Swarm run ID returned by spawn_aurabot or run_aurabot_swarm.",
 			},
 		},
 		"required": []string{"run_id"},

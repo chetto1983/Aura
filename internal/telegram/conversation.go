@@ -35,6 +35,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	}))
 	convCtx := ctxVal.(*conversation.Context)
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
+	userText := c.Text()
 
 	// Refresh the system prompt on every turn so the Runtime Context
 	// (current time + timezone) stays accurate. The LLM uses these values
@@ -57,17 +58,22 @@ func (b *Bot) handleConversation(c tele.Context) {
 			systemPrompt += "\n\n" + block
 		}
 	}
+	if b.swarmToolsAvailable() {
+		systemPrompt += "\n\n" + conversation.SwarmRoutingPrompt()
+		if hint := conversation.SwarmTurnHint(userText); hint != "" {
+			systemPrompt += "\n\n" + hint
+		}
+	}
 	convCtx.SetSystemMessage(systemPrompt)
 
 	b.logger.Info("conversation started",
 		"user_id", userID,
 		"username", c.Sender().Username,
-		"message", c.Text(),
+		"message", userText,
 	)
 
 	// Capture the user text locally so we can always archive it even if
 	// EnforceLimit (below) trims it out of convCtx.
-	userText := c.Text()
 	convCtx.AddUserMessage(userText)
 
 	// Slice 11p: speculative wiki retrieval. The model used to discover
@@ -81,7 +87,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// stays available for follow-up queries the model wants to refine.
 	// Picobot equivalent: internal/agent/context.go ranker injection.
 	if b.search != nil && b.search.IsIndexed() {
-		if results, err := b.search.Search(context.Background(), c.Text(), 5); err == nil && len(results) > 0 {
+		if results, err := b.search.Search(context.Background(), userText, 5); err == nil && len(results) > 0 {
 			convCtx.SetSearchContext(search.FormatResults(results))
 		} else if err != nil {
 			b.logger.Debug("speculative wiki search failed", "user_id", userID, "error", err)
@@ -95,7 +101,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	// No LLM configured — echo mode
 	if b.llm == nil {
-		echo := "Echo: " + c.Text()
+		echo := "Echo: " + userText
 		if err := c.Send(echo); err != nil {
 			b.logger.Error("failed to send echo", "user_id", userID, "error", err)
 		}
@@ -219,6 +225,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,
 	)
+}
+
+func (b *Bot) swarmToolsAvailable() bool {
+	return b.swarmMgr != nil && b.tools != nil && b.tools.Get("run_aurabot_swarm") != nil
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop

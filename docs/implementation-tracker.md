@@ -98,8 +98,35 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17c | AuraBot LLM tools + debug metrics | done | `AURABOT_*` config/settings gate, bot wiring, `spawn_aurabot` / `list_swarm_tasks` / `read_swarm_result`, token metrics persisted on tasks, and `cmd/debug_swarm` hermetic E2E harness with wall/task/token/tool/speedup metrics. |
 | 17d | AuraBot swarm observability | done | Read-only API + dashboard panel for swarm runs/tasks, aggregate counts, wall/task elapsed, speedup, LLM/tool/token telemetry, and per-task results/errors. |
 | 17e | AuraBot planner + synthesis | done | Deterministic read-only planner builds role assignments from a goal, `run_aurabot_swarm` executes the team in parallel, and synthesis rolls up worker results/metrics without an extra LLM call. |
+| 17f | AuraBot conservative routing | done | Telegram prompt now exposes swarm routing only when `run_aurabot_swarm` is actually registered, adds a per-turn hint for broad read-only second-brain work, and keeps mutations on explicit write/admin tools. |
 
 ## Session Log
+
+### 2026-05-03 - Slice 17f (AuraBot conservative routing)
+
+Implementation slice using this chat as orchestrator plus one read-only explorer agent.
+
+**Implementation**:
+
+- Added `internal/conversation/swarm_prompt.go`: stable AuraBot routing prompt plus conservative per-turn heuristic for broad read-only second-brain requests.
+- The routing prompt is conditional: Telegram appends it only when both a swarm manager exists and the `run_aurabot_swarm` tool is registered.
+- Added a per-turn hint for prompts like broad wiki/source/skill audits, synthesis, planning, and "cosa manca" checks.
+- Kept simple lookups on direct tools and mutation-oriented prompts off the swarm hint path.
+- Tightened `run_aurabot_swarm` / `spawn_aurabot` descriptions so the LLM prefers the team tool for multi-role investigations but understands it is read-only.
+- Captured `userText` once in `handleConversation` and reused it for prompt routing, speculative wiki search, echo fallback, logging, and archiving.
+
+**Verification**:
+
+- `go test ./internal/conversation ./internal/telegram ./internal/swarmtools ./internal/agent`
+- `go run ./cmd/debug_swarm -json`: main planner run completed `5/5` tasks with `speedup≈2.15x`; public tool path completed `team_calls=1`, `runs=1`, `tasks=3`, `completed=3`, `failed=0`, `list_calls=1`, `read_calls=3`.
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `$env:PATH='D:\tmp\w64devkit\bin;' + $env:PATH; go test -race ./...`
+
+**Next work**:
+
+- Slice 17g: review-gated proposal queue for wiki/skill mutations. Keep actual writes human-approved; no autonomous mutation role yet.
 
 ### 2026-05-03 - Slice 17e (AuraBot planner + synthesis)
 
