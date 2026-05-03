@@ -51,22 +51,22 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Fetch the proposal first to reconstruct the Decision for AutoApplier.
-		proposal, err := deps.Summaries.Get(r.Context(), id)
+		proposal, err := deps.Summaries.SetStatus(r.Context(), id, "approved")
 		if err != nil {
 			if errors.Is(err, summarizer.ErrProposalNotFound) {
 				writeError(w, deps.Logger, http.StatusNotFound, "proposal not found")
 				return
 			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to fetch proposal")
-			return
-		}
-		if proposal.Status != "pending" {
-			writeError(w, deps.Logger, http.StatusConflict, "proposal already decided")
+			if errors.Is(err, summarizer.ErrProposalConflict) {
+				writeError(w, deps.Logger, http.StatusConflict, "proposal already decided")
+				return
+			}
+			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to approve proposal")
 			return
 		}
 
-		// Apply via AutoApplier if a wiki writer is wired.
+		// Apply via AutoApplier if a wiki writer is wired. The status flip
+		// happens first so concurrent approve/reject requests cannot both apply.
 		if deps.SummariesWiki != nil {
 			applier := summarizer.NewAutoApplier(deps.SummariesWiki)
 			dec := summarizer.Decision{
@@ -86,16 +86,7 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			}
 		}
 
-		updated, err := deps.Summaries.SetStatus(r.Context(), id, "approved")
-		if err != nil {
-			if errors.Is(err, summarizer.ErrProposalConflict) {
-				writeError(w, deps.Logger, http.StatusConflict, "proposal already decided")
-				return
-			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to approve proposal")
-			return
-		}
-		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(updated))
+		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(proposal))
 	}
 }
 

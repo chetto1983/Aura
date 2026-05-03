@@ -94,19 +94,22 @@ func (s *SummariesStore) Get(ctx context.Context, id int64) (ProposedUpdate, err
 // SetStatus flips the status of a proposal. Returns ErrProposalNotFound if
 // no row exists, ErrProposalConflict if already approved or rejected.
 func (s *SummariesStore) SetStatus(ctx context.Context, id int64, newStatus string) (ProposedUpdate, error) {
-	p, err := s.Get(ctx, id)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE proposed_updates SET status = ? WHERE id = ? AND status = 'pending'`, newStatus, id)
 	if err != nil {
-		return ProposedUpdate{}, err
-	}
-	if p.Status != "pending" {
-		return ProposedUpdate{}, ErrProposalConflict
-	}
-	if _, err := s.db.ExecContext(ctx,
-		`UPDATE proposed_updates SET status = ? WHERE id = ?`, newStatus, id); err != nil {
 		return ProposedUpdate{}, fmt.Errorf("summaries set status: %w", err)
 	}
-	p.Status = newStatus
-	return p, nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ProposedUpdate{}, fmt.Errorf("summaries set status rows affected: %w", err)
+	}
+	if affected == 1 {
+		return s.Get(ctx, id)
+	}
+	if _, err := s.Get(ctx, id); err != nil {
+		return ProposedUpdate{}, err
+	}
+	return ProposedUpdate{}, ErrProposalConflict
 }
 
 type proposalScanner interface {
