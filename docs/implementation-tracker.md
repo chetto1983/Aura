@@ -88,8 +88,25 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 15b-livetest | Telegram E2E smoke for slice 15b | done | Three real `create_docx` calls: `Quarterly Highlights Memo.docx`, `Project Status.docx`, `Wiki Pages Summary.docx`. The wiki-summary call exercised the full ecosystem: `list_wiki` → 3 **parallel** `read_wiki` calls (slice 11l fan-out, all started within 1 ms) → `create_docx`. 162–286 ms per generate, all delivered via `tele.Document`. |
 | 15c | `create_pdf` tool + Telegram delivery | done | New `internal/files/pdf.go` — pure-Go via `github.com/go-pdf/fpdf` (single dep, no transitive). Same block grammar as create_docx (heading / paragraph / bullet / table) so the LLM only learns one DSL across the three formats. A4 + 15 mm margins + Helvetica family (one of fpdf's 14 base fonts → no font-subset embedding, fully self-contained). Headings: bold + ramped sizes 18→10pt for H1→H6. Tables: bordered, auto-sized cell width across the printable width, first row bolded as a header treatment. **Latin-1 sanitization**: fpdf's standard fonts only support cp1252; curly quotes / em-dashes / ellipses / NBSP / tabs in LLM output would crash at write time. `latin1Sanitize` maps the common offenders to ASCII equivalents (apostrophe, straight quote, hyphen, three dots, plain space) and drops anything else outside cp1252 to a literal question mark. New `source.KindPDFGen` (`pdf_generated`) — distinct from `KindPDF` (uploads) so OCR-only UI actions hide cleanly and `ingest_source` never tries to compile a generated PDF that has no `ocr.md`. Same on-disk filename + content-type as KindPDF (`original.pdf` + `application/pdf` + `inline` disposition) — the file IS a PDF either way; only the source.Kind disambiguates. New `tools.CreatePDFTool` reuses `DocumentSender`. Tool registration alongside xlsx/docx in `setup.go`. New `cmd/debug_pdf` 5-scenario hermetic harness (happy path + Latin-1 sanitization + dedup + path-traversal blocked + caps). 9 pdf tests in `internal/files` + 5 pdf tool tests in `internal/tools` + extended router test (5 kinds: PDF + XLSX + DOCX + PDFGen + text 404). |
 | 15e | Natural-prompt file creation smoke | done | New `cmd/debug_files` harness registers the real `create_xlsx`, `create_docx`, and `create_pdf` tools against a hermetic temp source store and a `DocumentSender` stub. Three ordinary prompts verify model tool selection, persisted source kind/status, file asset bytes, and delivery. Live run on 2026-05-03 with `LLM_MODEL=glm-5.1:cloud` passed all 3 scenarios. |
+| 16a | Structured tool errors | done | New `internal/tools/error.go` with `ToolError` JSON struct (`ok`, `error`, `retryable`, `hint`), `FormatToolError` (retryable=true + pattern-matched hint), `FormatFatalToolError` (retryable=false). `hintForError` maps error keywords (missing/required, invalid/malformed, not found, too large) to actionable hints. `executeToolCalls` in `conversation.go` now produces structured JSON instead of `"(tool error) raw msg"`. 7 unit tests. |
+| 16b | System prompt retry directive | done | New paragraph in `system_prompt.go` "Tool Use" section tells the LLM to read `{"ok":false,...}` results, correct arguments using `hint` if `retryable:true`, retry once, or explain the problem if fatal/retry-fails. |
+| 16c | Immediate Telegram placeholder | done | `handleConversation` sends a "⏳" placeholder via `c.Bot().Send` before entering `runToolCallingLoop`. Signature changes thread `*tele.Message` through `runToolCallingLoop` → `consumeStream`. `consumeStream` edits the existing placeholder instead of creating a new message; falls back to `Send` if edit fails. Non-streamed delivery deletes the placeholder and sends the real response. |
+| 16d | Defer EnforceLimit to background | done | Moved `convCtx.EnforceLimit` from before `runToolCallingLoop` to a fire-and-forget goroutine after the archiver block, so summarizer latency doesn't block the user seeing the response. |
+| 16e | Throttle 800ms → 600ms | done | `streamingEditThrottle` tightened from 800ms to 600ms. Still safe under Telegram's ~1/sec edit rate limit. |
 
 ## Session Log
+
+### 2026-05-03 — Phase 16: Engine Quality & Performance
+
+Five slices executed via subagent-driven development (fresh agent per slice). Two workstreams:
+
+**Error Recovery (16a-16b):** Tool errors are now structured JSON with retryable/hint fields instead of plain `"(tool error)"` strings. System prompt teaches the LLM to self-correct on retryable errors. Commits `1ec8c5b` + `1800c76`.
+
+**Latency (16c-16e):** Immediate "⏳" placeholder on Telegram removes the empty wait before first token. EnforceLimit summarization deferred to background after response delivery. Edit throttle tightened 800→600ms. Commits `254f394` + `abea01f` + `4a78c0f`.
+
+**Quality gates:** `go build/vet/test ./...` all green. Ready for live Telegram smoke to verify placeholder appears instantly and streaming feels responsive at 600ms.
+
+**Deferred to Phase 17:** Dashboard/UI polish + E2E test coverage expansion.
 
 ### 2026-05-03 - Slice 12u.9 (HR-02 proposal category + related slugs)
 
