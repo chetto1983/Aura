@@ -146,6 +146,45 @@ func TestHealthRollup_EmptyStores(t *testing.T) {
 	if got.Tasks.ByStatus == nil {
 		t.Error("tasks.by_status is nil")
 	}
+	if got.Sandbox.Enabled {
+		t.Error("sandbox.enabled = true in default test deps, want false")
+	}
+}
+
+func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
+	e := newTestEnv(t)
+	e.router = NewRouter(Deps{
+		Wiki:      e.wiki,
+		Sources:   e.sources,
+		Scheduler: e.sched,
+		Sandbox: SandboxHealth{
+			Enabled:   true,
+			Available: false,
+			Runtime:   `runtime\python\python.exe`,
+			Detail:    "runtime unavailable",
+		},
+	})
+
+	rr := e.do("GET", "/health")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got HealthRollup
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Sandbox.Enabled {
+		t.Fatal("sandbox.enabled = false, want true")
+	}
+	if got.Sandbox.Available {
+		t.Fatal("sandbox.available = true, want false")
+	}
+	if got.Sandbox.Runtime != `runtime\python\python.exe` {
+		t.Fatalf("sandbox.runtime = %q", got.Sandbox.Runtime)
+	}
+	if got.Sandbox.Detail != "runtime unavailable" {
+		t.Fatalf("sandbox.detail = %q", got.Sandbox.Detail)
+	}
 }
 
 func TestHealthRollup_AggregatesAcrossStores(t *testing.T) {

@@ -19,11 +19,22 @@ type HealthRollup struct {
 	Sources   SourcesHealth   `json:"sources"`
 	Tasks     TasksHealth     `json:"tasks"`
 	Scheduler SchedulerHealth `json:"scheduler"`
+	Sandbox   SandboxHealth   `json:"sandbox"`
 	// Slice 11j: embedding cache hit/miss counters. Zero when no
 	// cache is wired (no EMBEDDING_API_KEY or no DB_PATH).
 	EmbedCache EmbedCacheHealth `json:"embed_cache"`
 	// Slice 12i: organic wiki growth driven by the auto-summarizer.
 	CompoundingRate CompoundingRate `json:"compounding_rate"`
+}
+
+// SandboxHealth reports whether local code execution is active. The desired
+// end-user path is a bundled runtime shipped with Aura; Runtime is kept
+// best-effort for operator diagnostics.
+type SandboxHealth struct {
+	Enabled   bool   `json:"enabled"`
+	Available bool   `json:"available"`
+	Runtime   string `json:"runtime,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 // EmbedCacheHealth reports SHA-keyed embedding cache stats. Hits are

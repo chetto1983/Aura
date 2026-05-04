@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { Code2, TrendingUp } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
@@ -57,6 +57,7 @@ export function HealthDashboard() {
           <div className="text-xs text-muted-foreground">{t('health.activeTasks')}</div>
         </Card>
 
+        <SandboxCard sandbox={data.sandbox} />
         <EmbedCacheCard cache={data.embed_cache} />
         {data.compounding_rate && (
           <CompoundingRateCard rate={data.compounding_rate} />
@@ -65,6 +66,30 @@ export function HealthDashboard() {
 
       <ProcessFooter process={data.process} />
     </div>
+  );
+}
+
+function SandboxCard({ sandbox }: { sandbox?: { enabled: boolean; available: boolean; runtime?: string; detail?: string } }) {
+  const { t } = useLocale();
+  const enabled = sandbox?.enabled ?? false;
+  const available = sandbox?.available ?? false;
+  const subtitle = !enabled
+    ? t('health.sandboxDisabled')
+    : available
+      ? t('health.sandboxReady')
+      : t('health.sandboxUnavailable');
+  return (
+    <Card title={t('health.sandbox')} subtitle={subtitle}>
+      <div className="flex items-center gap-2">
+        <Code2 size={20} className={available ? 'text-primary/70 shrink-0' : 'text-amber-500 shrink-0'} />
+        <div className="text-3xl font-bold tabular-nums">
+          {available ? t('health.on') : t('health.off')}
+        </div>
+      </div>
+      <div className="mt-1 truncate text-xs text-muted-foreground" title={sandbox?.detail || sandbox?.runtime || ''}>
+        {available ? (sandbox?.runtime || t('health.bundledRuntime')) : (sandbox?.detail || t('health.bundledRuntime'))}
+      </div>
+    </Card>
   );
 }
 

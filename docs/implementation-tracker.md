@@ -44,6 +44,8 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 Last completed slice: `sandbox.1` sandbox toolset guardrails.
 
+Active slice: `sandbox.2` sandbox runtime/productization hardening.
+
 What is shipped:
 
 - `search_memory` produces an evidence envelope.
@@ -71,6 +73,7 @@ What is shipped:
 - Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
 - Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
 - Sandbox code execution is wired behind explicit tools (`execute_code`, `list_tools`, `read_tool`, `save_tool`) and a separate `sandbox_code` toolset profile; scheduled agent jobs reject that profile and keep executable-code tools out of `scheduler_safe`.
+- Sandbox runtime product rule: end users must not install Python/pip/Isola manually. Aura now looks for a bundled runtime, refuses system Python by default, supports `SANDBOX_PYTHON_PATH` / `SANDBOX_ALLOW_SYSTEM_PYTHON=true` only as operator/dev overrides, disables `execute_code` when the runtime probe fails, and exposes sandbox availability through `/api/health` for the dashboard.
 
 Phase 18 status: **closed**.
 
@@ -98,6 +101,7 @@ Next best slice:
 - Sandbox smoke hardening:
   - run sidecar syntax and manager/tool tests on the local machine;
   - verify Isola availability and record whether live execution is enabled or skipped;
+  - package a real bundled sandbox runtime under `runtime/python/...` in release artifacts;
   - keep `save_tool` out of autonomous scheduled jobs unless a later admin workflow explicitly approves durable writes.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.

@@ -145,22 +145,36 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 
 	// Sandbox code execution (Isola WASM)
 	var sandboxMgr *sandbox.Manager
+	sandboxHealth := api.SandboxHealth{
+		Enabled: cfg.SandboxEnabled,
+		Detail:  "sandbox disabled",
+	}
 	if cfg.SandboxEnabled {
 		runnerPath := sandbox.FindRunnerPath()
 		if runnerPath == "" {
 			logger.Warn("sandbox runner not found, execute_code disabled")
+			sandboxHealth.Detail = "sandbox runner not found; execute_code disabled"
 		} else {
 			mgr, err := sandbox.NewManager(sandbox.Config{
-				PythonPath: "python3",
-				RunnerPath: runnerPath,
-				Timeout:    time.Duration(cfg.SandboxTimeoutSec) * time.Second,
+				PythonPath:        cfg.SandboxPythonPath,
+				AllowSystemPython: cfg.SandboxAllowSystemPython,
+				RunnerPath:        runnerPath,
+				Timeout:           time.Duration(cfg.SandboxTimeoutSec) * time.Second,
 			})
 			if err != nil {
 				logger.Warn("sandbox manager unavailable, execute_code disabled", "error", err)
-			} else if !mgr.IsAvailable() {
-				logger.Warn("sandbox: Python/Isola not available, run: pip install isola")
+				sandboxHealth.Detail = err.Error()
+			} else if availability := mgr.CheckAvailability(); !availability.Available {
+				sandboxHealth.Runtime = availability.PythonPath
+				sandboxHealth.Detail = "sandbox runtime unavailable; execute_code disabled"
+				logger.Warn("sandbox runtime unavailable, execute_code disabled",
+					"runtime", availability.PythonPath,
+					"detail", availability.Detail)
 			} else {
 				sandboxMgr = mgr
+				sandboxHealth.Available = true
+				sandboxHealth.Runtime = availability.PythonPath
+				sandboxHealth.Detail = availability.Detail
 				logger.Info("sandbox enabled (Isola WASM)")
 			}
 		}
@@ -553,6 +567,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		SkillsAdmin:     cfg.SkillsAdmin,
 		// Slice 11j: surface cache hit/miss counters in /api/health.
 		EmbedCache: embedCache,
+		Sandbox:    sandboxHealth,
 		// Pending-approval pipeline. Bot owns the side-effects (DB
 		// transition + Telegram delivery), so the api package just sees
 		// the interface.

@@ -8,6 +8,19 @@
 
 **Tech Stack:** Go 1.25, Python 3.11+ with Isola, SQLite (existing scheduler DB)
 
+## Product Runtime Guardrail
+
+The end-user path must not require installing Python, pip, wheels, Docker, or a developer toolchain. `pip install isola` is acceptable only for local development and CI probes.
+
+Release builds must ship a sandbox runtime with Aura and the app must auto-discover it before looking at system Python:
+
+- Windows: `runtime/python/python.exe`
+- macOS/Linux: `runtime/python/bin/python3`
+
+`SANDBOX_PYTHON_PATH` and `SANDBOX_ALLOW_SYSTEM_PYTHON=true` are operator/dev overrides for tests and unusual deployments, not installation instructions. Aura must not use system Python by default. If no usable bundled runtime exists, Aura must degrade clearly: do not register `execute_code`, keep toolset guardrails intact, and expose the disabled/unavailable state in health/dashboard surfaces.
+
+Product target after the current Isola sidecar hardening: evaluate a Go-embedded WASI host (`wazero`) plus bundled Python artifacts so the sandbox is owned by Aura's release package instead of the host machine.
+
 ## Current Guardrail
 
 Sandbox execution tools are explicit opt-in tools, not part of the scheduled routine default perimeter.

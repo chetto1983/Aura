@@ -104,6 +104,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
+	os.Unsetenv("SANDBOX_PYTHON_PATH")
+	os.Unsetenv("SANDBOX_ALLOW_SYSTEM_PYTHON")
 
 	cfg, err := Load()
 	if err != nil {
@@ -183,5 +185,37 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.HTTPPort != "127.0.0.1:8080" {
 		t.Errorf("HTTPPort = %q, want 127.0.0.1:8080 (slice 10b: localhost-only by default)", cfg.HTTPPort)
+	}
+	if cfg.SandboxPythonPath != "" {
+		t.Errorf("SandboxPythonPath = %q, want empty default", cfg.SandboxPythonPath)
+	}
+	if cfg.SandboxAllowSystemPython {
+		t.Errorf("SandboxAllowSystemPython = true, want false by default")
+	}
+}
+
+func TestLoadSandboxPythonPath(t *testing.T) {
+	os.Setenv("SANDBOX_PYTHON_PATH", `C:\Aura\runtime\python\python.exe`)
+	defer os.Unsetenv("SANDBOX_PYTHON_PATH")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SandboxPythonPath != `C:\Aura\runtime\python\python.exe` {
+		t.Fatalf("SandboxPythonPath = %q", cfg.SandboxPythonPath)
+	}
+}
+
+func TestLoadSandboxAllowSystemPython(t *testing.T) {
+	os.Setenv("SANDBOX_ALLOW_SYSTEM_PYTHON", "true")
+	defer os.Unsetenv("SANDBOX_ALLOW_SYSTEM_PYTHON")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.SandboxAllowSystemPython {
+		t.Fatal("SandboxAllowSystemPython = false, want true")
 	}
 }

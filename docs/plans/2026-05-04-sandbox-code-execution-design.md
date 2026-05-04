@@ -84,6 +84,17 @@ Safety gate: dry-run mode (proposes changes via Telegram for owner approval) vs 
 
 ## 6. Cross-Platform
 
-Isola runs identically on Windows, macOS, and Linux with zero system dependencies. Single `pip install isola` or bundled Python wheel. No Docker, no admin rights, no daemon.
+Aura's product contract is "install Aura and go." The sandbox runtime must therefore be bundled with release artifacts, not installed manually by the user.
+
+Supported product layout:
+
+- Windows: `runtime/python/python.exe`
+- macOS/Linux: `runtime/python/bin/python3`
+
+Aura probes the bundled runtime at startup by building the Isola Python template. If the probe fails, `execute_code` stays disabled and the dashboard health rollup shows the sandbox as unavailable. `SANDBOX_PYTHON_PATH` and `SANDBOX_ALLOW_SYSTEM_PYTHON=true` are reserved for operators and CI, not for normal end-user setup. Aura must not use system Python by default.
+
+No Docker, no admin rights, no daemon, and no user-facing Python/pip instructions.
+
+Long-term product target: replace the host Python sidecar with a Go-embedded WASI host plus bundled Python artifacts. `wazero` is the preferred direction to evaluate because it is pure Go and keeps Aura installable as a normal application. Isola remains acceptable only when it can be shipped as a bundled runtime that passes the startup probe on every release platform.
 
 The only limitation: no C extensions (numpy, pandas). For Aura's use case — analysis scripts, simulations, data processing — pure Python is sufficient for the vast majority of tasks.

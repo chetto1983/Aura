@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -29,12 +30,23 @@ type Result struct {
 
 // Config controls sandbox behaviour.
 type Config struct {
-	// PythonPath is the path to the Python 3 binary. Default "python3".
+	// PythonPath is the path to the Python 3 binary. Defaults to an
+	// auto-detected interpreter that can import Isola when available.
 	PythonPath string
+	// AllowSystemPython lets development and CI fall back to python/python3.
+	// Product builds should leave this false and ship runtime/python instead.
+	AllowSystemPython bool
 	// RunnerPath is the absolute path to sandbox_runner.py.
 	RunnerPath string
 	// Timeout is the per-execution wall-clock limit. Default 15s.
 	Timeout time.Duration
+}
+
+// Availability describes whether the host can run the trusted Isola sidecar.
+type Availability struct {
+	Available  bool
+	PythonPath string
+	Detail     string
 }
 
 // Manager runs Python code in an Isola WASM sandbox.
@@ -46,7 +58,7 @@ type Manager struct {
 // available or the runner script doesn't exist.
 func NewManager(cfg Config) (*Manager, error) {
 	if cfg.PythonPath == "" {
-		cfg.PythonPath = "python3"
+		cfg.PythonPath = defaultPythonPath(cfg.AllowSystemPython)
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 15 * time.Second
@@ -58,6 +70,84 @@ func NewManager(cfg Config) (*Manager, error) {
 		return nil, fmt.Errorf("sandbox: runner script not found at %s: %w", cfg.RunnerPath, err)
 	}
 	return &Manager{cfg: cfg}, nil
+}
+
+func defaultPythonPath(allowSystem bool) string {
+	candidates := defaultPythonCandidates(allowSystem)
+	for _, candidate := range candidates {
+		if pythonHasIsola(candidate) {
+			return candidate
+		}
+	}
+	for _, candidate := range candidates {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join("runtime", "python", "python.exe")
+	}
+	return filepath.Join("runtime", "python", "bin", "python3")
+}
+
+func defaultPythonCandidates(allowSystem bool) []string {
+	var candidates []string
+	add := func(path string) {
+		if path != "" {
+			candidates = append(candidates, path)
+		}
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(exeDir, "runtime", "python", "python.exe"))
+			add(filepath.Join(exeDir, "python", "python.exe"))
+		} else {
+			add(filepath.Join(exeDir, "runtime", "python", "bin", "python3"))
+			add(filepath.Join(exeDir, "python", "bin", "python3"))
+		}
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(cwd, "runtime", "python", "python.exe"))
+			add(filepath.Join(cwd, ".venv", "Scripts", "python.exe"))
+		} else {
+			add(filepath.Join(cwd, "runtime", "python", "bin", "python3"))
+			add(filepath.Join(cwd, ".venv", "bin", "python3"))
+		}
+	}
+
+	if allowSystem {
+		if runtime.GOOS == "windows" {
+			add("python")
+			add("python3")
+		} else {
+			add("python3")
+			add("python")
+		}
+	}
+
+	seen := make(map[string]bool, len(candidates))
+	unique := candidates[:0]
+	for _, candidate := range candidates {
+		if !seen[candidate] {
+			seen[candidate] = true
+			unique = append(unique, candidate)
+		}
+	}
+	return unique
+}
+
+func pythonHasIsola(path string) bool {
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, path, "-c", "import isola")
+	return cmd.Run() == nil
 }
 
 // Execute runs the given Python code in an Isola WASM sandbox.
@@ -95,7 +185,9 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Env = []string{}
+	// The trusted sidecar needs the host Python environment to locate Isola.
+	// User code still receives an empty environment inside sandbox_runner.py.
+	cmd.Env = os.Environ()
 
 	runErr := cmd.Run()
 
@@ -115,36 +207,99 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 	return nil, errors.New("sandbox: runner produced no output")
 }
 
-// IsAvailable reports whether the Python sidecar is reachable and Isola
-// is installed.
+// IsAvailable reports whether the Python sidecar can build the Isola Python
+// runtime template. Importing Isola is not enough on every platform.
 func (m *Manager) IsAvailable() bool {
-	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	return m.CheckAvailability().Available
+}
+
+// CheckAvailability runs the same host-side template probe used to decide
+// whether execute_code should be registered.
+func (m *Manager) CheckAvailability() Availability {
+	cmdCtx, cancel := context.WithTimeout(context.Background(), m.cfg.Timeout+5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", "import isola; print('ok')")
-	out, err := cmd.Output()
-	return err == nil && string(bytes.TrimSpace(out)) == "ok"
+	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", checkIsolaRuntimeScript)
+	cmd.Env = os.Environ()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return Availability{
+			Available:  false,
+			PythonPath: m.cfg.PythonPath,
+			Detail:     detail,
+		}
+	}
+	return Availability{
+		Available:  true,
+		PythonPath: m.cfg.PythonPath,
+		Detail:     "Isola Python runtime template available",
+	}
 }
 
-// forbiddenPatterns are Python constructs rejected before execution as
-// defense-in-depth. The WASM sandbox already isolates the runtime, but
-// these rejections fail fast with clear error messages.
-var forbiddenPatterns = []string{
-	"__import__(",
-	"eval(",
-	"exec(",
-	"compile(",
-	"globals()",
-	"locals()",
-	"getattr(",
-	"setattr(",
-	"delattr(",
-	"input(",
+const validateCodeScript = `
+import ast
+import sys
+
+FORBIDDEN_CALLS = {
+    "__import__",
+    "eval",
+    "exec",
+    "compile",
+    "globals",
+    "locals",
+    "getattr",
+    "setattr",
+    "delattr",
+    "input",
 }
+
+try:
+    tree = ast.parse(sys.stdin.read(), filename="<sandbox>", mode="exec")
+except SyntaxError as exc:
+    if exc.lineno is not None:
+        print(f"syntax error: line {exc.lineno}, column {exc.offset}: {exc.msg}", file=sys.stderr)
+    else:
+        print(f"syntax error: {exc.msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+class Validator(ast.NodeVisitor):
+    def visit_Call(self, node):
+        name = ""
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        if name in FORBIDDEN_CALLS:
+            print(f"forbidden construct {name!r} detected", file=sys.stderr)
+            sys.exit(3)
+        self.generic_visit(node)
+
+
+Validator().visit(tree)
+`
+
+const checkIsolaRuntimeScript = `
+import asyncio
+from isola import build_template
+
+
+async def main():
+    await build_template("python")
+
+
+asyncio.run(main())
+`
 
 // ValidateCode performs defense-in-depth validation before sandbox
-// execution. It shells out to Python's compiler for syntax checking, then
-// scans for forbidden patterns. Returns nil if code appears safe.
+// execution. It shells out to Python's AST parser so comments and strings are
+// not treated as executable code, while spaced call variants like eval (...)
+// are still rejected. Returns nil if code appears safe.
 func (m *Manager) ValidateCode(code string) error {
 	if strings.TrimSpace(code) == "" {
 		return errors.New("sandbox: code must not be empty")
@@ -152,23 +307,23 @@ func (m *Manager) ValidateCode(code string) error {
 	if len(code) > 100_000 {
 		return errors.New("sandbox: code exceeds 100KB limit")
 	}
-	lowered := strings.ToLower(code)
-	for _, pattern := range forbiddenPatterns {
-		if strings.Contains(lowered, pattern) {
-			return fmt.Errorf("sandbox: forbidden construct %q detected", pattern)
-		}
-	}
 	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", "compile(__import__('sys').stdin.read(), '<sandbox>', 'exec')")
+	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", validateCodeScript)
 	cmd.Stdin = strings.NewReader(code)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		stderr := string(out)
-		if stderr == "" {
-			stderr = err.Error()
+		if cmdCtx.Err() != nil {
+			return fmt.Errorf("sandbox: validation timed out: %w", cmdCtx.Err())
 		}
-		return fmt.Errorf("sandbox: syntax error: %s", strings.TrimSpace(stderr))
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		if strings.HasPrefix(msg, "syntax error:") {
+			return fmt.Errorf("sandbox: %s", msg)
+		}
+		return fmt.Errorf("sandbox: validation failed: %s", msg)
 	}
 	return nil
 }

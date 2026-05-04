@@ -46,6 +46,7 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			Sources:   SourcesHealth{ByStatus: map[string]int{}},
 			Tasks:     TasksHealth{ByStatus: map[string]int{}},
 			Scheduler: SchedulerHealth{},
+			Sandbox:   deps.Sandbox,
 		}
 
 		// Process rollup

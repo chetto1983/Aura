@@ -73,9 +73,11 @@ type Config struct {
 	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
 
 	// Sandbox code execution (Isola WASM)
-	SandboxEnabled         bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
-	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"15"`
-	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
+	SandboxEnabled           bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxPythonPath        string `envconfig:"SANDBOX_PYTHON_PATH"`
+	SandboxAllowSystemPython bool   `envconfig:"SANDBOX_ALLOW_SYSTEM_PYTHON" default:"false"`
+	SandboxTimeoutSec        int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"15"`
+	SandboxAutoImproveMode   string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -180,6 +182,8 @@ func Load() (*Config, error) {
 	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", 60)
 
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
+	cfg.SandboxPythonPath = getEnv("SANDBOX_PYTHON_PATH", "")
+	cfg.SandboxAllowSystemPython = getEnvBool("SANDBOX_ALLOW_SYSTEM_PYTHON", false)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", 15)
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
