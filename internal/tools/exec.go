@@ -27,7 +27,7 @@ func (t *ExecuteCodeTool) Description() string {
 	return "Execute Python code in an isolated WASM sandbox. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
 		"The sandbox is ephemeral — no state persists between executions. " +
-		"Stdlib only by default. Set allow_network=true if the code needs to make HTTP requests. " +
+		"Packages are limited to Aura's bundled runtime profile. Set allow_network=true only when HTTP access is explicitly needed. " +
 		"Timeout is configurable up to the server limit (default 15s)."
 }
 

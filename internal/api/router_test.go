@@ -160,9 +160,8 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 		Sandbox: SandboxHealth{
 			Enabled:     true,
 			Available:   false,
-			RuntimeKind: "isola_legacy",
-			Runtime:     `runtime\python\python.exe`,
-			Detail:      "runtime unavailable",
+			RuntimeKind: "unavailable",
+			Detail:      "Pyodide runtime adapter not configured; execute_code disabled",
 		},
 	})
 
@@ -180,13 +179,13 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 	if got.Sandbox.Available {
 		t.Fatal("sandbox.available = true, want false")
 	}
-	if got.Sandbox.RuntimeKind != "isola_legacy" {
+	if got.Sandbox.RuntimeKind != "unavailable" {
 		t.Fatalf("sandbox.runtime_kind = %q", got.Sandbox.RuntimeKind)
 	}
-	if got.Sandbox.Runtime != `runtime\python\python.exe` {
-		t.Fatalf("sandbox.runtime = %q", got.Sandbox.Runtime)
+	if got.Sandbox.Runtime != "" {
+		t.Fatalf("sandbox.runtime = %q, want empty", got.Sandbox.Runtime)
 	}
-	if got.Sandbox.Detail != "runtime unavailable" {
+	if got.Sandbox.Detail != "Pyodide runtime adapter not configured; execute_code disabled" {
 		t.Fatalf("sandbox.detail = %q", got.Sandbox.Detail)
 	}
 }

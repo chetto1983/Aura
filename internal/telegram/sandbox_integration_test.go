@@ -3,7 +3,7 @@ package telegram_test
 import "testing"
 
 func TestSandboxIntegration_ExecuteAndSaveTool(t *testing.T) {
-	t.Skip("integration test — requires full Aura stack with Isola")
+	t.Skip("integration test — requires full Aura stack with bundled Pyodide runtime")
 
 	// Expected flow:
 	// 1. User: "run a simulation of 100 dice rolls and compute the average"
@@ -14,7 +14,7 @@ func TestSandboxIntegration_ExecuteAndSaveTool(t *testing.T) {
 }
 
 func TestSandboxIntegration_ToolDiscovery(t *testing.T) {
-	t.Skip("integration test — requires full Aura stack with Isola")
+	t.Skip("integration test — requires full Aura stack with bundled Pyodide runtime")
 
 	// Expected flow:
 	// 1. User uploads a CSV: "summarize this"

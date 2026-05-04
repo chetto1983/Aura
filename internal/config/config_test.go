@@ -104,8 +104,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
-	os.Unsetenv("SANDBOX_PYTHON_PATH")
-	os.Unsetenv("SANDBOX_ALLOW_SYSTEM_PYTHON")
+	os.Unsetenv("SANDBOX_ENABLED")
+	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
 
 	cfg, err := Load()
 	if err != nil {
@@ -186,36 +186,36 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.HTTPPort != "127.0.0.1:8080" {
 		t.Errorf("HTTPPort = %q, want 127.0.0.1:8080 (slice 10b: localhost-only by default)", cfg.HTTPPort)
 	}
-	if cfg.SandboxPythonPath != "" {
-		t.Errorf("SandboxPythonPath = %q, want empty default", cfg.SandboxPythonPath)
+	if !cfg.SandboxEnabled {
+		t.Errorf("SandboxEnabled = false, want true by default")
 	}
-	if cfg.SandboxAllowSystemPython {
-		t.Errorf("SandboxAllowSystemPython = true, want false by default")
+	if cfg.SandboxTimeoutSec != 15 {
+		t.Errorf("SandboxTimeoutSec = %d, want 15", cfg.SandboxTimeoutSec)
 	}
 }
 
-func TestLoadSandboxPythonPath(t *testing.T) {
-	os.Setenv("SANDBOX_PYTHON_PATH", `C:\Aura\runtime\python\python.exe`)
-	defer os.Unsetenv("SANDBOX_PYTHON_PATH")
+func TestLoadSandboxEnabled(t *testing.T) {
+	os.Setenv("SANDBOX_ENABLED", "false")
+	defer os.Unsetenv("SANDBOX_ENABLED")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.SandboxPythonPath != `C:\Aura\runtime\python\python.exe` {
-		t.Fatalf("SandboxPythonPath = %q", cfg.SandboxPythonPath)
+	if cfg.SandboxEnabled {
+		t.Fatal("SandboxEnabled = true, want false")
 	}
 }
 
-func TestLoadSandboxAllowSystemPython(t *testing.T) {
-	os.Setenv("SANDBOX_ALLOW_SYSTEM_PYTHON", "true")
-	defer os.Unsetenv("SANDBOX_ALLOW_SYSTEM_PYTHON")
+func TestLoadSandboxTimeout(t *testing.T) {
+	os.Setenv("SANDBOX_TIMEOUT_SEC", "45")
+	defer os.Unsetenv("SANDBOX_TIMEOUT_SEC")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cfg.SandboxAllowSystemPython {
-		t.Fatal("SandboxAllowSystemPython = false, want true")
+	if cfg.SandboxTimeoutSec != 45 {
+		t.Fatalf("SandboxTimeoutSec = %d, want 45", cfg.SandboxTimeoutSec)
 	}
 }

@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-04
 **Status:** active
-**Supersedes:** the earlier Isola sidecar task list in this file.
+**Backend:** bundled Pyodide offline runtime.
 
 ## Goal
 
@@ -27,9 +27,8 @@ Why:
 - Native-extension packages such as NumPy and pandas become realistic for
   normal office workflows.
 
-Isola remains historical prototype code only. New work should move the
-`internal/sandbox` package behind a runtime abstraction, then replace the
-Isola runner with a Pyodide adapter.
+There is no host-runtime fallback. New work should keep `internal/sandbox`
+behind the runtime abstraction and wire only the bundled Pyodide adapter.
 
 Reference: https://pyodide.org/en/stable/usage/packages-in-pyodide.html
 
@@ -112,7 +111,7 @@ The current tool perimeter is correct and must survive the architecture change:
 
 ### sandbox.pyodide.1 - Runtime Abstraction
 
-**Goal:** decouple `internal/sandbox` from Isola-specific host Python.
+**Goal:** decouple `internal/sandbox` from concrete runtime assumptions.
 
 **Files:**
 
@@ -126,10 +125,9 @@ The current tool perimeter is correct and must survive the architecture change:
 - Introduce a runtime adapter boundary inside `internal/sandbox`.
 - Preserve public `Manager.Execute`, `Manager.ValidateCode`, and health shape
   where possible.
-- Add runtime kind/detail fields so health can say `pyodide`, `isola_legacy`,
-  or `unavailable`.
-- Keep existing Isola adapter only as a temporary legacy implementation behind
-  the new boundary.
+- Add runtime kind/detail fields so health can say `pyodide` or
+  `unavailable`.
+- Remove host-runtime fallback behavior; missing Pyodide means unavailable.
 
 **Acceptance:**
 
@@ -154,8 +152,7 @@ user code.
 - Add `runtime/pyodide/aura-pyodide-manifest.json` schema documentation.
 - Add manifest loader with path containment and hash validation.
 - Add required package list and package import smoke definitions.
-- Add config names for product runtime paths, e.g. `SANDBOX_RUNTIME_DIR`,
-  while keeping old Python-path config as legacy/dev only until removed.
+- Add config names for product runtime paths, e.g. `SANDBOX_RUNTIME_DIR`.
 
 **Acceptance:**
 
@@ -230,10 +227,9 @@ healthy.
 
 **Implementation:**
 
-- Prefer Pyodide runtime health over the legacy Isola path.
+- Prefer Pyodide runtime health.
 - Disable `execute_code` when required package smoke fails.
-- Update tool descriptions to mention bundled Pyodide package availability,
-  not stdlib-only/Isola.
+- Update tool descriptions to mention bundled Pyodide package availability.
 - Update dashboard health text.
 
 **Acceptance:**
@@ -242,28 +238,27 @@ healthy.
 - `cd web; npm run build` passes when dashboard copy/assets change.
 - Health rollup shows runtime kind and package profile status.
 
-### sandbox.pyodide.6 - Retire Isola Product Path
+### sandbox.pyodide.6 - Runtime Packaging Cleanup
 
-**Goal:** remove user-facing Isola/Python product assumptions.
+**Goal:** remove stale runtime packaging assumptions after Pyodide execution is
+green.
 
 **Files:**
 
-- `internal/sandbox/sandbox_runner.py`
-- `internal/sandbox/requirements.txt`
 - `internal/config/config.go`
 - `.env.example`
 - docs/runtime docs
 
 **Implementation:**
 
-- Delete or quarantine Isola sidecar files once Pyodide execution is green.
-- Remove product references to `pip install isola`.
-- Keep only explicit legacy/dev toggles if needed for tests.
+- Confirm host-runtime fallback files and config are absent.
+- Remove any temporary Pyodide migration notes that no longer apply.
+- Keep product docs focused on `runtime/pyodide/...`.
 
 **Acceptance:**
 
-- `rg -n "Isola|pip install|SANDBOX_PYTHON_PATH|SANDBOX_ALLOW_SYSTEM_PYTHON"`
-  shows only legacy/deprecation notes or no hits.
+- Repository search shows no host-Python fallback config or obsolete product
+  runtime path references.
 - Full `verify-go.ps1` passes.
 
 ## Post-Implementation Verification

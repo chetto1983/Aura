@@ -53,9 +53,9 @@ Auto-Improve    -> scheduled job (gap detection -> proposals -> wiki filing)
 - **Auto-Improve Scheduler** reviews conversation gaps and proposes tools. It
   does not silently grant executable-code tools to recurring jobs.
 
-Isola is no longer the target backend. Existing Isola-sidecar code is treated
-as a temporary prototype surface to be replaced behind the `internal/sandbox`
-manager interface.
+There is no host-runtime fallback. If the bundled Pyodide adapter is not
+configured or the bundle probe fails, Aura disables `execute_code` and reports
+`runtime_kind=unavailable`.
 
 ---
 

@@ -143,8 +143,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
 	}
 
-	// Sandbox code execution. Pyodide will become the product backend; the
-	// current manager keeps the legacy Isola sidecar behind a runtime adapter.
+	// Sandbox code execution. Until the bundled Pyodide adapter is wired,
+	// fail closed so execute_code is not registered through a host fallback.
 	var sandboxMgr *sandbox.Manager
 	sandboxHealth := api.SandboxHealth{
 		Enabled:     cfg.SandboxEnabled,
@@ -152,37 +152,10 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		Detail:      "sandbox disabled",
 	}
 	if cfg.SandboxEnabled {
-		runnerPath := sandbox.FindRunnerPath()
-		if runnerPath == "" {
-			logger.Warn("sandbox runner not found, execute_code disabled")
-			sandboxHealth.Detail = "sandbox runner not found; execute_code disabled"
-		} else {
-			mgr, err := sandbox.NewManager(sandbox.Config{
-				PythonPath:        cfg.SandboxPythonPath,
-				AllowSystemPython: cfg.SandboxAllowSystemPython,
-				RunnerPath:        runnerPath,
-				Timeout:           time.Duration(cfg.SandboxTimeoutSec) * time.Second,
-			})
-			if err != nil {
-				logger.Warn("sandbox manager unavailable, execute_code disabled", "error", err)
-				sandboxHealth.Detail = err.Error()
-			} else if availability := mgr.CheckAvailability(); !availability.Available {
-				sandboxHealth.RuntimeKind = string(availability.Kind)
-				sandboxHealth.Runtime = availability.PythonPath
-				sandboxHealth.Detail = availability.Detail
-				logger.Warn("sandbox runtime unavailable, execute_code disabled",
-					"runtime_kind", availability.Kind,
-					"runtime", availability.PythonPath,
-					"detail", availability.Detail)
-			} else {
-				sandboxMgr = mgr
-				sandboxHealth.Available = true
-				sandboxHealth.RuntimeKind = string(availability.Kind)
-				sandboxHealth.Runtime = availability.PythonPath
-				sandboxHealth.Detail = availability.Detail
-				logger.Info("sandbox enabled", "runtime_kind", availability.Kind)
-			}
-		}
+		sandboxHealth.Detail = "Pyodide runtime adapter not configured; execute_code disabled"
+		logger.Warn("sandbox runtime unavailable, execute_code disabled",
+			"runtime_kind", sandbox.RuntimeKindUnavailable,
+			"detail", sandboxHealth.Detail)
 	}
 
 	// Tool registry (persistent LLM-written Python tools)

@@ -16,13 +16,9 @@ runtime/
     runner/
 ```
 
-Do not require end users to install Python, pip, Isola, Docker, Node,
-Pyodide, or a developer toolchain. Any runner needed to host Pyodide must be
-part of Aura's release artifact.
-
-The previous `runtime/python/...` layout is legacy/prototype-only while the
-codebase is migrated away from the Isola sidecar. The product path is
-`runtime/pyodide/...`.
+Do not require end users to install Python, pip, Docker, Node, Pyodide, or a
+developer toolchain. Any runner needed to host Pyodide must be part of Aura's
+release artifact.
 
 ## Default Package Profile
 

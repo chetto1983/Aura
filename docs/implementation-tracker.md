@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.1` runtime abstraction.
+Last completed slice: `sandbox.pyodide.1b` legacy runtime removal.
 
 Active slice: `sandbox.pyodide.2` bundle manifest and probe.
 
@@ -73,10 +73,10 @@ What is shipped:
 - Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
 - Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
 - Sandbox code execution is wired behind explicit tools (`execute_code`, `list_tools`, `read_tool`, `save_tool`) and a separate `sandbox_code` toolset profile; scheduled agent jobs reject that profile and keep executable-code tools out of `scheduler_safe`.
-- Sandbox runtime product rule: end users must not install Python/pip/Isola/Docker/Node/Pyodide manually. The target product runtime is now a bundled `runtime/pyodide/...` offline package, probed at startup; unhealthy bundles disable `execute_code` and surface sandbox health.
+- Sandbox runtime product rule: end users must not install Python/pip/Docker/Node/Pyodide manually. The target product runtime is now a bundled `runtime/pyodide/...` offline package, probed at startup; unhealthy bundles disable `execute_code` and surface sandbox health.
 - Sandbox package product rule: the bundled Pyodide runtime must include an office/data profile (`numpy`, `pandas`, `scipy`, `statsmodels`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
-- `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. The legacy Isola sidecar remains behind the boundary while Pyodide lands.
-- Sandbox health now exposes `runtime_kind` (`pyodide`, `isola_legacy`, or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
+- `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. There is no host-runtime fallback; until the Pyodide adapter is configured, `execute_code` remains unavailable.
+- Sandbox health now exposes `runtime_kind` (`pyodide` or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
 
 Phase 18 status: **closed**.
 
@@ -224,8 +224,28 @@ Workspace warning:
 | sandbox.1 | Sandbox toolset guardrails | done | Consolidated code-execution tools into an explicit `sandbox_code` profile and restored `scheduler_safe` to propose-only defaults; scheduled `agent_job` rejects sandbox profiles because executable code is outside the recurring-job perimeter. |
 | sandbox.pyodide.0 | Sandbox architecture pivot | done | Replaced the Isola product plan with a bundled Pyodide offline-runtime plan grounded in the official Pyodide package list; next slice is runtime abstraction before adapter implementation. |
 | sandbox.pyodide.1 | Runtime abstraction | done | `internal/sandbox.Manager` now delegates execution/validation/health to a runtime adapter; legacy Isola is behind the boundary and `/health` reports `runtime_kind` plus detail without widening scheduler-safe sandbox permissions. |
+| sandbox.pyodide.1b | Legacy runtime removal | done | Removed the host-Python sidecar, Python-path config, and fallback startup probe. Sandbox now fails closed with `runtime_kind=unavailable` until the bundled Pyodide adapter lands. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.1b (Legacy runtime removal)
+
+Goal: remove the host-runtime sandbox fallback immediately and make code execution fail closed until the bundled Pyodide adapter is implemented.
+
+Implementation:
+
+- Removed the host Python sidecar files from `internal/sandbox`.
+- Simplified `sandbox.Config` to `Runtime` + timeout only; nil runtime now errors instead of auto-detecting a host interpreter.
+- Removed Python-path and system-Python sandbox config fields from `internal/config` and `.env.example`.
+- Telegram startup no longer searches for a runner or registers `execute_code` through a fallback runtime; sandbox health reports `runtime_kind=unavailable` with a clear Pyodide-adapter detail.
+- Updated active sandbox docs to treat `runtime/pyodide/...` as the only execution path.
+
+Verification:
+
+- `go test ./internal/sandbox ./internal/toolsets ./internal/scheduler ./internal/telegram ./internal/api ./internal/tools ./internal/config`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: `sandbox.pyodide.2` bundle manifest and probe.
 
 ### 2026-05-04 - Sandbox.pyodide.1 (Runtime abstraction)
 
