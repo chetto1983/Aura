@@ -279,7 +279,7 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
-	signature, ok := b.agentJobWakeSignature(t.Context(), normalized)
+	signature, ok := scheduler.AgentJobWakeSignature(t.Context(), normalized, scheduler.AgentJobWakeDeps{Wiki: wikiStore})
 	if !ok || signature == "" {
 		t.Fatalf("expected wake signature, got %q ok=%v", signature, ok)
 	}

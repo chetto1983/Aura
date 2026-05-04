@@ -2,13 +2,10 @@ package telegram
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -133,7 +130,11 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 		return agentJobRun{}, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
 	allowlist := safeAgentJobTools(payload.ToolAllowlist)
-	wakeSignature, hasWakeSignature := b.agentJobWakeSignature(ctx, payload)
+	wakeSignature, hasWakeSignature := scheduler.AgentJobWakeSignature(ctx, payload, scheduler.AgentJobWakeDeps{
+		Wiki:    b.wiki,
+		Sources: b.sources,
+		Tasks:   b.schedDB,
+	})
 	if hasWakeSignature && task.WakeSignature != "" && task.WakeSignature == wakeSignature {
 		return agentJobRun{
 			Payload:       payload,
@@ -307,7 +308,7 @@ func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string
 	}
 	var lines []string
 	for _, anchor := range anchors {
-		name, ok := agentJobTaskAnchor(anchor)
+		name, ok := scheduler.AgentJobTaskAnchor(anchor)
 		if !ok {
 			continue
 		}
@@ -318,89 +319,6 @@ func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string
 		lines = append(lines, fmt.Sprintf("- %s: %s", task.Name, truncateTelegramText(task.LastOutput, 800)))
 	}
 	return strings.Join(lines, "\n")
-}
-
-func (b *Bot) agentJobWakeSignature(ctx context.Context, payload scheduler.AgentJobPayload) (string, bool) {
-	if len(payload.WakeIfChanged) == 0 {
-		return "", false
-	}
-	parts := make([]string, 0, len(payload.WakeIfChanged))
-	for _, signal := range payload.WakeIfChanged {
-		if part, ok := b.agentJobWakePart(ctx, signal); ok {
-			parts = append(parts, part)
-		}
-	}
-	if len(parts) == 0 {
-		return "", false
-	}
-	sort.Strings(parts)
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
-	return hex.EncodeToString(sum[:]), true
-}
-
-func (b *Bot) agentJobWakePart(ctx context.Context, signal string) (string, bool) {
-	signal = strings.TrimSpace(signal)
-	if signal == "" {
-		return "", false
-	}
-	if slug, ok := wikiSignalSlug(signal); ok {
-		if b.wiki == nil {
-			return "", false
-		}
-		page, err := b.wiki.ReadPage(slug)
-		if err != nil {
-			return "wiki:" + slug + ":missing", true
-		}
-		return fmt.Sprintf("wiki:%s:%s:%s:%s", slug, page.UpdatedAt, page.Title, strings.Join(page.Related, ",")), true
-	}
-	if id, ok := strings.CutPrefix(signal, "source:"); ok {
-		if b.sources == nil {
-			return "", false
-		}
-		id = strings.TrimSpace(id)
-		src, err := b.sources.Get(id)
-		if err != nil {
-			return "source:" + id + ":missing", true
-		}
-		return fmt.Sprintf("source:%s:%s:%s:%d:%s:%s", src.ID, src.SHA256, src.Status, src.PageCount, strings.Join(src.WikiPages, ","), src.Error), true
-	}
-	if name, ok := agentJobTaskAnchor(signal); ok {
-		if b.schedDB == nil {
-			return "", false
-		}
-		task, err := b.schedDB.GetByName(ctx, name)
-		if err != nil {
-			return "task:" + name + ":missing", true
-		}
-		return fmt.Sprintf("task:%s:%s:%s:%s", task.Name, task.LastRunAt.UTC().Format(time.RFC3339), task.WakeSignature, task.LastError), true
-	}
-	return "", false
-}
-
-func wikiSignalSlug(signal string) (string, bool) {
-	if slug, ok := strings.CutPrefix(signal, "wiki:"); ok {
-		slug = strings.TrimSpace(slug)
-		return slug, slug != ""
-	}
-	if strings.HasPrefix(signal, "[[") && strings.HasSuffix(signal, "]]") {
-		slug := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(signal, "[["), "]]"))
-		return slug, slug != ""
-	}
-	return "", false
-}
-
-func agentJobTaskAnchor(anchor string) (string, bool) {
-	anchor = strings.TrimSpace(anchor)
-	for _, prefix := range []string{"task:", "agent_job:"} {
-		if name, ok := strings.CutPrefix(anchor, prefix); ok {
-			name = strings.TrimSpace(name)
-			return name, name != ""
-		}
-	}
-	if anchor == "" || strings.Contains(anchor, ":") || strings.HasPrefix(anchor, "[[") {
-		return "", false
-	}
-	return anchor, true
 }
 
 func safeAgentJobTools(requested []string) []string {

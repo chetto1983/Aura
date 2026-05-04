@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19f` persisted agent-job outputs and wake gates.
+Last completed slice: `19g` scheduled-routine E2E harness.
 
 What is shipped:
 
@@ -65,6 +65,8 @@ What is shipped:
 - Scheduled `agent_job` runs now persist compact `last_output`, JSON metrics, and a deterministic `wake_signature`.
 - `wake_if_changed` can skip the LLM call entirely when stable wiki/source/task signals have not changed.
 - `context_from` can include prior scheduled-task outputs by task name, so recurring routines continue from their last useful result instead of restarting cold.
+- `cmd/debug_agent_jobs` now proves the scheduled routine contract in a hermetic temp wiki and SQLite scheduler DB: first run executes, second run skips before the LLM call, a wiki mutation changes the signature, and the third run executes again.
+- Agent-job wake signatures now live in `internal/scheduler`, so Telegram runtime and debug harnesses use the same deterministic wiki/source/task signal logic.
 
 Phase 18 status: **closed**.
 
@@ -89,10 +91,12 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19g: scheduled-routine E2E harness:
-  - create a small debug command that schedules a skill-backed `agent_job`, runs it twice, and asserts the second run skips when `wake_if_changed` is unchanged;
-  - mutate a monitored wiki page/source signal and prove the next run executes again;
-  - report LLM calls, tool calls, tokens, elapsed time, skipped status, and persisted output so usefulness and latency stay visible.
+- Phase 19h: skill proposal install/smoke decision:
+  - decide whether Phase 19 closes with a documented manual install/smoke handoff or an implemented admin-gated approval workflow;
+  - keep normal `/summaries` approval from silently mutating skills;
+  - record the lifecycle clearly so procedural-memory proposals are not ambiguous debt.
+
+Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
@@ -203,9 +207,40 @@ Workspace warning:
 | 19d | Named toolset profiles | done | `internal/toolsets` centralizes profiles and role presets; scheduler and AuraBot swarm now reuse the same catalog and keep recursive/dangerous tools out of scheduled jobs. |
 | 19e | Skill/context-backed agent jobs | done | `agent_job` payloads now normalize `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; runtime prompts guide skill reads, memory-first context, and no-op prechecks. |
 | 19f | Agent-job outputs and wake gates | done | Scheduled `agent_job` runs persist compact output/metrics/signature, deterministic wiki/source/task wake gates can skip LLM calls, and `context_from` can include prior task outputs. |
-| 19g | Scheduled-routine E2E harness | planned | Add a debug harness proving run -> skip -> mutate -> rerun behavior with real metrics. |
+| 19g | Scheduled-routine E2E harness | done | `cmd/debug_agent_jobs` proves run -> skip -> mutate -> rerun with persisted output/metrics/signature; skipped run makes zero LLM/tool calls. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19g (Scheduled-routine E2E harness)
+
+Goal: prove that skill-backed scheduled routines are cheap, resumable, and not context-hungry.
+
+Implementation:
+
+- Added `cmd/debug_agent_jobs`, a hermetic debug harness that creates a temp wiki, temp SQLite scheduler DB, a monitored wiki page, and a skill/context-backed `agent_job` payload with `enabled_toolsets`, `skills`, `context_from`, `wake_if_changed`, and `notify=false`.
+- The harness runs the required sequence:
+  - run 1 executes through the bounded agent runner, calls `read_wiki`, and persists `last_output`, `last_metrics_json`, and `wake_signature`;
+  - run 2 sees the unchanged wake signature and skips before any LLM or tool call;
+  - the harness mutates the monitored wiki page;
+  - run 3 executes again with a changed wake signature and refreshed persisted result fields.
+- Moved deterministic wake-signature computation into `internal/scheduler/wake.go`, so Telegram runtime and debug harnesses share the same wiki/source/task signal logic.
+- Kept the harness side-effect envelope narrow: no dashboard dependency, no broad filesystem/source mutation, no direct wiki/skill mutation from the job, and no recursive scheduling tools.
+- Added an optional `-live-llm` mode; the default deterministic fake LLM is the acceptance path.
+
+Measured fake run:
+
+- run 1: skipped=false, llm_calls=2, tool_calls=1, tokens=93, wake_changed=no.
+- run 2: skipped=true, llm_calls=0, tool_calls=0, tokens=0, wake_changed=no.
+- run 3: skipped=false, llm_calls=2, tool_calls=1, tokens=93, wake_changed=yes.
+
+Verification:
+
+- `go test ./internal/scheduler ./internal/telegram ./internal/tools ./cmd/debug_agent_jobs`
+- `go run ./cmd/debug_agent_jobs`
+- `staticcheck ./internal/scheduler ./internal/telegram ./internal/tools ./cmd/debug_agent_jobs`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: 19h, decide and document or implement the skill proposal install/smoke lifecycle.
 
 ### 2026-05-04 - Slice 19f (Agent-job outputs and wake gates)
 
