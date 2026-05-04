@@ -141,6 +141,17 @@ go run ./cmd/debug_sandbox --tool-smoke
 This constructs the Pyodide runner/manager, registers `execute_code`, and checks
 that `sum(range(1, 101))` returns `5050`.
 
+To test the Telegram conversation path with a live LLM and real outgoing
+Telegram messages to the first allowlisted user, run:
+
+```powershell
+go run ./cmd/debug_telegram_sandbox
+```
+
+This injects a synthetic private text update into Aura's Telegram handler,
+expects the model to call `execute_code`, and fails unless the final/tool output
+contains `5050`.
+
 GoReleaser runs the same installer and smoke before building archives. Release
 archives include `runtime/pyodide/**`, so Windows users do not need to install
 Node, Python, pip, Docker, or Pyodide separately.

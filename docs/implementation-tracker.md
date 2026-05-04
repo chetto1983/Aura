@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.7` registered execute_code smoke.
+Last completed slice: `sandbox.pyodide.7b` Telegram conversation sandbox smoke.
 
-Active slice: `sandbox.pyodide.7b` live incoming Telegram smoke.
+Active slice: `sandbox.pyodide.8` artifact return path decision.
 
 What is shipped:
 
@@ -83,6 +83,7 @@ What is shipped:
 - `cmd/debug_sandbox --smoke` is now the repeatable operator harness for the local bundle: it reports missing bundles as unavailable and runs arithmetic, data imports, XLSX read, matplotlib artifact, and PDF/text extraction scenarios offline.
 - Release packaging now rebuilds the ignored Pyodide bundle from pinned inputs, bundles Windows Node under `runtime/pyodide/runner/node-win-x64`, runs `cmd/debug_sandbox --smoke` before archive creation, and includes `runtime/pyodide/**` in GoReleaser archives.
 - `cmd/debug_sandbox --tool-smoke` now exercises the registered `execute_code` tool boundary against the local Pyodide manager and verifies `sum(range(1, 101)) == 5050`.
+- `cmd/debug_telegram_sandbox` now injects a synthetic private Telegram text update into the real Aura bot, uses the live LLM plus real outgoing Telegram messages, verifies the model calls `execute_code`, and fails unless the conversation surfaces `5050`.
 
 Phase 18 status: **closed**.
 
@@ -107,10 +108,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.7b` live incoming Telegram smoke:
-  - keep Aura running with the rebuilt local bundle and health reporting `runtime_kind=pyodide`, `available=true`;
-  - ask Telegram to compute `sum(range(1, 101))` through `execute_code`;
-  - capture any model/tool-loop copy or timeout issues before declaring the feature ready.
+- `sandbox.pyodide.8` artifact return path decision:
+  - decide how sandbox-created files (plots, CSV/XLSX/PDF outputs) should move from the Pyodide filesystem to Aura sources/Telegram documents;
+  - keep file egress allowlisted and explicit, not broad filesystem access;
+  - add the first narrow artifact smoke once the contract is chosen.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -236,8 +237,32 @@ Workspace warning:
 | sandbox.pyodide.5 | Enable execute_code | done | Telegram startup now constructs the Pyodide runner, enables `execute_code` only when bundle and runner health are available, reports invalid bundles as unavailable, and supports the local Windows `.cmd` dev runner fallback. |
 | sandbox.pyodide.6 | Release bundle packaging | done | Added a pinned Pyodide bundle installer, release workflow/Goreleaser hooks, archive inclusion for `runtime/pyodide/**`, publish-time `debug_sandbox --smoke`, and config tests for release packaging. |
 | sandbox.pyodide.7 | Registered execute_code smoke | done | Started Aura with the rebuilt local bundle, confirmed authenticated `/api/health` reports `runtime_kind=pyodide` and `available=true`, and added `cmd/debug_sandbox --tool-smoke` to run `sum(range(1, 101))` through the registered `execute_code` tool boundary. |
+| sandbox.pyodide.7b | Telegram conversation sandbox smoke | done | Added `cmd/debug_telegram_sandbox`, a live-LLM Telegram-handler smoke that injects a synthetic private text update, sends real outgoing bot messages, verifies `execute_code` was called, and asserts the conversation surfaced `5050`; also fixed `Bot.Stop` for debug-created bots that never started polling. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.7b (Telegram conversation sandbox smoke)
+
+Goal: prove Aura's Telegram conversation loop can route a natural user request through the live LLM, call `execute_code`, and surface the Pyodide result.
+
+Implementation:
+
+- Started a temporary `cmd/aura` binary with the rebuilt local bundle and confirmed authenticated `/api/health` reported sandbox `enabled=true`, `available=true`, `runtime_kind=pyodide`, and `detail="Pyodide runner available"`.
+- Waited for a manual incoming Telegram update; none arrived during the observation window, so the slice shifted to a repeatable synthetic-incoming Telegram smoke.
+- Added `Bot.RunDebugTextSmoke`, which injects a synthetic private text update into the normal Telegram conversation handler for an allowlisted user and summarizes whether `execute_code` was called and `5050` appeared.
+- Added `cmd/debug_telegram_sandbox`, which loads `.env`, creates the real Aura Telegram bot without starting long polling, sends real outgoing Telegram placeholder/tool/final messages to the first allowlisted user, and fails unless the live LLM uses `execute_code` and returns `5050`.
+- Fixed `Bot.Stop` so debug-created bots that never called `Start` close stores/MCP clients without deadlocking on telebot's poller stop channel.
+
+Verification:
+
+- `go test ./internal/telegram -run "TestStopWithoutStart|TestDebugTextSmokeResultFromMessages" -count=1 -v`
+- `go run ./cmd/debug_telegram_sandbox` passed: `tool_calls=execute_code`, `called_execute_code=true`, `contains_5050=true`, final answer `The sum of numbers from 1 to 100 is **5050**.`
+- `go test ./internal/telegram ./cmd/debug_telegram_sandbox -count=1 -v`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Known note: this is synthetic incoming Telegram rather than a human Telegram client update, because Bot API cannot impersonate a user. It still exercises Aura's Telegram handler, live LLM routing, real outgoing bot messages, and the registered Pyodide `execute_code` tool.
+
+Next slice: `sandbox.pyodide.8` choose and implement the first explicit artifact egress path for sandbox-created files.
 
 ### 2026-05-04 - Sandbox.pyodide.7 (Registered execute_code smoke)
 

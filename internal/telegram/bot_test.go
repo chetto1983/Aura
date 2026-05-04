@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/config"
@@ -123,6 +124,20 @@ func TestProposalToolsAvailableRequiresRegisteredTool(t *testing.T) {
 	reg.Register(fakeTelegramTool{name: "propose_wiki_change"})
 	if !b.proposalToolsAvailable() {
 		t.Fatal("proposal tools should be available with registered proposal tool")
+	}
+}
+
+func TestStopWithoutStartReturns(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		(&Bot{}).Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked on a bot that was never started")
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/auth"
@@ -60,6 +61,7 @@ type Bot struct {
 	toolReg     *tools.ToolRegistry            // persistent LLM-written Python tools
 	active      sync.Map                       // maps userID string -> bool (active conversation tracking)
 	ctxMap      sync.Map                       // maps userID string -> *conversation.Context
+	started     atomic.Bool                    // true while the telebot poller has been started
 }
 
 // Username returns the bot's Telegram username.
@@ -135,6 +137,8 @@ func (b *Bot) Start() {
 	if b.sched != nil {
 		b.sched.Start(context.Background())
 	}
+	b.started.Store(true)
+	defer b.started.Store(false)
 	b.bot.Start()
 }
 
@@ -155,5 +159,7 @@ func (b *Bot) Stop() {
 	for _, c := range b.mcpClients {
 		_ = c.Close()
 	}
-	b.bot.Stop()
+	if b.bot != nil && b.started.Load() {
+		b.bot.Stop()
+	}
 }
