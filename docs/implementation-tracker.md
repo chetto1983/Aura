@@ -69,21 +69,23 @@ Closure criteria met:
 
 Phase 19 direction:
 
-- Memory quality observability and graph operations:
-  - read local `reports/memory-quality/*.json`;
-  - show trend pass rate, elapsed time, LLM calls, tool calls, proposal calls;
-  - render the report graph separately from the durable wiki graph;
-  - highlight failed, slow, or tool-drift scenarios;
-  - use real LLM runs as the benchmark, not fake-LLM substitutes.
+- Code inventory, procedural memory, and graph-aware operations:
+  - inventory Aura code and remove only verified dead code;
+  - use Picobot/Hermes as reference repositories instead of reinventing skills, toolsets, cron, or delegation patterns;
+  - implement review-gated procedural memory through `propose_skill_change`;
+  - add named toolset profiles for `agent_job` and swarm roles;
+  - extend scheduled routines with `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`;
+  - keep real LLM scorecards as the usefulness benchmark, but do not start phase 19 with another dashboard unless it unlocks implementation decisions.
 
 Next best slice:
 
-- Phase 19a: build a small dashboard/report reader for local memory-quality artifacts:
-  - trend pass rate, elapsed time, LLM calls, tool calls, proposal calls;
-  - graph view of scenario -> tool -> evidence/proposal relationships;
-  - highlight failed or slow scenarios.
+- Phase 19b: implement `propose_skill_change`:
+  - skill draft/proposal kind create/update/delete;
+  - trigger rules, allowed tools, examples, and one smoke prompt;
+  - provenance from source/wiki/conversation/tool/job/swarm evidence;
+  - review queue integration, approval smoke test, and install/audit path.
 
-Status note: phase 18 is closed. Phase 19 starts from observability of real usefulness, not more memory primitives.
+Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
 Workspace warning:
 
@@ -184,9 +186,37 @@ Workspace warning:
 | 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
 | 18h | Memory quality report graph | done | `debug_memory_quality` can now save timestamped local JSON reports with summary metrics, full live/hermetic results, and graph-ready nodes/edges for scenario -> tool -> evidence/proposal analysis. |
 | 18-close | Phase 18 closure | done | Phase 18 memory layer is closed: evidence envelope, decay, provenance, batch review, drill-down, live scorecard, and graph-ready quality reports all shipped under the LLM Wiki memory philosophy. |
-| 19 | Memory quality observability + graph operations | planned | Read saved live LLM quality reports, render trends and report graphs, flag drift/slow scenarios, and keep this diagnostic graph separate from durable wiki memory. |
+| 19 | Code inventory + procedural memory | planned | Inventory Aura code, remove verified dead code, reuse Picobot/Hermes patterns, add review-gated skill proposals, toolset profiles, and skill-backed agent jobs. |
+| 19a | Code inventory and low-risk cleanup | done | `docs/code-inventory-phase-19-2026-05-04.md`; removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
+| 19b | Review-gated skill proposals | planned | Add `propose_skill_change` for procedural memory: draft SKILL.md, trigger rules, allowed tools, examples, smoke prompt, provenance, review/install audit. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19a (Code inventory + cleanup)
+
+Goal: start phase 19 with a code/reuse inventory instead of adding low-value dashboard surfaces.
+
+Implementation:
+
+- Added `docs/code-inventory-phase-19-2026-05-04.md`.
+- Mapped Aura code areas, dead/legacy findings, and Picobot/Hermes patterns to reuse.
+- Removed stale `cmd/debug_swarm` hard-coded `debugAssignments()` after confirming the planner path supersedes it.
+- Fixed low-risk staticcheck hygiene in debug/test/client code:
+  - unused router assignments in settings tests;
+  - literal control char in XLSX tests;
+  - direct tool-definition struct conversion;
+  - capitalized error strings in debug/client paths.
+- Redirected phase 19 from "dashboard/report reader first" to procedural memory and toolsets:
+  - `propose_skill_change`;
+  - named toolset profiles;
+  - skill-backed `agent_job` fields.
+
+Verification:
+
+- Staticcheck targeted cleanup set.
+- Full Go verification before commit.
+
+Next slice: implement `propose_skill_change` as review-gated procedural memory.
 
 ### 2026-05-04 - Phase 18 closed / Phase 19 opened
 

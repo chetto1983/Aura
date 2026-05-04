@@ -209,65 +209,6 @@ func run(cfg config) error {
 	return nil
 }
 
-func debugAssignments() []swarm.Assignment {
-	return []swarm.Assignment{
-		{
-			Role:          "librarian",
-			Subject:       "wiki index scan",
-			Prompt:        "List wiki pages and read the index page.",
-			SystemPrompt:  "You are an AuraBot librarian. Use read-only wiki tools and report concise evidence.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-			Depth:         0,
-			UserID:        "debug-user",
-		},
-		{
-			Role:          "critic",
-			Subject:       "wiki lint check",
-			Prompt:        "Check the wiki and source inbox for obvious structural issues.",
-			SystemPrompt:  "You are an AuraBot critic. Prefer lint tools and keep the result short.",
-			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
-			Depth:         0,
-			UserID:        "debug-user",
-		},
-		{
-			Role:          "synthesizer",
-			Subject:       "second brain synthesis",
-			Prompt:        "Read available wiki/source context and synthesize one operational takeaway.",
-			SystemPrompt:  "You are an AuraBot synthesizer. Combine read-only context into a concise answer.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
-			Depth:         1,
-			UserID:        "debug-user",
-		},
-		{
-			Role:          "librarian",
-			Subject:       "source inbox scan",
-			Prompt:        "List source inbox entries and report one useful item.",
-			SystemPrompt:  "You are an AuraBot librarian. Use read-only source tools and report concise evidence.",
-			ToolAllowlist: []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-			Depth:         0,
-			UserID:        "debug-user",
-		},
-		{
-			Role:          "critic",
-			Subject:       "link hygiene",
-			Prompt:        "Check whether wiki links and source state look structurally healthy.",
-			SystemPrompt:  "You are an AuraBot critic. Prefer lint tools and keep the result short.",
-			ToolAllowlist: []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
-			Depth:         0,
-			UserID:        "debug-user",
-		},
-		{
-			Role:          "skillsmith",
-			Subject:       "skill catalog smoke",
-			Prompt:        "Inspect the available skill catalog path and summarize whether skill discovery works.",
-			SystemPrompt:  "You are an AuraBot skillsmith. Use read-only skill tools and report concise evidence.",
-			ToolAllowlist: []string{"list_skills", "read_skill", "search_skill_catalog"},
-			Depth:         1,
-			UserID:        "debug-user",
-		},
-	}
-}
-
 func collectMetrics(result swarm.RunResult, dbPath string, wall time.Duration, runner *meteredRunner) metrics {
 	out := metrics{
 		DBPath:    dbPath,

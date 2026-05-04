@@ -52,7 +52,7 @@ func TestSanitizeFilename(t *testing.T) {
 		{".xlsx", "workbook.xlsx"},
 		{strings.Repeat("a", 200), strings.Repeat("a", 75) + ".xlsx"},
 		// Newline / control char in middle gets stripped.
-		{"linebreak", "linebreak.xlsx"},
+		{"line\x01break", "linebreak.xlsx"},
 	}
 	for _, tc := range cases {
 		got := SanitizeFilename(tc.in)

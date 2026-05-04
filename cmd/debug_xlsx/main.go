@@ -105,7 +105,7 @@ func main() {
 		}
 		out, err := tool.Execute(ctx, args)
 		if err != nil {
-			return fmt.Errorf("Execute: %w", err)
+			return fmt.Errorf("execute: %w", err)
 		}
 		var resp map[string]any
 		if err := json.Unmarshal([]byte(out), &resp); err != nil {
@@ -170,7 +170,7 @@ func main() {
 		}
 		out, err := tool.Execute(ctx, args)
 		if err != nil {
-			return fmt.Errorf("Execute: %w", err)
+			return fmt.Errorf("execute: %w", err)
 		}
 		var resp map[string]any
 		if err := json.Unmarshal([]byte(out), &resp); err != nil {

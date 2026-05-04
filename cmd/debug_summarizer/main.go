@@ -91,7 +91,7 @@ func run() error {
 	}
 	for _, t := range turns {
 		if err := archiveStore.Append(ctx, t); err != nil {
-			return fmt.Errorf("Append turn %d: %w", t.TurnIndex, err)
+			return fmt.Errorf("append turn %d: %w", t.TurnIndex, err)
 		}
 	}
 

@@ -264,12 +264,8 @@ func convertToolDefinitions(defs []ToolDefinition) []toolWrapper {
 	tools := make([]toolWrapper, 0, len(defs))
 	for _, def := range defs {
 		tools = append(tools, toolWrapper{
-			Type: "function",
-			Function: functionDef{
-				Name:        def.Name,
-				Description: def.Description,
-				Parameters:  def.Parameters,
-			},
+			Type:     "function",
+			Function: functionDef(def),
 		})
 	}
 	return tools

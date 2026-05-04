@@ -180,12 +180,12 @@ func TestSettingsList_AuraBotShowsEditableDefaults(t *testing.T) {
 }
 
 func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing.T) {
-	router, store := newSettingsEnv(t)
+	_, store := newSettingsEnv(t)
 	ctx := context.Background()
 	if err := store.Set(ctx, settings.KeyAuraBotTimeoutSec, "600"); err != nil {
 		t.Fatalf("set timeout: %v", err)
 	}
-	router = NewRouter(Deps{
+	router := NewRouter(Deps{
 		Settings:      store,
 		RuntimeConfig: &config.Config{AuraBotTimeoutSec: 300},
 	})
@@ -241,10 +241,10 @@ func TestSettingsUpdate_HappyPath(t *testing.T) {
 }
 
 func TestSettingsUpdate_AppliesRuntimeSettingsHook(t *testing.T) {
-	router, store := newSettingsEnv(t)
+	_, store := newSettingsEnv(t)
 	cfg := &config.Config{AuraBotTimeoutSec: 300}
 	var calls int
-	router = NewRouter(Deps{
+	router := NewRouter(Deps{
 		Settings:      store,
 		RuntimeConfig: cfg,
 		ApplyRuntimeSettings: func(ctx context.Context) error {
