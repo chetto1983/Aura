@@ -41,6 +41,12 @@ func TestNewStoreWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
 	}
 }
 
+func TestNewStoreWithDBRejectsNil(t *testing.T) {
+	if _, err := NewStoreWithDB(nil); err == nil {
+		t.Fatal("NewStoreWithDB(nil) error = nil, want error")
+	}
+}
+
 func TestParseDailyTime(t *testing.T) {
 	cases := []struct {
 		in        string

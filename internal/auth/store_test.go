@@ -18,6 +18,12 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+func TestNewStoreWithDBRejectsNil(t *testing.T) {
+	if _, err := NewStoreWithDB(nil); err == nil {
+		t.Fatal("NewStoreWithDB(nil) error = nil, want error")
+	}
+}
+
 func TestIssueLookup_RoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

@@ -14,6 +14,7 @@ import (
 type sqliteSearcher struct {
 	db     *sql.DB
 	logger *slog.Logger
+	owned  bool
 }
 
 // newSqliteSearcher creates a SQLite-backed searcher.
@@ -28,6 +29,7 @@ func newSqliteSearcher(dbPath string, logger *slog.Logger) (*sqliteSearcher, err
 		_ = db.Close()
 		return nil, err
 	}
+	s.owned = true
 	return s, nil
 }
 
@@ -39,9 +41,16 @@ func newSqliteSearcherWithDB(db *sql.DB, logger *slog.Logger) (*sqliteSearcher, 
 		return nil, fmt.Errorf("setting up sqlite schema: %w", err)
 	}
 
-	s := &sqliteSearcher{db: db, logger: logger}
+	s := &sqliteSearcher{db: db, logger: logger, owned: false}
 
 	return s, nil
+}
+
+func (s *sqliteSearcher) Close() error {
+	if s == nil || !s.owned {
+		return nil
+	}
+	return s.db.Close()
 }
 
 func setupSqliteSchema(db *sql.DB) error {

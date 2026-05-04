@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/philippgille/chromem-go"
 )
@@ -131,6 +132,53 @@ func TestNewEngine(t *testing.T) {
 	}
 	if e.IsIndexed() {
 		t.Error("new engine should not be indexed yet")
+	}
+}
+
+func TestNewEngineWithFallbackCloseReleasesOwnedDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "search.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	engine, err := NewEngineWithFallback(tmpDir, keywordEmbedding, dbPath, logger)
+	if err != nil {
+		t.Fatalf("NewEngineWithFallback: %v", err)
+	}
+	if engine.sqlite == nil {
+		t.Fatal("sqlite fallback was not configured")
+	}
+
+	if err := engine.Close(); err != nil {
+		t.Fatalf("engine Close: %v", err)
+	}
+
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db after engine Close: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`SELECT COUNT(*) FROM wiki_documents`); err != nil {
+		t.Fatalf("query reopened search db: %v", err)
+	}
+}
+
+func TestSqliteSearcherWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "shared.db")
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	searcher, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	if err := searcher.Close(); err != nil {
+		t.Fatalf("searcher Close: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("shared db was closed by searcher Close: %v", err)
 	}
 }
 

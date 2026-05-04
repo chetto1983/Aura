@@ -70,6 +70,9 @@ func OpenStore(path string) (*Store, error) {
 // already opened the scheduler/auth DB and wants settings on the same
 // connection pool.
 func NewStoreWithDB(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, errors.New("settings: db required")
+	}
 	s := &Store{db: db, now: time.Now, owned: false}
 	if err := s.migrate(); err != nil {
 		return nil, err

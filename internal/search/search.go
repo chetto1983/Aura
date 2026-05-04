@@ -98,6 +98,15 @@ func NewEngineWithFallbackWithDB(wikiDir string, embedFn chromem.EmbeddingFunc, 
 	return engine, nil
 }
 
+// Close releases resources owned by the engine. Engines built with
+// NewEngineWithFallbackWithDB keep the caller-owned SQLite pool open.
+func (e *Engine) Close() error {
+	if e == nil || e.sqlite == nil {
+		return nil
+	}
+	return e.sqlite.Close()
+}
+
 // Index adds or updates a document in the search index.
 func (e *Engine) Index(ctx context.Context, id string, content string, metadata map[string]string) error {
 	e.mu.Lock()

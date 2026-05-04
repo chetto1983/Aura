@@ -130,6 +130,9 @@ func OpenStore(path string) (*Store, error) {
 // NewStoreWithDB wraps an existing *sql.DB so the scheduler can share a
 // connection with other subsystems on the same DB file.
 func NewStoreWithDB(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, errors.New("scheduler: db required")
+	}
 	s := &Store{db: db, owned: false}
 	if err := s.migrate(); err != nil {
 		return nil, err

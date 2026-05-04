@@ -17,6 +17,12 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
+func TestNewStoreWithDBRejectsNil(t *testing.T) {
+	if _, err := NewStoreWithDB(nil); err == nil {
+		t.Fatal("NewStoreWithDB(nil) error = nil, want error")
+	}
+}
+
 func TestStoreSetGetRoundTrip(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

@@ -87,6 +87,9 @@ func OpenStore(path string) (*Store, error) {
 // NewStoreWithDB shares an existing *sql.DB so auth can co-locate with
 // another subsystem (typically scheduler) on the same file.
 func NewStoreWithDB(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, errors.New("auth: db required")
+	}
 	s := &Store{db: db, now: time.Now, owned: false}
 	if err := s.migrate(); err != nil {
 		return nil, err
