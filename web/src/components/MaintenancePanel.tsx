@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import type { WikiIssue } from '@/types/api';
 
 const SEVERITY_ORDER = ['high', 'medium', 'low'] as const;
@@ -25,6 +26,7 @@ type SeverityFilter = 'all' | 'high' | 'medium' | 'low';
 type StatusFilter = 'open' | 'resolved' | 'all';
 
 export function MaintenancePanel() {
+  const { t, formatDate } = useLocale();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open');
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
@@ -41,7 +43,7 @@ export function MaintenancePanel() {
   const { data, error, loading, refetch } = useApi<WikiIssue[]>(fetcher);
 
   if (loading && !data) return <PanelSkeleton />;
-  if (error && !data) return <ErrorCard error={error} title="Failed to load maintenance issues" onRetry={refetch} />;
+  if (error && !data) return <ErrorCard error={error} title={t('maintenance.errorTitle')} onRetry={refetch} />;
 
   const issues = (data ?? []).filter((i) => !dismissed.has(i.id));
 
@@ -59,8 +61,8 @@ export function MaintenancePanel() {
     <div className="p-6 space-y-4">
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Maintenance</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Wiki issue queue</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('maintenance.title')}</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('maintenance.subtitle')}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select
@@ -68,19 +70,19 @@ export function MaintenancePanel() {
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           >
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="all">All statuses</option>
+            <option value="open">{t('maintenance.filterOpen')}</option>
+            <option value="resolved">{t('maintenance.filterResolved')}</option>
+            <option value="all">{t('maintenance.filterAllStatuses')}</option>
           </select>
           <select
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           >
-            <option value="all">All severities</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
+            <option value="all">{t('maintenance.filterAllSeverities')}</option>
+            <option value="high">{t('maintenance.filterHigh')}</option>
+            <option value="medium">{t('maintenance.filterMedium')}</option>
+            <option value="low">{t('maintenance.filterLow')}</option>
           </select>
         </div>
       </header>
@@ -116,19 +118,20 @@ export function MaintenancePanel() {
 }
 
 function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => void }) {
+  const { t, formatDate } = useLocale();
   const [resolving, setResolving] = useState(false);
   const borderClass = SEVERITY_SECTION[issue.severity] ?? '';
 
   const handleResolve = async () => {
     if (resolving) return;
     setResolving(true);
-    const tid = toast.loading('Resolving…');
+    const tid = toast.loading(t('maintenance.toast.resolving'));
     try {
       await api.resolveIssue(issue.id);
-      toast.success('Issue marked resolved.', { id: tid });
+      toast.success(t('maintenance.toast.resolved'), { id: tid });
       onDismiss();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to resolve', { id: tid });
+      toast.error(err instanceof Error ? err.message : t('maintenance.toast.resolveFailed'), { id: tid });
       setResolving(false);
     }
   };
@@ -148,7 +151,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
           )}
           {issue.broken_link && (
             <p className="text-sm">
-              Broken link:{' '}
+              {t('maintenance.brokenLink')}{' '}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{issue.broken_link}</code>
             </p>
           )}
@@ -170,7 +173,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
             onClick={() => void handleResolve()}
             className="min-h-11 rounded-md bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
           >
-            {resolving ? 'Resolving…' : 'Mark resolved'}
+            {resolving ? t('maintenance.resolving') : t('maintenance.markResolved')}
           </button>
         )}
         {issue.slug && (
@@ -178,12 +181,12 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
             href={`/wiki/${encodeURIComponent(issue.slug)}`}
             className="inline-flex min-h-11 items-center gap-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-2 text-sm font-medium transition-colors"
           >
-            Open page
+            {t('maintenance.openPage')}
             <ExternalLink size={10} />
           </a>
         )}
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {new Date(issue.created_at).toLocaleDateString()}
+          {formatDate(issue.created_at)}
         </span>
       </div>
     </div>
@@ -191,11 +194,12 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
 }
 
 function EmptyState() {
+  const { t } = useLocale();
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
       <Wrench size={40} className="text-muted-foreground/40" />
-      <p className="text-sm font-medium text-muted-foreground">All clean — no maintenance issues.</p>
-      <p className="text-sm text-muted-foreground">The wiki maintenance scheduler will populate this queue when issues are detected.</p>
+      <p className="text-sm font-medium text-muted-foreground">{t('maintenance.emptyTitle')}</p>
+      <p className="text-sm text-muted-foreground">{t('maintenance.emptyHint')}</p>
     </div>
   );
 }
