@@ -31,10 +31,11 @@ type HealthRollup struct {
 // end-user path is a bundled runtime shipped with Aura; Runtime is kept
 // best-effort for operator diagnostics.
 type SandboxHealth struct {
-	Enabled   bool   `json:"enabled"`
-	Available bool   `json:"available"`
-	Runtime   string `json:"runtime,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Available   bool   `json:"available"`
+	RuntimeKind string `json:"runtime_kind,omitempty"`
+	Runtime     string `json:"runtime,omitempty"`
+	Detail      string `json:"detail,omitempty"`
 }
 
 // EmbedCacheHealth reports SHA-keyed embedding cache stats. Hits are

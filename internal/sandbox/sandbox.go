@@ -1,8 +1,8 @@
-// Package sandbox executes LLM-generated Python code in an Isola WASM sandbox.
+// Package sandbox executes LLM-generated Python code in an isolated runtime.
 //
-// It works by writing the user's code to a temp file, then calling the
-// bundled sandbox_runner.py script via os/exec. The Python sidecar wraps
-// Isola and returns JSON with stdout/stderr/exit_code.
+// Manager owns policy, health, and the stable execute_code boundary. Runtime
+// adapters own the actual backend implementation so the legacy Isola sidecar
+// can be replaced by the bundled Pyodide runtime without changing callers.
 package sandbox
 
 import (
@@ -30,6 +30,9 @@ type Result struct {
 
 // Config controls sandbox behaviour.
 type Config struct {
+	// Runtime is the execution adapter. Nil uses the temporary legacy Isola
+	// sidecar configured below.
+	Runtime Runtime
 	// PythonPath is the path to the Python 3 binary. Defaults to an
 	// auto-detected interpreter that can import Isola when available.
 	PythonPath string
@@ -42,34 +45,55 @@ type Config struct {
 	Timeout time.Duration
 }
 
-// Availability describes whether the host can run the trusted Isola sidecar.
+type RuntimeKind string
+
+const (
+	RuntimeKindPyodide     RuntimeKind = "pyodide"
+	RuntimeKindIsolaLegacy RuntimeKind = "isola_legacy"
+	RuntimeKindUnavailable RuntimeKind = "unavailable"
+)
+
+// Runtime is the adapter boundary for sandbox execution backends.
+type Runtime interface {
+	Kind() RuntimeKind
+	Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error)
+	CheckAvailability() Availability
+	ValidateCode(code string) error
+}
+
+// Availability describes whether the configured runtime can execute code.
 type Availability struct {
 	Available  bool
+	Kind       RuntimeKind
 	PythonPath string
 	Detail     string
 }
 
-// Manager runs Python code in an Isola WASM sandbox.
+// Manager runs Python code through a configured sandbox runtime.
 type Manager struct {
-	cfg Config
+	cfg     Config
+	runtime Runtime
 }
 
-// NewManager creates a sandbox manager. Returns an error if Python is not
-// available or the runner script doesn't exist.
+// NewManager creates a sandbox manager. Until the Pyodide adapter lands, nil
+// Runtime means "use the legacy Isola sidecar".
 func NewManager(cfg Config) (*Manager, error) {
-	if cfg.PythonPath == "" {
-		cfg.PythonPath = defaultPythonPath(cfg.AllowSystemPython)
-	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 15 * time.Second
 	}
-	if cfg.RunnerPath == "" {
-		return nil, errors.New("sandbox: RunnerPath is required")
+	if cfg.Runtime == nil {
+		if cfg.PythonPath == "" {
+			cfg.PythonPath = defaultPythonPath(cfg.AllowSystemPython)
+		}
+		if cfg.RunnerPath == "" {
+			return nil, errors.New("sandbox: RunnerPath is required")
+		}
+		if _, err := os.Stat(cfg.RunnerPath); err != nil {
+			return nil, fmt.Errorf("sandbox: runner script not found at %s: %w", cfg.RunnerPath, err)
+		}
+		cfg.Runtime = newIsolaLegacyRuntime(cfg)
 	}
-	if _, err := os.Stat(cfg.RunnerPath); err != nil {
-		return nil, fmt.Errorf("sandbox: runner script not found at %s: %w", cfg.RunnerPath, err)
-	}
-	return &Manager{cfg: cfg}, nil
+	return &Manager{cfg: cfg, runtime: cfg.Runtime}, nil
 }
 
 func defaultPythonPath(allowSystem bool) string {
@@ -150,12 +174,75 @@ func pythonHasIsola(path string) bool {
 	return cmd.Run() == nil
 }
 
-// Execute runs the given Python code in an Isola WASM sandbox.
+// RuntimeKind reports the configured backend kind.
+func (m *Manager) RuntimeKind() RuntimeKind {
+	if m == nil || m.runtime == nil {
+		return RuntimeKindUnavailable
+	}
+	return m.runtime.Kind()
+}
+
+// Execute runs the given Python code in the configured runtime.
 func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error) {
 	if err := m.ValidateCode(code); err != nil {
 		return nil, err
 	}
+	return m.runtime.Execute(ctx, code, allowNetwork)
+}
 
+// IsAvailable reports whether the configured runtime can execute code.
+func (m *Manager) IsAvailable() bool {
+	return m.CheckAvailability().Available
+}
+
+// CheckAvailability runs the runtime probe used to decide whether
+// execute_code should be registered.
+func (m *Manager) CheckAvailability() Availability {
+	if m == nil || m.runtime == nil {
+		return Availability{
+			Available: false,
+			Kind:      RuntimeKindUnavailable,
+			Detail:    "sandbox runtime unavailable",
+		}
+	}
+	return normalizeAvailability(m.runtime.Kind(), m.runtime.CheckAvailability())
+}
+
+// ValidateCode performs defense-in-depth validation before sandbox execution.
+// The configured runtime owns the concrete validation mechanism.
+func (m *Manager) ValidateCode(code string) error {
+	if strings.TrimSpace(code) == "" {
+		return errors.New("sandbox: code must not be empty")
+	}
+	if len(code) > 100_000 {
+		return errors.New("sandbox: code exceeds 100KB limit")
+	}
+	return m.runtime.ValidateCode(code)
+}
+
+func normalizeAvailability(kind RuntimeKind, availability Availability) Availability {
+	if availability.Kind == "" {
+		availability.Kind = kind
+	}
+	if availability.Kind == "" {
+		availability.Kind = RuntimeKindUnavailable
+	}
+	return availability
+}
+
+type isolaLegacyRuntime struct {
+	cfg Config
+}
+
+func newIsolaLegacyRuntime(cfg Config) Runtime {
+	return &isolaLegacyRuntime{cfg: cfg}
+}
+
+func (r *isolaLegacyRuntime) Kind() RuntimeKind {
+	return RuntimeKindIsolaLegacy
+}
+
+func (r *isolaLegacyRuntime) Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error) {
 	tmpFile, err := os.CreateTemp("", "aura-sandbox-*.py")
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: create temp file: %w", err)
@@ -170,18 +257,18 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 	tmpFile.Close()
 
 	args := []string{
-		m.cfg.RunnerPath,
+		r.cfg.RunnerPath,
 		"--code-file", tmpPath,
-		"--timeout", fmt.Sprintf("%d", int(m.cfg.Timeout.Seconds())),
+		"--timeout", fmt.Sprintf("%d", int(r.cfg.Timeout.Seconds())),
 	}
 	if allowNetwork {
 		args = append(args, "--network")
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, m.cfg.Timeout+5*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, r.cfg.Timeout+5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, args...)
+	cmd := exec.CommandContext(cmdCtx, r.cfg.PythonPath, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -207,19 +294,13 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 	return nil, errors.New("sandbox: runner produced no output")
 }
 
-// IsAvailable reports whether the Python sidecar can build the Isola Python
-// runtime template. Importing Isola is not enough on every platform.
-func (m *Manager) IsAvailable() bool {
-	return m.CheckAvailability().Available
-}
-
 // CheckAvailability runs the same host-side template probe used to decide
 // whether execute_code should be registered.
-func (m *Manager) CheckAvailability() Availability {
-	cmdCtx, cancel := context.WithTimeout(context.Background(), m.cfg.Timeout+5*time.Second)
+func (r *isolaLegacyRuntime) CheckAvailability() Availability {
+	cmdCtx, cancel := context.WithTimeout(context.Background(), r.cfg.Timeout+5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", checkIsolaRuntimeScript)
+	cmd := exec.CommandContext(cmdCtx, r.cfg.PythonPath, "-c", checkIsolaRuntimeScript)
 	cmd.Env = os.Environ()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -230,13 +311,15 @@ func (m *Manager) CheckAvailability() Availability {
 		}
 		return Availability{
 			Available:  false,
-			PythonPath: m.cfg.PythonPath,
+			Kind:       RuntimeKindIsolaLegacy,
+			PythonPath: r.cfg.PythonPath,
 			Detail:     detail,
 		}
 	}
 	return Availability{
 		Available:  true,
-		PythonPath: m.cfg.PythonPath,
+		Kind:       RuntimeKindIsolaLegacy,
+		PythonPath: r.cfg.PythonPath,
 		Detail:     "Isola Python runtime template available",
 	}
 }
@@ -296,20 +379,13 @@ async def main():
 asyncio.run(main())
 `
 
-// ValidateCode performs defense-in-depth validation before sandbox
-// execution. It shells out to Python's AST parser so comments and strings are
+// ValidateCode shells out to Python's AST parser so comments and strings are
 // not treated as executable code, while spaced call variants like eval (...)
 // are still rejected. Returns nil if code appears safe.
-func (m *Manager) ValidateCode(code string) error {
-	if strings.TrimSpace(code) == "" {
-		return errors.New("sandbox: code must not be empty")
-	}
-	if len(code) > 100_000 {
-		return errors.New("sandbox: code exceeds 100KB limit")
-	}
+func (r *isolaLegacyRuntime) ValidateCode(code string) error {
 	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", validateCodeScript)
+	cmd := exec.CommandContext(cmdCtx, r.cfg.PythonPath, "-c", validateCodeScript)
 	cmd.Stdin = strings.NewReader(code)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

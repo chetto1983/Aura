@@ -59,6 +59,45 @@ func TestNewManager_EmptyPythonPathDefaults(t *testing.T) {
 	}
 }
 
+func TestNewManager_RuntimeAdapterDoesNotRequireLegacyRunner(t *testing.T) {
+	runtime := &fakeRuntime{
+		kind: sandbox.RuntimeKindPyodide,
+		availability: sandbox.Availability{
+			Available: true,
+			Kind:      sandbox.RuntimeKindPyodide,
+			Detail:    "fake pyodide ready",
+		},
+		result: &sandbox.Result{
+			OK:        true,
+			Stdout:    "hi\n",
+			ExitCode:  0,
+			ElapsedMs: 1,
+		},
+	}
+
+	mgr, err := sandbox.NewManager(sandbox.Config{Runtime: runtime})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	if got := mgr.RuntimeKind(); got != sandbox.RuntimeKindPyodide {
+		t.Fatalf("RuntimeKind() = %q, want pyodide", got)
+	}
+	availability := mgr.CheckAvailability()
+	if !availability.Available || availability.Kind != sandbox.RuntimeKindPyodide || availability.Detail != "fake pyodide ready" {
+		t.Fatalf("availability = %+v", availability)
+	}
+	result, err := mgr.Execute(context.Background(), "print('hi')", true)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Stdout != "hi\n" {
+		t.Fatalf("stdout = %q", result.Stdout)
+	}
+	if runtime.executedCode != "print('hi')" || !runtime.executedAllowNetwork {
+		t.Fatalf("runtime did not receive execute request: code=%q allow=%v", runtime.executedCode, runtime.executedAllowNetwork)
+	}
+}
+
 func TestFindRunnerPath(t *testing.T) {
 	path := sandbox.FindRunnerPath()
 	if path == "" {
@@ -67,6 +106,34 @@ func TestFindRunnerPath(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("runner path %s does not exist: %v", path, err)
 	}
+}
+
+type fakeRuntime struct {
+	kind                 sandbox.RuntimeKind
+	availability         sandbox.Availability
+	result               *sandbox.Result
+	validateErr          error
+	executeErr           error
+	executedCode         string
+	executedAllowNetwork bool
+}
+
+func (r *fakeRuntime) Kind() sandbox.RuntimeKind {
+	return r.kind
+}
+
+func (r *fakeRuntime) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+	r.executedCode = code
+	r.executedAllowNetwork = allowNetwork
+	return r.result, r.executeErr
+}
+
+func (r *fakeRuntime) CheckAvailability() sandbox.Availability {
+	return r.availability
+}
+
+func (r *fakeRuntime) ValidateCode(_ string) error {
+	return r.validateErr
 }
 
 func TestValidateCode_RejectsEmptyAndOversize(t *testing.T) {

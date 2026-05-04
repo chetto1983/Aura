@@ -158,10 +158,11 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 		Sources:   e.sources,
 		Scheduler: e.sched,
 		Sandbox: SandboxHealth{
-			Enabled:   true,
-			Available: false,
-			Runtime:   `runtime\python\python.exe`,
-			Detail:    "runtime unavailable",
+			Enabled:     true,
+			Available:   false,
+			RuntimeKind: "isola_legacy",
+			Runtime:     `runtime\python\python.exe`,
+			Detail:      "runtime unavailable",
 		},
 	})
 
@@ -178,6 +179,9 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 	}
 	if got.Sandbox.Available {
 		t.Fatal("sandbox.available = true, want false")
+	}
+	if got.Sandbox.RuntimeKind != "isola_legacy" {
+		t.Fatalf("sandbox.runtime_kind = %q", got.Sandbox.RuntimeKind)
 	}
 	if got.Sandbox.Runtime != `runtime\python\python.exe` {
 		t.Fatalf("sandbox.runtime = %q", got.Sandbox.Runtime)

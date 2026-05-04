@@ -143,11 +143,13 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
 	}
 
-	// Sandbox code execution (Isola WASM)
+	// Sandbox code execution. Pyodide will become the product backend; the
+	// current manager keeps the legacy Isola sidecar behind a runtime adapter.
 	var sandboxMgr *sandbox.Manager
 	sandboxHealth := api.SandboxHealth{
-		Enabled: cfg.SandboxEnabled,
-		Detail:  "sandbox disabled",
+		Enabled:     cfg.SandboxEnabled,
+		RuntimeKind: string(sandbox.RuntimeKindUnavailable),
+		Detail:      "sandbox disabled",
 	}
 	if cfg.SandboxEnabled {
 		runnerPath := sandbox.FindRunnerPath()
@@ -165,17 +167,20 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 				logger.Warn("sandbox manager unavailable, execute_code disabled", "error", err)
 				sandboxHealth.Detail = err.Error()
 			} else if availability := mgr.CheckAvailability(); !availability.Available {
+				sandboxHealth.RuntimeKind = string(availability.Kind)
 				sandboxHealth.Runtime = availability.PythonPath
-				sandboxHealth.Detail = "sandbox runtime unavailable; execute_code disabled"
+				sandboxHealth.Detail = availability.Detail
 				logger.Warn("sandbox runtime unavailable, execute_code disabled",
+					"runtime_kind", availability.Kind,
 					"runtime", availability.PythonPath,
 					"detail", availability.Detail)
 			} else {
 				sandboxMgr = mgr
 				sandboxHealth.Available = true
+				sandboxHealth.RuntimeKind = string(availability.Kind)
 				sandboxHealth.Runtime = availability.PythonPath
 				sandboxHealth.Detail = availability.Detail
-				logger.Info("sandbox enabled (Isola WASM)")
+				logger.Info("sandbox enabled", "runtime_kind", availability.Kind)
 			}
 		}
 	}

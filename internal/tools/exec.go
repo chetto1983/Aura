@@ -7,7 +7,7 @@ import (
 	"github.com/aura/aura/internal/sandbox"
 )
 
-// ExecuteCodeTool lets the LLM run Python code in the Isola WASM sandbox.
+// ExecuteCodeTool lets the LLM run Python code in Aura's isolated runtime.
 type ExecuteCodeTool struct {
 	manager *sandbox.Manager
 }
