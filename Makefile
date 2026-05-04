@@ -3,7 +3,7 @@
 all: test build
 
 build:
-	go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon_app.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
+	go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
 	go build -o aura.exe ./cmd/aura
 
 test:

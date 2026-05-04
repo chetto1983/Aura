@@ -6,7 +6,7 @@ before:
   hooks:
     - go mod tidy
     - go run ./cmd/build_icon
-    - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon_app.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
+    - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
     - npm --prefix web run build
     - node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64
     - go run ./cmd/debug_sandbox --smoke
