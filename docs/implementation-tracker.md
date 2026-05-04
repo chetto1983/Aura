@@ -118,6 +118,14 @@ Next best slice:
   - run one final routing smoke (`create_pdf` for ordinary PDFs, `execute_code` for computed artifacts) if needed;
   - close the Pyodide sandbox milestone with verification notes.
 
+Tomorrow resume note (2026-05-05):
+
+- Current judgment: sandbox is safe for local use and feature-complete beta; do not call it production-closed until `sandbox.pyodide.close` lands.
+- Open product decision: sandbox artifacts currently deliver to Telegram but do not persist as Aura sources. Choose deliver-only vs source persistence.
+- Suggested closure checks: `go run ./cmd/debug_sandbox --smoke`, `go run ./cmd/debug_sandbox --artifact-smoke`, `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m`, and a routing smoke that confirms ordinary PDFs use `create_pdf` while computed artifacts use `execute_code`.
+- Local `.env` was updated to `SANDBOX_TIMEOUT_SEC=60` during slice 9; `.env.example` is tracked with the same default.
+- Last good commit before this handoff: `b599374 slice sandbox.pyodide.9: smoke live artifact delivery`.
+
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
