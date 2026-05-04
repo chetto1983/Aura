@@ -3,7 +3,8 @@
 all: test build
 
 build:
-	go build ./...
+	go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon_app.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
+	go build -o aura.exe ./cmd/aura
 
 test:
 	go test ./...
@@ -28,7 +29,7 @@ web:
 	cd web && npm run dev
 
 web-build:
-	cd web && npm install && npm run build
+	go run ./cmd/build_icon && cd web && npm install && npm run build
 
 ui-dev:
 	$(MAKE) -j2 web run

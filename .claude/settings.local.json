@@ -54,7 +54,18 @@
       "Bash(npm install *)",
       "PowerShell(New-Item *)",
       "Bash(npx tsc *)",
-      "PowerShell(cd D:\\\\Aura\\\\web; npx tsc --noEmit; Write-Output \"Exit code: $LASTEXITCODE\")"
+      "PowerShell(cd D:\\\\Aura\\\\web; npx tsc --noEmit; Write-Output \"Exit code: $LASTEXITCODE\")",
+      "Bash(npx vite *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Aura\" -Depth 1)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(go run *)",
+      "Bash(xxd internal/tray/icon.ico)",
+      "Bash(xxd *)",
+      "Bash(objdump -h cmd/aura/aura.exe)",
+      "PowerShell($exe = [System.Reflection.Assembly]::LoadFile\\(\"D:\\\\Aura\\\\cmd\\\\aura\\\\aura.exe\"\\); \"OK\")",
+      "Bash(go version *)",
+      "PowerShell([System.Diagnostics.FileVersionInfo]::GetVersionInfo\\(\"D:\\\\Aura\\\\aura.exe\"\\) | Select-Object ProductName, FileDescription, CompanyName, FileVersion, ProductVersion, OriginalFilename, InternalName | Format-List)",
+      "PowerShell(Get-Item \"D:\\\\Aura\\\\aura.exe\" | ForEach-Object { [System.Diagnostics.FileVersionInfo]::GetVersionInfo\\($_.FullName\\) } | Select-Object ProductName, FileDescription, CompanyName, FileVersion, ProductVersion, OriginalFilename, InternalName | Format-List)"
     ]
   }
 }
