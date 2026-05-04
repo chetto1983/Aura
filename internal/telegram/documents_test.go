@@ -209,3 +209,39 @@ func TestDocHandlerStopWaitsForInFlightWorker(t *testing.T) {
 		t.Fatal("worker did not complete before Stop returned")
 	}
 }
+
+func TestDocHandlerStopWaitsForWorkRegisteredBeforeWorkerLaunch(t *testing.T) {
+	h := newDocHandler(docHandlerConfig{})
+
+	if !h.beginWork() {
+		t.Fatal("beginWork returned false before Stop")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		h.Stop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while registered document work was still in progress")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if h.beginWork() {
+		t.Fatal("beginWork returned true after Stop began")
+	}
+
+	h.finishWork()
+
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return after registered document work finished")
+	}
+
+	if h.beginWork() {
+		t.Fatal("beginWork returned true after Stop returned")
+	}
+}

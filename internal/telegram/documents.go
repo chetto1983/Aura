@@ -55,6 +55,8 @@ type docHandler struct {
 	allowed   func(string) bool
 	logger    *slog.Logger
 	sem       chan struct{}
+	mu        sync.Mutex
+	closed    bool
 	wg        sync.WaitGroup // tracks in-flight workers for graceful shutdown
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -84,10 +86,33 @@ func (h *docHandler) Stop() {
 	if h == nil {
 		return
 	}
+	h.mu.Lock()
+	h.closed = true
+	h.mu.Unlock()
 	if h.cancel != nil {
 		h.cancel()
 	}
 	h.wg.Wait()
+}
+
+func (h *docHandler) beginWork() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return false
+	}
+	h.wg.Add(1)
+	return true
+}
+
+func (h *docHandler) finishWork() {
+	if h == nil {
+		return
+	}
+	h.wg.Done()
 }
 
 // onDocument is a Telegram tele.Handler. Validates synchronously, sends the
@@ -115,15 +140,19 @@ func (h *docHandler) onDocument(c tele.Context) error {
 		return nil
 	}
 
+	if !h.beginWork() {
+		return nil
+	}
+
 	progress, err := h.bot.Send(c.Chat(), "📄 Got it — saving "+safeName(doc.FileName)+"…")
 	if err != nil {
+		h.finishWork()
 		h.logger.Error("send initial progress reply failed", "user_id", userID, "err", err)
 		return nil
 	}
 
-	h.wg.Add(1)
 	go func() {
-		defer h.wg.Done()
+		defer h.finishWork()
 		h.process(h.ctx, userID, doc, progress)
 	}()
 	return nil
