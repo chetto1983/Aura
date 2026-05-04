@@ -28,6 +28,18 @@ Working tree before this session:
 
 Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging`, `orchestrator`, `search`, `skill`, `telegram`, `tools`, `tracing`, `wiki`. No `source`, `ocr`, `ingest` yet.
 
+## Memory Philosophy Guardrail
+
+Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
+
+- Raw sources are immutable evidence. Aura stores PDFs, OCR, URLs, files, and archive turns as source material; it does not treat raw chunks as the final knowledge base.
+- The wiki is the compiled, compounding memory artifact. Durable facts, decisions, summaries, contradictions, links, and synthesis belong in markdown wiki pages with frontmatter and `[[slug]]` links.
+- Search is an access path, not a second memory layer. `search_memory`, embeddings, archive lookup, and source search help Aura find evidence, but they should feed wiki updates/proposals instead of replacing the wiki.
+- Autonomous learning is review-gated. Agent jobs, swarm runs, summarizers, and future watchers should propose wiki changes by default, not silently mutate durable memory.
+- Skills are procedural memory, not factual memory. Repeated workflows can become reviewable `SKILL.md` proposals; facts and project knowledge still belong in the wiki/source model.
+- The conversation archive is evidence and short-term recall. Stable facts extracted from chat should be promoted into the wiki through explicit saves or reviewed proposals.
+- Future memory slices must preserve this stack: source evidence -> compiled wiki -> search/evidence envelope -> reviewed updates -> optional procedural skills.
+
 ## Slice Status
 
 | # | Slice | Status | Notes |
@@ -114,6 +126,20 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 18a | Memory evidence envelope | done | `search_memory` now appends a structured JSON evidence envelope after the readable evidence list so final answers can preserve source IDs, wiki slugs, conversation IDs, snippets, scores, OCR page numbers, and warnings without noisy citations in casual chat. |
 
 ## Session Log
+
+### 2026-05-04 - Memory philosophy guardrail
+
+Decision: keep Aura's memory model faithful to `docs/llm-wiki.md`.
+
+- Raw sources stay immutable evidence.
+- The wiki stays the durable compiled memory, not a cache over chunks.
+- `search_memory` and embeddings are retrieval/evidence accelerators, not a parallel RAG memory layer.
+- Archive facts, swarm findings, agent-job outputs, and watcher discoveries should become wiki proposals unless the user explicitly asks for a direct save.
+- Skills remain procedural memory; they should encode repeated workflows, not become the place where factual knowledge lives.
+
+Verification: docs-only tracker update; no code tests run.
+
+Next slice remains proposal provenance + batch review, but with this explicit stack: source evidence -> compiled wiki -> reviewed durable update.
 
 ### 2026-05-04 - Slice 18a (Memory evidence envelope)
 
