@@ -21,6 +21,18 @@ Release builds must ship a sandbox runtime with Aura and the app must auto-disco
 
 Product target after the current Isola sidecar hardening: evaluate a Go-embedded WASI host (`wazero`) plus bundled Python artifacts so the sandbox is owned by Aura's release package instead of the host machine.
 
+## Bundled Office/Data Package Profile
+
+The sandbox is only useful for daily office work if it ships with the packages people expect for spreadsheets, CSVs, reports, PDFs, lightweight analytics, and charts. The baseline profile must be bundled and work offline:
+
+- `numpy`, `pandas`, `scipy`, `statsmodels`
+- XLSX/office IO: `openpyxl` or equivalent writer support, `xlrd`, `pyarrow`, `python-calamine`
+- Charts/images: `matplotlib`, `Pillow`
+- PDF/HTML/text extraction: `PyMuPDF`, `beautifulsoup4`, `lxml`, `html5lib`
+- Utility stack: `requests`, `pyyaml`, `python-dateutil`, `pytz`, `tzdata`, `regex`, `rich`
+
+Current research note: Pyodide is the strongest candidate for this package profile because its official distribution already includes many scientific/data packages (`numpy`, `pandas`, `scipy`, `matplotlib`, `scikit-learn`, `pyarrow`, `PyMuPDF`, `Pillow`, `beautifulsoup4`, `lxml`, `requests`, `pyyaml`, etc.) and supports additional pure-Python wheels through `micropip`. For Aura, package sources must be vendored/pinned into the release artifact instead of downloaded at execution time.
+
 ## Current Guardrail
 
 Sandbox execution tools are explicit opt-in tools, not part of the scheduled routine default perimeter.

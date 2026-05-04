@@ -97,4 +97,14 @@ No Docker, no admin rights, no daemon, and no user-facing Python/pip instruction
 
 Long-term product target: replace the host Python sidecar with a Go-embedded WASI host plus bundled Python artifacts. `wazero` is the preferred direction to evaluate because it is pure Go and keeps Aura installable as a normal application. Isola remains acceptable only when it can be shipped as a bundled runtime that passes the startup probe on every release platform.
 
-The only limitation: no C extensions (numpy, pandas). For Aura's use case — analysis scripts, simulations, data processing — pure Python is sufficient for the vast majority of tasks.
+The sandbox must not stop at pure Python. Everyday office work needs a real data/document stack, including native-extension packages such as NumPy and pandas.
+
+Default bundled package profile:
+
+- Tables/statistics: `numpy`, `pandas`, `scipy`, `statsmodels`
+- Spreadsheet/data files: `openpyxl` or equivalent XLSX writer support, `xlrd`, `pyarrow`, `python-calamine`
+- Charts/images: `matplotlib`, `Pillow`
+- Documents/text: `PyMuPDF`, `beautifulsoup4`, `lxml`, `html5lib`
+- Utilities: `requests`, `pyyaml`, `python-dateutil`, `pytz`, `tzdata`, `regex`, `rich`
+
+This pushes the runtime choice toward Pyodide-style packaging: Pyodide officially ships many of these packages as WebAssembly builds and supports loading additional pure-Python wheels through `micropip`. For Aura releases, package loading must be offline and pinned: no runtime CDN/PyPI dependency for normal user workflows.
