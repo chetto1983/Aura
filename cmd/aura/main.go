@@ -12,6 +12,7 @@ import (
 
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/settings"
@@ -42,28 +43,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	pool, err := auradb.Open(cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open database", "error", err, "db_path", cfg.DBPath)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
 	// table on top of the env-loaded config. Bootstrap fields
 	// (TelegramToken / HTTPPort / DBPath / LogLevel and the path roots)
 	// stay env-only — see internal/settings/applier.go. Empty store is a
 	// no-op, so this is safe before the dashboard ever writes a setting.
-	settingsStore, err := settings.OpenStore(cfg.DBPath)
+	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
-		logger.Warn("settings store unavailable, using env only", "error", err)
-	} else {
-		settings.ApplyToConfig(context.Background(), settingsStore, cfg)
-		defer settingsStore.Close()
+		logger.Error("failed to open settings store", "error", err)
+		os.Exit(1)
 	}
+	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
 	// env + settings overlay, the install is fresh. Open a loopback-only
 	// HTTP server with a setup form, block until the user submits, then
 	// re-load .env + settings so the saved values flow back into cfg.
 	if !cfg.IsBootstrapped() {
-		if settingsStore == nil {
-			logger.Error("first-run setup needs a writable DB; check DB_PATH and disk permissions", "db_path", cfg.DBPath)
-			os.Exit(1)
-		}
 		token, err := setup.Run(setup.Config{
 			Listen:        cfg.HTTPPort,
 			DotEnvPath:    ".env",
@@ -118,7 +121,7 @@ func main() {
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
 
-	bot, err := telegram.New(cfg, settingsStore, logger)
+	bot, err := telegram.New(cfg, settingsStore, pool, logger)
 	if err != nil {
 		logger.Error("failed to create telegram bot", "error", err)
 		os.Exit(1)

@@ -52,6 +52,8 @@ Active phase: Phase 1, DB Foundation (`FIX-02`).
 
 2026-05-04 Task 3.2 handoff: store/search injection compatibility bridge done. Auth, scheduler, settings, swarm, embed cache, and SQLite FTS wrappers now route through `internal/db.Open`; injected constructors preserve caller-owned shared pools. Next slice: production startup wiring.
 
+2026-05-04 Task 3.3 handoff: production startup wiring done. `cmd/aura` opens one shared SQLite pool via `internal/db.Open`, settings/Telegram/auth/scheduler/search/swarm use injected pool-backed constructors, and bot shutdown no longer closes shared DB handles. Verification: targeted Telegram/aura/sandbox tests and builds plus static scans for legacy production opens. Next slice: static guard/full Phase 1 verification or residual production `sql.Open` scan.
+
 The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 
 Docs cleanup status:

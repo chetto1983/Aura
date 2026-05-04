@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
@@ -177,11 +178,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
-	store, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "sched.db"))
-	if err != nil {
-		t.Fatalf("OpenStore: %v", err)
-	}
-	defer store.Close()
+	store := newTelegramTestSchedulerStore(t)
 	notify := false
 	payload, err := scheduler.AgentJobPayload{
 		Goal:          "Check Aura gaps",
@@ -305,11 +302,7 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 }
 
 func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
-	store, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "sched.db"))
-	if err != nil {
-		t.Fatalf("OpenStore: %v", err)
-	}
-	defer store.Close()
+	store := newTelegramTestSchedulerStore(t)
 	next := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	task, err := store.Upsert(t.Context(), &scheduler.Task{
 		Name:                 "prior-research",
@@ -388,4 +381,18 @@ func containsTestString(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func newTelegramTestSchedulerStore(t *testing.T) *scheduler.Store {
+	t.Helper()
+	pool, err := auradb.Open(filepath.Join(t.TempDir(), "sched.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	store, err := scheduler.NewStoreWithDB(pool)
+	if err != nil {
+		t.Fatalf("new scheduler store: %v", err)
+	}
+	return store
 }

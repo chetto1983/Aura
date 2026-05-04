@@ -187,12 +187,6 @@ func (b *Bot) Stop() {
 	if b.sched != nil {
 		b.sched.Stop()
 	}
-	if b.schedDB != nil {
-		_ = b.schedDB.Close()
-	}
-	if b.authDB != nil {
-		_ = b.authDB.Close()
-	}
 	for _, c := range b.mcpClients {
 		_ = c.Close()
 	}

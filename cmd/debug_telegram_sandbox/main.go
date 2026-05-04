@@ -19,11 +19,10 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/config"
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/telegram"
-
-	_ "modernc.org/sqlite"
 )
 
 func main() {
@@ -48,11 +47,15 @@ func main() {
 	if err != nil {
 		fail("load config: %v", err)
 	}
-	settingsStore, err := settings.OpenStore(cfg.DBPath)
+	pool, err := auradb.Open(cfg.DBPath)
+	if err != nil {
+		fail("open database: %v", err)
+	}
+	defer pool.Close()
+	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
 		fail("open settings store: %v", err)
 	}
-	defer settingsStore.Close()
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 
 	userID := strings.TrimSpace(*userIDFlag)
@@ -68,7 +71,7 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	bot, err := telegram.New(cfg, settingsStore, logger)
+	bot, err := telegram.New(cfg, settingsStore, pool, logger)
 	if err != nil {
 		fail("create telegram bot: %v", err)
 	}

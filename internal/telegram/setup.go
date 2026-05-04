@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -36,10 +37,14 @@ import (
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
 //
 // settingsStore is the runtime configuration store opened by main.go on
-// cfg.DBPath. It's threaded through so the dashboard's /settings page
-// can persist edits without re-opening the SQLite file. May be nil
-// (tests) — in that case the dashboard /settings endpoints respond 503.
-func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger) (*Bot, error) {
+// cfg.DBPath. It's threaded through so the dashboard's /settings page can
+// persist edits on the shared SQLite pool. May be nil (tests) — in that case
+// the dashboard /settings endpoints respond 503.
+func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger *slog.Logger) (*Bot, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("telegram: db pool required")
+	}
+
 	pref := tele.Settings{
 		Token: cfg.TelegramToken,
 	}
@@ -79,23 +84,16 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		// SQLite cache so unchanged wiki pages don't re-embed on every
 		// restart. Same cache also serves query embeddings, so repeat
 		// questions skip the Mistral round trip too.
-		if cfg.DBPath != "" {
-			cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
-			cache, err := search.OpenEmbedCache(cfg.DBPath, cacheNamespace, embedFn, logger)
-			if err != nil {
-				logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
-			} else {
-				embedFn = cache.EmbedFunc()
-				embedCache = cache
-			}
+		cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
+		cache, err := search.NewEmbedCacheWithDB(pool, cacheNamespace, embedFn, logger)
+		if err != nil {
+			logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
+		} else {
+			embedFn = cache.EmbedFunc()
+			embedCache = cache
 		}
 		var se *search.Engine
-		var err error
-		if cfg.DBPath != "" {
-			se, err = search.NewEngineWithFallback(cfg.WikiPath, embedFn, cfg.DBPath, logger)
-		} else {
-			se, err = search.NewEngine(cfg.WikiPath, embedFn, logger)
-		}
+		se, err = search.NewEngineWithFallbackWithDB(cfg.WikiPath, embedFn, pool, logger)
 		if err != nil {
 			logger.Warn("failed to create search engine, search disabled", "error", err)
 		} else {
@@ -208,11 +206,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	// reminder (delivered to the LLM-call's user via Telegram) and
 	// wiki_maintenance (autonomous nightly pass). Three LLM tools wrap
 	// the queue: schedule_task / list_tasks / cancel_task.
-	schedDBPath := cfg.DBPath
-	if schedDBPath == "" {
-		schedDBPath = "./aura.db"
-	}
-	schedStore, err := scheduler.OpenStore(schedDBPath)
+	schedStore, err := scheduler.NewStoreWithDB(pool)
 	if err != nil {
 		return nil, fmt.Errorf("creating scheduler store: %w", err)
 	}
@@ -227,7 +221,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		toolRegistry.Register(tool)
 	}
 
-	swarmStore, err := swarm.NewStoreWithDB(schedStore.DB())
+	swarmStore, err := swarm.NewStoreWithDB(pool)
 	if err != nil {
 		return nil, fmt.Errorf("creating swarm store: %w", err)
 	}
@@ -320,7 +314,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	// Slice 10d: dashboard auth. Open the api_tokens table on the same
 	// SQLite file the scheduler uses — saves a second file path config
 	// and keeps everything backup-able as a single artifact.
-	authStore, err := auth.OpenStore(schedDBPath)
+	authStore, err := auth.NewStoreWithDB(pool)
 	if err != nil {
 		return nil, fmt.Errorf("creating auth store: %w", err)
 	}

@@ -3,11 +3,13 @@ package telegram
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/config"
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
 )
@@ -23,6 +25,13 @@ func TestToolActivityMessageFallback(t *testing.T) {
 	got := toolActivityMessage(" ")
 	if got != "Running tool" {
 		t.Fatalf("toolActivityMessage() = %q, want %q", got, "Running tool")
+	}
+}
+
+func TestNewRequiresDBPool(t *testing.T) {
+	_, err := New(&config.Config{}, nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "db pool required") {
+		t.Fatalf("New() error = %v, want db pool required", err)
 	}
 }
 
@@ -155,10 +164,14 @@ func (fakeTelegramTool) Execute(context.Context, map[string]any) (string, error)
 
 func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 	t.Helper()
-	store, err := auth.OpenStore(filepath.Join(t.TempDir(), "auth.db"))
+	pool, err := auradb.Open(filepath.Join(t.TempDir(), "auth.db"))
 	if err != nil {
-		t.Fatalf("open auth store: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { pool.Close() })
+	store, err := auth.NewStoreWithDB(pool)
+	if err != nil {
+		t.Fatalf("new auth store: %v", err)
+	}
 	return store
 }
