@@ -1,14 +1,16 @@
 # Architecture Research — v1.0 Hardening Integration
 
+> **Superseded research note (2026-05-04):** This architecture research preserves the earlier broad hardening investigation. It is not the active v1.0 Production Readiness implementation plan. Use `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md` for current scope. Items below that are absent from those approved docs are v1.1+ or historical context.
+
 **Domain:** Go monolith hardening (SQLite centralization, migrations, token expiry, secrets encryption, test coverage, release packaging)
 **Researched:** 2026-05-04
-**Confidence:** HIGH — all observations verified against live codebase
+**Confidence:** HIGH for historical observations; superseded for active v1.0 scope.
 
 ## Current Architecture Baseline
 
 A single Go binary embeds a React 19 SPA. 30 internal packages. SQLite (`aura.db`) is accessed by 4 independent `*sql.DB` openers: `auth.OpenStore`, `settings.OpenStore`, `scheduler.OpenStore`, and `search.OpenEmbedCache`. The scheduler's `DB()` method serves as a de-facto shared connection for `swarm`, `conversation`, `summarizer`, and `issues` — but auth and settings both open their own connections to the same file. No migration framework exists: every store has an inline `CREATE TABLE IF NOT EXISTS` in its `migrate()` method, and the scheduler applies ad-hoc `ALTER TABLE ADD COLUMN` via `PRAGMA table_info` checks. No version tracking, no rollback.
 
-Settings secrets (LLM_API_KEY, EMBEDDING_API_KEY, MISTRAL_API_KEY, OLLAMA_API_KEY) are stored in plain text. Dashboard tokens are issued without expiry. Telegram test coverage is 23.6% (36 tests, 6 files). The tray package has zero tests. `internal/tools/files.go` is a 650-line monolith with XLSX, DOCX, and PDF tools in one file. Release packaging consists of `go build -o aura.exe` with no runtime bundling.
+Settings secrets (LLM_API_KEY, EMBEDDING_API_KEY, MISTRAL_API_KEY, OLLAMA_API_KEY) were stored in plain text in the research snapshot. Dashboard tokens were issued without expiry. Telegram test coverage, tray coverage, and file-generation tool layout were also surveyed as historical hardening candidates. Release packaging consisted of `go build -o aura.exe` with no runtime bundling. Current v1.0 blockers are only those in the approved planning docs.
 
 Full architecture detail is at `.planning/codebase/ARCHITECTURE.md`.
 
@@ -188,9 +190,9 @@ internal/settings/
 - **Settings migration:** Existing plaintext rows are re-encrypted on first read-then-write. No bulk migration needed — each key is encrypted when the user next saves the settings form. Plaintext rows still work because the `enc:` prefix check fails gracefully (value returned as-is).
 - **Backward compatibility:** If `ENCRYPTION_KEY` is unset (legacy installs), encryption is a no-op. Aura runs identically to today.
 
-## Hardening Item #5: Test Coverage + File Split + Tray Tests
+## Historical Hardening Item #5: Test Coverage + File Split + Tray Tests
 
-### 5a: Telegram Test Coverage (22.1% → 55%+) — MODIFIED tests only
+### 5a: Telegram Test Coverage Research — Historical Only
 
 | Existing test file | Current tests | Target additions |
 |---|---|---|
@@ -206,7 +208,7 @@ internal/settings/
 
 Integration: No new components. Pure test additions following existing patterns (table-driven tests, `TestXxx` naming). Use existing mock stubs where available.
 
-### 5b: Split `tools/files.go` — MODIFIED (refactor, no behavioral change)
+### 5b: File-Generation Tool Split Research — Historical Only
 
 ```
 internal/tools/
@@ -337,8 +339,8 @@ scripts/
 | `internal/search/embed_cache.go` | Opens own `*sql.DB`, inline schema | `OpenEmbedCacheWithDB(db)` constructor | Modified |
 | `internal/search/sqlite.go` | Opens own `*sql.DB`, inline schema | `NewFallbackStoreWithDB(db)` constructor | Modified |
 | `internal/telegram/setup.go` | Calls `scheduler.OpenStore(path)`, `auth.OpenStore(path)` | Receives shared `*sql.DB`, uses `NewStoreWithDB` constructors, launches `PurgeExpired` goroutine | Modified |
-| `internal/telegram/*_test.go` | 36 tests across 6 files, 23.6% coverage | ~60 tests across 10 files, 55%+ coverage | Modified (+ new test files) |
-| `internal/tools/files{,_xlsx,_docx,_pdf}.go` | 650-line monolith in files.go | 4 files: interface in files.go, implementations split | Refactored |
+| `internal/telegram/*_test.go` | 36 tests across 6 files, 23.6% coverage | Historical research target: broader test suite | Historical research |
+| `internal/tools/files{,_xlsx,_docx,_pdf}` | Historical mixed file-generation implementation | Historical research target: interface plus split implementations | Historical research |
 | `internal/tray/tray.go` | Inline browser-open in platform files | `openBrowser` abstraction, test seam | Modified |
 | `internal/tray/tray_test.go` + `browser_test.go` | — | Stop safety, options validation, cross-platform browser abstraction | **NEW** |
 | `scripts/package.ps1` | — | Release archive builder with Pyodide bundle + smoke check | **NEW** |
@@ -399,7 +401,7 @@ All existing patterns remain intact:
 - `internal/settings/store.go` — current settings store (223 lines, plaintext secrets)
 - `internal/scheduler/store.go` — current migration pattern (ad-hoc ALTER TABLE)
 - `internal/telegram/*_test.go` — 6 test files, 36 test functions, 23.6% coverage
-- `internal/tools/files.go` — 650-line monolithic file generation tool
+- `internal/tools/files` — historical file-generation tool research context
 - `internal/tray/` — zero tests, inline browser-open logic
 
 ---

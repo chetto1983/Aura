@@ -1,17 +1,19 @@
 # Project Research Summary
 
+> **Superseded research note (2026-05-04):** This file preserves the broader hardening research snapshot. It is not the active v1.0 Production Readiness plan. Current scope and sequencing live in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`. Anything below that conflicts with those documents is historical or deferred to v1.1+.
+
 **Project:** Aura — Go Telegram assistant with embedded React dashboard
 **Domain:** Go monolith hardening (SQLite reliability, security, test coverage, release packaging)
 **Researched:** 2026-05-04
-**Confidence:** HIGH
+**Confidence:** HIGH for historical audit context; superseded for active v1.0 scope.
 
 ## Executive Summary
 
-Aura is a single-binary Go application with an embedded React 19 SPA and SQLite persistence. The v1.0 "Close Concern" hardening milestone targets 13 documented concerns from CONCERNS.md across reliability, security, code quality, test coverage, and release packaging. This research confirms a pure-Go approach throughout: no new dependencies are required for any of the hardening work.
+Aura is a single-binary Go application with an embedded React 19 SPA and SQLite persistence. This research snapshot originally explored a broad hardening milestone across reliability, security, code quality, test coverage, and release packaging. That broad scope has been superseded by the approved v1.0 Production Readiness planning docs linked above.
 
 The critical finding is that **SQLite connection centralization is the single-path dependency for all database reliability and security work**. Five independent `sql.Open("sqlite", path)` calls against the same `aura.db` file cause `SQLITE_BUSY` under concurrent writes and prevent any coherent migration or encryption story. Creating an `internal/db` package with a single `Open()` factory that applies WAL mode, busy_timeout, foreign_keys, and a versioned migration runner is the prerequisite for 6 of the 13 hardening items.
 
-The recommended approach is a 7-phase implementation plan with a hard dependency chain: centralized DB → versioned migrations → token expiry + secrets encryption (parallel) → test coverage + file split + tray tests (parallel) → release packaging. Independent low-risk items (bare panic fix, error logging, file split) can run in parallel with the DB chain. All 13 items are required — this is a close-concern milestone, not an MVP with optional features.
+The historical recommendation was a 7-phase implementation plan with a hard dependency chain: centralized DB → versioned migrations → token expiry + secrets encryption (parallel) → test coverage + file split + tray tests (parallel) → release packaging. Treat that as research context only. The active v1.0 work is the approved Production Readiness scope in `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`.
 
 ## Key Findings
 
@@ -27,29 +29,29 @@ All hardening work uses existing dependencies or Go stdlib. No `go get` commands
 
 ### Expected Features
 
-13 items across P0 (crash risk, critical coverage gaps) through P3 (platform polish, release readiness). DB centralization is the critical dependency path: it gates versioned migrations, which in turn gate token expiry, scheduler migration extraction, and secrets encryption.
+The historical research identified 13 candidate hardening items across P0 through P3. DB centralization was the critical dependency path in that broader research: it gated versioned migrations, token expiry, scheduler migration extraction, and secrets encryption. Current v1.0 scope may be narrower; use the approved planning docs as the source of truth.
 
-**Must have (P0 — crash risk / critical untested paths):**
+**Historical P0 candidates — superseded for active v1.0 scope:**
 - Fix bare `panic(err)` in `MustResolveProfiles` — P0 crash risk; replaces panic with error return
-- Boost `internal/telegram` test coverage from 22.1% to 55%+ — P0 coverage gap; 1866 lines of untested conversation orchestration
+- Telegram coverage expansion — coverage-gap research; not an active numeric v1.0 target
 
-**Must have (P1 — reliability and security fundamentals):**
+**Historical P1 candidates — superseded for active v1.0 scope:**
 - Centralize SQLite DB connection to single pool — P1 reliability gap; gates all migration and schema work
 - Add dashboard token expiration (`expires_at` with TTL) — P1 security gap; 30-day default, configurable
 - Extract scheduler migrations to `scheduler/migrations.go` — P1 code-quality gap; de-monoliths 754-line store
 
-**Must have (P2 — architecture and code quality):**
+**Historical P2 candidates — superseded for active v1.0 scope:**
 - Versioned migration framework with `schema_versions` table — P2 architecture gap; transactional, up-only, reproducible
 - Encrypt secrets at rest (API keys in settings store) — P2 security gap; AES-256-GCM with auto-generated encryption key
-- Split `tools/files.go` into per-format files — P2 code-quality gap; 650-line monolith → 4 focused files
+- File-generation tool split — code-quality research item deferred unless restored by approved planning docs
 
-**Must have (P3 — platform polish and release readiness):**
+**Historical P3 candidates — superseded for active v1.0 scope:**
 - Add tray unit test coverage + cross-platform `openBrowser` — P3 coverage + platform gap
 - Document telebot beta dependency risk — P3 dependency gap; pin to commit hash, monitoring plan
 - Bundle Pyodide runtime into Windows release artifact — P3 release gap
 - Smoke test before publish — P3 quality gate; verifies Pyodide execution post-extract
 
-**Defer (v1.0.1+ — post-validation):**
+**Defer (v1.1+ historical research):**
 - Automated coverage scorecard in CI
 - Rate limiting on dashboard auth endpoints
 - Domain-grouped tool sub-packages
@@ -64,8 +66,8 @@ The hardening introduces 4 new components (`internal/db/`, `internal/db/migratio
 2. `internal/db/migrations/` — Versioned migration runner with `_migrations` tracking table; consolidates all per-store `CREATE TABLE` and `ALTER TABLE` into 8 numbered migration files
 3. `internal/settings/encrypt.go` — AES-256-GCM encrypt/decrypt for `_API_KEY` fields; transparent at `Get()/Set()` boundary with `enc:v1:` prefix protocol
 4. Modified `internal/auth/store.go` — `expires_at` column with expiry enforcement, `PurgeExpired()` background goroutine
-5. Modified `internal/telegram/*_test.go` — ~24 new test functions across 4 new test files, targeting 55%+ coverage
-6. Refactored `internal/tools/files{,_xlsx,_docx,_pdf}.go` — Monolith split into per-format files
+5. Historical `internal/telegram/*_test.go` expansion — future coverage research, not an active v1.0 numeric target
+6. Historical file-generation tool refactor — future code-quality research, not active v1.0 work
 7. `scripts/package.ps1` — Release archive builder with Pyodide bundle + smoke check
 
 ### Critical Pitfalls
@@ -113,14 +115,14 @@ Based on research, suggested phase structure:
 **Uses:** `crypto/aes` + `crypto/cipher` (stdlib) from STACK.md.
 **Avoids:** Losing encryption key (Pitfall 3) — separate random key, not derived from TELEGRAM_TOKEN.
 
-### Phase 5: Telegram Test Coverage
+### Historical Phase 5: Telegram Test Coverage
 **Rationale:** Largest single effort. Independent of all DB work — can start anytime, but tests validate the hardened codebase.
-**Delivers:** ~24 new test functions across 4 new test files; coverage from 22.1% to 55%+; hermetic fixtures, stub LLM client, fake telebot context.
+**Delivers:** Historical target of ~24 new test functions across 4 new test files; hermetic fixtures, stub LLM client, fake telebot context. Not an active v1.0 blocker.
 **Avoids:** Tests with real infrastructure (Pitfall 5) — temp SQLite, canned responses, no real API keys.
 
 ### Phase 6: Code Quality (File Split + Tray Tests + Scheduler Extraction + Error Logging)
 **Rationale:** Independent items that can run in parallel with Phases 3–5. Pure refactor/test additions, no behavioral changes.
-**Delivers:** Split `tools/files.go` into per-format files; tray test coverage + cross-platform `openBrowser`; extracted `scheduler/migrations.go`; slog logging at 7 discard sites.
+**Delivers:** Historical file-generation tool split; tray test coverage + cross-platform `openBrowser`; extracted `scheduler/migrations.go`; slog logging at 7 discard sites. Only items present in the approved planning docs are active v1.0 work.
 
 ### Phase 7: Release Packaging
 **Rationale:** Final deliverable — packages everything once all hardening is verified. Gates on stable test suite.
@@ -132,21 +134,21 @@ Based on research, suggested phase structure:
 - **DB centralization must ship first** — it is the prerequisite for 6 of 13 items. Without it, no migration framework, no encryption, no token expiry, no PRAGMAs.
 - **Versioned migrations must follow immediately** — it gates token expiry, encryption, and scheduler extraction which all produce schema changes.
 - **Token expiry and encryption can parallel** — both depend on migrations but not on each other. Together they close both security gaps.
-- **Test coverage, file split, and tray tests can parallel with everything** — they have zero dependencies on the DB chain. Running them concurrently with Phases 3–4 maximizes throughput.
+- **Historical note:** Test coverage expansion, file split, and tray tests were researched as parallel work. They are v1.1+ or historical unless present in the approved v1.0 planning docs.
 - **Error logging and bare panic fix can ship in parallel with Phase 1** — they're independent low-risk items that improve observability immediately.
 - **Release packaging is the final task** — it packages the hardened binary. Must run after all fixes and tests are verified stable.
 
 ### Research Flags
 
 Phases needing deeper research during planning:
-- **Phase 5 (Telegram coverage):** Complex — requires determining which conversation paths are critical vs edge cases, building reusable test harness, deciding mock vs stub vs fixture approach for LLM responses.
+- **Historical Phase 5 (Telegram coverage):** Complex — requires determining which conversation paths are critical vs edge cases, building reusable test harness, deciding mock vs stub vs fixture approach for LLM responses. Deferred unless restored by approved planning docs.
 - **Phase 7 (Release packaging):** Cross-platform — needs verification on a clean Windows VM that Pyodide works post-extract; smoke test must cover all sandbox runtime modes.
 
 Phases with standard patterns (skip research-phase):
 - **Phases 1–2 (DB centralization + migrations):** Well-established Go patterns — `database/sql` connection pooling, `CREATE TABLE IF NOT EXISTS` idempotency, ordered migration slices. Pattern already partially implemented via `NewStoreWithDB` constructors.
 - **Phase 3 (Token expiry):** Standard auth pattern — expiry timestamp, background purge, configurable TTL. No novel design work.
 - **Phase 4 (Secrets encryption):** Standard crypto — AES-256-GCM key derivation + authenticated encryption. Go stdlib reference implementation available.
-- **Phase 6 (File split + tray tests + error logging):** Pure refactor — no design decisions, follow existing patterns.
+- **Historical Phase 6 (file split + tray tests + error logging):** Pure refactor — no design decisions, follow existing patterns. Deferred unless restored by approved planning docs.
 
 ## Confidence Assessment
 
@@ -172,7 +174,7 @@ Phases with standard patterns (skip research-phase):
 - `.planning/codebase/ARCHITECTURE.md` — current system architecture, startup sequence, component wiring
 - `go.mod` — verified dependencies: `modernc.org/sqlite` v1.50.0, `golang.org/x/crypto` v0.48.0 (indirect)
 - `.goreleaser.yml` — verified release pipeline: before hooks, CGO_ENABLED=0, GOOS/GOARCH matrix
-- Source code: `cmd/aura/main.go`, `internal/telegram/setup.go`, `internal/auth/store.go`, `internal/settings/store.go`, `internal/scheduler/store.go`, `internal/search/embed_cache.go`, `internal/tools/files.go`, `internal/tray/`
+- Source code: `cmd/aura/main.go`, `internal/telegram/setup.go`, `internal/auth/store.go`, `internal/settings/store.go`, `internal/scheduler/store.go`, `internal/search/embed_cache.go`, `internal/tools/files`, `internal/tray/`
 
 ### Secondary (MEDIUM confidence)
 - Go stdlib documentation (`crypto/aes`, `crypto/cipher`, `crypto/sha256`, `crypto/rand`, `database/sql`) — verified AES-256-GCM authenticated encryption and connection pool patterns
