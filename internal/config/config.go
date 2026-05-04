@@ -71,6 +71,10 @@ type Config struct {
 	SummarizerMinSalience     float64 `envconfig:"SUMMARIZER_MIN_SALIENCE" default:"0.5"`
 	SummarizerLookbackTurns   int     `envconfig:"SUMMARIZER_LOOKBACK_TURNS" default:"10"`
 	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
+
+	// Sandbox code execution (Isola WASM)
+	SandboxEnabled    bool `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxTimeoutSec int  `envconfig:"SANDBOX_TIMEOUT_SEC" default:"15"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -173,6 +177,9 @@ func Load() (*Config, error) {
 	cfg.SummarizerMinSalience = getEnvFloat("SUMMARIZER_MIN_SALIENCE", 0.5)
 	cfg.SummarizerLookbackTurns = getEnvInt("SUMMARIZER_LOOKBACK_TURNS", 10)
 	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", 60)
+
+	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
+	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", 15)
 
 	return cfg, nil
 }
