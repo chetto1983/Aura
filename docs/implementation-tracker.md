@@ -124,8 +124,28 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 | 17p | Settings active-vs-saved diagnostics | done | `/settings` now returns the running process value for each row plus `restart_required`; the dashboard highlights rows where a saved DB override differs from the active config, so users know when a restart is needed. |
 | 17q | Live AuraBot settings apply | done | Saving AuraBot max-active/max-depth/timeout/max-iterations in `/settings` now updates the in-process runner/manager for subsequent swarm runs when AuraBot is already enabled. Enabling/disabling the swarm still requires restart because it changes registered tools. |
 | 18a | Memory evidence envelope | done | `search_memory` now appends a structured JSON evidence envelope after the readable evidence list so final answers can preserve source IDs, wiki slugs, conversation IDs, snippets, scores, OCR page numbers, and warnings without noisy citations in casual chat. |
+| 18b | Maintenance memory decay | done | Wiki maintenance now flags stale compiled-memory pages as `memory_decay` issues after conservative age thresholds, preserving the LLM Wiki rule that old knowledge becomes review work instead of silent mutation. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18b (Maintenance memory decay)
+
+Goal: make the nightly maintenance pass notice memory that is getting old, without turning Aura into a parallel RAG cache or silently rewriting wiki pages.
+
+Implementation:
+
+- `wiki.Lint` now emits `memory_decay` issues when a page's `updated_at` exceeds conservative thresholds:
+  - medium after 90 days;
+  - high after 180 days.
+- Decay issues include age and normalized decay score in the message.
+- `MaintenanceJob` preserves structured lint kind/severity when enqueueing issues, so `memory_decay` reaches the dashboard/API as its own issue kind.
+- No page is auto-updated; decay creates review work in the existing maintenance queue.
+
+Verification:
+
+- `go test ./internal/wiki ./internal/scheduler`
+
+Next slice: proposal provenance + batch review, using decay/source/archive evidence as proposal origins.
 
 ### 2026-05-04 - Memory philosophy guardrail
 
