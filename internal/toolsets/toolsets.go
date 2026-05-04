@@ -10,6 +10,7 @@ const (
 	ProfileWikiReview    = "wiki_review"
 	ProfileSkillsRead    = "skills_read"
 	ProfileWebResearch   = "web_research"
+	ProfileSandboxCode   = "sandbox_code"
 	ProfileSchedulerSafe = "scheduler_safe"
 )
 
@@ -39,6 +40,11 @@ var profiles = map[string][]string{
 		"web_search",
 		"web_fetch",
 	},
+	ProfileSandboxCode: {
+		"execute_code",
+		"list_tools",
+		"read_tool",
+	},
 	ProfileSchedulerSafe: {
 		"list_wiki",
 		"read_wiki",
@@ -51,9 +57,6 @@ var profiles = map[string][]string{
 		"web_fetch",
 		"propose_wiki_change",
 		"propose_skill_change",
-		"execute_code",
-		"list_tools",
-		"read_tool",
 	},
 }
 

@@ -8,6 +8,15 @@
 
 **Tech Stack:** Go 1.25, Python 3.11+ with Isola, SQLite (existing scheduler DB)
 
+## Current Guardrail
+
+Sandbox execution tools are explicit opt-in tools, not part of the scheduled routine default perimeter.
+
+- `sandbox_code` profile contains `execute_code`, `list_tools`, and `read_tool`.
+- `scheduler_safe` excludes `execute_code`, `list_tools`, `read_tool`, and `save_tool`.
+- `save_tool` remains a durable mutation path and must not be granted to recurring jobs by default.
+- Scheduled `agent_job` payloads that request only sandbox tools are rejected instead of silently falling back to broad defaults.
+
 ---
 
 ### Task 1: Python sidecar — Isola sandbox runner

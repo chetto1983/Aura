@@ -82,6 +82,9 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 			return nil, fmt.Errorf("agent_job enabled_toolsets: %w", err)
 		}
 		base = toolsets.FilterAllowed(base, AgentJobAllowedTools)
+		if len(base) == 0 {
+			return nil, errors.New("agent_job enabled_toolsets have no tools allowed by scheduled-job perimeter")
+		}
 	} else {
 		base = append([]string(nil), DefaultAgentJobTools...)
 	}

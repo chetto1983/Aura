@@ -86,6 +86,13 @@ func TestNormalizeAgentJobPayload_RejectsUnknownToolset(t *testing.T) {
 	}
 }
 
+func TestNormalizeAgentJobPayload_RejectsSandboxCodeToolset(t *testing.T) {
+	_, err := NormalizeAgentJobPayload(`{"goal":"x","enabled_toolsets":["sandbox_code"]}`)
+	if err == nil {
+		t.Fatal("expected sandbox_code to be outside scheduled agent job perimeter")
+	}
+}
+
 func TestResolveAgentJobTools_RejectsRequestedToolOutsideEnabledToolsets(t *testing.T) {
 	_, err := ResolveAgentJobTools([]string{toolsets.ProfileMemoryRead}, []string{"web_search"}, false)
 	if err == nil {

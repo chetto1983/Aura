@@ -44,16 +44,33 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 		"run_task_now",
 		"spawn_aurabot",
 		"run_aurabot_swarm",
+		"execute_code",
+		"list_tools",
+		"read_tool",
 		"save_tool",
 	} {
 		if slices.Contains(safe, forbidden) {
 			t.Fatalf("scheduler_safe includes forbidden tool %q: %+v", forbidden, safe)
 		}
 	}
-	for _, required := range []string{"search_memory", "web_search", "propose_wiki_change", "propose_skill_change", "execute_code", "list_tools", "read_tool"} {
+	for _, required := range []string{"search_memory", "web_search", "propose_wiki_change", "propose_skill_change"} {
 		if !slices.Contains(safe, required) {
 			t.Fatalf("scheduler_safe missing %q: %+v", required, safe)
 		}
+	}
+}
+
+func TestSandboxCodeProfileIsExplicit(t *testing.T) {
+	got, err := ResolveProfiles(ProfileSandboxCode)
+	if err != nil {
+		t.Fatalf("ResolveProfiles: %v", err)
+	}
+	want := []string{"execute_code", "list_tools", "read_tool"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sandbox_code tools = %+v, want %+v", got, want)
+	}
+	if slices.Contains(got, "save_tool") {
+		t.Fatalf("sandbox_code should not include persistent save_tool by default: %+v", got)
 	}
 }
 

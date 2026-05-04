@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19h` skill proposal lifecycle decision.
+Last completed slice: `sandbox.1` sandbox toolset guardrails.
 
 What is shipped:
 
@@ -70,6 +70,7 @@ What is shipped:
 - Agent-job wake signatures now live in `internal/scheduler`, so Telegram runtime and debug harnesses use the same deterministic wiki/source/task signal logic.
 - Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
 - Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
+- Sandbox code execution is wired behind explicit tools (`execute_code`, `list_tools`, `read_tool`, `save_tool`) and a separate `sandbox_code` toolset profile; scheduled agent jobs reject that profile and keep executable-code tools out of `scheduler_safe`.
 
 Phase 18 status: **closed**.
 
@@ -94,10 +95,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19i: real-user routine drill:
-  - run realistic prompts for skill-backed routines, wake gates, run-now behavior, and skill proposal creation;
-  - record elapsed time, LLM/tool calls, token use, selected tools, skipped/not-skipped outcome, and usefulness notes;
-  - treat slow or ambiguous behavior as follow-up work rather than "technically passed".
+- Sandbox smoke hardening:
+  - run sidecar syntax and manager/tool tests on the local machine;
+  - verify Isola availability and record whether live execution is enabled or skipped;
+  - keep `save_tool` out of autonomous scheduled jobs unless a later admin workflow explicitly approves durable writes.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -213,8 +214,32 @@ Workspace warning:
 | 19g | Scheduled-routine E2E harness | done | `cmd/debug_agent_jobs` proves run -> skip -> mutate -> rerun with persisted output/metrics/signature; skipped run makes zero LLM/tool calls. |
 | 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
 | 19h | Skill proposal lifecycle decision | done | Phase 19 uses Option A: skill proposals remain review-only on `/summaries` approval, expose an explicit `skill_lifecycle` API handoff, and document manual install/smoke as the admin path for Phase 20. |
+| sandbox.1 | Sandbox toolset guardrails | done | Consolidated code-execution tools into an explicit `sandbox_code` profile and restored `scheduler_safe` to propose-only defaults; scheduled `agent_job` rejects sandbox profiles because executable code is outside the recurring-job perimeter. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.1 (Sandbox toolset guardrails)
+
+Goal: consolidate the newly landed sandbox/code-execution tools without widening autonomous scheduled-job permissions.
+
+Implementation:
+
+- Added explicit `toolsets.ProfileSandboxCode` with `execute_code`, `list_tools`, and `read_tool`.
+- Removed sandbox execution/discovery tools from `scheduler_safe`.
+- Kept `save_tool` out of the sandbox profile because it is a durable mutation and should remain an explicit direct tool/admin workflow, not a default profile capability.
+- Tightened `scheduler.ResolveAgentJobTools`: if a requested enabled toolset resolves to no tools allowed by the scheduled-job perimeter, normalization now fails instead of silently falling back to defaults.
+- Added regression tests proving:
+  - `scheduler_safe` excludes `execute_code`, `list_tools`, `read_tool`, and `save_tool`;
+  - `sandbox_code` exists as an explicit opt-in profile;
+  - scheduled `agent_job` rejects `sandbox_code`.
+
+Verification:
+
+- `go test ./internal/toolsets ./internal/scheduler`
+- `staticcheck ./internal/toolsets ./internal/scheduler`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: sandbox smoke hardening, including sidecar syntax check and local Isola availability notes.
 
 ### 2026-05-04 - Slice 19h (Skill proposal lifecycle decision)
 
