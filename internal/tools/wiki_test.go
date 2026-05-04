@@ -139,4 +139,12 @@ func TestProposeWikiChangeToolValidation(t *testing.T) {
 	if _, err := tool.Execute(t.Context(), map[string]any{"action": "patch", "fact": "missing target"}); err == nil {
 		t.Fatal("expected missing target error")
 	}
+	if _, err := tool.Execute(t.Context(), map[string]any{
+		"action":      "patch",
+		"fact":        "missing evidence",
+		"target_slug": "aura-memory",
+		"origin_tool": "search_memory",
+	}); err == nil || !strings.Contains(err.Error(), "evidence refs are required") {
+		t.Fatalf("expected missing search_memory evidence error, got %v", err)
+	}
 }

@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `18f` memory quality scorecard.
+Last completed slice: `18g` live memory routing scorecard.
 
 What is shipped:
 
@@ -53,15 +53,16 @@ What is shipped:
 - `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
 - Proposal evidence chips can jump to source/wiki/conversation context.
 - `cmd/debug_memory_quality` scores 20 everyday memory questions plus review-gated proposal quality.
+- `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
 
 Next best slice:
 
-- Run the same 20-question scorecard through the live LLM/tool loop:
-  - assert tool selection uses `search_memory` before broad tools;
-  - assert durable updates go through `propose_wiki_change`;
-  - capture wall-clock, tool count, evidence hit rate, and failed intent cases.
+- Convert the live routing scorecard into a smaller CI-safe fake-LLM regression for:
+  - one answer-only memory question;
+  - one durable proposal question with evidence;
+  - one retry path when `propose_wiki_change` is missing evidence.
 
-Status note: slice `18f` makes memory usefulness measurable in a hermetic harness. The next risk is live routing drift: the model can still choose the wrong path even when the underlying tools are good.
+Status note: slice `18g` proved the live model can pass the real 20-question memory scorecard after proposal evidence is enforced. The next risk is making this behavior cheap to guard in normal test runs.
 
 Workspace warning:
 
@@ -159,8 +160,46 @@ Workspace warning:
 | 18d | Batch proposal review | done | `/summaries` now supports batch approve/reject with per-ID failures, and the dashboard can select multiple proposals while showing compact provenance evidence on each card. |
 | 18e | Evidence drill-down | done | Proposal evidence chips now link to source, wiki, and conversation/archive context; source/conversation panels honor hash navigation. Added Playwright E2E for the review evidence flow. |
 | 18f | Memory quality scorecard | done | New hermetic `cmd/debug_memory_quality` harness runs 20 everyday second-brain questions through `search_memory`, creates 4 review-gated wiki proposals, and fails if evidence/proposal quality falls below 90%. |
+| 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18g (Live memory routing scorecard)
+
+Goal: verify Aura is useful through the actual LLM/tool loop, not only when tools are called directly by a harness.
+
+Implementation:
+
+- Extended `cmd/debug_memory_quality` with `-live-llm`, `-limit`, and `-live-timeout`.
+- Live mode loads `.env`, seeds the same temporary source inbox and conversation archive, and registers only:
+  - `search_memory`;
+  - `propose_wiki_change`.
+- The live scorecard checks:
+  - every question calls `search_memory`;
+  - expected source/archive evidence appears;
+  - durable-memory scenarios call `propose_wiki_change`;
+  - answer-only scenarios do not create unexpected proposals;
+  - deadline partials are failures, not false passes.
+- `propose_wiki_change` now rejects proposals with `origin_tool=search_memory` when no evidence refs are provided, forcing the model to retry with the Evidence envelope.
+- Aura's system prompt now explicitly describes `propose_wiki_change` and the evidence requirement for search-backed proposals.
+
+Live debug result after the guardrail:
+
+- `go run ./cmd/debug_memory_quality -live-llm`
+- `questions=20 passed=20 routing_pass_rate=100%`
+- `search_memory_calls=20 proposal_calls=4 unexpected_proposals=0`
+- `llm_calls=44 tool_calls=24 elapsed_ms=559560`
+
+Verification:
+
+- `go test ./cmd/debug_memory_quality ./internal/tools ./internal/conversation`
+- `go run ./cmd/debug_memory_quality`
+- `go run ./cmd/debug_memory_quality -json`
+- `go run ./cmd/debug_memory_quality -live-llm -limit 8`
+- `go run ./cmd/debug_memory_quality -live-llm`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: add cheap fake-LLM regression tests for memory routing/retry so the live scorecard remains a periodic diagnostic instead of the only safety net.
 
 ### 2026-05-04 - Slice 18f (Memory quality scorecard)
 

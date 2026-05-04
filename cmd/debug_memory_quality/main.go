@@ -6,11 +6,14 @@
 //	go run ./cmd/debug_memory_quality
 //	go run ./cmd/debug_memory_quality -json
 //	go run ./cmd/debug_memory_quality -keep
+//	go run ./cmd/debug_memory_quality -live-llm
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -20,8 +23,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
+	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
@@ -66,6 +71,37 @@ type report struct {
 	Results             []scenarioResult `json:"results"`
 }
 
+type liveReport struct {
+	OK                      bool                 `json:"ok"`
+	Model                   string               `json:"model"`
+	Questions               int                  `json:"questions"`
+	Passed                  int                  `json:"passed"`
+	RoutingPassRate         float64              `json:"routing_pass_rate"`
+	SearchMemoryCalls       int                  `json:"search_memory_calls"`
+	ProposalCalls           int                  `json:"proposal_calls"`
+	UnexpectedProposalCalls int                  `json:"unexpected_proposal_calls"`
+	LLMCalls                int                  `json:"llm_calls"`
+	ToolCalls               int                  `json:"tool_calls"`
+	ElapsedMS               int64                `json:"elapsed_ms"`
+	Warnings                []string             `json:"warnings,omitempty"`
+	Results                 []liveScenarioResult `json:"results"`
+}
+
+type liveScenarioResult struct {
+	Name               string   `json:"name"`
+	Question           string   `json:"question"`
+	Pass               bool     `json:"pass"`
+	ToolCalls          []string `json:"tool_calls"`
+	LLMCalls           int      `json:"llm_calls"`
+	ElapsedMS          int64    `json:"elapsed_ms"`
+	EvidenceCount      int      `json:"evidence_count"`
+	EvidenceKinds      []string `json:"evidence_kinds"`
+	ProposalOK         bool     `json:"proposal_ok,omitempty"`
+	UnexpectedProposal bool     `json:"unexpected_proposal,omitempty"`
+	Issues             []string `json:"issues,omitempty"`
+	Final              string   `json:"final,omitempty"`
+}
+
 type evidenceEnvelope struct {
 	Query    string         `json:"query"`
 	Items    []evidenceItem `json:"items"`
@@ -85,12 +121,45 @@ type evidenceItem struct {
 func main() {
 	jsonOut := flag.Bool("json", false, "print machine-readable JSON only")
 	keep := flag.Bool("keep", false, "keep the temporary wiki directory")
+	liveLLM := flag.Bool("live-llm", false, "drive the scorecard through the live LLM/tool loop")
+	limit := flag.Int("limit", 0, "optional number of scenarios to run")
+	liveTimeout := flag.Duration("live-timeout", 180*time.Second, "per-scenario timeout for -live-llm")
 	flag.Parse()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	runTimeout := 30 * time.Second
+	if *liveLLM {
+		count := len(selectedScenarios(*limit))
+		runTimeout = time.Duration(count) * (*liveTimeout + 30*time.Second)
+		if runTimeout < 5*time.Minute {
+			runTimeout = 5 * time.Minute
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
-	rep, wikiDir, err := run(ctx)
+	if *liveLLM {
+		rep, wikiDir, err := runLive(ctx, *limit, *liveTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
+			os.Exit(1)
+		}
+		if !*keep {
+			defer os.RemoveAll(wikiDir)
+		}
+		if *jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(rep)
+		} else {
+			printLiveReport(rep, wikiDir)
+		}
+		if !rep.OK {
+			os.Exit(1)
+		}
+		return
+	}
+
+	rep, wikiDir, err := run(ctx, *limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
 		os.Exit(1)
@@ -111,7 +180,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context) (report, string, error) {
+func run(ctx context.Context, limit int) (report, string, error) {
 	wikiDir, err := os.MkdirTemp("", "aura-debug-memory-quality-*")
 	if err != nil {
 		return report{}, "", fmt.Errorf("create temp wiki: %w", err)
@@ -144,7 +213,7 @@ func run(ctx context.Context) (report, string, error) {
 	}
 
 	rep := report{Results: make([]scenarioResult, 0, len(scenarios()))}
-	for _, sc := range scenarios() {
+	for _, sc := range selectedScenarios(limit) {
 		result := runScenario(ctx, sc, searchTool, proposalTool)
 		rep.Results = append(rep.Results, result)
 		rep.Questions++
@@ -173,9 +242,102 @@ func run(ctx context.Context) (report, string, error) {
 	if rep.ProposalScenarios > 0 {
 		rep.ProposalQualityRate = rep.ProposalQualityRate / float64(rep.ProposalScenarios)
 	}
-	rep.OK = rep.EvidenceHitRate >= 0.90 && rep.ProposalQualityRate >= 0.90 && rep.SourceEvidenceHits > 0 && rep.ArchiveEvidenceHits > 0
+	proposalGate := rep.ProposalScenarios == 0 || rep.ProposalQualityRate >= 0.90
+	rep.OK = rep.EvidenceHitRate >= 0.90 && proposalGate && rep.SourceEvidenceHits > 0 && rep.ArchiveEvidenceHits > 0
 	if !rep.OK {
 		rep.Warnings = append(rep.Warnings, "memory quality gate failed: want >=90% evidence hit rate and >=90% proposal quality")
+	}
+	return rep, wikiDir, nil
+}
+
+func runLive(ctx context.Context, limit int, liveTimeout time.Duration) (liveReport, string, error) {
+	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return liveReport{}, "", fmt.Errorf("load .env: %w", err)
+	}
+	apiKey := strings.TrimSpace(os.Getenv("LLM_API_KEY"))
+	if apiKey == "" {
+		return liveReport{}, "", fmt.Errorf("LLM_API_KEY is required for -live-llm")
+	}
+	baseURL := envDefault("LLM_BASE_URL", "https://api.openai.com/v1")
+	model := envDefault("LLM_MODEL", "gpt-4")
+
+	wikiDir, err := os.MkdirTemp("", "aura-debug-memory-routing-*")
+	if err != nil {
+		return liveReport{}, "", fmt.Errorf("create temp wiki: %w", err)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	srcStore, err := source.NewStore(wikiDir, logger)
+	if err != nil {
+		return liveReport{}, wikiDir, fmt.Errorf("source store: %w", err)
+	}
+	sched, err := scheduler.OpenStore(filepath.Join(wikiDir, "aura-debug.db"))
+	if err != nil {
+		return liveReport{}, wikiDir, fmt.Errorf("scheduler store: %w", err)
+	}
+	defer sched.Close()
+	archive, err := conversation.NewArchiveStore(sched.DB())
+	if err != nil {
+		return liveReport{}, wikiDir, fmt.Errorf("archive store: %w", err)
+	}
+	summaries := summarizer.NewSummariesStore(sched.DB())
+	if err := seedMemory(ctx, srcStore, archive); err != nil {
+		return liveReport{}, wikiDir, err
+	}
+
+	reg := tools.NewRegistry(logger)
+	if tool := tools.NewSearchMemoryTool(nil, srcStore, archive); tool != nil {
+		reg.Register(tool)
+	}
+	if tool := tools.NewProposeWikiChangeTool(summaries); tool != nil {
+		reg.Register(tool)
+	}
+
+	runner, err := agent.NewRunner(agent.Config{
+		LLM:           llm.NewOpenAIClient(llm.OpenAIConfig{APIKey: apiKey, BaseURL: baseURL, Model: model}),
+		Tools:         reg,
+		Model:         model,
+		MaxIterations: 4,
+		Timeout:       liveTimeout,
+		ToolTimeout:   20 * time.Second,
+		Logger:        logger,
+	})
+	if err != nil {
+		return liveReport{}, wikiDir, err
+	}
+
+	rep := liveReport{Model: model, Results: make([]liveScenarioResult, 0, len(selectedScenarios(limit)))}
+	started := time.Now()
+	for _, sc := range selectedScenarios(limit) {
+		result := runLiveScenario(ctx, runner, sc)
+		rep.Results = append(rep.Results, result)
+		rep.Questions++
+		if result.Pass {
+			rep.Passed++
+		}
+		rep.LLMCalls += result.LLMCalls
+		rep.ToolCalls += len(result.ToolCalls)
+		for _, name := range result.ToolCalls {
+			switch name {
+			case "search_memory":
+				rep.SearchMemoryCalls++
+			case "propose_wiki_change":
+				rep.ProposalCalls++
+				if !sc.ShouldPropose {
+					rep.UnexpectedProposalCalls++
+				}
+			}
+		}
+	}
+	rep.ElapsedMS = time.Since(started).Milliseconds()
+	if rep.Questions > 0 {
+		rep.RoutingPassRate = float64(rep.Passed) / float64(rep.Questions)
+	}
+	rep.OK = rep.RoutingPassRate >= 0.85 &&
+		rep.SearchMemoryCalls >= rep.Questions &&
+		rep.UnexpectedProposalCalls == 0
+	if !rep.OK {
+		rep.Warnings = append(rep.Warnings, "live routing gate failed: want >=85% pass rate, search_memory on every question, and no unexpected proposals")
 	}
 	return rep, wikiDir, nil
 }
@@ -208,6 +370,57 @@ func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, propos
 		res.ProposalID, res.ProposalOK, res.QualityIssues = createAndScoreProposal(ctx, sc, env.Items, proposalTool)
 		res.Pass = res.Pass && res.ProposalOK
 	}
+	return res
+}
+
+func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario) liveScenarioResult {
+	res := liveScenarioResult{Name: sc.Name, Question: sc.Question}
+	started := time.Now()
+	result, err := runner.Run(ctx, agent.Task{
+		SystemPrompt:       liveSystemPrompt(),
+		Prompt:             liveScenarioPrompt(sc),
+		ToolAllowlist:      []string{"search_memory", "propose_wiki_change"},
+		UserID:             "9001",
+		Temperature:        llm.Float64Ptr(0),
+		MaxToolCalls:       3,
+		MaxToolResultChars: 12000,
+		CompleteOnDeadline: true,
+	})
+	res.ElapsedMS = time.Since(started).Milliseconds()
+	res.LLMCalls = result.LLMCalls
+	res.Final = singleLine(result.Content, 220)
+	if err != nil {
+		res.Issues = append(res.Issues, err.Error())
+	}
+	if strings.Contains(result.Content, "interrupted before a final answer") {
+		res.Issues = append(res.Issues, "runner returned a deadline partial instead of a final answer")
+	}
+	envelopes, proposalOK := inspectLiveMessages(result.Messages)
+	res.EvidenceKinds = evidenceKinds(envelopes)
+	res.EvidenceCount = len(envelopes)
+	res.ProposalOK = proposalOK
+	res.ToolCalls = toolCallNames(result.Messages)
+
+	if !hasString(res.ToolCalls, "search_memory") {
+		res.Issues = append(res.Issues, "missing search_memory call")
+	}
+	for _, kind := range sc.ExpectKinds {
+		if !hasKind(res.EvidenceKinds, kind) {
+			res.Issues = append(res.Issues, "missing evidence kind "+kind)
+		}
+	}
+	if sc.ShouldPropose {
+		if !hasString(res.ToolCalls, "propose_wiki_change") {
+			res.Issues = append(res.Issues, "missing propose_wiki_change call")
+		}
+		if !res.ProposalOK {
+			res.Issues = append(res.Issues, "proposal was not created cleanly")
+		}
+	} else if hasString(res.ToolCalls, "propose_wiki_change") {
+		res.UnexpectedProposal = true
+		res.Issues = append(res.Issues, "unexpected proposal for answer-only question")
+	}
+	res.Pass = len(res.Issues) == 0 && res.EvidenceCount > 0
 	return res
 }
 
@@ -349,6 +562,43 @@ func scenarios() []scenario {
 	}
 }
 
+func selectedScenarios(limit int) []scenario {
+	all := scenarios()
+	if limit <= 0 || limit >= len(all) {
+		return all
+	}
+	return all[:limit]
+}
+
+func liveSystemPrompt() string {
+	return `You are Aura's live memory routing evaluator.
+For every user question:
+- Call search_memory first with the most useful query.
+- Answer only from the returned evidence.
+- If the question asks about durable Aura/project/workflow memory policy, call propose_wiki_change after search_memory so the wiki can grow through review.
+- Do not call propose_wiki_change for ordinary answer-only questions.
+- When calling propose_wiki_change from search_memory, set origin_tool="search_memory" and pass evidence refs copied from the Evidence envelope. Include kind, id, title/page/snippet when available.
+- Do not repeat search_memory unless the first call returned no matching evidence.
+- If a tool returns {"ok":false,...} and retryable=true, fix the arguments from the hint and retry that tool once.
+- Keep the final answer concise and mention evidence IDs naturally.`
+}
+
+func liveScenarioPrompt(sc scenario) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "User question: %s\n", sc.Question)
+	fmt.Fprintf(&sb, "Useful search query: %s\n", sc.Query)
+	if sc.Scope != "" {
+		fmt.Fprintf(&sb, "Preferred memory scope: %s\n", sc.Scope)
+	}
+	if sc.ShouldPropose {
+		fmt.Fprintf(&sb, "This should create a reviewed wiki proposal. action=%s target_slug=%s category=%s\n",
+			emptyDefault(sc.ProposalAction, "patch"), sc.ProposalTarget, sc.ProposalCategory)
+	} else {
+		sb.WriteString("This is answer-only. Do not create a wiki proposal.\n")
+	}
+	return sb.String()
+}
+
 func proposalFact(sc scenario) string {
 	return fmt.Sprintf("For [[%s]], preserve this durable memory insight from the daily question %q: %s.", sc.ProposalTarget, sc.Question, sc.Query)
 }
@@ -404,6 +654,99 @@ func hasKind(kinds []string, want string) bool {
 	return false
 }
 
+func inspectLiveMessages(messages []llm.Message) ([]evidenceItem, bool) {
+	var evidence []evidenceItem
+	proposalOK := false
+	for _, msg := range messages {
+		if msg.Role != "tool" {
+			continue
+		}
+		if env, err := parseEnvelope(msg.Content); err == nil {
+			evidence = append(evidence, env.Items...)
+		}
+		var proposal struct {
+			OK       bool  `json:"ok"`
+			ID       int64 `json:"id"`
+			Evidence int   `json:"evidence"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(msg.Content)), &proposal); err == nil {
+			if proposal.OK && proposal.ID > 0 && proposal.Evidence > 0 {
+				proposalOK = true
+			}
+		}
+	}
+	return evidence, proposalOK
+}
+
+func toolCallNames(messages []llm.Message) []string {
+	var names []string
+	for _, msg := range messages {
+		if msg.Role != "assistant" {
+			continue
+		}
+		for _, call := range msg.ToolCalls {
+			names = append(names, call.Name)
+		}
+	}
+	return names
+}
+
+func hasString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func loadDotEnv(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		if key != "" {
+			os.Setenv(key, value)
+		}
+	}
+	return scanner.Err()
+}
+
+func envDefault(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func emptyDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func singleLine(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if max > 0 && len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
+}
+
 func printReport(rep report, wikiDir string) {
 	status := "PASS"
 	if !rep.OK {
@@ -435,6 +778,57 @@ func printReport(rep report, wikiDir string) {
 		}
 		if len(r.QualityIssues) > 0 {
 			fmt.Printf(" issues=%s", strings.Join(r.QualityIssues, "; "))
+		}
+		fmt.Println()
+	}
+	for _, warning := range rep.Warnings {
+		fmt.Printf("warning: %s\n", warning)
+	}
+}
+
+func printLiveReport(rep liveReport, wikiDir string) {
+	status := "PASS"
+	if !rep.OK {
+		status = "FAIL"
+	}
+	fmt.Printf("%s debug_memory_quality live-llm\n", status)
+	fmt.Printf("model=%s wiki_dir=%s\n", rep.Model, wikiDir)
+	fmt.Printf("questions=%d passed=%d routing_pass_rate=%.0f%% search_memory_calls=%d proposal_calls=%d unexpected_proposals=%d llm_calls=%d tool_calls=%d elapsed_ms=%d\n",
+		rep.Questions,
+		rep.Passed,
+		rep.RoutingPassRate*100,
+		rep.SearchMemoryCalls,
+		rep.ProposalCalls,
+		rep.UnexpectedProposalCalls,
+		rep.LLMCalls,
+		rep.ToolCalls,
+		rep.ElapsedMS,
+	)
+	for _, r := range rep.Results {
+		mark := "PASS"
+		if !r.Pass {
+			mark = "FAIL"
+		}
+		fmt.Printf("- %s %s evidence=%d kinds=%s tools=%s llm_calls=%d elapsed_ms=%d",
+			mark,
+			r.Name,
+			r.EvidenceCount,
+			strings.Join(r.EvidenceKinds, ","),
+			strings.Join(r.ToolCalls, ","),
+			r.LLMCalls,
+			r.ElapsedMS,
+		)
+		if r.ProposalOK {
+			fmt.Printf(" proposal=true")
+		}
+		if r.UnexpectedProposal {
+			fmt.Printf(" unexpected_proposal=true")
+		}
+		if len(r.Issues) > 0 {
+			fmt.Printf(" issues=%s", strings.Join(r.Issues, "; "))
+		}
+		if r.Final != "" {
+			fmt.Printf(" final=%q", r.Final)
 		}
 		fmt.Println()
 	}

@@ -116,6 +116,11 @@ func (t *ProposeWikiChangeTool) Execute(ctx context.Context, args map[string]any
 	if err != nil {
 		return "", err
 	}
+	originTool := strings.TrimSpace(stringArg(args, "origin_tool"))
+	evidence := evidenceRefsArg(args, "evidence")
+	if originTool == "search_memory" && len(evidence) == 0 {
+		return "", fmt.Errorf("propose_wiki_change: evidence refs are required when origin_tool is search_memory; copy compact refs from the search_memory Evidence envelope")
+	}
 	proposal, err := t.store.Propose(ctx, summarizer.ProposalInput{
 		ChatID:        userIDAsInt64(ctx),
 		Fact:          fact,
@@ -126,9 +131,9 @@ func (t *ProposeWikiChangeTool) Execute(ctx context.Context, args map[string]any
 		Category:      strings.TrimSpace(stringArg(args, "category")),
 		RelatedSlugs:  stringSliceArg(args, "related"),
 		Provenance: summarizer.Provenance{
-			OriginTool:   strings.TrimSpace(stringArg(args, "origin_tool")),
+			OriginTool:   originTool,
 			OriginReason: strings.TrimSpace(stringArg(args, "origin_reason")),
-			Evidence:     evidenceRefsArg(args, "evidence"),
+			Evidence:     evidence,
 			AgentJobID:   strings.TrimSpace(stringArg(args, "agent_job_id")),
 			SwarmRunID:   strings.TrimSpace(stringArg(args, "swarm_run_id")),
 			SwarmTaskID:  strings.TrimSpace(stringArg(args, "swarm_task_id")),
