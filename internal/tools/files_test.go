@@ -42,6 +42,27 @@ func newCreateXLSXTest(t *testing.T) (*CreateXLSXTool, *stubDocSender, *source.S
 	return tool, sender, store
 }
 
+func TestFileCreationToolDescriptionsPreferTypedToolsOverSandbox(t *testing.T) {
+	store, err := source.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("source.NewStore: %v", err)
+	}
+	tools := []struct {
+		name string
+		desc string
+		want string
+	}{
+		{"create_xlsx", NewCreateXLSXTool(store, nil).Description(), "Prefer this over execute_code for ordinary spreadsheets"},
+		{"create_docx", NewCreateDOCXTool(store, nil).Description(), "Prefer this over execute_code for ordinary Word documents"},
+		{"create_pdf", NewCreatePDFTool(store, nil).Description(), "Prefer this over execute_code for ordinary PDFs"},
+	}
+	for _, tt := range tools {
+		if !strings.Contains(tt.desc, tt.want) {
+			t.Fatalf("%s description missing %q:\n%s", tt.name, tt.want, tt.desc)
+		}
+	}
+}
+
 func TestCreateXLSXTool_HappyPath_DeliversAndPersists(t *testing.T) {
 	tool, sender, store := newCreateXLSXTest(t)
 	ctx := WithUserID(context.Background(), "12345")

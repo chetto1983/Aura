@@ -35,6 +35,7 @@ func (t *ExecuteCodeTool) Description() string {
 	return "Execute Python code in an isolated WASM sandbox. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
 		"The sandbox is ephemeral; no state persists between executions. " +
+		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under /tmp/aura_out; Aura collects plain files from that directory and delivers them to Telegram when possible. " +
 		"Packages are limited to Aura's bundled runtime profile. Set allow_network=true only when HTTP access is explicitly needed. " +
 		"Timeout is configurable up to the server limit (default 15s)."

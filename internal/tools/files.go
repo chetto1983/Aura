@@ -44,7 +44,7 @@ func NewCreateXLSXTool(store *source.Store, sender DocumentSender) *CreateXLSXTo
 func (t *CreateXLSXTool) Name() string { return "create_xlsx" }
 
 func (t *CreateXLSXTool) Description() string {
-	return "Generate an Excel workbook (.xlsx) from structured rows and persist it as a source. Optionally deliver the file to the user's Telegram chat. Use when the user asks for a spreadsheet, table export, invoice, or report. Cells are sanitized against formula injection; pure values only — no formulas."
+	return "Generate an Excel workbook (.xlsx) from structured rows and persist it as a source. Optionally deliver the file to the user's Telegram chat. Prefer this over execute_code for ordinary spreadsheets, table exports, invoices, or reports. Cells are sanitized against formula injection; pure values only - no formulas."
 }
 
 func (t *CreateXLSXTool) Parameters() map[string]any {
@@ -226,7 +226,7 @@ func NewCreateDOCXTool(store *source.Store, sender DocumentSender) *CreateDOCXTo
 func (t *CreateDOCXTool) Name() string { return "create_docx" }
 
 func (t *CreateDOCXTool) Description() string {
-	return "Generate a Word document (.docx) from structured blocks (heading/paragraph/bullet/table) and persist it as a source. Optionally deliver the file to the user's Telegram chat. Use when the user asks for a report, memo, write-up, summary doc, or formatted note."
+	return "Generate a Word document (.docx) from structured blocks (heading/paragraph/bullet/table) and persist it as a source. Optionally deliver the file to the user's Telegram chat. Prefer this over execute_code for ordinary Word documents, reports, memos, write-ups, summary docs, or formatted notes."
 }
 
 func (t *CreateDOCXTool) Parameters() map[string]any {
@@ -432,7 +432,7 @@ func NewCreatePDFTool(store *source.Store, sender DocumentSender) *CreatePDFTool
 func (t *CreatePDFTool) Name() string { return "create_pdf" }
 
 func (t *CreatePDFTool) Description() string {
-	return "Generate a PDF document (.pdf) from structured blocks (heading/paragraph/bullet/table) and persist it as a source. Optionally deliver the file to the user's Telegram chat. Use when the user asks for a printable report, invoice, contract draft, or any document that should be PDF rather than editable Word format."
+	return "Generate a PDF document (.pdf) from structured blocks (heading/paragraph/bullet/table) and persist it as a source. Optionally deliver the file to the user's Telegram chat. Prefer this over execute_code for ordinary PDFs, printable reports, invoices, contract drafts, or documents that should be PDF rather than editable Word format."
 }
 
 func (t *CreatePDFTool) Parameters() map[string]any {

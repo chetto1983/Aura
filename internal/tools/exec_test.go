@@ -16,6 +16,22 @@ func TestExecuteCodeTool_NilManager(t *testing.T) {
 	}
 }
 
+func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing.T) {
+	manager, err := sandbox.NewManager(sandbox.Config{
+		Runtime: fakeExecRuntime{result: &sandbox.Result{OK: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := tools.NewExecuteCodeTool(manager)
+	desc := tool.Description()
+	for _, want := range []string{"Use create_xlsx/create_docx/create_pdf", "for simple documents", "/tmp/aura_out", "computed artifacts"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("description missing %q:\n%s", want, desc)
+		}
+	}
+}
+
 func TestExecuteCodeTool_DeliversArtifacts(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{

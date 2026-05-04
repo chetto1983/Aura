@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.8` artifact egress through `execute_code`.
+Last completed slice: `sandbox.pyodide.8a` file tool choice clarity.
 
 Active slice: `sandbox.pyodide.9` live Telegram artifact delivery smoke.
 
@@ -86,6 +86,7 @@ What is shipped:
 - `cmd/debug_telegram_sandbox` now injects a synthetic private Telegram text update into the real Aura bot, uses the live LLM plus real outgoing Telegram messages, verifies the model calls `execute_code`, and fails unless the conversation surfaces `5050`.
 - Sandbox code can return files by writing plain direct-child files under `/tmp/aura_out`; the Pyodide runner collects up to 10 artifacts capped at 5 MiB each, returns base64 artifact payloads over the runner protocol, and `execute_code` delivers them through Telegram documents when invoked with a Telegram user context.
 - `cmd/debug_sandbox --artifact-smoke` now proves artifact egress through the registered `execute_code` boundary by writing `/tmp/aura_out/artifact.txt` in Pyodide and asserting the tool output includes artifact metadata.
+- File-generation tool choice is explicit in the system prompt and tool descriptions: `create_xlsx` / `create_docx` / `create_pdf` are preferred for ordinary user-facing documents that should persist as Aura sources, while `execute_code` is for calculations, plots, custom exports, and computed artifacts under `/tmp/aura_out`.
 
 Phase 18 status: **closed**.
 
@@ -241,8 +242,27 @@ Workspace warning:
 | sandbox.pyodide.7 | Registered execute_code smoke | done | Started Aura with the rebuilt local bundle, confirmed authenticated `/api/health` reports `runtime_kind=pyodide` and `available=true`, and added `cmd/debug_sandbox --tool-smoke` to run `sum(range(1, 101))` through the registered `execute_code` tool boundary. |
 | sandbox.pyodide.7b | Telegram conversation sandbox smoke | done | Added `cmd/debug_telegram_sandbox`, a live-LLM Telegram-handler smoke that injects a synthetic private text update, sends real outgoing bot messages, verifies `execute_code` was called, and asserts the conversation surfaced `5050`; also fixed `Bot.Stop` for debug-created bots that never started polling. |
 | sandbox.pyodide.8 | Artifact egress | done | Pyodide code can write direct-child files under `/tmp/aura_out`; the runner returns bounded base64 artifacts, Go decodes them into `sandbox.Artifact`, `execute_code` reports artifact metadata and auto-delivers through Telegram when user context and sender are available, and `cmd/debug_sandbox --artifact-smoke` proves the boundary. |
+| sandbox.pyodide.8a | File tool choice clarity | done | Added prompt and tool-description guidance so ordinary spreadsheets/docs/PDFs prefer typed `create_*` tools that persist Aura sources, while `execute_code` is reserved for computed artifacts, plots, custom exports, and code-required workflows. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.8a (File tool choice clarity)
+
+Goal: reduce model confusion now that both typed file tools and sandbox artifacts can return files.
+
+Implementation:
+
+- Added system-prompt guidance for file-generation tool choice.
+- Updated `create_xlsx`, `create_docx`, and `create_pdf` descriptions to prefer typed tools over `execute_code` for ordinary documents.
+- Updated `execute_code` description to defer simple documents to typed tools and reserve sandbox artifacts for computed outputs.
+- Added tests locking the prompt and tool-description arbitration text.
+
+Verification:
+
+- `go test ./internal/conversation -run TestDefaultSystemPromptClarifiesFileGenerationToolChoice -count=1 -v`
+- `go test ./internal/tools -run "Test(ExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools|FileCreationToolDescriptionsPreferTypedToolsOverSandbox)" -count=1 -v`
+
+Next slice remains `sandbox.pyodide.9`: live Telegram artifact-delivery smoke.
 
 ### 2026-05-04 - Sandbox.pyodide.8 (Artifact egress)
 

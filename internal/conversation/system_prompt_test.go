@@ -31,3 +31,17 @@ func TestRenderSystemPromptIncludesRuntimeContext(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultSystemPromptClarifiesFileGenerationToolChoice(t *testing.T) {
+	got := DefaultSystemPrompt()
+	for _, want := range []string{
+		"create_xlsx/create_docx/create_pdf",
+		"Prefer those typed file tools over execute_code",
+		"Use execute_code for computed artifacts",
+		"/tmp/aura_out",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system prompt missing file-generation guidance %q", want)
+		}
+	}
+}
