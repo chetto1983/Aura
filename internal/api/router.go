@@ -232,6 +232,8 @@ func NewRouter(deps Deps) http.Handler {
 
 	// Slice 12k.1: summaries review queue.
 	mux.HandleFunc("GET /summaries", handleSummariesList(deps))
+	mux.HandleFunc("POST /summaries/batch/approve", handleSummariesBatchApprove(deps))
+	mux.HandleFunc("POST /summaries/batch/reject", handleSummariesBatchReject(deps))
 	mux.HandleFunc("POST /summaries/{id}/approve", handleSummariesApprove(deps))
 	mux.HandleFunc("POST /summaries/{id}/reject", handleSummariesReject(deps))
 

@@ -126,8 +126,33 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 | 18a | Memory evidence envelope | done | `search_memory` now appends a structured JSON evidence envelope after the readable evidence list so final answers can preserve source IDs, wiki slugs, conversation IDs, snippets, scores, OCR page numbers, and warnings without noisy citations in casual chat. |
 | 18b | Maintenance memory decay | done | Wiki maintenance now flags stale compiled-memory pages as `memory_decay` issues after conservative age thresholds, preserving the LLM Wiki rule that old knowledge becomes review work instead of silent mutation. |
 | 18c | Proposal provenance | done | `propose_wiki_change` and summarizer review proposals now persist structured provenance JSON with origin tool/reason, evidence refs, agent job IDs, and swarm IDs; API responses expose it for review UI. |
+| 18d | Batch proposal review | done | `/summaries` now supports batch approve/reject with per-ID failures, and the dashboard can select multiple proposals while showing compact provenance evidence on each card. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18d (Batch proposal review)
+
+Goal: make proactive memory growth reviewable at agent scale instead of one click per proposal.
+
+Implementation:
+
+- Added `POST /summaries/batch/approve` and `POST /summaries/batch/reject`.
+- Batch endpoints validate/dedupe up to 100 proposal IDs and return both updated proposals and per-ID failures.
+- Batch approve preserves the existing behavior: status flips first, then wiki application is attempted and logged if it fails.
+- `SummariesPanel` now supports select-all, per-card selection, batch approve/reject, and compact provenance display:
+  - origin tool;
+  - origin reason;
+  - evidence refs with source/page identifiers.
+- Updated dashboard API types and English/Italian locale strings.
+
+Verification:
+
+- `go test ./internal/api ./internal/conversation/summarizer`
+- `npm run lint` in `web/`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-web.ps1`
+
+Next slice: proposal drill-down/evidence preview, so reviewers can open the source/archive/wiki evidence from the queue before approving.
 
 ### 2026-05-04 - Slice 18c (Proposal provenance)
 

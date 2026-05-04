@@ -292,6 +292,20 @@ type ProposedUpdate struct {
 	CreatedAt     string     `json:"created_at"`
 }
 
+type SummaryBatchRequest struct {
+	IDs []int64 `json:"ids"`
+}
+
+type SummaryBatchFailure struct {
+	ID    int64  `json:"id"`
+	Error string `json:"error"`
+}
+
+type SummaryBatchResponse struct {
+	Updated []ProposedUpdate      `json:"updated"`
+	Failed  []SummaryBatchFailure `json:"failed"`
+}
+
 type EvidenceRef struct {
 	Kind    string `json:"kind"`
 	ID      string `json:"id"`

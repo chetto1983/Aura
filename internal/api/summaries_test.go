@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -168,6 +169,76 @@ func TestHandleSummariesApprove_AlreadyApproved(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d", w.Code)
+	}
+}
+
+func TestHandleSummariesBatchApprove_Partial(t *testing.T) {
+	db, store := newSummariesDB(t)
+	first := seedProposal(t, db, "new", "pending")
+	second := seedProposal(t, db, "patch", "pending")
+	done := seedProposal(t, db, "new", "approved")
+	ws := &fakeWikiStoreForSummaries{}
+
+	router := NewRouter(Deps{Summaries: store, SummariesWiki: ws})
+	body := []byte(fmt.Sprintf(`{"ids":[%d,%d,%d,9999]}`, first, second, done))
+	req := httptest.NewRequest("POST", "/summaries/batch/approve", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp SummaryBatchResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Updated) != 2 {
+		t.Fatalf("updated = %d, want 2: %#v", len(resp.Updated), resp)
+	}
+	if len(resp.Failed) != 2 {
+		t.Fatalf("failed = %d, want 2: %#v", len(resp.Failed), resp)
+	}
+	if len(ws.written) != 2 {
+		t.Fatalf("wiki writes = %d, want 2", len(ws.written))
+	}
+}
+
+func TestHandleSummariesBatchReject_HappyPath(t *testing.T) {
+	db, store := newSummariesDB(t)
+	first := seedProposal(t, db, "new", "pending")
+	second := seedProposal(t, db, "patch", "pending")
+	ws := &fakeWikiStoreForSummaries{}
+
+	router := NewRouter(Deps{Summaries: store, SummariesWiki: ws})
+	body := []byte(fmt.Sprintf(`{"ids":[%d,%d,%d]}`, first, second, first))
+	req := httptest.NewRequest("POST", "/summaries/batch/reject", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp SummaryBatchResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Updated) != 2 || len(resp.Failed) != 0 {
+		t.Fatalf("response = %#v, want 2 updated and 0 failed", resp)
+	}
+	if len(ws.written) != 0 {
+		t.Fatal("want no wiki mutation on batch reject")
+	}
+}
+
+func TestHandleSummariesBatchReject_InvalidIDs(t *testing.T) {
+	_, store := newSummariesDB(t)
+	router := NewRouter(Deps{Summaries: store})
+	req := httptest.NewRequest("POST", "/summaries/batch/reject", bytes.NewReader([]byte(`{"ids":[0]}`)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

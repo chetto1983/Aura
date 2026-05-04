@@ -287,6 +287,16 @@ export interface ProposalProvenance {
   swarm_task_id?: string;
 }
 
+export interface SummaryBatchFailure {
+  id: number;
+  error: string;
+}
+
+export interface SummaryBatchResponse {
+  updated: ProposedUpdate[];
+  failed: SummaryBatchFailure[];
+}
+
 export interface Task {
   name: string;
   kind: 'reminder' | 'wiki_maintenance' | 'agent_job';

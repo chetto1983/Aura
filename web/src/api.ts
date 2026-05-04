@@ -24,6 +24,7 @@ import type {
   ConversationTurn,
   ConversationDetail,
   ProposedUpdate,
+  SummaryBatchResponse,
   WikiIssue,
   SettingItem,
   SettingsUpdateResponse,
@@ -256,6 +257,10 @@ export const api = {
     post<ProposedUpdate>(`/summaries/${id}/approve`),
   rejectSummary: (id: number) =>
     post<ProposedUpdate>(`/summaries/${id}/reject`),
+  approveSummaries: (ids: number[]) =>
+    post<SummaryBatchResponse>(`/summaries/batch/approve`, { ids }),
+  rejectSummaries: (ids: number[]) =>
+    post<SummaryBatchResponse>(`/summaries/batch/reject`, { ids }),
 
   // ---- maintenance issue queue (slice 12l) ----
   maintenanceIssues: (status?: string, severity?: string) =>

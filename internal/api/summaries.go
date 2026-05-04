@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -115,6 +118,114 @@ func handleSummariesReject(deps Deps) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(updated))
+	}
+}
+
+func handleSummariesBatchApprove(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handleSummariesBatchDecision(w, r, deps, "approved")
+	}
+}
+
+func handleSummariesBatchReject(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handleSummariesBatchDecision(w, r, deps, "rejected")
+	}
+}
+
+func handleSummariesBatchDecision(w http.ResponseWriter, r *http.Request, deps Deps, status string) {
+	if deps.Summaries == nil {
+		writeError(w, deps.Logger, http.StatusNotFound, "summaries store unavailable")
+		return
+	}
+	req, err := parseSummaryBatchRequest(r)
+	if err != nil {
+		writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	resp := SummaryBatchResponse{
+		Updated: []ProposedUpdate{},
+		Failed:  []SummaryBatchFailure{},
+	}
+	for _, id := range req.IDs {
+		proposal, err := deps.Summaries.SetStatus(r.Context(), id, status)
+		if err != nil {
+			resp.Failed = append(resp.Failed, SummaryBatchFailure{
+				ID:    id,
+				Error: summaryDecisionError(err),
+			})
+			continue
+		}
+		if status == "approved" {
+			applyApprovedSummary(r.Context(), deps, proposal)
+		}
+		resp.Updated = append(resp.Updated, proposalToDTO(proposal))
+	}
+	writeJSON(w, deps.Logger, http.StatusOK, resp)
+}
+
+func parseSummaryBatchRequest(r *http.Request) (SummaryBatchRequest, error) {
+	var req SummaryBatchRequest
+	dec := json.NewDecoder(io.LimitReader(r.Body, 16*1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		return SummaryBatchRequest{}, fmt.Errorf("invalid JSON body")
+	}
+	if len(req.IDs) == 0 {
+		return SummaryBatchRequest{}, fmt.Errorf("ids is required")
+	}
+	if len(req.IDs) > 100 {
+		return SummaryBatchRequest{}, fmt.Errorf("ids is limited to 100")
+	}
+	seen := map[int64]struct{}{}
+	ids := make([]int64, 0, len(req.IDs))
+	for _, id := range req.IDs {
+		if id <= 0 {
+			return SummaryBatchRequest{}, fmt.Errorf("ids must contain positive proposal ids")
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	req.IDs = ids
+	return req, nil
+}
+
+func applyApprovedSummary(ctx context.Context, deps Deps, proposal summarizer.ProposedUpdate) {
+	// Apply via AutoApplier if a wiki writer is wired. The status flip
+	// happens first so concurrent approve/reject requests cannot both apply.
+	if deps.SummariesWiki == nil {
+		return
+	}
+	applier := summarizer.NewAutoApplier(deps.SummariesWiki)
+	dec := summarizer.Decision{
+		Candidate: summarizer.Candidate{
+			Fact:          proposal.Fact,
+			Category:      proposalCategory(proposal.Category),
+			RelatedSlugs:  proposal.RelatedSlugs,
+			SourceTurnIDs: proposal.SourceTurnIDs,
+		},
+		Action:     summarizer.Action(proposal.Action),
+		TargetSlug: proposal.TargetSlug,
+		Similarity: proposal.Similarity,
+	}
+	if applyErr := applier.Apply(ctx, dec); applyErr != nil {
+		deps.Logger.Warn("summaries approve: apply failed", "id", proposal.ID, "error", applyErr)
+		// Don't block the status flip; log and continue.
+	}
+}
+
+func summaryDecisionError(err error) string {
+	switch {
+	case errors.Is(err, summarizer.ErrProposalNotFound):
+		return "proposal not found"
+	case errors.Is(err, summarizer.ErrProposalConflict):
+		return "proposal already decided"
+	default:
+		return "decision failed"
 	}
 }
 
