@@ -59,9 +59,12 @@ type Bot struct {
 	api         http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
 	sandboxMgr  *sandbox.Manager               // nil when SANDBOX_ENABLED=false or runtime unavailable
 	toolReg     *tools.ToolRegistry            // persistent LLM-written Python tools
-	active      sync.Map                       // maps userID string -> bool (active conversation tracking)
-	ctxMap      sync.Map                       // maps userID string -> *conversation.Context
-	started     atomic.Bool                    // true while the telebot poller has been started
+	debugDocsMu sync.Mutex
+	debugDocs   []DebugDocumentSend
+	debugDocSeq atomic.Uint64
+	active      sync.Map    // maps userID string -> bool (active conversation tracking)
+	ctxMap      sync.Map    // maps userID string -> *conversation.Context
+	started     atomic.Bool // true while the telebot poller has been started
 }
 
 // Username returns the bot's Telegram username.
@@ -128,7 +131,41 @@ func (b *Bot) SendDocumentToUser(userID, filename string, body []byte, caption s
 	if _, err := b.bot.Send(tele.ChatID(chatID), doc); err != nil {
 		return fmt.Errorf("send document to user %s: %w", userID, err)
 	}
+	b.recordDebugDocumentSend(filename, body, caption)
 	return nil
+}
+
+func (b *Bot) recordDebugDocumentSend(filename string, body []byte, caption string) {
+	if b == nil {
+		return
+	}
+	send := DebugDocumentSend{
+		Seq:       b.debugDocSeq.Add(1),
+		Filename:  filename,
+		Caption:   caption,
+		SizeBytes: len(body),
+	}
+	b.debugDocsMu.Lock()
+	defer b.debugDocsMu.Unlock()
+	b.debugDocs = append(b.debugDocs, send)
+	if len(b.debugDocs) > 100 {
+		b.debugDocs = append([]DebugDocumentSend(nil), b.debugDocs[len(b.debugDocs)-100:]...)
+	}
+}
+
+func (b *Bot) debugDocumentSendsAfter(seq uint64) []DebugDocumentSend {
+	if b == nil {
+		return nil
+	}
+	b.debugDocsMu.Lock()
+	defer b.debugDocsMu.Unlock()
+	out := make([]DebugDocumentSend, 0)
+	for _, send := range b.debugDocs {
+		if send.Seq > seq {
+			out = append(out, send)
+		}
+	}
+	return out
 }
 
 // Start begins polling for Telegram messages and the scheduler tick loop.

@@ -193,8 +193,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.SandboxRuntimeDir != DefaultSandboxRuntimeDir {
 		t.Errorf("SandboxRuntimeDir = %q, want %q", cfg.SandboxRuntimeDir, DefaultSandboxRuntimeDir)
 	}
-	if cfg.SandboxTimeoutSec != 15 {
-		t.Errorf("SandboxTimeoutSec = %d, want 15", cfg.SandboxTimeoutSec)
+	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
+		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
 	}
 }
 

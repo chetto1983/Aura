@@ -29,9 +29,17 @@ import (
 func main() {
 	userIDFlag := flag.String("user", "", "Telegram user ID to smoke; defaults to first allowed_users row")
 	username := flag.String("username", "", "optional Telegram username for the synthetic update")
-	prompt := flag.String("prompt", "Use execute_code to compute sum(range(1, 101)) and tell me the result.", "synthetic incoming Telegram text")
+	prompt := flag.String("prompt", "", "synthetic incoming Telegram text")
+	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
+	if strings.TrimSpace(*prompt) == "" {
+		if *artifactSmoke {
+			*prompt = defaultArtifactSmokePrompt()
+		} else {
+			*prompt = defaultArithmeticSmokePrompt()
+		}
+	}
 
 	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fail("load .env: %v", err)
@@ -82,13 +90,52 @@ func main() {
 	fmt.Printf("tool_calls=%s\n", strings.Join(result.ToolCalls, ","))
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
+	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
+	if len(result.ArtifactFilenames) > 0 {
+		fmt.Printf("artifact_filenames=%s\n", strings.Join(result.ArtifactFilenames, ","))
+	}
+	fmt.Printf("document_sends=%d\n", len(result.DocumentSends))
+	for _, send := range result.DocumentSends {
+		fmt.Printf("document=%s size=%d caption=%q\n", send.Filename, send.SizeBytes, singleLine(send.Caption, 160))
+	}
 	if result.FinalText != "" {
 		fmt.Printf("final=%s\n", singleLine(result.FinalText, 500))
 	}
-	if !result.CalledExecuteCode || !result.Contains5050 {
-		fail("expected execute_code call and final/tool output containing 5050")
+	if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
+		fail("%v", err)
+	}
+	if *artifactSmoke {
+		fmt.Println("PASS: synthetic Telegram turn used execute_code and delivered a sandbox artifact document")
+		return
 	}
 	fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
+}
+
+func defaultArithmeticSmokePrompt() string {
+	return "Use execute_code to compute sum(range(1, 101)) and tell me the result."
+}
+
+func defaultArtifactSmokePrompt() string {
+	return "Use execute_code to create a small text artifact. In Python, write exactly 'hello from Aura artifact smoke' to /tmp/aura_out/aura_artifact.txt, then tell me when it has been sent. Do not use create_xlsx, create_docx, or create_pdf."
+}
+
+func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifactSmoke bool) error {
+	if !result.CalledExecuteCode {
+		return errors.New("expected execute_code call")
+	}
+	if artifactSmoke {
+		if !result.ContainsArtifactMetadata {
+			return errors.New("expected execute_code artifact metadata")
+		}
+		if len(result.DocumentSends) == 0 {
+			return errors.New("expected at least one Telegram document delivery")
+		}
+		return nil
+	}
+	if !result.Contains5050 {
+		return errors.New("expected final/tool output containing 5050")
+	}
+	return nil
 }
 
 func firstAllowedUserID(dbPath string) (string, error) {

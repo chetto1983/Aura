@@ -43,6 +43,51 @@ func TestDebugTextSmokeResultFromMessagesDetectsExecuteCodeAnd5050(t *testing.T)
 	}
 }
 
+func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
+	result := debugTextSmokeResultFromMessages("1148481707", "make artifact", []llm.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []llm.ToolCall{{
+				ID:   "call-1",
+				Name: "execute_code",
+				Arguments: map[string]any{
+					"code": "open('/tmp/aura_out/aura_artifact.txt','w').write('hello')",
+				},
+			}},
+		},
+		{
+			Role:       "tool",
+			ToolCallID: "call-1",
+			Content:    "exit_code: 0\nelapsed_ms: 42\n\nwrote file\n\nartifacts:\n- aura_artifact.txt (5 bytes, text/plain; charset=utf-8, delivered=true)",
+		},
+	})
+
+	if !result.CalledExecuteCode {
+		t.Fatal("CalledExecuteCode = false, want true")
+	}
+	if !result.ContainsArtifactMetadata {
+		t.Fatal("ContainsArtifactMetadata = false, want true")
+	}
+	if len(result.ArtifactFilenames) != 1 || result.ArtifactFilenames[0] != "aura_artifact.txt" {
+		t.Fatalf("ArtifactFilenames = %v", result.ArtifactFilenames)
+	}
+}
+
+func TestDebugDocumentSendsAfterReturnsOnlyNewSends(t *testing.T) {
+	b := &Bot{}
+	b.recordDebugDocumentSend("old.txt", []byte("old"), "old")
+	after := b.debugDocSeq.Load()
+	b.recordDebugDocumentSend("aura_artifact.txt", []byte("hello"), "caption")
+
+	sends := b.debugDocumentSendsAfter(after)
+	if len(sends) != 1 {
+		t.Fatalf("sends = %d, want 1: %+v", len(sends), sends)
+	}
+	if sends[0].Filename != "aura_artifact.txt" || sends[0].SizeBytes != 5 || sends[0].Caption != "caption" {
+		t.Fatalf("send = %+v", sends[0])
+	}
+}
+
 func TestDebugTextSmokeResultFromMessagesReportsMissingTool(t *testing.T) {
 	result := debugTextSmokeResultFromMessages("1148481707", "compute", []llm.Message{
 		{Role: "assistant", Content: "5050"},

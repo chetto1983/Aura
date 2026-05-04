@@ -145,6 +145,8 @@ Sandbox code can return files by writing plain files under `/tmp/aura_out`.
 Aura collects only direct child files from that directory, caps artifact count
 and size, decodes them into `execute_code` artifact metadata, and delivers them
 as Telegram documents when the tool call has a Telegram user context.
+`SANDBOX_TIMEOUT_SEC` defaults to 60 seconds because the bundled Pyodide runner
+can take about 20 seconds to cold-start with the office/data package profile.
 
 To test artifact egress through the same `execute_code` tool boundary, run:
 
@@ -166,6 +168,16 @@ go run ./cmd/debug_telegram_sandbox
 This injects a synthetic private text update into Aura's Telegram handler,
 expects the model to call `execute_code`, and fails unless the final/tool output
 contains `5050`.
+
+To test live Telegram delivery of sandbox-created files, run:
+
+```powershell
+go run ./cmd/debug_telegram_sandbox --artifact-smoke
+```
+
+This asks the live LLM to write `/tmp/aura_out/aura_artifact.txt` through
+`execute_code` and fails unless Aura returns artifact metadata and sends a real
+Telegram document to the allowlisted user.
 
 GoReleaser runs the same installer and smoke before building archives. Release
 archives include `runtime/pyodide/**`, so Windows users do not need to install

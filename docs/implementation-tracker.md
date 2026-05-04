@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.8a` file tool choice clarity.
+Last completed slice: `sandbox.pyodide.9` live Telegram artifact delivery smoke.
 
-Active slice: `sandbox.pyodide.9` live Telegram artifact delivery smoke.
+Active slice: `sandbox.pyodide.close` sandbox milestone closure check.
 
 What is shipped:
 
@@ -87,6 +87,8 @@ What is shipped:
 - Sandbox code can return files by writing plain direct-child files under `/tmp/aura_out`; the Pyodide runner collects up to 10 artifacts capped at 5 MiB each, returns base64 artifact payloads over the runner protocol, and `execute_code` delivers them through Telegram documents when invoked with a Telegram user context.
 - `cmd/debug_sandbox --artifact-smoke` now proves artifact egress through the registered `execute_code` boundary by writing `/tmp/aura_out/artifact.txt` in Pyodide and asserting the tool output includes artifact metadata.
 - File-generation tool choice is explicit in the system prompt and tool descriptions: `create_xlsx` / `create_docx` / `create_pdf` are preferred for ordinary user-facing documents that should persist as Aura sources, while `execute_code` is for calculations, plots, custom exports, and computed artifacts under `/tmp/aura_out`.
+- `cmd/debug_telegram_sandbox --artifact-smoke` now runs a live LLM Telegram smoke that asks the model to create `/tmp/aura_out/aura_artifact.txt`, verifies `execute_code` was called, verifies artifact metadata appeared, and confirms a real Telegram document was sent.
+- `SANDBOX_TIMEOUT_SEC` now defaults to 60 seconds; the prior 15-second default was too short for Pyodide cold start in the live Telegram path even though the standalone debug runner used a 2-minute smoke timeout.
 
 Phase 18 status: **closed**.
 
@@ -111,10 +113,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.9` live Telegram artifact delivery smoke:
-  - ask the live LLM to create a small file/plot through `execute_code`;
-  - verify Aura sends the returned sandbox artifact as a Telegram document to the requesting user;
-  - record copy, filename, MIME, and delivery behavior before closing the sandbox milestone.
+- `sandbox.pyodide.close` milestone closure:
+  - decide whether sandbox artifacts remain deliver-only or also persist as Aura sources;
+  - run one final routing smoke (`create_pdf` for ordinary PDFs, `execute_code` for computed artifacts) if needed;
+  - close the Pyodide sandbox milestone with verification notes.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -243,8 +245,32 @@ Workspace warning:
 | sandbox.pyodide.7b | Telegram conversation sandbox smoke | done | Added `cmd/debug_telegram_sandbox`, a live-LLM Telegram-handler smoke that injects a synthetic private text update, sends real outgoing bot messages, verifies `execute_code` was called, and asserts the conversation surfaced `5050`; also fixed `Bot.Stop` for debug-created bots that never started polling. |
 | sandbox.pyodide.8 | Artifact egress | done | Pyodide code can write direct-child files under `/tmp/aura_out`; the runner returns bounded base64 artifacts, Go decodes them into `sandbox.Artifact`, `execute_code` reports artifact metadata and auto-delivers through Telegram when user context and sender are available, and `cmd/debug_sandbox --artifact-smoke` proves the boundary. |
 | sandbox.pyodide.8a | File tool choice clarity | done | Added prompt and tool-description guidance so ordinary spreadsheets/docs/PDFs prefer typed `create_*` tools that persist Aura sources, while `execute_code` is reserved for computed artifacts, plots, custom exports, and code-required workflows. |
+| sandbox.pyodide.9 | Live Telegram artifact smoke | done | Extended `cmd/debug_telegram_sandbox --artifact-smoke` to require `execute_code`, artifact metadata, and real Telegram document delivery; live run delivered `aura_artifact.txt` after raising the Pyodide timeout default to 60 seconds. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.9 (Live Telegram artifact delivery smoke)
+
+Goal: prove the live Telegram + LLM conversation path can create and deliver a sandbox artifact file.
+
+Implementation:
+
+- Extended `Bot.RunDebugTextSmoke` results with artifact metadata detection and a bounded debug-only capture of successful Telegram document-send metadata.
+- Added `cmd/debug_telegram_sandbox --artifact-smoke`, which asks the live LLM to write `/tmp/aura_out/aura_artifact.txt` through `execute_code` and fails unless a Telegram document is sent.
+- Raised `SANDBOX_TIMEOUT_SEC` default from 15 to 60 seconds after the first live run showed Pyodide cold-starting past the old limit.
+- Updated runtime docs and config tests for the new timeout default.
+
+Verification:
+
+- `go test ./internal/telegram -run "TestDebug(TextSmokeResultFromMessagesDetectsArtifactMetadata|DocumentSendsAfterReturnsOnlyNewSends)" -count=1 -v`
+- `go test ./cmd/debug_telegram_sandbox -run TestTelegramSandboxSmokeReport -count=1 -v`
+- `go test ./internal/config -run "TestLoad(Success|SandboxTimeout)" -count=1 -v`
+- `go test ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`
+- First live run failed usefully at the old 15-second sandbox timeout.
+- `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m` passed: `tool_calls=execute_code`, `contains_artifact_metadata=true`, `artifact_filenames=aura_artifact.txt`, `document_sends=1`, `size=30`, caption `Aura sandbox artifact: aura_artifact.txt`, final text confirmed delivery.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: `sandbox.pyodide.close` decide artifact persistence policy and close the milestone.
 
 ### 2026-05-04 - Sandbox.pyodide.8a (File tool choice clarity)
 

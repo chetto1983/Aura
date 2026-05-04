@@ -18,12 +18,24 @@ import (
 // It is intentionally compact so debug commands can assert milestone behavior
 // without exposing raw tool arguments or secrets.
 type DebugTextSmokeResult struct {
-	UserID            string
-	Prompt            string
-	ToolCalls         []string
-	CalledExecuteCode bool
-	Contains5050      bool
-	FinalText         string
+	UserID                   string
+	Prompt                   string
+	ToolCalls                []string
+	CalledExecuteCode        bool
+	Contains5050             bool
+	ContainsArtifactMetadata bool
+	ArtifactFilenames        []string
+	DocumentSends            []DebugDocumentSend
+	FinalText                string
+}
+
+// DebugDocumentSend records metadata for documents successfully delivered by
+// the bot during a debug smoke. It never stores file bodies.
+type DebugDocumentSend struct {
+	Seq       uint64
+	Filename  string
+	Caption   string
+	SizeBytes int
 }
 
 // RunDebugTextSmoke injects one synthetic private text message into this Bot
@@ -59,6 +71,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		},
 	}
 	c := tele.NewContext(b.bot, update)
+	docSeq := b.debugDocSeq.Load()
 
 	done := make(chan struct{})
 	go func() {
@@ -80,7 +93,9 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	if !ok || convCtx == nil {
 		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, errors.New("telegram debug smoke: invalid conversation context after turn")
 	}
-	return debugTextSmokeResultFromMessages(userIDString, prompt, convCtx.Messages()), nil
+	result := debugTextSmokeResultFromMessages(userIDString, prompt, convCtx.Messages())
+	result.DocumentSends = b.debugDocumentSendsAfter(docSeq)
+	return result, nil
 }
 
 func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Message) DebugTextSmokeResult {
@@ -101,6 +116,33 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		if strings.Contains(msg.Content, "5050") {
 			result.Contains5050 = true
 		}
+		for _, name := range artifactFilenamesFromToolContent(msg.Content) {
+			result.ContainsArtifactMetadata = true
+			result.ArtifactFilenames = append(result.ArtifactFilenames, name)
+		}
 	}
 	return result
+}
+
+func artifactFilenamesFromToolContent(content string) []string {
+	if !strings.Contains(content, "artifacts:") {
+		return nil
+	}
+	var names []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+		name, _, ok := strings.Cut(rest, " ")
+		if !ok {
+			name = rest
+		}
+		name = strings.TrimSpace(name)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
