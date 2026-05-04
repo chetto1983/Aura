@@ -14,6 +14,7 @@ import {
   type ActiveRequest,
   type PromptOptions,
 } from '@/lib/confirmModal';
+import { useLocale } from '@/hooks/useLocale';
 
 // Mount once at the app root. Imperative callers use confirm() / prompt()
 // from @/lib/confirmModal; this component renders whatever request is
@@ -101,10 +102,11 @@ export function ConfirmHost() {
     closeWith(trimmed);
   };
 
+  const { t } = useLocale();
   const isPrompt = active?.kind === 'prompt';
   const opts = active?.opts;
-  const confirmLabel = opts?.confirmLabel ?? (opts?.destructive ? 'Delete' : 'Confirm');
-  const cancelLabel = opts?.cancelLabel ?? 'Cancel';
+  const confirmLabel = opts?.confirmLabel ?? (opts?.destructive ? t('common.delete') : t('common.confirm'));
+  const cancelLabel = opts?.cancelLabel ?? t('common.cancel');
 
   return (
     <Dialog

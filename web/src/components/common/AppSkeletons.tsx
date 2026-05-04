@@ -1,5 +1,6 @@
 import type * as React from "react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/hooks/useLocale";
 
 export function Skeleton({
   className,
@@ -42,8 +43,9 @@ export function ToolArtifactSkeleton() {
 }
 
 export function SkillsListSkeleton({ rows = 3 }: { rows?: number }) {
+  const { t } = useLocale();
   return (
-    <div className="grid gap-3" role="status" aria-label="Caricamento skills">
+    <div className="grid gap-3" role="status" aria-label={t('common.skillsLoading')}>
       {Array.from({ length: rows }).map((_, index) => (
         <div
           key={index}
@@ -59,28 +61,30 @@ export function SkillsListSkeleton({ rows = 3 }: { rows?: number }) {
           </div>
         </div>
       ))}
-      <span className="sr-only">Caricamento skills...</span>
+      <span className="sr-only">{t('common.skillsLoadingSr')}</span>
     </div>
   );
 }
 
 export function CommandResultsSkeleton({ rows = 4 }: { rows?: number }) {
+  const { t } = useLocale();
   return (
-    <div className="grid gap-1 p-2" role="status" aria-label="Ricerca in corso">
+    <div className="grid gap-1 p-2" role="status" aria-label={t('common.searching')}>
       {Array.from({ length: rows }).map((_, index) => (
         <div key={index} className="rounded-[var(--radius-sm)] p-2">
           <Skeleton className="mb-2 h-3.5 w-32" />
           <Skeleton className="h-3 w-full" />
         </div>
       ))}
-      <span className="sr-only">Ricerca in corso...</span>
+      <span className="sr-only">{t('common.searchingSr')}</span>
     </div>
   );
 }
 
 export function GraphSkeleton() {
+  const { t } = useLocale();
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[--surface]" role="status" aria-label="Caricamento grafo">
+    <div className="absolute inset-0 overflow-hidden bg-[--surface]" role="status" aria-label={t('common.graphLoading')}>
       <div className="absolute left-[12%] top-[16%] size-20 rounded-full border border-[--border] bg-[--surface-raised]" />
       <div className="absolute right-[18%] top-[22%] size-14 rounded-full border border-[--border] bg-[--surface-raised]" />
       <div className="absolute bottom-[20%] left-[30%] size-16 rounded-full border border-[--border] bg-[--surface-raised]" />
@@ -94,7 +98,7 @@ export function GraphSkeleton() {
           <Skeleton className="h-3 w-56" />
         </div>
       </div>
-      <span className="sr-only">Caricamento grafo...</span>
+      <span className="sr-only">{t('common.graphLoadingSr')}</span>
     </div>
   );
 }

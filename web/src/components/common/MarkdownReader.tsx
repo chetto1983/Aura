@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useLocale } from "@/hooks/useLocale";
 
 type MarkdownDocument = {
   body: string;
@@ -28,6 +29,7 @@ function parseFrontmatter(markdown: string): MarkdownDocument {
 }
 
 export function MarkdownReader({ markdown }: { markdown: string }) {
+  const { t } = useLocale();
   const doc = parseFrontmatter(markdown);
 
   if (!doc.body) {
@@ -41,7 +43,7 @@ export function MarkdownReader({ markdown }: { markdown: string }) {
   return (
     <article className="sacchi-md-reader">
       {(doc.meta.type || doc.meta.updated) && (
-        <div className="sacchi-md-reader__meta" aria-label="Metadati pagina">
+        <div className="sacchi-md-reader__meta" aria-label={t('common.pageMetadata')}>
           {doc.meta.type && <span>{doc.meta.type}</span>}
           {doc.meta.updated && <span>Aggiornata {doc.meta.updated}</span>}
         </div>

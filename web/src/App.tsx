@@ -8,6 +8,7 @@ import { Login } from '@/components/Login';
 import { ConfirmHost } from '@/components/common/ConfirmModal';
 import { getToken } from '@/lib/auth';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { useLocale } from '@/hooks/useLocale';
 
 // Code-splitting: only HealthDashboard + Shell + Login are eagerly
 // loaded (~core UX). Every other panel lazy-imports so a fresh dashboard
@@ -41,7 +42,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function PanelLoading() {
-  return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  const { t } = useLocale();
+  return <div className="p-6 text-sm text-muted-foreground">{t('common.loading')}</div>;
 }
 
 export default function App() {
