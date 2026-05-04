@@ -1,16 +1,15 @@
 package scheduler
 
 import (
-	"database/sql"
 	"path/filepath"
 	"testing"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 func TestMigrateAddsProposedUpdateReviewColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "legacy.db")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open legacy db: %v", err)
 	}
@@ -53,7 +52,7 @@ CREATE TABLE proposed_updates (
 
 func TestMigrateAddsScheduleWeekdaysColumn(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "legacy-scheduler.db")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open legacy db: %v", err)
 	}

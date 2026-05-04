@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/philippgille/chromem-go"
-	_ "modernc.org/sqlite" // SQLite driver
 )
 
 // EmbedCacheNamespace returns the provider-scoped cache namespace for
@@ -53,6 +53,7 @@ type EmbedCache struct {
 	model  string
 	inner  chromem.EmbeddingFunc
 	logger *slog.Logger
+	owned  bool
 	hits   atomic.Uint64
 	misses atomic.Uint64
 }
@@ -65,9 +66,23 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 	if dbPath == "" {
 		return nil, errors.New("embed cache: dbPath required")
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("embed cache: open %q: %w", dbPath, err)
+	}
+	c, err := NewEmbedCacheWithDB(db, model, inner, logger)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	c.owned = true
+	return c, nil
+}
+
+// NewEmbedCacheWithDB creates the cache table using a caller-owned SQLite pool.
+func NewEmbedCacheWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+	if db == nil {
+		return nil, errors.New("embed cache: db required")
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS embedding_cache (
 		content_sha TEXT NOT NULL,
@@ -76,15 +91,17 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 		created_at  TIMESTAMP NOT NULL,
 		PRIMARY KEY (content_sha, model)
 	)`); err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("embed cache: create table: %w", err)
 	}
-	return &EmbedCache{db: db, model: model, inner: inner, logger: logger}, nil
+	return &EmbedCache{db: db, model: model, inner: inner, logger: logger, owned: false}, nil
 }
 
 // Close releases the SQLite handle. Idempotent.
 func (c *EmbedCache) Close() error {
 	if c == nil || c.db == nil {
+		return nil
+	}
+	if !c.owned {
 		return nil
 	}
 	return c.db.Close()

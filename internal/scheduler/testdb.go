@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // NewTestDB opens a fresh SQLite database in t.TempDir(), applies all
@@ -15,7 +15,7 @@ import (
 func NewTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		t.Fatalf("NewTestDB open: %v", err)
 	}

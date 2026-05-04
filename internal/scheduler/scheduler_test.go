@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	auradb "github.com/aura/aura/internal/db"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -18,6 +20,25 @@ func newTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { store.Close() })
 	return store
+}
+
+func TestNewStoreWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	store, err := NewStoreWithDB(db)
+	if err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("store Close: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("shared db was closed by store Close: %v", err)
+	}
 }
 
 func TestParseDailyTime(t *testing.T) {

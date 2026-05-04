@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // conversationsSchemaSQL creates the conversations archive table used by
@@ -103,26 +103,23 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
     ON scheduled_tasks(status, next_run_at);
 `
 
-// Store wraps a *sql.DB with the SQL needed by the scheduler. The underlying
-// DB is owned by the caller; Store does not Close it so the scheduler can
-// share a connection with other Aura subsystems (e.g. search).
+// Store wraps a *sql.DB with the SQL needed by the scheduler. OpenStore-created
+// stores own their DB handle; NewStoreWithDB-created stores share a caller-owned
+// pool with other Aura subsystems.
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	owned bool
 }
 
 // OpenStore opens (or creates) the SQLite file at path and applies the
 // scheduler schema. The caller is responsible for closing the returned
 // Store.
 func OpenStore(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := auradb.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open scheduler db: %w", err)
 	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping scheduler db: %w", err)
-	}
-	s := &Store{db: db}
+	s := &Store{db: db, owned: true}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -133,7 +130,7 @@ func OpenStore(path string) (*Store, error) {
 // NewStoreWithDB wraps an existing *sql.DB so the scheduler can share a
 // connection with other subsystems on the same DB file.
 func NewStoreWithDB(db *sql.DB) (*Store, error) {
-	s := &Store{db: db}
+	s := &Store{db: db, owned: false}
 	if err := s.migrate(); err != nil {
 		return nil, err
 	}
@@ -144,6 +141,9 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 // (created via OpenStore). Callers using NewStoreWithDB must close their
 // own DB.
 func (s *Store) Close() error {
+	if s == nil || !s.owned {
+		return nil
+	}
 	return s.db.Close()
 }
 

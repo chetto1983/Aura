@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/philippgille/chromem-go"
 )
 
@@ -46,6 +47,25 @@ func TestEmbedCacheNamespace(t *testing.T) {
 	}
 	if got := EmbedCacheNamespace("https://api.mistral.ai/v1", ""); got != "https://api.mistral.ai/v1" {
 		t.Fatalf("empty model namespace = %q", got)
+	}
+}
+
+func TestNewEmbedCacheWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared-cache.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	c, err := NewEmbedCacheWithDB(db, "mistral-embed", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewEmbedCacheWithDB: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("cache Close: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("shared db was closed by cache Close: %v", err)
 	}
 }
 

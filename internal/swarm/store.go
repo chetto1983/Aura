@@ -7,13 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
-
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 const schemaSQL = `
@@ -66,13 +64,9 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", filepath.Clean(path))
+	db, err := auradb.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open swarm db: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping swarm db: %w", err)
 	}
 	s := newStore(db, true)
 	if err := s.migrate(); err != nil {
@@ -94,7 +88,6 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 }
 
 func newStore(db *sql.DB, owned bool) *Store {
-	db.SetMaxOpenConns(1)
 	return &Store{
 		db:    db,
 		owned: owned,
@@ -115,9 +108,6 @@ func (s *Store) Close() error {
 func (s *Store) DB() *sql.DB { return s.db }
 
 func (s *Store) migrate() error {
-	if _, err := s.db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
-		return fmt.Errorf("swarm migrate busy_timeout: %w", err)
-	}
 	if _, err := s.db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("swarm migrate: %w", err)
 	}

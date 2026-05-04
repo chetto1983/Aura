@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // sqliteSearcher provides full-text search via SQLite + FTS5.
@@ -18,18 +18,24 @@ type sqliteSearcher struct {
 
 // newSqliteSearcher creates a SQLite-backed searcher.
 func newSqliteSearcher(dbPath string, logger *slog.Logger) (*sqliteSearcher, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite connection: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("pinging sqlite database: %w", err)
+	s, err := newSqliteSearcherWithDB(db, logger)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
 	}
+	return s, nil
+}
 
+func newSqliteSearcherWithDB(db *sql.DB, logger *slog.Logger) (*sqliteSearcher, error) {
+	if db == nil {
+		return nil, fmt.Errorf("sqlite searcher: db required")
+	}
 	if err := setupSqliteSchema(db); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("setting up sqlite schema: %w", err)
 	}
 

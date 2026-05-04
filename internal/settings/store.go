@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // ErrNotFound is returned by Get when the key is unset. Callers that want
@@ -54,13 +54,9 @@ func OpenStore(path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("settings: db path required")
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := auradb.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("settings: open db: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("settings: ping db: %w", err)
 	}
 	s := &Store{db: db, now: time.Now, owned: true}
 	if err := s.migrate(); err != nil {

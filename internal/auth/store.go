@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // ErrInvalid is returned by Lookup when the token is unknown, malformed,
@@ -72,13 +72,9 @@ type Store struct {
 // OpenStore opens (or creates) the SQLite file at path and applies the
 // auth schema. The caller is responsible for Close.
 func OpenStore(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := auradb.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open auth db: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping auth db: %w", err)
 	}
 	s := &Store{db: db, now: time.Now, owned: true}
 	if err := s.migrate(); err != nil {

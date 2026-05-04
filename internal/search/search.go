@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -68,6 +69,25 @@ func NewEngineWithFallback(wikiDir string, embedFn chromem.EmbeddingFunc, dbPath
 	}
 
 	sq, err := newSqliteSearcher(dbPath, logger)
+	if err != nil {
+		logger.Warn("sqlite fallback unavailable, proceeding with chromem only", "error", err)
+		return engine, nil
+	}
+
+	engine.sqlite = sq
+	logger.Info("sqlite fallback search enabled")
+	return engine, nil
+}
+
+// NewEngineWithFallbackWithDB creates a search engine using a caller-owned
+// SQLite pool for the FTS5 fallback.
+func NewEngineWithFallbackWithDB(wikiDir string, embedFn chromem.EmbeddingFunc, db *sql.DB, logger *slog.Logger) (*Engine, error) {
+	engine, err := NewEngine(wikiDir, embedFn, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	sq, err := newSqliteSearcherWithDB(db, logger)
 	if err != nil {
 		logger.Warn("sqlite fallback unavailable, proceeding with chromem only", "error", err)
 		return engine, nil

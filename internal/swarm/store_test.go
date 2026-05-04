@@ -2,15 +2,13 @@ package swarm
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/llm"
-
-	_ "modernc.org/sqlite"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -158,7 +156,7 @@ func TestStoreListRunsNewestFirstAndClampsLimit(t *testing.T) {
 }
 
 func TestNewStoreWithDBDoesNotOwnDB(t *testing.T) {
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "shared.db"))
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
