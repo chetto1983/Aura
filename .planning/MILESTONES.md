@@ -22,4 +22,4 @@ Started: 2026-05-04
 
 Goal: Resolve all codebase concerns from `.planning/codebase/CONCERNS.md` — fix bugs, raise coverage, tighten security, and ship a stable release with bundled sandbox.
 
-Scope: P0–P3 concerns + sandbox.pyodide.6
+Scope: P0–P3 concerns

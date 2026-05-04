@@ -40,7 +40,6 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 - [ ] Encrypt secrets at rest in settings store
 - [ ] Tray basic unit test coverage + cross-platform `openBrowser` abstraction
 - [ ] Document telebot beta dependency risk
-- [ ] Bundle Pyodide runtime into Windows release artifact + smoke before publish
 
 ### Out of Scope
 
@@ -103,7 +102,6 @@ This document evolves at phase transitions and milestone boundaries.
 - Centralize DB, add token expiry, extract scheduler migrations
 - Versioned migration framework, split file tools, encrypt secrets
 - Tray tests + cross-platform browser, document telebot status
-- Bundle Pyodide runtime into release + smoke test
 
 ---
 
