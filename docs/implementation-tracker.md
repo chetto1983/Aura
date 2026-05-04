@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19g.1` scheduled-job runtime context and rendered notifications.
+Last completed slice: `19h` skill proposal lifecycle decision.
 
 What is shipped:
 
@@ -50,6 +50,7 @@ What is shipped:
 - Maintenance raises `memory_decay` review issues.
 - Wiki proposals persist provenance (`origin_tool`, `origin_reason`, evidence refs, agent job/swarm IDs).
 - Skill proposals persist procedural-memory drafts (`SKILL.md`, allowed tools, smoke prompt, reason) in the same review queue without mutating local skill files.
+- Skill proposal approval is explicitly review-only in Phase 19: `/summaries` returns `skill_lifecycle`, and install/smoke is a documented manual admin handoff rather than a silent side effect.
 - `/summaries` supports single and batch approve/reject.
 - `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
 - Proposal evidence chips can jump to source/wiki/conversation context.
@@ -93,10 +94,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19h: skill proposal install/smoke decision:
-  - decide whether Phase 19 closes with a documented manual install/smoke handoff or an implemented admin-gated approval workflow;
-  - keep normal `/summaries` approval from silently mutating skills;
-  - record the lifecycle clearly so procedural-memory proposals are not ambiguous debt.
+- Phase 19i: real-user routine drill:
+  - run realistic prompts for skill-backed routines, wake gates, run-now behavior, and skill proposal creation;
+  - record elapsed time, LLM/tool calls, token use, selected tools, skipped/not-skipped outcome, and usefulness notes;
+  - treat slow or ambiguous behavior as follow-up work rather than "technically passed".
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -211,8 +212,39 @@ Workspace warning:
 | 19f | Agent-job outputs and wake gates | done | Scheduled `agent_job` runs persist compact output/metrics/signature, deterministic wiki/source/task wake gates can skip LLM calls, and `context_from` can include prior task outputs. |
 | 19g | Scheduled-routine E2E harness | done | `cmd/debug_agent_jobs` proves run -> skip -> mutate -> rerun with persisted output/metrics/signature; skipped run makes zero LLM/tool calls. |
 | 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
+| 19h | Skill proposal lifecycle decision | done | Phase 19 uses Option A: skill proposals remain review-only on `/summaries` approval, expose an explicit `skill_lifecycle` API handoff, and document manual install/smoke as the admin path for Phase 20. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19h (Skill proposal lifecycle decision)
+
+Goal: make procedural-memory proposal review unambiguous without introducing a silent skill mutation path.
+
+Decision:
+
+- Chose Option A for Phase 19 closure: approving a skill proposal in `/summaries` marks the draft reviewed only.
+- Install/update/delete and smoke execution remain an explicit admin handoff, documented in `docs/plans/2026-05-04-skill-proposal-lifecycle.md`.
+- Option B remains a future admin workflow, but it must not hook generic summary approval directly.
+
+Implementation:
+
+- Added `summarizer.IsSkillAction` to pair with `IsWikiAction`, making wiki mutations and skill proposals separate at the type boundary.
+- Consolidated single and batch summary approval through the same guarded `applyApprovedSummary` path, so non-wiki actions return before any `AutoApplier` write.
+- Added `skill_lifecycle` to `GET/POST /summaries` DTOs for skill proposals:
+  - `mode=review_only`;
+  - `review_status=pending_review|reviewed|rejected`;
+  - `install_status=not_installed_by_summary_approval`;
+  - `smoke_status=operator_required`;
+  - `next_step` names the explicit admin handoff.
+- Added tests for action classifiers, skill lifecycle DTOs, and approved skill proposals not mutating wiki pages.
+
+Verification:
+
+- `go test ./internal/conversation/summarizer ./internal/api`
+- `staticcheck ./internal/conversation/summarizer ./internal/api`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: 19i, run the real-user routine drill and record usefulness/latency/tool metrics.
 
 ### 2026-05-04 - Slice 19g.1 (Scheduled-job runtime context and rendered notifications)
 

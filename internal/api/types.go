@@ -281,18 +281,19 @@ type WikiIssue struct {
 
 // ProposedUpdate is one row of GET /summaries (mirrors proposed_updates table).
 type ProposedUpdate struct {
-	ID            int64      `json:"id"`
-	ChatID        int64      `json:"chat_id"`
-	Fact          string     `json:"fact"`
-	Action        string     `json:"action"`
-	TargetSlug    string     `json:"target_slug,omitempty"`
-	Similarity    float64    `json:"similarity"`
-	SourceTurnIDs []int64    `json:"source_turn_ids"`
-	Category      string     `json:"category,omitempty"`
-	RelatedSlugs  []string   `json:"related_slugs"`
-	Provenance    Provenance `json:"provenance,omitempty"`
-	Status        string     `json:"status"`
-	CreatedAt     string     `json:"created_at"`
+	ID             int64           `json:"id"`
+	ChatID         int64           `json:"chat_id"`
+	Fact           string          `json:"fact"`
+	Action         string          `json:"action"`
+	TargetSlug     string          `json:"target_slug,omitempty"`
+	Similarity     float64         `json:"similarity"`
+	SourceTurnIDs  []int64         `json:"source_turn_ids"`
+	Category       string          `json:"category,omitempty"`
+	RelatedSlugs   []string        `json:"related_slugs"`
+	Provenance     Provenance      `json:"provenance,omitempty"`
+	SkillLifecycle *SkillLifecycle `json:"skill_lifecycle,omitempty"`
+	Status         string          `json:"status"`
+	CreatedAt      string          `json:"created_at"`
 }
 
 type SummaryBatchRequest struct {
@@ -336,6 +337,17 @@ type SkillProposal struct {
 	SmokePrompt  string   `json:"smoke_prompt,omitempty"`
 	Content      string   `json:"content,omitempty"`
 	Reason       string   `json:"reason,omitempty"`
+}
+
+// SkillLifecycle documents the current Phase-19 review contract for skill
+// proposals. Approving a generic summary reviews the draft only; it does not
+// write SKILL.md files or run smoke prompts.
+type SkillLifecycle struct {
+	Mode          string `json:"mode"`
+	ReviewStatus  string `json:"review_status"`
+	InstallStatus string `json:"install_status"`
+	SmokeStatus   string `json:"smoke_status"`
+	NextStep      string `json:"next_step"`
 }
 
 // SwarmRunSummary is one row of GET /swarm/runs.

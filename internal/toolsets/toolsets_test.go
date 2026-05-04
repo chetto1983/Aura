@@ -44,14 +44,13 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 		"run_task_now",
 		"spawn_aurabot",
 		"run_aurabot_swarm",
-		"execute_code",
 		"save_tool",
 	} {
 		if slices.Contains(safe, forbidden) {
 			t.Fatalf("scheduler_safe includes forbidden tool %q: %+v", forbidden, safe)
 		}
 	}
-	for _, required := range []string{"search_memory", "web_search", "propose_wiki_change", "propose_skill_change"} {
+	for _, required := range []string{"search_memory", "web_search", "propose_wiki_change", "propose_skill_change", "execute_code", "list_tools", "read_tool"} {
 		if !slices.Contains(safe, required) {
 			t.Fatalf("scheduler_safe missing %q: %+v", required, safe)
 		}

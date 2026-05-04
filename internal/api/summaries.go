@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -68,26 +69,7 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Apply via AutoApplier if a wiki writer is wired. The status flip
-		// happens first so concurrent approve/reject requests cannot both apply.
-		if deps.SummariesWiki != nil {
-			applier := summarizer.NewAutoApplier(deps.SummariesWiki)
-			dec := summarizer.Decision{
-				Candidate: summarizer.Candidate{
-					Fact:          proposal.Fact,
-					Category:      proposalCategory(proposal.Category),
-					RelatedSlugs:  proposal.RelatedSlugs,
-					SourceTurnIDs: proposal.SourceTurnIDs,
-				},
-				Action:     summarizer.Action(proposal.Action),
-				TargetSlug: proposal.TargetSlug,
-				Similarity: proposal.Similarity,
-			}
-			if applyErr := applier.Apply(r.Context(), dec); applyErr != nil {
-				deps.Logger.Warn("summaries approve: apply failed", "id", id, "error", applyErr)
-				// Don't block the status flip — log and continue.
-			}
-		}
+		applyApprovedSummary(r.Context(), deps, proposal)
 
 		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(proposal))
 	}
@@ -251,18 +233,19 @@ func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {
 		related = []string{}
 	}
 	return ProposedUpdate{
-		ID:            p.ID,
-		ChatID:        p.ChatID,
-		Fact:          p.Fact,
-		Action:        p.Action,
-		TargetSlug:    p.TargetSlug,
-		Similarity:    p.Similarity,
-		SourceTurnIDs: ids,
-		Category:      p.Category,
-		RelatedSlugs:  related,
-		Provenance:    provenanceToDTO(p.Provenance),
-		Status:        p.Status,
-		CreatedAt:     p.CreatedAt.UTC().Format(time.RFC3339),
+		ID:             p.ID,
+		ChatID:         p.ChatID,
+		Fact:           p.Fact,
+		Action:         p.Action,
+		TargetSlug:     p.TargetSlug,
+		Similarity:     p.Similarity,
+		SourceTurnIDs:  ids,
+		Category:       p.Category,
+		RelatedSlugs:   related,
+		Provenance:     provenanceToDTO(p.Provenance),
+		SkillLifecycle: skillLifecycleToDTO(p),
+		Status:         p.Status,
+		CreatedAt:      p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -301,6 +284,38 @@ func skillProposalToDTO(p *summarizer.SkillProposal) *SkillProposal {
 		SmokePrompt:  p.SmokePrompt,
 		Content:      p.Content,
 		Reason:       p.Reason,
+	}
+}
+
+func skillLifecycleToDTO(p summarizer.ProposedUpdate) *SkillLifecycle {
+	if !summarizer.IsSkillAction(p.Action) {
+		return nil
+	}
+	name := ""
+	action := p.Action
+	if p.Provenance.Skill != nil {
+		name = p.Provenance.Skill.Name
+		if p.Provenance.Skill.Action != "" {
+			action = "skill_" + p.Provenance.Skill.Action
+		}
+	}
+	nextStep := "Use the explicit admin skill workflow to install/update/delete the reviewed skill, then run the smoke prompt and record the result."
+	if name != "" {
+		nextStep = fmt.Sprintf("Use the explicit admin skill workflow for %q to install/update/delete the reviewed skill, then run the smoke prompt and record the result.", name)
+	}
+	reviewStatus := "pending_review"
+	switch p.Status {
+	case "approved":
+		reviewStatus = "reviewed"
+	case "rejected":
+		reviewStatus = "rejected"
+	}
+	return &SkillLifecycle{
+		Mode:          "review_only",
+		ReviewStatus:  reviewStatus,
+		InstallStatus: "not_installed_by_summary_approval",
+		SmokeStatus:   "operator_required",
+		NextStep:      strings.TrimSpace(action + ": " + nextStep),
 	}
 }
 

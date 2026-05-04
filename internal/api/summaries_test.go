@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,20 @@ func seedProposal(t *testing.T, db *sql.DB, action, status string) int64 {
 	return id
 }
 
+func seedSkillProposal(t *testing.T, db *sql.DB, action, status string) int64 {
+	t.Helper()
+	provenance := `{"origin_tool":"propose_skill_change","proposal_kind":"skill","skill":{"action":"create","name":"morning-brief","description":"Morning briefing flow","allowed_tools":["daily_briefing"],"smoke_prompt":"Brief me for today","content":"---\nname: morning-brief\ndescription: Morning briefing flow\n---\nUse daily_briefing."}}`
+	res, err := db.ExecContext(context.Background(),
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
+		 VALUES (1, 'skill draft', ?, '', 1, '[]', 'skill', '[]', ?, ?)`,
+		action, provenance, status)
+	if err != nil {
+		t.Fatalf("seed skill: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 func TestHandleSummariesList_HappyPath(t *testing.T) {
 	db, store := newSummariesDB(t)
 	seedProposal(t, db, "new", "pending")
@@ -99,6 +114,40 @@ func TestHandleSummariesList_Empty(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&body)
 	if len(body) != 0 {
 		t.Fatalf("want empty, got %d", len(body))
+	}
+}
+
+func TestHandleSummariesList_SkillProposalLifecycle(t *testing.T) {
+	db, store := newSummariesDB(t)
+	seedSkillProposal(t, db, "skill_create", "pending")
+
+	router := NewRouter(Deps{Summaries: store})
+	req := httptest.NewRequest("GET", "/summaries", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body []ProposedUpdate
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) != 1 || body[0].Provenance.Skill == nil {
+		t.Fatalf("missing skill proposal DTO: %#v", body)
+	}
+	lifecycle := body[0].SkillLifecycle
+	if lifecycle == nil {
+		t.Fatalf("missing skill lifecycle: %#v", body[0])
+	}
+	if lifecycle.Mode != "review_only" || lifecycle.ReviewStatus != "pending_review" {
+		t.Fatalf("unexpected lifecycle = %#v", lifecycle)
+	}
+	if lifecycle.InstallStatus != "not_installed_by_summary_approval" || lifecycle.SmokeStatus != "operator_required" {
+		t.Fatalf("lifecycle should make install/smoke handoff explicit: %#v", lifecycle)
+	}
+	if !strings.Contains(lifecycle.NextStep, "morning-brief") {
+		t.Fatalf("next step should name the skill: %#v", lifecycle)
 	}
 }
 
@@ -149,7 +198,7 @@ func TestHandleSummariesApprove_HappyPath(t *testing.T) {
 
 func TestHandleSummariesApprove_SkillProposalDoesNotMutateWiki(t *testing.T) {
 	db, store := newSummariesDB(t)
-	id := seedProposal(t, db, "skill_create", "pending")
+	id := seedSkillProposal(t, db, "skill_create", "pending")
 	ws := &fakeWikiStoreForSummaries{}
 
 	router := NewRouter(Deps{Summaries: store, SummariesWiki: ws})
@@ -164,6 +213,9 @@ func TestHandleSummariesApprove_SkillProposalDoesNotMutateWiki(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&body)
 	if body.Status != "approved" || body.Action != "skill_create" {
 		t.Fatalf("response = %+v", body)
+	}
+	if body.SkillLifecycle == nil || body.SkillLifecycle.ReviewStatus != "reviewed" {
+		t.Fatalf("approved skill proposal should say reviewed only: %#v", body.SkillLifecycle)
 	}
 	if len(ws.written) != 0 {
 		t.Fatalf("skill proposal approval must not write wiki pages, wrote %d", len(ws.written))

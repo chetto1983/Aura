@@ -73,8 +73,9 @@ type Config struct {
 	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
 
 	// Sandbox code execution (Isola WASM)
-	SandboxEnabled    bool `envconfig:"SANDBOX_ENABLED" default:"true"`
-	SandboxTimeoutSec int  `envconfig:"SANDBOX_TIMEOUT_SEC" default:"15"`
+	SandboxEnabled         bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"15"`
+	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -180,6 +181,7 @@ func Load() (*Config, error) {
 
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", 15)
+	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
 	return cfg, nil
 }

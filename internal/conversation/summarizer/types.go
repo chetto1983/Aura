@@ -25,6 +25,18 @@ func IsWikiAction(action string) bool {
 	}
 }
 
+// IsSkillAction reports whether action represents a procedural-memory skill
+// proposal. Generic review approval marks these reviewed only; installation
+// and smoke tests stay in an explicit admin skill workflow.
+func IsSkillAction(action string) bool {
+	switch Action(action) {
+	case ActionSkillCreate, ActionSkillUpdate, ActionSkillDelete:
+		return true
+	default:
+		return false
+	}
+}
+
 // Candidate is one extracted fact from a conversation turn batch.
 type Candidate struct {
 	Fact          string   `json:"fact"`

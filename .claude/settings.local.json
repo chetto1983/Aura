@@ -65,7 +65,12 @@
       "PowerShell($exe = [System.Reflection.Assembly]::LoadFile\\(\"D:\\\\Aura\\\\cmd\\\\aura\\\\aura.exe\"\\); \"OK\")",
       "Bash(go version *)",
       "PowerShell([System.Diagnostics.FileVersionInfo]::GetVersionInfo\\(\"D:\\\\Aura\\\\aura.exe\"\\) | Select-Object ProductName, FileDescription, CompanyName, FileVersion, ProductVersion, OriginalFilename, InternalName | Format-List)",
-      "PowerShell(Get-Item \"D:\\\\Aura\\\\aura.exe\" | ForEach-Object { [System.Diagnostics.FileVersionInfo]::GetVersionInfo\\($_.FullName\\) } | Select-Object ProductName, FileDescription, CompanyName, FileVersion, ProductVersion, OriginalFilename, InternalName | Format-List)"
+      "PowerShell(Get-Item \"D:\\\\Aura\\\\aura.exe\" | ForEach-Object { [System.Diagnostics.FileVersionInfo]::GetVersionInfo\\($_.FullName\\) } | Select-Object ProductName, FileDescription, CompanyName, FileVersion, ProductVersion, OriginalFilename, InternalName | Format-List)",
+      "Bash(Get-ChildItem *)",
+      "Bash(New-Item *)",
+      "Bash(python *)",
+      "Bash(pip install *)",
+      "Bash(pip show *)"
     ]
   }
 }

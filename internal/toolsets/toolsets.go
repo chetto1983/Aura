@@ -51,6 +51,9 @@ var profiles = map[string][]string{
 		"web_fetch",
 		"propose_wiki_change",
 		"propose_skill_change",
+		"execute_code",
+		"list_tools",
+		"read_tool",
 	},
 }
 

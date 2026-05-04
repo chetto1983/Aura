@@ -2,7 +2,7 @@
 
 Date: 2026-05-04
 
-Status: planned
+Status: in progress
 
 Scope: close Phase 19 without leaving ambiguous debt around procedural memory, skill-backed scheduled routines, wake gates, and legacy cleanup.
 
@@ -35,12 +35,12 @@ Already shipped:
 - graph-aware semantic index (`19c`);
 - named toolset profiles for jobs and swarm (`19d`);
 - skill/context-backed scheduled `agent_job` payloads (`19e`);
-- persisted agent-job output, metrics, wake signatures, and deterministic skip gates (`19f`).
+- persisted agent-job output, metrics, wake signatures, and deterministic skip gates (`19f`);
+- scheduled-routine E2E harness plus log-driven runtime-context fix (`19g`, `19g.1`);
+- skill proposal lifecycle decision (`19h`): generic `/summaries` approval is review-only, with install/smoke documented as a manual admin handoff.
 
 Remaining risk:
 
-- scheduled routines have unit-level proof, but not one compact E2E harness that proves run -> skip -> mutate -> rerun;
-- skill proposals contain smoke prompts, but the install/smoke handoff needs an explicit product decision or implementation;
 - real-user prompts need one final drill to ensure this is useful and fast, not just architecturally correct;
 - legacy/debt items need final classification so Phase 20 does not inherit vague cleanup.
 
@@ -101,9 +101,11 @@ Debt not allowed:
 
 Objective: make the procedural-memory workflow unambiguous.
 
+Status: done for Phase 19 with Option A. See `docs/plans/2026-05-04-skill-proposal-lifecycle.md`.
+
 Decision first:
 
-- Option A, minimal close: skill proposals stay review-only in Phase 19; approved proposals are marked reviewed, and install/smoke is a documented manual operator step for Phase 20.
+- Option A, minimal close: skill proposals stay review-only in Phase 19; approved proposals are marked reviewed, and install/smoke is a documented manual operator step for Phase 20. **Chosen.**
 - Option B, stronger close: approval can install the skill through the existing admin-gated skill installer, run the proposal smoke prompt, and record pass/fail.
 
 Preferred implementation if choosing Option B:

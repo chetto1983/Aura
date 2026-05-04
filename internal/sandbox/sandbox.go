@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -61,6 +62,10 @@ func NewManager(cfg Config) (*Manager, error) {
 
 // Execute runs the given Python code in an Isola WASM sandbox.
 func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error) {
+	if err := m.ValidateCode(code); err != nil {
+		return nil, err
+	}
+
 	tmpFile, err := os.CreateTemp("", "aura-sandbox-*.py")
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: create temp file: %w", err)
@@ -119,6 +124,53 @@ func (m *Manager) IsAvailable() bool {
 	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", "import isola; print('ok')")
 	out, err := cmd.Output()
 	return err == nil && string(bytes.TrimSpace(out)) == "ok"
+}
+
+// forbiddenPatterns are Python constructs rejected before execution as
+// defense-in-depth. The WASM sandbox already isolates the runtime, but
+// these rejections fail fast with clear error messages.
+var forbiddenPatterns = []string{
+	"__import__(",
+	"eval(",
+	"exec(",
+	"compile(",
+	"globals()",
+	"locals()",
+	"getattr(",
+	"setattr(",
+	"delattr(",
+	"input(",
+}
+
+// ValidateCode performs defense-in-depth validation before sandbox
+// execution. It shells out to Python's compiler for syntax checking, then
+// scans for forbidden patterns. Returns nil if code appears safe.
+func (m *Manager) ValidateCode(code string) error {
+	if strings.TrimSpace(code) == "" {
+		return errors.New("sandbox: code must not be empty")
+	}
+	if len(code) > 100_000 {
+		return errors.New("sandbox: code exceeds 100KB limit")
+	}
+	lowered := strings.ToLower(code)
+	for _, pattern := range forbiddenPatterns {
+		if strings.Contains(lowered, pattern) {
+			return fmt.Errorf("sandbox: forbidden construct %q detected", pattern)
+		}
+	}
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, m.cfg.PythonPath, "-c", "compile(__import__('sys').stdin.read(), '<sandbox>', 'exec')")
+	cmd.Stdin = strings.NewReader(code)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		stderr := string(out)
+		if stderr == "" {
+			stderr = err.Error()
+		}
+		return fmt.Errorf("sandbox: syntax error: %s", strings.TrimSpace(stderr))
+	}
+	return nil
 }
 
 // FindRunnerPath locates sandbox_runner.py. Tries multiple locations:

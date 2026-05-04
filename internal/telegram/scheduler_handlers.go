@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -441,22 +442,83 @@ If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String()
 		return fmt.Errorf("auto_improve: LLM call: %w", err)
 	}
 
-	var proposals []struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Params      string `json:"params"`
-		Code        string `json:"code"`
-		Usage       string `json:"usage"`
-	}
+	var proposals []autoImproveProposal
 	if err := json.Unmarshal([]byte(resp.Content), &proposals); err != nil {
 		logger.Warn("auto_improve: failed to parse LLM proposals", "error", err)
 		return nil
 	}
 
+	mode := strings.ToLower(strings.TrimSpace(b.cfg.SandboxAutoImproveMode))
+	if mode == "" {
+		mode = "dry_run"
+	}
+
+	switch mode {
+	case "dry_run":
+		return b.proposeAutoImproveTools(ctx, proposals, logger)
+	case "auto_apply":
+		return b.applyAutoImproveTools(ctx, proposals, logger)
+	default:
+		logger.Warn("auto_improve: unknown mode, defaulting to dry_run", "mode", mode)
+		return b.proposeAutoImproveTools(ctx, proposals, logger)
+	}
+}
+
+func (b *Bot) proposeAutoImproveTools(ctx context.Context, proposals []autoImproveProposal, logger *slog.Logger) error {
+	if len(proposals) == 0 {
+		for _, ownerID := range b.collectOwnerIDs() {
+			b.SendToUser(ownerID, "Auto-improve scan complete: no gaps found.")
+		}
+		return nil
+	}
+
+	for _, p := range proposals {
+		if _, err := b.toolReg.GetToolCode(p.Name); err == nil {
+			logger.Info("auto_improve: tool already exists, skipping proposal", "name", p.Name)
+			continue
+		}
+		msg := fmt.Sprintf("Auto-improve proposes a new tool:\n\n**%s** — %s\n\nParams: %s\nUsage: %s\n\n```python\n%s\n```\n\nApprove with /approve_tool %s or ignore.",
+			p.Name, p.Description, p.Params, p.Usage, truncate(p.Code, 2000), p.Name)
+		for _, ownerID := range b.collectOwnerIDs() {
+			if err := b.SendToUser(ownerID, msg); err != nil {
+				logger.Warn("auto_improve: failed to send proposal", "name", p.Name, "owner_id", ownerID, "error", err)
+			}
+		}
+	}
+	return nil
+}
+
+type autoImproveProposal struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Params      string `json:"params"`
+	Code        string `json:"code"`
+	Usage       string `json:"usage"`
+}
+
+func (b *Bot) applyAutoImproveTools(ctx context.Context, proposals []autoImproveProposal, logger *slog.Logger) error {
 	for _, p := range proposals {
 		if _, err := b.toolReg.GetToolCode(p.Name); err == nil {
 			logger.Info("auto_improve: tool already exists, skipping", "name", p.Name)
 			continue
+		}
+
+		if b.sandboxMgr != nil {
+			if err := b.sandboxMgr.ValidateCode(p.Code); err != nil {
+				logger.Warn("auto_improve: tool failed validation, skipping", "name", p.Name, "error", err)
+				continue
+			}
+			result, err := b.sandboxMgr.Execute(ctx, p.Code, false)
+			if err != nil || !result.OK {
+				errMsg := "sandbox error"
+				if err != nil {
+					errMsg = err.Error()
+				} else {
+					errMsg = result.Stderr
+				}
+				logger.Warn("auto_improve: tool failed sandbox execution, skipping", "name", p.Name, "error", errMsg)
+				continue
+			}
 		}
 
 		if err := b.toolReg.SaveTool(ctx, p.Name, p.Description, p.Params, p.Code, p.Usage); err != nil {
@@ -467,12 +529,11 @@ If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String()
 		logger.Info("auto_improve: saved new tool", "name", p.Name)
 
 		for _, ownerID := range b.collectOwnerIDs() {
-			if err := b.sendGeneratedToUser(ownerID, fmt.Sprintf("I wrote a new tool: **%s** - %s", p.Name, p.Description)); err != nil {
+			if err := b.SendToUser(ownerID, fmt.Sprintf("Auto-improve saved a new tool: **%s** — %s", p.Name, p.Description)); err != nil {
 				logger.Warn("auto_improve: failed to notify owner", "owner_id", ownerID, "error", err)
 			}
 		}
 	}
-
 	return nil
 }
 
