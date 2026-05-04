@@ -2,6 +2,8 @@
 
 Date: 2026-05-03
 
+Status note (2026-05-04): slices 17h-17q closed several gaps called out below: weekday/every-minute recurrence, scheduled `agent_job`, `daily_briefing`, unified `search_memory`, AuraBot runtime diagnostics/settings, and live AuraBot tuning. The still-open high-value work is evidence preservation, proposal provenance/dedupe/batch review, semantic wiki patching, and review-gated skill creation.
+
 Goal: build a realistic set of daily user questions and check what Aura can do today, what is fragile, and what is truly missing to make it useful as a proactive second brain.
 
 ## 20 Daily Questions
@@ -224,14 +226,14 @@ Status note: slice 17h closed the recurrence parity part of this backlog. `sched
 
 | Priority | Slice | Why first | Risk |
 | -------- | ----- | --------- | ---- |
-| P0 | Restart/settings sanity for AuraBot + `propose_wiki_change` | New code is useless if the live bot does not load it. | Low |
+| Done | Restart/settings sanity for AuraBot + `propose_wiki_change` | Shipped across slices 17p-17q; settings now show active-vs-saved drift and apply safe AuraBot tunables live. | Low |
 | Done | Expose `every_minutes` in `schedule_task` or align tool/API recurrence | Shipped in slice 17h. | Low |
 | Done | Add weekday recurrence | Shipped in slice 17h. | Medium |
 | Done | Add `agent_job` scheduler kind, propose-only | Shipped in slice 17i. | Medium-high |
 | Done | Add `daily_briefing` read-only tool | Shipped in slice 17j; live E2E prompt selected the tool. | Medium |
-| P1 | Add source/wiki unified search | Unlocks document Q&A with evidence. | Medium |
-| P2 | Evidence envelope | Improves trust across all answers. | Medium |
-| P2 | Proposal provenance + batch review | Makes proactivity manageable. | Medium |
+| Done | Add source/wiki unified search | Shipped in slice 17k as `search_memory` over wiki, sources/OCR, and archive. | Medium |
+| P1 | Evidence envelope | Improves trust across all source-backed answers and powers "show me why". | Medium |
+| P1 | Proposal provenance + batch review | Makes proactivity manageable and auditable. | Medium |
 | P2 | `update_wiki` semantic patch | Prevents duplicate/overwrite memory damage. | Medium-high |
 | P3 | Skill creation workflow | Powerful, but safer after review/proposal path is strong. | Medium |
 
@@ -287,6 +289,36 @@ Use these as repeatable natural-language smoke tests:
    Users will ask "today", "this week", "what changed", "what should I do". Aura has the raw stores, but lacks a daily briefing/digest layer that composes tasks, wiki changes, conversations, sources, and watch results.
 
 ## Highest-Value Next Slices
+
+1. **Evidence envelope**
+
+   Standardize a compact proof trail in `search_memory` and prompt behavior: wiki slugs, source IDs/files/pages, conversation turn IDs, snippets, and warnings. Answers should surface it only when the user asks "perche' / prove / fonti" or when trust materially depends on evidence.
+
+2. **Proposal provenance + batch review**
+
+   Add origin fields to wiki proposals: source IDs, turn IDs, tool name, agent job ID, swarm run/task ID, confidence, and reason. Make dashboard review fast enough for many small proposals without creating memory clutter.
+
+3. **`update_wiki` semantic patch**
+
+   Add a safe patch/merge tool for existing pages so Aura can update a page without duplicating sections or overwriting useful content.
+
+4. **Skill creation workflow**
+
+   Add a reviewable skill draft path: `SKILL.md`, trigger rules, allowed tools, examples, and one smoke prompt. Installation remains explicit and review-gated.
+
+## Legacy Gap Cleanup
+
+The following earlier priorities are now shipped and should not be treated as active blockers:
+
+- Agentic scheduled jobs: shipped in slice 17i with propose-only `agent_job`.
+- Weekday and every-minute recurrence: shipped in slice 17h.
+- Daily briefing: shipped in slice 17j.
+- Unified memory search: shipped in slice 17k.
+- AuraBot runtime/settings sanity: shipped in slices 17p-17q.
+
+Older analysis remains useful as product background, but active implementation should start from the prioritized backlog above and `docs/implementation-tracker.md`.
+
+## Previous Highest-Value Next Slices
 
 1. **Agentic scheduled jobs**
 

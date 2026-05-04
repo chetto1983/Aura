@@ -42,7 +42,7 @@ func NewSearchMemoryTool(wiki *search.Engine, sources *source.Store, archive *co
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
 
 func (t *SearchMemoryTool) Description() string {
-	return "Search Aura memory across wiki pages, stored sources/OCR, and the conversation archive. Returns compact evidence items with wiki slugs, source IDs, conversation turn IDs, snippets, and source page numbers when available."
+	return "Search Aura memory across wiki pages, stored sources/OCR, and the conversation archive. Returns compact readable evidence plus a JSON evidence envelope with wiki slugs, source IDs, conversation turn IDs, snippets, and source page numbers when available."
 }
 
 func (t *SearchMemoryTool) Parameters() map[string]any {
@@ -126,6 +126,22 @@ type memoryResult struct {
 	Snippet    string
 	Page       int
 	Score      float64
+}
+
+type memoryEvidenceEnvelope struct {
+	Query    string               `json:"query"`
+	Items    []memoryEvidenceItem `json:"items"`
+	Warnings []string             `json:"warnings,omitempty"`
+}
+
+type memoryEvidenceItem struct {
+	Kind    string  `json:"kind"`
+	ID      string  `json:"id"`
+	Title   string  `json:"title,omitempty"`
+	Role    string  `json:"role,omitempty"`
+	Page    int     `json:"page,omitempty"`
+	Score   float64 `json:"score"`
+	Snippet string  `json:"snippet,omitempty"`
 }
 
 func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit int) ([]memoryResult, []string) {
@@ -232,15 +248,17 @@ func (t *SearchMemoryTool) searchArchive(ctx context.Context, query string, chat
 
 func formatMemoryResults(query string, results []memoryResult, warnings []string) string {
 	var sb strings.Builder
+	cleanedWarnings := cleanWarnings(warnings)
 	fmt.Fprintf(&sb, "Memory evidence for %q", query)
 	if len(results) == 0 {
 		sb.WriteString(": no matching evidence found.")
-		if len(warnings) > 0 {
+		if len(cleanedWarnings) > 0 {
 			sb.WriteString("\nWarnings:")
-			for _, warning := range cleanWarnings(warnings) {
+			for _, warning := range cleanedWarnings {
 				fmt.Fprintf(&sb, "\n- %s", warning)
 			}
 		}
+		appendMemoryEvidenceEnvelope(&sb, query, results, cleanedWarnings)
 		return sb.String()
 	}
 	fmt.Fprintf(&sb, " (%d result(s)):", len(results))
@@ -260,13 +278,39 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
 		}
 	}
-	if len(warnings) > 0 {
+	if len(cleanedWarnings) > 0 {
 		sb.WriteString("\nWarnings:")
-		for _, warning := range cleanWarnings(warnings) {
+		for _, warning := range cleanedWarnings {
 			fmt.Fprintf(&sb, "\n- %s", warning)
 		}
 	}
+	appendMemoryEvidenceEnvelope(&sb, query, results, cleanedWarnings)
 	return truncateForToolContext(sb.String(), maxSourceToolChars)
+}
+
+func appendMemoryEvidenceEnvelope(sb *strings.Builder, query string, results []memoryResult, warnings []string) {
+	envelope := memoryEvidenceEnvelope{
+		Query:    query,
+		Items:    make([]memoryEvidenceItem, 0, len(results)),
+		Warnings: warnings,
+	}
+	for _, r := range results {
+		envelope.Items = append(envelope.Items, memoryEvidenceItem{
+			Kind:    r.Kind,
+			ID:      r.Identifier,
+			Title:   r.Title,
+			Role:    r.Role,
+			Page:    r.Page,
+			Score:   r.Score,
+			Snippet: compactMemoryLine(r.Snippet),
+		})
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return
+	}
+	sb.WriteString("\nEvidence envelope:\n")
+	sb.Write(payload)
 }
 
 func memoryScopes(raw string) (map[string]bool, error) {

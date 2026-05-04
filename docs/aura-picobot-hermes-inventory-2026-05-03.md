@@ -2,6 +2,8 @@
 
 Date: 2026-05-03
 
+Status note (2026-05-04): the original P0 `search_memory` slice has shipped as slice 17k. The active memory slice is now the evidence envelope/provenance layer, then proposal review and skill proposals.
+
 Goal: compare Aura, Picobot, and Hermes Agent as product/runtime patterns, then decide what Aura should adopt without rewriting the whole system.
 
 References:
@@ -93,7 +95,7 @@ The synthesis:
 
 ## Priority Backlog
 
-### P0 - Unified Evidence Search
+### P0 - Unified Evidence Search (Shipped In Slice 17k)
 
 Build `search_memory` over wiki pages, source OCR/text, and optionally conversation archive snippets.
 
@@ -103,7 +105,7 @@ Minimum:
 - Prefer source/page evidence for document questions.
 - Keep `search_wiki` as a narrower legacy/specialized tool.
 
-Why first: many real user questions fail because Aura can remember, but cannot yet show a unified "why".
+Why it mattered first: many real user questions fail when Aura can remember, but cannot show a unified "why". This is now the base layer; future slices should not rebuild it, only improve structured evidence, indexing quality, and answer routing.
 
 ### P1 - Evidence Envelope
 
@@ -198,13 +200,11 @@ Use these to prevent the project from becoming impressive but useless:
 
 ## Recommended Next Slice
 
-Do `search_memory` first.
+`search_memory` is done. Continue in this order:
 
-Reason: it unlocks document Q&A, evidence, profile checks, daily briefings, swarm synthesis, and future proposal quality. Skill creation is exciting, but without unified evidence Aura risks learning procedures on top of incomplete memory.
-
-Second slice: proposal provenance + batch review.
-
-Third slice: `propose_skill_change`.
+1. Evidence envelope so retrieved memory survives to final answers with compact proof.
+2. Proposal provenance + batch review so evidence can become review-gated wiki growth.
+3. `propose_skill_change` so repeated procedures become reviewable procedural memory.
 
 This sequence keeps Aura useful and trustworthy while it becomes more proactive.
 

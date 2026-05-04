@@ -111,8 +111,27 @@ Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging
 | 17o | Dashboard AuraBot settings | done | `/settings` now exposes AuraBot in its own group with editable defaults for enabled/max-active/depth/timeout/iterations, explains DB-over-`.env` precedence, and lets operators save overrides to `aura.db` instead of editing `.env`. |
 | 17p | Settings active-vs-saved diagnostics | done | `/settings` now returns the running process value for each row plus `restart_required`; the dashboard highlights rows where a saved DB override differs from the active config, so users know when a restart is needed. |
 | 17q | Live AuraBot settings apply | done | Saving AuraBot max-active/max-depth/timeout/max-iterations in `/settings` now updates the in-process runner/manager for subsequent swarm runs when AuraBot is already enabled. Enabling/disabling the swarm still requires restart because it changes registered tools. |
+| 18a | Memory evidence envelope | done | `search_memory` now appends a structured JSON evidence envelope after the readable evidence list so final answers can preserve source IDs, wiki slugs, conversation IDs, snippets, scores, OCR page numbers, and warnings without noisy citations in casual chat. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18a (Memory evidence envelope)
+
+Goal: make memory answers more trustworthy without redesigning the retrieval stack.
+
+Implementation:
+
+- `search_memory` still returns the existing human-readable evidence list for easy LLM scanning.
+- The tool now also appends an `Evidence envelope` JSON block with query, typed evidence items, identifiers, titles, roles, OCR page numbers, scores, snippets, and warnings.
+- The Aura system prompt now tells the model to preserve that envelope internally and cite it only when the user asks for proof/sources or when evidence materially matters.
+- Cleaned legacy roadmap docs so shipped work is marked as shipped instead of dragging the next slice back to already-completed `search_memory`/scheduler/AuraBot activation work.
+
+Verification:
+
+- `go test ./internal/tools ./internal/conversation`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: proposal provenance + batch review, using the structured evidence IDs from `search_memory` as the proposal source trail.
 
 ### 2026-05-03 - Slice 17q (Live AuraBot settings apply)
 

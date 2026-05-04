@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -63,6 +64,7 @@ func TestSearchMemoryTool_SearchesSourcesAndArchive(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Memory evidence",
+		"Evidence envelope:",
 		"[source]",
 		src.ID,
 		"renewal-note.txt",
@@ -73,6 +75,16 @@ func TestSearchMemoryTool_SearchesSourcesAndArchive(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
+	}
+	envelope := parseMemoryEvidenceEnvelope(t, out)
+	if envelope.Query != "contract deadline" {
+		t.Fatalf("unexpected evidence query: %q", envelope.Query)
+	}
+	if !hasEvidenceItem(envelope.Items, "source", src.ID, "renewal-note.txt", 0) {
+		t.Fatalf("missing structured source evidence: %#v", envelope.Items)
+	}
+	if !hasEvidenceKind(envelope.Items, "archive") {
+		t.Fatalf("missing structured archive evidence: %#v", envelope.Items)
 	}
 }
 
@@ -100,6 +112,10 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 	}
 	if !strings.Contains(out, "page=2") || !strings.Contains(out, "agreement.pdf") {
 		t.Fatalf("expected OCR page evidence:\n%s", out)
+	}
+	envelope := parseMemoryEvidenceEnvelope(t, out)
+	if !hasEvidenceItem(envelope.Items, "source", src.ID, "agreement.pdf", 2) {
+		t.Fatalf("expected structured page evidence:\n%#v", envelope.Items)
 	}
 }
 
@@ -139,4 +155,49 @@ func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	if !strings.Contains(out, "chat=10") || strings.Contains(out, "chat=20") {
 		t.Fatalf("chat filter not respected:\n%s", out)
 	}
+}
+
+type testMemoryEvidenceEnvelope struct {
+	Query    string                   `json:"query"`
+	Items    []testMemoryEvidenceItem `json:"items"`
+	Warnings []string                 `json:"warnings"`
+}
+
+type testMemoryEvidenceItem struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Page  int    `json:"page"`
+}
+
+func parseMemoryEvidenceEnvelope(t *testing.T, out string) testMemoryEvidenceEnvelope {
+	t.Helper()
+	const marker = "Evidence envelope:\n"
+	idx := strings.LastIndex(out, marker)
+	if idx < 0 {
+		t.Fatalf("missing evidence envelope:\n%s", out)
+	}
+	var envelope testMemoryEvidenceEnvelope
+	if err := json.Unmarshal([]byte(out[idx+len(marker):]), &envelope); err != nil {
+		t.Fatalf("invalid evidence envelope JSON: %v\n%s", err, out)
+	}
+	return envelope
+}
+
+func hasEvidenceKind(items []testMemoryEvidenceItem, kind string) bool {
+	for _, item := range items {
+		if item.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEvidenceItem(items []testMemoryEvidenceItem, kind, id, title string, page int) bool {
+	for _, item := range items {
+		if item.Kind == kind && item.ID == id && item.Title == title && item.Page == page {
+			return true
+		}
+	}
+	return false
 }
