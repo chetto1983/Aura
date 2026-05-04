@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/toolsets"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -214,17 +215,7 @@ func agentJobSystemPrompt(writePolicy string) string {
 }
 
 func safeAgentJobTools(requested []string) []string {
-	allowed := map[string]bool{}
-	for _, tool := range scheduler.DefaultAgentJobTools {
-		allowed[tool] = true
-	}
-	out := make([]string, 0, len(requested))
-	for _, tool := range requested {
-		tool = strings.TrimSpace(tool)
-		if tool != "" && allowed[tool] {
-			out = append(out, tool)
-		}
-	}
+	out := toolsets.FilterAllowed(requested, scheduler.DefaultAgentJobTools)
 	if len(out) == 0 {
 		return append([]string(nil), scheduler.DefaultAgentJobTools...)
 	}

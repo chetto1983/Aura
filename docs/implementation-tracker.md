@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19c` graph-aware semantic index.
+Last completed slice: `19d` named toolset profiles.
 
 What is shipped:
 
@@ -59,6 +59,8 @@ What is shipped:
 - `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, latency, full results, and graph nodes/edges.
 - Embeddings are wired through dedicated `EMBEDDING_*` settings; the cache is now namespaced by provider base URL plus model.
 - Wiki search now embeds graph node cards and category index cards alongside page bodies, exposing `graph_node` / `graph_index` evidence through `search_memory`.
+- Aura tool allowlists now live in `internal/toolsets` as named profiles (`memory_read`, `wiki_review`, `skills_read`, `web_research`, `scheduler_safe`) plus shared AuraBot role presets.
+- Scheduled `agent_job` defaults use the `scheduler_safe` profile and continue to filter out recursive/dangerous tools such as `schedule_task`, `run_task_now`, `spawn_aurabot`, `run_aurabot_swarm`, `execute_code`, and `save_tool`.
 
 Phase 18 status: **closed**.
 
@@ -83,11 +85,11 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19d: named toolset profiles for `agent_job` and swarm roles:
-  - extract repeated allowlists into composable profiles;
-  - include `memory_read`, `wiki_review`, `skills_read`, `web_research`, and `scheduler_safe`;
-  - block recursive/dangerous tools inside scheduled agent jobs by default;
-  - prepare `agent_job` for `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`.
+- Phase 19e: skill/context-backed scheduled agent jobs:
+  - extend `agent_job` payloads with `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`;
+  - resolve `enabled_toolsets` through `internal/toolsets` instead of raw tool names;
+  - keep write policy propose-only by default;
+  - add a natural prompt/debug check that proves the agent uses memory context first and does not wait hours on broad goals.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
@@ -195,9 +197,35 @@ Workspace warning:
 | 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
 | 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
 | 19c | Graph-aware semantic index | done | Wiki indexing now embeds compact graph node cards and category/global index cards alongside page bodies; `search_memory` exposes graph evidence without turning embeddings into durable memory. |
-| 19d | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
+| 19d | Named toolset profiles | done | `internal/toolsets` centralizes profiles and role presets; scheduler and AuraBot swarm now reuse the same catalog and keep recursive/dangerous tools out of scheduled jobs. |
+| 19e | Skill/context-backed agent jobs | planned | Add `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed` to scheduled routines while preserving propose-only defaults. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19d (Named toolset profiles)
+
+Goal: remove duplicated tool allowlists before making scheduled routines and AuraBot more proactive.
+
+Implementation:
+
+- Added `internal/toolsets` with named profiles:
+  - `memory_read`
+  - `wiki_review`
+  - `skills_read`
+  - `web_research`
+  - `scheduler_safe`
+- Centralized AuraBot role presets in the same package, preserving the existing role behavior for `librarian`, `critic`, `researcher`, `skillsmith`, and `synthesizer`.
+- `scheduler.DefaultAgentJobTools` now comes from `toolsets.SchedulerSafeTools()`.
+- `telegram.safeAgentJobTools` now filters through `toolsets.FilterAllowed`, so raw task payloads cannot sneak in recursive or high-risk tools.
+- `swarm.BuildPlan` and `spawn_aurabot` now resolve role allowlists from `internal/toolsets` instead of maintaining separate maps.
+
+Verification:
+
+- `go test ./internal/toolsets ./internal/scheduler ./internal/telegram ./internal/swarm ./internal/swarmtools`
+- `staticcheck ./internal/toolsets ./internal/scheduler ./internal/telegram ./internal/swarm ./internal/swarmtools`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: 19e, extend scheduled `agent_job` with `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed` using the new `internal/toolsets` catalog.
 
 ### 2026-05-04 - Slice 19c (Graph-aware semantic index)
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/aura/aura/internal/toolsets"
 )
 
 const (
@@ -211,20 +213,8 @@ func rankPlanRole(role string) int {
 }
 
 func roleReadOnlyTools(role string) []string {
-	switch role {
-	case "librarian":
-		return []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"}
-	case "critic":
-		return []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"}
-	case "researcher":
-		return []string{"web_search", "web_fetch"}
-	case "synthesizer":
-		return []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"}
-	case "skillsmith":
-		return []string{"list_skills", "read_skill", "search_skill_catalog"}
-	default:
-		return nil
-	}
+	tools, _ := toolsets.RoleTools(role)
+	return tools
 }
 
 func roleSubject(role, goal string) string {

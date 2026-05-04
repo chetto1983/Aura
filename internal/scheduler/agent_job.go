@@ -5,25 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/aura/aura/internal/toolsets"
 )
 
 const (
 	AgentJobWritePolicyProposeOnly = "propose_only"
 )
 
-var DefaultAgentJobTools = []string{
-	"list_wiki",
-	"read_wiki",
-	"search_memory",
-	"search_wiki",
-	"list_sources",
-	"read_source",
-	"lint_sources",
-	"web_search",
-	"web_fetch",
-	"propose_wiki_change",
-	"propose_skill_change",
-}
+var DefaultAgentJobTools = toolsets.SchedulerSafeTools()
 
 type AgentJobPayload struct {
 	Goal          string   `json:"goal"`

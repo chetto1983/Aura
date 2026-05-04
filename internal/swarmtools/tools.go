@@ -11,6 +11,7 @@ import (
 
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/toolsets"
 )
 
 type SpawnAuraBotTool struct {
@@ -389,7 +390,7 @@ func summarizeTask(task swarm.Task, includeResult bool) taskSummary {
 }
 
 func resolveRoleTools(role string, requested []string) ([]string, error) {
-	allowed, ok := roleToolPresets()[role]
+	allowed, ok := toolsets.RoleTools(role)
 	if !ok {
 		return nil, fmt.Errorf("spawn_aurabot: unknown role %q", role)
 	}
@@ -403,16 +404,6 @@ func resolveRoleTools(role string, requested []string) ([]string, error) {
 		}
 	}
 	return cleaned, nil
-}
-
-func roleToolPresets() map[string][]string {
-	return map[string][]string{
-		"librarian":   []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-		"critic":      []string{"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
-		"researcher":  []string{"web_search", "web_fetch"},
-		"synthesizer": []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
-		"skillsmith":  []string{"list_skills", "read_skill", "search_skill_catalog"},
-	}
 }
 
 func roleSystemPrompt(role string) string {
