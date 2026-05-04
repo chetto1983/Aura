@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `18d` batch proposal review, committed as `012da51`.
+Last completed slice: `18f` memory quality scorecard.
 
 What is shipped:
 
@@ -51,23 +51,24 @@ What is shipped:
 - Wiki proposals persist provenance (`origin_tool`, `origin_reason`, evidence refs, agent job/swarm IDs).
 - `/summaries` supports single and batch approve/reject.
 - `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
+- Proposal evidence chips can jump to source/wiki/conversation context.
+- `cmd/debug_memory_quality` scores 20 everyday memory questions plus review-gated proposal quality.
 
 Next best slice:
 
-- Proposal evidence drill-down from the review queue:
-  - open `source:*` evidence in Source Inbox/detail or OCR page context;
-  - open `archive` / `conversation:*` evidence in Conversations;
-  - open `wiki` evidence in Wiki page view;
-  - keep approval review-gated.
+- Run the same 20-question scorecard through the live LLM/tool loop:
+  - assert tool selection uses `search_memory` before broad tools;
+  - assert durable updates go through `propose_wiki_change`;
+  - capture wall-clock, tool count, evidence hit rate, and failed intent cases.
 
-Status note: shipped in slice `18e`; next memory slice should move from navigation to richer evidence preview only if real review sessions show that link-out is still too slow.
+Status note: slice `18f` makes memory usefulness measurable in a hermetic harness. The next risk is live routing drift: the model can still choose the wrong path even when the underlying tools are good.
 
 Workspace warning:
 
-- Leave existing favicon/packaging/dashboard-dist churn untouched unless explicitly taking that slice:
+- Leave favicon/packaging/dashboard-dist churn untouched unless explicitly taking that slice:
   `.goreleaser.yml`, `Makefile`, `cmd/build_icon/main.go`, `web/index.html`, `web/public/*`, `cmd/aura/versioninfo.json`, and `internal/api/dist/*`.
 - Leave `.claude/settings.local.json` untouched.
-- Before the next code slice, run `git status --short -uall`; this handoff saw unexpected tracked `cmd/*/main.go` deletions in the dirty tree. Do not stage them accidentally; recover/coordinate that workspace state first.
+- Before the next code slice, run `git status --short -uall` and stage explicit paths only.
 
 ## Slice Status
 
@@ -157,8 +158,31 @@ Workspace warning:
 | 18c | Proposal provenance | done | `propose_wiki_change` and summarizer review proposals now persist structured provenance JSON with origin tool/reason, evidence refs, agent job IDs, and swarm IDs; API responses expose it for review UI. |
 | 18d | Batch proposal review | done | `/summaries` now supports batch approve/reject with per-ID failures, and the dashboard can select multiple proposals while showing compact provenance evidence on each card. |
 | 18e | Evidence drill-down | done | Proposal evidence chips now link to source, wiki, and conversation/archive context; source/conversation panels honor hash navigation. Added Playwright E2E for the review evidence flow. |
+| 18f | Memory quality scorecard | done | New hermetic `cmd/debug_memory_quality` harness runs 20 everyday second-brain questions through `search_memory`, creates 4 review-gated wiki proposals, and fails if evidence/proposal quality falls below 90%. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18f (Memory quality scorecard)
+
+Goal: stop guessing whether Aura's memory is useful by adding a repeatable scorecard built from real daily questions.
+
+Implementation:
+
+- Added `cmd/debug_memory_quality`, a hermetic debug harness for second-brain usefulness.
+- Seeds a temporary source inbox with text evidence and OCR-backed PDF evidence.
+- Seeds the conversation archive with realistic user preferences, Aura memory policy, weekly planning, and provenance expectations.
+- Runs 20 everyday questions through the real `search_memory` tool and checks expected evidence kinds.
+- Creates 4 review-gated `propose_wiki_change` proposals for scenarios where memory should grow.
+- Scores evidence hit rate, source/archive coverage, proposals created, and proposal quality; emits both readable and JSON reports.
+
+Verification:
+
+- `go test ./cmd/debug_memory_quality`
+- `go run ./cmd/debug_memory_quality`
+- `go run ./cmd/debug_memory_quality -json`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: run the scorecard through the live LLM/tool loop to catch routing drift, slow tool choices, or missed proposal opportunities.
 
 ### 2026-05-04 - Slice 18e (Evidence drill-down)
 
