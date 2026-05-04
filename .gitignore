@@ -46,3 +46,6 @@ wiki/*
 /$cover
 .codex-*
 *.log
+
+# Local benchmark/history artifacts
+/reports/memory-quality/

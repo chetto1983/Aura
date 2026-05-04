@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `18g` live memory routing scorecard.
+Last completed slice: `18h` memory quality report graph.
 
 What is shipped:
 
@@ -54,15 +54,16 @@ What is shipped:
 - Proposal evidence chips can jump to source/wiki/conversation context.
 - `cmd/debug_memory_quality` scores 20 everyday memory questions plus review-gated proposal quality.
 - `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
+- `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, full results, and graph nodes/edges.
 
 Next best slice:
 
-- Convert the live routing scorecard into a smaller CI-safe fake-LLM regression for:
-  - one answer-only memory question;
-  - one durable proposal question with evidence;
-  - one retry path when `propose_wiki_change` is missing evidence.
+- Build a small dashboard/report reader for local memory-quality artifacts:
+  - trend pass rate, elapsed time, LLM calls, tool calls, proposal calls;
+  - graph view of scenario -> tool -> evidence/proposal relationships;
+  - highlight failed or slow scenarios.
 
-Status note: slice `18g` proved the live model can pass the real 20-question memory scorecard after proposal evidence is enforced. The next risk is making this behavior cheap to guard in normal test runs.
+Status note: slice `18h` keeps the live LLM benchmark as the source of truth and records graph-ready evidence without turning raw sources into a second memory layer.
 
 Workspace warning:
 
@@ -161,8 +162,37 @@ Workspace warning:
 | 18e | Evidence drill-down | done | Proposal evidence chips now link to source, wiki, and conversation/archive context; source/conversation panels honor hash navigation. Added Playwright E2E for the review evidence flow. |
 | 18f | Memory quality scorecard | done | New hermetic `cmd/debug_memory_quality` harness runs 20 everyday second-brain questions through `search_memory`, creates 4 review-gated wiki proposals, and fails if evidence/proposal quality falls below 90%. |
 | 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
+| 18h | Memory quality report graph | done | `debug_memory_quality` can now save timestamped local JSON reports with summary metrics, full live/hermetic results, and graph-ready nodes/edges for scenario -> tool -> evidence/proposal analysis. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18h (Memory quality report graph)
+
+Goal: keep real LLM metrics as the benchmark while preserving the `docs/llm-wiki.md` philosophy: source/archive evidence feeds compiled memory, and graph structure makes relationships visible.
+
+Implementation:
+
+- Added `-report-dir` to `cmd/debug_memory_quality`.
+- Reports are timestamped JSON files containing:
+  - generation time and mode (`hermetic` or `live-llm`);
+  - summary metrics;
+  - full scenario results;
+  - graph-ready `nodes` / `edges`.
+- The graph captures:
+  - scorecard -> scenario;
+  - scenario -> tool calls;
+  - scenario -> evidence kinds (`source`, `archive`, future `wiki`);
+  - scenario -> proposal when a review-gated update is created.
+- Added `/reports/memory-quality/` to `.gitignore`; reports are local diagnostic artifacts, not committed source of truth.
+
+Verification:
+
+- `go test ./cmd/debug_memory_quality`
+- `go run ./cmd/debug_memory_quality -limit 3 -report-dir <temp>`
+- `go run ./cmd/debug_memory_quality -live-llm -limit 3 -report-dir <temp>`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: add a dashboard/report reader for saved memory-quality artifacts and render the report graph without mixing it with durable wiki memory.
 
 ### 2026-05-04 - Slice 18g (Live memory routing scorecard)
 

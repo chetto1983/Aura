@@ -7,6 +7,7 @@
 //	go run ./cmd/debug_memory_quality -json
 //	go run ./cmd/debug_memory_quality -keep
 //	go run ./cmd/debug_memory_quality -live-llm
+//	go run ./cmd/debug_memory_quality -live-llm -report-dir reports/memory-quality
 package main
 
 import (
@@ -102,6 +103,36 @@ type liveScenarioResult struct {
 	Final              string   `json:"final,omitempty"`
 }
 
+type savedReport struct {
+	GeneratedAt string         `json:"generated_at"`
+	Mode        string         `json:"mode"`
+	OK          bool           `json:"ok"`
+	Summary     map[string]any `json:"summary"`
+	Hermetic    *report        `json:"hermetic,omitempty"`
+	Live        *liveReport    `json:"live,omitempty"`
+	Graph       qualityGraph   `json:"graph"`
+}
+
+type qualityGraph struct {
+	Nodes []graphNode `json:"nodes"`
+	Edges []graphEdge `json:"edges"`
+}
+
+type graphNode struct {
+	ID      string         `json:"id"`
+	Label   string         `json:"label"`
+	Kind    string         `json:"kind"`
+	Status  string         `json:"status,omitempty"`
+	Metrics map[string]any `json:"metrics,omitempty"`
+}
+
+type graphEdge struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Kind   string `json:"kind"`
+	Weight int    `json:"weight,omitempty"`
+}
+
 type evidenceEnvelope struct {
 	Query    string         `json:"query"`
 	Items    []evidenceItem `json:"items"`
@@ -124,6 +155,7 @@ func main() {
 	liveLLM := flag.Bool("live-llm", false, "drive the scorecard through the live LLM/tool loop")
 	limit := flag.Int("limit", 0, "optional number of scenarios to run")
 	liveTimeout := flag.Duration("live-timeout", 180*time.Second, "per-scenario timeout for -live-llm")
+	reportDir := flag.String("report-dir", "", "optional directory for timestamped JSON reports with graph data")
 	flag.Parse()
 
 	runTimeout := 30 * time.Second
@@ -153,6 +185,16 @@ func main() {
 		} else {
 			printLiveReport(rep, wikiDir)
 		}
+		if *reportDir != "" {
+			path, err := saveLiveQualityReport(*reportDir, rep)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: save report: %v\n", err)
+				os.Exit(1)
+			}
+			if !*jsonOut {
+				fmt.Printf("report=%s\n", path)
+			}
+		}
 		if !rep.OK {
 			os.Exit(1)
 		}
@@ -174,6 +216,16 @@ func main() {
 		_ = enc.Encode(rep)
 	} else {
 		printReport(rep, wikiDir)
+	}
+	if *reportDir != "" {
+		path, err := saveHermeticQualityReport(*reportDir, rep)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: save report: %v\n", err)
+			os.Exit(1)
+		}
+		if !*jsonOut {
+			fmt.Printf("report=%s\n", path)
+		}
 	}
 	if !rep.OK {
 		os.Exit(1)
@@ -698,6 +750,228 @@ func hasString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func saveHermeticQualityReport(dir string, rep report) (string, error) {
+	artifact := savedReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Mode:        "hermetic",
+		OK:          rep.OK,
+		Summary: map[string]any{
+			"questions":             rep.Questions,
+			"passed":                rep.Passed,
+			"evidence_hit_rate":     rep.EvidenceHitRate,
+			"proposal_scenarios":    rep.ProposalScenarios,
+			"proposals_created":     rep.ProposalsCreated,
+			"proposal_quality_rate": rep.ProposalQualityRate,
+			"source_evidence_hits":  rep.SourceEvidenceHits,
+			"archive_evidence_hits": rep.ArchiveEvidenceHits,
+		},
+		Hermetic: &rep,
+		Graph:    hermeticQualityGraph(rep),
+	}
+	return writeQualityArtifact(dir, "hermetic", artifact)
+}
+
+func saveLiveQualityReport(dir string, rep liveReport) (string, error) {
+	artifact := savedReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Mode:        "live-llm",
+		OK:          rep.OK,
+		Summary: map[string]any{
+			"model":                     rep.Model,
+			"questions":                 rep.Questions,
+			"passed":                    rep.Passed,
+			"routing_pass_rate":         rep.RoutingPassRate,
+			"search_memory_calls":       rep.SearchMemoryCalls,
+			"proposal_calls":            rep.ProposalCalls,
+			"unexpected_proposal_calls": rep.UnexpectedProposalCalls,
+			"llm_calls":                 rep.LLMCalls,
+			"tool_calls":                rep.ToolCalls,
+			"elapsed_ms":                rep.ElapsedMS,
+		},
+		Live:  &rep,
+		Graph: liveQualityGraph(rep),
+	}
+	return writeQualityArtifact(dir, "live-llm", artifact)
+}
+
+func writeQualityArtifact(dir, mode string, artifact savedReport) (string, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return "", fmt.Errorf("report dir is required")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create report dir: %w", err)
+	}
+	name := fmt.Sprintf("%s-%s.json", time.Now().UTC().Format("20060102-150405"), mode)
+	path := filepath.Join(dir, name)
+	body, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal report: %w", err)
+	}
+	if err := os.WriteFile(path, append(body, '\n'), 0o644); err != nil {
+		return "", fmt.Errorf("write report: %w", err)
+	}
+	return path, nil
+}
+
+func hermeticQualityGraph(rep report) qualityGraph {
+	g := newGraphBuilder()
+	g.addNode(graphNode{
+		ID:     "scorecard:hermetic",
+		Label:  "Hermetic memory scorecard",
+		Kind:   "scorecard",
+		Status: passStatus(rep.OK),
+		Metrics: map[string]any{
+			"questions":             rep.Questions,
+			"evidence_hit_rate":     rep.EvidenceHitRate,
+			"proposal_quality_rate": rep.ProposalQualityRate,
+		},
+	})
+	g.addNode(graphNode{ID: "tool:search_memory", Label: "search_memory", Kind: "tool"})
+	g.addNode(graphNode{ID: "tool:propose_wiki_change", Label: "propose_wiki_change", Kind: "tool"})
+	for _, r := range rep.Results {
+		scenarioID := "scenario:" + r.Name
+		g.addNode(graphNode{
+			ID:     scenarioID,
+			Label:  r.Name,
+			Kind:   "scenario",
+			Status: passStatus(r.Pass),
+			Metrics: map[string]any{
+				"evidence_count": r.EvidenceCount,
+			},
+		})
+		g.addEdge("scorecard:hermetic", scenarioID, "contains", 0)
+		g.addEdge(scenarioID, "tool:search_memory", "uses", 1)
+		for _, kind := range r.EvidenceKinds {
+			evidenceID := "evidence:" + kind
+			g.addNode(graphNode{ID: evidenceID, Label: kind, Kind: "evidence_kind"})
+			g.addEdge(scenarioID, evidenceID, "found_evidence", 1)
+		}
+		if r.ProposalID > 0 {
+			proposalID := fmt.Sprintf("proposal:%s:%d", r.Name, r.ProposalID)
+			g.addNode(graphNode{ID: proposalID, Label: fmt.Sprintf("%s proposal", r.Name), Kind: "proposal", Status: passStatus(r.ProposalOK)})
+			g.addEdge(scenarioID, "tool:propose_wiki_change", "uses", 1)
+			g.addEdge(scenarioID, proposalID, "proposes", 1)
+		}
+	}
+	return g.graph()
+}
+
+func liveQualityGraph(rep liveReport) qualityGraph {
+	g := newGraphBuilder()
+	g.addNode(graphNode{
+		ID:     "scorecard:live-llm",
+		Label:  "Live LLM memory scorecard",
+		Kind:   "scorecard",
+		Status: passStatus(rep.OK),
+		Metrics: map[string]any{
+			"model":             rep.Model,
+			"questions":         rep.Questions,
+			"routing_pass_rate": rep.RoutingPassRate,
+			"elapsed_ms":        rep.ElapsedMS,
+			"llm_calls":         rep.LLMCalls,
+			"tool_calls":        rep.ToolCalls,
+		},
+	})
+	for _, r := range rep.Results {
+		scenarioID := "scenario:" + r.Name
+		g.addNode(graphNode{
+			ID:     scenarioID,
+			Label:  r.Name,
+			Kind:   "scenario",
+			Status: passStatus(r.Pass),
+			Metrics: map[string]any{
+				"evidence_count": r.EvidenceCount,
+				"elapsed_ms":     r.ElapsedMS,
+				"llm_calls":      r.LLMCalls,
+			},
+		})
+		g.addEdge("scorecard:live-llm", scenarioID, "contains", 0)
+		for _, tool := range r.ToolCalls {
+			toolID := "tool:" + tool
+			g.addNode(graphNode{ID: toolID, Label: tool, Kind: "tool"})
+			g.addEdge(scenarioID, toolID, "uses", 1)
+		}
+		for _, kind := range r.EvidenceKinds {
+			evidenceID := "evidence:" + kind
+			g.addNode(graphNode{ID: evidenceID, Label: kind, Kind: "evidence_kind"})
+			g.addEdge(scenarioID, evidenceID, "found_evidence", 1)
+		}
+		if r.ProposalOK || hasString(r.ToolCalls, "propose_wiki_change") {
+			proposalID := "proposal:" + r.Name
+			g.addNode(graphNode{ID: proposalID, Label: r.Name + " proposal", Kind: "proposal", Status: passStatus(r.ProposalOK)})
+			g.addEdge(scenarioID, proposalID, "proposes", 1)
+		}
+	}
+	return g.graph()
+}
+
+type graphBuilder struct {
+	nodes map[string]graphNode
+	edges map[string]graphEdge
+	order []string
+}
+
+func newGraphBuilder() *graphBuilder {
+	return &graphBuilder{
+		nodes: make(map[string]graphNode),
+		edges: make(map[string]graphEdge),
+	}
+}
+
+func (g *graphBuilder) addNode(node graphNode) {
+	if strings.TrimSpace(node.ID) == "" {
+		return
+	}
+	if _, exists := g.nodes[node.ID]; !exists {
+		g.order = append(g.order, node.ID)
+	}
+	g.nodes[node.ID] = node
+}
+
+func (g *graphBuilder) addEdge(from, to, kind string, weight int) {
+	if from == "" || to == "" || kind == "" {
+		return
+	}
+	key := from + "\x00" + to + "\x00" + kind
+	edge := g.edges[key]
+	if edge.From == "" {
+		edge = graphEdge{From: from, To: to, Kind: kind}
+	}
+	if weight > 0 {
+		edge.Weight += weight
+	}
+	g.edges[key] = edge
+}
+
+func (g *graphBuilder) graph() qualityGraph {
+	nodes := make([]graphNode, 0, len(g.nodes))
+	for _, id := range g.order {
+		nodes = append(nodes, g.nodes[id])
+	}
+	edges := make([]graphEdge, 0, len(g.edges))
+	for _, edge := range g.edges {
+		edges = append(edges, edge)
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From == edges[j].From {
+			if edges[i].To == edges[j].To {
+				return edges[i].Kind < edges[j].Kind
+			}
+			return edges[i].To < edges[j].To
+		}
+		return edges[i].From < edges[j].From
+	})
+	return qualityGraph{Nodes: nodes, Edges: edges}
+}
+
+func passStatus(ok bool) string {
+	if ok {
+		return "pass"
+	}
+	return "fail"
 }
 
 func loadDotEnv(path string) error {
