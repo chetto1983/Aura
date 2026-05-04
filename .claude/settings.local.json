@@ -70,7 +70,8 @@
       "Bash(New-Item *)",
       "Bash(python *)",
       "Bash(pip install *)",
-      "Bash(pip show *)"
+      "Bash(pip show *)",
+      "Skill(gsd-plan-phase)"
     ]
   }
 }
