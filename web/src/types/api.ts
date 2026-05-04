@@ -67,11 +67,10 @@ export interface Graph {
 
 export interface SourceSummary {
   id: string;
-  // 'xlsx' (slice 15a), 'docx' (slice 15b), and 'pdf_generated'
-  // (slice 15c) are Aura-generated artifacts — same store layout as
-  // user-uploaded PDFs, different ext / disposition. KindPDFGen stays
-  // distinct from KindPDF so OCR-only UI actions can hide cleanly.
-  kind: 'pdf' | 'text' | 'url' | 'xlsx' | 'docx' | 'pdf_generated';
+  // 'xlsx' (slice 15a), 'docx' (slice 15b), 'pdf_generated'
+  // (slice 15c), and 'sandbox_artifact' are Aura-generated artifacts.
+  // They share the source layout with uploaded PDFs but skip OCR actions.
+  kind: 'pdf' | 'text' | 'url' | 'xlsx' | 'docx' | 'pdf_generated' | 'sandbox_artifact';
   filename: string;
   status: 'stored' | 'ocr_complete' | 'ingested' | 'failed';
   created_at: string;

@@ -88,7 +88,8 @@ What is shipped:
 - `cmd/debug_sandbox --artifact-smoke` now proves artifact egress through the registered `execute_code` boundary by writing `/tmp/aura_out/artifact.txt` in Pyodide and asserting the tool output includes artifact metadata.
 - File-generation tool choice is explicit in the system prompt and tool descriptions: `create_xlsx` / `create_docx` / `create_pdf` are preferred for ordinary user-facing documents that should persist as Aura sources, while `execute_code` is for calculations, plots, custom exports, and computed artifacts under `/tmp/aura_out`.
 - `cmd/debug_telegram_sandbox --artifact-smoke` now runs a live LLM Telegram smoke that asks the model to create `/tmp/aura_out/aura_artifact.txt`, verifies `execute_code` was called, verifies artifact metadata appeared, and confirms a real Telegram document was sent.
-- `SANDBOX_TIMEOUT_SEC` now defaults to 60 seconds; the prior 15-second default was too short for Pyodide cold start in the live Telegram path even though the standalone debug runner used a 2-minute smoke timeout.
+- Sandbox artifacts now persist as first-class Aura sources (`kind=sandbox_artifact`, `status=ingested`) as well as delivering through Telegram. The `/sources/{id}/raw` endpoint and dashboard Source Inbox can download them, and smoke tooling now fails unless artifact metadata includes `source_id=src_...`.
+- `SANDBOX_TIMEOUT_SEC` now defaults to 120 seconds; live Telegram smoke showed 60 seconds was still marginal for Pyodide cold start, while 120 seconds produced a single-call artifact run.
 
 Phase 18 status: **closed**.
 
@@ -113,18 +114,13 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.close` milestone closure:
-  - decide whether sandbox artifacts remain deliver-only or also persist as Aura sources;
-  - run one final routing smoke (`create_pdf` for ordinary PDFs, `execute_code` for computed artifacts) if needed;
-  - close the Pyodide sandbox milestone with verification notes.
+- Phase 19 code/procedural-memory work can resume from `docs/plans/2026-05-04-phase-19-closure-plan.md`; the Pyodide sandbox milestone is production-closed.
 
-Tomorrow resume note (2026-05-05):
+Sandbox closure note (2026-05-04):
 
-- Current judgment: sandbox is safe for local use and feature-complete beta; do not call it production-closed until `sandbox.pyodide.close` lands.
-- Open product decision: sandbox artifacts currently deliver to Telegram but do not persist as Aura sources. Choose deliver-only vs source persistence.
-- Suggested closure checks: `go run ./cmd/debug_sandbox --smoke`, `go run ./cmd/debug_sandbox --artifact-smoke`, `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m`, and a routing smoke that confirms ordinary PDFs use `create_pdf` while computed artifacts use `execute_code`.
-- Local `.env` was updated to `SANDBOX_TIMEOUT_SEC=60` during slice 9; `.env.example` is tracked with the same default.
-- Last good commit before this handoff: `b599374 slice sandbox.pyodide.9: smoke live artifact delivery`.
+- `sandbox.pyodide.close` is complete: computed artifacts persist as sources, deliver over Telegram, and appear in the dashboard as downloadable file sources.
+- Production checks passed: targeted Go tests, `verify-web.ps1`, `verify-go.ps1`, `go run ./cmd/debug_sandbox --tool-smoke --timeout 2m`, `go run ./cmd/debug_sandbox --artifact-smoke --timeout 2m`, `go run ./cmd/debug_sandbox --smoke --timeout 2m`, and `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m`.
+- Local `.env` was updated to `SANDBOX_TIMEOUT_SEC=120`; `.env.example` carries the same tracked default.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 

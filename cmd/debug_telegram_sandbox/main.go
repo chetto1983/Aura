@@ -94,6 +94,9 @@ func main() {
 	if len(result.ArtifactFilenames) > 0 {
 		fmt.Printf("artifact_filenames=%s\n", strings.Join(result.ArtifactFilenames, ","))
 	}
+	if len(result.ArtifactSourceIDs) > 0 {
+		fmt.Printf("artifact_source_ids=%s\n", strings.Join(result.ArtifactSourceIDs, ","))
+	}
 	fmt.Printf("document_sends=%d\n", len(result.DocumentSends))
 	for _, send := range result.DocumentSends {
 		fmt.Printf("document=%s size=%d caption=%q\n", send.Filename, send.SizeBytes, singleLine(send.Caption, 160))
@@ -129,6 +132,9 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 		}
 		if len(result.DocumentSends) == 0 {
 			return errors.New("expected at least one Telegram document delivery")
+		}
+		if len(result.ArtifactSourceIDs) == 0 {
+			return errors.New("expected sandbox artifact source persistence")
 		}
 		return nil
 	}

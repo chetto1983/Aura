@@ -1,4 +1,4 @@
-// Package source manages immutable user-provided sources (PDFs, URLs, text).
+// Package source manages immutable user-provided sources and generated files.
 //
 // Each source is keyed by a sha256-derived ID and stored under
 // <wiki>/raw/<id>/ with an immutable original.<ext> plus a mutable
@@ -38,6 +38,10 @@ const (
 	// LLM never tries to ingest_source a doc that has no ocr.md and so
 	// the dashboard can hide OCR-only actions cleanly.
 	KindPDFGen Kind = "pdf_generated"
+	// KindSandboxArtifact is a file emitted by execute_code under
+	// /tmp/aura_out. It is persisted as ingested evidence but does not enter
+	// the OCR pipeline because the file type is arbitrary.
+	KindSandboxArtifact Kind = "sandbox_artifact"
 )
 
 // Status tracks where a source is in the OCR/ingest pipeline.

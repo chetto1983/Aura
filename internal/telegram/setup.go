@@ -355,7 +355,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	}
 
 	// Sandbox tools
-	if tool := tools.NewExecuteCodeToolWithSender(sandboxMgr, b); tool != nil {
+	if tool := tools.NewExecuteCodeToolWithStore(sandboxMgr, b, sourceStore); tool != nil {
 		toolRegistry.Register(tool)
 	}
 	if tool := tools.NewListToolsTool(toolReg); tool != nil {

@@ -8,7 +8,7 @@ import (
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
-const DefaultSandboxTimeoutSec = 60
+const DefaultSandboxTimeoutSec = 120
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
@@ -78,7 +78,7 @@ type Config struct {
 	// runtime; no host Python fallback is supported.
 	SandboxEnabled         bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
 	SandboxRuntimeDir      string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
-	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"60"`
+	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
 	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
 }
 

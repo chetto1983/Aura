@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
+	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 )
 
@@ -91,7 +92,7 @@ func main() {
 			fmt.Printf("FAIL: %s\n", report.Error)
 			os.Exit(1)
 		}
-		fmt.Printf("PASS: execute_code returned artifact metadata for artifact.txt\n")
+		fmt.Printf("PASS: execute_code returned and persisted artifact metadata for artifact.txt\n")
 		return
 	}
 
@@ -192,13 +193,18 @@ func executeCodeToolSmokeProgram() string {
 }
 
 func runExecuteCodeArtifactSmoke(ctx context.Context, rt sandbox.Runtime) executeCodeToolSmokeReport {
-	report := runExecuteCodeToolSmokeWithProgram(ctx, rt, executeCodeArtifactSmokeProgram())
+	report := runExecuteCodeToolSmokeWithProgram(ctx, rt, executeCodeArtifactSmokeProgram(), true)
 	if !report.OK {
 		return report
 	}
 	if !strings.Contains(report.Output, "artifacts:") || !strings.Contains(report.Output, "artifact.txt") {
 		report.OK = false
 		report.Error = "execute_code output did not contain artifact.txt metadata"
+		return report
+	}
+	if !strings.Contains(report.Output, "persisted=true") || !strings.Contains(report.Output, "source_id=src_") {
+		report.OK = false
+		report.Error = "execute_code output did not contain persisted artifact source metadata"
 		return report
 	}
 	return report
@@ -215,7 +221,7 @@ print("wrote artifact")
 `)
 }
 
-func runExecuteCodeToolSmokeWithProgram(ctx context.Context, rt sandbox.Runtime, code string) executeCodeToolSmokeReport {
+func runExecuteCodeToolSmokeWithProgram(ctx context.Context, rt sandbox.Runtime, code string, persistArtifacts bool) executeCodeToolSmokeReport {
 	report := executeCodeToolSmokeReport{}
 	if rt == nil {
 		report.Availability = sandbox.Availability{Available: false, Kind: sandbox.RuntimeKindUnavailable, Detail: "sandbox runtime unavailable"}
@@ -237,7 +243,21 @@ func runExecuteCodeToolSmokeWithProgram(ctx context.Context, rt sandbox.Runtime,
 		report.Error = err.Error()
 		return report
 	}
-	tool := tools.NewExecuteCodeTool(manager)
+	var sourceStore *source.Store
+	if persistArtifacts {
+		wikiDir, err := os.MkdirTemp("", "aura-debug-sandbox-*")
+		if err != nil {
+			report.Error = err.Error()
+			return report
+		}
+		defer os.RemoveAll(wikiDir)
+		sourceStore, err = source.NewStore(wikiDir, nil)
+		if err != nil {
+			report.Error = err.Error()
+			return report
+		}
+	}
+	tool := tools.NewExecuteCodeToolWithStore(manager, nil, sourceStore)
 	if tool == nil {
 		report.Error = "execute_code tool did not register"
 		return report

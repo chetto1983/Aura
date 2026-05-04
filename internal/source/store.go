@@ -101,7 +101,7 @@ func (s *Store) Put(ctx context.Context, in PutInput) (src *Source, dup bool, er
 		return nil, false, fmt.Errorf("source: create source dir: %w", err)
 	}
 
-	originalName := "original" + extForKind(in.Kind)
+	originalName := OriginalFilenameForKind(in.Kind, in.Filename)
 	if err := writeFileAtomic(filepath.Join(sourceDir, originalName), in.Bytes); err != nil {
 		return nil, false, fmt.Errorf("source: write original: %w", err)
 	}
@@ -266,6 +266,30 @@ func writeFileAtomic(path string, data []byte) error {
 	return os.Rename(tmpPath, path)
 }
 
+// OriginalFilenameForKind returns the canonical on-disk filename for the raw
+// source bytes. Most kinds have fixed extensions; sandbox artifacts preserve
+// a safe display extension so downloads retain their natural file type.
+func OriginalFilenameForKind(k Kind, displayFilename string) string {
+	if k == KindSandboxArtifact {
+		return "original" + safeArtifactExt(displayFilename)
+	}
+	return "original" + extForKind(k)
+}
+
+func safeArtifactExt(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if len(ext) < 2 || len(ext) > 16 {
+		return ".bin"
+	}
+	for _, r := range ext {
+		if r == '.' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			continue
+		}
+		return ".bin"
+	}
+	return ext
+}
+
 func extForKind(k Kind) string {
 	switch k {
 	case KindPDF:
@@ -282,13 +306,15 @@ func extForKind(k Kind) string {
 		// Generated PDFs share the .pdf extension with uploads. The Kind
 		// alone disambiguates; the on-disk file is a real PDF either way.
 		return ".pdf"
+	case KindSandboxArtifact:
+		return ".bin"
 	}
 	return ".bin"
 }
 
 func validatePutInput(in PutInput) error {
 	switch in.Kind {
-	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX, KindPDFGen:
+	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX, KindPDFGen, KindSandboxArtifact:
 	default:
 		return fmt.Errorf("source: invalid kind %q", in.Kind)
 	}

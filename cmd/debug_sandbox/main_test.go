@@ -78,6 +78,9 @@ func TestRunExecuteCodeArtifactSmokeRequiresArtifact(t *testing.T) {
 	if !strings.Contains(report.Output, "artifact.txt") {
 		t.Fatalf("output = %q, want artifact metadata", report.Output)
 	}
+	if !strings.Contains(report.Output, "persisted=true") || !strings.Contains(report.Output, "source_id=src_") {
+		t.Fatalf("output = %q, want persisted source metadata", report.Output)
+	}
 }
 
 type debugSandboxFakeRuntime struct {

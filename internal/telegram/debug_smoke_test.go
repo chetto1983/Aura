@@ -58,7 +58,7 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 		{
 			Role:       "tool",
 			ToolCallID: "call-1",
-			Content:    "exit_code: 0\nelapsed_ms: 42\n\nwrote file\n\nartifacts:\n- aura_artifact.txt (5 bytes, text/plain; charset=utf-8, delivered=true)",
+			Content:    "exit_code: 0\nelapsed_ms: 42\n\nwrote file\n\nartifacts:\n- aura_artifact.txt (5 bytes, text/plain; charset=utf-8, delivered=true, persisted=true, source_id=src_0123456789abcdef)",
 		},
 	})
 
@@ -70,6 +70,9 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 	}
 	if len(result.ArtifactFilenames) != 1 || result.ArtifactFilenames[0] != "aura_artifact.txt" {
 		t.Fatalf("ArtifactFilenames = %v", result.ArtifactFilenames)
+	}
+	if len(result.ArtifactSourceIDs) != 1 || result.ArtifactSourceIDs[0] != "src_0123456789abcdef" {
+		t.Fatalf("ArtifactSourceIDs = %v", result.ArtifactSourceIDs)
 	}
 }
 

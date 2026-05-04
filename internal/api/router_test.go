@@ -85,10 +85,15 @@ func (e *testEnv) seedPage(title, body, category string, related []string) *wiki
 
 func (e *testEnv) seedSource(content []byte, kind source.Kind, filename string) *source.Source {
 	e.t.Helper()
+	return e.seedSourceWithMime(content, kind, filename, "application/pdf")
+}
+
+func (e *testEnv) seedSourceWithMime(content []byte, kind source.Kind, filename, mimeType string) *source.Source {
+	e.t.Helper()
 	rec, _, err := e.sources.Put(context.Background(), source.PutInput{
 		Kind:     kind,
 		Filename: filename,
-		MimeType: "application/pdf",
+		MimeType: mimeType,
 		Bytes:    content,
 	})
 	if err != nil {
@@ -465,6 +470,7 @@ func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 	xlsx := e.seedSource([]byte("PK\x03\x04 fake xlsx zip"), source.KindXLSX, "report.xlsx")
 	docx := e.seedSource([]byte("PK\x03\x04 fake docx zip"), source.KindDOCX, "memo.docx")
 	pdfgen := e.seedSource([]byte("%PDF-1.4 generated content"), source.KindPDFGen, "invoice.pdf")
+	artifact := e.seedSourceWithMime([]byte("a,b\n1,2\n"), source.KindSandboxArtifact, "metrics.csv", "text/csv")
 	txt := e.seedSource([]byte("hello text"), source.KindText, "note.txt")
 
 	// PDF: inline disposition, application/pdf content type.
@@ -533,6 +539,23 @@ func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 	}
 	if !strings.Contains(rr.Header().Get("Content-Disposition"), `invoice.pdf`) {
 		t.Errorf("pdfgen filename not in content-disposition: %q", rr.Header().Get("Content-Disposition"))
+	}
+
+	// Sandbox artifacts: generic attachment using the source MIME type and
+	// original filename, with the source store preserving a safe extension.
+	rr = e.do("GET", "/sources/"+artifact.ID+"/raw")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("artifact status %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "text/csv" {
+		t.Errorf("artifact content-type = %q, want text/csv from seeded MIME", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") || !strings.Contains(cd, `metrics.csv`) {
+		t.Errorf("artifact content-disposition = %q, want attachment metrics.csv", cd)
+	}
+	body, _ = io.ReadAll(rr.Body)
+	if string(body) != "a,b\n1,2\n" {
+		t.Errorf("artifact body = %q", string(body))
 	}
 
 	// Text source must not expose a raw endpoint.

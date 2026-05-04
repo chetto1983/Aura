@@ -338,7 +338,7 @@ func NewListSourcesTool(store *source.Store) *ListSourcesTool {
 func (t *ListSourcesTool) Name() string { return "list_sources" }
 
 func (t *ListSourcesTool) Description() string {
-	return "List stored sources, newest first. Optional filters: kind (pdf/text/url), status (stored/ocr_complete/ingested/failed)."
+	return "List stored sources, newest first. Optional filters: kind (pdf/text/url/xlsx/docx/pdf_generated/sandbox_artifact), status (stored/ocr_complete/ingested/failed)."
 }
 
 func (t *ListSourcesTool) Parameters() map[string]any {
@@ -348,7 +348,7 @@ func (t *ListSourcesTool) Parameters() map[string]any {
 			"kind": map[string]any{
 				"type":        "string",
 				"description": "Filter by kind.",
-				"enum":        []string{"pdf", "text", "url"},
+				"enum":        []string{"pdf", "text", "url", "xlsx", "docx", "pdf_generated", "sandbox_artifact"},
 			},
 			"status": map[string]any{
 				"type":        "string",

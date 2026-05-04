@@ -140,6 +140,24 @@ var rawAssets = map[source.Kind]rawAsset{
 		contentType: "application/pdf",
 		disposition: "inline",
 	},
+	source.KindSandboxArtifact: {
+		disposition: "attachment",
+	},
+}
+
+func rawAssetForSource(rec *source.Source) (rawAsset, bool) {
+	asset, ok := rawAssets[rec.Kind]
+	if !ok {
+		return rawAsset{}, false
+	}
+	if rec.Kind == source.KindSandboxArtifact {
+		asset.filename = source.OriginalFilenameForKind(rec.Kind, rec.Filename)
+		asset.contentType = rec.MimeType
+		if asset.contentType == "" {
+			asset.contentType = "application/octet-stream"
+		}
+	}
+	return asset, true
 }
 
 func handleSourceRaw(deps Deps) http.HandlerFunc {
@@ -159,7 +177,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
 			return
 		}
-		asset, ok := rawAssets[rec.Kind]
+		asset, ok := rawAssetForSource(rec)
 		if !ok {
 			writeError(w, deps.Logger, http.StatusNotFound, "raw endpoint not supported for this source kind")
 			return
@@ -194,7 +212,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 
 func validKind(k source.Kind) bool {
 	switch k {
-	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX, source.KindPDFGen:
+	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX, source.KindPDFGen, source.KindSandboxArtifact:
 		return true
 	}
 	return false

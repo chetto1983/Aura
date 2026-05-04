@@ -249,6 +249,7 @@ func TestStorePutKinds(t *testing.T) {
 		{PutInput{Kind: KindPDF, Filename: "a.pdf", Bytes: []byte("a")}, "original.pdf"},
 		{PutInput{Kind: KindText, Filename: "b.txt", Bytes: []byte("b")}, "original.txt"},
 		{PutInput{Kind: KindURL, Filename: "c.url", Bytes: []byte("https://example.com")}, "original.url"},
+		{PutInput{Kind: KindSandboxArtifact, Filename: "chart.PNG", Bytes: []byte("png")}, "original.png"},
 	}
 	for _, tc := range cases {
 		src, _, err := s.Put(context.Background(), tc.in)
@@ -258,5 +259,26 @@ func TestStorePutKinds(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(s.RawDir(), src.ID, tc.wantFile)); err != nil {
 			t.Errorf("%s: %s missing", tc.in.Kind, tc.wantFile)
 		}
+	}
+}
+
+func TestOriginalFilenameForKindUsesSafeArtifactExtension(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     Kind
+		filename string
+		want     string
+	}{
+		{name: "pdf", kind: KindPDF, filename: "ignored.txt", want: "original.pdf"},
+		{name: "artifact ext lowercased", kind: KindSandboxArtifact, filename: "Report.CSV", want: "original.csv"},
+		{name: "artifact no ext", kind: KindSandboxArtifact, filename: "artifact", want: "original.bin"},
+		{name: "artifact unsafe ext", kind: KindSandboxArtifact, filename: "artifact.bad/ext", want: "original.bin"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := OriginalFilenameForKind(tc.kind, tc.filename); got != tc.want {
+				t.Fatalf("OriginalFilenameForKind(%q, %q) = %q, want %q", tc.kind, tc.filename, got, tc.want)
+			}
+		})
 	}
 }

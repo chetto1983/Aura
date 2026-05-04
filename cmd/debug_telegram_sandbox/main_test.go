@@ -12,6 +12,7 @@ func TestTelegramSandboxSmokeReportPassesArtifactSmoke(t *testing.T) {
 		CalledExecuteCode:        true,
 		ContainsArtifactMetadata: true,
 		ArtifactFilenames:        []string{"aura_artifact.txt"},
+		ArtifactSourceIDs:        []string{"src_0123456789abcdef"},
 		DocumentSends: []telegram.DebugDocumentSend{{
 			Filename:  "aura_artifact.txt",
 			Caption:   "Aura sandbox artifact: aura_artifact.txt",
@@ -34,5 +35,23 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutDocument(t *testin
 	err := validateTelegramSandboxSmoke(result, true)
 	if err == nil || !strings.Contains(err.Error(), "document") {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want document failure", err)
+	}
+}
+
+func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutSource(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		CalledExecuteCode:        true,
+		ContainsArtifactMetadata: true,
+		ArtifactFilenames:        []string{"aura_artifact.txt"},
+		DocumentSends: []telegram.DebugDocumentSend{{
+			Filename:  "aura_artifact.txt",
+			Caption:   "Aura sandbox artifact: aura_artifact.txt",
+			SizeBytes: 30,
+		}},
+	}
+
+	err := validateTelegramSandboxSmoke(result, true)
+	if err == nil || !strings.Contains(err.Error(), "source persistence") {
+		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want source persistence failure", err)
 	}
 }

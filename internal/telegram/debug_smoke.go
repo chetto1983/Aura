@@ -25,6 +25,7 @@ type DebugTextSmokeResult struct {
 	Contains5050             bool
 	ContainsArtifactMetadata bool
 	ArtifactFilenames        []string
+	ArtifactSourceIDs        []string
 	DocumentSends            []DebugDocumentSend
 	FinalText                string
 }
@@ -120,6 +121,7 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 			result.ContainsArtifactMetadata = true
 			result.ArtifactFilenames = append(result.ArtifactFilenames, name)
 		}
+		result.ArtifactSourceIDs = append(result.ArtifactSourceIDs, artifactSourceIDsFromToolContent(msg.Content)...)
 	}
 	return result
 }
@@ -145,4 +147,25 @@ func artifactFilenamesFromToolContent(content string) []string {
 		}
 	}
 	return names
+}
+
+func artifactSourceIDsFromToolContent(content string) []string {
+	if !strings.Contains(content, "artifacts:") || !strings.Contains(content, "source_id=") {
+		return nil
+	}
+	var ids []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		for _, part := range strings.Split(line, ",") {
+			part = strings.TrimSpace(strings.TrimSuffix(part, ")"))
+			id, ok := strings.CutPrefix(part, "source_id=")
+			if ok && strings.TrimSpace(id) != "" {
+				ids = append(ids, strings.TrimSpace(id))
+			}
+		}
+	}
+	return ids
 }
