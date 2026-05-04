@@ -5,19 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
 var pragmas = []string{
-	"PRAGMA journal_mode=WAL",
-	"PRAGMA busy_timeout=5000",
-	"PRAGMA foreign_keys=ON",
-	"PRAGMA synchronous=NORMAL",
-	"PRAGMA cache_size=-20000",
-	"PRAGMA temp_store=MEMORY",
-	"PRAGMA mmap_size=30000000000",
+	"journal_mode=WAL",
+	"busy_timeout=5000",
+	"foreign_keys=ON",
+	"synchronous=NORMAL",
+	"cache_size=-20000",
+	"temp_store=MEMORY",
+	"mmap_size=30000000000",
 }
 
 // Open opens a SQLite database configured with Aura's production PRAGMAs.
@@ -26,16 +27,9 @@ func Open(path string) (*sql.DB, error) {
 		return nil, errors.New("db path is required")
 	}
 
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", withPragmas(path))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
-	}
-
-	for _, pragma := range pragmas {
-		if _, err := db.Exec(pragma); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("apply %s: %w", pragma, err)
-		}
 	}
 
 	if err := db.Ping(); err != nil {
@@ -44,4 +38,17 @@ func Open(path string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+func withPragmas(path string) string {
+	values := url.Values{}
+	for _, pragma := range pragmas {
+		values.Add("_pragma", pragma)
+	}
+
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + values.Encode()
 }

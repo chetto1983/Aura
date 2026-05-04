@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,47 @@ func TestOpenFreshDatabaseEnablesForeignKeys(t *testing.T) {
 	}
 	if enabled != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", enabled)
+	}
+}
+
+func TestOpenAppliesConnectionPragmasToNewPooledConnections(t *testing.T) {
+	t.Parallel()
+
+	db := openTempDB(t)
+	db.SetMaxOpenConns(2)
+
+	ctx := context.Background()
+	conn1, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("get first connection: %v", err)
+	}
+	defer conn1.Close()
+
+	conn2, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("get second connection: %v", err)
+	}
+	defer conn2.Close()
+
+	for name, conn := range map[string]*sql.Conn{
+		"first":  conn1,
+		"second": conn2,
+	} {
+		var foreignKeys int
+		if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
+			t.Fatalf("%s connection query foreign_keys: %v", name, err)
+		}
+		if foreignKeys != 1 {
+			t.Fatalf("%s connection foreign_keys = %d, want 1", name, foreignKeys)
+		}
+
+		var busyTimeout int
+		if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+			t.Fatalf("%s connection query busy_timeout: %v", name, err)
+		}
+		if busyTimeout != 5000 {
+			t.Fatalf("%s connection busy_timeout = %d, want 5000", name, busyTimeout)
+		}
 	}
 }
 
