@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.5` enable `execute_code`.
+Last completed slice: `sandbox.pyodide.6` release bundle packaging.
 
-Active slice: `sandbox.pyodide.6` release bundle packaging.
+Active slice: `sandbox.pyodide.7` real Telegram smoke.
 
 What is shipped:
 
@@ -81,6 +81,7 @@ What is shipped:
 - `internal/sandbox.PyodideRunner` now speaks the runner JSON protocol over stdin/stdout, starts the bundled runner with sanitized env and timeout enforcement, parses result JSON, and has hermetic fake-runner tests plus an opt-in live Pyodide bundle test.
 - Local dev bundle installed under ignored `runtime/pyodide/` with Pyodide 0.29.3 core assets, local package wheels, manifest hashes, and a Node-backed development runner; live adapter smoke imported the full baseline profile offline and printed `5050`.
 - `cmd/debug_sandbox --smoke` is now the repeatable operator harness for the local bundle: it reports missing bundles as unavailable and runs arithmetic, data imports, XLSX read, matplotlib artifact, and PDF/text extraction scenarios offline.
+- Release packaging now rebuilds the ignored Pyodide bundle from pinned inputs, bundles Windows Node under `runtime/pyodide/runner/node-win-x64`, runs `cmd/debug_sandbox --smoke` before archive creation, and includes `runtime/pyodide/**` in GoReleaser archives.
 
 Phase 18 status: **closed**.
 
@@ -105,10 +106,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.6` release bundle packaging:
-  - package the Pyodide runtime and runner into the Windows release artifact;
-  - make release smoke run `cmd/debug_sandbox --smoke` before publishing;
-  - document how non-release dev bundles stay ignored and reproducible.
+- `sandbox.pyodide.7` real Telegram smoke:
+  - start Aura with the rebuilt local bundle and confirm health reports `runtime_kind=pyodide`, `available=true`;
+  - ask Telegram to compute `sum(range(1, 101))` through `execute_code`;
+  - capture any model/tool-loop copy or timeout issues before declaring the feature ready.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -232,8 +233,33 @@ Workspace warning:
 | sandbox.pyodide.3 | Pyodide runner adapter | done | Added the JSON stdin/stdout runner adapter with sanitized env, timeout kill, fake-runner tests, opt-in live Pyodide bundle smoke, and ignored local runtime bundle install. |
 | sandbox.pyodide.4 | Offline package smoke | done | Added `cmd/debug_sandbox --smoke` plus reusable smoke scenarios for arithmetic, data imports, XLSX read, matplotlib artifact generation, and PDF/text extraction; missing bundles fail as unavailable. |
 | sandbox.pyodide.5 | Enable execute_code | done | Telegram startup now constructs the Pyodide runner, enables `execute_code` only when bundle and runner health are available, reports invalid bundles as unavailable, and supports the local Windows `.cmd` dev runner fallback. |
+| sandbox.pyodide.6 | Release bundle packaging | done | Added a pinned Pyodide bundle installer, release workflow/Goreleaser hooks, archive inclusion for `runtime/pyodide/**`, publish-time `debug_sandbox --smoke`, and config tests for release packaging. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.6 (Release bundle packaging)
+
+Goal: make the Pyodide runtime reproducible for release archives and gate publishing on the real offline smoke.
+
+Implementation:
+
+- Added `runtime/install-pyodide-bundle.mjs`, pinned to Pyodide 0.29.3, to rebuild ignored `runtime/pyodide/` from npm/lock metadata, download the baseline package closure with sha256 checks, write the local manifest, and generate runner scripts.
+- The installer supports `--with-node-win-x64`, which downloads Node 22.13.1 for Windows and places it under `runtime/pyodide/runner/node-win-x64` so the Windows archive is self-contained.
+- Updated `.goreleaser.yml` to build the web assets, rebuild the Pyodide bundle, run `go run ./cmd/debug_sandbox --smoke`, and include `runtime/pyodide/**` in release archives.
+- Updated `.github/workflows/release.yml` so CI installs web dependencies and builds the Pyodide bundle before GoReleaser.
+- Added `internal/release/release_config_test.go` to pin the release workflow/config invariants.
+- Replaced the deprecated GoReleaser `format_overrides.format` key with `formats`.
+- Updated runtime docs with the reproducible installer and release archive behavior.
+
+Verification:
+
+- `go test ./internal/release -count=1 -v`
+- `node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64`
+- `go run ./cmd/debug_sandbox --smoke`
+- `go run github.com/goreleaser/goreleaser/v2@latest check`
+- `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish` reached the new bundle installer and smoke hook successfully, then failed during local Windows cross-build with `unknown relocation type 7` from the existing `cmd/aura/resource.syso` under the Go 1.26 toolchain used by `go run`; CI uses the workflow's configured Go 1.25 toolchain.
+
+Next slice: `sandbox.pyodide.7` real Telegram smoke through the registered `execute_code` tool.
 
 ### 2026-05-04 - Sandbox.pyodide.5 (Enable execute_code)
 

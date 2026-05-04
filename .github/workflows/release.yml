@@ -31,6 +31,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Build Pyodide runtime bundle
+        run: node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

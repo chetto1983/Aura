@@ -110,8 +110,18 @@ invalid runtime assets leave the tool disabled and surface sandbox health.
 ## Local Bundle Smoke
 
 The local development bundle is ignored by git because it is a release artifact,
-not source. After installing `runtime/pyodide/`, run the repeatable package
-smoke with:
+not source. To rebuild it from pinned release inputs, run:
+
+```powershell
+node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64
+```
+
+That command installs Pyodide 0.29.3 from npm, resolves Aura's baseline package
+closure from `pyodide-lock.json`, downloads package artifacts with hash checks,
+writes `aura-pyodide-manifest.json`, and adds the runner scripts plus a bundled
+Windows Node runtime for release archives.
+
+After installing `runtime/pyodide/`, run the repeatable package smoke with:
 
 ```powershell
 go run ./cmd/debug_sandbox --smoke
@@ -120,6 +130,10 @@ go run ./cmd/debug_sandbox --smoke
 The smoke validates bundle availability and runs arithmetic, data imports,
 spreadsheet read, matplotlib artifact creation, and PDF/text extraction against
 local Pyodide files.
+
+GoReleaser runs the same installer and smoke before building archives. Release
+archives include `runtime/pyodide/**`, so Windows users do not need to install
+Node, Python, pip, Docker, or Pyodide separately.
 
 For the narrower adapter test, run:
 

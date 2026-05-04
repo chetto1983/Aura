@@ -7,7 +7,9 @@ before:
     - go mod tidy
     - go run ./cmd/build_icon
     - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon_app.ico -o cmd/aura/resource.syso cmd/aura/versioninfo.json
-    - bash -c "cd web && npm ci && npm run build"
+    - npm --prefix web run build
+    - node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64
+    - go run ./cmd/debug_sandbox --smoke
 
 builds:
   - id: aura
@@ -42,12 +44,15 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - INSTALL.md
       - .env.example
       - mcp.example.json
+      - src: runtime/pyodide/**/*
+        dst: runtime/pyodide
 
 checksum:
   name_template: 'checksums.txt'
