@@ -1,0 +1,89 @@
+# Sandbox Code Execution — Design
+
+**Date:** 2026-05-04
+**Status:** approved
+**Backend:** Isola (CPython in WASM, capability-based sandbox)
+
+---
+
+## 1. Thesis
+
+Aura can currently only reason — it can't compute. When a user asks "what's the correlation between X and Y in this CSV" or "run a simulation of this scenario," Aura is stuck describing what it would do instead of doing it.
+
+This phase gives Aura a sandbox where it writes and executes Python code, then uses the results to answer questions, build permanent tools, and autonomously improve over time.
+
+Four capabilities:
+
+1. **Solve problems via code execution** — run Python in an isolated WASM sandbox, return results
+2. **Build permanent tools** — save useful scripts to a tool registry that compounds
+3. **Learn from execution feedback** — file insights and successful code into the wiki
+4. **Autonomously identify and fix weaknesses** — scheduled job finds gaps, writes new tools
+
+---
+
+## 2. Architecture
+
+Three new Go components:
+
+```
+Sandbox Manager ──► Isola WASM (ephemeral, airgapped, tmpfs-only)
+Tool Registry  ──► wiki/tools/ (.py scripts + .md wiki pages)
+Auto-Improve   ──► scheduled job (gap detection → tool writing → wiki filing)
+```
+
+- **Sandbox Manager** (`internal/sandbox/`) — manages Isola sandbox lifecycle: creates ephemeral WASM instances, executes Python, returns stdout/stderr, enforces timeouts. AST validation as defense-in-depth before WASM isolation.
+- **Tool Registry** (`wiki/tools/`) — directory of LLM-written Python scripts with frontmatter metadata. LLM discovers tools via `tools/index.md`, registers new ones after successful execution.
+- **Auto-Improve Scheduler** — periodic job that reviews conversation archives for gaps, writes tools to fill them, files insights into wiki.
+
+---
+
+## 3. Execution Flow
+
+```
+User request → LLM decides code needed → writes Python → Sandbox Mgr validates AST
+→ Isola WASM executes (airgap, tmpfs, 15s timeout) → stdout/stderr back to LLM
+→ LLM answers user → optionally saves tool to registry + wiki entry
+```
+
+Key safety properties:
+- **AST validation** before execution (Go-side, using Python's `ast` module) — rejects dangerous patterns even before WASM sees the code
+- **Airgap by default** — no network access unless explicitly granted
+- **tmpfs-only filesystem** — scratch directory, destroyed with sandbox
+- **15-second default timeout** — wall-clock limit
+- **Ephemeral** — sandbox destroyed after every execution
+
+---
+
+## 4. Tool Registry
+
+```
+wiki/tools/
+├── index.md                 # catalog, LLM reads this first
+├── data_correlation.py       # script
+├── data-correlation.md       # wiki page: what, when, params
+├── csv_cleaner.py
+├── csv-cleaner.md
+└── ...
+```
+
+Each `.py` has a standard header with description, parameters, required libraries, creation date, and usage hints. The LLM owns the registry entirely — writes, updates, deduplicates. No human curation needed.
+
+---
+
+## 5. Autonomous Improvement
+
+Scheduled job (default: nightly), three passes:
+
+1. **Identify gaps** — scan conversation archives for "I can't do that" responses, low-confidence answers, repeated similar requests with no existing tool
+2. **Write tools** — for each gap, write a Python tool and register it
+3. **File insights** — synthesize patterns into wiki pages, update index.md and log.md
+
+Safety gate: dry-run mode (proposes changes via Telegram for owner approval) vs auto-apply mode. Default is dry-run.
+
+---
+
+## 6. Cross-Platform
+
+Isola runs identically on Windows, macOS, and Linux with zero system dependencies. Single `pip install isola` or bundled Python wheel. No Docker, no admin rights, no daemon.
+
+The only limitation: no C extensions (numpy, pandas). For Aura's use case — analysis scripts, simulations, data processing — pure Python is sufficient for the vast majority of tasks.
