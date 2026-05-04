@@ -16,10 +16,29 @@ Shipped through Phase 19a–19g.1 and sandbox.pyodide.5:
 
 Refer to `docs/implementation-tracker.md` for detailed slice-by-slice history.
 
-## v1.0 — Close Concern (IN PROGRESS)
+## v1.0 — Production Readiness (IN PROGRESS)
 
 Started: 2026-05-04
 
-Goal: Resolve all codebase concerns from `.planning/codebase/CONCERNS.md` — fix bugs, raise coverage, tighten security, and ship a stable release with bundled sandbox.
+Goal: Make Aura safe to run as the daily production build by closing data-integrity, migration-safety, dashboard-security, memory-reliability, Telegram-regression, and release-gate blockers.
 
-Scope: P0–P3 concerns
+In scope:
+- Shared SQLite pool with WAL, busy_timeout, and foreign_keys
+- Versioned migrations and upgrade safety
+- Observable conversation archive failures
+- Dashboard token expiry
+- Settings secret redaction
+- Focused Telegram critical-path tests
+- Final production release gates
+
+Deferred to v1.1 Hardening Polish:
+- File tool split
+- Broad large-file refactors
+- tray coverage polish
+- telebot beta monitoring docs
+- Full settings at-rest encryption unless redaction proves insufficient
+- Arbitrary coverage targets outside Telegram critical paths
+
+## v1.1 — Hardening Polish (PLANNED)
+
+Follow-up hardening work that is useful but not part of the v1.0 production release gate.

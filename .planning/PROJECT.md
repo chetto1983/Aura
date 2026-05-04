@@ -30,16 +30,13 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 
 ### Active
 
-- [ ] Replace `MustResolveProfiles` bare panic with error return
-- [ ] Boost `internal/telegram` unit test coverage 22.1% → 55%+
-- [ ] Centralize SQLite DB connection (single pool, WAL + busy_timeout)
-- [ ] Add dashboard token expiration (`expires_at` with TTL)
-- [ ] Extract `scheduler/store.go` migrations to `scheduler/migrations.go`
-- [ ] Versioned migration framework
-- [ ] Split `tools/files.go` into `files_xlsx.go` / `files_docx.go` / `files_pdf.go`
-- [ ] Encrypt secrets at rest in settings store
-- [ ] Tray basic unit test coverage + cross-platform `openBrowser` abstraction
-- [ ] Document telebot beta dependency risk
+- [ ] Shared SQLite pool with WAL, busy_timeout, and foreign_keys
+- [ ] Versioned migrations and upgrade safety
+- [ ] Observable conversation archive failures
+- [ ] Dashboard token expiry
+- [ ] Settings secret redaction in API responses and dashboard state
+- [ ] Focused Telegram critical-path tests
+- [ ] Final production release gates
 
 ### Out of Scope
 
@@ -93,16 +90,27 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-## Current Milestone: v1.0 Close Concern
+## Current Milestone: v1.0 Production Readiness
 
-**Goal:** Harden Aura by resolving every concern from the codebase audit — fix bugs, raise test coverage, tighten security, and ship a stable release artifact.
+**Goal:** Make Aura safe to run as the daily production build by closing data-integrity, migration-safety, dashboard-security, memory-reliability, Telegram-regression, and release-gate blockers.
 
-**Target features:**
-- Fix bare panic, raise telegram coverage
-- Centralize DB, add token expiry, extract scheduler migrations
-- Versioned migration framework, split file tools, encrypt secrets
-- Tray tests + cross-platform browser, document telebot status
+**In scope:**
+- Shared SQLite pool with WAL, busy_timeout, and foreign_keys
+- Versioned migrations and upgrade safety
+- Observable conversation archive failures
+- Dashboard token expiry
+- Settings secret redaction
+- Focused Telegram critical-path tests
+- Final production release gates
+
+**Deferred to v1.1 Hardening Polish:**
+- File tool split
+- Broad large-file refactors
+- tray coverage polish
+- telebot beta monitoring docs
+- Full settings at-rest encryption unless redaction proves insufficient
+- Arbitrary coverage targets outside Telegram critical paths
 
 ---
 
-*Last updated: 2026-05-04 after new-milestone bootstrap*
+*Last updated: 2026-05-04 after v1.0 production-readiness reconciliation*

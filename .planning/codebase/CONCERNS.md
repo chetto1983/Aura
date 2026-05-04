@@ -2,6 +2,18 @@
 
 **Analysis Date:** 2026-05-04
 
+## Missing Production Blockers Found During v1.0 Design
+
+**Conversation archive failures can be silent:**
+- Issue: archive append failures in the Telegram conversation path are not surfaced strongly enough for a memory-first product.
+- Impact: Aura can appear to answer correctly while losing durable conversation evidence.
+- Fix approach: make archive append failures observable through logging and focused tests.
+
+**Settings API can expose secrets:**
+- Issue: dashboard/settings responses can return raw API key values to any holder of a valid dashboard token.
+- Impact: a stolen dashboard token can exfiltrate LLM, OCR, or embedding credentials.
+- Fix approach: redact secret settings in API responses and UI state while keeping write/test-connection paths working.
+
 ## Error Handling Gaps
 
 **Ignored errors in production paths:**
@@ -65,7 +77,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 | File | Lines | Concern |
 |------|-------|---------|
 | `internal/scheduler/store.go` | 754 | Schema definitions + all CRUD for 5 tables + migration logic + dropLegacyConversations. Single responsibility is violated — this is a schema registry, migration engine, and data access layer in one file. |
-| `internal/tools/files.go` | 599 | XLSX, DOCX, and PDF generation all in one file. Each format's `Execute` method is 100+ lines. |
+| File-generation tool module | 599 | XLSX, DOCX, and PDF generation all in one file. Each format's `Execute` method is 100+ lines. |
 | `internal/tools/source.go` | 488 | Five tool implementations (store_source, ocr_source, read_source, list_sources, lint_sources) in one file. |
 | `internal/tools/memory_search.go` | 461 | Semantic search, source search, archive search, snippet formatting — all in one file. |
 | `internal/api/types.go` | 401 | Every API response struct in one file. Grows with every new dashboard endpoint. |
@@ -73,7 +85,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 | `internal/tools/scheduler.go` | 473 | Multiple scheduler tool implementations in one file. |
 | `internal/conversation/context.go` | 385 | Conversation context management, message trimming, summarization, and tool-result pairing. |
 
-**Recommendation:** Split `tools/files.go` into `tools/files_xlsx.go`, `tools/files_docx.go`, and `tools/files_pdf.go`. Split `tools/source.go` into one file per tool. Consider extracting `scheduler/store.go` migrations into `scheduler/migrations.go`.
+**Recommendation:** Defer the file-generation tool split to v1.1 Hardening Polish. Split `tools/source.go` into one file per tool in a later broad large-file refactor. Keep v1.0 focused on production blockers.
 
 ## Database Migration Strategy (Fragile)
 
@@ -196,7 +208,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 | **P1** | No token expiration | Add `expires_at` to `api_tokens` |
 | **P1** | `scheduler/store.go` (754 lines) | Extract migrations to separate file |
 | **P2** | Ad-hoc per-store migrations | Versioned migration framework |
-| **P2** | `tools/files.go` (599 lines) | Split by file format |
+| **P2** | File-generation tool module (599 lines) | Split by file format |
 | **P2** | Secrets in plain text in settings | At-rest encryption for API keys |
 | **P3** | `tray` 0% coverage | Basic unit test for Windows/non-Windows paths |
 | **P3** | Deprecated/unsupported beta dependency | Monitor telebot v4 for stable release |
