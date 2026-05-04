@@ -22,6 +22,7 @@ var DefaultAgentJobTools = []string{
 	"web_search",
 	"web_fetch",
 	"propose_wiki_change",
+	"propose_skill_change",
 }
 
 type AgentJobPayload struct {

@@ -184,6 +184,13 @@ func loadPathFile(path string) (Skill, error) {
 	return parseSkill(data)
 }
 
+// ParseSkill validates and parses one complete SKILL.md file. It is exported
+// for review-gated skill proposal flows that need to validate a draft before
+// placing it in Aura's mutation queue.
+func ParseSkill(data []byte) (Skill, error) {
+	return parseSkill(data)
+}
+
 func parseSkill(data []byte) (Skill, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")

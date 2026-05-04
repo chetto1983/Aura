@@ -7,9 +7,23 @@ const (
 	ActionSkip  Action = "skip"  // already covered in wiki (sim > patchThreshold)
 	ActionPatch Action = "patch" // exists but worth augmenting (newThreshold <= sim <= patchThreshold)
 	ActionNew   Action = "new"   // genuinely new (sim < newThreshold)
+
+	ActionSkillCreate Action = "skill_create" // proposed procedural memory addition
+	ActionSkillUpdate Action = "skill_update" // proposed procedural memory patch
+	ActionSkillDelete Action = "skill_delete" // proposed procedural memory removal
 )
 
 func (a Action) String() string { return string(a) }
+
+// IsWikiAction reports whether action can be applied by the wiki AutoApplier.
+func IsWikiAction(action string) bool {
+	switch Action(action) {
+	case ActionNew, ActionPatch, ActionSkip:
+		return true
+	default:
+		return false
+	}
+}
 
 // Candidate is one extracted fact from a conversation turn batch.
 type Candidate struct {

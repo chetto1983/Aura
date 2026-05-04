@@ -43,12 +43,27 @@ type EvidenceRef struct {
 
 // Provenance explains why and from where a proposal was created.
 type Provenance struct {
-	OriginTool   string        `json:"origin_tool,omitempty"`
-	OriginReason string        `json:"origin_reason,omitempty"`
-	Evidence     []EvidenceRef `json:"evidence,omitempty"`
-	AgentJobID   string        `json:"agent_job_id,omitempty"`
-	SwarmRunID   string        `json:"swarm_run_id,omitempty"`
-	SwarmTaskID  string        `json:"swarm_task_id,omitempty"`
+	OriginTool   string         `json:"origin_tool,omitempty"`
+	OriginReason string         `json:"origin_reason,omitempty"`
+	ProposalKind string         `json:"proposal_kind,omitempty"`
+	Evidence     []EvidenceRef  `json:"evidence,omitempty"`
+	Skill        *SkillProposal `json:"skill,omitempty"`
+	AgentJobID   string         `json:"agent_job_id,omitempty"`
+	SwarmRunID   string         `json:"swarm_run_id,omitempty"`
+	SwarmTaskID  string         `json:"swarm_task_id,omitempty"`
+}
+
+// SkillProposal is a review-gated procedural-memory draft. Approval in the
+// generic summaries queue marks it reviewed; installation/smoke-test workflows
+// stay in the skills/admin layer.
+type SkillProposal struct {
+	Action       string   `json:"action"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
+	SmokePrompt  string   `json:"smoke_prompt,omitempty"`
+	Content      string   `json:"content,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
 }
 
 // SummariesStore provides CRUD over the proposed_updates table.
@@ -92,6 +107,8 @@ func (s *SummariesStore) Propose(ctx context.Context, in ProposalInput) (Propose
 		if in.TargetSlug == "" {
 			return ProposedUpdate{}, errors.New("summaries propose: target_slug is required for patch")
 		}
+	case string(ActionSkillCreate), string(ActionSkillUpdate), string(ActionSkillDelete):
+		in.TargetSlug = ""
 	default:
 		return ProposedUpdate{}, fmt.Errorf("summaries propose: unsupported action %q", action)
 	}
@@ -246,9 +263,11 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 func cleanProvenance(p Provenance) Provenance {
 	p.OriginTool = strings.TrimSpace(p.OriginTool)
 	p.OriginReason = strings.TrimSpace(p.OriginReason)
+	p.ProposalKind = strings.TrimSpace(p.ProposalKind)
 	p.AgentJobID = strings.TrimSpace(p.AgentJobID)
 	p.SwarmRunID = strings.TrimSpace(p.SwarmRunID)
 	p.SwarmTaskID = strings.TrimSpace(p.SwarmTaskID)
+	p.Skill = cleanSkillProposal(p.Skill)
 	if len(p.Evidence) == 0 {
 		p.Evidence = []EvidenceRef{}
 		return p
@@ -278,6 +297,24 @@ func cleanProvenance(p Provenance) Provenance {
 	}
 	p.Evidence = out
 	return p
+}
+
+func cleanSkillProposal(in *SkillProposal) *SkillProposal {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Action = strings.TrimSpace(out.Action)
+	out.Name = strings.TrimSpace(out.Name)
+	out.Description = strings.TrimSpace(out.Description)
+	out.SmokePrompt = strings.TrimSpace(out.SmokePrompt)
+	out.Content = strings.TrimSpace(out.Content)
+	out.Reason = strings.TrimSpace(out.Reason)
+	out.AllowedTools = cleanProposalStrings(out.AllowedTools)
+	if out.Action == "" && out.Name == "" && out.Description == "" && out.Content == "" && out.Reason == "" {
+		return nil
+	}
+	return &out
 }
 
 func cleanProposalStrings(values []string) []string {

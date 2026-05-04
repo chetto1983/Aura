@@ -211,6 +211,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	if tool := tools.NewProposeWikiChangeTool(summariesStore); tool != nil {
 		toolRegistry.Register(tool)
 	}
+	if tool := tools.NewProposeSkillChangeTool(summariesStore); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	swarmStore, err := swarm.NewStoreWithDB(schedStore.DB())
 	if err != nil {

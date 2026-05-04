@@ -42,13 +42,14 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `18-close` phase 18 closure.
+Last completed slice: `19b` review-gated skill proposals.
 
 What is shipped:
 
 - `search_memory` produces an evidence envelope.
 - Maintenance raises `memory_decay` review issues.
 - Wiki proposals persist provenance (`origin_tool`, `origin_reason`, evidence refs, agent job/swarm IDs).
+- Skill proposals persist procedural-memory drafts (`SKILL.md`, allowed tools, smoke prompt, reason) in the same review queue without mutating local skill files.
 - `/summaries` supports single and batch approve/reject.
 - `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
 - Proposal evidence chips can jump to source/wiki/conversation context.
@@ -79,11 +80,11 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19b: implement `propose_skill_change`:
-  - skill draft/proposal kind create/update/delete;
-  - trigger rules, allowed tools, examples, and one smoke prompt;
-  - provenance from source/wiki/conversation/tool/job/swarm evidence;
-  - review queue integration, approval smoke test, and install/audit path.
+- Phase 19c: named toolset profiles for `agent_job` and swarm roles:
+  - extract repeated allowlists into composable profiles;
+  - include `memory_read`, `wiki_review`, `skills_read`, `web_research`, and `scheduler_safe`;
+  - block recursive/dangerous tools inside scheduled agent jobs by default;
+  - prepare `agent_job` for `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
@@ -188,9 +189,39 @@ Workspace warning:
 | 18-close | Phase 18 closure | done | Phase 18 memory layer is closed: evidence envelope, decay, provenance, batch review, drill-down, live scorecard, and graph-ready quality reports all shipped under the LLM Wiki memory philosophy. |
 | 19 | Code inventory + procedural memory | planned | Inventory Aura code, remove verified dead code, reuse Picobot/Hermes patterns, add review-gated skill proposals, toolset profiles, and skill-backed agent jobs. |
 | 19a | Code inventory and low-risk cleanup | done | `docs/code-inventory-phase-19-2026-05-04.md`; removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
-| 19b | Review-gated skill proposals | planned | Add `propose_skill_change` for procedural memory: draft SKILL.md, trigger rules, allowed tools, examples, smoke prompt, provenance, review/install audit. |
+| 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
+| 19c | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19b (Review-gated skill proposals)
+
+Goal: add Hermes-style procedural learning without letting the model mutate skill files directly.
+
+Implementation:
+
+- Added `propose_skill_change`.
+- The tool supports create/update/delete skill proposals.
+- Create/update validate a complete `SKILL.md` draft using Aura's skill parser.
+- Proposals include:
+  - skill name/action/description;
+  - allowed tools;
+  - smoke prompt;
+  - full draft content for create/update;
+  - reason for delete;
+  - provenance/evidence refs, agent job IDs, and swarm IDs.
+- Skill proposals reuse `proposed_updates` as the single human review queue.
+- `/summaries/.../approve` now skips wiki auto-apply for non-wiki proposal actions, so approving a skill proposal marks it reviewed without writing wiki pages or skill files.
+- Scheduled `agent_job` default tools now include `propose_skill_change` while preserving propose-only write policy.
+- System prompt now explains that skills are procedural memory and must be proposed, not directly installed/deleted from chat.
+
+Verification:
+
+- `go test ./internal/tools ./internal/api ./internal/conversation/summarizer ./internal/skills ./internal/scheduler ./internal/telegram`
+- `staticcheck ./internal/tools ./internal/api ./internal/conversation/summarizer ./internal/skills ./internal/scheduler ./internal/telegram`
+- Full Go verification before commit.
+
+Next slice: extract named Aura toolset profiles for scheduled jobs and swarm roles.
 
 ### 2026-05-04 - Slice 19a (Code inventory + cleanup)
 

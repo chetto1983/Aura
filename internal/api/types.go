@@ -315,12 +315,24 @@ type EvidenceRef struct {
 }
 
 type Provenance struct {
-	OriginTool   string        `json:"origin_tool,omitempty"`
-	OriginReason string        `json:"origin_reason,omitempty"`
-	Evidence     []EvidenceRef `json:"evidence,omitempty"`
-	AgentJobID   string        `json:"agent_job_id,omitempty"`
-	SwarmRunID   string        `json:"swarm_run_id,omitempty"`
-	SwarmTaskID  string        `json:"swarm_task_id,omitempty"`
+	OriginTool   string         `json:"origin_tool,omitempty"`
+	OriginReason string         `json:"origin_reason,omitempty"`
+	ProposalKind string         `json:"proposal_kind,omitempty"`
+	Evidence     []EvidenceRef  `json:"evidence,omitempty"`
+	Skill        *SkillProposal `json:"skill,omitempty"`
+	AgentJobID   string         `json:"agent_job_id,omitempty"`
+	SwarmRunID   string         `json:"swarm_run_id,omitempty"`
+	SwarmTaskID  string         `json:"swarm_task_id,omitempty"`
+}
+
+type SkillProposal struct {
+	Action       string   `json:"action"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
+	SmokePrompt  string   `json:"smoke_prompt,omitempty"`
+	Content      string   `json:"content,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
 }
 
 // SwarmRunSummary is one row of GET /swarm/runs.

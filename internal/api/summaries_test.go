@@ -147,6 +147,29 @@ func TestHandleSummariesApprove_HappyPath(t *testing.T) {
 	}
 }
 
+func TestHandleSummariesApprove_SkillProposalDoesNotMutateWiki(t *testing.T) {
+	db, store := newSummariesDB(t)
+	id := seedProposal(t, db, "skill_create", "pending")
+	ws := &fakeWikiStoreForSummaries{}
+
+	router := NewRouter(Deps{Summaries: store, SummariesWiki: ws})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/summaries/%d/approve", id), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body ProposedUpdate
+	json.NewDecoder(w.Body).Decode(&body)
+	if body.Status != "approved" || body.Action != "skill_create" {
+		t.Fatalf("response = %+v", body)
+	}
+	if len(ws.written) != 0 {
+		t.Fatalf("skill proposal approval must not write wiki pages, wrote %d", len(ws.written))
+	}
+}
+
 func TestHandleSummariesApprove_NotFound(t *testing.T) {
 	_, store := newSummariesDB(t)
 	router := NewRouter(Deps{Summaries: store, SummariesWiki: &fakeWikiStoreForSummaries{}})

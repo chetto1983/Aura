@@ -197,6 +197,9 @@ func parseSummaryBatchRequest(r *http.Request) (SummaryBatchRequest, error) {
 func applyApprovedSummary(ctx context.Context, deps Deps, proposal summarizer.ProposedUpdate) {
 	// Apply via AutoApplier if a wiki writer is wired. The status flip
 	// happens first so concurrent approve/reject requests cannot both apply.
+	if !summarizer.IsWikiAction(proposal.Action) {
+		return
+	}
 	if deps.SummariesWiki == nil {
 		return
 	}
@@ -277,10 +280,27 @@ func provenanceToDTO(p summarizer.Provenance) Provenance {
 	return Provenance{
 		OriginTool:   p.OriginTool,
 		OriginReason: p.OriginReason,
+		ProposalKind: p.ProposalKind,
 		Evidence:     evidence,
+		Skill:        skillProposalToDTO(p.Skill),
 		AgentJobID:   p.AgentJobID,
 		SwarmRunID:   p.SwarmRunID,
 		SwarmTaskID:  p.SwarmTaskID,
+	}
+}
+
+func skillProposalToDTO(p *summarizer.SkillProposal) *SkillProposal {
+	if p == nil {
+		return nil
+	}
+	return &SkillProposal{
+		Action:       p.Action,
+		Name:         p.Name,
+		Description:  p.Description,
+		AllowedTools: append([]string(nil), p.AllowedTools...),
+		SmokePrompt:  p.SmokePrompt,
+		Content:      p.Content,
+		Reason:       p.Reason,
 	}
 }
 
