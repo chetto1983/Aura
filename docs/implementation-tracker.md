@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `18h` memory quality report graph.
+Last completed slice: `18-close` phase 18 closure.
 
 What is shipped:
 
@@ -56,14 +56,34 @@ What is shipped:
 - `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
 - `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, full results, and graph nodes/edges.
 
+Phase 18 status: **closed**.
+
+Closure criteria met:
+
+- Live LLM scorecard passed 20/20 real daily-memory questions.
+- Every live scorecard question used `search_memory`.
+- Durable-memory scenarios created review-gated proposals through `propose_wiki_change`.
+- Search-backed proposals are rejected unless they carry evidence refs.
+- Evidence drill-down, batch review, provenance, memory decay, and report graph artifacts are shipped.
+- The memory stack still follows `docs/llm-wiki.md`: source evidence -> compiled wiki -> search/evidence envelope -> reviewed updates -> optional procedural skills.
+
+Phase 19 direction:
+
+- Memory quality observability and graph operations:
+  - read local `reports/memory-quality/*.json`;
+  - show trend pass rate, elapsed time, LLM calls, tool calls, proposal calls;
+  - render the report graph separately from the durable wiki graph;
+  - highlight failed, slow, or tool-drift scenarios;
+  - use real LLM runs as the benchmark, not fake-LLM substitutes.
+
 Next best slice:
 
-- Build a small dashboard/report reader for local memory-quality artifacts:
+- Phase 19a: build a small dashboard/report reader for local memory-quality artifacts:
   - trend pass rate, elapsed time, LLM calls, tool calls, proposal calls;
   - graph view of scenario -> tool -> evidence/proposal relationships;
   - highlight failed or slow scenarios.
 
-Status note: slice `18h` keeps the live LLM benchmark as the source of truth and records graph-ready evidence without turning raw sources into a second memory layer.
+Status note: phase 18 is closed. Phase 19 starts from observability of real usefulness, not more memory primitives.
 
 Workspace warning:
 
@@ -163,8 +183,42 @@ Workspace warning:
 | 18f | Memory quality scorecard | done | New hermetic `cmd/debug_memory_quality` harness runs 20 everyday second-brain questions through `search_memory`, creates 4 review-gated wiki proposals, and fails if evidence/proposal quality falls below 90%. |
 | 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
 | 18h | Memory quality report graph | done | `debug_memory_quality` can now save timestamped local JSON reports with summary metrics, full live/hermetic results, and graph-ready nodes/edges for scenario -> tool -> evidence/proposal analysis. |
+| 18-close | Phase 18 closure | done | Phase 18 memory layer is closed: evidence envelope, decay, provenance, batch review, drill-down, live scorecard, and graph-ready quality reports all shipped under the LLM Wiki memory philosophy. |
+| 19 | Memory quality observability + graph operations | planned | Read saved live LLM quality reports, render trends and report graphs, flag drift/slow scenarios, and keep this diagnostic graph separate from durable wiki memory. |
 
 ## Session Log
+
+### 2026-05-04 - Phase 18 closed / Phase 19 opened
+
+Decision: phase 18 is complete.
+
+Why it closes:
+
+- The memory pipeline now has a full evidence/proposal loop:
+  - `search_memory` evidence envelope;
+  - `memory_decay` maintenance issues;
+  - provenance-preserving wiki proposals;
+  - batch review;
+  - evidence drill-down;
+  - live LLM scorecard;
+  - graph-ready quality reports.
+- The live LLM benchmark is the canonical usefulness check:
+  - last full run passed `20/20`;
+  - `search_memory_calls=20`;
+  - `proposal_calls=4`;
+  - `unexpected_proposals=0`.
+- The implementation preserves the `docs/llm-wiki.md` philosophy:
+  - raw sources/archive turns stay evidence;
+  - wiki remains the compiled memory artifact;
+  - search remains an access path;
+  - autonomous durable updates stay review-gated;
+  - report graphs are diagnostics, not a replacement memory layer.
+
+Phase 19:
+
+- Theme: memory quality observability and graph operations.
+- First slice: dashboard/report reader for `reports/memory-quality/*.json`.
+- Keep real LLM scorecards as the benchmark; do not replace them with fake-LLM metrics.
 
 ### 2026-05-04 - Slice 18h (Memory quality report graph)
 
