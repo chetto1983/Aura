@@ -18,6 +18,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	auraskills "github.com/aura/aura/internal/skills"
@@ -55,6 +56,8 @@ type Bot struct {
 	summRunner  *summarizer.Runner             // nil when SUMMARIZER_ENABLED=false
 	issues      *scheduler.IssuesStore         // wiki_issues queue, shared by API + maintenance
 	api         http.Handler                   // read-only JSON API for the dashboard, mounted on the health server
+	sandboxMgr  *sandbox.Manager               // nil when SANDBOX_ENABLED=false or Isola unavailable
+	toolReg     *tools.ToolRegistry            // persistent LLM-written Python tools
 	active      sync.Map                       // maps userID string -> bool (active conversation tracking)
 	ctxMap      sync.Map                       // maps userID string -> *conversation.Context
 }

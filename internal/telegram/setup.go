@@ -18,6 +18,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/settings"
@@ -140,6 +141,35 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
+	}
+
+	// Sandbox code execution (Isola WASM)
+	var sandboxMgr *sandbox.Manager
+	if cfg.SandboxEnabled {
+		runnerPath := sandbox.FindRunnerPath()
+		if runnerPath == "" {
+			logger.Warn("sandbox runner not found, execute_code disabled")
+		} else {
+			mgr, err := sandbox.NewManager(sandbox.Config{
+				PythonPath: "python3",
+				RunnerPath: runnerPath,
+				Timeout:    time.Duration(cfg.SandboxTimeoutSec) * time.Second,
+			})
+			if err != nil {
+				logger.Warn("sandbox manager unavailable, execute_code disabled", "error", err)
+			} else if !mgr.IsAvailable() {
+				logger.Warn("sandbox: Python/Isola not available, run: pip install isola")
+			} else {
+				sandboxMgr = mgr
+				logger.Info("sandbox enabled (Isola WASM)")
+			}
+		}
+	}
+
+	// Tool registry (persistent LLM-written Python tools)
+	toolReg, err := tools.NewToolRegistry(wikiStore)
+	if err != nil {
+		logger.Warn("tool registry unavailable", "error", err)
 	}
 
 	toolRegistry := tools.NewRegistry(logger)
@@ -331,6 +361,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		swarmMgr:    swarmManager,
 		authDB:      authStore,
 		mcpClients:  mcpClients,
+		sandboxMgr:  sandboxMgr,
+		toolReg:     toolReg,
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:   cfg.SoftBudget,
 			HardBudget:   cfg.HardBudget,
@@ -338,6 +370,20 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		}, logger),
 	}
 	if tool := tools.NewRunTaskNowTool(b); tool != nil {
+		toolRegistry.Register(tool)
+	}
+
+	// Sandbox tools
+	if tool := tools.NewExecuteCodeTool(sandboxMgr); tool != nil {
+		toolRegistry.Register(tool)
+	}
+	if tool := tools.NewListToolsTool(toolReg); tool != nil {
+		toolRegistry.Register(tool)
+	}
+	if tool := tools.NewReadToolTool(toolReg); tool != nil {
+		toolRegistry.Register(tool)
+	}
+	if tool := tools.NewSaveToolTool(toolReg); tool != nil {
 		toolRegistry.Register(tool)
 	}
 
