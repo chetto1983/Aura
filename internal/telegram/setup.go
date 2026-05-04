@@ -476,6 +476,22 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
 
+	// Bootstrap autonomous improvement task (nightly, offset from wiki maintenance)
+	autoImproveAt, err := scheduler.NextDailyRun("04:00", time.Local, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("computing auto-improve run: %w", err)
+	}
+	if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
+		Name:          "nightly-auto-improve",
+		Kind:          scheduler.KindAutoImprove,
+		ScheduleKind:  scheduler.ScheduleDaily,
+		ScheduleDaily: "04:00",
+		NextRunAt:     autoImproveAt,
+		Status:        scheduler.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap auto-improve task", "err", err)
+	}
+
 	b.docs = newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sourceStore,

@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -30,6 +31,8 @@ func (b *Bot) dispatchTask(ctx context.Context, task *scheduler.Task) error {
 		return b.dispatchWikiMaintenance(ctx)
 	case scheduler.KindAgentJob:
 		return b.dispatchAgentJob(ctx, task)
+	case scheduler.KindAutoImprove:
+		return b.dispatchAutoImprove(ctx)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
@@ -245,6 +248,105 @@ func safeAgentJobTools(requested []string) []string {
 		return append([]string(nil), scheduler.DefaultAgentJobTools...)
 	}
 	return out
+}
+
+func (b *Bot) dispatchAutoImprove(ctx context.Context) error {
+	if b.llm == nil {
+		return fmt.Errorf("auto_improve: no LLM client available")
+	}
+	if b.toolReg == nil {
+		return fmt.Errorf("auto_improve: no tool registry available")
+	}
+	if b.archiveDB == nil {
+		return fmt.Errorf("auto_improve: no conversation archive available")
+	}
+
+	logger := b.logger.With("component", "auto_improve")
+
+	recentTurns, err := b.archiveDB.ListAll(ctx, 200)
+	if err != nil {
+		return fmt.Errorf("auto_improve: scan archive: %w", err)
+	}
+
+	var convSummary strings.Builder
+	convSummary.WriteString("Recent conversations:\n\n")
+	for _, turn := range recentTurns {
+		if turn.Role == "user" {
+			convSummary.WriteString(fmt.Sprintf("User: %s\n", truncate(turn.Content, 200)))
+		} else if turn.Role == "assistant" && (strings.Contains(turn.Content, "I can't") || strings.Contains(turn.Content, "I don't know")) {
+			convSummary.WriteString(fmt.Sprintf("Assistant (low-confidence): %s\n", truncate(turn.Content, 200)))
+		}
+	}
+
+	tools, _ := b.toolReg.ListTools()
+	var toolsSummary strings.Builder
+	for _, t := range tools {
+		toolsSummary.WriteString(fmt.Sprintf("- %s: %s\n", t.Name, t.Description))
+	}
+
+	prompt := fmt.Sprintf(`You are Aura's self-improvement system. Review recent conversations and existing tools.
+
+%s
+
+Existing tools:
+%s
+
+Identify up to 3 gaps where a new Python tool would make future conversations better.
+For each gap, write the tool code and propose it for the registry.
+Focus on patterns where users asked for things Aura couldn't do or where a reusable script would save time.
+
+Respond ONLY with a JSON array of tool proposals:
+[{"name": "tool_name", "description": "...", "params": "...", "code": "...", "usage": "..."}]
+If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String())
+
+	req := llm.Request{
+		Messages: []llm.Message{{Role: "user", Content: prompt}},
+		Model:    b.cfg.LLMModel,
+	}
+
+	resp, err := b.llm.Send(ctx, req)
+	if err != nil {
+		return fmt.Errorf("auto_improve: LLM call: %w", err)
+	}
+
+	var proposals []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Params      string `json:"params"`
+		Code        string `json:"code"`
+		Usage       string `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(resp.Content), &proposals); err != nil {
+		logger.Warn("auto_improve: failed to parse LLM proposals", "error", err)
+		return nil
+	}
+
+	for _, p := range proposals {
+		if _, err := b.toolReg.GetToolCode(p.Name); err == nil {
+			logger.Info("auto_improve: tool already exists, skipping", "name", p.Name)
+			continue
+		}
+
+		if err := b.toolReg.SaveTool(ctx, p.Name, p.Description, p.Params, p.Code, p.Usage); err != nil {
+			logger.Warn("auto_improve: failed to save tool", "name", p.Name, "error", err)
+			continue
+		}
+
+		logger.Info("auto_improve: saved new tool", "name", p.Name)
+
+		for _, ownerID := range b.collectOwnerIDs() {
+			b.SendToUser(ownerID, fmt.Sprintf("I wrote a new tool: **%s** — %s", p.Name, p.Description))
+		}
+	}
+
+	return nil
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func truncateTelegramText(text string, max int) string {
