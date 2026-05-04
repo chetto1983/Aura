@@ -26,6 +26,11 @@ type Store struct {
 	logger  *slog.Logger
 }
 
+const (
+	memoryDecayMediumAge = 90 * 24 * time.Hour
+	memoryDecayHighAge   = 180 * 24 * time.Hour
+)
+
 // NewStore creates a wiki store rooted at the given directory.
 // It initializes the git repo if one doesn't exist.
 func NewStore(dir string, logger *slog.Logger) (*Store, error) {
@@ -432,12 +437,18 @@ func (s *Store) MigrateYAMLToMD(ctx context.Context) (int, error) {
 
 // LintIssue represents a problem found by Lint.
 type LintIssue struct {
-	Slug    string
-	Message string
+	Slug     string
+	Message  string
+	Kind     string
+	Severity string
 }
 
-// Lint checks the wiki for broken links, orphans, and missing categories.
+// Lint checks the wiki for broken links, missing categories, and memory decay.
 func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
+	return s.lintAt(ctx, time.Now().UTC())
+}
+
+func (s *Store) lintAt(ctx context.Context, now time.Time) ([]LintIssue, error) {
 	slugs, err := s.ListPages()
 	if err != nil {
 		return nil, err
@@ -452,12 +463,16 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 	for _, slug := range slugs {
 		page, err := s.ReadPage(slug)
 		if err != nil {
-			issues = append(issues, LintIssue{Slug: slug, Message: "failed to read page"})
+			issues = append(issues, LintIssue{Slug: slug, Message: "failed to read page", Kind: "read_error", Severity: "medium"})
 			continue
 		}
 
 		if page.Category == "" {
-			issues = append(issues, LintIssue{Slug: slug, Message: "missing category"})
+			issues = append(issues, LintIssue{Slug: slug, Message: "missing category", Kind: "missing_category", Severity: "low"})
+		}
+
+		if issue, ok := memoryDecayIssue(slug, page.UpdatedAt, now); ok {
+			issues = append(issues, issue)
 		}
 
 		for _, link := range ExtractWikiLinks(page.Body) {
@@ -465,6 +480,7 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 				issues = append(issues, LintIssue{
 					Slug:    slug,
 					Message: fmt.Sprintf("broken link: [[%s]]", link),
+					Kind:    "broken_link", Severity: "high",
 				})
 			}
 		}
@@ -474,6 +490,7 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 				issues = append(issues, LintIssue{
 					Slug:    slug,
 					Message: fmt.Sprintf("broken related ref: %s", rel),
+					Kind:    "broken_link", Severity: "high",
 				})
 			}
 		}
@@ -488,6 +505,35 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 	})
 
 	return issues, nil
+}
+
+func memoryDecayIssue(slug, updatedAt string, now time.Time) (LintIssue, bool) {
+	updated, err := time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return LintIssue{
+			Slug: slug, Message: "invalid updated_at for decay check",
+			Kind: "invalid_metadata", Severity: "medium",
+		}, true
+	}
+	age := now.Sub(updated)
+	if age < memoryDecayMediumAge {
+		return LintIssue{}, false
+	}
+	days := int(age.Hours() / 24)
+	severity := "medium"
+	if age >= memoryDecayHighAge {
+		severity = "high"
+	}
+	decay := age.Hours() / memoryDecayHighAge.Hours()
+	if decay > 1 {
+		decay = 1
+	}
+	return LintIssue{
+		Slug:     slug,
+		Message:  fmt.Sprintf("memory decay: updated_at %s is %d days old (decay=%.2f)", updated.UTC().Format(time.RFC3339), days, decay),
+		Kind:     "memory_decay",
+		Severity: severity,
+	}, true
 }
 
 // RepairLink replaces all occurrences of [[brokenSlug]] with [[fixedSlug]]

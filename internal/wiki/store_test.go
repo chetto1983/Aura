@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 )
@@ -196,6 +197,35 @@ func TestListPages(t *testing.T) {
 	}
 	if len(slugs) != 2 {
 		t.Errorf("ListPages returned %d slugs, want 2", len(slugs))
+	}
+}
+
+func TestLintReportsMemoryDecay(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	page := &Page{
+		Title:         "Old Decision",
+		Body:          "A stable but old project decision.",
+		Category:      "decisions",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2025-01-01T00:00:00Z",
+		UpdatedAt:     "2025-01-01T00:00:00Z",
+	}
+	if err := store.WritePage(ctx, page); err != nil {
+		t.Fatalf("WritePage failed: %v", err)
+	}
+
+	issues, err := store.lintAt(ctx, time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("lintAt failed: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("want 1 decay issue, got %d: %#v", len(issues), issues)
+	}
+	issue := issues[0]
+	if issue.Kind != "memory_decay" || issue.Severity != "high" || !strings.Contains(issue.Message, "decay=1.00") {
+		t.Fatalf("unexpected decay issue: %#v", issue)
 	}
 }
 

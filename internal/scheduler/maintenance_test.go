@@ -242,6 +242,38 @@ func TestMaintenanceJob_NonLinkIssue(t *testing.T) {
 	}
 }
 
+func TestMaintenanceJob_PreservesLintIssueKindAndSeverity(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "old-page", Kind: "memory_decay", Severity: "high", Message: "memory decay: updated_at 2025-01-01T00:00:00Z is 181 days old (decay=1.00)"},
+		},
+		slugs: []string{"old-page"},
+	}
+	db := scheduler.NewTestDB(t)
+	issuesStore := scheduler.NewIssuesStore(db)
+
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithIssuesStore(issuesStore)
+
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fixed != 0 || deferred != 1 {
+		t.Fatalf("want fixed=0 deferred=1, got fixed=%d deferred=%d", fixed, deferred)
+	}
+	rows, err := issuesStore.List(context.Background(), "open")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 issue, got %d", len(rows))
+	}
+	if rows[0].Kind != "memory_decay" || rows[0].Severity != "high" {
+		t.Fatalf("lint kind/severity not preserved: %#v", rows[0])
+	}
+}
+
 // TestMaintenanceJob_OwnerNotifier_CalledOnce verifies that when multiple
 // high-severity issues are found, the notifier is called exactly once.
 func TestMaintenanceJob_OwnerNotifier_CalledOnce(t *testing.T) {

@@ -70,11 +70,18 @@ func (j *MaintenanceJob) Run(ctx context.Context) (fixed, deferred int, err erro
 		brokenSlug, ok := parseBrokenLink(li.Message)
 		if !ok {
 			// Non-broken-link issue (missing category, orphan, etc.)
-			severity := classifyNonLink(li.Message)
+			severity := li.Severity
+			if severity == "" {
+				severity = classifyNonLink(li.Message)
+			}
+			kind := li.Kind
+			if kind == "" {
+				kind = classifyKind(li.Message)
+			}
 			j.logger.Info("maintenance: non-link issue deferred",
 				"page", li.Slug, "msg", li.Message, "severity", severity)
 			j.enqueue(ctx, Issue{
-				Kind:     classifyKind(li.Message),
+				Kind:     kind,
 				Severity: severity,
 				Slug:     li.Slug,
 				Message:  li.Message,
@@ -135,6 +142,10 @@ func classifyKind(msg string) string {
 		return "broken_link"
 	case strings.Contains(msg, "missing category"):
 		return "missing_category"
+	case strings.Contains(msg, "memory decay"):
+		return "memory_decay"
+	case strings.Contains(msg, "invalid updated_at"):
+		return "invalid_metadata"
 	default:
 		return "orphan"
 	}
@@ -145,6 +156,8 @@ func classifyNonLink(msg string) string {
 	switch {
 	case strings.Contains(msg, "missing category"):
 		return "low"
+	case strings.Contains(msg, "memory decay"):
+		return "medium"
 	default:
 		return "medium"
 	}

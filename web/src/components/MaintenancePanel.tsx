@@ -26,7 +26,7 @@ type SeverityFilter = 'all' | 'high' | 'medium' | 'low';
 type StatusFilter = 'open' | 'resolved' | 'all';
 
 export function MaintenancePanel() {
-  const { t, formatDate } = useLocale();
+  const { t } = useLocale();
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open');
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
