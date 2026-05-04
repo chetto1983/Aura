@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
@@ -144,9 +145,10 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 			WakeSignature: wakeSignature,
 		}, nil
 	}
+	now := time.Now()
 	result, err := b.agentRunner.Run(ctx, agent.Task{
-		SystemPrompt:  agentJobSystemPrompt(payload),
-		Prompt:        b.agentJobPrompt(ctx, payload),
+		SystemPrompt:  agentJobSystemPrompt(payload, now, time.Local),
+		Prompt:        b.agentJobPrompt(ctx, task, payload, now, time.Local),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
 		Temperature:   llm.Float64Ptr(0),
@@ -199,11 +201,19 @@ func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, r
 }
 
 func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error) {
-	msg := fmt.Sprintf("Agent job %q completed.\n\n%s", task.Name, truncateTelegramText(content, 3200))
-	if err := b.SendToUser(task.RecipientID, msg); err != nil {
+	msg := agentJobNotificationMessage(task, content)
+	if err := b.sendGeneratedToUser(task.RecipientID, msg); err != nil {
 		return false, fmt.Errorf("agent_job %q notify: %w", task.Name, err)
 	}
 	return true, nil
+}
+
+func agentJobNotificationMessage(task *scheduler.Task, content string) string {
+	name := ""
+	if task != nil {
+		name = task.Name
+	}
+	return fmt.Sprintf("Agent job %q completed.\n\n%s", name, truncateTelegramText(content, 3200))
 }
 
 func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
@@ -270,7 +280,7 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 	}, nil
 }
 
-func agentJobSystemPrompt(payload scheduler.AgentJobPayload) string {
+func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
 	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory growth is useful, use propose_wiki_change so the user can review it. If reusable procedural knowledge is useful, use propose_skill_change so the user can review it. Return a short report with what you checked, any proposal created, and unresolved issues."
 	if len(payload.Skills) > 0 {
 		prompt += " This job is skill-backed: inspect attached skills with read_skill when available before applying their procedures."
@@ -278,11 +288,16 @@ func agentJobSystemPrompt(payload scheduler.AgentJobPayload) string {
 	if len(payload.WakeIfChanged) > 0 {
 		prompt += " Respect wake_if_changed as a no-op guard: check those signals first and finish quickly with no proposal if there is no material change."
 	}
+	prompt += conversation.RenderRuntimeContext(now, loc)
 	return prompt
 }
 
-func (b *Bot) agentJobPrompt(ctx context.Context, payload scheduler.AgentJobPayload) string {
+func (b *Bot) agentJobPrompt(ctx context.Context, task *scheduler.Task, payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
 	var sb strings.Builder
+	if schedule := agentJobScheduleContext(task, now, loc); schedule != "" {
+		sb.WriteString(schedule)
+		sb.WriteString("\n\n")
+	}
 	fmt.Fprintf(&sb, "Goal: %s", payload.Goal)
 	if len(payload.EnabledToolsets) > 0 {
 		fmt.Fprintf(&sb, "\n\nEnabled toolsets: %s", strings.Join(payload.EnabledToolsets, ", "))
@@ -300,6 +315,44 @@ func (b *Bot) agentJobPrompt(ctx context.Context, payload scheduler.AgentJobPayl
 		fmt.Fprintf(&sb, "\n\nWake-if-changed signals: %s\nBefore doing the full routine, check whether these signals changed materially. If not, return a concise no-change report and stop.", strings.Join(payload.WakeIfChanged, ", "))
 	}
 	return sb.String()
+}
+
+func agentJobScheduleContext(task *scheduler.Task, now time.Time, loc *time.Location) string {
+	if task == nil || task.NextRunAt.IsZero() {
+		return ""
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	scheduledLocal := task.NextRunAt.In(loc)
+	runningLocal := now.In(loc)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Scheduled task: %s\n", task.Name)
+	fmt.Fprintf(&sb, "Scheduled for: %s local (%s UTC)\n",
+		scheduledLocal.Format("2006-01-02 15:04:05"),
+		task.NextRunAt.UTC().Format(time.RFC3339),
+	)
+	fmt.Fprintf(&sb, "Running at: %s local (%s UTC)\n",
+		runningLocal.Format("2006-01-02 15:04:05"),
+		now.UTC().Format(time.RFC3339),
+	)
+	if task.ScheduleKind != "" {
+		fmt.Fprintf(&sb, "Schedule kind: %s", task.ScheduleKind)
+		switch task.ScheduleKind {
+		case scheduler.ScheduleDaily:
+			fmt.Fprintf(&sb, " daily=%s", task.ScheduleDaily)
+			if task.ScheduleWeekdays != "" {
+				fmt.Fprintf(&sb, " weekdays=%s", task.ScheduleWeekdays)
+			}
+		case scheduler.ScheduleEvery:
+			fmt.Fprintf(&sb, " every_minutes=%d", task.ScheduleEveryMinutes)
+		}
+		sb.WriteString("\n")
+	}
+	if delay := now.Sub(task.NextRunAt); delay > time.Minute {
+		fmt.Fprintf(&sb, "Run delay: %s. Treat current-date research as of Running at, not Scheduled for, unless the goal explicitly asks for historical state.\n", delay.Round(time.Minute))
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string {
@@ -414,7 +467,9 @@ If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String()
 		logger.Info("auto_improve: saved new tool", "name", p.Name)
 
 		for _, ownerID := range b.collectOwnerIDs() {
-			b.SendToUser(ownerID, fmt.Sprintf("I wrote a new tool: **%s** — %s", p.Name, p.Description))
+			if err := b.sendGeneratedToUser(ownerID, fmt.Sprintf("I wrote a new tool: **%s** - %s", p.Name, p.Description)); err != nil {
+				logger.Warn("auto_improve: failed to notify owner", "owner_id", ownerID, "error", err)
+			}
 		}
 	}
 

@@ -86,6 +86,25 @@ func (b *Bot) SendToUser(userID, message string) error {
 	return nil
 }
 
+// sendGeneratedToUser delivers assistant-generated text with the same
+// Markdown-to-Telegram-HTML rendering used by interactive chat replies.
+// Keep SendToUser raw for tokens and operator strings where escaping could
+// alter the payload.
+func (b *Bot) sendGeneratedToUser(userID, message string) error {
+	chatID, err := strconv.ParseInt(userID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("send generated to user %q: %w", userID, err)
+	}
+	rendered := renderForTelegram(message)
+	if _, err := b.bot.Send(tele.ChatID(chatID), rendered, tele.ModeHTML); err != nil {
+		b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
+		if _, plainErr := b.bot.Send(tele.ChatID(chatID), message); plainErr != nil {
+			return fmt.Errorf("send generated to user %s: %w", userID, plainErr)
+		}
+	}
+	return nil
+}
+
 // SendDocumentToUser delivers a generated file to userID's direct
 // Telegram chat. Used by the create_xlsx tool (slice 15a) to ship
 // LLM-authored spreadsheets back to the user. Satisfies

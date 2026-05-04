@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19g` scheduled-routine E2E harness.
+Last completed slice: `19g.1` scheduled-job runtime context and rendered notifications.
 
 What is shipped:
 
@@ -67,6 +67,8 @@ What is shipped:
 - `context_from` can include prior scheduled-task outputs by task name, so recurring routines continue from their last useful result instead of restarting cold.
 - `cmd/debug_agent_jobs` now proves the scheduled routine contract in a hermetic temp wiki and SQLite scheduler DB: first run executes, second run skips before the LLM call, a wiki mutation changes the signature, and the third run executes again.
 - Agent-job wake signatures now live in `internal/scheduler`, so Telegram runtime and debug harnesses use the same deterministic wiki/source/task signal logic.
+- Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
+- Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
 
 Phase 18 status: **closed**.
 
@@ -208,8 +210,36 @@ Workspace warning:
 | 19e | Skill/context-backed agent jobs | done | `agent_job` payloads now normalize `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; runtime prompts guide skill reads, memory-first context, and no-op prechecks. |
 | 19f | Agent-job outputs and wake gates | done | Scheduled `agent_job` runs persist compact output/metrics/signature, deterministic wiki/source/task wake gates can skip LLM calls, and `context_from` can include prior task outputs. |
 | 19g | Scheduled-routine E2E harness | done | `cmd/debug_agent_jobs` proves run -> skip -> mutate -> rerun with persisted output/metrics/signature; skipped run makes zero LLM/tool calls. |
+| 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19g.1 (Scheduled-job runtime context and rendered notifications)
+
+Goal: fix the production drift seen in `logs/aura-2026-05-04.log`, where an overdue scheduled routine ran without an explicit current date/time context and delivered the generated report as raw Markdown.
+
+Root cause:
+
+- Interactive chat used `conversation.RenderSystemPrompt(time.Now(), time.Local)`, but scheduled `agent_job` built an isolated system prompt that omitted the Runtime Context.
+- The scheduler knew the persisted `scheduled_for` time, but did not tell the agent the actual wall-clock `running_at` time or the delay after downtime.
+- `notifyAgentJob` sent assistant-generated output through raw `SendToUser`, unlike interactive replies which pass through `renderForTelegram`.
+
+Implementation:
+
+- Split `conversation.RenderRuntimeContext` out of `RenderSystemPrompt` so interactive turns and scheduled jobs share one wall-clock prompt block.
+- Fixed timezone offset rendering from rounded whole hours to exact `UTC+HH:MM`.
+- Added scheduled-job prompt metadata: task name, scheduled-for local/UTC time, running-at local/UTC time, schedule kind, and a late-run warning when the job fires more than one minute after `NextRunAt`.
+- Added `sendGeneratedToUser` for assistant-generated Telegram text, preserving raw `SendToUser` for tokens/operator payloads.
+- Routed `notifyAgentJob` and the legacy `auto_improve` owner notification through the generated-text renderer.
+- Added regression tests for exact runtime offsets, late scheduled-job context, agent-job prompt injection, and Markdown rendering in scheduled notifications.
+
+Verification:
+
+- `go test ./internal/conversation ./internal/telegram ./internal/scheduler ./internal/tools`
+- `staticcheck ./internal/conversation ./internal/telegram ./internal/scheduler ./internal/tools`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: 19h, decide and document or implement the skill proposal install/smoke lifecycle.
 
 ### 2026-05-04 - Slice 19g (Scheduled-routine E2E harness)
 

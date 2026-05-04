@@ -129,6 +129,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 		Kind:        scheduler.KindAgentJob,
 		Payload:     payload,
 		RecipientID: "123",
+		NextRunAt:   time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatalf("dispatchTask: %v", err)
@@ -142,12 +143,12 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 	}
 	system := req.Messages[0].Content
 	user := req.Messages[1].Content
-	for _, want := range []string{"skill-backed", "wake_if_changed"} {
+	for _, want := range []string{"skill-backed", "wake_if_changed", "## Runtime Context", "Current local time"} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q:\n%s", want, system)
 		}
 	}
-	for _, want := range []string{"Attached skills: aura-implementation", "Context anchors: [[memory-philosophy]]", "Wake-if-changed signals: wiki:memory-philosophy"} {
+	for _, want := range []string{"Scheduled task: agent-skilled", "Scheduled for:", "Running at:", "Attached skills: aura-implementation", "Context anchors: [[memory-philosophy]]", "Wake-if-changed signals: wiki:memory-philosophy"} {
 		if !strings.Contains(user, want) {
 			t.Fatalf("user prompt missing %q:\n%s", want, user)
 		}
@@ -338,10 +339,44 @@ func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
 	b := &Bot{schedDB: store}
-	prompt := b.agentJobPrompt(t.Context(), normalized)
+	prompt := b.agentJobPrompt(t.Context(), nil, normalized, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC), time.UTC)
 	for _, want := range []string{"Prior job outputs", "prior-research", "Found three durable memory gaps"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestAgentJobScheduleContextShowsLateRun(t *testing.T) {
+	task := &scheduler.Task{
+		Name:             "trading-signals-morning",
+		ScheduleKind:     scheduler.ScheduleDaily,
+		ScheduleDaily:    "10:00",
+		ScheduleWeekdays: "mon,tue,wed,thu,fri",
+		NextRunAt:        time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC),
+	}
+	now := time.Date(2026, 5, 4, 13, 19, 0, 0, time.UTC)
+	got := agentJobScheduleContext(task, now, time.FixedZone("CEST", 2*3600))
+	for _, want := range []string{
+		"Scheduled task: trading-signals-morning",
+		"Scheduled for: 2026-05-04 10:00:00 local (2026-05-04T08:00:00Z UTC)",
+		"Running at: 2026-05-04 15:19:00 local (2026-05-04T13:19:00Z UTC)",
+		"Schedule kind: daily daily=10:00 weekdays=mon,tue,wed,thu,fri",
+		"Run delay: 5h19m0s",
+		"Treat current-date research as of Running at",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("schedule context missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestAgentJobNotificationRendersMarkdownForTelegram(t *testing.T) {
+	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, "## Report\n- **Done**")
+	got := renderForTelegram(msg)
+	for _, want := range []string{"Agent job \"daily-brief\" completed.", "<b>Report</b>", "• <b>Done</b>"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered notification missing %q:\n%s", want, got)
 		}
 	}
 }

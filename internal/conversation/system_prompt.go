@@ -77,17 +77,22 @@ func DefaultSystemPrompt() string {
 // runs on the user's machine, or a specific time.LoadLocation result for
 // a hosted deployment.
 func RenderSystemPrompt(now time.Time, loc *time.Location) string {
+	return defaultSystemPrompt + RenderRuntimeContext(now, loc)
+}
+
+// RenderRuntimeContext returns the shared wall-clock block used by both
+// interactive chat turns and isolated scheduled agent jobs.
+func RenderRuntimeContext(now time.Time, loc *time.Location) string {
 	if loc == nil {
 		loc = time.Local
 	}
 	local := now.In(loc)
 	tzName, offsetSec := local.Zone()
-	offsetHours := offsetSec / 3600
 
 	runtime := fmt.Sprintf(`
 
 ## Runtime Context
-- Current local time: %s (%s, UTC%+d)
+- Current local time: %s (%s, %s)
 - Current UTC time: %s
 - User timezone: %s
 
@@ -101,9 +106,20 @@ When the user asks to schedule, remind, or defer something, prefer relative dura
 
 Never guess "now" — read it from this Runtime Context.`,
 		local.Format("2006-01-02 15:04:05"),
-		tzName, offsetHours,
+		tzName, formatUTCOffset(offsetSec),
 		now.UTC().Format(time.RFC3339),
 		loc.String(),
 	)
-	return defaultSystemPrompt + runtime
+	return runtime
+}
+
+func formatUTCOffset(offsetSec int) string {
+	sign := "+"
+	if offsetSec < 0 {
+		sign = "-"
+		offsetSec = -offsetSec
+	}
+	hours := offsetSec / 3600
+	minutes := (offsetSec % 3600) / 60
+	return fmt.Sprintf("UTC%s%02d:%02d", sign, hours, minutes)
 }
