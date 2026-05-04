@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.1b` legacy runtime removal.
+Last completed slice: `sandbox.pyodide.2` bundle manifest and probe.
 
-Active slice: `sandbox.pyodide.2` bundle manifest and probe.
+Active slice: `sandbox.pyodide.3` Pyodide runner adapter.
 
 What is shipped:
 
@@ -77,6 +77,7 @@ What is shipped:
 - Sandbox package product rule: the bundled Pyodide runtime must include an office/data profile (`numpy`, `pandas`, `scipy`, `statsmodels`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
 - `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. There is no host-runtime fallback; until the Pyodide adapter is configured, `execute_code` remains unavailable.
 - Sandbox health now exposes `runtime_kind` (`pyodide` or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
+- `SANDBOX_RUNTIME_DIR` defaults to `./runtime/pyodide`; startup probes `aura-pyodide-manifest.json`, validates required runtime files, hash pins, path containment, and the baseline package import profile, then reports actionable health detail while keeping `execute_code` disabled until the runner adapter lands.
 
 Phase 18 status: **closed**.
 
@@ -101,11 +102,11 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.2` bundle manifest and probe:
-  - define `runtime/pyodide/aura-pyodide-manifest.json` schema and required package profile;
-  - add manifest loading with containment and hash validation;
-  - document `SANDBOX_RUNTIME_DIR` product defaults while keeping host-Python config legacy/dev-only;
-  - fail closed when the runtime bundle is missing, incomplete, or hash-invalid.
+- `sandbox.pyodide.3` Pyodide runner adapter:
+  - define the runner JSON protocol for code, timeout, package requests, and output capture;
+  - start the bundled runner executable from `runtime/pyodide/runner/`;
+  - pass a sanitized environment and kill the runner on timeout;
+  - keep live Pyodide execution opt-in until release artifacts ship the bundle.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -225,8 +226,27 @@ Workspace warning:
 | sandbox.pyodide.0 | Sandbox architecture pivot | done | Replaced the Isola product plan with a bundled Pyodide offline-runtime plan grounded in the official Pyodide package list; next slice is runtime abstraction before adapter implementation. |
 | sandbox.pyodide.1 | Runtime abstraction | done | `internal/sandbox.Manager` now delegates execution/validation/health to a runtime adapter; legacy Isola is behind the boundary and `/health` reports `runtime_kind` plus detail without widening scheduler-safe sandbox permissions. |
 | sandbox.pyodide.1b | Legacy runtime removal | done | Removed the host-Python sidecar, Python-path config, and fallback startup probe. Sandbox now fails closed with `runtime_kind=unavailable` until the bundled Pyodide adapter lands. |
+| sandbox.pyodide.2 | Bundle manifest and probe | done | Added the Pyodide bundle manifest contract, path containment and sha256 validation, required runtime file/package import checks, `SANDBOX_RUNTIME_DIR`, startup health diagnostics, and docs for the release bundle schema. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.2 (Bundle manifest and probe)
+
+Goal: create a concrete offline Pyodide bundle contract before enabling user code execution.
+
+Implementation:
+
+- Added `internal/sandbox/manifest.go` with `aura-pyodide-manifest.json` loading, schema/runtime checks, required runtime file groups, sha256 validation, path containment, and the baseline office/data import profile.
+- Added manifest tests for happy path, missing manifest, missing file, hash mismatch, containment failure, required-runtime hash validation, and missing imports.
+- Added `SANDBOX_RUNTIME_DIR` config with default `./runtime/pyodide` and documented it in `.env.example`.
+- Telegram startup now probes the configured runtime dir and surfaces missing/invalid bundle detail through sandbox health while keeping `execute_code` disabled until the runner adapter exists.
+- Documented the manifest schema and package smoke list in `runtime/README.md`.
+
+Verification:
+
+- `go test ./internal/sandbox ./internal/config ./internal/api ./internal/tools ./internal/toolsets ./internal/scheduler ./internal/telegram`
+
+Next slice: `sandbox.pyodide.3` Pyodide runner adapter.
 
 ### 2026-05-04 - Sandbox.pyodide.1b (Legacy runtime removal)
 

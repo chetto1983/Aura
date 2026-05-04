@@ -152,10 +152,23 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		Detail:      "sandbox disabled",
 	}
 	if cfg.SandboxEnabled {
-		sandboxHealth.Detail = "Pyodide runtime adapter not configured; execute_code disabled"
-		logger.Warn("sandbox runtime unavailable, execute_code disabled",
-			"runtime_kind", sandbox.RuntimeKindUnavailable,
-			"detail", sandboxHealth.Detail)
+		probe := sandbox.ProbePyodideBundle(cfg.SandboxRuntimeDir)
+		sandboxHealth.Runtime = probe.RuntimeDir
+		sandboxHealth.Detail = probe.Detail
+		if probe.Valid {
+			sandboxHealth.RuntimeKind = string(sandbox.RuntimeKindPyodide)
+			logger.Warn("sandbox bundle valid but runner unavailable, execute_code disabled",
+				"runtime_kind", sandbox.RuntimeKindPyodide,
+				"runtime_dir", probe.RuntimeDir,
+				"pyodide_version", probe.PyodideVersion,
+				"detail", probe.Detail)
+		} else {
+			sandboxHealth.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
+			logger.Warn("sandbox runtime bundle unavailable, execute_code disabled",
+				"runtime_kind", sandbox.RuntimeKindUnavailable,
+				"runtime_dir", probe.RuntimeDir,
+				"detail", probe.Detail)
+		}
 	}
 
 	// Tool registry (persistent LLM-written Python tools)

@@ -105,6 +105,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
 	os.Unsetenv("SANDBOX_ENABLED")
+	os.Unsetenv("SANDBOX_RUNTIME_DIR")
 	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
 
 	cfg, err := Load()
@@ -189,6 +190,9 @@ func TestLoadSuccess(t *testing.T) {
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
 	}
+	if cfg.SandboxRuntimeDir != DefaultSandboxRuntimeDir {
+		t.Errorf("SandboxRuntimeDir = %q, want %q", cfg.SandboxRuntimeDir, DefaultSandboxRuntimeDir)
+	}
 	if cfg.SandboxTimeoutSec != 15 {
 		t.Errorf("SandboxTimeoutSec = %d, want 15", cfg.SandboxTimeoutSec)
 	}
@@ -204,6 +208,19 @@ func TestLoadSandboxEnabled(t *testing.T) {
 	}
 	if cfg.SandboxEnabled {
 		t.Fatal("SandboxEnabled = true, want false")
+	}
+}
+
+func TestLoadSandboxRuntimeDir(t *testing.T) {
+	os.Setenv("SANDBOX_RUNTIME_DIR", "D:/Aura/runtime/pyodide")
+	defer os.Unsetenv("SANDBOX_RUNTIME_DIR")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SandboxRuntimeDir != "D:/Aura/runtime/pyodide" {
+		t.Fatalf("SandboxRuntimeDir = %q", cfg.SandboxRuntimeDir)
 	}
 }
 

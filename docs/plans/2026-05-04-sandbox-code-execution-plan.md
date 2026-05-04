@@ -152,7 +152,8 @@ user code.
 - Add `runtime/pyodide/aura-pyodide-manifest.json` schema documentation.
 - Add manifest loader with path containment and hash validation.
 - Add required package list and package import smoke definitions.
-- Add config names for product runtime paths, e.g. `SANDBOX_RUNTIME_DIR`.
+- Add config names for product runtime paths, e.g. `SANDBOX_RUNTIME_DIR`,
+  without reintroducing host-Python config.
 
 **Acceptance:**
 
