@@ -10,12 +10,28 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/philippgille/chromem-go"
 	_ "modernc.org/sqlite" // SQLite driver
 )
+
+// EmbedCacheNamespace returns the provider-scoped cache namespace for
+// embedding vectors. Model alone is not enough: OpenAI-compatible endpoints can
+// expose the same model name with different dimensions or semantics.
+func EmbedCacheNamespace(baseURL, model string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	model = strings.TrimSpace(model)
+	if baseURL == "" {
+		return model
+	}
+	if model == "" {
+		return baseURL
+	}
+	return baseURL + "|" + model
+}
 
 // EmbedCache wraps a chromem.EmbeddingFunc with a SQLite-backed
 // content-addressed cache. The same fn serves both wiki indexing and
@@ -28,8 +44,9 @@ import (
 // uniquely identifies the document version, so a cache miss happens
 // only when content (or model) actually changed.
 //
-// The cache key is (content_sha, model). Changing EMBEDDING_MODEL
-// invalidates entries automatically because the model column differs.
+// The cache key is (content_sha, model). Callers should pass
+// EmbedCacheNamespace(baseURL, model) as model so changing either
+// EMBEDDING_BASE_URL or EMBEDDING_MODEL invalidates entries automatically.
 // Stale entries linger but cost nothing — pruning is a manual op.
 type EmbedCache struct {
 	db     *sql.DB

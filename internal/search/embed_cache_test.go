@@ -35,6 +35,20 @@ func newCache(t *testing.T, model string, inner chromem.EmbeddingFunc) *EmbedCac
 	return c
 }
 
+func TestEmbedCacheNamespace(t *testing.T) {
+	got := EmbedCacheNamespace(" https://api.mistral.ai/v1/ ", " mistral-embed ")
+	want := "https://api.mistral.ai/v1|mistral-embed"
+	if got != want {
+		t.Fatalf("EmbedCacheNamespace() = %q, want %q", got, want)
+	}
+	if got := EmbedCacheNamespace("", "mistral-embed"); got != "mistral-embed" {
+		t.Fatalf("empty base URL namespace = %q", got)
+	}
+	if got := EmbedCacheNamespace("https://api.mistral.ai/v1", ""); got != "https://api.mistral.ai/v1" {
+		t.Fatalf("empty model namespace = %q", got)
+	}
+}
+
 func TestEmbedCache_HitSkipsUpstream(t *testing.T) {
 	var invocations atomic.Uint64
 	c := newCache(t, "mistral-embed", counterFn(&invocations, []float32{1, 2, 3}))
@@ -82,6 +96,36 @@ func TestEmbedCache_DifferentTextMisses(t *testing.T) {
 	}
 	if invocations.Load() != 2 {
 		t.Fatalf("two distinct inputs should miss twice, got %d invocations", invocations.Load())
+	}
+}
+
+func TestEmbedCache_ProviderNamespaceIsolation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	model := "mistral-embed"
+	nsA := EmbedCacheNamespace("https://api.mistral.ai/v1", model)
+	nsB := EmbedCacheNamespace("https://example.test/v1", model)
+
+	var invocationsA atomic.Uint64
+	cA, err := OpenEmbedCache(dbPath, nsA, counterFn(&invocationsA, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cA.Embed(context.Background(), "shared text"); err != nil {
+		t.Fatal(err)
+	}
+	_ = cA.Close()
+
+	var invocationsB atomic.Uint64
+	cB, err := OpenEmbedCache(dbPath, nsB, counterFn(&invocationsB, []float32{3, 4}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cB.Close()
+	if _, err := cB.Embed(context.Background(), "shared text"); err != nil {
+		t.Fatal(err)
+	}
+	if invocationsB.Load() != 1 {
+		t.Fatalf("different provider namespace should miss, got %d invocations", invocationsB.Load())
 	}
 }
 

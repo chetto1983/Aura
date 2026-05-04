@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19b.1` end-user latency gate.
+Last completed slice: `19b.2` embedding config/cache audit.
 
 What is shipped:
 
@@ -57,6 +57,7 @@ What is shipped:
 - `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
 - `cmd/debug_memory_quality -live-llm` now fails slow scenarios that exceed the end-user latency budget; "eventually correct" is not enough.
 - `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, latency, full results, and graph nodes/edges.
+- Embeddings are wired through dedicated `EMBEDDING_*` settings; the cache is now namespaced by provider base URL plus model.
 
 Phase 18 status: **closed**.
 
@@ -195,6 +196,31 @@ Workspace warning:
 | 19c | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19b.2 (Embedding config/cache audit)
+
+Goal: verify embeddings are used correctly before optimizing complex-question latency.
+
+Findings:
+
+- Runtime `.env` has separate configured keys for chat (`LLM_API_KEY` via Ollama Cloud), embeddings (`EMBEDDING_API_KEY` / `https://api.mistral.ai/v1` / `mistral-embed`), and OCR (`MISTRAL_API_KEY`).
+- `cmd/aura` loads `.env`, overlays dashboard settings from SQLite, and creates the wiki search engine only when `EMBEDDING_API_KEY` is present.
+- `createEmbeddingFunc` uses only `EmbeddingBaseURL`, `EmbeddingAPIKey`, and `EmbeddingModel`; there is no fallback from embeddings to `LLM_API_KEY`.
+- `search_memory` uses vector search for wiki evidence when the index is ready, and lexical scan for sources/archive. This matches the guardrail: embeddings are retrieval/evidence acceleration, not a second durable memory layer.
+
+Implementation:
+
+- Added `search.EmbedCacheNamespace(baseURL, model)` so the SQLite embedding cache is isolated by provider endpoint plus model.
+- `telegram.New` now passes that namespace to `OpenEmbedCache`, preventing stale vector reuse when an operator changes `EMBEDDING_BASE_URL` while keeping the same model name.
+- Added tests for namespace normalization and provider isolation.
+
+Verification:
+
+- `go test ./internal/search`
+- `go test ./internal/telegram ./internal/config ./internal/settings ./internal/tools`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice remains: extract named Aura toolset profiles for scheduled jobs and swarm roles, then add faster foreground/background answer modes.
 
 ### 2026-05-04 - Slice 19b.1 (End-user latency gate)
 

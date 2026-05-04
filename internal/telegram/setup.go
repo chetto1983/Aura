@@ -79,7 +79,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		// restart. Same cache also serves query embeddings, so repeat
 		// questions skip the Mistral round trip too.
 		if cfg.DBPath != "" {
-			cache, err := search.OpenEmbedCache(cfg.DBPath, cfg.EmbeddingModel, embedFn, logger)
+			cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
+			cache, err := search.OpenEmbedCache(cfg.DBPath, cacheNamespace, embedFn, logger)
 			if err != nil {
 				logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
 			} else {
