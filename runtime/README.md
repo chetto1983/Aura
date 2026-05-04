@@ -104,14 +104,24 @@ Aura validates this file at startup before it can enable `execute_code`.
 
 Manifest paths are relative to `SANDBOX_RUNTIME_DIR` and must stay inside that
 directory. Required files and package artifacts are hash-checked. The manifest
-probe only proves that the bundle contract is present; execution remains
-disabled until Aura is wired to the bundled runner adapter.
+probe only proves that the bundle contract is present; `execute_code` remains
+disabled until Aura startup registers the bundled runner after a healthy probe.
 
 ## Local Bundle Smoke
 
 The local development bundle is ignored by git because it is a release artifact,
-not source. After installing `runtime/pyodide/`, run the opt-in live adapter
+not source. After installing `runtime/pyodide/`, run the repeatable package
 smoke with:
+
+```powershell
+go run ./cmd/debug_sandbox --smoke
+```
+
+The smoke validates bundle availability and runs arithmetic, data imports,
+spreadsheet read, matplotlib artifact creation, and PDF/text extraction against
+local Pyodide files.
+
+For the narrower adapter test, run:
 
 ```powershell
 $env:AURA_SANDBOX_LIVE='1'
@@ -119,5 +129,5 @@ $env:SANDBOX_PYODIDE_RUNNER='runtime\pyodide\runner\aura-pyodide-runner.cmd'
 go test ./internal/sandbox -run TestPyodideRunner_LivePyodideBundle -count=1 -v
 ```
 
-This smoke validates the manifest, starts the bundled runner, computes
+The adapter test validates the manifest, starts the bundled runner, computes
 `sum(range(101))`, and imports the baseline package profile from local files.

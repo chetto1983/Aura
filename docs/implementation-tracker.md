@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.3` Pyodide runner adapter.
+Last completed slice: `sandbox.pyodide.4` offline package smoke.
 
-Active slice: `sandbox.pyodide.4` offline package smoke.
+Active slice: `sandbox.pyodide.5` enable `execute_code`.
 
 What is shipped:
 
@@ -77,9 +77,10 @@ What is shipped:
 - Sandbox package product rule: the bundled Pyodide runtime must include an office/data profile (`numpy`, `pandas`, `scipy`, `statsmodels`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
 - `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. There is no host-runtime fallback; until the Pyodide adapter is configured, `execute_code` remains unavailable.
 - Sandbox health now exposes `runtime_kind` (`pyodide` or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
-- `SANDBOX_RUNTIME_DIR` defaults to `./runtime/pyodide`; startup probes `aura-pyodide-manifest.json`, validates required runtime files, hash pins, path containment, and the baseline package import profile, then reports actionable health detail while keeping `execute_code` disabled until the runner adapter lands.
+- `SANDBOX_RUNTIME_DIR` defaults to `./runtime/pyodide`; startup probes `aura-pyodide-manifest.json`, validates required runtime files, hash pins, path containment, and the baseline package import profile, then reports actionable health detail while keeping `execute_code` disabled until startup registers the bundled runner.
 - `internal/sandbox.PyodideRunner` now speaks the runner JSON protocol over stdin/stdout, starts the bundled runner with sanitized env and timeout enforcement, parses result JSON, and has hermetic fake-runner tests plus an opt-in live Pyodide bundle test.
 - Local dev bundle installed under ignored `runtime/pyodide/` with Pyodide 0.29.3 core assets, local package wheels, manifest hashes, and a Node-backed development runner; live adapter smoke imported the full baseline profile offline and printed `5050`.
+- `cmd/debug_sandbox --smoke` is now the repeatable operator harness for the local bundle: it reports missing bundles as unavailable and runs arithmetic, data imports, XLSX read, matplotlib artifact, and PDF/text extraction scenarios offline.
 
 Phase 18 status: **closed**.
 
@@ -104,10 +105,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.4` offline package smoke:
-  - add `cmd/debug_sandbox --smoke` as the repeatable operator harness;
-  - cover arithmetic, data imports, spreadsheet read, matplotlib artifact, and PDF/text imports;
-  - report missing bundle as unavailable rather than silent success.
+- `sandbox.pyodide.5` enable `execute_code`:
+  - construct `sandbox.PyodideRunner` from `SANDBOX_RUNTIME_DIR` during Telegram startup;
+  - register `execute_code` only when the bundle and runner are available;
+  - keep sandbox health explicit when the bundle is missing or unhealthy.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -229,8 +230,29 @@ Workspace warning:
 | sandbox.pyodide.1b | Legacy runtime removal | done | Removed the host-Python sidecar, Python-path config, and fallback startup probe. Sandbox now fails closed with `runtime_kind=unavailable` until the bundled Pyodide adapter lands. |
 | sandbox.pyodide.2 | Bundle manifest and probe | done | Added the Pyodide bundle manifest contract, path containment and sha256 validation, required runtime file/package import checks, `SANDBOX_RUNTIME_DIR`, startup health diagnostics, and docs for the release bundle schema. |
 | sandbox.pyodide.3 | Pyodide runner adapter | done | Added the JSON stdin/stdout runner adapter with sanitized env, timeout kill, fake-runner tests, opt-in live Pyodide bundle smoke, and ignored local runtime bundle install. |
+| sandbox.pyodide.4 | Offline package smoke | done | Added `cmd/debug_sandbox --smoke` plus reusable smoke scenarios for arithmetic, data imports, XLSX read, matplotlib artifact generation, and PDF/text extraction; missing bundles fail as unavailable. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.4 (Offline package smoke)
+
+Goal: make the Pyodide bundle testable through a repeatable operator smoke command before enabling `execute_code`.
+
+Implementation:
+
+- Added `internal/sandbox/smoke.go` with reusable offline smoke scenarios and a report model for availability, per-scenario output, and failures.
+- Added `internal/sandbox/smoke_test.go` with TDD coverage for missing-bundle/unavailable reporting, offline scenario coverage, no-network execution, and missing marker failures.
+- Added `cmd/debug_sandbox --smoke`, with runtime-dir/runner/timeout flags, concise pass/fail output, and non-zero exit on unavailable bundles or scenario failures.
+- Updated `runtime/README.md` with the repeatable smoke command.
+
+Verification:
+
+- `go test ./internal/sandbox -run TestRunPyodideSmoke -count=1 -v`
+- `go test ./cmd/debug_sandbox ./internal/sandbox -count=1`
+- `go run ./cmd/debug_sandbox --smoke --runtime-dir runtime\missing-pyodide --runner runtime\missing-pyodide\runner\missing.cmd` (expected unavailable failure)
+- `go run ./cmd/debug_sandbox --smoke`
+
+Next slice: `sandbox.pyodide.5` wire the Pyodide runner into Telegram startup and enable `execute_code` only when health is available.
 
 ### 2026-05-04 - Sandbox.pyodide.3 (Pyodide runner adapter + live bundle)
 
