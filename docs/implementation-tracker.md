@@ -40,6 +40,33 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 - The conversation archive is evidence and short-term recall. Stable facts extracted from chat should be promoted into the wiki through explicit saves or reviewed proposals.
 - Future memory slices must preserve this stack: source evidence -> compiled wiki -> search/evidence envelope -> reviewed updates -> optional procedural skills.
 
+## Current Handoff (2026-05-04)
+
+Last completed slice: `18d` batch proposal review, committed as `012da51`.
+
+What is shipped:
+
+- `search_memory` produces an evidence envelope.
+- Maintenance raises `memory_decay` review issues.
+- Wiki proposals persist provenance (`origin_tool`, `origin_reason`, evidence refs, agent job/swarm IDs).
+- `/summaries` supports single and batch approve/reject.
+- `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
+
+Next best slice:
+
+- Proposal evidence drill-down from the review queue:
+  - open `source:*` evidence in Source Inbox/detail or OCR page context;
+  - open `archive` / `conversation:*` evidence in Conversations;
+  - open `wiki` evidence in Wiki page view;
+  - keep approval review-gated.
+
+Workspace warning:
+
+- Leave existing favicon/packaging/dashboard-dist churn untouched unless explicitly taking that slice:
+  `.goreleaser.yml`, `Makefile`, `cmd/build_icon/main.go`, `web/index.html`, `web/public/*`, `cmd/aura/versioninfo.json`, and `internal/api/dist/*`.
+- Leave `.claude/settings.local.json` untouched.
+- Before the next code slice, run `git status --short -uall`; this handoff saw unexpected tracked `cmd/*/main.go` deletions in the dirty tree. Do not stage them accidentally; recover/coordinate that workspace state first.
+
 ## Slice Status
 
 | # | Slice | Status | Notes |
