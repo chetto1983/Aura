@@ -55,15 +55,23 @@ func TestRunExecuteCodeArtifactSmokeRequiresArtifact(t *testing.T) {
 	rt := &debugSandboxFakeRuntime{
 		result: &sandbox.Result{
 			OK:        true,
-			Stdout:    "wrote artifact\n",
+			Stdout:    "wrote sales artifacts\n",
 			ExitCode:  0,
 			ElapsedMs: 12,
-			Artifacts: []sandbox.Artifact{{
-				Name:      "artifact.txt",
-				MimeType:  "text/plain; charset=utf-8",
-				Bytes:     []byte("hello from pyodide artifact"),
-				SizeBytes: 27,
-			}},
+			Artifacts: []sandbox.Artifact{
+				{
+					Name:      "aura_sales_summary.csv",
+					MimeType:  "text/csv",
+					Bytes:     []byte("month,revenue\nJan,120\n"),
+					SizeBytes: int64(len("month,revenue\nJan,120\n")),
+				},
+				{
+					Name:      "aura_sales_plot.png",
+					MimeType:  "image/png",
+					Bytes:     []byte("png-bytes"),
+					SizeBytes: int64(len("png-bytes")),
+				},
+			},
 		},
 	}
 
@@ -72,13 +80,13 @@ func TestRunExecuteCodeArtifactSmokeRequiresArtifact(t *testing.T) {
 	if !report.OK {
 		t.Fatalf("report.OK = false, error=%q", report.Error)
 	}
-	if !strings.Contains(rt.code, "/tmp/aura_out/artifact.txt") {
-		t.Fatalf("executed code = %q, want /tmp/aura_out/artifact.txt", rt.code)
+	if !strings.Contains(rt.code, "pandas") || !strings.Contains(rt.code, "matplotlib") {
+		t.Fatalf("executed code = %q, want pandas + matplotlib smoke", rt.code)
 	}
-	if !strings.Contains(report.Output, "artifact.txt") {
-		t.Fatalf("output = %q, want artifact metadata", report.Output)
+	if !strings.Contains(report.Output, "aura_sales_summary.csv") || !strings.Contains(report.Output, "aura_sales_plot.png") {
+		t.Fatalf("output = %q, want rich artifact metadata", report.Output)
 	}
-	if !strings.Contains(report.Output, "persisted=true") || !strings.Contains(report.Output, "source_id=src_") {
+	if strings.Count(report.Output, "persisted=true") != 2 || strings.Count(report.Output, "source_id=src_") != 2 {
 		t.Fatalf("output = %q, want persisted source metadata", report.Output)
 	}
 }

@@ -92,7 +92,7 @@ func main() {
 			fmt.Printf("FAIL: %s\n", report.Error)
 			os.Exit(1)
 		}
-		fmt.Printf("PASS: execute_code returned and persisted artifact metadata for artifact.txt\n")
+		fmt.Printf("PASS: execute_code returned and persisted CSV + plot artifact metadata\n")
 		return
 	}
 
@@ -197,12 +197,14 @@ func runExecuteCodeArtifactSmoke(ctx context.Context, rt sandbox.Runtime) execut
 	if !report.OK {
 		return report
 	}
-	if !strings.Contains(report.Output, "artifacts:") || !strings.Contains(report.Output, "artifact.txt") {
+	if !strings.Contains(report.Output, "artifacts:") ||
+		!strings.Contains(report.Output, "aura_sales_summary.csv") ||
+		!strings.Contains(report.Output, "aura_sales_plot.png") {
 		report.OK = false
-		report.Error = "execute_code output did not contain artifact.txt metadata"
+		report.Error = "execute_code output did not contain rich artifact metadata"
 		return report
 	}
-	if !strings.Contains(report.Output, "persisted=true") || !strings.Contains(report.Output, "source_id=src_") {
+	if strings.Count(report.Output, "persisted=true") < 2 || strings.Count(report.Output, "source_id=src_") < 2 {
 		report.OK = false
 		report.Error = "execute_code output did not contain persisted artifact source metadata"
 		return report
@@ -213,11 +215,33 @@ func runExecuteCodeArtifactSmoke(ctx context.Context, rt sandbox.Runtime) execut
 func executeCodeArtifactSmokeProgram() string {
 	return strings.TrimSpace(`
 import os
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 os.makedirs("/tmp/aura_out", exist_ok=True)
-with open("/tmp/aura_out/artifact.txt", "w", encoding="utf-8") as f:
-    f.write("hello from pyodide artifact")
-print("wrote artifact")
+
+sales = pd.DataFrame({
+    "month": ["Jan", "Feb", "Mar", "Apr"],
+    "revenue": [1200, 1650, 1500, 2100],
+    "cost": [700, 900, 850, 1200],
+})
+sales["profit"] = sales["revenue"] - sales["cost"]
+summary = sales.assign(margin=(sales["profit"] / sales["revenue"]).round(3))
+summary.to_csv("/tmp/aura_out/aura_sales_summary.csv", index=False)
+
+fig, ax = plt.subplots(figsize=(6, 3.5))
+ax.plot(sales["month"], sales["revenue"], marker="o", label="Revenue")
+ax.bar(sales["month"], sales["profit"], alpha=0.45, label="Profit")
+ax.set_title("Aura sandbox sales smoke")
+ax.set_ylabel("EUR")
+ax.legend()
+fig.tight_layout()
+fig.savefig("/tmp/aura_out/aura_sales_plot.png", dpi=140)
+plt.close(fig)
+
+print("wrote sales summary csv and plot png")
 `)
 }
 

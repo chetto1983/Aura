@@ -122,6 +122,12 @@ Sandbox closure note (2026-05-04):
 - Production checks passed: targeted Go tests, `verify-web.ps1`, `verify-go.ps1`, `go run ./cmd/debug_sandbox --tool-smoke --timeout 2m`, `go run ./cmd/debug_sandbox --artifact-smoke --timeout 2m`, `go run ./cmd/debug_sandbox --smoke --timeout 2m`, and `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m`.
 - Local `.env` was updated to `SANDBOX_TIMEOUT_SEC=120`; `.env.example` carries the same tracked default.
 
+Sandbox smoke upgrade (2026-05-04):
+
+- The artifact smoke no longer proves only a hello-world text file. It now requires a richer computed workflow: pandas builds a sales summary CSV and matplotlib generates a PNG chart, both under `/tmp/aura_out`.
+- `cmd/debug_sandbox --artifact-smoke` and `cmd/debug_telegram_sandbox --artifact-smoke` now fail unless both `aura_sales_summary.csv` and `aura_sales_plot.png` are returned, persisted as sources, and, in the Telegram path, delivered as documents.
+- Live Telegram verification passed with one `execute_code` call, two sent documents, and two persisted source IDs.
+
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.

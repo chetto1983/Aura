@@ -58,7 +58,7 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 		{
 			Role:       "tool",
 			ToolCallID: "call-1",
-			Content:    "exit_code: 0\nelapsed_ms: 42\n\nwrote file\n\nartifacts:\n- aura_artifact.txt (5 bytes, text/plain; charset=utf-8, delivered=true, persisted=true, source_id=src_0123456789abcdef)",
+			Content:    "exit_code: 0\nelapsed_ms: 42\n\nwrote files\n\nartifacts:\n- aura_sales_summary.csv (22 bytes, text/csv, delivered=true, persisted=true, source_id=src_0123456789abcdef)\n- aura_sales_plot.png (2048 bytes, image/png, delivered=true, persisted=true, source_id=src_fedcba9876543210)",
 		},
 	})
 
@@ -68,10 +68,10 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 	if !result.ContainsArtifactMetadata {
 		t.Fatal("ContainsArtifactMetadata = false, want true")
 	}
-	if len(result.ArtifactFilenames) != 1 || result.ArtifactFilenames[0] != "aura_artifact.txt" {
+	if len(result.ArtifactFilenames) != 2 || result.ArtifactFilenames[0] != "aura_sales_summary.csv" || result.ArtifactFilenames[1] != "aura_sales_plot.png" {
 		t.Fatalf("ArtifactFilenames = %v", result.ArtifactFilenames)
 	}
-	if len(result.ArtifactSourceIDs) != 1 || result.ArtifactSourceIDs[0] != "src_0123456789abcdef" {
+	if len(result.ArtifactSourceIDs) != 2 || result.ArtifactSourceIDs[0] != "src_0123456789abcdef" || result.ArtifactSourceIDs[1] != "src_fedcba9876543210" {
 		t.Fatalf("ArtifactSourceIDs = %v", result.ArtifactSourceIDs)
 	}
 }

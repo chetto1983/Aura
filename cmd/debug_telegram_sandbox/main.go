@@ -119,7 +119,14 @@ func defaultArithmeticSmokePrompt() string {
 }
 
 func defaultArtifactSmokePrompt() string {
-	return "Use execute_code to create a small text artifact. In Python, write exactly 'hello from Aura artifact smoke' to /tmp/aura_out/aura_artifact.txt, then tell me when it has been sent. Do not use create_xlsx, create_docx, or create_pdf."
+	return strings.Join([]string{
+		"Use execute_code to create two computed sandbox artifacts, not a hello-world text file.",
+		"In Python, build a tiny sales DataFrame with months Jan-Apr, revenue, cost, profit, and margin.",
+		"Write the CSV exactly to /tmp/aura_out/aura_sales_summary.csv.",
+		"Also create a matplotlib chart and save it exactly to /tmp/aura_out/aura_sales_plot.png.",
+		"Then tell me both files were sent and persisted.",
+		"Do not use create_xlsx, create_docx, or create_pdf.",
+	}, " ")
 }
 
 func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifactSmoke bool) error {
@@ -130,10 +137,16 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 		if !result.ContainsArtifactMetadata {
 			return errors.New("expected execute_code artifact metadata")
 		}
+		if !hasAll(result.ArtifactFilenames, "aura_sales_summary.csv", "aura_sales_plot.png") {
+			return errors.New("expected rich artifact filenames aura_sales_summary.csv and aura_sales_plot.png")
+		}
 		if len(result.DocumentSends) == 0 {
 			return errors.New("expected at least one Telegram document delivery")
 		}
-		if len(result.ArtifactSourceIDs) == 0 {
+		if !hasDocumentSends(result.DocumentSends, "aura_sales_summary.csv", "aura_sales_plot.png") {
+			return errors.New("expected Telegram document delivery for both rich artifacts")
+		}
+		if len(result.ArtifactSourceIDs) < 2 {
 			return errors.New("expected sandbox artifact source persistence")
 		}
 		return nil
@@ -142,6 +155,32 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 		return errors.New("expected final/tool output containing 5050")
 	}
 	return nil
+}
+
+func hasAll(got []string, want ...string) bool {
+	seen := make(map[string]bool, len(got))
+	for _, item := range got {
+		seen[item] = true
+	}
+	for _, item := range want {
+		if !seen[item] {
+			return false
+		}
+	}
+	return true
+}
+
+func hasDocumentSends(sends []telegram.DebugDocumentSend, filenames ...string) bool {
+	seen := make(map[string]bool, len(sends))
+	for _, send := range sends {
+		seen[send.Filename] = true
+	}
+	for _, filename := range filenames {
+		if !seen[filename] {
+			return false
+		}
+	}
+	return true
 }
 
 func firstAllowedUserID(dbPath string) (string, error) {
