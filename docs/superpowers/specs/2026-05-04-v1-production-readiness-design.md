@@ -30,6 +30,8 @@ In scope:
 
 Deferred to v1.1:
 
+- MustResolveProfiles bare panic cleanup, unless future evidence proves
+  production/user-controlled reachability before v1.0;
 - file tool split and other broad large-file refactors;
 - tray coverage polish beyond any minimal safety fix needed for release;
 - telebot beta monitoring docs;
@@ -176,4 +178,3 @@ Pyodide package profile unless a release smoke fails.
 - Settings encryption: deferred unless secret redaction is insufficient.
 - Current phase work: `.planning/` remains the active planning surface;
   historical `docs/` plans are not revived.
-

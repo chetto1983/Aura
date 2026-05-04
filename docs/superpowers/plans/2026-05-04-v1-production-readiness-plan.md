@@ -29,9 +29,11 @@ The current `.planning/phases/01-centralize-sqlite-db/PLAN.md` already covers mu
 
 Milestone planning files:
 
+- Modify: `.planning/REQUIREMENTS.md` - replace the historical broad Close Concern requirement list with the approved v1.0 production blocker requirements and v1.1 deferrals.
+
 - Modify: `.planning/PROJECT.md` — rename/clarify v1.0 as Production Readiness and list deferred v1.1 items.
 - Modify: `.planning/MILESTONES.md` — set v1.0 scope to production blockers and record v1.1 Hardening Polish as the follow-up milestone.
-- Modify: `.planning/ROADMAP.md` — replace the broad six-phase Close Concern roadmap with the approved six production-readiness phases.
+- Modify: `.planning/ROADMAP.md` — replace the historical broad six-phase Close Concern roadmap with the approved six production-readiness phases.
 - Modify: `.planning/STATE.md` — point current work to DB Foundation and this production-readiness boundary.
 - Modify: `.planning/codebase/CONCERNS.md` — add the two missing production blockers found during brainstorming: archive reliability and settings secret redaction.
 - Modify: `.planning/phases/01-centralize-sqlite-db/PLAN.md` — keep DB Foundation focused on the shared pool and production SQLite open paths.
@@ -62,6 +64,7 @@ Implementation files by subplan:
 ## Task 1: Reconcile Planning Artifacts
 
 **Files:**
+- Modify: `.planning/REQUIREMENTS.md`
 - Modify: `.planning/PROJECT.md`
 - Modify: `.planning/MILESTONES.md`
 - Modify: `.planning/ROADMAP.md`
@@ -70,7 +73,7 @@ Implementation files by subplan:
 
 - [ ] **Step 1: Update milestone name and boundary**
 
-  In `.planning/PROJECT.md` and `.planning/MILESTONES.md`, change the active milestone from broad "Close Concern" wording to:
+  In `.planning/PROJECT.md` and `.planning/MILESTONES.md`, change the active milestone from historical broad "Close Concern" wording to:
 
   ```markdown
   ## v1.0 — Production Readiness
@@ -87,6 +90,7 @@ Implementation files by subplan:
   - final production release gates
 
   Deferred to v1.1 Hardening Polish:
+  - MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0
   - file tool split
   - broad large-file refactors
   - tray coverage polish
@@ -95,7 +99,33 @@ Implementation files by subplan:
   - arbitrary coverage targets outside Telegram critical paths
   ```
 
-- [ ] **Step 2: Add missing concerns**
+- [ ] **Step 2: Rewrite active requirements**
+
+  In `.planning/REQUIREMENTS.md`, replace any historical broad Close Concern or all-tiers requirement list with only the approved v1.0 production blockers:
+
+  ```markdown
+  - DB Foundation/shared SQLite/PRAGMAs
+  - Migration Safety/versioned migrations/upgrade idempotence
+  - Memory Reliability/archive failure observability
+  - Dashboard Security/token expiry
+  - Dashboard Security/settings secret redaction
+  - Telegram Regression Harness focused critical-path tests
+  - Release Gate automated/manual checks
+  ```
+
+  Mark these as deferred to v1.1 Hardening Polish:
+
+  ```markdown
+  - MustResolveProfiles bare panic cleanup unless future evidence proves production/user-controlled reachability before v1.0
+  - file tool split
+  - broad large-file refactors
+  - tray coverage polish
+  - telebot beta monitoring docs
+  - full settings at-rest encryption unless redaction proves insufficient
+  - arbitrary coverage targets outside Telegram critical paths
+  ```
+
+- [ ] **Step 3: Add missing concerns**
 
   In `.planning/codebase/CONCERNS.md`, add two production blockers:
 
@@ -113,7 +143,7 @@ Implementation files by subplan:
   - Fix approach: redact secret settings in API responses and UI state; keep write/test-connection paths working.
   ```
 
-- [ ] **Step 3: Replace roadmap phases**
+- [ ] **Step 4: Replace roadmap phases**
 
   In `.planning/ROADMAP.md`, use this phase list:
 
@@ -139,7 +169,7 @@ Implementation files by subplan:
   Automated Go/web/sandbox/package checks plus manual Windows production smoke.
   ```
 
-- [ ] **Step 4: Update current state**
+- [ ] **Step 5: Update current state**
 
   In `.planning/STATE.md`, set:
 
@@ -150,24 +180,26 @@ Implementation files by subplan:
   Current focus: shared SQLite pool with WAL, busy_timeout, foreign_keys, and production store constructor injection
   ```
 
-- [ ] **Step 5: Verify planning references**
+- [ ] **Step 6: Verify planning references**
 
   Run:
 
   ```powershell
-  rg -n "Close Concern|tools/files.go|telebot beta|tray coverage|55%\\+" .planning
+  rg -n "Close Concern|selected all tiers|10/10 requirements|55%\\+|telebot beta|tray coverage|tools/files.go|MustResolveProfiles" .planning docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md
   ```
 
   Expected:
 
+  - Active v1.0 scope lists only production-readiness blockers.
   - `Close Concern` appears only in historical notes, if at all.
-  - deferred items appear under v1.1/deferred scope, not v1.0 blockers.
+  - Deferred items appear under v1.1/deferred scope, not v1.0 blockers.
+  - `MustResolveProfiles` appears only in concern-audit entries or v1.1 deferrals with the production/user-controlled reachability caveat.
 
-- [ ] **Step 6: Commit planning reconciliation**
+- [ ] **Step 7: Commit planning reconciliation**
 
   ```powershell
-  git add .planning/PROJECT.md .planning/MILESTONES.md .planning/ROADMAP.md .planning/STATE.md .planning/codebase/CONCERNS.md
-  git commit -m "planning: focus v1 on production readiness"
+  git add .planning/REQUIREMENTS.md .planning/PROJECT.md .planning/MILESTONES.md .planning/ROADMAP.md .planning/STATE.md .planning/codebase/CONCERNS.md
+  git commit -m "planning: align requirements with v1 scope"
   ```
 
 ## Task 2: Patch Phase 1 DB Foundation Plan
@@ -411,4 +443,3 @@ Use subagent-driven execution only after Task 2 is committed. DB Foundation has 
 - Worker 4: verification and residual `sql.Open` scan
 
 Do not run multiple workers against the same file set.
-

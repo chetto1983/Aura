@@ -32,7 +32,7 @@ In scope:
 - Final production release gates
 
 Deferred to v1.1 Hardening Polish:
-- MustResolveProfiles panic fix unless production reachability promotes it back to a blocker
+- MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0
 - File tool split
 - Broad large-file refactors
 - tray coverage polish

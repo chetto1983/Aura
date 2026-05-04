@@ -1,40 +1,38 @@
-# Requirements: Aura — Close Concern
+# Requirements: Aura v1.0 Production Readiness
 
 **Defined:** 2026-05-04
-**Core Value:** Durable, compounding personal memory that grows smarter with every conversation — without relying on external note-taking apps.
+**Core Value:** Durable, compounding personal memory that grows smarter with every conversation without relying on external note-taking apps.
 
 ## Milestone v1.0 Requirements
 
-Requirements for hardening v1.0. Each maps to roadmap phases.
+v1.0 is limited to production blockers: data integrity, upgrade safety, memory reliability, dashboard security, Telegram critical-path regression confidence, and final release readiness.
 
-### Fix & Secure
+### Production Blockers
 
-- [ ] **FIX-01**: User does not experience bot crash on invalid toolset profile names — `MustResolveProfiles` returns error instead of bare panic
-- [ ] **FIX-02**: Database connections are centrally managed with WAL mode, busy timeout, and foreign key enforcement applied at startup
-- [ ] **FIX-03**: Dashboard bearer tokens expire after a configurable TTL (default 30 days) and expired tokens are rejected with a distinct error
-- [ ] **FIX-04**: API keys stored in SQLite settings (LLM, Embedding, Mistral, Ollama) are encrypted at rest with AES-256-GCM
+- [ ] **DB-01 DB Foundation:** Production startup uses one shared SQLite pool with WAL mode, `busy_timeout`, and foreign key enforcement applied through the approved DB open path.
+- [ ] **MIG-01 Migration Safety:** Schema changes run through deterministic versioned migrations with transactional application, fresh-install support, upgrade support, and idempotent reruns.
+- [ ] **MEM-01 Memory Reliability:** Conversation archive failures are observable through logging or returned errors so Aura does not silently lose durable memory.
+- [ ] **SEC-01 Dashboard Token Expiry:** Dashboard bearer tokens carry expiry metadata, default to a configurable 30-day TTL, and expired tokens are rejected distinctly from invalid tokens.
+- [ ] **SEC-02 Settings Secret Redaction:** Settings API responses and dashboard state redact LLM, embedding, Mistral, and Ollama secrets while preserving write and test-connection flows.
+- [ ] **TEST-01 Telegram Regression Harness:** Focused hermetic tests cover critical Telegram paths: conversation handling, streaming edits, document/OCR triggers, access control, and archive behavior.
+- [ ] **REL-01 Release Gate:** Automated and manual release checks prove Go, web, sandbox, migration, packaging, and Windows smoke readiness before tagging v1.0.
 
-### Test Coverage
+## Deferred to v1.1 Hardening Polish
 
-- [ ] **TEST-01**: `internal/telegram` package has ≥55% unit test coverage covering conversation handler, streaming, document handling, and access control
-- [ ] **TEST-02**: `internal/tray` package has basic unit test coverage for Windows and non-Windows paths plus a cross-platform `openBrowser` abstraction
-
-### Refactor
-
-- [ ] **REFACTOR-01**: Scheduler migrations are extracted from `store.go` into `scheduler/migrations.go` reducing the file from 754 to ~400 lines
-- [ ] **REFACTOR-02**: Database schema changes use a versioned migration framework with `schema_versions` table, ordered up-migrations, and transactional application
-- [ ] **REFACTOR-03**: `tools/files.go` is split into `files_xlsx.go`, `files_docx.go`, `files_pdf.go`, and `files_types.go` with no behavioral change
-
-### Polish
-
-- [ ] **POLISH-01**: Telebot v4 beta dependency risk is documented with a pinned commit hash and monitoring note for stable release
+- **FUT-01 MustResolveProfiles panic cleanup:** Deferred unless future evidence proves production/user-controlled reachability before v1.0.
+- **FUT-02 File tool split:** Split file-generation tools, including `tools/files.go`, outside the production-readiness gate.
+- **FUT-03 Broad large-file refactors:** Defer maintainability-only file splitting and package cleanup.
+- **FUT-04 Tray coverage polish:** Defer tray/browser-open coverage beyond any minimal safety fix required by release smoke.
+- **FUT-05 Telebot beta monitoring docs:** Defer dependency monitoring notes until after the v1.0 gate.
+- **FUT-06 Full settings at-rest encryption:** Defer unless secret redaction proves insufficient for v1.0 security.
+- **FUT-07 Arbitrary coverage targets:** Defer package-wide targets outside Telegram critical paths, including 55%+ goals.
 
 ## Future Requirements
 
-None — this milestone's scope is the complete CONCERNS.md audit. Deferred items:
+Deferred items from the concern audit stay in v1.1 Hardening Polish or later unless they become proven production blockers.
 
 <!-- Deferred from CONCERNS.md P3 tier -->
-- **FUT-01**: Pyodide runtime bundle in Windows release artifact (sandbox.pyodide.6) — deferred: release packaging milestone separate from hardening
+- **FUT-08 Pyodide runtime bundle in Windows release artifact:** Deferred to release packaging work outside this production-readiness requirements list unless the v1.0 release gate exposes a packaging blocker.
 
 ## Out of Scope
 
@@ -44,31 +42,28 @@ None — this milestone's scope is the complete CONCERNS.md audit. Deferred item
 | Replace chromem-go with sqlite-vector | Already evaluated and rejected in slice 11h |
 | WebSocket real-time dashboard | Not needed for hardening |
 | Mobile app | Web dashboard sufficient |
-| Replace telebot v4 | Beta risk is documented, not resolved by swapping library |
-| Distributed SQLite (Litestream/replication) | Local-first design — not needed |
+| Replace telebot v4 | Beta risk is monitored later, not resolved by swapping library |
+| Distributed SQLite (Litestream/replication) | Local-first design; not needed |
 | Replace SQLite with Postgres | Explicitly rejected in prd.md design principle #3 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FIX-01 | Phase 4 | Pending |
-| FIX-02 | Phase 1 | Pending |
-| FIX-03 | Phase 3 | Pending |
-| FIX-04 | Phase 3 | Pending |
-| TEST-01 | Phase 5 | Pending |
-| TEST-02 | Phase 4 | Pending |
-| REFACTOR-01 | Phase 2 | Pending |
-| REFACTOR-02 | Phase 2 | Pending |
-| REFACTOR-03 | Phase 4 | Pending |
-| POLISH-01 | Phase 6 | Pending |
+| DB-01 | Phase 1: DB Foundation | Pending |
+| MIG-01 | Phase 2: Migration Safety | Pending |
+| MEM-01 | Phase 3: Memory Reliability | Pending |
+| SEC-01 | Phase 4: Dashboard Security | Pending |
+| SEC-02 | Phase 4: Dashboard Security | Pending |
+| TEST-01 | Phase 5: Telegram Regression Harness | Pending |
+| REL-01 | Phase 6: Release Gate | Pending |
 
 **Coverage:**
-- v1 requirements: 10 total
-- Mapped to phases: 10
-- Unmapped: 0 ✓
+- v1.0 production-readiness requirements: 7 total
+- Mapped to phases: 7
+- Unmapped: 0
 
 ---
 
 *Requirements defined: 2026-05-04*
-*Last updated: 2026-05-04 after roadmap creation*
+*Last updated: 2026-05-04 after v1.0 production-readiness spec review*
