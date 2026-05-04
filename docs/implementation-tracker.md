@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.2` bundle manifest and probe.
+Last completed slice: `sandbox.pyodide.3` Pyodide runner adapter.
 
-Active slice: `sandbox.pyodide.3` Pyodide runner adapter.
+Active slice: `sandbox.pyodide.4` offline package smoke.
 
 What is shipped:
 
@@ -78,6 +78,8 @@ What is shipped:
 - `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. There is no host-runtime fallback; until the Pyodide adapter is configured, `execute_code` remains unavailable.
 - Sandbox health now exposes `runtime_kind` (`pyodide` or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
 - `SANDBOX_RUNTIME_DIR` defaults to `./runtime/pyodide`; startup probes `aura-pyodide-manifest.json`, validates required runtime files, hash pins, path containment, and the baseline package import profile, then reports actionable health detail while keeping `execute_code` disabled until the runner adapter lands.
+- `internal/sandbox.PyodideRunner` now speaks the runner JSON protocol over stdin/stdout, starts the bundled runner with sanitized env and timeout enforcement, parses result JSON, and has hermetic fake-runner tests plus an opt-in live Pyodide bundle test.
+- Local dev bundle installed under ignored `runtime/pyodide/` with Pyodide 0.29.3 core assets, local package wheels, manifest hashes, and a Node-backed development runner; live adapter smoke imported the full baseline profile offline and printed `5050`.
 
 Phase 18 status: **closed**.
 
@@ -102,11 +104,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.3` Pyodide runner adapter:
-  - define the runner JSON protocol for code, timeout, package requests, and output capture;
-  - start the bundled runner executable from `runtime/pyodide/runner/`;
-  - pass a sanitized environment and kill the runner on timeout;
-  - keep live Pyodide execution opt-in until release artifacts ship the bundle.
+- `sandbox.pyodide.4` offline package smoke:
+  - add `cmd/debug_sandbox --smoke` as the repeatable operator harness;
+  - cover arithmetic, data imports, spreadsheet read, matplotlib artifact, and PDF/text imports;
+  - report missing bundle as unavailable rather than silent success.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -227,8 +228,29 @@ Workspace warning:
 | sandbox.pyodide.1 | Runtime abstraction | done | `internal/sandbox.Manager` now delegates execution/validation/health to a runtime adapter; legacy Isola is behind the boundary and `/health` reports `runtime_kind` plus detail without widening scheduler-safe sandbox permissions. |
 | sandbox.pyodide.1b | Legacy runtime removal | done | Removed the host-Python sidecar, Python-path config, and fallback startup probe. Sandbox now fails closed with `runtime_kind=unavailable` until the bundled Pyodide adapter lands. |
 | sandbox.pyodide.2 | Bundle manifest and probe | done | Added the Pyodide bundle manifest contract, path containment and sha256 validation, required runtime file/package import checks, `SANDBOX_RUNTIME_DIR`, startup health diagnostics, and docs for the release bundle schema. |
+| sandbox.pyodide.3 | Pyodide runner adapter | done | Added the JSON stdin/stdout runner adapter with sanitized env, timeout kill, fake-runner tests, opt-in live Pyodide bundle smoke, and ignored local runtime bundle install. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.3 (Pyodide runner adapter + live bundle)
+
+Goal: execute simple Python through the bundled Pyodide runner boundary and prove the local bundle can run the baseline package profile.
+
+Implementation:
+
+- Added `internal/sandbox/pyodide_runner.go`: JSON request/response protocol, runner path resolution, sanitized child environment, timeout enforcement, stdout/stderr capture, and runtime availability checks.
+- Added hermetic fake-runner tests for command args, env filtering, timeout kill, runner failure, and invalid JSON.
+- Added an opt-in live test (`TestPyodideRunner_LivePyodideBundle`) that validates the local manifest, starts the development runner, imports the full baseline package profile, and computes `sum(range(101))`.
+- Installed the local Pyodide 0.29.3 bundle under ignored `runtime/pyodide/`: core Pyodide assets, closure of 37 package files, local lock/manifest hashes, and a Node-backed development runner script for E2E testing.
+- Updated `.gitignore` so local runtime artifacts and npm extraction downloads cannot be staged accidentally.
+
+Verification:
+
+- `go test ./internal/sandbox`
+- `$env:AURA_SANDBOX_LIVE='1'; $env:SANDBOX_PYODIDE_RUNNER='runtime\pyodide\runner\aura-pyodide-runner.cmd'; go test ./internal/sandbox -run TestPyodideRunner_LivePyodideBundle -count=1 -v`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: `sandbox.pyodide.4` offline package smoke command (`cmd/debug_sandbox --smoke`).
 
 ### 2026-05-04 - Sandbox.pyodide.2 (Bundle manifest and probe)
 

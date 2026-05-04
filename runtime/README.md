@@ -106,3 +106,18 @@ Manifest paths are relative to `SANDBOX_RUNTIME_DIR` and must stay inside that
 directory. Required files and package artifacts are hash-checked. The manifest
 probe only proves that the bundle contract is present; execution remains
 disabled until Aura is wired to the bundled runner adapter.
+
+## Local Bundle Smoke
+
+The local development bundle is ignored by git because it is a release artifact,
+not source. After installing `runtime/pyodide/`, run the opt-in live adapter
+smoke with:
+
+```powershell
+$env:AURA_SANDBOX_LIVE='1'
+$env:SANDBOX_PYODIDE_RUNNER='runtime\pyodide\runner\aura-pyodide-runner.cmd'
+go test ./internal/sandbox -run TestPyodideRunner_LivePyodideBundle -count=1 -v
+```
+
+This smoke validates the manifest, starts the bundled runner, computes
+`sum(range(101))`, and imports the baseline package profile from local files.

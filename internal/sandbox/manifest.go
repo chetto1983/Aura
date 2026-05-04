@@ -44,7 +44,7 @@ var requiredPyodideRuntimeFileGroups = [][]string{
 	{"pyodide.js", "pyodide.mjs"},
 	{"pyodide.asm.wasm"},
 	{"python_stdlib.zip"},
-	{"repodata.json"},
+	{"repodata.json", "pyodide-lock.json"},
 }
 
 // PyodideManifest describes the release-bundled Pyodide runtime.

@@ -50,3 +50,7 @@ wiki/*
 # Local benchmark/history artifacts
 /reports/memory-quality/
 .agents/skills/*
+
+# Local sandbox runtime bundle (release artifact, not source)
+/runtime/pyodide/
+/runtime/_downloads/
