@@ -158,9 +158,17 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 	out := make([]memoryResult, 0, len(results))
 	for _, r := range results {
 		snippet, _ := snippetAround(r.Content, query, searchMemorySnippetLimit)
+		kind := strings.TrimSpace(r.Kind)
+		if kind == "" || kind == "wiki_page" {
+			kind = "wiki"
+		}
+		identifier := "[[" + r.Slug + "]]"
+		if kind == "graph_index" {
+			identifier = r.Slug
+		}
 		out = append(out, memoryResult{
-			Kind:       "wiki",
-			Identifier: "[[" + r.Slug + "]]",
+			Kind:       kind,
+			Identifier: identifier,
 			Title:      r.Title,
 			Snippet:    snippet,
 			Score:      float64(r.Score),

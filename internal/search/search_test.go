@@ -2,11 +2,15 @@ package search
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/aura/aura/internal/wiki"
 	"github.com/philippgille/chromem-go"
 )
 
@@ -35,6 +39,14 @@ func TestFormatResults(t *testing.T) {
 				{Slug: "rust-basics", Title: "Rust Basics", Content: "Rust is safe", Score: 0.8},
 			},
 			expected: "Relevant wiki knowledge:\n- [[go-programming]] Go Programming\n  Go is a language\n- [[rust-basics]] Rust Basics\n  Rust is safe\n",
+		},
+		{
+			name: "graph node and index results",
+			results: []Result{
+				{Kind: "graph_node", Slug: "contract-renewal", Title: "Contract Renewal", Content: "Backlinks: legal-review", Score: 0.9},
+				{Kind: "graph_index", Slug: "index:category:project", Title: "Index: project", Content: "Graph index category: project", Score: 0.8},
+			},
+			expected: "Relevant wiki knowledge:\n- [graph_node] [[contract-renewal]] Contract Renewal\n  Backlinks: legal-review\n- [graph_index] index:category:project Index: project\n  Graph index category: project\n",
 		},
 	}
 
@@ -147,8 +159,57 @@ func TestIndexWikiPages(t *testing.T) {
 	_ = err
 }
 
+func TestIndexWikiPagesAddsGraphNodeCards(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		Tags:          []string{"contract"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Beta Legal Review",
+		Body:          "Review links to [[alpha-contract]] before renewal.",
+		Category:      "project",
+		Related:       []string{"alpha-contract"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	e, err := NewEngine(tmpDir, keywordEmbedding, logger)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	if err := e.IndexWikiPages(context.Background()); err != nil {
+		t.Fatalf("IndexWikiPages: %v", err)
+	}
+	if got, want := e.coll.Count(), 6; got != want {
+		t.Fatalf("indexed document count = %d, want %d", got, want)
+	}
+
+	results, err := e.Search(context.Background(), "backlinks beta", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !hasResult(results, "graph_node", "alpha-contract") {
+		t.Fatalf("missing graph_node result for alpha-contract: %#v", results)
+	}
+	if !hasResult(results, "graph_index", "index:category:project") {
+		t.Fatalf("missing graph_index result for project category: %#v", results)
+	}
+}
+
 func TestResultStruct(t *testing.T) {
 	r := Result{
+		Kind:    "wiki_page",
 		Slug:    "test-page",
 		Title:   "Test Page",
 		Content: "Some content",
@@ -156,6 +217,9 @@ func TestResultStruct(t *testing.T) {
 	}
 	if r.Slug != "test-page" {
 		t.Errorf("expected Slug 'test-page', got %q", r.Slug)
+	}
+	if r.Kind != "wiki_page" {
+		t.Errorf("expected Kind 'wiki_page', got %q", r.Kind)
 	}
 	if r.Title != "Test Page" {
 		t.Errorf("expected Title 'Test Page', got %q", r.Title)
@@ -166,4 +230,47 @@ func TestResultStruct(t *testing.T) {
 	if r.Score != 0.95 {
 		t.Errorf("expected Score 0.95, got %f", r.Score)
 	}
+}
+
+func writeTestMDPage(t *testing.T, dir string, page *wiki.Page) {
+	t.Helper()
+	data, err := wiki.MarshalMD(page)
+	if err != nil {
+		t.Fatalf("MarshalMD: %v", err)
+	}
+	path := filepath.Join(dir, wiki.Slug(page.Title)+".md")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func keywordEmbedding(_ context.Context, text string) ([]float32, error) {
+	lower := strings.ToLower(text)
+	keywords := []string{"backlinks", "beta", "project", "contract"}
+	vec := make([]float32, len(keywords)+1)
+	for i, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
+			vec[i] = 1
+		}
+	}
+	empty := true
+	for _, v := range vec {
+		if v != 0 {
+			empty = false
+			break
+		}
+	}
+	if empty {
+		vec[len(vec)-1] = 1
+	}
+	return vec, nil
+}
+
+func hasResult(results []Result, kind, slug string) bool {
+	for _, result := range results {
+		if result.Kind == kind && result.Slug == slug {
+			return true
+		}
+	}
+	return false
 }

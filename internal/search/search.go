@@ -23,6 +23,7 @@ const indexConcurrency = 4
 
 // Result represents a search result with relevance score.
 type Result struct {
+	Kind    string
 	Slug    string
 	Title   string
 	Content string
@@ -33,6 +34,7 @@ type Result struct {
 // and SQLite FTS5 as fallback.
 type Engine struct {
 	coll    *chromem.Collection
+	embedFn chromem.EmbeddingFunc
 	sqlite  *sqliteSearcher // nil if not configured
 	wikiDir string
 	mu      sync.RWMutex
@@ -50,6 +52,7 @@ func NewEngine(wikiDir string, embedFn chromem.EmbeddingFunc, logger *slog.Logge
 	}
 
 	return &Engine{
+		embedFn: embedFn,
 		coll:    coll,
 		wikiDir: wikiDir,
 		logger:  logger,
@@ -146,7 +149,8 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 	// round trips run in parallel goroutines. With 8 wiki pages × ~1 s
 	// per embed serial = ~8 s; concurrency=4 = ~2 s. Higher concurrency
 	// risks Mistral rate-limit pushback on free tiers.
-	docs := make([]chromem.Document, 0, len(slugFiles))
+	pages := make(map[string]indexedWikiPage, len(slugFiles))
+	docs := make([]chromem.Document, 0, len(slugFiles)*3)
 	for slug, fi := range slugFiles {
 		filePath := filepath.Join(e.wikiDir, fi.name)
 
@@ -156,21 +160,30 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 			continue
 		}
 
+		page, err := parseIndexedWikiPage(slug, fi.ext, data)
+		if err != nil {
+			e.logger.Warn("failed to parse wiki page for indexing", "slug", slug, "error", err)
+			continue
+		}
+		pages[slug] = page
 		var title, content string
 		if fi.ext == ".md" {
-			title, content = extractFromMD(data)
+			title, content = page.Title, page.Title+"\n"+page.Body
 		} else {
-			title = extractTitle(data)
-			content = title + "\n" + string(data)
+			title, content = page.Title, page.Title+"\n"+page.Body
 		}
 		docs = append(docs, chromem.Document{
 			ID:       slug,
 			Content:  content,
-			Metadata: map[string]string{"slug": slug, "title": title},
+			Metadata: map[string]string{"slug": slug, "title": title, "kind": "wiki_page"},
 		})
 	}
+	docs = append(docs, buildGraphDocuments(pages)...)
 
 	count := 0
+	if err := e.resetCollectionLocked(); err != nil {
+		return err
+	}
 	if len(docs) > 0 {
 		if err := e.coll.AddDocuments(ctx, docs, indexConcurrency); err != nil {
 			// Atomic failure on the batch — fall back to serial so a
@@ -190,6 +203,9 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 		// SQLite full-text mirror: keep this serial — local SQLite writes
 		// are cheap and concurrent inserts on the same FTS table fight.
 		if e.sqlite != nil {
+			if err := e.sqlite.clear(ctx); err != nil {
+				e.logger.Warn("failed to clear sqlite search mirror", "error", err)
+			}
 			for _, doc := range docs {
 				if err := e.sqlite.indexDocument(ctx, doc.ID, doc.Content, doc.Metadata); err != nil {
 					e.logger.Warn("failed to index in sqlite", "slug", doc.ID, "error", err)
@@ -199,7 +215,17 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 	}
 
 	e.indexed = true
-	e.logger.Info("wiki pages indexed", "count", count, "concurrency", indexConcurrency)
+	e.logger.Info("wiki pages indexed", "count", count, "pages", len(pages), "concurrency", indexConcurrency)
+	return nil
+}
+
+func (e *Engine) resetCollectionLocked() error {
+	db := chromem.NewDB()
+	coll, err := db.CreateCollection("wiki", nil, e.embedFn)
+	if err != nil {
+		return fmt.Errorf("resetting chromem collection: %w", err)
+	}
+	e.coll = coll
 	return nil
 }
 
@@ -244,39 +270,22 @@ func (e *Engine) IsIndexed() bool {
 	return e.indexed
 }
 
-// ReindexWikiPage removes and re-indexes a single wiki page.
+// ReindexWikiPage refreshes the semantic wiki index after one page changed.
+// Graph node cards include backlinks and category/index summaries, so a single
+// page change can affect neighboring nodes. We verify the changed page exists,
+// then rebuild the in-memory collection. The embedding cache keeps unchanged
+// documents cheap.
 func (e *Engine) ReindexWikiPage(ctx context.Context, slug string) error {
-	// Try .md first, fall back to .yaml
-	var data []byte
-	var isMD bool
 	mdPath := filepath.Join(e.wikiDir, slug+".md")
 	yamlPath := filepath.Join(e.wikiDir, slug+".yaml")
 
-	if d, err := os.ReadFile(mdPath); err == nil {
-		data = d
-		isMD = true
-	} else if d, err := os.ReadFile(yamlPath); err == nil {
-		data = d
-		isMD = false
-	} else {
-		return fmt.Errorf("reading wiki page %s: file not found", slug)
+	if _, err := os.Stat(mdPath); err != nil {
+		if _, yamlErr := os.Stat(yamlPath); yamlErr != nil {
+			return fmt.Errorf("reading wiki page %s: file not found", slug)
+		}
 	}
 
-	var title, content string
-	if isMD {
-		title, content = extractFromMD(data)
-	} else {
-		title = extractTitle(data)
-		content = title + "\n" + string(data)
-	}
-
-	if err := e.Index(ctx, slug, content, map[string]string{"slug": slug, "title": title}); err != nil {
-		return err
-	}
-	e.mu.Lock()
-	e.indexed = true
-	e.mu.Unlock()
-	return nil
+	return e.IndexWikiPages(ctx)
 }
 
 // FormatResults formats search results as context for injection into LLM prompts.
@@ -289,7 +298,13 @@ func FormatResults(results []Result) string {
 	var sb strings.Builder
 	sb.WriteString("Relevant wiki knowledge:\n")
 	for _, r := range results {
-		sb.WriteString(fmt.Sprintf("- [[%s]] %s\n", r.Slug, r.Title))
+		kind := resultKind(r)
+		label := resultLabel(r)
+		if kind == "wiki_page" {
+			sb.WriteString(fmt.Sprintf("- %s %s\n", label, r.Title))
+		} else {
+			sb.WriteString(fmt.Sprintf("- [%s] %s %s\n", kind, label, r.Title))
+		}
 		excerpt := truncateExcerpt(r.Content, 200)
 		if excerpt != "" {
 			sb.WriteString(fmt.Sprintf("  %s\n", excerpt))
@@ -340,27 +355,6 @@ func findMDBodyEnd(content string) int {
 	return len(content) - len(rest) + idx + 5
 }
 
-// extractFromMD parses a markdown file with frontmatter and returns title and body content.
-func extractFromMD(data []byte) (title, content string) {
-	content = string(data)
-
-	// Extract title from frontmatter
-	if strings.HasPrefix(content, "---") {
-		end := findMDBodyEnd(content)
-		if end != -1 && end < len(content) {
-			body := strings.TrimSpace(content[end:])
-			content = strings.TrimSpace(body)
-		}
-		// Parse just the title from frontmatter
-		title = extractTitle(data)
-	} else {
-		title = extractTitle(data)
-	}
-
-	content = title + "\n" + content
-	return title, content
-}
-
 // extractTitle parses just the title field from YAML bytes.
 func extractTitle(data []byte) string {
 	var partial struct {
@@ -408,11 +402,20 @@ func (e *Engine) queryChromem(ctx context.Context, query string, topK int) ([]Re
 	searchResults := make([]Result, 0, len(results))
 	for _, r := range results {
 		title := ""
+		slug := r.ID
+		kind := "wiki_page"
 		if r.Metadata != nil {
 			title = r.Metadata["title"]
+			if metaSlug := strings.TrimSpace(r.Metadata["slug"]); metaSlug != "" {
+				slug = metaSlug
+			}
+			if metaKind := strings.TrimSpace(r.Metadata["kind"]); metaKind != "" {
+				kind = metaKind
+			}
 		}
 		searchResults = append(searchResults, Result{
-			Slug:    r.ID,
+			Kind:    kind,
+			Slug:    slug,
 			Title:   title,
 			Content: r.Content,
 			Score:   r.Similarity,
@@ -420,4 +423,23 @@ func (e *Engine) queryChromem(ctx context.Context, query string, topK int) ([]Re
 	}
 
 	return searchResults, nil
+}
+
+func resultKind(r Result) string {
+	if strings.TrimSpace(r.Kind) == "" {
+		return "wiki_page"
+	}
+	return r.Kind
+}
+
+func resultLabel(r Result) string {
+	if r.Slug == "" {
+		return ""
+	}
+	switch resultKind(r) {
+	case "wiki_page", "graph_node":
+		return "[[" + r.Slug + "]]"
+	default:
+		return r.Slug
+	}
 }

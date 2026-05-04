@@ -3,12 +3,18 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/wiki"
 )
 
 func TestSearchMemoryTool_MetadataAndValidation(t *testing.T) {
@@ -119,6 +125,51 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 	}
 }
 
+func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
+	ctx := context.Background()
+	wikiDir := t.TempDir()
+	writeMemoryTestPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	writeMemoryTestPage(t, wikiDir, &wiki.Page{
+		Title:         "Beta Legal Review",
+		Body:          "Review links to [[alpha-contract]] before renewal.",
+		Category:      "project",
+		Related:       []string{"alpha-contract"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	engine, err := search.NewEngine(wikiDir, memoryKeywordEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	if err := engine.IndexWikiPages(ctx); err != nil {
+		t.Fatalf("IndexWikiPages: %v", err)
+	}
+
+	tool := NewSearchMemoryTool(engine, nil, nil)
+	out, err := tool.Execute(ctx, map[string]any{"query": "backlinks beta", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "[graph_node] [[alpha-contract]]") {
+		t.Fatalf("expected graph_node evidence:\n%s", out)
+	}
+	envelope := parseMemoryEvidenceEnvelope(t, out)
+	if !hasEvidenceItem(envelope.Items, "graph_node", "[[alpha-contract]]", "Alpha Contract", 0) {
+		t.Fatalf("missing structured graph_node evidence: %#v", envelope.Items)
+	}
+}
+
 func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	ctx := context.Background()
 	sourceStore := newTestSourceStore(t)
@@ -155,6 +206,40 @@ func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	if !strings.Contains(out, "chat=10") || strings.Contains(out, "chat=20") {
 		t.Fatalf("chat filter not respected:\n%s", out)
 	}
+}
+
+func writeMemoryTestPage(t *testing.T, dir string, page *wiki.Page) {
+	t.Helper()
+	data, err := wiki.MarshalMD(page)
+	if err != nil {
+		t.Fatalf("MarshalMD: %v", err)
+	}
+	path := filepath.Join(dir, wiki.Slug(page.Title)+".md")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func memoryKeywordEmbedding(_ context.Context, text string) ([]float32, error) {
+	lower := strings.ToLower(text)
+	keywords := []string{"backlinks", "beta", "project", "contract"}
+	vec := make([]float32, len(keywords)+1)
+	for i, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
+			vec[i] = 1
+		}
+	}
+	empty := true
+	for _, v := range vec {
+		if v != 0 {
+			empty = false
+			break
+		}
+	}
+	if empty {
+		vec[len(vec)-1] = 1
+	}
+	return vec, nil
 }
 
 type testMemoryEvidenceEnvelope struct {

@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19b.2` embedding config/cache audit.
+Last completed slice: `19c` graph-aware semantic index.
 
 What is shipped:
 
@@ -58,6 +58,7 @@ What is shipped:
 - `cmd/debug_memory_quality -live-llm` now fails slow scenarios that exceed the end-user latency budget; "eventually correct" is not enough.
 - `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, latency, full results, and graph nodes/edges.
 - Embeddings are wired through dedicated `EMBEDDING_*` settings; the cache is now namespaced by provider base URL plus model.
+- Wiki search now embeds graph node cards and category index cards alongside page bodies, exposing `graph_node` / `graph_index` evidence through `search_memory`.
 
 Phase 18 status: **closed**.
 
@@ -82,7 +83,7 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19c: named toolset profiles for `agent_job` and swarm roles:
+- Phase 19d: named toolset profiles for `agent_job` and swarm roles:
   - extract repeated allowlists into composable profiles;
   - include `memory_read`, `wiki_review`, `skills_read`, `web_research`, and `scheduler_safe`;
   - block recursive/dangerous tools inside scheduled agent jobs by default;
@@ -193,9 +194,34 @@ Workspace warning:
 | 19a | Code inventory and low-risk cleanup | done | `docs/code-inventory-phase-19-2026-05-04.md`; removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
 | 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
 | 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
-| 19c | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
+| 19c | Graph-aware semantic index | done | Wiki indexing now embeds compact graph node cards and category/global index cards alongside page bodies; `search_memory` exposes graph evidence without turning embeddings into durable memory. |
+| 19d | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19c (Graph-aware semantic index)
+
+Goal: speed complex memory questions by embedding graph/index nodes, while keeping the wiki as the durable memory layer.
+
+Implementation:
+
+- `internal/search` now builds semantic documents for:
+  - wiki page bodies (`kind=wiki_page`);
+  - compact graph node cards (`kind=graph_node`) with title, category, tags, sources, outbound links, backlinks, updated time, and body summary;
+  - category/global index cards (`kind=graph_index`) derived from the wiki graph.
+- `IndexWikiPages` indexes page bodies plus graph/index cards in the same chromem collection, so a query still needs one query embedding but can hit shorter graph summaries.
+- Full semantic rebuild now recreates the in-memory collection before adding docs, avoiding stale derived graph/index nodes.
+- `ReindexWikiPage` verifies the changed page exists, then refreshes the semantic index because backlinks and category cards can change outside the edited page.
+- `search.Result` carries `Kind`; SQLite FTS fallback preserves that metadata.
+- `search_memory` maps wiki-page results to `wiki` evidence and graph-derived results to `graph_node` / `graph_index` evidence, keeping the evidence envelope typed.
+
+Verification:
+
+- `go test ./internal/search ./internal/tools`
+- `staticcheck ./internal/search ./internal/tools`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: named Aura toolset profiles (`memory_read`, `wiki_review`, `skills_read`, `web_research`, `scheduler_safe`) to cut tool schema/context for scheduled jobs and swarm roles.
 
 ### 2026-05-04 - Slice 19b.2 (Embedding config/cache audit)
 

@@ -49,6 +49,14 @@ func setupSqliteSchema(db *sql.DB) error {
 	return nil
 }
 
+func (s *sqliteSearcher) clear(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM wiki_documents`)
+	if err != nil {
+		return fmt.Errorf("clearing wiki_documents: %w", err)
+	}
+	return nil
+}
+
 func (s *sqliteSearcher) indexDocument(ctx context.Context, id, content string, metadata map[string]string) error {
 	metaJSON := metadataToJSON(metadata)
 	title := metadata["title"]
@@ -100,8 +108,13 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 		if slug == "" {
 			slug = id
 		}
+		kind := extractMetaField(metaJSON, "kind")
+		if kind == "" {
+			kind = "wiki_page"
+		}
 
 		results = append(results, Result{
+			Kind:    kind,
 			Slug:    slug,
 			Title:   title,
 			Content: content,
