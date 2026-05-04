@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -28,6 +29,30 @@ func TestLoadPyodideManifest_HappyPath(t *testing.T) {
 	}
 	if !strings.HasSuffix(manifestPath, sandbox.PyodideManifestFilename) {
 		t.Fatalf("manifestPath = %q", manifestPath)
+	}
+}
+
+func TestPyodideRunnerDefaultPathUsesWindowsCmdDevRunner(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows dev runner fallback")
+	}
+	dir := t.TempDir()
+	writePyodideBundle(t, dir, nil)
+	runnerPath := filepath.Join(dir, "runner", "aura-pyodide-runner.cmd")
+	if err := os.MkdirAll(filepath.Dir(runnerPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runnerPath, []byte("@echo off\r\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{RuntimeDir: dir})
+	if err != nil {
+		t.Fatalf("NewPyodideRunner() error = %v", err)
+	}
+	availability := runner.CheckAvailability()
+	if !availability.Available {
+		t.Fatalf("CheckAvailability() = %+v, want available", availability)
 	}
 }
 

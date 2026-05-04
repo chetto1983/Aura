@@ -103,9 +103,9 @@ Aura validates this file at startup before it can enable `execute_code`.
 ```
 
 Manifest paths are relative to `SANDBOX_RUNTIME_DIR` and must stay inside that
-directory. Required files and package artifacts are hash-checked. The manifest
-probe only proves that the bundle contract is present; `execute_code` remains
-disabled until Aura startup registers the bundled runner after a healthy probe.
+directory. Required files and package artifacts are hash-checked. Aura registers
+`execute_code` only when both the bundle and runner are healthy; missing or
+invalid runtime assets leave the tool disabled and surface sandbox health.
 
 ## Local Bundle Smoke
 

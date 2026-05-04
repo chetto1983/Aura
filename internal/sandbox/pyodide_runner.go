@@ -223,6 +223,10 @@ func (r *PyodideRunner) Execute(ctx context.Context, code string, allowNetwork b
 func defaultPyodideRunnerPath(runtimeDir string) string {
 	name := "aura-pyodide-runner"
 	if runtime.GOOS == "windows" {
+		cmdPath := filepath.Join(runtimeDir, "runner", name+".cmd")
+		if info, err := os.Stat(cmdPath); err == nil && !info.IsDir() {
+			return cmdPath
+		}
 		name += ".exe"
 	}
 	return filepath.Join(runtimeDir, "runner", name)

@@ -143,33 +143,9 @@ func New(cfg *config.Config, settingsStore *settings.Store, logger *slog.Logger)
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
 	}
 
-	// Sandbox code execution. Until the bundled Pyodide adapter is wired,
-	// fail closed so execute_code is not registered through a host fallback.
-	var sandboxMgr *sandbox.Manager
-	sandboxHealth := api.SandboxHealth{
-		Enabled:     cfg.SandboxEnabled,
-		RuntimeKind: string(sandbox.RuntimeKindUnavailable),
-		Detail:      "sandbox disabled",
-	}
-	if cfg.SandboxEnabled {
-		probe := sandbox.ProbePyodideBundle(cfg.SandboxRuntimeDir)
-		sandboxHealth.Runtime = probe.RuntimeDir
-		sandboxHealth.Detail = probe.Detail
-		if probe.Valid {
-			sandboxHealth.RuntimeKind = string(sandbox.RuntimeKindPyodide)
-			logger.Warn("sandbox bundle valid but runner unavailable, execute_code disabled",
-				"runtime_kind", sandbox.RuntimeKindPyodide,
-				"runtime_dir", probe.RuntimeDir,
-				"pyodide_version", probe.PyodideVersion,
-				"detail", probe.Detail)
-		} else {
-			sandboxHealth.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
-			logger.Warn("sandbox runtime bundle unavailable, execute_code disabled",
-				"runtime_kind", sandbox.RuntimeKindUnavailable,
-				"runtime_dir", probe.RuntimeDir,
-				"detail", probe.Detail)
-		}
-	}
+	// Sandbox code execution. The tool is registered only after the bundled
+	// Pyodide runtime and runner both pass availability checks.
+	sandboxMgr, sandboxHealth := setupSandboxRuntime(cfg, logger)
 
 	// Tool registry (persistent LLM-written Python tools)
 	toolReg, err := tools.NewToolRegistry(wikiStore)
@@ -667,6 +643,72 @@ func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
 
 	normalized := true
 	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, cfg.EmbeddingAPIKey, model, &normalized)
+}
+
+func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	health := api.SandboxHealth{
+		Enabled:     cfg.SandboxEnabled,
+		RuntimeKind: string(sandbox.RuntimeKindUnavailable),
+		Detail:      "sandbox disabled",
+	}
+	if !cfg.SandboxEnabled {
+		return nil, health
+	}
+
+	timeout := time.Duration(cfg.SandboxTimeoutSec) * time.Second
+	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
+		RuntimeDir: cfg.SandboxRuntimeDir,
+		Timeout:    timeout,
+	})
+	if err != nil {
+		health.Detail = err.Error()
+		logger.Warn("sandbox runner configuration invalid, execute_code disabled",
+			"runtime_kind", sandbox.RuntimeKindUnavailable,
+			"runtime_dir", cfg.SandboxRuntimeDir,
+			"detail", health.Detail)
+		return nil, health
+	}
+
+	availability := runner.CheckAvailability()
+	health.Runtime = cfg.SandboxRuntimeDir
+	health.Available = availability.Available
+	health.RuntimeKind = string(availability.Kind)
+	if health.RuntimeKind == "" {
+		health.RuntimeKind = string(sandbox.RuntimeKindPyodide)
+	}
+	health.Detail = availability.Detail
+	if !availability.Available {
+		if !strings.Contains(availability.Detail, "Pyodide runner") {
+			health.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
+		}
+		logger.Warn("sandbox runtime unavailable, execute_code disabled",
+			"runtime_kind", health.RuntimeKind,
+			"runtime_dir", cfg.SandboxRuntimeDir,
+			"detail", availability.Detail)
+		return nil, health
+	}
+
+	manager, err := sandbox.NewManager(sandbox.Config{
+		Runtime: runner,
+		Timeout: timeout,
+	})
+	if err != nil {
+		health.Available = false
+		health.Detail = err.Error()
+		logger.Warn("sandbox manager unavailable, execute_code disabled",
+			"runtime_kind", health.RuntimeKind,
+			"runtime_dir", cfg.SandboxRuntimeDir,
+			"detail", health.Detail)
+		return nil, health
+	}
+	logger.Info("sandbox runtime available, execute_code enabled",
+		"runtime_kind", health.RuntimeKind,
+		"runtime_dir", cfg.SandboxRuntimeDir,
+		"detail", health.Detail)
+	return manager, health
 }
 
 // noopWikiSearcher satisfies summarizer.WikiSearcher with an always-empty result.
