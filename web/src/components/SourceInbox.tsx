@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Upload, Play, RefreshCcw, Download } from 'lucide-react';
 import { getToken } from '@/lib/auth';
@@ -18,6 +18,7 @@ export function SourceInbox() {
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [focusedSourceId, setFocusedSourceId] = useState('');
   // Per-row in-flight tracking so the same button can't be double-clicked.
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,6 +44,23 @@ export function SourceInbox() {
       else next.delete(id);
       return next;
     });
+  }, []);
+
+  useEffect(() => {
+    const focusFromHash = () => {
+      const prefix = '#source-';
+      if (!window.location.hash.startsWith(prefix)) return;
+      const id = decodeURIComponent(window.location.hash.slice(prefix.length));
+      setFocusedSourceId(id);
+      window.setTimeout(() => {
+        const nodes = document.querySelectorAll<HTMLElement>(`[data-source-id="${id}"]`);
+        const visible = Array.from(nodes).find((node) => node.getClientRects().length > 0);
+        visible?.scrollIntoView({ block: 'center' });
+      }, 0);
+    };
+    focusFromHash();
+    window.addEventListener('hashchange', focusFromHash);
+    return () => window.removeEventListener('hashchange', focusFromHash);
   }, []);
 
   const handleIngest = useCallback(async (s: SourceSummary) => {
@@ -175,7 +193,11 @@ export function SourceInbox() {
             </h2>
             <div className="space-y-2 md:hidden">
               {rows.map((s) => (
-                <article key={s.id} className="rounded-lg border bg-card p-3">
+                <article
+                  key={s.id}
+                  data-source-id={s.id}
+                  className={`scroll-mt-24 rounded-lg border bg-card p-3 ${focusedSourceId === s.id ? 'ring-2 ring-primary/30' : ''}`}
+                >
                   <p className="break-words font-mono text-xs font-medium">{s.filename}</p>
                   <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
                     <p>{t('sources.mobile.created')} {fmtDate(s.created_at)}</p>
@@ -207,7 +229,11 @@ export function SourceInbox() {
                 </thead>
                 <tbody>
                   {rows.map((s) => (
-                    <tr key={s.id} className="border-t hover:bg-muted/30">
+                    <tr
+                      key={s.id}
+                      data-source-id={s.id}
+                      className={`scroll-mt-24 border-t hover:bg-muted/30 ${focusedSourceId === s.id ? 'bg-primary/5' : ''}`}
+                    >
                       <td className="py-2 px-3 font-mono text-xs">{s.filename}</td>
                       <td className="py-2 px-3 text-muted-foreground">{fmtDate(s.created_at)}</td>
                       <td className="py-2 px-3 text-right tabular-nums">{s.page_count ?? '—'}</td>

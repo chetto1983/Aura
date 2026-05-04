@@ -35,6 +35,23 @@ export function ConversationsPanel() {
 
   const turns = data ?? [];
 
+  useEffect(() => {
+    const openHashTurn = () => {
+      const match = window.location.hash.match(/^#turn-(\d+)$/);
+      if (!match) return;
+      const id = Number(match[1]);
+      setSelectedId(id);
+      window.setTimeout(() => {
+        const nodes = document.querySelectorAll<HTMLElement>(`[data-turn-id="${id}"]`);
+        const visible = Array.from(nodes).find((node) => node.getClientRects().length > 0);
+        visible?.scrollIntoView({ block: 'center' });
+      }, 0);
+    };
+    openHashTurn();
+    window.addEventListener('hashchange', openHashTurn);
+    return () => window.removeEventListener('hashchange', openHashTurn);
+  }, []);
+
   const filtered = turns.filter((t) => {
     if (dateFrom) {
       const d = new Date(t.created_at);
@@ -270,6 +287,7 @@ export function ConversationsPanel() {
           {filtered.map((turn) => (
             <button
               key={turn.id}
+              data-turn-id={turn.id}
               type="button"
               onClick={() => setSelectedId(turn.id)}
               className="w-full rounded-lg border bg-card p-3 text-left hover:bg-accent/30"
@@ -304,6 +322,7 @@ export function ConversationsPanel() {
               {filtered.map((turn, i) => (
                 <tr
                   key={turn.id}
+                  data-turn-id={turn.id}
                   onClick={() => setSelectedId(turn.id)}
                   className={`cursor-pointer transition-colors hover:bg-accent/40 ${
                     i % 2 === 0 ? '' : 'bg-muted/10'

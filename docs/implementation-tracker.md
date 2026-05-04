@@ -60,6 +60,8 @@ Next best slice:
   - open `wiki` evidence in Wiki page view;
   - keep approval review-gated.
 
+Status note: shipped in slice `18e`; next memory slice should move from navigation to richer evidence preview only if real review sessions show that link-out is still too slow.
+
 Workspace warning:
 
 - Leave existing favicon/packaging/dashboard-dist churn untouched unless explicitly taking that slice:
@@ -154,8 +156,33 @@ Workspace warning:
 | 18b | Maintenance memory decay | done | Wiki maintenance now flags stale compiled-memory pages as `memory_decay` issues after conservative age thresholds, preserving the LLM Wiki rule that old knowledge becomes review work instead of silent mutation. |
 | 18c | Proposal provenance | done | `propose_wiki_change` and summarizer review proposals now persist structured provenance JSON with origin tool/reason, evidence refs, agent job IDs, and swarm IDs; API responses expose it for review UI. |
 | 18d | Batch proposal review | done | `/summaries` now supports batch approve/reject with per-ID failures, and the dashboard can select multiple proposals while showing compact provenance evidence on each card. |
+| 18e | Evidence drill-down | done | Proposal evidence chips now link to source, wiki, and conversation/archive context; source/conversation panels honor hash navigation. Added Playwright E2E for the review evidence flow. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18e (Evidence drill-down)
+
+Goal: make proposal review useful in practice by letting reviewers jump from a proposed memory update to its evidence context.
+
+Implementation:
+
+- Evidence chips in `SummariesPanel` now become links when the evidence kind is actionable:
+  - `source` -> `/sources#source-<id>`;
+  - `wiki` -> `/wiki/<slug>`;
+  - `archive` / `conversation` -> `/conversations#turn-<id>`.
+- `SourceInbox` reads `#source-...`, scrolls the visible source row/card into view, and highlights it.
+- `ConversationsPanel` reads `#turn-...`, scrolls the visible turn row/card, and opens the conversation drawer automatically.
+- Added mocked Playwright E2E for summaries evidence drill-down, including archive evidence opening the drawer.
+- Rebuilt embedded dashboard assets in `internal/api/dist`.
+
+Verification:
+
+- `go test ./internal/api ./internal/conversation/summarizer ./internal/tools`
+- `npm run lint` in `web/`
+- `AURA_DASHBOARD_URL=http://127.0.0.1:4173 npx playwright test e2e/summaries-evidence.spec.ts --project=chromium`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-web.ps1`
+
+Next slice: run real-user proposal review drills against live data and only then decide whether inline evidence preview is worth adding.
 
 ### 2026-05-04 - Slice 18d (Batch proposal review)
 

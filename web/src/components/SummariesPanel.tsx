@@ -305,14 +305,49 @@ function ProposalCard({
 
 function EvidenceChip({ refItem }: { refItem: ProposalEvidenceRef }) {
   const label = `${refItem.kind}:${refItem.id}${refItem.page ? ` p.${refItem.page}` : ''}`;
+  const href = evidenceHref(refItem);
+  const title = [refItem.title, refItem.snippet].filter(Boolean).join(' - ') || label;
+  const className = `max-w-full rounded-full bg-muted px-2 py-1 text-muted-foreground truncate ${
+    href ? 'hover:bg-primary/10 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/30' : ''
+  }`;
+  if (!href) {
+    return (
+      <span className={className} title={title}>
+        {label}
+      </span>
+    );
+  }
   return (
-    <span
-      className="max-w-full rounded-full bg-muted px-2 py-1 text-muted-foreground truncate"
-      title={[refItem.title, refItem.snippet].filter(Boolean).join(' - ') || label}
+    <a
+      href={href}
+      className={className}
+      title={title}
+      aria-label={`Open evidence ${label}`}
     >
       {label}
-    </span>
+    </a>
   );
+}
+
+function evidenceHref(refItem: ProposalEvidenceRef): string | null {
+  const kind = refItem.kind.toLowerCase();
+  const id = refItem.id.trim();
+  if (!id) return null;
+  if (kind === 'source') {
+    return `/sources#source-${encodeURIComponent(id)}`;
+  }
+  if (kind === 'wiki') {
+    return `/wiki/${encodeURIComponent(stripPrefix(id, 'wiki:'))}`;
+  }
+  if (kind === 'archive' || kind === 'conversation') {
+    const turnID = stripPrefix(id, 'conversation:');
+    return /^\d+$/.test(turnID) ? `/conversations#turn-${turnID}` : '/conversations';
+  }
+  return null;
+}
+
+function stripPrefix(value: string, prefix: string): string {
+  return value.toLowerCase().startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
 function EmptyState() {
