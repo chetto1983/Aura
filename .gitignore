@@ -23,7 +23,7 @@
 Thumbs.db
 
 # Goversioninfo output
-/cmd/aura/resource.syso
+/cmd/aura/resource*.syso
 /internal/tray/icon_app.ico
 
 # Wiki data (tracked via git inside wiki dir)*.exe*
