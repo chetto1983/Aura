@@ -51,6 +51,35 @@ func TestRunExecuteCodeToolSmokeFailsWhenRuntimeUnavailable(t *testing.T) {
 	}
 }
 
+func TestRunExecuteCodeArtifactSmokeRequiresArtifact(t *testing.T) {
+	rt := &debugSandboxFakeRuntime{
+		result: &sandbox.Result{
+			OK:        true,
+			Stdout:    "wrote artifact\n",
+			ExitCode:  0,
+			ElapsedMs: 12,
+			Artifacts: []sandbox.Artifact{{
+				Name:      "artifact.txt",
+				MimeType:  "text/plain; charset=utf-8",
+				Bytes:     []byte("hello from pyodide artifact"),
+				SizeBytes: 27,
+			}},
+		},
+	}
+
+	report := runExecuteCodeArtifactSmoke(context.Background(), rt)
+
+	if !report.OK {
+		t.Fatalf("report.OK = false, error=%q", report.Error)
+	}
+	if !strings.Contains(rt.code, "/tmp/aura_out/artifact.txt") {
+		t.Fatalf("executed code = %q, want /tmp/aura_out/artifact.txt", rt.code)
+	}
+	if !strings.Contains(report.Output, "artifact.txt") {
+		t.Fatalf("output = %q, want artifact metadata", report.Output)
+	}
+}
+
 type debugSandboxFakeRuntime struct {
 	availability sandbox.Availability
 	result       *sandbox.Result

@@ -3,6 +3,7 @@
 //	go run ./cmd/debug_sandbox --smoke
 //	go run ./cmd/debug_sandbox --smoke --runtime-dir runtime/pyodide --runner runtime/pyodide/runner/aura-pyodide-runner.cmd
 //	go run ./cmd/debug_sandbox --tool-smoke
+//	go run ./cmd/debug_sandbox --artifact-smoke
 //
 // It validates the local Pyodide bundle, starts the runner, and executes the
 // offline office/data smoke profile without requiring LLM or Telegram services.
@@ -23,16 +24,17 @@ import (
 
 func main() {
 	var (
-		smoke      = flag.Bool("smoke", false, "run the offline Pyodide package smoke")
-		toolSmoke  = flag.Bool("tool-smoke", false, "run the registered execute_code tool smoke")
-		runtimeDir = flag.String("runtime-dir", envDefault("SANDBOX_RUNTIME_DIR", "runtime/pyodide"), "Pyodide runtime directory")
-		runnerPath = flag.String("runner", envDefault("SANDBOX_PYODIDE_RUNNER", ""), "Pyodide runner executable/script path")
-		timeout    = flag.Duration("timeout", 2*time.Minute, "per-scenario timeout")
+		smoke         = flag.Bool("smoke", false, "run the offline Pyodide package smoke")
+		toolSmoke     = flag.Bool("tool-smoke", false, "run the registered execute_code tool smoke")
+		artifactSmoke = flag.Bool("artifact-smoke", false, "run the execute_code artifact egress smoke")
+		runtimeDir    = flag.String("runtime-dir", envDefault("SANDBOX_RUNTIME_DIR", "runtime/pyodide"), "Pyodide runtime directory")
+		runnerPath    = flag.String("runner", envDefault("SANDBOX_PYODIDE_RUNNER", ""), "Pyodide runner executable/script path")
+		timeout       = flag.Duration("timeout", 2*time.Minute, "per-scenario timeout")
 	)
 	flag.Parse()
 
-	if !*smoke && !*toolSmoke {
-		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke or --tool-smoke")
+	if !*smoke && !*toolSmoke && !*artifactSmoke {
+		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke, --tool-smoke, or --artifact-smoke")
 		os.Exit(2)
 	}
 	if strings.TrimSpace(*runnerPath) == "" {
@@ -68,6 +70,28 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("PASS: execute_code returned 5050 through the registered tool boundary\n")
+		return
+	}
+
+	if *artifactSmoke {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+
+		fmt.Printf("Aura sandbox execute_code artifact smoke\n")
+		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
+		fmt.Printf("runner=%s\n", *runnerPath)
+		fmt.Printf("timeout=%s\n\n", timeout.String())
+
+		report := runExecuteCodeArtifactSmoke(ctx, runner)
+		fmt.Printf("availability: kind=%s available=%v detail=%s\n\n", report.Availability.Kind, report.Availability.Available, report.Availability.Detail)
+		if strings.TrimSpace(report.Output) != "" {
+			fmt.Printf("output:\n%s\n", strings.TrimSpace(report.Output))
+		}
+		if !report.OK {
+			fmt.Printf("FAIL: %s\n", report.Error)
+			os.Exit(1)
+		}
+		fmt.Printf("PASS: execute_code returned artifact metadata for artifact.txt\n")
 		return
 	}
 
@@ -165,6 +189,70 @@ func runExecuteCodeToolSmoke(ctx context.Context, rt sandbox.Runtime) executeCod
 
 func executeCodeToolSmokeProgram() string {
 	return "print(sum(range(1, 101)))"
+}
+
+func runExecuteCodeArtifactSmoke(ctx context.Context, rt sandbox.Runtime) executeCodeToolSmokeReport {
+	report := runExecuteCodeToolSmokeWithProgram(ctx, rt, executeCodeArtifactSmokeProgram())
+	if !report.OK {
+		return report
+	}
+	if !strings.Contains(report.Output, "artifacts:") || !strings.Contains(report.Output, "artifact.txt") {
+		report.OK = false
+		report.Error = "execute_code output did not contain artifact.txt metadata"
+		return report
+	}
+	return report
+}
+
+func executeCodeArtifactSmokeProgram() string {
+	return strings.TrimSpace(`
+import os
+
+os.makedirs("/tmp/aura_out", exist_ok=True)
+with open("/tmp/aura_out/artifact.txt", "w", encoding="utf-8") as f:
+    f.write("hello from pyodide artifact")
+print("wrote artifact")
+`)
+}
+
+func runExecuteCodeToolSmokeWithProgram(ctx context.Context, rt sandbox.Runtime, code string) executeCodeToolSmokeReport {
+	report := executeCodeToolSmokeReport{}
+	if rt == nil {
+		report.Availability = sandbox.Availability{Available: false, Kind: sandbox.RuntimeKindUnavailable, Detail: "sandbox runtime unavailable"}
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	report.Availability = rt.CheckAvailability()
+	if report.Availability.Kind == "" {
+		report.Availability.Kind = rt.Kind()
+	}
+	if !report.Availability.Available {
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	manager, err := sandbox.NewManager(sandbox.Config{Runtime: rt})
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	tool := tools.NewExecuteCodeTool(manager)
+	if tool == nil {
+		report.Error = "execute_code tool did not register"
+		return report
+	}
+	output, err := tool.Execute(ctx, map[string]any{
+		"code":          code,
+		"allow_network": false,
+	})
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	report.Output = output
+	report.OK = true
+	return report
 }
 
 func defaultDebugRunnerPath(runtimeDir string) string {

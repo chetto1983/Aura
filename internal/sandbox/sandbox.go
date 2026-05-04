@@ -14,11 +14,21 @@ import (
 
 // Result holds the output of a sandbox execution.
 type Result struct {
-	OK        bool   `json:"ok"`
-	Stdout    string `json:"stdout"`
-	Stderr    string `json:"stderr"`
-	ExitCode  int    `json:"exit_code"`
-	ElapsedMs int    `json:"elapsed_ms"`
+	OK        bool       `json:"ok"`
+	Stdout    string     `json:"stdout"`
+	Stderr    string     `json:"stderr"`
+	ExitCode  int        `json:"exit_code"`
+	ElapsedMs int        `json:"elapsed_ms"`
+	Artifacts []Artifact `json:"artifacts,omitempty"`
+}
+
+// Artifact is an explicit file emitted by sandbox code from the configured
+// output directory. Runtimes must only populate this for allowlisted paths.
+type Artifact struct {
+	Name      string `json:"name"`
+	MimeType  string `json:"mime_type"`
+	Bytes     []byte `json:"bytes"`
+	SizeBytes int64  `json:"size_bytes"`
 }
 
 // Config controls sandbox behaviour.

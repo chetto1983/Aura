@@ -39,6 +39,9 @@ func TestPyodideRunner_ExecuteSendsProtocolAndSanitizedEnv(t *testing.T) {
 	if !slices.Contains(capture.Request.Packages, "numpy") || !slices.Contains(capture.Request.Packages, "rich") {
 		t.Fatalf("packages = %v, want baseline package profile", capture.Request.Packages)
 	}
+	if !slices.Contains(capture.Request.OutputFileAllowlist, "/tmp/aura_out") {
+		t.Fatalf("output_file_allowlist = %v, want /tmp/aura_out", capture.Request.OutputFileAllowlist)
+	}
 	if !argPair(capture.Args, "--runtime-dir", runtimeDir) {
 		t.Fatalf("args = %v, want --runtime-dir", capture.Args)
 	}
@@ -47,6 +50,40 @@ func TestPyodideRunner_ExecuteSendsProtocolAndSanitizedEnv(t *testing.T) {
 	}
 	if !envContains(capture.Env, "PATH") || !envContains(capture.Env, "TEMP") {
 		t.Fatalf("env missing safe process vars: %v", capture.Env)
+	}
+}
+
+func TestPyodideRunner_ExecuteReturnsArtifacts(t *testing.T) {
+	runner, _ := newFakePyodideRunner(t, "artifact", filepath.Join(t.TempDir(), "capture.json"))
+
+	result, err := runner.Execute(context.Background(), "open('/tmp/aura_out/report.txt','w').write('hello')", false)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(result.Artifacts) != 1 {
+		t.Fatalf("artifacts = %d, want 1: %+v", len(result.Artifacts), result.Artifacts)
+	}
+	artifact := result.Artifacts[0]
+	if artifact.Name != "report.txt" {
+		t.Fatalf("artifact name = %q", artifact.Name)
+	}
+	if artifact.MimeType != "text/plain; charset=utf-8" {
+		t.Fatalf("mime = %q", artifact.MimeType)
+	}
+	if string(artifact.Bytes) != "hello" {
+		t.Fatalf("bytes = %q", string(artifact.Bytes))
+	}
+	if artifact.SizeBytes != 5 {
+		t.Fatalf("size = %d, want 5", artifact.SizeBytes)
+	}
+}
+
+func TestPyodideRunner_ExecuteRejectsArtifactTraversal(t *testing.T) {
+	runner, _ := newFakePyodideRunner(t, "artifact-traversal", filepath.Join(t.TempDir(), "capture.json"))
+
+	_, err := runner.Execute(context.Background(), "open('/tmp/aura_out/../escape.txt','w').write('nope')", false)
+	if err == nil || !strings.Contains(err.Error(), "plain filename") {
+		t.Fatalf("Execute() error = %v, want plain filename rejection", err)
 	}
 }
 
@@ -176,10 +213,11 @@ type fakeRunnerCapture struct {
 }
 
 type fakeRunnerRequestBody struct {
-	Code         string   `json:"code"`
-	TimeoutMS    int      `json:"timeout_ms"`
-	AllowNetwork bool     `json:"allow_network"`
-	Packages     []string `json:"packages"`
+	Code                string   `json:"code"`
+	TimeoutMS           int      `json:"timeout_ms"`
+	AllowNetwork        bool     `json:"allow_network"`
+	Packages            []string `json:"packages"`
+	OutputFileAllowlist []string `json:"output_file_allowlist"`
 }
 
 func readFakeRunnerCapture(t *testing.T, path string) fakeRunnerCapture {
@@ -246,6 +284,12 @@ func TestPyodideRunnerHelperProcess(t *testing.T) {
 	switch mode {
 	case "success":
 		fmt.Print(`{"ok":true,"stdout":"6\n","stderr":"","exit_code":0,"elapsed_ms":7}`)
+		os.Exit(0)
+	case "artifact":
+		fmt.Print(`{"ok":true,"stdout":"made artifact\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"report.txt","mime_type":"text/plain; charset=utf-8","size_bytes":5,"content_base64":"aGVsbG8="}]}`)
+		os.Exit(0)
+	case "artifact-traversal":
+		fmt.Print(`{"ok":true,"stdout":"made artifact\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"../escape.txt","mime_type":"text/plain; charset=utf-8","size_bytes":4,"content_base64":"bm9wZQ=="}]}`)
 		os.Exit(0)
 	case "exit":
 		fmt.Fprint(os.Stderr, "runner boom")

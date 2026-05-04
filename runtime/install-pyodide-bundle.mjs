@@ -283,6 +283,10 @@ function runnerMJS() {
   return `import { loadPyodide } from "../pyodide.mjs";
 import path from "node:path";
 
+const OUTPUT_DIR = "/tmp/aura_out";
+const MAX_ARTIFACTS = 10;
+const MAX_ARTIFACT_BYTES = 5 * 1024 * 1024;
+
 function argValue(name, fallback = "") {
   const idx = process.argv.indexOf(name);
   return idx >= 0 && idx + 1 < process.argv.length ? process.argv[idx + 1] : fallback;
@@ -292,6 +296,53 @@ async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function artifactMime(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".csv")) return "text/csv; charset=utf-8";
+  if (lower.endsWith(".txt") || lower.endsWith(".log") || lower.endsWith(".md")) return "text/plain; charset=utf-8";
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  return "application/octet-stream";
+}
+
+function safeArtifactName(name) {
+  return String(name || "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80);
+}
+
+function ensureOutputDir(pyodide) {
+  const FS = pyodide.FS;
+  if (!FS.analyzePath("/tmp").exists) FS.mkdir("/tmp");
+  if (!FS.analyzePath(OUTPUT_DIR).exists) FS.mkdirTree(OUTPUT_DIR);
+}
+
+function collectArtifacts(pyodide) {
+  const FS = pyodide.FS;
+  if (!FS.analyzePath(OUTPUT_DIR).exists) return [];
+  const names = FS.readdir(OUTPUT_DIR).filter((name) => name !== "." && name !== "..").sort();
+  const artifacts = [];
+  for (const rawName of names) {
+    if (artifacts.length >= MAX_ARTIFACTS) break;
+    const name = safeArtifactName(rawName);
+    if (!name || name !== rawName) continue;
+    const filePath = OUTPUT_DIR + "/" + name;
+    const info = FS.analyzePath(filePath);
+    if (!info.exists || !FS.isFile(info.object.mode)) continue;
+    const bytes = FS.readFile(filePath, { encoding: "binary" });
+    if (bytes.length > MAX_ARTIFACT_BYTES) continue;
+    artifacts.push({
+      name,
+      mime_type: artifactMime(name),
+      size_bytes: bytes.length,
+      content_base64: Buffer.from(bytes).toString("base64"),
+    });
+  }
+  return artifacts;
 }
 
 const started = Date.now();
@@ -314,8 +365,10 @@ try {
   if (packages.length > 0) {
     await pyodide.loadPackage(packages, { messageCallback: () => {}, errorCallback: (msg) => { stderr += msg + "\\n"; } });
   }
+  ensureOutputDir(pyodide);
   await pyodide.runPythonAsync(String(request.code || ""));
-  process.stdout.write(JSON.stringify({ ok: true, stdout, stderr, exit_code: 0, elapsed_ms: Date.now() - started }));
+  const artifacts = collectArtifacts(pyodide);
+  process.stdout.write(JSON.stringify({ ok: true, stdout, stderr, exit_code: 0, elapsed_ms: Date.now() - started, artifacts }));
 } catch (error) {
   process.stdout.write(JSON.stringify({ ok: false, stdout: "", stderr: String(error && error.stack || error), exit_code: 1, elapsed_ms: Date.now() - started }));
 }

@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.7b` Telegram conversation sandbox smoke.
+Last completed slice: `sandbox.pyodide.8` artifact egress through `execute_code`.
 
-Active slice: `sandbox.pyodide.8` artifact return path decision.
+Active slice: `sandbox.pyodide.9` live Telegram artifact delivery smoke.
 
 What is shipped:
 
@@ -84,6 +84,8 @@ What is shipped:
 - Release packaging now rebuilds the ignored Pyodide bundle from pinned inputs, bundles Windows Node under `runtime/pyodide/runner/node-win-x64`, runs `cmd/debug_sandbox --smoke` before archive creation, and includes `runtime/pyodide/**` in GoReleaser archives.
 - `cmd/debug_sandbox --tool-smoke` now exercises the registered `execute_code` tool boundary against the local Pyodide manager and verifies `sum(range(1, 101)) == 5050`.
 - `cmd/debug_telegram_sandbox` now injects a synthetic private Telegram text update into the real Aura bot, uses the live LLM plus real outgoing Telegram messages, verifies the model calls `execute_code`, and fails unless the conversation surfaces `5050`.
+- Sandbox code can return files by writing plain direct-child files under `/tmp/aura_out`; the Pyodide runner collects up to 10 artifacts capped at 5 MiB each, returns base64 artifact payloads over the runner protocol, and `execute_code` delivers them through Telegram documents when invoked with a Telegram user context.
+- `cmd/debug_sandbox --artifact-smoke` now proves artifact egress through the registered `execute_code` boundary by writing `/tmp/aura_out/artifact.txt` in Pyodide and asserting the tool output includes artifact metadata.
 
 Phase 18 status: **closed**.
 
@@ -108,10 +110,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.8` artifact return path decision:
-  - decide how sandbox-created files (plots, CSV/XLSX/PDF outputs) should move from the Pyodide filesystem to Aura sources/Telegram documents;
-  - keep file egress allowlisted and explicit, not broad filesystem access;
-  - add the first narrow artifact smoke once the contract is chosen.
+- `sandbox.pyodide.9` live Telegram artifact delivery smoke:
+  - ask the live LLM to create a small file/plot through `execute_code`;
+  - verify Aura sends the returned sandbox artifact as a Telegram document to the requesting user;
+  - record copy, filename, MIME, and delivery behavior before closing the sandbox milestone.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
 
@@ -238,8 +240,36 @@ Workspace warning:
 | sandbox.pyodide.6 | Release bundle packaging | done | Added a pinned Pyodide bundle installer, release workflow/Goreleaser hooks, archive inclusion for `runtime/pyodide/**`, publish-time `debug_sandbox --smoke`, and config tests for release packaging. |
 | sandbox.pyodide.7 | Registered execute_code smoke | done | Started Aura with the rebuilt local bundle, confirmed authenticated `/api/health` reports `runtime_kind=pyodide` and `available=true`, and added `cmd/debug_sandbox --tool-smoke` to run `sum(range(1, 101))` through the registered `execute_code` tool boundary. |
 | sandbox.pyodide.7b | Telegram conversation sandbox smoke | done | Added `cmd/debug_telegram_sandbox`, a live-LLM Telegram-handler smoke that injects a synthetic private text update, sends real outgoing bot messages, verifies `execute_code` was called, and asserts the conversation surfaced `5050`; also fixed `Bot.Stop` for debug-created bots that never started polling. |
+| sandbox.pyodide.8 | Artifact egress | done | Pyodide code can write direct-child files under `/tmp/aura_out`; the runner returns bounded base64 artifacts, Go decodes them into `sandbox.Artifact`, `execute_code` reports artifact metadata and auto-delivers through Telegram when user context and sender are available, and `cmd/debug_sandbox --artifact-smoke` proves the boundary. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.8 (Artifact egress)
+
+Goal: give sandbox-created files a narrow, explicit return path without broad filesystem access.
+
+Implementation:
+
+- Chose `/tmp/aura_out` as the only output directory for this slice.
+- Added runner protocol support for `output_file_allowlist` plus bounded artifact collection from direct child files only.
+- Added `sandbox.Artifact` on execution results and guarded Go-side decode against traversal names, bad base64, count overflow, size overflow, and size mismatches.
+- Extended `execute_code` to include artifact metadata in tool output and to send returned artifacts through the existing Telegram `DocumentSender` when a Telegram user context is present.
+- Added `cmd/debug_sandbox --artifact-smoke` and runtime docs for the artifact contract.
+
+Verification:
+
+- `go test ./internal/sandbox -run "TestPyodideRunner_Execute(SendsProtocolAndSanitizedEnv|ReturnsArtifacts)" -count=1 -v`
+- `go test ./internal/tools -run TestExecuteCodeTool_DeliversArtifacts -count=1 -v`
+- `go test ./cmd/debug_sandbox -run TestRunExecuteCodeArtifactSmokeRequiresArtifact -count=1 -v`
+- `go test ./internal/sandbox ./internal/tools ./internal/telegram ./cmd/debug_sandbox -count=1`
+- `node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64`
+- `go run ./cmd/debug_sandbox --artifact-smoke`
+- `go run ./cmd/debug_sandbox --tool-smoke`
+- `go run ./cmd/debug_sandbox --smoke`
+
+Known note: the artifact smoke has no Telegram user context, so it correctly reports `delivered=false`; unit coverage verifies delivery when user context and `DocumentSender` are present.
+
+Next slice: `sandbox.pyodide.9` run a live Telegram artifact-delivery smoke where the model creates a small file or plot and Aura sends the document to the requesting user.
 
 ### 2026-05-04 - Sandbox.pyodide.7b (Telegram conversation sandbox smoke)
 

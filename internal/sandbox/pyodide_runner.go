@@ -3,9 +3,11 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +21,9 @@ const (
 	defaultPyodideRunnerTimeout     = 15 * time.Second
 	defaultPyodideRunnerOutputBytes = 1 << 20
 	defaultPyodideResultOutputBytes = 64 * 1024
+	defaultPyodideOutputDir         = "/tmp/aura_out"
+	maxPyodideArtifacts             = 10
+	maxPyodideArtifactBytes         = 5 << 20
 )
 
 // PyodideRunnerConfig controls the bundled Pyodide runner adapter.
@@ -53,12 +58,20 @@ type pyodideRunnerRequest struct {
 }
 
 type pyodideRunnerResponse struct {
-	OK        bool   `json:"ok"`
-	Stdout    string `json:"stdout"`
-	Stderr    string `json:"stderr"`
-	ExitCode  int    `json:"exit_code"`
-	ElapsedMs int    `json:"elapsed_ms"`
-	Error     string `json:"error,omitempty"`
+	OK        bool                      `json:"ok"`
+	Stdout    string                    `json:"stdout"`
+	Stderr    string                    `json:"stderr"`
+	ExitCode  int                       `json:"exit_code"`
+	ElapsedMs int                       `json:"elapsed_ms"`
+	Error     string                    `json:"error,omitempty"`
+	Artifacts []pyodideRunnerArtifactIn `json:"artifacts,omitempty"`
+}
+
+type pyodideRunnerArtifactIn struct {
+	Name          string `json:"name"`
+	MimeType      string `json:"mime_type"`
+	SizeBytes     int64  `json:"size_bytes"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 // NewPyodideRunner creates a runtime adapter for the bundled Pyodide runner.
@@ -172,7 +185,7 @@ func (r *PyodideRunner) Execute(ctx context.Context, code string, allowNetwork b
 		AllowNetwork:        allowNetwork,
 		Packages:            append([]string(nil), RequiredPyodideImports...),
 		InputFiles:          []string{},
-		OutputFileAllowlist: []string{},
+		OutputFileAllowlist: []string{defaultPyodideOutputDir},
 	}
 	requestJSON, err := json.Marshal(request)
 	if err != nil {
@@ -211,13 +224,65 @@ func (r *PyodideRunner) Execute(ctx context.Context, code string, allowNetwork b
 	if response.Error != "" && response.Stderr == "" {
 		response.Stderr = response.Error
 	}
+	artifacts, err := decodePyodideArtifacts(response.Artifacts)
+	if err != nil {
+		return nil, err
+	}
 	return &Result{
 		OK:        response.OK,
 		Stdout:    clipPyodideOutput(response.Stdout, r.maxResultOutputBytes),
 		Stderr:    clipPyodideOutput(response.Stderr, r.maxResultOutputBytes),
 		ExitCode:  response.ExitCode,
 		ElapsedMs: response.ElapsedMs,
+		Artifacts: artifacts,
 	}, nil
+}
+
+func decodePyodideArtifacts(raw []pyodideRunnerArtifactIn) ([]Artifact, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > maxPyodideArtifacts {
+		return nil, fmt.Errorf("sandbox: runner returned %d artifacts, max %d", len(raw), maxPyodideArtifacts)
+	}
+	artifacts := make([]Artifact, 0, len(raw))
+	for i, item := range raw {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			return nil, fmt.Errorf("sandbox: artifact[%d] missing name", i)
+		}
+		if name != filepath.Base(name) || strings.ContainsAny(name, `/\`) {
+			return nil, fmt.Errorf("sandbox: artifact[%d] name must be a plain filename", i)
+		}
+		body, err := base64.StdEncoding.DecodeString(item.ContentBase64)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox: artifact[%d] base64: %w", i, err)
+		}
+		if len(body) > maxPyodideArtifactBytes {
+			return nil, fmt.Errorf("sandbox: artifact[%d] exceeds %d bytes", i, maxPyodideArtifactBytes)
+		}
+		mimeType := strings.TrimSpace(item.MimeType)
+		if mimeType == "" {
+			mimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
+		}
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		size := item.SizeBytes
+		if size == 0 {
+			size = int64(len(body))
+		}
+		if size != int64(len(body)) {
+			return nil, fmt.Errorf("sandbox: artifact[%d] size mismatch", i)
+		}
+		artifacts = append(artifacts, Artifact{
+			Name:      name,
+			MimeType:  mimeType,
+			Bytes:     body,
+			SizeBytes: size,
+		})
+	}
+	return artifacts, nil
 }
 
 func defaultPyodideRunnerPath(runtimeDir string) string {

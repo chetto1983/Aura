@@ -141,6 +141,21 @@ go run ./cmd/debug_sandbox --tool-smoke
 This constructs the Pyodide runner/manager, registers `execute_code`, and checks
 that `sum(range(1, 101))` returns `5050`.
 
+Sandbox code can return files by writing plain files under `/tmp/aura_out`.
+Aura collects only direct child files from that directory, caps artifact count
+and size, decodes them into `execute_code` artifact metadata, and delivers them
+as Telegram documents when the tool call has a Telegram user context.
+
+To test artifact egress through the same `execute_code` tool boundary, run:
+
+```powershell
+go run ./cmd/debug_sandbox --artifact-smoke
+```
+
+The smoke writes `/tmp/aura_out/artifact.txt` in Pyodide, verifies the file is
+returned in the tool output, and reports `delivered=false` because the debug
+harness does not run with a Telegram user sender.
+
 To test the Telegram conversation path with a live LLM and real outgoing
 Telegram messages to the first allowlisted user, run:
 
