@@ -14,12 +14,17 @@ const (
 )
 
 var DefaultAgentJobTools = toolsets.SchedulerSafeTools()
+var AgentJobAllowedTools = appendUniqueStrings(DefaultAgentJobTools, toolsets.MustResolveProfiles(toolsets.ProfileSkillsRead)...)
 
 type AgentJobPayload struct {
-	Goal          string   `json:"goal"`
-	ToolAllowlist []string `json:"tool_allowlist,omitempty"`
-	WritePolicy   string   `json:"write_policy,omitempty"`
-	Notify        *bool    `json:"notify,omitempty"`
+	Goal            string   `json:"goal"`
+	ToolAllowlist   []string `json:"tool_allowlist,omitempty"`
+	EnabledToolsets []string `json:"enabled_toolsets,omitempty"`
+	Skills          []string `json:"skills,omitempty"`
+	ContextFrom     []string `json:"context_from,omitempty"`
+	WakeIfChanged   []string `json:"wake_if_changed,omitempty"`
+	WritePolicy     string   `json:"write_policy,omitempty"`
+	Notify          *bool    `json:"notify,omitempty"`
 }
 
 func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
@@ -39,10 +44,18 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 	if payload.Goal == "" {
 		return AgentJobPayload{}, errors.New("agent_job payload goal required")
 	}
-	payload.ToolAllowlist = cleanUniqueStrings(payload.ToolAllowlist)
-	if len(payload.ToolAllowlist) == 0 {
-		payload.ToolAllowlist = append([]string(nil), DefaultAgentJobTools...)
+	payload.EnabledToolsets = cleanUniqueStrings(payload.EnabledToolsets)
+	payload.Skills = cleanUniqueStrings(payload.Skills)
+	payload.ContextFrom = cleanUniqueStrings(payload.ContextFrom)
+	payload.WakeIfChanged = cleanUniqueStrings(payload.WakeIfChanged)
+	if len(payload.Skills) > 0 && !containsString(payload.EnabledToolsets, toolsets.ProfileSkillsRead) {
+		payload.EnabledToolsets = append(payload.EnabledToolsets, toolsets.ProfileSkillsRead)
 	}
+	tools, err := ResolveAgentJobTools(payload.EnabledToolsets, payload.ToolAllowlist, len(payload.Skills) > 0)
+	if err != nil {
+		return AgentJobPayload{}, err
+	}
+	payload.ToolAllowlist = tools
 	payload.WritePolicy = strings.TrimSpace(payload.WritePolicy)
 	if payload.WritePolicy == "" {
 		payload.WritePolicy = AgentJobWritePolicyProposeOnly
@@ -55,6 +68,49 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 		payload.Notify = &notify
 	}
 	return payload, nil
+}
+
+func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, forceSkillsRead bool) ([]string, error) {
+	enabledToolsets = cleanUniqueStrings(enabledToolsets)
+	requestedTools = cleanUniqueStrings(requestedTools)
+
+	var base []string
+	var err error
+	if len(enabledToolsets) > 0 {
+		base, err = toolsets.ResolveProfiles(enabledToolsets...)
+		if err != nil {
+			return nil, fmt.Errorf("agent_job enabled_toolsets: %w", err)
+		}
+		base = toolsets.FilterAllowed(base, AgentJobAllowedTools)
+	} else {
+		base = append([]string(nil), DefaultAgentJobTools...)
+	}
+	if forceSkillsRead {
+		skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+		if err != nil {
+			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
+		}
+		base = appendUniqueStrings(base, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
+	}
+
+	if len(requestedTools) == 0 {
+		return fallbackAgentJobTools(base), nil
+	}
+	filtered := toolsets.FilterAllowed(requestedTools, base)
+	if forceSkillsRead {
+		skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+		if err != nil {
+			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
+		}
+		filtered = appendUniqueStrings(filtered, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
+	}
+	if len(filtered) == 0 {
+		if len(enabledToolsets) > 0 {
+			return nil, errors.New("agent_job tool_allowlist has no tools allowed by enabled_toolsets")
+		}
+		return fallbackAgentJobTools(base), nil
+	}
+	return fallbackAgentJobTools(filtered), nil
 }
 
 func (p AgentJobPayload) JSON() (string, error) {
@@ -86,4 +142,36 @@ func cleanUniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func appendUniqueStrings(out []string, values ...string) []string {
+	seen := make(map[string]bool, len(out)+len(values))
+	for _, value := range out {
+		seen[value] = true
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func fallbackAgentJobTools(values []string) []string {
+	if len(values) == 0 {
+		return append([]string(nil), DefaultAgentJobTools...)
+	}
+	return append([]string(nil), values...)
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

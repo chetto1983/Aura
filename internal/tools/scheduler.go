@@ -124,7 +124,7 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "Task body. For reminder: message text. For wiki_maintenance: ignored. For agent_job: the goal to run, or JSON with goal/tool_allowlist/write_policy.",
+				"description": "Task body. For reminder: message text. For wiki_maintenance: ignored. For agent_job: the goal to run, or JSON with goal, enabled_toolsets, skills, context_from, wake_if_changed, tool_allowlist, write_policy, notify. Prefer enabled_toolsets over raw tool_allowlist.",
 			},
 			"in": map[string]any{
 				"type":        "string",

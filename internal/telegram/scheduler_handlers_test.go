@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,82 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	}
 }
 
+func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
+	fake := &schedulerFakeLLM{}
+	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, name := range []string{
+		"search_memory",
+		"list_wiki",
+		"read_wiki",
+		"list_skills",
+		"read_skill",
+		"search_skill_catalog",
+		"web_search",
+	} {
+		reg.Register(schedulerFakeTool{name: name})
+	}
+	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	notify := false
+	payload, err := scheduler.AgentJobPayload{
+		Goal:            "Review daily memory drift",
+		EnabledToolsets: []string{"memory_read"},
+		Skills:          []string{"aura-implementation"},
+		ContextFrom:     []string{"[[memory-philosophy]]"},
+		WakeIfChanged:   []string{"wiki:memory-philosophy"},
+		Notify:          &notify,
+	}.JSON()
+	if err != nil {
+		t.Fatalf("payload JSON: %v", err)
+	}
+	b := &Bot{
+		agentRunner: runner,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	err = b.dispatchTask(t.Context(), &scheduler.Task{
+		Name:        "agent-skilled",
+		Kind:        scheduler.KindAgentJob,
+		Payload:     payload,
+		RecipientID: "123",
+	})
+	if err != nil {
+		t.Fatalf("dispatchTask: %v", err)
+	}
+	if len(fake.reqs) != 1 {
+		t.Fatalf("LLM calls = %d, want 1", len(fake.reqs))
+	}
+	req := fake.reqs[0]
+	if len(req.Messages) < 2 {
+		t.Fatalf("messages = %+v", req.Messages)
+	}
+	system := req.Messages[0].Content
+	user := req.Messages[1].Content
+	for _, want := range []string{"skill-backed", "wake_if_changed"} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, system)
+		}
+	}
+	for _, want := range []string{"Attached skills: aura-implementation", "Context anchors: [[memory-philosophy]]", "Wake-if-changed signals: wiki:memory-philosophy"} {
+		if !strings.Contains(user, want) {
+			t.Fatalf("user prompt missing %q:\n%s", want, user)
+		}
+	}
+	var names []string
+	for _, def := range req.Tools {
+		names = append(names, def.Name)
+	}
+	for _, want := range []string{"search_memory", "read_skill"} {
+		if !containsTestString(names, want) {
+			t.Fatalf("tool %q missing from allowlist: %+v", want, names)
+		}
+	}
+	if containsTestString(names, "web_search") {
+		t.Fatalf("web_search should not be enabled by memory_read toolset: %+v", names)
+	}
+}
+
 func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	fake := &schedulerFakeLLM{}
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -156,4 +233,13 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 			t.Fatalf("forbidden tool leaked into run_task_now allowlist: %#v", names)
 		}
 	}
+}
+
+func containsTestString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

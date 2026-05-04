@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19d` named toolset profiles.
+Last completed slice: `19e` skill/context-backed agent jobs.
 
 What is shipped:
 
@@ -61,6 +61,7 @@ What is shipped:
 - Wiki search now embeds graph node cards and category index cards alongside page bodies, exposing `graph_node` / `graph_index` evidence through `search_memory`.
 - Aura tool allowlists now live in `internal/toolsets` as named profiles (`memory_read`, `wiki_review`, `skills_read`, `web_research`, `scheduler_safe`) plus shared AuraBot role presets.
 - Scheduled `agent_job` defaults use the `scheduler_safe` profile and continue to filter out recursive/dangerous tools such as `schedule_task`, `run_task_now`, `spawn_aurabot`, `run_aurabot_swarm`, `execute_code`, and `save_tool`.
+- Scheduled `agent_job` payloads now support `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; toolsets define the allowed perimeter, raw allowlists can only narrow it, and skill-backed jobs automatically get skill-read tools.
 
 Phase 18 status: **closed**.
 
@@ -85,11 +86,11 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19e: skill/context-backed scheduled agent jobs:
-  - extend `agent_job` payloads with `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`;
-  - resolve `enabled_toolsets` through `internal/toolsets` instead of raw tool names;
-  - keep write policy propose-only by default;
-  - add a natural prompt/debug check that proves the agent uses memory context first and does not wait hours on broad goals.
+- Phase 19f: persisted agent-job outputs and real no-op gates:
+  - store compact last output refs/metrics for scheduled `agent_job` runs;
+  - turn `wake_if_changed` from a prompt-level precheck into a deterministic hash/signature gate where possible;
+  - let `context_from` consume prior job outputs by task name;
+  - keep notifications concise and skip work when no monitored signal changed.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
@@ -198,9 +199,36 @@ Workspace warning:
 | 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
 | 19c | Graph-aware semantic index | done | Wiki indexing now embeds compact graph node cards and category/global index cards alongside page bodies; `search_memory` exposes graph evidence without turning embeddings into durable memory. |
 | 19d | Named toolset profiles | done | `internal/toolsets` centralizes profiles and role presets; scheduler and AuraBot swarm now reuse the same catalog and keep recursive/dangerous tools out of scheduled jobs. |
-| 19e | Skill/context-backed agent jobs | planned | Add `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed` to scheduled routines while preserving propose-only defaults. |
+| 19e | Skill/context-backed agent jobs | done | `agent_job` payloads now normalize `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; runtime prompts guide skill reads, memory-first context, and no-op prechecks. |
+| 19f | Agent-job outputs and wake gates | planned | Persist compact run outputs/metrics and make `wake_if_changed` a deterministic skip gate where possible. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19e (Skill/context-backed agent jobs)
+
+Goal: make scheduled routines more procedural and cheaper to run without granting broad tools or direct mutation.
+
+Implementation:
+
+- Extended `scheduler.AgentJobPayload` with:
+  - `enabled_toolsets`
+  - `skills`
+  - `context_from`
+  - `wake_if_changed`
+- `enabled_toolsets` now resolve through `internal/toolsets`; unknown profiles fail normalization.
+- `tool_allowlist` can narrow the selected toolsets, but it cannot expand outside the selected profile perimeter.
+- Skill-backed jobs automatically enable `skills_read` tools so the runner can inspect attached `SKILL.md` files via `read_skill`.
+- Runtime agent-job prompts now include compact sections for attached skills, context anchors, and wake-if-changed signals.
+- `wake_if_changed` is currently a prompt-level no-op precheck: the agent checks those signals first and should stop quickly when there is no material change. A deterministic skip gate is left for 19f.
+- `schedule_task` now documents the structured JSON payload shape so the LLM can schedule richer `agent_job` routines naturally.
+
+Verification:
+
+- `go test ./internal/scheduler ./internal/telegram ./internal/tools ./internal/toolsets`
+- `staticcheck ./internal/scheduler ./internal/telegram ./internal/tools ./internal/toolsets`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Next slice: 19f, persist compact agent-job outputs/metrics and convert `wake_if_changed` into deterministic skip gates where Aura has stable signals.
 
 ### 2026-05-04 - Slice 19d (Named toolset profiles)
 

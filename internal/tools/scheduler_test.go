@@ -240,6 +240,52 @@ func TestScheduleTaskTool_AgentJob(t *testing.T) {
 	}
 }
 
+func TestScheduleTaskTool_AgentJobStructuredPayload(t *testing.T) {
+	store := newTestSchedStore(t)
+	tool := NewScheduleTaskTool(store, time.UTC)
+	ctx := WithUserID(t.Context(), "12345")
+
+	payloadJSON := `{
+		"goal":"Check daily project memory drift",
+		"enabled_toolsets":["memory_read"],
+		"skills":["aura-implementation"],
+		"context_from":["[[memory-philosophy]]"],
+		"wake_if_changed":["wiki:memory-philosophy"],
+		"tool_allowlist":["search_memory","web_search"]
+	}`
+	_, err := tool.Execute(ctx, map[string]any{
+		"name":          "memory-drift-watch",
+		"kind":          "agent_job",
+		"payload":       payloadJSON,
+		"every_minutes": float64(1440),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, err := store.GetByName(ctx, "memory-drift-watch")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	payload, err := scheduler.NormalizeAgentJobPayload(got.Payload)
+	if err != nil {
+		t.Fatalf("NormalizeAgentJobPayload: %v", err)
+	}
+	if payload.Goal != "Check daily project memory drift" {
+		t.Fatalf("goal = %q", payload.Goal)
+	}
+	if strings.Contains(strings.Join(payload.ToolAllowlist, ","), "web_search") {
+		t.Fatalf("web_search should be filtered by memory_read toolset: %+v", payload.ToolAllowlist)
+	}
+	for _, want := range []string{"search_memory", "read_skill"} {
+		if !containsSchedTestString(payload.ToolAllowlist, want) {
+			t.Fatalf("missing %q in allowlist: %+v", want, payload.ToolAllowlist)
+		}
+	}
+	if !containsSchedTestString(payload.EnabledToolsets, "skills_read") {
+		t.Fatalf("skills_read should be auto-enabled for skill-backed jobs: %+v", payload.EnabledToolsets)
+	}
+}
+
 func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 	store := newTestSchedStore(t)
 	tool := NewScheduleTaskTool(store, time.UTC)
@@ -309,6 +355,15 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func containsSchedTestString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func TestScheduleTaskTool_RelativeIn(t *testing.T) {

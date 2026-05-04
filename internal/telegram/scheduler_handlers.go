@@ -115,8 +115,8 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 	}
 	allowlist := safeAgentJobTools(payload.ToolAllowlist)
 	result, err := b.agentRunner.Run(ctx, agent.Task{
-		SystemPrompt:  agentJobSystemPrompt(payload.WritePolicy),
-		Prompt:        payload.Goal,
+		SystemPrompt:  agentJobSystemPrompt(payload),
+		Prompt:        agentJobPrompt(payload),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
 		Temperature:   llm.Float64Ptr(0),
@@ -210,12 +210,37 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 	}, nil
 }
 
-func agentJobSystemPrompt(writePolicy string) string {
-	return "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + writePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory growth is useful, use propose_wiki_change so the user can review it. Return a short report with what you checked, any proposal created, and unresolved issues."
+func agentJobSystemPrompt(payload scheduler.AgentJobPayload) string {
+	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory growth is useful, use propose_wiki_change so the user can review it. If reusable procedural knowledge is useful, use propose_skill_change so the user can review it. Return a short report with what you checked, any proposal created, and unresolved issues."
+	if len(payload.Skills) > 0 {
+		prompt += " This job is skill-backed: inspect attached skills with read_skill when available before applying their procedures."
+	}
+	if len(payload.WakeIfChanged) > 0 {
+		prompt += " Respect wake_if_changed as a no-op guard: check those signals first and finish quickly with no proposal if there is no material change."
+	}
+	return prompt
+}
+
+func agentJobPrompt(payload scheduler.AgentJobPayload) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Goal: %s", payload.Goal)
+	if len(payload.EnabledToolsets) > 0 {
+		fmt.Fprintf(&sb, "\n\nEnabled toolsets: %s", strings.Join(payload.EnabledToolsets, ", "))
+	}
+	if len(payload.Skills) > 0 {
+		fmt.Fprintf(&sb, "\n\nAttached skills: %s\nUse read_skill on these names before relying on their procedures. Do not install, delete, or edit skills directly.", strings.Join(payload.Skills, ", "))
+	}
+	if len(payload.ContextFrom) > 0 {
+		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets, preferably via search_memory or narrow read tools before broad web/tool use.", strings.Join(payload.ContextFrom, ", "))
+	}
+	if len(payload.WakeIfChanged) > 0 {
+		fmt.Fprintf(&sb, "\n\nWake-if-changed signals: %s\nBefore doing the full routine, check whether these signals changed materially. If not, return a concise no-change report and stop.", strings.Join(payload.WakeIfChanged, ", "))
+	}
+	return sb.String()
 }
 
 func safeAgentJobTools(requested []string) []string {
-	out := toolsets.FilterAllowed(requested, scheduler.DefaultAgentJobTools)
+	out := toolsets.FilterAllowed(requested, scheduler.AgentJobAllowedTools)
 	if len(out) == 0 {
 		return append([]string(nil), scheduler.DefaultAgentJobTools...)
 	}
