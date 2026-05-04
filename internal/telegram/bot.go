@@ -179,18 +179,21 @@ func (b *Bot) Start() {
 	b.bot.Start()
 }
 
-// Stop gracefully stops the bot and the scheduler.
+// Stop gracefully stops update intake and waits for background workers.
 func (b *Bot) Stop() {
-	if b.archiver != nil {
-		_ = b.archiver.Close(context.Background())
+	if b.bot != nil && b.started.Load() {
+		b.bot.Stop()
 	}
 	if b.sched != nil {
 		b.sched.Stop()
 	}
+	if b.docs != nil {
+		b.docs.Stop()
+	}
+	if b.archiver != nil {
+		_ = b.archiver.Close(context.Background())
+	}
 	for _, c := range b.mcpClients {
 		_ = c.Close()
-	}
-	if b.bot != nil && b.started.Load() {
-		b.bot.Stop()
 	}
 }

@@ -43,6 +43,7 @@ type Scheduler struct {
 	mu      sync.Mutex
 	running bool
 	cancel  context.CancelFunc
+	done    chan struct{}
 }
 
 func New(cfg Config) (*Scheduler, error) {
@@ -90,29 +91,54 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.running = true
 	loopCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	done := make(chan struct{})
+	s.done = done
 	s.mu.Unlock()
 
-	go s.run(loopCtx)
+	go s.run(loopCtx, done)
 }
 
-// Stop cancels the tick loop. Returns immediately; in-flight dispatches
-// continue until ctx hands them a cancellation.
+// Stop cancels the tick loop and waits for any in-flight tick work to return.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if !s.running {
+		s.mu.Unlock()
 		return
 	}
+	cancel := s.cancel
+	done := s.done
 	if s.cancel != nil {
-		s.cancel()
+		cancel()
 	}
-	s.running = false
+	s.mu.Unlock()
+
+	if done != nil {
+		<-done
+	}
+
+	s.mu.Lock()
+	if s.done == done {
+		s.running = false
+		s.cancel = nil
+		s.done = nil
+	}
+	s.mu.Unlock()
 }
 
-func (s *Scheduler) run(ctx context.Context) {
+func (s *Scheduler) run(ctx context.Context, done chan struct{}) {
 	s.logger.Info("scheduler started", "tick", s.tick)
 	t := time.NewTicker(s.tick)
-	defer t.Stop()
+	defer func() {
+		t.Stop()
+		s.mu.Lock()
+		if s.done == done {
+			s.running = false
+			s.cancel = nil
+			s.done = nil
+		}
+		s.mu.Unlock()
+		close(done)
+	}()
 
 	// One immediate tick on startup so tasks that came due while the bot
 	// was offline fire as soon as we boot.

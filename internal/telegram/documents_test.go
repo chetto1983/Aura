@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -163,5 +164,48 @@ func TestPluralS(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("pluralS(%d) = %q, want %q", tc.n, got, tc.want)
 		}
+	}
+}
+
+func TestDocHandlerStopWaitsForInFlightWorker(t *testing.T) {
+	h := newDocHandler(docHandlerConfig{})
+
+	workerStarted := make(chan struct{})
+	releaseWorker := make(chan struct{})
+	var workerDone atomic.Bool
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		close(workerStarted)
+		<-releaseWorker
+		workerDone.Store(true)
+	}()
+
+	select {
+	case <-workerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		h.Stop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned before document worker completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseWorker)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return after document worker completed")
+	}
+	if !workerDone.Load() {
+		t.Fatal("worker did not complete before Stop returned")
 	}
 }

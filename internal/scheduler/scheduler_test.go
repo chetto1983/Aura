@@ -736,9 +736,62 @@ func TestScheduler_PicksUpStaleTaskAfterRestart(t *testing.T) {
 func TestScheduler_StopIsIdempotent(t *testing.T) {
 	store := newTestStore(t)
 	s, _ := New(Config{Store: store, Dispatcher: noopDispatcher, TickInterval: 100 * time.Millisecond})
+	s.Stop() // before Start must be safe
 	s.Start(context.Background())
 	s.Stop()
 	s.Stop() // second call must not panic
+}
+
+func TestScheduler_StopWaitsForInFlightDispatch(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	dueAt := time.Now().UTC().Add(-time.Minute)
+	mustUpsert(t, store, &Task{
+		Name: "blocking-dispatch", Kind: KindReminder,
+		ScheduleKind: ScheduleAt, ScheduleAt: dueAt, NextRunAt: dueAt,
+	})
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	dispatcher := func(context.Context, *Task) error {
+		close(entered)
+		<-release
+		return nil
+	}
+	s, err := New(Config{
+		Store:        store,
+		Dispatcher:   dispatcher,
+		TickInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s.Start(ctx)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		s.Stop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned before in-flight dispatcher completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return after dispatcher completed")
+	}
 }
 
 func TestNew_RejectsMissingDeps(t *testing.T) {

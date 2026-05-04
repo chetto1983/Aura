@@ -56,12 +56,15 @@ type docHandler struct {
 	logger    *slog.Logger
 	sem       chan struct{}
 	wg        sync.WaitGroup // tracks in-flight workers for graceful shutdown
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func newDocHandler(cfg docHandlerConfig) *docHandler {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &docHandler{
 		bot:       cfg.Bot,
 		sources:   cfg.Sources,
@@ -71,7 +74,20 @@ func newDocHandler(cfg docHandlerConfig) *docHandler {
 		allowed:   cfg.Allowlist,
 		logger:    cfg.Logger,
 		sem:       make(chan struct{}, docConcurrencyLimit),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
+}
+
+// Stop cancels queued/running document work and waits for all workers to exit.
+func (h *docHandler) Stop() {
+	if h == nil {
+		return
+	}
+	if h.cancel != nil {
+		h.cancel()
+	}
+	h.wg.Wait()
 }
 
 // onDocument is a Telegram tele.Handler. Validates synchronously, sends the
@@ -108,7 +124,7 @@ func (h *docHandler) onDocument(c tele.Context) error {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		h.process(context.Background(), userID, doc, progress)
+		h.process(h.ctx, userID, doc, progress)
 	}()
 	return nil
 }
@@ -117,7 +133,11 @@ func (h *docHandler) onDocument(c tele.Context) error {
 // progress message; failures replace its text with a single-line error.
 func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Document, progress *tele.Message) {
 	// Bounded concurrency: queue if 2 jobs already in flight.
-	h.sem <- struct{}{}
+	select {
+	case h.sem <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
 	defer func() { <-h.sem }()
 
 	editor := newProgressEditor(h.bot, progress, h.logger)
