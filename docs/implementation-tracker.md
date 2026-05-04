@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19e` skill/context-backed agent jobs.
+Last completed slice: `19f` persisted agent-job outputs and wake gates.
 
 What is shipped:
 
@@ -62,6 +62,9 @@ What is shipped:
 - Aura tool allowlists now live in `internal/toolsets` as named profiles (`memory_read`, `wiki_review`, `skills_read`, `web_research`, `scheduler_safe`) plus shared AuraBot role presets.
 - Scheduled `agent_job` defaults use the `scheduler_safe` profile and continue to filter out recursive/dangerous tools such as `schedule_task`, `run_task_now`, `spawn_aurabot`, `run_aurabot_swarm`, `execute_code`, and `save_tool`.
 - Scheduled `agent_job` payloads now support `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; toolsets define the allowed perimeter, raw allowlists can only narrow it, and skill-backed jobs automatically get skill-read tools.
+- Scheduled `agent_job` runs now persist compact `last_output`, JSON metrics, and a deterministic `wake_signature`.
+- `wake_if_changed` can skip the LLM call entirely when stable wiki/source/task signals have not changed.
+- `context_from` can include prior scheduled-task outputs by task name, so recurring routines continue from their last useful result instead of restarting cold.
 
 Phase 18 status: **closed**.
 
@@ -86,11 +89,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- Phase 19f: persisted agent-job outputs and real no-op gates:
-  - store compact last output refs/metrics for scheduled `agent_job` runs;
-  - turn `wake_if_changed` from a prompt-level precheck into a deterministic hash/signature gate where possible;
-  - let `context_from` consume prior job outputs by task name;
-  - keep notifications concise and skip work when no monitored signal changed.
+- Phase 19g: scheduled-routine E2E harness:
+  - create a small debug command that schedules a skill-backed `agent_job`, runs it twice, and asserts the second run skips when `wake_if_changed` is unchanged;
+  - mutate a monitored wiki page/source signal and prove the next run executes again;
+  - report LLM calls, tool calls, tokens, elapsed time, skipped status, and persisted output so usefulness and latency stay visible.
 
 Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
@@ -200,9 +202,36 @@ Workspace warning:
 | 19c | Graph-aware semantic index | done | Wiki indexing now embeds compact graph node cards and category/global index cards alongside page bodies; `search_memory` exposes graph evidence without turning embeddings into durable memory. |
 | 19d | Named toolset profiles | done | `internal/toolsets` centralizes profiles and role presets; scheduler and AuraBot swarm now reuse the same catalog and keep recursive/dangerous tools out of scheduled jobs. |
 | 19e | Skill/context-backed agent jobs | done | `agent_job` payloads now normalize `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; runtime prompts guide skill reads, memory-first context, and no-op prechecks. |
-| 19f | Agent-job outputs and wake gates | planned | Persist compact run outputs/metrics and make `wake_if_changed` a deterministic skip gate where possible. |
+| 19f | Agent-job outputs and wake gates | done | Scheduled `agent_job` runs persist compact output/metrics/signature, deterministic wiki/source/task wake gates can skip LLM calls, and `context_from` can include prior task outputs. |
+| 19g | Scheduled-routine E2E harness | planned | Add a debug harness proving run -> skip -> mutate -> rerun behavior with real metrics. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19f (Agent-job outputs and wake gates)
+
+Goal: make scheduled routines cheaper and more continuous, so recurring work does not spend tokens rereading unchanged context.
+
+Implementation:
+
+- Added `last_output`, `last_metrics_json`, and `wake_signature` columns to `scheduled_tasks`, with an idempotent migration for existing databases.
+- Added `RecordAgentJobResult` and preserved result fields across normal task upserts, so editing a schedule does not erase the last useful run.
+- `dispatchAgentJob` and `run_task_now` now persist compact output and run metrics after each execution.
+- `wake_if_changed` now computes deterministic signatures for stable signals:
+  - `wiki:<slug>` and `[[slug]]`
+  - `source:<src_id>`
+  - `task:<name>` / `agent_job:<name>`
+- When the stored signature matches the current signature, Aura skips the LLM call and records a concise skipped result.
+- `context_from` can reference prior task outputs with `task:<name>`, `agent_job:<name>`, or a bare task name; the compact prior output is injected into the next prompt.
+- `list_tasks`, `run_task_now`, `/api/tasks`, and the frontend task type now expose the persisted agent-job result data where relevant.
+
+Verification:
+
+- `go test ./internal/scheduler ./internal/telegram ./internal/tools ./internal/api`
+- `staticcheck ./internal/scheduler ./internal/telegram ./internal/tools ./internal/api`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+- `npm run lint` (from `web/`)
+
+Next slice: 19g, add a scheduled-routine E2E/debug harness that proves run -> skip -> mutate -> rerun with LLM/tool/token/latency metrics.
 
 ### 2026-05-04 - Slice 19e (Skill/context-backed agent jobs)
 

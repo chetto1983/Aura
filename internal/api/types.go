@@ -165,6 +165,9 @@ type Task struct {
 	NextRunAt            time.Time  `json:"next_run_at"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	LastError            string     `json:"last_error,omitempty"`
+	LastOutput           string     `json:"last_output,omitempty"`
+	LastMetricsJSON      string     `json:"last_metrics_json,omitempty"`
+	WakeSignature        string     `json:"wake_signature,omitempty"`
 	Status               string     `json:"status"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`

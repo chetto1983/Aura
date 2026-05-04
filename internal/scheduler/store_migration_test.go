@@ -96,4 +96,9 @@ CREATE TABLE scheduled_tasks (
 	if !cols["schedule_weekdays"] {
 		t.Fatal("missing migrated schedule_weekdays column")
 	}
+	for _, col := range []string{"last_output", "last_metrics_json", "wake_signature"} {
+		if !cols[col] {
+			t.Fatalf("missing migrated column %q", col)
+		}
+	}
 }

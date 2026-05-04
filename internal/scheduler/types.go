@@ -73,6 +73,9 @@ type Task struct {
 	NextRunAt            time.Time // UTC
 	LastRunAt            time.Time // zero until first fire
 	LastError            string    // set when the dispatcher returns an error
+	LastOutput           string    // compact last agent_job output, if any
+	LastMetricsJSON      string    // compact JSON metrics for the last agent_job run
+	WakeSignature        string    // deterministic signature used by wake_if_changed gates
 	Status               Status
 	CreatedAt            time.Time
 	UpdatedAt            time.Time

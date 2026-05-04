@@ -368,6 +368,51 @@ func TestStore_RecordManualRunPreservesSchedule(t *testing.T) {
 	}
 }
 
+func TestStore_RecordAgentJobResultPreservesAcrossUpsert(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	next := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	task, err := store.Upsert(ctx, &Task{
+		Name:                 "agent-output",
+		Kind:                 KindAgentJob,
+		Payload:              "check memory",
+		ScheduleKind:         ScheduleEvery,
+		ScheduleEveryMinutes: 60,
+		NextRunAt:            next,
+	})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.RecordAgentJobResult(ctx, task.ID, "short report", `{"llm_calls":1}`, "sig-1"); err != nil {
+		t.Fatalf("RecordAgentJobResult: %v", err)
+	}
+	got, err := store.GetByName(ctx, "agent-output")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.LastOutput != "short report" || got.LastMetricsJSON != `{"llm_calls":1}` || got.WakeSignature != "sig-1" {
+		t.Fatalf("agent job result fields = %+v", got)
+	}
+
+	if _, err := store.Upsert(ctx, &Task{
+		Name:                 "agent-output",
+		Kind:                 KindAgentJob,
+		Payload:              "updated goal",
+		ScheduleKind:         ScheduleEvery,
+		ScheduleEveryMinutes: 30,
+		NextRunAt:            next.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("second Upsert: %v", err)
+	}
+	got, err = store.GetByName(ctx, "agent-output")
+	if err != nil {
+		t.Fatalf("GetByName after upsert: %v", err)
+	}
+	if got.LastOutput != "short report" || got.LastMetricsJSON != `{"llm_calls":1}` || got.WakeSignature != "sig-1" {
+		t.Fatalf("agent job result was not preserved across upsert: %+v", got)
+	}
+}
+
 func TestStore_List(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

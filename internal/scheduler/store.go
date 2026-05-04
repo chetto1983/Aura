@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     next_run_at            TEXT NOT NULL,
     last_run_at            TEXT,
     last_error             TEXT NOT NULL DEFAULT '',
+    last_output            TEXT NOT NULL DEFAULT '',
+    last_metrics_json      TEXT NOT NULL DEFAULT '',
+    wake_signature         TEXT NOT NULL DEFAULT '',
     status                 TEXT NOT NULL DEFAULT 'active',
     created_at             TEXT NOT NULL,
     updated_at             TEXT NOT NULL
@@ -159,6 +162,9 @@ func (s *Store) migrate() error {
 	}
 	if err := addScheduleWeekdaysColumn(s.db); err != nil {
 		return fmt.Errorf("scheduler migrate schedule_weekdays: %w", err)
+	}
+	if err := addAgentJobResultColumns(s.db); err != nil {
+		return fmt.Errorf("scheduler migrate agent job result columns: %w", err)
 	}
 	if err := dropLegacyConversations(s.db); err != nil {
 		return fmt.Errorf("scheduler drop legacy conversations: %w", err)
@@ -252,6 +258,22 @@ func addScheduleWeekdaysColumn(db *sql.DB) error {
 	return err
 }
 
+func addAgentJobResultColumns(db *sql.DB) error {
+	cols, err := tableInfoColumns(db, "scheduled_tasks")
+	if err != nil {
+		return err
+	}
+	for _, col := range []string{"last_output", "last_metrics_json", "wake_signature"} {
+		if cols[col] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // dropLegacyConversations removes a pre-Phase-12 `conversations` table that
 // older builds created in internal/search/sqlite.go (since deleted). Detected
 // by the absence of a chat_id column. Existing data was never written or read,
@@ -314,8 +336,9 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 		INSERT INTO scheduled_tasks
 			(name, kind, payload, recipient_id, schedule_kind, schedule_at, schedule_daily,
 			 schedule_weekdays, schedule_every_minutes,
-			 next_run_at, last_run_at, last_error, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 next_run_at, last_run_at, last_error, last_output, last_metrics_json,
+			 wake_signature, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			kind                   = excluded.kind,
 			payload                = excluded.payload,
@@ -333,6 +356,7 @@ func (s *Store) Upsert(ctx context.Context, t *Task) (*Task, error) {
 		t.Name, string(t.Kind), t.Payload, t.RecipientID, string(t.ScheduleKind),
 		scheduleAt, scheduleDaily, t.ScheduleWeekdays, t.ScheduleEveryMinutes,
 		t.NextRunAt.UTC().Format(time.RFC3339), lastRunAt, t.LastError,
+		t.LastOutput, t.LastMetricsJSON, t.WakeSignature,
 		string(t.Status), t.CreatedAt.UTC().Format(time.RFC3339), t.UpdatedAt.UTC().Format(time.RFC3339),
 	); err != nil {
 		return nil, fmt.Errorf("scheduler upsert: %w", err)
@@ -440,6 +464,25 @@ func (s *Store) RecordManualRun(ctx context.Context, id int64, lastRun time.Time
 	)
 	if err != nil {
 		return fmt.Errorf("scheduler record manual run: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RecordAgentJobResult(ctx context.Context, id int64, output, metricsJSON, wakeSignature string) error {
+	const q = `
+		UPDATE scheduled_tasks
+		SET last_output = ?, last_metrics_json = ?, wake_signature = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := s.db.ExecContext(ctx, q,
+		output,
+		metricsJSON,
+		wakeSignature,
+		time.Now().UTC().Format(time.RFC3339),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("scheduler record agent job result: %w", err)
 	}
 	return nil
 }
@@ -552,7 +595,8 @@ func nullStringFromTask(t *Task) sql.NullString {
 
 const selectColumns = `id, name, kind, payload, recipient_id, schedule_kind,
 	schedule_at, schedule_daily, schedule_weekdays, schedule_every_minutes,
-	next_run_at, last_run_at, last_error, status,
+	next_run_at, last_run_at, last_error, last_output, last_metrics_json,
+	wake_signature, status,
 	created_at, updated_at`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows so scanTask can
@@ -578,7 +622,8 @@ func scanTask(r rowScanner) (*Task, error) {
 	if err := r.Scan(
 		&t.ID, &t.Name, &kindRaw, &t.Payload, &t.RecipientID, &scheduleKind,
 		&scheduleAt, &scheduleDaily, &scheduleDays, &t.ScheduleEveryMinutes,
-		&nextRun, &lastRunAt, &t.LastError, &statusRaw,
+		&nextRun, &lastRunAt, &t.LastError, &t.LastOutput, &t.LastMetricsJSON,
+		&t.WakeSignature, &statusRaw,
 		&createdAt, &updatedAt,
 	); err != nil {
 		return nil, err

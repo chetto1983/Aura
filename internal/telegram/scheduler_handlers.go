@@ -2,10 +2,13 @@ package telegram
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -88,6 +91,7 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 func (b *Bot) dispatchAgentJob(ctx context.Context, task *scheduler.Task) error {
 	run, err := b.runAgentJob(ctx, task)
 	b.logAgentJobRun(task, run)
+	b.persistAgentJobResult(ctx, task, run)
 	if err != nil {
 		return err
 	}
@@ -106,6 +110,18 @@ type agentJobRun struct {
 	ToolAllowlist []string
 	Result        agent.Result
 	Notified      bool
+	Skipped       bool
+	WakeSignature string
+}
+
+type agentJobMetrics struct {
+	Skipped          bool  `json:"skipped"`
+	LLMCalls         int   `json:"llm_calls"`
+	ToolCalls        int   `json:"tool_calls"`
+	TokensPrompt     int   `json:"tokens_prompt"`
+	TokensCompletion int   `json:"tokens_completion"`
+	TokensTotal      int   `json:"tokens_total"`
+	ElapsedMS        int64 `json:"elapsed_ms"`
 }
 
 func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRun, error) {
@@ -117,14 +133,24 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 		return agentJobRun{}, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
 	allowlist := safeAgentJobTools(payload.ToolAllowlist)
+	wakeSignature, hasWakeSignature := b.agentJobWakeSignature(ctx, payload)
+	if hasWakeSignature && task.WakeSignature != "" && task.WakeSignature == wakeSignature {
+		return agentJobRun{
+			Payload:       payload,
+			ToolAllowlist: allowlist,
+			Result:        agent.Result{Content: "Agent job skipped: wake_if_changed signals unchanged."},
+			Skipped:       true,
+			WakeSignature: wakeSignature,
+		}, nil
+	}
 	result, err := b.agentRunner.Run(ctx, agent.Task{
 		SystemPrompt:  agentJobSystemPrompt(payload),
-		Prompt:        agentJobPrompt(payload),
+		Prompt:        b.agentJobPrompt(ctx, payload),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
 		Temperature:   llm.Float64Ptr(0),
 	})
-	run := agentJobRun{Payload: payload, ToolAllowlist: allowlist, Result: result}
+	run := agentJobRun{Payload: payload, ToolAllowlist: allowlist, Result: result, WakeSignature: wakeSignature}
 	if err != nil {
 		return run, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
@@ -135,6 +161,7 @@ func (b *Bot) logAgentJobRun(task *scheduler.Task, run agentJobRun) {
 	b.logger.Info("agent job complete",
 		"name", task.Name,
 		"recipient_id", task.RecipientID,
+		"skipped", run.Skipped,
 		"llm_calls", run.Result.LLMCalls,
 		"tool_calls", run.Result.ToolCalls,
 		"tokens_prompt", run.Result.Tokens.PromptTokens,
@@ -142,6 +169,32 @@ func (b *Bot) logAgentJobRun(task *scheduler.Task, run agentJobRun) {
 		"tokens_total", run.Result.Tokens.TotalTokens,
 		"elapsed_ms", run.Result.Elapsed.Milliseconds(),
 	)
+}
+
+func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, run agentJobRun) {
+	if b.schedDB == nil || task == nil || task.ID == 0 {
+		return
+	}
+	if run.Payload.Goal == "" && run.Result.Content == "" && run.WakeSignature == "" {
+		return
+	}
+	metrics := agentJobMetrics{
+		Skipped:          run.Skipped,
+		LLMCalls:         run.Result.LLMCalls,
+		ToolCalls:        run.Result.ToolCalls,
+		TokensPrompt:     run.Result.Tokens.PromptTokens,
+		TokensCompletion: run.Result.Tokens.CompletionTokens,
+		TokensTotal:      run.Result.Tokens.TotalTokens,
+		ElapsedMS:        run.Result.Elapsed.Milliseconds(),
+	}
+	data, err := json.Marshal(metrics)
+	if err != nil {
+		b.logger.Warn("agent job metrics marshal failed", "name", task.Name, "error", err)
+		return
+	}
+	if err := b.schedDB.RecordAgentJobResult(ctx, task.ID, truncateTelegramText(run.Result.Content, 4000), string(data), run.WakeSignature); err != nil {
+		b.logger.Warn("agent job result persistence failed", "name", task.Name, "error", err)
+	}
 }
 
 func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error) {
@@ -190,6 +243,7 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 			lastErr = notifyErr.Error()
 		}
 	}
+	b.persistAgentJobResult(ctx, task, run)
 	if err := b.schedDB.RecordManualRun(ctx, task.ID, started, lastErr); err != nil && lastErr == "" {
 		status = "failed"
 		lastErr = err.Error()
@@ -209,6 +263,8 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 		TokensTotal:      run.Result.Tokens.TotalTokens,
 		ElapsedMS:        run.Result.Elapsed.Milliseconds(),
 		Notified:         run.Notified,
+		Skipped:          run.Skipped,
+		WakeSignature:    run.WakeSignature,
 		ToolAllowlist:    run.ToolAllowlist,
 	}, nil
 }
@@ -224,7 +280,7 @@ func agentJobSystemPrompt(payload scheduler.AgentJobPayload) string {
 	return prompt
 }
 
-func agentJobPrompt(payload scheduler.AgentJobPayload) string {
+func (b *Bot) agentJobPrompt(ctx context.Context, payload scheduler.AgentJobPayload) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Goal: %s", payload.Goal)
 	if len(payload.EnabledToolsets) > 0 {
@@ -235,11 +291,116 @@ func agentJobPrompt(payload scheduler.AgentJobPayload) string {
 	}
 	if len(payload.ContextFrom) > 0 {
 		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets, preferably via search_memory or narrow read tools before broad web/tool use.", strings.Join(payload.ContextFrom, ", "))
+		if prior := b.agentJobPriorOutputs(ctx, payload.ContextFrom); prior != "" {
+			fmt.Fprintf(&sb, "\n\nPrior job outputs:\n%s", prior)
+		}
 	}
 	if len(payload.WakeIfChanged) > 0 {
 		fmt.Fprintf(&sb, "\n\nWake-if-changed signals: %s\nBefore doing the full routine, check whether these signals changed materially. If not, return a concise no-change report and stop.", strings.Join(payload.WakeIfChanged, ", "))
 	}
 	return sb.String()
+}
+
+func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string {
+	if b.schedDB == nil {
+		return ""
+	}
+	var lines []string
+	for _, anchor := range anchors {
+		name, ok := agentJobTaskAnchor(anchor)
+		if !ok {
+			continue
+		}
+		task, err := b.schedDB.GetByName(ctx, name)
+		if err != nil || strings.TrimSpace(task.LastOutput) == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", task.Name, truncateTelegramText(task.LastOutput, 800)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (b *Bot) agentJobWakeSignature(ctx context.Context, payload scheduler.AgentJobPayload) (string, bool) {
+	if len(payload.WakeIfChanged) == 0 {
+		return "", false
+	}
+	parts := make([]string, 0, len(payload.WakeIfChanged))
+	for _, signal := range payload.WakeIfChanged {
+		if part, ok := b.agentJobWakePart(ctx, signal); ok {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:]), true
+}
+
+func (b *Bot) agentJobWakePart(ctx context.Context, signal string) (string, bool) {
+	signal = strings.TrimSpace(signal)
+	if signal == "" {
+		return "", false
+	}
+	if slug, ok := wikiSignalSlug(signal); ok {
+		if b.wiki == nil {
+			return "", false
+		}
+		page, err := b.wiki.ReadPage(slug)
+		if err != nil {
+			return "wiki:" + slug + ":missing", true
+		}
+		return fmt.Sprintf("wiki:%s:%s:%s:%s", slug, page.UpdatedAt, page.Title, strings.Join(page.Related, ",")), true
+	}
+	if id, ok := strings.CutPrefix(signal, "source:"); ok {
+		if b.sources == nil {
+			return "", false
+		}
+		id = strings.TrimSpace(id)
+		src, err := b.sources.Get(id)
+		if err != nil {
+			return "source:" + id + ":missing", true
+		}
+		return fmt.Sprintf("source:%s:%s:%s:%d:%s:%s", src.ID, src.SHA256, src.Status, src.PageCount, strings.Join(src.WikiPages, ","), src.Error), true
+	}
+	if name, ok := agentJobTaskAnchor(signal); ok {
+		if b.schedDB == nil {
+			return "", false
+		}
+		task, err := b.schedDB.GetByName(ctx, name)
+		if err != nil {
+			return "task:" + name + ":missing", true
+		}
+		return fmt.Sprintf("task:%s:%s:%s:%s", task.Name, task.LastRunAt.UTC().Format(time.RFC3339), task.WakeSignature, task.LastError), true
+	}
+	return "", false
+}
+
+func wikiSignalSlug(signal string) (string, bool) {
+	if slug, ok := strings.CutPrefix(signal, "wiki:"); ok {
+		slug = strings.TrimSpace(slug)
+		return slug, slug != ""
+	}
+	if strings.HasPrefix(signal, "[[") && strings.HasSuffix(signal, "]]") {
+		slug := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(signal, "[["), "]]"))
+		return slug, slug != ""
+	}
+	return "", false
+}
+
+func agentJobTaskAnchor(anchor string) (string, bool) {
+	anchor = strings.TrimSpace(anchor)
+	for _, prefix := range []string{"task:", "agent_job:"} {
+		if name, ok := strings.CutPrefix(anchor, prefix); ok {
+			name = strings.TrimSpace(name)
+			return name, name != ""
+		}
+	}
+	if anchor == "" || strings.Contains(anchor, ":") || strings.HasPrefix(anchor, "[[") {
+		return "", false
+	}
+	return anchor, true
 }
 
 func safeAgentJobTools(requested []string) []string {

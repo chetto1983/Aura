@@ -310,6 +310,9 @@ export interface Task {
   next_run_at: string;
   last_run_at?: string;
   last_error?: string;
+  last_output?: string;
+  last_metrics_json?: string;
+  wake_signature?: string;
   status: 'active' | 'done' | 'cancelled' | 'failed';
   created_at: string;
   updated_at: string;

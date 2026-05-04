@@ -31,6 +31,8 @@ type RunTaskNowResult struct {
 	TokensTotal      int      `json:"tokens_total"`
 	ElapsedMS        int64    `json:"elapsed_ms"`
 	Notified         bool     `json:"notified"`
+	Skipped          bool     `json:"skipped,omitempty"`
+	WakeSignature    string   `json:"wake_signature,omitempty"`
 	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
 }
 
@@ -387,6 +389,9 @@ func formatTaskLine(task *scheduler.Task) string {
 	}
 	if task.LastError != "" {
 		parts = append(parts, fmt.Sprintf("last_error=%q", truncateForToolContext(task.LastError, 80)))
+	}
+	if task.Kind == scheduler.KindAgentJob && task.LastOutput != "" {
+		parts = append(parts, fmt.Sprintf("last_output=%q", truncateForToolContext(task.LastOutput, 120)))
 	}
 	return strings.Join(parts, " · ")
 }

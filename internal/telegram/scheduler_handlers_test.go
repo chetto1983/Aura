@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/wiki"
 )
 
 type schedulerFakeLLM struct {
@@ -231,6 +232,116 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	for _, name := range names {
 		if name == "write_wiki" {
 			t.Fatalf("forbidden tool leaked into run_task_now allowlist: %#v", names)
+		}
+	}
+}
+
+func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
+	fake := &schedulerFakeLLM{}
+	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	reg.Register(schedulerFakeTool{name: "search_memory"})
+	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	wikiStore, err := wiki.NewStore(filepath.Join(t.TempDir(), "wiki"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	now := time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if err := wikiStore.WritePage(t.Context(), &wiki.Page{
+		Title:         "Memory Philosophy",
+		Category:      "system",
+		Tags:          []string{"memory"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Body:          "Keep graph-aware memory compact.",
+	}); err != nil {
+		t.Fatalf("WritePage: %v", err)
+	}
+	notify := false
+	payload, err := scheduler.AgentJobPayload{
+		Goal:          "Review memory drift",
+		WakeIfChanged: []string{"[[memory-philosophy]]"},
+		Notify:        &notify,
+	}.JSON()
+	if err != nil {
+		t.Fatalf("payload JSON: %v", err)
+	}
+	b := &Bot{
+		wiki:        wikiStore,
+		agentRunner: runner,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	normalized, err := scheduler.NormalizeAgentJobPayload(payload)
+	if err != nil {
+		t.Fatalf("NormalizeAgentJobPayload: %v", err)
+	}
+	signature, ok := b.agentJobWakeSignature(t.Context(), normalized)
+	if !ok || signature == "" {
+		t.Fatalf("expected wake signature, got %q ok=%v", signature, ok)
+	}
+	run, err := b.runAgentJob(t.Context(), &scheduler.Task{
+		Name:          "memory-drift",
+		Kind:          scheduler.KindAgentJob,
+		Payload:       payload,
+		WakeSignature: signature,
+	})
+	if err != nil {
+		t.Fatalf("runAgentJob: %v", err)
+	}
+	if !run.Skipped {
+		t.Fatalf("run was not skipped: %+v", run)
+	}
+	if len(fake.reqs) != 0 {
+		t.Fatalf("LLM calls = %d, want 0", len(fake.reqs))
+	}
+	if !strings.Contains(run.Result.Content, "skipped") {
+		t.Fatalf("skip output = %q", run.Result.Content)
+	}
+}
+
+func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
+	store, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "sched.db"))
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+	next := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	task, err := store.Upsert(t.Context(), &scheduler.Task{
+		Name:                 "prior-research",
+		Kind:                 scheduler.KindAgentJob,
+		Payload:              "research topic",
+		ScheduleKind:         scheduler.ScheduleEvery,
+		ScheduleEveryMinutes: 60,
+		NextRunAt:            next,
+	})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.RecordAgentJobResult(t.Context(), task.ID, "Found three durable memory gaps.", `{"llm_calls":1}`, "sig-a"); err != nil {
+		t.Fatalf("RecordAgentJobResult: %v", err)
+	}
+	notify := false
+	payload, err := scheduler.AgentJobPayload{
+		Goal:        "Continue the review",
+		ContextFrom: []string{"task:prior-research"},
+		Notify:      &notify,
+	}.JSON()
+	if err != nil {
+		t.Fatalf("payload JSON: %v", err)
+	}
+	normalized, err := scheduler.NormalizeAgentJobPayload(payload)
+	if err != nil {
+		t.Fatalf("NormalizeAgentJobPayload: %v", err)
+	}
+	b := &Bot{schedDB: store}
+	prompt := b.agentJobPrompt(t.Context(), normalized)
+	for _, want := range []string{"Prior job outputs", "prior-research", "Found three durable memory gaps"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }
