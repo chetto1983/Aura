@@ -44,9 +44,11 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
-Active milestone: `v1.0 Close Concern`, tracked in `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
+Active milestone: `v1.0 Production Readiness`, tracked by `.planning/REQUIREMENTS.md`, `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-Active phase: Phase 1, Centralize SQLite DB (`FIX-02`).
+Active phase: Phase 1, DB Foundation (`FIX-02`).
+
+The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 
 Docs cleanup status:
 
@@ -54,7 +56,7 @@ Docs cleanup status:
 - `docs/implementation-tracker.md` remains the long-form shipped-history ledger.
 - `docs/llm-wiki.md` remains the durable product memory-pattern reference.
 - Phase 18 is closed.
-- Phase 19 is closed for the pre-GSD/productization track. Its remaining "real-user routine drill" and "legacy/debt closure" notes were superseded by the `v1.0 Close Concern` milestone, which now owns hardening and cleanup through explicit requirements.
+- Phase 19 is closed for the pre-GSD/productization track. Its remaining "real-user routine drill" and "legacy/debt closure" notes were superseded by the `v1.0 Production Readiness` milestone, which now owns hardening and cleanup through explicit requirements.
 - Sandbox Pyodide work is production-closed and released as `v3.0.2`.
 
 Phase 18 status: **closed**.
@@ -71,7 +73,7 @@ Closure criteria met:
 Phase 19 status:
 
 - Closed as the pre-GSD productization track after code inventory, review-gated skill proposals, graph-aware semantic index, named toolsets, skill/context-backed scheduled jobs, wake gates, scheduled-job E2E harnesses, and the skill proposal lifecycle decision shipped.
-- The remaining real-user routine drill and broad debt cleanup notes are not active `docs/` phases. They are superseded by the `v1.0 Close Concern` milestone in `.planning/`.
+- The remaining real-user routine drill and broad debt cleanup notes are not active `docs/` phases. They are superseded by the `v1.0 Production Readiness` milestone in `.planning/`.
 - Future work should start from `.planning/STATE.md` and the active phase directory, not from deleted historical docs under `docs/plans/`.
 
 Sandbox closure note (2026-05-04):
@@ -185,7 +187,7 @@ Workspace warning:
 | 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
 | 18h | Memory quality report graph | done | `debug_memory_quality` can now save timestamped local JSON reports with summary metrics, full live/hermetic results, and graph-ready nodes/edges for scenario -> tool -> evidence/proposal analysis. |
 | 18-close | Phase 18 closure | done | Phase 18 memory layer is closed: evidence envelope, decay, provenance, batch review, drill-down, live scorecard, and graph-ready quality reports all shipped under the LLM Wiki memory philosophy. |
-| 19 | Code inventory + procedural memory | closed | Pre-GSD productization track closed; shipped code inventory, review-gated skill proposals, graph-aware search, toolsets, skill/context-backed agent jobs, wake gates, E2E harnesses, and skill lifecycle decision. Remaining cleanup moved to `v1.0 Close Concern` in `.planning/`. |
+| 19 | Code inventory + procedural memory | closed | Pre-GSD productization track closed; shipped code inventory, review-gated skill proposals, graph-aware search, toolsets, skill/context-backed agent jobs, wake gates, E2E harnesses, and skill lifecycle decision. Remaining cleanup moved to `v1.0 Production Readiness` in `.planning/`. |
 | 19a | Code inventory and low-risk cleanup | done | Historical inventory doc removed from `docs/` cleanup; source remains in git history. Removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
 | 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
 | 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
@@ -197,7 +199,7 @@ Workspace warning:
 | 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
 | 19h | Skill proposal lifecycle decision | done | Phase 19 uses Option A: skill proposals remain review-only on `/summaries` approval, expose an explicit `skill_lifecycle` API handoff, and document manual install/smoke as the admin path for Phase 20. |
 | 19i | Real-user routine drill | superseded | Not active in `docs/`; usefulness/latency drills should be added only as explicit `v1.0` or later phase acceptance checks. |
-| 19j | Legacy and debt closure | superseded | Broad debt cleanup moved to `.planning/codebase/CONCERNS.md` and `v1.0 Close Concern`; no unknown Phase 19 debt remains in `docs/`. |
+| 19j | Legacy and debt closure | superseded | Broad debt cleanup moved to `.planning/codebase/CONCERNS.md` and `v1.0 Production Readiness`; no unknown Phase 19 debt remains in `docs/`. |
 | 19-close | Formal closure | done | Tracker now points to `.planning/` for active phases; stale `docs/plans` files removed. |
 | sandbox.1 | Sandbox toolset guardrails | done | Consolidated code-execution tools into an explicit `sandbox_code` profile and restored `scheduler_safe` to propose-only defaults; scheduled `agent_job` rejects sandbox profiles because executable code is outside the recurring-job perimeter. |
 | sandbox.pyodide.0 | Sandbox architecture pivot | done | Replaced the Isola product plan with a bundled Pyodide offline-runtime plan grounded in the official Pyodide package list; next slice is runtime abstraction before adapter implementation. |
@@ -224,7 +226,7 @@ Goal: close stale pending phase handoffs in `docs/` and make `.planning/` the on
 Implementation:
 
 - Updated the current handoff to mark Pyodide sandbox production closure as complete and released in `v3.0.2`.
-- Marked Phase 19 as closed/superseded by the `v1.0 Close Concern` milestone rather than leaving `19i`, `19j`, and `19-close` as ambiguous docs debt.
+- Marked Phase 19 as closed/superseded by the `v1.0 Production Readiness` milestone rather than leaving `19i`, `19j`, and `19-close` as ambiguous docs debt.
 - Removed historical plan files and obsolete audit/strategy docs from the active docs tree; their content remains recoverable from git history.
 - Updated lingering references so tests and operator docs point to the tracker or `.planning/` instead of deleted plan files.
 
