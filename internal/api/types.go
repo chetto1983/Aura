@@ -278,17 +278,35 @@ type WikiIssue struct {
 
 // ProposedUpdate is one row of GET /summaries (mirrors proposed_updates table).
 type ProposedUpdate struct {
-	ID            int64    `json:"id"`
-	ChatID        int64    `json:"chat_id"`
-	Fact          string   `json:"fact"`
-	Action        string   `json:"action"`
-	TargetSlug    string   `json:"target_slug,omitempty"`
-	Similarity    float64  `json:"similarity"`
-	SourceTurnIDs []int64  `json:"source_turn_ids"`
-	Category      string   `json:"category,omitempty"`
-	RelatedSlugs  []string `json:"related_slugs"`
-	Status        string   `json:"status"`
-	CreatedAt     string   `json:"created_at"`
+	ID            int64      `json:"id"`
+	ChatID        int64      `json:"chat_id"`
+	Fact          string     `json:"fact"`
+	Action        string     `json:"action"`
+	TargetSlug    string     `json:"target_slug,omitempty"`
+	Similarity    float64    `json:"similarity"`
+	SourceTurnIDs []int64    `json:"source_turn_ids"`
+	Category      string     `json:"category,omitempty"`
+	RelatedSlugs  []string   `json:"related_slugs"`
+	Provenance    Provenance `json:"provenance,omitempty"`
+	Status        string     `json:"status"`
+	CreatedAt     string     `json:"created_at"`
+}
+
+type EvidenceRef struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Title   string `json:"title,omitempty"`
+	Page    int    `json:"page,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+type Provenance struct {
+	OriginTool   string        `json:"origin_tool,omitempty"`
+	OriginReason string        `json:"origin_reason,omitempty"`
+	Evidence     []EvidenceRef `json:"evidence,omitempty"`
+	AgentJobID   string        `json:"agent_job_id,omitempty"`
+	SwarmRunID   string        `json:"swarm_run_id,omitempty"`
+	SwarmTaskID  string        `json:"swarm_task_id,omitempty"`
 }
 
 // SwarmRunSummary is one row of GET /swarm/runs.

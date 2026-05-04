@@ -27,6 +27,7 @@ func newProposalStore(t *testing.T) (*sql.DB, *SummariesStore) {
 		source_turn_ids TEXT NOT NULL DEFAULT '',
 		category TEXT NOT NULL DEFAULT '',
 		related_slugs TEXT NOT NULL DEFAULT '',
+		provenance_json TEXT NOT NULL DEFAULT '{}',
 		status TEXT NOT NULL DEFAULT 'pending',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -39,8 +40,8 @@ func newProposalStore(t *testing.T) (*sql.DB, *SummariesStore) {
 func insertProposal(t *testing.T, db *sql.DB, status string) int64 {
 	t.Helper()
 	res, err := db.ExecContext(context.Background(),
-		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
-		 VALUES (42, 'fact', 'patch', 'target', 0.7, '[1,2]', 'project', '["aura"]', ?)`,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
+		 VALUES (42, 'fact', 'patch', 'target', 0.7, '[1,2]', 'project', '["aura"]', '{"origin_tool":"search_memory"}', ?)`,
 		status)
 	if err != nil {
 		t.Fatalf("insert proposal: %v", err)
@@ -64,6 +65,15 @@ func TestSummariesStorePropose_New(t *testing.T) {
 		SourceTurnIDs: []int64{10, 11},
 		Category:      "project",
 		RelatedSlugs:  []string{"aurabot", "aurabot", " "},
+		Provenance: Provenance{
+			OriginTool:   "search_memory",
+			OriginReason: "found durable project fact",
+			Evidence: []EvidenceRef{
+				{Kind: "source", ID: "src_123", Title: "note.pdf", Page: 2},
+				{Kind: "source", ID: "src_123", Title: "note.pdf", Page: 2},
+				{Kind: "", ID: "skip"},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
@@ -79,6 +89,12 @@ func TestSummariesStorePropose_New(t *testing.T) {
 	}
 	if len(got.RelatedSlugs) != 1 || got.RelatedSlugs[0] != "aurabot" {
 		t.Fatalf("related slugs = %#v", got.RelatedSlugs)
+	}
+	if got.Provenance.OriginTool != "search_memory" || got.Provenance.OriginReason != "found durable project fact" {
+		t.Fatalf("provenance = %#v", got.Provenance)
+	}
+	if len(got.Provenance.Evidence) != 1 || got.Provenance.Evidence[0].ID != "src_123" || got.Provenance.Evidence[0].Page != 2 {
+		t.Fatalf("evidence = %#v", got.Provenance.Evidence)
 	}
 }
 

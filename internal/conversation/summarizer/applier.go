@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   source_turn_ids TEXT    NOT NULL DEFAULT '',
   category        TEXT    NOT NULL DEFAULT '',
   related_slugs   TEXT    NOT NULL DEFAULT '',
+  provenance_json TEXT    NOT NULL DEFAULT '{}',
   status          TEXT    NOT NULL DEFAULT 'pending',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -155,10 +156,11 @@ func (r *ReviewApplier) Apply(ctx context.Context, d Decision) error {
 	}
 	ids, _ := json.Marshal(d.Candidate.SourceTurnIDs)
 	related, _ := json.Marshal(d.Candidate.RelatedSlugs)
-	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
-		VALUES (0, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+	provenance, _ := json.Marshal(Provenance{OriginTool: "conversation_summarizer", Evidence: turnEvidenceRefs(d.Candidate.SourceTurnIDs)})
+	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
+		VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
 	_, err := r.db.ExecContext(ctx, q,
-		d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related))
+		d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related), string(provenance))
 	if err != nil {
 		return fmt.Errorf("review applier insert: %w", err)
 	}
@@ -177,6 +179,11 @@ func ensureReviewColumns(db *sql.DB) error {
 	}
 	if !cols["related_slugs"] {
 		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !cols["provenance_json"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
 			return err
 		}
 	}
@@ -225,6 +232,20 @@ func uniqueNonEmpty(values []string) []string {
 		}
 		seen[value] = true
 		out = append(out, value)
+	}
+	return out
+}
+
+func turnEvidenceRefs(ids []int64) []EvidenceRef {
+	if len(ids) == 0 {
+		return []EvidenceRef{}
+	}
+	out := make([]EvidenceRef, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		out = append(out, EvidenceRef{Kind: "archive", ID: fmt.Sprintf("conversation:%d", id)})
 	}
 	return out
 }

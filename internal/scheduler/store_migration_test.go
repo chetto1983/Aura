@@ -44,7 +44,7 @@ CREATE TABLE proposed_updates (
 	if err != nil {
 		t.Fatalf("tableInfoColumns: %v", err)
 	}
-	for _, col := range []string{"category", "related_slugs"} {
+	for _, col := range []string{"category", "related_slugs", "provenance_json"} {
 		if !cols[col] {
 			t.Fatalf("missing migrated column %q", col)
 		}

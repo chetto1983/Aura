@@ -60,6 +60,41 @@ func (t *ProposeWikiChangeTool) Parameters() map[string]any {
 				"description": "Optional archived conversation turn IDs that support this proposal.",
 				"items":       map[string]any{"type": "integer"},
 			},
+			"evidence": map[string]any{
+				"type":        "array",
+				"description": "Optional compact evidence refs, usually copied from search_memory Evidence envelope. Each item should include kind and id, plus title/page/snippet when available.",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"kind":    map[string]any{"type": "string"},
+						"id":      map[string]any{"type": "string"},
+						"title":   map[string]any{"type": "string"},
+						"page":    map[string]any{"type": "integer"},
+						"snippet": map[string]any{"type": "string"},
+					},
+					"required": []string{"kind", "id"},
+				},
+			},
+			"origin_tool": map[string]any{
+				"type":        "string",
+				"description": "Optional tool or routine that discovered the proposal, e.g. search_memory, daily_briefing, agent_job, aurabot_swarm.",
+			},
+			"origin_reason": map[string]any{
+				"type":        "string",
+				"description": "Optional short reason this should become durable wiki knowledge.",
+			},
+			"agent_job_id": map[string]any{
+				"type":        "string",
+				"description": "Optional scheduled agent job name/id that produced this proposal.",
+			},
+			"swarm_run_id": map[string]any{
+				"type":        "string",
+				"description": "Optional AuraBot swarm run ID that produced this proposal.",
+			},
+			"swarm_task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional AuraBot swarm task ID that produced this proposal.",
+			},
 			"confidence": map[string]any{
 				"type":        "number",
 				"description": "Optional confidence from 0 to 1. Defaults to 1.",
@@ -90,6 +125,14 @@ func (t *ProposeWikiChangeTool) Execute(ctx context.Context, args map[string]any
 		SourceTurnIDs: int64SliceArg(args, "source_turn_ids"),
 		Category:      strings.TrimSpace(stringArg(args, "category")),
 		RelatedSlugs:  stringSliceArg(args, "related"),
+		Provenance: summarizer.Provenance{
+			OriginTool:   strings.TrimSpace(stringArg(args, "origin_tool")),
+			OriginReason: strings.TrimSpace(stringArg(args, "origin_reason")),
+			Evidence:     evidenceRefsArg(args, "evidence"),
+			AgentJobID:   strings.TrimSpace(stringArg(args, "agent_job_id")),
+			SwarmRunID:   strings.TrimSpace(stringArg(args, "swarm_run_id")),
+			SwarmTaskID:  strings.TrimSpace(stringArg(args, "swarm_task_id")),
+		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("propose_wiki_change: %w", err)
@@ -100,6 +143,7 @@ func (t *ProposeWikiChangeTool) Execute(ctx context.Context, args map[string]any
 		Status:     proposal.Status,
 		Action:     proposal.Action,
 		TargetSlug: proposal.TargetSlug,
+		Evidence:   len(proposal.Provenance.Evidence),
 		ReviewPath: "/summaries",
 	}
 	out, err := json.Marshal(resp)
@@ -115,6 +159,7 @@ type proposeWikiChangeResponse struct {
 	Status     string `json:"status"`
 	Action     string `json:"action"`
 	TargetSlug string `json:"target_slug,omitempty"`
+	Evidence   int    `json:"evidence,omitempty"`
 	ReviewPath string `json:"review_path"`
 }
 
@@ -185,6 +230,63 @@ func numberArg(args map[string]any, key string) float64 {
 	case json.Number:
 		f, _ := n.Float64()
 		return f
+	default:
+		return 0
+	}
+}
+
+func evidenceRefsArg(args map[string]any, key string) []summarizer.EvidenceRef {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return nil
+	}
+	values, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]summarizer.EvidenceRef, 0, len(values))
+	for _, value := range values {
+		item, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref := summarizer.EvidenceRef{
+			Kind:    strings.TrimSpace(stringFromAny(item["kind"])),
+			ID:      strings.TrimSpace(stringFromAny(item["id"])),
+			Title:   strings.TrimSpace(stringFromAny(item["title"])),
+			Page:    intFromAny(item["page"]),
+			Snippet: strings.TrimSpace(stringFromAny(item["snippet"])),
+		}
+		if ref.Kind == "" || ref.ID == "" {
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
+func stringFromAny(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case fmt.Stringer:
+		return x.String()
+	default:
+		return ""
+	}
+}
+
+func intFromAny(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return int(n)
 	default:
 		return 0
 	}

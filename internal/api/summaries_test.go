@@ -36,6 +36,7 @@ func newSummariesDB(t *testing.T) (*sql.DB, *summarizer.SummariesStore) {
 		source_turn_ids TEXT NOT NULL DEFAULT '',
 		category TEXT NOT NULL DEFAULT '',
 		related_slugs TEXT NOT NULL DEFAULT '',
+		provenance_json TEXT NOT NULL DEFAULT '{}',
 		status TEXT NOT NULL DEFAULT 'pending',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -48,8 +49,8 @@ func newSummariesDB(t *testing.T) (*sql.DB, *summarizer.SummariesStore) {
 func seedProposal(t *testing.T, db *sql.DB, action, status string) int64 {
 	t.Helper()
 	res, err := db.ExecContext(context.Background(),
-		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
-		 VALUES (1, 'test fact', ?, 'slug', 0.5, '[1,2]', 'project', '["aura"]', ?)`,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
+		 VALUES (1, 'test fact', ?, 'slug', 0.5, '[1,2]', 'project', '["aura"]', '{"origin_tool":"search_memory","evidence":[{"kind":"source","id":"src_1","page":2}]}', ?)`,
 		action, status)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -77,6 +78,9 @@ func TestHandleSummariesList_HappyPath(t *testing.T) {
 	}
 	if len(body) != 2 {
 		t.Fatalf("want 2 rows, got %d", len(body))
+	}
+	if body[0].Provenance.OriginTool != "search_memory" || len(body[0].Provenance.Evidence) != 1 {
+		t.Fatalf("missing provenance in DTO: %#v", body[0].Provenance)
 	}
 }
 

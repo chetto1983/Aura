@@ -142,7 +142,7 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	rows, err := db.QueryContext(context.Background(), "SELECT status, category, related_slugs FROM proposed_updates WHERE action='new'")
+	rows, err := db.QueryContext(context.Background(), "SELECT status, category, related_slugs, provenance_json FROM proposed_updates WHERE action='new'")
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -152,7 +152,8 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 		var status string
 		var category string
 		var related string
-		rows.Scan(&status, &category, &related)
+		var provenance string
+		rows.Scan(&status, &category, &related, &provenance)
 		if status != "pending" {
 			t.Fatalf("want status=pending, got %q", status)
 		}
@@ -161,6 +162,9 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 		}
 		if related != `["bologna","marco"]` {
 			t.Fatalf("want related slugs JSON, got %q", related)
+		}
+		if !strings.Contains(provenance, "conversation_summarizer") || !strings.Contains(provenance, "conversation:1") {
+			t.Fatalf("want provenance with summarizer origin and turn evidence, got %q", provenance)
 		}
 		count++
 	}
@@ -194,7 +198,7 @@ CREATE TABLE proposed_updates (
 	if _, err := summarizer.NewReviewApplier(db); err != nil {
 		t.Fatalf("NewReviewApplier: %v", err)
 	}
-	rows, err := db.Query(`SELECT category, related_slugs FROM proposed_updates LIMIT 0`)
+	rows, err := db.Query(`SELECT category, related_slugs, provenance_json FROM proposed_updates LIMIT 0`)
 	if err != nil {
 		t.Fatalf("new columns not queryable: %v", err)
 	}

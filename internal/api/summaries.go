@@ -146,8 +146,30 @@ func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {
 		SourceTurnIDs: ids,
 		Category:      p.Category,
 		RelatedSlugs:  related,
+		Provenance:    provenanceToDTO(p.Provenance),
 		Status:        p.Status,
 		CreatedAt:     p.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func provenanceToDTO(p summarizer.Provenance) Provenance {
+	evidence := make([]EvidenceRef, 0, len(p.Evidence))
+	for _, ref := range p.Evidence {
+		evidence = append(evidence, EvidenceRef{
+			Kind:    ref.Kind,
+			ID:      ref.ID,
+			Title:   ref.Title,
+			Page:    ref.Page,
+			Snippet: ref.Snippet,
+		})
+	}
+	return Provenance{
+		OriginTool:   p.OriginTool,
+		OriginReason: p.OriginReason,
+		Evidence:     evidence,
+		AgentJobID:   p.AgentJobID,
+		SwarmRunID:   p.SwarmRunID,
+		SwarmTaskID:  p.SwarmTaskID,
 	}
 }
 

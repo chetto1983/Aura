@@ -10,7 +10,7 @@ import type { CompoundingRate } from '@/types/api';
 const POLL_MS = 5000;
 
 export function HealthDashboard() {
-  const { t, formatDate, formatRelative, formatNumber } = useLocale();
+  const { t, formatRelative, formatNumber } = useLocale();
   const fetcher = useCallback(() => api.health(), []);
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
 

@@ -265,8 +265,26 @@ export interface ProposedUpdate {
   source_turn_ids: number[];
   category?: string;
   related_slugs: string[];
+  provenance?: ProposalProvenance;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
+}
+
+export interface ProposalEvidenceRef {
+  kind: string;
+  id: string;
+  title?: string;
+  page?: number;
+  snippet?: string;
+}
+
+export interface ProposalProvenance {
+  origin_tool?: string;
+  origin_reason?: string;
+  evidence?: ProposalEvidenceRef[];
+  agent_job_id?: string;
+  swarm_run_id?: string;
+  swarm_task_id?: string;
 }
 
 export interface Task {

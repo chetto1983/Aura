@@ -18,17 +18,37 @@ var ErrProposalConflict = errors.New("summarizer: proposal already decided")
 
 // ProposedUpdate is one row from proposed_updates.
 type ProposedUpdate struct {
-	ID            int64     `json:"id"`
-	ChatID        int64     `json:"chat_id"`
-	Fact          string    `json:"fact"`
-	Action        string    `json:"action"`
-	TargetSlug    string    `json:"target_slug,omitempty"`
-	Similarity    float64   `json:"similarity"`
-	SourceTurnIDs []int64   `json:"source_turn_ids"`
-	Category      string    `json:"category,omitempty"`
-	RelatedSlugs  []string  `json:"related_slugs"`
-	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            int64      `json:"id"`
+	ChatID        int64      `json:"chat_id"`
+	Fact          string     `json:"fact"`
+	Action        string     `json:"action"`
+	TargetSlug    string     `json:"target_slug,omitempty"`
+	Similarity    float64    `json:"similarity"`
+	SourceTurnIDs []int64    `json:"source_turn_ids"`
+	Category      string     `json:"category,omitempty"`
+	RelatedSlugs  []string   `json:"related_slugs"`
+	Provenance    Provenance `json:"provenance,omitempty"`
+	Status        string     `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// EvidenceRef points to one compact source of evidence behind a proposal.
+type EvidenceRef struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Title   string `json:"title,omitempty"`
+	Page    int    `json:"page,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// Provenance explains why and from where a proposal was created.
+type Provenance struct {
+	OriginTool   string        `json:"origin_tool,omitempty"`
+	OriginReason string        `json:"origin_reason,omitempty"`
+	Evidence     []EvidenceRef `json:"evidence,omitempty"`
+	AgentJobID   string        `json:"agent_job_id,omitempty"`
+	SwarmRunID   string        `json:"swarm_run_id,omitempty"`
+	SwarmTaskID  string        `json:"swarm_task_id,omitempty"`
 }
 
 // SummariesStore provides CRUD over the proposed_updates table.
@@ -48,6 +68,7 @@ type ProposalInput struct {
 	SourceTurnIDs []int64
 	Category      string
 	RelatedSlugs  []string
+	Provenance    Provenance
 }
 
 // NewSummariesStore wraps an existing *sql.DB. The migration must already
@@ -83,10 +104,11 @@ func (s *SummariesStore) Propose(ctx context.Context, in ProposalInput) (Propose
 	}
 	ids, _ := json.Marshal(in.SourceTurnIDs)
 	related, _ := json.Marshal(cleanProposalStrings(in.RelatedSlugs))
+	provenance, _ := json.Marshal(cleanProvenance(in.Provenance))
 
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
 		in.ChatID,
 		fact,
 		action,
@@ -95,6 +117,7 @@ func (s *SummariesStore) Propose(ctx context.Context, in ProposalInput) (Propose
 		string(ids),
 		strings.TrimSpace(in.Category),
 		string(related),
+		string(provenance),
 	)
 	if err != nil {
 		return ProposedUpdate{}, fmt.Errorf("summaries propose: %w", err)
@@ -116,12 +139,12 @@ func (s *SummariesStore) List(ctx context.Context, status string, limit int) ([]
 	var err error
 	if status != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
+			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status, created_at
 			 FROM proposed_updates WHERE status = ? ORDER BY created_at DESC LIMIT ?`,
 			status, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
+			`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status, created_at
 			 FROM proposed_updates ORDER BY created_at DESC LIMIT ?`,
 			limit)
 	}
@@ -144,7 +167,7 @@ func (s *SummariesStore) List(ctx context.Context, status string, limit int) ([]
 // Get returns a single proposal by ID, or ErrProposalNotFound.
 func (s *SummariesStore) Get(ctx context.Context, id int64) (ProposedUpdate, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, status, created_at
+		`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status, created_at
 		 FROM proposed_updates WHERE id = ?`, id)
 	p, err := scanProposal(row)
 	if err != nil {
@@ -185,10 +208,11 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	var p ProposedUpdate
 	var idsJSON string
 	var relatedJSON string
+	var provenanceJSON string
 	var createdAt string
 	if err := r.Scan(
 		&p.ID, &p.ChatID, &p.Fact, &p.Action, &p.TargetSlug,
-		&p.Similarity, &idsJSON, &p.Category, &relatedJSON, &p.Status, &createdAt,
+		&p.Similarity, &idsJSON, &p.Category, &relatedJSON, &provenanceJSON, &p.Status, &createdAt,
 	); err != nil {
 		return ProposedUpdate{}, err
 	}
@@ -204,6 +228,10 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	if p.RelatedSlugs == nil {
 		p.RelatedSlugs = []string{}
 	}
+	if provenanceJSON != "" && provenanceJSON != "null" {
+		_ = json.Unmarshal([]byte(provenanceJSON), &p.Provenance)
+	}
+	p.Provenance = cleanProvenance(p.Provenance)
 	ts, err := time.Parse("2006-01-02 15:04:05", createdAt)
 	if err != nil {
 		ts, err = time.Parse(time.RFC3339, createdAt)
@@ -213,6 +241,43 @@ func scanProposal(r proposalScanner) (ProposedUpdate, error) {
 	}
 	p.CreatedAt = ts.UTC()
 	return p, nil
+}
+
+func cleanProvenance(p Provenance) Provenance {
+	p.OriginTool = strings.TrimSpace(p.OriginTool)
+	p.OriginReason = strings.TrimSpace(p.OriginReason)
+	p.AgentJobID = strings.TrimSpace(p.AgentJobID)
+	p.SwarmRunID = strings.TrimSpace(p.SwarmRunID)
+	p.SwarmTaskID = strings.TrimSpace(p.SwarmTaskID)
+	if len(p.Evidence) == 0 {
+		p.Evidence = []EvidenceRef{}
+		return p
+	}
+	out := make([]EvidenceRef, 0, len(p.Evidence))
+	seen := map[string]struct{}{}
+	for _, ref := range p.Evidence {
+		ref.Kind = strings.TrimSpace(ref.Kind)
+		ref.ID = strings.TrimSpace(ref.ID)
+		ref.Title = strings.TrimSpace(ref.Title)
+		ref.Snippet = strings.TrimSpace(ref.Snippet)
+		if ref.Kind == "" || ref.ID == "" {
+			continue
+		}
+		key := ref.Kind + "\x00" + ref.ID
+		if ref.Page > 0 {
+			key += fmt.Sprintf("\x00%d", ref.Page)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, ref)
+		if len(out) >= 12 {
+			break
+		}
+	}
+	p.Evidence = out
+	return p
 }
 
 func cleanProposalStrings(values []string) []string {

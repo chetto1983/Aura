@@ -90,7 +90,13 @@ func TestProposeWikiChangeTool(t *testing.T) {
 		"category":        "project",
 		"related":         []any{"aurabot", "second-brain"},
 		"source_turn_ids": []any{float64(7), float64(8)},
-		"confidence":      0.8,
+		"origin_tool":     "search_memory",
+		"origin_reason":   "source-backed second brain improvement",
+		"evidence": []any{
+			map[string]any{"kind": "source", "id": "src_abc", "title": "note.pdf", "page": float64(2), "snippet": "review-gated wiki proposals"},
+			map[string]any{"kind": "archive", "id": "conversation:7"},
+		},
+		"confidence": 0.8,
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -114,6 +120,12 @@ func TestProposeWikiChangeTool(t *testing.T) {
 	}
 	if len(got.SourceTurnIDs) != 2 || got.SourceTurnIDs[0] != 7 || got.SourceTurnIDs[1] != 8 {
 		t.Fatalf("turn ids = %+v", got.SourceTurnIDs)
+	}
+	if got.Provenance.OriginTool != "search_memory" || got.Provenance.OriginReason != "source-backed second brain improvement" {
+		t.Fatalf("provenance = %+v", got.Provenance)
+	}
+	if len(got.Provenance.Evidence) != 2 || got.Provenance.Evidence[0].ID != "src_abc" || got.Provenance.Evidence[0].Page != 2 {
+		t.Fatalf("evidence = %+v", got.Provenance.Evidence)
 	}
 }
 

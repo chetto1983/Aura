@@ -125,8 +125,34 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 | 17q | Live AuraBot settings apply | done | Saving AuraBot max-active/max-depth/timeout/max-iterations in `/settings` now updates the in-process runner/manager for subsequent swarm runs when AuraBot is already enabled. Enabling/disabling the swarm still requires restart because it changes registered tools. |
 | 18a | Memory evidence envelope | done | `search_memory` now appends a structured JSON evidence envelope after the readable evidence list so final answers can preserve source IDs, wiki slugs, conversation IDs, snippets, scores, OCR page numbers, and warnings without noisy citations in casual chat. |
 | 18b | Maintenance memory decay | done | Wiki maintenance now flags stale compiled-memory pages as `memory_decay` issues after conservative age thresholds, preserving the LLM Wiki rule that old knowledge becomes review work instead of silent mutation. |
+| 18c | Proposal provenance | done | `propose_wiki_change` and summarizer review proposals now persist structured provenance JSON with origin tool/reason, evidence refs, agent job IDs, and swarm IDs; API responses expose it for review UI. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 18c (Proposal provenance)
+
+Goal: make proactive wiki growth auditable before adding batch review.
+
+Implementation:
+
+- Added `provenance_json` to `proposed_updates` with idempotent migrations for scheduler startup and direct `ReviewApplier` use.
+- `SummariesStore` now round-trips structured provenance:
+  - origin tool;
+  - origin reason;
+  - compact evidence refs (`kind`, `id`, optional title/page/snippet);
+  - optional agent job, swarm run, and swarm task IDs.
+- `propose_wiki_change` accepts provenance fields and evidence refs, so evidence from `search_memory` can survive into the review queue.
+- Review-mode summarizer proposals now mark their origin as `conversation_summarizer` and convert source turn IDs into archive evidence refs.
+- `/summaries` API DTOs expose provenance for the dashboard.
+- Prompt guidance now asks Aura to include provenance when proposing from `search_memory`, `daily_briefing`, `agent_job`, or AuraBot evidence.
+
+Verification:
+
+- `go test ./internal/conversation ./internal/conversation/summarizer ./internal/tools ./internal/api ./internal/scheduler`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-web.ps1`
+
+Next slice: batch approve/reject endpoints and dashboard controls, now backed by visible proposal provenance.
 
 ### 2026-05-04 - Slice 18b (Maintenance memory decay)
 

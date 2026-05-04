@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   source_turn_ids TEXT    NOT NULL DEFAULT '',
   category        TEXT    NOT NULL DEFAULT '',
   related_slugs   TEXT    NOT NULL DEFAULT '',
+  provenance_json TEXT    NOT NULL DEFAULT '{}',
   status          TEXT    NOT NULL DEFAULT 'pending',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -191,6 +192,11 @@ func addProposedUpdateReviewColumns(db *sql.DB) error {
 	}
 	if !cols["related_slugs"] {
 		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !cols["provenance_json"] {
+		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
 			return err
 		}
 	}
