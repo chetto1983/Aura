@@ -176,7 +176,7 @@ Rispetto alla v3.0 questa PRD documenta lo stato realmente in produzione: SQLite
 - [x] Sidebar nav + chord shortcuts: `g v`/`g u`/`g x`.
 - [x] `dropLegacyConversations` migration idempotente per DB esistenti.
 - [x] Test suite: 289 tests green; staticcheck U1000 zero findings; coverage core data-layer 100% per function.
-- [x] Live E2E checklist drafted in `docs/plans/2026-05-02-phase-12-e2e-checklist.md`.
+- [x] Live E2E checklist completed during Phase 12; historical checklist content now lives in git history and the closure status is summarized in `docs/implementation-tracker.md`.
 
 ## Functional Requirements
 

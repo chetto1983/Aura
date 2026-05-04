@@ -3,8 +3,8 @@ import { test, expect } from './fixtures';
 /**
  * Phase 12 dashboard E2E.
  *
- * Covers the dashboard side of the live checklist
- * (docs/plans/2026-05-02-phase-12-e2e-checklist.md):
+ * Covers the dashboard side of the historical Phase 12 live checklist
+ * summarized in docs/implementation-tracker.md:
  * - Steps 2 (open dashboard) + 3 (sidebar nav).
  * - Step 5 (open /conversations + drawer).
  * - Step 9 (compounding-rate card on health).

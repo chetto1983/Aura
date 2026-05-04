@@ -138,7 +138,7 @@ Aura must consolidate Picobot's tool surface, but translate memory and files int
 
 Picobot reference path: `D:\tmp\picobot\internal\agent\tools`.
 
-Full audit: `docs/picobot-tools-audit.md`.
+Historical Picobot audit details were removed from active docs during the 2026-05-04 cleanup; current shipped tool status lives in `docs/implementation-tracker.md`.
 
 | Picobot tool | Purpose | Aura status | Aura equivalent / required action |
 | --- | --- | --- | --- |

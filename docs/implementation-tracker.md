@@ -23,7 +23,7 @@ Working tree before this session:
 
 - Embedding config moved to Mistral defaults (`EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) — `internal/config/config.go`, `internal/config/config_test.go`, `.env.example` modified, not yet committed.
 - `cmd/debug_tools/main.go` added (untracked) — natural prompt smoke harness for `write_wiki` / `read_wiki` / `search_wiki` and optional live web tools via `--live-web`.
-- New product docs: `docs/picobot-tools-audit.md`, `docs/second-brain-consolidation-strategy.md`, `pdr.md`.
+- New product docs at the time: Picobot/tool audit, second-brain consolidation strategy, and `pdr.md`. The first two were later removed from active docs during the 2026-05-04 cleanup; use git history for the original artifacts.
 - Branch: `ralph/US-010-observability`.
 
 Existing packages: `budget`, `config`, `conversation`, `health`, `llm`, `logging`, `orchestrator`, `search`, `skill`, `telegram`, `tools`, `tracing`, `wiki`. No `source`, `ocr`, `ingest` yet.
@@ -42,54 +42,20 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.9` live Telegram artifact delivery smoke.
+Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
-Active slice: `sandbox.pyodide.close` sandbox milestone closure check.
+Active milestone: `v1.0 Close Concern`, tracked in `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-What is shipped:
+Active phase: Phase 1, Centralize SQLite DB (`FIX-02`).
 
-- `search_memory` produces an evidence envelope.
-- Maintenance raises `memory_decay` review issues.
-- Wiki proposals persist provenance (`origin_tool`, `origin_reason`, evidence refs, agent job/swarm IDs).
-- Skill proposals persist procedural-memory drafts (`SKILL.md`, allowed tools, smoke prompt, reason) in the same review queue without mutating local skill files.
-- Skill proposal approval is explicitly review-only in Phase 19: `/summaries` returns `skill_lifecycle`, and install/smoke is a documented manual admin handoff rather than a silent side effect.
-- `/summaries` supports single and batch approve/reject.
-- `SummariesPanel` can select multiple proposals and shows compact provenance on each proposal.
-- Proposal evidence chips can jump to source/wiki/conversation context.
-- `cmd/debug_memory_quality` scores 20 everyday memory questions plus review-gated proposal quality.
-- `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
-- `cmd/debug_memory_quality -live-llm` now fails slow scenarios that exceed the end-user latency budget; "eventually correct" is not enough.
-- `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, latency, full results, and graph nodes/edges.
-- Embeddings are wired through dedicated `EMBEDDING_*` settings; the cache is now namespaced by provider base URL plus model.
-- Wiki search now embeds graph node cards and category index cards alongside page bodies, exposing `graph_node` / `graph_index` evidence through `search_memory`.
-- Aura tool allowlists now live in `internal/toolsets` as named profiles (`memory_read`, `wiki_review`, `skills_read`, `web_research`, `scheduler_safe`) plus shared AuraBot role presets.
-- Scheduled `agent_job` defaults use the `scheduler_safe` profile and continue to filter out recursive/dangerous tools such as `schedule_task`, `run_task_now`, `spawn_aurabot`, `run_aurabot_swarm`, `execute_code`, and `save_tool`.
-- Scheduled `agent_job` payloads now support `enabled_toolsets`, `skills`, `context_from`, and `wake_if_changed`; toolsets define the allowed perimeter, raw allowlists can only narrow it, and skill-backed jobs automatically get skill-read tools.
-- Scheduled `agent_job` runs now persist compact `last_output`, JSON metrics, and a deterministic `wake_signature`.
-- `wake_if_changed` can skip the LLM call entirely when stable wiki/source/task signals have not changed.
-- `context_from` can include prior scheduled-task outputs by task name, so recurring routines continue from their last useful result instead of restarting cold.
-- `cmd/debug_agent_jobs` now proves the scheduled routine contract in a hermetic temp wiki and SQLite scheduler DB: first run executes, second run skips before the LLM call, a wiki mutation changes the signature, and the third run executes again.
-- Agent-job wake signatures now live in `internal/scheduler`, so Telegram runtime and debug harnesses use the same deterministic wiki/source/task signal logic.
-- Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
-- Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
-- Sandbox code execution is wired behind explicit tools (`execute_code`, `list_tools`, `read_tool`, `save_tool`) and a separate `sandbox_code` toolset profile; scheduled agent jobs reject that profile and keep executable-code tools out of `scheduler_safe`.
-- Sandbox runtime product rule: end users must not install Python/pip/Docker/Node/Pyodide manually. The target product runtime is now a bundled `runtime/pyodide/...` offline package, probed at startup; unhealthy bundles disable `execute_code` and surface sandbox health.
-- Sandbox package product rule: the bundled Pyodide runtime must include an office/data profile (`numpy`, `pandas`, `scipy`, `statsmodels`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
-- `internal/sandbox.Manager` now delegates execution, validation, and availability probes to a runtime adapter. There is no host-runtime fallback.
-- Sandbox health now exposes `runtime_kind` (`pyodide` or `unavailable`) plus runtime detail, while keeping existing execute/toolset guardrails unchanged.
-- `SANDBOX_RUNTIME_DIR` defaults to `./runtime/pyodide`; startup now constructs `sandbox.PyodideRunner`, checks the manifest plus runner availability, registers `execute_code` only when healthy, and reports missing/invalid bundle health as unavailable.
-- `internal/sandbox.PyodideRunner` now speaks the runner JSON protocol over stdin/stdout, starts the bundled runner with sanitized env and timeout enforcement, parses result JSON, and has hermetic fake-runner tests plus an opt-in live Pyodide bundle test.
-- Local dev bundle installed under ignored `runtime/pyodide/` with Pyodide 0.29.3 core assets, local package wheels, manifest hashes, and a Node-backed development runner; live adapter smoke imported the full baseline profile offline and printed `5050`.
-- `cmd/debug_sandbox --smoke` is now the repeatable operator harness for the local bundle: it reports missing bundles as unavailable and runs arithmetic, data imports, XLSX read, matplotlib artifact, and PDF/text extraction scenarios offline.
-- Release packaging now rebuilds the ignored Pyodide bundle from pinned inputs, bundles Windows Node under `runtime/pyodide/runner/node-win-x64`, runs `cmd/debug_sandbox --smoke` before archive creation, and includes `runtime/pyodide/**` in GoReleaser archives.
-- `cmd/debug_sandbox --tool-smoke` now exercises the registered `execute_code` tool boundary against the local Pyodide manager and verifies `sum(range(1, 101)) == 5050`.
-- `cmd/debug_telegram_sandbox` now injects a synthetic private Telegram text update into the real Aura bot, uses the live LLM plus real outgoing Telegram messages, verifies the model calls `execute_code`, and fails unless the conversation surfaces `5050`.
-- Sandbox code can return files by writing plain direct-child files under `/tmp/aura_out`; the Pyodide runner collects up to 10 artifacts capped at 5 MiB each, returns base64 artifact payloads over the runner protocol, and `execute_code` delivers them through Telegram documents when invoked with a Telegram user context.
-- `cmd/debug_sandbox --artifact-smoke` now proves artifact egress through the registered `execute_code` boundary by writing `/tmp/aura_out/artifact.txt` in Pyodide and asserting the tool output includes artifact metadata.
-- File-generation tool choice is explicit in the system prompt and tool descriptions: `create_xlsx` / `create_docx` / `create_pdf` are preferred for ordinary user-facing documents that should persist as Aura sources, while `execute_code` is for calculations, plots, custom exports, and computed artifacts under `/tmp/aura_out`.
-- `cmd/debug_telegram_sandbox --artifact-smoke` now runs a live LLM Telegram smoke that asks the model to create `/tmp/aura_out/aura_artifact.txt`, verifies `execute_code` was called, verifies artifact metadata appeared, and confirms a real Telegram document was sent.
-- Sandbox artifacts now persist as first-class Aura sources (`kind=sandbox_artifact`, `status=ingested`) as well as delivering through Telegram. The `/sources/{id}/raw` endpoint and dashboard Source Inbox can download them, and smoke tooling now fails unless artifact metadata includes `source_id=src_...`.
-- `SANDBOX_TIMEOUT_SEC` now defaults to 120 seconds; live Telegram smoke showed 60 seconds was still marginal for Pyodide cold start, while 120 seconds produced a single-call artifact run.
+Docs cleanup status:
+
+- `docs/plans/` is no longer an active planning surface. Historical plans were removed in the docs cleanup slice; use git history for old phase plans and use `.planning/` for current phase work.
+- `docs/implementation-tracker.md` remains the long-form shipped-history ledger.
+- `docs/llm-wiki.md` remains the durable product memory-pattern reference.
+- Phase 18 is closed.
+- Phase 19 is closed for the pre-GSD/productization track. Its remaining "real-user routine drill" and "legacy/debt closure" notes were superseded by the `v1.0 Close Concern` milestone, which now owns hardening and cleanup through explicit requirements.
+- Sandbox Pyodide work is production-closed and released as `v3.0.2`.
 
 Phase 18 status: **closed**.
 
@@ -102,19 +68,11 @@ Closure criteria met:
 - Evidence drill-down, batch review, provenance, memory decay, and report graph artifacts are shipped.
 - The memory stack still follows `docs/llm-wiki.md`: source evidence -> compiled wiki -> search/evidence envelope -> reviewed updates -> optional procedural skills.
 
-Phase 19 direction:
+Phase 19 status:
 
-- Code inventory, procedural memory, and graph-aware operations:
-  - inventory Aura code and remove only verified dead code;
-  - use Picobot/Hermes as reference repositories instead of reinventing skills, toolsets, cron, or delegation patterns;
-  - implement review-gated procedural memory through `propose_skill_change`;
-  - add named toolset profiles for `agent_job` and swarm roles;
-  - extend scheduled routines with `skills`, `enabled_toolsets`, `context_from`, and `wake_if_changed`;
-  - keep real LLM scorecards as the usefulness benchmark, but do not start phase 19 with another dashboard unless it unlocks implementation decisions.
-
-Next best slice:
-
-- Phase 19 code/procedural-memory work can resume from `docs/plans/2026-05-04-phase-19-closure-plan.md`; the Pyodide sandbox milestone is production-closed.
+- Closed as the pre-GSD productization track after code inventory, review-gated skill proposals, graph-aware semantic index, named toolsets, skill/context-backed scheduled jobs, wake gates, scheduled-job E2E harnesses, and the skill proposal lifecycle decision shipped.
+- The remaining real-user routine drill and broad debt cleanup notes are not active `docs/` phases. They are superseded by the `v1.0 Close Concern` milestone in `.planning/`.
+- Future work should start from `.planning/STATE.md` and the active phase directory, not from deleted historical docs under `docs/plans/`.
 
 Sandbox closure note (2026-05-04):
 
@@ -127,10 +85,6 @@ Sandbox smoke upgrade (2026-05-04):
 - The artifact smoke no longer proves only a hello-world text file. It now requires a richer computed workflow: pandas builds a sales summary CSV and matplotlib generates a PNG chart, both under `/tmp/aura_out`.
 - `cmd/debug_sandbox --artifact-smoke` and `cmd/debug_telegram_sandbox --artifact-smoke` now fail unless both `aura_sales_summary.csv` and `aura_sales_plot.png` are returned, persisted as sources, and, in the Telegram path, delivered as documents.
 - Live Telegram verification passed with one `execute_code` call, two sent documents, and two persisted source IDs.
-
-Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
-
-Status note: phase 18 is closed. Phase 19 starts from code inventory and procedural learning, with UI only when it serves review/install workflows.
 
 Workspace warning:
 
@@ -191,7 +145,7 @@ Workspace warning:
 | 14.delete | Tasks delete (user "/tasks can not delete task") | done | New `POST /api/tasks/{name}/delete` hard-removes rows; Cancel still flips status to preserve audit trail. Frontend Delete button next to Cancel with `window.confirm`. SchedulerStore interface gained `Delete(ctx, name)`. |
 | 14.recurrence | Recurring tasks (user "can not schedule recurrent task") | done | New `ScheduleEvery` kind + `schedule_every_minutes INTEGER` column with idempotent `ALTER TABLE` migration on existing aura.db files. API accepts `every_minutes` (>=1); validateScheduleFields enforces exclusivity with at/daily; advance-after-fire computes `firedAt + N*time.Minute`. UI: "Every N minutes" radio in NewTaskDialog with hint ("60 = hourly, 1440 = daily, 10080 = weekly"). |
 | 14.cleanup | Conversation archive cleanup (user "db will be full with no control") | done | `ArchiveStore` gained `DeleteByChat`, `DeleteOlderThan`, `DeleteAll`, `Stats`. New endpoints: `GET /api/conversations/stats` (row count + oldest + distinct chats), `POST /api/conversations/cleanup?chat_id=X` / `?older_than_days=N` / `?all=true` with mutually-exclusive validation. Frontend toolbar: stats badge in header, "Purge older than…" prompt, "Wipe this chat" (visible when chat_id filter set), "Wipe all" — all confirm-gated. 6 E2E specs. |
-| 14.5 | Dashboard UX hardening | done | Mobile cards on WikiPanel/SourceInbox/TasksPanel/ConversationsPanel; WikiGraph mobile fallback; 44px touch targets; AA contrast on metadata text; auth-expiry returnTo across query/state/sessionStorage; custom ConfirmModal replaces window.confirm/prompt. New `e2e/confirm-modal.spec.ts`. Closes `docs/dashboard-ux-audit-2026-05-02.md`. |
+| 14.5 | Dashboard UX hardening | done | Mobile cards on WikiPanel/SourceInbox/TasksPanel/ConversationsPanel; WikiGraph mobile fallback; 44px touch targets; AA contrast on metadata text; auth-expiry returnTo across query/state/sessionStorage; custom ConfirmModal replaces window.confirm/prompt. New `e2e/confirm-modal.spec.ts`. Closes the historical dashboard UX audit. |
 | 15a | `create_xlsx` tool + Telegram delivery | done | New `internal/files` pkg with `BuildXLSX` using `xuri/excelize/v2`; formula-injection sanitization (CWE-1236) via leading apostrophe on `=`/`+`/`-`/`@`/`\t`/`\r`. Caps: 16 sheets · 10 000 rows/sheet · 100 cols/row · 200 000 cells · 25 MB serialized · 80-char filename. New `source.KindXLSX` (.xlsx ext). New `tools.CreateXLSXTool` persisting via the existing source store (sha256 dedup → "show me last week's invoice" for free). New `tools.DocumentSender` interface satisfied by `Bot.SendDocumentToUser` (mirrors `SendToUser` pattern from slice 10d's `request_dashboard_token`). Tool wired post-construction in `setup.go`. New `cmd/debug_xlsx` 5-scenario hermetic harness (happy path + injection neutralized + dedup + path-traversal blocked + caps). 19 unit tests (12 xlsx + 7 tool). |
 | 15a-livetest | Telegram E2E smoke for slice 15a | done | Real Telegram bot run with the user. Three real `create_xlsx` calls fired naturally from prompts (no prompt engineering): `expenses.xlsx`, `wiki-pages.xlsx` (LLM chained `list_wiki` then `create_xlsx`), `budget.xlsx`. All persisted with `kind=xlsx`/`status=ingested`/correct openxml mime, 127–400 ms generate, delivered via `tele.Document`. Manifest description was sufficient for tool selection. |
 | 15d | Dashboard download endpoint + button | done | `GET /api/sources/{id}/raw` generalized via a kind→asset table (`rawAssets[Kind] → {filename, contentType, disposition}`); PDFs render `inline`, XLSX forces `attachment`. Adding 15b/15c is one row each — no router change. `validKind` accepts `xlsx`. `SourceSummary` TS kind union extended. `SourceInbox` row gains a Download button (PDF + XLSX); fetch with bearer header → blob URL → trigger download (auth-gated `<a href>` doesn't work because Authorization headers don't tag along on link clicks). Re-OCR / Ingest buttons now hidden for non-PDF kinds — XLSX skips OCR entirely. New router test covers PDF (inline), XLSX (attachment), text (404). |
@@ -231,8 +185,8 @@ Workspace warning:
 | 18g | Live memory routing scorecard | done | `cmd/debug_memory_quality -live-llm` drives the same 20 questions through the live LLM/tool loop, measures routing/tool/proposal drift, and proposal creation now rejects `origin_tool=search_memory` without evidence. |
 | 18h | Memory quality report graph | done | `debug_memory_quality` can now save timestamped local JSON reports with summary metrics, full live/hermetic results, and graph-ready nodes/edges for scenario -> tool -> evidence/proposal analysis. |
 | 18-close | Phase 18 closure | done | Phase 18 memory layer is closed: evidence envelope, decay, provenance, batch review, drill-down, live scorecard, and graph-ready quality reports all shipped under the LLM Wiki memory philosophy. |
-| 19 | Code inventory + procedural memory | planned | Inventory Aura code, remove verified dead code, reuse Picobot/Hermes patterns, add review-gated skill proposals, toolset profiles, and skill-backed agent jobs. |
-| 19a | Code inventory and low-risk cleanup | done | `docs/code-inventory-phase-19-2026-05-04.md`; removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
+| 19 | Code inventory + procedural memory | closed | Pre-GSD productization track closed; shipped code inventory, review-gated skill proposals, graph-aware search, toolsets, skill/context-backed agent jobs, wake gates, E2E harnesses, and skill lifecycle decision. Remaining cleanup moved to `v1.0 Close Concern` in `.planning/`. |
+| 19a | Code inventory and low-risk cleanup | done | Historical inventory doc removed from `docs/` cleanup; source remains in git history. Removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
 | 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
 | 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
 | 19c | Graph-aware semantic index | done | Wiki indexing now embeds compact graph node cards and category/global index cards alongside page bodies; `search_memory` exposes graph evidence without turning embeddings into durable memory. |
@@ -242,6 +196,9 @@ Workspace warning:
 | 19g | Scheduled-routine E2E harness | done | `cmd/debug_agent_jobs` proves run -> skip -> mutate -> rerun with persisted output/metrics/signature; skipped run makes zero LLM/tool calls. |
 | 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
 | 19h | Skill proposal lifecycle decision | done | Phase 19 uses Option A: skill proposals remain review-only on `/summaries` approval, expose an explicit `skill_lifecycle` API handoff, and document manual install/smoke as the admin path for Phase 20. |
+| 19i | Real-user routine drill | superseded | Not active in `docs/`; usefulness/latency drills should be added only as explicit `v1.0` or later phase acceptance checks. |
+| 19j | Legacy and debt closure | superseded | Broad debt cleanup moved to `.planning/codebase/CONCERNS.md` and `v1.0 Close Concern`; no unknown Phase 19 debt remains in `docs/`. |
+| 19-close | Formal closure | done | Tracker now points to `.planning/` for active phases; stale `docs/plans` files removed. |
 | sandbox.1 | Sandbox toolset guardrails | done | Consolidated code-execution tools into an explicit `sandbox_code` profile and restored `scheduler_safe` to propose-only defaults; scheduled `agent_job` rejects sandbox profiles because executable code is outside the recurring-job perimeter. |
 | sandbox.pyodide.0 | Sandbox architecture pivot | done | Replaced the Isola product plan with a bundled Pyodide offline-runtime plan grounded in the official Pyodide package list; next slice is runtime abstraction before adapter implementation. |
 | sandbox.pyodide.1 | Runtime abstraction | done | `internal/sandbox.Manager` now delegates execution/validation/health to a runtime adapter; legacy Isola is behind the boundary and `/health` reports `runtime_kind` plus detail without widening scheduler-safe sandbox permissions. |
@@ -256,8 +213,25 @@ Workspace warning:
 | sandbox.pyodide.8 | Artifact egress | done | Pyodide code can write direct-child files under `/tmp/aura_out`; the runner returns bounded base64 artifacts, Go decodes them into `sandbox.Artifact`, `execute_code` reports artifact metadata and auto-delivers through Telegram when user context and sender are available, and `cmd/debug_sandbox --artifact-smoke` proves the boundary. |
 | sandbox.pyodide.8a | File tool choice clarity | done | Added prompt and tool-description guidance so ordinary spreadsheets/docs/PDFs prefer typed `create_*` tools that persist Aura sources, while `execute_code` is reserved for computed artifacts, plots, custom exports, and code-required workflows. |
 | sandbox.pyodide.9 | Live Telegram artifact smoke | done | Extended `cmd/debug_telegram_sandbox --artifact-smoke` to require `execute_code`, artifact metadata, and real Telegram document delivery; live run delivered `aura_artifact.txt` after raising the Pyodide timeout default to 60 seconds. |
+| sandbox.pyodide.close | Production closure | done | Rich artifact smokes persist CSV/PNG outputs as sources, live Telegram artifact delivery passed, v3.0.2 GitHub release shipped with bundled Pyodide runtime assets. |
 
 ## Session Log
+
+### 2026-05-04 - Docs phase cleanup and legacy plan removal
+
+Goal: close stale pending phase handoffs in `docs/` and make `.planning/` the only active phase surface.
+
+Implementation:
+
+- Updated the current handoff to mark Pyodide sandbox production closure as complete and released in `v3.0.2`.
+- Marked Phase 19 as closed/superseded by the `v1.0 Close Concern` milestone rather than leaving `19i`, `19j`, and `19-close` as ambiguous docs debt.
+- Removed historical plan files and obsolete audit/strategy docs from the active docs tree; their content remains recoverable from git history.
+- Updated lingering references so tests and operator docs point to the tracker or `.planning/` instead of deleted plan files.
+
+Verification:
+
+- Docs-only cleanup; no Go behavior changed.
+- Reference scan after cleanup confirms no active code/tests point to deleted plan files.
 
 ### 2026-05-04 - Sandbox.pyodide.9 (Live Telegram artifact delivery smoke)
 
@@ -280,7 +254,7 @@ Verification:
 - `go run ./cmd/debug_telegram_sandbox --artifact-smoke --timeout 4m` passed: `tool_calls=execute_code`, `contains_artifact_metadata=true`, `artifact_filenames=aura_artifact.txt`, `document_sends=1`, `size=30`, caption `Aura sandbox artifact: aura_artifact.txt`, final text confirmed delivery.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
 
-Next slice: `sandbox.pyodide.close` decide artifact persistence policy and close the milestone.
+Follow-up completed: `sandbox.pyodide.close` persisted sandbox artifacts as sources, upgraded artifact smokes beyond hello-world, and shipped the production release.
 
 ### 2026-05-04 - Sandbox.pyodide.8a (File tool choice clarity)
 
@@ -523,8 +497,8 @@ Goal: change the sandbox product architecture from Isola/host-Python hardening t
 
 Implementation:
 
-- Rewrote `docs/plans/2026-05-04-sandbox-code-execution-design.md` so Pyodide is the approved backend and Isola is only legacy prototype context.
-- Replaced the obsolete Isola task list in `docs/plans/2026-05-04-sandbox-code-execution-plan.md` with Pyodide migration slices: runtime abstraction, bundle manifest/probe, runner adapter, package smoke, `execute_code` switch, and Isola retirement.
+- Rewrote the historical sandbox code-execution design so Pyodide is the approved backend and Isola is only legacy prototype context.
+- Replaced the obsolete Isola task list in the historical sandbox plan with Pyodide migration slices: runtime abstraction, bundle manifest/probe, runner adapter, package smoke, `execute_code` switch, and Isola retirement.
 - Updated `runtime/README.md` to document `runtime/pyodide/...` as the product layout and keep `runtime/python/...` legacy-only.
 - Used the official Pyodide 0.29.3 package list as the package source of truth. Most required office/data packages are built in; `openpyxl` must be treated as a vendored wheel candidate or replaced after smoke testing.
 
@@ -565,7 +539,7 @@ Goal: make procedural-memory proposal review unambiguous without introducing a s
 Decision:
 
 - Chose Option A for Phase 19 closure: approving a skill proposal in `/summaries` marks the draft reviewed only.
-- Install/update/delete and smoke execution remain an explicit admin handoff, documented in `docs/plans/2026-05-04-skill-proposal-lifecycle.md`.
+- Install/update/delete and smoke execution remain an explicit admin handoff, documented in the historical skill proposal lifecycle note and now summarized here.
 - Option B remains a future admin workflow, but it must not hook generic summary approval directly.
 
 Implementation:
@@ -838,7 +812,7 @@ Goal: start phase 19 with a code/reuse inventory instead of adding low-value das
 
 Implementation:
 
-- Added `docs/code-inventory-phase-19-2026-05-04.md`.
+- Added the historical Phase 19 code inventory document, later removed from active docs during cleanup.
 - Mapped Aura code areas, dead/legacy findings, and Picobot/Hermes patterns to reuse.
 - Removed stale `cmd/debug_swarm` hard-coded `debugAssignments()` after confirming the planner path supersedes it.
 - Fixed low-risk staticcheck hygiene in debug/test/client code:
@@ -1371,7 +1345,7 @@ Implementation slice to convert "remind me to do the routine" into "run a bounde
 
 ### 2026-05-03 - Slice 17h (Daily recurrence parity)
 
-Implementation slice from `docs/daily-questions-gap-audit-2026-05-03.md` to fix the real "giorni feriali alle 10" gap without introducing full cron or autonomous agent jobs yet.
+Implementation slice from the historical daily-questions gap audit to fix the real "giorni feriali alle 10" gap without introducing full cron or autonomous agent jobs yet.
 
 **Implementation**:
 
@@ -1515,7 +1489,7 @@ Follow-up slice after `slice 17: add AuraBot swarm MVP` commit `32abb88`.
 
 ### 2026-05-03 - Slice 17c (AuraBot LLM tools + E2E metrics)
 
-Third implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+Third implementation slice from the historical AuraBot swarm design.
 
 **Implementation**:
 
@@ -1566,7 +1540,7 @@ Third implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
 
 ### 2026-05-03 - Slice 17b (AuraBot swarm store + manager)
 
-Second implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+Second implementation slice from the historical AuraBot swarm design.
 
 **Implementation**:
 
@@ -1613,7 +1587,7 @@ Second implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`
 
 ### 2026-05-03 - Slice 17a (AuraBot bounded runner)
 
-First implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
+First implementation slice from the historical AuraBot swarm design.
 
 **Implementation**:
 
@@ -1646,7 +1620,7 @@ First implementation slice from `docs/plans/2026-05-03-AuraBot-swarm-design.md`.
 
 - `internal/agent/runner.go`
 - `internal/agent/runner_test.go`
-- `docs/plans/2026-05-03-AuraBot-swarm-design.md`
+- historical AuraBot swarm design doc
 - `docs/implementation-tracker.md`
 
 **Next work**:
@@ -1668,7 +1642,7 @@ Five slices executed via subagent-driven development (fresh agent per slice). Tw
 
 ### 2026-05-03 - Slice 12u.9 (HR-02 proposal category + related slugs)
 
-Fixes `docs/REVIEW.md` HR-02. Review-mode summarizer proposals now round-trip `Candidate.Category` and `Candidate.RelatedSlugs` through `proposed_updates` and restore them when approving a proposal.
+Fixes Phase 12 review HR-02. Review-mode summarizer proposals now round-trip `Candidate.Category` and `Candidate.RelatedSlugs` through `proposed_updates` and restore them when approving a proposal.
 
 **Implementation**:
 
@@ -1684,11 +1658,11 @@ Fixes `docs/REVIEW.md` HR-02. Review-mode summarizer proposals now round-trip `C
 - Extended approve tests to assert the wiki page receives the original category and related slugs.
 - Added scheduler migration coverage for legacy `proposed_updates` tables.
 
-**Next work**: no HIGH items from the Phase 12 review backlog remain open; next slice should come from the current product backlog rather than `docs/REVIEW.md`.
+**Next work**: no HIGH items from the Phase 12 review backlog remain open; next slice should come from the current product backlog rather than the historical review doc.
 
 ### 2026-05-03 - Slice 12u.8 (HR-01 RepairLink partial-commit)
 
-Fixes `docs/REVIEW.md` HR-01. `wiki.Store.RepairLink` no longer aborts the whole auto-fix pass on the first page-level read/write failure. It now accumulates per-page errors, continues scanning later pages, writes the `auto-fix` audit log unconditionally, and returns a joined summary error when any page failed.
+Fixes Phase 12 review HR-01. `wiki.Store.RepairLink` no longer aborts the whole auto-fix pass on the first page-level read/write failure. It now accumulates per-page errors, continues scanning later pages, writes the `auto-fix` audit log unconditionally, and returns a joined summary error when any page failed.
 
 **Test coverage**:
 
@@ -1837,7 +1811,7 @@ First slice of Phase 15 (file creation milestone). Aura goes from "knowledge & c
 
 ### 2026-05-02 — Phase 14.5 (Dashboard UX hardening)
 
-Closes the high/medium findings from `docs/dashboard-ux-audit-2026-05-02.md`. One atomic commit. No backend or schema changes.
+Closes the high/medium findings from the historical dashboard UX audit. One atomic commit. No backend or schema changes.
 
 **Audit fixes**:
 
@@ -1894,7 +1868,7 @@ No behavior changes intended; this is an ownership-boundary refactor to make fut
 
 ### 2026-05-02 — Phase 12 (Compounding Memory) v0.12.0
 
-Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6 against `docs/plans/2026-05-02-phase-12-compounding-memory-plan.md`. 21 atomic slices (12a–12u) + 9 post-review follow-ups (12u.1–12u.9) + 2 lead infra commits (12.cleanup, 12.fix-applier).
+Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend / Frontend / Q&A) all on Sonnet 4.6 against the historical Phase 12 compounding-memory plan. 21 atomic slices (12a–12u) + 9 post-review follow-ups (12u.1–12u.9) + 2 lead infra commits (12.cleanup, 12.fix-applier).
 
 **Architecture**: SQLite `conversations` archive (write side: `BufferedAppender` chan-100, drain goroutine, drop-on-full slog warn; read side: `ArchiveStore.ListByChat/ListAll/Get/MaxTurnIndex`). `summarizer` package: `LLMScorer` temperature=0 → `Deduper` (sim>0.85 skip / ≥0.5 patch / <0.5 new) → 3 `Applier` impls (Auto/Review/Off) gated by `SUMMARIZER_MODE`. `MaintenanceJob` Levenshtein auto-fix + `wiki_issues` queue with severity policy. `compounding_rate` metric on `/api/health`. Dashboard: `/conversations`, `/summaries`, `/maintenance` routes + 5th `HealthDashboard` card + sidebar nav with `g v / g u / g x` chords.
 
@@ -2369,7 +2343,7 @@ Single session. Lead orchestrated a 3-teammate Claude Code Agent Team (Backend /
   - (Phase 4 commit, name varies by squash) new components
   - `70b2ce6` 10b WIP: adapt copied components to /api/* and react-router
   - Final commit (this commit): build SPA, wire static handler in main, tray Open Dashboard, Makefile, tracker update.
-- Manual verification still owed by user: `go run ./cmd/aura`, then http://localhost:8080/ should render the dashboard; the 13-item checklist in `docs/plans/2026-04-30-slice-10b-plan.md` Task 37 is the canonical list. The tray's Open Dashboard launches the browser.
+- Manual verification still owed by user at that time: `go run ./cmd/aura`, then http://localhost:8080/ should render the dashboard; the historical slice 10b checklist was the canonical list. The tray's Open Dashboard launches the browser.
 - Next slice: **10c — UI write actions** (POST endpoints + ingest/cancel/rebuild buttons). Or 10d (auth) if LAN exposure is needed sooner.
 
 ### 2026-04-30 — Slice 10a complete (read-only HTTP API)
