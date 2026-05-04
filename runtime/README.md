@@ -2,26 +2,35 @@
 
 Release builds should place optional bundled runtimes here.
 
-The code-execution sandbox looks for Python in this layout before any
-operator override:
+The code-execution sandbox targets a bundled Pyodide runtime:
 
-- Windows: `runtime/python/python.exe`
-- macOS/Linux: `runtime/python/bin/python3`
+```text
+runtime/
+  pyodide/
+    pyodide.js / pyodide.mjs
+    pyodide.asm.wasm
+    python_stdlib.zip
+    repodata.json
+    packages/
+    aura-pyodide-manifest.json
+    runner/
+```
 
-Do not require end users to install Python, pip, Isola, Docker, or a
-developer toolchain. System Python is only a development/operator fallback
-when `SANDBOX_ALLOW_SYSTEM_PYTHON=true` or `SANDBOX_PYTHON_PATH` is set.
+Do not require end users to install Python, pip, Isola, Docker, Node,
+Pyodide, or a developer toolchain. Any runner needed to host Pyodide must be
+part of Aura's release artifact.
 
-The long-term product target is a Go-embedded WASI runtime with bundled
-Python artifacts, so Aura can ship as one installable product.
+The previous `runtime/python/...` layout is legacy/prototype-only while the
+codebase is migrated away from the Isola sidecar. The product path is
+`runtime/pyodide/...`.
 
 ## Default Package Profile
 
 The bundled sandbox should support everyday office/data work out of the box:
 
 - `numpy`, `pandas`, `scipy`, `statsmodels`
-- spreadsheet/data IO: `openpyxl` or equivalent XLSX writer support, `xlrd`,
-  `pyarrow`, `python-calamine`
+- spreadsheet/data IO: `xlrd`, `pyarrow`, `python-calamine`; vendor
+  `openpyxl` only if a pinned pure-Python wheel smoke test passes
 - charts/images: `matplotlib`, `Pillow`
 - document/text extraction: `PyMuPDF`, `beautifulsoup4`, `lxml`, `html5lib`
 - utility stack: `requests`, `pyyaml`, `python-dateutil`, `pytz`, `tzdata`,

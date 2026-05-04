@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.1` sandbox toolset guardrails.
+Last completed slice: `sandbox.pyodide.0` sandbox architecture pivot.
 
-Active slice: `sandbox.2` sandbox runtime/productization hardening.
+Active slice: `sandbox.pyodide.1` runtime abstraction.
 
 What is shipped:
 
@@ -73,8 +73,8 @@ What is shipped:
 - Scheduled `agent_job` runs now receive the same wall-clock Runtime Context as interactive chat, plus explicit scheduled-for/running-at metadata when an overdue job fires after downtime.
 - Assistant-generated scheduled-job notifications now use the Telegram Markdown-to-HTML renderer instead of raw `SendToUser`, so reports do not arrive as visible Markdown.
 - Sandbox code execution is wired behind explicit tools (`execute_code`, `list_tools`, `read_tool`, `save_tool`) and a separate `sandbox_code` toolset profile; scheduled agent jobs reject that profile and keep executable-code tools out of `scheduler_safe`.
-- Sandbox runtime product rule: end users must not install Python/pip/Isola manually. Aura now looks for a bundled runtime, refuses system Python by default, supports `SANDBOX_PYTHON_PATH` / `SANDBOX_ALLOW_SYSTEM_PYTHON=true` only as operator/dev overrides, disables `execute_code` when the runtime probe fails, and exposes sandbox availability through `/api/health` for the dashboard.
-- Sandbox package product rule: the bundled runtime must include an office/data profile (`numpy`, `pandas`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
+- Sandbox runtime product rule: end users must not install Python/pip/Isola/Docker/Node/Pyodide manually. The target product runtime is now a bundled `runtime/pyodide/...` offline package, probed at startup; unhealthy bundles disable `execute_code` and surface sandbox health.
+- Sandbox package product rule: the bundled Pyodide runtime must include an office/data profile (`numpy`, `pandas`, `scipy`, `statsmodels`, spreadsheet IO, charts, PDF/text extraction, utility libs) and work offline; runtime downloads from PyPI/CDNs are not acceptable for normal user workflows.
 
 Phase 18 status: **closed**.
 
@@ -99,11 +99,10 @@ Phase 19 direction:
 
 Next best slice:
 
-- Sandbox smoke hardening:
-  - run sidecar syntax and manager/tool tests on the local machine;
-  - verify Isola availability and record whether live execution is enabled or skipped;
-  - package a real bundled sandbox runtime under `runtime/python/...` in release artifacts;
-  - evaluate Pyodide/Python-WASM packaging for the office/data package profile instead of a pure-Python-only runtime;
+- `sandbox.pyodide.1` runtime abstraction:
+  - decouple `internal/sandbox` from Isola-specific host Python assumptions;
+  - add runtime kind/detail health so Aura can report `pyodide`, `isola_legacy`, or `unavailable`;
+  - preserve current `execute_code`/toolset guardrails while the Pyodide adapter lands behind the same manager boundary;
   - keep `save_tool` out of autonomous scheduled jobs unless a later admin workflow explicitly approves durable writes.
 
 Closure plan: `docs/plans/2026-05-04-phase-19-closure-plan.md` defines the remaining 19g, 19h, 19i, 19j, and 19-close slices, including no-debt acceptance criteria.
@@ -221,8 +220,27 @@ Workspace warning:
 | 19g.1 | Scheduled-job runtime context and rendered notifications | done | Log-driven fix: scheduled `agent_job` prompts share the interactive Runtime Context, include scheduled-for vs running-at metadata for late runs, and render assistant-generated notifications through Telegram HTML instead of leaking Markdown. |
 | 19h | Skill proposal lifecycle decision | done | Phase 19 uses Option A: skill proposals remain review-only on `/summaries` approval, expose an explicit `skill_lifecycle` API handoff, and document manual install/smoke as the admin path for Phase 20. |
 | sandbox.1 | Sandbox toolset guardrails | done | Consolidated code-execution tools into an explicit `sandbox_code` profile and restored `scheduler_safe` to propose-only defaults; scheduled `agent_job` rejects sandbox profiles because executable code is outside the recurring-job perimeter. |
+| sandbox.pyodide.0 | Sandbox architecture pivot | done | Replaced the Isola product plan with a bundled Pyodide offline-runtime plan grounded in the official Pyodide package list; next slice is runtime abstraction before adapter implementation. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.0 (Architecture pivot)
+
+Goal: change the sandbox product architecture from Isola/host-Python hardening to a bundled Pyodide offline runtime that supports real office/data packages.
+
+Implementation:
+
+- Rewrote `docs/plans/2026-05-04-sandbox-code-execution-design.md` so Pyodide is the approved backend and Isola is only legacy prototype context.
+- Replaced the obsolete Isola task list in `docs/plans/2026-05-04-sandbox-code-execution-plan.md` with Pyodide migration slices: runtime abstraction, bundle manifest/probe, runner adapter, package smoke, `execute_code` switch, and Isola retirement.
+- Updated `runtime/README.md` to document `runtime/pyodide/...` as the product layout and keep `runtime/python/...` legacy-only.
+- Used the official Pyodide 0.29.3 package list as the package source of truth. Most required office/data packages are built in; `openpyxl` must be treated as a vendored wheel candidate or replaced after smoke testing.
+
+Verification:
+
+- Docs-only slice; no Go code changed.
+- `git status --short -uall` started clean before edits.
+
+Next slice: `sandbox.pyodide.1` runtime abstraction inside `internal/sandbox`, preserving current toolset guardrails while making runtime kind/health explicit.
 
 ### 2026-05-04 - Sandbox.1 (Sandbox toolset guardrails)
 
@@ -245,7 +263,7 @@ Verification:
 - `staticcheck ./internal/toolsets ./internal/scheduler`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
 
-Next slice: sandbox smoke hardening, including sidecar syntax check and local Isola availability notes.
+Next slice: superseded by `sandbox.pyodide.1` runtime abstraction after the Pyodide architecture pivot.
 
 ### 2026-05-04 - Slice 19h (Skill proposal lifecycle decision)
 
