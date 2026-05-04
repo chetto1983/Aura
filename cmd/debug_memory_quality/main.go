@@ -78,6 +78,10 @@ type liveReport struct {
 	Questions               int                  `json:"questions"`
 	Passed                  int                  `json:"passed"`
 	RoutingPassRate         float64              `json:"routing_pass_rate"`
+	LatencyBudgetMS         int64                `json:"latency_budget_ms"`
+	AvgScenarioMS           int64                `json:"avg_scenario_ms"`
+	MaxScenarioMS           int64                `json:"max_scenario_ms"`
+	SlowScenarios           int                  `json:"slow_scenarios"`
 	SearchMemoryCalls       int                  `json:"search_memory_calls"`
 	ProposalCalls           int                  `json:"proposal_calls"`
 	UnexpectedProposalCalls int                  `json:"unexpected_proposal_calls"`
@@ -95,6 +99,7 @@ type liveScenarioResult struct {
 	ToolCalls          []string `json:"tool_calls"`
 	LLMCalls           int      `json:"llm_calls"`
 	ElapsedMS          int64    `json:"elapsed_ms"`
+	LatencyBudgetMS    int64    `json:"latency_budget_ms,omitempty"`
 	EvidenceCount      int      `json:"evidence_count"`
 	EvidenceKinds      []string `json:"evidence_kinds"`
 	ProposalOK         bool     `json:"proposal_ok,omitempty"`
@@ -154,7 +159,8 @@ func main() {
 	keep := flag.Bool("keep", false, "keep the temporary wiki directory")
 	liveLLM := flag.Bool("live-llm", false, "drive the scorecard through the live LLM/tool loop")
 	limit := flag.Int("limit", 0, "optional number of scenarios to run")
-	liveTimeout := flag.Duration("live-timeout", 180*time.Second, "per-scenario timeout for -live-llm")
+	liveTimeout := flag.Duration("live-timeout", 60*time.Second, "hard per-scenario timeout for -live-llm")
+	liveLatencyBudget := flag.Duration("live-latency-budget", 30*time.Second, "end-user latency budget per live scenario; <=0 disables the slow-response gate")
 	reportDir := flag.String("report-dir", "", "optional directory for timestamped JSON reports with graph data")
 	flag.Parse()
 
@@ -170,7 +176,7 @@ func main() {
 	defer cancel()
 
 	if *liveLLM {
-		rep, wikiDir, err := runLive(ctx, *limit, *liveTimeout)
+		rep, wikiDir, err := runLive(ctx, *limit, *liveTimeout, *liveLatencyBudget)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
 			os.Exit(1)
@@ -302,7 +308,7 @@ func run(ctx context.Context, limit int) (report, string, error) {
 	return rep, wikiDir, nil
 }
 
-func runLive(ctx context.Context, limit int, liveTimeout time.Duration) (liveReport, string, error) {
+func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time.Duration) (liveReport, string, error) {
 	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return liveReport{}, "", fmt.Errorf("load .env: %w", err)
 	}
@@ -358,14 +364,25 @@ func runLive(ctx context.Context, limit int, liveTimeout time.Duration) (liveRep
 		return liveReport{}, wikiDir, err
 	}
 
-	rep := liveReport{Model: model, Results: make([]liveScenarioResult, 0, len(selectedScenarios(limit)))}
+	rep := liveReport{
+		Model:           model,
+		LatencyBudgetMS: liveLatencyBudget.Milliseconds(),
+		Results:         make([]liveScenarioResult, 0, len(selectedScenarios(limit))),
+	}
 	started := time.Now()
 	for _, sc := range selectedScenarios(limit) {
-		result := runLiveScenario(ctx, runner, sc)
+		result := runLiveScenario(ctx, runner, sc, liveLatencyBudget)
 		rep.Results = append(rep.Results, result)
 		rep.Questions++
 		if result.Pass {
 			rep.Passed++
+		}
+		rep.AvgScenarioMS += result.ElapsedMS
+		if result.ElapsedMS > rep.MaxScenarioMS {
+			rep.MaxScenarioMS = result.ElapsedMS
+		}
+		if liveLatencyBudget > 0 && result.ElapsedMS > liveLatencyBudget.Milliseconds() {
+			rep.SlowScenarios++
 		}
 		rep.LLMCalls += result.LLMCalls
 		rep.ToolCalls += len(result.ToolCalls)
@@ -384,12 +401,14 @@ func runLive(ctx context.Context, limit int, liveTimeout time.Duration) (liveRep
 	rep.ElapsedMS = time.Since(started).Milliseconds()
 	if rep.Questions > 0 {
 		rep.RoutingPassRate = float64(rep.Passed) / float64(rep.Questions)
+		rep.AvgScenarioMS = rep.AvgScenarioMS / int64(rep.Questions)
 	}
 	rep.OK = rep.RoutingPassRate >= 0.85 &&
 		rep.SearchMemoryCalls >= rep.Questions &&
-		rep.UnexpectedProposalCalls == 0
+		rep.UnexpectedProposalCalls == 0 &&
+		rep.SlowScenarios == 0
 	if !rep.OK {
-		rep.Warnings = append(rep.Warnings, "live routing gate failed: want >=85% pass rate, search_memory on every question, and no unexpected proposals")
+		rep.Warnings = append(rep.Warnings, "live usefulness gate failed: want >=85% pass rate, search_memory on every question, no unexpected proposals, and no slow scenarios over the end-user latency budget")
 	}
 	return rep, wikiDir, nil
 }
@@ -425,7 +444,7 @@ func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, propos
 	return res
 }
 
-func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario) liveScenarioResult {
+func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liveLatencyBudget time.Duration) liveScenarioResult {
 	res := liveScenarioResult{Name: sc.Name, Question: sc.Question}
 	started := time.Now()
 	result, err := runner.Run(ctx, agent.Task{
@@ -439,6 +458,12 @@ func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario) liv
 		CompleteOnDeadline: true,
 	})
 	res.ElapsedMS = time.Since(started).Milliseconds()
+	if liveLatencyBudget > 0 {
+		res.LatencyBudgetMS = liveLatencyBudget.Milliseconds()
+		if res.ElapsedMS > res.LatencyBudgetMS {
+			res.Issues = append(res.Issues, fmt.Sprintf("slow response: %dms over %dms end-user budget", res.ElapsedMS, res.LatencyBudgetMS))
+		}
+	}
 	res.LLMCalls = result.LLMCalls
 	res.Final = singleLine(result.Content, 220)
 	if err != nil {
@@ -783,6 +808,10 @@ func saveLiveQualityReport(dir string, rep liveReport) (string, error) {
 			"questions":                 rep.Questions,
 			"passed":                    rep.Passed,
 			"routing_pass_rate":         rep.RoutingPassRate,
+			"latency_budget_ms":         rep.LatencyBudgetMS,
+			"avg_scenario_ms":           rep.AvgScenarioMS,
+			"max_scenario_ms":           rep.MaxScenarioMS,
+			"slow_scenarios":            rep.SlowScenarios,
 			"search_memory_calls":       rep.SearchMemoryCalls,
 			"proposal_calls":            rep.ProposalCalls,
 			"unexpected_proposal_calls": rep.UnexpectedProposalCalls,
@@ -870,6 +899,10 @@ func liveQualityGraph(rep liveReport) qualityGraph {
 			"model":             rep.Model,
 			"questions":         rep.Questions,
 			"routing_pass_rate": rep.RoutingPassRate,
+			"latency_budget_ms": rep.LatencyBudgetMS,
+			"avg_scenario_ms":   rep.AvgScenarioMS,
+			"max_scenario_ms":   rep.MaxScenarioMS,
+			"slow_scenarios":    rep.SlowScenarios,
 			"elapsed_ms":        rep.ElapsedMS,
 			"llm_calls":         rep.LLMCalls,
 			"tool_calls":        rep.ToolCalls,
@@ -883,9 +916,10 @@ func liveQualityGraph(rep liveReport) qualityGraph {
 			Kind:   "scenario",
 			Status: passStatus(r.Pass),
 			Metrics: map[string]any{
-				"evidence_count": r.EvidenceCount,
-				"elapsed_ms":     r.ElapsedMS,
-				"llm_calls":      r.LLMCalls,
+				"evidence_count":    r.EvidenceCount,
+				"elapsed_ms":        r.ElapsedMS,
+				"latency_budget_ms": r.LatencyBudgetMS,
+				"llm_calls":         r.LLMCalls,
 			},
 		})
 		g.addEdge("scorecard:live-llm", scenarioID, "contains", 0)
@@ -1067,10 +1101,14 @@ func printLiveReport(rep liveReport, wikiDir string) {
 	}
 	fmt.Printf("%s debug_memory_quality live-llm\n", status)
 	fmt.Printf("model=%s wiki_dir=%s\n", rep.Model, wikiDir)
-	fmt.Printf("questions=%d passed=%d routing_pass_rate=%.0f%% search_memory_calls=%d proposal_calls=%d unexpected_proposals=%d llm_calls=%d tool_calls=%d elapsed_ms=%d\n",
+	fmt.Printf("questions=%d passed=%d routing_pass_rate=%.0f%% slow=%d budget_ms=%d avg_ms=%d max_ms=%d search_memory_calls=%d proposal_calls=%d unexpected_proposals=%d llm_calls=%d tool_calls=%d elapsed_ms=%d\n",
 		rep.Questions,
 		rep.Passed,
 		rep.RoutingPassRate*100,
+		rep.SlowScenarios,
+		rep.LatencyBudgetMS,
+		rep.AvgScenarioMS,
+		rep.MaxScenarioMS,
 		rep.SearchMemoryCalls,
 		rep.ProposalCalls,
 		rep.UnexpectedProposalCalls,

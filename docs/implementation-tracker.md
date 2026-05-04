@@ -42,7 +42,7 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `19b` review-gated skill proposals.
+Last completed slice: `19b.1` end-user latency gate.
 
 What is shipped:
 
@@ -55,7 +55,8 @@ What is shipped:
 - Proposal evidence chips can jump to source/wiki/conversation context.
 - `cmd/debug_memory_quality` scores 20 everyday memory questions plus review-gated proposal quality.
 - `cmd/debug_memory_quality -live-llm` drives the same scorecard through the live LLM/tool loop and measures routing drift.
-- `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, full results, and graph nodes/edges.
+- `cmd/debug_memory_quality -live-llm` now fails slow scenarios that exceed the end-user latency budget; "eventually correct" is not enough.
+- `cmd/debug_memory_quality -report-dir ...` writes timestamped JSON artifacts with summary, latency, full results, and graph nodes/edges.
 
 Phase 18 status: **closed**.
 
@@ -190,9 +191,41 @@ Workspace warning:
 | 19 | Code inventory + procedural memory | planned | Inventory Aura code, remove verified dead code, reuse Picobot/Hermes patterns, add review-gated skill proposals, toolset profiles, and skill-backed agent jobs. |
 | 19a | Code inventory and low-risk cleanup | done | `docs/code-inventory-phase-19-2026-05-04.md`; removed stale `debugAssignments`; fixed staticcheck hygiene in debug/test/client code. |
 | 19b | Review-gated skill proposals | done | Added `propose_skill_change`: validates complete SKILL.md drafts, stores create/update/delete skill proposals with provenance/allowed tools/smoke prompt in `proposed_updates`, and keeps approval from mutating wiki pages. |
+| 19b.1 | End-user latency gate | done | Live memory scorecard now has `-live-latency-budget` and fails scenarios that are correct but too slow for an end user. |
 | 19c | Named toolset profiles | planned | Extract Aura tool profiles for agent jobs and swarm roles, then use them before expanding scheduled/swarm procedural power. |
 
 ## Session Log
+
+### 2026-05-04 - Slice 19b.1 (End-user latency gate)
+
+Goal: make usefulness include time-to-answer, not only eventual correctness.
+
+Trigger: a live end-user challenge run was interrupted because it was taking several minutes. That is a product failure even if the final answer would eventually be correct.
+
+Implementation:
+
+- `cmd/debug_memory_quality -live-llm` now defaults to a 60s hard per-scenario timeout instead of 180s.
+- Added `-live-latency-budget` (default 30s).
+- Each live scenario records `latency_budget_ms`.
+- The live report records:
+  - `avg_scenario_ms`;
+  - `max_scenario_ms`;
+  - `slow_scenarios`;
+  - `latency_budget_ms`.
+- A scenario over budget gets a quality issue and fails.
+- The overall live gate now requires:
+  - >=85% pass rate;
+  - `search_memory` on every question;
+  - no unexpected proposals;
+  - zero slow scenarios.
+
+Verification:
+
+- Targeted `go test ./cmd/debug_memory_quality`.
+- Targeted `staticcheck ./cmd/debug_memory_quality`.
+- Next live E2E should run with a tiny limit first, e.g. `-limit 1 -live-timeout 45s -live-latency-budget 20s`, before expanding.
+
+Next slice remains: extract named Aura toolset profiles for scheduled jobs and swarm roles.
 
 ### 2026-05-04 - Slice 19b (Review-gated skill proposals)
 
