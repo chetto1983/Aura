@@ -42,9 +42,9 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed slice: `sandbox.pyodide.6` release bundle packaging.
+Last completed slice: `sandbox.pyodide.7` registered execute_code smoke.
 
-Active slice: `sandbox.pyodide.7` real Telegram smoke.
+Active slice: `sandbox.pyodide.7b` live incoming Telegram smoke.
 
 What is shipped:
 
@@ -82,6 +82,7 @@ What is shipped:
 - Local dev bundle installed under ignored `runtime/pyodide/` with Pyodide 0.29.3 core assets, local package wheels, manifest hashes, and a Node-backed development runner; live adapter smoke imported the full baseline profile offline and printed `5050`.
 - `cmd/debug_sandbox --smoke` is now the repeatable operator harness for the local bundle: it reports missing bundles as unavailable and runs arithmetic, data imports, XLSX read, matplotlib artifact, and PDF/text extraction scenarios offline.
 - Release packaging now rebuilds the ignored Pyodide bundle from pinned inputs, bundles Windows Node under `runtime/pyodide/runner/node-win-x64`, runs `cmd/debug_sandbox --smoke` before archive creation, and includes `runtime/pyodide/**` in GoReleaser archives.
+- `cmd/debug_sandbox --tool-smoke` now exercises the registered `execute_code` tool boundary against the local Pyodide manager and verifies `sum(range(1, 101)) == 5050`.
 
 Phase 18 status: **closed**.
 
@@ -106,8 +107,8 @@ Phase 19 direction:
 
 Next best slice:
 
-- `sandbox.pyodide.7` real Telegram smoke:
-  - start Aura with the rebuilt local bundle and confirm health reports `runtime_kind=pyodide`, `available=true`;
+- `sandbox.pyodide.7b` live incoming Telegram smoke:
+  - keep Aura running with the rebuilt local bundle and health reporting `runtime_kind=pyodide`, `available=true`;
   - ask Telegram to compute `sum(range(1, 101))` through `execute_code`;
   - capture any model/tool-loop copy or timeout issues before declaring the feature ready.
 
@@ -234,8 +235,33 @@ Workspace warning:
 | sandbox.pyodide.4 | Offline package smoke | done | Added `cmd/debug_sandbox --smoke` plus reusable smoke scenarios for arithmetic, data imports, XLSX read, matplotlib artifact generation, and PDF/text extraction; missing bundles fail as unavailable. |
 | sandbox.pyodide.5 | Enable execute_code | done | Telegram startup now constructs the Pyodide runner, enables `execute_code` only when bundle and runner health are available, reports invalid bundles as unavailable, and supports the local Windows `.cmd` dev runner fallback. |
 | sandbox.pyodide.6 | Release bundle packaging | done | Added a pinned Pyodide bundle installer, release workflow/Goreleaser hooks, archive inclusion for `runtime/pyodide/**`, publish-time `debug_sandbox --smoke`, and config tests for release packaging. |
+| sandbox.pyodide.7 | Registered execute_code smoke | done | Started Aura with the rebuilt local bundle, confirmed authenticated `/api/health` reports `runtime_kind=pyodide` and `available=true`, and added `cmd/debug_sandbox --tool-smoke` to run `sum(range(1, 101))` through the registered `execute_code` tool boundary. |
 
 ## Session Log
+
+### 2026-05-04 - Sandbox.pyodide.7 (Registered execute_code smoke)
+
+Goal: prove the rebuilt local Pyodide bundle is visible to Aura startup and that the registered `execute_code` tool boundary can execute the milestone arithmetic prompt.
+
+Implementation:
+
+- Started the real `cmd/aura` binary path from a local build with the rebuilt `runtime/pyodide` bundle.
+- Confirmed startup logs enabled `execute_code` with `runtime_kind=pyodide` and `detail="Pyodide runner available"`.
+- Confirmed authenticated `/api/health` reports sandbox `enabled=true`, `available=true`, `runtime_kind=pyodide`, and `runtime="./runtime/pyodide"`.
+- Added `cmd/debug_sandbox --tool-smoke`, which constructs the Pyodide runner/manager, registers `tools.NewExecuteCodeTool`, runs `print(sum(range(1, 101)))`, and fails unless the tool output contains `5050`.
+- Added `cmd/debug_sandbox` tests for the registered-tool smoke success path and unavailable-runtime diagnostics.
+
+Verification:
+
+- `go test ./cmd/debug_sandbox -count=1 -v`
+- `go run ./cmd/debug_sandbox --tool-smoke`
+- `go build -o .codex/tmp/aura-pyodide7-smoke.exe ./cmd/aura`
+- temporary Aura process health probe at `http://127.0.0.1:8081/api/health` with a locally minted dashboard token
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`
+
+Known gap: no live incoming Telegram user update was observed during this session, so the next slice must keep the app running while the operator sends the actual Telegram prompt and then inspect conversation/tool-loop logs for copy, streaming, and timeout issues.
+
+Next slice: `sandbox.pyodide.7b` live incoming Telegram smoke through the bot conversation path.
 
 ### 2026-05-04 - Sandbox.pyodide.6 (Release bundle packaging)
 

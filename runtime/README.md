@@ -131,6 +131,16 @@ The smoke validates bundle availability and runs arithmetic, data imports,
 spreadsheet read, matplotlib artifact creation, and PDF/text extraction against
 local Pyodide files.
 
+To test the same runtime through Aura's registered `execute_code` tool boundary,
+run:
+
+```powershell
+go run ./cmd/debug_sandbox --tool-smoke
+```
+
+This constructs the Pyodide runner/manager, registers `execute_code`, and checks
+that `sum(range(1, 101))` returns `5050`.
+
 GoReleaser runs the same installer and smoke before building archives. Release
 archives include `runtime/pyodide/**`, so Windows users do not need to install
 Node, Python, pip, Docker, or Pyodide separately.

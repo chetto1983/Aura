@@ -2,6 +2,7 @@
 //
 //	go run ./cmd/debug_sandbox --smoke
 //	go run ./cmd/debug_sandbox --smoke --runtime-dir runtime/pyodide --runner runtime/pyodide/runner/aura-pyodide-runner.cmd
+//	go run ./cmd/debug_sandbox --tool-smoke
 //
 // It validates the local Pyodide bundle, starts the runner, and executes the
 // offline office/data smoke profile without requiring LLM or Telegram services.
@@ -17,19 +18,21 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
+	"github.com/aura/aura/internal/tools"
 )
 
 func main() {
 	var (
 		smoke      = flag.Bool("smoke", false, "run the offline Pyodide package smoke")
+		toolSmoke  = flag.Bool("tool-smoke", false, "run the registered execute_code tool smoke")
 		runtimeDir = flag.String("runtime-dir", envDefault("SANDBOX_RUNTIME_DIR", "runtime/pyodide"), "Pyodide runtime directory")
 		runnerPath = flag.String("runner", envDefault("SANDBOX_PYODIDE_RUNNER", ""), "Pyodide runner executable/script path")
 		timeout    = flag.Duration("timeout", 2*time.Minute, "per-scenario timeout")
 	)
 	flag.Parse()
 
-	if !*smoke {
-		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke to run the offline Pyodide package smoke")
+	if !*smoke && !*toolSmoke {
+		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke or --tool-smoke")
 		os.Exit(2)
 	}
 	if strings.TrimSpace(*runnerPath) == "" {
@@ -44,6 +47,28 @@ func main() {
 	})
 	if err != nil {
 		fail("configure runner: %v", err)
+	}
+
+	if *toolSmoke {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+
+		fmt.Printf("Aura sandbox execute_code tool smoke\n")
+		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
+		fmt.Printf("runner=%s\n", *runnerPath)
+		fmt.Printf("timeout=%s\n\n", timeout.String())
+
+		report := runExecuteCodeToolSmoke(ctx, runner)
+		fmt.Printf("availability: kind=%s available=%v detail=%s\n\n", report.Availability.Kind, report.Availability.Available, report.Availability.Detail)
+		if strings.TrimSpace(report.Output) != "" {
+			fmt.Printf("output:\n%s\n", strings.TrimSpace(report.Output))
+		}
+		if !report.OK {
+			fmt.Printf("FAIL: %s\n", report.Error)
+			os.Exit(1)
+		}
+		fmt.Printf("PASS: execute_code returned 5050 through the registered tool boundary\n")
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout*time.Duration(len(sandbox.PyodideSmokeScenarios())+1))
@@ -85,6 +110,61 @@ func main() {
 	if !report.OK {
 		os.Exit(1)
 	}
+}
+
+type executeCodeToolSmokeReport struct {
+	OK           bool
+	Availability sandbox.Availability
+	Output       string
+	Error        string
+}
+
+func runExecuteCodeToolSmoke(ctx context.Context, rt sandbox.Runtime) executeCodeToolSmokeReport {
+	report := executeCodeToolSmokeReport{}
+	if rt == nil {
+		report.Availability = sandbox.Availability{Available: false, Kind: sandbox.RuntimeKindUnavailable, Detail: "sandbox runtime unavailable"}
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	report.Availability = rt.CheckAvailability()
+	if report.Availability.Kind == "" {
+		report.Availability.Kind = rt.Kind()
+	}
+	if !report.Availability.Available {
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	manager, err := sandbox.NewManager(sandbox.Config{Runtime: rt})
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	tool := tools.NewExecuteCodeTool(manager)
+	if tool == nil {
+		report.Error = "execute_code tool did not register"
+		return report
+	}
+	output, err := tool.Execute(ctx, map[string]any{
+		"code":          executeCodeToolSmokeProgram(),
+		"allow_network": false,
+	})
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	report.Output = output
+	if !strings.Contains(output, "5050") {
+		report.Error = "execute_code output did not contain 5050"
+		return report
+	}
+	report.OK = true
+	return report
+}
+
+func executeCodeToolSmokeProgram() string {
+	return "print(sum(range(1, 101)))"
 }
 
 func defaultDebugRunnerPath(runtimeDir string) string {
