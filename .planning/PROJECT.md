@@ -52,7 +52,7 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 - **Wiki:** Markdown files on disk with YAML frontmatter and `[[slug]]` links. Optionally Git-backed.
 - **LLM:** OpenAI-compatible HTTP client as primary; Ollama fallback. Mistral for embeddings and OCR.
 - **Deployment:** Single binary (`aura.exe`) with `//go:embed all:dist`. Windows tray icon. Dev bundle at `runtime/pyodide/`.
-- **Known issues:** All documented in `.planning/codebase/CONCERNS.md` — this milestone aims to close them.
+- **Known issues:** Documented in `.planning/codebase/CONCERNS.md`; v1.0 closes production-readiness blockers from that audit and defers polish, broad refactors, and lower-confidence triage items to v1.1 Hardening Polish.
 
 ## Constraints
 
@@ -104,6 +104,7 @@ This document evolves at phase transitions and milestone boundaries.
 - Final production release gates
 
 **Deferred to v1.1 Hardening Polish:**
+- MustResolveProfiles panic fix unless production reachability promotes it back to a blocker
 - File tool split
 - Broad large-file refactors
 - tray coverage polish

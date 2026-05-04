@@ -27,7 +27,7 @@ See: .planning/ROADMAP.md
 
 ## Recent Activity
 
-[2026-05-04] Bootstrap new-milestone: audit CONCERNS.md (10 areas across P0–P3), selected all tiers
-[2026-05-04] Defined REQUIREMENTS.md (10 requirements across Fix & Secure / Test / Refactor / Polish categories)
-[2026-05-04] Created ROADMAP.md: 6 phases, 10/10 requirements mapped, critical path identified
+[2026-05-04] Bootstrap new-milestone: audited CONCERNS.md and narrowed v1.0 to production-readiness blockers
+[2026-05-04] Defined v1.0 requirements around DB, migrations, memory reliability, dashboard security, Telegram critical paths, and release gates
+[2026-05-04] Created ROADMAP.md: 6 production-readiness phases with v1.1 deferrals recorded
 [2026-05-04] Reconciled v1.0 around Production Readiness: DB foundation, migration safety, memory reliability, dashboard security, Telegram regression harness, and release gate.

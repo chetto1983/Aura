@@ -200,6 +200,8 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 
 ## Summary of Priority
 
+v1.0 scope triage: the priority table remains the concern audit severity, not the active milestone boundary. v1.0 closes production-readiness blockers: shared SQLite ownership and PRAGMAs, migration safety, dashboard token expiry, settings API secret redaction, observable archive failures, Telegram critical-path tests, and release gates. v1.1 Hardening Polish defers the MustResolveProfiles panic fix unless production reachability promotes it back to a blocker, file-generation split, broad large-file refactors, tray coverage/browser polish, telebot beta monitoring docs, full settings at-rest encryption unless redaction proves insufficient, and arbitrary package-wide coverage targets.
+
 | Priority | Area | Recommendation |
 |----------|------|----------------|
 | **P0** | `internal/telegram` 22.1% coverage | Add integration tests for main conversation handler |

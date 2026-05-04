@@ -20,6 +20,7 @@ In scope:
 - Final production release gates
 
 Deferred to v1.1 Hardening Polish:
+- MustResolveProfiles panic fix unless production reachability promotes it back to a blocker
 - File tool split, including `tools/files.go`
 - Broad large-file refactors
 - tray coverage polish
@@ -123,6 +124,7 @@ Automated Go/web/sandbox/package checks plus manual Windows production smoke.
 
 | Deferred item | Follow-up milestone | Reason |
 |---------------|---------------------|--------|
+| MustResolveProfiles panic fix | v1.1 Hardening Polish | High-severity concern, but not part of the approved production-readiness gate unless production reachability is proven |
 | File tool split | v1.1 Hardening Polish | Large-file cleanup, not a production blocker |
 | Broad large-file refactors | v1.1 Hardening Polish | Useful maintainability work outside v1.0 gate |
 | tray coverage polish | v1.1 Hardening Polish | Lower risk than DB, security, memory, and Telegram paths |
