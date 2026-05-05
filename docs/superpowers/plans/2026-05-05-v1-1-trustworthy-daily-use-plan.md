@@ -1240,10 +1240,12 @@ git commit -m "docs: monitor telebot beta dependency"
 - Modify: `.planning/MILESTONES.md`
 - Modify: `.planning/PROJECT.md`
 - Modify: `.planning/STATE.md`
+- Modify: `.planning/codebase/CONCERNS.md`
+- Modify: `README.md`
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Run focused package tests**
+- [x] **Step 1: Run focused package tests**
 
 Run:
 
@@ -1253,7 +1255,7 @@ go test ./internal/toolsets ./internal/scheduler ./internal/telegram ./internal/
 
 Expected: PASS.
 
-- [ ] **Step 2: Run broad Go verification**
+- [x] **Step 2: Run broad Go verification**
 
 Run:
 
@@ -1263,7 +1265,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\sc
 
 Expected: PASS for `go fmt ./...`, `go test ./...`, `go build ./...`, and `go vet ./...`.
 
-- [ ] **Step 3: Run snapshot packaging**
+- [x] **Step 3: Run snapshot packaging**
 
 Run:
 
@@ -1273,7 +1275,7 @@ go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
 
 Expected: PASS.
 
-- [ ] **Step 4: Inspect Windows GUI subsystem**
+- [x] **Step 4: Inspect Windows GUI subsystem**
 
 Run:
 
@@ -1287,11 +1289,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-windows-gui-su
 
 Expected: prints `windows gui subsystem ok: <path>`.
 
-- [ ] **Step 5: Mark v1.1 requirements complete**
+- [x] **Step 5: Mark v1.1 requirements complete**
 
 In `.planning/REQUIREMENTS.md`, mark all v1.1 requirements `[x]` only after the relevant tasks and release gate pass.
 
-- [ ] **Step 6: Mark milestone complete**
+- [x] **Step 6: Mark milestone complete**
 
 Update `.planning/MILESTONES.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, and `docs/implementation-tracker.md` with:
 
@@ -1304,7 +1306,7 @@ Release gates passed:
 - Windows GUI subsystem inspection
 ```
 
-- [ ] **Step 7: Commit closure docs**
+- [x] **Step 7: Commit closure docs**
 
 ```powershell
 git add .planning/REQUIREMENTS.md .planning/MILESTONES.md .planning/PROJECT.md .planning/STATE.md docs/implementation-tracker.md docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md

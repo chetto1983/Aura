@@ -1,23 +1,23 @@
 ## Current Position
 
 Current milestone: v1.1 Trustworthy Daily Use
-Current phase: Phase 1 - Panic Removal Gate
-Current focus: remove production panic paths before observability and packaged Windows UX work
-Status: v1.1 Trustworthy Daily Use started; v1.0 Production Readiness remains complete
-Last activity: 2026-05-05 - Started v1.1 Trustworthy Daily Use docs and active state
+Current phase: Complete
+Current focus: ready to choose the next milestone
+Status: v1.1 Trustworthy Daily Use complete; v1.0 Production Readiness remains complete
+Last activity: 2026-05-05 - Completed v1.1 release gate with focused tests, full Go verifier, GoReleaser snapshot package, and Windows GUI subsystem inspection
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-05)
 
 **Core value:** Durable, compounding personal memory that grows smarter with every conversation - without relying on external note-taking apps.
-**Current focus:** remove production panic paths before observability and packaged Windows UX work.
+**Current focus:** ready to choose the next milestone.
 
 ## Roadmap
 
 See: .planning/ROADMAP.md
 
-**Phases:**
+**Phases completed:**
 - Phase 1: Panic Removal Gate
 - Phase 2: Production Error Observability
 - Phase 3: Platform And Dependency Hygiene
@@ -25,6 +25,7 @@ See: .planning/ROADMAP.md
 
 ## Recent Activity
 
+[2026-05-05] Completed v1.1 Trustworthy Daily Use. Release gates passed: focused package tests, full Go verifier, GoReleaser snapshot package, and Windows GUI subsystem inspection.
 [2026-05-05] Started v1.1 Trustworthy Daily Use. Current milestone: v1.1 Trustworthy Daily Use. Current phase: Phase 1 - Panic Removal Gate. Current focus: remove production panic paths before observability and packaged Windows UX work.
 [2026-05-04] Bootstrap new-milestone: audited CONCERNS.md and narrowed v1.0 to production-readiness blockers
 [2026-05-04] Defined v1.0 requirements around DB, migrations, memory reliability, dashboard security, Telegram critical paths, and release gates

@@ -6,13 +6,13 @@ Aura is a Go-based Telegram assistant with LLM integrations, local wiki storage,
 
 **No Go, Node, or build tools required.** Download a pre-built binary for your OS and follow [INSTALL.md](INSTALL.md). Takes ~15 minutes including creating your Telegram bot.
 
-| OS                    | Binary                     |
-| --------------------- | -------------------------- |
-| Windows               | `aura_windows_amd64.exe`   |
-| macOS (Intel)         | `aura_darwin_amd64`        |
-| macOS (Apple Silicon) | `aura_darwin_arm64`        |
-| Linux (x86_64)        | `aura_linux_amd64`         |
-| Linux (ARM64)         | `aura_linux_arm64`         |
+| OS                    | Release archive                         | Extracted binary |
+| --------------------- | --------------------------------------- | ---------------- |
+| Windows               | `aura_<version>_windows_x86_64.zip`     | `aura.exe`       |
+| macOS (Intel)         | `aura_<version>_darwin_x86_64.tar.gz`   | `aura`           |
+| macOS (Apple Silicon) | `aura_<version>_darwin_arm64.tar.gz`    | `aura`           |
+| Linux (x86_64)        | `aura_<version>_linux_x86_64.tar.gz`    | `aura`           |
+| Linux (ARM64)         | `aura_<version>_linux_arm64.tar.gz`     | `aura`           |
 
 ## Build from source (developers)
 

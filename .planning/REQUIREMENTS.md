@@ -22,14 +22,14 @@ v1.0 is limited to production blockers: data integrity, upgrade safety, memory r
 
 v1.1 is limited to trustworthy daily-use hardening: no avoidable production panics, observable runtime cleanup failures, packaged Windows tray UX, dependency watchpoints, and a focused release gate.
 
-- [ ] **PANIC-01 Toolset Profile Panic Removal:** Invalid or stale toolset profile names must not cause an unstructured process panic in production paths.
-- [ ] **OBS-01 Shutdown Close Observability:** Shutdown close failures for long-lived services are logged with enough context to diagnose DB/client close problems.
-- [ ] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
-- [ ] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
-- [ ] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
-- [ ] **DEP-01 Telebot Beta Monitoring:** Aura tracks the `gopkg.in/telebot.v4` beta dependency with a pinned-version review checklist and smoke expectations.
-- [ ] **UX-01 Packaged Windows Console Suppression:** GoReleaser-produced Windows artifacts build `cmd/aura` as a GUI/tray-first binary without a console window while development and debug commands keep console output.
-- [ ] **REL-02 Focused v1.1 Release Gate:** Focused package tests, broad Go verification, Windows GUI-subsystem package inspection, and any required manual smoke pass before tagging v1.1.
+- [x] **PANIC-01 Toolset Profile Panic Removal:** Invalid or stale toolset profile names must not cause an unstructured process panic in production paths.
+- [x] **OBS-01 Shutdown Close Observability:** Shutdown close failures for long-lived services are logged with enough context to diagnose DB/client close problems.
+- [x] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
+- [x] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
+- [x] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
+- [x] **DEP-01 Telebot Beta Monitoring:** Aura tracks the `gopkg.in/telebot.v4` beta dependency with a pinned-version review checklist and smoke expectations.
+- [x] **UX-01 Packaged Windows Console Suppression:** GoReleaser-produced Windows artifacts build `cmd/aura` as a GUI/tray-first binary without a console window while development and debug commands keep console output.
+- [x] **REL-02 Focused v1.1 Release Gate:** Focused package tests, broad Go verification, Windows GUI-subsystem package inspection, and any required manual smoke pass before tagging v1.1.
 
 ## Deferred Beyond v1.1 Trustworthy Daily Use
 
@@ -40,7 +40,7 @@ v1.1 is limited to trustworthy daily-use hardening: no avoidable production pani
 
 ## Future Requirements
 
-Deferred items from the concern audit stay beyond v1.1 unless they become proven production blockers. The former MustResolveProfiles panic cleanup, tray/browser-open polish, and Telebot monitoring deferrals are superseded by active v1.1 requirements `PANIC-01`, `OBS-02`, and `DEP-01`.
+Deferred items from the concern audit stay beyond v1.1 unless they become proven production blockers. The former MustResolveProfiles panic cleanup, tray/browser-open polish, and Telebot monitoring deferrals are superseded by completed v1.1 requirements `PANIC-01`, `OBS-02`, and `DEP-01`.
 
 <!-- Deferred from CONCERNS.md P3 tier -->
 - **FUT-08 Pyodide runtime bundle in Windows release artifact:** Deferred to release packaging work outside this requirements list unless the release gate exposes a packaging blocker.
@@ -75,23 +75,23 @@ Deferred items from the concern audit stay beyond v1.1 unless they become proven
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PANIC-01 | Phase 1: Panic Removal Gate | Pending |
-| OBS-01 | Phase 2: Production Error Observability | Pending |
-| OBS-02 | Phase 2: Production Error Observability | Pending |
-| OBS-03 | Phase 2: Production Error Observability | Pending |
-| AUDIT-01 | Phase 2: Production Error Observability | Pending |
-| DEP-01 | Phase 3: Platform And Dependency Hygiene | Pending |
-| UX-01 | Phase 3: Platform And Dependency Hygiene | Pending |
-| REL-02 | Phase 4: Release Gate Lite | Pending |
+| PANIC-01 | Phase 1: Panic Removal Gate | Done - production `MustResolveProfiles` panic path removed on 2026-05-05 |
+| OBS-01 | Phase 2: Production Error Observability | Done - shutdown close failures logged on 2026-05-05 |
+| OBS-02 | Phase 2: Production Error Observability | Done - tray browser-open validation/logging landed on 2026-05-05 |
+| OBS-03 | Phase 2: Production Error Observability | Done - Telegram cleanup failure logging landed on 2026-05-05 |
+| AUDIT-01 | Phase 2: Production Error Observability | Done - token audit update failures are logged without denying valid requests on 2026-05-05 |
+| DEP-01 | Phase 3: Platform And Dependency Hygiene | Done - telebot v4 monitoring doc and concern status landed on 2026-05-05 |
+| UX-01 | Phase 3: Platform And Dependency Hygiene | Done - packaged Windows `aura.exe` uses GUI subsystem on 2026-05-05 |
+| REL-02 | Phase 4: Release Gate Lite | Done - focused tests, full Go verifier, snapshot package, and Windows GUI inspection passed on 2026-05-05 |
 
 ## Coverage
 
 | Milestone | Total | Complete | Remaining | Mapped to phases | Unmapped |
 |-----------|-------|----------|-----------|------------------|----------|
 | v1.0 Production Readiness | 7 | 7 | 0 | 7 | 0 |
-| v1.1 Trustworthy Daily Use | 8 | 0 | 8 | 8 | 0 |
+| v1.1 Trustworthy Daily Use | 8 | 8 | 0 | 8 | 0 |
 
 ---
 
 *Requirements defined: 2026-05-04*
-*Last updated: 2026-05-05 for v1.1 Trustworthy Daily Use kickoff*
+*Last updated: 2026-05-05 for v1.1 Trustworthy Daily Use completion*

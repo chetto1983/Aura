@@ -38,17 +38,13 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 - [x] Focused Telegram critical-path tests
 - [x] Final production release gates
 
-### Active v1.1 Trustworthy Daily Use
+### Completed v1.1 Trustworthy Daily Use
 
-Current milestone: v1.1 Trustworthy Daily Use
-Current phase: Phase 1 - Panic Removal Gate
-Current focus: remove production panic paths before observability and packaged Windows UX work
-
-- [ ] Remove production `MustResolveProfiles` panic paths
-- [ ] Surface shutdown, tray/browser-open, Telegram cleanup, and token-audit failures
-- [ ] Suppress the packaged Windows console through GoReleaser-only GUI subsystem flags
-- [ ] Document Telebot v4 beta monitoring
-- [ ] Run a focused v1.1 release gate
+- [x] Removed production `MustResolveProfiles` panic paths
+- [x] Surfaced shutdown, tray/browser-open, Telegram cleanup, and token-audit failures
+- [x] Suppressed the packaged Windows console through GoReleaser-only GUI subsystem flags
+- [x] Documented Telebot v4 beta monitoring
+- [x] Ran a focused v1.1 release gate
 
 ### Out of Scope
 
@@ -64,7 +60,7 @@ Current focus: remove production panic paths before observability and packaged W
 - **Wiki:** Markdown files on disk with YAML frontmatter and `[[slug]]` links. Optionally Git-backed.
 - **LLM:** OpenAI-compatible HTTP client as primary; Ollama fallback. Mistral for embeddings and OCR.
 - **Deployment:** Single binary (`aura.exe`) with `//go:embed all:dist`. Windows tray icon. Dev bundle at `runtime/pyodide/`.
-- **Known issues:** Documented in `.planning/codebase/CONCERNS.md`; v1.0 closed production-readiness blockers from that audit, and v1.1 Trustworthy Daily Use is the active hardening milestone for panic removal, quiet failure observability, packaged Windows UX, and dependency watchpoints.
+- **Known issues:** Documented in `.planning/codebase/CONCERNS.md`; v1.0 closed production-readiness blockers from that audit, and v1.1 closed panic removal, quiet failure observability, packaged Windows UX, and dependency watchpoints.
 
 ## Constraints
 
@@ -133,16 +129,20 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-## Active Milestone: v1.1 Trustworthy Daily Use
+## Completed Milestone: v1.1 Trustworthy Daily Use
 
-Current milestone: v1.1 Trustworthy Daily Use
-Current phase: Phase 1 - Panic Removal Gate
-Current focus: remove production panic paths before observability and packaged Windows UX work
+Completed: 2026-05-05
 
 **Goal:** Make Aura safer and calmer for daily use by removing avoidable panics, surfacing quiet runtime failures, suppressing the packaged Windows console, and documenting dependency/platform watchpoints.
 
 **Boundary:** Hardening-only. No new user-facing features, broad large-file refactors, memory-quality upgrades, settings at-rest encryption, or separate console binary.
 
+**Release gates passed:**
+- Focused package tests
+- Full Go verifier
+- GoReleaser snapshot package
+- Windows GUI subsystem inspection
+
 ---
 
-*Last updated: 2026-05-05 for v1.1 Trustworthy Daily Use kickoff*
+*Last updated: 2026-05-05 for v1.1 Trustworthy Daily Use completion*

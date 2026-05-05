@@ -39,20 +39,17 @@ Release gates passed:
 - Windows ZIP content inspection
 - Manual Windows production smoke from the snapshot ZIP
 
-Deferred to v1.1 Hardening Polish:
-- MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0
+Deferred beyond v1.0:
 - File tool split
 - Broad large-file refactors
 - tray coverage polish
-- telebot beta monitoring docs
 - Full settings at-rest encryption unless redaction proves insufficient
 - Arbitrary coverage targets outside Telegram critical paths
 
-## v1.1 - Trustworthy Daily Use (ACTIVE)
+## v1.1 - Trustworthy Daily Use (COMPLETE)
 
-Current milestone: v1.1 Trustworthy Daily Use
-Current phase: Phase 1 - Panic Removal Gate
-Current focus: remove production panic paths before observability and packaged Windows UX work
+Started: 2026-05-05
+Completed: 2026-05-05
 
 Goal: Make Aura safer and calmer for daily use by removing avoidable panics, surfacing quiet runtime failures, suppressing the packaged Windows console, and documenting dependency/platform watchpoints.
 
@@ -62,3 +59,9 @@ Hardening boundary:
 - No memory-quality upgrades
 - No settings at-rest encryption
 - No separate `aura-console.exe`
+
+Release gates passed:
+- Focused package tests
+- Full Go verifier
+- GoReleaser snapshot package
+- Windows GUI subsystem inspection

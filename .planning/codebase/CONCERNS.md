@@ -43,10 +43,10 @@
 ## Bare Panic Risk
 
 **`MustResolveProfiles` panics on invalid profile names:**
-- Issue: `panic(err)` is the only error-handling path when toolset profile resolution fails.
-- Files: `internal/toolsets/toolsets.go` (line 128)
-- Impact: Any caller that passes an invalid profile name to `MustResolveProfiles` crashes the entire bot process — no recovery, no graceful degradation, no error logged before the panic.
-- Fix approach: Replace with an `error` return and let callers decide the failure mode. If "must" semantics are needed, use `zap.Fatal` or an explicit crash after structured logging, not a bare panic. At minimum, wrap in a `slog.Fatal` so the reason appears in logs.
+- Status: **Closed in v1.1.** Production code now uses `ResolveProfiles` error returns and scheduler-safe fallback initialization.
+- Former issue: `panic(err)` was the only error-handling path when toolset profile resolution failed.
+- Former impact: Any caller that passed an invalid profile name to `MustResolveProfiles` could crash the entire bot process without recovery, graceful degradation, or a structured log before the panic.
+- Regression guard: keep production paths on explicit errors or logged failure handling; do not reintroduce panic-style profile helpers for runtime code.
 
 ## Test Coverage Gaps
 
@@ -206,12 +206,12 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 
 ## Summary of Priority
 
-v1.0 scope triage: the priority table remains the concern audit severity, not the active milestone boundary. v1.0 closes production-readiness blockers: shared SQLite ownership and PRAGMAs, migration safety, dashboard token expiry, settings API secret redaction, observable archive failures, Telegram critical-path tests, and release gates. v1.1 Hardening Polish defers the MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0, file-generation split, broad large-file refactors, tray coverage/browser polish, telebot beta monitoring docs, full settings at-rest encryption unless redaction proves insufficient, and arbitrary package-wide coverage targets.
+v1.0 scope triage: the priority table remains the original concern audit severity, not the active milestone boundary. v1.0 closed production-readiness blockers: shared SQLite ownership and PRAGMAs, migration safety, dashboard token expiry, settings API secret redaction, observable archive failures, Telegram critical-path tests, and release gates. v1.1 closes the `MustResolveProfiles` production panic path and telebot beta monitoring; file-generation split, broad large-file refactors, deeper tray/browser polish, full settings at-rest encryption unless redaction proves insufficient, and arbitrary package-wide coverage targets remain outside the v1.1 hardening boundary.
 
 | Priority | Area | Recommendation |
 |----------|------|----------------|
 | **P0** | `internal/telegram` 22.1% coverage | Add integration tests for main conversation handler |
-| **P0** | Bare panic in `MustResolveProfiles` | Replace with error return or logged fatal |
+| **P0** | Bare panic in `MustResolveProfiles` | Closed in v1.1; keep production paths on error returns |
 | **P1** | Multiple SQLite connection pools | Closed in PR #1; keep covered by release smoke |
 | **P1** | No token expiration | Add `expires_at` to `api_tokens` |
 | **P1** | `scheduler/store.go` (754 lines) | Extract migrations to separate file |
@@ -219,7 +219,7 @@ v1.0 scope triage: the priority table remains the concern audit severity, not th
 | **P2** | File-generation tool module (599 lines) | Split by file format |
 | **P2** | Secrets in plain text in settings | At-rest encryption for API keys |
 | **P3** | `tray` 0% coverage | Basic unit test for Windows/non-Windows paths |
-| **P3** | Deprecated/unsupported beta dependency | Monitor telebot v4 for stable release |
+| **P3** | Deprecated/unsupported beta dependency | Monitored in v1.1; use telebot upgrade smoke checklist |
 
 ---
 

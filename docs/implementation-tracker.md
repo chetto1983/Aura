@@ -16,6 +16,8 @@
 
 2026-05-05 v1.1 Phase 3b handoff: `DEP-01` landed. Telebot v4 beta usage is now intentionally tracked with pinned-version notes, upgrade smoke expectations, and rollback policy. Verification: `Select-String -Path go.mod,docs\telebot-v4-monitoring.md -Pattern 'gopkg.in/telebot.v4'`. Next work: v1.1 release gate.
 
+2026-05-05 v1.1 closure handoff: `v1.1 Trustworthy Daily Use` is complete. Closed `PANIC-01`, `OBS-01`, `OBS-02`, `OBS-03`, `AUDIT-01`, `DEP-01`, `UX-01`, and `REL-02`; fixed stale concerns/README release docs discovered during review. Release gates passed: `go test ./internal/toolsets ./internal/scheduler ./internal/telegram ./internal/tray ./internal/auth ./internal/api -count=1`, `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`, `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean`, and `scripts\check-windows-gui-subsystem.ps1` against the extracted Windows `aura.exe` printing `windows gui subsystem ok`. GoReleaser generated `go.mod`/embedded web asset noise was restored before committing. Next work: choose the next milestone.
+
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
 ## Slice Order (from PDR §12)
@@ -56,13 +58,13 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 - The conversation archive is evidence and short-term recall. Stable facts extracted from chat should be promoted into the wiki through explicit saves or reviewed proposals.
 - Future memory slices must preserve this stack: source evidence -> compiled wiki -> search/evidence envelope -> reviewed updates -> optional procedural skills.
 
-## Current Handoff (2026-05-04)
+## Current Handoff (2026-05-05)
 
-Last completed milestone: `v1.0 Production Readiness`.
+Last completed milestone: `v1.1 Trustworthy Daily Use`.
 
-Active milestone: `v1.1 Trustworthy Daily Use`.
+Active phase: none. Current focus: choose the next milestone.
 
-Active phase: Phase 1 Panic Removal Gate. Current focus: remove production panic paths before observability and packaged Windows UX work.
+2026-05-05 v1.1 closure handoff: `v1.1 Trustworthy Daily Use` is complete. Release gates passed: focused package tests, full Go verifier, GoReleaser snapshot package, and Windows GUI subsystem inspection. Next work: choose the next milestone.
 
 2026-05-05 v1.1 kickoff handoff: `v1.1 Trustworthy Daily Use` is the active milestone. Scope is hardening-only: remove `MustResolveProfiles` production panic paths, surface shutdown/tray/Telegram cleanup/token-audit failures, suppress the packaged Windows console through GoReleaser only, document telebot v4 beta monitoring, and run a focused release gate. Next work: Phase 1 Panic Removal Gate.
 
