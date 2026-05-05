@@ -34,6 +34,8 @@ Do not implement dashboard token expiry, settings secret redaction, archive reli
   - Minimal shipped legacy schema builder for `v3.0.2` upgrade tests when no fixture already exists.
 - Modify: `cmd/aura/main.go`
   - Calls `migrations.Run(context.Background(), pool)` after `auradb.Open(cfg.DBPath)` and before `settings.NewStoreWithDB(pool)`.
+- Modify: `cmd/debug_telegram_sandbox/main.go`
+  - Calls `migrations.Run(context.Background(), pool)` after `auradb.Open(cfg.DBPath)` and before shared settings store or Telegram construction.
 - Modify: `internal/auth/store.go`
   - Removes production schema bootstrapping from `NewStoreWithDB`; keeps `OpenStore` compatible by opening through `internal/db.Open`, running migrations, then returning a store.
 - Modify: `internal/scheduler/store.go`
@@ -1227,17 +1229,19 @@ Expected: commit succeeds with migration package files staged.
 
 **Files:**
 - Modify: `cmd/aura/main.go`
+- Modify: `cmd/debug_telegram_sandbox/main.go`
 - Test: `cmd/aura/main_test.go` or existing command package test file
+- Test: `cmd/debug_telegram_sandbox/main_test.go` or existing command package test file
 
 - [ ] **Step 1: Import migrations in production startup**
 
-In `cmd/aura/main.go`, add this import:
+In `cmd/aura/main.go` and `cmd/debug_telegram_sandbox/main.go`, add this import:
 
 ```go
 	"github.com/aura/aura/internal/db/migrations"
 ```
 
-- [ ] **Step 2: Run migrations after `auradb.Open`**
+- [ ] **Step 2: Run migrations after `auradb.Open` in `cmd/aura`**
 
 Immediately after:
 
@@ -1259,7 +1263,31 @@ add:
 	}
 ```
 
-- [ ] **Step 3: Add a static startup-order test**
+- [ ] **Step 3: Run migrations after `auradb.Open` in `cmd/debug_telegram_sandbox`**
+
+In `cmd/debug_telegram_sandbox/main.go`, immediately after:
+
+```go
+	pool, err := auradb.Open(cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open database", "error", err, "db_path", cfg.DBPath)
+		os.Exit(1)
+	}
+	defer pool.Close()
+```
+
+add:
+
+```go
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		logger.Error("failed to migrate database", "error", err, "db_path", cfg.DBPath)
+		os.Exit(1)
+	}
+```
+
+This call must stay before `settings.NewStoreWithDB(pool)`, any shared Telegram store construction, and `telegram.New`.
+
+- [ ] **Step 4: Add a static startup-order test for `cmd/aura`**
 
 Create or update `cmd/aura/main_test.go` with this test:
 
@@ -1286,26 +1314,65 @@ func TestMainRunsMigrationsBeforeStoreConstruction(t *testing.T) {
 
 Add `os`, `strings`, and `testing` imports if `cmd/aura/main_test.go` is new.
 
-- [ ] **Step 4: Run command package tests**
+- [ ] **Step 5: Add a static startup-order test for `cmd/debug_telegram_sandbox`**
+
+Create or update `cmd/debug_telegram_sandbox/main_test.go` with this test:
+
+```go
+func TestMainRunsMigrationsBeforeSharedStoreConstruction(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	openIdx := strings.Index(source, "auradb.Open(cfg.DBPath)")
+	migrateIdx := strings.Index(source, "migrations.Run(context.Background(), pool)")
+	settingsIdx := strings.Index(source, "settings.NewStoreWithDB(pool)")
+	telegramIdx := strings.Index(source, "telegram.New(")
+
+	if openIdx < 0 || migrateIdx < 0 || settingsIdx < 0 || telegramIdx < 0 {
+		t.Fatalf("startup markers missing: open=%d migrate=%d settings=%d telegram=%d", openIdx, migrateIdx, settingsIdx, telegramIdx)
+	}
+	if !(openIdx < migrateIdx && migrateIdx < settingsIdx && settingsIdx < telegramIdx) {
+		t.Fatalf("startup order invalid: open=%d migrate=%d settings=%d telegram=%d", openIdx, migrateIdx, settingsIdx, telegramIdx)
+	}
+}
+```
+
+Add `os`, `strings`, and `testing` imports if `cmd/debug_telegram_sandbox/main_test.go` is new.
+
+- [ ] **Step 6: Run command package tests**
 
 Run:
 
 ```powershell
 go test ./cmd/aura
+go test ./cmd/debug_telegram_sandbox
 ```
 
-Expected: PASS; the static check proves production startup runs migrations before store construction.
+Expected: PASS; the static checks prove production startup and the debug Telegram sandbox run migrations before shared-store construction.
 
-- [ ] **Step 5: Commit startup wiring**
+- [ ] **Step 7: Build command packages**
 
 Run:
 
 ```powershell
-git add cmd/aura/main.go cmd/aura/main_test.go
+go build ./cmd/aura
+go build ./cmd/debug_telegram_sandbox
+```
+
+Expected: both command packages build successfully.
+
+- [ ] **Step 8: Commit startup wiring**
+
+Run:
+
+```powershell
+git add cmd/aura/main.go cmd/aura/main_test.go cmd/debug_telegram_sandbox/main.go cmd/debug_telegram_sandbox/main_test.go
 git commit -m "db: run migrations during aura startup"
 ```
 
-Expected: commit succeeds with only `cmd/aura` files staged.
+Expected: commit succeeds with only startup wiring files staged.
 
 ## Task 7: Store Schema Ownership Cleanup
 
@@ -1768,12 +1835,25 @@ Expected: PASS.
 Run:
 
 ```powershell
-go test ./internal/telegram ./cmd/aura
+go test ./internal/telegram
+go test ./cmd/aura
+go test ./cmd/debug_telegram_sandbox
 ```
 
-Expected: PASS, including `TestMainRunsMigrationsBeforeStoreConstruction`.
+Expected: PASS, including `TestMainRunsMigrationsBeforeStoreConstruction` and `TestMainRunsMigrationsBeforeSharedStoreConstruction`.
 
-- [ ] **Step 4: Run all Go tests**
+- [ ] **Step 4: Build startup command packages**
+
+Run:
+
+```powershell
+go build ./cmd/aura
+go build ./cmd/debug_telegram_sandbox
+```
+
+Expected: PASS; both startup commands compile after migration wiring.
+
+- [ ] **Step 5: Run all Go tests**
 
 Run:
 
@@ -1783,30 +1863,39 @@ go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 5: Run static startup-order check from the shell**
+- [ ] **Step 6: Run static startup-order check from the shell**
 
 Run:
 
 ```powershell
 @'
 from pathlib import Path
-s = Path("cmd/aura/main.go").read_text()
-markers = [
-    "auradb.Open(cfg.DBPath)",
-    "migrations.Run(context.Background(), pool)",
-    "settings.NewStoreWithDB(pool)",
-    "telegram.New(cfg, settingsStore, pool, logger)",
-]
-positions = [s.index(m) for m in markers]
-print(positions)
-if positions != sorted(positions):
-    raise SystemExit("startup order invalid")
+checks = {
+    "cmd/aura/main.go": [
+        "auradb.Open(cfg.DBPath)",
+        "migrations.Run(context.Background(), pool)",
+        "settings.NewStoreWithDB(pool)",
+        "telegram.New(cfg, settingsStore, pool, logger)",
+    ],
+    "cmd/debug_telegram_sandbox/main.go": [
+        "auradb.Open(cfg.DBPath)",
+        "migrations.Run(context.Background(), pool)",
+        "settings.NewStoreWithDB(pool)",
+        "telegram.New(",
+    ],
+}
+for path, markers in checks.items():
+    s = Path(path).read_text()
+    positions = [s.index(m) for m in markers]
+    print(path, positions)
+    if positions != sorted(positions):
+        raise SystemExit(f"startup order invalid: {path}")
 '@ | python -
 ```
 
-Expected: prints four increasing byte offsets and exits 0.
+Expected: prints increasing byte offsets for both startup commands and exits 0.
 
-- [ ] **Step 6: Confirm no lazy production schema DDL remains in shared-pool constructors**
+- [ ] **Step 7: Confirm no lazy production schema DDL remains in shared-pool constructors**
 
 Run:
 
@@ -1816,7 +1905,7 @@ rg -n "CREATE TABLE|CREATE INDEX|CREATE VIRTUAL TABLE|ALTER TABLE|schemaSQL|migr
 
 Expected: DDL appears in tests or owned compatibility helpers only where they call `migrations.Run`; production shared-pool constructors `NewStoreWithDB`, `newSqliteSearcherWithDB`, and `NewEmbedCacheWithDB` contain no schema DDL.
 
-- [ ] **Step 7: Confirm migration table name**
+- [ ] **Step 8: Confirm migration table name**
 
 Run:
 
@@ -1826,7 +1915,17 @@ rg -n "schema_migrations" internal/db/migrations
 
 Expected: matches in `migrations.go` and `migrations_test.go`; table columns are `version`, `name`, and `applied_at`.
 
-- [ ] **Step 8: Inspect working tree before final commit**
+- [ ] **Step 9: Confirm debug Telegram sandbox migration wiring**
+
+Run:
+
+```powershell
+rg -n "auradb.Open\(cfg.DBPath\)|migrations.Run\(context.Background\(\), pool\)|settings.NewStoreWithDB\(pool\)|telegram.New\(" cmd/debug_telegram_sandbox/main.go
+```
+
+Expected: all four markers are present, and the line numbers show `migrations.Run(context.Background(), pool)` after `auradb.Open(cfg.DBPath)` and before shared-store construction.
+
+- [ ] **Step 10: Inspect working tree before final commit**
 
 Run:
 
@@ -1836,7 +1935,7 @@ git status --short -uall
 
 Expected: only intended migration-safety files are modified or untracked.
 
-- [ ] **Step 9: Commit verification polish if formatting changed files**
+- [ ] **Step 11: Commit verification polish if formatting changed files**
 
 Run only if `go fmt ./...` changed files after the previous commits:
 
@@ -1876,5 +1975,6 @@ Migration Safety is complete when:
 - Missing scheduler, proposed update, and swarm metric columns are backfilled.
 - `Run` can execute twice without duplicating `schema_migrations` rows.
 - `cmd/aura/main.go` runs migrations before settings store construction and before `telegram.New`.
+- `cmd/debug_telegram_sandbox/main.go` runs migrations before settings store construction and before `telegram.New`, so the debug Telegram sandbox smoke command does not bypass migrations.
 - Store constructors no longer lazily create production schemas from shared-pool constructors.
 - Verification commands in Task 9 pass.
