@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -171,4 +172,34 @@ func TestNewStoreWithDBDoesNotOwnDB(t *testing.T) {
 	if err := db.Ping(); err != nil {
 		t.Fatalf("shared db was closed: %v", err)
 	}
+}
+
+func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := NewStoreWithDB(db); err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "swarm_runs") {
+		t.Fatal("NewStoreWithDB created swarm_runs; migrations should own schema")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }

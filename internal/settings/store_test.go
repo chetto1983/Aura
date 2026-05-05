@@ -2,8 +2,11 @@ package settings
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
+
+	auradb "github.com/aura/aura/internal/db"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -21,6 +24,36 @@ func TestNewStoreWithDBRejectsNil(t *testing.T) {
 	if _, err := NewStoreWithDB(nil); err == nil {
 		t.Fatal("NewStoreWithDB(nil) error = nil, want error")
 	}
+}
+
+func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := NewStoreWithDB(db); err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "settings") {
+		t.Fatal("NewStoreWithDB created settings; migrations should own schema")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }
 
 func TestStoreSetGetRoundTrip(t *testing.T) {

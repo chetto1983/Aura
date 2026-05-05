@@ -10,6 +10,7 @@ import (
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
 )
@@ -169,6 +170,9 @@ func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
 	store, err := auth.NewStoreWithDB(pool)
 	if err != nil {
 		t.Fatalf("new auth store: %v", err)

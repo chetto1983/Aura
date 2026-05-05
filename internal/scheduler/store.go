@@ -9,99 +9,8 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
-
-// conversationsSchemaSQL creates the conversations archive table used by
-// internal/conversation.ArchiveStore. Kept here so the shared SQLite DB is
-// fully migrated whenever a Store is opened, regardless of call order.
-const conversationsSchemaSQL = `
-CREATE TABLE IF NOT EXISTS conversations (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id           INTEGER NOT NULL,
-  user_id           INTEGER NOT NULL,
-  turn_index        INTEGER NOT NULL,
-  role              TEXT    NOT NULL,
-  content           TEXT    NOT NULL,
-  tool_calls        TEXT,
-  tool_call_id      TEXT,
-  llm_calls         INTEGER NOT NULL DEFAULT 0,
-  tool_calls_count  INTEGER NOT NULL DEFAULT 0,
-  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
-  tokens_in         INTEGER NOT NULL DEFAULT 0,
-  tokens_out        INTEGER NOT NULL DEFAULT 0,
-  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(chat_id, turn_index)
-);
-CREATE INDEX IF NOT EXISTS idx_conv_chat ON conversations(chat_id, turn_index);
-CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, created_at);
-`
-
-// wikiIssuesSchemaSQL creates the wiki_issues table used by IssuesStore.
-const wikiIssuesSchemaSQL = `
-CREATE TABLE IF NOT EXISTS wiki_issues (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind        TEXT    NOT NULL,
-  severity    TEXT    NOT NULL,
-  slug        TEXT    NOT NULL DEFAULT '',
-  broken_link TEXT    NOT NULL DEFAULT '',
-  message     TEXT    NOT NULL DEFAULT '',
-  status      TEXT    NOT NULL DEFAULT 'open',
-  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  resolved_at DATETIME
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_issues_key
-  ON wiki_issues(kind, slug, broken_link);
-`
-
-// proposedUpdatesSchemaSQL creates the proposed_updates table used by the
-// review-mode summarizer applier. Idempotent via IF NOT EXISTS.
-const proposedUpdatesSchemaSQL = `
-CREATE TABLE IF NOT EXISTS proposed_updates (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id         INTEGER NOT NULL,
-  fact            TEXT    NOT NULL,
-  action          TEXT    NOT NULL,
-  target_slug     TEXT    NOT NULL DEFAULT '',
-  similarity      REAL    NOT NULL DEFAULT 0,
-  source_turn_ids TEXT    NOT NULL DEFAULT '',
-  category        TEXT    NOT NULL DEFAULT '',
-  related_slugs   TEXT    NOT NULL DEFAULT '',
-  provenance_json TEXT    NOT NULL DEFAULT '{}',
-  status          TEXT    NOT NULL DEFAULT 'pending',
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`
-
-// schemaSQL bootstraps the scheduled_tasks table and its index. Idempotent;
-// safe to run on every startup. The schedule_every_minutes column is the
-// 14-era addition for arbitrary-interval recurrence (every N minutes —
-// covers hourly, weekly, custom). Older DBs that pre-date the column get
-// the row added by addEveryMinutesColumn during migrate().
-const schemaSQL = `
-CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                   TEXT NOT NULL UNIQUE,
-    kind                   TEXT NOT NULL,
-    payload                TEXT NOT NULL DEFAULT '',
-    recipient_id           TEXT NOT NULL DEFAULT '',
-    schedule_kind          TEXT NOT NULL,
-    schedule_at            TEXT,
-    schedule_daily         TEXT,
-    schedule_weekdays      TEXT NOT NULL DEFAULT '',
-    schedule_every_minutes INTEGER NOT NULL DEFAULT 0,
-    next_run_at            TEXT NOT NULL,
-    last_run_at            TEXT,
-    last_error             TEXT NOT NULL DEFAULT '',
-    last_output            TEXT NOT NULL DEFAULT '',
-    last_metrics_json      TEXT NOT NULL DEFAULT '',
-    wake_signature         TEXT NOT NULL DEFAULT '',
-    status                 TEXT NOT NULL DEFAULT 'active',
-    created_at             TEXT NOT NULL,
-    updated_at             TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
-    ON scheduled_tasks(status, next_run_at);
-`
 
 // Store wraps a *sql.DB with the SQL needed by the scheduler. OpenStore-created
 // stores own their DB handle; NewStoreWithDB-created stores share a caller-owned
@@ -119,12 +28,11 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open scheduler db: %w", err)
 	}
-	s := &Store{db: db, owned: true}
-	if err := s.migrate(); err != nil {
+	if err := migrations.Run(context.Background(), db); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("scheduler migrate: %w", err)
 	}
-	return s, nil
+	return &Store{db: db, owned: true}, nil
 }
 
 // NewStoreWithDB wraps an existing *sql.DB so the scheduler can share a
@@ -133,11 +41,7 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("scheduler: db required")
 	}
-	s := &Store{db: db, owned: false}
-	if err := s.migrate(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return &Store{db: db, owned: false}, nil
 }
 
 // Close closes the underlying DB. Safe to call only when Store owns the DB
@@ -154,158 +58,6 @@ func (s *Store) Close() error {
 // conversation archive) can share the same SQLite connection.
 func (s *Store) DB() *sql.DB {
 	return s.db
-}
-
-func (s *Store) migrate() error {
-	if _, err := s.db.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("scheduler migrate: %w", err)
-	}
-	if err := addEveryMinutesColumn(s.db); err != nil {
-		return fmt.Errorf("scheduler migrate every_minutes: %w", err)
-	}
-	if err := addScheduleWeekdaysColumn(s.db); err != nil {
-		return fmt.Errorf("scheduler migrate schedule_weekdays: %w", err)
-	}
-	if err := addAgentJobResultColumns(s.db); err != nil {
-		return fmt.Errorf("scheduler migrate agent job result columns: %w", err)
-	}
-	if err := dropLegacyConversations(s.db); err != nil {
-		return fmt.Errorf("scheduler drop legacy conversations: %w", err)
-	}
-	if _, err := s.db.Exec(conversationsSchemaSQL); err != nil {
-		return fmt.Errorf("scheduler migrate conversations: %w", err)
-	}
-	if _, err := s.db.Exec(proposedUpdatesSchemaSQL); err != nil {
-		return fmt.Errorf("scheduler migrate proposed_updates: %w", err)
-	}
-	if err := addProposedUpdateReviewColumns(s.db); err != nil {
-		return fmt.Errorf("scheduler migrate proposed_updates review columns: %w", err)
-	}
-	if _, err := s.db.Exec(wikiIssuesSchemaSQL); err != nil {
-		return fmt.Errorf("scheduler migrate wiki_issues: %w", err)
-	}
-	return nil
-}
-
-// addProposedUpdateReviewColumns back-fills category and related_slugs on
-// DBs created before HR-02. Idempotent via PRAGMA table_info checks.
-func addProposedUpdateReviewColumns(db *sql.DB) error {
-	cols, err := tableInfoColumns(db, "proposed_updates")
-	if err != nil {
-		return err
-	}
-	if !cols["category"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !cols["related_slugs"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !cols["provenance_json"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func tableInfoColumns(db *sql.DB, table string) (map[string]bool, error) {
-	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	cols := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		cols[name] = true
-	}
-	return cols, rows.Err()
-}
-
-// addEveryMinutesColumn back-fills the schedule_every_minutes column on
-// pre-existing aura.db files that were created before slice 14.
-// Idempotent — checks PRAGMA table_info before issuing the ALTER.
-func addEveryMinutesColumn(db *sql.DB) error {
-	cols, err := tableInfoColumns(db, "scheduled_tasks")
-	if err != nil {
-		return err
-	}
-	if cols["schedule_every_minutes"] {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_every_minutes INTEGER NOT NULL DEFAULT 0`)
-	return err
-}
-
-// addScheduleWeekdaysColumn back-fills the optional daily weekday filter on
-// existing aura.db files. Empty preserves legacy "every day" behavior.
-func addScheduleWeekdaysColumn(db *sql.DB) error {
-	cols, err := tableInfoColumns(db, "scheduled_tasks")
-	if err != nil {
-		return err
-	}
-	if cols["schedule_weekdays"] {
-		return nil
-	}
-	_, err = db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN schedule_weekdays TEXT NOT NULL DEFAULT ''`)
-	return err
-}
-
-func addAgentJobResultColumns(db *sql.DB) error {
-	cols, err := tableInfoColumns(db, "scheduled_tasks")
-	if err != nil {
-		return err
-	}
-	for _, col := range []string{"last_output", "last_metrics_json", "wake_signature"} {
-		if cols[col] {
-			continue
-		}
-		if _, err := db.Exec(`ALTER TABLE scheduled_tasks ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// dropLegacyConversations removes a pre-Phase-12 `conversations` table that
-// older builds created in internal/search/sqlite.go (since deleted). Detected
-// by the absence of a chat_id column. Existing data was never written or read,
-// so dropping is safe.
-func dropLegacyConversations(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(conversations)`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	hasAny, hasChatID := false, false
-	for rows.Next() {
-		hasAny = true
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "chat_id" {
-			hasChatID = true
-		}
-	}
-	if !hasAny || hasChatID {
-		return nil
-	}
-	_, err = db.Exec(`DROP TABLE conversations`)
-	return err
 }
 
 // Upsert inserts a task or, if a task with the same name exists, updates

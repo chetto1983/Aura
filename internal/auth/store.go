@@ -26,39 +26,13 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
 
 // ErrInvalid is returned by Lookup when the token is unknown, malformed,
 // or revoked. The middleware translates it to 401 — the API never
 // distinguishes "wrong token" from "revoked token" to a client.
 var ErrInvalid = errors.New("auth: invalid token")
-
-// schemaSQL bootstraps the api_tokens table. Idempotent.
-const schemaSQL = `
-CREATE TABLE IF NOT EXISTS api_tokens (
-    token_hash TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    issued_at  TEXT NOT NULL,
-    last_used  TEXT,
-    revoked_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
-
-CREATE TABLE IF NOT EXISTS allowed_users (
-    user_id    TEXT PRIMARY KEY,
-    source     TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS pending_users (
-    user_id      TEXT PRIMARY KEY,
-    username     TEXT NOT NULL,
-    requested_at TEXT NOT NULL,
-    decided_at   TEXT,
-    decision     TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_pending_users_decision ON pending_users(decision);
-`
 
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
 // API tokens. Callers using OpenStore own the close lifecycle; callers
@@ -76,12 +50,11 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open auth db: %w", err)
 	}
-	s := &Store{db: db, now: time.Now, owned: true}
-	if err := s.migrate(); err != nil {
+	if err := migrations.Run(context.Background(), db); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("auth migrate: %w", err)
 	}
-	return s, nil
+	return &Store{db: db, now: time.Now, owned: true}, nil
 }
 
 // NewStoreWithDB shares an existing *sql.DB so auth can co-locate with
@@ -90,11 +63,7 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("auth: db required")
 	}
-	s := &Store{db: db, now: time.Now, owned: false}
-	if err := s.migrate(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return &Store{db: db, now: time.Now, owned: false}, nil
 }
 
 // Close closes the underlying DB if Store owns it.
@@ -103,13 +72,6 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
-}
-
-func (s *Store) migrate() error {
-	if _, err := s.db.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("auth migrate: %w", err)
-	}
-	return nil
 }
 
 // Issue mints a fresh token for userID, persists its SHA-256 hash, and

@@ -27,19 +27,12 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
 
 // ErrNotFound is returned by Get when the key is unset. Callers that want
 // a fallback should use GetString / GetInt / GetFloat / GetBool instead.
 var ErrNotFound = errors.New("settings: not found")
-
-const schemaSQL = `
-CREATE TABLE IF NOT EXISTS settings (
-    key        TEXT PRIMARY KEY,
-    value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-`
 
 // Store is a thin SQLite-backed key/value store.
 type Store struct {
@@ -58,12 +51,11 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("settings: open db: %w", err)
 	}
-	s := &Store{db: db, now: time.Now, owned: true}
-	if err := s.migrate(); err != nil {
+	if err := migrations.Run(context.Background(), db); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("settings: migrate: %w", err)
 	}
-	return s, nil
+	return &Store{db: db, now: time.Now, owned: true}, nil
 }
 
 // NewStoreWithDB shares an existing *sql.DB. Useful when the bot has
@@ -73,11 +65,7 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("settings: db required")
 	}
-	s := &Store{db: db, now: time.Now, owned: false}
-	if err := s.migrate(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return &Store{db: db, now: time.Now, owned: false}, nil
 }
 
 // Close closes the underlying DB if Store owns it.
@@ -86,13 +74,6 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
-}
-
-func (s *Store) migrate() error {
-	if _, err := s.db.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("settings: migrate: %w", err)
-	}
-	return nil
 }
 
 // Get returns the raw string value for key. Returns ErrNotFound when no

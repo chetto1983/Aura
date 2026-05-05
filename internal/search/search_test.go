@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"os"
@@ -180,6 +181,37 @@ func TestSqliteSearcherWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
 	if err := db.Ping(); err != nil {
 		t.Fatalf("shared db was closed by searcher Close: %v", err)
 	}
+}
+
+func TestSqliteSearcherWithDBDoesNotCreateSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "shared.db")
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "wiki_documents") {
+		t.Fatal("newSqliteSearcherWithDB created wiki_documents; migrations should own schema")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }
 
 func TestIndexWikiPages(t *testing.T) {

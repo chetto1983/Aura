@@ -11,6 +11,7 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
@@ -390,6 +391,9 @@ func newTelegramTestSchedulerStore(t *testing.T) *scheduler.Store {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
 	store, err := scheduler.NewStoreWithDB(pool)
 	if err != nil {
 		t.Fatalf("new scheduler store: %v", err)
