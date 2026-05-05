@@ -51,6 +51,9 @@ wiki/*
 /reports/memory-quality/
 .agents/skills/*
 
+# Local isolated development worktrees
+/.worktrees/
+
 # Local sandbox runtime bundle (release artifact, not source)
 /runtime/pyodide/
 /runtime/_downloads/
