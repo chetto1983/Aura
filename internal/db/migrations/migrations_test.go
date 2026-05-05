@@ -19,6 +19,32 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestFTS5CreateVirtualTableWorksInsideTransaction(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	_, err = tx.ExecContext(ctx, `
+CREATE VIRTUAL TABLE wiki_documents_tx_probe
+USING fts5(id, content, metadata, title)
+`)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("CREATE VIRTUAL TABLE inside transaction failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM wiki_documents_tx_probe`).Scan(&count); err != nil {
+		t.Fatalf("query FTS5 probe: %v", err)
+	}
+}
+
 func appliedVersions(t *testing.T, db *sql.DB) []int {
 	t.Helper()
 	rows, err := db.Query(`SELECT version FROM schema_migrations ORDER BY version`)
