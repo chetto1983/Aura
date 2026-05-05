@@ -23,15 +23,19 @@ import "time"
 type Kind string
 
 const (
-	KindPDF  Kind = "pdf"
-	KindText Kind = "text"
-	KindURL  Kind = "url"
-	// KindXLSX is an Aura-generated spreadsheet (slice 15a). Persisted in
-	// the same raw/<id>/ layout but never OCR'd; status stays "ingested"
-	// because there's no compile step to run.
+	KindPDF      Kind = "pdf"
+	KindText     Kind = "text"
+	KindMarkdown Kind = "markdown"
+	KindJSON     Kind = "json"
+	KindCSV      Kind = "csv"
+	KindURL      Kind = "url"
+	// KindXLSX covers XLSX files in the source store. Generated spreadsheets
+	// are written as ingested artifacts; uploaded spreadsheets are normalized
+	// before ingest during v1.2.
 	KindXLSX Kind = "xlsx"
-	// KindDOCX is an Aura-generated Word document (slice 15b). Same
-	// generated-artifact lifecycle as KindXLSX.
+	// KindDOCX covers DOCX files in the source store. Generated documents are
+	// written as ingested artifacts; uploaded documents are normalized before
+	// ingest during v1.2.
 	KindDOCX Kind = "docx"
 	// KindPDFGen is an Aura-generated PDF (slice 15c). Distinct from
 	// KindPDF (which marks user-uploaded PDFs that get OCR'd) so the
@@ -48,25 +52,38 @@ const (
 type Status string
 
 const (
-	StatusStored      Status = "stored"
-	StatusOCRComplete Status = "ocr_complete"
-	StatusIngested    Status = "ingested"
-	StatusFailed      Status = "failed"
+	StatusStored          Status = "stored"
+	StatusExtracting      Status = "extracting"
+	StatusOCRComplete     Status = "ocr_complete"
+	StatusExtractComplete Status = "extract_complete"
+	StatusIngested        Status = "ingested"
+	StatusFailed          Status = "failed"
 )
+
+type ExtractionMeta struct {
+	ExtractorName    string   `json:"extractor_name,omitempty"`
+	ExtractorVersion string   `json:"extractor_version,omitempty"`
+	TextBytes        int      `json:"text_bytes,omitempty"`
+	PageCount        int      `json:"page_count,omitempty"`
+	SheetCount       int      `json:"sheet_count,omitempty"`
+	RowCount         int      `json:"row_count,omitempty"`
+	Warnings         []string `json:"warnings,omitempty"`
+}
 
 // Source is the metadata record persisted as source.json. Field order matches
 // PDR §4 for human readability of the on-disk file.
 type Source struct {
-	ID        string    `json:"id"`
-	Kind      Kind      `json:"kind"`
-	Filename  string    `json:"filename"`
-	MimeType  string    `json:"mime_type"`
-	SHA256    string    `json:"sha256"`
-	SizeBytes int64     `json:"size_bytes"`
-	CreatedAt time.Time `json:"created_at"`
-	Status    Status    `json:"status"`
-	OCRModel  string    `json:"ocr_model,omitempty"`
-	PageCount int       `json:"page_count,omitempty"`
-	WikiPages []string  `json:"wiki_pages,omitempty"`
-	Error     string    `json:"error,omitempty"`
+	ID        string          `json:"id"`
+	Kind      Kind            `json:"kind"`
+	Filename  string          `json:"filename"`
+	MimeType  string          `json:"mime_type"`
+	SHA256    string          `json:"sha256"`
+	SizeBytes int64           `json:"size_bytes"`
+	CreatedAt time.Time       `json:"created_at"`
+	Status    Status          `json:"status"`
+	OCRModel  string          `json:"ocr_model,omitempty"`
+	PageCount int             `json:"page_count,omitempty"`
+	Extract   *ExtractionMeta `json:"extract,omitempty"`
+	WikiPages []string        `json:"wiki_pages,omitempty"`
+	Error     string          `json:"error,omitempty"`
 }

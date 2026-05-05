@@ -296,6 +296,12 @@ func extForKind(k Kind) string {
 		return ".pdf"
 	case KindText:
 		return ".txt"
+	case KindMarkdown:
+		return ".md"
+	case KindJSON:
+		return ".json"
+	case KindCSV:
+		return ".csv"
 	case KindURL:
 		return ".url"
 	case KindXLSX:
@@ -314,7 +320,7 @@ func extForKind(k Kind) string {
 
 func validatePutInput(in PutInput) error {
 	switch in.Kind {
-	case KindPDF, KindText, KindURL, KindXLSX, KindDOCX, KindPDFGen, KindSandboxArtifact:
+	case KindPDF, KindText, KindMarkdown, KindJSON, KindCSV, KindURL, KindXLSX, KindDOCX, KindPDFGen, KindSandboxArtifact:
 	default:
 		return fmt.Errorf("source: invalid kind %q", in.Kind)
 	}

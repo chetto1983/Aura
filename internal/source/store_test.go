@@ -248,6 +248,9 @@ func TestStorePutKinds(t *testing.T) {
 	}{
 		{PutInput{Kind: KindPDF, Filename: "a.pdf", Bytes: []byte("a")}, "original.pdf"},
 		{PutInput{Kind: KindText, Filename: "b.txt", Bytes: []byte("b")}, "original.txt"},
+		{PutInput{Kind: KindMarkdown, Filename: "notes.md", Bytes: []byte("# notes")}, "original.md"},
+		{PutInput{Kind: KindJSON, Filename: "data.json", Bytes: []byte(`{"ok":true}`)}, "original.json"},
+		{PutInput{Kind: KindCSV, Filename: "data.csv", Bytes: []byte("a,b\n1,2\n")}, "original.csv"},
 		{PutInput{Kind: KindURL, Filename: "c.url", Bytes: []byte("https://example.com")}, "original.url"},
 		{PutInput{Kind: KindSandboxArtifact, Filename: "chart.PNG", Bytes: []byte("png")}, "original.png"},
 	}

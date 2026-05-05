@@ -56,7 +56,7 @@ This plan was reviewed against the 2026-05-05 implementation conversation. These
 - Modify: `internal/source/store.go`
 - Test: `internal/source/formats_test.go`
 
-- [ ] **Step 1: Write failing format policy tests**
+- [x] **Step 1: Write failing format policy tests**
 
 Create `internal/source/formats_test.go`:
 
@@ -110,13 +110,13 @@ func TestExtractionStatusesAreValid(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/source -run "TestDetectUploadFormat|TestExtractionStatuses" -count=1`
 
 Expected: FAIL with missing `KindMarkdown`, `KindJSON`, `KindCSV`, `DetectUploadFormat`, or `ValidStatus`.
 
-- [ ] **Step 3: Add source kinds, statuses, and extraction metadata**
+- [x] **Step 3: Add source kinds, statuses, and extraction metadata**
 
 Modify `internal/source/source.go`:
 
@@ -170,7 +170,7 @@ type Source struct {
 }
 ```
 
-- [ ] **Step 4: Add format policy**
+- [x] **Step 4: Add format policy**
 
 Create `internal/source/formats.go`:
 
@@ -224,7 +224,7 @@ func ValidStatus(s Status) bool {
 }
 ```
 
-- [ ] **Step 5: Update store validation and raw filename mapping**
+- [x] **Step 5: Update store validation and raw filename mapping**
 
 Modify `validatePutInput` and `extForKind` in `internal/source/store.go`:
 
@@ -271,7 +271,7 @@ func validatePutInput(in PutInput) error {
 }
 ```
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 Run: `go test ./internal/source -run "TestDetectUploadFormat|TestExtractionStatuses" -count=1`
 
