@@ -66,6 +66,7 @@ export function MaintenancePanel() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <select
+            aria-label={t('maintenance.statusFilterLabel')}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
@@ -75,6 +76,7 @@ export function MaintenancePanel() {
             <option value="all">{t('maintenance.filterAllStatuses')}</option>
           </select>
           <select
+            aria-label={t('maintenance.severityFilterLabel')}
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"

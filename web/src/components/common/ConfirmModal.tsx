@@ -105,6 +105,7 @@ export function ConfirmHost() {
   const { t } = useLocale();
   const isPrompt = active?.kind === 'prompt';
   const opts = active?.opts;
+  const promptLabel = isPrompt ? (opts as PromptOptions | undefined)?.label : undefined;
   const confirmLabel = opts?.confirmLabel ?? (opts?.destructive ? t('common.delete') : t('common.confirm'));
   const cancelLabel = opts?.cancelLabel ?? t('common.cancel');
 
@@ -136,12 +137,12 @@ export function ConfirmHost() {
 
             {isPrompt && (
               <div className="space-y-1.5">
-                {(opts as PromptOptions).label && (
+                {promptLabel && (
                   <label
                     className="text-xs text-muted-foreground"
                     htmlFor="confirm-modal-input"
                   >
-                    {(opts as PromptOptions).label}
+                    {promptLabel}
                   </label>
                 )}
                 <input
@@ -149,6 +150,7 @@ export function ConfirmHost() {
                   data-testid="confirm-modal-input"
                   ref={inputRef}
                   type="text"
+                  aria-label={promptLabel ? undefined : opts.title}
                   autoFocus
                   inputMode={(opts as PromptOptions).inputMode}
                   placeholder={(opts as PromptOptions).placeholder}

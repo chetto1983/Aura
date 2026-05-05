@@ -86,6 +86,7 @@ export function WikiPanel() {
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
+          aria-label={t('wiki.searchLabel')}
           placeholder={t('wiki.searchPlaceholder')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
