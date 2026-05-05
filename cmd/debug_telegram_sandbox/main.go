@@ -48,13 +48,15 @@ func main() {
 	if err != nil {
 		fail("load config: %v", err)
 	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	pool, err := auradb.Open(cfg.DBPath)
 	if err != nil {
 		fail("open database: %v", err)
 	}
 	defer pool.Close()
 	if err := migrations.Run(context.Background(), pool); err != nil {
-		fail("migrate database: %v", err)
+		logger.Error("failed to migrate database", "error", err, "db_path", cfg.DBPath)
+		os.Exit(1)
 	}
 	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
@@ -74,7 +76,6 @@ func main() {
 		fail("parse user id %q: %v", userID, err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	bot, err := telegram.New(cfg, settingsStore, pool, logger)
 	if err != nil {
 		fail("create telegram bot: %v", err)
