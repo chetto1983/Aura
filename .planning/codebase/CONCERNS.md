@@ -197,10 +197,10 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 ## Dependency Risks
 
 **Beta Telegram library:**
-- Issue: `gopkg.in/telebot.v4 v4.0.0-beta.7` — the core dependency that powers all user interaction is a beta release.
-- Files: `go.mod` (line 5)
-- Risk: API-breaking changes in the telebot library could require significant refactoring with no deprecation period. Beta releases may have undiscovered bugs.
-- Recommendation: Pin to a specific commit hash rather than a beta tag, or contribute upstream to help move the library toward a stable release.
+- Status: **Monitored for v1.1.** See `docs/telebot-v4-monitoring.md`.
+- Issue: `gopkg.in/telebot.v4 v4.0.0-beta.7` powers all user interaction and is still a beta release.
+- Risk: API-breaking changes can require significant refactoring with no deprecation period.
+- Current policy: keep the pinned beta version until an explicit upgrade slice runs the documented Telegram smoke checklist.
 
 **Indirect dependencies from the full Go module graph include packages like `cloud.google.com/go/*` and `github.com/DataDog/datadog-go` that appear to be pulled in transitively but are unused by Aura's code — likely artifacts of the full module resolution graph.**
 

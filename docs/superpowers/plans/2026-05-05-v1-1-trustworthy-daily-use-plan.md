@@ -1161,7 +1161,7 @@ git commit -m "slice 3a: suppress packaged windows console"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Create monitoring doc**
+- [x] **Step 1: Create monitoring doc**
 
 Create `docs/telebot-v4-monitoring.md`:
 
@@ -1196,7 +1196,7 @@ Before upgrading Telebot:
 If live Telegram smoke fails after an upgrade, revert only the Telebot dependency change and any required API adaptation commit. Do not revert unrelated Aura feature work.
 ```
 
-- [ ] **Step 2: Update concerns status**
+- [x] **Step 2: Update concerns status**
 
 In `.planning/codebase/CONCERNS.md`, change the Telebot dependency section from an open recommendation to:
 
@@ -1208,7 +1208,7 @@ In `.planning/codebase/CONCERNS.md`, change the Telebot dependency section from 
 - Current policy: keep the pinned beta version until an explicit upgrade slice runs the documented Telegram smoke checklist.
 ```
 
-- [ ] **Step 3: Verify doc references current dependency**
+- [x] **Step 3: Verify doc references current dependency**
 
 Run:
 
@@ -1218,7 +1218,7 @@ Select-String -Path go.mod,docs\telebot-v4-monitoring.md -Pattern 'gopkg.in/tele
 
 Expected: both files show `v4.0.0-beta.7`.
 
-- [ ] **Step 4: Record handoff and commit**
+- [x] **Step 4: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

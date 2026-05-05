@@ -14,6 +14,8 @@
 
 2026-05-05 v1.1 Phase 3a review-fix handoff: INSTALL release instructions now match GoReleaser archive outputs (`aura_<version>_<os>_<arch>.zip`/`.tar.gz`) and the extracted binary names (`aura.exe` on Windows, `aura` on macOS/Linux). Runtime commands, chmod guidance, systemd `ExecStart`, and update wording no longer reference obsolete per-OS binary names. Verification: `git diff --check`.
 
+2026-05-05 v1.1 Phase 3b handoff: `DEP-01` landed. Telebot v4 beta usage is now intentionally tracked with pinned-version notes, upgrade smoke expectations, and rollback policy. Verification: `Select-String -Path go.mod,docs\telebot-v4-monitoring.md -Pattern 'gopkg.in/telebot.v4'`. Next work: v1.1 release gate.
+
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
 ## Slice Order (from PDR §12)
