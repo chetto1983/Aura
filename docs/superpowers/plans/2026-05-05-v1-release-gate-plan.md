@@ -137,7 +137,7 @@ Expected: prints `release archive ok: <zip name>`.
 
 ## Task 5: Manual Windows Production Smoke
 
-- [ ] **Step 1: Run first-run app smoke from the snapshot ZIP**
+- [x] **Step 1: Run first-run app smoke from the snapshot ZIP**
 
 Manual operator steps:
 
@@ -154,7 +154,7 @@ notepad .env
 
 Expected: first-run setup starts without missing runtime files or database migration failures.
 
-- [ ] **Step 2: Verify Telegram and dashboard live paths**
+- [x] **Step 2: Verify Telegram and dashboard live paths**
 
 Manual checklist:
 
@@ -166,13 +166,13 @@ Manual checklist:
 - `execute_code` returns at least one CSV and one PNG artifact and sends them back over Telegram.
 - The Windows tray "Open Dashboard" action opens the dashboard in the browser.
 
-- [ ] **Step 3: Record manual smoke result**
+- [x] **Step 3: Record manual smoke result**
 
 Update `docs/implementation-tracker.md` with the exact date, ZIP name, machine, commands run, and any skipped live checks. Mark `REL-01` done only if every manual item passes or is explicitly accepted as a release exception.
 
 ## Task 6: Complete v1.0 Production Readiness
 
-- [ ] **Step 1: Mark release requirement complete**
+- [x] **Step 1: Mark release requirement complete**
 
 After Tasks 1-5 pass, update `.planning/REQUIREMENTS.md`:
 
@@ -183,7 +183,7 @@ Complete: 7
 Remaining: 0
 ```
 
-- [ ] **Step 2: Mark milestone complete**
+- [x] **Step 2: Mark milestone complete**
 
 Update `.planning/MILESTONES.md`, `.planning/PROJECT.md`, `.planning/STATE.md`, and `docs/implementation-tracker.md` with:
 
@@ -196,7 +196,7 @@ Release gates passed:
 - manual Windows smoke
 ```
 
-- [ ] **Step 3: Commit release gate closure**
+- [x] **Step 3: Commit release gate closure**
 
 Stage explicitly:
 

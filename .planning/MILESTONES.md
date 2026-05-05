@@ -16,9 +16,10 @@ Shipped through Phase 19a–19g.1 and sandbox.pyodide.5:
 
 Refer to `docs/implementation-tracker.md` for detailed slice-by-slice history.
 
-## v1.0 — Production Readiness (IN PROGRESS)
+## v1.0 — Production Readiness (COMPLETE)
 
 Started: 2026-05-04
+Completed: 2026-05-05
 
 Goal: Make Aura safe to run as the daily production build by closing data-integrity, migration-safety, dashboard-security, memory-reliability, Telegram-regression, and release-gate blockers.
 
@@ -30,6 +31,13 @@ In scope:
 - Settings secret redaction
 - Focused Telegram critical-path tests
 - Final production release gates
+
+Release gates passed:
+- Automated Go/web/sandbox checks
+- Migration fresh/upgrade/idempotence checks
+- Release candidate package check
+- Windows ZIP content inspection
+- Manual Windows production smoke from the snapshot ZIP
 
 Deferred to v1.1 Hardening Polish:
 - MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0

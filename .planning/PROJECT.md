@@ -28,15 +28,15 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 - ✓ History cap, parallel tool calls, speculative wiki retrieval (slices 11k–11p)
 - ✓ Progressive Telegram streaming edits (slices 11s–11t)
 
-### Active
+### Completed v1.0 Production Readiness
 
-- [ ] Shared SQLite pool with WAL, busy_timeout, and foreign_keys
-- [ ] Versioned migrations and upgrade safety
-- [ ] Observable conversation archive failures
-- [ ] Dashboard token expiry
-- [ ] Settings secret redaction in API responses and dashboard state
-- [ ] Focused Telegram critical-path tests
-- [ ] Final production release gates
+- [x] Shared SQLite pool with WAL, busy_timeout, and foreign_keys
+- [x] Versioned migrations and upgrade safety
+- [x] Observable conversation archive failures
+- [x] Dashboard token expiry
+- [x] Settings secret redaction in API responses and dashboard state
+- [x] Focused Telegram critical-path tests
+- [x] Final production release gates
 
 ### Out of Scope
 
@@ -69,7 +69,7 @@ Aura is a personal AI agent, local-first, accessible via Telegram, that accumula
 | Settings in SQLite with env overlay | First-run wizard → DB writes → env fallback; no restart for most changes | ✓ Good |
 | Pyodide offline bundle over host Python | Deterministic, no user installs, reproducible | ✓ Good |
 | Phase 19 skill proposals review-only (Option A) | Explicit admin handoff for install/smoke; no silent mutations | ✓ Good |
-| Single `aura.db` over per-store files | Simpler backup/operability; WAL mitigates write contention | — Pending |
+| Single `aura.db` over per-store files | Simpler backup/operability; WAL mitigates write contention | Done in v1.0 |
 
 ## Evolution
 
@@ -90,7 +90,7 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-## Current Milestone: v1.0 Production Readiness
+## Completed Milestone: v1.0 Production Readiness
 
 **Goal:** Make Aura safe to run as the daily production build by closing data-integrity, migration-safety, dashboard-security, memory-reliability, Telegram-regression, and release-gate blockers.
 
@@ -103,6 +103,13 @@ This document evolves at phase transitions and milestone boundaries.
 - Focused Telegram critical-path tests
 - Final production release gates
 
+**Release gates passed:**
+- Automated Go/web/sandbox checks
+- Migration fresh/upgrade/idempotence checks
+- Release candidate package check
+- Windows ZIP content inspection
+- Manual Windows production smoke
+
 **Deferred to v1.1 Hardening Polish:**
 - MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0
 - File tool split
@@ -114,4 +121,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-05-04 after v1.0 production-readiness reconciliation*
+*Last updated: 2026-05-05 after v1.0 Production Readiness completion*
