@@ -42,11 +42,11 @@ Status note (2026-05-04): Aura memory stays aligned with `docs/llm-wiki.md`.
 
 ## Current Handoff (2026-05-04)
 
-Last completed milestone: Pyodide sandbox production release `v3.0.2`.
+Last completed milestone: `v1.0 Production Readiness`.
 
-Active milestone: `v1.0 Production Readiness` is complete. Next milestone candidate: `v1.1 Hardening Polish`.
+Active milestone: `v1.1 Trustworthy Daily Use`.
 
-Active phase: v1.0 closure complete; next work is v1.1 Hardening Polish planning or v1.0 tag/release.
+Active phase: Phase 1 Panic Removal Gate. Current focus: remove production panic paths before observability and packaged Windows UX work.
 
 2026-05-05 v1.1 kickoff handoff: `v1.1 Trustworthy Daily Use` is the active milestone. Scope is hardening-only: remove `MustResolveProfiles` production panic paths, surface shutdown/tray/Telegram cleanup/token-audit failures, suppress the packaged Windows console through GoReleaser only, document telebot v4 beta monitoring, and run a focused release gate. Next work: Phase 1 Panic Removal Gate.
 
