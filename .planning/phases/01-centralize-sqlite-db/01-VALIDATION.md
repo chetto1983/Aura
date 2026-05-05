@@ -41,11 +41,11 @@ created: 2026-05-04
 
 | Task ID | Plan Area | Requirement | Test Type | Automated Command | Status |
 |---------|-----------|-------------|-----------|-------------------|--------|
-| 1-01 | Shared DB pool | `internal/db.Open` applies WAL, busy timeout, and foreign keys | unit | `go test ./internal/db -count=1` | pending |
-| 1-02 | Constructor injection | In-scope stores/search components accept shared `*sql.DB` | unit/build | `go test ./internal/auth ./internal/scheduler ./internal/settings ./internal/search ./internal/swarm -count=1` | pending |
-| 1-03 | Entrypoint wiring | Production startup opens the Aura DB through `internal/db.Open` | unit/build | `go test ./internal/telegram ./cmd/aura -count=1` | pending |
-| 1-04 | Shutdown ownership | Shared pool is closed by `cmd/aura/main.go`, not by stores or bot shutdown | unit/build | `go test ./internal/telegram ./cmd/aura -count=1` | pending |
-| 1-05 | Static guard | Production `sql.Open("sqlite"` calls are removed from `internal` and `cmd` except the DB foundation path | static | `rg 'sql\.Open\("sqlite"' internal cmd` | pending |
+| 1-01 | Shared DB pool | `internal/db.Open` applies WAL, busy timeout, and foreign keys | unit | `go test ./internal/db -count=1` | green - passed 2026-05-04 |
+| 1-02 | Constructor injection | In-scope stores/search components accept shared `*sql.DB` | unit/build | `go test ./internal/auth ./internal/scheduler ./internal/settings ./internal/search ./internal/swarm -count=1` | green - passed 2026-05-04 |
+| 1-03 | Entrypoint wiring | Production startup opens the Aura DB through `internal/db.Open` | unit/build | `go test ./internal/telegram ./cmd/aura -count=1` | green - passed 2026-05-04 |
+| 1-04 | Shutdown ownership | Shared pool is closed by `cmd/aura/main.go`, not by stores or bot shutdown | unit/build | `go test ./internal/telegram ./cmd/aura -count=1` | green - passed 2026-05-04 |
+| 1-05 | Static guard | Production `sql.Open("sqlite"` calls are removed from `internal` and `cmd` except the DB foundation path | static | `rg 'sql\.Open\("sqlite"' internal cmd` | green - passed 2026-05-04 |
 
 ## Manual-Only Verifications
 
@@ -57,12 +57,16 @@ created: 2026-05-04
 
 Phase 1 validates the DB Foundation only. Schema versioning and upgrade orchestration validation belongs to Phase 2.
 
+## Automated Guard Result
+
+Automated Phase 1 DB Foundation verification passed on 2026-05-04. Required Go tests and builds passed, fresh temp DB PRAGMA assertions passed, and static search confirmed the production SQLite open path is centralized in `internal/db/db.go`. Manual process lifecycle smoke for clean shutdown remains pending.
+
 ## Validation Sign-Off
 
-- [ ] Required verification commands pass
-- [ ] Fresh temp DB PRAGMA assertions pass
-- [ ] Static search reviewed for production SQLite opens
-- [ ] Phase 2 schema versioning and upgrade orchestration work remains out of Phase 1
+- [x] Required verification commands pass
+- [x] Fresh temp DB PRAGMA assertions pass
+- [x] Static search reviewed for production SQLite opens
+- [x] Phase 2 schema versioning and upgrade orchestration work remains out of Phase 1
 - [ ] `nyquist_compliant: true` set in frontmatter after validation is complete
 
-**Approval:** pending
+**Approval:** Automated approved; manual lifecycle smoke pending.

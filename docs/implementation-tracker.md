@@ -46,13 +46,13 @@ Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
 Active milestone: `v1.0 Production Readiness`, tracked by `.planning/REQUIREMENTS.md`, `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-Active phase: Phase 1, DB Foundation (`FIX-02`).
+Active phase: Phase 2, Migration Safety planning/execution.
 
 2026-05-04 Task 3.1 handoff: `internal/db` shared SQLite open path is done. Touched `internal/db/db.go`, `internal/db/db_test.go`, and this tracker; ran the targeted DB tests plus requested package slice verification. Next slice: store constructor injection into the shared pool.
 
 2026-05-04 Task 3.2 handoff: store/search injection compatibility bridge done. Auth, scheduler, settings, swarm, embed cache, and SQLite FTS wrappers now route through `internal/db.Open`; injected constructors preserve caller-owned shared pools. Next slice: production startup wiring.
 
-2026-05-04 Task 3.3 handoff: production startup wiring done. `cmd/aura` opens one shared SQLite pool via `internal/db.Open`, settings/Telegram/auth/scheduler/search/swarm use injected pool-backed constructors, and bot shutdown no longer closes shared DB handles. Verification: targeted Telegram/aura/sandbox tests and builds plus static scans for legacy production opens. Next slice: static guard/full Phase 1 verification or residual production `sql.Open` scan.
+2026-05-04 Task 3.3 handoff: Phase 1 DB Foundation automated guard passed after production startup wiring. `cmd/aura` opens one shared SQLite pool via `internal/db.Open`, settings/Telegram/auth/scheduler/search/swarm use injected pool-backed constructors, and static scans confirm no legacy production SQLite open path outside `internal/db/db.go`. Next work: Phase 2 Migration Safety planning/execution. Residual release-gate check: manual lifecycle smoke for clean shutdown.
 
 The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 
