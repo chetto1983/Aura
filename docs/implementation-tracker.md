@@ -1,6 +1,6 @@
 # Aura Implementation Tracker
 
-2026-05-05 v1.1 Phase 1 handoff: `PANIC-01` landed. Production code no longer calls `MustResolveProfiles`; scheduled-agent allowed tools now initialize through `ResolveProfiles` without a bare panic path, and focused tests cover invalid profile behavior plus skills-read allowlist inclusion. Verification: `rg "MustResolveProfiles" internal cmd` produced no results; `go test ./internal/toolsets ./internal/scheduler -count=1` passed. Next work: Phase 2 Production Error Observability.
+2026-05-05 v1.1 Phase 1 handoff: `PANIC-01` landed. Production code no longer calls `MustResolveProfiles`; scheduled-agent allowed tools now initialize through `ResolveProfiles` without a bare panic path, and focused tests cover invalid profile behavior plus skills-read allowlist inclusion. Verification: local `rg` was unavailable/blocked with `Accesso negato`; fallback static search `Get-ChildItem internal,cmd -Recurse -File | Select-String -Pattern 'MustResolveProfiles'` returned no matches; `go test ./internal/toolsets ./internal/scheduler -count=1` passed. Next work: Phase 2 Production Error Observability.
 
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
