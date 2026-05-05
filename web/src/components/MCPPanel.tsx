@@ -204,8 +204,14 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
       )}
       {showRun && (
         <div className="mt-2 space-y-2 rounded-md border bg-muted/10 p-3">
-          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t('mcp.argsLabel')}</label>
+          <label
+            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+            htmlFor={`mcp-args-${server}-${tool.name}`}
+          >
+            {t('mcp.argsLabel')}
+          </label>
           <textarea
+            id={`mcp-args-${server}-${tool.name}`}
             value={args}
             onChange={(e) => setArgs(e.target.value)}
             spellCheck={false}

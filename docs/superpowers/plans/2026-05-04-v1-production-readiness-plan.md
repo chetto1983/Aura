@@ -356,7 +356,7 @@ Implementation files by subplan:
 
   Include token expiry schema/API behavior and settings secret redaction behavior.
 
-- [ ] **Step 3: Write Telegram Regression plan**
+- [x] **Step 3: Write Telegram Regression plan**
 
   Include focused tests for conversation, streaming, document/OCR trigger, auth, and archive behavior. Do not chase arbitrary package coverage.
 

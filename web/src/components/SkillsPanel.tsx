@@ -302,6 +302,7 @@ function CatalogView({ onAdminBlocked }: { onAdminBlocked: () => void }) {
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
+          aria-label={t('skills.catalog.searchLabel')}
           placeholder={t('skills.catalog.searchPlaceholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}

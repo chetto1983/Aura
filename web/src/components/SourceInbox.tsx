@@ -171,6 +171,7 @@ export function SourceInbox() {
       <input
         ref={fileInputRef}
         type="file"
+        aria-label={t('sources.uploadFileLabel')}
         accept=".pdf,application/pdf"
         multiple
         className="hidden"
