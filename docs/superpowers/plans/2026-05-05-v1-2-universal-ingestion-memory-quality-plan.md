@@ -293,7 +293,7 @@ git commit -m "feat: add universal source format policy"
 - Create: `internal/source/extract_go.go`
 - Test: `internal/source/extract_test.go`
 
-- [ ] **Step 1: Write failing extraction contract tests**
+- [x] **Step 1: Write failing extraction contract tests**
 
 Create `internal/source/extract_test.go`:
 
@@ -348,13 +348,13 @@ func TestExtractGoRejectsMalformedJSON(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/source -run "TestGoExtractors|TestExtractGo" -count=1`
 
 Expected: FAIL with missing `ExtractGo`, `ExtractInput`, or `ExtractResult`.
 
-- [ ] **Step 3: Add extraction result types**
+- [x] **Step 3: Add extraction result types**
 
 Create `internal/source/extract.go`:
 
@@ -413,7 +413,7 @@ func WriteExtractionFiles(store interface{ Path(id, name string) string }, src *
 }
 ```
 
-- [ ] **Step 4: Add Go extractors**
+- [x] **Step 4: Add Go extractors**
 
 Create `internal/source/extract_go.go`:
 
@@ -543,7 +543,7 @@ func renderMarkdownTable(rows [][]string, maxRows int) string {
 }
 ```
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run: `go test ./internal/source -run "TestGoExtractors|TestExtractGo" -count=1`
 
