@@ -298,8 +298,28 @@ func runOne(ctx context.Context, db *sql.DB, migration Migration) error {
 }
 
 func createCurrentSchema(ctx context.Context, tx *sql.Tx) error {
+	if err := dropLegacyConversationsWithoutChatID(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, currentSchemaSQL); err != nil {
 		return fmt.Errorf("migrations: create current schema: %w", err)
+	}
+	return nil
+}
+
+func dropLegacyConversationsWithoutChatID(ctx context.Context, tx *sql.Tx) error {
+	cols, err := txTableColumns(ctx, tx, "conversations")
+	if err != nil {
+		return err
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	if _, ok := cols["chat_id"]; ok {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE conversations`); err != nil {
+		return fmt.Errorf("migrations: drop legacy conversations table: %w", err)
 	}
 	return nil
 }

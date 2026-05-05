@@ -200,6 +200,50 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 	})
 }
 
+func TestRunRepairsLegacyConversationsTableWithoutChatID(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO conversations (user_id, role, content) VALUES (2002, 'user', 'legacy row');
+`); err != nil {
+		t.Fatalf("create legacy conversations table: %v", err)
+	}
+
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	assertColumns(t, db, "conversations", []string{
+		"id",
+		"chat_id",
+		"user_id",
+		"turn_index",
+		"role",
+		"content",
+		"tool_calls",
+		"tool_call_id",
+		"llm_calls",
+		"tool_calls_count",
+		"elapsed_ms",
+		"tokens_in",
+		"tokens_out",
+		"created_at",
+	})
+	assertIndexes(t, db, "conversations", []string{
+		"idx_conv_chat",
+		"idx_conv_user",
+	})
+	assertScalar(t, db, `SELECT COUNT(*) FROM conversations`, 0)
+}
+
 func TestRunCreatesUsableWikiDocumentsFTS5Table(t *testing.T) {
 	db := openTestDB(t)
 
@@ -355,6 +399,20 @@ func tableColumns(t *testing.T, db *sql.DB, table string) map[string]struct{} {
 		t.Fatalf("rows %s: %v", table, err)
 	}
 	return cols
+}
+
+func assertIndexes(t *testing.T, db *sql.DB, table string, names []string) {
+	t.Helper()
+	for _, name := range names {
+		var got string
+		if err := db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name = ?`,
+			table,
+			name,
+		).Scan(&got); err != nil {
+			t.Fatalf("%s missing index %s: %v", table, name, err)
+		}
+	}
 }
 
 func TestRegisteredReturnsCopy(t *testing.T) {
