@@ -146,12 +146,22 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 			activeValue := activeSettingValue(deps.RuntimeConfig, meta.Key, it.Value)
 			it.RestartRequired = activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)
 			it.ActiveValue = activeValue
-			if it.IsSecret && activeValue != "" {
-				it.ActiveValue = "(configured)"
-			}
+			redactSecretSetting(&it)
 			items = append(items, it)
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SettingsListResponse{Items: items})
+	}
+}
+
+func redactSecretSetting(it *SettingItem) {
+	if it == nil || !it.IsSecret {
+		return
+	}
+	if it.Value != "" {
+		it.Value = ""
+	}
+	if it.ActiveValue != "" {
+		it.ActiveValue = "(configured)"
 	}
 }
 

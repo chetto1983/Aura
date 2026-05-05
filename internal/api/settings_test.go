@@ -48,8 +48,11 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	for _, it := range resp.Items {
 		if it.Key == settings.KeyLLMAPIKey {
 			found = true
-			if it.Value != "sk-test" {
-				t.Errorf("LLM_API_KEY value = %q, want sk-test", it.Value)
+			if it.Value != "" {
+				t.Errorf("LLM_API_KEY value = %q, want redacted empty edit field", it.Value)
+			}
+			if it.ActiveValue != "(configured)" {
+				t.Errorf("LLM_API_KEY active_value = %q, want configured placeholder", it.ActiveValue)
 			}
 			if it.Source != "db" {
 				t.Errorf("LLM_API_KEY source = %q, want db", it.Source)
@@ -62,6 +65,35 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	if !found {
 		t.Errorf("LLM_API_KEY not in items")
 	}
+}
+
+func TestSettingsList_RedactsEnvSecrets(t *testing.T) {
+	t.Setenv(settings.KeyEmbeddingAPIKey, "embed-secret")
+	router, _ := newSettingsEnv(t)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+
+	var resp SettingsListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, it := range resp.Items {
+		if it.Key != settings.KeyEmbeddingAPIKey {
+			continue
+		}
+		if it.Value != "" || it.ActiveValue != "(configured)" {
+			t.Fatalf("secret row leaked: value=%q active_value=%q", it.Value, it.ActiveValue)
+		}
+		if it.Source != "env" || !it.IsSecret {
+			t.Fatalf("secret row metadata = source:%q is_secret:%v", it.Source, it.IsSecret)
+		}
+		return
+	}
+	t.Fatal("EMBEDDING_API_KEY not in items")
 }
 
 func TestSettingsList_FallsBackToEnv(t *testing.T) {

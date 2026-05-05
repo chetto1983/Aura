@@ -143,19 +143,19 @@ Expected: PASS.
 - Modify: `web/src/components/SettingsPanel.tsx`
 - Modify: `web/src/types/api.ts` only if a new response flag is needed.
 
-- [ ] **Step 1: Write failing API test**
+- [x] **Step 1: Write failing API test**
 
 Change the existing settings list secret test so `LLM_API_KEY` never returns raw `Value` or raw `ActiveValue`; expect `(configured)` or an empty edit field plus `is_secret=true`.
 
-- [ ] **Step 2: Implement response-boundary redaction**
+- [x] **Step 2: Implement response-boundary redaction**
 
 Redact every `SettingItem` where `IsSecret` is true before `writeJSON`, without changing `POST /settings` storage or `POST /settings/test` request behavior.
 
-- [ ] **Step 3: Update frontend state behavior**
+- [x] **Step 3: Update frontend state behavior**
 
 Ensure the settings form does not treat redacted placeholders as dirty secrets and does not resubmit placeholders as raw values.
 
-- [ ] **Step 4: Run Go and web verification**
+- [x] **Step 4: Run Go and web verification**
 
 Run:
 
@@ -175,9 +175,9 @@ Expected: PASS.
 - Modify: `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`
 
 - [x] Mark `SEC-01` done after token expiry lands.
-- [ ] Mark `SEC-02` done after settings redaction lands.
-- [ ] Advance active state to Phase 5 after both are done.
-- [ ] Run full verification:
+- [x] Mark `SEC-02` done after settings redaction lands.
+- [x] Advance active state to Phase 5 after both are done.
+- [x] Run full verification:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1

@@ -9,6 +9,7 @@ import type { SettingItem } from '@/types/api';
 type Group = 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 
 const GROUP_ORDER: Group[] = ['provider', 'embeddings', 'ocr', 'budget', 'summarizer', 'aurabot', 'other'];
+const SECRET_PLACEHOLDER = '(configured)';
 
 export function SettingsPanel() {
   const { t } = useLocale();
@@ -52,7 +53,9 @@ export function SettingsPanel() {
 
   function valueOf(key: string): string {
     if (key in pending) return pending[key];
-    return items.find((it) => it.key === key)?.value ?? '';
+    const item = items.find((it) => it.key === key);
+    if (item?.is_secret && item.value === SECRET_PLACEHOLDER) return '';
+    return item?.value ?? '';
   }
   function setValue(key: string, value: string) {
     setPending((prev) => ({ ...prev, [key]: value }));
@@ -69,7 +72,17 @@ export function SettingsPanel() {
     if (!hasChanges) return;
     setSaving(true);
     try {
-      const res = await api.updateSettings(pending);
+      const updates = Object.fromEntries(
+        Object.entries(pending).filter(([key, value]) => {
+          const item = items.find((it) => it.key === key);
+          return !(item?.is_secret && value === SECRET_PLACEHOLDER);
+        }),
+      );
+      if (Object.keys(updates).length === 0) {
+        setPending({});
+        return;
+      }
+      const res = await api.updateSettings(updates);
       if (res.ok) {
         const fresh = await api.settings();
         setItems(fresh.items);
@@ -405,6 +418,7 @@ function Control({
         id={item.key}
         type={inputType}
         value={value}
+        placeholder={item.is_secret && item.active_value === SECRET_PLACEHOLDER ? SECRET_PLACEHOLDER : undefined}
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
         spellCheck={false}
