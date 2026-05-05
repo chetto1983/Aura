@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -310,8 +311,26 @@ func readSourceMarkdown(store *source.Store, src *source.Source, maxBytes int) (
 		return readOriginalContent(store, src.ID, "original.txt", maxBytes)
 	case source.KindURL:
 		return readOriginalContent(store, src.ID, "original.url", maxBytes)
+	case source.KindSandboxArtifact:
+		if !isReadableSandboxArtifact(src) {
+			return "", fmt.Errorf("read_source: sandbox artifact %s is not text-readable (mime=%s)", src.ID, src.MimeType)
+		}
+		return readOriginalContent(store, src.ID, source.OriginalFilenameForKind(src.Kind, src.Filename), maxBytes)
 	}
 	return "", fmt.Errorf("read_source: ocr.md not found for %s (status=%s); run ocr_source first", src.ID, src.Status)
+}
+
+func isReadableSandboxArtifact(src *source.Source) bool {
+	mime := strings.ToLower(strings.TrimSpace(src.MimeType))
+	if strings.HasPrefix(mime, "text/") || strings.Contains(mime, "json") || strings.Contains(mime, "xml") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(src.Filename)) {
+	case ".txt", ".md", ".markdown", ".csv", ".json", ".py", ".html", ".xml", ".yaml", ".yml", ".log":
+		return true
+	default:
+		return false
+	}
 }
 
 func readOriginalContent(store *source.Store, id, name string, maxBytes int) (string, error) {

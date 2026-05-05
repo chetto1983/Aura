@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
+	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 )
@@ -28,14 +29,15 @@ func main() {
 		smoke         = flag.Bool("smoke", false, "run the offline Pyodide package smoke")
 		toolSmoke     = flag.Bool("tool-smoke", false, "run the registered execute_code tool smoke")
 		artifactSmoke = flag.Bool("artifact-smoke", false, "run the execute_code artifact egress smoke")
+		skillE2E      = flag.Bool("skill-e2e", false, "run skills -> execute_code -> persisted script -> read_source E2E")
 		runtimeDir    = flag.String("runtime-dir", envDefault("SANDBOX_RUNTIME_DIR", "runtime/pyodide"), "Pyodide runtime directory")
 		runnerPath    = flag.String("runner", envDefault("SANDBOX_PYODIDE_RUNNER", ""), "Pyodide runner executable/script path")
 		timeout       = flag.Duration("timeout", 2*time.Minute, "per-scenario timeout")
 	)
 	flag.Parse()
 
-	if !*smoke && !*toolSmoke && !*artifactSmoke {
-		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke, --tool-smoke, or --artifact-smoke")
+	if !*smoke && !*toolSmoke && !*artifactSmoke && !*skillE2E {
+		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke, --tool-smoke, --artifact-smoke, or --skill-e2e")
 		os.Exit(2)
 	}
 	if strings.TrimSpace(*runnerPath) == "" {
@@ -93,6 +95,28 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("PASS: execute_code returned and persisted CSV + plot artifact metadata\n")
+		return
+	}
+
+	if *skillE2E {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+
+		fmt.Printf("Aura sandbox skill E2E\n")
+		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
+		fmt.Printf("runner=%s\n", *runnerPath)
+		fmt.Printf("timeout=%s\n\n", timeout.String())
+
+		report := runSkillSandboxE2E(ctx, runner)
+		fmt.Printf("availability: kind=%s available=%v detail=%s\n\n", report.Availability.Kind, report.Availability.Available, report.Availability.Detail)
+		if strings.TrimSpace(report.Output) != "" {
+			fmt.Printf("output:\n%s\n", strings.TrimSpace(report.Output))
+		}
+		if !report.OK {
+			fmt.Printf("FAIL: %s\n", report.Error)
+			os.Exit(1)
+		}
+		fmt.Printf("PASS: skills were read, Python executed, script/result persisted, and read_source recalled the script\n")
 		return
 	}
 
@@ -210,6 +234,177 @@ func runExecuteCodeArtifactSmoke(ctx context.Context, rt sandbox.Runtime) execut
 		return report
 	}
 	return report
+}
+
+func runSkillSandboxE2E(ctx context.Context, rt sandbox.Runtime) executeCodeToolSmokeReport {
+	report := executeCodeToolSmokeReport{}
+	if rt == nil {
+		report.Availability = sandbox.Availability{Available: false, Kind: sandbox.RuntimeKindUnavailable, Detail: "sandbox runtime unavailable"}
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	report.Availability = rt.CheckAvailability()
+	if report.Availability.Kind == "" {
+		report.Availability.Kind = rt.Kind()
+	}
+	if !report.Availability.Available {
+		report.Error = report.Availability.Detail
+		return report
+	}
+
+	loader := skills.NewLoader("skills")
+	listOut, err := tools.NewListSkillsTool(loader).Execute(ctx, map[string]any{})
+	if err != nil {
+		report.Error = "list skills: " + err.Error()
+		return report
+	}
+	if !strings.Contains(listOut, "aura-python-sandbox") || !strings.Contains(listOut, "aura-source-extraction") {
+		report.Output = listOut
+		report.Error = "runtime skills missing from list_skills output"
+		return report
+	}
+
+	readSkill := tools.NewReadSkillTool(loader)
+	pythonSkill, err := readSkill.Execute(ctx, map[string]any{"name": "aura-python-sandbox"})
+	if err != nil {
+		report.Error = "read aura-python-sandbox: " + err.Error()
+		return report
+	}
+	sourceSkill, err := readSkill.Execute(ctx, map[string]any{"name": "aura-source-extraction"})
+	if err != nil {
+		report.Error = "read aura-source-extraction: " + err.Error()
+		return report
+	}
+	for _, want := range []string{"/tmp/aura_out", "allow_network=false", "sandbox_artifact"} {
+		if !strings.Contains(pythonSkill, want) {
+			report.Output = pythonSkill
+			report.Error = "aura-python-sandbox missing guidance: " + want
+			return report
+		}
+	}
+	for _, want := range []string{"extract.md", "Do not run arbitrary user Python"} {
+		if !strings.Contains(sourceSkill, want) {
+			report.Output = sourceSkill
+			report.Error = "aura-source-extraction missing guidance: " + want
+			return report
+		}
+	}
+
+	manager, err := sandbox.NewManager(sandbox.Config{Runtime: rt})
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	wikiDir, err := os.MkdirTemp("", "aura-skill-e2e-*")
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	defer os.RemoveAll(wikiDir)
+	sourceStore, err := source.NewStore(wikiDir, nil)
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	execTool := tools.NewExecuteCodeToolWithStore(manager, nil, sourceStore)
+	if execTool == nil {
+		report.Error = "execute_code tool did not register"
+		return report
+	}
+	execOut, err := execTool.Execute(ctx, map[string]any{
+		"code":          skillE2EProgram(),
+		"allow_network": false,
+	})
+	if err != nil {
+		report.Error = "execute_code: " + err.Error()
+		return report
+	}
+	if !strings.Contains(execOut, "AURA_SKILL_E2E wrote durable script and result") {
+		report.Output = execOut
+		report.Error = "execute_code output missing E2E marker"
+		return report
+	}
+
+	rows, err := sourceStore.List(source.ListFilter{Kind: source.KindSandboxArtifact})
+	if err != nil {
+		report.Error = "list persisted artifacts: " + err.Error()
+		return report
+	}
+	if len(rows) < 2 {
+		report.Output = execOut
+		report.Error = fmt.Sprintf("persisted artifacts = %d, want at least 2", len(rows))
+		return report
+	}
+
+	readSource := tools.NewReadSourceTool(sourceStore)
+	var scriptRecall, resultRecall string
+	for _, row := range rows {
+		text, err := readSource.Execute(ctx, map[string]any{"source_id": row.ID, "mode": "excerpt"})
+		if err != nil {
+			continue
+		}
+		if strings.Contains(row.Filename, ".py") {
+			scriptRecall = text
+		}
+		if strings.Contains(row.Filename, ".md") {
+			resultRecall = text
+		}
+	}
+	if !strings.Contains(scriptRecall, "AURA_SKILL_E2E_SCRIPT") {
+		report.Output = execOut
+		report.Error = "read_source did not recall persisted Python script"
+		return report
+	}
+	if !strings.Contains(resultRecall, "aura-python-sandbox") {
+		report.Output = execOut
+		report.Error = "read_source did not recall persisted result note"
+		return report
+	}
+
+	var sb strings.Builder
+	sb.WriteString("skills: read aura-python-sandbox and aura-source-extraction\n")
+	sb.WriteString(execOut)
+	sb.WriteString("\n\nremembered script excerpt:\n")
+	sb.WriteString(singleLine(scriptRecall, 300))
+	sb.WriteString("\n\nremembered result excerpt:\n")
+	sb.WriteString(singleLine(resultRecall, 300))
+	report.Output = sb.String()
+	report.OK = true
+	return report
+}
+
+func skillE2EProgram() string {
+	return strings.TrimSpace(`
+from pathlib import Path
+
+OUT = Path("/tmp/aura_out")
+OUT.mkdir(parents=True, exist_ok=True)
+
+script = """# AURA_SKILL_E2E_SCRIPT
+from pathlib import Path
+
+def summarize(values):
+    total = sum(values)
+    return {"count": len(values), "total": total, "mean": total / len(values)}
+
+if __name__ == "__main__":
+    result = summarize([3, 5, 8, 13])
+    print("AURA_SKILL_E2E_SCRIPT", result)
+"""
+
+(OUT / "aura_skill_e2e.py").write_text(script, encoding="utf-8")
+(OUT / "aura_skill_e2e_result.md").write_text(
+    "# Aura Skill E2E Result\n\n"
+    "- Skill read: aura-python-sandbox\n"
+    "- Source guardrail: aura-source-extraction\n"
+    "- Network: disabled\n"
+    "- Durable script: aura_skill_e2e.py\n",
+    encoding="utf-8",
+)
+
+print("AURA_SKILL_E2E wrote durable script and result")
+`)
 }
 
 func executeCodeArtifactSmokeProgram() string {

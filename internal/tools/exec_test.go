@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -130,6 +131,61 @@ func TestExecuteCodeTool_PersistsArtifactsAsSources(t *testing.T) {
 	}
 	if _, err := os.Stat(store.Path(rec.ID, "original.csv")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExecuteCodeTool_PersistedScriptArtifactIsReadableSource(t *testing.T) {
+	script := "from pathlib import Path\nprint('AURA_SKILL_E2E script remembered')\n"
+	manager, err := sandbox.NewManager(sandbox.Config{
+		Runtime: fakeExecRuntime{result: &sandbox.Result{
+			OK:        true,
+			Stdout:    "created script and result\n",
+			ExitCode:  0,
+			ElapsedMs: 12,
+			Artifacts: []sandbox.Artifact{{
+				Name:      "aura_skill_e2e.py",
+				MimeType:  "text/x-python",
+				Bytes:     []byte(script),
+				SizeBytes: int64(len(script)),
+			}, {
+				Name:      "aura_skill_e2e_result.md",
+				MimeType:  "text/markdown",
+				Bytes:     []byte("# Aura Skill E2E\n\n- Skill read: aura-python-sandbox\n- Network: disabled\n"),
+				SizeBytes: int64(len("# Aura Skill E2E\n\n- Skill read: aura-python-sandbox\n- Network: disabled\n")),
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := source.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := tools.NewExecuteCodeToolWithStore(manager, nil, store)
+	if tool == nil {
+		t.Fatal("tool = nil")
+	}
+
+	out, err := tool.Execute(context.Background(), map[string]any{"code": "create e2e artifacts"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	ids := regexp.MustCompile(`source_id=(src_[a-f0-9]{16})`).FindAllStringSubmatch(out, -1)
+	if len(ids) != 2 {
+		t.Fatalf("output source ids = %v, want 2\n%s", ids, out)
+	}
+
+	read := tools.NewReadSourceTool(store)
+	got, err := read.Execute(context.Background(), map[string]any{
+		"source_id": ids[0][1],
+		"mode":      "excerpt",
+	})
+	if err != nil {
+		t.Fatalf("read persisted script source: %v", err)
+	}
+	if !strings.Contains(got, "AURA_SKILL_E2E script remembered") {
+		t.Fatalf("read_source output = %q", got)
 	}
 }
 
