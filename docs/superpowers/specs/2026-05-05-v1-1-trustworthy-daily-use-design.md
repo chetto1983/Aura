@@ -26,6 +26,9 @@ In scope:
 - log or return ignored production-path errors in shutdown, tray browser-open,
   Telegram placeholder cleanup, and auth token audit updates;
 - validate dashboard URLs before shell handoff from the tray;
+- ship the packaged Windows `aura.exe` as a GUI/tray-first binary with no
+  console window, while preserving console output for development and debug
+  commands;
 - add focused tests where the relevant failure path can be faked cleanly;
 - document telebot v4 beta monitoring and smoke expectations;
 - run a focused v1.1 release gate.
@@ -38,6 +41,7 @@ Out of scope:
 - memory quality upgrades and wiki proposal intelligence;
 - settings at-rest encryption, unless it is explicitly promoted into a
   security-focused milestone.
+- hiding consoles for `go run`, local developer builds, or debug binaries.
 
 ## Requirements
 
@@ -107,6 +111,20 @@ Acceptance:
   checklist, and rollback expectation;
 - no library replacement is attempted in this milestone.
 
+### UX-01: Packaged Windows Console Suppression
+
+The shipped Windows `aura.exe` should behave like a tray application and should
+not open a console window during normal use.
+
+Acceptance:
+
+- GoReleaser-produced Windows artifacts build `cmd/aura` with the Windows GUI
+  subsystem;
+- local development commands, `go run ./cmd/aura`, and debug binaries keep
+  console output for troubleshooting;
+- release notes or install docs preserve a troubleshooting path for operators
+  who need logs.
+
 ### REL-02: Focused v1.1 Release Gate
 
 The milestone closes with verification proportional to the changes.
@@ -115,6 +133,8 @@ Acceptance:
 
 - focused package tests pass for changed areas;
 - `go test ./...` and `go build ./...` pass before completion;
+- a snapshot Windows package proves the released `aura.exe` is built with no
+  console subsystem;
 - Windows/manual smoke is run only if tray/browser behavior changes in a way
   that cannot be covered hermetically.
 
@@ -132,6 +152,11 @@ skills, MCP input, or user-triggered tool execution.
 Runtime observability should use the existing structured logging conventions.
 Error logs should identify the subsystem and operation, but must not include
 raw tokens, API keys, tool arguments, base64 payloads, or full OCR text.
+
+Windows console suppression belongs to release packaging, not source-level
+developer builds. The GoReleaser Windows build should add the GUI subsystem
+linker flag for `cmd/aura` only. Debug commands and non-release local builds
+remain console-friendly.
 
 ## Data Flow
 
@@ -159,6 +184,14 @@ Tray open flow:
 3. Unsupported URLs are logged and rejected.
 4. Shell launch errors are logged for operator diagnosis.
 
+Windows package build flow:
+
+1. Developer and debug builds keep default console behavior.
+2. GoReleaser builds the packaged Windows `cmd/aura` binary with the GUI
+   subsystem flag.
+3. The release gate inspects or smokes the packaged binary, not a local dev
+   build, when checking for console suppression.
+
 ## Phases
 
 ### 1. Panic Removal Gate
@@ -180,12 +213,13 @@ comment explaining why it is unobservable and safe.
 
 ### 3. Platform And Dependency Hygiene
 
-Tighten tray/headless behavior and document telebot beta monitoring. This phase
-is deliberately documentation-light and code-light unless the tray changes need
+Tighten tray/headless behavior, suppress the console window for packaged
+Windows releases, and document telebot beta monitoring. This phase is
+deliberately documentation-light and code-light unless the tray changes need
 small tests or URL validation helpers.
 
-Success means future telebot upgrades and tray regressions have explicit smoke
-expectations.
+Success means future telebot upgrades, packaged Windows UX, and tray
+regressions have explicit smoke expectations.
 
 ### 4. Release Gate Lite
 
@@ -206,6 +240,8 @@ Use focused tests instead of broad coverage targets.
   failure can be induced without brittle timing.
 - Tray tests cover URL validation in pure functions where possible; manual
   Windows smoke covers shell handoff if needed.
+- Packaging checks cover the Windows release binary's GUI subsystem behavior
+  without changing developer/debug console behavior.
 
 ## Release Gate
 
@@ -214,19 +250,22 @@ Minimum verification:
 - `go test ./internal/toolsets ./internal/telegram ./internal/auth ./internal/tray -count=1`
 - `go test ./...`
 - `go build ./...`
+- GoReleaser snapshot build when packaging behavior changes
 
 Manual verification:
 
 - Windows tray "Open Dashboard" smoke only if the browser-open path changes
   beyond pure validation/logging.
+- Windows packaged `aura.exe` smoke for console suppression when the release
+  linker flags change.
 - Telegram smoke only if conversation cleanup changes alter message delivery.
 
 ## Out Of Scope
 
 v1.1 does not add new dashboard panels, new Telegram commands, new memory
 promotion flows, broad file splits, dependency swaps, installers, auto-update,
-or settings encryption. Those are valid future milestones, but they would blur
-the trust-focused boundary of this one.
+settings encryption, or a separate `aura-console.exe`. Those are valid future
+milestones, but they would blur the trust-focused boundary of this one.
 
 ## Open Decisions Resolved
 
@@ -237,3 +276,5 @@ the trust-focused boundary of this one.
   milestone.
 - Broad refactors: defer unless a small extraction is required to make a v1.1
   failure path testable.
+- Console suppression: apply only to packaged Windows `aura.exe`; keep dev,
+  `go run`, and debug binaries console-friendly.
