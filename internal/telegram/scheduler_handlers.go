@@ -202,17 +202,21 @@ func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, r
 }
 
 func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error) {
-	msg := agentJobNotificationMessage(task, content)
+	payload, _ := scheduler.NormalizeAgentJobPayload(task.Payload)
+	msg := agentJobNotificationMessage(task, payload, content)
 	if err := b.sendGeneratedToUser(task.RecipientID, msg); err != nil {
 		return false, fmt.Errorf("agent_job %q notify: %w", task.Name, err)
 	}
 	return true, nil
 }
 
-func agentJobNotificationMessage(task *scheduler.Task, content string) string {
+func agentJobNotificationMessage(task *scheduler.Task, payload scheduler.AgentJobPayload, content string) string {
 	name := ""
 	if task != nil {
 		name = task.Name
+	}
+	if payload.Language == "it" {
+		return fmt.Sprintf("Job agente %q completato.\n\n%s", name, truncateTelegramText(content, 3200))
 	}
 	return fmt.Sprintf("Agent job %q completed.\n\n%s", name, truncateTelegramText(content, 3200))
 }
@@ -283,6 +287,11 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 
 func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
 	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory growth is useful, use propose_wiki_change so the user can review it. If reusable procedural knowledge is useful, use propose_skill_change so the user can review it. Return a short report with what you checked, any proposal created, and unresolved issues."
+	if lang := agentJobLanguageInstruction(payload.Language); lang != "" {
+		prompt += " " + lang
+	} else {
+		prompt += " Output language: infer the language from the saved goal and context anchors; if unclear, mirror the language most recently used by the user in that saved context."
+	}
 	if len(payload.Skills) > 0 {
 		prompt += " This job is skill-backed: inspect attached skills with read_skill when available before applying their procedures."
 	}
@@ -291,6 +300,17 @@ func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc 
 	}
 	prompt += conversation.RenderRuntimeContext(now, loc)
 	return prompt
+}
+
+func agentJobLanguageInstruction(language string) string {
+	switch scheduler.NormalizeAgentJobLanguage(language) {
+	case "it":
+		return "Output language: Italian. Write the final report and all user-facing prose in Italian, regardless of tool or web result language."
+	case "en":
+		return "Output language: English. Write the final report and all user-facing prose in English, regardless of tool or web result language."
+	default:
+		return ""
+	}
 }
 
 func (b *Bot) agentJobPrompt(ctx context.Context, task *scheduler.Task, payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {

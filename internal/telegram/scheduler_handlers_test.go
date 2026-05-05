@@ -366,12 +366,29 @@ func TestAgentJobScheduleContextShowsLateRun(t *testing.T) {
 }
 
 func TestAgentJobNotificationRendersMarkdownForTelegram(t *testing.T) {
-	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, "## Report\n- **Done**")
+	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, scheduler.AgentJobPayload{}, "## Report\n- **Done**")
 	got := renderForTelegram(msg)
 	for _, want := range []string{"Agent job \"daily-brief\" completed.", "<b>Report</b>", "• <b>Done</b>"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rendered notification missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestAgentJobPromptUsesPayloadLanguage(t *testing.T) {
+	got := agentJobSystemPrompt(scheduler.AgentJobPayload{
+		WritePolicy: scheduler.AgentJobWritePolicyProposeOnly,
+		Language:    "it",
+	}, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC), time.UTC)
+	if !strings.Contains(got, "Output language: Italian") {
+		t.Fatalf("prompt missing Italian language instruction:\n%s", got)
+	}
+}
+
+func TestAgentJobNotificationLocalizesPrefix(t *testing.T) {
+	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, scheduler.AgentJobPayload{Language: "it"}, "Fatto")
+	if !strings.HasPrefix(msg, "Job agente \"daily-brief\" completato.") {
+		t.Fatalf("unexpected notification prefix: %q", msg)
 	}
 }
 

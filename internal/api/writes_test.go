@@ -193,7 +193,7 @@ func TestTaskUpsert_HappyPath_EveryMinutes(t *testing.T) {
 
 func TestTaskUpsert_HappyPath_AgentJob(t *testing.T) {
 	e := newTestEnv(t)
-	body := `{"name":"agent-job","kind":"agent_job","recipient_id":"u123","payload":"Check Aura sources and propose useful wiki updates.","daily":"10:00","weekdays":"weekdays"}`
+	body := `{"name":"agent-job","kind":"agent_job","recipient_id":"u123","payload":"Check Aura sources and propose useful wiki updates.","language":"it-IT","daily":"10:00","weekdays":"weekdays"}`
 	rr := e.doLocal("POST", "/tasks", []byte(body))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
@@ -210,6 +210,9 @@ func TestTaskUpsert_HappyPath_AgentJob(t *testing.T) {
 	}
 	if !strings.Contains(got.Payload, `"write_policy":"propose_only"`) {
 		t.Errorf("payload not normalized: %s", got.Payload)
+	}
+	if !strings.Contains(got.Payload, `"language":"it"`) {
+		t.Errorf("payload missing normalized language: %s", got.Payload)
 	}
 }
 

@@ -24,6 +24,7 @@ type AgentJobPayload struct {
 	ContextFrom     []string `json:"context_from,omitempty"`
 	WakeIfChanged   []string `json:"wake_if_changed,omitempty"`
 	WritePolicy     string   `json:"write_policy,omitempty"`
+	Language        string   `json:"language,omitempty"`
 	Notify          *bool    `json:"notify,omitempty"`
 }
 
@@ -48,6 +49,7 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 	payload.Skills = cleanUniqueStrings(payload.Skills)
 	payload.ContextFrom = cleanUniqueStrings(payload.ContextFrom)
 	payload.WakeIfChanged = cleanUniqueStrings(payload.WakeIfChanged)
+	payload.Language = NormalizeAgentJobLanguage(payload.Language)
 	if len(payload.Skills) > 0 && !containsString(payload.EnabledToolsets, toolsets.ProfileSkillsRead) {
 		payload.EnabledToolsets = append(payload.EnabledToolsets, toolsets.ProfileSkillsRead)
 	}
@@ -68,6 +70,25 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 		payload.Notify = &notify
 	}
 	return payload, nil
+}
+
+func NormalizeAgentJobLanguage(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	value = strings.ReplaceAll(value, "_", "-")
+	if i := strings.Index(value, "-"); i >= 0 {
+		value = value[:i]
+	}
+	switch value {
+	case "it", "ita", "italian", "italiano":
+		return "it"
+	case "en", "eng", "english", "inglese":
+		return "en"
+	default:
+		return ""
+	}
 }
 
 func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, forceSkillsRead bool) ([]string, error) {

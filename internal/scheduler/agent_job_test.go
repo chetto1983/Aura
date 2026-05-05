@@ -30,6 +30,7 @@ func TestNormalizeAgentJobPayload_JSON(t *testing.T) {
 	got, err := NormalizeAgentJobPayload(`{
 		"goal":"Check markets",
 		"tool_allowlist":["web_search","web_search","propose_wiki_change"],
+		"language":"it-IT",
 		"notify":false
 	}`)
 	if err != nil {
@@ -40,6 +41,9 @@ func TestNormalizeAgentJobPayload_JSON(t *testing.T) {
 	}
 	if len(got.ToolAllowlist) != 2 || got.ToolAllowlist[0] != "web_search" || got.ToolAllowlist[1] != "propose_wiki_change" {
 		t.Errorf("ToolAllowlist = %#v", got.ToolAllowlist)
+	}
+	if got.Language != "it" {
+		t.Errorf("Language = %q, want it", got.Language)
 	}
 	if got.Notify == nil || *got.Notify {
 		t.Fatal("Notify should preserve false")

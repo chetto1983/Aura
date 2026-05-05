@@ -319,7 +319,7 @@ function NewTaskForm({
   onCancel: () => void;
   onSubmit: (req: UpsertTaskRequest) => Promise<void>;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<Task['kind']>('wiki_maintenance');
   const [payload, setPayload] = useState('');
@@ -338,6 +338,7 @@ function NewTaskForm({
       const req: UpsertTaskRequest = { name: name.trim(), kind };
       if (payload.trim()) req.payload = payload.trim();
       if (kind === 'reminder' && recipientId.trim()) req.recipient_id = recipientId.trim();
+      if (kind === 'agent_job') req.language = locale;
       if (scheduleMode === 'at') {
         // <input type="datetime-local"> emits "YYYY-MM-DDTHH:MM" in local
         // time. Convert to UTC RFC3339 for the wire.

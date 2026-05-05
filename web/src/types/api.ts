@@ -123,6 +123,7 @@ export interface UpsertTaskRequest {
   kind: Task['kind'];
   payload?: string;
   recipient_id?: string;
+  language?: 'en' | 'it';
   at?: string; // RFC3339 UTC
   daily?: string; // HH:MM (bot's local TZ)
   weekdays?: string; // optional daily filter: mon,tue,wed,thu,fri,sat,sun

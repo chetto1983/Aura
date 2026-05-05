@@ -62,6 +62,8 @@ func renderForTelegram(s string) string {
 		return placeholder(len(codes) - 1)
 	})
 
+	s = degradeMarkdownTables(s)
+
 	// Step 2: per-line block-level conversion.
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
@@ -121,6 +123,108 @@ func renderForTelegram(s string) string {
 	}
 
 	return s
+}
+
+func degradeMarkdownTables(s string) string {
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); {
+		if i+1 >= len(lines) || !isMarkdownTableHeader(lines[i], lines[i+1]) {
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		headers := splitMarkdownTableRow(lines[i])
+		i += 2
+		var rows [][]string
+		for i < len(lines) {
+			line := lines[i]
+			if strings.TrimSpace(line) == "" {
+				break
+			}
+			cells := splitMarkdownTableRow(line)
+			if len(cells) == 0 {
+				break
+			}
+			rows = append(rows, cells)
+			i++
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		for _, row := range rows {
+			if rendered := renderMarkdownTableRow(headers, row); rendered != "" {
+				out = append(out, "- "+rendered)
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func isMarkdownTableHeader(header, sep string) bool {
+	headers := splitMarkdownTableRow(header)
+	seps := splitMarkdownTableRow(sep)
+	if len(headers) < 2 || len(seps) < 2 {
+		return false
+	}
+	for _, cell := range seps {
+		cell = strings.TrimSpace(cell)
+		if cell == "" {
+			return false
+		}
+		cell = strings.Trim(cell, ":")
+		if len(cell) < 3 || strings.Trim(cell, "-") != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func splitMarkdownTableRow(line string) []string {
+	line = strings.TrimSpace(line)
+	if !strings.Contains(line, "|") {
+		return nil
+	}
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
+	parts := strings.Split(line, "|")
+	cells := make([]string, 0, len(parts))
+	for _, part := range parts {
+		cells = append(cells, strings.TrimSpace(part))
+	}
+	return cells
+}
+
+func renderMarkdownTableRow(headers, row []string) string {
+	if len(row) == 0 {
+		return ""
+	}
+	for len(row) < len(headers) {
+		row = append(row, "")
+	}
+	if len(headers) == 2 && strings.TrimSpace(row[0]) != "" {
+		if strings.TrimSpace(row[1]) == "" {
+			return row[0]
+		}
+		return row[0] + ": " + row[1]
+	}
+	parts := make([]string, 0, len(headers))
+	for i, header := range headers {
+		if i >= len(row) {
+			break
+		}
+		cell := strings.TrimSpace(row[i])
+		if cell == "" {
+			continue
+		}
+		header = strings.TrimSpace(header)
+		if header == "" {
+			parts = append(parts, cell)
+		} else {
+			parts = append(parts, header+": "+cell)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 var (

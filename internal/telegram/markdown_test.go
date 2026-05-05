@@ -1,6 +1,9 @@
 package telegram
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRenderForTelegram(t *testing.T) {
 	cases := []struct {
@@ -64,5 +67,37 @@ func TestRenderForTelegramDoesNotDoubleEscape(t *testing.T) {
 	want := `see <a href="https://x.com/?q=a&amp;b">hi</a>`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderForTelegramDegradesMarkdownTables(t *testing.T) {
+	in := "Signals:\n\n| Asset | Signal | Note |\n| --- | --- | --- |\n| BTC | **Buy** | breakout |\n| ETH | Wait | range |\n"
+	got := renderForTelegram(in)
+	for _, unwanted := range []string{"| Asset |", "| --- |", "| BTC |"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("rendered Telegram text still contains markdown table %q:\n%s", unwanted, got)
+		}
+	}
+	for _, want := range []string{
+		"Signals:",
+		"• Asset: BTC; Signal: <b>Buy</b>; Note: breakout",
+		"• Asset: ETH; Signal: Wait; Note: range",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered Telegram text missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderForTelegramDegradesTwoColumnTables(t *testing.T) {
+	in := "| Metric | Value |\n| --- | --- |\n| Price | 123 |\n| Bias | Neutral |"
+	got := renderForTelegram(in)
+	if strings.Contains(got, "|") {
+		t.Fatalf("rendered Telegram text still contains pipes:\n%s", got)
+	}
+	for _, want := range []string{"• Price: 123", "• Bias: Neutral"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered Telegram text missing %q:\n%s", want, got)
+		}
 	}
 }

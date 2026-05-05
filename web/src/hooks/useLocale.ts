@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import type { SupportedLang } from '@/i18n';
+import { SUPPORTED_LANGS, type SupportedLang } from '@/i18n';
 
 export function useLocale() {
   const { t, i18n } = useTranslation();
 
-  const locale = i18n.language as SupportedLang;
+  const locale = normalizeSupportedLang(i18n.resolvedLanguage || i18n.language);
 
   const formatDate = (
     date: Date | number | string,
@@ -32,4 +32,9 @@ export function useLocale() {
   };
 
   return { t, locale, formatDate, formatRelative, formatNumber };
+}
+
+function normalizeSupportedLang(value: string): SupportedLang {
+  const base = value.toLowerCase().split(/[-_]/)[0] as SupportedLang;
+  return SUPPORTED_LANGS.includes(base) ? base : 'en';
 }

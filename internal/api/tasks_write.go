@@ -22,6 +22,7 @@ type UpsertTaskRequest struct {
 	Kind         string `json:"kind"`
 	Payload      string `json:"payload,omitempty"`
 	RecipientID  string `json:"recipient_id,omitempty"`
+	Language     string `json:"language,omitempty"`      // dashboard locale for scheduled agent jobs
 	At           string `json:"at,omitempty"`            // RFC3339 UTC
 	Daily        string `json:"daily,omitempty"`         // HH:MM, local TZ
 	Weekdays     string `json:"weekdays,omitempty"`      // optional daily filter: mon,tue,...
@@ -43,6 +44,7 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		req.At = strings.TrimSpace(req.At)
 		req.Daily = strings.TrimSpace(req.Daily)
 		req.Weekdays = strings.TrimSpace(req.Weekdays)
+		req.Language = scheduler.NormalizeAgentJobLanguage(req.Language)
 		if !taskNameRe.MatchString(req.Name) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "name must be 1-64 chars [A-Za-z0-9_.-]")
 			return
@@ -82,6 +84,9 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 				return
+			}
+			if req.Language != "" {
+				payload.Language = req.Language
 			}
 			req.Payload, err = payload.JSON()
 			if err != nil {
