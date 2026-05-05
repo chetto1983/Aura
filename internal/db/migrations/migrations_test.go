@@ -3,6 +3,7 @@ package migrations
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -64,6 +65,49 @@ func appliedVersions(t *testing.T, db *sql.DB) []int {
 		t.Fatalf("rows: %v", err)
 	}
 	return versions
+}
+
+func loadSQLFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read SQL file %s: %v", path, err)
+	}
+	return string(content)
+}
+
+func seedV302Rows(t *testing.T, db *sql.DB) {
+	t.Helper()
+	statements := []string{
+		`INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'Europe/Rome', '2026-01-02T03:04:05Z')`,
+		`INSERT INTO api_tokens (token_hash, user_id, issued_at, last_used, revoked_at) VALUES ('hash-1', 'user-1', '2026-01-02T03:04:05Z', NULL, NULL)`,
+		`INSERT INTO allowed_users (user_id, source, created_at) VALUES ('user-1', 'manual', '2026-01-02T03:04:05Z')`,
+		`INSERT INTO pending_users (user_id, username, requested_at, decided_at, decision) VALUES ('user-2', 'pending_user', '2026-01-02T03:04:05Z', NULL, NULL)`,
+		`INSERT INTO scheduled_tasks (name, kind, payload, recipient_id, schedule_kind, schedule_at, schedule_daily, schedule_every_minutes, next_run_at, last_run_at, last_error, status, created_at, updated_at) VALUES ('daily-review', 'telegram', '{}', 'chat-1', 'daily', NULL, '09:00', 0, '2026-01-03T09:00:00Z', NULL, '', 'active', '2026-01-02T03:04:05Z', '2026-01-02T03:04:05Z')`,
+		`INSERT INTO conversations (chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id, llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out, created_at) VALUES (1001, 2002, 1, 'user', 'remember migration safety', NULL, NULL, 1, 0, 123, 10, 20, '2026-01-02T03:04:05Z')`,
+		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, status, created_at) VALUES (1001, 'Aura has migration tests', 'create', 'migration-tests', 0.75, '1', 'pending', '2026-01-02T03:04:05Z')`,
+		`INSERT INTO wiki_issues (kind, severity, slug, broken_link, message, status, created_at, resolved_at) VALUES ('broken_link', 'medium', 'migration-tests', 'missing-page', 'Missing wiki page', 'open', '2026-01-02T03:04:05Z', NULL)`,
+		`INSERT INTO embedding_cache (content_sha, model, embedding, created_at) VALUES ('sha-1', 'mistral-embed', x'010203', '2026-01-02T03:04:05Z')`,
+		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES ('migration-tests', 'Aura preserves searchable legacy wiki content', '{"slug":"migration-tests"}', 'Migration Tests')`,
+		`INSERT INTO swarm_runs (id, goal, status, created_by, created_at, updated_at, completed_at, last_error) VALUES ('run-1', 'verify migrations', 'running', 'test', '2026-01-02T03:04:05Z', '2026-01-02T03:04:05Z', NULL, '')`,
+		`INSERT INTO swarm_tasks (id, run_id, parent_id, role, subject, prompt, tool_allowlist, status, depth, attempts, blocked_by, result, tool_calls, llm_calls, elapsed_ms, created_at, started_at, completed_at, last_error) VALUES ('task-1', 'run-1', '', 'tester', 'migration', 'verify upgrade', '[]', 'pending', 0, 0, '[]', '', 0, 0, 0, '2026-01-02T03:04:05Z', NULL, NULL, '')`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("seed v302 row with %q: %v", statement, err)
+		}
+	}
+}
+
+func assertScalar[T comparable](t *testing.T, db *sql.DB, query string, want T) {
+	t.Helper()
+	var got T
+	if err := db.QueryRow(query).Scan(&got); err != nil {
+		t.Fatalf("query scalar %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("query scalar %q = %v, want %v", query, got, want)
+	}
 }
 
 func TestRunCreatesSchemaMigrationsTable(t *testing.T) {
@@ -208,6 +252,73 @@ func TestRunIsIdempotent(t *testing.T) {
 		if first[i] != second[i] {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
+	}
+}
+
+func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.Exec(loadSQLFile(t, filepath.Join("testdata", "v302_schema.sql"))); err != nil {
+		t.Fatalf("create v302 schema: %v", err)
+	}
+	seedV302Rows(t, db)
+
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	assertScalar(t, db, `SELECT value FROM settings WHERE key = 'timezone'`, "Europe/Rome")
+	assertScalar(t, db, `SELECT COUNT(*) FROM api_tokens WHERE token_hash = 'hash-1'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM allowed_users WHERE user_id = 'user-1'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM pending_users WHERE user_id = 'user-2'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM scheduled_tasks WHERE name = 'daily-review'`, 1)
+	assertScalar(t, db, `SELECT content FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "remember migration safety")
+	assertScalar(t, db, `SELECT fact FROM proposed_updates WHERE target_slug = 'migration-tests'`, "Aura has migration tests")
+	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_issues WHERE slug = 'migration-tests'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM embedding_cache WHERE content_sha = 'sha-1'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM swarm_runs WHERE id = 'run-1'`, 1)
+	assertScalar(t, db, `SELECT COUNT(*) FROM swarm_tasks WHERE id = 'task-1'`, 1)
+
+	assertScalar(t, db, `SELECT id FROM wiki_documents WHERE wiki_documents MATCH 'searchable'`, "migration-tests")
+
+	assertColumns(t, db, "scheduled_tasks", []string{
+		"schedule_weekdays",
+		"schedule_every_minutes",
+		"last_output",
+		"last_metrics_json",
+		"wake_signature",
+	})
+	assertColumns(t, db, "proposed_updates", []string{
+		"category",
+		"related_slugs",
+		"provenance_json",
+	})
+	assertColumns(t, db, "swarm_tasks", []string{
+		"tokens_prompt",
+		"tokens_completion",
+		"tokens_total",
+	})
+	assertScalar(t, db, `SELECT schedule_weekdays FROM scheduled_tasks WHERE name = 'daily-review'`, "")
+	assertScalar(t, db, `SELECT provenance_json FROM proposed_updates WHERE target_slug = 'migration-tests'`, "{}")
+	assertScalar(t, db, `SELECT tokens_total FROM swarm_tasks WHERE id = 'task-1'`, 0)
+
+	first := appliedVersions(t, db)
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	second := appliedVersions(t, db)
+
+	if len(first) != len(second) {
+		t.Fatalf("applied migration count changed after rerun: first=%v second=%v", first, second)
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
+		}
+	}
+	if len(first) != 2 || first[0] != 1 || first[1] != 2 {
+		t.Fatalf("applied versions = %v, want [1 2]", first)
 	}
 }
 
