@@ -709,7 +709,7 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 	for _, table := range requiredTables {
 		t.Run(table, func(t *testing.T) {
 			var name string
-			err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, table).Scan(&name)
+			err := db.QueryRow(`SELECT name FROM sqlite_schema WHERE name = ?`, table).Scan(&name)
 			if err != nil {
 				t.Fatalf("missing table %s: %v", table, err)
 			}
@@ -1316,7 +1316,9 @@ Expected: commit succeeds with only `cmd/aura` files staged.
 - Modify: `internal/search/sqlite.go`
 - Modify: `internal/search/embed_cache.go`
 - Modify: `internal/swarm/store.go`
-- Modify: tests in `internal/auth`, `internal/scheduler`, `internal/settings`, `internal/search`, `internal/swarm` only where constructors need explicit migrations.
+- Modify: tests in `internal/auth`, `internal/scheduler`, `internal/settings`, `internal/search`, `internal/swarm`, and `internal/telegram` only where constructors need explicit migrations.
+- Modify: `internal/telegram/bot_test.go`
+- Modify: `internal/telegram/scheduler_handlers_test.go`
 
 - [ ] **Step 1: Add migrations imports where `OpenStore` needs compatibility**
 
@@ -1502,6 +1504,8 @@ Add the import:
 
 Apply this only to tests that perform CRUD after `NewStoreWithDB`. Tests that only assert nil DB rejection do not need migrations.
 
+Include Telegram tests that open raw DB pools and then construct shared-pool stores through bot or scheduler handler setup. In particular, update `internal/telegram/bot_test.go` and `internal/telegram/scheduler_handlers_test.go` so any test path that opens a database and reaches `NewStoreWithDB` runs `migrations.Run` first.
+
 - [ ] **Step 8: Move old store migration tests into migration package**
 
 Delete `internal/scheduler/store_migration_test.go` after confirming the coverage exists in `internal/db/migrations/migrations_test.go`:
@@ -1517,7 +1521,7 @@ Do not delete scheduler CRUD tests.
 Run:
 
 ```powershell
-go test ./internal/db ./internal/auth ./internal/scheduler ./internal/settings ./internal/search ./internal/swarm
+go test ./internal/db ./internal/auth ./internal/scheduler ./internal/settings ./internal/search ./internal/swarm ./internal/telegram
 ```
 
 Expected: PASS; store constructors no longer lazily create production schemas from shared-pool constructors.
@@ -1527,11 +1531,12 @@ Expected: PASS; store constructors no longer lazily create production schemas fr
 Run:
 
 ```powershell
-git add internal/auth/store.go internal/scheduler/store.go internal/settings/store.go internal/search/sqlite.go internal/search/embed_cache.go internal/swarm/store.go internal/auth internal/scheduler internal/settings internal/search internal/swarm
+git status --short -uall
+git add internal/auth/store.go internal/scheduler/store.go internal/settings/store.go internal/search/sqlite.go internal/search/embed_cache.go internal/swarm/store.go internal/telegram/bot_test.go internal/telegram/scheduler_handlers_test.go
 git commit -m "db: move store schema ownership to migrations"
 ```
 
-Expected: commit succeeds with only migration-related store and test changes staged.
+Expected: `git status --short -uall` is inspected before staging; stage only the changed files from this task, using explicit file paths and omitting any unrelated user edits. If constructor tests outside Telegram changed, add those exact test file paths from the inspected status output. Commit succeeds with only migration-related store and test changes staged.
 
 ## Task 8: Fresh/Upgrade Schema Convergence Gate
 
@@ -1543,36 +1548,138 @@ Expected: commit succeeds with only migration-related store and test changes sta
 Add these helpers to `internal/db/migrations/migrations_test.go`:
 
 ```go
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
 func schemaSignature(t *testing.T, db *sql.DB) []string {
 	t.Helper()
+	var out []string
+
+	out = append(out, tableSignatures(t, db)...)
+	out = append(out, indexSignatures(t, db)...)
+	out = append(out, ftsSignatures(t, db)...)
+	sort.Strings(out)
+	return out
+}
+
+func tableSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
 	rows, err := db.Query(`
-SELECT type, name, tbl_name, sql
-FROM sqlite_master
-WHERE name NOT LIKE 'sqlite_%'
+SELECT name
+FROM sqlite_schema
+WHERE type = 'table'
+  AND name NOT LIKE 'sqlite_%'
   AND name NOT LIKE 'wiki_documents_%'
-ORDER BY type, name
+ORDER BY name
 `)
 	if err != nil {
-		t.Fatalf("schema signature query: %v", err)
+		t.Fatalf("table signature query: %v", err)
 	}
 	defer rows.Close()
+
 	var out []string
 	for rows.Next() {
-		var typ, name, table string
-		var sqlText sql.NullString
-		if err := rows.Scan(&typ, &name, &table, &sqlText); err != nil {
-			t.Fatalf("schema signature scan: %v", err)
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			t.Fatalf("table signature scan: %v", err)
 		}
-		out = append(out, typ+"|"+name+"|"+table+"|"+strings.Join(strings.Fields(sqlText.String), " "))
+		out = append(out, "table|"+table+"|"+strings.Join(columnSignatures(t, db, table), ","))
 	}
 	if err := rows.Err(); err != nil {
-		t.Fatalf("schema signature rows: %v", err)
+		t.Fatalf("table signature rows: %v", err)
 	}
 	return out
 }
+
+func columnSignatures(t *testing.T, db *sql.DB, table string) []string {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(` + quoteIdent(table) + `)`)
+	if err != nil {
+		t.Fatalf("table info %s: %v", table, err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("table info scan %s: %v", table, err)
+		}
+		def := "<nil>"
+		if defaultValue.Valid {
+			def = strings.Join(strings.Fields(defaultValue.String), " ")
+		}
+		out = append(out, fmt.Sprintf("%s:%s:notnull=%d:default=%s:pk=%d", name, strings.ToUpper(typ), notNull, def, pk))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table info rows %s: %v", table, err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func indexSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.Query(`
+SELECT name, tbl_name, sql
+FROM sqlite_schema
+WHERE type = 'index'
+  AND name NOT LIKE 'sqlite_%'
+ORDER BY name
+`)
+	if err != nil {
+		t.Fatalf("index signature query: %v", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name, table string
+		var sqlText sql.NullString
+		if err := rows.Scan(&name, &table, &sqlText); err != nil {
+			t.Fatalf("index signature scan: %v", err)
+		}
+		sqlSig := ""
+		if sqlText.Valid {
+			sqlSig = strings.Join(strings.Fields(sqlText.String), " ")
+		}
+		out = append(out, "index|"+name+"|"+table+"|"+sqlSig)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("index signature rows: %v", err)
+	}
+	return out
+}
+
+func ftsSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	var name string
+	if err := db.QueryRow(`SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'wiki_documents'`).Scan(&name); err != nil {
+		t.Fatalf("wiki_documents FTS table missing: %v", err)
+	}
+	return []string{"fts|wiki_documents|present"}
+}
+
+func assertFTSContentBehavior(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	if _, err := db.Exec(`
+INSERT INTO wiki_documents(id, content, metadata, title)
+VALUES (?, 'convergence probe text', '{}', 'Convergence Probe')
+`, id); err != nil {
+		t.Fatalf("insert FTS probe: %v", err)
+	}
+	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_documents WHERE wiki_documents MATCH 'convergence'`, 1)
+	if _, err := db.Exec(`DELETE FROM wiki_documents WHERE id = ?`, id); err != nil {
+		t.Fatalf("delete FTS probe: %v", err)
+	}
+}
 ```
 
-Add `strings` to the imports.
+Add `fmt`, `sort`, and `strings` to the imports. This semantic signature intentionally avoids comparing raw DDL text: table comparison is by column name/type/notnull/default/pk sets so upgraded tables with `ALTER TABLE ... ADD COLUMN` converge even when fresh DDL places the same column in a different ordinal position. Index comparison is by name, owning table, and normalized SQL where SQLite preserves meaningful SQL. FTS comparison is by virtual table presence and a write/search/delete behavior probe.
 
 - [ ] **Step 2: Add convergence test**
 
@@ -1605,6 +1712,8 @@ func TestFreshAndUpgradedSchemasConverge(t *testing.T) {
 			t.Fatalf("schema mismatch at %d\nfresh=%s\nupgraded=%s\nfreshAll=%v\nupgradedAll=%v", i, freshSig[i], upgradedSig[i], freshSig, upgradedSig)
 		}
 	}
+	assertFTSContentBehavior(t, fresh, "fresh-convergence-probe")
+	assertFTSContentBehavior(t, upgraded, "upgraded-convergence-probe")
 }
 ```
 
@@ -1732,11 +1841,16 @@ Expected: only intended migration-safety files are modified or untracked.
 Run only if `go fmt ./...` changed files after the previous commits:
 
 ```powershell
-git add internal/db/migrations internal/auth internal/scheduler internal/settings internal/search internal/swarm cmd/aura
+git status --short -uall
+```
+
+After inspecting status, run `git add` with explicit file paths for only the formatting or test-polish files changed in this phase, then run:
+
+```powershell
 git commit -m "db: finalize migration safety verification"
 ```
 
-Expected: commit includes formatting or test polish from this phase only.
+Expected: unrelated user edits remain unstaged.
 
 ## Implementation Commit Sequence
 
