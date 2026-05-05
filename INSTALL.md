@@ -44,18 +44,19 @@ Each Aura install needs its own bot. Bots are free and take 30 seconds.
 
 ## Step 2 — Download Aura (1 minute)
 
-Grab the binary for your OS from the [Releases page](https://github.com/chetto1983/Aura/releases):
+Grab the archive for your OS from the [Releases page](https://github.com/chetto1983/Aura/releases):
 
-| OS | File |
+| OS | Archive |
 |---|---|
-| Windows | `aura_windows_amd64.exe` |
-| macOS (Intel) | `aura_darwin_amd64` |
-| macOS (Apple Silicon) | `aura_darwin_arm64` |
-| Linux | `aura_linux_amd64` |
+| Windows | `aura_<version>_windows_x86_64.zip` |
+| macOS (Intel) | `aura_<version>_macos_x86_64.tar.gz` |
+| macOS (Apple Silicon) | `aura_<version>_macos_arm64.tar.gz` |
+| Linux (x86_64) | `aura_<version>_linux_x86_64.tar.gz` |
+| Linux (ARM64) | `aura_<version>_linux_arm64.tar.gz` |
 
-Drop it in a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`).
+Extract the archive into a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`). The Windows archive contains `aura.exe`; macOS and Linux archives contain `aura`.
 
-**On macOS / Linux:** `chmod +x aura_*`
+**On macOS / Linux:** `chmod +x aura`
 
 **On macOS:** the first run may be blocked by Gatekeeper. Right-click → Open → confirm.
 
@@ -66,7 +67,7 @@ Drop it in a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`).
 Open a terminal in the same folder and run the binary:
 
 **Windows:** double-click `aura.exe` from the extracted release folder, or run `.\aura.exe` from PowerShell. The packaged Windows app runs as a tray-first GUI binary, so it does not keep a console window open during normal use.
-**macOS / Linux:** `./aura_*`
+**macOS / Linux:** `./aura`
 
 You'll see something like:
 
@@ -159,7 +160,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/YOU/aura
-ExecStart=/home/YOU/aura/aura_linux_amd64
+ExecStart=/home/YOU/aura/aura
 Restart=always
 
 [Install]
@@ -193,7 +194,7 @@ Everything is in the folder where you ran the binary:
 ## Updating
 
 1. Stop Aura (Ctrl+C, or stop the service).
-2. Download the new binary, replace the old.
+2. Download the new archive, extract it, and replace the old `aura` or `aura.exe`.
 3. Start Aura.
 
 Your `.env`, `aura.db`, `wiki/`, and `skills/` are untouched.
