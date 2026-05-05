@@ -178,7 +178,7 @@ git commit -m "slice 5a: cover telegram streaming delivery"
 **Files:**
 - Modify: `internal/telegram/bot_test.go`
 
-- [ ] **Step 1: Test unauthorized text is ignored**
+- [x] **Step 1: Test unauthorized text is ignored**
 
 Add a test that constructs `Bot{cfg: &config.Config{Allowlist: []string{"owner"}, AllowlistConfigured: true}}`, sends a fake context from user `999`, calls `onMessage`, and asserts:
 
@@ -186,11 +186,11 @@ Add a test that constructs `Bot{cfg: &config.Config{Allowlist: []string{"owner"}
 - `b.active` does not contain `"999"`;
 - `b.ctxMap` does not contain `"999"`.
 
-- [ ] **Step 2: Test authorized text returns immediately**
+- [x] **Step 2: Test authorized text returns immediately**
 
 Add a test that constructs an allowlisted bot with nil LLM and a fake context from `"owner"`, calls `onMessage`, and waits briefly for `b.ctxMap` to contain `"owner"`. This guards the goroutine launch contract without waiting for a live LLM.
 
-- [ ] **Step 3: Run access tests**
+- [x] **Step 3: Run access tests**
 
 Run:
 

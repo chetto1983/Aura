@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
+	tele "gopkg.in/telebot.v4"
 )
 
 func TestToolActivityMessageDoesNotExposeArgs(t *testing.T) {
@@ -106,6 +109,69 @@ func TestCollectOwnerIDs_EmptyWhenNothingConfigured(t *testing.T) {
 	}
 }
 
+func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
+	b := &Bot{
+		cfg: &config.Config{
+			Allowlist:           []string{"owner"},
+			AllowlistConfigured: true,
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	ctx := tele.NewContext(nil, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 999, Username: "guest"},
+		Chat:   &tele.Chat{ID: 999},
+		Text:   "hello",
+	}})
+
+	if err := b.onMessage(ctx); err != nil {
+		t.Fatalf("onMessage() error = %v, want nil", err)
+	}
+	if _, ok := b.active.Load("999"); ok {
+		t.Fatal("unauthorized text should not mark the user active")
+	}
+	if _, ok := b.ctxMap.Load("999"); ok {
+		t.Fatal("unauthorized text should not create conversation context")
+	}
+}
+
+func TestOnMessageAllowlistedTextStartsConversation(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{
+		cfg: &config.Config{
+			Allowlist:           []string{"123"},
+			AllowlistConfigured: true,
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Text:   "hello",
+	}})
+
+	if err := b.onMessage(ctx); err != nil {
+		t.Fatalf("onMessage() error = %v, want nil", err)
+	}
+	waitUntil(t, time.Second, func() bool {
+		_, ok := b.ctxMap.Load("123")
+		return ok
+	})
+	waitUntil(t, time.Second, func() bool {
+		return countTelegramMethods(calls, "sendMessage") > 0
+	})
+	waitUntil(t, time.Second, func() bool {
+		_, ok := b.active.Load("123")
+		return !ok
+	})
+}
+
 func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	b := &Bot{tools: reg}
@@ -178,4 +244,16 @@ func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 		t.Fatalf("new auth store: %v", err)
 	}
 	return store
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition was not met before timeout")
 }
