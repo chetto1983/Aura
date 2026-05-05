@@ -46,7 +46,7 @@ Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
 Active milestone: `v1.0 Production Readiness`, tracked by `.planning/REQUIREMENTS.md`, `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-Active phase: Phase 3, Memory Reliability planning/execution.
+Active phase: Phase 4, Dashboard Security planning/execution.
 
 2026-05-04 Task 3.1 handoff: `internal/db` shared SQLite open path is done. Touched `internal/db/db.go`, `internal/db/db_test.go`, and this tracker; ran the targeted DB tests plus requested package slice verification. Next slice: store constructor injection into the shared pool.
 
@@ -55,6 +55,8 @@ Active phase: Phase 3, Memory Reliability planning/execution.
 2026-05-04 Task 3.3 handoff: Phase 1 DB Foundation automated guard passed after production startup wiring. `cmd/aura` opens one shared SQLite pool via `internal/db.Open`, settings/Telegram/auth/scheduler/search/swarm use injected pool-backed constructors, and static scans confirm no legacy production SQLite open path outside `internal/db/db.go`. Next work: Phase 2 Migration Safety planning/execution. Residual release-gate check: manual lifecycle smoke for clean shutdown.
 
 2026-05-05 Phase 2 handoff: Migration Safety merged to `master` via PR #1. Aura now has `internal/db/migrations` with `schema_migrations`, transactional versioned application, fresh schema creation, v3.0.2 upgrade fixture coverage, fresh/upgraded convergence tests, FTS transaction/behavior proofs, and legacy `conversations` repair centralized in migrations. `cmd/aura` and `cmd/debug_telegram_sandbox` run migrations immediately after `internal/db.Open` and before shared store construction. Shared-pool constructors no longer lazily create production schema; owned compatibility openers run migrations themselves. Verification before PR: `go test ./...`, `go build ./cmd/aura`, `go build ./cmd/debug_telegram_sandbox`, startup-order static checks, and lazy-schema static checks. Next work: Phase 3 Memory Reliability. Residual release-gate check: manual lifecycle smoke for clean shutdown.
+
+2026-05-05 Phase 3 handoff: Memory Reliability implemented. Added `docs/superpowers/plans/2026-05-05-v1-memory-reliability-plan.md`, extracted `archiveConversationTurns` in `internal/telegram/conversation.go`, changed the bot archiver field to a small package-local interface in `internal/telegram/bot.go`, tightened `internal/conversation/archive.go` buffered-drain/drop logs, and added focused coverage in `internal/telegram/archive_test.go` plus `internal/conversation/buffered_test.go`. Direct and buffered archive append failures now log at error level with `chat_id`, `turn_index`, `role`, and `error` where available; success-path tests cover user, assistant tool-call, tool-result, final assistant telemetry, and failure observability. Verification: `go test ./internal/telegram -run TestArchiveConversationTurns -count=1`, `go test ./internal/conversation -run TestBufferedAppender_DrainGenericError -count=1`, `go test ./internal/telegram ./internal/conversation -count=1`, `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`. Next work: Phase 4 Dashboard Security.
 
 The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 

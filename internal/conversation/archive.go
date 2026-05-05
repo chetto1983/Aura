@@ -303,13 +303,13 @@ func NewBufferedAppender(store TurnAppender, bufSize int) *BufferedAppender {
 }
 
 // Append enqueues a Turn non-blocking. If the buffer is full the turn is
-// dropped and a warning is logged (archive_dropped_total).
+// dropped and an error is logged (archive_dropped_total).
 func (a *BufferedAppender) Append(_ context.Context, t Turn) error {
 	select {
 	case a.ch <- t:
 	default:
-		a.logger.Warn("archive_dropped_total: buffer full, turn dropped",
-			"chat_id", t.ChatID, "turn_index", t.TurnIndex)
+		a.logger.Error("archive_dropped_total: buffer full, turn dropped",
+			"chat_id", t.ChatID, "turn_index", t.TurnIndex, "role", t.Role)
 	}
 	return nil
 }
@@ -327,8 +327,8 @@ func (a *BufferedAppender) drain() {
 	for t := range a.ch {
 		if err := a.store.Append(context.Background(), t); err != nil {
 			if !errors.Is(err, ErrDuplicateTurn) {
-				a.logger.Warn("archive drain: append failed",
-					"chat_id", t.ChatID, "turn_index", t.TurnIndex, "error", err)
+				a.logger.Error("archive drain: append failed",
+					"chat_id", t.ChatID, "turn_index", t.TurnIndex, "role", t.Role, "error", err)
 			}
 		}
 	}

@@ -11,7 +11,7 @@ v1.0 is limited to production blockers: data integrity, upgrade safety, memory r
 
 - [x] **DB-01 DB Foundation:** Production startup uses one shared SQLite pool with WAL mode, `busy_timeout`, and foreign key enforcement applied through the approved DB open path.
 - [x] **MIG-01 Migration Safety:** Schema changes run through deterministic versioned migrations with transactional application, fresh-install support, upgrade support, and idempotent reruns.
-- [ ] **MEM-01 Memory Reliability:** Conversation archive failures are observable through logging or returned errors so Aura does not silently lose durable memory.
+- [x] **MEM-01 Memory Reliability:** Conversation archive failures are observable through logging or returned errors so Aura does not silently lose durable memory.
 - [ ] **SEC-01 Dashboard Token Expiry:** Dashboard bearer tokens carry expiry metadata, default to a configurable 30-day TTL, and expired tokens are rejected distinctly from invalid tokens.
 - [ ] **SEC-02 Settings Secret Redaction:** Settings API responses and dashboard state redact LLM, embedding, Mistral, and Ollama secrets while preserving write and test-connection flows.
 - [ ] **TEST-01 Telegram Regression Harness:** Focused hermetic tests cover critical Telegram paths: conversation handling, streaming edits, document/OCR triggers, access control, and archive behavior.
@@ -52,7 +52,7 @@ Deferred items from the concern audit stay in v1.1 Hardening Polish or later unl
 |-------------|-------|--------|
 | DB-01 | Phase 1: DB Foundation | Done — merged in PR #1 on 2026-05-05 |
 | MIG-01 | Phase 2: Migration Safety | Done — merged in PR #1 on 2026-05-05 |
-| MEM-01 | Phase 3: Memory Reliability | Pending |
+| MEM-01 | Phase 3: Memory Reliability | Done — direct and buffered archive append failures logged and covered on 2026-05-05 |
 | SEC-01 | Phase 4: Dashboard Security | Pending |
 | SEC-02 | Phase 4: Dashboard Security | Pending |
 | TEST-01 | Phase 5: Telegram Regression Harness | Pending |
@@ -60,12 +60,12 @@ Deferred items from the concern audit stay in v1.1 Hardening Polish or later unl
 
 **Coverage:**
 - v1.0 production-readiness requirements: 7 total
-- Complete: 2
-- Remaining: 5
+- Complete: 3
+- Remaining: 4
 - Mapped to phases: 7
 - Unmapped: 0
 
 ---
 
 *Requirements defined: 2026-05-04*
-*Last updated: 2026-05-05 after DB Foundation + Migration Safety merge*
+*Last updated: 2026-05-05 after Memory Reliability completion*

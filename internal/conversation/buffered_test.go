@@ -1,8 +1,11 @@
 package conversation_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -134,16 +137,33 @@ func TestBufferedAppender_DrainErrDuplicateTurn(t *testing.T) {
 // TestBufferedAppender_DrainGenericError verifies that non-duplicate errors
 // from the underlying store are logged (not panicked) by the drain goroutine.
 func TestBufferedAppender_DrainGenericError(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	genericErr := errors.New("some db error")
 	errStore := &errStore{err: genericErr}
 	appender := conversation.NewBufferedAppender(errStore, 10)
 
-	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 0, Role: "user", Content: "fail"})
+	_ = appender.Append(context.Background(), conversation.Turn{ChatID: 1, TurnIndex: 0, Role: "assistant", Content: "fail"})
 
 	if err := appender.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// No panic, no hang — generic error logged and swallowed.
+	got := logs.String()
+	for _, want := range []string{
+		"level=ERROR",
+		"archive drain: append failed",
+		"chat_id=1",
+		"turn_index=0",
+		"role=assistant",
+		`error="some db error"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log %q does not contain %q", got, want)
+		}
+	}
 }
 
 // errStore always returns the configured error from Append.

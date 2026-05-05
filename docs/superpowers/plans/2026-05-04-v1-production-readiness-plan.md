@@ -348,7 +348,7 @@ Implementation files by subplan:
 - Create: `docs/superpowers/plans/2026-05-04-v1-telegram-regression-plan.md`
 - Create: `docs/superpowers/plans/2026-05-04-v1-release-gate-plan.md`
 
-- [ ] **Step 1: Write Memory Reliability plan**
+- [x] **Step 1: Write Memory Reliability plan**
 
   Include exact tests and code paths for archive append failure observability in `internal/telegram/conversation.go`.
 

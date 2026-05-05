@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,47 +160,16 @@ func (b *Bot) handleConversation(c tele.Context) {
 				"chat_id", chatID, "error", err)
 		}
 
-		// User message: archived first from the locally-captured text.
-		_ = b.archiver.Append(ctx, conversation.Turn{
-			ChatID:    chatID,
-			UserID:    c.Sender().ID,
-			TurnIndex: nextIdx,
-			Role:      "user",
-			Content:   userText,
+		archiveConversationTurns(ctx, b.logger, b.archiver, archiveTurnInput{
+			ChatID:       chatID,
+			UserID:       c.Sender().ID,
+			NextIndex:    nextIdx,
+			UserText:     userText,
+			LoopMessages: convCtx.MessagesSince(preLoopIdx),
+			Stats:        stats,
+			ElapsedMS:    time.Since(turnStart).Milliseconds(),
+			TokensIn:     convCtx.TotalTokensUsed(),
 		})
-		nextIdx++
-
-		// Loop messages: assistant tool-calls, tool results, final answer.
-		// Snapshot taken after EnforceLimit so the slice is the messages
-		// runToolCallingLoop appended this turn.
-		loopMsgs := convCtx.MessagesSince(preLoopIdx)
-		elapsedMS := time.Since(turnStart).Milliseconds()
-		for i, msg := range loopMsgs {
-			turn := conversation.Turn{
-				ChatID:     chatID,
-				UserID:     c.Sender().ID,
-				TurnIndex:  nextIdx,
-				Role:       msg.Role,
-				Content:    msg.Content,
-				ToolCallID: msg.ToolCallID,
-			}
-			if len(msg.ToolCalls) > 0 {
-				if raw, err := json.Marshal(msg.ToolCalls); err == nil {
-					turn.ToolCalls = string(raw)
-				} else {
-					b.logger.Warn("archive: tool_calls marshal failed",
-						"chat_id", chatID, "turn_index", nextIdx, "error", err)
-				}
-			}
-			if msg.Role == "assistant" && i == len(loopMsgs)-1 {
-				turn.LLMCalls = stats.llmCalls
-				turn.ToolCallsCount = stats.toolCalls
-				turn.ElapsedMS = elapsedMS
-				turn.TokensIn = convCtx.TotalTokensUsed()
-			}
-			_ = b.archiver.Append(ctx, turn)
-			nextIdx++
-		}
 
 		// Slice 12e: post-turn summarizer extraction (log-only; apply in 12f).
 		if b.summRunner != nil {
@@ -244,6 +214,73 @@ func (b *Bot) proposalToolsAvailable() bool {
 type turnStats struct {
 	llmCalls  int
 	toolCalls int
+}
+
+type archiveTurnInput struct {
+	ChatID       int64
+	UserID       int64
+	NextIndex    int64
+	UserText     string
+	LoopMessages []llm.Message
+	Stats        turnStats
+	ElapsedMS    int64
+	TokensIn     int
+}
+
+func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversationArchiver, input archiveTurnInput) {
+	if archiver == nil {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	nextIdx := input.NextIndex
+	appendTurn := func(turn conversation.Turn) {
+		if err := archiver.Append(ctx, turn); err != nil {
+			logger.Error("archive: append failed",
+				"chat_id", turn.ChatID,
+				"turn_index", turn.TurnIndex,
+				"role", turn.Role,
+				"error", err)
+		}
+	}
+
+	appendTurn(conversation.Turn{
+		ChatID:    input.ChatID,
+		UserID:    input.UserID,
+		TurnIndex: nextIdx,
+		Role:      "user",
+		Content:   input.UserText,
+	})
+	nextIdx++
+
+	for i, msg := range input.LoopMessages {
+		turn := conversation.Turn{
+			ChatID:     input.ChatID,
+			UserID:     input.UserID,
+			TurnIndex:  nextIdx,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+		}
+		if len(msg.ToolCalls) > 0 {
+			if raw, err := json.Marshal(msg.ToolCalls); err == nil {
+				turn.ToolCalls = string(raw)
+			} else {
+				logger.Warn("archive: tool_calls marshal failed",
+					"chat_id", input.ChatID, "turn_index", nextIdx, "error", err)
+			}
+		}
+		if msg.Role == "assistant" && i == len(input.LoopMessages)-1 {
+			turn.LLMCalls = input.Stats.llmCalls
+			turn.ToolCallsCount = input.Stats.toolCalls
+			turn.ElapsedMS = input.ElapsedMS
+			turn.TokensIn = input.TokensIn
+		}
+		appendTurn(turn)
+		nextIdx++
+	}
 }
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message) (string, turnStats) {

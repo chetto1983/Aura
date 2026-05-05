@@ -1,17 +1,17 @@
 ## Current Position
 
-Phase: 3 of 6 (Memory Reliability)
-Plan: Phase 3 — Memory Reliability
-Status: Phase 1 DB Foundation and Phase 2 Migration Safety merged via PR #1; ready to plan/execute Memory Reliability
-Current focus: make Telegram conversation archive failures observable and cover archive success/failure paths with focused tests
-Last activity: 2026-05-05 — Merged DB Foundation + Migration Safety, removed migration worktree, and updated active state for Phase 3
+Phase: 4 of 6 (Dashboard Security)
+Plan: Phase 4 — Dashboard Security
+Status: Phase 3 Memory Reliability implemented; ready to plan/execute dashboard token expiry and settings secret redaction
+Current focus: add dashboard bearer-token expiry and redact secret settings in API/UI responses
+Last activity: 2026-05-05 — Completed Memory Reliability with observable archive append failures and focused archive tests
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-04)
 
 **Core value:** Durable, compounding personal memory that grows smarter with every conversation — without relying on external note-taking apps.
-**Current focus:** Memory reliability: observable archive failures in the Telegram conversation path.
+**Current focus:** Dashboard security: token expiry and settings secret redaction for v1.0.
 
 ## Roadmap
 
@@ -32,3 +32,4 @@ See: .planning/ROADMAP.md
 [2026-05-04] Created ROADMAP.md: 6 production-readiness phases with v1.1 deferrals recorded
 [2026-05-04] Reconciled v1.0 around Production Readiness: DB foundation, migration safety, memory reliability, dashboard security, Telegram regression harness, and release gate.
 [2026-05-05] Merged PR #1: Phase 1 DB Foundation + Phase 2 Migration Safety. `master` now has shared SQLite pool startup, versioned migrations, v3.0.2 upgrade coverage, and lazy schema ownership removed from shared constructors.
+[2026-05-05] Completed Phase 3 Memory Reliability. Telegram archive helper logs direct append failures with chat/turn/role metadata and focused tests cover archive success plus failure observability.
