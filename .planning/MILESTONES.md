@@ -1,14 +1,14 @@
-# Milestones — Aura
+# Milestones - Aura
 
-## v0.0–v0.12.0 (Informal — before GSD tracking)
+## v0.0-v0.12.0 (Informal - before GSD tracking)
 
-Shipped through Phase 19a–19g.1 and sandbox.pyodide.5:
-- Telegram agent with streaming + Markdown→HTML
+Shipped through Phase 19a-19g.1 and sandbox.pyodide.5:
+- Telegram agent with streaming + Markdown->HTML
 - Mistral OCR pipeline
 - SQLite scheduler + agent jobs
 - Skills/MCP extensibility
 - React dashboard with bearer auth
-- Compounding memory (archive → summarizer → wiki review)
+- Compounding memory (archive -> summarizer -> wiki review)
 - AuraBot swarm
 - Pyodide sandbox (execute_code enabled)
 - XLSX/DOCX/PDF tools
@@ -16,7 +16,7 @@ Shipped through Phase 19a–19g.1 and sandbox.pyodide.5:
 
 Refer to `docs/implementation-tracker.md` for detailed slice-by-slice history.
 
-## v1.0 — Production Readiness (COMPLETE)
+## v1.0 - Production Readiness (COMPLETE)
 
 Started: 2026-05-04
 Completed: 2026-05-05
@@ -48,6 +48,17 @@ Deferred to v1.1 Hardening Polish:
 - Full settings at-rest encryption unless redaction proves insufficient
 - Arbitrary coverage targets outside Telegram critical paths
 
-## v1.1 — Hardening Polish (PLANNED)
+## v1.1 - Trustworthy Daily Use (ACTIVE)
 
-Follow-up hardening work that is useful but not part of the v1.0 production release gate.
+Current milestone: v1.1 Trustworthy Daily Use
+Current phase: Phase 1 - Panic Removal Gate
+Current focus: remove production panic paths before observability and packaged Windows UX work
+
+Goal: Make Aura safer and calmer for daily use by removing avoidable panics, surfacing quiet runtime failures, suppressing the packaged Windows console, and documenting dependency/platform watchpoints.
+
+Hardening boundary:
+- No new user-facing features
+- No broad large-file refactors
+- No memory-quality upgrades
+- No settings at-rest encryption
+- No separate `aura-console.exe`

@@ -51,7 +51,7 @@
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Update requirements**
+- [x] **Step 1: Update requirements**
 
 Add a new `## Milestone v1.1 Requirements` section to `.planning/REQUIREMENTS.md` with this exact checklist:
 
@@ -70,7 +70,7 @@ v1.1 is limited to trustworthy daily-use hardening: no avoidable production pani
 - [ ] **REL-02 Focused v1.1 Release Gate:** Focused package tests, broad Go verification, Windows GUI-subsystem package inspection, and any required manual smoke pass before tagging v1.1.
 ```
 
-- [ ] **Step 2: Update roadmap**
+- [x] **Step 2: Update roadmap**
 
 Replace `.planning/ROADMAP.md` with a v1.1 roadmap that contains these phases:
 
@@ -142,7 +142,7 @@ Out of scope:
 - Manual Windows smoke runs only where hermetic checks cannot prove behavior.
 ```
 
-- [ ] **Step 3: Update milestone/project/state docs**
+- [x] **Step 3: Update milestone/project/state docs**
 
 Update `.planning/MILESTONES.md`, `.planning/PROJECT.md`, and `.planning/STATE.md` so they agree on:
 
@@ -152,7 +152,7 @@ Current phase: Phase 1 - Panic Removal Gate
 Current focus: remove production panic paths before observability and packaged Windows UX work
 ```
 
-- [ ] **Step 4: Add tracker kickoff**
+- [x] **Step 4: Add tracker kickoff**
 
 Append this handoff near the top of `docs/implementation-tracker.md`:
 
@@ -160,7 +160,7 @@ Append this handoff near the top of `docs/implementation-tracker.md`:
 2026-05-05 v1.1 kickoff handoff: `v1.1 Trustworthy Daily Use` is the active milestone. Scope is hardening-only: remove `MustResolveProfiles` production panic paths, surface shutdown/tray/Telegram cleanup/token-audit failures, suppress the packaged Windows console through GoReleaser only, document telebot v4 beta monitoring, and run a focused release gate. Next work: Phase 1 Panic Removal Gate.
 ```
 
-- [ ] **Step 5: Verify docs**
+- [x] **Step 5: Verify docs**
 
 Run:
 
@@ -170,7 +170,7 @@ git diff --check
 
 Expected: exit code 0.
 
-- [ ] **Step 6: Commit docs**
+- [x] **Step 6: Commit docs**
 
 ```powershell
 git add .planning/REQUIREMENTS.md .planning/ROADMAP.md .planning/MILESTONES.md .planning/PROJECT.md .planning/STATE.md docs/implementation-tracker.md docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md

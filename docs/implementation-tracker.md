@@ -48,6 +48,8 @@ Active milestone: `v1.0 Production Readiness` is complete. Next milestone candid
 
 Active phase: v1.0 closure complete; next work is v1.1 Hardening Polish planning or v1.0 tag/release.
 
+2026-05-05 v1.1 kickoff handoff: `v1.1 Trustworthy Daily Use` is the active milestone. Scope is hardening-only: remove `MustResolveProfiles` production panic paths, surface shutdown/tray/Telegram cleanup/token-audit failures, suppress the packaged Windows console through GoReleaser only, document telebot v4 beta monitoring, and run a focused release gate. Next work: Phase 1 Panic Removal Gate.
+
 2026-05-04 Task 3.1 handoff: `internal/db` shared SQLite open path is done. Touched `internal/db/db.go`, `internal/db/db_test.go`, and this tracker; ran the targeted DB tests plus requested package slice verification. Next slice: store constructor injection into the shared pool.
 
 2026-05-04 Task 3.2 handoff: store/search injection compatibility bridge done. Auth, scheduler, settings, swarm, embed cache, and SQLite FTS wrappers now route through `internal/db.Open`; injected constructors preserve caller-owned shared pools. Next slice: production startup wiring.

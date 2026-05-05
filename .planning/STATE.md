@@ -1,32 +1,31 @@
 ## Current Position
 
-Phase: v1.0 complete
-Plan: Next milestone planning
-Status: v1.0 Production Readiness complete; ready to tag/release or start v1.1 Hardening Polish
-Current focus: prepare the v1.0 tag/release or plan v1.1 Hardening Polish
-Last activity: 2026-05-05 - Completed v1.0 release gate after automated checks and manual Windows smoke
+Current milestone: v1.1 Trustworthy Daily Use
+Current phase: Phase 1 - Panic Removal Gate
+Current focus: remove production panic paths before observability and packaged Windows UX work
+Status: v1.1 Trustworthy Daily Use started; v1.0 Production Readiness remains complete
+Last activity: 2026-05-05 - Started v1.1 Trustworthy Daily Use docs and active state
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-05)
 
 **Core value:** Durable, compounding personal memory that grows smarter with every conversation - without relying on external note-taking apps.
-**Current focus:** v1.0 complete; next milestone v1.1 Hardening Polish.
+**Current focus:** remove production panic paths before observability and packaged Windows UX work.
 
 ## Roadmap
 
 See: .planning/ROADMAP.md
 
 **Phases:**
-- Phase 1: DB Foundation
-- Phase 2: Migration Safety
-- Phase 3: Memory Reliability
-- Phase 4: Dashboard Security
-- Phase 5: Telegram Regression Harness
-- Phase 6: Release Gate
+- Phase 1: Panic Removal Gate
+- Phase 2: Production Error Observability
+- Phase 3: Platform And Dependency Hygiene
+- Phase 4: Release Gate Lite
 
 ## Recent Activity
 
+[2026-05-05] Started v1.1 Trustworthy Daily Use. Current milestone: v1.1 Trustworthy Daily Use. Current phase: Phase 1 - Panic Removal Gate. Current focus: remove production panic paths before observability and packaged Windows UX work.
 [2026-05-04] Bootstrap new-milestone: audited CONCERNS.md and narrowed v1.0 to production-readiness blockers
 [2026-05-04] Defined v1.0 requirements around DB, migrations, memory reliability, dashboard security, Telegram critical paths, and release gates
 [2026-05-04] Created ROADMAP.md: 6 production-readiness phases with v1.1 deferrals recorded

@@ -1,138 +1,65 @@
-# Roadmap: Aura v1.0 — Production Readiness
+# Roadmap: Aura v1.1 - Trustworthy Daily Use
 
-**Created:** 2026-05-04
-**Milestone:** v1.0 Production Readiness
-**Total phases:** 6
+**Created:** 2026-05-05
+**Milestone:** v1.1 Trustworthy Daily Use
+**Total phases:** 4
 
 ## Milestone Goal
 
-Make Aura safe to run as the daily production build by closing data-integrity, migration-safety, dashboard-security, memory-reliability, Telegram-regression, and release-gate blockers.
+Make Aura safer and calmer for daily use by removing avoidable panics, surfacing quiet runtime failures, suppressing the packaged Windows console, and documenting dependency/platform watchpoints.
 
 ## Boundary
 
 In scope:
-- Shared SQLite pool with WAL, busy_timeout, and foreign_keys
-- Versioned migrations and upgrade safety
-- Observable conversation archive failures
-- Dashboard token expiry
-- Settings secret redaction
-- Focused Telegram critical-path tests
-- Final production release gates
+- Toolset profile panic removal
+- Shutdown, tray/browser, Telegram cleanup, and token-audit observability
+- Packaged Windows GUI/tray-first binary behavior
+- Telebot v4 beta monitoring docs
+- Focused v1.1 release gate
 
-Deferred to v1.1 Hardening Polish:
-- MustResolveProfiles panic fix unless future evidence proves production/user-controlled reachability before v1.0
-- File tool split, including `tools/files.go`
+Out of scope:
+- New user-facing features
 - Broad large-file refactors
-- tray coverage polish
-- telebot beta monitoring docs
-- Full settings at-rest encryption unless redaction proves insufficient
-- Arbitrary coverage targets outside Telegram critical paths, including 55%+ package-wide goals
-
-## Dependency Graph
-
-```
-Phase 1 (DB Foundation)
-  └→ Phase 2 (Migration Safety)
-       ├→ Phase 4 (Dashboard Security)
-       └→ Phase 6 (Release Gate)
-
-Phase 3 (Memory Reliability)
-  └→ Phase 5 (Telegram Regression Harness)
-       └→ Phase 6 (Release Gate)
-```
-
-Critical path: Phase 1 → Phase 2 → Phase 4 → Phase 6, with Phase 3 and Phase 5 feeding the same release gate.
+- Memory-quality upgrades
+- Settings at-rest encryption
+- A separate `aura-console.exe`
 
 ## Phases
 
-### Phase 1: DB Foundation
+### Phase 1: Panic Removal Gate
 
-One shared SQLite pool, production PRAGMAs, and no independent production DB opens.
-
-**Addresses:** FIX-02, SQLite configuration gaps
-**Depends on:** —
+**Addresses:** PANIC-01
+**Depends on:** -
 **Success criteria:**
-- Production startup creates the Aura database through a shared DB open path.
-- WAL, busy_timeout, and foreign_keys are applied at open time.
-- Store constructors accept the shared pool and do not own production DB lifecycle.
+- No production path calls `MustResolveProfiles`.
+- Invalid profile names return contextual errors instead of panicking.
+- Focused tests cover invalid profile behavior.
 
-### Phase 2: Migration Safety
+### Phase 2: Production Error Observability
 
-Versioned migrations, fresh/upgrade schema convergence, and idempotent startup.
-
-**Addresses:** REFACTOR-02, ad-hoc per-store migrations
+**Addresses:** OBS-01, OBS-02, OBS-03, AUDIT-01
 **Depends on:** Phase 1
 **Success criteria:**
-- A fresh database and an upgraded database converge to the same schema.
-- Startup migrations are idempotent and run before production stores initialize.
-- Failed migrations do not leave partially applied schema state.
+- Shutdown close errors are logged.
+- Tray browser-open failures are logged and unsafe URLs are rejected.
+- Placeholder deletion failures are logged at low severity.
+- Token `last_used` audit write failures are observable without denying valid tokens.
 
-### Phase 3: Memory Reliability
+### Phase 3: Platform And Dependency Hygiene
 
-Observable archive failures and critical memory-write tests.
-
-**Addresses:** MEM-01, conversation archive observability
-**Depends on:** —
-**Success criteria:**
-- Archive append failures in the Telegram conversation path are logged strongly enough to diagnose.
-- Focused tests cover successful and failed conversation archive writes.
-
-### Phase 4: Dashboard Security
-
-Token expiry and settings secret redaction.
-
-**Addresses:** FIX-03, SEC-01
+**Addresses:** DEP-01, UX-01
 **Depends on:** Phase 2
 **Success criteria:**
-- Dashboard bearer tokens expire according to configured TTL behavior.
-- Settings API responses and dashboard state redact secret values while write and test-connection paths keep working.
+- Packaged Windows `aura.exe` uses the Windows GUI subsystem.
+- Development and debug commands keep console output.
+- Telebot v4 beta monitoring docs define upgrade and rollback checks.
 
-### Phase 5: Telegram Regression Harness
+### Phase 4: Release Gate Lite
 
-Focused tests for conversation, streaming, document/OCR trigger, auth, and archive behavior.
-
-**Addresses:** TEST-01 narrowed to Telegram critical paths
-**Depends on:** Phase 3
+**Addresses:** REL-02
+**Depends on:** Phases 1-3
 **Success criteria:**
-- Critical Telegram paths are covered with hermetic tests.
-- Tests avoid real network calls and do not require production Telegram credentials.
-
-### Phase 6: Release Gate
-
-Automated Go/web/sandbox/package checks plus manual Windows production smoke.
-
-**Addresses:** REL-01
-**Depends on:** Phases 2, 4, and 5
-**Success criteria:**
-- Automated Go, web, sandbox, migration, and package checks pass.
-- Manual Windows smoke validates first-run setup, Telegram, dashboard login, ingest/OCR/wiki, reminders, sandbox artifacts, and tray dashboard launch.
-
-## Requirement Traceability
-
-| Requirement | Phase | v1.0 Rationale |
-|-------------|-------|----------------|
-| FIX-02: Multiple SQLite connection pools | Phase 1 | Data-integrity foundation |
-| SQLite PRAGMAs: WAL, busy_timeout, foreign_keys | Phase 1 | Production DB reliability |
-| REFACTOR-02: Versioned migration framework | Phase 2 | Upgrade safety |
-| MEM-01: Conversation archive failures observable | Phase 3 | Memory reliability |
-| FIX-03: Dashboard token expiration | Phase 4 | Dashboard security |
-| SEC-01: Settings API secret redaction | Phase 4 | Credential exposure prevention |
-| TEST-01: Telegram critical-path tests | Phase 5 | Regression confidence |
-| REL-01: Production release gate | Phase 6 | Release readiness |
-
-## Deferred Requirement Traceability
-
-| Deferred item | Follow-up milestone | Reason |
-|---------------|---------------------|--------|
-| MustResolveProfiles panic fix | v1.1 Hardening Polish | High-severity concern, but not part of the approved production-readiness gate unless future evidence proves production/user-controlled reachability before v1.0 |
-| File tool split | v1.1 Hardening Polish | Large-file cleanup, not a production blocker |
-| Broad large-file refactors | v1.1 Hardening Polish | Useful maintainability work outside v1.0 gate |
-| tray coverage polish | v1.1 Hardening Polish | Lower risk than DB, security, memory, and Telegram paths |
-| telebot beta monitoring docs | v1.1 Hardening Polish | Dependency monitoring can follow the production gate |
-| Full settings at-rest encryption | v1.1 Hardening Polish | Revisit if API redaction is insufficient |
-| Arbitrary coverage targets outside Telegram critical paths | v1.1 Hardening Polish | v1.0 only gates critical Telegram behavior |
-
----
-
-*Roadmap defined: 2026-05-04*
-*Last updated: 2026-05-04*
+- Focused package tests pass.
+- `go test ./...` and `go build ./...` pass.
+- Snapshot Windows artifact passes GUI-subsystem inspection.
+- Manual Windows smoke runs only where hermetic checks cannot prove behavior.
