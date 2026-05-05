@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/aura/aura/internal/api"
@@ -32,7 +35,6 @@ var (
 func main() {
 	// Initialize structured logger with zap backend and secret sanitization
 	logger, cleanupLog := logging.Setup("info", "./logs")
-	defer cleanupLog()
 
 	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		logger.Warn("could not load .env", "error", err)
@@ -41,30 +43,100 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
+		cleanupLog()
 		os.Exit(1)
 	}
+
+	var (
+		mu       sync.Mutex
+		stopping bool
+		stopApp  func()
+	)
+
+	setStopApp := func(stop func()) {
+		mu.Lock()
+		if stopping {
+			mu.Unlock()
+			stop()
+			return
+		}
+		stopApp = stop
+		mu.Unlock()
+	}
+	requestStop := func() {
+		mu.Lock()
+		stopping = true
+		stop := stopApp
+		stopApp = nil
+		mu.Unlock()
+		if stop != nil {
+			stop()
+		}
+	}
+
+	go func() {
+		stop, err := startAura(logger, cleanupLog, cfg)
+		if err != nil {
+			logger.Error("aura startup failed", "error", err)
+			tray.Stop()
+			return
+		}
+		setStopApp(stop)
+	}()
+
+	// Bridge SIGINT/SIGTERM to tray.Stop so the same shutdown path runs whether
+	// the user closes from the tray menu or sends a signal.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		tray.Stop()
+	}()
+
+	// Run tray on the main goroutine. Blocks until the user clicks Quit, a
+	// signal triggers tray.Stop above, or startup fails.
+	if err := tray.Run(tray.Options{
+		Title:        "Aura",
+		Tooltip:      "Aura - starting on " + cfg.HTTPPort,
+		Version:      auraVersion,
+		DashboardURL: "http://" + dashboardHost(cfg.HTTPPort),
+	}); err != nil {
+		logger.Warn("tray exited with error", "error", err)
+	}
+	requestStop()
+}
+
+func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ func(), err error) {
+	cleanup := cleanupLog
+	defer func() {
+		if err != nil && cleanup != nil {
+			cleanup()
+		}
+	}()
 
 	pool, err := auradb.Open(cfg.DBPath)
 	if err != nil {
-		logger.Error("failed to open database", "error", err, "db_path", cfg.DBPath)
-		os.Exit(1)
+		return nil, fmt.Errorf("open database %s: %w", cfg.DBPath, err)
 	}
-	defer pool.Close()
+	closePool := true
+	defer func() {
+		if err != nil && closePool {
+			pool.Close()
+		}
+	}()
 
 	if err := migrations.Run(context.Background(), pool); err != nil {
-		logger.Error("failed to migrate database", "error", err, "db_path", cfg.DBPath)
-		os.Exit(1)
+		return nil, fmt.Errorf("migrate database %s: %w", cfg.DBPath, err)
 	}
 
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
 	// table on top of the env-loaded config. Bootstrap fields
 	// (TelegramToken / HTTPPort / DBPath / LogLevel and the path roots)
-	// stay env-only — see internal/settings/applier.go. Empty store is a
+	// stay env-only; see internal/settings/applier.go. Empty store is a
 	// no-op, so this is safe before the dashboard ever writes a setting.
 	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
-		logger.Error("failed to open settings store", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("open settings store: %w", err)
 	}
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 
@@ -80,8 +152,7 @@ func main() {
 			Logger:        logger,
 		})
 		if err != nil {
-			logger.Error("setup wizard failed", "error", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("setup wizard: %w", err)
 		}
 		// Re-load: .env now has TELEGRAM_TOKEN, settings DB now has
 		// LLM_*, etc. Replace cfg in place with the fresh values.
@@ -91,28 +162,22 @@ func main() {
 		}
 		newCfg, err := config.Load()
 		if err != nil {
-			logger.Error("post-setup config load", "error", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("post-setup config load: %w", err)
 		}
 		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		cfg = newCfg
 	}
 
 	// Set log level from config (replaces the early logger)
-	cleanupLog()
-	logger, cleanupLog = logging.Setup(cfg.LogLevel, cfg.LogDir)
-	defer cleanupLog()
+	if cleanup != nil {
+		cleanup()
+	}
+	logger, cleanup = logging.Setup(cfg.LogLevel, cfg.LogDir)
 
 	// Initialize OpenTelemetry tracing (disabled unless OTEL_ENABLED is set)
 	shutdown, err := tracing.SetupIfEnabled("aura", auraVersion, cfg.OTelEnabled, logger)
 	if err != nil {
 		logger.Warn("tracing setup failed, continuing without traces", "error", err)
-	} else {
-		defer func() {
-			if err := shutdown(context.Background()); err != nil {
-				logger.Warn("tracing shutdown failed", "error", err)
-			}
-		}()
 	}
 
 	// Start health/observability HTTP server
@@ -129,8 +194,7 @@ func main() {
 
 	bot, err := telegram.New(cfg, settingsStore, pool, logger)
 	if err != nil {
-		logger.Error("failed to create telegram bot", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create telegram bot: %w", err)
 	}
 
 	healthServer.SetBotUsername(bot.Username())
@@ -145,7 +209,7 @@ func main() {
 	if static, err := api.StaticHandler(); err == nil {
 		healthServer.Mount("/", static)
 	} else if errors.Is(err, api.ErrNoStaticAssets) {
-		logger.Warn("dashboard SPA unavailable — run `make web-build`",
+		logger.Warn("dashboard SPA unavailable - run `make web-build`",
 			"detail", "internal/api/dist is empty; /api still works, only / is missing")
 	} else {
 		logger.Error("failed to mount dashboard SPA", "error", err)
@@ -157,31 +221,23 @@ func main() {
 
 	go bot.Start()
 
-	// Bridge SIGINT/SIGTERM to tray.Stop so the same shutdown path runs whether
-	// the user closes from the tray menu or sends a signal.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		tray.Stop()
-	}()
-
-	// Run tray on the main goroutine. Blocks until the user clicks Quit or a
-	// signal triggers tray.Stop above.
-	if err := tray.Run(tray.Options{
-		Title:        "Aura",
-		Tooltip:      "Aura — running on " + cfg.HTTPPort,
-		Version:      auraVersion,
-		DashboardURL: "http://" + dashboardHost(cfg.HTTPPort),
-	}); err != nil {
-		logger.Warn("tray exited with error", "error", err)
-	}
-
-	logger.Info("shutting down")
-	bot.Stop()
-	if err := healthServer.Shutdown(context.Background()); err != nil {
-		logger.Warn("health server shutdown failed", "error", err)
-	}
+	closePool = false
+	return func() {
+		logger.Info("shutting down")
+		bot.Stop()
+		if err := healthServer.Shutdown(context.Background()); err != nil {
+			logger.Warn("health server shutdown failed", "error", err)
+		}
+		if shutdown != nil {
+			if err := shutdown(context.Background()); err != nil {
+				logger.Warn("tracing shutdown failed", "error", err)
+			}
+		}
+		pool.Close()
+		if cleanup != nil {
+			cleanup()
+		}
+	}, nil
 }
 
 // configHealthProvider reports the health of the config subsystem.
