@@ -558,10 +558,20 @@ func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 		t.Errorf("artifact body = %q", string(body))
 	}
 
-	// Text source must not expose a raw endpoint.
+	// Text source: attachment disposition and text content type.
 	rr = e.do("GET", "/sources/"+txt.ID+"/raw")
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("text raw status %d, want 404", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("text status %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Errorf("text content-type = %q, want text/plain; charset=utf-8", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") || !strings.Contains(cd, `note.txt`) {
+		t.Errorf("text content-disposition = %q, want attachment note.txt", cd)
+	}
+	body, _ = io.ReadAll(rr.Body)
+	if string(body) != "hello text" {
+		t.Errorf("text body = %q", string(body))
 	}
 }
 

@@ -36,10 +36,8 @@ type UploadResponse struct {
 	Note       string   `json:"note,omitempty"` // human-friendly summary line
 }
 
-// handleSourceUpload accepts a multipart PDF upload and runs the same
-// pipeline as Telegram: store -> OCR -> auto-ingest. Bounded by the
-// configured size cap; OCR/ingest are skipped if their dependencies are
-// nil so the bot still works when MISTRAL_API_KEY is unset.
+// handleSourceUpload accepts a multipart source upload. PDFs go through OCR;
+// text-like formats are normalized directly into extract.md/extract.json.
 func handleSourceUpload(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if deps.Sources == nil {
@@ -69,8 +67,9 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		defer file.Close()
 
 		filename := safeUploadName(header.Filename)
-		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
-			writeError(w, deps.Logger, http.StatusBadRequest, "only PDF uploads are accepted")
+		format, err := source.DetectUploadFormat(filename, header.Header.Get("Content-Type"))
+		if err != nil {
+			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 			return
 		}
 		if header.Size > maxBytes {
@@ -91,9 +90,9 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 
 		// Step 1 — store
 		src, dup, err := deps.Sources.Put(r.Context(), source.PutInput{
-			Kind:     source.KindPDF,
+			Kind:     format.Kind,
 			Filename: filename,
-			MimeType: "application/pdf",
+			MimeType: format.MimeType,
 			Bytes:    body,
 		})
 		if err != nil {
@@ -118,6 +117,35 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		}
 
 		// Step 2 — OCR (optional)
+		if format.Kind != source.KindPDF {
+			res, err := source.ExtractGo(r.Context(), source.ExtractInput{Source: src, Bytes: body})
+			if err != nil {
+				_, _ = upsertSourceStatus(deps.Sources, src.ID, source.StatusFailed, err.Error())
+				resp.Status = string(source.StatusFailed)
+				resp.Note = "Extraction failed: " + err.Error()
+				writeJSON(w, deps.Logger, http.StatusOK, resp)
+				return
+			}
+			if err := source.WriteExtractionFiles(deps.Sources, src, res); err != nil {
+				writeError(w, deps.Logger, http.StatusInternalServerError, "write extract files: "+err.Error())
+				return
+			}
+			updated, err := deps.Sources.Update(src.ID, func(s *source.Source) error {
+				s.Status = source.StatusExtractComplete
+				s.Extract = &res.Metadata
+				s.Error = ""
+				return nil
+			})
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusInternalServerError, "status update: "+err.Error())
+				return
+			}
+			resp.Status = string(updated.Status)
+			resp.Note = "extracted Â· ready for ingest"
+			writeJSON(w, deps.Logger, http.StatusOK, resp)
+			return
+		}
+
 		if deps.OCR == nil {
 			resp.Note = fmt.Sprintf("stored as %s (OCR disabled)", src.ID)
 			writeJSON(w, deps.Logger, http.StatusOK, resp)

@@ -3,6 +3,7 @@ package telegram
 import (
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,42 @@ func TestValidatePDFAcceptsPDF(t *testing.T) {
 	}
 	if err := validatePDF(doc, 100); err != nil {
 		t.Errorf("validatePDF: %v", err)
+	}
+}
+
+func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
+	cases := []struct {
+		name string
+		mime string
+		kind source.Kind
+	}{
+		{"paper.pdf", "application/pdf", source.KindPDF},
+		{"notes.txt", "text/plain", source.KindText},
+		{"daily.md", "text/markdown", source.KindMarkdown},
+		{"data.json", "application/json", source.KindJSON},
+		{"budget.csv", "text/csv", source.KindCSV},
+		{"memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", source.KindDOCX},
+		{"sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", source.KindXLSX},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := &tele.Document{File: tele.File{FileSize: 1024}, MIME: tc.mime, FileName: tc.name}
+			format, err := validateDocument(doc, 100)
+			if err != nil {
+				t.Fatalf("validateDocument() error = %v", err)
+			}
+			if format.Kind != tc.kind {
+				t.Fatalf("kind = %s, want %s", format.Kind, tc.kind)
+			}
+		})
+	}
+}
+
+func TestValidateDocumentRejectsUnsupported(t *testing.T) {
+	doc := &tele.Document{File: tele.File{FileSize: 1024}, MIME: "application/octet-stream", FileName: "deck.pptx"}
+	_, err := validateDocument(doc, 100)
+	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
+		t.Fatalf("err = %v, want unsupported file type", err)
 	}
 }
 
@@ -255,6 +292,58 @@ func TestDocHandlerAuthorizedPDFDocumentStoresSource(t *testing.T) {
 	}
 	if stored[0].SizeBytes != int64(len(fakeTelegramPDFBytes)) {
 		t.Fatalf("source size = %d, want %d", stored[0].SizeBytes, len(fakeTelegramPDFBytes))
+	}
+	if got := countTelegramMethods(calls, "getFile"); got != 1 {
+		t.Fatalf("getFile calls = %d, want 1", got)
+	}
+}
+
+func TestDocHandlerAuthorizedTextDocumentExtractsSource(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	h := newDocHandler(docHandlerConfig{
+		Bot:     tb,
+		Sources: sources,
+		Allowlist: func(string) bool {
+			return true
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Document: &tele.Document{
+			File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+			MIME:     "text/plain",
+			FileName: "notes.txt",
+		},
+	}})
+
+	if err := h.onDocument(ctx); err != nil {
+		t.Fatalf("onDocument() error = %v, want nil", err)
+	}
+
+	var stored []*source.Source
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindText})
+		return err == nil && len(stored) == 1 && stored[0].Status == source.StatusExtractComplete
+	})
+	h.Stop()
+
+	if stored[0].Extract == nil {
+		t.Fatalf("source extraction metadata missing: %+v", stored[0])
+	}
+	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {
+		t.Fatalf("extract.md missing: %v", err)
 	}
 	if got := countTelegramMethods(calls, "getFile"); got != 1 {
 		t.Fatalf("getFile calls = %d, want 1", got)

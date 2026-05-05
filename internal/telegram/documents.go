@@ -135,7 +135,8 @@ func (h *docHandler) onDocument(c tele.Context) error {
 		return nil
 	}
 
-	if err := validatePDF(doc, h.maxFileMB); err != nil {
+	format, err := validateDocument(doc, h.maxFileMB)
+	if err != nil {
 		_ = c.Reply("❌ " + err.Error())
 		return nil
 	}
@@ -153,14 +154,15 @@ func (h *docHandler) onDocument(c tele.Context) error {
 
 	go func() {
 		defer h.finishWork()
-		h.process(h.ctx, userID, doc, progress)
+		h.process(h.ctx, userID, doc, format, progress)
 	}()
 	return nil
 }
 
-// process runs the PDF → ocr_complete pipeline. Each step edits the same
-// progress message; failures replace its text with a single-line error.
-func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Document, progress *tele.Message) {
+// process stores the document, then routes PDFs through OCR and text-like
+// sources through normalized extraction. Each step edits the same progress
+// message; failures replace its text with a single-line error.
+func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Document, format source.UploadFormat, progress *tele.Message) {
 	// Bounded concurrency: queue if 2 jobs already in flight.
 	select {
 	case h.sem <- struct{}{}:
@@ -186,9 +188,9 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 
 	// Step 2: store as immutable source.
 	src, dup, err := h.sources.Put(ctx, source.PutInput{
-		Kind:     source.KindPDF,
+		Kind:     format.Kind,
 		Filename: safeName(doc.FileName),
-		MimeType: "application/pdf",
+		MimeType: format.MimeType,
 		Bytes:    pdfBytes,
 	})
 	if err != nil {
@@ -197,9 +199,40 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 	}
 
 	if dup {
-		editor.set(fmt.Sprintf("🔁 Already stored as %s · status: %s · send /reocr %s to re-run.",
-			src.ID, src.Status, src.ID))
-		h.logger.Info("pdf duplicate", "user_id", userID, "source_id", src.ID, "status", src.Status)
+		editor.set(fmt.Sprintf("🔁 Already stored as %s · status: %s.", src.ID, src.Status))
+		h.logger.Info("source duplicate", "user_id", userID, "source_id", src.ID, "status", src.Status, "kind", src.Kind)
+		return
+	}
+
+	if format.Kind != source.KindPDF {
+		res, err := source.ExtractGo(ctx, source.ExtractInput{Source: src, Bytes: pdfBytes})
+		if err != nil {
+			_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
+				s.Status = source.StatusFailed
+				s.Error = err.Error()
+				return nil
+			})
+			editor.fail("Extraction failed: " + err.Error())
+			h.logger.Warn("source extraction failed", "user_id", userID, "source_id", src.ID, "kind", src.Kind, "err", err)
+			return
+		}
+		if err := source.WriteExtractionFiles(h.sources, src, res); err != nil {
+			editor.fail("Write extract files failed: " + err.Error())
+			return
+		}
+		updated, err := h.sources.Update(src.ID, func(s *source.Source) error {
+			s.Status = source.StatusExtractComplete
+			s.Extract = &res.Metadata
+			s.Error = ""
+			return nil
+		})
+		if err != nil {
+			editor.fail("Status update failed: " + err.Error())
+			return
+		}
+		editor.set(fmt.Sprintf("✅ Done · %s · %s · extracted · ready for ingest",
+			updated.ID, formatSize(updated.SizeBytes)))
+		h.logger.Info("source extracted", "user_id", userID, "source_id", updated.ID, "kind", updated.Kind, "size_bytes", updated.SizeBytes)
 		return
 	}
 
@@ -306,9 +339,26 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 		src.ID, pageCount, pluralS(pageCount), formatDuration(duration), tail))
 }
 
-// validatePDF rejects non-PDF MIME types and oversized uploads up front. The
-// OCR client and source store both gracefully reject empty bytes too, but
-// failing here gives the user a faster, more specific error.
+func validateDocument(doc *tele.Document, maxFileMB int) (source.UploadFormat, error) {
+	if doc == nil {
+		return source.UploadFormat{}, errors.New("no document attached")
+	}
+	format, err := source.DetectUploadFormat(doc.FileName, doc.MIME)
+	if err != nil {
+		return source.UploadFormat{}, err
+	}
+	if maxFileMB > 0 {
+		max := int64(maxFileMB) * 1024 * 1024
+		if doc.FileSize > max {
+			return source.UploadFormat{}, fmt.Errorf("file too large: %s exceeds %d MB cap",
+				formatSize(doc.FileSize), maxFileMB)
+		}
+	}
+	return format, nil
+}
+
+// validatePDF preserves older tests and PDF-only call sites while Telegram
+// document uploads move to validateDocument.
 func validatePDF(doc *tele.Document, maxFileMB int) error {
 	if doc == nil {
 		return errors.New("no document attached")
@@ -321,12 +371,16 @@ func validatePDF(doc *tele.Document, maxFileMB int) error {
 		}
 		return fmt.Errorf("only PDFs supported (got %s)", got)
 	}
-	if maxFileMB > 0 {
-		max := int64(maxFileMB) * 1024 * 1024
-		if doc.FileSize > max {
-			return fmt.Errorf("PDF too large: %s exceeds %d MB cap",
-				formatSize(doc.FileSize), maxFileMB)
-		}
+	pdfDoc := *doc
+	if strings.TrimSpace(pdfDoc.FileName) == "" {
+		pdfDoc.FileName = "document.pdf"
+	}
+	format, err := validateDocument(&pdfDoc, maxFileMB)
+	if err != nil {
+		return err
+	}
+	if format.Kind != source.KindPDF {
+		return fmt.Errorf("only PDFs supported (got %s)", format.MimeType)
 	}
 	return nil
 }

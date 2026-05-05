@@ -121,6 +121,26 @@ var rawAssets = map[source.Kind]rawAsset{
 		contentType: "application/pdf",
 		disposition: "inline",
 	},
+	source.KindText: {
+		filename:    "original.txt",
+		contentType: "text/plain; charset=utf-8",
+		disposition: "attachment",
+	},
+	source.KindMarkdown: {
+		filename:    "original.md",
+		contentType: "text/markdown; charset=utf-8",
+		disposition: "attachment",
+	},
+	source.KindJSON: {
+		filename:    "original.json",
+		contentType: "application/json",
+		disposition: "attachment",
+	},
+	source.KindCSV: {
+		filename:    "original.csv",
+		contentType: "text/csv; charset=utf-8",
+		disposition: "attachment",
+	},
 	source.KindXLSX: {
 		filename:    "original.xlsx",
 		contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -212,16 +232,12 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 
 func validKind(k source.Kind) bool {
 	switch k {
-	case source.KindPDF, source.KindText, source.KindURL, source.KindXLSX, source.KindDOCX, source.KindPDFGen, source.KindSandboxArtifact:
+	case source.KindPDF, source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindURL, source.KindXLSX, source.KindDOCX, source.KindPDFGen, source.KindSandboxArtifact:
 		return true
 	}
 	return false
 }
 
 func validStatus(s source.Status) bool {
-	switch s {
-	case source.StatusStored, source.StatusOCRComplete, source.StatusIngested, source.StatusFailed:
-		return true
-	}
-	return false
+	return source.ValidStatus(s)
 }

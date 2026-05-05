@@ -867,7 +867,7 @@ git commit -m "feat: add sandboxed spreadsheet extraction"
 - Test: `internal/api/upload_test.go`
 - Test: `internal/telegram/documents_test.go`
 
-- [ ] **Step 1: Write failing API upload tests for non-PDF formats**
+- [x] **Step 1: Write failing API upload tests for non-PDF formats**
 
 Add to `internal/api/upload_test.go`:
 
@@ -893,13 +893,13 @@ func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/api -run TestSourceUploadAcceptsTextAndRejectsUnsupported -count=1`
 
 Expected: FAIL because upload handler still accepts only PDF.
 
-- [ ] **Step 3: Refactor API upload to detect format and normalize**
+- [x] **Step 3: Refactor API upload to detect format and normalize**
 
 In `internal/api/upload.go`, replace the PDF-only suffix check with:
 
@@ -971,7 +971,7 @@ if format.Kind != source.KindPDF {
 }
 ```
 
-- [ ] **Step 4: Update Telegram validation to shared format policy**
+- [x] **Step 4: Update Telegram validation to shared format policy**
 
 Rename `validatePDF` to `validateDocument` in `internal/telegram/documents.go` and return `source.UploadFormat`:
 
@@ -996,7 +996,7 @@ func validateDocument(doc *tele.Document, maxFileMB int) (source.UploadFormat, e
 
 Thread the detected format into `process`, store with `format.Kind`, and use the same non-PDF extraction branch as the API path. Keep the PDF branch on OCR.
 
-- [ ] **Step 5: Update raw download and filter validation**
+- [x] **Step 5: Update raw download and filter validation**
 
 In `internal/api/sources.go`, add raw assets for text-like kinds:
 
@@ -1009,7 +1009,7 @@ source.KindCSV:      {filename: "original.csv", contentType: "text/csv; charset=
 
 Update `validKind` to include `KindMarkdown`, `KindJSON`, and `KindCSV`. Update `validStatus` to call `source.ValidStatus`.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 Run: `go test ./internal/api ./internal/telegram ./internal/source -count=1`
 
