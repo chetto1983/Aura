@@ -7,6 +7,7 @@ require gopkg.in/telebot.v4 v4.0.0-beta.7
 require (
 	fyne.io/systray v1.12.0
 	github.com/disintegration/imaging v1.6.2
+	github.com/eekstunt/telegramify-markdown-go v0.2.0
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/philippgille/chromem-go v0.7.0
@@ -51,6 +52,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+	github.com/yuin/goldmark v1.8.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect

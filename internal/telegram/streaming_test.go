@@ -35,7 +35,7 @@ func TestConsumeStreamEditsPlaceholderAndSuppressesDoubleSend(t *testing.T) {
 		Chat:   &tele.Chat{ID: 123},
 		Text:   "hello",
 	}})
-	content := strings.Repeat("x", streamingMinThreshold)
+	content := "**bold** " + strings.Repeat("x", streamingMinThreshold)
 	ch := make(chan llm.Token, 2)
 	ch <- llm.Token{Content: content}
 	ch <- llm.Token{Done: true, Usage: llm.TokenUsage{TotalTokens: 7}}
@@ -57,6 +57,17 @@ func TestConsumeStreamEditsPlaceholderAndSuppressesDoubleSend(t *testing.T) {
 	}
 	if got := countTelegramMethods(calls, "sendMessage"); got != 0 {
 		t.Fatalf("sendMessage calls = %d, want 0", got)
+	}
+	for _, call := range calls {
+		if call.Method != "editMessageText" {
+			continue
+		}
+		if _, ok := call.Body["parse_mode"]; ok {
+			t.Fatalf("editMessageText sent parse_mode, want entities: %+v", call.Body)
+		}
+		if _, ok := call.Body["entities"]; !ok {
+			t.Fatalf("editMessageText missing entities: %+v", call.Body)
+		}
 	}
 }
 

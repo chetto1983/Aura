@@ -105,12 +105,8 @@ func (b *Bot) sendGeneratedToUser(userID, message string) error {
 	if err != nil {
 		return fmt.Errorf("send generated to user %q: %w", userID, err)
 	}
-	rendered := renderForTelegram(message)
-	if _, err := b.bot.Send(tele.ChatID(chatID), rendered, tele.ModeHTML); err != nil {
-		b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
-		if _, plainErr := b.bot.Send(tele.ChatID(chatID), message); plainErr != nil {
-			return fmt.Errorf("send generated to user %s: %w", userID, plainErr)
-		}
+	if err := b.sendAssistantToRecipient(b.bot, tele.ChatID(chatID), message); err != nil {
+		return fmt.Errorf("send generated to user %s: %w", userID, err)
 	}
 	return nil
 }
