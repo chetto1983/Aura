@@ -14,7 +14,7 @@ v1.0 is limited to production blockers: data integrity, upgrade safety, memory r
 - [x] **MEM-01 Memory Reliability:** Conversation archive failures are observable through logging or returned errors so Aura does not silently lose durable memory.
 - [x] **SEC-01 Dashboard Token Expiry:** Dashboard bearer tokens carry expiry metadata, default to a configurable 30-day TTL, and expired tokens are rejected distinctly from invalid tokens.
 - [x] **SEC-02 Settings Secret Redaction:** Settings API responses and dashboard state redact LLM, embedding, Mistral, and Ollama secrets while preserving write and test-connection flows.
-- [ ] **TEST-01 Telegram Regression Harness:** Focused hermetic tests cover critical Telegram paths: conversation handling, streaming edits, document/OCR triggers, access control, and archive behavior.
+- [x] **TEST-01 Telegram Regression Harness:** Focused hermetic tests cover critical Telegram paths: conversation handling, streaming edits, document/OCR triggers, access control, and archive behavior.
 - [ ] **REL-01 Release Gate:** Automated and manual release checks prove Go, web, sandbox, migration, packaging, and Windows smoke readiness before tagging v1.0.
 
 ## Deferred to v1.1 Hardening Polish
@@ -55,17 +55,17 @@ Deferred items from the concern audit stay in v1.1 Hardening Polish or later unl
 | MEM-01 | Phase 3: Memory Reliability | Done — direct and buffered archive append failures logged and covered on 2026-05-05 |
 | SEC-01 | Phase 4: Dashboard Security | Done — token expiry schema/store/config/middleware landed on 2026-05-05 |
 | SEC-02 | Phase 4: Dashboard Security | Done — settings API/UI redacts secret values on reads while preserving writes/tests on 2026-05-05 |
-| TEST-01 | Phase 5: Telegram Regression Harness | Pending |
+| TEST-01 | Phase 5: Telegram Regression Harness | Done - focused Telegram conversation/archive, streaming edit, document/OCR trigger, and access-control tests landed on 2026-05-05 |
 | REL-01 | Phase 6: Release Gate | Pending |
 
 **Coverage:**
 - v1.0 production-readiness requirements: 7 total
-- Complete: 5
-- Remaining: 2
+- Complete: 6
+- Remaining: 1
 - Mapped to phases: 7
 - Unmapped: 0
 
 ---
 
 *Requirements defined: 2026-05-04*
-*Last updated: 2026-05-05 after Dashboard Security completion*
+*Last updated: 2026-05-05 after Telegram Regression Harness completion*

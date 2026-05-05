@@ -1,17 +1,17 @@
 ## Current Position
 
-Phase: 5 of 6 (Telegram Regression Harness)
-Plan: Phase 5 - Telegram Regression Harness
-Status: Phase 4 Dashboard Security complete; ready to plan and execute focused Telegram critical-path regression coverage
-Current focus: write the Telegram Regression Harness plan, then add focused tests for conversation, streaming edits, document/OCR triggers, access control, and archive behavior
-Last activity: 2026-05-05 - Completed Dashboard Security with expiring bearer tokens plus settings API/UI secret redaction
+Phase: 6 of 6 (Release Gate)
+Plan: Phase 6 - Release Gate
+Status: Phase 5 Telegram Regression Harness complete; ready to run automated and manual release gates
+Current focus: write and execute the release gate plan covering Go, web, sandbox, migration, packaging, and Windows smoke
+Last activity: 2026-05-05 - Completed Telegram Regression Harness with focused hermetic coverage for archive behavior, streaming edits, text access control, and document/OCR triggers
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-04)
 
 **Core value:** Durable, compounding personal memory that grows smarter with every conversation - without relying on external note-taking apps.
-**Current focus:** Telegram regression harness for v1.0.
+**Current focus:** Release gate for v1.0.
 
 ## Roadmap
 
@@ -35,3 +35,4 @@ See: .planning/ROADMAP.md
 [2026-05-05] Completed Phase 3 Memory Reliability. Telegram archive helper logs direct append failures with chat/turn/role metadata and focused tests cover archive success plus failure observability.
 [2026-05-05] Completed Phase 4a Dashboard Token Expiry. `api_tokens.expires_at` is migrated/backfilled, new tokens default to 720-hour TTL, production wiring applies `DASHBOARD_TOKEN_TTL_HOURS`, and expired tokens return distinct `token_expired` 401 bodies.
 [2026-05-05] Completed Phase 4b Settings Secret Redaction. `GET /settings` no longer returns raw secret values or active values for LLM, embedding, Mistral, or Ollama keys; the dashboard treats configured-secret markers as placeholders only and does not save them back as raw values.
+[2026-05-05] Completed Phase 5 Telegram Regression Harness. Focused hermetic tests now cover archive behavior, streaming edits, text access control, and document/OCR trigger behavior without live Telegram credentials.

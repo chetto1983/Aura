@@ -46,7 +46,7 @@ Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
 Active milestone: `v1.0 Production Readiness`, tracked by `.planning/REQUIREMENTS.md`, `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-Active phase: Phase 5, Telegram Regression Harness planning/execution.
+Active phase: Phase 6, Release Gate planning/execution.
 
 2026-05-04 Task 3.1 handoff: `internal/db` shared SQLite open path is done. Touched `internal/db/db.go`, `internal/db/db_test.go`, and this tracker; ran the targeted DB tests plus requested package slice verification. Next slice: store constructor injection into the shared pool.
 
@@ -67,6 +67,8 @@ Active phase: Phase 5, Telegram Regression Harness planning/execution.
 2026-05-05 Phase 5b handoff: Text access-control regression tests landed. `internal/telegram/bot_test.go` now proves unauthorized text from non-allowlisted users returns nil without active/chat context state, and allowlisted text starts the async conversation path against a local fake Telegram API through nil-LLM echo mode. Verification: `go test ./internal/telegram -run TestOnMessage -count=1`, `go test ./internal/telegram -count=1`, and `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`. `TEST-01` remains open; next Phase 5 slice is document/OCR trigger regression tests in `internal/telegram/documents_test.go`.
 
 2026-05-05 Phase 5c handoff: Document/OCR trigger regression tests landed. `internal/telegram/documents_test.go` now proves unauthorized document uploads return nil before work registration or source writes, and allowlisted PDF uploads use the real async handler path plus a local fake Telegram API to download and persist a `stored` PDF source when OCR is disabled. The fake Telegram API in `internal/telegram/streaming_test.go` now also supports `getFile` and `/file/bot...` downloads for shared Telegram handler tests. Verification: `go test ./internal/telegram -run "TestDocHandler.*Document" -count=1`, `go test ./internal/telegram -count=1`, and `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`. `TEST-01` remains open; next Phase 5 slice is final harness closure: focused package verification, existing archive proof decision, requirement/state updates, and Phase 6 release-gate handoff.
+
+2026-05-05 Phase 5 closure handoff: Telegram Regression Harness closed and `TEST-01` marked done. Existing archive tests from Phase 3 remain the archive proof; Phase 5 added focused streaming, text access-control, and document/OCR trigger regressions around that existing memory coverage. Verification: `go test ./internal/telegram -count=1` and `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`. Next work: Phase 6 Release Gate plan plus automated Go/web/sandbox/package checks and manual Windows smoke.
 
 The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 

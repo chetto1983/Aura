@@ -236,7 +236,7 @@ Expected: PASS.
 - Modify: `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-telegram-regression-plan.md`
 
-- [ ] **Step 1: Run focused Phase 5 tests**
+- [x] **Step 1: Run focused Phase 5 tests**
 
 Run:
 
@@ -246,7 +246,7 @@ go test ./internal/telegram -count=1
 
 Expected: PASS.
 
-- [ ] **Step 2: Run full Go verification**
+- [x] **Step 2: Run full Go verification**
 
 Run:
 
@@ -256,7 +256,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\sc
 
 Expected: PASS. Restore unrelated line-ending churn before staging.
 
-- [ ] **Step 3: Mark `TEST-01` done**
+- [x] **Step 3: Mark `TEST-01` done**
 
 Update `.planning/REQUIREMENTS.md` traceability:
 
@@ -266,7 +266,7 @@ Update `.planning/REQUIREMENTS.md` traceability:
 
 Set coverage to Complete `6`, Remaining `1`.
 
-- [ ] **Step 4: Advance state to Phase 6**
+- [x] **Step 4: Advance state to Phase 6**
 
 Set `.planning/STATE.md`:
 
