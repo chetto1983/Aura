@@ -428,6 +428,20 @@ func schemaSignature(t *testing.T, db *sql.DB) []string {
 
 func tableSignatures(t *testing.T, db *sql.DB) []string {
 	t.Helper()
+	tables := schemaTables(t, db)
+
+	var signatures []string
+	for _, table := range tables {
+		signatures = append(signatures, fmt.Sprintf("table|%s|", table))
+		for _, column := range columnSignatures(t, db, table) {
+			signatures = append(signatures, fmt.Sprintf("column|%s|%s", table, column))
+		}
+	}
+	return signatures
+}
+
+func schemaTables(t *testing.T, db *sql.DB) []string {
+	t.Helper()
 	rows, err := db.Query(`
 SELECT name
 FROM sqlite_master
@@ -441,21 +455,18 @@ ORDER BY name
 	}
 	defer rows.Close()
 
-	var signatures []string
+	var tables []string
 	for rows.Next() {
 		var table string
 		if err := rows.Scan(&table); err != nil {
 			t.Fatalf("scan table: %v", err)
 		}
-		signatures = append(signatures, fmt.Sprintf("table|%s|", table))
-		for _, column := range columnSignatures(t, db, table) {
-			signatures = append(signatures, fmt.Sprintf("column|%s|%s", table, column))
-		}
+		tables = append(tables, table)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("table rows: %v", err)
 	}
-	return signatures
+	return tables
 }
 
 func columnSignatures(t *testing.T, db *sql.DB, table string) []string {
@@ -500,35 +511,103 @@ func columnSignatures(t *testing.T, db *sql.DB, table string) []string {
 
 func indexSignatures(t *testing.T, db *sql.DB) []string {
 	t.Helper()
-	rows, err := db.Query(`
-SELECT name, tbl_name, sql
-FROM sqlite_master
-WHERE type = 'index'
-  AND name NOT LIKE 'sqlite_%'
-ORDER BY name
-`)
+	var signatures []string
+	for _, table := range schemaTables(t, db) {
+		rows, err := db.Query(`PRAGMA index_list(` + quoteIdent(table) + `)`)
+		if err != nil {
+			t.Fatalf("index list %s: %v", table, err)
+		}
+
+		for rows.Next() {
+			var seq, unique, partial int
+			var name, origin string
+			if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+				rows.Close()
+				t.Fatalf("scan index list %s: %v", table, err)
+			}
+			identity := name
+			if strings.HasPrefix(name, "sqlite_autoindex_") {
+				identity = origin
+			}
+			signatures = append(
+				signatures,
+				fmt.Sprintf(
+					"index|%s|%s|unique=%d|origin=%s|partial=%d|columns=%s|sql=%s",
+					table,
+					identity,
+					unique,
+					origin,
+					partial,
+					strings.Join(indexColumns(t, db, name), ","),
+					indexSQL(t, db, name),
+				),
+			)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			t.Fatalf("index list rows %s: %v", table, err)
+		}
+		rows.Close()
+	}
+	sort.Strings(signatures)
+	return signatures
+}
+
+func indexColumns(t *testing.T, db *sql.DB, index string) []string {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA index_info(` + quoteIdent(index) + `)`)
 	if err != nil {
-		t.Fatalf("query indexes: %v", err)
+		t.Fatalf("index info %s: %v", index, err)
 	}
 	defer rows.Close()
 
-	var signatures []string
+	type indexedColumn struct {
+		seq  int
+		name string
+	}
+	var columns []indexedColumn
 	for rows.Next() {
-		var name, table string
-		var sqlText sql.NullString
-		if err := rows.Scan(&name, &table, &sqlText); err != nil {
-			t.Fatalf("scan index: %v", err)
+		var seq, cid int
+		var name sql.NullString
+		if err := rows.Scan(&seq, &cid, &name); err != nil {
+			t.Fatalf("scan index info %s: %v", index, err)
 		}
-		normalizedSQL := ""
-		if sqlText.Valid {
-			normalizedSQL = strings.Join(strings.Fields(sqlText.String), " ")
+		columnName := fmt.Sprintf("#cid%d", cid)
+		if name.Valid {
+			columnName = name.String
 		}
-		signatures = append(signatures, fmt.Sprintf("index|%s|%s|%s", name, table, normalizedSQL))
+		columns = append(columns, indexedColumn{seq: seq, name: columnName})
 	}
 	if err := rows.Err(); err != nil {
-		t.Fatalf("index rows: %v", err)
+		t.Fatalf("index info rows %s: %v", index, err)
 	}
-	return signatures
+
+	sort.Slice(columns, func(i, j int) bool {
+		return columns[i].seq < columns[j].seq
+	})
+	names := make([]string, 0, len(columns))
+	for _, column := range columns {
+		names = append(names, column.name)
+	}
+	return names
+}
+
+func indexSQL(t *testing.T, db *sql.DB, index string) string {
+	t.Helper()
+	var sqlText sql.NullString
+	if err := db.QueryRow(
+		`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		index,
+	).Scan(&sqlText); err != nil {
+		if err == sql.ErrNoRows {
+			return ""
+		}
+		t.Fatalf("query index SQL %s: %v", index, err)
+	}
+	if !sqlText.Valid {
+		return ""
+	}
+	return strings.Join(strings.Fields(sqlText.String), " ")
 }
 
 func ftsSignatures(t *testing.T, db *sql.DB) []string {
@@ -567,6 +646,7 @@ func assertFTSContentBehavior(t *testing.T, db *sql.DB) {
 	if _, err := db.Exec(`DELETE FROM wiki_documents WHERE id = ?`, probeID); err != nil {
 		t.Fatalf("delete wiki_documents probe: %v", err)
 	}
+	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_documents WHERE wiki_documents MATCH 'convergence'`, 0)
 }
 
 func assertColumns(t *testing.T, db *sql.DB, table string, names []string) {
