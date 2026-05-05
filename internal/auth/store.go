@@ -34,13 +34,19 @@ import (
 // distinguishes "wrong token" from "revoked token" to a client.
 var ErrInvalid = errors.New("auth: invalid token")
 
+// ErrExpired is returned by Lookup when a known token is past expires_at.
+var ErrExpired = errors.New("auth: token expired")
+
+const defaultTokenTTL = 30 * 24 * time.Hour
+
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
 // API tokens. Callers using OpenStore own the close lifecycle; callers
 // using NewStoreWithDB share a connection with another subsystem.
 type Store struct {
-	db    *sql.DB
-	now   func() time.Time
-	owned bool
+	db       *sql.DB
+	now      func() time.Time
+	tokenTTL time.Duration
+	owned    bool
 }
 
 // OpenStore opens (or creates) the SQLite file at path and applies the
@@ -54,7 +60,7 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("auth migrate: %w", err)
 	}
-	return &Store{db: db, now: time.Now, owned: true}, nil
+	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: true}, nil
 }
 
 // NewStoreWithDB shares an existing *sql.DB so auth can co-locate with
@@ -63,7 +69,7 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("auth: db required")
 	}
-	return &Store{db: db, now: time.Now, owned: false}, nil
+	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: false}, nil
 }
 
 // Close closes the underlying DB if Store owns it.
@@ -72,6 +78,19 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
+}
+
+// SetTokenTTL configures how long newly-issued dashboard bearer tokens
+// remain valid. Non-positive values restore the default 30-day TTL.
+func (s *Store) SetTokenTTL(ttl time.Duration) {
+	if s == nil {
+		return
+	}
+	if ttl <= 0 {
+		s.tokenTTL = defaultTokenTTL
+		return
+	}
+	s.tokenTTL = ttl
 }
 
 // Issue mints a fresh token for userID, persists its SHA-256 hash, and
@@ -87,13 +106,15 @@ func (s *Store) Issue(ctx context.Context, userID string) (string, error) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	hash := hashToken(token)
-	now := s.now().UTC().Format(time.RFC3339)
+	nowTime := s.now().UTC()
+	now := nowTime.Format(time.RFC3339)
+	expiresAt := nowTime.Add(s.tokenTTL).UTC().Format(time.RFC3339)
 
 	const q = `
-		INSERT INTO api_tokens (token_hash, user_id, issued_at, last_used, revoked_at)
-		VALUES (?, ?, ?, NULL, NULL)
+		INSERT INTO api_tokens (token_hash, user_id, issued_at, expires_at, last_used, revoked_at)
+		VALUES (?, ?, ?, ?, NULL, NULL)
 	`
-	if _, err := s.db.ExecContext(ctx, q, hash, userID, now); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, hash, userID, now, expiresAt); err != nil {
 		return "", fmt.Errorf("auth issue: %w", err)
 	}
 	return token, nil
@@ -107,14 +128,15 @@ func (s *Store) Lookup(ctx context.Context, token string) (string, error) {
 		return "", ErrInvalid
 	}
 	hash := hashToken(token)
-	const q = `SELECT token_hash, user_id, revoked_at FROM api_tokens WHERE token_hash = ?`
+	const q = `SELECT token_hash, user_id, revoked_at, expires_at FROM api_tokens WHERE token_hash = ?`
 	var (
 		gotHash   string
 		userID    string
 		revokedAt sql.NullString
+		expiresAt sql.NullString
 	)
 	row := s.db.QueryRowContext(ctx, q, hash)
-	if err := row.Scan(&gotHash, &userID, &revokedAt); err != nil {
+	if err := row.Scan(&gotHash, &userID, &revokedAt, &expiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrInvalid
 		}
@@ -128,6 +150,16 @@ func (s *Store) Lookup(ctx context.Context, token string) (string, error) {
 	}
 	if revokedAt.Valid && revokedAt.String != "" {
 		return "", ErrInvalid
+	}
+	if !expiresAt.Valid || expiresAt.String == "" {
+		return "", ErrExpired
+	}
+	expiry, err := time.Parse(time.RFC3339, expiresAt.String)
+	if err != nil {
+		return "", fmt.Errorf("auth lookup: parse expires_at: %w", err)
+	}
+	if !s.now().UTC().Before(expiry) {
+		return "", ErrExpired
 	}
 	// last_used is best-effort; a write failure here doesn't invalidate
 	// the lookup. Logging happens at the middleware layer.

@@ -318,6 +318,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	if err != nil {
 		return nil, fmt.Errorf("creating auth store: %w", err)
 	}
+	authStore.SetTokenTTL(time.Duration(cfg.DashboardTokenTTLHours) * time.Hour)
 
 	b := &Bot{
 		bot:         tb,

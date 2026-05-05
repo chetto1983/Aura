@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func okHandler() http.Handler {
@@ -109,6 +111,27 @@ func TestRequireBearer_RevokedToken(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status %d, want 401", rr.Code)
+	}
+}
+
+func TestRequireBearer_ExpiredTokenBody(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	tok, _ := s.Issue(ctx, "u1")
+	s.now = func() time.Time { return now.Add(30*24*time.Hour + time.Second) }
+
+	h := RequireBearer(s, nil, nil, okHandler())
+	req := httptest.NewRequest("GET", "/health", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", rr.Code)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, `"token_expired"`) {
+		t.Fatalf("body = %q, want token_expired", got)
 	}
 }
 

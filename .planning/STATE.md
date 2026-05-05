@@ -2,16 +2,16 @@
 
 Phase: 4 of 6 (Dashboard Security)
 Plan: Phase 4 — Dashboard Security
-Status: Phase 3 Memory Reliability implemented; ready to plan/execute dashboard token expiry and settings secret redaction
-Current focus: add dashboard bearer-token expiry and redact secret settings in API/UI responses
-Last activity: 2026-05-05 — Completed Memory Reliability with observable archive append failures and focused archive tests
+Status: Dashboard token expiry implemented; continue Phase 4 with settings secret redaction
+Current focus: redact secret settings in API/UI responses while preserving write and test-connection flows
+Last activity: 2026-05-05 — Completed Dashboard Token Expiry with expires_at migration, configurable 30-day TTL, and distinct expired-token rejection
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-04)
 
 **Core value:** Durable, compounding personal memory that grows smarter with every conversation — without relying on external note-taking apps.
-**Current focus:** Dashboard security: token expiry and settings secret redaction for v1.0.
+**Current focus:** Dashboard security: settings secret redaction for v1.0.
 
 ## Roadmap
 
@@ -33,3 +33,4 @@ See: .planning/ROADMAP.md
 [2026-05-04] Reconciled v1.0 around Production Readiness: DB foundation, migration safety, memory reliability, dashboard security, Telegram regression harness, and release gate.
 [2026-05-05] Merged PR #1: Phase 1 DB Foundation + Phase 2 Migration Safety. `master` now has shared SQLite pool startup, versioned migrations, v3.0.2 upgrade coverage, and lazy schema ownership removed from shared constructors.
 [2026-05-05] Completed Phase 3 Memory Reliability. Telegram archive helper logs direct append failures with chat/turn/role metadata and focused tests cover archive success plus failure observability.
+[2026-05-05] Completed Phase 4a Dashboard Token Expiry. `api_tokens.expires_at` is migrated/backfilled, new tokens default to 720-hour TTL, production wiring applies `DASHBOARD_TOKEN_TTL_HOURS`, and expired tokens return distinct `token_expired` 401 bodies.

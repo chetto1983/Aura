@@ -18,6 +18,7 @@ type Migration struct {
 var registered = []Migration{
 	{Version: 1, Name: "create_current_schema", Up: createCurrentSchema},
 	{Version: 2, Name: "backfill_current_columns", Up: backfillCurrentColumns},
+	{Version: 3, Name: "add_api_token_expiry", Up: addAPITokenExpiry},
 }
 
 type columnDef struct {
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL,
   issued_at  TEXT NOT NULL,
+  expires_at TEXT,
   last_used  TEXT,
   revoked_at TEXT
 );
@@ -349,6 +351,61 @@ func backfillCurrentColumns(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	return nil
+}
+
+func addAPITokenExpiry(ctx context.Context, tx *sql.Tx) error {
+	if err := addMissingColumns(ctx, tx, "api_tokens", []columnDef{
+		{Name: "expires_at", SQL: "TEXT"},
+	}); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT token_hash, issued_at FROM api_tokens WHERE expires_at IS NULL OR expires_at = ''`)
+	if err != nil {
+		return fmt.Errorf("migrations: query api token expiry backfill: %w", err)
+	}
+	defer rows.Close()
+
+	type tokenExpiry struct {
+		hash      string
+		expiresAt string
+	}
+	var updates []tokenExpiry
+	for rows.Next() {
+		var hash, issuedAtRaw string
+		if err := rows.Scan(&hash, &issuedAtRaw); err != nil {
+			return fmt.Errorf("migrations: scan api token expiry backfill: %w", err)
+		}
+		issuedAt, err := parseStoredTime(issuedAtRaw)
+		if err != nil {
+			return fmt.Errorf("migrations: parse api_tokens.issued_at %q: %w", issuedAtRaw, err)
+		}
+		updates = append(updates, tokenExpiry{
+			hash:      hash,
+			expiresAt: issuedAt.Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("migrations: iterate api token expiry backfill: %w", err)
+	}
+	for _, update := range updates {
+		if _, err := tx.ExecContext(ctx, `UPDATE api_tokens SET expires_at = ? WHERE token_hash = ?`, update.expiresAt, update.hash); err != nil {
+			return fmt.Errorf("migrations: update api token expiry: %w", err)
+		}
+	}
+	return nil
+}
+
+func parseStoredTime(raw string) (time.Time, error) {
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return ts, nil
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return ts, nil
+	}
+	if ts, err := time.Parse("2006-01-02 15:04:05", raw); err == nil {
+		return ts.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("unsupported timestamp")
 }
 
 func addMissingColumns(ctx context.Context, tx *sql.Tx, table string, columns []columnDef) error {

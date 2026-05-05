@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -31,9 +32,10 @@ type AllowlistFunc func(userID string) bool
 // RequireBearer returns a middleware that enforces a valid `Authorization:
 // Bearer <token>` header on every wrapped request. On success the
 // resolved user ID is stashed in the request context. On failure the
-// handler emits a JSON 401 — the response intentionally does not
-// distinguish "missing header" from "wrong token" from "revoked token"
-// from "user de-allowlisted" so an attacker can't enumerate token state.
+// handler emits a JSON 401. Expired tokens get a distinct body so the
+// dashboard can explain re-login; missing, wrong, revoked, and
+// de-allowlisted tokens remain generic so an attacker can't enumerate
+// token state.
 func RequireBearer(store *Store, allowlist AllowlistFunc, logger *slog.Logger, next http.Handler) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
@@ -48,6 +50,11 @@ func RequireBearer(store *Store, allowlist AllowlistFunc, logger *slog.Logger, n
 		if err != nil {
 			// Don't log the token (or its prefix) — a leak in logs
 			// defeats the whole point. Just record that auth failed.
+			if errors.Is(err, ErrExpired) {
+				logger.Debug("auth: token expired", "remote_addr", r.RemoteAddr)
+				writeTokenExpired(w)
+				return
+			}
 			logger.Debug("auth: lookup failed", "remote_addr", r.RemoteAddr)
 			writeUnauthorized(w)
 			return
@@ -84,6 +91,12 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+}
+
+func writeTokenExpired(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte(`{"error":"token_expired"}`))
 }
 
 // TokenFromRequest reads the bearer token off the request header, when

@@ -352,7 +352,7 @@ Implementation files by subplan:
 
   Include exact tests and code paths for archive append failure observability in `internal/telegram/conversation.go`.
 
-- [ ] **Step 2: Write Dashboard Security plan**
+- [x] **Step 2: Write Dashboard Security plan**
 
   Include token expiry schema/API behavior and settings secret redaction behavior.
 

@@ -104,6 +104,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
+	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_RUNTIME_DIR")
 	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
@@ -187,6 +188,9 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.HTTPPort != "127.0.0.1:8080" {
 		t.Errorf("HTTPPort = %q, want 127.0.0.1:8080 (slice 10b: localhost-only by default)", cfg.HTTPPort)
 	}
+	if cfg.DashboardTokenTTLHours != 720 {
+		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
+	}
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
 	}
@@ -195,6 +199,19 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
+	}
+}
+
+func TestLoadDashboardTokenTTLHours(t *testing.T) {
+	os.Setenv("DASHBOARD_TOKEN_TTL_HOURS", "24")
+	defer os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DashboardTokenTTLHours != 24 {
+		t.Fatalf("DashboardTokenTTLHours = %d, want 24", cfg.DashboardTokenTTLHours)
 	}
 }
 

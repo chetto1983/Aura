@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	auradb "github.com/aura/aura/internal/db"
 )
@@ -73,6 +74,47 @@ func TestIssueLookup_RoundTrip(t *testing.T) {
 	}
 	if got != "u1" {
 		t.Errorf("user = %q, want u1", got)
+	}
+}
+
+func TestIssueSetsExpiresAt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+
+	tok, err := s.Issue(ctx, "u1")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+
+	var expiresAt string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT expires_at FROM api_tokens WHERE token_hash = ?`,
+		hashToken(tok),
+	).Scan(&expiresAt); err != nil {
+		t.Fatalf("query expires_at: %v", err)
+	}
+	want := now.Add(30 * 24 * time.Hour).Format(time.RFC3339)
+	if expiresAt != want {
+		t.Fatalf("expires_at = %q, want %q", expiresAt, want)
+	}
+}
+
+func TestLookupExpiredToken(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+
+	tok, err := s.Issue(ctx, "u1")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	s.now = func() time.Time { return now.Add(30*24*time.Hour + time.Second) }
+
+	if _, err := s.Lookup(ctx, tok); !errors.Is(err, ErrExpired) {
+		t.Fatalf("lookup err = %v, want ErrExpired", err)
 	}
 }
 

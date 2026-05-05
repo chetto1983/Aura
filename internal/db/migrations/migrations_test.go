@@ -191,6 +191,9 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"last_metrics_json",
 		"wake_signature",
 	})
+	assertColumns(t, db, "api_tokens", []string{
+		"expires_at",
+	})
 	assertColumns(t, db, "proposed_updates", []string{
 		"category",
 		"related_slugs",
@@ -336,6 +339,9 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 		"last_metrics_json",
 		"wake_signature",
 	})
+	assertColumns(t, db, "api_tokens", []string{
+		"expires_at",
+	})
 	assertColumns(t, db, "proposed_updates", []string{
 		"category",
 		"related_slugs",
@@ -347,6 +353,7 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 		"tokens_total",
 	})
 	assertScalar(t, db, `SELECT schedule_weekdays FROM scheduled_tasks WHERE name = 'daily-review'`, "")
+	assertScalar(t, db, `SELECT expires_at FROM api_tokens WHERE token_hash = 'hash-1'`, "2026-02-01T03:04:05Z")
 	assertScalar(t, db, `SELECT provenance_json FROM proposed_updates WHERE target_slug = 'migration-tests'`, "{}")
 	assertScalar(t, db, `SELECT tokens_total FROM swarm_tasks WHERE id = 'task-1'`, 0)
 
@@ -364,8 +371,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 2 || first[0] != 1 || first[1] != 2 {
-		t.Fatalf("applied versions = %v, want [1 2]", first)
+	if len(first) != 3 || first[0] != 1 || first[1] != 2 || first[2] != 3 {
+		t.Fatalf("applied versions = %v, want [1 2 3]", first)
 	}
 }
 
