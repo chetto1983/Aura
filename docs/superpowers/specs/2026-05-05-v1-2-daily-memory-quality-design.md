@@ -76,6 +76,19 @@ Acceptance:
 - extractor tests include at least one table fixture and one malformed-file failure fixture;
 - sandbox artifact support remains separate from source extraction artifacts to avoid confusing generated files with ingested user sources.
 
+### SKILL-SANDBOX-E2E: Skill-Guided Sandbox Memory Flow
+
+Aura must prove that local procedural skills can guide useful sandbox work without hardcoding every workflow or adding extra runtime agents.
+
+Acceptance:
+
+- Aura reads required runtime skills from `D:\Aura\skills`;
+- a local skill guides deterministic Python script creation for a real mixed-source fixture;
+- the script runs in the existing Pyodide sandbox with no network and bounded timeout;
+- both the generated script and result are persisted as source evidence;
+- the persisted script/result can be read back and used for recall;
+- the flow runs as a local E2E command suitable for release gates.
+
 ### MEMEVAL-01: Mixed-Source Memory Scorecard
 
 Aura must have a repeatable local scorecard for daily-memory behavior over mixed source types.

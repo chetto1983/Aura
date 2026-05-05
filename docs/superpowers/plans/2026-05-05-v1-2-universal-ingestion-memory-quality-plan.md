@@ -1,6 +1,6 @@
 # v1.2 Universal Ingestion + Memory Quality Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use superpowers:executing-plans to implement this plan task-by-task. subagent-driven-development is optional for independent code slices only; the product runtime must remain one Aura agent using skills, tools, and sandbox execution rather than spawning extra runtime agents. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Aura ingest PDF, TXT, MD, JSON, CSV, DOCX, and XLSX sources from Telegram and the dashboard, then prove mixed-source memory quality with a deterministic release scorecard.
 
@@ -13,6 +13,17 @@
 ## Scope Check
 
 The spec has two lanes, but they are coupled by one boundary: normalized source evidence. This plan keeps them in one milestone because the memory scorecard must exercise the new source formats. Work is split into small tasks that can be reviewed and committed independently.
+
+## Conversation Review Updates
+
+This plan was reviewed against the 2026-05-05 implementation conversation. These decisions override any weaker examples below:
+
+- **Not PDF-only:** the milestone remains multi-format ingestion inspired by Cognee's broad ingestion model, but Aura does not adopt Cognee as a dependency or add a Python service.
+- **Python sandbox is leverage, not a file tool clone:** Pyodide should help Aura generate/extract/verify structured evidence, especially table-heavy files and agent-authored scripts, but fixed extractor scripts must be bounded, no-network, and versioned.
+- **Skills live in `D:\Aura\skills`:** E2E coverage must prove Aura reads local Aura skills from that folder, uses a skill to guide Python code generation, executes the code in the sandbox, persists the script/result as source evidence, and can recall the script later.
+- **No synthetic "hello world" scorecard:** the release gate cannot pass by checking expected terms inside a fixture. It must run real extraction, ingestion/retrieval/proposal paths, and at least one real skills + sandbox + persisted-source recall flow.
+- **Single-agent runtime:** dedicated skills are the extensibility layer. Do not hardcode every extractor or add costly runtime agent swarms for this milestone; let the existing Aura agent choose skills and use sandbox tools through the existing tool registry.
+- **Production UX regression:** keep the v1.1 tray/console lesson in the release gate. Packaged Aura must remain console-free, and Windows startup must log `tray: ready` with the visible `icon_app.ico` asset.
 
 ## File Structure
 
@@ -28,8 +39,10 @@ The spec has two lanes, but they are coupled by one boundary: normalized source 
 - Modify `internal/telegram/documents.go`: Telegram upload uses same format policy and normalizer.
 - Modify `internal/ingest/pipeline.go`: read `extract.md` first and retain `ocr.md` fallback for old PDFs.
 - Add `cmd/debug_memory_scorecard/main.go`: local release gate command.
+- Add `cmd/debug_skill_sandbox_memory/main.go`: local E2E proving skills -> sandbox code -> persisted source -> recall.
 - Add `internal/memoryscore/`: fixture loader and deterministic scorecard runner.
 - Add `testdata/memoryscore/v1_2/`: mixed-source fixtures and expected cases.
+- Add `testdata/skill_sandbox_memory/`: fixture skill prompts, expected script/result terms, and persisted-source recall assertions.
 - Modify `web/src/types/api.ts`, `web/src/components/SourceInbox.tsx`, `web/src/i18n/locales/en.json`, `web/src/i18n/locales/it.json`: multi-format upload and status labels.
 - Modify `docs/implementation-tracker.md`, `.planning/PROJECT.md`, `.planning/ROADMAP.md`: record milestone progress and release result.
 
@@ -1265,6 +1278,8 @@ git commit -m "feat: show universal source ingestion in dashboard"
 
 ## Task 8: Mixed-Source Memory Scorecard
 
+**Review correction:** this task must not be a self-referential fixture-term checker. A fixture loader is useful, but the release scorecard must execute real Aura paths: store source fixtures, extract normalized evidence, compile/ingest into wiki/search surfaces, run retrieval/proposal checks, and report which evidence was selected. The simplified `EvaluateDeterministic` skeleton below is acceptable only as a first failing-test scaffold for fixture validation; it is not sufficient for `REL-03`.
+
 **Files:**
 - Create: `internal/memoryscore/scorecard.go`
 - Create: `internal/memoryscore/scorecard_test.go`
@@ -1329,7 +1344,16 @@ Expected: FAIL with missing package implementation.
 
 - [ ] **Step 4: Implement deterministic scorecard**
 
-Create `internal/memoryscore/scorecard.go`:
+Create `internal/memoryscore/scorecard.go` as a real-path runner. It may start with fixture loading and result aggregation, but before this task is complete it must:
+
+- create an isolated temp source/wiki/search environment;
+- load fixture files from `testdata/memoryscore/v1_2/sources/`;
+- call the same extraction helpers used by Telegram/dashboard upload;
+- call the ingest pipeline on extracted sources;
+- query retrieval/proposal helpers for each case;
+- pass or fail based on selected evidence and expected behavior, not on terms embedded in the case definition.
+
+The early scaffold can look like:
 
 ```go
 package memoryscore
@@ -1446,6 +1470,8 @@ Expected:
 ```text
 memory scorecard: 6/6 passed (threshold 5)
 ```
+
+Before commit, inspect one failure-mode run by temporarily removing a required fixture or expected term and confirm the command fails with the case name and missing evidence reason.
 
 Commit:
 
@@ -1590,7 +1616,73 @@ git commit -m "feat: ground memory proposals in normalized sources"
 
 ---
 
-## Task 10: Release Gate and Documentation
+## Task 10: Skills + Sandbox + Memory E2E
+
+**Purpose:** prove the agent can use procedural memory without hardcoding every workflow: read an Aura skill from `D:\Aura\skills`, produce useful Python code, execute it in the bundled sandbox, persist the script/result as source evidence, and recall it later.
+
+**Files:**
+- Create: `cmd/debug_skill_sandbox_memory/main.go`
+- Create: `testdata/skill_sandbox_memory/README.md`
+- Modify: `docs/implementation-tracker.md`
+- Test: `cmd/debug_skill_sandbox_memory/main_test.go`
+
+- [ ] **Step 1: Add or verify local Aura skills**
+
+Ensure at least these skills exist under `D:\Aura\skills`:
+
+- `aura-python-sandbox`: instructs the agent to write bounded, deterministic Python scripts for Pyodide with explicit stdout/result files.
+- `aura-source-extraction`: instructs the agent to turn script outputs into source-backed evidence, not ad hoc chat text.
+
+Do not install or depend on remote skill catalogs for the release gate. Remote catalogs can inspire skill shape, but the E2E must run from the local Aura skills folder.
+
+- [ ] **Step 2: Write the E2E command**
+
+Create `cmd/debug_skill_sandbox_memory/main.go` so it performs the full flow:
+
+1. Load skills from the same roots as production, including `D:\Aura\skills`.
+2. Read `aura-python-sandbox` and `aura-source-extraction`.
+3. Generate or select a deterministic Python script that processes a mixed-source fixture, for example CSV/XLSX rows into a compact markdown summary.
+4. Execute the script with `internal/sandbox` Pyodide using no network and bounded timeout.
+5. Persist both the generated script and result markdown as source records.
+6. Read those source records back through the source/tool path.
+7. Print a compact PASS line with the skill names, script source ID, result source ID, and recall assertion.
+
+Expected output shape:
+
+```text
+skill sandbox memory e2e: PASS skills=aura-python-sandbox,aura-source-extraction script=src_... result=src_... recall=ok
+```
+
+- [ ] **Step 3: Add tests for failure modes**
+
+Add `cmd/debug_skill_sandbox_memory/main_test.go` with focused coverage for:
+
+- missing skill returns a clear failure;
+- sandbox runtime unavailable returns a clear skip/failure depending on command flags;
+- persisted script/result are readable source evidence;
+- binary sandbox artifacts are not treated as text recall evidence.
+
+- [ ] **Step 4: Run real E2E**
+
+Run:
+
+```bash
+go test ./cmd/debug_skill_sandbox_memory ./internal/skills ./internal/tools ./internal/sandbox -count=1
+go run ./cmd/debug_skill_sandbox_memory --timeout 2m
+```
+
+Expected: tests pass and the command prints the PASS line above. This is the anti-"hello world" gate for the skills/sandbox autonomy part of the milestone.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add cmd/debug_skill_sandbox_memory testdata/skill_sandbox_memory docs/implementation-tracker.md
+git commit -m "test: prove skill-guided sandbox memory e2e"
+```
+
+---
+
+## Task 11: Release Gate and Documentation
 
 **Files:**
 - Modify: `docs/implementation-tracker.md`
@@ -1606,14 +1698,19 @@ Run:
 ```bash
 go test ./internal/source ./internal/ingest ./internal/api ./internal/telegram ./internal/tools ./internal/memoryscore -count=1
 go run ./cmd/debug_memory_scorecard
+go run ./cmd/debug_skill_sandbox_memory --timeout 2m
 go test ./...
 npm --prefix web run build
+go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+scripts\check-windows-gui-subsystem.ps1 <extracted snapshot aura.exe>
 ```
 
 Expected:
 
 ```text
 memory scorecard: 6/6 passed (threshold 5)
+skill sandbox memory e2e: PASS ...
+windows gui subsystem ok
 ```
 
 All test/build commands exit 0.
@@ -1631,8 +1728,11 @@ Date: 2026-05-05
 
 - `go test ./internal/source ./internal/ingest ./internal/api ./internal/telegram ./internal/tools ./internal/memoryscore -count=1`
 - `go run ./cmd/debug_memory_scorecard`
+- `go run ./cmd/debug_skill_sandbox_memory --timeout 2m`
 - `go test ./...`
 - `npm --prefix web run build`
+- `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean`
+- `scripts\check-windows-gui-subsystem.ps1` against the extracted Windows snapshot `aura.exe`
 
 ## Result
 
@@ -1657,6 +1757,7 @@ Mixed-source memory scorecard: 6/6 passed, threshold 5/6.
 - Images, audio, video, PPTX, cloud connectors, and website crawling are outside v1.2.
 - Mistral OCR remains the PDF extraction path.
 - Wiki updates remain review-gated.
+- Runtime remains a single Aura agent using skills and tools; no additional runtime agent swarm is required for universal ingestion.
 ```
 
 - [ ] **Step 3: Update tracker**
@@ -1671,7 +1772,8 @@ Add to `docs/implementation-tracker.md`:
 - Kept PDF OCR compatible by adapting `ocr.md` into the normalized extraction contract.
 - Used bounded Pyodide extraction for spreadsheet/table evidence.
 - Added mixed-source memory scorecard and release gate.
-- Verification: focused source/ingest/API/Telegram/tools/memoryscore tests, `go test ./...`, dashboard build, and scorecard all passed.
+- Proved skill-guided sandbox script creation, execution, persisted source recall, and result recall from local Aura skills.
+- Verification: focused source/ingest/API/Telegram/tools/memoryscore tests, skill sandbox memory E2E, `go test ./...`, dashboard build, GoReleaser snapshot, Windows GUI subsystem check, and scorecard all passed.
 ```
 
 - [ ] **Step 4: Update planning state**
@@ -1680,7 +1782,7 @@ In `.planning/PROJECT.md`, `.planning/ROADMAP.md`, and `.planning/STATE.md`, mar
 
 ```markdown
 v1.2 Universal Ingestion + Memory Quality: complete.
-Release gate: multi-format extraction tests passed; mixed-source scorecard 6/6 passed at threshold 5/6.
+Release gate: multi-format extraction tests passed; mixed-source scorecard 6/6 passed at threshold 5/6; skill sandbox memory E2E passed; Windows GUI subsystem and tray startup regression checked.
 ```
 
 - [ ] **Step 5: Commit closure docs**
@@ -1701,10 +1803,11 @@ Spec coverage:
 - INGEST-01 is covered by Tasks 1, 5, and 7.
 - EXTRACT-01 is covered by Tasks 2, 3, 4, and 6.
 - SANDBOX-01 is covered by Task 4.
+- SKILL-SANDBOX-E2E is covered by Task 10.
 - MEMEVAL-01 is covered by Task 8.
 - RET-01 is covered by Tasks 6, 8, and 9.
 - PROP-01 and PROP-02 are covered by Task 9.
-- REL-03 is covered by Task 10.
+- REL-03 is covered by Task 11.
 
 Placeholder scan:
 
