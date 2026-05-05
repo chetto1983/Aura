@@ -65,7 +65,7 @@ Drop it in a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`).
 
 Open a terminal in the same folder and run the binary:
 
-**Windows (PowerShell):** `.\aura_windows_amd64.exe`
+**Windows:** double-click `aura.exe` from the extracted release folder, or run `.\aura.exe` from PowerShell. The packaged Windows app runs as a tray-first GUI binary, so it does not keep a console window open during normal use.
 **macOS / Linux:** `./aura_*`
 
 You'll see something like:
@@ -222,6 +222,9 @@ Right-click → Open → confirm. One-time.
 
 **Windows: Defender flags the binary**
 Unsigned binaries from Releases trigger this. Click More info → Run anyway.
+
+**Windows: I do not see a console window**
+This is expected for packaged releases. Aura writes logs under the configured `LOG_DIR` (default: `./logs`). For development troubleshooting, run from source with `go run ./cmd/aura` or use the debug commands; those still print to the console.
 
 ---
 

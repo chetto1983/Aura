@@ -993,7 +993,7 @@ git commit -m "slice 2d: surface token audit update failures"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Create the PE subsystem check script**
+- [x] **Step 1: Create the PE subsystem check script**
 
 Create `scripts/check-windows-gui-subsystem.ps1`:
 
@@ -1030,7 +1030,7 @@ switch ($subsystem) {
 }
 ```
 
-- [ ] **Step 2: Update GoReleaser builds**
+- [x] **Step 2: Update GoReleaser builds**
 
 In `.goreleaser.yml`, replace the single `builds` entry with two build entries:
 
@@ -1082,7 +1082,7 @@ archives:
 
 Keep the existing archive `name_template`, `format_overrides`, and `files` under the same archive entry.
 
-- [ ] **Step 3: Update install troubleshooting**
+- [x] **Step 3: Update install troubleshooting**
 
 In `INSTALL.md`, replace the Windows run instruction:
 
@@ -1103,7 +1103,7 @@ In the Troubleshooting section, add:
 This is expected for packaged releases. Aura writes logs under the configured `LOG_DIR` (default: `./logs`). For development troubleshooting, run from source with `go run ./cmd/aura` or use the debug commands; those still print to the console.
 ```
 
-- [ ] **Step 4: Build snapshot package**
+- [x] **Step 4: Build snapshot package**
 
 Run:
 
@@ -1113,7 +1113,7 @@ go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
 
 Expected: PASS and a Windows ZIP appears under `dist`.
 
-- [ ] **Step 5: Inspect packaged subsystem**
+- [x] **Step 5: Inspect packaged subsystem**
 
 Run:
 
@@ -1127,7 +1127,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-windows-gui-su
 
 Expected: prints `windows gui subsystem ok: <path>`.
 
-- [ ] **Step 6: Verify dev build remains console-friendly**
+- [x] **Step 6: Verify dev build remains console-friendly**
 
 Run:
 
@@ -1138,7 +1138,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-windows-gui-su
 
 Expected: the check fails with `windows console subsystem found`, proving local developer builds did not inherit the packaged GUI subsystem flag. Do not treat this expected failure as a task failure.
 
-- [ ] **Step 7: Record handoff and commit**
+- [x] **Step 7: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

@@ -10,6 +10,8 @@
 
 2026-05-05 v1.1 Phase 2d handoff: `AUDIT-01` landed. Auth token lookup now surfaces `last_used` audit update failures through `AuditUpdateError`; middleware logs that warning and continues valid requests without leaking token material. Verification: `go test ./internal/auth -run "TestLookup.*Audit|TestIssueLookup_RoundTrip" -count=1` and `go test ./internal/auth ./internal/api -count=1`. Next work: packaged Windows console suppression and dependency monitoring.
 
+2026-05-05 v1.1 Phase 3a handoff: `UX-01` landed. GoReleaser now builds packaged Windows `aura.exe` with the GUI subsystem while local developer builds remain console-friendly. Added PE subsystem inspection script and INSTALL troubleshooting notes. GoReleaser v2.15.4 uses `archives.ids` for archive build filtering, so the plan's two-build structure landed with that v2 syntax instead of deprecated `archives.builds`. Verification: `npm --prefix web ci` restored local Vite dependencies before packaging; `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean` passed, packaged `aura.exe` printed `windows gui subsystem ok`, and a local dev build intentionally failed the GUI check as `windows console subsystem found`. Next work: telebot beta monitoring docs.
+
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
 ## Slice Order (from PDR §12)
