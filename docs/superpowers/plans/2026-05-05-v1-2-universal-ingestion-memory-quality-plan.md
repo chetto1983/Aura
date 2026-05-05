@@ -684,7 +684,7 @@ git commit -m "feat: normalize pdf ocr evidence"
 - Create: `internal/source/testdata/malformed.xlsx`
 - Test: `internal/source/extract_pyodide_test.go`
 
-- [ ] **Step 1: Write Pyodide bridge tests with availability skip**
+- [x] **Step 1: Write Pyodide bridge tests with availability skip**
 
 Create `internal/source/extract_pyodide_test.go`:
 
@@ -754,13 +754,13 @@ import (
 )
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/source -run TestPyodideXLSXExtractor -count=1`
 
 Expected: FAIL with missing `ExtractWithPyodide`, or SKIP when runtime is unavailable before implementation.
 
-- [ ] **Step 3: Add fixed-script Pyodide bridge**
+- [x] **Step 3: Add fixed-script Pyodide bridge**
 
 Create `internal/source/extract_pyodide.go`:
 
@@ -842,7 +842,7 @@ print(json.dumps({
 }
 ```
 
-- [ ] **Step 4: Run focused test and commit**
+- [x] **Step 4: Run focused test and commit**
 
 Run: `go test ./internal/source -run TestPyodideXLSXExtractor -count=1`
 
