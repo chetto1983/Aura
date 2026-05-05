@@ -8,16 +8,55 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
-// sendAssistant delivers an LLM-generated message to the user with
-// Markdown rendered to Telegram's HTML subset. Plain operator strings
-// (auth errors, bootstrap messages) keep using c.Send directly so we
-// don't double-escape them. If HTML send fails (e.g. malformed render),
-// fall back to a plain c.Send so the user still sees the response.
+// sendAssistant delivers LLM-generated Markdown using Telegram message
+// entities. Plain operator strings (auth errors, bootstrap messages) keep
+// using c.Send directly so token-like payloads are never transformed. If
+// entity delivery fails, we fall back through the older HTML renderer and
+// then plain text so the user still sees the response.
 func (b *Bot) sendAssistant(c tele.Context, text string) {
-	rendered := renderForTelegram(text)
-	if err := c.Send(rendered, tele.ModeHTML); err != nil {
-		b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
-		_ = c.Send(text)
+	if err := sendTelegramEntityMessages(c.Bot(), c.Recipient(), text); err != nil {
+		b.logger.Warn("entity send failed, falling back to HTML", "error", err)
+		rendered := renderForTelegram(text)
+		if err := c.Send(rendered, tele.ModeHTML); err != nil {
+			b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
+			_ = c.Send(text)
+		}
+	}
+}
+
+func (b *Bot) sendAssistantToRecipient(bot tele.API, recipient tele.Recipient, text string) error {
+	if err := sendTelegramEntityMessages(bot, recipient, text); err != nil {
+		b.logger.Warn("entity send failed, falling back to HTML", "error", err)
+		rendered := renderForTelegram(text)
+		if _, htmlErr := bot.Send(recipient, rendered, tele.ModeHTML); htmlErr != nil {
+			b.logger.Warn("HTML send failed, falling back to plain text", "error", htmlErr)
+			_, plainErr := bot.Send(recipient, text)
+			return plainErr
+		}
+	}
+	return nil
+}
+
+func (b *Bot) editAssistantMessage(bot tele.API, msg tele.Editable, part renderedTelegramMessage, rawText string) (*tele.Message, error) {
+	edited, err := editTelegramEntityMessage(bot, msg, part)
+	if err == nil {
+		return edited, nil
+	}
+	b.logger.Warn("entity edit failed, falling back to HTML", "error", err)
+	rendered := renderForTelegram(rawText)
+	edited, err = bot.Edit(msg, rendered, tele.ModeHTML)
+	if err != nil {
+		return nil, err
+	}
+	return edited, nil
+}
+
+func (b *Bot) sendAssistantRemainder(bot tele.API, recipient tele.Recipient, parts []renderedTelegramMessage, start int) {
+	for _, part := range parts[start:] {
+		if _, err := bot.Send(recipient, part.Text, part.Entities); err != nil {
+			b.logger.Warn("streaming remainder send failed", "error", err)
+			return
+		}
 	}
 }
 
@@ -47,25 +86,29 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string, 
 	var resp llm.Response
 
 	flush := func() {
-		text := renderForTelegram(sb.String())
 		if sb.Len() < streamingMinThreshold {
+			return
+		}
+		raw := sb.String()
+		parts := renderForTelegramEntities(raw)
+		if len(parts) == 0 {
 			return
 		}
 		if msg == nil {
 			if placeholder != nil {
 				// Edit the pre-existing placeholder instead of sending a new message.
-				if _, err := c.Bot().Edit(placeholder, text, tele.ModeHTML); err != nil {
+				if edited, err := b.editAssistantMessage(c.Bot(), placeholder, parts[0], raw); err != nil {
 					b.logger.Debug("placeholder edit failed, falling back to new message", "user_id", userID, "error", err)
-					sent, sendErr := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
+					sent, sendErr := c.Bot().Send(c.Recipient(), parts[0].Text, parts[0].Entities)
 					if sendErr != nil {
 						return
 					}
 					msg = sent
 				} else {
-					msg = placeholder
+					msg = edited
 				}
 			} else {
-				sent, err := c.Bot().Send(c.Recipient(), text, tele.ModeHTML)
+				sent, err := c.Bot().Send(c.Recipient(), parts[0].Text, parts[0].Entities)
 				if err != nil {
 					b.logger.Warn("streaming initial send failed", "user_id", userID, "error", err)
 					return
@@ -78,7 +121,7 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string, 
 		if time.Since(lastEdit) < streamingEditThrottle {
 			return
 		}
-		if _, err := c.Bot().Edit(msg, text, tele.ModeHTML); err != nil {
+		if _, err := b.editAssistantMessage(c.Bot(), msg, parts[0], raw); err != nil {
 			// Rate limit or transient: skip this edit, the next one will retry.
 			b.logger.Debug("streaming edit failed", "user_id", userID, "error", err)
 			return
@@ -104,10 +147,15 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string, 
 			// Final edit so the message reflects the complete text even
 			// if the throttle skipped the last delta.
 			if msg != nil && !resp.HasToolCalls {
-				rendered := renderForTelegram(sb.String())
-				if _, err := c.Bot().Edit(msg, rendered, tele.ModeHTML); err != nil {
+				raw := sb.String()
+				parts := renderForTelegramEntities(raw)
+				if len(parts) == 0 {
+					break
+				}
+				if _, err := b.editAssistantMessage(c.Bot(), msg, parts[0], raw); err != nil {
 					b.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
 				}
+				b.sendAssistantRemainder(c.Bot(), c.Recipient(), parts, 1)
 			}
 			break
 		}
