@@ -251,12 +251,25 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 	if res.Response.UsageInfo != nil && res.Response.UsageInfo.PagesProcessed > 0 {
 		pageCount = res.Response.UsageInfo.PagesProcessed
 	}
+	normalized := source.ExtractFromOCRMarkdown(&source.Source{
+		ID:        src.ID,
+		Kind:      src.Kind,
+		Filename:  src.Filename,
+		SHA256:    src.SHA256,
+		OCRModel:  res.Response.Model,
+		PageCount: pageCount,
+	}, md)
+	if err := source.WriteExtractionFiles(h.sources, src, normalized); err != nil {
+		editor.fail("Write extract files failed: " + err.Error())
+		return
+	}
 
 	// Step 5: flip status, attach OCR metadata.
 	updated, err := h.sources.Update(src.ID, func(s *source.Source) error {
 		s.Status = source.StatusOCRComplete
 		s.OCRModel = res.Response.Model
 		s.PageCount = pageCount
+		s.Extract = &normalized.Metadata
 		return nil
 	})
 	if err != nil {

@@ -158,10 +158,24 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		}
 
 		// Step 4 — flip status, attach OCR metadata.
+		normalized := source.ExtractFromOCRMarkdown(&source.Source{
+			ID:        src.ID,
+			Kind:      src.Kind,
+			Filename:  src.Filename,
+			SHA256:    src.SHA256,
+			OCRModel:  ocrRes.Response.Model,
+			PageCount: pageCount,
+		}, md)
+		if err := source.WriteExtractionFiles(deps.Sources, src, normalized); err != nil {
+			writeError(w, deps.Logger, http.StatusInternalServerError, "write extract files: "+err.Error())
+			return
+		}
+
 		updated, err := deps.Sources.Update(src.ID, func(s *source.Source) error {
 			s.Status = source.StatusOCRComplete
 			s.OCRModel = ocrRes.Response.Model
 			s.PageCount = pageCount
+			s.Extract = &normalized.Metadata
 			return nil
 		})
 		if err != nil {

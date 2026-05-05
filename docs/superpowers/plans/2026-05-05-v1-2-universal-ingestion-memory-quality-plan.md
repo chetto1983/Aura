@@ -566,7 +566,7 @@ git commit -m "feat: add normalized source extractors"
 - Modify: `internal/telegram/documents.go`
 - Test: `internal/source/extract_pdf_test.go`
 
-- [ ] **Step 1: Write failing PDF adapter test**
+- [x] **Step 1: Write failing PDF adapter test**
 
 Create `internal/source/extract_pdf_test.go`:
 
@@ -590,13 +590,13 @@ func TestExtractFromOCRMarkdownPreservesPDFEvidence(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/source -run TestExtractFromOCRMarkdown -count=1`
 
 Expected: FAIL with missing `ExtractFromOCRMarkdown`.
 
-- [ ] **Step 3: Add PDF adapter**
+- [x] **Step 3: Add PDF adapter**
 
 Create `internal/source/extract_pdf.go`:
 
@@ -627,7 +627,7 @@ func ExtractFromOCRMarkdown(src *Source, md string) ExtractResult {
 }
 ```
 
-- [ ] **Step 4: Update API and Telegram PDF paths to write `extract.md` and `extract.json`**
+- [x] **Step 4: Update API and Telegram PDF paths to write `extract.md` and `extract.json`**
 
 In `internal/api/upload.go`, after writing `ocr.md` and `ocr.json`, add:
 
@@ -661,7 +661,7 @@ if err := source.WriteExtractionFiles(h.sources, src, normalized); err != nil {
 }
 ```
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 Run: `go test ./internal/source ./internal/api ./internal/telegram -run "TestExtractFromOCRMarkdown|Source|Document" -count=1`
 
