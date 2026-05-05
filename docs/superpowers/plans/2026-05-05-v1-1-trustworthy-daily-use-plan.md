@@ -315,7 +315,7 @@ git commit -m "slice 1: remove toolset profile panic path"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Write the shutdown logging test**
+- [x] **Step 1: Write the shutdown logging test**
 
 Create `internal/telegram/stop_test.go`:
 
@@ -363,7 +363,7 @@ func (f *closeFailingArchiver) Close(context.Context) error {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -373,7 +373,7 @@ go test ./internal/telegram -run TestStopLogsArchiverCloseFailure -count=1
 
 Expected: FAIL because `Bot.Stop` discards the archiver close error.
 
-- [ ] **Step 3: Implement archiver close logging**
+- [x] **Step 3: Implement archiver close logging**
 
 In `internal/telegram/bot.go`, replace:
 
@@ -410,7 +410,7 @@ for i, c := range b.mcpClients {
 
 Add `"log/slog"` only if the file does not already import it. `bot.go` already imports `log/slog`, so no import change should be needed.
 
-- [ ] **Step 4: Run focused Telegram test**
+- [x] **Step 4: Run focused Telegram test**
 
 Run:
 
@@ -420,7 +420,7 @@ go test ./internal/telegram -run TestStopLogsArchiverCloseFailure -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Run Telegram package tests**
+- [x] **Step 5: Run Telegram package tests**
 
 Run:
 
@@ -430,7 +430,7 @@ go test ./internal/telegram -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Record handoff and commit**
+- [x] **Step 6: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

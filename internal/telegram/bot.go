@@ -195,10 +195,21 @@ func (b *Bot) Stop() {
 	if b.docs != nil {
 		b.docs.Stop()
 	}
-	if b.archiver != nil {
-		_ = b.archiver.Close(context.Background())
+	logger := b.logger
+	if logger == nil {
+		logger = slog.Default()
 	}
-	for _, c := range b.mcpClients {
-		_ = c.Close()
+	if b.archiver != nil {
+		if err := b.archiver.Close(context.Background()); err != nil {
+			logger.Error("telegram shutdown: archiver close failed", "error", err)
+		}
+	}
+	for i, c := range b.mcpClients {
+		if c == nil {
+			continue
+		}
+		if err := c.Close(); err != nil {
+			logger.Error("telegram shutdown: mcp client close failed", "index", i, "error", err)
+		}
 	}
 }
