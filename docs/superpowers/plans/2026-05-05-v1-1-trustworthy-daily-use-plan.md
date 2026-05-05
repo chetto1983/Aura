@@ -63,7 +63,7 @@ v1.1 is limited to trustworthy daily-use hardening: no avoidable production pani
 - [ ] **PANIC-01 Toolset Profile Panic Removal:** Invalid or stale toolset profile names must not cause an unstructured process panic in production paths.
 - [ ] **OBS-01 Shutdown Close Observability:** Shutdown close failures for long-lived services are logged with enough context to diagnose DB/client close problems.
 - [x] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
-- [ ] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
+- [x] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
 - [ ] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
 - [ ] **DEP-01 Telebot Beta Monitoring:** Aura tracks the `gopkg.in/telebot.v4` beta dependency with a pinned-version review checklist and smoke expectations.
 - [ ] **UX-01 Packaged Windows Console Suppression:** GoReleaser-produced Windows artifacts build `cmd/aura` as a GUI/tray-first binary without a console window while development and debug commands keep console output.
@@ -638,7 +638,7 @@ git commit -m "slice 2b: surface tray browser-open failures"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Extract cleanup helper test**
+- [x] **Step 1: Extract cleanup helper test**
 
 Create `internal/telegram/conversation_cleanup_test.go`:
 
@@ -675,7 +675,7 @@ func TestLogPlaceholderDeleteFailure(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -685,7 +685,7 @@ go test ./internal/telegram -run TestLogPlaceholderDeleteFailure -count=1
 
 Expected: FAIL because `logPlaceholderDeleteFailure` does not exist.
 
-- [ ] **Step 3: Add helper and use it**
+- [x] **Step 3: Add helper and use it**
 
 In `internal/telegram/conversation.go`, add this helper near `handleConversation`:
 
@@ -723,7 +723,7 @@ if placeholder != nil {
 }
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -733,7 +733,7 @@ go test ./internal/telegram -run "TestLogPlaceholderDeleteFailure|TestConsumeStr
 
 Expected: PASS.
 
-- [ ] **Step 5: Run Telegram package tests**
+- [x] **Step 5: Run Telegram package tests**
 
 Run:
 
@@ -743,7 +743,7 @@ go test ./internal/telegram -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Record handoff and commit**
+- [x] **Step 6: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

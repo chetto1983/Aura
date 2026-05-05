@@ -6,6 +6,8 @@
 
 2026-05-05 v1.1 Phase 2b handoff: `OBS-02` landed. Tray browser-open now validates dashboard URLs before Windows shell handoff, logs refused/failed opens, and non-Windows tray startup logs headless mode. Verification: `go test ./internal/tray -count=1`. Next work: Telegram cleanup observability.
 
+2026-05-05 v1.1 Phase 2c handoff: `OBS-03` landed. Placeholder deletion failures during non-streamed response cleanup now log at debug level with user/message context without failing delivery. Verification: `go test ./internal/telegram -run "TestLogPlaceholderDeleteFailure|TestConsumeStream" -count=1` and `go test ./internal/telegram -count=1`. Next work: auth token audit observability.
+
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
 ## Slice Order (from PDR §12)

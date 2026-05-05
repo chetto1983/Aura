@@ -135,7 +135,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
-			_ = c.Bot().Delete(placeholder)
+			if err := c.Bot().Delete(placeholder); err != nil {
+				logPlaceholderDeleteFailure(b.logger, userID, placeholder, err)
+			}
 		}
 		b.sendAssistant(c, response)
 	}
@@ -198,6 +200,20 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,
 	)
+}
+
+func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder *tele.Message, err error) {
+	if err == nil {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	args := []any{"user_id", userID, "error", err}
+	if placeholder != nil {
+		args = append(args, "message_id", placeholder.ID)
+	}
+	logger.Debug("telegram cleanup: placeholder delete failed", args...)
 }
 
 func (b *Bot) swarmToolsAvailable() bool {
