@@ -41,3 +41,36 @@ func TestProjectAuraSourceExtractionSkillGuidesSandboxCode(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectRuntimeSkillsIncludeSandboxAndAuthoringGuidance(t *testing.T) {
+	loader := NewLoader(filepath.Join("..", "..", "skills"))
+
+	cases := map[string][]string{
+		"aura-python-sandbox": {
+			"execute_code",
+			"/tmp/aura_out",
+			"allow_network=false",
+			"sandbox_artifact",
+		},
+		"aura-skill-authoring": {
+			"propose_skill_change",
+			"Use when",
+			"human review",
+			"SKILL.md",
+		},
+	}
+
+	for name, wants := range cases {
+		t.Run(name, func(t *testing.T) {
+			skill, err := loader.LoadByName(name)
+			if err != nil {
+				t.Fatalf("LoadByName(%s): %v", name, err)
+			}
+			for _, want := range wants {
+				if !strings.Contains(skill.Content, want) && !strings.Contains(skill.Description, want) {
+					t.Fatalf("%s missing %q:\nDescription: %s\n\n%s", name, want, skill.Description, skill.Content)
+				}
+			}
+		})
+	}
+}
