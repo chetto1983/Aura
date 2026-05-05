@@ -106,6 +106,84 @@ func TestRunCreatesSchemaMigrationsTable(t *testing.T) {
 	}
 }
 
+func TestRunCreatesCurrentFreshSchema(t *testing.T) {
+	db := openTestDB(t)
+
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	tables := []string{
+		"settings",
+		"api_tokens",
+		"allowed_users",
+		"pending_users",
+		"scheduled_tasks",
+		"conversations",
+		"proposed_updates",
+		"wiki_issues",
+		"embedding_cache",
+		"wiki_documents",
+		"swarm_runs",
+		"swarm_tasks",
+	}
+	for _, table := range tables {
+		var name string
+		if err := db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table') AND name = ?`,
+			table,
+		).Scan(&name); err != nil {
+			t.Fatalf("table %s does not exist: %v", table, err)
+		}
+	}
+
+	assertColumns(t, db, "scheduled_tasks", []string{
+		"schedule_weekdays",
+		"schedule_every_minutes",
+		"last_output",
+		"last_metrics_json",
+		"wake_signature",
+	})
+	assertColumns(t, db, "proposed_updates", []string{
+		"category",
+		"related_slugs",
+		"provenance_json",
+	})
+	assertColumns(t, db, "swarm_tasks", []string{
+		"tokens_prompt",
+		"tokens_completion",
+		"tokens_total",
+	})
+}
+
+func TestRunCreatesUsableWikiDocumentsFTS5Table(t *testing.T) {
+	db := openTestDB(t)
+
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES (?, ?, ?, ?)`,
+		"alpha",
+		"Aura remembers durable context",
+		`{"slug":"alpha"}`,
+		"Alpha",
+	); err != nil {
+		t.Fatalf("insert wiki_documents: %v", err)
+	}
+
+	var id string
+	if err := db.QueryRow(
+		`SELECT id FROM wiki_documents WHERE wiki_documents MATCH 'durable'`,
+	).Scan(&id); err != nil {
+		t.Fatalf("query wiki_documents MATCH: %v", err)
+	}
+	if id != "alpha" {
+		t.Fatalf("matched wiki_documents id = %q, want alpha", id)
+	}
+}
+
 func TestRunIsIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -131,6 +209,41 @@ func TestRunIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
+}
+
+func assertColumns(t *testing.T, db *sql.DB, table string, names []string) {
+	t.Helper()
+	cols := tableColumns(t, db, table)
+	for _, name := range names {
+		if _, ok := cols[name]; !ok {
+			t.Fatalf("%s missing column %s; columns=%v", table, name, cols)
+		}
+	}
+}
+
+func tableColumns(t *testing.T, db *sql.DB, table string) map[string]struct{} {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		t.Fatalf("table info %s: %v", table, err)
+	}
+	defer rows.Close()
+
+	cols := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table info %s: %v", table, err)
+		}
+		cols[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows %s: %v", table, err)
+	}
+	return cols
 }
 
 func TestRegisteredReturnsCopy(t *testing.T) {
