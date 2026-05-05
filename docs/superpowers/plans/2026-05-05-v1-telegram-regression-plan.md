@@ -205,7 +205,7 @@ Expected: PASS.
 **Files:**
 - Modify: `internal/telegram/documents_test.go`
 
-- [ ] **Step 1: Test unauthorized document is rejected before work registration**
+- [x] **Step 1: Test unauthorized document is rejected before work registration**
 
 Call `newDocHandler(docHandlerConfig{Allowlist: func(string) bool { return false }})` with a fake document context and assert:
 
@@ -213,11 +213,11 @@ Call `newDocHandler(docHandlerConfig{Allowlist: func(string) bool { return false
 - no source directory is created;
 - `beginWork` remains available afterward.
 
-- [ ] **Step 2: Test authorized PDF registers async work**
+- [x] **Step 2: Test authorized PDF registers async work**
 
 Use a fake Telegram API server that can answer `sendMessage` and `getFile`, configure a temp source store and OCR disabled, call `onDocument` with an allowlisted PDF, wait for the worker to complete, and assert a stored source exists with `status=stored`.
 
-- [ ] **Step 3: Run document tests**
+- [x] **Step 3: Run document tests**
 
 Run:
 

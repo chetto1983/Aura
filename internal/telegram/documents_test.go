@@ -1,11 +1,14 @@
 package telegram
 
 import (
+	"io"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/source"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -167,6 +170,97 @@ func TestPluralS(t *testing.T) {
 	}
 }
 
+func TestDocHandlerUnauthorizedDocumentRejectedBeforeWork(t *testing.T) {
+	sources := newDocumentTestSourceStore(t)
+	h := newDocHandler(docHandlerConfig{
+		Sources: sources,
+		Allowlist: func(string) bool {
+			return false
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	ctx := tele.NewContext(nil, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 999, Username: "guest"},
+		Chat:   &tele.Chat{ID: 999},
+		Document: &tele.Document{
+			File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+			MIME:     "application/pdf",
+			FileName: "blocked.pdf",
+		},
+	}})
+
+	if err := h.onDocument(ctx); err != nil {
+		t.Fatalf("onDocument() error = %v, want nil", err)
+	}
+	got, err := sources.List(source.ListFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("sources = %d, want none for unauthorized document", len(got))
+	}
+	if !h.beginWork() {
+		t.Fatal("beginWork returned false after unauthorized document")
+	}
+	h.finishWork()
+}
+
+func TestDocHandlerAuthorizedPDFDocumentStoresSource(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	h := newDocHandler(docHandlerConfig{
+		Bot:     tb,
+		Sources: sources,
+		Allowlist: func(string) bool {
+			return true
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Document: &tele.Document{
+			File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+			MIME:     "application/pdf",
+			FileName: "paper.pdf",
+		},
+	}})
+
+	if err := h.onDocument(ctx); err != nil {
+		t.Fatalf("onDocument() error = %v, want nil", err)
+	}
+
+	var stored []*source.Source
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindPDF})
+		return err == nil && len(stored) == 1
+	})
+	h.Stop()
+
+	if stored[0].Status != source.StatusStored {
+		t.Fatalf("source status = %q, want %q", stored[0].Status, source.StatusStored)
+	}
+	if stored[0].Filename != "paper.pdf" {
+		t.Fatalf("source filename = %q, want paper.pdf", stored[0].Filename)
+	}
+	if stored[0].SizeBytes != int64(len(fakeTelegramPDFBytes)) {
+		t.Fatalf("source size = %d, want %d", stored[0].SizeBytes, len(fakeTelegramPDFBytes))
+	}
+	if got := countTelegramMethods(calls, "getFile"); got != 1 {
+		t.Fatalf("getFile calls = %d, want 1", got)
+	}
+}
+
 func TestDocHandlerStopWaitsForInFlightWorker(t *testing.T) {
 	h := newDocHandler(docHandlerConfig{})
 
@@ -244,4 +338,13 @@ func TestDocHandlerStopWaitsForWorkRegisteredBeforeWorkerLaunch(t *testing.T) {
 	if h.beginWork() {
 		t.Fatal("beginWork returned true after Stop returned")
 	}
+}
+
+func newDocumentTestSourceStore(t *testing.T) *source.Store {
+	t.Helper()
+	store, err := source.NewStore(t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new source store: %v", err)
+	}
+	return store
 }

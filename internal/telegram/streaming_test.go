@@ -19,6 +19,8 @@ type telegramAPICall struct {
 	Body   map[string]any
 }
 
+var fakeTelegramPDFBytes = []byte("%PDF-1.7\n% aura telegram document test\n")
+
 func TestConsumeStreamEditsPlaceholderAndSuppressesDoubleSend(t *testing.T) {
 	var calls []telegramAPICall
 	srv := newTelegramAPIServer(t, &calls)
@@ -94,11 +96,21 @@ func TestConsumeStreamToolCallDoesNotMarkDelivered(t *testing.T) {
 func newTelegramAPIServer(t *testing.T, calls *[]telegramAPICall) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/file/") {
+			w.Header().Set("Content-Type", "application/pdf")
+			_, _ = w.Write(fakeTelegramPDFBytes)
+			return
+		}
+
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		method := path.Base(r.URL.Path)
 		*calls = append(*calls, telegramAPICall{Method: method, Body: body})
 		w.Header().Set("Content-Type", "application/json")
+		if method == "getFile" {
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"doc-1","file_path":"documents/test.pdf","file_size":36}}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":99,"chat":{"id":123},"date":1760000000,"text":"ok"}}`))
 	}))
 }
