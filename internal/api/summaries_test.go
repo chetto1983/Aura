@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/wiki"
 
 	_ "modernc.org/sqlite"
@@ -27,22 +28,7 @@ func newSummariesDB(t *testing.T) (*sql.DB, *summarizer.SummariesStore) {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	// Apply migration.
-	const mig = `CREATE TABLE IF NOT EXISTS proposed_updates (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		chat_id INTEGER NOT NULL,
-		fact TEXT NOT NULL,
-		action TEXT NOT NULL,
-		target_slug TEXT NOT NULL DEFAULT '',
-		similarity REAL NOT NULL DEFAULT 0,
-		source_turn_ids TEXT NOT NULL DEFAULT '',
-		category TEXT NOT NULL DEFAULT '',
-		related_slugs TEXT NOT NULL DEFAULT '',
-		provenance_json TEXT NOT NULL DEFAULT '{}',
-		status TEXT NOT NULL DEFAULT 'pending',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	);`
-	if _, err := db.Exec(mig); err != nil {
+	if err := migrations.Run(context.Background(), db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db, summarizer.NewSummariesStore(db)
