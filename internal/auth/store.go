@@ -37,16 +37,32 @@ var ErrInvalid = errors.New("auth: invalid token")
 // ErrExpired is returned by Lookup when a known token is past expires_at.
 var ErrExpired = errors.New("auth: token expired")
 
+// AuditUpdateError reports that token lookup succeeded, but updating the
+// best-effort last_used audit field failed.
+type AuditUpdateError struct {
+	UserID string
+	Err    error
+}
+
+func (e *AuditUpdateError) Error() string {
+	return "auth: token audit update failed"
+}
+
+func (e *AuditUpdateError) Unwrap() error {
+	return e.Err
+}
+
 const defaultTokenTTL = 30 * 24 * time.Hour
 
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
 // API tokens. Callers using OpenStore own the close lifecycle; callers
 // using NewStoreWithDB share a connection with another subsystem.
 type Store struct {
-	db       *sql.DB
-	now      func() time.Time
-	tokenTTL time.Duration
-	owned    bool
+	db             *sql.DB
+	now            func() time.Time
+	tokenTTL       time.Duration
+	owned          bool
+	updateLastUsed func(context.Context, string, string) error
 }
 
 // OpenStore opens (or creates) the SQLite file at path and applies the
@@ -60,7 +76,7 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("auth migrate: %w", err)
 	}
-	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: true}, nil
+	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: true, updateLastUsed: defaultUpdateLastUsed(db)}, nil
 }
 
 // NewStoreWithDB shares an existing *sql.DB so auth can co-locate with
@@ -69,7 +85,7 @@ func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("auth: db required")
 	}
-	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: false}, nil
+	return &Store{db: db, now: time.Now, tokenTTL: defaultTokenTTL, owned: false, updateLastUsed: defaultUpdateLastUsed(db)}, nil
 }
 
 // Close closes the underlying DB if Store owns it.
@@ -164,8 +180,20 @@ func (s *Store) Lookup(ctx context.Context, token string) (string, error) {
 	// last_used is best-effort; a write failure here doesn't invalidate
 	// the lookup. Logging happens at the middleware layer.
 	now := s.now().UTC().Format(time.RFC3339)
-	_, _ = s.db.ExecContext(ctx, `UPDATE api_tokens SET last_used = ? WHERE token_hash = ?`, now, hash)
+	if s.updateLastUsed == nil {
+		s.updateLastUsed = defaultUpdateLastUsed(s.db)
+	}
+	if err := s.updateLastUsed(ctx, now, hash); err != nil {
+		return userID, &AuditUpdateError{UserID: userID, Err: err}
+	}
 	return userID, nil
+}
+
+func defaultUpdateLastUsed(db *sql.DB) func(context.Context, string, string) error {
+	return func(ctx context.Context, now, hash string) error {
+		_, err := db.ExecContext(ctx, `UPDATE api_tokens SET last_used = ? WHERE token_hash = ?`, now, hash)
+		return err
+	}
 }
 
 // Revoke flips revoked_at on the row whose hash matches token. Returns

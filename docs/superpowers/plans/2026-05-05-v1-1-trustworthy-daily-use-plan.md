@@ -64,7 +64,7 @@ v1.1 is limited to trustworthy daily-use hardening: no avoidable production pani
 - [ ] **OBS-01 Shutdown Close Observability:** Shutdown close failures for long-lived services are logged with enough context to diagnose DB/client close problems.
 - [x] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
 - [x] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
-- [ ] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
+- [x] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
 - [ ] **DEP-01 Telebot Beta Monitoring:** Aura tracks the `gopkg.in/telebot.v4` beta dependency with a pinned-version review checklist and smoke expectations.
 - [ ] **UX-01 Packaged Windows Console Suppression:** GoReleaser-produced Windows artifacts build `cmd/aura` as a GUI/tray-first binary without a console window while development and debug commands keep console output.
 - [ ] **REL-02 Focused v1.1 Release Gate:** Focused package tests, broad Go verification, Windows GUI-subsystem package inspection, and any required manual smoke pass before tagging v1.1.
@@ -767,7 +767,7 @@ git commit -m "slice 2c: log telegram cleanup failures"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Add audit-error type and test**
+- [x] **Step 1: Add audit-error type and test**
 
 Add this test to `internal/auth/store_test.go`:
 
@@ -820,7 +820,7 @@ func TestLookupSurfacesLastUsedAuditFailureWithoutDenyingToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run auth tests to verify failure**
+- [x] **Step 2: Run auth tests to verify failure**
 
 Run:
 
@@ -830,7 +830,7 @@ go test ./internal/auth -run TestLookupSurfacesLastUsedAuditFailureWithoutDenyin
 
 Expected: FAIL because `updateLastUsed` and `AuditUpdateError` do not exist.
 
-- [ ] **Step 3: Add audit update hook and error type**
+- [x] **Step 3: Add audit update hook and error type**
 
 In `internal/auth/store.go`, add this type near the existing error vars:
 
@@ -885,7 +885,7 @@ func defaultUpdateLastUsed(db *sql.DB) func(context.Context, string, string) err
 
 Update both constructors to set `updateLastUsed: defaultUpdateLastUsed(db)`.
 
-- [ ] **Step 4: Return audit error without denying the user**
+- [x] **Step 4: Return audit error without denying the user**
 
 In `Lookup`, replace:
 
@@ -906,7 +906,7 @@ if err := s.updateLastUsed(ctx, now, hash); err != nil {
 return userID, nil
 ```
 
-- [ ] **Step 5: Make middleware log audit errors and continue**
+- [x] **Step 5: Make middleware log audit errors and continue**
 
 In `internal/auth/middleware.go`, after:
 
@@ -949,7 +949,7 @@ if err != nil {
 }
 ```
 
-- [ ] **Step 6: Run focused auth tests**
+- [x] **Step 6: Run focused auth tests**
 
 Run:
 
@@ -959,7 +959,7 @@ go test ./internal/auth -run "TestLookup.*Audit|TestIssueLookup_RoundTrip" -coun
 
 Expected: PASS.
 
-- [ ] **Step 7: Run API/auth package tests**
+- [x] **Step 7: Run API/auth package tests**
 
 Run:
 
@@ -969,7 +969,7 @@ go test ./internal/auth ./internal/api -count=1
 
 Expected: PASS.
 
-- [ ] **Step 8: Record handoff and commit**
+- [x] **Step 8: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

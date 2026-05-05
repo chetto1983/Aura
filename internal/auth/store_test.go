@@ -139,6 +139,47 @@ func TestLookup_EmptyToken(t *testing.T) {
 	}
 }
 
+func TestLookupPrimaryFailureAfterDroppedAPITokens(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	tok, err := s.Issue(ctx, "u1")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE api_tokens`); err != nil {
+		t.Fatalf("drop api_tokens: %v", err)
+	}
+
+	userID, err := s.Lookup(ctx, tok)
+	if err == nil {
+		t.Fatal("lookup err = nil, want query failure after dropped table")
+	}
+	if userID != "" {
+		t.Fatalf("userID = %q, want empty when primary lookup fails", userID)
+	}
+}
+
+func TestLookupSurfacesLastUsedAuditFailureWithoutDenyingToken(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	tok, err := s.Issue(ctx, "u1")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	s.updateLastUsed = func(context.Context, string, string) error {
+		return errors.New("database locked")
+	}
+
+	userID, err := s.Lookup(ctx, tok)
+	if userID != "u1" {
+		t.Fatalf("userID = %q, want u1", userID)
+	}
+	var auditErr *AuditUpdateError
+	if !errors.As(err, &auditErr) {
+		t.Fatalf("err = %v, want AuditUpdateError", err)
+	}
+}
+
 func TestLookup_RevokedToken(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

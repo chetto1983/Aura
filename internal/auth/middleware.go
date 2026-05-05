@@ -48,6 +48,13 @@ func RequireBearer(store *Store, allowlist AllowlistFunc, logger *slog.Logger, n
 		}
 		userID, err := store.Lookup(r.Context(), token)
 		if err != nil {
+			var auditErr *AuditUpdateError
+			if errors.As(err, &auditErr) {
+				logger.Warn("auth: token audit update failed", "user_id", auditErr.UserID, "error", auditErr.Err)
+				err = nil
+			}
+		}
+		if err != nil {
 			// Don't log the token (or its prefix) — a leak in logs
 			// defeats the whole point. Just record that auth failed.
 			if errors.Is(err, ErrExpired) {

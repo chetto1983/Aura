@@ -8,6 +8,8 @@
 
 2026-05-05 v1.1 Phase 2c handoff: `OBS-03` landed. Placeholder deletion failures during non-streamed response cleanup now log at debug level with user/message context without failing delivery. Verification: `go test ./internal/telegram -run "TestLogPlaceholderDeleteFailure|TestConsumeStream" -count=1` and `go test ./internal/telegram -count=1`. Next work: auth token audit observability.
 
+2026-05-05 v1.1 Phase 2d handoff: `AUDIT-01` landed. Auth token lookup now surfaces `last_used` audit update failures through `AuditUpdateError`; middleware logs that warning and continues valid requests without leaking token material. Verification: `go test ./internal/auth -run "TestLookup.*Audit|TestIssueLookup_RoundTrip" -count=1` and `go test ./internal/auth ./internal/api -count=1`. Next work: packaged Windows console suppression and dependency monitoring.
+
 Track work against `pdr.md` v4.0-next (Standalone Second Brain + PDF Ingestion).
 
 ## Slice Order (from PDR §12)
