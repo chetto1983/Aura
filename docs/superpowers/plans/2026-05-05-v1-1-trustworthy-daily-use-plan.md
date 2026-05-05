@@ -187,7 +187,7 @@ git commit -m "docs: start v1.1 trustworthy daily use"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Write the toolset non-panic test**
+- [x] **Step 1: Write the toolset non-panic test**
 
 Add this test to `internal/toolsets/toolsets_test.go`:
 
@@ -204,7 +204,7 @@ func TestMustResolveProfilesIsNotUsedForUnknownProfile(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the scheduler allowed tools test**
+- [x] **Step 2: Write the scheduler allowed tools test**
 
 Add this test to `internal/scheduler/agent_job_test.go`:
 
@@ -218,7 +218,7 @@ func TestAgentJobAllowedToolsIncludesSkillsReadWithoutPanic(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run tests before implementation**
+- [x] **Step 3: Run tests before implementation**
 
 Run:
 
@@ -228,7 +228,7 @@ go test ./internal/toolsets ./internal/scheduler -count=1
 
 Expected: tests pass or fail only if existing test files need import adjustment. The panic-risk target is static production usage, not a runtime failure in current tests.
 
-- [ ] **Step 4: Remove production `MustResolveProfiles` use**
+- [x] **Step 4: Remove production `MustResolveProfiles` use**
 
 In `internal/scheduler/agent_job.go`, replace:
 
@@ -252,7 +252,7 @@ func buildAgentJobAllowedTools() []string {
 }
 ```
 
-- [ ] **Step 5: Remove the panic helper**
+- [x] **Step 5: Remove the panic helper**
 
 Delete this function from `internal/toolsets/toolsets.go`:
 
@@ -266,7 +266,7 @@ func MustResolveProfiles(names ...string) []string {
 }
 ```
 
-- [ ] **Step 6: Prove no production usage remains**
+- [x] **Step 6: Prove no production usage remains**
 
 Run:
 
@@ -276,7 +276,7 @@ rg "MustResolveProfiles" internal cmd
 
 Expected: no output.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -286,7 +286,7 @@ go test ./internal/toolsets ./internal/scheduler -count=1
 
 Expected: PASS.
 
-- [ ] **Step 8: Record handoff and commit**
+- [x] **Step 8: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

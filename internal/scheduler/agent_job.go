@@ -14,7 +14,15 @@ const (
 )
 
 var DefaultAgentJobTools = toolsets.SchedulerSafeTools()
-var AgentJobAllowedTools = appendUniqueStrings(DefaultAgentJobTools, toolsets.MustResolveProfiles(toolsets.ProfileSkillsRead)...)
+var AgentJobAllowedTools = buildAgentJobAllowedTools()
+
+func buildAgentJobAllowedTools() []string {
+	skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+	if err != nil {
+		return append([]string(nil), DefaultAgentJobTools...)
+	}
+	return appendUniqueStrings(append([]string(nil), DefaultAgentJobTools...), skillTools...)
+}
 
 type AgentJobPayload struct {
 	Goal            string   `json:"goal"`

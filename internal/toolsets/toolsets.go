@@ -122,14 +122,6 @@ func ResolveProfiles(names ...string) ([]string, error) {
 	return out, nil
 }
 
-func MustResolveProfiles(names ...string) []string {
-	tools, err := ResolveProfiles(names...)
-	if err != nil {
-		panic(err)
-	}
-	return tools
-}
-
 func SchedulerSafeTools() []string {
 	return cloneStrings(profiles[ProfileSchedulerSafe])
 }

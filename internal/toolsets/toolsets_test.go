@@ -23,6 +23,17 @@ func TestResolveProfilesRejectsUnknownProfile(t *testing.T) {
 	}
 }
 
+func TestResolveProfilesUnknownProfileDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ResolveProfiles panicked for unknown profile: %v", r)
+		}
+	}()
+	if _, err := ResolveProfiles("not-a-profile"); err == nil {
+		t.Fatal("ResolveProfiles unknown profile error = nil, want error")
+	}
+}
+
 func TestProfilesReturnClones(t *testing.T) {
 	got, ok := Profile(ProfileMemoryRead)
 	if !ok {

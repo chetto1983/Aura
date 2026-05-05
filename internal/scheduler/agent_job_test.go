@@ -84,6 +84,14 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	}
 }
 
+func TestAgentJobAllowedToolsIncludesSkillsReadWithoutPanic(t *testing.T) {
+	for _, want := range []string{"list_skills", "read_skill", "search_skill_catalog"} {
+		if !containsString(AgentJobAllowedTools, want) {
+			t.Fatalf("AgentJobAllowedTools missing %q: %+v", want, AgentJobAllowedTools)
+		}
+	}
+}
+
 func TestNormalizeAgentJobPayload_RejectsUnknownToolset(t *testing.T) {
 	if _, err := NormalizeAgentJobPayload(`{"goal":"x","enabled_toolsets":["memory_write"]}`); err == nil {
 		t.Fatal("expected unknown toolset error")
