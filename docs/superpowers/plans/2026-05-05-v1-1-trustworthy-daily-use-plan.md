@@ -62,7 +62,7 @@ v1.1 is limited to trustworthy daily-use hardening: no avoidable production pani
 
 - [ ] **PANIC-01 Toolset Profile Panic Removal:** Invalid or stale toolset profile names must not cause an unstructured process panic in production paths.
 - [ ] **OBS-01 Shutdown Close Observability:** Shutdown close failures for long-lived services are logged with enough context to diagnose DB/client close problems.
-- [ ] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
+- [x] **OBS-02 Tray Browser-Open Observability:** Tray dashboard-open failures are visible to the operator, and invalid dashboard URLs are rejected before shell handoff.
 - [ ] **OBS-03 Telegram Cleanup Observability:** Cosmetic Telegram cleanup failures, such as placeholder deletion during streaming, are observable at low severity.
 - [ ] **AUDIT-01 Token Audit Update Observability:** Auth token `last_used` write failures are observable without denying an otherwise valid dashboard request.
 - [ ] **DEP-01 Telebot Beta Monitoring:** Aura tracks the `gopkg.in/telebot.v4` beta dependency with a pinned-version review checklist and smoke expectations.
@@ -455,7 +455,7 @@ git commit -m "slice 2a: log telegram shutdown close failures"
 - Modify: `docs/implementation-tracker.md`
 - Modify: `docs/superpowers/plans/2026-05-05-v1-1-trustworthy-daily-use-plan.md`
 
-- [ ] **Step 1: Write URL validation tests**
+- [x] **Step 1: Write URL validation tests**
 
 Create `internal/tray/browser_test.go`:
 
@@ -491,7 +491,7 @@ func TestValidateDashboardURLRejectsUnsafeValues(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tray tests to verify failure**
+- [x] **Step 2: Run tray tests to verify failure**
 
 Run:
 
@@ -501,7 +501,7 @@ go test ./internal/tray -count=1
 
 Expected: FAIL because `validateDashboardURL` does not exist.
 
-- [ ] **Step 3: Add URL validation helper**
+- [x] **Step 3: Add URL validation helper**
 
 Create `internal/tray/browser.go`:
 
@@ -534,7 +534,7 @@ func validateDashboardURL(raw string) (string, error) {
 }
 ```
 
-- [ ] **Step 4: Add Windows browser-open logging**
+- [x] **Step 4: Add Windows browser-open logging**
 
 In `internal/tray/tray_windows.go`, add imports:
 
@@ -565,7 +565,7 @@ func openBrowser(rawURL string) {
 }
 ```
 
-- [ ] **Step 5: Make non-Windows tray behavior explicit**
+- [x] **Step 5: Make non-Windows tray behavior explicit**
 
 In `internal/tray/tray_other.go`, replace:
 
@@ -605,7 +605,7 @@ func run(opts Options) error {
 }
 ```
 
-- [ ] **Step 6: Run tray tests**
+- [x] **Step 6: Run tray tests**
 
 Run:
 
@@ -615,7 +615,7 @@ go test ./internal/tray -count=1
 
 Expected: PASS.
 
-- [ ] **Step 7: Record handoff and commit**
+- [x] **Step 7: Record handoff and commit**
 
 Append to `docs/implementation-tracker.md`:
 

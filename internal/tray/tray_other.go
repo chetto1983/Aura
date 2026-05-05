@@ -2,7 +2,10 @@
 
 package tray
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 var (
 	stopOnce sync.Once
@@ -11,7 +14,12 @@ var (
 
 // On non-Windows platforms the tray is a no-op: Run blocks until Stop is
 // called so cmd/aura/main.go can use the same shutdown sequence as Windows.
-func run(_ Options) error {
+func run(opts Options) error {
+	if opts.DashboardURL != "" {
+		slog.Info("tray: platform not supported, running headless", "dashboard_url", opts.DashboardURL)
+	} else {
+		slog.Info("tray: platform not supported, running headless")
+	}
 	<-stopCh
 	return nil
 }

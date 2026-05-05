@@ -4,6 +4,7 @@ package tray
 
 import (
 	_ "embed"
+	"log/slog"
 	"os/exec"
 
 	"fyne.io/systray"
@@ -46,6 +47,13 @@ func run(opts Options) error {
 
 func stop() { systray.Quit() }
 
-func openBrowser(url string) {
-	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+func openBrowser(rawURL string) {
+	u, err := validateDashboardURL(rawURL)
+	if err != nil {
+		slog.Warn("tray: refusing to open dashboard url", "url", rawURL, "error", err)
+		return
+	}
+	if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start(); err != nil {
+		slog.Warn("tray: open dashboard failed", "url", u, "error", err)
+	}
 }
