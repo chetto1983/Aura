@@ -1,5 +1,7 @@
 # Aura Implementation Tracker
 
+2026-05-05 tray visibility fix handoff: Windows tray startup was working, but the primary embedded `icon.ico` rendered as noisy pixels while `icon_app.ico` rendered as the real Aura icon. The tray now uses `icon_app.ico` as primary, keeps `icon.ico` as fallback, and logs tray start/ready/stop lifecycle with icon byte counts for future diagnosis. Verification: `go test ./internal/tray -count=1`; live `go run ./cmd/aura` startup log showed `tray: ready` with `icon_bytes=276710` after previously using the bad `134635` byte icon.
+
 2026-05-05 v1.1 Phase 1 handoff: `PANIC-01` landed. Production code no longer calls `MustResolveProfiles`; scheduled-agent allowed tools now initialize through `ResolveProfiles` without a bare panic path, and focused tests cover invalid profile behavior plus skills-read allowlist inclusion. Verification: local `rg` was unavailable/blocked with `Accesso negato`; fallback static search `Get-ChildItem internal,cmd -Recurse -File | Select-String -Pattern 'MustResolveProfiles'` returned no matches; `go test ./internal/toolsets ./internal/scheduler -count=1` passed. Next work: Phase 2 Production Error Observability.
 
 2026-05-05 v1.1 Phase 2a handoff: `OBS-01` started. `Bot.Stop` now logs archiver and MCP client close failures instead of discarding them, while successful shutdown remains unchanged. Verification: `go test ./internal/telegram -run TestStopLogsArchiverCloseFailure -count=1` and `go test ./internal/telegram -count=1`. Next work: tray/browser-open observability.

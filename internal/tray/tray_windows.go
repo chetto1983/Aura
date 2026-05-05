@@ -10,12 +10,17 @@ import (
 	"fyne.io/systray"
 )
 
-//go:embed icon.ico
+//go:embed icon_app.ico
 var iconBytes []byte
 
+//go:embed icon.ico
+var fallbackIconBytes []byte
+
 func run(opts Options) error {
+	slog.Info("tray: starting", "dashboard_url", opts.DashboardURL, "primary_icon_bytes", len(iconBytes), "fallback_icon_bytes", len(fallbackIconBytes))
 	onReady := func() {
-		systray.SetIcon(iconBytes)
+		icon := chooseTrayIcon(iconBytes, fallbackIconBytes)
+		systray.SetIcon(icon)
 		if opts.Title != "" {
 			systray.SetTitle(opts.Title)
 		}
@@ -40,12 +45,18 @@ func run(opts Options) error {
 			<-mQuit.ClickedCh
 			systray.Quit()
 		}()
+		slog.Info("tray: ready", "dashboard_url", opts.DashboardURL, "icon_bytes", len(icon))
 	}
-	systray.Run(onReady, func() {})
+	systray.Run(onReady, func() {
+		slog.Info("tray: exiting")
+	})
 	return nil
 }
 
-func stop() { systray.Quit() }
+func stop() {
+	slog.Info("tray: stop requested")
+	systray.Quit()
+}
 
 func openBrowser(rawURL string) {
 	u, err := validateDashboardURL(rawURL)
