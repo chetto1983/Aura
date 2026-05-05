@@ -3,8 +3,11 @@ package migrations
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	auradb "github.com/aura/aura/internal/db"
@@ -363,6 +366,206 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 	}
 	if len(first) != 2 || first[0] != 1 || first[1] != 2 {
 		t.Fatalf("applied versions = %v, want [1 2]", first)
+	}
+}
+
+func TestFreshAndUpgradedSchemasConverge(t *testing.T) {
+	ctx := context.Background()
+
+	fresh := openTestDB(t)
+	if err := Run(ctx, fresh); err != nil {
+		t.Fatalf("fresh Run: %v", err)
+	}
+
+	upgraded := openTestDB(t)
+	if _, err := upgraded.Exec(loadSQLFile(t, filepath.Join("testdata", "v302_schema.sql"))); err != nil {
+		t.Fatalf("create v302 schema: %v", err)
+	}
+	if err := Run(ctx, upgraded); err != nil {
+		t.Fatalf("upgraded Run: %v", err)
+	}
+
+	freshSignature := schemaSignature(t, fresh)
+	upgradedSignature := schemaSignature(t, upgraded)
+	if len(freshSignature) != len(upgradedSignature) {
+		t.Fatalf(
+			"schema signature length mismatch: fresh=%d upgraded=%d\nfresh=%v\nupgraded=%v",
+			len(freshSignature),
+			len(upgradedSignature),
+			freshSignature,
+			upgradedSignature,
+		)
+	}
+	for i := range freshSignature {
+		if freshSignature[i] != upgradedSignature[i] {
+			t.Fatalf(
+				"schema signature mismatch at %d:\nfresh:    %s\nupgraded: %s\nfresh all=%v\nupgraded all=%v",
+				i,
+				freshSignature[i],
+				upgradedSignature[i],
+				freshSignature,
+				upgradedSignature,
+			)
+		}
+	}
+
+	assertFTSContentBehavior(t, fresh)
+	assertFTSContentBehavior(t, upgraded)
+}
+
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+func schemaSignature(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	signature := tableSignatures(t, db)
+	signature = append(signature, indexSignatures(t, db)...)
+	signature = append(signature, ftsSignatures(t, db)...)
+	sort.Strings(signature)
+	return signature
+}
+
+func tableSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.Query(`
+SELECT name
+FROM sqlite_master
+WHERE type = 'table'
+  AND name NOT LIKE 'sqlite_%'
+  AND name NOT LIKE 'wiki_documents_%'
+ORDER BY name
+`)
+	if err != nil {
+		t.Fatalf("query tables: %v", err)
+	}
+	defer rows.Close()
+
+	var signatures []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			t.Fatalf("scan table: %v", err)
+		}
+		signatures = append(signatures, fmt.Sprintf("table|%s|", table))
+		for _, column := range columnSignatures(t, db, table) {
+			signatures = append(signatures, fmt.Sprintf("column|%s|%s", table, column))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table rows: %v", err)
+	}
+	return signatures
+}
+
+func columnSignatures(t *testing.T, db *sql.DB, table string) []string {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(` + quoteIdent(table) + `)`)
+	if err != nil {
+		t.Fatalf("table info %s: %v", table, err)
+	}
+	defer rows.Close()
+
+	var signatures []string
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table info %s: %v", table, err)
+		}
+		defaultSignature := ""
+		if defaultValue.Valid {
+			defaultSignature = strings.Join(strings.Fields(defaultValue.String), " ")
+		}
+		signatures = append(
+			signatures,
+			fmt.Sprintf(
+				"%s:%s:%d:%s:%d",
+				name,
+				strings.ToUpper(typ),
+				notNull,
+				defaultSignature,
+				pk,
+			),
+		)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table info rows %s: %v", table, err)
+	}
+	sort.Strings(signatures)
+	return signatures
+}
+
+func indexSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.Query(`
+SELECT name, tbl_name, sql
+FROM sqlite_master
+WHERE type = 'index'
+  AND name NOT LIKE 'sqlite_%'
+ORDER BY name
+`)
+	if err != nil {
+		t.Fatalf("query indexes: %v", err)
+	}
+	defer rows.Close()
+
+	var signatures []string
+	for rows.Next() {
+		var name, table string
+		var sqlText sql.NullString
+		if err := rows.Scan(&name, &table, &sqlText); err != nil {
+			t.Fatalf("scan index: %v", err)
+		}
+		normalizedSQL := ""
+		if sqlText.Valid {
+			normalizedSQL = strings.Join(strings.Fields(sqlText.String), " ")
+		}
+		signatures = append(signatures, fmt.Sprintf("index|%s|%s|%s", name, table, normalizedSQL))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("index rows: %v", err)
+	}
+	return signatures
+}
+
+func ftsSignatures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	var exists int
+	if err := db.QueryRow(`
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type = 'table'
+  AND name = 'wiki_documents'
+`).Scan(&exists); err != nil {
+		t.Fatalf("query wiki_documents FTS table: %v", err)
+	}
+	if exists == 0 {
+		return nil
+	}
+	return []string{"fts|wiki_documents|present"}
+}
+
+func assertFTSContentBehavior(t *testing.T, db *sql.DB) {
+	t.Helper()
+	const probeID = "__schema_convergence_probe__"
+	if _, err := db.Exec(`DELETE FROM wiki_documents WHERE id = ?`, probeID); err != nil {
+		t.Fatalf("delete stale wiki_documents probe: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES (?, ?, ?, ?)`,
+		probeID,
+		"schema convergence verifies FTS content behavior",
+		`{"slug":"schema-convergence-probe"}`,
+		"Schema Convergence Probe",
+	); err != nil {
+		t.Fatalf("insert wiki_documents probe: %v", err)
+	}
+	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_documents WHERE wiki_documents MATCH 'convergence'`, 1)
+	if _, err := db.Exec(`DELETE FROM wiki_documents WHERE id = ?`, probeID); err != nil {
+		t.Fatalf("delete wiki_documents probe: %v", err)
 	}
 }
 
