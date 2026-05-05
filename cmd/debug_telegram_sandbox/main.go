@@ -20,6 +20,7 @@ import (
 
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/telegram"
@@ -52,6 +53,9 @@ func main() {
 		fail("open database: %v", err)
 	}
 	defer pool.Close()
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		fail("migrate database: %v", err)
+	}
 	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
 		fail("open settings store: %v", err)
