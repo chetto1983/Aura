@@ -55,6 +55,19 @@ Required constraints:
 
 If a task asks for a script, create an extractor template or Go bridge, not a general-purpose file tool.
 
+## Quality Bar
+
+Sandbox extraction code must be boring, deterministic, and easy to test.
+
+- Prefer small functions with explicit inputs and outputs.
+- Return structured errors and warnings instead of parsing stderr text.
+- Keep source bytes, normalized markdown, and metadata as separate values.
+- Version every extractor contract so old `extract.json` files stay understandable.
+- Treat truncation as a recorded warning, not a silent success.
+- Use fixture files for malformed input, table input, and large input.
+- Keep network disabled even when third-party parsing libraries are used.
+- Avoid hidden global state; pass runners, limits, and stores as dependencies.
+
 ## Implementation Pattern
 
 For each task:

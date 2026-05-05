@@ -70,6 +70,19 @@ func TestReadSkillTool(t *testing.T) {
 	}
 }
 
+func TestReadSkillToolLoadsProjectAuraSourceExtractionSkill(t *testing.T) {
+	tool := NewReadSkillTool(skills.NewLoader(filepath.Join("..", "..", "skills")))
+	result, err := tool.Execute(context.Background(), map[string]any{"name": "aura-source-extraction"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, want := range []string{"Quality Bar", "allowNetwork=false", "extract.md", "Do not run arbitrary user Python"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("Execute() result missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestReadSkillToolRejectsBadName(t *testing.T) {
 	tool := NewReadSkillTool(skills.NewLoader(t.TempDir()))
 	if _, err := tool.Execute(context.Background(), map[string]any{"name": "../alpha"}); err == nil {
