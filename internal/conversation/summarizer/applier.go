@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -117,35 +118,15 @@ func containsStr(ss []string, s string) bool {
 
 // ---- ReviewApplier ----
 
-const reviewMigrationSQL = `
-CREATE TABLE IF NOT EXISTS proposed_updates (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id         INTEGER NOT NULL,
-  fact            TEXT    NOT NULL,
-  action          TEXT    NOT NULL,
-  target_slug     TEXT    NOT NULL DEFAULT '',
-  similarity      REAL    NOT NULL DEFAULT 0,
-  source_turn_ids TEXT    NOT NULL DEFAULT '',
-  category        TEXT    NOT NULL DEFAULT '',
-  related_slugs   TEXT    NOT NULL DEFAULT '',
-  provenance_json TEXT    NOT NULL DEFAULT '{}',
-  status          TEXT    NOT NULL DEFAULT 'pending',
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`
-
 // ReviewApplier inserts proposals into proposed_updates; no wiki mutation.
 type ReviewApplier struct {
 	db *sql.DB
 }
 
-// NewReviewApplier returns a ReviewApplier, applying the migration if needed.
+// NewReviewApplier returns a ReviewApplier backed by a migrated DB.
 func NewReviewApplier(db *sql.DB) (*ReviewApplier, error) {
-	if _, err := db.Exec(reviewMigrationSQL); err != nil {
-		return nil, fmt.Errorf("review applier migrate: %w", err)
-	}
-	if err := ensureReviewColumns(db); err != nil {
-		return nil, fmt.Errorf("review applier migrate columns: %w", err)
+	if db == nil {
+		return nil, errors.New("review applier: db required")
 	}
 	return &ReviewApplier{db: db}, nil
 }
@@ -165,49 +146,6 @@ func (r *ReviewApplier) Apply(ctx context.Context, d Decision) error {
 		return fmt.Errorf("review applier insert: %w", err)
 	}
 	return nil
-}
-
-func ensureReviewColumns(db *sql.DB) error {
-	cols, err := tableColumns(db, "proposed_updates")
-	if err != nil {
-		return err
-	}
-	if !cols["category"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !cols["related_slugs"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN related_slugs TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if !cols["provenance_json"] {
-		if _, err := db.Exec(`ALTER TABLE proposed_updates ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
-	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	cols := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		cols[name] = true
-	}
-	return cols, rows.Err()
 }
 
 // ---- OffApplier ----
