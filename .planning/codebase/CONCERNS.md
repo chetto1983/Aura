@@ -90,6 +90,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 ## Database Migration Strategy (Fragile)
 
 **Ad-hoc per-store migration pattern:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** Schema ownership moved to `internal/db/migrations` with versioned transactional migrations, `schema_migrations`, fresh-install support, v3.0.2 upgrade coverage, convergence tests, FTS proofs, and legacy `conversations` repair.
 - Issue: Each store (`scheduler.Store`, `auth.Store`, `settings.Store`, `search.EmbedCache`, `swarm.Store`) manages its own `migrate()` method independently. There is no versioned migration framework, no transaction wrapping, and no rollback capability.
 - Files: `internal/scheduler/store.go` (lines 156-184), `internal/auth/store.go`, `internal/settings/store.go` (lines 92-97), `internal/search/embed_cache.go` (line 72), `internal/swarm/store.go` (lines 117-140)
 - Impact:
@@ -100,6 +101,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 - Fix approach: Adopt a versioned migration system (e.g., `golang-migrate` or a simple `schema_versions` table with sequential up-only migrations). Run all migrations once at startup in a single transaction before any store is initialized.
 
 **Multiple SQLite connection pools:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** Production startup now opens one shared SQLite pool through `internal/db.Open` and injects it into settings, Telegram/auth, scheduler, search, and swarm stores.
 - Issue: Multiple stores open their own `sql.Open("sqlite", path)` connections to the same `DB_PATH`. Although SQLite supports multiple readers, only one writer at a time — and multiple connection pools create independent WAL/journal management.
 - Files: `internal/scheduler/store.go` (line 117), `internal/auth/store.go` (line 75), `internal/settings/store.go` (line 57), `internal/search/embed_cache.go` (line 68), `internal/swarm/store.go` (line 69)
 - Impact: Potential `database is locked` errors under concurrent write load (e.g., scheduler ticks during conversation archive writes). No WAL mode is explicitly configured, so the default rollback journal serializes all writes.
@@ -135,16 +137,19 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 ## SQLite Configuration Gaps
 
 **No WAL mode configured:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** `internal/db.Open` applies WAL on the approved production DB open path.
 - Issue: SQLite defaults to rollback journal mode. WAL is never explicitly enabled.
 - Impact: All writes serialize. During concurrent usage (scheduler ticks + conversation archiving + dashboard writes), `database is locked` errors can occur.
 - Fix approach: Execute `PRAGMA journal_mode=WAL;` once after opening the DB connection.
 
 **No busy timeout configured:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** `internal/db.Open` applies a busy timeout on the approved production DB open path.
 - Issue: No `PRAGMA busy_timeout` is set. Default is 0 (immediate failure on lock contention).
 - Impact: Any write contention immediately fails instead of waiting briefly.
 - Fix approach: `PRAGMA busy_timeout=5000;` (5-second wait before giving up).
 
 **No foreign key enforcement:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** `internal/db.Open` enables foreign key enforcement on the approved production DB open path.
 - Issue: `PRAGMA foreign_keys=ON` is not set.
 - Impact: Referential integrity is not enforced at the database level (e.g., deleting an allowed user doesn't cascade to revoke their tokens — the auth store handles this in Go code).
 - Current mitigation: Referential integrity is enforced in application code, but this is fragile.
@@ -164,6 +169,7 @@ The `internal/telegram` package contains `conversation.go` (383 lines), `documen
 ## Architecture Smells
 
 **scheduler.Store as the de facto DB migration authority:**
+- Status: **Closed for v1.0 in PR #1 (2026-05-05).** Production schema creation now runs in `internal/db/migrations` before stores are constructed.
 - Issue: Tables that belong to other packages (`conversations`, `proposed_updates`, `wiki_issues`) are created by `scheduler.Store.migrate()` because it's guaranteed to run first during bot startup.
 - Files: `internal/scheduler/store.go` (lines 169-183)
 - Impact: If startup order changes or `scheduler.Store` is initialized lazily, these tables may not exist when their owning packages try to use them. This is a hidden temporal coupling.
@@ -206,10 +212,10 @@ v1.0 scope triage: the priority table remains the concern audit severity, not th
 |----------|------|----------------|
 | **P0** | `internal/telegram` 22.1% coverage | Add integration tests for main conversation handler |
 | **P0** | Bare panic in `MustResolveProfiles` | Replace with error return or logged fatal |
-| **P1** | Multiple SQLite connection pools | Centralize DB connection, enable WAL + busy_timeout |
+| **P1** | Multiple SQLite connection pools | Closed in PR #1; keep covered by release smoke |
 | **P1** | No token expiration | Add `expires_at` to `api_tokens` |
 | **P1** | `scheduler/store.go` (754 lines) | Extract migrations to separate file |
-| **P2** | Ad-hoc per-store migrations | Versioned migration framework |
+| **P2** | Ad-hoc per-store migrations | Closed in PR #1; keep covered by migration fixture tests |
 | **P2** | File-generation tool module (599 lines) | Split by file format |
 | **P2** | Secrets in plain text in settings | At-rest encryption for API keys |
 | **P3** | `tray` 0% coverage | Basic unit test for Windows/non-Windows paths |

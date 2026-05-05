@@ -46,13 +46,15 @@ Last completed milestone: Pyodide sandbox production release `v3.0.2`.
 
 Active milestone: `v1.0 Production Readiness`, tracked by `.planning/REQUIREMENTS.md`, `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`, `.planning/STATE.md`, and `.planning/phases/01-centralize-sqlite-db/`.
 
-Active phase: Phase 2, Migration Safety planning/execution.
+Active phase: Phase 3, Memory Reliability planning/execution.
 
 2026-05-04 Task 3.1 handoff: `internal/db` shared SQLite open path is done. Touched `internal/db/db.go`, `internal/db/db_test.go`, and this tracker; ran the targeted DB tests plus requested package slice verification. Next slice: store constructor injection into the shared pool.
 
 2026-05-04 Task 3.2 handoff: store/search injection compatibility bridge done. Auth, scheduler, settings, swarm, embed cache, and SQLite FTS wrappers now route through `internal/db.Open`; injected constructors preserve caller-owned shared pools. Next slice: production startup wiring.
 
 2026-05-04 Task 3.3 handoff: Phase 1 DB Foundation automated guard passed after production startup wiring. `cmd/aura` opens one shared SQLite pool via `internal/db.Open`, settings/Telegram/auth/scheduler/search/swarm use injected pool-backed constructors, and static scans confirm no legacy production SQLite open path outside `internal/db/db.go`. Next work: Phase 2 Migration Safety planning/execution. Residual release-gate check: manual lifecycle smoke for clean shutdown.
+
+2026-05-05 Phase 2 handoff: Migration Safety merged to `master` via PR #1. Aura now has `internal/db/migrations` with `schema_migrations`, transactional versioned application, fresh schema creation, v3.0.2 upgrade fixture coverage, fresh/upgraded convergence tests, FTS transaction/behavior proofs, and legacy `conversations` repair centralized in migrations. `cmd/aura` and `cmd/debug_telegram_sandbox` run migrations immediately after `internal/db.Open` and before shared store construction. Shared-pool constructors no longer lazily create production schema; owned compatibility openers run migrations themselves. Verification before PR: `go test ./...`, `go build ./cmd/aura`, `go build ./cmd/debug_telegram_sandbox`, startup-order static checks, and lazy-schema static checks. Next work: Phase 3 Memory Reliability. Residual release-gate check: manual lifecycle smoke for clean shutdown.
 
 The old `v1.0 Close Concern` wording is superseded by `.planning/REQUIREMENTS.md` and the v1 production readiness plan.
 

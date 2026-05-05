@@ -1,9 +1,9 @@
 ---
 phase: 1
 slug: centralize-sqlite-db
-status: draft
+status: automated-complete
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-04
 ---
 
@@ -69,4 +69,4 @@ Automated Phase 1 DB Foundation verification passed on 2026-05-04. Required Go t
 - [x] Phase 2 schema versioning and upgrade orchestration work remains out of Phase 1
 - [ ] `nyquist_compliant: true` set in frontmatter after validation is complete
 
-**Approval:** Automated approved; manual lifecycle smoke pending.
+**Approval:** Automated approved; manual lifecycle smoke pending. Phase 2 Migration Safety has since merged through PR #1; keep this Phase 1 manual lifecycle smoke as a release-gate item rather than a blocker for starting Phase 3.
