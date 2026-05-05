@@ -31,13 +31,14 @@ func TestMainStartsAuraBeforeTrayBlocks(t *testing.T) {
 		t.Fatalf("read main.go: %v", err)
 	}
 	source := string(data)
-	startIdx := strings.Index(source, "go func() {\n\t\tstop, err := startAura(")
+	goIdx := strings.Index(source, "go func() {")
+	startIdx := strings.Index(source, "startAura(logger, cleanupLog, cfg)")
 	trayIdx := strings.Index(source, "tray.Run(tray.Options{")
 
-	if startIdx < 0 || trayIdx < 0 {
-		t.Fatalf("startup markers missing: start=%d tray=%d", startIdx, trayIdx)
+	if goIdx < 0 || startIdx < 0 || trayIdx < 0 {
+		t.Fatalf("startup markers missing: go=%d start=%d tray=%d", goIdx, startIdx, trayIdx)
 	}
-	if startIdx > trayIdx {
-		t.Fatalf("tray blocks before Aura startup begins: start=%d tray=%d", startIdx, trayIdx)
+	if !(goIdx < startIdx && startIdx < trayIdx) {
+		t.Fatalf("tray blocks before Aura startup begins: go=%d start=%d tray=%d", goIdx, startIdx, trayIdx)
 	}
 }
