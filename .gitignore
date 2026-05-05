@@ -58,3 +58,4 @@ wiki/*
 # Local sandbox runtime bundle (release artifact, not source)
 /runtime/pyodide/
 /runtime/_downloads/
+dist/*

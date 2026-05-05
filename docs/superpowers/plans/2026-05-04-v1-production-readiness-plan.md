@@ -360,7 +360,7 @@ Implementation files by subplan:
 
   Include focused tests for conversation, streaming, document/OCR trigger, auth, and archive behavior. Do not chase arbitrary package coverage.
 
-- [ ] **Step 4: Write Release Gate plan**
+- [x] **Step 4: Write Release Gate plan**
 
   Include automated Go/web/sandbox checks, migration upgrade checks, archive/package extraction checks, and manual Windows smoke.
 
