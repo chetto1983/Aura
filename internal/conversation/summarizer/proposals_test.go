@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aura/aura/internal/db/migrations"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -17,22 +19,8 @@ func newProposalStore(t *testing.T) (*sql.DB, *SummariesStore) {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	const schema = `CREATE TABLE proposed_updates (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		chat_id INTEGER NOT NULL,
-		fact TEXT NOT NULL,
-		action TEXT NOT NULL,
-		target_slug TEXT NOT NULL DEFAULT '',
-		similarity REAL NOT NULL DEFAULT 0,
-		source_turn_ids TEXT NOT NULL DEFAULT '',
-		category TEXT NOT NULL DEFAULT '',
-		related_slugs TEXT NOT NULL DEFAULT '',
-		provenance_json TEXT NOT NULL DEFAULT '{}',
-		status TEXT NOT NULL DEFAULT 'pending',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	);`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("create schema: %v", err)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 	return db, NewSummariesStore(db)
 }

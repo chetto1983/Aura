@@ -69,6 +69,22 @@ func TestNewEmbedCacheWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
 	}
 }
 
+func TestNewEmbedCacheWithDBDoesNotCreateSchema(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared-cache.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := NewEmbedCacheWithDB(db, "mistral-embed", nil, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("NewEmbedCacheWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "embedding_cache") {
+		t.Fatal("NewEmbedCacheWithDB created embedding_cache; migrations should own schema")
+	}
+}
+
 func TestEmbedCache_HitSkipsUpstream(t *testing.T) {
 	var invocations atomic.Uint64
 	c := newCache(t, "mistral-embed", counterFn(&invocations, []float32{1, 2, 3}))

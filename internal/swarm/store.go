@@ -12,49 +12,8 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
-
-const schemaSQL = `
-CREATE TABLE IF NOT EXISTS swarm_runs (
-  id           TEXT PRIMARY KEY,
-  goal         TEXT NOT NULL,
-  status       TEXT NOT NULL,
-  created_by   TEXT NOT NULL,
-  created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL,
-  completed_at TEXT,
-  last_error   TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS swarm_tasks (
-  id             TEXT PRIMARY KEY,
-  run_id         TEXT NOT NULL,
-  parent_id      TEXT NOT NULL DEFAULT '',
-  role           TEXT NOT NULL,
-  subject        TEXT NOT NULL,
-  prompt         TEXT NOT NULL,
-  tool_allowlist TEXT NOT NULL DEFAULT '[]',
-  status         TEXT NOT NULL,
-  depth          INTEGER NOT NULL DEFAULT 0,
-  attempts       INTEGER NOT NULL DEFAULT 0,
-  blocked_by     TEXT NOT NULL DEFAULT '[]',
-  result         TEXT NOT NULL DEFAULT '',
-  tool_calls     INTEGER NOT NULL DEFAULT 0,
-  llm_calls      INTEGER NOT NULL DEFAULT 0,
-  tokens_prompt  INTEGER NOT NULL DEFAULT 0,
-  tokens_completion INTEGER NOT NULL DEFAULT 0,
-  tokens_total   INTEGER NOT NULL DEFAULT 0,
-  elapsed_ms     INTEGER NOT NULL DEFAULT 0,
-  created_at     TEXT NOT NULL,
-  started_at     TEXT,
-  completed_at   TEXT,
-  last_error     TEXT NOT NULL DEFAULT '',
-  FOREIGN KEY(run_id) REFERENCES swarm_runs(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_swarm_tasks_run ON swarm_tasks(run_id, status, created_at);
-CREATE INDEX IF NOT EXISTS idx_swarm_tasks_status ON swarm_tasks(status, created_at);
-`
 
 type Store struct {
 	db    *sql.DB
@@ -68,23 +27,18 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open swarm db: %w", err)
 	}
-	s := newStore(db, true)
-	if err := s.migrate(); err != nil {
+	if err := migrations.Run(context.Background(), db); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("swarm migrate: %w", err)
 	}
-	return s, nil
+	return newStore(db, true), nil
 }
 
 func NewStoreWithDB(db *sql.DB) (*Store, error) {
 	if db == nil {
 		return nil, fmt.Errorf("swarm store: db required")
 	}
-	s := newStore(db, false)
-	if err := s.migrate(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return newStore(db, false), nil
 }
 
 func newStore(db *sql.DB, owned bool) *Store {
@@ -106,52 +60,6 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
-
-func (s *Store) migrate() error {
-	if _, err := s.db.Exec(schemaSQL); err != nil {
-		return fmt.Errorf("swarm migrate: %w", err)
-	}
-	if err := addSwarmTaskMetricColumns(s.db); err != nil {
-		return fmt.Errorf("swarm migrate metric columns: %w", err)
-	}
-	return nil
-}
-
-func addSwarmTaskMetricColumns(db *sql.DB) error {
-	cols, err := tableColumns(db, "swarm_tasks")
-	if err != nil {
-		return err
-	}
-	for _, col := range []string{"tokens_prompt", "tokens_completion", "tokens_total"} {
-		if cols[col] {
-			continue
-		}
-		if _, err := db.Exec(`ALTER TABLE swarm_tasks ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
-	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	cols := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		cols[name] = true
-	}
-	return cols, rows.Err()
-}
 
 func (s *Store) CreateRun(ctx context.Context, goal, createdBy string) (*Run, error) {
 	id, err := s.newID("swarm")

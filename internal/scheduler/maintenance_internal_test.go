@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
 
 // openTestDBInternal opens a raw SQLite DB with the scheduler + issues migrations
@@ -20,14 +21,8 @@ func openTestDBInternal(t *testing.T) *sql.DB {
 		t.Fatalf("openTestDBInternal: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if _, err := db.Exec(schemaSQL); err != nil {
-		t.Fatalf("migrate scheduler: %v", err)
-	}
-	if _, err := db.Exec(conversationsSchemaSQL); err != nil {
-		t.Fatalf("migrate conversations: %v", err)
-	}
-	if _, err := db.Exec(wikiIssuesSchemaSQL); err != nil {
-		t.Fatalf("migrate wiki_issues: %v", err)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 	return db
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/philippgille/chromem-go"
 )
 
@@ -70,6 +71,10 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 	if err != nil {
 		return nil, fmt.Errorf("embed cache: open %q: %w", dbPath, err)
 	}
+	if err := migrations.Run(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("embed cache: migrate: %w", err)
+	}
 	c, err := NewEmbedCacheWithDB(db, model, inner, logger)
 	if err != nil {
 		_ = db.Close()
@@ -79,19 +84,10 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 	return c, nil
 }
 
-// NewEmbedCacheWithDB creates the cache table using a caller-owned SQLite pool.
+// NewEmbedCacheWithDB wraps a caller-owned migrated SQLite pool.
 func NewEmbedCacheWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
 	if db == nil {
 		return nil, errors.New("embed cache: db required")
-	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS embedding_cache (
-		content_sha TEXT NOT NULL,
-		model       TEXT NOT NULL,
-		embedding   BLOB NOT NULL,
-		created_at  TIMESTAMP NOT NULL,
-		PRIMARY KEY (content_sha, model)
-	)`); err != nil {
-		return nil, fmt.Errorf("embed cache: create table: %w", err)
 	}
 	return &EmbedCache{db: db, model: model, inner: inner, logger: logger, owned: false}, nil
 }

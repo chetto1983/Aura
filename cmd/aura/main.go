@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/settings"
@@ -49,6 +50,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		logger.Error("failed to migrate database", "error", err, "db_path", cfg.DBPath)
+		os.Exit(1)
+	}
 
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
 	// table on top of the env-loaded config. Bootstrap fields

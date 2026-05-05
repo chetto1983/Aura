@@ -2,9 +2,12 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
+
+	auradb "github.com/aura/aura/internal/db"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -22,6 +25,36 @@ func TestNewStoreWithDBRejectsNil(t *testing.T) {
 	if _, err := NewStoreWithDB(nil); err == nil {
 		t.Fatal("NewStoreWithDB(nil) error = nil, want error")
 	}
+}
+
+func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := NewStoreWithDB(db); err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "api_tokens") {
+		t.Fatal("NewStoreWithDB created api_tokens; migrations should own schema")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }
 
 func TestIssueLookup_RoundTrip(t *testing.T) {

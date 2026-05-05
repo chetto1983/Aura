@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,36 @@ func TestNewStoreWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
 	if err := db.Ping(); err != nil {
 		t.Fatalf("shared db was closed by store Close: %v", err)
 	}
+}
+
+func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "shared.db"))
+	if err != nil {
+		t.Fatalf("open shared db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := NewStoreWithDB(db); err != nil {
+		t.Fatalf("NewStoreWithDB: %v", err)
+	}
+
+	if tableExists(t, db, "scheduled_tasks") {
+		t.Fatal("NewStoreWithDB created scheduled_tasks; migrations should own schema")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }
 
 func TestNewStoreWithDBRejectsNil(t *testing.T) {

@@ -1,11 +1,13 @@
 package scheduler
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
 
 // NewTestDB opens a fresh SQLite database in t.TempDir(), applies all
@@ -21,21 +23,8 @@ func NewTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	// Apply all migrations (idempotent).
-	if _, err := db.Exec(schemaSQL); err != nil {
-		t.Fatalf("NewTestDB migrate scheduler: %v", err)
-	}
-	if _, err := db.Exec(conversationsSchemaSQL); err != nil {
-		t.Fatalf("NewTestDB migrate conversations: %v", err)
-	}
-	if _, err := db.Exec(proposedUpdatesSchemaSQL); err != nil {
-		t.Fatalf("NewTestDB migrate proposed_updates: %v", err)
-	}
-	if err := addProposedUpdateReviewColumns(db); err != nil {
-		t.Fatalf("NewTestDB migrate proposed_updates review columns: %v", err)
-	}
-	if _, err := db.Exec(wikiIssuesSchemaSQL); err != nil {
-		t.Fatalf("NewTestDB migrate wiki_issues: %v", err)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("NewTestDB migrate: %v", err)
 	}
 	return db
 }

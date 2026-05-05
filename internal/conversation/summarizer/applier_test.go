@@ -173,36 +173,40 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 	}
 }
 
-func TestReviewApplier_MigratesLegacyProposalColumns(t *testing.T) {
+func TestNewReviewApplierRejectsNilDB(t *testing.T) {
+	if _, err := summarizer.NewReviewApplier(nil); err == nil {
+		t.Fatal("NewReviewApplier(nil) error = nil, want error")
+	}
+}
+
+func TestNewReviewApplierDoesNotCreateSchema(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`
-CREATE TABLE proposed_updates (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id         INTEGER NOT NULL,
-  fact            TEXT    NOT NULL,
-  action          TEXT    NOT NULL,
-  target_slug     TEXT    NOT NULL DEFAULT '',
-  similarity      REAL    NOT NULL DEFAULT 0,
-  source_turn_ids TEXT    NOT NULL DEFAULT '',
-  status          TEXT    NOT NULL DEFAULT 'pending',
-  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`)
-	if err != nil {
-		t.Fatalf("create legacy table: %v", err)
-	}
+
 	if _, err := summarizer.NewReviewApplier(db); err != nil {
 		t.Fatalf("NewReviewApplier: %v", err)
 	}
-	rows, err := db.Query(`SELECT category, related_slugs, provenance_json FROM proposed_updates LIMIT 0`)
-	if err != nil {
-		t.Fatalf("new columns not queryable: %v", err)
+
+	if tableExists(t, db, "proposed_updates") {
+		t.Fatal("NewReviewApplier created proposed_updates; migrations should own schema")
 	}
-	rows.Close()
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
+	if err == nil {
+		return true
+	}
+	if err == sql.ErrNoRows {
+		return false
+	}
+	t.Fatalf("query sqlite_master: %v", err)
+	return false
 }
 
 func TestReviewApplier_ActionPatch_InsertsProposal(t *testing.T) {

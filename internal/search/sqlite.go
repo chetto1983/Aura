@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 )
 
 // sqliteSearcher provides full-text search via SQLite + FTS5.
@@ -23,6 +24,10 @@ func newSqliteSearcher(dbPath string, logger *slog.Logger) (*sqliteSearcher, err
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite connection: %w", err)
 	}
+	if err := migrations.Run(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrating sqlite schema: %w", err)
+	}
 
 	s, err := newSqliteSearcherWithDB(db, logger)
 	if err != nil {
@@ -37,9 +42,6 @@ func newSqliteSearcherWithDB(db *sql.DB, logger *slog.Logger) (*sqliteSearcher, 
 	if db == nil {
 		return nil, fmt.Errorf("sqlite searcher: db required")
 	}
-	if err := setupSqliteSchema(db); err != nil {
-		return nil, fmt.Errorf("setting up sqlite schema: %w", err)
-	}
 
 	s := &sqliteSearcher{db: db, logger: logger, owned: false}
 
@@ -51,17 +53,6 @@ func (s *sqliteSearcher) Close() error {
 		return nil
 	}
 	return s.db.Close()
-}
-
-func setupSqliteSchema(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE VIRTUAL TABLE IF NOT EXISTS wiki_documents
-		USING fts5(id, content, metadata, title)
-	`)
-	if err != nil {
-		return fmt.Errorf("creating FTS5 table: %w", err)
-	}
-	return nil
 }
 
 func (s *sqliteSearcher) clear(ctx context.Context) error {
