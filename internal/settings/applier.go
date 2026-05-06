@@ -30,6 +30,8 @@ const (
 	KeyOllamaModel               = "OLLAMA_MODEL"
 	KeyOllamaAPIKey              = "OLLAMA_API_KEY"
 	KeyOllamaWebBaseURL          = "OLLAMA_WEB_BASE_URL"
+	KeyWebSearchProvider         = "WEB_SEARCH_PROVIDER"
+	KeySearXNGBaseURL            = "SEARXNG_BASE_URL"
 	KeyMaxToolIterations         = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL          = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin               = "SKILLS_ADMIN"
@@ -71,6 +73,7 @@ func OverridableKeys() []string {
 		KeySoftBudget, KeyHardBudget, KeyCostPerToken,
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
 		KeyOllamaBaseURL, KeyOllamaModel, KeyOllamaAPIKey, KeyOllamaWebBaseURL,
+		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -124,6 +127,8 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.OllamaModel = s.GetString(ctx, KeyOllamaModel, cfg.OllamaModel)
 	cfg.OllamaAPIKey = s.GetString(ctx, KeyOllamaAPIKey, cfg.OllamaAPIKey)
 	cfg.OllamaWebBaseURL = s.GetString(ctx, KeyOllamaWebBaseURL, cfg.OllamaWebBaseURL)
+	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyWebSearchProvider, cfg.WebSearchProvider)))
+	cfg.SearXNGBaseURL = s.GetString(ctx, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
 	cfg.MaxToolIterations = s.GetInt(ctx, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = s.GetString(ctx, KeySkillsCatalogURL, cfg.SkillsCatalogURL)

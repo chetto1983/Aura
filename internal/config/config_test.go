@@ -83,6 +83,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("HARD_BUDGET")
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("OLLAMA_WEB_BASE_URL")
+	os.Unsetenv("WEB_SEARCH_PROVIDER")
+	os.Unsetenv("SEARXNG_BASE_URL")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_CATALOG_URL")
@@ -129,6 +131,12 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.OllamaWebBaseURL != DefaultOllamaWebBaseURL {
 		t.Errorf("OllamaWebBaseURL = %q, want %q", cfg.OllamaWebBaseURL, DefaultOllamaWebBaseURL)
+	}
+	if cfg.WebSearchProvider != "disabled" {
+		t.Errorf("WebSearchProvider = %q, want disabled", cfg.WebSearchProvider)
+	}
+	if cfg.SearXNGBaseURL != DefaultSearXNGBaseURL {
+		t.Errorf("SearXNGBaseURL = %q, want %q", cfg.SearXNGBaseURL, DefaultSearXNGBaseURL)
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
@@ -207,6 +215,24 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
+	}
+}
+
+func TestLoadWebSearchProvider(t *testing.T) {
+	os.Setenv("WEB_SEARCH_PROVIDER", " searxng ")
+	os.Setenv("SEARXNG_BASE_URL", "http://searxng:8080")
+	defer os.Unsetenv("WEB_SEARCH_PROVIDER")
+	defer os.Unsetenv("SEARXNG_BASE_URL")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WebSearchProvider != "searxng" {
+		t.Fatalf("WebSearchProvider = %q, want searxng", cfg.WebSearchProvider)
+	}
+	if cfg.SearXNGBaseURL != "http://searxng:8080" {
+		t.Fatalf("SearXNGBaseURL = %q", cfg.SearXNGBaseURL)
 	}
 }
 

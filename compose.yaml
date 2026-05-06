@@ -16,6 +16,7 @@ services:
       MCP_SERVERS_PATH: "/data/mcp.json"
       PROMPT_OVERLAY_PATH: "/data"
       SANDBOX_ENABLED: "false"
+      WEB_SEARCH_PROVIDER: "searxng"
       SEARXNG_BASE_URL: "http://searxng:8080"
     ports:
       - "127.0.0.1:8080:8080"

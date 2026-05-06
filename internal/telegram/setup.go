@@ -162,19 +162,20 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
 	toolRegistry.Register(tools.NewReadSkillTool(skillLoader))
-	// web_search / web_fetch are backed by Ollama's hosted web API, which
-	// authenticates with the same credential as Ollama Cloud's chat API.
-	// If the operator only set LLM_API_KEY (because Ollama Cloud is their
-	// chat provider too) we transparently reuse it for the web tools, so
-	// the model doesn't have to truthfully report "no web search" when in
-	// fact a single key would have unlocked both surfaces.
-	ollamaWebKey := cfg.OllamaAPIKey
-	if ollamaWebKey == "" && strings.Contains(cfg.LLMBaseURL, "ollama.com") {
-		ollamaWebKey = cfg.LLMAPIKey
-	}
-	if ollamaWebKey != "" {
-		toolRegistry.Register(tools.NewWebSearchTool(ollamaWebKey, cfg.OllamaWebBaseURL))
-		toolRegistry.Register(tools.NewWebFetchTool(ollamaWebKey, cfg.OllamaWebBaseURL))
+	switch strings.ToLower(strings.TrimSpace(cfg.WebSearchProvider)) {
+	case "searxng":
+		toolRegistry.Register(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL))
+	case "ollama":
+		if cfg.OllamaAPIKey != "" {
+			toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+			toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+		} else {
+			logger.Warn("WEB_SEARCH_PROVIDER=ollama but OLLAMA_API_KEY is blank; web tools disabled")
+		}
+	case "", "disabled":
+		// Explicitly disabled.
+	default:
+		logger.Warn("unknown WEB_SEARCH_PROVIDER; web tools disabled", "provider", cfg.WebSearchProvider)
 	}
 	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
 	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))

@@ -82,6 +82,8 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyOllamaBaseURL, Group: "provider", Kind: "url", Label: "Ollama base URL (failover)", Hint: "Bare host, e.g. http://localhost:11434"},
 	{Key: settings.KeyOllamaModel, Group: "provider", Kind: "text", Label: "Ollama model"},
 	{Key: settings.KeyOllamaAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "Ollama API key (rarely needed)"},
+	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng", "ollama"}, Label: "Web search provider", Hint: "SearXNG is the recommended container provider; Ollama needs OLLAMA_API_KEY"},
+	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
 
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
@@ -202,6 +204,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.OllamaAPIKey
 	case settings.KeyOllamaWebBaseURL:
 		return cfg.OllamaWebBaseURL
+	case settings.KeyWebSearchProvider:
+		return cfg.WebSearchProvider
+	case settings.KeySearXNGBaseURL:
+		return cfg.SearXNGBaseURL
 	case settings.KeyMaxToolIterations:
 		return strconv.Itoa(cfg.MaxToolIterations)
 	case settings.KeySkillsCatalogURL:

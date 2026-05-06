@@ -6,6 +6,7 @@ import (
 )
 
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
+const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
@@ -31,6 +32,8 @@ type Config struct {
 	OllamaModel            string  `envconfig:"OLLAMA_MODEL"`
 	OllamaAPIKey           string  `envconfig:"OLLAMA_API_KEY"`
 	OllamaWebBaseURL       string  `envconfig:"OLLAMA_WEB_BASE_URL"`
+	WebSearchProvider      string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
+	SearXNGBaseURL         string  `envconfig:"SEARXNG_BASE_URL"`
 	MaxToolIterations      int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath               string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	PromptOverlayPath      string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
@@ -146,6 +149,8 @@ func Load() (*Config, error) {
 	cfg.OllamaModel = getEnv("OLLAMA_MODEL", "")
 	cfg.OllamaAPIKey = getEnv("OLLAMA_API_KEY", "")
 	cfg.OllamaWebBaseURL = getEnv("OLLAMA_WEB_BASE_URL", DefaultOllamaWebBaseURL)
+	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(getEnv("WEB_SEARCH_PROVIDER", "disabled")))
+	cfg.SearXNGBaseURL = getEnv("SEARXNG_BASE_URL", DefaultSearXNGBaseURL)
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")

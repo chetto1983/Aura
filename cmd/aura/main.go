@@ -216,7 +216,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	// Register component health providers
 	healthServer.RegisterProvider("config", &configHealthProvider{cfg: cfg})
-	if cfg.OllamaAPIKey != "" {
+	if cfg.WebSearchProvider != "" && cfg.WebSearchProvider != "disabled" {
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
 
@@ -285,7 +285,7 @@ type webSearchHealthProvider struct{}
 func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
 	return health.ComponentHealth{
 		Status: "ok",
-		Detail: "Ollama web tools configured",
+		Detail: "web search provider configured",
 	}
 }
 

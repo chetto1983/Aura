@@ -59,6 +59,9 @@ Back up these folders before moving hosts or upgrading major versions.
 - `compose.yaml` sets `AURA_HEADLESS=true`; desktop builds still keep the tray.
 - `compose.yaml` sets `AURA_ENV_PATH=/data/.env`; the setup wizard writes the
   Telegram token there rather than to an ephemeral container filesystem.
+- `compose.yaml` sets `WEB_SEARCH_PROVIDER=searxng`, so Aura registers the
+  stable `web_search` tool against the bundled SearXNG service instead of
+  requiring Ollama web credentials.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - The container stack disables `SANDBOX_ENABLED` by default because the Pyodide
