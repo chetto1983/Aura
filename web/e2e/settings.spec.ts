@@ -30,7 +30,8 @@ test.describe('settings page (14d)', () => {
     await expect(page.locator('input#AURA_ENV_PATH')).toBeVisible();
     await expect(page.locator('input#DB_PATH')).toBeVisible();
     await expect(page.locator('button[role="switch"]#SANDBOX_ENABLED')).toBeVisible();
-    await expect(page.locator('input#AURA_ENV_PATH')).toBeDisabled();
+    await expect(page.locator('input#AURA_ENV_PATH')).toBeEnabled();
+    await expect(page.locator('button[role="switch"]#SANDBOX_ENABLED')).toBeEnabled();
   });
 
   test('Test connection button is present and disabled when no base URL', async ({ authedPage: page }) => {

@@ -97,59 +97,97 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	}
 }
 
-func TestApplyToConfigKeepsBootstrapFields(t *testing.T) {
-	// TelegramToken / HTTPPort / DBPath / LogLevel / WikiPath / SkillsPath /
-	// MCPServersPath / PromptOverlayPath are bootstrap-only — even if rows
-	// exist with those names, the applier must NOT touch them. (We don't
-	// emit Set calls for those keys here; we just verify ApplyToConfig
-	// leaves them alone with the most paranoid possible store state — a
-	// row written under each key.)
+func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
+	// Container-first installs use the dashboard as the single settings
+	// surface, so runtime and sandbox rows are deliberate overrides.
 	s := openTestStore(t)
 	ctx := context.Background()
 
 	cfg := &config.Config{
-		TelegramToken:     "bootstrap-token",
-		HTTPPort:          "127.0.0.1:8080",
-		DBPath:            "./aura.db",
-		LogLevel:          "info",
-		WikiPath:          "./wiki",
-		SkillsPath:        "./skills",
-		MCPServersPath:    "./mcp.json",
-		PromptOverlayPath: ".",
+		TelegramToken:          "bootstrap-token",
+		HTTPPort:               "127.0.0.1:8080",
+		Headless:               false,
+		EnvPath:                ".env",
+		DBPath:                 "./aura.db",
+		LogLevel:               "info",
+		LogDir:                 "./logs",
+		WikiPath:               "./wiki",
+		SkillsPath:             "./skills",
+		MCPServersPath:         "./mcp.json",
+		PromptOverlayPath:      ".",
+		DashboardTokenTTLHours: 720,
+		SandboxEnabled:         true,
+		SandboxRuntimeDir:      "./runtime/pyodide",
+		SandboxTimeoutSec:      120,
+		SandboxAutoImproveMode: "dry_run",
 	}
 
-	for _, k := range []string{
-		"TELEGRAM_TOKEN", "HTTP_PORT", "DB_PATH", "LOG_LEVEL",
-		"WIKI_PATH", "SKILLS_PATH", "MCP_SERVERS_PATH", "PROMPT_OVERLAY_PATH",
-	} {
-		_ = s.Set(ctx, k, "ATTACKER_VALUE")
-	}
+	_ = s.Set(ctx, KeyTelegramToken, "override-token")
+	_ = s.Set(ctx, KeyHTTPPort, "0.0.0.0:9090")
+	_ = s.Set(ctx, KeyHeadless, "true")
+	_ = s.Set(ctx, KeyEnvPath, "/data/.env")
+	_ = s.Set(ctx, KeyDBPath, "/data/aura-next.db")
+	_ = s.Set(ctx, KeyLogLevel, "debug")
+	_ = s.Set(ctx, KeyLogDir, "/data/logs")
+	_ = s.Set(ctx, KeyWikiPath, "/wiki")
+	_ = s.Set(ctx, KeySkillsPath, "/skills")
+	_ = s.Set(ctx, KeyMCPServersPath, "/data/mcp.json")
+	_ = s.Set(ctx, KeyPromptOverlayPath, "/data")
+	_ = s.Set(ctx, KeyDashboardTokenTTLHours, "24")
+	_ = s.Set(ctx, KeySandboxEnabled, "false")
+	_ = s.Set(ctx, KeySandboxRuntimeDir, "/app/runtime/pyodide")
+	_ = s.Set(ctx, KeySandboxTimeoutSec, "45")
+	_ = s.Set(ctx, KeySandboxAutoImproveMode, "off")
 
 	ApplyToConfig(ctx, s, cfg)
 
-	if cfg.TelegramToken != "bootstrap-token" {
-		t.Errorf("TelegramToken overridden: %q", cfg.TelegramToken)
+	if cfg.TelegramToken != "override-token" {
+		t.Errorf("TelegramToken = %q", cfg.TelegramToken)
 	}
-	if cfg.HTTPPort != "127.0.0.1:8080" {
-		t.Errorf("HTTPPort overridden: %q", cfg.HTTPPort)
+	if cfg.HTTPPort != "0.0.0.0:9090" {
+		t.Errorf("HTTPPort = %q", cfg.HTTPPort)
 	}
-	if cfg.DBPath != "./aura.db" {
-		t.Errorf("DBPath overridden: %q", cfg.DBPath)
+	if !cfg.Headless {
+		t.Errorf("Headless = false")
 	}
-	if cfg.LogLevel != "info" {
-		t.Errorf("LogLevel overridden: %q", cfg.LogLevel)
+	if cfg.EnvPath != "/data/.env" {
+		t.Errorf("EnvPath = %q", cfg.EnvPath)
 	}
-	if cfg.WikiPath != "./wiki" {
-		t.Errorf("WikiPath overridden: %q", cfg.WikiPath)
+	if cfg.DBPath != "/data/aura-next.db" {
+		t.Errorf("DBPath = %q", cfg.DBPath)
 	}
-	if cfg.SkillsPath != "./skills" {
-		t.Errorf("SkillsPath overridden: %q", cfg.SkillsPath)
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel = %q", cfg.LogLevel)
 	}
-	if cfg.MCPServersPath != "./mcp.json" {
-		t.Errorf("MCPServersPath overridden: %q", cfg.MCPServersPath)
+	if cfg.LogDir != "/data/logs" {
+		t.Errorf("LogDir = %q", cfg.LogDir)
 	}
-	if cfg.PromptOverlayPath != "." {
-		t.Errorf("PromptOverlayPath overridden: %q", cfg.PromptOverlayPath)
+	if cfg.WikiPath != "/wiki" {
+		t.Errorf("WikiPath = %q", cfg.WikiPath)
+	}
+	if cfg.SkillsPath != "/skills" {
+		t.Errorf("SkillsPath = %q", cfg.SkillsPath)
+	}
+	if cfg.MCPServersPath != "/data/mcp.json" {
+		t.Errorf("MCPServersPath = %q", cfg.MCPServersPath)
+	}
+	if cfg.PromptOverlayPath != "/data" {
+		t.Errorf("PromptOverlayPath = %q", cfg.PromptOverlayPath)
+	}
+	if cfg.DashboardTokenTTLHours != 24 {
+		t.Errorf("DashboardTokenTTLHours = %d", cfg.DashboardTokenTTLHours)
+	}
+	if cfg.SandboxEnabled {
+		t.Errorf("SandboxEnabled = true")
+	}
+	if cfg.SandboxRuntimeDir != "/app/runtime/pyodide" {
+		t.Errorf("SandboxRuntimeDir = %q", cfg.SandboxRuntimeDir)
+	}
+	if cfg.SandboxTimeoutSec != 45 {
+		t.Errorf("SandboxTimeoutSec = %d", cfg.SandboxTimeoutSec)
+	}
+	if cfg.SandboxAutoImproveMode != "off" {
+		t.Errorf("SandboxAutoImproveMode = %q", cfg.SandboxAutoImproveMode)
 	}
 }
 
@@ -237,29 +275,14 @@ func TestIsOverridable(t *testing.T) {
 	if !IsOverridable(KeyLLMAPIKey) {
 		t.Errorf("LLM_API_KEY should be overridable")
 	}
-	if IsOverridable("TELEGRAM_TOKEN") {
-		t.Errorf("TELEGRAM_TOKEN must NOT be overridable")
-	}
-	if IsOverridable("HTTP_PORT") {
-		t.Errorf("HTTP_PORT must NOT be overridable")
-	}
-	if IsOverridable("DB_PATH") {
-		t.Errorf("DB_PATH must NOT be overridable")
-	}
-	if IsOverridable("WIKI_PATH") {
-		t.Errorf("WIKI_PATH must NOT be overridable")
-	}
-	if IsOverridable("LOG_LEVEL") {
-		t.Errorf("LOG_LEVEL must NOT be overridable")
-	}
-	if IsOverridable("PROMPT_OVERLAY_PATH") {
-		t.Errorf("PROMPT_OVERLAY_PATH must NOT be overridable")
-	}
-	if IsOverridable("MCP_SERVERS_PATH") {
-		t.Errorf("MCP_SERVERS_PATH must NOT be overridable")
-	}
-	if IsOverridable("SKILLS_PATH") {
-		t.Errorf("SKILLS_PATH must NOT be overridable")
+	for _, key := range []string{
+		KeyTelegramToken, KeyHTTPPort, KeyDBPath, KeyWikiPath,
+		KeyLogLevel, KeyPromptOverlayPath, KeyMCPServersPath,
+		KeySkillsPath, KeySandboxEnabled, KeySandboxTimeoutSec,
+	} {
+		if !IsOverridable(key) {
+			t.Errorf("%s should be overridable", key)
+		}
 	}
 	if IsOverridable("UNRELATED") {
 		t.Errorf("random key shouldn't be overridable")

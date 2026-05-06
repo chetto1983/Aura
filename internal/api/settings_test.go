@@ -89,7 +89,7 @@ func TestSettingsCatalogCoversEveryOverridableKey(t *testing.T) {
 	}
 }
 
-func TestSettingsList_ShowsRuntimeEnvOnlyKeysReadOnly(t *testing.T) {
+func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{
 		Settings: store,
@@ -132,8 +132,8 @@ func TestSettingsList_ShowsRuntimeEnvOnlyKeysReadOnly(t *testing.T) {
 				continue
 			}
 			found = true
-			if !it.ReadOnly {
-				t.Fatalf("%s read_only = false, want true", key)
+			if it.ReadOnly {
+				t.Fatalf("%s read_only = true, want false", key)
 			}
 			if it.Value != value || it.ActiveValue != value {
 				t.Fatalf("%s = value:%q active:%q, want %q", key, it.Value, it.ActiveValue, value)
@@ -142,6 +142,22 @@ func TestSettingsList_ShowsRuntimeEnvOnlyKeysReadOnly(t *testing.T) {
 		if !found {
 			t.Fatalf("%s not in settings response", key)
 		}
+	}
+}
+
+func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {
+	router, store := newSettingsEnv(t)
+	body := `{"updates":{"HTTP_PORT":"0.0.0.0:9090","SANDBOX_TIMEOUT_SEC":"45"}}`
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if got, _ := store.Get(context.Background(), settings.KeyHTTPPort); got != "0.0.0.0:9090" {
+		t.Fatalf("HTTP_PORT persisted = %q", got)
+	}
+	if got, _ := store.Get(context.Background(), settings.KeySandboxTimeoutSec); got != "45" {
+		t.Fatalf("SANDBOX_TIMEOUT_SEC persisted = %q", got)
 	}
 }
 
@@ -429,17 +445,16 @@ func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
 	}
 }
 
-func TestSettingsUpdate_RejectsBootstrapKey(t *testing.T) {
+func TestSettingsUpdate_AcceptsTelegramTokenOverride(t *testing.T) {
 	router, store := newSettingsEnv(t)
-	body := `{"updates":{"TELEGRAM_TOKEN":"hijack"}}`
+	body := `{"updates":{"TELEGRAM_TOKEN":"123456:override"}}`
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
-	if rr.Code != 400 {
-		t.Errorf("status = %d, want 400 (bootstrap key not overridable)", rr.Code)
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
 	}
-	// Sanity: nothing got written.
-	if _, err := store.Get(context.Background(), "TELEGRAM_TOKEN"); err != settings.ErrNotFound {
-		t.Errorf("TELEGRAM_TOKEN was accepted into store")
+	if got, _ := store.Get(context.Background(), settings.KeyTelegramToken); got != "123456:override" {
+		t.Errorf("TELEGRAM_TOKEN persisted = %q", got)
 	}
 }
 

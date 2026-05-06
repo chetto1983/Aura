@@ -77,18 +77,18 @@ type SettingsTestRequest struct {
 // here; LLM_MAX_RETRIES and other fine-tuning knobs stay overridable
 // programmatically but aren't surfaced in the dashboard form.
 var settingsCatalog = []SettingItem{
-	{Key: "TELEGRAM_TOKEN", Group: "runtime", Kind: "text", IsSecret: true, ReadOnly: true, Label: "Telegram bot token", Hint: "Bootstrap-only; edited in mounted /data/.env or setup wizard"},
-	{Key: "HTTP_PORT", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Dashboard bind address"},
-	{Key: "AURA_HEADLESS", Group: "runtime", Kind: "bool", ReadOnly: true, Label: "Headless/container mode"},
-	{Key: "AURA_ENV_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Env file path"},
-	{Key: "DB_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "SQLite database path"},
-	{Key: "LOG_LEVEL", Group: "runtime", Kind: "enum", Options: []string{"debug", "info", "warn", "error"}, ReadOnly: true, Label: "Log level"},
-	{Key: "LOG_DIR", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Log directory"},
-	{Key: "WIKI_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Wiki path"},
-	{Key: "SKILLS_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Skills path"},
-	{Key: "MCP_SERVERS_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "MCP servers config path"},
-	{Key: "PROMPT_OVERLAY_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Prompt overlay path"},
-	{Key: "DASHBOARD_TOKEN_TTL_HOURS", Group: "runtime", Kind: "int", ReadOnly: true, Label: "Dashboard token TTL (hours)"},
+	{Key: settings.KeyTelegramToken, Group: "runtime", Kind: "text", IsSecret: true, Label: "Telegram bot token", Hint: "Saved as an override; restart Aura after changing the bot token"},
+	{Key: settings.KeyHTTPPort, Group: "runtime", Kind: "text", Label: "Dashboard bind address", Hint: "Restart Aura after changing the bind address"},
+	{Key: settings.KeyHeadless, Group: "runtime", Kind: "bool", Label: "Headless/container mode", Hint: "Takes effect on next process start"},
+	{Key: settings.KeyEnvPath, Group: "runtime", Kind: "text", Label: "Env file path", Hint: "Early boot setting; use carefully and restart after changing"},
+	{Key: settings.KeyDBPath, Group: "runtime", Kind: "text", Label: "SQLite database path", Hint: "Early boot setting; use carefully and restart after changing"},
+	{Key: settings.KeyLogLevel, Group: "runtime", Kind: "enum", Options: []string{"debug", "info", "warn", "error"}, Label: "Log level"},
+	{Key: settings.KeyLogDir, Group: "runtime", Kind: "text", Label: "Log directory"},
+	{Key: settings.KeyWikiPath, Group: "runtime", Kind: "text", Label: "Wiki path", Hint: "Restart Aura after moving the wiki root"},
+	{Key: settings.KeySkillsPath, Group: "runtime", Kind: "text", Label: "Skills path", Hint: "Restart Aura after moving skill roots"},
+	{Key: settings.KeyMCPServersPath, Group: "runtime", Kind: "text", Label: "MCP servers config path", Hint: "Restart Aura after changing MCP config path"},
+	{Key: settings.KeyPromptOverlayPath, Group: "runtime", Kind: "text", Label: "Prompt overlay path"},
+	{Key: settings.KeyDashboardTokenTTLHours, Group: "runtime", Kind: "int", Label: "Dashboard token TTL (hours)"},
 
 	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
 	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
@@ -142,10 +142,10 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Applies to new workers when AuraBot is already enabled."},
 	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops. Applies to new workers."},
 
-	{Key: "SANDBOX_ENABLED", Group: "sandbox", Kind: "bool", ReadOnly: true, Label: "Sandbox enabled", Hint: "Container app disables this by default until the runtime is packaged"},
-	{Key: "SANDBOX_RUNTIME_DIR", Group: "sandbox", Kind: "text", ReadOnly: true, Label: "Sandbox runtime directory"},
-	{Key: "SANDBOX_TIMEOUT_SEC", Group: "sandbox", Kind: "int", ReadOnly: true, Label: "Sandbox timeout (seconds)"},
-	{Key: "SANDBOX_AUTO_IMPROVE_MODE", Group: "sandbox", Kind: "enum", Options: []string{"off", "dry_run", "auto"}, ReadOnly: true, Label: "Sandbox auto-improve mode"},
+	{Key: settings.KeySandboxEnabled, Group: "sandbox", Kind: "bool", Label: "Sandbox enabled", Hint: "Restart Aura after enabling or disabling the code execution tool"},
+	{Key: settings.KeySandboxRuntimeDir, Group: "sandbox", Kind: "text", Label: "Sandbox runtime directory", Hint: "Container default is /app/runtime/pyodide"},
+	{Key: settings.KeySandboxTimeoutSec, Group: "sandbox", Kind: "int", Label: "Sandbox timeout (seconds)"},
+	{Key: settings.KeySandboxAutoImproveMode, Group: "sandbox", Kind: "enum", Options: []string{"off", "dry_run", "auto"}, Label: "Sandbox auto-improve mode"},
 
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
@@ -179,7 +179,7 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 				it.Source = "default"
 			}
 			activeValue := activeSettingValue(deps.RuntimeConfig, meta.Key, it.Value)
-			if it.ReadOnly && it.Value == "" {
+			if it.Value == "" && activeValue != "" {
 				it.Value = activeValue
 			}
 			it.RestartRequired = activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)
@@ -214,29 +214,29 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 	switch key {
 	case settings.KeyAllowlist:
 		return strings.Join(cfg.Allowlist, ",")
-	case "TELEGRAM_TOKEN":
+	case settings.KeyTelegramToken:
 		return cfg.TelegramToken
-	case "HTTP_PORT":
+	case settings.KeyHTTPPort:
 		return cfg.HTTPPort
-	case "AURA_HEADLESS":
+	case settings.KeyHeadless:
 		return strconv.FormatBool(cfg.Headless)
-	case "AURA_ENV_PATH":
+	case settings.KeyEnvPath:
 		return cfg.EnvPath
-	case "DB_PATH":
+	case settings.KeyDBPath:
 		return cfg.DBPath
-	case "LOG_LEVEL":
+	case settings.KeyLogLevel:
 		return cfg.LogLevel
-	case "LOG_DIR":
+	case settings.KeyLogDir:
 		return cfg.LogDir
-	case "WIKI_PATH":
+	case settings.KeyWikiPath:
 		return cfg.WikiPath
-	case "SKILLS_PATH":
+	case settings.KeySkillsPath:
 		return cfg.SkillsPath
-	case "MCP_SERVERS_PATH":
+	case settings.KeyMCPServersPath:
 		return cfg.MCPServersPath
-	case "PROMPT_OVERLAY_PATH":
+	case settings.KeyPromptOverlayPath:
 		return cfg.PromptOverlayPath
-	case "DASHBOARD_TOKEN_TTL_HOURS":
+	case settings.KeyDashboardTokenTTLHours:
 		return strconv.Itoa(cfg.DashboardTokenTTLHours)
 	case settings.KeyMaxContextTokens:
 		return strconv.Itoa(cfg.MaxContextTokens)
@@ -336,13 +336,13 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.Itoa(cfg.SummarizerLookbackTurns)
 	case settings.KeySummarizerCooldownSeconds:
 		return strconv.Itoa(cfg.SummarizerCooldownSeconds)
-	case "SANDBOX_ENABLED":
+	case settings.KeySandboxEnabled:
 		return strconv.FormatBool(cfg.SandboxEnabled)
-	case "SANDBOX_RUNTIME_DIR":
+	case settings.KeySandboxRuntimeDir:
 		return cfg.SandboxRuntimeDir
-	case "SANDBOX_TIMEOUT_SEC":
+	case settings.KeySandboxTimeoutSec:
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
-	case "SANDBOX_AUTO_IMPROVE_MODE":
+	case settings.KeySandboxAutoImproveMode:
 		return cfg.SandboxAutoImproveMode
 	default:
 		return fallback

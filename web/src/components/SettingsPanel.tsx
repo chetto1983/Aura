@@ -241,7 +241,7 @@ export function SettingsPanel() {
 }
 
 function SettingRow({
-  item, value, dirty, revealed, onChange, onRevert, onToggleReveal,
+	item, value, dirty, revealed, onChange, onRevert, onToggleReveal,
 }: {
   item: SettingItem;
   value: string;
@@ -252,6 +252,8 @@ function SettingRow({
   onToggleReveal: () => void;
 }) {
   const { t } = useLocale();
+  const label = t(`settings.item.${item.key}.label`, { defaultValue: item.label ?? item.key });
+  const hint = t(`settings.item.${item.key}.hint`, { defaultValue: item.hint ?? '' });
   const sourceBadge = (() => {
     if (item.read_only) return { label: t('settings.badge.readOnly'), cls: 'bg-zinc-500/12 text-zinc-700 dark:text-zinc-300 border-zinc-500/40' };
     if (dirty) return { label: t('settings.badge.edited'), cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
@@ -279,13 +281,13 @@ function SettingRow({
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-x-5 gap-y-1.5 md:items-center px-5 py-3.5">
       <label className="min-w-0" htmlFor={item.key}>
         <div className="text-[13px] font-medium text-foreground flex items-center gap-1.5 flex-wrap">
-          <span className="truncate">{item.label ?? item.key}</span>
+          <span className="truncate">{label}</span>
           <span className={`text-[9.5px] font-medium uppercase tracking-[0.06em] px-1.5 py-px rounded-[4px] border whitespace-nowrap ${sourceBadge.cls}`}>
             {sourceBadge.label}
           </span>
         </div>
         <div className="text-[10.5px] font-mono text-muted-foreground mt-0.5 truncate">{item.key}</div>
-        {item.hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{item.hint}</div>}
+        {hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{hint}</div>}
         {sourceHint && <div className="text-[12px] text-muted-foreground/80 mt-1 leading-snug">{sourceHint}</div>}
         {activeHint && <div className="text-[12px] text-orange-600 dark:text-orange-300 mt-1 leading-snug">{activeHint}</div>}
       </label>

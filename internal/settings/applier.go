@@ -8,15 +8,25 @@ import (
 	"github.com/aura/aura/internal/config"
 )
 
-// Bootstrap fields are never overridden by the DB. They're either needed
-// before the DB can be opened (TelegramToken, HTTPPort, DBPath, LogLevel)
-// or hold path roots that the running process has already opened
-// (WikiPath, SkillsPath, MCPServersPath, PromptOverlayPath). Edits to
-// these go to .env and take effect on next restart.
-//
-// Everything else is fair game for runtime override via this applier.
+// Settings are persisted in SQLite and overlaid after the database opens.
+// Early process fields such as AURA_HEADLESS, AURA_ENV_PATH, and DB_PATH are
+// still surfaced so the dashboard can be the single place to edit config, but
+// they only become authoritative after restart when the process can load them
+// before opening long-lived resources.
 const (
+	KeyTelegramToken             = "TELEGRAM_TOKEN"
 	KeyAllowlist                 = "TELEGRAM_ALLOWLIST"
+	KeyHTTPPort                  = "HTTP_PORT"
+	KeyHeadless                  = "AURA_HEADLESS"
+	KeyEnvPath                   = "AURA_ENV_PATH"
+	KeyDBPath                    = "DB_PATH"
+	KeyLogLevel                  = "LOG_LEVEL"
+	KeyLogDir                    = "LOG_DIR"
+	KeyWikiPath                  = "WIKI_PATH"
+	KeySkillsPath                = "SKILLS_PATH"
+	KeyMCPServersPath            = "MCP_SERVERS_PATH"
+	KeyPromptOverlayPath         = "PROMPT_OVERLAY_PATH"
+	KeyDashboardTokenTTLHours    = "DASHBOARD_TOKEN_TTL_HOURS"
 	KeyMaxContextTokens          = "MAX_CONTEXT_TOKENS"
 	KeyMaxHistoryMessages        = "MAX_HISTORY_MESSAGES"
 	KeySoftBudget                = "SOFT_BUDGET"
@@ -66,6 +76,10 @@ const (
 	KeySummarizerMinSalience     = "SUMMARIZER_MIN_SALIENCE"
 	KeySummarizerLookbackTurns   = "SUMMARIZER_LOOKBACK_TURNS"
 	KeySummarizerCooldownSeconds = "SUMMARIZER_COOLDOWN_SECONDS"
+	KeySandboxEnabled            = "SANDBOX_ENABLED"
+	KeySandboxRuntimeDir         = "SANDBOX_RUNTIME_DIR"
+	KeySandboxTimeoutSec         = "SANDBOX_TIMEOUT_SEC"
+	KeySandboxAutoImproveMode    = "SANDBOX_AUTO_IMPROVE_MODE"
 )
 
 // OverridableKeys returns every key the applier touches. Callers (e.g. the
@@ -73,7 +87,11 @@ const (
 // targets a real config field instead of stuffing arbitrary KV pairs.
 func OverridableKeys() []string {
 	return []string{
+		KeyTelegramToken,
 		KeyAllowlist,
+		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath,
+		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath,
+		KeyMCPServersPath, KeyPromptOverlayPath, KeyDashboardTokenTTLHours,
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
 		KeySoftBudget, KeyHardBudget, KeyCostPerToken,
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
@@ -94,6 +112,7 @@ func OverridableKeys() []string {
 		KeyConvArchiveEnabled,
 		KeySummarizerEnabled, KeySummarizerMode, KeySummarizerTurnInterval,
 		KeySummarizerMinSalience, KeySummarizerLookbackTurns, KeySummarizerCooldownSeconds,
+		KeySandboxEnabled, KeySandboxRuntimeDir, KeySandboxTimeoutSec, KeySandboxAutoImproveMode,
 	}
 }
 
@@ -113,11 +132,25 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 		return
 	}
 
+	cfg.TelegramToken = s.GetString(ctx, KeyTelegramToken, cfg.TelegramToken)
+
 	if v, err := s.Get(ctx, KeyAllowlist); err == nil {
 		// Re-use config's allowlist parser so semantics match Load.
 		cfg.Allowlist = parseAllowlist(v)
 		cfg.AllowlistConfigured = len(cfg.Allowlist) > 0
 	}
+
+	cfg.HTTPPort = s.GetString(ctx, KeyHTTPPort, cfg.HTTPPort)
+	cfg.Headless = s.GetBool(ctx, KeyHeadless, cfg.Headless)
+	cfg.EnvPath = s.GetString(ctx, KeyEnvPath, cfg.EnvPath)
+	cfg.DBPath = s.GetString(ctx, KeyDBPath, cfg.DBPath)
+	cfg.LogLevel = s.GetString(ctx, KeyLogLevel, cfg.LogLevel)
+	cfg.LogDir = s.GetString(ctx, KeyLogDir, cfg.LogDir)
+	cfg.WikiPath = s.GetString(ctx, KeyWikiPath, cfg.WikiPath)
+	cfg.SkillsPath = s.GetString(ctx, KeySkillsPath, cfg.SkillsPath)
+	cfg.MCPServersPath = s.GetString(ctx, KeyMCPServersPath, cfg.MCPServersPath)
+	cfg.PromptOverlayPath = s.GetString(ctx, KeyPromptOverlayPath, cfg.PromptOverlayPath)
+	cfg.DashboardTokenTTLHours = s.GetInt(ctx, KeyDashboardTokenTTLHours, cfg.DashboardTokenTTLHours)
 
 	cfg.MaxContextTokens = s.GetInt(ctx, KeyMaxContextTokens, cfg.MaxContextTokens)
 	cfg.MaxHistoryMessages = s.GetInt(ctx, KeyMaxHistoryMessages, cfg.MaxHistoryMessages)
@@ -175,6 +208,11 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.SummarizerMinSalience = s.GetFloat(ctx, KeySummarizerMinSalience, cfg.SummarizerMinSalience)
 	cfg.SummarizerLookbackTurns = s.GetInt(ctx, KeySummarizerLookbackTurns, cfg.SummarizerLookbackTurns)
 	cfg.SummarizerCooldownSeconds = s.GetInt(ctx, KeySummarizerCooldownSeconds, cfg.SummarizerCooldownSeconds)
+
+	cfg.SandboxEnabled = s.GetBool(ctx, KeySandboxEnabled, cfg.SandboxEnabled)
+	cfg.SandboxRuntimeDir = s.GetString(ctx, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
+	cfg.SandboxTimeoutSec = s.GetInt(ctx, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
+	cfg.SandboxAutoImproveMode = s.GetString(ctx, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
 }
 
 // parseAllowlist mirrors the comma-split semantics in config.Load.
