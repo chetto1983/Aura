@@ -59,32 +59,28 @@ func Export(ctx context.Context, cfg Config, uploader Uploader, now time.Time) (
 	}
 	key := fmt.Sprintf("backups/%s/aura-backup.tar.gz", now.UTC().Format("2006-01-02-150405"))
 
-	pr, pw := io.Pipe()
-	done := make(chan archiveResult, 1)
-	go func() {
-		files, err := writeArchive(pw, cfg)
-		closeErr := pw.Close()
-		if err == nil {
-			err = closeErr
-		}
-		done <- archiveResult{files: files, err: err}
-	}()
-
-	err := uploader.PutObject(ctx, cfg.Bucket, key, pr)
-	_ = pr.Close()
-	archive := <-done
+	tmp, err := os.CreateTemp("", "aura-backup-*.tar.gz")
 	if err != nil {
+		return Result{}, fmt.Errorf("create temp archive: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	files, err := writeArchive(tmp, cfg)
+	if err != nil {
+		return Result{}, fmt.Errorf("build backup archive: %w", err)
+	}
+	size, err := tmp.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return Result{}, fmt.Errorf("stat temp archive: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return Result{}, fmt.Errorf("rewind temp archive: %w", err)
+	}
+	if err := uploader.PutObject(ctx, cfg.Bucket, key, tmp); err != nil {
 		return Result{}, fmt.Errorf("upload backup: %w", err)
 	}
-	if archive.err != nil {
-		return Result{}, fmt.Errorf("build backup archive: %w", archive.err)
-	}
-	return Result{Bucket: cfg.Bucket, Key: key, Files: archive.files}, nil
-}
-
-type archiveResult struct {
-	files int
-	err   error
+	return Result{Bucket: cfg.Bucket, Key: key, Bytes: size, Files: files}, nil
 }
 
 func writeArchive(w io.Writer, cfg Config) (int, error) {

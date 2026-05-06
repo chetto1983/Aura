@@ -72,6 +72,7 @@ func newS3Uploader(ctx context.Context, cfg backup.Config) (*s3Uploader, error) 
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(cfg.Region),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")),
+		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
 	)
 	if err != nil {
 		return nil, err
