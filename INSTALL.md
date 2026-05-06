@@ -4,6 +4,8 @@ Aura is your **personal Telegram second brain** — it remembers what you tell i
 
 This guide gets a non-developer running in **about 5 minutes**, no `.env` editing required.
 
+> Current releases are Docker-image only. Use `ghcr.io/chetto1983/aura:<version>` with Docker Compose. The old desktop binary workflow is manual-only for legacy testing.
+
 ---
 
 ## What you'll end up with
@@ -182,7 +184,8 @@ desktop tray; Docker handles start/stop.
 ```powershell
 New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
 Copy-Item .env.example data/.env
-docker compose up -d --build
+$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
+docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
 Then open <http://127.0.0.1:8080>. SearXNG is available on the host at

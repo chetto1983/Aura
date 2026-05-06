@@ -1,75 +1,150 @@
-# Aura
+<p align="center">
+  <img src="Logo/logo.png" alt="Aura logo" width="112">
+</p>
 
-Aura is a Go-based Telegram assistant with LLM integrations, local wiki storage, search, budget tracking, health endpoints, logging, and optional tracing.
+<h1 align="center">Aura</h1>
 
-## Install
+<p align="center">
+  A private Telegram second brain that runs as a self-hosted Docker stack.
+</p>
 
-Aura is now container-first. End users should run the Docker Compose stack,
-which starts Aura headless beside SearXNG search and Garage S3 backup storage.
-Desktop binaries remain useful for local development and legacy installs, but
-Docker is the supported server path.
+<p align="center">
+  <a href="https://github.com/chetto1983/Aura/pkgs/container/aura"><img alt="Docker image" src="https://img.shields.io/badge/image-ghcr.io%2Fchetto1983%2Faura-2496ED"></a>
+  <a href="docs/container.md"><img alt="Install path" src="https://img.shields.io/badge/install-Docker%20Compose-0B6B50"></a>
+  <img alt="Go version" src="https://img.shields.io/badge/Go-1.26.2-00ADD8">
+</p>
 
-## Build from source (developers)
+Aura is a personal assistant you own. It chats through your Telegram bot,
+ingests files into a local source inbox, builds a Markdown wiki, searches memory
+with embeddings, and gives you a dashboard for sources, tasks, settings,
+backups, skills, and health.
 
-- Go 1.26.2 or newer matching `go.mod`
-- Node 20+ for the web dashboard
-- A Telegram bot token
-- At least one allowlisted Telegram user ID
-- Optional OpenAI-compatible LLM and embedding API credentials
+The supported install path is now Docker Compose. Release tags publish only the
+container image at `ghcr.io/chetto1983/aura:<version>`.
 
-## Setup
+## What Runs
 
-Create a local environment file from the template:
+The default stack starts four local services:
 
-```powershell
-Copy-Item .env.example .env
-```
+- `aura`: the Telegram bot, memory engine, tools, and embedded dashboard.
+- `searxng`: local web search for the stable `web_search` tool.
+- `garage`: S3-compatible artifact and backup storage.
+- `garage-webui`: optional Garage admin UI behind a Compose profile.
 
-Then fill in the required values:
+All user data stays in visible folders beside the Compose file:
 
-- `TELEGRAM_TOKEN`
-- `TELEGRAM_ALLOWLIST`
+- `data/`: `.env`, SQLite database, logs, MCP config, prompt overlays.
+- `wiki/`: compiled memory pages and source evidence.
+- `skills/`: installed agent skills.
+- `garage/`: Garage object storage data.
 
-Optional LLM settings can point to any OpenAI-compatible API, including OpenAI, OpenRouter, Mistral, Groq, DeepSeek, Together, or local Ollama.
+## Quick Start
 
-## Common Commands
+Prerequisites:
 
-```powershell
-docker compose --profile test run --rm test
-go build ./...
-go run ./cmd/aura
-go run ./cmd/debug_llm
-```
+- Docker Desktop or Docker Engine with Docker Compose.
+- A Telegram bot token from [@BotFather](https://t.me/BotFather).
+- An OpenAI-compatible LLM endpoint, or a local Ollama-compatible endpoint.
 
-The same commands are available through `make`:
-
-```powershell
-make test
-make build
-make run
-make debug-llm
-```
-
-## Container Stack
-
-For server-style installs, Aura ships a Docker Compose stack with Aura running
-headless beside SearXNG and Garage S3:
+Start Aura:
 
 ```powershell
+git clone https://github.com/chetto1983/Aura
+cd Aura
 New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
 Copy-Item .env.example data/.env
+$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+Open the setup wizard:
+
+```text
+http://127.0.0.1:8080
+```
+
+If port `8080` is busy:
+
+```powershell
+$env:AURA_HOST_PORT = "18080"
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+Then open `http://127.0.0.1:18080`.
+
+## Setup Flow
+
+1. Paste your `TELEGRAM_TOKEN`.
+2. Pick an OpenAI-compatible LLM preset or choose **Custom**.
+3. Test the model connection.
+4. Optional: configure embeddings, OCR, search, sandbox, and Garage backup keys.
+5. Click **Save and start Aura**.
+6. Open Telegram, start your bot, and approve your own user.
+
+Aura writes bootstrap config to `data/.env` and runtime settings to
+`data/aura.db`.
+
+## Update
+
+Pull the newest image and recreate the Aura container:
+
+```powershell
+docker compose -f compose.yaml -f compose.image.yaml pull aura
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+Pin a release by setting `AURA_IMAGE`:
+
+```powershell
+$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:v1.2.3"
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+## Develop
+
+Build the local working tree instead of pulling GHCR:
+
+```powershell
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8080>. SearXNG is exposed on
-<http://127.0.0.1:8088>. See [docs/container.md](docs/container.md).
-If port 8080 is already occupied, set `AURA_HOST_PORT` before starting Compose
-and open that port instead.
+Run the canonical test container:
 
-## Runtime Data
+```powershell
+docker compose --profile test run --rm test
+```
 
-The repo ignores generated runtime files such as `.env`, `aura.db`, and built binaries. Wiki raw data is also ignored by default, while schema and documentation files stay tracked.
+Useful local commands:
 
-## Health
+```powershell
+go test ./...
+go build ./...
+go run ./cmd/aura
+go run ./cmd/debug_llm
+go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
+```
 
-Aura starts an HTTP health and observability server on `HTTP_PORT`, defaulting to `:8080`.
+## Release
+
+A normal release is a Docker image release.
+
+```powershell
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The `Docker image` workflow publishes:
+
+- `ghcr.io/chetto1983/aura:v1.2.3`
+- `ghcr.io/chetto1983/aura:latest`
+- a `sha-*` traceability tag
+
+The legacy desktop binary workflow is manual-only. Use it only for secondary
+desktop builds.
+
+## Docs
+
+- [Install guide](INSTALL.md)
+- [Container stack](docs/container.md)
+- [Implementation tracker](docs/implementation-tracker.md)
+- [Product requirements](prd.md)

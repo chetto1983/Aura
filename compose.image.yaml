@@ -1,0 +1,5 @@
+services:
+  aura:
+    image: ${AURA_IMAGE:-ghcr.io/chetto1983/aura:latest}
+    build: null
+    pull_policy: always

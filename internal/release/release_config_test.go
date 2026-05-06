@@ -21,12 +21,47 @@ func TestReleaseWorkflowPreparesPyodideBundleBeforeGoReleaser(t *testing.T) {
 	root := repoRoot(t)
 	body := readFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 
+	requireContains(t, body, "workflow_dispatch:")
+	requireNotContains(t, body, "tags:")
+	requireContains(t, body, "Legacy desktop binary release")
 	requireContains(t, body, "node-version: '20'")
 	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64")
 	requireOrder(t, body,
 		"name: Build Pyodide runtime bundle",
 		"name: Run GoReleaser",
 	)
+}
+
+func TestDockerImageWorkflowPublishesGHCRImageOnTags(t *testing.T) {
+	root := repoRoot(t)
+	body := readFile(t, filepath.Join(root, ".github", "workflows", "docker-image.yml"))
+
+	requireContains(t, body, "tags:")
+	requireContains(t, body, "- 'v*'")
+	requireContains(t, body, "workflow_dispatch:")
+	requireContains(t, body, "packages: write")
+	requireContains(t, body, "REGISTRY: ghcr.io")
+	requireContains(t, body, "IMAGE_NAME: chetto1983/aura")
+	requireContains(t, body, "docker/login-action@v4")
+	requireContains(t, body, "registry: ${{ env.REGISTRY }}")
+	requireContains(t, body, "password: ${{ secrets.GITHUB_TOKEN }}")
+	requireContains(t, body, "docker/metadata-action@v6")
+	requireContains(t, body, "type=ref,event=tag")
+	requireContains(t, body, "type=raw,value=latest")
+	requireContains(t, body, "docker/build-push-action@v7")
+	requireContains(t, body, "platforms: linux/amd64,linux/arm64")
+	requireContains(t, body, "push: true")
+	requireContains(t, body, "provenance: true")
+	requireContains(t, body, "sbom: true")
+}
+
+func TestComposeImageOverrideUsesPublishedImage(t *testing.T) {
+	root := repoRoot(t)
+	body := readFile(t, filepath.Join(root, "compose.image.yaml"))
+
+	requireContains(t, body, "ghcr.io/chetto1983/aura:latest")
+	requireContains(t, body, "build: null")
+	requireContains(t, body, "pull_policy: always")
 }
 
 func TestRuntimeBundleInstallerDocumentsPinnedReleaseInputs(t *testing.T) {
@@ -62,6 +97,13 @@ func requireContains(t *testing.T, body, needle string) {
 	t.Helper()
 	if !strings.Contains(body, needle) {
 		t.Fatalf("missing %q", needle)
+	}
+}
+
+func requireNotContains(t *testing.T, body, needle string) {
+	t.Helper()
+	if strings.Contains(body, needle) {
+		t.Fatalf("unexpected %q", needle)
 	}
 }
 

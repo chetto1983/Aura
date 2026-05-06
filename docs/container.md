@@ -22,14 +22,18 @@ host and is reachable from Aura as `http://garage:3900`.
 ## First Run
 
 Create the host data folders, then copy the environment template into the
-mounted data folder. You may leave `TELEGRAM_TOKEN` blank to use the first-run
-setup wizard:
+mounted data folder. Released installs pull the published GHCR image; you may
+leave `TELEGRAM_TOKEN` blank to use the first-run setup wizard:
 
 ```powershell
 New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
 Copy-Item .env.example data/.env
-docker compose up -d --build
+$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
+docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
+
+Pin a specific release by setting `AURA_IMAGE` to a tag such as
+`ghcr.io/chetto1983/aura:v1.2.3`.
 
 Open the dashboard:
 
@@ -42,10 +46,16 @@ changing Aura's in-container port:
 
 ```powershell
 $env:AURA_HOST_PORT = "18080"
-docker compose up -d --build
+docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
 Then open `http://127.0.0.1:18080`.
+
+For local development, build from the working tree instead:
+
+```powershell
+docker compose up -d --build
+```
 
 Probe SearXNG from the host:
 
@@ -120,6 +130,20 @@ Inside the Compose network, Aura should use:
 ```text
 http://searxng:8080
 ```
+
+## Publishing Releases
+
+Aura release tags publish only the Docker image. Push a version tag:
+
+```powershell
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+GitHub Actions builds `ghcr.io/chetto1983/aura:v1.2.3`, also tags it as
+`latest`, and publishes linux/amd64 plus linux/arm64 variants. The legacy
+GoReleaser binary workflow is manual-only and should not run for normal
+releases.
 
 ## Data
 
