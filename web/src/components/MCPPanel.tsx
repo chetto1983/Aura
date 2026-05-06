@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Plug, ChevronDown, ChevronRight, Server, Globe, Play, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Plug, ChevronDown, ChevronRight, Server, Globe, Play, Loader2, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
@@ -44,8 +44,12 @@ export function MCPPanel() {
         <button
           type="button"
           onClick={refetch}
-          className="text-xs text-muted-foreground hover:text-foreground"
+          aria-label={t('mcp.refresh')}
+          title={t('mcp.refreshHint')}
+          className="inline-flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
+          <RefreshCw size={14} />
+          <span>{t('mcp.refresh')}</span>
           {t('mcp.serverCount', { count: data.length })} · {t('mcp.toolCount', { count: totalTools })}
         </button>
       </header>
@@ -90,6 +94,7 @@ function ServerCard({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/30"
       >
         {isOpen ? <ChevronDown size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />}
@@ -180,6 +185,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
           <button
             type="button"
             onClick={() => setShowSchema((v) => !v)}
+            aria-expanded={showSchema}
             className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline min-h-[28px] px-1"
           >
             {showSchema ? t('mcp.hideSchema') : t('mcp.showSchema')}
@@ -188,6 +194,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
         <button
           type="button"
           onClick={() => setShowRun((v) => !v)}
+          aria-expanded={showRun}
           className="ml-auto inline-flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] text-primary hover:bg-primary/10 min-h-[36px]"
         >
           <Play size={11} />

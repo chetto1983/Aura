@@ -99,6 +99,7 @@ function RunList({
           key={run.id}
           type="button"
           onClick={() => onSelect(run.id)}
+          aria-pressed={selectedID === run.id}
           className={`w-full rounded-md border bg-card p-3 text-left transition-colors hover:bg-muted/50 ${
             selectedID === run.id ? 'border-primary/40 ring-1 ring-primary/20' : ''
           }`}
@@ -223,11 +224,22 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useLocale();
   return (
     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[status] ?? 'bg-muted text-muted-foreground'}`}>
-      {status}
+      {statusLabel(status, t)}
     </span>
   );
+}
+
+function statusLabel(status: string, t: ReturnType<typeof useLocale>['t']): string {
+  switch (status) {
+    case 'pending': return t('swarm.status.pending');
+    case 'running': return t('swarm.status.running');
+    case 'completed': return t('swarm.status.completed');
+    case 'failed': return t('swarm.status.failed');
+    default: return status;
+  }
 }
 
 function EmptyState() {

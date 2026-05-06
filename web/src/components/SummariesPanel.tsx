@@ -206,7 +206,7 @@ function ProposalCard({
         </label>
         <p className="text-sm leading-relaxed flex-1">{update.fact}</p>
         <span className={`shrink-0 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ACTION_BADGE[update.action] ?? 'bg-muted text-muted-foreground'}`}>
-          {update.action}
+          {actionLabel(update.action, t)}
         </span>
       </div>
 
@@ -303,6 +303,15 @@ function ProposalCard({
   );
 }
 
+function actionLabel(action: string, t: ReturnType<typeof useLocale>['t']): string {
+  switch (action) {
+    case 'new': return t('summaries.action.new');
+    case 'patch': return t('summaries.action.patch');
+    case 'skip': return t('summaries.action.skip');
+    default: return action;
+  }
+}
+
 function EvidenceChip({ refItem }: { refItem: ProposalEvidenceRef }) {
   const { t } = useLocale();
   const label = `${refItem.kind}:${refItem.id}${refItem.page ? ` p.${refItem.page}` : ''}`;
@@ -358,6 +367,12 @@ function EmptyState() {
       <FileCheck size={40} className="text-muted-foreground/40" />
       <p className="text-sm font-medium text-muted-foreground">{t('summaries.emptyTitle')}</p>
       <p className="text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: t('summaries.emptyHint') }} />
+      <a
+        href="/settings"
+        className="mt-2 inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+      >
+        {t('summaries.emptySettings')}
+      </a>
     </div>
   );
 }
