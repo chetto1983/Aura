@@ -26,7 +26,7 @@ Before working on a new feature, please check existing issues and the project do
 
 ### Requirements
 
-- Go (version matching `go.mod`, currently 1.25.5 or newer)[page:1]
+- Go (version matching `go.mod`, currently 1.26.2 or newer)[page:1]
 - Node 20+ for the web dashboard[page:1]
 - A Telegram bot token
 - At least one allowlisted Telegram user ID

@@ -54,6 +54,14 @@ func (e *AuditUpdateError) Unwrap() error {
 
 const defaultTokenTTL = 30 * 24 * time.Hour
 
+const (
+	// SourceTelegramBootstrap is the normal first-run owner claim path.
+	SourceTelegramBootstrap = "telegram_bootstrap"
+	// SourceE2EBootstrap grants dashboard access for local smoke tests
+	// without counting as a real owner that can block first-run setup.
+	SourceE2EBootstrap = "e2e_bootstrap"
+)
+
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
 // API tokens. Callers using OpenStore own the close lifecycle; callers
 // using NewStoreWithDB share a connection with another subsystem.
@@ -234,8 +242,8 @@ func (s *Store) BootstrapUser(ctx context.Context, userID string) (bool, error) 
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO allowed_users (user_id, source, created_at)
 		SELECT ?, ?, ?
-		WHERE NOT EXISTS (SELECT 1 FROM allowed_users)
-	`, userID, "telegram_bootstrap", now)
+		WHERE NOT EXISTS (SELECT 1 FROM allowed_users WHERE source <> ?)
+	`, userID, SourceTelegramBootstrap, now, SourceE2EBootstrap)
 	if err != nil {
 		return false, fmt.Errorf("auth bootstrap: insert: %w", err)
 	}
@@ -244,9 +252,51 @@ func (s *Store) BootstrapUser(ctx context.Context, userID string) (bool, error) 
 		return false, fmt.Errorf("auth bootstrap: rows affected: %w", err)
 	}
 	if n > 0 {
+		if err := s.closePendingAsApproved(ctx, userID, now); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	return s.IsUserAllowed(ctx, userID)
+}
+
+// BootstrapE2EUser grants dashboard access for local browser smoke tests
+// only while no real owner exists. E2E users are intentionally ignored by
+// BootstrapUser's first-owner check so a test seed can never strand the
+// operator in the pending approval loop.
+func (s *Store) BootstrapE2EUser(ctx context.Context, userID string) (bool, error) {
+	if userID == "" {
+		return false, errors.New("auth: user id required")
+	}
+	now := s.now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO allowed_users (user_id, source, created_at)
+		SELECT ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM allowed_users WHERE source <> ?)
+		ON CONFLICT(user_id) DO NOTHING
+	`, userID, SourceE2EBootstrap, now, SourceE2EBootstrap)
+	if err != nil {
+		return false, fmt.Errorf("auth e2e bootstrap: insert: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("auth e2e bootstrap: rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+	return s.IsUserAllowed(ctx, userID)
+}
+
+func (s *Store) closePendingAsApproved(ctx context.Context, userID, decidedAt string) error {
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE pending_users
+		SET decided_at = ?, decision = 'approved'
+		WHERE user_id = ? AND decision IS NULL
+	`, decidedAt, userID); err != nil {
+		return fmt.Errorf("auth bootstrap: close pending: %w", err)
+	}
+	return nil
 }
 
 // IsUserAllowed reports whether userID has been persisted by BootstrapUser.

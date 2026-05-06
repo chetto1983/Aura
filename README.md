@@ -16,7 +16,7 @@ Aura is a Go-based Telegram assistant with LLM integrations, local wiki storage,
 
 ## Build from source (developers)
 
-- Go 1.25.5 or newer matching `go.mod`
+- Go 1.26.2 or newer matching `go.mod`
 - Node 20+ for the web dashboard
 - A Telegram bot token
 - At least one allowlisted Telegram user ID

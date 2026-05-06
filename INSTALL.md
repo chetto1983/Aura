@@ -254,7 +254,7 @@ make build
 ./aura
 ```
 
-Requires Go 1.25+ and Node 20+.
+Requires Go 1.26.2+ and Node 20+.
 
 ---
 

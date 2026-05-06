@@ -39,18 +39,26 @@ func TestNewRequiresDBPool(t *testing.T) {
 	}
 }
 
-func TestIsAllowlisted_UsesConfiguredAllowlistFirst(t *testing.T) {
+func TestIsAllowlisted_UnionsConfiguredAndPersistedAllowlist(t *testing.T) {
+	store := newTelegramTestAuthStore(t)
+	if claimed, err := store.BootstrapUser(context.Background(), "persisted"); err != nil || !claimed {
+		t.Fatalf("bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
 	b := &Bot{
 		cfg: &config.Config{
 			Allowlist:           []string{"configured"},
 			AllowlistConfigured: true,
 		},
+		authDB: store,
 	}
 	if !b.isAllowlisted("configured") {
 		t.Fatal("configured user should be allowed")
 	}
-	if b.isAllowlisted("bootstrap") {
-		t.Fatal("bootstrap store should be ignored when env allowlist is configured")
+	if !b.isAllowlisted("persisted") {
+		t.Fatal("persisted bootstrap/approved user should be allowed even when env allowlist is configured")
+	}
+	if b.isAllowlisted("other") {
+		t.Fatal("unknown user should not be allowed")
 	}
 }
 
@@ -106,6 +114,50 @@ func TestCollectOwnerIDs_EmptyWhenNothingConfigured(t *testing.T) {
 	b := &Bot{cfg: &config.Config{}}
 	if got := b.collectOwnerIDs(); len(got) != 0 {
 		t.Errorf("got %v, want empty slice", got)
+	}
+}
+
+func TestOnLoginBootstrapsFirstRunAndSendsToken(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newTelegramTestAuthStore(t)
+	b := &Bot{
+		bot:    tb,
+		cfg:    &config.Config{},
+		authDB: store,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Text:   "/login",
+	}})
+
+	if err := b.onLogin(ctx); err != nil {
+		t.Fatalf("onLogin() error = %v, want nil", err)
+	}
+	ok, err := store.IsUserAllowed(context.Background(), "123")
+	if err != nil {
+		t.Fatalf("allowed lookup: %v", err)
+	}
+	if !ok {
+		t.Fatal("first /login user should be bootstrapped into allowed_users")
+	}
+	if got := countTelegramMethods(calls, "sendMessage"); got != 1 {
+		t.Fatalf("sendMessage calls = %d, want 1 (calls=%+v)", got, calls)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	if !strings.Contains(text, "Dashboard token") {
+		t.Fatalf("login reply = %q, want dashboard token", text)
+	}
+	if strings.Contains(text, "pending approval") || strings.Contains(text, "Aura is private") {
+		t.Fatalf("login reply = %q, want direct first-run token", text)
 	}
 }
 

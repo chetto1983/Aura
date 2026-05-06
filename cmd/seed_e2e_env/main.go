@@ -2,9 +2,11 @@
 // allowlisted user and patches the AURA_E2E_TOKEN + AURA_E2E_CHAT_ID
 // keys in .env so `npm run e2e` (Playwright) has live credentials.
 //
-// It does NOT alter any other key in .env. It does NOT issue tokens for
-// new users. It refuses to run if no allowed user exists yet (run the
-// bot once via Telegram /start to bootstrap).
+// It does NOT alter any other key in .env. By default it refuses to run
+// if no allowed user exists yet (run the bot once via Telegram /start to
+// bootstrap). The optional -bootstrap-user path is for local smoke tests
+// only and marks that user as e2e_bootstrap so it cannot block the first
+// real Telegram owner from claiming the install.
 //
 // Usage:
 //
@@ -60,7 +62,7 @@ func main() {
 	ctx := context.Background()
 
 	if strings.TrimSpace(*bootstrapUserID) != "" {
-		created, err := authStore.BootstrapUser(ctx, strings.TrimSpace(*bootstrapUserID))
+		created, err := authStore.BootstrapE2EUser(ctx, strings.TrimSpace(*bootstrapUserID))
 		if err != nil {
 			log.Fatalf("bootstrap user: %v", err)
 		}

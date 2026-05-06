@@ -300,3 +300,57 @@ func TestBootstrapUser_OnlyFirstUserWins(t *testing.T) {
 		t.Fatalf("same bootstrap user claimed=%v err=%v, want true nil", claimed, err)
 	}
 }
+
+func TestBootstrapUser_ClosesOwnPendingRequest(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.RequestAccess(ctx, "owner", "ownername"); err != nil {
+		t.Fatalf("request access: %v", err)
+	}
+	if claimed, err := s.BootstrapUser(ctx, "owner"); err != nil || !claimed {
+		t.Fatalf("bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
+	pending, err := s.ListPending(ctx)
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending after bootstrap = %+v, want empty", pending)
+	}
+}
+
+func TestBootstrapE2EUser_DoesNotBlockFirstRealOwner(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if claimed, err := s.BootstrapE2EUser(ctx, "e2e"); err != nil || !claimed {
+		t.Fatalf("e2e bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
+	if claimed, err := s.BootstrapUser(ctx, "owner"); err != nil || !claimed {
+		t.Fatalf("real bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
+	ok, err := s.IsUserAllowed(ctx, "owner")
+	if err != nil {
+		t.Fatalf("allowed lookup: %v", err)
+	}
+	if !ok {
+		t.Fatal("real owner should be allowed after e2e bootstrap")
+	}
+}
+
+func TestBootstrapE2EUser_DoesNotBypassExistingRealOwner(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if claimed, err := s.BootstrapUser(ctx, "owner"); err != nil || !claimed {
+		t.Fatalf("real bootstrap claimed=%v err=%v, want true nil", claimed, err)
+	}
+	if claimed, err := s.BootstrapE2EUser(ctx, "e2e"); err != nil || claimed {
+		t.Fatalf("e2e bootstrap claimed=%v err=%v, want false nil", claimed, err)
+	}
+	ok, err := s.IsUserAllowed(ctx, "e2e")
+	if err != nil {
+		t.Fatalf("allowed lookup: %v", err)
+	}
+	if ok {
+		t.Fatal("e2e user should not be added after a real owner exists")
+	}
+}

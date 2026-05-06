@@ -174,18 +174,39 @@ func (b *Bot) DenyAccess(ctx context.Context, userID string) error {
 
 func (b *Bot) onLogin(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
-	if !b.isAllowlisted(userID) {
-		b.logger.Warn("login token requested by non-allowlisted user",
+	if b.isAllowlisted(userID) {
+		return b.sendLoginToken(c, userID, "Here is a fresh dashboard token.")
+	}
+
+	claimed, err := b.tryBootstrapUser(userID)
+	if err != nil {
+		b.logger.Error("login bootstrap allowlist failed",
+			"user_id", userID,
+			"username", c.Sender().Username,
+			"error", err,
+		)
+		return c.Send("Aura could not complete first-time setup. Check the app logs and try /login again.")
+	}
+	if claimed {
+		b.logger.Info("first-run telegram user bootstrapped from login",
 			"user_id", userID,
 			"username", c.Sender().Username,
 		)
-		return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
+		return b.sendLoginToken(c, userID, "Welcome to Aura. You claimed this first-run install.")
 	}
-	return b.sendLoginToken(c, userID, "Here is a fresh dashboard token.")
+
+	b.logger.Warn("login token requested by non-allowlisted user",
+		"user_id", userID,
+		"username", c.Sender().Username,
+	)
+	return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
 }
 
 func (b *Bot) tryBootstrapUser(userID string) (bool, error) {
-	if b.cfg.AllowlistConfigured || b.authDB == nil {
+	if b.authDB == nil {
+		return false, nil
+	}
+	if b.cfg != nil && b.cfg.AllowlistConfigured {
 		return false, nil
 	}
 	return b.authDB.BootstrapUser(context.Background(), userID)
@@ -195,7 +216,7 @@ func (b *Bot) isAllowlisted(userID string) bool {
 	if b.cfg != nil && b.cfg.IsAllowlisted(userID) {
 		return true
 	}
-	if b.cfg == nil || b.cfg.AllowlistConfigured || b.authDB == nil {
+	if b.authDB == nil {
 		return false
 	}
 	ok, err := b.authDB.IsUserAllowed(context.Background(), userID)
