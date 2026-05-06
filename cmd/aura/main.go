@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -156,6 +157,11 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	if err := migrations.Run(context.Background(), pool); err != nil {
 		return nil, fmt.Errorf("migrate database %s: %w", cfg.DBPath, err)
 	}
+	if status, err := auradb.CheckIntegrity(context.Background(), pool); err != nil {
+		return nil, fmt.Errorf("check database integrity %s: %w", cfg.DBPath, err)
+	} else if status != "ok" {
+		return nil, fmt.Errorf("database integrity check failed for %s: %s", cfg.DBPath, status)
+	}
 
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
 	// table on top of the env-loaded config. Bootstrap fields
@@ -217,6 +223,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	// Register component health providers
 	healthServer.RegisterProvider("config", &configHealthProvider{cfg: cfg})
+	healthServer.RegisterProvider("database", &databaseHealthProvider{db: pool})
 	if cfg.WebSearchProvider != "" && cfg.WebSearchProvider != "disabled" {
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
@@ -278,6 +285,30 @@ func (p *configHealthProvider) HealthStatus() health.ComponentHealth {
 	return health.ComponentHealth{
 		Status: "ok",
 		Detail: "configuration loaded",
+	}
+}
+
+type databaseHealthProvider struct {
+	db *sql.DB
+}
+
+func (p *databaseHealthProvider) HealthStatus() health.ComponentHealth {
+	status, err := auradb.CheckIntegrity(context.Background(), p.db)
+	if err != nil {
+		return health.ComponentHealth{
+			Status: "error",
+			Detail: err.Error(),
+		}
+	}
+	if status != "ok" {
+		return health.ComponentHealth{
+			Status: "error",
+			Detail: status,
+		}
+	}
+	return health.ComponentHealth{
+		Status: "ok",
+		Detail: "integrity ok",
 	}
 }
 

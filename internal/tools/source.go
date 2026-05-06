@@ -15,7 +15,7 @@ import (
 )
 
 // Output caps for source-reading tools. Bound the LLM context budget the same
-// way web tools do (see ollama_web.go: maxWebToolChars=8000).
+// way web_search/web_fetch tools do via maxWebToolChars.
 const (
 	maxSourceToolChars  = 8000
 	excerptDefaultBytes = 4000

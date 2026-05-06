@@ -39,4 +39,4 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 - Prefer small, focused changes that follow the existing Go package layout.
 - Use `Body` for wiki page content; the project has migrated from YAML page files to markdown with frontmatter.
 - Keep wiki links in `[[slug]]` form.
-- Use `LLM_API_KEY` for the chat model and Ollama web tools when configured. Use dedicated Mistral embedding settings (`EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) for wiki search; do not fall back from embeddings to `LLM_API_KEY`.
+- Use `LLM_API_KEY` only for the chat model. Web search is controlled by `WEB_SEARCH_PROVIDER` (`searxng`, `ollama`, or `disabled`) with provider-specific settings; do not assume the chat key unlocks search. Use dedicated Mistral embedding settings (`EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) for wiki search; do not fall back from embeddings to `LLM_API_KEY`.

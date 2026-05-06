@@ -134,6 +134,28 @@ func TestOpenAllowsCreateInsertSelectRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCheckIntegrityReportsOK(t *testing.T) {
+	t.Parallel()
+
+	db := openTempDB(t)
+
+	status, err := CheckIntegrity(context.Background(), db)
+	if err != nil {
+		t.Fatalf("CheckIntegrity: %v", err)
+	}
+	if status != "ok" {
+		t.Fatalf("integrity status = %q, want ok", status)
+	}
+}
+
+func TestCheckIntegrityRejectsNilDB(t *testing.T) {
+	t.Parallel()
+
+	if _, err := CheckIntegrity(context.Background(), nil); err == nil {
+		t.Fatal("CheckIntegrity(nil) error = nil, want error")
+	}
+}
+
 func openTempDB(t *testing.T) *sql.DB {
 	t.Helper()
 

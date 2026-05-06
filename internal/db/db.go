@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -37,6 +38,18 @@ func Open(path string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// CheckIntegrity runs SQLite's integrity check on the shared database pool.
+func CheckIntegrity(ctx context.Context, db *sql.DB) (string, error) {
+	if db == nil {
+		return "", errors.New("db is required")
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&status); err != nil {
+		return "", fmt.Errorf("sqlite integrity check: %w", err)
+	}
+	return status, nil
 }
 
 func withPragmas(path string) string {
