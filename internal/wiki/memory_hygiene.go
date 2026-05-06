@@ -152,6 +152,9 @@ func (s *Store) CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*Me
 	touched := make(map[string]bool)
 	for _, item := range pages {
 		changed := false
+		if stripAutoSourcePreview(item.page) {
+			changed = true
+		}
 		for broken, fixed := range replacements {
 			old := "[[" + broken + "]]"
 			next := "[[" + fixed + "]]"
@@ -422,6 +425,19 @@ func pageReferencesSlug(page *Page, slug string) bool {
 		return true
 	}
 	return hasString(page.Related, slug)
+}
+
+func stripAutoSourcePreview(page *Page) bool {
+	if page == nil || !hasString(page.Tags, "source") || len(page.Sources) == 0 {
+		return false
+	}
+	marker := "\n## Preview\n"
+	idx := strings.Index(page.Body, marker)
+	if idx < 0 {
+		return false
+	}
+	page.Body = strings.TrimRight(page.Body[:idx], " \n\t") + "\n"
+	return true
 }
 
 func appendUniqueSorted(values []string, value string) []string {

@@ -143,11 +143,13 @@ func TestCompile_ExtractCompleteSource(t *testing.T) {
 	for _, want := range []string{
 		"Kind: text",
 		"wiki/raw/" + src.ID + "/extract.md",
-		"Aura should remember text uploads.",
 	} {
 		if !strings.Contains(page.Body, want) {
 			t.Fatalf("page body missing %q:\n%s", want, page.Body)
 		}
+	}
+	if strings.Contains(page.Body, "Aura should remember text uploads.") {
+		t.Fatalf("source summary should not duplicate extracted text:\n%s", page.Body)
 	}
 	post, err := env.sources.Get(src.ID)
 	if err != nil {
@@ -206,11 +208,14 @@ func TestCompile_HappyPath(t *testing.T) {
 		// re-read of an ingested source page should never say ocr_complete.
 		"Status: ingested",
 		"## Extracted Markdown",
-		"## Preview",
-		"The quick brown fox",
 	} {
 		if !strings.Contains(page.Body, want) {
 			t.Errorf("body missing %q in:\n%s", want, page.Body)
+		}
+	}
+	for _, leak := range []string{"## Preview", "The quick brown fox"} {
+		if strings.Contains(page.Body, leak) {
+			t.Errorf("source summary leaked raw preview %q in:\n%s", leak, page.Body)
 		}
 	}
 	// Preview must NOT contain the OCR file's own header lines (PDR §8 — don't

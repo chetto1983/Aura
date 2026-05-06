@@ -262,8 +262,11 @@ func TestSourceUploadTextCanBeIngested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadPage: %v", err)
 	}
-	if !strings.Contains(page.Body, "extract.md") || !strings.Contains(page.Body, "Aura should compile text sources") {
-		t.Fatalf("page body missing extracted text evidence:\n%s", page.Body)
+	if !strings.Contains(page.Body, "extract.md") {
+		t.Fatalf("page body missing extracted markdown pointer:\n%s", page.Body)
+	}
+	if strings.Contains(page.Body, "Aura should compile text sources") {
+		t.Fatalf("source page should not duplicate extracted text:\n%s", page.Body)
 	}
 }
 
@@ -312,11 +315,13 @@ func TestSourceUploadXLSXCanBeIngested(t *testing.T) {
 	for _, want := range []string{
 		"Kind: xlsx",
 		"wiki/raw/" + upload.ID + "/extract.md",
-		"sandbox",
 	} {
 		if !strings.Contains(page.Body, want) {
 			t.Fatalf("page body missing %q:\n%s", want, page.Body)
 		}
+	}
+	if strings.Contains(page.Body, "sandbox") {
+		t.Fatalf("source page should not duplicate extracted xlsx body:\n%s", page.Body)
 	}
 }
 

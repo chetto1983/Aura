@@ -454,7 +454,7 @@ func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liv
 		UserID:             "9001",
 		Temperature:        llm.Float64Ptr(0),
 		MaxToolCalls:       3,
-		MaxToolResultChars: 12000,
+		MaxToolResultChars: 8000,
 		CompleteOnDeadline: true,
 	})
 	res.ElapsedMS = time.Since(started).Milliseconds()
@@ -651,13 +651,14 @@ func liveSystemPrompt() string {
 	return `You are Aura's live memory routing evaluator.
 For every user question:
 - Call search_memory first with the most useful query.
+- Use limit=3 for answer-only questions unless evidence is missing.
 - Answer only from the returned evidence.
 - If the question asks about durable Aura/project/workflow memory policy, call propose_wiki_change after search_memory so the wiki can grow through review.
 - Do not call propose_wiki_change for ordinary answer-only questions.
 - When calling propose_wiki_change from search_memory, set origin_tool="search_memory" and pass evidence refs copied from the Evidence envelope. Include kind, id, title/page/snippet when available.
 - Do not repeat search_memory unless the first call returned no matching evidence.
 - If a tool returns {"ok":false,...} and retryable=true, fix the arguments from the hint and retry that tool once.
-- Keep the final answer concise and mention evidence IDs naturally.`
+- Keep the final answer under 40 words for answer-only questions. Mention evidence IDs naturally.`
 }
 
 func liveScenarioPrompt(sc scenario) string {
