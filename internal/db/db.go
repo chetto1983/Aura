@@ -18,7 +18,6 @@ var pragmas = []string{
 	"synchronous=NORMAL",
 	"cache_size=-20000",
 	"temp_store=MEMORY",
-	"mmap_size=30000000000",
 }
 
 // Open opens a SQLite database configured with Aura's production PRAGMAs.

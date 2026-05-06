@@ -123,7 +123,7 @@ func (e *Engine) Index(ctx context.Context, id string, content string, metadata 
 
 	if e.sqlite != nil {
 		if err := e.sqlite.indexDocument(ctx, id, content, metadata); err != nil {
-			e.logger.Warn("failed to index in pgvector fallback", "id", id, "error", err)
+			e.logger.Warn("failed to index in sqlite search fallback", "id", id, "error", err)
 		}
 	}
 
@@ -305,7 +305,7 @@ func (e *Engine) resetCollectionLocked() error {
 }
 
 // Search performs a vector similarity search and returns the top-k results.
-// Falls back to pgvector if chromem search fails.
+// Falls back to SQLite FTS if chromem search fails.
 func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -326,7 +326,7 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, 
 
 	e.logger.Warn("chromem search failed, trying sqlite fallback", "error", err)
 
-	// Try fallback (pgvector) if available
+	// Try fallback (SQLite FTS) if available.
 	if e.sqlite != nil {
 		results, pgErr := e.sqlite.search(ctx, query, topK)
 		if pgErr == nil {

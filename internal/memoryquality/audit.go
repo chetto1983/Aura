@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/wiki"
-	_ "modernc.org/sqlite"
 )
 
 type Options struct {
@@ -207,7 +207,7 @@ func expectedIndexIDs(pages []pageRecord) map[string]bool {
 }
 
 func auditSQLiteIndex(ctx context.Context, dbPath string, expected map[string]bool) ([]Issue, int, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := auradb.Open(dbPath)
 	if err != nil {
 		return nil, 0, err
 	}

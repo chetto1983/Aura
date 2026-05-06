@@ -103,6 +103,16 @@ func TestOpenAppliesConnectionPragmasToNewPooledConnections(t *testing.T) {
 	}
 }
 
+func TestWithPragmasDoesNotEnableMemoryMappedIO(t *testing.T) {
+	t.Parallel()
+
+	dsn := withPragmas("aura.db")
+
+	if strings.Contains(dsn, "mmap_size") {
+		t.Fatalf("withPragmas enabled mmap_size in %q; mmap is unsafe for Docker Desktop bind-mounted SQLite/WAL files", dsn)
+	}
+}
+
 func TestOpenAllowsCreateInsertSelectRoundTrip(t *testing.T) {
 	t.Parallel()
 

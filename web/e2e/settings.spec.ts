@@ -29,9 +29,10 @@ test.describe('settings page (14d)', () => {
     await expect(page.getByRole('heading', { name: /budget/i })).toBeVisible();
     await expect(page.locator('input#AURA_ENV_PATH')).toBeVisible();
     await expect(page.locator('input#DB_PATH')).toBeVisible();
-    await expect(page.locator('button[role="switch"]#SANDBOX_ENABLED')).toBeVisible();
+    const sandboxSwitch = page.getByRole('switch', { name: /sandbox enabled/i });
+    await expect(sandboxSwitch).toBeVisible();
     await expect(page.locator('input#AURA_ENV_PATH')).toBeEnabled();
-    await expect(page.locator('button[role="switch"]#SANDBOX_ENABLED')).toBeEnabled();
+    await expect(sandboxSwitch).toBeEnabled();
   });
 
   test('Test connection button is present and disabled when no base URL', async ({ authedPage: page }) => {
@@ -86,12 +87,12 @@ test.describe('settings page (14d)', () => {
   test('boolean fields render as a switch and toggle marks dirty', async ({ authedPage: page }) => {
     await page.goto('/settings');
     // OCR_ENABLED is a bool in the catalog - should render with role="switch".
-    const sw = page.locator('button[role="switch"]#OCR_ENABLED');
+    const sw = page.getByRole('switch', { name: /ocr enabled/i });
     await expect(sw).toBeVisible({ timeout: 5_000 });
 
-    const before = await sw.getAttribute('aria-checked');
+    const before = await sw.isChecked();
     await sw.click();
-    const after = await sw.getAttribute('aria-checked');
+    const after = await sw.isChecked();
     expect(after).not.toBe(before);
 
     // Save activates.
