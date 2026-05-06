@@ -67,6 +67,9 @@ type Config struct {
 	EnvPath                 string  `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours  int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	OTelEnabled             bool    `envconfig:"OTEL_ENABLED" default:"false"`
+	PromptVersion           string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
+	ToolProfileMode         string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
+	OrchestrationLogLevel   string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -208,6 +211,9 @@ func Load() (*Config, error) {
 	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
+	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
+	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(getEnv("AURA_TOOL_PROFILE_MODE", "auto")))
+	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
 
 	cfg.MistralAPIKey = getEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")

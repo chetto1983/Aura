@@ -31,6 +31,8 @@ func main() {
 	username := flag.String("username", "", "optional Telegram username for the synthetic update")
 	prompt := flag.String("prompt", "", "synthetic incoming Telegram text")
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
+	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
+	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
 	if strings.TrimSpace(*prompt) == "" {
@@ -96,6 +98,14 @@ func main() {
 		fail("run debug text smoke: %v", err)
 	}
 	fmt.Printf("tool_calls=%s\n", strings.Join(result.ToolCalls, ","))
+	fmt.Printf("prompt_version=%s\n", result.PromptVersion)
+	fmt.Printf("prompt_hash=%s\n", result.PromptHash)
+	fmt.Printf("prompt_modules=%s\n", strings.Join(result.PromptModules, ","))
+	fmt.Printf("tool_profile=%s\n", result.ToolProfile)
+	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
+	fmt.Printf("skills_read=%v\n", result.SkillsRead)
+	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
+	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
@@ -112,14 +122,33 @@ func main() {
 	if result.FinalText != "" {
 		fmt.Printf("final=%s\n", singleLine(result.FinalText, 500))
 	}
-	if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
-		fail("%v", err)
+	fmt.Printf("token_usage_reported=%v\n", result.TokenUsageReported)
+	fmt.Printf("tokens_prompt=%d\n", result.TokensPrompt)
+	fmt.Printf("tokens_completion=%d\n", result.TokensCompletion)
+	fmt.Printf("tokens_total=%d\n", result.TokensTotal)
+	fmt.Printf("estimated_context_tokens=%d\n", result.EstimatedContextTokens)
+	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
+	if strings.TrimSpace(*expectTools) != "" {
+		expected := splitCSV(*expectTools)
+		if missing := missingTools(result.ToolCalls, expected); len(missing) > 0 {
+			fail("missing expected tools: %s", strings.Join(missing, ","))
+		}
+		fmt.Printf("expected_tools_present=%s\n", strings.Join(expected, ","))
+	}
+	if !*noValidate {
+		if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
+			fail("%v", err)
+		}
 	}
 	if *artifactSmoke {
 		fmt.Println("PASS: synthetic Telegram turn used execute_code and delivered a sandbox artifact document")
 		return
 	}
-	fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
+	if *noValidate {
+		fmt.Println("PASS: synthetic Telegram turn completed; legacy execute_code assertion skipped")
+	} else {
+		fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
+	}
 }
 
 func defaultArithmeticSmokePrompt() string {
@@ -189,6 +218,26 @@ func hasDocumentSends(sends []telegram.DebugDocumentSend, filenames ...string) b
 		}
 	}
 	return true
+}
+
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func missingTools(got, expected []string) []string {
+	var missing []string
+	for _, want := range expected {
+		if !hasAll(got, want) {
+			missing = append(missing, want)
+		}
+	}
+	return missing
 }
 
 func firstAllowedUserID(dbPath string) (string, error) {

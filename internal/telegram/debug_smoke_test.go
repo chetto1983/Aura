@@ -103,3 +103,35 @@ func TestDebugTextSmokeResultFromMessagesReportsMissingTool(t *testing.T) {
 		t.Fatal("Contains5050 = false, want true from final text")
 	}
 }
+
+func TestDebugTextSmokeResultDefaultsTokenFieldsToMissingUsage(t *testing.T) {
+	result := debugTextSmokeResultFromMessages("1148481707", "compute", []llm.Message{
+		{Role: "assistant", Content: "done"},
+	})
+
+	if result.TokenUsageReported {
+		t.Fatal("TokenUsageReported = true, want false before RunDebugTextSmoke fills budget deltas")
+	}
+	if result.TokensPrompt != 0 || result.TokensCompletion != 0 || result.TokensTotal != 0 {
+		t.Fatalf("token fields = prompt %d completion %d total %d, want zero defaults", result.TokensPrompt, result.TokensCompletion, result.TokensTotal)
+	}
+}
+
+func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
+	result := debugTextSmokeResultFromMessages("1148481707", "summary", []llm.Message{
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "1", Name: "list_skills"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "2", Name: "read_skill"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "3", Name: "run_aurabot_swarm"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "4", Name: "execute_code"}}},
+	})
+
+	if !result.SkillsRead {
+		t.Fatal("SkillsRead = false, want true")
+	}
+	if !result.SwarmUsed {
+		t.Fatal("SwarmUsed = false, want true")
+	}
+	if !result.SandboxUsed {
+		t.Fatal("SandboxUsed = false, want true")
+	}
+}

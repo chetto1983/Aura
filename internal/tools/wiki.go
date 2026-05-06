@@ -135,11 +135,27 @@ func (t *ReadWikiTool) Execute(ctx context.Context, args map[string]any) (string
 	if err != nil {
 		return "", err
 	}
-	page, err := t.store.ReadPage(slug)
+	resolved, candidates, err := t.store.ResolveSlug(slug)
 	if err != nil {
 		return "", fmt.Errorf("read_wiki: %w", err)
 	}
-	return formatWikiPage(slug, page), nil
+	if resolved == "" {
+		normalized := wiki.Slug(slug)
+		if len(candidates) > 0 {
+			return "", fmt.Errorf("read_wiki: page [[%s]] not found; candidate pages: [[%s]]", normalized, strings.Join(candidates, "]], [["))
+		}
+		return "", fmt.Errorf("read_wiki: page [[%s]] not found; use list_wiki or search_wiki to find the canonical slug", normalized)
+	}
+
+	page, err := t.store.ReadPage(resolved)
+	if err != nil {
+		return "", fmt.Errorf("read_wiki: %w", err)
+	}
+	out := formatWikiPage(resolved, page)
+	if normalized := wiki.Slug(slug); normalized != "" && normalized != resolved {
+		return fmt.Sprintf("Resolved alias [[%s]] -> [[%s]].\n\n%s", normalized, resolved, out), nil
+	}
+	return out, nil
 }
 
 // SearchWikiTool searches indexed wiki pages.

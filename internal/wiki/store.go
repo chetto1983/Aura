@@ -73,6 +73,22 @@ func (s *Store) fileMutex(slug string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
+func normalizeSlugInput(slug string) string {
+	slug = strings.TrimSpace(slug)
+	slug = strings.TrimSuffix(slug, ".md")
+	slug = strings.TrimSuffix(slug, ".yaml")
+	return Slug(slug)
+}
+
+func (s *Store) pageFileExists(slug string) bool {
+	for _, ext := range []string{".md", ".yaml"} {
+		if _, err := os.Stat(filepath.Join(s.dir, slug+ext)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // WritePage atomically writes a wiki page to disk as .md and commits it to git.
 // It validates the page against the schema before writing.
 func (s *Store) WritePage(ctx context.Context, page *Page) error {
@@ -137,6 +153,11 @@ func (s *Store) WritePage(ctx context.Context, page *Page) error {
 // ReadPage reads a wiki page by slug.
 // Tries .md first, falls back to legacy .yaml format.
 func (s *Store) ReadPage(slug string) (*Page, error) {
+	slug = normalizeSlugInput(slug)
+	if slug == "" {
+		return nil, fmt.Errorf("reading wiki page: empty slug")
+	}
+
 	// Try .md first
 	mdPath := filepath.Join(s.dir, slug+".md")
 	if data, err := os.ReadFile(mdPath); err == nil {
@@ -147,9 +168,38 @@ func (s *Store) ReadPage(slug string) (*Page, error) {
 	yamlPath := filepath.Join(s.dir, slug+".yaml")
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading wiki page %s: %w", slug, err)
+		return nil, fmt.Errorf("reading wiki page [[%s]]: not found", slug)
 	}
 	return ParseYAML(data)
+}
+
+// ResolveSlug maps a user/model supplied slug or short alias to a canonical
+// page slug. Exact pages win. Prefix aliases are accepted only when unique so
+// a short guess like "golem" can recover to the real page without silently
+// choosing between multiple candidates.
+func (s *Store) ResolveSlug(input string) (resolved string, candidates []string, err error) {
+	query := normalizeSlugInput(input)
+	if query == "" {
+		return "", nil, fmt.Errorf("resolving wiki slug: empty slug")
+	}
+	if s.pageFileExists(query) {
+		return query, nil, nil
+	}
+
+	slugs, err := s.ListPages()
+	if err != nil {
+		return "", nil, err
+	}
+	for _, slug := range slugs {
+		if strings.HasPrefix(slug, query+"-") {
+			candidates = append(candidates, slug)
+		}
+	}
+	sort.Strings(candidates)
+	if len(candidates) == 1 {
+		return candidates[0], candidates, nil
+	}
+	return "", candidates, nil
 }
 
 // DeletePage removes a wiki page by slug and commits the deletion to git.

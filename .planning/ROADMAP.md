@@ -56,6 +56,22 @@ Deferred from this milestone:
 
 ## Planned Next After Current Release Closure
 
+### v3.1 Agent Orchestration And System Prompt Versioning
+
+Status: in progress
+
+Plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
+
+Goal: make Aura's main Telegram agent use versioned prompt composition, focused tool profiles, and first-class swarm/sandbox routing before the MCP marketplace expands the tool surface.
+
+Success criteria:
+
+- Prompt composition logs version, modules, hash, and active tool profile.
+- Telegram exposes only the active profile's tools to the LLM.
+- Skills, swarm, and sandbox are first-class route guidance, not incidental tools.
+- Debug Telegram smoke reports exposed tools, called tools, tokens, estimated context, and cost.
+- Document, sandbox-compute, memory, and swarm-research prompts each choose the expected profile in tests.
+
 ### v4.0 MCP Marketplace And Autonomous Plugin Manager
 
 Status: planned

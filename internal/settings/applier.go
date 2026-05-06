@@ -61,6 +61,9 @@ const (
 	KeyEmbeddingBaseURL          = "EMBEDDING_BASE_URL"
 	KeyEmbeddingModel            = "EMBEDDING_MODEL"
 	KeyOTelEnabled               = "OTEL_ENABLED"
+	KeyPromptVersion             = "AURA_PROMPT_VERSION"
+	KeyToolProfileMode           = "AURA_TOOL_PROFILE_MODE"
+	KeyOrchestrationLogLevel     = "AURA_ORCHESTRATION_LOG_LEVEL"
 	KeyMistralAPIKey             = "MISTRAL_API_KEY"
 	KeyMistralOCRModel           = "MISTRAL_OCR_MODEL"
 	KeyMistralOCRBaseURL         = "MISTRAL_OCR_BASE_URL"
@@ -106,7 +109,7 @@ func OverridableKeys() []string {
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
-		KeyOTelEnabled,
+		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
 		KeyMistralOCRTableFormat, KeyMistralOCRIncludeImages,
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
@@ -196,6 +199,9 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.EmbeddingBaseURL = s.GetString(ctx, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)
 	cfg.EmbeddingModel = s.GetString(ctx, KeyEmbeddingModel, cfg.EmbeddingModel)
 	cfg.OTelEnabled = s.GetBool(ctx, KeyOTelEnabled, cfg.OTelEnabled)
+	cfg.PromptVersion = s.GetString(ctx, KeyPromptVersion, cfg.PromptVersion)
+	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyToolProfileMode, cfg.ToolProfileMode)))
+	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
 
 	cfg.MistralAPIKey = s.GetString(ctx, KeyMistralAPIKey, cfg.MistralAPIKey)
 	cfg.MistralOCRModel = s.GetString(ctx, KeyMistralOCRModel, cfg.MistralOCRModel)

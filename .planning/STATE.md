@@ -18,6 +18,12 @@ The remaining release caveat is live LLM latency, not tool routing. With `LLM_MO
 
 ## Next Milestone Handoff
 
+v3.1 is now the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
+
+Canonical plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
+
+The implementation direction is Claude Code style orchestration without a separate intent model: versioned prompt modules, runtime tool profiles, skill preflight, swarm-first broad synthesis, sandbox-first compute/artifact work, and per-turn tool/token/cost telemetry.
+
 v4.0 is planned as "MCP Marketplace And Autonomous Plugin Manager" after current release closure.
 
 Canonical plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`

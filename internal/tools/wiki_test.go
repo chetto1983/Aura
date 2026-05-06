@@ -68,6 +68,58 @@ func TestWikiToolValidation(t *testing.T) {
 	}
 }
 
+func TestReadWikiToolResolvesShortAlias(t *testing.T) {
+	store, err := wiki.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+
+	write := NewWriteWikiTool(store, nil)
+	if _, err := write.Execute(t.Context(), map[string]any{
+		"title": "Golem Agente AI Personale in Go",
+		"body":  "Golem notes.",
+	}); err != nil {
+		t.Fatalf("write.Execute() error = %v", err)
+	}
+
+	read := NewReadWikiTool(store)
+	out, err := read.Execute(t.Context(), map[string]any{"slug": "golem"})
+	if err != nil {
+		t.Fatalf("read.Execute(alias) error = %v", err)
+	}
+	if !strings.Contains(out, "Resolved alias [[golem]] -> [[golem-agente-ai-personale-in-go]]") {
+		t.Fatalf("alias resolution missing from output: %s", out)
+	}
+	if !strings.Contains(out, "# Golem Agente AI Personale in Go") {
+		t.Fatalf("canonical page missing from output: %s", out)
+	}
+}
+
+func TestReadWikiToolReportsAmbiguousAliasCandidates(t *testing.T) {
+	store, err := wiki.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	write := NewWriteWikiTool(store, nil)
+	for _, title := range []string{"Alpha Note", "Alpha Plan"} {
+		if _, err := write.Execute(t.Context(), map[string]any{"title": title, "body": "Alpha."}); err != nil {
+			t.Fatalf("write.Execute(%q): %v", title, err)
+		}
+	}
+
+	read := NewReadWikiTool(store)
+	_, err = read.Execute(t.Context(), map[string]any{"slug": "alpha"})
+	if err == nil {
+		t.Fatal("expected ambiguous alias error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"candidate pages", "[[alpha-note]]", "[[alpha-plan]]"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error missing %q: %s", want, msg)
+		}
+	}
+}
+
 func TestSearchWikiToolMetadata(t *testing.T) {
 	searchTool := NewSearchWikiTool(nil)
 	if searchTool.Name() != "search_wiki" || searchTool.Description() == "" || searchTool.Parameters()["type"] != "object" {

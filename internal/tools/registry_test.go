@@ -53,3 +53,31 @@ func TestRegistryExecuteMissingTool(t *testing.T) {
 		t.Fatal("expected missing tool error")
 	}
 }
+
+func TestRegistryDefinitionsForFiltersAndKeepsRegistryOrder(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(namedFakeTool{name: "alpha"})
+	reg.Register(namedFakeTool{name: "beta"})
+	reg.Register(namedFakeTool{name: "gamma"})
+
+	defs := reg.DefinitionsFor([]string{"gamma", "missing", "alpha"})
+	if len(defs) != 2 {
+		t.Fatalf("DefinitionsFor length = %d, want 2: %+v", len(defs), defs)
+	}
+	if defs[0].Name != "alpha" || defs[1].Name != "gamma" {
+		t.Fatalf("DefinitionsFor names = %q,%q; want alpha,gamma", defs[0].Name, defs[1].Name)
+	}
+}
+
+type namedFakeTool struct {
+	name string
+}
+
+func (t namedFakeTool) Name() string        { return t.name }
+func (t namedFakeTool) Description() string { return "Fake tool" }
+func (t namedFakeTool) Parameters() map[string]any {
+	return map[string]any{"type": "object"}
+}
+func (t namedFakeTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	return t.name, nil
+}

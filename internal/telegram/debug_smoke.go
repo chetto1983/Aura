@@ -28,6 +28,20 @@ type DebugTextSmokeResult struct {
 	ArtifactSourceIDs        []string
 	DocumentSends            []DebugDocumentSend
 	FinalText                string
+	PromptVersion            string
+	PromptHash               string
+	PromptModules            []string
+	ToolProfile              string
+	ToolsExposed             []string
+	SkillsRead               bool
+	SwarmUsed                bool
+	SandboxUsed              bool
+	TokenUsageReported       bool
+	TokensPrompt             int
+	TokensCompletion         int
+	TokensTotal              int
+	EstimatedContextTokens   int
+	CostUSD                  float64
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -73,6 +87,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	}
 	c := tele.NewContext(b.bot, update)
 	docSeq := b.debugDocSeq.Load()
+	budgetBefore := b.BudgetStatus()
 
 	done := make(chan struct{})
 	go func() {
@@ -96,6 +111,24 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	}
 	result := debugTextSmokeResultFromMessages(userIDString, prompt, convCtx.Messages())
 	result.DocumentSends = b.debugDocumentSendsAfter(docSeq)
+	if snap, ok := b.loadOrchestrationSnapshot(userIDString); ok {
+		result.PromptVersion = snap.PromptVersion
+		result.PromptHash = snap.PromptHash
+		result.PromptModules = snap.PromptModules
+		result.ToolProfile = snap.ToolProfile
+		result.ToolsExposed = snap.ToolsExposed
+		result.applyOrchestrationToolCalls(snap.ToolsCalled)
+		result.SkillsRead = result.SkillsRead || snap.SkillsRead
+		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed
+		result.SandboxUsed = result.SandboxUsed || snap.SandboxUsed
+	}
+	result.EstimatedContextTokens = convCtx.EstimatedTokens()
+	budgetAfter := b.BudgetStatus()
+	result.TokensPrompt = budgetAfter.PromptTokens - budgetBefore.PromptTokens
+	result.TokensCompletion = budgetAfter.CompletionTokens - budgetBefore.CompletionTokens
+	result.TokensTotal = budgetAfter.TotalTokens - budgetBefore.TotalTokens
+	result.CostUSD = budgetAfter.TotalCost - budgetBefore.TotalCost
+	result.TokenUsageReported = result.TokensPrompt > 0 || result.TokensCompletion > 0 || result.TokensTotal > 0
 	return result, nil
 }
 
@@ -109,6 +142,14 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 			result.ToolCalls = append(result.ToolCalls, call.Name)
 			if call.Name == "execute_code" {
 				result.CalledExecuteCode = true
+			}
+			switch call.Name {
+			case "read_skill":
+				result.SkillsRead = true
+			case "run_aurabot_swarm":
+				result.SwarmUsed = true
+			case "execute_code":
+				result.SandboxUsed = true
 			}
 		}
 		if msg.Role == "assistant" && strings.TrimSpace(msg.Content) != "" {
@@ -124,6 +165,13 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		result.ArtifactSourceIDs = append(result.ArtifactSourceIDs, artifactSourceIDsFromToolContent(msg.Content)...)
 	}
 	return result
+}
+
+func (r *DebugTextSmokeResult) applyOrchestrationToolCalls(called []string) {
+	if r == nil || len(called) == 0 || len(r.ToolCalls) > 0 {
+		return
+	}
+	r.ToolCalls = append([]string(nil), called...)
 }
 
 func artifactFilenamesFromToolContent(content string) []string {

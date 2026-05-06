@@ -110,6 +110,35 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	}
 }
 
+func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	cfg := &config.Config{
+		PromptVersion:         "aura-agent-v1",
+		ToolProfileMode:       "auto",
+		OrchestrationLogLevel: "summary",
+	}
+
+	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
+	_ = s.Set(ctx, KeyToolProfileMode, "SWARM_RESEARCH")
+	_ = s.Set(ctx, KeyOrchestrationLogLevel, "DEBUG")
+
+	ApplyToConfig(ctx, s, cfg)
+
+	if cfg.PromptVersion != "aura-agent-v2" {
+		t.Fatalf("PromptVersion = %q", cfg.PromptVersion)
+	}
+	if cfg.ToolProfileMode != "swarm_research" {
+		t.Fatalf("ToolProfileMode = %q", cfg.ToolProfileMode)
+	}
+	if cfg.OrchestrationLogLevel != "debug" {
+		t.Fatalf("OrchestrationLogLevel = %q", cfg.OrchestrationLogLevel)
+	}
+	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) {
+		t.Fatal("orchestration settings must be dashboard-overridable")
+	}
+}
+
 func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	// Container-first installs use the dashboard as the single settings
 	// surface, so runtime and sandbox rows are deliberate overrides.

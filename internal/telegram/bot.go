@@ -62,9 +62,10 @@ type Bot struct {
 	debugDocsMu sync.Mutex
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64
-	active      sync.Map    // maps userID string -> bool (active conversation tracking)
-	ctxMap      sync.Map    // maps userID string -> *conversation.Context
-	started     atomic.Bool // true while the telebot poller has been started
+	active      sync.Map // maps userID string -> bool (active conversation tracking)
+	ctxMap      sync.Map // maps userID string -> *conversation.Context
+	orchMap     sync.Map // maps userID string -> orchestrationSnapshot
+	started     atomic.Bool
 }
 
 type conversationArchiver interface {

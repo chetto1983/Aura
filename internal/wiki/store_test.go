@@ -168,6 +168,75 @@ func TestReadPageNotFound(t *testing.T) {
 	}
 }
 
+func TestResolveSlugShortAlias(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	for _, page := range []*Page{
+		{
+			Title:         "Golem Agente AI Personale in Go",
+			Body:          "Golem notes.",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     "2026-05-06T00:00:00Z",
+			UpdatedAt:     "2026-05-06T00:00:00Z",
+		},
+		{
+			Title:         "GOA AI Framework Design First per Agenti Agentic",
+			Body:          "Goa notes.",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     "2026-05-06T00:00:00Z",
+			UpdatedAt:     "2026-05-06T00:00:00Z",
+		},
+	} {
+		if err := store.WritePage(ctx, page); err != nil {
+			t.Fatalf("WritePage(%q): %v", page.Title, err)
+		}
+	}
+
+	for alias, want := range map[string]string{
+		"golem":    "golem-agente-ai-personale-in-go",
+		"goa-ai":   "goa-ai-framework-design-first-per-agenti-agentic",
+		"golem.md": "golem-agente-ai-personale-in-go",
+	} {
+		got, candidates, err := store.ResolveSlug(alias)
+		if err != nil {
+			t.Fatalf("ResolveSlug(%q): %v", alias, err)
+		}
+		if got != want {
+			t.Fatalf("ResolveSlug(%q) = %q candidates=%v, want %q", alias, got, candidates, want)
+		}
+	}
+}
+
+func TestResolveSlugAmbiguousAliasReturnsCandidates(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	for _, title := range []string{"Alpha Note", "Alpha Plan"} {
+		if err := store.WritePage(ctx, &Page{
+			Title:         title,
+			Body:          "Alpha notes.",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     "2026-05-06T00:00:00Z",
+			UpdatedAt:     "2026-05-06T00:00:00Z",
+		}); err != nil {
+			t.Fatalf("WritePage(%q): %v", title, err)
+		}
+	}
+
+	got, candidates, err := store.ResolveSlug("alpha")
+	if err != nil {
+		t.Fatalf("ResolveSlug(alpha): %v", err)
+	}
+	if got != "" {
+		t.Fatalf("ResolveSlug(alpha) resolved %q, want ambiguous", got)
+	}
+	if strings.Join(candidates, ",") != "alpha-note,alpha-plan" {
+		t.Fatalf("candidates = %v", candidates)
+	}
+}
+
 func TestListPages(t *testing.T) {
 	store, _ := newTestStore(t)
 

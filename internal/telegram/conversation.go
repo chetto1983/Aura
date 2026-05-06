@@ -12,6 +12,7 @@ import (
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/search"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/tools"
@@ -38,37 +39,48 @@ func (b *Bot) handleConversation(c tele.Context) {
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
 	userText := c.Text()
 
-	// Refresh the system prompt on every turn so the Runtime Context
-	// (current time + timezone) stays accurate. The LLM uses these values
-	// when scheduling reminders, so a stale snapshot is worse than the
-	// per-turn cost of re-rendering a few hundred bytes.
-	systemPrompt := conversation.RenderSystemPrompt(time.Now(), time.Local)
+	// Build the versioned prompt and focused tool profile fresh on every
+	// turn so runtime time, overlays, skills, swarm, and sandbox state stay
+	// accurate without restarting the bot.
+	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
+	var skillsBlock string
 	// Slice 11q: read SOUL.md / AGENTS.md / USER.md / TOOLS.md from the
 	// configured overlay dir. Picobot pattern: lets the operator tune
 	// personality, durable user facts, and tool guidance by editing a
 	// file — the next user turn picks up the change with no recompile or
 	// restart. Files are optional; missing ones are skipped silently.
-	if overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath); overlay != "" {
-		systemPrompt += "\n\n" + overlay
-	}
 	if b.skills != nil {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
 			b.logger.Warn("failed to load local skills", "error", err)
 		} else if block := auraskills.PromptBlock(loadedSkills); block != "" {
-			systemPrompt += "\n\n" + block
+			skillsBlock = block
 		}
 	}
-	if b.swarmToolsAvailable() {
-		systemPrompt += "\n\n" + conversation.SwarmRoutingPrompt()
-		if hint := conversation.SwarmTurnHint(userText); hint != "" {
-			systemPrompt += "\n\n" + hint
-		}
+	available := orchestration.Availability{
+		Swarm:     b.swarmToolsAvailable(),
+		Sandbox:   b.sandboxToolsAvailable(),
+		Proposals: b.proposalToolsAvailable(),
 	}
-	if b.proposalToolsAvailable() {
-		systemPrompt += "\n\n" + conversation.WikiProposalPrompt()
+	toolProfile := orchestration.SelectProfile(userText, b.cfg.ToolProfileMode, available)
+	toolAllowlist, err := orchestration.ToolsForProfile(toolProfile, available)
+	if err != nil {
+		b.logger.Warn("orchestration profile failed; falling back to default", "profile", toolProfile, "error", err)
+		toolProfile = orchestration.ProfileDefault
+		toolAllowlist, _ = orchestration.ToolsForProfile(toolProfile, available)
 	}
-	convCtx.SetSystemMessage(systemPrompt)
+	promptPlan := orchestration.ComposePrompt(orchestration.PromptInput{
+		Version:           b.cfg.PromptVersion,
+		Now:               time.Now(),
+		Location:          time.Local,
+		Overlay:           overlay,
+		SkillsBlock:       skillsBlock,
+		SwarmAvailable:    available.Swarm,
+		SandboxAvailable:  available.Sandbox,
+		ProposalAvailable: available.Proposals,
+		Profile:           toolProfile,
+	})
+	convCtx.SetSystemMessage(promptPlan.Content)
 
 	b.logger.Info("conversation started",
 		"user_id", userID,
@@ -131,7 +143,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// their message. consumeStream edits this instead of creating a new one.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder)
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolProfile)
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
@@ -199,6 +211,19 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"elapsed_ms", time.Since(turnStart).Milliseconds(),
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,
+		"prompt_version", stats.promptVersion,
+		"prompt_hash", stats.promptHash,
+		"prompt_modules", strings.Join(stats.promptModules, ","),
+		"tool_profile", stats.toolProfile,
+		"tools_exposed", strings.Join(stats.toolsExposed, ","),
+		"tools_called", strings.Join(stats.toolsCalled, ","),
+		"skills_read", stats.skillsRead,
+		"swarm_used", stats.swarmUsed,
+		"sandbox_used", stats.sandboxUsed,
+		"tokens_prompt", stats.tokensPrompt,
+		"tokens_completion", stats.tokensCompletion,
+		"tokens_total", stats.tokensTotal,
+		"cost_usd", fmt.Sprintf("%.6f", stats.costUSD),
 	)
 }
 
@@ -224,12 +249,41 @@ func (b *Bot) proposalToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("propose_wiki_change") != nil
 }
 
+func (b *Bot) sandboxToolsAvailable() bool {
+	return b.tools != nil && b.tools.Get("execute_code") != nil
+}
+
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
 type turnStats struct {
-	llmCalls  int
-	toolCalls int
+	llmCalls         int
+	toolCalls        int
+	promptVersion    string
+	promptModules    []string
+	promptHash       string
+	toolProfile      string
+	toolsExposed     []string
+	toolsCalled      []string
+	skillsRead       bool
+	swarmUsed        bool
+	sandboxUsed      bool
+	tokensPrompt     int
+	tokensCompletion int
+	tokensTotal      int
+	costUSD          float64
+}
+
+type orchestrationSnapshot struct {
+	PromptVersion string
+	PromptModules []string
+	PromptHash    string
+	ToolProfile   string
+	ToolsExposed  []string
+	ToolsCalled   []string
+	SkillsRead    bool
+	SwarmUsed     bool
+	SandboxUsed   bool
 }
 
 type archiveTurnInput struct {
@@ -299,15 +353,22 @@ func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	}
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message) (string, turnStats) {
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profile orchestration.Profile) (string, turnStats) {
 	maxIterations := b.cfg.MaxToolIterations
 	if maxIterations <= 0 {
 		maxIterations = 10
 	}
 
-	var stats turnStats
+	stats := turnStats{
+		promptVersion: promptPlan.Version,
+		promptModules: append([]string(nil), promptPlan.Modules...),
+		promptHash:    promptPlan.Hash,
+		toolProfile:   string(profile),
+	}
 	var lastToolResult string
-	toolDefs := b.tools.Definitions()
+	toolDefs := b.tools.DefinitionsFor(toolAllowlist)
+	stats.toolsExposed = toolDefinitionNames(toolDefs)
+	b.storeOrchestrationSnapshot(userID, stats)
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// Context bounding happens once at the start of handleConversation.
 		// Re-enforcing on every tool iteration triggered a summarizer LLM
@@ -339,6 +400,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 
 		convCtx.TrackTokens(resp.Usage)
+		stats.tokensPrompt += resp.Usage.PromptTokens
+		stats.tokensCompletion += resp.Usage.CompletionTokens
+		stats.tokensTotal += resp.Usage.TotalTokens
+		stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 		if b.budget != nil {
 			b.budget.RecordUsage(resp.Usage)
 		}
@@ -366,7 +431,19 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 
 		convCtx.AddAssistantToolCallMessage(resp.Content, resp.ToolCalls)
 		stats.toolCalls += len(resp.ToolCalls)
-		lastToolResult = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls)
+		for _, call := range resp.ToolCalls {
+			stats.toolsCalled = append(stats.toolsCalled, call.Name)
+			switch call.Name {
+			case "read_skill":
+				stats.skillsRead = true
+			case "run_aurabot_swarm":
+				stats.swarmUsed = true
+			case "execute_code":
+				stats.sandboxUsed = true
+			}
+		}
+		b.storeOrchestrationSnapshot(userID, stats)
+		lastToolResult = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls, toolAllowlist)
 	}
 
 	fallback := "Tool loop stopped after reaching the maximum iteration limit."
@@ -389,7 +466,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 //
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) string {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolAllowlist []string) string {
 	if len(calls) == 0 {
 		return ""
 	}
@@ -409,6 +486,10 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
+			if !toolAllowed(tc.Name, toolAllowlist) {
+				results[i] = outcome{id: tc.ID, content: tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name))}
+				return
+			}
 			toolCtx := tools.WithUserID(ctx, userID)
 			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
 			if err != nil {
@@ -426,6 +507,61 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		lastToolResult = r.content
 	}
 	return lastToolResult
+}
+
+func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
+	if b == nil || strings.TrimSpace(userID) == "" {
+		return
+	}
+	b.orchMap.Store(userID, orchestrationSnapshot{
+		PromptVersion: stats.promptVersion,
+		PromptModules: append([]string(nil), stats.promptModules...),
+		PromptHash:    stats.promptHash,
+		ToolProfile:   stats.toolProfile,
+		ToolsExposed:  append([]string(nil), stats.toolsExposed...),
+		ToolsCalled:   append([]string(nil), stats.toolsCalled...),
+		SkillsRead:    stats.skillsRead,
+		SwarmUsed:     stats.swarmUsed,
+		SandboxUsed:   stats.sandboxUsed,
+	})
+}
+
+func (b *Bot) loadOrchestrationSnapshot(userID string) (orchestrationSnapshot, bool) {
+	if b == nil {
+		return orchestrationSnapshot{}, false
+	}
+	value, ok := b.orchMap.Load(userID)
+	if !ok {
+		return orchestrationSnapshot{}, false
+	}
+	snap, ok := value.(orchestrationSnapshot)
+	return snap, ok
+}
+
+func toolDefinitionNames(defs []llm.ToolDefinition) []string {
+	out := make([]string, 0, len(defs))
+	for _, def := range defs {
+		out = append(out, def.Name)
+	}
+	return out
+}
+
+func toolAllowed(name string, allowlist []string) bool {
+	for _, allowed := range allowlist {
+		if allowed == name {
+			return true
+		}
+	}
+	return false
+}
+
+func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {
+	prompt := usage.PromptTokens
+	completion := usage.CompletionTokens
+	if prompt == 0 && completion == 0 {
+		prompt = usage.TotalTokens
+	}
+	return (float64(prompt)*inputPerM + float64(completion)*outputPerM) / 1_000_000
 }
 
 func toolActivityMessage(name string) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -61,6 +62,25 @@ func (r *Registry) Definitions() []llm.ToolDefinition {
 			Parameters:  t.Parameters(),
 		})
 	}
+	return defs
+}
+
+// DefinitionsFor returns only definitions whose names are in allowlist.
+func (r *Registry) DefinitionsFor(allowlist []string) []llm.ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	defs := make([]llm.ToolDefinition, 0, len(allowlist))
+	for _, t := range r.tools {
+		if slices.Contains(allowlist, t.Name()) {
+			defs = append(defs, llm.ToolDefinition{
+				Name:        t.Name(),
+				Description: t.Description(),
+				Parameters:  t.Parameters(),
+			})
+		}
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
 	return defs
 }
 

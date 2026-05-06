@@ -158,17 +158,8 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	// `.agents/skills` layouts across versions/agents, so keep both visible.
 	// In containers the install cwd is /skills, so catalog installs persist
 	// under the mounted /skills tree.
-	skillInstallRoot := strings.TrimSpace(cfg.SkillsInstallProjectDir)
-	if skillInstallRoot == "" {
-		skillInstallRoot = "."
-	}
-	skillLoader := auraskills.NewLoader(
-		cfg.SkillsPath,
-		".agents/skills",
-		".claude/skills",
-		filepath.Join(skillInstallRoot, ".agents", "skills"),
-		filepath.Join(skillInstallRoot, ".claude", "skills"),
-	)
+	skillRoots := skillSearchRoots(cfg)
+	skillLoader := auraskills.NewLoader(skillRoots[0], skillRoots[1:]...)
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
 	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
@@ -514,13 +505,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	}
 	// Deleter mirrors the loader's roots so catalog-installed skills are
 	// deletable too.
-	skillsDeleter, err := auraskills.NewFSDeleter(
-		cfg.SkillsPath,
-		".agents/skills",
-		".claude/skills",
-		filepath.Join(skillInstallRoot, ".agents", "skills"),
-		filepath.Join(skillInstallRoot, ".claude", "skills"),
-	)
+	skillsDeleter, err := auraskills.NewFSDeleter(skillRoots[0], skillRoots[1:]...)
 	if err != nil {
 		logger.Warn("skills deleter unavailable", "error", err)
 	}
@@ -602,6 +587,29 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 
 	b.registerHandlers()
 	return b, nil
+}
+
+func skillSearchRoots(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	skillsPath := strings.TrimSpace(cfg.SkillsPath)
+	if skillsPath == "" {
+		skillsPath = "./skills"
+	}
+	installRoot := strings.TrimSpace(cfg.SkillsInstallProjectDir)
+	if installRoot == "" {
+		installRoot = "."
+	}
+	return []string{
+		skillsPath,
+		".agents/skills",
+		".claude/skills",
+		filepath.Join(skillsPath, ".agents", "skills"),
+		filepath.Join(skillsPath, ".claude", "skills"),
+		filepath.Join(installRoot, ".agents", "skills"),
+		filepath.Join(installRoot, ".claude", "skills"),
+	}
 }
 
 // createLLMClient builds the LLM client chain with failover:
