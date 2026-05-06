@@ -11,8 +11,9 @@ import type { SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'extracting', 'ocr_complete', 'extract_complete', 'ingested'];
-const UPLOAD_ACCEPT = '.pdf,.txt,.md,.json,.csv,application/pdf,text/plain,text/markdown,application/json,text/csv';
-const UPLOAD_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.json', '.csv']);
+const ACCEPTED_SOURCE_INPUT = '.pdf,.txt,.md,.json,.csv,.xlsx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const SUPPORTED_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.json', '.csv', '.xlsx'];
+const UPLOAD_EXTENSIONS = new Set(SUPPORTED_SOURCE_EXTENSIONS);
 const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv']);
 const DOWNLOADABLE_KINDS = new Set<SourceSummary['kind']>([
   'pdf',
@@ -188,7 +189,7 @@ export function SourceInbox() {
         ref={fileInputRef}
         type="file"
         aria-label={t('sources.uploadFileLabel')}
-        accept={UPLOAD_ACCEPT}
+        accept={ACCEPTED_SOURCE_INPUT}
         multiple
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}

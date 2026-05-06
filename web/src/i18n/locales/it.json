@@ -175,7 +175,7 @@
   "sources.table.pages": "Pagine",
   "sources.table.wiki": "Wiki",
   "sources.table.actions": "Azioni",
-  "sources.drop.idle": "Trascina qui PDF, TXT, MD, JSON o CSV, o clicca per sfogliare",
+  "sources.drop.idle": "Trascina file PDF, TXT, MD, JSON, CSV o XLSX qui, oppure clicca per sfogliare",
   "sources.drop.active": "Rilascia i file supportati per caricarli",
   "sources.drop.uploading": "Caricamento…",
   "sources.drop.hint": "I PDF usano OCR; i file testuali vengono estratti e messi in coda per la wiki.",

@@ -175,7 +175,7 @@
   "sources.table.pages": "Pages",
   "sources.table.wiki": "Wiki",
   "sources.table.actions": "Actions",
-  "sources.drop.idle": "Drag PDFs, TXT, MD, JSON, or CSV here, or click to browse",
+  "sources.drop.idle": "Drag PDF, TXT, MD, JSON, CSV, or XLSX files here, or click to browse",
   "sources.drop.active": "Drop supported files to upload",
   "sources.drop.uploading": "Uploading…",
   "sources.drop.hint": "PDFs use OCR; text-like files are extracted and queued for wiki ingest.",
