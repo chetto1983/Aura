@@ -58,7 +58,7 @@ make debug-llm
 ## Container Stack
 
 For server-style installs, Aura ships a Docker Compose stack with Aura running
-headless and SearXNG running beside it:
+headless beside SearXNG and Garage S3:
 
 ```powershell
 New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null

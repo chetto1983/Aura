@@ -34,6 +34,11 @@ type Config struct {
 	OllamaWebBaseURL       string  `envconfig:"OLLAMA_WEB_BASE_URL"`
 	WebSearchProvider      string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
 	SearXNGBaseURL         string  `envconfig:"SEARXNG_BASE_URL"`
+	GarageS3Endpoint       string  `envconfig:"GARAGE_S3_ENDPOINT"`
+	GarageS3Region         string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
+	GarageS3Bucket         string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
+	GarageS3AccessKey      string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
+	GarageS3SecretKey      string  `envconfig:"GARAGE_S3_SECRET_KEY"`
 	MaxToolIterations      int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath               string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	PromptOverlayPath      string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
@@ -151,6 +156,11 @@ func Load() (*Config, error) {
 	cfg.OllamaWebBaseURL = getEnv("OLLAMA_WEB_BASE_URL", DefaultOllamaWebBaseURL)
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(getEnv("WEB_SEARCH_PROVIDER", "disabled")))
 	cfg.SearXNGBaseURL = getEnv("SEARXNG_BASE_URL", DefaultSearXNGBaseURL)
+	cfg.GarageS3Endpoint = getEnv("GARAGE_S3_ENDPOINT", "")
+	cfg.GarageS3Region = getEnv("GARAGE_S3_REGION", "garage")
+	cfg.GarageS3Bucket = getEnv("GARAGE_S3_BUCKET", "aura-artifacts")
+	cfg.GarageS3AccessKey = getEnv("GARAGE_S3_ACCESS_KEY", "")
+	cfg.GarageS3SecretKey = getEnv("GARAGE_S3_SECRET_KEY", "")
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")

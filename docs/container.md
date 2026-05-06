@@ -8,10 +8,14 @@ signals.
 
 - `aura`: the Telegram bot and embedded dashboard.
 - `searxng`: local metasearch for Aura's SearXNG web-search provider.
+- `garage`: local S3-compatible object storage for manual backup exports.
+- `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
+  profile.
 
 The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
 `127.0.0.1:8088` on the host and is reachable from Aura as
-`http://searxng:8080`.
+`http://searxng:8080`. Garage's S3 API is bound to `127.0.0.1:3900` on the
+host and is reachable from Aura as `http://garage:3900`.
 
 ## First Run
 
@@ -36,6 +40,20 @@ Probe SearXNG from the host:
 ```powershell
 go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
 ```
+
+Run a manual backup export to Garage:
+
+```powershell
+go run ./cmd/debug_backup
+```
+
+Open the optional Garage Web UI:
+
+```powershell
+docker compose --profile garage-ui up -d garage-webui
+```
+
+Then browse to `http://127.0.0.1:3909`.
 
 Inside the Compose network, Aura should use:
 
@@ -63,6 +81,12 @@ Back up these folders before moving hosts or upgrading major versions.
   stable `web_search` tool against the bundled SearXNG service instead of
   requiring Ollama web credentials. The paired `web_fetch` tool uses Aura's
   bounded direct HTTP fetcher in this mode.
+- `compose.yaml` starts Garage with `--single-node --default-bucket`, matching
+  Garage's quick-start path. The local demo keys are intentionally low-trust;
+  rotate them before exposing Garage beyond localhost.
+- Backup export is manual first: it archives `.env`, `aura.db`, `wiki/`, and
+  `skills/` into `backups/YYYY-MM-DD-HHMMSS/aura-backup.tar.gz` in the
+  configured Garage bucket. SQLite and wiki storage remain local files.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - The container stack disables `SANDBOX_ENABLED` by default because the Pyodide

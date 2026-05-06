@@ -85,6 +85,12 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng", "ollama"}, Label: "Web search provider", Hint: "SearXNG is the recommended container provider; Ollama needs OLLAMA_API_KEY"},
 	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
 
+	{Key: settings.KeyGarageS3Endpoint, Group: "storage", Kind: "url", Label: "Garage S3 endpoint", Hint: "Compose uses http://garage:3900"},
+	{Key: settings.KeyGarageS3Region, Group: "storage", Kind: "text", Label: "Garage S3 region"},
+	{Key: settings.KeyGarageS3Bucket, Group: "storage", Kind: "text", Label: "Garage S3 bucket"},
+	{Key: settings.KeyGarageS3AccessKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 access key"},
+	{Key: settings.KeyGarageS3SecretKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 secret key"},
+
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
 	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
@@ -208,6 +214,16 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.WebSearchProvider
 	case settings.KeySearXNGBaseURL:
 		return cfg.SearXNGBaseURL
+	case settings.KeyGarageS3Endpoint:
+		return cfg.GarageS3Endpoint
+	case settings.KeyGarageS3Region:
+		return cfg.GarageS3Region
+	case settings.KeyGarageS3Bucket:
+		return cfg.GarageS3Bucket
+	case settings.KeyGarageS3AccessKey:
+		return cfg.GarageS3AccessKey
+	case settings.KeyGarageS3SecretKey:
+		return cfg.GarageS3SecretKey
 	case settings.KeyMaxToolIterations:
 		return strconv.Itoa(cfg.MaxToolIterations)
 	case settings.KeySkillsCatalogURL:

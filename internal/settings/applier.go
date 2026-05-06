@@ -32,6 +32,11 @@ const (
 	KeyOllamaWebBaseURL          = "OLLAMA_WEB_BASE_URL"
 	KeyWebSearchProvider         = "WEB_SEARCH_PROVIDER"
 	KeySearXNGBaseURL            = "SEARXNG_BASE_URL"
+	KeyGarageS3Endpoint          = "GARAGE_S3_ENDPOINT"
+	KeyGarageS3Region            = "GARAGE_S3_REGION"
+	KeyGarageS3Bucket            = "GARAGE_S3_BUCKET"
+	KeyGarageS3AccessKey         = "GARAGE_S3_ACCESS_KEY"
+	KeyGarageS3SecretKey         = "GARAGE_S3_SECRET_KEY"
 	KeyMaxToolIterations         = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL          = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin               = "SKILLS_ADMIN"
@@ -74,6 +79,8 @@ func OverridableKeys() []string {
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
 		KeyOllamaBaseURL, KeyOllamaModel, KeyOllamaAPIKey, KeyOllamaWebBaseURL,
 		KeyWebSearchProvider, KeySearXNGBaseURL,
+		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
+		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -129,6 +136,11 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.OllamaWebBaseURL = s.GetString(ctx, KeyOllamaWebBaseURL, cfg.OllamaWebBaseURL)
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyWebSearchProvider, cfg.WebSearchProvider)))
 	cfg.SearXNGBaseURL = s.GetString(ctx, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
+	cfg.GarageS3Endpoint = s.GetString(ctx, KeyGarageS3Endpoint, cfg.GarageS3Endpoint)
+	cfg.GarageS3Region = s.GetString(ctx, KeyGarageS3Region, cfg.GarageS3Region)
+	cfg.GarageS3Bucket = s.GetString(ctx, KeyGarageS3Bucket, cfg.GarageS3Bucket)
+	cfg.GarageS3AccessKey = s.GetString(ctx, KeyGarageS3AccessKey, cfg.GarageS3AccessKey)
+	cfg.GarageS3SecretKey = s.GetString(ctx, KeyGarageS3SecretKey, cfg.GarageS3SecretKey)
 	cfg.MaxToolIterations = s.GetInt(ctx, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = s.GetString(ctx, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
