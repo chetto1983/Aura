@@ -2,17 +2,12 @@
 
 Aura is a Go-based Telegram assistant with LLM integrations, local wiki storage, search, budget tracking, health endpoints, logging, and optional tracing.
 
-## Install (end users)
+## Install
 
-**No Go, Node, or build tools required.** Download a pre-built binary for your OS and follow [INSTALL.md](INSTALL.md). Takes ~15 minutes including creating your Telegram bot.
-
-| OS                    | Release archive                         | Extracted binary |
-| --------------------- | --------------------------------------- | ---------------- |
-| Windows               | `aura_<version>_windows_x86_64.zip`     | `aura.exe`       |
-| macOS (Intel)         | `aura_<version>_darwin_x86_64.tar.gz`   | `aura`           |
-| macOS (Apple Silicon) | `aura_<version>_darwin_arm64.tar.gz`    | `aura`           |
-| Linux (x86_64)        | `aura_<version>_linux_x86_64.tar.gz`    | `aura`           |
-| Linux (ARM64)         | `aura_<version>_linux_arm64.tar.gz`     | `aura`           |
+Aura is now container-first. End users should run the Docker Compose stack,
+which starts Aura headless beside SearXNG search and Garage S3 backup storage.
+Desktop binaries remain useful for local development and legacy installs, but
+Docker is the supported server path.
 
 ## Build from source (developers)
 
@@ -40,7 +35,7 @@ Optional LLM settings can point to any OpenAI-compatible API, including OpenAI, 
 ## Common Commands
 
 ```powershell
-go test ./...
+docker compose --profile test run --rm test
 go build ./...
 go run ./cmd/aura
 go run ./cmd/debug_llm

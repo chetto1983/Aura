@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 )
 
 func TestPyodideXLSXExtractor(t *testing.T) {
+	requireLivePyodideExtraction(t)
 	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
 		RuntimeDir: filepath.Join("..", "..", "runtime", "pyodide"),
 		Timeout:    60 * time.Second,
@@ -39,6 +41,7 @@ func TestPyodideXLSXExtractor(t *testing.T) {
 }
 
 func TestPyodideDOCXExtractor(t *testing.T) {
+	requireLivePyodideExtraction(t)
 	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
 		RuntimeDir: filepath.Join("..", "..", "runtime", "pyodide"),
 		Timeout:    60 * time.Second,
@@ -59,6 +62,13 @@ func TestPyodideDOCXExtractor(t *testing.T) {
 	}
 	if !strings.Contains(res.Markdown, "Aura should remember decisions") || res.Metadata.ExtractorName != "pyodide_docx" {
 		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
+	}
+}
+
+func requireLivePyodideExtraction(t *testing.T) {
+	t.Helper()
+	if os.Getenv("AURA_SOURCE_PYODIDE_LIVE") != "1" {
+		t.Skip("set AURA_SOURCE_PYODIDE_LIVE=1 to run live Pyodide extraction; it needs Node and a high-memory Docker engine")
 	}
 }
 

@@ -73,5 +73,25 @@ services:
       garage:
         condition: service_started
 
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    profiles: ["test"]
+    working_dir: /src
+    command: ["sh", "-c", "go test $(go list ./... | grep -v '/web/node_modules/') -count=1"]
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    volumes:
+      - .:/src
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+
 volumes:
   searxng-cache:
+  go-mod-cache:
+  go-build-cache:

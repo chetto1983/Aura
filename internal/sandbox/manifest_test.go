@@ -45,6 +45,13 @@ func TestPyodideRunnerDefaultPathUsesWindowsCmdDevRunner(t *testing.T) {
 	if err := os.WriteFile(runnerPath, []byte("@echo off\r\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	nodePath := filepath.Join(dir, "runner", "node-win-x64", "node.exe")
+	if err := os.MkdirAll(filepath.Dir(nodePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nodePath, []byte("fake node"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{RuntimeDir: dir})
 	if err != nil {

@@ -54,6 +54,9 @@ func TestPyodideRunner_ExecuteSendsProtocolAndSanitizedEnv(t *testing.T) {
 	if !envContains(capture.Env, "PATH") || !envContains(capture.Env, "TEMP") {
 		t.Fatalf("env missing safe process vars: %v", capture.Env)
 	}
+	if !envContains(capture.Env, "NODE_OPTIONS") {
+		t.Fatalf("env missing Node runtime tuning var: %v", capture.Env)
+	}
 }
 
 func TestPyodideRunner_ExecuteReturnsArtifacts(t *testing.T) {
@@ -227,6 +230,35 @@ func TestPyodideRunner_CheckAvailabilityRequiresManifestAndRunner(t *testing.T) 
 	}
 }
 
+func TestPyodideRunner_CheckAvailabilityRequiresNodeRuntime(t *testing.T) {
+	runtimeDir := t.TempDir()
+	writePyodideBundle(t, runtimeDir, nil)
+	runnerPath := filepath.Join(runtimeDir, "runner", "aura-pyodide-runner")
+	if err := os.MkdirAll(filepath.Dir(runnerPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\nexec node \"$0.mjs\" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+
+	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
+		RuntimeDir: runtimeDir,
+		RunnerPath: runnerPath,
+	})
+	if err != nil {
+		t.Fatalf("NewPyodideRunner() error = %v", err)
+	}
+
+	availability := runner.CheckAvailability()
+	if availability.Available {
+		t.Fatal("Available = true, want false without Node")
+	}
+	if !strings.Contains(availability.Detail, "requires Node.js") {
+		t.Fatalf("Detail = %q, want Node diagnostic", availability.Detail)
+	}
+}
+
 func TestPyodideRunner_LivePyodideBundle(t *testing.T) {
 	if os.Getenv("AURA_SANDBOX_LIVE") != "1" {
 		t.Skip("set AURA_SANDBOX_LIVE=1 and SANDBOX_PYODIDE_RUNNER to run the live Pyodide bundle smoke")
@@ -287,7 +319,7 @@ func newFakePyodideRunner(t *testing.T, mode, capturePath string) (*sandbox.Pyod
 		RunnerPath:  exe,
 		RunnerArgs:  []string{"-test.run=TestPyodideRunnerHelperProcess", "--", mode, capturePath},
 		Timeout:     100 * time.Millisecond,
-		Environment: []string{"PATH=/bin", "TEMP=/tmp", "TELEGRAM_TOKEN=secret", "LLM_API_KEY=secret", "CUSTOM_SECRET=secret"},
+		Environment: []string{"PATH=/bin", "TEMP=/tmp", "NODE_OPTIONS=--max-old-space-size=4096", "TELEGRAM_TOKEN=secret", "LLM_API_KEY=secret", "CUSTOM_SECRET=secret"},
 	})
 	if err != nil {
 		t.Fatalf("NewPyodideRunner() error = %v", err)

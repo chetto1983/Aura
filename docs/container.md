@@ -11,6 +11,8 @@ signals.
 - `garage`: local S3-compatible object storage for manual backup exports.
 - `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
   profile.
+- `test`: optional developer test container with Go 1.26.2, Node 22, and the
+  Linux sandbox capability needed for no-network skill tests.
 
 The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
 `127.0.0.1:8088` on the host and is reachable from Aura as
@@ -65,6 +67,29 @@ docker compose --profile garage-ui up -d garage-webui
 
 Then browse to `http://127.0.0.1:3909`.
 
+## Test In Docker
+
+Docker is the canonical development and release gate. Run Go tests through the
+Compose test profile so the environment matches Aura's Linux container path:
+
+```powershell
+docker compose --profile test run --rm test
+```
+
+The test image includes Node for the Pyodide runner tests. The service also
+adds `SYS_ADMIN` with an unconfined seccomp profile because Linux no-network
+skill tests create a temporary network namespace; a plain `docker run
+golang:... go test ./...` container cannot do that reliably.
+The command excludes incidental Go packages under `web/node_modules`.
+
+Live XLSX/DOCX Pyodide extraction is opt-in because it can need more memory
+than a default Docker Desktop engine exposes. Run it only after assigning Docker
+enough memory:
+
+```powershell
+docker compose --profile test run --rm -e AURA_SOURCE_PYODIDE_LIVE=1 test go test ./internal/source -run TestPyodide -count=1 -v
+```
+
 Inside the Compose network, Aura should use:
 
 ```text
@@ -99,5 +124,7 @@ Back up these folders before moving hosts or upgrading major versions.
   configured Garage bucket. SQLite and wiki storage remain local files.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
-- The container stack disables `SANDBOX_ENABLED` by default because the Pyodide
-  runtime bundle is not included in the initial image.
+- The app container disables `SANDBOX_ENABLED` by default because the Pyodide
+  runtime bundle is not included in the production image. The separate `test`
+  service mounts the working tree and includes Node so bundled runtime tests can
+  execute when `runtime/pyodide/` exists locally.

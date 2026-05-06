@@ -354,10 +354,50 @@ func (r *PyodideRunner) CheckAvailability() Availability {
 			Detail:    fmt.Sprintf("Pyodide runner path is a directory: %s", r.runnerPath),
 		}
 	}
+	if detail := r.checkNodeRuntime(); detail != "" {
+		return Availability{
+			Available: false,
+			Kind:      RuntimeKindPyodide,
+			Detail:    detail,
+		}
+	}
 	return Availability{
 		Available: true,
 		Kind:      RuntimeKindPyodide,
 		Detail:    "Pyodide runner available",
+	}
+}
+
+func (r *PyodideRunner) checkNodeRuntime() string {
+	runnerDir := filepath.Dir(r.runnerPath)
+	for _, candidate := range pyodideNodeCandidates(runnerDir) {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return ""
+		}
+	}
+	nodeName := "node"
+	if runtime.GOOS == "windows" {
+		nodeName = "node.exe"
+	}
+	if _, err := exec.LookPath(nodeName); err == nil {
+		return ""
+	}
+	return fmt.Sprintf("Pyodide runner requires Node.js; install Node in the container test image or bundle a Node runtime next to %s", r.runnerPath)
+}
+
+func pyodideNodeCandidates(runnerDir string) []string {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{filepath.Join(runnerDir, "node-win-x64", "node.exe")}
+	case "linux":
+		return []string{filepath.Join(runnerDir, "node-linux-x64", "bin", "node")}
+	case "darwin":
+		return []string{
+			filepath.Join(runnerDir, "node-darwin-arm64", "bin", "node"),
+			filepath.Join(runnerDir, "node-darwin-x64", "bin", "node"),
+		}
+	default:
+		return nil
 	}
 }
 
@@ -618,6 +658,7 @@ func sanitizedPyodideRunnerEnv(env []string) []string {
 		"LANG":         true,
 		"LC_ALL":       true,
 		"LOCALAPPDATA": true,
+		"NODE_OPTIONS": true,
 		"PATH":         true,
 		"PATHEXT":      true,
 		"SYSTEMROOT":   true,
