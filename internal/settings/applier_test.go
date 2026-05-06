@@ -139,6 +139,35 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	}
 }
 
+func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	cfg := &config.Config{
+		QdrantURL:        "http://127.0.0.1:6333",
+		QdrantCollection: "aura_memory_v1",
+		QdrantAPIKey:     "",
+	}
+
+	_ = s.Set(ctx, KeyQdrantURL, "http://qdrant:6333")
+	_ = s.Set(ctx, KeyQdrantCollection, "aura_memory_v2")
+	_ = s.Set(ctx, KeyQdrantAPIKey, "secret")
+
+	ApplyToConfig(ctx, s, cfg)
+
+	if cfg.QdrantURL != "http://qdrant:6333" {
+		t.Fatalf("QdrantURL = %q", cfg.QdrantURL)
+	}
+	if cfg.QdrantCollection != "aura_memory_v2" {
+		t.Fatalf("QdrantCollection = %q", cfg.QdrantCollection)
+	}
+	if cfg.QdrantAPIKey != "secret" {
+		t.Fatalf("QdrantAPIKey not applied")
+	}
+	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) {
+		t.Fatal("Qdrant settings must be dashboard-overridable")
+	}
+}
+
 func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	// Container-first installs use the dashboard as the single settings
 	// surface, so runtime and sandbox rows are deliberate overrides.

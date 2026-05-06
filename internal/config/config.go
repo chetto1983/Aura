@@ -7,6 +7,7 @@ import (
 
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
+const DefaultQdrantCollection = "aura_memory_v1"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
@@ -45,6 +46,9 @@ type Config struct {
 	GarageS3Bucket          string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
 	GarageS3AccessKey       string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
 	GarageS3SecretKey       string  `envconfig:"GARAGE_S3_SECRET_KEY"`
+	QdrantURL               string  `envconfig:"QDRANT_URL"`
+	QdrantCollection        string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
+	QdrantAPIKey            string  `envconfig:"QDRANT_API_KEY"`
 	MaxToolIterations       int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath                string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	PromptOverlayPath       string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
@@ -187,6 +191,9 @@ func Load() (*Config, error) {
 	cfg.GarageS3Bucket = getEnv("GARAGE_S3_BUCKET", "aura-artifacts")
 	cfg.GarageS3AccessKey = getEnv("GARAGE_S3_ACCESS_KEY", "")
 	cfg.GarageS3SecretKey = getEnv("GARAGE_S3_SECRET_KEY", "")
+	cfg.QdrantURL = getEnv("QDRANT_URL", "")
+	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
+	cfg.QdrantAPIKey = getEnv("QDRANT_API_KEY", "")
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")

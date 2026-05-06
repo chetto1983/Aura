@@ -8,6 +8,7 @@
 !.env.example
 /data/
 /garage/
+/qdrant/
 
 # MCP runtime config (template tracked as mcp.example.json)
 /mcp.json

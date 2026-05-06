@@ -93,6 +93,9 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("GARAGE_S3_BUCKET")
 	os.Unsetenv("GARAGE_S3_ACCESS_KEY")
 	os.Unsetenv("GARAGE_S3_SECRET_KEY")
+	os.Unsetenv("QDRANT_URL")
+	os.Unsetenv("QDRANT_COLLECTION")
+	os.Unsetenv("QDRANT_API_KEY")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
@@ -158,6 +161,12 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.GarageS3Bucket != "aura-artifacts" {
 		t.Errorf("GarageS3Bucket = %q, want aura-artifacts", cfg.GarageS3Bucket)
+	}
+	if cfg.QdrantURL != "" {
+		t.Errorf("QdrantURL = %q, want empty by default", cfg.QdrantURL)
+	}
+	if cfg.QdrantCollection != "aura_memory_v1" {
+		t.Errorf("QdrantCollection = %q, want aura_memory_v1", cfg.QdrantCollection)
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
@@ -239,6 +248,29 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
+	}
+}
+
+func TestLoadQdrantConfig(t *testing.T) {
+	os.Setenv("QDRANT_URL", "http://qdrant:6333")
+	os.Setenv("QDRANT_COLLECTION", "aura_memory_v2")
+	os.Setenv("QDRANT_API_KEY", "secret")
+	defer os.Unsetenv("QDRANT_URL")
+	defer os.Unsetenv("QDRANT_COLLECTION")
+	defer os.Unsetenv("QDRANT_API_KEY")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.QdrantURL != "http://qdrant:6333" {
+		t.Fatalf("QdrantURL = %q", cfg.QdrantURL)
+	}
+	if cfg.QdrantCollection != "aura_memory_v2" {
+		t.Fatalf("QdrantCollection = %q", cfg.QdrantCollection)
+	}
+	if cfg.QdrantAPIKey != "secret" {
+		t.Fatalf("QdrantAPIKey not loaded")
 	}
 }
 

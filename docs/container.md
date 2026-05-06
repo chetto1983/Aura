@@ -11,6 +11,8 @@ signals.
 - `garage`: local S3-compatible object storage for manual backup exports.
 - `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
   profile.
+- `qdrant`: local vector database sidecar for rebuildable wiki/memory
+  embeddings.
 - `test`: optional developer test container with Go 1.26.2, Node 22, and the
   Linux sandbox capability needed for no-network skill tests.
 
@@ -18,6 +20,8 @@ The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
 `127.0.0.1:8088` on the host and is reachable from Aura as
 `http://searxng:8080`. Garage's S3 API is bound to `127.0.0.1:3900` on the
 host and is reachable from Aura as `http://garage:3900`.
+Qdrant's REST API is bound to `127.0.0.1:6333` on the host and is reachable
+from Aura as `http://qdrant:6333`.
 
 ## First Run
 
@@ -68,6 +72,22 @@ Run a manual backup export to Garage:
 ```powershell
 go run ./cmd/debug_backup
 ```
+
+Probe Qdrant health:
+
+```powershell
+go run ./cmd/debug_qdrant -url http://127.0.0.1:6333
+```
+
+Rebuild the optional Qdrant wiki index after memory cleanup:
+
+```powershell
+go run ./cmd/debug_qdrant -url http://127.0.0.1:6333 -rebuild -timeout 5m
+```
+
+This command uses `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL`, and
+`EMBEDDING_MODEL`; Aura's SQLite FTS mirror remains the fallback runtime index
+until Qdrant search is promoted in a later slice.
 
 By default this writes a complete artifact set:
 
@@ -153,6 +173,10 @@ Visible host folders hold user data:
 - `wiki/`: compiled wiki and source evidence.
 - `skills/`: installed skills.
 - `garage/`: Garage S3 metadata and object data once the Garage service is enabled.
+- `qdrant-storage`: Docker-managed named volume for Qdrant's derived vector
+  index. Qdrant warns that Docker Desktop FUSE bind mounts can corrupt vector
+  storage, so Aura keeps this one derived index in a named volume and rebuilds
+  it from `wiki/` when needed.
 
 Back up these folders before moving hosts or upgrading major versions.
 
@@ -173,6 +197,11 @@ Back up these folders before moving hosts or upgrading major versions.
   `artifacts/YYYY-MM-DD-HHMMSS/`. SQLite and wiki storage remain local files.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
+- `compose.yaml` starts Qdrant from `qdrant/qdrant:latest` with storage in the
+  Docker-managed `qdrant-storage` volume. Aura exposes `QDRANT_URL`,
+  `QDRANT_COLLECTION`, and optional `QDRANT_API_KEY` in the dashboard settings,
+  but Qdrant is a sidecar index in this release, not the primary source of
+  truth.
 - The app container enables `SANDBOX_ENABLED=true` and ships the bundled
   Pyodide runtime at `/app/runtime/pyodide`. Node.js is installed in the image
   for the runner script. The separate `test` service still mounts the working

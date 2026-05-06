@@ -49,6 +49,9 @@ const (
 	KeyGarageS3Bucket            = "GARAGE_S3_BUCKET"
 	KeyGarageS3AccessKey         = "GARAGE_S3_ACCESS_KEY"
 	KeyGarageS3SecretKey         = "GARAGE_S3_SECRET_KEY"
+	KeyQdrantURL                 = "QDRANT_URL"
+	KeyQdrantCollection          = "QDRANT_COLLECTION"
+	KeyQdrantAPIKey              = "QDRANT_API_KEY"
 	KeyMaxToolIterations         = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL          = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin               = "SKILLS_ADMIN"
@@ -104,6 +107,7 @@ func OverridableKeys() []string {
 		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
+		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -185,6 +189,9 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.GarageS3Bucket = s.GetString(ctx, KeyGarageS3Bucket, cfg.GarageS3Bucket)
 	cfg.GarageS3AccessKey = s.GetString(ctx, KeyGarageS3AccessKey, cfg.GarageS3AccessKey)
 	cfg.GarageS3SecretKey = s.GetString(ctx, KeyGarageS3SecretKey, cfg.GarageS3SecretKey)
+	cfg.QdrantURL = s.GetString(ctx, KeyQdrantURL, cfg.QdrantURL)
+	cfg.QdrantCollection = s.GetString(ctx, KeyQdrantCollection, cfg.QdrantCollection)
+	cfg.QdrantAPIKey = s.GetString(ctx, KeyQdrantAPIKey, cfg.QdrantAPIKey)
 	cfg.MaxToolIterations = s.GetInt(ctx, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = s.GetString(ctx, KeySkillsCatalogURL, cfg.SkillsCatalogURL)

@@ -151,6 +151,56 @@ func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
 	}
 }
 
+func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings: store,
+		RuntimeConfig: &config.Config{
+			QdrantURL:        "http://qdrant:6333",
+			QdrantCollection: "aura_memory_v1",
+			QdrantAPIKey:     "secret",
+		},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	want := map[string]string{
+		settings.KeyQdrantURL:        "http://qdrant:6333",
+		settings.KeyQdrantCollection: "aura_memory_v1",
+	}
+	for key, value := range want {
+		found := false
+		for _, it := range resp.Items {
+			if it.Key != key {
+				continue
+			}
+			found = true
+			if it.Value != value || it.ActiveValue != value || it.ReadOnly {
+				t.Fatalf("%s = value:%q active:%q readonly:%v", key, it.Value, it.ActiveValue, it.ReadOnly)
+			}
+		}
+		if !found {
+			t.Fatalf("%s not in settings response", key)
+		}
+	}
+	for _, it := range resp.Items {
+		if it.Key != settings.KeyQdrantAPIKey {
+			continue
+		}
+		if it.Value != "" || it.ActiveValue != "(configured)" || !it.IsSecret {
+			t.Fatalf("QDRANT_API_KEY leaked: value=%q active=%q secret=%v", it.Value, it.ActiveValue, it.IsSecret)
+		}
+		return
+	}
+	t.Fatal("QDRANT_API_KEY not in settings response")
+}
+
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {
 	router, store := newSettingsEnv(t)
 	body := `{"updates":{"HTTP_PORT":"0.0.0.0:9090","SANDBOX_TIMEOUT_SEC":"45"}}`

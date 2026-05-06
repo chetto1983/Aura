@@ -107,6 +107,9 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyGarageS3Bucket, Group: "storage", Kind: "text", Label: "Garage S3 bucket"},
 	{Key: settings.KeyGarageS3AccessKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 access key"},
 	{Key: settings.KeyGarageS3SecretKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 secret key"},
+	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
+	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
+	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
 
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
@@ -287,6 +290,12 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.GarageS3AccessKey
 	case settings.KeyGarageS3SecretKey:
 		return cfg.GarageS3SecretKey
+	case settings.KeyQdrantURL:
+		return cfg.QdrantURL
+	case settings.KeyQdrantCollection:
+		return cfg.QdrantCollection
+	case settings.KeyQdrantAPIKey:
+		return cfg.QdrantAPIKey
 	case settings.KeyMaxToolIterations:
 		return strconv.Itoa(cfg.MaxToolIterations)
 	case settings.KeySkillsCatalogURL:
