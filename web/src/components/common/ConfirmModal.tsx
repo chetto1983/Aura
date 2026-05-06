@@ -28,6 +28,7 @@ export function ConfirmHost() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const activeRef = useRef<ActiveRequest | null>(null);
+  const clearTimerRef = useRef<number | null>(null);
 
   // Sync the ref *after* render so callbacks can read the latest active
   // request without violating react-hooks/refs (no writes during render).
@@ -37,6 +38,10 @@ export function ConfirmHost() {
 
   useEffect(() => {
     const unsubscribe = _subscribe((req) => {
+      if (clearTimerRef.current !== null) {
+        window.clearTimeout(clearTimerRef.current);
+        clearTimerRef.current = null;
+      }
       // If a request lands while another is active (e.g. async race),
       // resolve the old one as cancelled so its caller doesn't hang.
       setActive((prev) => {
@@ -49,6 +54,10 @@ export function ConfirmHost() {
     });
     return () => {
       unsubscribe();
+      if (clearTimerRef.current !== null) {
+        window.clearTimeout(clearTimerRef.current);
+        clearTimerRef.current = null;
+      }
       const current = activeRef.current;
       if (current) resolveCancelled(current);
     };
@@ -81,7 +90,12 @@ export function ConfirmHost() {
     setOpen(false);
     // Clear the request after the close animation finishes so the
     // dialog content stays mounted while it animates out.
-    window.setTimeout(() => setActive(null), 150);
+    const requestToClear = current;
+    if (clearTimerRef.current !== null) window.clearTimeout(clearTimerRef.current);
+    clearTimerRef.current = window.setTimeout(() => {
+      clearTimerRef.current = null;
+      if (activeRef.current === requestToClear) setActive(null);
+    }, 150);
   };
 
   const onConfirm = () => {

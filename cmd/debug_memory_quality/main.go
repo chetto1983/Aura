@@ -446,15 +446,21 @@ func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, propos
 
 func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liveLatencyBudget time.Duration) liveScenarioResult {
 	res := liveScenarioResult{Name: sc.Name, Question: sc.Question}
+	toolAllowlist := []string{"search_memory"}
+	maxToolCalls := 1
+	if sc.ShouldPropose {
+		toolAllowlist = append(toolAllowlist, "propose_wiki_change")
+		maxToolCalls = 2
+	}
 	started := time.Now()
 	result, err := runner.Run(ctx, agent.Task{
 		SystemPrompt:       liveSystemPrompt(),
 		Prompt:             liveScenarioPrompt(sc),
-		ToolAllowlist:      []string{"search_memory", "propose_wiki_change"},
+		ToolAllowlist:      toolAllowlist,
 		UserID:             "9001",
 		Temperature:        llm.Float64Ptr(0),
-		MaxToolCalls:       3,
-		MaxToolResultChars: 8000,
+		MaxToolCalls:       maxToolCalls,
+		MaxToolResultChars: 3000,
 		CompleteOnDeadline: true,
 	})
 	res.ElapsedMS = time.Since(started).Milliseconds()
@@ -658,7 +664,7 @@ For every user question:
 - When calling propose_wiki_change from search_memory, set origin_tool="search_memory" and pass evidence refs copied from the Evidence envelope. Include kind, id, title/page/snippet when available.
 - Do not repeat search_memory unless the first call returned no matching evidence.
 - If a tool returns {"ok":false,...} and retryable=true, fix the arguments from the hint and retry that tool once.
-- Keep the final answer under 40 words for answer-only questions. Mention evidence IDs naturally.`
+- Keep the final answer under 25 words for answer-only questions. Mention one evidence ID naturally.`
 }
 
 func liveScenarioPrompt(sc scenario) string {

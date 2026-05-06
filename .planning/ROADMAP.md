@@ -22,9 +22,16 @@ Key outcomes:
 
 ### v1.3 Memory Consolidation And Quality
 
-Status: planned
+Status: validation
 
 Goal: make Aura's durable memory graph useful instead of merely populated. The milestone should remove operational/generated docs from user memory, consolidate orphan pages into hubs, repair broken wiki links, verify embedding/search wiring, and measure answer quality through `search_memory`.
+
+Current validation state:
+
+- Deterministic memory cleanup is implemented and reproducible through `clean_wiki_memory` and nightly maintenance.
+- Live wiki dry-run hygiene reports 17 pages, 0 broken links, and 0 orphans.
+- Hermetic memory quality scorecard passes 20/20 with wiki, source, and archive evidence.
+- Live LLM scorecard still misses the 30s latency budget on `glm-5.1:cloud`, even though tool routing is correct.
 
 First success criteria:
 
@@ -36,6 +43,10 @@ First success criteria:
 - Embedding configuration uses `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL`, and `EMBEDDING_MODEL`; it must not fall back to `LLM_API_KEY`.
 - Embed cache behavior is covered by tests and visible through dashboard health.
 - `search_memory` quality is evaluated against real Aura/project questions, with proposals staying review-gated and evidence-backed.
+
+Remaining before closure:
+
+- Choose a faster live model/runtime path or split the live answer path so `search_memory` responses stay under the 30s end-user budget.
 
 Deferred from this milestone:
 

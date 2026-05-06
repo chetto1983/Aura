@@ -28,6 +28,32 @@ async function installDeterministicPageRoutes(page: Page) {
       },
     });
   });
+  await page.route('**/api/conversations/stats', async (route) => {
+    await route.fulfill({
+      json: {
+        total_rows: 1,
+        distinct_chats: 1,
+        oldest_at: '2026-05-05T10:00:00Z',
+        newest_at: '2026-05-05T10:00:00Z',
+      },
+    });
+  });
+  await page.route('**/api/conversations**', async (route) => {
+    if (!new URL(route.request().url()).pathname.endsWith('/api/conversations')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      json: [{
+        id: 101,
+        chat_id: 42,
+        role: 'user',
+        content: 'Route audit conversation fixture',
+        tool_calls_count: 0,
+        created_at: '2026-05-05T10:00:00Z',
+      }],
+    });
+  });
 }
 
 async function expectNoFrontendAuditArtifacts(page: Page) {

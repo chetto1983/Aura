@@ -48,6 +48,35 @@ test.describe('ConfirmModal — prompt flow on /conversations', () => {
     await page.keyboard.press('Escape');
     await expect(modal).toBeHidden({ timeout: 2_000 });
   });
+
+  test('submitting purge prompt keeps the follow-up destructive confirm populated', async ({ authedPage: page }) => {
+    await page.goto('/conversations');
+
+    const purgeBtn = page.getByRole('button', { name: /purge older than/i });
+    await expect(purgeBtn).toBeVisible({ timeout: 5_000 });
+    if (await purgeBtn.isDisabled()) {
+      test.skip(true, 'No archived turns — purge button disabled, prompt cannot open');
+      return;
+    }
+
+    await purgeBtn.click();
+    const modal = page.getByTestId('confirm-modal');
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    await page.getByTestId('confirm-modal-input').fill('30');
+    await page.getByTestId('confirm-modal-confirm').click();
+
+    await expect(modal).toBeVisible();
+    await expect(modal.getByText(/delete turns older than 30 days/i)).toBeVisible();
+    await expect(page.getByTestId('confirm-modal-cancel')).toBeVisible();
+    await expect(page.getByTestId('confirm-modal-confirm')).toBeVisible();
+
+    await page.waitForTimeout(250);
+    await expect(modal.getByText(/delete turns older than 30 days/i)).toBeVisible();
+
+    await page.getByTestId('confirm-modal-cancel').click();
+    await expect(modal).toBeHidden({ timeout: 2_000 });
+  });
 });
 
 test.describe('ConfirmModal — destructive confirm on /skills', () => {

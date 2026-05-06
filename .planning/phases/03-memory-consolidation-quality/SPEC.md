@@ -1,7 +1,7 @@
 # v1.3 Memory Consolidation And Quality Spec
 
 Date: 2026-05-06
-Status: draft
+Status: validation
 
 ## Goal
 
@@ -50,3 +50,7 @@ The dashboard graph currently shows many isolated nodes. The audit found three r
 - `go test ./internal/search -run EmbedCache -count=1`
 - Live wiki graph audit before and after cleanup.
 - `cmd/debug_memory_quality` once the wiki cleanup is complete and live keys are available.
+
+## Validation Update
+
+See `VALIDATION.md` for the current closure truth. Deterministic cleanup, embedding/search tests, live wiki hygiene, frontend audit, Go verification, and snapshot packaging passed. Live LLM routing uses `search_memory` correctly, but the configured `glm-5.1:cloud` runtime remains too slow for the 30s memory quality gate.

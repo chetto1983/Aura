@@ -27,7 +27,7 @@ Aura must close v1.2 by making the shipped upload and dashboard surfaces truthfu
 
 ## V13-MEM: Memory Consolidation And Quality
 
-Status: planned
+Status: validation
 
 Aura must keep durable memory clean, connected, and searchable. The next milestone audits the live wiki graph, checked-in docs, generated artifacts, search index, embedding cache, and `search_memory` answer quality.
 
@@ -43,3 +43,5 @@ Aura must keep durable memory clean, connected, and searchable. The next milesto
 - Embedding cache hit/miss behavior has focused tests and remains visible through `/api/health`.
 - `search_memory` returns evidence envelopes that combine wiki, source, and archive evidence without silently mutating durable wiki pages.
 - Proposal tools keep requiring evidence when the origin is `search_memory`.
+- Deterministic scorecards and live wiki hygiene pass before closure.
+- Live LLM memory routing either passes the 30s latency gate or the release notes explicitly mark the configured model as a performance caveat.
