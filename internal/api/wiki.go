@@ -85,7 +85,7 @@ func handleWikiGraph(deps Deps) http.HandlerFunc {
 			known[s] = true
 		}
 		nodes := make([]GraphNode, 0, len(slugs))
-		var edges []GraphEdge
+		edges := make([]GraphEdge, 0)
 		for _, slug := range slugs {
 			page, err := deps.Wiki.ReadPage(slug)
 			if err != nil {

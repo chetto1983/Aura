@@ -91,6 +91,13 @@ output_dir = Path("/tmp/aura_out")
 output_dir.mkdir(parents=True, exist_ok=True)
 warnings = []
 
+MAX_DOCX_ENTRIES = 512
+MAX_DOCX_TOTAL_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+MAX_DOCX_XML_PART_BYTES = 2 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 100
+MAX_DOCX_PARAGRAPHS = 5000
+MAX_DOCX_TEXT_BYTES = 512 * 1024
+
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 TEXT_TAG = "{" + WORD_NS + "}t"
 PARA_TAG = "{" + WORD_NS + "}p"
@@ -116,39 +123,85 @@ def paragraph_text(paragraph):
 
 def part_paragraphs(zf, name):
     try:
-        raw = zf.read(name)
+        info = zf.getinfo(name)
     except KeyError:
         return []
+    if info.file_size > MAX_DOCX_XML_PART_BYTES:
+        warnings.append(f"skipped oversized XML part {name}")
+        return []
+    if info.compress_size > 0 and info.file_size > info.compress_size * MAX_DOCX_COMPRESSION_RATIO:
+        warnings.append(f"skipped suspiciously compressed XML part {name}")
+        return []
+    raw = zf.read(info)
     try:
         root = ET.fromstring(raw)
     except ET.ParseError as exc:
         warnings.append(f"skipped malformed XML part {name}: {exc}")
         return []
-    return [text for text in (paragraph_text(p) for p in root.iter(PARA_TAG)) if text]
+    paragraphs = []
+    for paragraph in root.iter(PARA_TAG):
+        if len(paragraphs) >= MAX_DOCX_PARAGRAPHS:
+            warnings.append(f"truncated paragraph extraction in {name}")
+            break
+        text = paragraph_text(paragraph)
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+sections = []
+extracted_text_bytes = 0
+extracted_paragraphs = 0
+truncated = False
+
+def append_block(text, counts_as_paragraph=True):
+    global extracted_text_bytes, extracted_paragraphs, truncated
+    if counts_as_paragraph and extracted_paragraphs >= MAX_DOCX_PARAGRAPHS:
+        if not truncated:
+            warnings.append("document truncated at paragraph limit")
+        truncated = True
+        return False
+    projected = extracted_text_bytes + len((text + "\n\n").encode("utf-8"))
+    if projected > MAX_DOCX_TEXT_BYTES:
+        if not truncated:
+            warnings.append("document truncated at text byte limit")
+        truncated = True
+        return False
+    sections.append(text)
+    extracted_text_bytes = projected
+    if counts_as_paragraph:
+        extracted_paragraphs += 1
+    return True
+
+def append_part(label, paragraphs):
+    if not paragraphs:
+        return
+    if label and not append_block(label, False):
+        return
+    for text in paragraphs:
+        if not append_block(text):
+            return
 
 with zipfile.ZipFile(input_path) as zf:
+    infos = zf.infolist()
+    if len(infos) > MAX_DOCX_ENTRIES:
+        raise RuntimeError("DOCX has too many ZIP entries")
+    total_uncompressed = sum(info.file_size for info in infos)
+    if total_uncompressed > MAX_DOCX_TOTAL_UNCOMPRESSED_BYTES:
+        raise RuntimeError("DOCX uncompressed size exceeds limit")
     names = set(zf.namelist())
     if "word/document.xml" not in names:
         raise RuntimeError("DOCX missing word/document.xml")
 
-    sections = []
     header_parts = sorted(name for name in names if re.match(r"word/header\d+\.xml$", name))
     footer_parts = sorted(name for name in names if re.match(r"word/footer\d+\.xml$", name))
 
     for name in header_parts:
-        text = part_paragraphs(zf, name)
-        if text:
-            sections.append("## Header")
-            sections.extend(text)
+        append_part("## Header", part_paragraphs(zf, name))
 
-    body = part_paragraphs(zf, "word/document.xml")
-    sections.extend(body)
+    append_part("", part_paragraphs(zf, "word/document.xml"))
 
     for name in footer_parts:
-        text = part_paragraphs(zf, name)
-        if text:
-            sections.append("## Footer")
-            sections.extend(text)
+        append_part("## Footer", part_paragraphs(zf, name))
 
 markdown = "\n\n".join(sections).strip()
 if not markdown:

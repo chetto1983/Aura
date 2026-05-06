@@ -123,6 +123,11 @@ func TestPyodideRunner_ExtractDOCXUsesInputFileAndArtifacts(t *testing.T) {
 	if strings.Contains(capture.Request.Code, strings.Repeat("d", 100)) {
 		t.Fatalf("trusted extractor code embeds document bytes")
 	}
+	for _, want := range []string{"MAX_DOCX_XML_PART_BYTES", "MAX_DOCX_TEXT_BYTES", "MAX_DOCX_COMPRESSION_RATIO", "zf.getinfo(name)", "zf.infolist()"} {
+		if !strings.Contains(capture.Request.Code, want) {
+			t.Fatalf("trusted DOCX extractor code missing %q", want)
+		}
+	}
 	if len(capture.Request.InputFiles) != 1 || filepath.Base(capture.Request.InputFiles[0]) != "document.docx" {
 		t.Fatalf("input_files = %v, want document.docx input", capture.Request.InputFiles)
 	}

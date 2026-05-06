@@ -42,13 +42,15 @@ export default function WikiGraphView() {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
+  const nodes = useMemo(() => (Array.isArray(data?.nodes) ? data.nodes : []), [data]);
+  const edges = useMemo(() => (Array.isArray(data?.edges) ? data.edges : []), [data]);
   const matchedIds = useMemo(() => {
-    if (!data || !normalizedQuery) return new Set<string>();
-    return new Set(data.nodes
+    if (!normalizedQuery) return new Set<string>();
+    return new Set(nodes
       .filter((n) => [n.title, n.id, n.category].some((value) => value?.toLowerCase().includes(normalizedQuery)))
       .map((n) => n.id));
-  }, [data, normalizedQuery]);
-  const selectedNode = data?.nodes.find((n) => n.id === selectedId);
+  }, [nodes, normalizedQuery]);
+  const selectedNode = nodes.find((n) => n.id === selectedId);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -80,11 +82,11 @@ export default function WikiGraphView() {
   if (error && !data) return <div className="p-6 text-sm text-destructive">{t('graph.error', { message: error.message })}</div>;
   if (!data) return null;
 
-  const matchCount = normalizedQuery ? matchedIds.size : data.nodes.length;
+  const matchCount = normalizedQuery ? matchedIds.size : nodes.length;
 
   const graphData = {
-    nodes: data.nodes.map((n) => ({ ...n })) as ForceNode[],
-    links: data.edges.map((e) => ({ source: e.source, target: e.target, type: e.type })) as ForceLink[],
+    nodes: nodes.map((n) => ({ ...n })) as ForceNode[],
+    links: edges.map((e) => ({ source: e.source, target: e.target, type: e.type })) as ForceLink[],
   };
   const fitGraph = () => {
     graphRef.current?.zoomToFit(450, 48, (node) => {
@@ -113,7 +115,7 @@ export default function WikiGraphView() {
           {t('graph.fit')}
         </Button>
         <div className="ml-auto text-sm text-muted-foreground" aria-live="polite">
-          {t('graph.counts', { nodes: data.nodes.length, edges: data.edges.length })}
+          {t('graph.counts', { nodes: nodes.length, edges: edges.length })}
           {normalizedQuery && <span className="ml-2">{t('graph.matches', { count: matchCount })}</span>}
         </div>
       </div>
@@ -127,7 +129,7 @@ export default function WikiGraphView() {
           </Button>
         </div>
       )}
-      {data.nodes.length === 0 && (
+      {nodes.length === 0 && (
         <div className="p-6 text-sm text-muted-foreground">{t('graph.empty')}</div>
       )}
       <div ref={containerRef} className="min-h-[360px] flex-1 overflow-hidden">
@@ -156,11 +158,11 @@ export default function WikiGraphView() {
         </div>
       )}
       </div>
-      {data.nodes.length > 0 && (
+      {nodes.length > 0 && (
         <div className="border-t p-3 md:hidden">
           <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">{t('graph.nodes')}</p>
           <div className="space-y-1">
-            {data.nodes.slice(0, 12).map((node) => (
+            {nodes.slice(0, 12).map((node) => (
               <button
                 key={node.id}
                 type="button"

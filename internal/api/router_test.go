@@ -351,6 +351,12 @@ func TestWikiGraph_SkipsSelfLoops(t *testing.T) {
 	if len(got.Edges) != 0 {
 		t.Errorf("self-loops not filtered: %+v", got.Edges)
 	}
+	if got.Edges == nil {
+		t.Fatal("edges is nil, want empty array for frontend iteration")
+	}
+	if !strings.Contains(rr.Body.String(), `"edges":[]`) {
+		t.Fatalf("body = %s, want edges as [] not null", rr.Body.String())
+	}
 }
 
 func TestSourceList_FilterAndDTO(t *testing.T) {
