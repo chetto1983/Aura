@@ -44,7 +44,7 @@ type DOCXSpec struct {
 //   - "heading":   H1–H6 via Level (clamped 1..6); Text is the heading text.
 //   - "paragraph": plain paragraph; Text is the body.
 //   - "bullet":    rendered with a "• " prefix on a normal paragraph
-//                  (avoids needing a /word/numbering.xml definition).
+//     (avoids needing a /word/numbering.xml definition).
 //   - "table":     Rows is a 2-D slice; row[i][j] is the cell at row i, col j.
 type DOCXBlock struct {
 	Kind  string     // heading | paragraph | bullet | table

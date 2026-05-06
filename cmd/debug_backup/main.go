@@ -20,6 +20,7 @@ import (
 )
 
 func main() {
+	mode := flag.String("mode", "all", "export mode: full, artifacts, or all")
 	timeout := flag.Duration("timeout", 2*time.Minute, "backup upload timeout")
 	flag.Parse()
 
@@ -42,6 +43,8 @@ func main() {
 		DBPath:     cfg.DBPath,
 		WikiPath:   cfg.WikiPath,
 		SkillsPath: cfg.SkillsPath,
+		LogDir:     cfg.LogDir,
+		AuditPaths: []string{"reports"},
 	}
 	if missing := missingGarageConfig(bcfg); len(missing) > 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: missing Garage backup config: %s\n", strings.Join(missing, ", "))
@@ -56,12 +59,28 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FAIL: create S3 uploader: %v\n", err)
 		os.Exit(1)
 	}
-	res, err := backup.Export(ctx, bcfg, uploader, time.Now())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: export backup: %v\n", err)
+	switch strings.ToLower(strings.TrimSpace(*mode)) {
+	case "", "all", "artifacts":
+		res, err := backup.ExportArtifactSet(ctx, bcfg, uploader, time.Now())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: export artifact set: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("artifact set uploaded bucket=%s timestamp=%s objects=%d\n", res.Bucket, res.Timestamp, len(res.Objects))
+		for _, obj := range res.Objects {
+			fmt.Printf("- category=%s key=%s files=%d bytes=%d\n", obj.Category, obj.Key, obj.Files, obj.Bytes)
+		}
+	case "full":
+		res, err := backup.Export(ctx, bcfg, uploader, time.Now())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL: export backup: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("backup uploaded bucket=%s key=%s files=%d\n", res.Bucket, res.Key, res.Files)
+	default:
+		fmt.Fprintf(os.Stderr, "FAIL: invalid mode %q (want full, artifacts, or all)\n", *mode)
 		os.Exit(1)
 	}
-	fmt.Printf("backup uploaded bucket=%s key=%s files=%d\n", res.Bucket, res.Key, res.Files)
 }
 
 type s3Uploader struct {

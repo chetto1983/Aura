@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,13 @@ import (
 )
 
 type fakeUploader struct {
+	bucket string
+	key    string
+	body   []byte
+	puts   []fakePut
+}
+
+type fakePut struct {
 	bucket string
 	key    string
 	body   []byte
@@ -27,6 +35,7 @@ func (f *fakeUploader) PutObject(ctx context.Context, bucket, key string, body i
 		return err
 	}
 	f.body = data
+	f.puts = append(f.puts, fakePut{bucket: bucket, key: key, body: data})
 	return nil
 }
 
@@ -60,6 +69,121 @@ func TestExportNamesAndArchivesState(t *testing.T) {
 		if !containsString(names, want) {
 			t.Fatalf("archive missing %s in %v", want, names)
 		}
+	}
+}
+
+func TestExportArtifactSetUploadsCategorizedArchives(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, ".env"), []byte("LLM_API_KEY=secret\n"))
+	mustWrite(t, filepath.Join(dir, "aura.db"), []byte("sqlite"))
+	mustWrite(t, filepath.Join(dir, "aura.db-wal"), []byte("wal"))
+	mustWrite(t, filepath.Join(dir, "wiki", "index.md"), []byte("# Index\n"))
+	mustWrite(t, filepath.Join(dir, "wiki", "page.md"), []byte("# Page\n"))
+	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "original.pdf"), []byte("%PDF"))
+	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "source.json"), []byte(`{"id":"src_0123456789abcdef"}`))
+	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "ocr.md"), []byte("ocr"))
+	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "extract.md"), []byte("extract"))
+	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "cleaned.md"), []byte("clean"))
+	mustWrite(t, filepath.Join(dir, "skills", "demo", "SKILL.md"), []byte("---\nname: demo\n---\n"))
+	mustWrite(t, filepath.Join(dir, "logs", "aura.log"), []byte("log"))
+	mustWrite(t, filepath.Join(dir, "reports", "e2e.json"), []byte(`{"ok":true}`))
+
+	uploader := &fakeUploader{}
+	res, err := ExportArtifactSet(context.Background(), Config{
+		EnvPath:    filepath.Join(dir, ".env"),
+		DBPath:     filepath.Join(dir, "aura.db"),
+		WikiPath:   filepath.Join(dir, "wiki"),
+		SkillsPath: filepath.Join(dir, "skills"),
+		LogDir:     filepath.Join(dir, "logs"),
+		AuditPaths: []string{filepath.Join(dir, "reports")},
+		Bucket:     "aura-artifacts",
+	}, uploader, time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ExportArtifactSet() error = %v", err)
+	}
+	for _, want := range []string{
+		"backups/2026-05-06-070809/aura-backup.tar.gz",
+		"artifacts/2026-05-06-070809/source-originals.tar.gz",
+		"artifacts/2026-05-06-070809/extractions.tar.gz",
+		"artifacts/2026-05-06-070809/memory-snapshot.tar.gz",
+		"artifacts/2026-05-06-070809/embedding-index.tar.gz",
+		"artifacts/2026-05-06-070809/audit-bundle.tar.gz",
+		"artifacts/2026-05-06-070809/manifest.json",
+	} {
+		if !hasObject(res.Objects, want) {
+			t.Fatalf("missing uploaded object %s in %+v", want, res.Objects)
+		}
+	}
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/source-originals.tar.gz", "sources/src_0123456789abcdef/original.pdf")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/source-originals.tar.gz", "sources/src_0123456789abcdef/source.json")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/extractions.tar.gz", "sources/src_0123456789abcdef/ocr.md")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/extractions.tar.gz", "sources/src_0123456789abcdef/extract.md")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/extractions.tar.gz", "sources/src_0123456789abcdef/cleaned.md")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/memory-snapshot.tar.gz", "memory/wiki/page.md")
+	assertArchiveNotContains(t, uploader, "artifacts/2026-05-06-070809/memory-snapshot.tar.gz", "memory/wiki/raw/src_0123456789abcdef/ocr.md")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/aura.db")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/aura.db-wal")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/wiki/index.md")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/audit-bundle.tar.gz", "audit/logs/aura.log")
+	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/audit-bundle.tar.gz", "audit/reports/e2e.json")
+
+	var manifest ArtifactSetResult
+	manifestBody := bodyForKey(t, uploader, "artifacts/2026-05-06-070809/manifest.json")
+	if err := json.Unmarshal(manifestBody, &manifest); err != nil {
+		t.Fatalf("manifest json: %v", err)
+	}
+	if !hasObject(manifest.Objects, "artifacts/2026-05-06-070809/manifest.json") {
+		t.Fatalf("manifest should list itself: %+v", manifest.Objects)
+	}
+	for _, obj := range manifest.Objects {
+		if obj.Key == "artifacts/2026-05-06-070809/manifest.json" && obj.Bytes != int64(len(manifestBody)) {
+			t.Fatalf("manifest bytes = %d, actual %d", obj.Bytes, len(manifestBody))
+		}
+	}
+}
+
+func TestAddOneFileToleratesGrowingLiveFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aura.log")
+	mustWrite(t, path, []byte("before"))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open append: %v", err)
+	}
+	if _, err := file.WriteString("-after"); err != nil {
+		file.Close()
+		t.Fatalf("append: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close append: %v", err)
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := addOneFile(tw, path, "audit/aura.log", info); err != nil {
+		t.Fatalf("addOneFile() error = %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	tr := tar.NewReader(bytes.NewReader(buf.Bytes()))
+	h, err := tr.Next()
+	if err != nil {
+		t.Fatalf("tar next: %v", err)
+	}
+	if h.Size != int64(len("before")) {
+		t.Fatalf("header size = %d, want stale stat size", h.Size)
+	}
+	body, err := io.ReadAll(tr)
+	if err != nil {
+		t.Fatalf("read tar body: %v", err)
+	}
+	if string(body) != "before" {
+		t.Fatalf("body = %q, want stale-size snapshot", body)
 	}
 }
 
@@ -118,4 +242,40 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func hasObject(objects []ArtifactResult, key string) bool {
+	for _, obj := range objects {
+		if obj.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func assertArchiveContains(t *testing.T, uploader *fakeUploader, key, name string) {
+	t.Helper()
+	names := tarNames(t, bodyForKey(t, uploader, key))
+	if !containsString(names, name) {
+		t.Fatalf("%s missing %s in %v", key, name, names)
+	}
+}
+
+func assertArchiveNotContains(t *testing.T, uploader *fakeUploader, key, name string) {
+	t.Helper()
+	names := tarNames(t, bodyForKey(t, uploader, key))
+	if containsString(names, name) {
+		t.Fatalf("%s should not contain %s in %v", key, name, names)
+	}
+}
+
+func bodyForKey(t *testing.T, uploader *fakeUploader, key string) []byte {
+	t.Helper()
+	for _, put := range uploader.puts {
+		if put.key == key {
+			return put.body
+		}
+	}
+	t.Fatalf("upload %s not found in %+v", key, uploader.puts)
+	return nil
 }

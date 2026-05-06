@@ -59,6 +59,31 @@ Run a manual backup export to Garage:
 go run ./cmd/debug_backup
 ```
 
+By default this writes a complete artifact set:
+
+- `backups/<timestamp>/aura-backup.tar.gz`: full restore point with `.env`,
+  `aura.db`, `wiki/`, and `skills/`.
+- `artifacts/<timestamp>/source-originals.tar.gz`: source metadata plus
+  immutable originals such as PDFs, DOCX, TXT, HTML-derived files, uploads, and
+  sandbox artifacts stored under `wiki/raw/src_*/original.*`.
+- `artifacts/<timestamp>/extractions.tar.gz`: generated OCR/extraction files
+  such as `ocr.md`, `ocr.json`, `extract.md`, `extract.json`, cleaned markdown,
+  and extracted assets.
+- `artifacts/<timestamp>/memory-snapshot.tar.gz`: compiled wiki/memory pages,
+  excluding raw sources so OCR bloat does not get duplicated into memory.
+- `artifacts/<timestamp>/embedding-index.tar.gz`: `aura.db` plus SQLite
+  WAL/SHM sidecars and `wiki/index.md`, enough to preserve embedding cache and
+  search/index state without making S3 the live database.
+- `artifacts/<timestamp>/audit-bundle.tar.gz`: logs and `reports/` when
+  present, for failed ingest cases, E2E artifacts, and debug bundles.
+- `artifacts/<timestamp>/manifest.json`: uploaded object manifest.
+
+To upload only the legacy full restore object, run:
+
+```powershell
+go run ./cmd/debug_backup -mode full
+```
+
 Open the optional Garage Web UI:
 
 ```powershell
@@ -119,9 +144,9 @@ Back up these folders before moving hosts or upgrading major versions.
 - `compose.yaml` starts Garage with `--single-node --default-bucket`, matching
   Garage's quick-start path. The local demo keys are intentionally low-trust;
   rotate them before exposing Garage beyond localhost.
-- Backup export is manual first: it archives `.env`, `aura.db`, `wiki/`, and
-  `skills/` into `backups/YYYY-MM-DD-HHMMSS/aura-backup.tar.gz` in the
-  configured Garage bucket. SQLite and wiki storage remain local files.
+- Backup export is manual first. It writes a full restore point under
+  `backups/YYYY-MM-DD-HHMMSS/` plus categorized artifact archives under
+  `artifacts/YYYY-MM-DD-HHMMSS/`. SQLite and wiki storage remain local files.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - The app container enables `SANDBOX_ENABLED=true` and ships the bundled

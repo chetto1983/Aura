@@ -204,6 +204,12 @@ Everything is in the folder where you ran the binary:
 
 **Backups:** zip these four. Restore = unzip into a fresh install.
 
+In container installs, Garage can hold the same restore point plus categorized
+artifacts. Run `go run ./cmd/debug_backup` to upload a full restore archive,
+source originals/uploads, OCR and extraction outputs, memory/wiki snapshots
+without raw OCR bloat, embedding/index snapshots, and audit/debug bundles from
+logs and reports.
+
 ---
 
 ## Updating
