@@ -1,0 +1,44 @@
+services:
+  aura:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aura:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AURA_HEADLESS: "true"
+      HTTP_PORT: "0.0.0.0:8080"
+      DB_PATH: "/data/aura.db"
+      LOG_DIR: "/data/logs"
+      WIKI_PATH: "/wiki"
+      SKILLS_PATH: "/skills"
+      MCP_SERVERS_PATH: "/data/mcp.json"
+      PROMPT_OVERLAY_PATH: "/data"
+      SANDBOX_ENABLED: "false"
+      SEARXNG_BASE_URL: "http://searxng:8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - aura-data:/data
+      - aura-wiki:/wiki
+      - aura-skills:/skills
+    depends_on:
+      searxng:
+        condition: service_started
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./docker/searxng:/etc/searxng:ro
+      - searxng-cache:/var/cache/searxng
+
+volumes:
+  aura-data:
+  aura-wiki:
+  aura-skills:
+  searxng-cache:

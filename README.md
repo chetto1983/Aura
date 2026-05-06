@@ -55,6 +55,19 @@ make run
 make debug-llm
 ```
 
+## Container Stack
+
+For server-style installs, Aura ships a Docker Compose stack with Aura running
+headless and SearXNG running beside it:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+Open <http://127.0.0.1:8080>. SearXNG is exposed on
+<http://127.0.0.1:8088>. See [docs/container.md](docs/container.md).
+
 ## Runtime Data
 
 The repo ignores generated runtime files such as `.env`, `aura.db`, and built binaries. Wiki raw data is also ignored by default, while schema and documentation files stay tracked.

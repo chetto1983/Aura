@@ -42,3 +42,21 @@ func TestMainStartsAuraBeforeTrayBlocks(t *testing.T) {
 		t.Fatalf("tray blocks before Aura startup begins: go=%d start=%d tray=%d", goIdx, startIdx, trayIdx)
 	}
 }
+
+func TestHeadlessModeBypassesTrayRun(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	headlessIdx := strings.Index(source, "if cfg.Headless {")
+	runHeadlessIdx := strings.Index(source, "runHeadless(logger, cleanupLog, cfg)")
+	trayIdx := strings.Index(source, "tray.Run(tray.Options{")
+
+	if headlessIdx < 0 || runHeadlessIdx < 0 || trayIdx < 0 {
+		t.Fatalf("headless markers missing: headless=%d runHeadless=%d tray=%d", headlessIdx, runHeadlessIdx, trayIdx)
+	}
+	if !(headlessIdx < runHeadlessIdx && runHeadlessIdx < trayIdx) {
+		t.Fatalf("headless path must be checked before tray run: headless=%d runHeadless=%d tray=%d", headlessIdx, runHeadlessIdx, trayIdx)
+	}
+}

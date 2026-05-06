@@ -47,6 +47,7 @@ type Config struct {
 	EmbeddingModel         string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
 	DBPath                 string  `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort               string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
+	Headless               bool    `envconfig:"AURA_HEADLESS" default:"false"`
 	DashboardTokenTTLHours int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	OTelEnabled            bool    `envconfig:"OTEL_ENABLED" default:"false"`
 
@@ -162,6 +163,7 @@ func Load() (*Config, error) {
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
+	cfg.Headless = getEnvBool("AURA_HEADLESS", false)
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 

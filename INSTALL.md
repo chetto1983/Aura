@@ -174,6 +174,20 @@ Run the `.exe` "At log on" with "Restart on failure".
 ### VPS
 A $5/month Linux box (Hetzner / DigitalOcean / Vultr) runs Aura 24/7. Same install steps; SSH-tunnel the dashboard since `HTTP_PORT=127.0.0.1:8080` stays loopback-only.
 
+### Docker Compose
+For always-on server installs, Aura can run as one Compose stack with local
+SearXNG search beside it. This mode sets `AURA_HEADLESS=true`, so there is no
+desktop tray; Docker handles start/stop.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+Then open <http://127.0.0.1:8080>. SearXNG is available on the host at
+<http://127.0.0.1:8088> and inside the stack at `http://searxng:8080`.
+See [docs/container.md](docs/container.md) for volume and debug details.
+
 ---
 
 ## Where your data lives

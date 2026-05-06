@@ -47,6 +47,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.Headless {
+		runHeadless(logger, cleanupLog, cfg)
+		return
+	}
+	runWithTray(logger, cleanupLog, cfg)
+}
+
+func runWithTray(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
 	var (
 		mu       sync.Mutex
 		stopping bool
@@ -104,6 +112,25 @@ func main() {
 		logger.Warn("tray exited with error", "error", err)
 	}
 	requestStop()
+}
+
+func runHeadless(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
+	stop, err := startAura(logger, cleanupLog, cfg)
+	if err != nil {
+		logger.Error("aura startup failed", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("aura running headless", "dashboard_url", "http://"+dashboardHost(cfg.HTTPPort))
+	waitForShutdownSignal()
+	stop()
+}
+
+func waitForShutdownSignal() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+	signal.Stop(sigCh)
 }
 
 func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ func(), err error) {

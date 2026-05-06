@@ -104,6 +104,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
+	os.Unsetenv("AURA_HEADLESS")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_RUNTIME_DIR")
@@ -188,6 +189,9 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.HTTPPort != "127.0.0.1:8080" {
 		t.Errorf("HTTPPort = %q, want 127.0.0.1:8080 (slice 10b: localhost-only by default)", cfg.HTTPPort)
 	}
+	if cfg.Headless {
+		t.Errorf("Headless = true, want false by default")
+	}
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
 	}
@@ -212,6 +216,19 @@ func TestLoadDashboardTokenTTLHours(t *testing.T) {
 	}
 	if cfg.DashboardTokenTTLHours != 24 {
 		t.Fatalf("DashboardTokenTTLHours = %d, want 24", cfg.DashboardTokenTTLHours)
+	}
+}
+
+func TestLoadHeadless(t *testing.T) {
+	os.Setenv("AURA_HEADLESS", "true")
+	defer os.Unsetenv("AURA_HEADLESS")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.Headless {
+		t.Fatal("Headless = false, want true")
 	}
 }
 
