@@ -78,6 +78,7 @@ type Deps struct {
 	Scheduler   SchedulerStore
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
+	Extractor   source.PyodideRunner
 	Auth        *auth.Store
 	Allowlist   auth.AllowlistFunc
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100

@@ -6,7 +6,23 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/sandbox"
 )
+
+type fakePyodideRunner struct {
+	called       bool
+	code         string
+	allowNetwork bool
+	result       *sandbox.Result
+}
+
+func (r *fakePyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+	r.called = true
+	r.code = code
+	r.allowNetwork = allowNetwork
+	return r.result, nil
+}
 
 func TestGoExtractorsProduceMarkdownAndMetadata(t *testing.T) {
 	cases := []struct {
@@ -36,6 +52,55 @@ func TestGoExtractorsProduceMarkdownAndMetadata(t *testing.T) {
 				t.Fatalf("metadata incomplete: %+v", res.Metadata)
 			}
 		})
+	}
+}
+
+func TestExtractUploadedSourceUsesGoForTextLikeFormats(t *testing.T) {
+	res, err := ExtractUploadedSource(context.Background(), nil, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindCSV, Filename: "budget.csv"},
+		Bytes:  []byte("item,cost\nsandbox,12\n"),
+	})
+	if err != nil {
+		t.Fatalf("ExtractUploadedSource() error = %v", err)
+	}
+	if !strings.Contains(res.Markdown, "| item | cost |") {
+		t.Fatalf("markdown = %q, want CSV markdown table", res.Markdown)
+	}
+	if res.Metadata.ExtractorName != "go_csv" {
+		t.Fatalf("extractor = %q, want go_csv", res.Metadata.ExtractorName)
+	}
+}
+
+func TestExtractUploadedSourceUsesPyodideForXLSX(t *testing.T) {
+	runner := &fakePyodideRunner{result: &sandbox.Result{
+		OK:     true,
+		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+	}}
+	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
+		Bytes:  []byte("xlsx bytes"),
+	})
+	if err != nil {
+		t.Fatalf("ExtractUploadedSource() error = %v", err)
+	}
+	if !runner.called || runner.allowNetwork {
+		t.Fatalf("runner called=%v allowNetwork=%v, want called without network", runner.called, runner.allowNetwork)
+	}
+	if !strings.Contains(runner.code, "pd.ExcelFile") {
+		t.Fatalf("runner code missing XLSX extraction marker")
+	}
+	if res.Metadata.ExtractorName != "pyodide_xlsx" || !strings.Contains(res.Markdown, "sandbox") {
+		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
+	}
+}
+
+func TestExtractUploadedSourceXLSXRequiresRunner(t *testing.T) {
+	_, err := ExtractUploadedSource(context.Background(), nil, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
+		Bytes:  []byte("xlsx bytes"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "pyodide runner") {
+		t.Fatalf("error = %v, want pyodide runner requirement", err)
 	}
 }
 

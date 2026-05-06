@@ -118,7 +118,7 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 
 		// Step 2 — OCR (optional)
 		if format.Kind != source.KindPDF {
-			res, err := source.ExtractGo(r.Context(), source.ExtractInput{Source: src, Bytes: body})
+			res, err := source.ExtractUploadedSource(r.Context(), deps.Extractor, source.ExtractInput{Source: src, Bytes: body})
 			if err != nil {
 				_, _ = upsertSourceStatus(deps.Sources, src.ID, source.StatusFailed, err.Error())
 				resp.Status = string(source.StatusFailed)

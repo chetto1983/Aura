@@ -158,7 +158,7 @@
 
   "sources.title": "Sources",
   "sources.errorTitle": "Failed to load sources",
-  "sources.emptyHint": "No sources yet — drop a PDF, TXT, MD, JSON, or CSV above, or upload one in Telegram.",
+  "sources.emptyHint": "No sources yet — drop a PDF, TXT, MD, JSON, CSV, or XLSX above, or upload one in Telegram.",
   "sources.status.failed": "❌ Failed",
   "sources.status.stored": "📄 Stored (awaiting OCR)",
   "sources.status.extracting": "Extracting",

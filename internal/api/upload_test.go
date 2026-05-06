@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -12,8 +13,25 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/source"
 )
+
+type fakeUploadPyodideRunner struct {
+	called       bool
+	code         string
+	allowNetwork bool
+}
+
+func (r *fakeUploadPyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+	r.called = true
+	r.code = code
+	r.allowNetwork = allowNetwork
+	return &sandbox.Result{
+		OK:     true,
+		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+	}, nil
+}
 
 func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 	e := newTestEnv(t)
@@ -46,6 +64,57 @@ func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 	bad := e.uploadFile("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", []byte("pptx"))
 	if bad.Code != http.StatusBadRequest {
 		t.Fatalf("pptx status = %d, want 400 body=%s", bad.Code, bad.Body.String())
+	}
+}
+
+func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
+	e := newTestEnv(t)
+	runner := &fakeUploadPyodideRunner{}
+	e.router = NewRouter(Deps{
+		Wiki:      e.wiki,
+		Sources:   e.sources,
+		Scheduler: e.sched,
+		Extractor: runner,
+	})
+
+	rr := e.uploadFile("budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", []byte("xlsx bytes"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xlsx upload status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var got UploadResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Status != string(source.StatusExtractComplete) {
+		t.Fatalf("status = %s, want %s", got.Status, source.StatusExtractComplete)
+	}
+	if !runner.called || runner.allowNetwork || !strings.Contains(runner.code, "pd.ExcelFile") {
+		t.Fatalf("runner called=%v allowNetwork=%v codeContainsExcel=%v", runner.called, runner.allowNetwork, strings.Contains(runner.code, "pd.ExcelFile"))
+	}
+	src, err := e.sources.Get(got.ID)
+	if err != nil {
+		t.Fatalf("source get: %v", err)
+	}
+	if src.Kind != source.KindXLSX || src.Extract == nil || src.Extract.ExtractorName != "pyodide_xlsx" {
+		t.Fatalf("source = %+v, want xlsx with pyodide extraction metadata", src)
+	}
+	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
+	if err != nil {
+		t.Fatalf("read extract.md: %v", err)
+	}
+	if !strings.Contains(string(extract), "sandbox") {
+		t.Fatalf("extract.md = %q", extract)
+	}
+}
+
+func TestSourceUploadRejectsDeferredDOCX(t *testing.T) {
+	e := newTestEnv(t)
+	rr := e.uploadFile("memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", []byte("docx bytes"))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("docx status = %d, want 400 body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "unsupported file type") {
+		t.Fatalf("body = %s, want unsupported file type", rr.Body.String())
 	}
 }
 

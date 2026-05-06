@@ -158,7 +158,7 @@
 
   "sources.title": "Fonti",
   "sources.errorTitle": "Caricamento fonti fallito",
-  "sources.emptyHint": "Nessuna fonte — carica un PDF, TXT, MD, JSON o CSV qui sopra, oppure inviane uno su Telegram.",
+  "sources.emptyHint": "Nessuna fonte — carica un PDF, TXT, MD, JSON, CSV o XLSX qui sopra, oppure inviane uno su Telegram.",
   "sources.status.failed": "❌ Fallito",
   "sources.status.stored": "📄 Archiviato (in attesa OCR)",
   "sources.status.extracting": "Estrazione",

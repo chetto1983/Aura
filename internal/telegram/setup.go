@@ -510,6 +510,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 		Scheduler:   schedStore,
 		OCR:         ocrClient,
 		Ingest:      ingestPipeline,
+		Extractor:   sandboxMgr,
 		Auth:        authStore,
 		Allowlist:   b.isAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
