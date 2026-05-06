@@ -118,3 +118,49 @@ The final normal-user pass used headed Chromium via Playwright directly against 
 - `/sources` accepts a real TXT upload, exposes Download before ingest, successfully ingests it through `POST /api/sources/{id}/ingest`, and still exposes Download after ingest.
 - `/tasks` exposes a localized submit action (`Pianifica`) in the new-task dialog.
 - No browser console errors were emitted during the headed pass.
+
+## Finding FE-AUDIT-06: Conversation Review Lost User Context And Keyboard Access
+
+**Severity:** Medium
+**Status:** Fixed
+
+The `/conversations` page let mouse users open archived turns, but desktop table rows were click-only and filters lived only in component state. A normal user could not bookmark or share a filtered archive view, and keyboard users could not open a row from the table.
+
+**Evidence found:**
+- Desktop `<tr>` rows had `onClick` but no keyboard activation path.
+- Chat/date/tool filters reset on refresh because they were not reflected in the URL.
+
+**Fix:**
+- Conversation filters now sync to URL query params (`chat_id`, `from`, `to`, `has_tools`).
+- Opening a turn writes `#turn-<id>` to the URL and closing the drawer clears it.
+- Desktop rows are focusable and open on Enter/Space.
+- Added Playwright coverage for URL-backed filters and keyboard row opening.
+
+**Verification:**
+- `npm --prefix web run e2e`
+- Headed Playwright pass against the live `/conversations` page confirmed URL filters and keyboard drawer opening.
+
+## Finding FE-AUDIT-07: Secondary Pages Had Discoverability, Semantics, And Locale Gaps
+
+**Severity:** Medium
+**Status:** Fixed
+
+The remaining dashboard pages mostly worked, but several controls were visually present without the semantics or wording a normal user expects. These were small individually, but together they made the UI feel less complete outside the main source/wiki/task flows.
+
+**Evidence found:**
+- `/skills` used visual tabs without tab semantics.
+- `/mcp` exposed a clickable server/tool count, but it did not read as a refresh action.
+- `/summaries` empty state told users to change settings but offered no direct Settings path.
+- `/swarm`, `/summaries`, and `/maintenance` rendered raw status/action values such as `failed`, `new`, `high`, and `open` in localized UI.
+
+**Fix:**
+- Added semantic tab roles and expanded-state labels to Skills.
+- Turned the MCP count control into an explicit Refresh button with localized text.
+- Added an Open settings link to the Summaries empty state.
+- Localized Swarm statuses, Summary action badges, and Maintenance severity/status labels.
+- Added Playwright coverage for these page controls.
+
+**Verification:**
+- `npm --prefix web run i18n:check`
+- `npm --prefix web run e2e`
+- Headed Playwright pass against live Skills, MCP, Summaries, Swarm, and Maintenance pages.

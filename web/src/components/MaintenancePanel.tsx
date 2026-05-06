@@ -99,7 +99,7 @@ export function MaintenancePanel() {
             return (
               <section key={sev}>
                 <h2 className={`text-xs font-semibold uppercase tracking-wider mb-2 ${SEVERITY_COLOR[sev].split(' ')[1]}`}>
-                  {sev} ({group.length})
+                  {severityLabel(sev, t)} ({group.length})
                 </h2>
                 <div className="space-y-3">
                   {group.map((issue) => (
@@ -144,7 +144,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
         <div className="space-y-1 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium border ${SEVERITY_COLOR[issue.severity] ?? 'bg-muted text-muted-foreground'}`}>
-              {issue.severity}
+              {severityLabel(issue.severity, t)}
             </span>
             <span className="text-xs text-muted-foreground font-mono">{issue.kind.replace(/_/g, ' ')}</span>
           </div>
@@ -163,7 +163,7 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
             ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
             : 'bg-muted text-muted-foreground'
         }`}>
-          {issue.status}
+          {statusLabel(issue.status, t)}
         </span>
       </div>
 
@@ -193,6 +193,23 @@ function IssueCard({ issue, onDismiss }: { issue: WikiIssue; onDismiss: () => vo
       </div>
     </div>
   );
+}
+
+function severityLabel(severity: string, t: ReturnType<typeof useLocale>['t']): string {
+  switch (severity) {
+    case 'high': return t('maintenance.severity.high');
+    case 'medium': return t('maintenance.severity.medium');
+    case 'low': return t('maintenance.severity.low');
+    default: return severity;
+  }
+}
+
+function statusLabel(status: string, t: ReturnType<typeof useLocale>['t']): string {
+  switch (status) {
+    case 'open': return t('maintenance.status.open');
+    case 'resolved': return t('maintenance.status.resolved');
+    default: return status;
+  }
 }
 
 function EmptyState() {

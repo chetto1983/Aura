@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MessageSquare, Download, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,13 +19,36 @@ const ROLE_BADGE: Record<string, string> = {
 
 export function ConversationsPanel() {
   const { t, formatDate } = useLocale();
-  const [chatId, setChatId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [hasTools, setHasTools] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chatId = searchParams.get('chat_id') ?? '';
+  const dateFrom = searchParams.get('from') ?? '';
+  const dateTo = searchParams.get('to') ?? '';
+  const hasTools = searchParams.get('has_tools') === '1';
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const numericChatId = chatId.trim() !== '' ? parseInt(chatId, 10) : undefined;
+  const parsedChatId = chatId.trim() !== '' ? parseInt(chatId, 10) : NaN;
+  const numericChatId = Number.isFinite(parsedChatId) ? parsedChatId : undefined;
+
+  const setFilterParam = useCallback((key: string, value: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const openTurn = useCallback((id: number) => {
+    setSelectedId(id);
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#turn-${id}`);
+  }, []);
+
+  const closeTurn = useCallback(() => {
+    setSelectedId(null);
+    if (window.location.hash.startsWith('#turn-')) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
 
   const fetcher = useCallback(
     () => api.conversations(numericChatId, 100, hasTools || undefined),
@@ -242,7 +266,7 @@ export function ConversationsPanel() {
           <input
             type="number"
             value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
+            onChange={(e) => setFilterParam('chat_id', e.target.value)}
             placeholder={t('conversations.filterAllChats')}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
@@ -252,7 +276,7 @@ export function ConversationsPanel() {
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => setFilterParam('from', e.target.value)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
@@ -261,7 +285,7 @@ export function ConversationsPanel() {
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => setFilterParam('to', e.target.value)}
             className="min-h-11 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </label>
@@ -269,7 +293,7 @@ export function ConversationsPanel() {
           <input
             type="checkbox"
             checked={hasTools}
-            onChange={(e) => setHasTools(e.target.checked)}
+            onChange={(e) => setFilterParam('has_tools', e.target.checked ? '1' : '')}
             className="rounded"
             id="has-tools"
           />
@@ -289,7 +313,7 @@ export function ConversationsPanel() {
               key={turn.id}
               data-turn-id={turn.id}
               type="button"
-              onClick={() => setSelectedId(turn.id)}
+              onClick={() => openTurn(turn.id)}
               className="w-full rounded-lg border bg-card p-3 text-left hover:bg-accent/30"
             >
               <div className="flex min-h-11 items-center justify-between gap-3">
@@ -323,7 +347,16 @@ export function ConversationsPanel() {
                 <tr
                   key={turn.id}
                   data-turn-id={turn.id}
-                  onClick={() => setSelectedId(turn.id)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={t('conversations.openTurn', { id: turn.id, role: turn.role })}
+                  onClick={() => openTurn(turn.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openTurn(turn.id);
+                    }
+                  }}
                   className={`cursor-pointer transition-colors hover:bg-accent/40 ${
                     i % 2 === 0 ? '' : 'bg-muted/10'
                   }`}
@@ -347,7 +380,7 @@ export function ConversationsPanel() {
         </>
       )}
 
-      <ConversationDrawer turnId={selectedId} onClose={() => setSelectedId(null)} />
+      <ConversationDrawer turnId={selectedId} onClose={closeTurn} />
     </div>
   );
 }

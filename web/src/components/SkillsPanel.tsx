@@ -42,11 +42,11 @@ export function SkillsPanel() {
             {t('skills.subtitle')}
           </p>
         </div>
-        <div className="flex gap-1 border-b">
-          <TabButton active={tab === 'local'} onClick={() => setTab('local')} icon={<Sparkles size={14} />}>
+        <div className="flex gap-1 border-b" role="tablist" aria-label={t('skills.tabsLabel')}>
+          <TabButton active={tab === 'local'} panelId="skills-panel-local" onClick={() => setTab('local')} icon={<Sparkles size={14} />}>
             {t('skills.tab.local')}
           </TabButton>
-          <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')} icon={<Store size={14} />}>
+          <TabButton active={tab === 'catalog'} panelId="skills-panel-catalog" onClick={() => setTab('catalog')} icon={<Store size={14} />}>
             {t('skills.tab.catalog')}
           </TabButton>
         </div>
@@ -63,9 +63,13 @@ export function SkillsPanel() {
       )}
 
       {tab === 'local' ? (
-        <LocalSkillsView onAdminBlocked={() => setAdminGated(true)} />
+        <div id="skills-panel-local" role="tabpanel">
+          <LocalSkillsView onAdminBlocked={() => setAdminGated(true)} />
+        </div>
       ) : (
-        <CatalogView onAdminBlocked={() => setAdminGated(true)} />
+        <div id="skills-panel-catalog" role="tabpanel">
+          <CatalogView onAdminBlocked={() => setAdminGated(true)} />
+        </div>
       )}
     </div>
   );
@@ -73,11 +77,13 @@ export function SkillsPanel() {
 
 function TabButton({
   active,
+  panelId,
   onClick,
   icon,
   children,
 }: {
   active: boolean;
+  panelId: string;
   onClick: () => void;
   icon: React.ReactNode;
   children: React.ReactNode;
@@ -85,6 +91,9 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
+      aria-controls={panelId}
       onClick={onClick}
       className={`-mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${
         active
@@ -206,6 +215,8 @@ function LocalSkillRow({
         <button
           type="button"
           onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-label={t('skills.toggleSkill', { name: skill.name })}
           className="flex flex-1 items-start gap-3 py-3 pl-2 text-left min-w-0"
         >
           {isOpen ? <ChevronDown size={16} className="mt-0.5 shrink-0" /> : <ChevronRight size={16} className="mt-0.5 shrink-0" />}
