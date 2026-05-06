@@ -285,6 +285,119 @@ button { cursor: pointer; }
 a { color: var(--brand-strong); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+.aura-login-glow {
+  background: radial-gradient(600px 400px at 50% 35%, rgba(77, 168, 255, 0.18), transparent 65%);
+}
+
+.aura-settings-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid #71717a;
+  border-radius: 9999px;
+  background: #a1a1aa;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.aura-settings-switch:checked,
+.aura-settings-switch[data-state="checked"] {
+  border-color: var(--primary, #0891b2);
+  background: var(--primary, #06b6d4);
+}
+
+.aura-settings-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.aura-settings-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease;
+}
+
+.aura-settings-switch:checked::after {
+  transform: translateX(20px);
+}
+
+.aura-settings-field {
+  border: 1px solid var(--border, oklch(0.85 0.01 240));
+  box-shadow: inset 0 0 0 1px transparent;
+}
+
+.aura-settings-secret-button {
+  border: 1px solid var(--border, oklch(0.85 0.01 240));
+  background: var(--secondary, oklch(0.92 0.01 240));
+}
+
+.aura-status-bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.aura-status-bar__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.aura-status-bar__segment--stored {
+  fill: rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.8);
+}
+
+.aura-status-bar__segment--ocr-complete {
+  fill: #38bdf8;
+  background: #38bdf8;
+}
+
+.aura-status-bar__segment--ingested {
+  fill: var(--primary);
+  background: var(--primary);
+}
+
+.aura-status-bar__segment--failed {
+  fill: #f43f5e;
+  background: #f43f5e;
+}
+
+.aura-status-bar__segment--default {
+  fill: var(--muted-foreground);
+  background: var(--muted-foreground);
+}
+
+.aura-status-legend-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.aura-progress__indicator {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.aura-progress__bar {
+  fill: var(--primary);
+}
+
 .sacchi-theme-switcher {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

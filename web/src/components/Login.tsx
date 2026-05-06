@@ -133,11 +133,7 @@ export function Login() {
       {/* Ambient brand glow (decorative; the body gradient is also active) */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background:
-            'radial-gradient(600px 400px at 50% 35%, rgba(77, 168, 255, 0.18), transparent 65%)',
-        }}
+        className="aura-login-glow pointer-events-none absolute inset-0 -z-10"
       />
 
       <div className="w-full max-w-md space-y-6">

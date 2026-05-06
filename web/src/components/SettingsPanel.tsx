@@ -332,69 +332,22 @@ function Control({
 
   if (kind === 'bool') {
     const on = value === 'true' || value === '1';
-    // index.css has a global `button { background: none; border: none; }`
-    // reset that defeats Tailwind utilities AND any inline borderColor
-    // (because border-style: none stays applied). Set everything via
-    // inline shorthand so all three border sub-properties + background
-    // + box-shadow override the reset cleanly.
-    const trackOn = 'var(--primary, #06b6d4)';
-    const trackOff = '#a1a1aa'; // zinc-400 — readable on both light card AND dark card
-    const borderOn = 'var(--primary, #0891b2)';
-    const borderOff = '#71717a'; // zinc-500
     return (
-      <button
+      <input
         id={item.key}
-        type="button"
+        type="checkbox"
         role="switch"
-        aria-checked={on}
+        checked={on}
         data-state={on ? 'checked' : 'unchecked'}
         disabled={disabled}
-        onClick={() => onChange(on ? 'false' : 'true')}
+        onChange={() => onChange(on ? 'false' : 'true')}
         title={on ? t('settings.action.disable') : t('settings.action.enable')}
-        style={{
-          height: 32,
-          width: 52,
-          borderRadius: 9999,
-          background: on ? trackOn : trackOff,
-          border: `1px solid ${on ? borderOn : borderOff}`,
-          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.35)',
-          transition: 'background 120ms ease, border-color 120ms ease',
-          position: 'relative',
-          padding: 0,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.65 : 1,
-          flexShrink: 0,
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: 2,
-            width: 26,
-            height: 26,
-            borderRadius: 9999,
-            background: '#ffffff',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.18)',
-            transform: `translateX(${on ? 20 : 0}px)`,
-            transition: 'transform 120ms ease',
-          }}
-        />
-        <span className="sr-only">{on ? t('settings.status.enabled') : t('settings.status.disabled')}</span>
-      </button>
+        className="aura-settings-switch"
+      />
     );
   }
 
-  // 2026 input styling: 36px height, 6px radius, 3px tinted focus halo,
-  // hover lifts the border alpha. Tailwind `border-border` was too
-  // light in light mode (hairline against white card looked invisible),
-  // so pin to a stronger token via inline style on the input itself.
-  const fieldCls = 'min-h-11 w-full text-[13px] font-mono rounded-md bg-background px-3 transition-[border-color,box-shadow] duration-[120ms] focus:outline-none';
-  const fieldStyle: React.CSSProperties = {
-    border: '1px solid var(--border, oklch(0.85 0.01 240))',
-    boxShadow: 'inset 0 0 0 1px transparent',
-  };
+  const fieldCls = 'aura-settings-field min-h-11 w-full text-[13px] font-mono rounded-md bg-background px-3 transition-[border-color,box-shadow] duration-[120ms] focus:outline-none';
 
   if (kind === 'enum') {
     return (
@@ -403,7 +356,6 @@ function Control({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        style={fieldStyle}
         className={`${fieldCls} pr-8 ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
       >
         {!item.options?.includes(value) && value !== '' && <option value={value}>{value}</option>}
@@ -423,13 +375,11 @@ function Control({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        style={fieldStyle}
         className={`${fieldCls} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
       />
     );
   }
 
-  // text / url / secret
   const inputType = item.is_secret && !revealed ? 'password' : (kind === 'url' ? 'url' : 'text');
   return (
     <>
@@ -442,7 +392,6 @@ function Control({
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
         spellCheck={false}
-        style={fieldStyle}
         className={`${fieldCls} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
       />
       {item.is_secret && (
@@ -450,8 +399,7 @@ function Control({
           type="button"
           onClick={onToggleReveal}
           title={revealed ? t('settings.action.hide') : t('settings.action.reveal')}
-          style={{ border: '1px solid var(--border, oklch(0.85 0.01 240))', background: 'var(--secondary, oklch(0.92 0.01 240))' }}
-          className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
+          className="aura-settings-secret-button h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-md hover:brightness-95 transition text-muted-foreground hover:text-foreground"
         >
           {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>

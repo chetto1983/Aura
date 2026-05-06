@@ -201,29 +201,43 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
     return <div className="text-sm text-muted-foreground">{t('health.noSourcesYet')}</div>;
   }
   const colors: Record<string, string> = {
-    stored: 'bg-slate-400/80',
-    ocr_complete: 'bg-sky-400',
-    ingested: 'bg-primary',
-    failed: 'bg-rose-500',
+    stored: 'aura-status-bar__segment--stored',
+    ocr_complete: 'aura-status-bar__segment--ocr-complete',
+    ingested: 'aura-status-bar__segment--ingested',
+    failed: 'aura-status-bar__segment--failed',
   };
+  const { segments } = order.reduce<{
+    cursor: number;
+    segments: Array<{ key: string; value: number; x: number; width: number }>;
+  }>((acc, k) => {
+    const v = buckets[k] ?? 0;
+    if (v === 0) return acc;
+    const width = (v / sum) * 100;
+    return {
+      cursor: acc.cursor + width,
+      segments: [...acc.segments, { key: k, value: v, x: acc.cursor, width }],
+    };
+  }, { cursor: 0, segments: [] });
   return (
     <div className="space-y-2">
       <div
-        className="flex h-3 overflow-hidden rounded bg-muted"
+        className="aura-status-bar"
         aria-hidden="true"
       >
-        {order.map((k) => {
-          const v = buckets[k] ?? 0;
-          if (v === 0) return null;
-          return (
-            <div
-              key={k}
-              className={`${colors[k] ?? 'bg-muted-foreground'}`}
-              style={{ width: `${(v / sum) * 100}%` }}
-              title={`${k}: ${v}`}
-            />
-          );
-        })}
+        <svg className="aura-status-bar__svg" viewBox="0 0 100 12" preserveAspectRatio="none" focusable="false">
+          {segments.map(({ key, value, x, width }) => (
+            <rect
+              key={key}
+              className={`aura-status-bar__segment ${colors[key] ?? 'aura-status-bar__segment--default'}`}
+              x={x}
+              y="0"
+              width={width}
+              height="12"
+            >
+              <title>{`${key}: ${value}`}</title>
+            </rect>
+          ))}
+        </svg>
       </div>
       <span className="sr-only">
         {order.map((k) => `${k.replace('_', ' ')}: ${buckets[k] ?? 0}`).join(', ')}
@@ -231,7 +245,7 @@ function StatusBar({ buckets, order }: { buckets: Record<string, number>; order:
       <ul className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
         {order.map((k) => (
           <li key={k} className="flex items-center gap-2">
-            <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-sm ${colors[k] ?? 'bg-muted-foreground'}`} />
+            <span aria-hidden="true" className={`aura-status-legend-swatch ${colors[k] ?? 'aura-status-bar__segment--default'}`} />
             <span className="text-foreground">{k.replace('_', ' ')}</span>
             <span className="ml-auto tabular-nums">{buckets[k] ?? 0}</span>
           </li>
