@@ -1,6 +1,6 @@
 # Feature Research
 
-> **Superseded research note (2026-05-04):** This file is historical background from the broader hardening investigation. It is not the active v1.0 Production Readiness scope. Current requirements and sequencing live in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`. Items below that are not in those approved docs are deferred to v1.1+ or retained only as research context.
+> **Superseded research note (2026-05-04):** This file is historical background from the broader hardening investigation. It is not the active v1.0 Production Readiness scope. Current requirements and sequencing live in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md`, and `docs/implementation-tracker.md`. Items below that are not in those approved docs are retained only as research context.
 
 **Domain:** Go codebase hardening — bug fixes, test coverage, security, architecture, release packaging
 **Researched:** 2026-05-04
@@ -98,13 +98,13 @@ Bundle Pyodide + Smoke Test (Medium)
 - **Versioned Migration Framework gates all schema changes:** Token expiry (`expires_at`), encryption (ciphertext columns), and extracted scheduler migrations all produce schema changes. Running them through the framework ensures they're versioned, transactional, and recoverable.
 - **Encrypt Secrets requires both Centralized DB AND Versioned Migrations:** Encryption needs the centralized DB to access settings store, and versioned migrations to add ciphertext columns safely.
 - **Bundle Pyodide + Smoke is the final task:** Release packaging should run after test coverage is raised and all fixes are verified. Smoke test depends on stable code, not on specific fixes.
-- **Historical note:** The old research treated several low-risk items as parallel hardening work. Current v1.0 blockers are only those listed in the approved requirements, roadmap, spec, and plan linked at the top of this file.
+- **Historical note:** The old research treated several low-risk items as parallel hardening work. Current blockers are only those listed in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/PROJECT.md`; shipped slice detail lives in `docs/implementation-tracker.md`.
 
 ## MVP Definition
 
 ### Historical v1 Research Items (Superseded)
 
-The following list is preserved as historical research. It must not be used as the active v1.0 checklist. Current v1.0 Production Readiness scope is defined by `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`.
+The following list is preserved as historical research. It must not be used as the active v1.0 checklist. Current Production Readiness scope is defined by `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md`, and shipped slice history in `docs/implementation-tracker.md`.
 
 - [ ] **Fix bare panic in `MustResolveProfiles`** — P0 crash risk; replaces `panic(err)` with error return. Closes CONCERNS.md:31-38.
 - [ ] **Log ignored errors across 7 discard sites** — P1 observability gap; adds `slog` calls to shutdown close, tray browser, placeholder deletion, token last_used. Closes CONCERNS.md:7-29.

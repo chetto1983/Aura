@@ -1,6 +1,6 @@
 # Project Research Summary
 
-> **Superseded research note (2026-05-04):** This file preserves the broader hardening research snapshot. It is not the active v1.0 Production Readiness plan. Current scope and sequencing live in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md`. Anything below that conflicts with those documents is historical or deferred to v1.1+.
+> **Superseded research note (2026-05-04):** This file preserves the broader hardening research snapshot. It is not the active v1.0 Production Readiness plan. Current scope and sequencing live in `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md`, and `docs/implementation-tracker.md`. Anything below that conflicts with those documents is historical.
 
 **Project:** Aura — Go Telegram assistant with embedded React dashboard
 **Domain:** Go monolith hardening (SQLite reliability, security, test coverage, release packaging)

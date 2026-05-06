@@ -1,6 +1,6 @@
 # Architecture Research — v1.0 Hardening Integration
 
-> **Superseded research note (2026-05-04):** This architecture research preserves the earlier broad hardening investigation. It is not the active v1.0 Production Readiness implementation plan. Use `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `docs/superpowers/specs/2026-05-04-v1-production-readiness-design.md`, and `docs/superpowers/plans/2026-05-04-v1-production-readiness-plan.md` for current scope. Items below that are absent from those approved docs are v1.1+ or historical context.
+> **Superseded research note (2026-05-04):** This architecture research preserves the earlier broad hardening investigation. It is not the active v1.0 Production Readiness implementation plan. Use `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md`, and `docs/implementation-tracker.md` for current scope and shipped history. Items below that are absent from those approved docs are historical context.
 
 **Domain:** Go monolith hardening (SQLite centralization, migrations, token expiry, secrets encryption, test coverage, release packaging)
 **Researched:** 2026-05-04

@@ -17,7 +17,7 @@ Current shipped surfaces (see `prd.md` v4.0 + `docs/implementation-tracker.md` f
 - `internal/tray` — Windows tray icon with "Open Dashboard"; no-op on other platforms.
 - `internal/telegram/markdown.go` — LLM Markdown → Telegram HTML subset renderer (slice 11u).
 
-Active phase work now lives under `.planning/` (for example `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.planning/phases/*`). Historical phase plans previously under `docs/plans/` were removed from the active docs tree; use git history for those artifacts and `docs/implementation-tracker.md` for shipped slice history.
+Active phase work now lives under `.planning/` (for example `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.planning/phases/*`). Historical phase plans/specs previously under `docs/plans/` and `docs/superpowers/`, plus stale early PRD/PDR/progress artifacts, were removed from the active docs tree; use git history for those artifacts and `docs/implementation-tracker.md` for shipped slice history.
 
 ## Commands
 
