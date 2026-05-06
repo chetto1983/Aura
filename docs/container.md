@@ -7,7 +7,7 @@ signals.
 ## Services
 
 - `aura`: the Telegram bot and embedded dashboard.
-- `searxng`: local metasearch for the upcoming SearXNG web-search provider.
+- `searxng`: local metasearch for Aura's SearXNG web-search provider.
 
 The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
 `127.0.0.1:8088` on the host and is reachable from Aura as

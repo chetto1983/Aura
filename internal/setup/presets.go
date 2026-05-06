@@ -13,10 +13,9 @@ type Preset struct {
 	Description string `json:"description"`
 }
 
-// LLMPresets covers the providers the .env example already documents
-// (OpenAI / Mistral / Anthropic via openai-compatible / Ollama / Groq /
-// DeepSeek / Together / Fireworks). The "custom" preset lets the user
-// enter their own URL.
+// LLMPresets covers common OpenAI-compatible providers. The "custom" preset
+// lets the user enter any compatible URL, while OpenRouter is just one hosted
+// routing option rather than a special Aura integration.
 var LLMPresets = []Preset{
 	{
 		ID:          "openai",
@@ -37,13 +36,13 @@ var LLMPresets = []Preset{
 		Description: "EU-based, cheaper. Get a key at console.mistral.ai.",
 	},
 	{
-		ID:          "anthropic",
-		Label:       "Anthropic Claude",
-		BaseURL:     "https://api.anthropic.com/v1",
-		Model:       "claude-sonnet-4-6",
+		ID:          "openrouter",
+		Label:       "OpenRouter",
+		BaseURL:     "https://openrouter.ai/api/v1",
+		Model:       "deepseek/deepseek-chat",
 		NeedsKey:    true,
 		ProbePath:   "/models",
-		Description: "Claude family. Native API; OpenAI-compatible mode used.",
+		Description: "OpenAI-compatible router for many hosted models.",
 	},
 	{
 		ID:          "ollama",

@@ -85,7 +85,7 @@ Leave the terminal open. Aura runs as long as the terminal is open.
 1. Open <http://127.0.0.1:8080> in your browser.
 2. The **first-run wizard** asks for two things:
    - **Telegram bot token** — paste the token from Step 1.
-   - **LLM provider** — pick a preset (OpenAI / Mistral / Anthropic / Ollama / Groq / DeepSeek / Together / Custom). Each preset fills the URL and a sensible default model. Paste your API key (or skip the key for Ollama).
+   - **LLM provider** — pick a preset (OpenAI / OpenRouter / Mistral / Ollama / Groq / DeepSeek / Together / Custom). Each preset fills the OpenAI-compatible URL and a sensible default model. Paste your API key (or skip the key for Ollama).
 3. Click **Test connection** to verify the URL + key. You'll see "✓ Connected — N models available" if it works.
 4. Optional: open the **Embeddings** and **OCR** sections to add a Mistral key for wiki vector search and PDF ingestion. You can do this later instead.
 5. Click **Save and start Aura**. The wizard writes the token to `.env`, everything else to `aura.db`, and starts the bot.
@@ -110,7 +110,7 @@ Open the dashboard at <http://localhost:8080> and click **Settings** in the side
 
 You can change:
 
-- LLM provider, model, base URL, API key
+- LLM provider, model, OpenAI-compatible base URL, API key
 - Embeddings + OCR keys
 - Soft / hard budget caps
 - Summarizer mode, allowlist, OCR page limits, etc.

@@ -405,7 +405,7 @@ export interface SettingItem {
   options?: string[]; // present when kind === 'enum'
   label?: string;
   hint?: string;
-  group?: 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+  group?: 'provider' | 'search' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 }
 
 export interface SettingsUpdateResponse {

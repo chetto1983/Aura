@@ -6,9 +6,9 @@ import { api, ApiError } from '@/api';
 import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
-type Group = 'provider' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+type Group = 'provider' | 'search' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 
-const GROUP_ORDER: Group[] = ['provider', 'embeddings', 'ocr', 'budget', 'summarizer', 'aurabot', 'other'];
+const GROUP_ORDER: Group[] = ['provider', 'search', 'embeddings', 'ocr', 'budget', 'summarizer', 'aurabot', 'other'];
 const SECRET_PLACEHOLDER = '(configured)';
 
 export function SettingsPanel() {
@@ -125,6 +125,7 @@ export function SettingsPanel() {
   const groupLabel = (g: Group): string => {
     switch (g) {
       case 'provider': return t('settings.group.provider');
+      case 'search': return t('settings.group.search');
       case 'embeddings': return t('settings.group.embeddings');
       case 'ocr': return t('settings.group.ocr');
       case 'budget': return t('settings.group.budget');
@@ -137,6 +138,7 @@ export function SettingsPanel() {
   const groupHint = (g: Group): string => {
     switch (g) {
       case 'provider': return t('settings.hint.provider');
+      case 'search': return t('settings.hint.search');
       case 'embeddings': return t('settings.hint.embeddings');
       case 'ocr': return t('settings.hint.ocr');
       case 'budget': return t('settings.hint.budget');

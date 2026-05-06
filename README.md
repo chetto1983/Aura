@@ -35,7 +35,7 @@ Then fill in the required values:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_ALLOWLIST`
 
-Optional LLM settings can point to OpenAI-compatible APIs or local Ollama, depending on the provider path you want to use.
+Optional LLM settings can point to any OpenAI-compatible API, including OpenAI, OpenRouter, Mistral, Groq, DeepSeek, Together, or local Ollama.
 
 ## Common Commands
 

@@ -162,8 +162,22 @@ func TestPresetByID(t *testing.T) {
 	if p, ok := PresetByID("openai"); !ok || p.BaseURL != "https://api.openai.com/v1" {
 		t.Errorf("PresetByID(openai) wrong: %+v", p)
 	}
+	if p, ok := PresetByID("openrouter"); !ok || p.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("PresetByID(openrouter) wrong: %+v", p)
+	}
+	if _, ok := PresetByID("anthropic"); ok {
+		t.Errorf("native Anthropic preset should not be exposed as OpenAI-compatible")
+	}
 	if _, ok := PresetByID("does-not-exist"); ok {
 		t.Errorf("PresetByID returned ok for unknown id")
+	}
+}
+
+func TestPresetsUseModelsProbe(t *testing.T) {
+	for _, preset := range LLMPresets {
+		if preset.ProbePath != "/models" {
+			t.Fatalf("%s ProbePath = %q, want /models", preset.ID, preset.ProbePath)
+		}
 	}
 }
 
