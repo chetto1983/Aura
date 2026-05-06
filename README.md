@@ -68,6 +68,8 @@ docker compose up -d --build
 
 Open <http://127.0.0.1:8080>. SearXNG is exposed on
 <http://127.0.0.1:8088>. See [docs/container.md](docs/container.md).
+If port 8080 is already occupied, set `AURA_HOST_PORT` before starting Compose
+and open that port instead.
 
 ## Runtime Data
 

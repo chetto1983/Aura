@@ -173,6 +173,32 @@ func TestPresetByID(t *testing.T) {
 	}
 }
 
+func TestSetupLocaleDetectionAndPresets(t *testing.T) {
+	if got := detectLocale("it-IT,it;q=0.9,en;q=0.8"); got != "it" {
+		t.Fatalf("detectLocale Italian = %q", got)
+	}
+	if got := detectLocale("de-DE,de;q=0.9"); got != "en" {
+		t.Fatalf("detectLocale fallback = %q", got)
+	}
+	text := setupText("it")
+	if !strings.Contains(text["heading"], "Benvenuto") {
+		t.Fatalf("Italian heading missing: %q", text["heading"])
+	}
+	presets := localizedPresets("it")
+	var found bool
+	for _, preset := range presets {
+		if preset.ID == "openrouter" {
+			found = true
+			if strings.Contains(preset.Description, "router for many hosted") {
+				t.Fatalf("OpenRouter description not localized: %q", preset.Description)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("OpenRouter preset missing")
+	}
+}
+
 func TestPresetsUseModelsProbe(t *testing.T) {
 	for _, preset := range LLMPresets {
 		if preset.ProbePath != "/models" {
@@ -196,5 +222,14 @@ func TestLoopbackOnly(t *testing.T) {
 		if got != want {
 			t.Errorf("loopbackOnly(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestListenAddressAllowsContainerBind(t *testing.T) {
+	if got := listenAddress("0.0.0.0:8080", true); got != "0.0.0.0:8080" {
+		t.Fatalf("listenAddress(headless) = %q, want 0.0.0.0:8080", got)
+	}
+	if got := listenAddress("0.0.0.0:8080", false); got != "127.0.0.1:8080" {
+		t.Fatalf("listenAddress(desktop) = %q, want 127.0.0.1:8080", got)
 	}
 }

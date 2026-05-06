@@ -24,6 +24,10 @@ type Config struct {
 	// caller passes a LAN address — the wizard has no auth.
 	Listen string
 
+	// AllowRemoteBind preserves Listen when it binds all interfaces. Use only
+	// for headless/container installs where Docker controls host exposure.
+	AllowRemoteBind bool
+
 	// DotEnvPath is where the wizard writes TELEGRAM_TOKEN. Defaults to
 	// "./.env" when blank.
 	DotEnvPath string
@@ -51,7 +55,7 @@ func Run(cfg Config) (telegramToken string, err error) {
 		cfg.DotEnvPath = ".env"
 	}
 
-	listen := loopbackOnly(cfg.Listen)
+	listen := listenAddress(cfg.Listen, cfg.AllowRemoteBind)
 	tpl, err := template.New("setup").Parse(pageHTML)
 	if err != nil {
 		return "", fmt.Errorf("setup: parse template: %w", err)
@@ -66,9 +70,16 @@ func Run(cfg Config) (telegramToken string, err error) {
 			return
 		}
 		ollamaUp := detectOllama(r.Context(), "http://localhost:11434")
-		presetsJSON, _ := json.Marshal(LLMPresets)
+		locale := detectLocale(r.Header.Get("Accept-Language"))
+		t := setupText(locale)
+		presets := localizedPresets(locale)
+		presetsJSON, _ := json.Marshal(presets)
+		textJSON, _ := json.Marshal(t)
 		data := map[string]any{
-			"Presets":        LLMPresets,
+			"Locale":         locale,
+			"T":              t,
+			"TextJSON":       template.JS(textJSON), //nolint:gosec // static translation table
+			"Presets":        presets,
 			"PresetsJSON":    template.JS(presetsJSON), //nolint:gosec // local-only loopback page; presets are static
 			"OllamaDetected": ollamaUp,
 		}
@@ -226,6 +237,16 @@ func loopbackOnly(addr string) string {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, port)
+}
+
+func listenAddress(addr string, allowRemoteBind bool) string {
+	if allowRemoteBind {
+		addr = strings.TrimSpace(addr)
+		if addr != "" {
+			return addr
+		}
+	}
+	return loopbackOnly(addr)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

@@ -35,6 +35,16 @@ Open the dashboard:
 http://127.0.0.1:8080
 ```
 
+If another local service already owns port 8080, pick a host port without
+changing Aura's in-container port:
+
+```powershell
+$env:AURA_HOST_PORT = "18080"
+docker compose up -d --build
+```
+
+Then open `http://127.0.0.1:18080`.
+
 Probe SearXNG from the host:
 
 ```powershell

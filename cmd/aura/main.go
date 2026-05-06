@@ -174,10 +174,11 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// re-load .env + settings so the saved values flow back into cfg.
 	if !cfg.IsBootstrapped() {
 		token, err := setup.Run(setup.Config{
-			Listen:        cfg.HTTPPort,
-			DotEnvPath:    cfg.EnvPath,
-			SettingsStore: settingsStore,
-			Logger:        logger,
+			Listen:          cfg.HTTPPort,
+			AllowRemoteBind: cfg.Headless,
+			DotEnvPath:      cfg.EnvPath,
+			SettingsStore:   settingsStore,
+			Logger:          logger,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("setup wizard: %w", err)
@@ -303,11 +304,11 @@ func dashboardHost(port string) string {
 }
 
 // loadDotEnv reads KEY=VALUE pairs from the given file and sets them in the
-// process environment. Mirrors the helper used by cmd/debug_tools and
-// cmd/debug_ingest so all entrypoints honor the same .env. Lines starting
-// with `#` and blank lines are ignored. Surrounding single/double quotes are
-// stripped. Existing env values are overwritten so .env is the source of
-// truth during local runs.
+// process environment when the key is not already set. Explicit process
+// environment wins so Docker Compose can provide container paths/ports while
+// mounted .env fills in user-managed secrets like TELEGRAM_TOKEN.
+// Lines starting with `#` and blank lines are ignored. Surrounding
+// single/double quotes are stripped.
 func loadDotEnv(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -327,7 +328,7 @@ func loadDotEnv(path string) error {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
+		if key != "" && os.Getenv(key) == "" {
 			os.Setenv(key, value)
 		}
 	}

@@ -9,6 +9,7 @@
 // Usage:
 //
 //	go run ./cmd/seed_e2e_env [-db ./aura.db] [-env .env] [-user <id>]
+//	go run ./cmd/seed_e2e_env [-db ./aura.db] [-env .env] -bootstrap-user <id>
 //
 // Without -user it picks the first row of allowed_users (typically the
 // owner). Without -db / -env it uses the project defaults.
@@ -35,6 +36,7 @@ func main() {
 	dbPath := flag.String("db", "./aura.db", "path to the live SQLite database")
 	envPath := flag.String("env", ".env", "path to the .env file to patch")
 	userID := flag.String("user", "", "user id to issue the token for (default: first allowed_users row)")
+	bootstrapUserID := flag.String("bootstrap-user", "", "debug/E2E only: insert this user as first allowed user when allowlist is empty")
 	seedTurns := flag.Bool("seed-turns", false, "if true and the conversations table is empty, inject 3 synthetic turns so the Playwright drawer test has data")
 	flag.Parse()
 
@@ -56,6 +58,19 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	if strings.TrimSpace(*bootstrapUserID) != "" {
+		created, err := authStore.BootstrapUser(ctx, strings.TrimSpace(*bootstrapUserID))
+		if err != nil {
+			log.Fatalf("bootstrap user: %v", err)
+		}
+		if created {
+			log.Printf("bootstrapped allowed user %s", strings.TrimSpace(*bootstrapUserID))
+		}
+		if *userID == "" {
+			*userID = strings.TrimSpace(*bootstrapUserID)
+		}
+	}
 
 	// Resolve the target user.
 	resolvedUserID := *userID

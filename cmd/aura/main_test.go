@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -70,11 +71,31 @@ func TestMainUsesConfiguredEnvPath(t *testing.T) {
 	for _, want := range []string{
 		`initialEnvPath := config.EnvPathFromEnvironment()`,
 		`loadDotEnv(initialEnvPath)`,
-		`DotEnvPath:    cfg.EnvPath`,
+		`DotEnvPath:      cfg.EnvPath`,
 		`loadDotEnv(cfg.EnvPath)`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("main.go missing %q", want)
 		}
+	}
+}
+
+func TestLoadDotEnvDoesNotOverrideExistingEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("HTTP_PORT=127.0.0.1:8080\nTELEGRAM_TOKEN=from-file\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	t.Setenv("HTTP_PORT", "0.0.0.0:8080")
+	os.Unsetenv("TELEGRAM_TOKEN")
+	defer os.Unsetenv("TELEGRAM_TOKEN")
+
+	if err := loadDotEnv(path); err != nil {
+		t.Fatalf("loadDotEnv: %v", err)
+	}
+	if got := os.Getenv("HTTP_PORT"); got != "0.0.0.0:8080" {
+		t.Fatalf("HTTP_PORT = %q, want compose env preserved", got)
+	}
+	if got := os.Getenv("TELEGRAM_TOKEN"); got != "from-file" {
+		t.Fatalf("TELEGRAM_TOKEN = %q, want file fallback", got)
 	}
 }
