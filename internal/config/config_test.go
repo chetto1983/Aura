@@ -81,6 +81,9 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("MAX_CONTEXT_TOKENS")
 	os.Unsetenv("SOFT_BUDGET")
 	os.Unsetenv("HARD_BUDGET")
+	os.Unsetenv("COST_INPUT_PER_M_TOKENS")
+	os.Unsetenv("COST_OUTPUT_PER_M_TOKENS")
+	os.Unsetenv("COST_PER_TOKEN")
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("OLLAMA_WEB_BASE_URL")
 	os.Unsetenv("WEB_SEARCH_PROVIDER")
@@ -92,6 +95,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("GARAGE_S3_SECRET_KEY")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
+	os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
 	os.Unsetenv("SKILLS_CATALOG_URL")
 	os.Unsetenv("AURABOT_ENABLED")
 	os.Unsetenv("AURABOT_MAX_ACTIVE")
@@ -134,6 +138,12 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.MaxContextTokens != 4000 {
 		t.Errorf("MaxContextTokens = %d, want 4000", cfg.MaxContextTokens)
 	}
+	if cfg.CostInputPerMTokens != DefaultCostInputPerMTokens {
+		t.Errorf("CostInputPerMTokens = %v, want %v", cfg.CostInputPerMTokens, DefaultCostInputPerMTokens)
+	}
+	if cfg.CostOutputPerMTokens != DefaultCostOutputPerMTokens {
+		t.Errorf("CostOutputPerMTokens = %v, want %v", cfg.CostOutputPerMTokens, DefaultCostOutputPerMTokens)
+	}
 	if cfg.OllamaWebBaseURL != DefaultOllamaWebBaseURL {
 		t.Errorf("OllamaWebBaseURL = %q, want %q", cfg.OllamaWebBaseURL, DefaultOllamaWebBaseURL)
 	}
@@ -154,6 +164,9 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SkillsPath != "./skills" {
 		t.Errorf("SkillsPath = %q, want ./skills", cfg.SkillsPath)
+	}
+	if cfg.SkillsInstallProjectDir != "" {
+		t.Errorf("SkillsInstallProjectDir = %q, want empty", cfg.SkillsInstallProjectDir)
 	}
 	if cfg.SkillsCatalogURL != "https://skills.sh/" {
 		t.Errorf("SkillsCatalogURL = %q, want https://skills.sh/", cfg.SkillsCatalogURL)
@@ -343,5 +356,62 @@ func TestLoadSandboxTimeout(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != 45 {
 		t.Fatalf("SandboxTimeoutSec = %d, want 45", cfg.SandboxTimeoutSec)
+	}
+}
+
+func TestLoadSkillsInstallProjectDir(t *testing.T) {
+	os.Setenv("SKILLS_INSTALL_PROJECT_DIR", "/skills")
+	defer os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SkillsInstallProjectDir != "/skills" {
+		t.Fatalf("SkillsInstallProjectDir = %q, want /skills", cfg.SkillsInstallProjectDir)
+	}
+}
+
+func TestLoadCostPerMillionTokens(t *testing.T) {
+	os.Setenv("COST_INPUT_PER_M_TOKENS", "0.28")
+	os.Setenv("COST_OUTPUT_PER_M_TOKENS", "0.42")
+	defer os.Unsetenv("COST_INPUT_PER_M_TOKENS")
+	defer os.Unsetenv("COST_OUTPUT_PER_M_TOKENS")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CostInputPerMTokens != 0.28 {
+		t.Fatalf("CostInputPerMTokens = %v, want 0.28", cfg.CostInputPerMTokens)
+	}
+	if cfg.CostOutputPerMTokens != 0.42 {
+		t.Fatalf("CostOutputPerMTokens = %v, want 0.42", cfg.CostOutputPerMTokens)
+	}
+}
+
+func TestLoadLegacyCostPerToken(t *testing.T) {
+	os.Setenv("COST_PER_TOKEN", "0.000001")
+	defer os.Unsetenv("COST_PER_TOKEN")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CostInputPerMTokens != 1 || cfg.CostOutputPerMTokens != 1 {
+		t.Fatalf("legacy costs = input %v output %v, want 1/1", cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
+	}
+}
+
+func TestLoadIgnoresOutOfScaleLegacyCostPerToken(t *testing.T) {
+	os.Setenv("COST_PER_TOKEN", "2")
+	defer os.Unsetenv("COST_PER_TOKEN")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CostInputPerMTokens != DefaultCostInputPerMTokens || cfg.CostOutputPerMTokens != DefaultCostOutputPerMTokens {
+		t.Fatalf("costs = input %v output %v, want defaults", cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
 	}
 }

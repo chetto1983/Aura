@@ -15,16 +15,13 @@ import (
 // NPXInstaller installs skills from the skills.sh catalog by shelling
 // out to `npx skills add <source> --agent claude-code -y [--skill <id>]`
 // from the project root. The skills.sh CLI uses cwd as its
-// project-detection anchor and writes the resulting SKILL.md tree to
-// `<cwd>/.claude/skills/<name>/`. Setting cwd to the project root keeps
-// installs in `<project>/.claude/skills/` — one of the loader's
-// configured roots — instead of nesting them under `<project>/skills/
-// .claude/skills/` which the loader doesn't scan.
+// project-detection anchor and writes the resulting SKILL.md tree to an
+// agent-specific skill root such as `<cwd>/.agents/skills/<name>/`.
 //
 // Slice 11c gates this behind SKILLS_ADMIN.
 type NPXInstaller struct {
 	skillsDir  string // SKILLS_PATH, kept so we can ensure it exists
-	projectDir string // working dir for npx; install lands at <projectDir>/.claude/skills
+	projectDir string // working dir for npx; install lands under this tree's agent skills root
 }
 
 // NewNPXInstaller resolves both the configured skills dir (so we can
@@ -72,16 +69,14 @@ func (i *NPXInstaller) Install(ctx context.Context, source, skillID string) (str
 	// skills CLI itself: without them it asks "Which agents do you want
 	// to install to?" interactively and the request hangs until the
 	// caller's timeout fires. Pinning --agent claude-code makes the
-	// install land at <project>/.claude/skills/<name>/, which is one of
-	// the loader's search roots.
+	// install land under one of the loader's search roots.
 	args := []string{"--yes", "skills", "add", source, "--agent", "claude-code", "-y"}
 	if skillID != "" {
 		args = append(args, "--skill", skillID)
 	}
 	cmd := exec.CommandContext(ctx, npxBinary(), args...)
 	// Critical: cwd is the project root, NOT the skills dir. The skills
-	// CLI uses cwd as its anchor and writes to <cwd>/.claude/skills.
-	// If we set cwd=skillsDir, we'd get nested skills/.claude/skills/.
+	// CLI uses cwd as its anchor and writes to an agent-specific skills root.
 	cmd.Dir = i.projectDir
 	// Hide the inherited environment from the child as much as we can
 	// without breaking npm/node lookup. Specifically: keep PATH and
@@ -96,7 +91,7 @@ func (i *NPXInstaller) Install(ctx context.Context, source, skillID string) (str
 
 // FSDeleter removes a single skill directory from one of several
 // configured skills roots (matches the loader's multi-root model so
-// catalog-installed skills under .claude/skills are deletable too).
+// catalog-installed skills are deletable too).
 // Path containment is enforced so a malicious name can't escape.
 type FSDeleter struct {
 	dirs []string
@@ -203,6 +198,7 @@ func sanitizedEnv(env []string) []string {
 		"LOCALAPPDATA":          true,
 		"TEMP":                  true,
 		"TMP":                   true,
+		"NPM_CONFIG_CACHE":      true,
 		"NODE_PATH":             true,
 		"NPM_CONFIG_USERCONFIG": true,
 		"NPM_CONFIG_PREFIX":     true,

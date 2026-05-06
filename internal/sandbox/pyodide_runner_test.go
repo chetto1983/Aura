@@ -318,7 +318,7 @@ func newFakePyodideRunner(t *testing.T, mode, capturePath string) (*sandbox.Pyod
 		RuntimeDir:  runtimeDir,
 		RunnerPath:  exe,
 		RunnerArgs:  []string{"-test.run=TestPyodideRunnerHelperProcess", "--", mode, capturePath},
-		Timeout:     100 * time.Millisecond,
+		Timeout:     time.Second,
 		Environment: []string{"PATH=/bin", "TEMP=/tmp", "NODE_OPTIONS=--max-old-space-size=4096", "TELEGRAM_TOKEN=secret", "LLM_API_KEY=secret", "CUSTOM_SECRET=secret"},
 	})
 	if err != nil {

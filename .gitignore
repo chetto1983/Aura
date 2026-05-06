@@ -61,3 +61,4 @@ wiki/*
 /runtime/pyodide/
 /runtime/_downloads/
 dist/*
+skills/.claude/*

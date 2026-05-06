@@ -24,6 +24,7 @@ const (
 	KeyLogDir                    = "LOG_DIR"
 	KeyWikiPath                  = "WIKI_PATH"
 	KeySkillsPath                = "SKILLS_PATH"
+	KeySkillsInstallProjectDir   = "SKILLS_INSTALL_PROJECT_DIR"
 	KeyMCPServersPath            = "MCP_SERVERS_PATH"
 	KeyPromptOverlayPath         = "PROMPT_OVERLAY_PATH"
 	KeyDashboardTokenTTLHours    = "DASHBOARD_TOKEN_TTL_HOURS"
@@ -31,7 +32,8 @@ const (
 	KeyMaxHistoryMessages        = "MAX_HISTORY_MESSAGES"
 	KeySoftBudget                = "SOFT_BUDGET"
 	KeyHardBudget                = "HARD_BUDGET"
-	KeyCostPerToken              = "COST_PER_TOKEN"
+	KeyCostInputPerMTokens       = "COST_INPUT_PER_M_TOKENS"
+	KeyCostOutputPerMTokens      = "COST_OUTPUT_PER_M_TOKENS"
 	KeyLLMAPIKey                 = "LLM_API_KEY"
 	KeyLLMBaseURL                = "LLM_BASE_URL"
 	KeyLLMModel                  = "LLM_MODEL"
@@ -90,10 +92,10 @@ func OverridableKeys() []string {
 		KeyTelegramToken,
 		KeyAllowlist,
 		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath,
-		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath,
+		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir,
 		KeyMCPServersPath, KeyPromptOverlayPath, KeyDashboardTokenTTLHours,
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
-		KeySoftBudget, KeyHardBudget, KeyCostPerToken,
+		KeySoftBudget, KeyHardBudget, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
 		KeyOllamaBaseURL, KeyOllamaModel, KeyOllamaAPIKey, KeyOllamaWebBaseURL,
 		KeyWebSearchProvider, KeySearXNGBaseURL,
@@ -148,6 +150,7 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.LogDir = s.GetString(ctx, KeyLogDir, cfg.LogDir)
 	cfg.WikiPath = s.GetString(ctx, KeyWikiPath, cfg.WikiPath)
 	cfg.SkillsPath = s.GetString(ctx, KeySkillsPath, cfg.SkillsPath)
+	cfg.SkillsInstallProjectDir = s.GetString(ctx, KeySkillsInstallProjectDir, cfg.SkillsInstallProjectDir)
 	cfg.MCPServersPath = s.GetString(ctx, KeyMCPServersPath, cfg.MCPServersPath)
 	cfg.PromptOverlayPath = s.GetString(ctx, KeyPromptOverlayPath, cfg.PromptOverlayPath)
 	cfg.DashboardTokenTTLHours = s.GetInt(ctx, KeyDashboardTokenTTLHours, cfg.DashboardTokenTTLHours)
@@ -156,7 +159,12 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 	cfg.MaxHistoryMessages = s.GetInt(ctx, KeyMaxHistoryMessages, cfg.MaxHistoryMessages)
 	cfg.SoftBudget = s.GetFloat(ctx, KeySoftBudget, cfg.SoftBudget)
 	cfg.HardBudget = s.GetFloat(ctx, KeyHardBudget, cfg.HardBudget)
-	cfg.CostPerToken = s.GetFloat(ctx, KeyCostPerToken, cfg.CostPerToken)
+	if v := s.GetFloat(ctx, KeyCostInputPerMTokens, cfg.CostInputPerMTokens); v > 0 {
+		cfg.CostInputPerMTokens = v
+	}
+	if v := s.GetFloat(ctx, KeyCostOutputPerMTokens, cfg.CostOutputPerMTokens); v > 0 {
+		cfg.CostOutputPerMTokens = v
+	}
 
 	cfg.LLMAPIKey = s.GetString(ctx, KeyLLMAPIKey, cfg.LLMAPIKey)
 	cfg.LLMBaseURL = s.GetString(ctx, KeyLLMBaseURL, cfg.LLMBaseURL)

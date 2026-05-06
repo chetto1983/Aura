@@ -4,16 +4,21 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 // Tracker manages global token usage and budget enforcement.
 type Tracker struct {
 	mu                 sync.Mutex
 	totalTokens        int
+	promptTokens       int
+	completionTokens   int
 	totalCost          float64
 	softBudget         float64
 	hardBudget         float64
-	costPerToken       float64
+	inputPerMTokens    float64
+	outputPerMTokens   float64
 	logger             *slog.Logger
 	softBudgetHit      bool
 	hardBudgetHit      bool
@@ -22,32 +27,77 @@ type Tracker struct {
 
 // Config holds budget configuration.
 type Config struct {
-	SoftBudget   float64
-	HardBudget   float64
-	CostPerToken float64 // cost per 1K tokens
+	SoftBudget            float64
+	HardBudget            float64
+	InputCostPerMTokens   float64 // USD per 1M input/prompt tokens
+	OutputCostPerMTokens  float64 // USD per 1M output/completion tokens
+	LegacyCostPerTokenUSD float64 // compatibility with the old USD/token setting
 }
 
 // NewTracker creates a new budget tracker.
 func NewTracker(cfg Config, logger *slog.Logger) *Tracker {
-	costPerToken := cfg.CostPerToken
-	if costPerToken <= 0 {
-		costPerToken = 0.01 / 1000 // $0.01 per 1K tokens as a reasonable default
-	}
+	inputPerM, outputPerM := normalizePrices(cfg)
 	return &Tracker{
-		softBudget:   cfg.SoftBudget,
-		hardBudget:   cfg.HardBudget,
-		costPerToken: costPerToken,
-		logger:       logger,
+		softBudget:       cfg.SoftBudget,
+		hardBudget:       cfg.HardBudget,
+		inputPerMTokens:  inputPerM,
+		outputPerMTokens: outputPerM,
+		logger:           logger,
 	}
 }
 
+// ApplyConfig updates budget limits and prices without resetting usage totals.
+func (t *Tracker) ApplyConfig(cfg Config) {
+	if t == nil {
+		return
+	}
+	inputPerM, outputPerM := normalizePrices(cfg)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.softBudget = cfg.SoftBudget
+	t.hardBudget = cfg.HardBudget
+	t.inputPerMTokens = inputPerM
+	t.outputPerMTokens = outputPerM
+	t.totalCost = costFor(t.promptTokens, t.completionTokens, inputPerM, outputPerM)
+	t.softBudgetHit = t.softBudget > 0 && t.totalCost >= t.softBudget
+	t.hardBudgetHit = t.hardBudget > 0 && t.totalCost >= t.hardBudget
+}
+
+func normalizePrices(cfg Config) (float64, float64) {
+	inputPerM := cfg.InputCostPerMTokens
+	outputPerM := cfg.OutputCostPerMTokens
+	if inputPerM <= 0 && outputPerM <= 0 && cfg.LegacyCostPerTokenUSD > 0 {
+		perM := cfg.LegacyCostPerTokenUSD * 1_000_000
+		inputPerM = perM
+		outputPerM = perM
+	}
+	if inputPerM <= 0 {
+		inputPerM = 0.20
+	}
+	if outputPerM <= 0 {
+		outputPerM = 0.80
+	}
+	return inputPerM, outputPerM
+}
+
 // RecordUsage records token usage from an LLM call.
-func (t *Tracker) RecordUsage(totalTokens int) {
+func (t *Tracker) RecordUsage(usage llm.TokenUsage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	promptTokens := usage.PromptTokens
+	completionTokens := usage.CompletionTokens
+	if promptTokens == 0 && completionTokens == 0 {
+		promptTokens = usage.TotalTokens
+	}
+	totalTokens := usage.TotalTokens
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
+	}
 	t.totalTokens += totalTokens
-	t.totalCost = float64(t.totalTokens) * t.costPerToken
+	t.promptTokens += promptTokens
+	t.completionTokens += completionTokens
+	t.totalCost += costFor(promptTokens, completionTokens, t.inputPerMTokens, t.outputPerMTokens)
 
 	// Check soft budget
 	if t.softBudget > 0 && t.totalCost >= t.softBudget && !t.softBudgetHit {
@@ -113,8 +163,7 @@ func (t *Tracker) TotalCost() float64 {
 
 // PredictCost estimates the cost of an upcoming LLM call.
 func (t *Tracker) PredictCost(contextTokens int, expectedOutputTokens int) float64 {
-	total := contextTokens + expectedOutputTokens
-	return float64(total) * t.costPerToken
+	return costFor(contextTokens, expectedOutputTokens, t.inputPerMTokens, t.outputPerMTokens)
 }
 
 // CanAfford checks whether an upcoming call would stay within the hard budget.
@@ -126,7 +175,7 @@ func (t *Tracker) CanAfford(contextTokens int, expectedOutputTokens int) bool {
 		return true // no hard budget set
 	}
 
-	predictedCost := t.totalCost + float64(contextTokens+expectedOutputTokens)*t.costPerToken
+	predictedCost := t.totalCost + costFor(contextTokens, expectedOutputTokens, t.inputPerMTokens, t.outputPerMTokens)
 	return predictedCost < t.hardBudget
 }
 
@@ -137,20 +186,32 @@ func (t *Tracker) Status() Status {
 
 	return Status{
 		TotalTokens:        t.totalTokens,
+		PromptTokens:       t.promptTokens,
+		CompletionTokens:   t.completionTokens,
 		TotalCost:          t.totalCost,
 		SoftBudget:         t.softBudget,
 		HardBudget:         t.hardBudget,
+		InputPerMTokens:    t.inputPerMTokens,
+		OutputPerMTokens:   t.outputPerMTokens,
 		SoftBudgetExceeded: t.softBudgetHit,
 		BudgetExceeded:     t.hardBudgetHit,
 	}
 }
 
+func costFor(promptTokens, completionTokens int, inputPerM, outputPerM float64) float64 {
+	return (float64(promptTokens)*inputPerM + float64(completionTokens)*outputPerM) / 1_000_000
+}
+
 // Status represents the current budget status.
 type Status struct {
 	TotalTokens        int
+	PromptTokens       int
+	CompletionTokens   int
 	TotalCost          float64
 	SoftBudget         float64
 	HardBudget         float64
+	InputPerMTokens    float64
+	OutputPerMTokens   float64
 	SoftBudgetExceeded bool
 	BudgetExceeded     bool
 }

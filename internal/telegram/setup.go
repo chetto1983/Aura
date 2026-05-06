@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -152,12 +153,22 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	}
 
 	toolRegistry := tools.NewRegistry(logger)
-	// Loader scans both the operator-curated SKILLS_PATH (./skills by
-	// default) and `.claude/skills`, where `npx skills add … --agent
-	// claude-code` writes catalog installs. Catalog flow stays
-	// transparent: install via dashboard → file lands in .claude/skills
-	// → loader picks it up on the next chat turn / dashboard refresh.
-	skillLoader := auraskills.NewLoader(cfg.SkillsPath, ".claude/skills")
+	// Loader scans both the operator-curated SKILLS_PATH and the skills.sh
+	// CLI install roots. The catalog CLI has used both `.claude/skills` and
+	// `.agents/skills` layouts across versions/agents, so keep both visible.
+	// In containers the install cwd is /skills, so catalog installs persist
+	// under the mounted /skills tree.
+	skillInstallRoot := strings.TrimSpace(cfg.SkillsInstallProjectDir)
+	if skillInstallRoot == "" {
+		skillInstallRoot = "."
+	}
+	skillLoader := auraskills.NewLoader(
+		cfg.SkillsPath,
+		".agents/skills",
+		".claude/skills",
+		filepath.Join(skillInstallRoot, ".agents", "skills"),
+		filepath.Join(skillInstallRoot, ".claude", "skills"),
+	)
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
 	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
 	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
@@ -343,9 +354,10 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 		sandboxMgr:  sandboxMgr,
 		toolReg:     toolReg,
 		budget: budget.NewTracker(budget.Config{
-			SoftBudget:   cfg.SoftBudget,
-			HardBudget:   cfg.HardBudget,
-			CostPerToken: cfg.CostPerToken,
+			SoftBudget:           cfg.SoftBudget,
+			HardBudget:           cfg.HardBudget,
+			InputCostPerMTokens:  cfg.CostInputPerMTokens,
+			OutputCostPerMTokens: cfg.CostOutputPerMTokens,
 		}, logger),
 	}
 	if tool := tools.NewRunTaskNowTool(b); tool != nil {
@@ -494,16 +506,21 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	// package, so even when the gate is off we still wire the deps so
 	// flipping SKILLS_ADMIN=true requires only a restart, not a rebuild.
 	// Empty projectDir → installer falls back to os.Getwd() (the bot's
-	// cwd at startup), which is the project root for any standard layout.
-	// Prevents the regression where cwd=cfg.SkillsPath caused skills to
-	// nest under skills/.claude/skills/ instead of <project>/.claude/skills/.
-	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, "")
+	// cwd at startup). Containers set SKILLS_INSTALL_PROJECT_DIR=/skills so
+	// installs persist under the mounted /skills agent-specific skill trees.
+	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, cfg.SkillsInstallProjectDir)
 	if err != nil {
 		logger.Warn("skills installer unavailable", "error", err)
 	}
-	// Deleter mirrors the loader's roots so catalog-installed skills
-	// (in .claude/skills) are deletable too.
-	skillsDeleter, err := auraskills.NewFSDeleter(cfg.SkillsPath, ".claude/skills")
+	// Deleter mirrors the loader's roots so catalog-installed skills are
+	// deletable too.
+	skillsDeleter, err := auraskills.NewFSDeleter(
+		cfg.SkillsPath,
+		".agents/skills",
+		".claude/skills",
+		filepath.Join(skillInstallRoot, ".agents", "skills"),
+		filepath.Join(skillInstallRoot, ".claude", "skills"),
+	)
 	if err != nil {
 		logger.Warn("skills deleter unavailable", "error", err)
 	}
@@ -551,7 +568,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 		Settings:      settingsStore,
 		RuntimeConfig: cfg,
 		ApplyRuntimeSettings: func(ctx context.Context) error {
-			return applyAuraBotRuntimeSettings(ctx, settingsStore, cfg, auraRunner, swarmManager, logger)
+			return applyRuntimeSettings(ctx, settingsStore, cfg, auraRunner, swarmManager, b.budget, logger)
 		},
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,

@@ -340,7 +340,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 
 		convCtx.TrackTokens(resp.Usage)
 		if b.budget != nil {
-			b.budget.RecordUsage(resp.Usage.TotalTokens)
+			b.budget.RecordUsage(resp.Usage)
 		}
 
 		if !resp.HasToolCalls {

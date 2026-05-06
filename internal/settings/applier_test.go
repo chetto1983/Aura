@@ -10,16 +10,18 @@ import (
 func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 	s := openTestStore(t)
 	cfg := &config.Config{
-		LLMAPIKey:        "env-key",
-		LLMBaseURL:       "https://api.example.com",
-		LLMModel:         "gpt-x",
-		LLMMaxRetries:    5,
-		MaxContextTokens: 8000,
-		SoftBudget:       10.0,
-		HardBudget:       20.0,
-		OCREnabled:       true,
-		SkillsAdmin:      false,
-		SummarizerMode:   "off",
+		LLMAPIKey:            "env-key",
+		LLMBaseURL:           "https://api.example.com",
+		LLMModel:             "gpt-x",
+		LLMMaxRetries:        5,
+		MaxContextTokens:     8000,
+		SoftBudget:           10.0,
+		HardBudget:           20.0,
+		CostInputPerMTokens:  0.20,
+		CostOutputPerMTokens: 0.80,
+		OCREnabled:           true,
+		SkillsAdmin:          false,
+		SummarizerMode:       "off",
 	}
 
 	ApplyToConfig(context.Background(), s, cfg)
@@ -29,6 +31,7 @@ func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 	if cfg.LLMAPIKey != "env-key" || cfg.LLMBaseURL != "https://api.example.com" ||
 		cfg.LLMModel != "gpt-x" || cfg.LLMMaxRetries != 5 ||
 		cfg.MaxContextTokens != 8000 || cfg.SoftBudget != 10.0 || cfg.HardBudget != 20.0 ||
+		cfg.CostInputPerMTokens != 0.20 || cfg.CostOutputPerMTokens != 0.80 ||
 		!cfg.OCREnabled || cfg.SkillsAdmin || cfg.SummarizerMode != "off" {
 		t.Errorf("empty store mutated cfg: %+v", *cfg)
 	}
@@ -39,16 +42,18 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	ctx := context.Background()
 
 	cfg := &config.Config{
-		LLMAPIKey:        "env-key",
-		LLMBaseURL:       "https://api.example.com",
-		LLMModel:         "gpt-x",
-		LLMMaxRetries:    5,
-		MaxContextTokens: 8000,
-		SoftBudget:       10.0,
-		HardBudget:       20.0,
-		OCREnabled:       true,
-		SkillsAdmin:      false,
-		SummarizerMode:   "off",
+		LLMAPIKey:            "env-key",
+		LLMBaseURL:           "https://api.example.com",
+		LLMModel:             "gpt-x",
+		LLMMaxRetries:        5,
+		MaxContextTokens:     8000,
+		SoftBudget:           10.0,
+		HardBudget:           20.0,
+		CostInputPerMTokens:  0.20,
+		CostOutputPerMTokens: 0.80,
+		OCREnabled:           true,
+		SkillsAdmin:          false,
+		SummarizerMode:       "off",
 	}
 
 	// DB writes should win.
@@ -59,6 +64,8 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	_ = s.Set(ctx, KeyMaxContextTokens, "16000")
 	_ = s.Set(ctx, KeySoftBudget, "5.5")
 	_ = s.Set(ctx, KeyHardBudget, "12.5")
+	_ = s.Set(ctx, KeyCostInputPerMTokens, "0.28")
+	_ = s.Set(ctx, KeyCostOutputPerMTokens, "0.42")
 	_ = s.Set(ctx, KeyOCREnabled, "false")
 	_ = s.Set(ctx, KeySkillsAdmin, "true")
 	_ = s.Set(ctx, KeySummarizerMode, "review")
@@ -86,6 +93,12 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	if cfg.HardBudget != 12.5 {
 		t.Errorf("HardBudget = %v", cfg.HardBudget)
 	}
+	if cfg.CostInputPerMTokens != 0.28 {
+		t.Errorf("CostInputPerMTokens = %v", cfg.CostInputPerMTokens)
+	}
+	if cfg.CostOutputPerMTokens != 0.42 {
+		t.Errorf("CostOutputPerMTokens = %v", cfg.CostOutputPerMTokens)
+	}
 	if cfg.OCREnabled {
 		t.Errorf("OCREnabled = true, want false")
 	}
@@ -104,22 +117,23 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	ctx := context.Background()
 
 	cfg := &config.Config{
-		TelegramToken:          "bootstrap-token",
-		HTTPPort:               "127.0.0.1:8080",
-		Headless:               false,
-		EnvPath:                ".env",
-		DBPath:                 "./aura.db",
-		LogLevel:               "info",
-		LogDir:                 "./logs",
-		WikiPath:               "./wiki",
-		SkillsPath:             "./skills",
-		MCPServersPath:         "./mcp.json",
-		PromptOverlayPath:      ".",
-		DashboardTokenTTLHours: 720,
-		SandboxEnabled:         true,
-		SandboxRuntimeDir:      "./runtime/pyodide",
-		SandboxTimeoutSec:      120,
-		SandboxAutoImproveMode: "dry_run",
+		TelegramToken:           "bootstrap-token",
+		HTTPPort:                "127.0.0.1:8080",
+		Headless:                false,
+		EnvPath:                 ".env",
+		DBPath:                  "./aura.db",
+		LogLevel:                "info",
+		LogDir:                  "./logs",
+		WikiPath:                "./wiki",
+		SkillsPath:              "./skills",
+		SkillsInstallProjectDir: "",
+		MCPServersPath:          "./mcp.json",
+		PromptOverlayPath:       ".",
+		DashboardTokenTTLHours:  720,
+		SandboxEnabled:          true,
+		SandboxRuntimeDir:       "./runtime/pyodide",
+		SandboxTimeoutSec:       120,
+		SandboxAutoImproveMode:  "dry_run",
 	}
 
 	_ = s.Set(ctx, KeyTelegramToken, "override-token")
@@ -131,6 +145,7 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	_ = s.Set(ctx, KeyLogDir, "/data/logs")
 	_ = s.Set(ctx, KeyWikiPath, "/wiki")
 	_ = s.Set(ctx, KeySkillsPath, "/skills")
+	_ = s.Set(ctx, KeySkillsInstallProjectDir, "/skills")
 	_ = s.Set(ctx, KeyMCPServersPath, "/data/mcp.json")
 	_ = s.Set(ctx, KeyPromptOverlayPath, "/data")
 	_ = s.Set(ctx, KeyDashboardTokenTTLHours, "24")
@@ -167,6 +182,9 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	}
 	if cfg.SkillsPath != "/skills" {
 		t.Errorf("SkillsPath = %q", cfg.SkillsPath)
+	}
+	if cfg.SkillsInstallProjectDir != "/skills" {
+		t.Errorf("SkillsInstallProjectDir = %q", cfg.SkillsInstallProjectDir)
 	}
 	if cfg.MCPServersPath != "/data/mcp.json" {
 		t.Errorf("MCPServersPath = %q", cfg.MCPServersPath)
@@ -278,7 +296,8 @@ func TestIsOverridable(t *testing.T) {
 	for _, key := range []string{
 		KeyTelegramToken, KeyHTTPPort, KeyDBPath, KeyWikiPath,
 		KeyLogLevel, KeyPromptOverlayPath, KeyMCPServersPath,
-		KeySkillsPath, KeySandboxEnabled, KeySandboxTimeoutSec,
+		KeySkillsPath, KeySkillsInstallProjectDir, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
+		KeySandboxEnabled, KeySandboxTimeoutSec,
 	} {
 		if !IsOverridable(key) {
 			t.Errorf("%s should be overridable", key)

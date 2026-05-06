@@ -4,35 +4,38 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/aura/aura/internal/llm"
 )
 
-func newTestTracker(soft, hard, costPerToken float64) *Tracker {
+func newTestTracker(soft, hard, inputPerM, outputPerM float64) *Tracker {
 	return NewTracker(Config{
-		SoftBudget:   soft,
-		HardBudget:   hard,
-		CostPerToken: costPerToken,
+		SoftBudget:           soft,
+		HardBudget:           hard,
+		InputCostPerMTokens:  inputPerM,
+		OutputCostPerMTokens: outputPerM,
 	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn})))
 }
 
 func TestRecordUsage(t *testing.T) {
-	tr := newTestTracker(10.0, 20.0, 0.001)
-	tr.RecordUsage(1000)
+	tr := newTestTracker(10.0, 20.0, 1.00, 5.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 1_000_000, CompletionTokens: 100_000, TotalTokens: 1_100_000})
 
-	if tr.TotalTokens() != 1000 {
-		t.Errorf("TotalTokens = %d, want 1000", tr.TotalTokens())
+	if tr.TotalTokens() != 1_100_000 {
+		t.Errorf("TotalTokens = %d, want 1100000", tr.TotalTokens())
 	}
-	if tr.TotalCost() != 1.0 {
-		t.Errorf("TotalCost = %.4f, want 1.0", tr.TotalCost())
+	if tr.TotalCost() != 1.5 {
+		t.Errorf("TotalCost = %.4f, want 1.5", tr.TotalCost())
 	}
 }
 
 func TestRecordUsageAccumulates(t *testing.T) {
-	tr := newTestTracker(10.0, 20.0, 0.001)
-	tr.RecordUsage(1000)
-	tr.RecordUsage(500)
+	tr := newTestTracker(10.0, 20.0, 1.00, 5.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 500_000, CompletionTokens: 100_000, TotalTokens: 600_000})
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 500_000, TotalTokens: 500_000})
 
-	if tr.TotalTokens() != 1500 {
-		t.Errorf("TotalTokens = %d, want 1500", tr.TotalTokens())
+	if tr.TotalTokens() != 1_100_000 {
+		t.Errorf("TotalTokens = %d, want 1100000", tr.TotalTokens())
 	}
 	if tr.TotalCost() != 1.5 {
 		t.Errorf("TotalCost = %.4f, want 1.5", tr.TotalCost())
@@ -40,21 +43,20 @@ func TestRecordUsageAccumulates(t *testing.T) {
 }
 
 func TestSoftBudgetWarning(t *testing.T) {
-	tr := newTestTracker(1.0, 5.0, 0.001)
-	tr.RecordUsage(1000) // cost = 1.0, hits soft budget
+	tr := newTestTracker(1.0, 5.0, 1.00, 1.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 1_000_000, TotalTokens: 1_000_000})
 
 	if !tr.IsSoftBudgetExceeded() {
 		t.Error("soft budget should be exceeded")
 	}
-	// Should not be hard-exceeded yet
 	if tr.IsHardBudgetExceeded() {
 		t.Error("hard budget should not be exceeded at soft budget level")
 	}
 }
 
 func TestHardBudgetExceeded(t *testing.T) {
-	tr := newTestTracker(1.0, 2.0, 0.001)
-	tr.RecordUsage(2000) // cost = 2.0, hits hard budget
+	tr := newTestTracker(1.0, 2.0, 1.00, 1.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 2_000_000, TotalTokens: 2_000_000})
 
 	if !tr.IsHardBudgetExceeded() {
 		t.Error("hard budget should be exceeded")
@@ -62,42 +64,42 @@ func TestHardBudgetExceeded(t *testing.T) {
 }
 
 func TestCanAfford(t *testing.T) {
-	tr := newTestTracker(10.0, 5.0, 0.001)
-	tr.RecordUsage(2000) // cost = 2.0
+	tr := newTestTracker(10.0, 5.0, 1.00, 1.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 2_000_000, TotalTokens: 2_000_000})
 
-	// Can afford 2000 more tokens? cost = 2.0 + 2.0 = 4.0 < 5.0 → yes
-	if !tr.CanAfford(2000, 0) {
+	if !tr.CanAfford(2_000_000, 0) {
 		t.Error("CanAfford should return true when cost stays under hard budget")
 	}
-
-	// Can afford 4000 more tokens? cost = 2.0 + 4.0 = 6.0 > 5.0 → no
-	if tr.CanAfford(4000, 0) {
+	if tr.CanAfford(4_000_000, 0) {
 		t.Error("CanAfford should return false when cost exceeds hard budget")
 	}
 }
 
 func TestCanAffordNoHardBudget(t *testing.T) {
-	tr := newTestTracker(10.0, 0, 0.001) // no hard budget
+	tr := newTestTracker(10.0, 0, 1.00, 1.00)
 	if !tr.CanAfford(999999, 0) {
 		t.Error("CanAfford should return true when no hard budget is set")
 	}
 }
 
 func TestPredictCost(t *testing.T) {
-	tr := newTestTracker(0, 0, 0.001)
-	cost := tr.PredictCost(1000, 500)
+	tr := newTestTracker(0, 0, 1.00, 5.00)
+	cost := tr.PredictCost(1_000_000, 100_000)
 	if cost != 1.5 {
 		t.Errorf("PredictCost = %.4f, want 1.5", cost)
 	}
 }
 
 func TestStatus(t *testing.T) {
-	tr := newTestTracker(1.0, 5.0, 0.001)
-	tr.RecordUsage(1000)
+	tr := newTestTracker(1.0, 5.0, 1.00, 5.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 500_000, CompletionTokens: 100_000, TotalTokens: 600_000})
 
 	status := tr.Status()
-	if status.TotalTokens != 1000 {
-		t.Errorf("Status.TotalTokens = %d, want 1000", status.TotalTokens)
+	if status.TotalTokens != 600_000 {
+		t.Errorf("Status.TotalTokens = %d, want 600000", status.TotalTokens)
+	}
+	if status.PromptTokens != 500_000 || status.CompletionTokens != 100_000 {
+		t.Errorf("Status tokens = prompt %d completion %d", status.PromptTokens, status.CompletionTokens)
 	}
 	if status.TotalCost != 1.0 {
 		t.Errorf("Status.TotalCost = %.4f, want 1.0", status.TotalCost)
@@ -114,25 +116,36 @@ func TestStatus(t *testing.T) {
 	if status.BudgetExceeded {
 		t.Error("Status.BudgetExceeded should be false when only soft budget is hit")
 	}
+	if status.InputPerMTokens != 1.00 || status.OutputPerMTokens != 5.00 {
+		t.Errorf("prices = input %.4f output %.4f", status.InputPerMTokens, status.OutputPerMTokens)
+	}
 }
 
-func TestDefaultCostPerToken(t *testing.T) {
+func TestDefaultCostPerMillionTokens(t *testing.T) {
 	tr := NewTracker(Config{
-		SoftBudget:   10.0,
-		HardBudget:   20.0,
-		CostPerToken: 0, // should use default
+		SoftBudget: 10.0,
+		HardBudget: 20.0,
 	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
-	// Default is $0.01/1K tokens = 0.00001 per token
-	tr.RecordUsage(1000)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 1000, CompletionTokens: 100, TotalTokens: 1100})
 	if tr.TotalCost() <= 0 {
 		t.Errorf("TotalCost = %.6f, want > 0 with default cost", tr.TotalCost())
 	}
 }
 
+func TestLegacyCostPerTokenCompatibility(t *testing.T) {
+	tr := NewTracker(Config{
+		LegacyCostPerTokenUSD: 0.000001,
+	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	if cost := tr.PredictCost(1_000_000, 0); cost != 1.0 {
+		t.Errorf("legacy cost = %.4f, want 1.0", cost)
+	}
+}
+
 func TestShouldNotifySoftBudgetOnce(t *testing.T) {
-	tr := newTestTracker(1.0, 5.0, 0.001)
-	tr.RecordUsage(1000) // cost = 1.0, hits soft budget
+	tr := newTestTracker(1.0, 5.0, 1.00, 1.00)
+	tr.RecordUsage(llm.TokenUsage{PromptTokens: 1_000_000, TotalTokens: 1_000_000})
 
 	if !tr.ShouldNotifySoftBudget() {
 		t.Error("ShouldNotifySoftBudget should return true on first call after soft budget hit")
@@ -143,8 +156,7 @@ func TestShouldNotifySoftBudgetOnce(t *testing.T) {
 }
 
 func TestShouldNotifySoftBudgetNotHit(t *testing.T) {
-	tr := newTestTracker(1.0, 5.0, 0.001)
-	// Don't record enough usage to hit soft budget
+	tr := newTestTracker(1.0, 5.0, 1.00, 1.00)
 	if tr.ShouldNotifySoftBudget() {
 		t.Error("ShouldNotifySoftBudget should return false when soft budget not exceeded")
 	}

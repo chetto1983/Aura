@@ -10,56 +10,63 @@ const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
-const DefaultEnvPath = ".env"
+const (
+	DefaultEnvPath = ".env"
+
+	DefaultCostInputPerMTokens  = 0.20
+	DefaultCostOutputPerMTokens = 0.80
+)
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	TelegramToken          string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
-	Allowlist              []string `envconfig:"TELEGRAM_ALLOWLIST"`
-	AllowlistConfigured    bool
-	MaxContextTokens       int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
-	MaxHistoryMessages     int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
-	SoftBudget             float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
-	HardBudget             float64 `envconfig:"HARD_BUDGET" default:"20.0"`
-	CostPerToken           float64 `envconfig:"COST_PER_TOKEN" default:"0.00001"`
-	LogLevel               string  `envconfig:"LOG_LEVEL" default:"info"`
-	LogDir                 string  `envconfig:"LOG_DIR" default:"./logs"`
-	LLMAPIKey              string  `envconfig:"LLM_API_KEY"`
-	LLMBaseURL             string  `envconfig:"LLM_BASE_URL"`
-	LLMModel               string  `envconfig:"LLM_MODEL"`
-	LLMMaxRetries          int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
-	OllamaBaseURL          string  `envconfig:"OLLAMA_BASE_URL"`
-	OllamaModel            string  `envconfig:"OLLAMA_MODEL"`
-	OllamaAPIKey           string  `envconfig:"OLLAMA_API_KEY"`
-	OllamaWebBaseURL       string  `envconfig:"OLLAMA_WEB_BASE_URL"`
-	WebSearchProvider      string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
-	SearXNGBaseURL         string  `envconfig:"SEARXNG_BASE_URL"`
-	GarageS3Endpoint       string  `envconfig:"GARAGE_S3_ENDPOINT"`
-	GarageS3Region         string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
-	GarageS3Bucket         string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
-	GarageS3AccessKey      string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
-	GarageS3SecretKey      string  `envconfig:"GARAGE_S3_SECRET_KEY"`
-	MaxToolIterations      int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
-	WikiPath               string  `envconfig:"WIKI_PATH" default:"./wiki"`
-	PromptOverlayPath      string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
-	SkillsPath             string  `envconfig:"SKILLS_PATH" default:"./skills"`
-	SkillsCatalogURL       string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
-	SkillsAdmin            bool    `envconfig:"SKILLS_ADMIN" default:"false"`
-	MCPServersPath         string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
-	AuraBotEnabled         bool    `envconfig:"AURABOT_ENABLED" default:"false"`
-	AuraBotMaxActive       int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
-	AuraBotMaxDepth        int     `envconfig:"AURABOT_MAX_DEPTH" default:"1"`
-	AuraBotTimeoutSec      int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
-	AuraBotMaxIterations   int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
-	EmbeddingAPIKey        string  `envconfig:"EMBEDDING_API_KEY"`
-	EmbeddingBaseURL       string  `envconfig:"EMBEDDING_BASE_URL"`
-	EmbeddingModel         string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
-	DBPath                 string  `envconfig:"DB_PATH" default:"./aura.db"`
-	HTTPPort               string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
-	Headless               bool    `envconfig:"AURA_HEADLESS" default:"false"`
-	EnvPath                string  `envconfig:"AURA_ENV_PATH" default:".env"`
-	DashboardTokenTTLHours int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
-	OTelEnabled            bool    `envconfig:"OTEL_ENABLED" default:"false"`
+	TelegramToken           string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
+	Allowlist               []string `envconfig:"TELEGRAM_ALLOWLIST"`
+	AllowlistConfigured     bool
+	MaxContextTokens        int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
+	MaxHistoryMessages      int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
+	SoftBudget              float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
+	HardBudget              float64 `envconfig:"HARD_BUDGET" default:"20.0"`
+	CostInputPerMTokens     float64 `envconfig:"COST_INPUT_PER_M_TOKENS" default:"0.20"`
+	CostOutputPerMTokens    float64 `envconfig:"COST_OUTPUT_PER_M_TOKENS" default:"0.80"`
+	LogLevel                string  `envconfig:"LOG_LEVEL" default:"info"`
+	LogDir                  string  `envconfig:"LOG_DIR" default:"./logs"`
+	LLMAPIKey               string  `envconfig:"LLM_API_KEY"`
+	LLMBaseURL              string  `envconfig:"LLM_BASE_URL"`
+	LLMModel                string  `envconfig:"LLM_MODEL"`
+	LLMMaxRetries           int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	OllamaBaseURL           string  `envconfig:"OLLAMA_BASE_URL"`
+	OllamaModel             string  `envconfig:"OLLAMA_MODEL"`
+	OllamaAPIKey            string  `envconfig:"OLLAMA_API_KEY"`
+	OllamaWebBaseURL        string  `envconfig:"OLLAMA_WEB_BASE_URL"`
+	WebSearchProvider       string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
+	SearXNGBaseURL          string  `envconfig:"SEARXNG_BASE_URL"`
+	GarageS3Endpoint        string  `envconfig:"GARAGE_S3_ENDPOINT"`
+	GarageS3Region          string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
+	GarageS3Bucket          string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
+	GarageS3AccessKey       string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
+	GarageS3SecretKey       string  `envconfig:"GARAGE_S3_SECRET_KEY"`
+	MaxToolIterations       int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
+	WikiPath                string  `envconfig:"WIKI_PATH" default:"./wiki"`
+	PromptOverlayPath       string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
+	SkillsPath              string  `envconfig:"SKILLS_PATH" default:"./skills"`
+	SkillsInstallProjectDir string  `envconfig:"SKILLS_INSTALL_PROJECT_DIR"`
+	SkillsCatalogURL        string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
+	SkillsAdmin             bool    `envconfig:"SKILLS_ADMIN" default:"false"`
+	MCPServersPath          string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
+	AuraBotEnabled          bool    `envconfig:"AURABOT_ENABLED" default:"false"`
+	AuraBotMaxActive        int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
+	AuraBotMaxDepth         int     `envconfig:"AURABOT_MAX_DEPTH" default:"1"`
+	AuraBotTimeoutSec       int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
+	AuraBotMaxIterations    int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
+	EmbeddingAPIKey         string  `envconfig:"EMBEDDING_API_KEY"`
+	EmbeddingBaseURL        string  `envconfig:"EMBEDDING_BASE_URL"`
+	EmbeddingModel          string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
+	DBPath                  string  `envconfig:"DB_PATH" default:"./aura.db"`
+	HTTPPort                string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
+	Headless                bool    `envconfig:"AURA_HEADLESS" default:"false"`
+	EnvPath                 string  `envconfig:"AURA_ENV_PATH" default:".env"`
+	DashboardTokenTTLHours  int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
+	OTelEnabled             bool    `envconfig:"OTEL_ENABLED" default:"false"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -141,7 +148,23 @@ func Load() (*Config, error) {
 	cfg.MaxHistoryMessages = getEnvInt("MAX_HISTORY_MESSAGES", 50)
 	cfg.SoftBudget = getEnvFloat("SOFT_BUDGET", 10.0)
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
-	cfg.CostPerToken = getEnvFloat("COST_PER_TOKEN", 0.00001)
+	cfg.CostInputPerMTokens = getEnvFloat("COST_INPUT_PER_M_TOKENS", 0)
+	cfg.CostOutputPerMTokens = getEnvFloat("COST_OUTPUT_PER_M_TOKENS", 0)
+	if cfg.CostInputPerMTokens <= 0 && cfg.CostOutputPerMTokens <= 0 {
+		// Compatibility with the old USD/token knob. Values larger than one cent
+		// per token are assumed to be the common "per million token" unit mistake
+		// and intentionally fall back to sane defaults.
+		if legacy := getEnvFloat("COST_PER_TOKEN", 0); legacy > 0 && legacy <= 0.01 {
+			cfg.CostInputPerMTokens = legacy * 1_000_000
+			cfg.CostOutputPerMTokens = legacy * 1_000_000
+		}
+	}
+	if cfg.CostInputPerMTokens <= 0 {
+		cfg.CostInputPerMTokens = DefaultCostInputPerMTokens
+	}
+	if cfg.CostOutputPerMTokens <= 0 {
+		cfg.CostOutputPerMTokens = DefaultCostOutputPerMTokens
+	}
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
 	cfg.LogDir = getEnv("LOG_DIR", "./logs")
 
@@ -166,6 +189,7 @@ func Load() (*Config, error) {
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
+	cfg.SkillsInstallProjectDir = getEnv("SKILLS_INSTALL_PROJECT_DIR", "")
 	cfg.SkillsCatalogURL = getEnv("SKILLS_CATALOG_URL", "https://skills.sh/")
 	cfg.SkillsAdmin = getEnvBool("SKILLS_ADMIN", false)
 	cfg.MCPServersPath = getEnv("MCP_SERVERS_PATH", "./mcp.json")

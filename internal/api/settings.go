@@ -86,6 +86,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyLogDir, Group: "runtime", Kind: "text", Label: "Log directory"},
 	{Key: settings.KeyWikiPath, Group: "runtime", Kind: "text", Label: "Wiki path", Hint: "Restart Aura after moving the wiki root"},
 	{Key: settings.KeySkillsPath, Group: "runtime", Kind: "text", Label: "Skills path", Hint: "Restart Aura after moving skill roots"},
+	{Key: settings.KeySkillsInstallProjectDir, Group: "runtime", Kind: "text", Label: "Skills install project directory", Hint: "Container default is /skills so catalog installs persist in the mounted volume"},
 	{Key: settings.KeyMCPServersPath, Group: "runtime", Kind: "text", Label: "MCP servers config path", Hint: "Restart Aura after changing MCP config path"},
 	{Key: settings.KeyPromptOverlayPath, Group: "runtime", Kind: "text", Label: "Prompt overlay path"},
 	{Key: settings.KeyDashboardTokenTTLHours, Group: "runtime", Kind: "int", Label: "Dashboard token TTL (hours)"},
@@ -124,7 +125,8 @@ var settingsCatalog = []SettingItem{
 
 	{Key: settings.KeySoftBudget, Group: "budget", Kind: "float", Label: "Soft budget (USD)", Hint: "Telegram warning fires once this is crossed"},
 	{Key: settings.KeyHardBudget, Group: "budget", Kind: "float", Label: "Hard budget (USD)", Hint: "Bot refuses LLM calls past this"},
-	{Key: settings.KeyCostPerToken, Group: "budget", Kind: "float", Label: "Cost per token (USD)", Hint: "Used to estimate spend; provider-specific"},
+	{Key: settings.KeyCostInputPerMTokens, Group: "budget", Kind: "float", Label: "Input price (USD / 1M tokens)", Hint: "Set from the selected provider/model pricing"},
+	{Key: settings.KeyCostOutputPerMTokens, Group: "budget", Kind: "float", Label: "Output price (USD / 1M tokens)", Hint: "Set from the selected provider/model pricing"},
 	{Key: settings.KeyMaxContextTokens, Group: "budget", Kind: "int", Label: "Max context tokens", Hint: "Summarization fires at 80% of this"},
 	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Label: "Max in-flight messages", Hint: "Hard cap; oldest evicted first"},
 	{Key: settings.KeyMaxToolIterations, Group: "budget", Kind: "int", Label: "Max tool iterations / turn"},
@@ -232,6 +234,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.WikiPath
 	case settings.KeySkillsPath:
 		return cfg.SkillsPath
+	case settings.KeySkillsInstallProjectDir:
+		return cfg.SkillsInstallProjectDir
 	case settings.KeyMCPServersPath:
 		return cfg.MCPServersPath
 	case settings.KeyPromptOverlayPath:
@@ -246,8 +250,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.FormatFloat(cfg.SoftBudget, 'f', -1, 64)
 	case settings.KeyHardBudget:
 		return strconv.FormatFloat(cfg.HardBudget, 'f', -1, 64)
-	case settings.KeyCostPerToken:
-		return strconv.FormatFloat(cfg.CostPerToken, 'f', -1, 64)
+	case settings.KeyCostInputPerMTokens:
+		return strconv.FormatFloat(cfg.CostInputPerMTokens, 'f', -1, 64)
+	case settings.KeyCostOutputPerMTokens:
+		return strconv.FormatFloat(cfg.CostOutputPerMTokens, 'f', -1, 64)
 	case settings.KeyLLMAPIKey:
 		return cfg.LLMAPIKey
 	case settings.KeyLLMBaseURL:
@@ -413,7 +419,8 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 func touchesLiveRuntimeSetting(keys []string) bool {
 	for _, key := range keys {
 		switch key {
-		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations:
+		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations,
+			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens:
 			return true
 		}
 	}

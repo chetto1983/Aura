@@ -94,20 +94,23 @@ func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
 	router := NewRouter(Deps{
 		Settings: store,
 		RuntimeConfig: &config.Config{
-			TelegramToken:          "123456:secret",
-			HTTPPort:               "0.0.0.0:8080",
-			Headless:               true,
-			EnvPath:                "/data/.env",
-			DBPath:                 "/data/aura.db",
-			WikiPath:               "/wiki",
-			SkillsPath:             "/skills",
-			MCPServersPath:         "/data/mcp.json",
-			PromptOverlayPath:      "/data",
-			DashboardTokenTTLHours: 720,
-			SandboxEnabled:         false,
-			SandboxRuntimeDir:      "/app/runtime/pyodide",
-			SandboxTimeoutSec:      120,
-			SandboxAutoImproveMode: "dry_run",
+			TelegramToken:           "123456:secret",
+			HTTPPort:                "0.0.0.0:8080",
+			Headless:                true,
+			EnvPath:                 "/data/.env",
+			DBPath:                  "/data/aura.db",
+			WikiPath:                "/wiki",
+			SkillsPath:              "/skills",
+			SkillsInstallProjectDir: "/skills",
+			CostInputPerMTokens:     0.28,
+			CostOutputPerMTokens:    0.42,
+			MCPServersPath:          "/data/mcp.json",
+			PromptOverlayPath:       "/data",
+			DashboardTokenTTLHours:  720,
+			SandboxEnabled:          false,
+			SandboxRuntimeDir:       "/app/runtime/pyodide",
+			SandboxTimeoutSec:       120,
+			SandboxAutoImproveMode:  "dry_run",
 		},
 	})
 
@@ -119,11 +122,14 @@ func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
 	var resp SettingsListResponse
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	want := map[string]string{
-		"AURA_ENV_PATH":       "/data/.env",
-		"DB_PATH":             "/data/aura.db",
-		"WIKI_PATH":           "/wiki",
-		"SANDBOX_ENABLED":     "false",
-		"SANDBOX_RUNTIME_DIR": "/app/runtime/pyodide",
+		"AURA_ENV_PATH":              "/data/.env",
+		"DB_PATH":                    "/data/aura.db",
+		"WIKI_PATH":                  "/wiki",
+		"SKILLS_INSTALL_PROJECT_DIR": "/skills",
+		"COST_INPUT_PER_M_TOKENS":    "0.28",
+		"COST_OUTPUT_PER_M_TOKENS":   "0.42",
+		"SANDBOX_ENABLED":            "false",
+		"SANDBOX_RUNTIME_DIR":        "/app/runtime/pyodide",
 	}
 	for key, value := range want {
 		found := false

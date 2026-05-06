@@ -25,6 +25,7 @@ func (b *Bot) onStatus(c tele.Context) error {
 		status := b.budget.Status()
 		fmt.Fprintf(&sb, "Tokens used: %d\n", status.TotalTokens)
 		fmt.Fprintf(&sb, "Estimated cost: $%.4f\n", status.TotalCost)
+		fmt.Fprintf(&sb, "Token price: input $%.4f/M, output $%.4f/M\n", status.InputPerMTokens, status.OutputPerMTokens)
 		if status.SoftBudget > 0 {
 			fmt.Fprintf(&sb, "Soft budget: $%.2f\n", status.SoftBudget)
 		}

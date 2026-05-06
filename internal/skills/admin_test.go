@@ -97,6 +97,7 @@ func TestSanitizedEnv_KeepsPathAndProfileOnly(t *testing.T) {
 	in := []string{
 		"PATH=/usr/bin",
 		"HOME=/home/me",
+		"NPM_CONFIG_CACHE=/data/.npm",
 		"TELEGRAM_TOKEN=secret",
 		"MISTRAL_API_KEY=alsoSecret",
 		"NPM_CONFIG_PREFIX=/opt/npm",
@@ -107,7 +108,7 @@ func TestSanitizedEnv_KeepsPathAndProfileOnly(t *testing.T) {
 	for _, kv := range out {
 		have[kv] = true
 	}
-	for _, want := range []string{"PATH=/usr/bin", "HOME=/home/me", "NPM_CONFIG_PREFIX=/opt/npm"} {
+	for _, want := range []string{"PATH=/usr/bin", "HOME=/home/me", "NPM_CONFIG_CACHE=/data/.npm", "NPM_CONFIG_PREFIX=/opt/npm"} {
 		if !have[want] {
 			t.Errorf("missing %q", want)
 		}

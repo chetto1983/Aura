@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/aura ./cmd/aura
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates nodejs tzdata wget \
+RUN apk add --no-cache ca-certificates git nodejs npm tzdata wget \
     && adduser -D -H -u 10001 aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app
@@ -26,8 +26,11 @@ ENV AURA_HEADLESS=true \
     HTTP_PORT=0.0.0.0:8080 \
     DB_PATH=/data/aura.db \
     LOG_DIR=/data/logs \
+    HOME=/data \
+    NPM_CONFIG_CACHE=/data/.npm \
     WIKI_PATH=/wiki \
     SKILLS_PATH=/skills \
+    SKILLS_INSTALL_PROJECT_DIR=/skills \
     MCP_SERVERS_PATH=/data/mcp.json \
     PROMPT_OVERLAY_PATH=/data \
     SANDBOX_ENABLED=true \
