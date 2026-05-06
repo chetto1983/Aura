@@ -573,6 +573,19 @@ func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
 	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {
 		t.Fatalf("extract.md missing after retry: %v", err)
 	}
+	var retrySuccess string
+	for _, call := range calls {
+		if call.Method != "editMessageText" {
+			continue
+		}
+		text, _ := call.Body["text"].(string)
+		if strings.Contains(text, "ready for ingest") {
+			retrySuccess = text
+		}
+	}
+	if !strings.Contains(retrySuccess, "✅ Done ·") || strings.Contains(retrySuccess, "Ã") || strings.Contains(retrySuccess, "Â") {
+		t.Fatalf("retry success text = %q", retrySuccess)
+	}
 }
 
 func TestDocHandlerStopWaitsForInFlightWorker(t *testing.T) {

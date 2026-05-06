@@ -9,7 +9,7 @@ The current product direction is the LLM Wiki memory pattern: immutable sources 
 - Users can upload and manage evidence from Telegram and the dashboard.
 - Source ingestion supports PDF, TXT, Markdown, JSON, CSV, XLSX, and DOCX.
 - Extracted sources write `extract.md` and `extract.json`; PDF OCR also preserves `ocr.md` and `ocr.json`.
-- `extract_complete` sources are eligible for wiki ingestion through the shared `AfterExtract` path.
+- `extract_complete` sources are eligible for wiki ingestion through the dashboard/API ingest action and the existing ingest pipeline.
 - The dashboard is served from Go-embedded React assets under `internal/api/dist`.
 
 ## Guardrails

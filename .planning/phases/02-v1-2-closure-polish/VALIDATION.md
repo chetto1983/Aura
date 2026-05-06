@@ -10,9 +10,10 @@ This phase closes v1.2 source intake polish. The accepted formats are PDF, TXT, 
 
 - Source/API/Telegram/frontend upload claims now use the same supported-format truth.
 - XLSX extraction routes through the sandbox manager and Pyodide, with input files mounted into the Pyodide filesystem before the trusted script runs.
+- XLSX extraction rejects oversized/suspicious ZIP archives before invoking Pyodide and only parses a bounded number of rows per sheet.
 - DOCX extraction routes through a fixed offline Pyodide script that reads WordprocessingML parts and writes normalized markdown plus JSON metadata.
 - DOCX extraction is bounded by entry count, uncompressed size, XML part size, compression ratio, paragraph count, and text bytes.
-- Non-PDF `extract_complete` sources flow through the shared ingest path into wiki pages.
+- Non-PDF `extract_complete` sources flow through the dashboard/API ingest action into wiki pages.
 - Wiki graph responses return empty edge lists as `[]`.
 - Wiki graph UI tolerates legacy `null` edge/node responses.
 - Conversation rows remain semantic table rows, while turn IDs provide real keyboard-accessible open buttons.

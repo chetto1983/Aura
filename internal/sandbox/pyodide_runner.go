@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -26,12 +27,19 @@ const (
 	defaultPyodideOutputDir         = "/tmp/aura_out"
 	maxPyodideArtifacts             = 10
 	maxPyodideArtifactBytes         = 5 << 20
+	maxXLSXEntries                  = 512
+	maxXLSXTotalUncompressedBytes   = 20 << 20
+	maxXLSXXMLPartBytes             = 5 << 20
+	maxXLSXCompressionRatio         = 100
 )
 
 const trustedXLSXExtractorCode = `
 import json
 from pathlib import Path
 import pandas as pd
+
+MAX_XLSX_SHEETS = 10
+MAX_XLSX_ROWS_PER_SHEET = 200
 
 input_path = Path("workbook.xlsx")
 output_dir = Path("/tmp/aura_out")
@@ -51,19 +59,19 @@ def markdown_table(df):
     headers = [clean_cell(c) for c in list(df.columns)]
     lines = ["| " + " | ".join(headers) + " |"]
     lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-    for _, row in df.head(200).iterrows():
+    for _, row in df.head(MAX_XLSX_ROWS_PER_SHEET).iterrows():
         lines.append("| " + " | ".join(clean_cell(row[c]) for c in df.columns) + " |")
     return "\n".join(lines)
 
-for sheet in book.sheet_names[:10]:
-    df = book.parse(sheet)
+for sheet in book.sheet_names[:MAX_XLSX_SHEETS]:
+    df = book.parse(sheet, nrows=MAX_XLSX_ROWS_PER_SHEET)
     rows_total += int(len(df.index))
     sections.append("## Sheet: " + str(sheet))
     sections.append(markdown_table(df))
 
-if len(book.sheet_names) > 10:
+if len(book.sheet_names) > MAX_XLSX_SHEETS:
     warnings.append("workbook truncated to first 10 sheets")
-if rows_total > 200:
+if rows_total >= MAX_XLSX_ROWS_PER_SHEET:
     warnings.append("large workbook rendered with per-sheet row limits")
 
 markdown = "\n\n".join(sections).strip() + "\n"
@@ -365,6 +373,9 @@ func (r *PyodideRunner) ExtractXLSX(ctx context.Context, body []byte) (source.Ex
 	if r == nil {
 		return source.ExtractResult{}, errors.New("sandbox: Pyodide runner not configured")
 	}
+	if err := validateXLSXArchive(body); err != nil {
+		return source.ExtractResult{}, err
+	}
 	tmpDir, err := os.MkdirTemp("", "aura-xlsx-*")
 	if err != nil {
 		return source.ExtractResult{}, fmt.Errorf("sandbox: create xlsx input dir: %w", err)
@@ -394,6 +405,30 @@ func (r *PyodideRunner) ExtractXLSX(ctx context.Context, body []byte) (source.Ex
 		return source.ExtractResult{}, fmt.Errorf("source: parse pyodide extract metadata: %w", err)
 	}
 	return source.ExtractResult{Markdown: string(md), Metadata: meta}, nil
+}
+
+func validateXLSXArchive(body []byte) error {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return fmt.Errorf("source: invalid XLSX archive: %w", err)
+	}
+	if len(zr.File) > maxXLSXEntries {
+		return errors.New("source: XLSX has too many ZIP entries")
+	}
+	var total uint64
+	for _, f := range zr.File {
+		total += f.UncompressedSize64
+		if total > maxXLSXTotalUncompressedBytes {
+			return errors.New("source: XLSX uncompressed size exceeds limit")
+		}
+		if strings.HasSuffix(strings.ToLower(f.Name), ".xml") && f.UncompressedSize64 > maxXLSXXMLPartBytes {
+			return fmt.Errorf("source: XLSX XML part %s exceeds limit", f.Name)
+		}
+		if f.CompressedSize64 > 0 && f.UncompressedSize64 > f.CompressedSize64*maxXLSXCompressionRatio {
+			return fmt.Errorf("source: XLSX ZIP entry %s has suspicious compression ratio", f.Name)
+		}
+	}
+	return nil
 }
 
 func (r *PyodideRunner) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {

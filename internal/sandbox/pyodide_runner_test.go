@@ -1,8 +1,11 @@
 package sandbox_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,7 +84,7 @@ func TestPyodideRunner_ExecuteReturnsArtifacts(t *testing.T) {
 func TestPyodideRunner_ExtractXLSXUsesInputFileAndArtifacts(t *testing.T) {
 	capturePath := filepath.Join(t.TempDir(), "capture.json")
 	runner, _ := newFakePyodideRunner(t, "xlsx-artifact", capturePath)
-	body := []byte(strings.Repeat("x", 160_000))
+	body := makeZipWithEntry(t, "xl/worksheets/sheet1.xml", "<worksheet><sheetData/></worksheet>")
 
 	result, err := runner.ExtractXLSX(context.Background(), body)
 	if err != nil {
@@ -100,6 +103,20 @@ func TestPyodideRunner_ExtractXLSXUsesInputFileAndArtifacts(t *testing.T) {
 	}
 	if len(capture.Request.InputFiles) != 1 || filepath.Base(capture.Request.InputFiles[0]) != "workbook.xlsx" {
 		t.Fatalf("input_files = %v, want workbook.xlsx input", capture.Request.InputFiles)
+	}
+}
+
+func TestPyodideRunner_ExtractXLSXRejectsOversizedArchiveBeforeRunner(t *testing.T) {
+	capturePath := filepath.Join(t.TempDir(), "capture.json")
+	runner, _ := newFakePyodideRunner(t, "xlsx-artifact", capturePath)
+	body := makeZipWithEntry(t, "xl/worksheets/sheet1.xml", strings.Repeat("x", 21*1024*1024))
+
+	_, err := runner.ExtractXLSX(context.Background(), body)
+	if err == nil || !strings.Contains(err.Error(), "uncompressed size exceeds limit") {
+		t.Fatalf("ExtractXLSX() error = %v, want uncompressed size limit", err)
+	}
+	if _, statErr := os.Stat(capturePath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("runner capture stat error = %v, want runner not invoked", statErr)
 	}
 }
 
@@ -131,6 +148,23 @@ func TestPyodideRunner_ExtractDOCXUsesInputFileAndArtifacts(t *testing.T) {
 	if len(capture.Request.InputFiles) != 1 || filepath.Base(capture.Request.InputFiles[0]) != "document.docx" {
 		t.Fatalf("input_files = %v, want document.docx input", capture.Request.InputFiles)
 	}
+}
+
+func makeZipWithEntry(t *testing.T, name, body string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func TestPyodideRunner_ExecuteRejectsArtifactTraversal(t *testing.T) {

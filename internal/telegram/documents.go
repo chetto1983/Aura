@@ -228,7 +228,7 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 				editor.fail("Status update failed: " + err.Error())
 				return
 			}
-			editor.set(fmt.Sprintf("âœ… Done Â· %s Â· %s Â· extracted Â· ready for ingest",
+			editor.set(fmt.Sprintf("✅ Done · %s · %s · extracted · ready for ingest",
 				updated.ID, formatSize(updated.SizeBytes)))
 			h.logger.Info("source extracted", "user_id", userID, "source_id", updated.ID, "kind", updated.Kind, "size_bytes", updated.SizeBytes)
 			return
