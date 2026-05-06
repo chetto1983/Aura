@@ -16,6 +16,14 @@ v1.3 memory consolidation has deterministic cleanup and hermetic quality gates i
 
 The remaining release caveat is live LLM latency, not tool routing. With `LLM_MODEL=glm-5.1:cloud`, `debug_memory_quality -live-llm` called `search_memory` for every scenario and kept proposals review-gated, but missed the 30s end-user budget on several scenarios.
 
+## Next Milestone Handoff
+
+v4.0 is planned as "MCP Marketplace And Autonomous Plugin Manager" after current release closure.
+
+Canonical plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
+
+The user decisions for v4.0 are MCP marketplace, container MCP runtime, official MCP Registry plus local cache, review-gated security, and agent auto rollback for approved staged proposals. The implementation must keep plugin enablement review-gated and expose only enabled approved MCP tools to the agent.
+
 ## Recent Decisions
 
 - Keep v1.2 extraction narrow and auditable.

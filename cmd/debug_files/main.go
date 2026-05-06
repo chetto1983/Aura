@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 )
@@ -31,6 +33,7 @@ type scenario struct {
 	name      string
 	prompt    string
 	wantTool  string
+	wantTools []string
 	wantKind  source.Kind
 	wantAsset string
 	wantExt   string
@@ -57,6 +60,7 @@ func (s *stubSender) SendDocumentToUser(userID, filename string, body []byte, ca
 
 func main() {
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
+	skillDocx := flag.Bool("skill-docx", false, "run one natural prompt that must read the installed docx skill before create_docx")
 	flag.Parse()
 
 	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -90,6 +94,11 @@ func main() {
 	reg.Register(tools.NewCreateXLSXTool(store, sender))
 	reg.Register(tools.NewCreateDOCXTool(store, sender))
 	reg.Register(tools.NewCreatePDFTool(store, sender))
+	if *skillDocx {
+		loader := newDebugSkillLoader(envDefault("SKILLS_PATH", "skills"), os.Getenv("SKILLS_INSTALL_PROJECT_DIR"))
+		reg.Register(tools.NewListSkillsTool(loader))
+		reg.Register(tools.NewReadSkillTool(loader))
+	}
 
 	client := llm.NewOpenAIClient(llm.OpenAIConfig{
 		APIKey:  apiKey,
@@ -126,6 +135,9 @@ func main() {
 			wantExt:   ".pdf",
 		},
 	}
+	if *skillDocx {
+		scenarios = []scenario{skillBackedDocxScenario()}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -136,14 +148,14 @@ func main() {
 	failures := 0
 	for _, sc := range scenarios {
 		before := len(sender.calls)
-		called, final, toolResults, err := runScenario(ctx, client, reg, model, sc.prompt)
+		called, final, toolResults, err := runScenario(ctx, client, reg, model, sc.prompt, *skillDocx)
 		resp, resultErr := parseToolResponse(toolResults, sc.wantTool)
 		if resultErr != nil && err == nil {
 			err = resultErr
 		}
 
 		ok := err == nil &&
-			containsTool(called, sc.wantTool) &&
+			containsTools(called, requiredTools(sc)) &&
 			validateResponse(store, sender, before, resp, sc) == nil
 
 		status := "PASS"
@@ -152,7 +164,7 @@ func main() {
 			failures++
 		}
 		fmt.Printf("[%s] %s\n", status, sc.name)
-		fmt.Printf("  wanted: %s\n", sc.wantTool)
+		fmt.Printf("  wanted: %s\n", strings.Join(requiredTools(sc), ", "))
 		fmt.Printf("  called: %s\n", strings.Join(called, ", "))
 		if err != nil {
 			fmt.Printf("  error: %v\n", err)
@@ -176,12 +188,10 @@ func main() {
 	}
 }
 
-func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, model, prompt string) ([]string, string, []toolResult, error) {
+func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, model, prompt string, skillAware bool) ([]string, string, []toolResult, error) {
 	ctx = tools.WithUserID(ctx, "debug-files-harness")
 	messages := []llm.Message{
-		{Role: "system", Content: conversation.RenderSystemPrompt(time.Now(), time.Local) +
-			"\n\nFor this smoke test, choose exactly the file creation tool that matches the requested output format. " +
-			"Set deliver=true or omit it so the file is sent. Do not answer without creating the file."},
+		{Role: "system", Content: buildSystemPrompt(skillAware)},
 		{Role: "user", Content: prompt},
 	}
 
@@ -218,6 +228,51 @@ func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, mo
 		}
 	}
 	return called, lastToolResult, results, fmt.Errorf("max tool iterations reached")
+}
+
+func buildSystemPrompt(skillAware bool) string {
+	prompt := conversation.RenderSystemPrompt(time.Now(), time.Local) +
+		"\n\nFor this smoke test, choose exactly the file creation tool that matches the requested output format. " +
+		"Set deliver=true or omit it so the file is sent. Do not answer without creating the file."
+	if skillAware {
+		prompt += " Inspect installed local skills with list_skills, then call read_skill for the matching document skill before create_docx. The expected order is list_skills/read_skill before create_docx."
+	}
+	return prompt
+}
+
+func skillBackedDocxScenario() scenario {
+	return scenario{
+		name: "skill_docx_aura_docs_summary",
+		prompt: "Crea e inviami un documento Word modificabile chiamato aura-documenti-riepilogo. " +
+			"Usa le skill installate quando pertinenti. Il documento deve riassumere i documenti Aura principali che hai nel contesto: " +
+			"README installazione Docker, docs/container.md stack e backup, docs/implementation-tracker.md stato shipped, e il piano v4.0 MCP Marketplace. " +
+			"Includi titolo, breve panoramica, punti chiave, tabella dei documenti e prossimi passi.",
+		wantTool:  "create_docx",
+		wantTools: []string{"list_skills", "read_skill", "create_docx"},
+		wantKind:  source.KindDOCX,
+		wantAsset: "original.docx",
+		wantExt:   ".docx",
+	}
+}
+
+func newDebugSkillLoader(skillsPath, installProjectDir string) *skills.Loader {
+	skillsPath = strings.TrimSpace(skillsPath)
+	if skillsPath == "" {
+		skillsPath = "skills"
+	}
+	installRoot := strings.TrimSpace(installProjectDir)
+	if installRoot == "" {
+		installRoot = "."
+	}
+	return skills.NewLoader(
+		skillsPath,
+		".agents/skills",
+		".claude/skills",
+		filepath.Join(skillsPath, ".agents", "skills"),
+		filepath.Join(skillsPath, ".claude", "skills"),
+		filepath.Join(installRoot, ".agents", "skills"),
+		filepath.Join(installRoot, ".claude", "skills"),
+	)
 }
 
 type toolResult struct {
@@ -331,6 +386,22 @@ func containsTool(called []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func containsTools(called []string, wants []string) bool {
+	for _, want := range wants {
+		if !containsTool(called, want) {
+			return false
+		}
+	}
+	return true
+}
+
+func requiredTools(sc scenario) []string {
+	if len(sc.wantTools) > 0 {
+		return sc.wantTools
+	}
+	return []string{sc.wantTool}
 }
 
 func singleLine(s string, max int) string {

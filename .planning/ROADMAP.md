@@ -53,3 +53,23 @@ Deferred from this milestone:
 - New source formats and cloud connectors.
 - MarkItDown integration.
 - Large UI redesigns beyond memory-quality observability.
+
+## Planned Next After Current Release Closure
+
+### v4.0 MCP Marketplace And Autonomous Plugin Manager
+
+Status: planned
+
+Plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
+
+Goal: make Aura's plugin system MCP-first, Docker-first, review-gated, and agent-auditable.
+
+Success criteria:
+
+- Aura syncs the official MCP Registry into a local cache without blocking startup.
+- Aura can install MCP plugins as managed container sidecars or remote HTTP connections.
+- Failed plugin installs smoke-test and roll back automatically without breaking existing tools.
+- Dashboard review gates plugin install, update, enable, disable, and rollback operations.
+- Enabled approved MCP tools are exposed to the agent with stable `mcp_<server>_<tool>` names.
+- Dashboard shows Marketplace, Installed plugins, Health, and Review Queue views.
+- Docker smoke validates registry sync, fake MCP install, enable, invoke, and rollback.
