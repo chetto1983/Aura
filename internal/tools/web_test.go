@@ -126,6 +126,55 @@ func TestWebFetchToolExecute(t *testing.T) {
 	}
 }
 
+func TestDirectWebFetchToolRejectsNonHTTPURLs(t *testing.T) {
+	tool := NewDirectWebFetchTool()
+	for _, target := range []string{"file:///etc/passwd", "ftp://example.com/file", "mailto:test@example.com"} {
+		if _, err := tool.Execute(t.Context(), map[string]any{"url": target}); err == nil {
+			t.Fatalf("Execute(%q) returned nil error", target)
+		}
+	}
+}
+
+func TestDirectWebFetchToolExtractsHTML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<html><head><title>Page title</title><script>ignoreMe()</script></head><body><main><h1>Hello Aura</h1><p>Main content here.</p><a href="/next">Next</a></main></body></html>`)
+	}))
+	defer server.Close()
+
+	tool := NewDirectWebFetchTool()
+	out, err := tool.Execute(t.Context(), map[string]any{"url": server.URL})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !containsAll(out, "# Page title", "Hello Aura", "Main content here.", server.URL+"/next") {
+		t.Fatalf("output missing expected content: %q", out)
+	}
+	if strings.Contains(out, "ignoreMe") {
+		t.Fatalf("script text leaked into output: %q", out)
+	}
+}
+
+func TestDirectWebFetchToolCapsLargePages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(strings.Repeat("x", maxDirectFetchResponseBytes+1024)))
+	}))
+	defer server.Close()
+
+	tool := NewDirectWebFetchTool()
+	out, err := tool.Execute(t.Context(), map[string]any{"url": server.URL})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(out, "[truncated") {
+		t.Fatalf("output should mention truncation: %q", out)
+	}
+	if len(out) > maxWebToolChars+64 {
+		t.Fatalf("output len = %d, want bounded near %d", len(out), maxWebToolChars)
+	}
+}
+
 func TestWebToolValidationHelpers(t *testing.T) {
 	if _, err := requiredString(map[string]any{}, "query"); err == nil {
 		t.Fatal("expected missing string error")

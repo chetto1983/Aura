@@ -165,6 +165,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	switch strings.ToLower(strings.TrimSpace(cfg.WebSearchProvider)) {
 	case "searxng":
 		toolRegistry.Register(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL))
+		toolRegistry.Register(tools.NewDirectWebFetchTool())
 	case "ollama":
 		if cfg.OllamaAPIKey != "" {
 			toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))

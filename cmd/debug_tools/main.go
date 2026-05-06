@@ -29,7 +29,7 @@ type scenario struct {
 }
 
 func main() {
-	liveWeb := flag.Bool("live-web", false, "run real web_search and web_fetch calls with LLM_API_KEY")
+	liveWeb := flag.Bool("live-web", false, "run real web_search and web_fetch calls with WEB_SEARCH_PROVIDER")
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
 	flag.Parse()
 
@@ -45,7 +45,9 @@ func main() {
 
 	baseURL := envDefault("LLM_BASE_URL", "https://api.openai.com/v1")
 	model := envDefault("LLM_MODEL", "gpt-4")
-	webBaseURL := envDefault("OLLAMA_WEB_BASE_URL", config.DefaultOllamaWebBaseURL)
+	webSearchProvider := strings.ToLower(envDefault("WEB_SEARCH_PROVIDER", "disabled"))
+	searxngBaseURL := envDefault("SEARXNG_BASE_URL", config.DefaultSearXNGBaseURL)
+	ollamaWebBaseURL := envDefault("OLLAMA_WEB_BASE_URL", config.DefaultOllamaWebBaseURL)
 	embeddingAPIKey := os.Getenv("EMBEDDING_API_KEY")
 	if embeddingAPIKey == "" {
 		fmt.Println("FAIL: EMBEDDING_API_KEY is required for wiki search; configure it for Mistral embeddings")
@@ -90,8 +92,22 @@ func main() {
 	reg.Register(tools.NewReadWikiTool(store))
 	reg.Register(tools.NewSearchWikiTool(engine))
 	if *liveWeb {
-		reg.Register(tools.NewWebSearchTool(apiKey, webBaseURL))
-		reg.Register(tools.NewWebFetchTool(apiKey, webBaseURL))
+		switch webSearchProvider {
+		case "searxng":
+			reg.Register(tools.NewSearXNGSearchTool(searxngBaseURL))
+			reg.Register(tools.NewDirectWebFetchTool())
+		case "ollama":
+			ollamaWebKey := os.Getenv("OLLAMA_API_KEY")
+			if ollamaWebKey == "" {
+				fmt.Println("FAIL: OLLAMA_API_KEY is required when WEB_SEARCH_PROVIDER=ollama")
+				os.Exit(1)
+			}
+			reg.Register(tools.NewWebSearchTool(ollamaWebKey, ollamaWebBaseURL))
+			reg.Register(tools.NewWebFetchTool(ollamaWebKey, ollamaWebBaseURL))
+		default:
+			fmt.Println("FAIL: set WEB_SEARCH_PROVIDER=searxng or ollama when using -live-web")
+			os.Exit(1)
+		}
 	}
 
 	client := llm.NewOpenAIClient(llm.OpenAIConfig{
@@ -132,15 +148,15 @@ func main() {
 		scenarios = append(scenarios,
 			scenario{
 				name:      "web_search",
-				prompt:    "Use web search to find the official Ollama web search API documentation. Reply with one source URL.",
+				prompt:    "Use web search to find the official SearXNG search API documentation. Reply with one source URL.",
 				wantTools: []string{"web_search"},
-				wantText:  []string{"docs.ollama.com"},
+				wantText:  []string{"searxng"},
 			},
 			scenario{
 				name:      "web_fetch",
-				prompt:    "Fetch https://docs.ollama.com/capabilities/web-search and summarize the web_search endpoint in one sentence.",
+				prompt:    "Fetch https://docs.searxng.org/dev/search_api.html and summarize the SearXNG JSON search API in one sentence.",
 				wantTools: []string{"web_fetch"},
-				wantText:  []string{"web_search"},
+				wantText:  []string{"SearXNG"},
 			},
 		)
 	}
@@ -148,7 +164,7 @@ func main() {
 	fmt.Printf("Natural tool smoke test\n")
 	fmt.Printf("model=%s base_url=%s live_web=%v wiki=%s\n", model, baseURL, *liveWeb, wikiDir)
 	fmt.Printf("llm_api_key=SET\n")
-	fmt.Printf("web_api_key=LLM_API_KEY\n")
+	fmt.Printf("web_search_provider=%s searxng_base_url=%s\n", webSearchProvider, searxngBaseURL)
 	fmt.Printf("embedding_base_url=%s embedding_model=%s\n\n", embeddingBaseURL, embeddingModel)
 
 	failures := 0
