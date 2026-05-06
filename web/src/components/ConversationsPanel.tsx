@@ -347,21 +347,24 @@ export function ConversationsPanel() {
                 <tr
                   key={turn.id}
                   data-turn-id={turn.id}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={t('conversations.openTurn', { id: turn.id, role: turn.role })}
                   onClick={() => openTurn(turn.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openTurn(turn.id);
-                    }
-                  }}
                   className={`cursor-pointer transition-colors hover:bg-accent/40 ${
                     i % 2 === 0 ? '' : 'bg-muted/10'
                   }`}
                 >
-                  <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{turn.id}</td>
+                  <td className="px-4 py-2.5 tabular-nums text-muted-foreground">
+                    <button
+                      type="button"
+                      aria-label={t('conversations.openTurn', { id: turn.id, role: turn.role })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openTurn(turn.id);
+                      }}
+                      className="rounded-sm text-left tabular-nums hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      {turn.id}
+                    </button>
+                  </td>
                   <td className="px-4 py-2.5 tabular-nums">{turn.chat_id}</td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_BADGE[turn.role] ?? 'bg-muted text-muted-foreground'}`}>
