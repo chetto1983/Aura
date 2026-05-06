@@ -66,6 +66,7 @@ export default function App() {
                       <Route path="/graph" element={<WikiGraphView />} />
                       <Route path="/sources" element={<SourceInbox />} />
                       <Route path="/tasks" element={<TasksPanel />} />
+                      <Route path="/task" element={<Navigate to="/tasks" replace />} />
                       <Route path="/skills" element={<SkillsPanel />} />
                       <Route path="/mcp" element={<MCPPanel />} />
                       <Route path="/pending" element={<PendingUsersPanel />} />

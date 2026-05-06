@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, X, Calendar, Trash2 } from 'lucide-react';
+import { Plus, X, Calendar, Trash2, Pencil } from 'lucide-react';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import {
   Dialog,
@@ -27,6 +27,7 @@ export function TasksPanel() {
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
   const [busyNames, setBusyNames] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const statusLabel = (s: Task['status']): string => {
     switch (s) {
@@ -88,16 +89,17 @@ export function TasksPanel() {
     }
   }, [refetch, setBusy, t]);
 
-  const handleCreate = useCallback(async (req: UpsertTaskRequest) => {
-    const id = toast.loading(t('tasks.toast.scheduling', { name: req.name }));
+  const handleSave = useCallback(async (req: UpsertTaskRequest, editing: boolean) => {
+    const id = toast.loading(t(editing ? 'tasks.toast.updating' : 'tasks.toast.scheduling', { name: req.name }));
     try {
       const saved = await api.upsertTask(req);
-      toast.success(t('tasks.toast.scheduled', { name: saved.name, nextRun: saved.next_run_at }), { id });
+      toast.success(t(editing ? 'tasks.toast.updated' : 'tasks.toast.scheduled', { name: saved.name, nextRun: saved.next_run_at }), { id });
       refetch();
       setDialogOpen(false);
+      setEditingTask(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(t('tasks.toast.scheduleFailed', { error: msg }), { id });
+      toast.error(t(editing ? 'tasks.toast.updateFailed' : 'tasks.toast.scheduleFailed', { error: msg }), { id });
       // Keep the dialog open so the user can fix the input.
     }
   }, [refetch, t]);
@@ -122,7 +124,10 @@ export function TasksPanel() {
         </div>
         <button
           type="button"
-          onClick={() => setDialogOpen(true)}
+          onClick={() => {
+            setEditingTask(null);
+            setDialogOpen(true);
+          }}
           className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
         >
           <Plus size={14} />
@@ -140,7 +145,15 @@ export function TasksPanel() {
         </div>
       )}
 
-      <NewTaskDialog open={dialogOpen} onOpenChange={setDialogOpen} onSubmit={handleCreate} />
+      <TaskDialog
+        open={dialogOpen}
+        task={editingTask}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setEditingTask(null);
+        }}
+        onSubmit={(req) => handleSave(req, editingTask !== null)}
+      />
 
       {STATUS_ORDER.map((s) => {
         const rows = grouped[s];
@@ -168,6 +181,10 @@ export function TasksPanel() {
                   <TaskActions
                     task={task}
                     busy={busyNames.has(task.name)}
+                    onEdit={() => {
+                      setEditingTask(task);
+                      setDialogOpen(true);
+                    }}
                     onCancel={() => void handleCancel(task)}
                     onDelete={() => void handleDelete(task)}
                   />
@@ -213,6 +230,10 @@ export function TasksPanel() {
                         <TaskActions
                           task={task}
                           busy={busyNames.has(task.name)}
+                          onEdit={() => {
+                            setEditingTask(task);
+                            setDialogOpen(true);
+                          }}
                           onCancel={() => void handleCancel(task)}
                           onDelete={() => void handleDelete(task)}
                         />
@@ -236,28 +257,31 @@ export function TasksPanel() {
 // Reminders require a recipient_id; the field is shown only when kind is
 // reminder. The form submits a UpsertTaskRequest unchanged — server-side
 // validation surfaces clear messages back through the toast.
-function NewTaskDialog({
+function TaskDialog({
   open,
+  task,
   onOpenChange,
   onSubmit,
 }: {
   open: boolean;
+  task: Task | null;
   onOpenChange: (o: boolean) => void;
   onSubmit: (req: UpsertTaskRequest) => Promise<void>;
 }) {
   const { t } = useLocale();
+  const editing = task !== null;
   // Keying the form on `open` means each open mounts a fresh form with
   // default useState values — no setState-in-effect dance to clear state.
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{t('tasks.dialog.title')}</DialogTitle>
+          <DialogTitle>{t(editing ? 'tasks.dialog.editTitle' : 'tasks.dialog.title')}</DialogTitle>
           <DialogDescription>
-            {t('tasks.dialog.description')}
+            {t(editing ? 'tasks.dialog.editDescription' : 'tasks.dialog.description')}
           </DialogDescription>
         </DialogHeader>
-        {open && <NewTaskForm key={String(open)} onCancel={() => onOpenChange(false)} onSubmit={onSubmit} />}
+        {open && <TaskForm key={task?.name ?? 'new'} task={task} onCancel={() => onOpenChange(false)} onSubmit={onSubmit} />}
       </DialogContent>
     </Dialog>
   );
@@ -266,17 +290,32 @@ function NewTaskDialog({
 function TaskActions({
   task,
   busy,
+  onEdit,
   onCancel,
   onDelete,
 }: {
   task: Task;
   busy: boolean;
+  onEdit: () => void;
   onCancel: () => void;
   onDelete: () => void;
 }) {
   const { t } = useLocale();
+  const editable = isEditableTaskKind(task.kind);
   return (
     <div className="mt-3 inline-flex flex-wrap items-center justify-end gap-1.5 md:mt-0">
+      {editable && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onEdit}
+          className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50 disabled:cursor-wait"
+          title={t('tasks.action.editHint')}
+        >
+          <Pencil size={14} />
+          {t('common.edit')}
+        </button>
+      )}
       {task.status === 'active' && (
         <button
           type="button"
@@ -312,23 +351,26 @@ function formatSchedule(t: Task): string {
   return t.schedule_at || 'not scheduled';
 }
 
-function NewTaskForm({
+function TaskForm({
+  task,
   onCancel,
   onSubmit,
 }: {
+  task: Task | null;
   onCancel: () => void;
   onSubmit: (req: UpsertTaskRequest) => Promise<void>;
 }) {
   const { t, locale } = useLocale();
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<Task['kind']>('wiki_maintenance');
-  const [payload, setPayload] = useState('');
-  const [recipientId, setRecipientId] = useState('');
-  const [scheduleMode, setScheduleMode] = useState<'at' | 'daily' | 'every'>('daily');
-  const [at, setAt] = useState('');
-  const [daily, setDaily] = useState('03:00');
-  const [weekdays, setWeekdays] = useState<string[]>([]);
-  const [everyMinutes, setEveryMinutes] = useState(60);
+  const editing = task !== null;
+  const [name, setName] = useState(task?.name ?? '');
+  const [kind, setKind] = useState<UpsertTaskRequest['kind']>(editableTaskKind(task?.kind));
+  const [payload, setPayload] = useState(task?.payload ?? '');
+  const [recipientId, setRecipientId] = useState(task?.recipient_id ?? '');
+  const [scheduleMode, setScheduleMode] = useState<'at' | 'daily' | 'every'>(task?.schedule_kind ?? 'daily');
+  const [at, setAt] = useState(toLocalDateTimeValue(task?.schedule_at));
+  const [daily, setDaily] = useState(task?.schedule_daily || '03:00');
+  const [weekdays, setWeekdays] = useState<string[]>(task?.schedule_weekdays ? task.schedule_weekdays.split(',').filter(Boolean) : []);
+  const [everyMinutes, setEveryMinutes] = useState(task?.schedule_every_minutes || 60);
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -367,14 +409,15 @@ function NewTaskForm({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={editing}
               pattern="[A-Za-z0-9_.\-]{1,64}"
               placeholder={t('tasks.form.namePlaceholder')}
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-70"
             />
             <span className="mt-1 block text-xs text-muted-foreground">
-              {t('tasks.form.nameHint')}
+              {editing ? t('tasks.form.nameEditHint') : t('tasks.form.nameHint')}
             </span>
           </label>
 
@@ -382,7 +425,7 @@ function NewTaskForm({
             {t('tasks.form.kindLabel')}
             <select
               value={kind}
-              onChange={(e) => setKind(e.target.value as Task['kind'])}
+              onChange={(e) => setKind(e.target.value as UpsertTaskRequest['kind'])}
               className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
             >
               <option value="wiki_maintenance">{t('tasks.kind.wikiMaintenance')}</option>
@@ -523,16 +566,32 @@ function NewTaskForm({
         >
           {t('tasks.form.cancel')}
         </button>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="min-h-11 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {submitting ? t('tasks.form.submitting') : t('tasks.form.submit')}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="min-h-11 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+          {submitting ? t(editing ? 'tasks.form.updating' : 'tasks.form.submitting') : t(editing ? 'tasks.form.update' : 'tasks.form.submit')}
         </button>
       </DialogFooter>
     </form>
   );
+}
+
+function toLocalDateTimeValue(iso?: string): string {
+  if (!iso || iso.startsWith('0001')) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function isEditableTaskKind(kind: Task['kind']): kind is UpsertTaskRequest['kind'] {
+  return kind === 'reminder' || kind === 'wiki_maintenance' || kind === 'agent_job';
+}
+
+function editableTaskKind(kind?: Task['kind']): UpsertTaskRequest['kind'] {
+  return kind && isEditableTaskKind(kind) ? kind : 'wiki_maintenance';
 }
 
 function Countdown({ iso }: { iso: string }) {

@@ -470,6 +470,43 @@ func TestSourceOCR_PresentAndMissing(t *testing.T) {
 	}
 }
 
+func TestSourceMarkdown_PDFAndExtractedSource(t *testing.T) {
+	e := newTestEnv(t)
+	pdf := e.seedSource([]byte("pdf-e-content"), source.KindPDF, "e.pdf")
+	txt := e.seedSource([]byte("text-e-content"), source.KindText, "e.txt")
+
+	if err := os.WriteFile(e.sources.Path(pdf.ID, "ocr.md"), []byte("# pdf markdown\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.sources.Path(txt.ID, source.ExtractMarkdownFile), []byte("# text markdown\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := e.do("GET", "/sources/"+pdf.ID+"/markdown")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("pdf status %d, body %s", rr.Code, rr.Body)
+	}
+	var got SourceMarkdown
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.File != "ocr.md" || !strings.Contains(got.Markdown, "pdf markdown") {
+		t.Fatalf("pdf markdown = %+v", got)
+	}
+
+	rr = e.do("GET", "/sources/"+txt.ID+"/markdown")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("text status %d, body %s", rr.Code, rr.Body)
+	}
+	got = SourceMarkdown{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.File != source.ExtractMarkdownFile || !strings.Contains(got.Markdown, "text markdown") {
+		t.Fatalf("text markdown = %+v", got)
+	}
+}
+
 func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 	e := newTestEnv(t)
 	pdf := e.seedSource([]byte("%PDF-1.4 fake content"), source.KindPDF, "doc.pdf")

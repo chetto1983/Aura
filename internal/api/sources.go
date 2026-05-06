@@ -104,6 +104,46 @@ func handleSourceOCR(deps Deps) http.HandlerFunc {
 	}
 }
 
+func handleSourceMarkdown(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !sourceIDRe.MatchString(id) {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid source id")
+			return
+		}
+		rec, err := deps.Sources.Get(id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
+				return
+			}
+			deps.Logger.Warn("api: get source for markdown", "id", id, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
+			return
+		}
+		name := source.ExtractMarkdownFile
+		if rec.Kind == source.KindPDF {
+			name = "ocr.md"
+		}
+		path := deps.Sources.Path(id, name)
+		if path == "" {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid source path")
+			return
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				writeError(w, deps.Logger, http.StatusNotFound, name+" not found for this source")
+				return
+			}
+			deps.Logger.Warn("api: read source markdown", "id", id, "file", name, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read "+name)
+			return
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, SourceMarkdown{Markdown: string(data), File: name})
+	}
+}
+
 // rawAsset maps a source kind to its on-disk filename and download
 // content-type. PDFs render inline (browsers handle them); xlsx forces
 // an attachment because no browser previews .xlsx natively. Kept as a

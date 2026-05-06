@@ -1,16 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Upload, Play, RefreshCcw, Download } from 'lucide-react';
+import { Upload, Play, RefreshCcw, Download, Eye, Search, X, FileText, ExternalLink } from 'lucide-react';
 import { getToken } from '@/lib/auth';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
 import { ErrorCard } from '@/components/common/ErrorCard';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { SourceSummary, UploadResponse } from '@/types/api';
+import type { SourceDetail, SourceMarkdown, SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'extracting', 'ocr_complete', 'extract_complete', 'ingested'];
+const KIND_ORDER: SourceSummary['kind'][] = ['pdf', 'text', 'markdown', 'json', 'csv', 'xlsx', 'docx', 'pdf_generated', 'sandbox_artifact', 'url'];
 const ACCEPTED_SOURCE_INPUT = '.pdf,.txt,.md,.json,.csv,.xlsx,.docx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const SUPPORTED_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.json', '.csv', '.xlsx', '.docx'];
 const UPLOAD_EXTENSIONS = new Set(SUPPORTED_SOURCE_EXTENSIONS);
@@ -34,6 +42,10 @@ export function SourceInbox() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [focusedSourceId, setFocusedSourceId] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | SourceSummary['status']>('all');
+  const [kindFilter, setKindFilter] = useState<'all' | SourceSummary['kind']>('all');
+  const [selectedSourceId, setSelectedSourceId] = useState('');
   // Per-row in-flight tracking so the same button can't be double-clicked.
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -141,13 +153,31 @@ export function SourceInbox() {
     }
   }, [refetch, t]);
 
+  const sourceCounts = useMemo(() => countByStatus(data ?? []), [data]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (data ?? []).filter((s) => {
+      if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+      if (kindFilter !== 'all' && s.kind !== kindFilter) return false;
+      if (!q) return true;
+      return [
+        s.id,
+        s.filename,
+        s.kind,
+        s.status,
+        ...(s.wiki_pages ?? []),
+      ].some((part) => part.toLowerCase().includes(q));
+    });
+  }, [data, kindFilter, query, statusFilter]);
+
+  const grouped: Record<string, SourceSummary[]> = {};
+  for (const s of filtered) (grouped[s.status] ??= []).push(s);
+  const isEmpty = (data?.length ?? 0) === 0;
+  const hasFilters = query.trim() !== '' || statusFilter !== 'all' || kindFilter !== 'all';
+
   if (loading && !data) return <SourceInboxSkeleton />;
   if (error && !data) return <ErrorCard error={error} title={t('sources.errorTitle')} onRetry={refetch} />;
   if (!data) return null;
-
-  const grouped: Record<string, SourceSummary[]> = {};
-  for (const s of data ?? []) (grouped[s.status] ??= []).push(s);
-  const isEmpty = (data?.length ?? 0) === 0;
 
   return (
     <div
@@ -195,10 +225,48 @@ export function SourceInbox() {
         onChange={(e) => void handleFiles(e.target.files)}
       />
 
+      <SourceToolbar
+        query={query}
+        statusFilter={statusFilter}
+        kindFilter={kindFilter}
+        counts={sourceCounts}
+        resultCount={filtered.length}
+        totalCount={data.length}
+        onQueryChange={setQuery}
+        onStatusChange={setStatusFilter}
+        onKindChange={setKindFilter}
+        onClear={() => {
+          setQuery('');
+          setStatusFilter('all');
+          setKindFilter('all');
+        }}
+      />
+
       {isEmpty && (
         <p className="text-sm text-muted-foreground">
           {t('sources.emptyHint')}
         </p>
+      )}
+
+      {!isEmpty && filtered.length === 0 && (
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">{t('sources.filters.emptyTitle')}</p>
+          <p className="mt-1">{t('sources.filters.emptyHint')}</p>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('all');
+                setKindFilter('all');
+              }}
+              className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+            >
+              <X size={14} />
+              {t('sources.filters.clear')}
+            </button>
+          )}
+        </div>
       )}
 
       {STATUS_ORDER.map((status) => {
@@ -226,6 +294,7 @@ export function SourceInbox() {
                     <SourceActions
                       source={s}
                       busy={busyIds.has(s.id)}
+                      onDetails={() => setSelectedSourceId(s.id)}
                       onIngest={() => void handleIngest(s)}
                       onReocr={() => void handleReocr(s)}
                     />
@@ -266,6 +335,7 @@ export function SourceInbox() {
                         <SourceActions
                           source={s}
                           busy={busyIds.has(s.id)}
+                          onDetails={() => setSelectedSourceId(s.id)}
                           onIngest={() => void handleIngest(s)}
                           onReocr={() => void handleReocr(s)}
                         />
@@ -278,6 +348,14 @@ export function SourceInbox() {
           </section>
         );
       })}
+
+      <SourceDetailDialog
+        sourceId={selectedSourceId}
+        open={selectedSourceId !== ''}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSourceId('');
+        }}
+      />
     </div>
   );
 }
@@ -314,6 +392,211 @@ function DropZone({
   );
 }
 
+function SourceToolbar({
+  query,
+  statusFilter,
+  kindFilter,
+  counts,
+  resultCount,
+  totalCount,
+  onQueryChange,
+  onStatusChange,
+  onKindChange,
+  onClear,
+}: {
+  query: string;
+  statusFilter: 'all' | SourceSummary['status'];
+  kindFilter: 'all' | SourceSummary['kind'];
+  counts: Record<SourceSummary['status'], number>;
+  resultCount: number;
+  totalCount: number;
+  onQueryChange: (q: string) => void;
+  onStatusChange: (status: 'all' | SourceSummary['status']) => void;
+  onKindChange: (kind: 'all' | SourceSummary['kind']) => void;
+  onClear: () => void;
+}) {
+  const { t } = useLocale();
+  const hasFilters = query.trim() !== '' || statusFilter !== 'all' || kindFilter !== 'all';
+  return (
+    <section className="space-y-3 rounded-lg border bg-card p-3">
+      <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_180px_180px_auto]">
+        <label className="relative block text-sm">
+          <span className="sr-only">{t('sources.filters.searchLabel')}</span>
+          <Search size={15} className="pointer-events-none absolute left-3 top-3.5 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder={t('sources.filters.searchPlaceholder')}
+            className="min-h-11 w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="sr-only">{t('sources.filters.statusLabel')}</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => onStatusChange(e.target.value as 'all' | SourceSummary['status'])}
+            className="min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="all">{t('sources.filters.allStatuses')}</option>
+            {STATUS_ORDER.map((status) => (
+              <option key={status} value={status}>{t(`sources.status.${statusKey(status)}`)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="sr-only">{t('sources.filters.kindLabel')}</span>
+          <select
+            value={kindFilter}
+            onChange={(e) => onKindChange(e.target.value as 'all' | SourceSummary['kind'])}
+            className="min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="all">{t('sources.filters.allKinds')}</option>
+            {KIND_ORDER.map((kind) => (
+              <option key={kind} value={kind}>{kind}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!hasFilters}
+          onClick={onClear}
+          className="inline-flex min-h-11 items-center justify-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <X size={14} />
+          {t('sources.filters.clear')}
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{t('sources.filters.resultCount', { count: resultCount, total: totalCount })}</span>
+        {STATUS_ORDER.map((status) => (
+          <span key={status} className="rounded-full bg-muted px-2 py-1">
+            {t(`sources.status.${statusKey(status)}`)}: <span className="tabular-nums">{counts[status] ?? 0}</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SourceDetailDialog({
+  sourceId,
+  open,
+  onOpenChange,
+}: {
+  sourceId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t, formatDate, formatNumber } = useLocale();
+  const [detail, setDetail] = useState<SourceDetail | null>(null);
+  const [markdown, setMarkdown] = useState<SourceMarkdown | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open || !sourceId) return;
+    let alive = true;
+    void Promise.all([
+      api.source(sourceId),
+      api.sourceMarkdown(sourceId).catch(() => null),
+    ]).then(([sourceDetail, sourceMarkdown]) => {
+      if (!alive) return;
+      setDetail(sourceDetail);
+      setMarkdown(sourceMarkdown);
+      setError('');
+    }).catch((err) => {
+      if (!alive) return;
+      setError(`${sourceId}:${err instanceof Error ? err.message : String(err)}`);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, sourceId]);
+
+  const activeDetail = detail?.id === sourceId ? detail : null;
+  const activeMarkdown = activeDetail ? markdown : null;
+  const activeError = error.startsWith(`${sourceId}:`) ? error.slice(sourceId.length + 1) : '';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{activeDetail?.filename ?? t('sources.detail.title')}</DialogTitle>
+          <DialogDescription>
+            {activeDetail ? `${activeDetail.kind} · ${activeDetail.status} · ${formatBytes(activeDetail.size_bytes, formatNumber)}` : t('common.loading')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {activeError && <ErrorCard error={new Error(activeError)} title={t('sources.detail.errorTitle')} />}
+        {!activeDetail && !activeError && <Skeleton className="h-64 w-full" />}
+        {activeDetail && (
+          <div className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1">
+            <dl className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-2">
+              <MetaRow label={t('sources.detail.id')} value={activeDetail.id} mono />
+              <MetaRow label={t('sources.detail.created')} value={formatDate(activeDetail.created_at, { dateStyle: 'medium', timeStyle: 'short' })} />
+              <MetaRow label={t('sources.detail.mime')} value={activeDetail.mime_type || '-'} />
+              <MetaRow label={t('sources.detail.sha')} value={activeDetail.sha256} mono />
+              <MetaRow label={t('sources.detail.pages')} value={activeDetail.page_count ? String(activeDetail.page_count) : '-'} />
+              <MetaRow label={t('sources.detail.ocrModel')} value={activeDetail.ocr_model || '-'} />
+            </dl>
+
+            {activeDetail.error && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {activeDetail.error}
+              </div>
+            )}
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-medium">{t('sources.detail.wikiPages')}</h3>
+              {activeDetail.wiki_pages?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {activeDetail.wiki_pages.map((slug) => (
+                    <a
+                      key={slug}
+                      href={`/wiki/${encodeURIComponent(slug)}`}
+                      className="inline-flex min-h-9 items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      [[{slug}]]
+                      <ExternalLink size={12} />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('sources.noWikiPage')}</p>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <FileText size={15} />
+                {activeMarkdown ? t('sources.detail.markdownTitle', { file: activeMarkdown.file }) : t('sources.detail.markdownMissing')}
+              </h3>
+              {activeMarkdown ? (
+                <pre className="max-h-80 overflow-auto rounded-lg border bg-background p-3 text-xs leading-relaxed whitespace-pre-wrap">
+                  {activeMarkdown.markdown.slice(0, 12000)}
+                  {activeMarkdown.markdown.length > 12000 ? '\n\n...' : ''}
+                </pre>
+              ) : (
+                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  {t('sources.detail.noMarkdown')}
+                </p>
+              )}
+            </section>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs uppercase text-muted-foreground">{label}</dt>
+      <dd className={`mt-1 break-words ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
 function WikiRefs({ pages }: { pages?: string[] }) {
   const { t } = useLocale();
   if (!pages?.length) {
@@ -339,11 +622,13 @@ function WikiRefs({ pages }: { pages?: string[] }) {
 function SourceActions({
   source: s,
   busy,
+  onDetails,
   onIngest,
   onReocr,
 }: {
   source: SourceSummary;
   busy: boolean;
+  onDetails: () => void;
   onIngest: () => void;
   onReocr: () => void;
 }) {
@@ -383,11 +668,17 @@ function SourceActions({
     (ocrEligible && (s.status === 'ocr_complete' || s.status === 'failed')) ||
     (extractEligible && s.status === 'extract_complete');
   const showReocr = ocrEligible && (s.status === 'stored' || s.status === 'failed');
-  if (!showIngest && !showReocr && !showDownload) {
-    return <span className="text-xs text-muted-foreground">{'—'}</span>;
-  }
   return (
     <div className="inline-flex flex-wrap justify-end gap-1">
+      <button
+        type="button"
+        onClick={onDetails}
+        className="inline-flex min-h-11 items-center gap-1 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+        title={t('sources.action.detailsHint', { filename: s.filename })}
+      >
+        <Eye size={14} />
+        {t('sources.action.details')}
+      </button>
       {showDownload && (
         <button
           type="button"
@@ -438,6 +729,33 @@ function fileExtension(name: string): string {
   const trimmed = name.trim().toLowerCase();
   const dot = trimmed.lastIndexOf('.');
   return dot >= 0 ? trimmed.slice(dot) : '';
+}
+
+function countByStatus(rows: SourceSummary[]): Record<SourceSummary['status'], number> {
+  return STATUS_ORDER.reduce((acc, status) => {
+    acc[status] = rows.filter((row) => row.status === status).length;
+    return acc;
+  }, {} as Record<SourceSummary['status'], number>);
+}
+
+function statusKey(status: SourceSummary['status']): string {
+  switch (status) {
+    case 'ocr_complete': return 'ocrComplete';
+    case 'extract_complete': return 'extractComplete';
+    default: return status;
+  }
+}
+
+function formatBytes(bytes: number, formatNumber: (n: number, opts?: Intl.NumberFormatOptions) => string): string {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${formatNumber(value, { maximumFractionDigits: value >= 10 || unit === 0 ? 0 : 1 })} ${units[unit]}`;
 }
 
 function formatUploadSummary(filename: string, res: UploadResponse, t: ReturnType<typeof useLocale>['t']): string {

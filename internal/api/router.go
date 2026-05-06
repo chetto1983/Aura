@@ -178,6 +178,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /sources", handleSourceList(deps))
 	mux.HandleFunc("GET /sources/{id}", handleSourceGet(deps))
 	mux.HandleFunc("GET /sources/{id}/ocr", handleSourceOCR(deps))
+	mux.HandleFunc("GET /sources/{id}/markdown", handleSourceMarkdown(deps))
 	mux.HandleFunc("GET /sources/{id}/raw", handleSourceRaw(deps))
 
 	// Browser PDF upload — same write surface as Telegram. Auth-gated by

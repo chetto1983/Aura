@@ -163,6 +163,13 @@ type SourceOCR struct {
 	Markdown string `json:"markdown"`
 }
 
+// SourceMarkdown is the response of GET /sources/{id}/markdown. File is the
+// on-disk generated markdown artifact ("ocr.md" or "extract.md").
+type SourceMarkdown struct {
+	Markdown string `json:"markdown"`
+	File     string `json:"file"`
+}
+
 // Task is the response shape for /tasks endpoints.
 type Task struct {
 	Name                 string     `json:"name"`

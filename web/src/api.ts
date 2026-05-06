@@ -5,6 +5,7 @@ import type {
   Graph,
   SourceSummary,
   SourceDetail,
+  SourceMarkdown,
   Task,
   UploadResponse,
   IngestResponse,
@@ -166,6 +167,8 @@ export const api = {
   source: (id: string) => get<SourceDetail>(`/sources/${id}`),
   sourceOCR: (id: string) =>
     get<{ markdown: string }>(`/sources/${id}/ocr`),
+  sourceMarkdown: (id: string) =>
+    get<SourceMarkdown>(`/sources/${id}/markdown`),
   uploadSource: async (file: File): Promise<UploadResponse> => {
     const fd = new FormData();
     fd.append('file', file, file.name);

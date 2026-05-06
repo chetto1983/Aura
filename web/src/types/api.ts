@@ -117,9 +117,14 @@ export interface ReocrResponse {
   note?: string;
 }
 
+export interface SourceMarkdown {
+  markdown: string;
+  file: string;
+}
+
 export interface UpsertTaskRequest {
   name: string;
-  kind: Task['kind'];
+  kind: Exclude<Task['kind'], 'auto_improve'>;
   payload?: string;
   recipient_id?: string;
   language?: 'en' | 'it';
@@ -304,7 +309,7 @@ export interface SummaryBatchResponse {
 
 export interface Task {
   name: string;
-  kind: 'reminder' | 'wiki_maintenance' | 'agent_job';
+  kind: 'reminder' | 'wiki_maintenance' | 'agent_job' | 'auto_improve';
   payload?: string;
   recipient_id?: string;
   schedule_kind: 'at' | 'daily' | 'every';
