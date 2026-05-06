@@ -223,6 +223,59 @@ func TestSourceUploadTextCanBeIngested(t *testing.T) {
 	}
 }
 
+func TestSourceUploadXLSXCanBeIngested(t *testing.T) {
+	e := newTestEnv(t)
+	pipeline, err := ingest.New(ingest.Config{Sources: e.sources, Wiki: e.wiki})
+	if err != nil {
+		t.Fatalf("ingest.New: %v", err)
+	}
+	runner := &fakeUploadPyodideRunner{}
+	e.router = NewRouter(Deps{
+		Wiki:      e.wiki,
+		Sources:   e.sources,
+		Scheduler: e.sched,
+		Extractor: runner,
+		Ingest:    pipeline,
+	})
+
+	rr := e.uploadFile("budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", []byte("xlsx bytes"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("xlsx upload status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var upload UploadResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &upload); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+	if upload.Status != string(source.StatusExtractComplete) {
+		t.Fatalf("upload status = %s, want %s", upload.Status, source.StatusExtractComplete)
+	}
+
+	ingestRR := e.do("POST", "/sources/"+upload.ID+"/ingest")
+	if ingestRR.Code != http.StatusOK {
+		t.Fatalf("ingest status = %d body=%s", ingestRR.Code, ingestRR.Body.String())
+	}
+	var ingested IngestResponse
+	if err := json.Unmarshal(ingestRR.Body.Bytes(), &ingested); err != nil {
+		t.Fatalf("decode ingest: %v", err)
+	}
+	if ingested.Status != string(source.StatusIngested) || len(ingested.WikiPages) != 1 {
+		t.Fatalf("ingest response = %+v, want ingested wiki page", ingested)
+	}
+	page, err := e.wiki.ReadPage(ingested.WikiPages[0])
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	for _, want := range []string{
+		"Kind: xlsx",
+		"wiki/raw/" + upload.ID + "/extract.md",
+		"sandbox",
+	} {
+		if !strings.Contains(page.Body, want) {
+			t.Fatalf("page body missing %q:\n%s", want, page.Body)
+		}
+	}
+}
+
 func (e *testEnv) uploadFile(name, contentType string, body []byte) *httptest.ResponseRecorder {
 	e.t.Helper()
 	var buf bytes.Buffer
