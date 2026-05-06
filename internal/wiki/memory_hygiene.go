@@ -2,7 +2,10 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +26,7 @@ type MemoryHygieneReport struct {
 	PlannedHubs   []string     `json:"planned_hubs,omitempty"`
 	CreatedHubs   []string     `json:"created_hubs,omitempty"`
 	RepairedLinks []LinkRepair `json:"repaired_links,omitempty"`
+	RenamedPages  []PageRename `json:"renamed_pages,omitempty"`
 	TouchedPages  []string     `json:"touched_pages,omitempty"`
 }
 
@@ -41,6 +45,14 @@ type LinkRepair struct {
 	Location    string `json:"location"`
 }
 
+// PageRename records a safe semantic rename for an opaque memory page.
+type PageRename struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Title  string `json:"title"`
+	Reason string `json:"reason"`
+}
+
 type memoryPage struct {
 	slug string
 	page *Page
@@ -56,18 +68,27 @@ func (s *Store) CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*Me
 		return nil, err
 	}
 
-	known := make(map[string]*Page, len(pages))
-	byCategory := make(map[string][]string)
-	for _, item := range pages {
-		known[item.slug] = item.page
-		category := cleanCategory(item.page.Category)
-		byCategory[category] = append(byCategory[category], item.slug)
-	}
-	for category := range byCategory {
-		sort.Strings(byCategory[category])
+	report := &MemoryHygieneReport{Pages: len(pages)}
+	known, byCategory := organizeMemoryPages(pages)
+	plannedRenames := s.planOpaqueSourceRenames(pages, known)
+	report.RenamedPages = plannedRenames
+	if opts.Apply && len(plannedRenames) > 0 {
+		if err := s.applyPageRenames(ctx, plannedRenames); err != nil {
+			return report, err
+		}
+		pages, err = s.memoryPages()
+		if err != nil {
+			return report, err
+		}
+		report.Pages = len(pages)
+		known, byCategory = organizeMemoryPages(pages)
 	}
 
-	report := &MemoryHygieneReport{Pages: len(pages)}
+	report.Pages = len(pages)
+	if !opts.Apply {
+		report.RenamedPages = s.planOpaqueSourceRenames(pages, known)
+	}
+
 	incoming := make(map[string]int)
 	outgoing := make(map[string]int)
 	missingByTarget := make(map[string][]BrokenLink)
@@ -191,9 +212,32 @@ func (s *Store) CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*Me
 	}
 
 	report.TouchedPages = sortedStringSet(touched)
-	s.RebuildIndex(ctx)
-	s.AppendLog(ctx, "memory-hygiene", "")
+	if memoryHygieneChanged(report) {
+		s.RebuildIndex(ctx)
+		s.AppendLog(ctx, "memory-hygiene", "")
+	}
 	return report, nil
+}
+
+func memoryHygieneChanged(report *MemoryHygieneReport) bool {
+	return len(report.RenamedPages) > 0 ||
+		len(report.CreatedHubs) > 0 ||
+		len(report.RepairedLinks) > 0 ||
+		len(report.TouchedPages) > 0
+}
+
+func organizeMemoryPages(pages []memoryPage) (map[string]*Page, map[string][]string) {
+	known := make(map[string]*Page, len(pages))
+	byCategory := make(map[string][]string)
+	for _, item := range pages {
+		known[item.slug] = item.page
+		category := cleanCategory(item.page.Category)
+		byCategory[category] = append(byCategory[category], item.slug)
+	}
+	for category := range byCategory {
+		sort.Strings(byCategory[category])
+	}
+	return known, byCategory
 }
 
 type graphRef struct {
@@ -216,6 +260,253 @@ func (s *Store) memoryPages() ([]memoryPage, error) {
 		pages = append(pages, memoryPage{slug: slug, page: page})
 	}
 	return pages, nil
+}
+
+func (s *Store) planOpaqueSourceRenames(pages []memoryPage, known map[string]*Page) []PageRename {
+	planned := make([]PageRename, 0)
+	reserved := make(map[string]bool)
+	for slug := range known {
+		reserved[slug] = true
+	}
+	for _, item := range pages {
+		if !isOpaqueSourceSlug(item.slug) || item.page == nil || !hasString(item.page.Tags, "source") {
+			continue
+		}
+		sourceID := pageSourceID(item.page)
+		if sourceID == "" {
+			continue
+		}
+		heading := s.semanticSourceHeading(sourceID)
+		if heading == "" {
+			continue
+		}
+		title := truncateTitle("Source: " + heading)
+		nextSlug := Slug(title)
+		if nextSlug == "" || nextSlug == item.slug || IsOperationalSlug(nextSlug) {
+			continue
+		}
+		if reserved[nextSlug] && nextSlug != item.slug {
+			continue
+		}
+		reserved[nextSlug] = true
+		planned = append(planned, PageRename{
+			From:   item.slug,
+			To:     nextSlug,
+			Title:  title,
+			Reason: "opaque source slug replaced with heading from extracted source markdown",
+		})
+	}
+	sort.Slice(planned, func(i, j int) bool {
+		return planned[i].From < planned[j].From
+	})
+	return planned
+}
+
+func (s *Store) applyPageRenames(ctx context.Context, renames []PageRename) error {
+	renameMap := make(map[string]string, len(renames))
+	for _, rename := range renames {
+		if rename.From == "" || rename.To == "" || rename.From == rename.To {
+			continue
+		}
+		page, err := s.ReadPage(rename.From)
+		if err != nil {
+			return fmt.Errorf("rename wiki page read %s: %w", rename.From, err)
+		}
+		page.Title = rename.Title
+		if page.Title == "" {
+			page.Title = titleFromSlug(rename.To)
+		}
+		stripAutoSourcePreview(page)
+		page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.WritePage(ctx, page); err != nil {
+			return fmt.Errorf("rename wiki page write %s -> %s: %w", rename.From, rename.To, err)
+		}
+		if err := s.DeletePage(ctx, rename.From); err != nil {
+			return fmt.Errorf("rename wiki page delete %s: %w", rename.From, err)
+		}
+		if sourceID := pageSourceID(page); sourceID != "" {
+			if err := s.updateSourceWikiPages(sourceID, rename.From, rename.To); err != nil {
+				return fmt.Errorf("rename wiki source metadata %s: %w", sourceID, err)
+			}
+		}
+		renameMap[rename.From] = rename.To
+	}
+	if len(renameMap) == 0 {
+		return nil
+	}
+
+	pages, err := s.memoryPages()
+	if err != nil {
+		return err
+	}
+	for _, item := range pages {
+		changed := false
+		for oldSlug, newSlug := range renameMap {
+			oldLink := "[[" + oldSlug + "]]"
+			newLink := "[[" + newSlug + "]]"
+			if strings.Contains(item.page.Body, oldLink) {
+				item.page.Body = strings.ReplaceAll(item.page.Body, oldLink, newLink)
+				changed = true
+			}
+			if replaceRelated(item.page, oldSlug, newSlug) {
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		item.page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.WritePage(ctx, item.page); err != nil {
+			return fmt.Errorf("rename wiki backlinks write %s: %w", item.slug, err)
+		}
+	}
+	return nil
+}
+
+func isOpaqueSourceSlug(slug string) bool {
+	const prefix = "source-"
+	if !strings.HasPrefix(slug, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(slug, prefix)
+	parts := strings.Split(rest, "-")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func pageSourceID(page *Page) string {
+	if page == nil {
+		return ""
+	}
+	for _, source := range page.Sources {
+		source = strings.TrimSpace(source)
+		if id, ok := strings.CutPrefix(source, "source:"); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+func (s *Store) semanticSourceHeading(sourceID string) string {
+	for _, name := range []string{"extract.md", "ocr.md"} {
+		data, err := os.ReadFile(filepath.Join(s.dir, "raw", sourceID, name))
+		if err != nil {
+			continue
+		}
+		if heading := firstSemanticHeading(string(data)); heading != "" {
+			return heading
+		}
+	}
+	return ""
+}
+
+func firstSemanticHeading(markdown string) string {
+	for _, line := range strings.Split(markdown, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "#") {
+			continue
+		}
+		text := strings.TrimSpace(strings.TrimLeft(line, "#"))
+		if text == "" {
+			continue
+		}
+		lower := strings.ToLower(text)
+		if strings.HasPrefix(lower, "source ocr:") ||
+			strings.HasPrefix(lower, "source extract:") ||
+			strings.HasPrefix(lower, "source:") ||
+			strings.HasPrefix(lower, "page ") {
+			continue
+		}
+		return strings.Trim(text, " .\t")
+	}
+	return ""
+}
+
+func truncateTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if len(title) <= 200 {
+		return title
+	}
+	cut := title[:200]
+	if idx := strings.LastIndex(cut, " "); idx >= 20 {
+		cut = cut[:idx]
+	}
+	return strings.TrimSpace(cut)
+}
+
+func (s *Store) updateSourceWikiPages(sourceID, oldSlug, newSlug string) error {
+	path := filepath.Join(s.dir, "raw", sourceID, "source.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return err
+	}
+	pages := make([]string, 0, 1)
+	seen := make(map[string]bool)
+	if rawPages, ok := meta["wiki_pages"].([]any); ok {
+		for _, rawPage := range rawPages {
+			slug, ok := rawPage.(string)
+			if !ok {
+				continue
+			}
+			if slug == oldSlug {
+				slug = newSlug
+			}
+			if slug == "" || seen[slug] {
+				continue
+			}
+			seen[slug] = true
+			pages = append(pages, slug)
+		}
+	}
+	if !seen[newSlug] {
+		pages = append(pages, newSlug)
+	}
+	sort.Strings(pages)
+	meta["wiki_pages"] = pages
+
+	updated, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	updated = append(updated, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(path), "source.*.json")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(updated); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func pageGraphRefs(page *Page) []graphRef {

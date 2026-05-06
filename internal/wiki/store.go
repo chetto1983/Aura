@@ -168,7 +168,7 @@ func (s *Store) ReadPage(slug string) (*Page, error) {
 	yamlPath := filepath.Join(s.dir, slug+".yaml")
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading wiki page [[%s]]: not found", slug)
+		return nil, fmt.Errorf("reading wiki page [[%s]]: %w", slug, os.ErrNotExist)
 	}
 	return ParseYAML(data)
 }
@@ -311,7 +311,7 @@ func (s *Store) gitCommit(_ context.Context, filename, action string) error {
 			Email: "aura@local",
 		},
 	}); err != nil {
-		if strings.Contains(err.Error(), "nothing to commit") {
+		if isCleanWorktreeCommitError(err) {
 			return nil
 		}
 		return fmt.Errorf("committing %s: %w", filename, err)
@@ -319,6 +319,15 @@ func (s *Store) gitCommit(_ context.Context, filename, action string) error {
 
 	s.logger.Info("wiki page committed to git", "file", filename, "action", action)
 	return nil
+}
+
+func isCleanWorktreeCommitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "nothing to commit") ||
+		strings.Contains(msg, "clean working tree")
 }
 
 // Dir returns the absolute directory the store reads from. Useful for

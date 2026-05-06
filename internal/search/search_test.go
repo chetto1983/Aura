@@ -12,6 +12,7 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/philippgille/chromem-go"
 )
@@ -337,6 +338,119 @@ func TestIndexWikiPagesSkipsOperationalDocs(t *testing.T) {
 		if result.Slug == "SCHEMA" || result.Slug == "index" || result.Slug == "log" {
 			t.Fatalf("operational doc leaked into search results: %#v", results)
 		}
+	}
+}
+
+func TestRebuildSQLiteWikiDocumentsClearsStaleAndIndexesGraph(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Beta Review",
+		Body:          "Review links to [[alpha-contract]].",
+		Category:      "project",
+		Related:       []string{"alpha-contract"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := migrations.Run(context.Background(), db); err != nil {
+		db.Close()
+		t.Fatalf("migrate db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO wiki_documents (id, content, metadata, title) VALUES ('stale-source', 'old raw', '{"kind":"raw"}', 'Old')`); err != nil {
+		db.Close()
+		t.Fatalf("insert stale doc: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	count, pages, err := RebuildSQLiteWikiDocuments(context.Background(), tmpDir, dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildSQLiteWikiDocuments: %v", err)
+	}
+	if count != 6 || pages != 2 {
+		t.Fatalf("count=%d pages=%d, want count=6 pages=2", count, pages)
+	}
+
+	db, err = auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer db.Close()
+	var stale int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM wiki_documents WHERE id = 'stale-source'`).Scan(&stale); err != nil {
+		t.Fatalf("count stale: %v", err)
+	}
+	if stale != 0 {
+		t.Fatalf("stale docs = %d, want 0", stale)
+	}
+	var alpha int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM wiki_documents WHERE id IN ('alpha-contract', 'graph:node:alpha-contract')`).Scan(&alpha); err != nil {
+		t.Fatalf("count alpha docs: %v", err)
+	}
+	if alpha != 2 {
+		t.Fatalf("alpha docs = %d, want 2", alpha)
+	}
+}
+
+func TestRebuildSQLiteWikiDocumentsRepairsBadWikiDocumentsTable(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Repairable Memory",
+		Body:          "Search text after repair.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE wiki_documents(id TEXT)`); err != nil {
+		db.Close()
+		t.Fatalf("create bad wiki_documents: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	docs, pages, err := RebuildSQLiteWikiDocuments(context.Background(), tmpDir, dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildSQLiteWikiDocuments: %v", err)
+	}
+	if docs != 4 || pages != 1 {
+		t.Fatalf("docs=%d pages=%d, want docs=4 pages=1", docs, pages)
+	}
+	db, err = auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer db.Close()
+	var got string
+	if err := db.QueryRow(`SELECT id FROM wiki_documents WHERE wiki_documents MATCH 'repair'`).Scan(&got); err != nil {
+		t.Fatalf("query repaired fts: %v", err)
+	}
+	if got != "repairable-memory" {
+		t.Fatalf("matched id = %q, want repairable-memory", got)
 	}
 }
 

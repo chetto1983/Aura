@@ -137,40 +137,9 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	entries, err := os.ReadDir(e.wikiDir)
+	docs, pageCount, err := loadWikiDocuments(e.wikiDir, e.logger)
 	if err != nil {
-		return fmt.Errorf("reading wiki directory: %w", err)
-	}
-
-	// Build slug -> file mapping, preferring .md over .yaml
-	type fileInfo struct {
-		name string
-		ext  string
-	}
-	slugFiles := make(map[string]fileInfo)
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		var slug, ext string
-		if strings.HasSuffix(name, ".md") {
-			slug = strings.TrimSuffix(name, ".md")
-			ext = ".md"
-		} else if strings.HasSuffix(name, ".yaml") {
-			slug = strings.TrimSuffix(name, ".yaml")
-			ext = ".yaml"
-		} else {
-			continue
-		}
-		if wiki.IsOperationalSlug(slug) {
-			continue
-		}
-		// Prefer .md over .yaml
-		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
-			continue
-		}
-		slugFiles[slug] = fileInfo{name: name, ext: ext}
+		return err
 	}
 
 	// Slice 11i: switch from a serial AddDocument loop to chromem-go's
@@ -178,37 +147,6 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 	// round trips run in parallel goroutines. With 8 wiki pages × ~1 s
 	// per embed serial = ~8 s; concurrency=4 = ~2 s. Higher concurrency
 	// risks Mistral rate-limit pushback on free tiers.
-	pages := make(map[string]indexedWikiPage, len(slugFiles))
-	docs := make([]chromem.Document, 0, len(slugFiles)*3)
-	for slug, fi := range slugFiles {
-		filePath := filepath.Join(e.wikiDir, fi.name)
-
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			e.logger.Warn("failed to read wiki page for indexing", "slug", slug, "error", err)
-			continue
-		}
-
-		page, err := parseIndexedWikiPage(slug, fi.ext, data)
-		if err != nil {
-			e.logger.Warn("failed to parse wiki page for indexing", "slug", slug, "error", err)
-			continue
-		}
-		pages[slug] = page
-		var title, content string
-		if fi.ext == ".md" {
-			title, content = page.Title, page.Title+"\n"+page.Body
-		} else {
-			title, content = page.Title, page.Title+"\n"+page.Body
-		}
-		docs = append(docs, chromem.Document{
-			ID:       slug,
-			Content:  content,
-			Metadata: map[string]string{"slug": slug, "title": title, "kind": "wiki_page"},
-		})
-	}
-	docs = append(docs, buildGraphDocuments(pages)...)
-
 	count := 0
 	if err := e.resetCollectionLocked(); err != nil {
 		return err
@@ -232,20 +170,128 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 		// SQLite full-text mirror: keep this serial — local SQLite writes
 		// are cheap and concurrent inserts on the same FTS table fight.
 		if e.sqlite != nil {
-			if err := e.sqlite.clear(ctx); err != nil {
-				e.logger.Warn("failed to clear sqlite search mirror", "error", err)
-			}
-			for _, doc := range docs {
-				if err := e.sqlite.indexDocument(ctx, doc.ID, doc.Content, doc.Metadata); err != nil {
-					e.logger.Warn("failed to index in sqlite", "slug", doc.ID, "error", err)
-				}
+			if err := indexSQLiteDocuments(ctx, e.sqlite, docs); err != nil {
+				e.logger.Warn("failed to rebuild sqlite search mirror", "error", err)
 			}
 		}
 	}
 
 	e.indexed = true
-	e.logger.Info("wiki pages indexed", "count", count, "pages", len(pages), "concurrency", indexConcurrency)
+	e.logger.Info("wiki pages indexed", "count", count, "pages", pageCount, "concurrency", indexConcurrency)
 	return nil
+}
+
+// RebuildSQLiteWikiDocuments rebuilds the SQLite FTS mirror from the wiki
+// files without requiring an embedding model. It is used by closure/debug
+// flows after deterministic wiki cleanup so the manifest can be verified in
+// one pass even when vector embeddings are unavailable.
+func RebuildSQLiteWikiDocuments(ctx context.Context, wikiDir, dbPath string, logger *slog.Logger) (docsIndexed int, pagesIndexed int, err error) {
+	sqlite, err := newSqliteSearcher(dbPath, logger)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer sqlite.Close()
+
+	docs, pageCount, err := loadWikiDocuments(wikiDir, logger)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := indexSQLiteDocuments(ctx, sqlite, docs); err != nil {
+		return 0, 0, err
+	}
+	return len(docs), pageCount, nil
+}
+
+func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []chromem.Document) error {
+	if sqlite == nil {
+		return nil
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := sqlite.clearOrRecreate(ctx); err != nil {
+			return err
+		}
+		needsRepair := false
+		for _, doc := range docs {
+			if err := sqlite.indexDocument(ctx, doc.ID, doc.Content, doc.Metadata); err != nil {
+				if attempt == 0 && recoverableWikiDocumentsError(err) {
+					if repairErr := sqlite.recreateWikiDocuments(ctx); repairErr != nil {
+						return repairErr
+					}
+					needsRepair = true
+					break
+				}
+				return err
+			}
+		}
+		if !needsRepair {
+			return nil
+		}
+	}
+	return fmt.Errorf("rebuilding wiki_documents: repair retry exhausted")
+}
+
+func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]chromem.Document, int, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	entries, err := os.ReadDir(wikiDir)
+	if err != nil {
+		return nil, 0, fmt.Errorf("reading wiki directory: %w", err)
+	}
+
+	type fileInfo struct {
+		name string
+		ext  string
+	}
+	slugFiles := make(map[string]fileInfo)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		var slug, ext string
+		if strings.HasSuffix(name, ".md") {
+			slug = strings.TrimSuffix(name, ".md")
+			ext = ".md"
+		} else if strings.HasSuffix(name, ".yaml") {
+			slug = strings.TrimSuffix(name, ".yaml")
+			ext = ".yaml"
+		} else {
+			continue
+		}
+		if wiki.IsOperationalSlug(slug) {
+			continue
+		}
+		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
+			continue
+		}
+		slugFiles[slug] = fileInfo{name: name, ext: ext}
+	}
+
+	pages := make(map[string]indexedWikiPage, len(slugFiles))
+	docs := make([]chromem.Document, 0, len(slugFiles)*3)
+	for slug, fi := range slugFiles {
+		filePath := filepath.Join(wikiDir, fi.name)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			logger.Warn("failed to read wiki page for indexing", "slug", slug, "error", err)
+			continue
+		}
+		page, err := parseIndexedWikiPage(slug, fi.ext, data)
+		if err != nil {
+			logger.Warn("failed to parse wiki page for indexing", "slug", slug, "error", err)
+			continue
+		}
+		pages[slug] = page
+		title, content := page.Title, page.Title+"\n"+page.Body
+		docs = append(docs, chromem.Document{
+			ID:       slug,
+			Content:  content,
+			Metadata: map[string]string{"slug": slug, "title": title, "kind": "wiki_page"},
+		})
+	}
+	docs = append(docs, buildGraphDocuments(pages)...)
+	return docs, len(pages), nil
 }
 
 func (e *Engine) resetCollectionLocked() error {

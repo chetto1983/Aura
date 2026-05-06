@@ -203,7 +203,7 @@ func NewCleanWikiMemoryTool(store *wiki.Store) *CleanWikiMemoryTool {
 func (t *CleanWikiMemoryTool) Name() string { return "clean_wiki_memory" }
 
 func (t *CleanWikiMemoryTool) Description() string {
-	return "Audit wiki memory quality and optionally repair it automatically. Dry-run by default; apply=true creates shared hub pages, repairs obvious alias links, updates related refs, rebuilds index.md, and appends an audit log entry."
+	return "Audit wiki memory quality and optionally repair it automatically. Dry-run by default; apply=true renames safely inferred opaque source pages, creates shared hub pages, repairs obvious alias links, updates related refs, rebuilds index.md, and appends an audit log entry."
 }
 
 func (t *CleanWikiMemoryTool) Parameters() map[string]any {
@@ -212,7 +212,7 @@ func (t *CleanWikiMemoryTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"apply": map[string]any{
 				"type":        "boolean",
-				"description": "When false or omitted, only report planned repairs. When true, write hub pages and link repairs.",
+				"description": "When false or omitted, only report planned repairs. When true, write safe source renames, hub pages, and link repairs.",
 			},
 		},
 	}
@@ -241,6 +241,9 @@ func formatMemoryHygieneReport(report *wiki.MemoryHygieneReport, applied bool) s
 	fmt.Fprintf(&sb, "Orphans: %d\n", len(report.Orphans))
 
 	if applied {
+		for _, rename := range report.RenamedPages {
+			fmt.Fprintf(&sb, "- renamed [[%s]] -> [[%s]] (%s)\n", rename.From, rename.To, rename.Reason)
+		}
 		for _, slug := range report.CreatedHubs {
 			fmt.Fprintf(&sb, "- created hub [[%s]]\n", slug)
 		}
@@ -256,10 +259,13 @@ func formatMemoryHygieneReport(report *wiki.MemoryHygieneReport, applied bool) s
 	for _, slug := range report.PlannedHubs {
 		fmt.Fprintf(&sb, "- would create hub [[%s]]\n", slug)
 	}
+	for _, rename := range report.RenamedPages {
+		fmt.Fprintf(&sb, "- would rename [[%s]] -> [[%s]] (%s)\n", rename.From, rename.To, rename.Reason)
+	}
 	for _, repair := range report.RepairedLinks {
 		fmt.Fprintf(&sb, "- would repair [[%s]] -> [[%s]] in [[%s]] (%s)\n", repair.Target, repair.Replacement, repair.From, repair.Location)
 	}
-	if len(report.PlannedHubs) == 0 && len(report.RepairedLinks) == 0 && len(report.BrokenLinks) == 0 {
+	if len(report.PlannedHubs) == 0 && len(report.RenamedPages) == 0 && len(report.RepairedLinks) == 0 && len(report.BrokenLinks) == 0 {
 		sb.WriteString("Wiki memory graph is already connected and clean.\n")
 	}
 	return sb.String()

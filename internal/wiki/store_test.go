@@ -168,6 +168,24 @@ func TestReadPageNotFound(t *testing.T) {
 	}
 }
 
+func TestGitCommitTreatsCleanWorkingTreeAsNoop(t *testing.T) {
+	store, _ := newTestStore(t)
+	page := &Page{
+		Title:         "Clean Commit Test",
+		Body:          "Git no-op content.",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-06T00:00:00Z",
+		UpdatedAt:     "2026-05-06T00:00:00Z",
+	}
+	if err := store.WritePage(context.Background(), page); err != nil {
+		t.Fatalf("WritePage failed: %v", err)
+	}
+	if err := store.gitCommit(context.Background(), "index.md", "update"); err != nil {
+		t.Fatalf("gitCommit clean tree returned error: %v", err)
+	}
+}
+
 func TestResolveSlugShortAlias(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()

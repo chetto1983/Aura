@@ -63,6 +63,61 @@ func (s *sqliteSearcher) clear(ctx context.Context) error {
 	return nil
 }
 
+func (s *sqliteSearcher) clearOrRecreate(ctx context.Context) error {
+	if err := s.clear(ctx); err != nil {
+		if recoverableWikiDocumentsError(err) {
+			return s.recreateWikiDocuments(ctx)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *sqliteSearcher) recreateWikiDocuments(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS wiki_documents`); err != nil {
+		if !recoverableWikiDocumentsError(err) {
+			return fmt.Errorf("dropping wiki_documents: %w", err)
+		}
+		if repairErr := s.forgetWikiDocumentsSchema(ctx); repairErr != nil {
+			return fmt.Errorf("dropping wiki_documents: %w; forced schema repair failed: %v", err, repairErr)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `CREATE VIRTUAL TABLE wiki_documents USING fts5(id, content, metadata, title)`); err != nil {
+		return fmt.Errorf("creating wiki_documents: %w", err)
+	}
+	return nil
+}
+
+func (s *sqliteSearcher) forgetWikiDocumentsSchema(ctx context.Context) error {
+	var version int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA schema_version`).Scan(&version); err != nil {
+		return fmt.Errorf("reading schema_version: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `PRAGMA writable_schema=ON`); err != nil {
+		return fmt.Errorf("enable writable_schema: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM sqlite_schema
+		WHERE name = 'wiki_documents'
+		   OR name LIKE 'wiki_documents_%'
+		   OR tbl_name = 'wiki_documents'
+	`); err != nil {
+		_, _ = s.db.ExecContext(ctx, `PRAGMA writable_schema=OFF`)
+		return fmt.Errorf("delete wiki_documents schema rows: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA schema_version=%d`, version+1)); err != nil {
+		_, _ = s.db.ExecContext(ctx, `PRAGMA writable_schema=OFF`)
+		return fmt.Errorf("bump schema_version: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `PRAGMA writable_schema=OFF`); err != nil {
+		return fmt.Errorf("disable writable_schema: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("vacuum after wiki_documents schema repair: %w", err)
+	}
+	return nil
+}
+
 func (s *sqliteSearcher) indexDocument(ctx context.Context, id, content string, metadata map[string]string) error {
 	metaJSON := metadataToJSON(metadata)
 	title := metadata["title"]
@@ -81,6 +136,18 @@ func (s *sqliteSearcher) indexDocument(ctx context.Context, id, content string, 
 		return fmt.Errorf("inserting document %s: %w", id, err)
 	}
 	return nil
+}
+
+func recoverableWikiDocumentsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database disk image is malformed") ||
+		strings.Contains(msg, "corruption") ||
+		strings.Contains(msg, "has no column named") ||
+		strings.Contains(msg, "no such table: wiki_documents") ||
+		strings.Contains(msg, "not an fts5")
 }
 
 func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]Result, error) {
