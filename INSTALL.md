@@ -180,7 +180,8 @@ SearXNG search beside it. This mode sets `AURA_HEADLESS=true`, so there is no
 desktop tray; Docker handles start/stop.
 
 ```powershell
-Copy-Item .env.example .env
+New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
+Copy-Item .env.example data/.env
 docker compose up -d --build
 ```
 

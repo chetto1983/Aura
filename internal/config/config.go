@@ -9,6 +9,7 @@ const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
+const DefaultEnvPath = ".env"
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
@@ -48,6 +49,7 @@ type Config struct {
 	DBPath                 string  `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort               string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	Headless               bool    `envconfig:"AURA_HEADLESS" default:"false"`
+	EnvPath                string  `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	OTelEnabled            bool    `envconfig:"OTEL_ENABLED" default:"false"`
 
@@ -164,6 +166,7 @@ func Load() (*Config, error) {
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
 	cfg.Headless = getEnvBool("AURA_HEADLESS", false)
+	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 
@@ -193,6 +196,10 @@ func Load() (*Config, error) {
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
 	return cfg, nil
+}
+
+func EnvPathFromEnvironment() string {
+	return getEnv("AURA_ENV_PATH", DefaultEnvPath)
 }
 
 func parseAllowlist(raw string) []string {

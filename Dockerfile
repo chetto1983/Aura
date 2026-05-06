@@ -21,6 +21,7 @@ USER aura
 WORKDIR /app
 
 ENV AURA_HEADLESS=true \
+    AURA_ENV_PATH=/data/.env \
     HTTP_PORT=0.0.0.0:8080 \
     DB_PATH=/data/aura.db \
     LOG_DIR=/data/logs \

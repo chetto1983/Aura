@@ -309,7 +309,7 @@ func run(ctx context.Context, limit int) (report, string, error) {
 }
 
 func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time.Duration) (liveReport, string, error) {
-	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return liveReport{}, "", fmt.Errorf("load .env: %w", err)
 	}
 	apiKey := strings.TrimSpace(os.Getenv("LLM_API_KEY"))

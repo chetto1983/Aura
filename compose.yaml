@@ -5,10 +5,9 @@ services:
       dockerfile: Dockerfile
     image: aura:local
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       AURA_HEADLESS: "true"
+      AURA_ENV_PATH: "/data/.env"
       HTTP_PORT: "0.0.0.0:8080"
       DB_PATH: "/data/aura.db"
       LOG_DIR: "/data/logs"
@@ -21,9 +20,9 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - aura-data:/data
-      - aura-wiki:/wiki
-      - aura-skills:/skills
+      - ./data:/data
+      - ./wiki:/wiki
+      - ./skills:/skills
     depends_on:
       searxng:
         condition: service_started
@@ -38,7 +37,4 @@ services:
       - searxng-cache:/var/cache/searxng
 
 volumes:
-  aura-data:
-  aura-wiki:
-  aura-skills:
   searxng-cache:

@@ -105,6 +105,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
 	os.Unsetenv("AURA_HEADLESS")
+	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_RUNTIME_DIR")
@@ -192,6 +193,9 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.Headless {
 		t.Errorf("Headless = true, want false by default")
 	}
+	if cfg.EnvPath != ".env" {
+		t.Errorf("EnvPath = %q, want .env", cfg.EnvPath)
+	}
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
 	}
@@ -229,6 +233,19 @@ func TestLoadHeadless(t *testing.T) {
 	}
 	if !cfg.Headless {
 		t.Fatal("Headless = false, want true")
+	}
+}
+
+func TestLoadEnvPath(t *testing.T) {
+	os.Setenv("AURA_ENV_PATH", "/data/.env")
+	defer os.Unsetenv("AURA_ENV_PATH")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.EnvPath != "/data/.env" {
+		t.Fatalf("EnvPath = %q, want /data/.env", cfg.EnvPath)
 	}
 }
 

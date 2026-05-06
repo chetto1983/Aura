@@ -36,7 +36,8 @@ func main() {
 	// Initialize structured logger with zap backend and secret sanitization
 	logger, cleanupLog := logging.Setup("info", "./logs")
 
-	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+	initialEnvPath := config.EnvPathFromEnvironment()
+	if err := loadDotEnv(initialEnvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		logger.Warn("could not load .env", "error", err)
 	}
 
@@ -174,7 +175,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	if !cfg.IsBootstrapped() {
 		token, err := setup.Run(setup.Config{
 			Listen:        cfg.HTTPPort,
-			DotEnvPath:    ".env",
+			DotEnvPath:    cfg.EnvPath,
 			SettingsStore: settingsStore,
 			Logger:        logger,
 		})
@@ -184,7 +185,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		// Re-load: .env now has TELEGRAM_TOKEN, settings DB now has
 		// LLM_*, etc. Replace cfg in place with the fresh values.
 		os.Setenv("TELEGRAM_TOKEN", token)
-		if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := loadDotEnv(cfg.EnvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			logger.Warn("re-load .env after setup", "error", err)
 		}
 		newCfg, err := config.Load()

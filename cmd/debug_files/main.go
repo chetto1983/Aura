@@ -59,7 +59,7 @@ func main() {
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
 	flag.Parse()
 
-	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("warning: could not load .env: %v\n", err)
 	}
 

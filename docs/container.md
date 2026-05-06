@@ -15,11 +15,13 @@ The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
 
 ## First Run
 
-Copy the environment template and fill in your Telegram token, or leave it
-blank to use the first-run setup wizard:
+Create the host data folders, then copy the environment template into the
+mounted data folder. You may leave `TELEGRAM_TOKEN` blank to use the first-run
+setup wizard:
 
 ```powershell
-Copy-Item .env.example .env
+New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
+Copy-Item .env.example data/.env
 docker compose up -d --build
 ```
 
@@ -43,18 +45,20 @@ http://searxng:8080
 
 ## Data
 
-Docker volumes hold user data:
+Visible host folders hold user data:
 
-- `aura-data`: SQLite DB, logs, MCP config, prompt overlays.
-- `aura-wiki`: compiled wiki and source evidence.
-- `aura-skills`: installed skills.
-- `searxng-cache`: SearXNG cache.
+- `data/`: `.env`, SQLite DB, logs, MCP config, prompt overlays.
+- `wiki/`: compiled wiki and source evidence.
+- `skills/`: installed skills.
+- `garage/`: Garage S3 metadata and object data once the Garage service is enabled.
 
-Back up these volumes before moving hosts or upgrading major versions.
+Back up these folders before moving hosts or upgrading major versions.
 
 ## Notes
 
 - `compose.yaml` sets `AURA_HEADLESS=true`; desktop builds still keep the tray.
+- `compose.yaml` sets `AURA_ENV_PATH=/data/.env`; the setup wizard writes the
+  Telegram token there rather than to an ephemeral container filesystem.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - The container stack disables `SANDBOX_ENABLED` by default because the Pyodide

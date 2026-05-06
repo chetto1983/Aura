@@ -60,3 +60,21 @@ func TestHeadlessModeBypassesTrayRun(t *testing.T) {
 		t.Fatalf("headless path must be checked before tray run: headless=%d runHeadless=%d tray=%d", headlessIdx, runHeadlessIdx, trayIdx)
 	}
 }
+
+func TestMainUsesConfiguredEnvPath(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`initialEnvPath := config.EnvPathFromEnvironment()`,
+		`loadDotEnv(initialEnvPath)`,
+		`DotEnvPath:    cfg.EnvPath`,
+		`loadDotEnv(cfg.EnvPath)`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("main.go missing %q", want)
+		}
+	}
+}

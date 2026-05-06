@@ -41,7 +41,7 @@ func main() {
 		}
 	}
 
-	if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fail("load .env: %v", err)
 	}
 	cfg, err := config.Load()
@@ -235,6 +235,13 @@ func loadDotEnv(path string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func envDefault(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func singleLine(s string, max int) string {

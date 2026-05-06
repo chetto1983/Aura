@@ -61,7 +61,8 @@ For server-style installs, Aura ships a Docker Compose stack with Aura running
 headless and SearXNG running beside it:
 
 ```powershell
-Copy-Item .env.example .env
+New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
+Copy-Item .env.example data/.env
 docker compose up -d --build
 ```
 

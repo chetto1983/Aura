@@ -125,7 +125,7 @@ func run(ctx context.Context, opts options) (report, func(), error) {
 	model := ""
 	var client llm.Client = newScriptedLLM()
 	if opts.LiveLLM {
-		if err := loadDotEnv(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			_ = store.Close()
 			return report{}, cleanup, fmt.Errorf("load .env: %w", err)
 		}
