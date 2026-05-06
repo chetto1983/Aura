@@ -287,6 +287,59 @@ func TestIndexWikiPagesAddsGraphNodeCards(t *testing.T) {
 	}
 }
 
+func TestIndexWikiPagesSkipsOperationalDocs(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Project Memory",
+		Body:          "Durable memory page.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	specialPage := &wiki.Page{
+		Title:         "Schema",
+		Body:          "Example [[ghost]].",
+		Category:      "ops",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := wiki.MarshalMD(specialPage)
+	if err != nil {
+		t.Fatalf("MarshalMD special page: %v", err)
+	}
+	for _, name := range []string{"SCHEMA.md", "index.md", "log.md"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), data, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	e, err := NewEngine(tmpDir, keywordEmbedding, logger)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	if err := e.IndexWikiPages(context.Background()); err != nil {
+		t.Fatalf("IndexWikiPages: %v", err)
+	}
+	if got, want := e.coll.Count(), 4; got != want {
+		t.Fatalf("indexed document count = %d, want %d", got, want)
+	}
+	results, err := e.Search(context.Background(), "schema ghost", 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, result := range results {
+		if result.Slug == "SCHEMA" || result.Slug == "index" || result.Slug == "log" {
+			t.Fatalf("operational doc leaked into search results: %#v", results)
+		}
+	}
+}
+
 func TestResultStruct(t *testing.T) {
 	r := Result{
 		Kind:    "wiki_page",

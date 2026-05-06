@@ -211,6 +211,42 @@ func TestLintWikiTool_NilStore(t *testing.T) {
 	}
 }
 
+func TestCleanWikiMemoryTool_DryRunAndApply(t *testing.T) {
+	store, _ := newTestWikiStore(t)
+	putPage(t, store, "Trading Signal One", "trading-signals", "first", []string{"segnali-di-trading"}, nil)
+	putPage(t, store, "Trading Signal Two", "trading-signals", "second", []string{"segnali-di-trading"}, nil)
+
+	tool := NewCleanWikiMemoryTool(store)
+	out, err := tool.Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("dry-run Execute: %v", err)
+	}
+	if !strings.Contains(out, "Dry run") || !strings.Contains(out, "would create hub [[segnali-di-trading]]") {
+		t.Fatalf("dry-run output missing planned hub:\n%s", out)
+	}
+	if _, err := store.ReadPage("segnali-di-trading"); err == nil {
+		t.Fatal("dry-run created hub page")
+	}
+
+	out, err = tool.Execute(context.Background(), map[string]any{"apply": true})
+	if err != nil {
+		t.Fatalf("apply Execute: %v", err)
+	}
+	if !strings.Contains(out, "Applied") || !strings.Contains(out, "created hub [[segnali-di-trading]]") {
+		t.Fatalf("apply output missing created hub:\n%s", out)
+	}
+	if _, err := store.ReadPage("segnali-di-trading"); err != nil {
+		t.Fatalf("apply did not create hub page: %v", err)
+	}
+}
+
+func TestCleanWikiMemoryTool_NilStore(t *testing.T) {
+	tool := NewCleanWikiMemoryTool(nil)
+	if _, err := tool.Execute(context.Background(), map[string]any{}); err == nil {
+		t.Error("expected error on nil store")
+	}
+}
+
 func TestRebuildIndexTool(t *testing.T) {
 	store, dir := newTestWikiStore(t)
 	putPage(t, store, "Alpha", "engineering", "body", nil, nil)

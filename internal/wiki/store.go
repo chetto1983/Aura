@@ -207,8 +207,7 @@ func (s *Store) ListPages() ([]string, error) {
 		} else {
 			continue
 		}
-		// Skip special files
-		if slug == "index" || slug == "log" {
+		if IsOperationalSlug(slug) {
 			continue
 		}
 		if !seen[slug] {
@@ -217,6 +216,17 @@ func (s *Store) ListPages() ([]string, error) {
 		}
 	}
 	return slugs, nil
+}
+
+// IsOperationalSlug reports whether a markdown file is wiki infrastructure
+// rather than durable user/project memory.
+func IsOperationalSlug(slug string) bool {
+	switch strings.ToLower(strings.TrimSpace(slug)) {
+	case "index", "log", "schema":
+		return true
+	default:
+		return false
+	}
 }
 
 // gitCommit ignores ctx because go-git's Worktree API is synchronous; we

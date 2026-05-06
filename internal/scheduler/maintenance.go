@@ -11,6 +11,7 @@ import (
 
 // WikiMaintainer is the wiki surface MaintenanceJob needs.
 type WikiMaintainer interface {
+	CleanMemory(ctx context.Context, opts wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error)
 	Lint(ctx context.Context) ([]wiki.LintIssue, error)
 	ListPages() ([]string, error)
 	RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error
@@ -54,6 +55,10 @@ func (j *MaintenanceJob) WithOwnerNotifier(n OwnerNotifier) *MaintenanceJob {
 // deferred: number of issues persisted to wiki_issues (or just logged when
 // no IssuesStore is wired).
 func (j *MaintenanceJob) Run(ctx context.Context) (fixed, deferred int, err error) {
+	if _, err := j.wiki.CleanMemory(ctx, wiki.MemoryHygieneOptions{Apply: true}); err != nil {
+		return 0, 0, fmt.Errorf("maintenance clean memory: %w", err)
+	}
+
 	lintIssues, err := j.wiki.Lint(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("maintenance lint: %w", err)

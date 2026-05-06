@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aura/aura/internal/wiki"
 	"github.com/philippgille/chromem-go"
 	"gopkg.in/yaml.v3"
 )
@@ -162,8 +163,7 @@ func (e *Engine) IndexWikiPages(ctx context.Context) error {
 		} else {
 			continue
 		}
-		// Skip special files
-		if slug == "index" || slug == "log" {
+		if wiki.IsOperationalSlug(slug) {
 			continue
 		}
 		// Prefer .md over .yaml

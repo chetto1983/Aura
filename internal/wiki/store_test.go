@@ -200,6 +200,35 @@ func TestListPages(t *testing.T) {
 	}
 }
 
+func TestListPagesSkipsOperationalDocs(t *testing.T) {
+	store, dir := newTestStore(t)
+	ctx := context.Background()
+	page := &Page{
+		Title:         "Project Memory",
+		Body:          "Durable memory page.",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-04-28T10:00:00Z",
+		UpdatedAt:     "2026-04-28T10:00:00Z",
+	}
+	if err := store.WritePage(ctx, page); err != nil {
+		t.Fatalf("WritePage failed: %v", err)
+	}
+	for _, name := range []string{"SCHEMA.md", "index.md", "log.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("# "+name+"\n\nExample [[ghost]].\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	slugs, err := store.ListPages()
+	if err != nil {
+		t.Fatalf("ListPages failed: %v", err)
+	}
+	if len(slugs) != 1 || slugs[0] != "project-memory" {
+		t.Fatalf("ListPages() = %v, want only project-memory", slugs)
+	}
+}
+
 func TestLintReportsMemoryDecay(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()

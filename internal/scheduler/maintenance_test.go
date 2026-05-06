@@ -117,10 +117,16 @@ type mockWiki struct {
 	lintErr     error
 	slugs       []string
 	listErr     error
+	cleanErr    error
+	cleanCalls  int
 	repairErr   error
 	repairCalls int
 }
 
+func (m *mockWiki) CleanMemory(_ context.Context, _ wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error) {
+	m.cleanCalls++
+	return &wiki.MemoryHygieneReport{}, m.cleanErr
+}
 func (m *mockWiki) Lint(_ context.Context) ([]wiki.LintIssue, error) {
 	return m.lintIssues, m.lintErr
 }
@@ -139,6 +145,30 @@ func TestMaintenanceJob_LintError(t *testing.T) {
 	_, _, err := job.Run(context.Background())
 	if err == nil {
 		t.Fatal("want error when Lint fails, got nil")
+	}
+}
+
+func TestMaintenanceJob_RunsMemoryHygieneBeforeLint(t *testing.T) {
+	w := &mockWiki{}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	_, _, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if w.cleanCalls != 1 {
+		t.Fatalf("CleanMemory calls = %d, want 1", w.cleanCalls)
+	}
+}
+
+func TestMaintenanceJob_CleanMemoryError(t *testing.T) {
+	w := &mockWiki{cleanErr: errors.New("clean failed")}
+	job := scheduler.NewMaintenanceJob(w, nil)
+	_, _, err := job.Run(context.Background())
+	if err == nil {
+		t.Fatal("want error when CleanMemory fails, got nil")
+	}
+	if w.cleanCalls != 1 {
+		t.Fatalf("CleanMemory calls = %d, want 1", w.cleanCalls)
 	}
 }
 

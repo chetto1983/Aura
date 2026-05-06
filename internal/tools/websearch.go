@@ -136,3 +136,23 @@ func intArg(args map[string]any, key string, fallback, min, max int) int {
 	}
 	return n
 }
+
+func boolArg(args map[string]any, key string) bool {
+	v, ok := args[key]
+	if !ok {
+		return false
+	}
+	switch x := v.(type) {
+	case bool:
+		return x
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "1", "yes":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}

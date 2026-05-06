@@ -24,3 +24,22 @@ Aura must close v1.2 by making the shipped upload and dashboard surfaces truthfu
 - Broad image, audio, video, PPTX, email, website, and cloud-connector ingestion.
 - A generalized document converter layer. Microsoft MarkItDown is a candidate for a future spike, but v1.2 stays on narrow fixed extractors.
 - Larger memory scorecard, retrieval quality, and autonomous proposal work beyond closure validation.
+
+## V13-MEM: Memory Consolidation And Quality
+
+Status: planned
+
+Aura must keep durable memory clean, connected, and searchable. The next milestone audits the live wiki graph, checked-in docs, generated artifacts, search index, embedding cache, and `search_memory` answer quality.
+
+### Acceptance Criteria
+
+- Operational docs (`SCHEMA.md`, `index.md`, `log.md`) are not listed as ordinary wiki pages or indexed as user memory.
+- Generated workflow docs that duplicate `.planning/` are removed or archived outside active docs.
+- The LLM tool registry includes `clean_wiki_memory`, which dry-runs by default and can apply deterministic hub creation, alias repair, related-frontmatter repair, index rebuild, and audit logging; nightly wiki maintenance also runs that cleaner automatically.
+- Orphan wiki pages are either linked into a hub, repaired, or explicitly archived/deleted.
+- Broken wiki links are repaired to real slugs or converted into intentional new hub pages.
+- The dashboard graph has meaningful clusters and no operational/test debris nodes.
+- Embeddings use the dedicated embedding settings only; no embedding path falls back to `LLM_API_KEY`.
+- Embedding cache hit/miss behavior has focused tests and remains visible through `/api/health`.
+- `search_memory` returns evidence envelopes that combine wiki, source, and archive evidence without silently mutating durable wiki pages.
+- Proposal tools keep requiring evidence when the origin is `search_memory`.

@@ -190,6 +190,81 @@ func (t *LintWikiTool) Execute(ctx context.Context, args map[string]any) (string
 	return truncateForToolContext(sb.String(), maxWikiMaintToolChars), nil
 }
 
+// CleanWikiMemoryTool turns the lint-and-fix playbook into an automated agent
+// action: dry-run by default, apply only when explicitly requested.
+type CleanWikiMemoryTool struct {
+	store *wiki.Store
+}
+
+func NewCleanWikiMemoryTool(store *wiki.Store) *CleanWikiMemoryTool {
+	return &CleanWikiMemoryTool{store: store}
+}
+
+func (t *CleanWikiMemoryTool) Name() string { return "clean_wiki_memory" }
+
+func (t *CleanWikiMemoryTool) Description() string {
+	return "Audit wiki memory quality and optionally repair it automatically. Dry-run by default; apply=true creates shared hub pages, repairs obvious alias links, updates related refs, rebuilds index.md, and appends an audit log entry."
+}
+
+func (t *CleanWikiMemoryTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"apply": map[string]any{
+				"type":        "boolean",
+				"description": "When false or omitted, only report planned repairs. When true, write hub pages and link repairs.",
+			},
+		},
+	}
+}
+
+func (t *CleanWikiMemoryTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t.store == nil {
+		return "", errors.New("clean_wiki_memory: wiki store unavailable")
+	}
+	apply := boolArg(args, "apply")
+	report, err := t.store.CleanMemory(ctx, wiki.MemoryHygieneOptions{Apply: apply})
+	if err != nil {
+		return "", fmt.Errorf("clean_wiki_memory: %w", err)
+	}
+	return truncateForToolContext(formatMemoryHygieneReport(report, apply), maxWikiMaintToolChars), nil
+}
+
+func formatMemoryHygieneReport(report *wiki.MemoryHygieneReport, applied bool) string {
+	var sb strings.Builder
+	if applied {
+		fmt.Fprintf(&sb, "Applied wiki memory hygiene to %d page(s).\n", report.Pages)
+	} else {
+		fmt.Fprintf(&sb, "Dry run: wiki memory hygiene scanned %d page(s).\n", report.Pages)
+	}
+	fmt.Fprintf(&sb, "Broken links: %d\n", len(report.BrokenLinks))
+	fmt.Fprintf(&sb, "Orphans: %d\n", len(report.Orphans))
+
+	if applied {
+		for _, slug := range report.CreatedHubs {
+			fmt.Fprintf(&sb, "- created hub [[%s]]\n", slug)
+		}
+		for _, repair := range report.RepairedLinks {
+			fmt.Fprintf(&sb, "- repaired [[%s]] -> [[%s]] in [[%s]] (%s)\n", repair.Target, repair.Replacement, repair.From, repair.Location)
+		}
+		if len(report.TouchedPages) > 0 {
+			fmt.Fprintf(&sb, "Touched pages: [[%s]]\n", strings.Join(report.TouchedPages, "]], [["))
+		}
+		return sb.String()
+	}
+
+	for _, slug := range report.PlannedHubs {
+		fmt.Fprintf(&sb, "- would create hub [[%s]]\n", slug)
+	}
+	for _, repair := range report.RepairedLinks {
+		fmt.Fprintf(&sb, "- would repair [[%s]] -> [[%s]] in [[%s]] (%s)\n", repair.Target, repair.Replacement, repair.From, repair.Location)
+	}
+	if len(report.PlannedHubs) == 0 && len(report.RepairedLinks) == 0 && len(report.BrokenLinks) == 0 {
+		sb.WriteString("Wiki memory graph is already connected and clean.\n")
+	}
+	return sb.String()
+}
+
 // RebuildIndexTool regenerates index.md from the on-disk wiki pages.
 // Useful after manual edits or recovery — WritePage / DeletePage already
 // keep the index current automatically.

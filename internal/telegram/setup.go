@@ -198,6 +198,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 	// the explicit knobs that bypass the auto-maintained side files.
 	toolRegistry.Register(tools.NewListWikiTool(wikiStore))
 	toolRegistry.Register(tools.NewLintWikiTool(wikiStore))
+	toolRegistry.Register(tools.NewCleanWikiMemoryTool(wikiStore))
 	toolRegistry.Register(tools.NewRebuildIndexTool(wikiStore))
 	toolRegistry.Register(tools.NewAppendLogTool(wikiStore))
 
