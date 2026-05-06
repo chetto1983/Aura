@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -9,9 +10,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/source"
 	tele "gopkg.in/telebot.v4"
 )
+
+type fakeDocumentPyodideRunner struct {
+	calls        int
+	code         string
+	allowNetwork bool
+}
+
+func (r *fakeDocumentPyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+	r.calls++
+	r.code = code
+	r.allowNetwork = allowNetwork
+	return &sandbox.Result{
+		OK:     true,
+		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+	}, nil
+}
 
 func TestValidatePDFAcceptsPDF(t *testing.T) {
 	doc := &tele.Document{
@@ -34,7 +52,6 @@ func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
 		{"daily.md", "text/markdown", source.KindMarkdown},
 		{"data.json", "application/json", source.KindJSON},
 		{"budget.csv", "text/csv", source.KindCSV},
-		{"memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", source.KindDOCX},
 		{"sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", source.KindXLSX},
 	}
 	for _, tc := range cases {
@@ -48,6 +65,18 @@ func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
 				t.Fatalf("kind = %s, want %s", format.Kind, tc.kind)
 			}
 		})
+	}
+}
+
+func TestValidateDocumentRejectsDeferredDOCX(t *testing.T) {
+	doc := &tele.Document{
+		File:     tele.File{FileSize: 1024},
+		MIME:     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		FileName: "memo.docx",
+	}
+	_, err := validateDocument(doc, 100)
+	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
+		t.Fatalf("err = %v, want unsupported file type", err)
 	}
 }
 
@@ -344,6 +373,67 @@ func TestDocHandlerAuthorizedTextDocumentExtractsSource(t *testing.T) {
 	}
 	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {
 		t.Fatalf("extract.md missing: %v", err)
+	}
+	if got := countTelegramMethods(calls, "getFile"); got != 1 {
+		t.Fatalf("getFile calls = %d, want 1", got)
+	}
+}
+
+func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	runner := &fakeDocumentPyodideRunner{}
+	h := newDocHandler(docHandlerConfig{
+		Bot:       tb,
+		Sources:   sources,
+		Extractor: runner,
+		Allowlist: func(string) bool {
+			return true
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Document: &tele.Document{
+			File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+			MIME:     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			FileName: "budget.xlsx",
+		},
+	}})
+
+	if err := h.onDocument(ctx); err != nil {
+		t.Fatalf("onDocument() error = %v, want nil", err)
+	}
+
+	var stored []*source.Source
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindXLSX})
+		return err == nil && len(stored) == 1 && stored[0].Status == source.StatusExtractComplete
+	})
+	h.Stop()
+
+	if runner.calls != 1 || runner.allowNetwork || !strings.Contains(runner.code, "pd.ExcelFile") {
+		t.Fatalf("runner calls=%d allowNetwork=%v codeContainsExcel=%v", runner.calls, runner.allowNetwork, strings.Contains(runner.code, "pd.ExcelFile"))
+	}
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_xlsx" {
+		t.Fatalf("source extraction metadata = %+v, want pyodide_xlsx", stored[0].Extract)
+	}
+	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
+	if err != nil {
+		t.Fatalf("extract.md missing: %v", err)
+	}
+	if !strings.Contains(string(extract), "sandbox") {
+		t.Fatalf("extract.md = %q", extract)
 	}
 	if got := countTelegramMethods(calls, "getFile"); got != 1 {
 		t.Fatalf("getFile calls = %d, want 1", got)

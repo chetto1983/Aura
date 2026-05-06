@@ -34,6 +34,18 @@ test('source inbox accepts text-like uploads and exposes extracted ingest action
   });
 
   await page.goto('/sources');
+  sources = [{
+    id: 'src_bbbbbbbbbbbbbbbb',
+    kind: 'xlsx',
+    filename: 'budget.xlsx',
+    status: 'extract_complete',
+    created_at: '2026-05-05T10:00:00Z',
+    wiki_pages: [],
+  }];
+  await page.reload();
+  const xlsxRow = page.getByRole('row').filter({ hasText: 'budget.xlsx' });
+  await expect(xlsxRow.getByRole('button', { name: /^Ingest$/i })).toBeVisible();
+
   const input = page.locator('input[type="file"]');
   await expect(input).toHaveAttribute('accept', /\.txt/);
   await expect(input).toHaveAttribute('accept', /\.md/);

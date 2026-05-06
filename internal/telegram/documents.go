@@ -40,6 +40,7 @@ type docHandlerConfig struct {
 	Bot       *tele.Bot
 	Sources   *source.Store
 	OCR       *ocr.Client // may be nil if OCR_ENABLED=false or MISTRAL_API_KEY missing
+	Extractor source.PyodideRunner
 	MaxFileMB int
 	AfterOCR  AfterOCRHook
 	Allowlist func(userID string) bool
@@ -50,6 +51,7 @@ type docHandler struct {
 	bot       *tele.Bot
 	sources   *source.Store
 	ocr       *ocr.Client
+	extractor source.PyodideRunner
 	maxFileMB int
 	afterOCR  AfterOCRHook
 	allowed   func(string) bool
@@ -71,6 +73,7 @@ func newDocHandler(cfg docHandlerConfig) *docHandler {
 		bot:       cfg.Bot,
 		sources:   cfg.Sources,
 		ocr:       cfg.OCR,
+		extractor: cfg.Extractor,
 		maxFileMB: cfg.MaxFileMB,
 		afterOCR:  cfg.AfterOCR,
 		allowed:   cfg.Allowlist,
@@ -205,7 +208,7 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 	}
 
 	if format.Kind != source.KindPDF {
-		res, err := source.ExtractGo(ctx, source.ExtractInput{Source: src, Bytes: pdfBytes})
+		res, err := source.ExtractUploadedSource(ctx, h.extractor, source.ExtractInput{Source: src, Bytes: pdfBytes})
 		if err != nil {
 			_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
 				s.Status = source.StatusFailed

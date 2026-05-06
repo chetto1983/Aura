@@ -14,7 +14,7 @@ const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'extracting
 const ACCEPTED_SOURCE_INPUT = '.pdf,.txt,.md,.json,.csv,.xlsx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const SUPPORTED_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.json', '.csv', '.xlsx'];
 const UPLOAD_EXTENSIONS = new Set(SUPPORTED_SOURCE_EXTENSIONS);
-const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv']);
+const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv', 'xlsx']);
 const DOWNLOADABLE_KINDS = new Set<SourceSummary['kind']>([
   'pdf',
   'text',

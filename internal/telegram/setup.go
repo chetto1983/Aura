@@ -472,6 +472,7 @@ func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger
 		Bot:       tb,
 		Sources:   sourceStore,
 		OCR:       ocrClient,
+		Extractor: sandboxMgr,
 		MaxFileMB: cfg.OCRMaxFileMB,
 		Allowlist: b.isAllowlisted,
 		Logger:    logger,
