@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/backup"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -62,6 +63,14 @@ type SwarmStore interface {
 	GetRun(ctx context.Context, id string) (*swarm.Run, error)
 	ListTasks(ctx context.Context, runID string) ([]swarm.Task, error)
 	GetTask(ctx context.Context, id string) (*swarm.Task, error)
+}
+
+// BackupService is the dashboard boundary for Garage exports. Production
+// builds this from RuntimeConfig; tests can pass a fake so no S3 server is
+// needed.
+type BackupService interface {
+	ListObjects(ctx context.Context) ([]backup.Object, error)
+	ExportArtifactSet(ctx context.Context, now time.Time) (backup.ArtifactSetResult, error)
 }
 
 // Deps is the set of stores the router handlers operate on.
@@ -147,6 +156,10 @@ type Deps struct {
 	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
 	// dashboard returns empty run lists and 404s for details.
 	Swarm SwarmStore
+
+	// Garage artifact vault. Optional; when nil, handlers build a manager
+	// from RuntimeConfig so settings changes are picked up without restart.
+	Backups BackupService
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -249,6 +262,10 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /settings", handleSettingsList(deps))
 	mux.HandleFunc("POST /settings", handleSettingsUpdate(deps))
 	mux.HandleFunc("POST /settings/test", handleSettingsTest(deps))
+
+	// Garage backup/artifact vault.
+	mux.HandleFunc("GET /backups", handleBackupList(deps))
+	mux.HandleFunc("POST /backups/export", handleBackupExport(deps))
 
 	// Slice 17d: AuraBot swarm observability.
 	mux.HandleFunc("GET /swarm/runs", handleSwarmRunList(deps))

@@ -29,6 +29,8 @@ import type {
   WikiIssue,
   SettingItem,
   SettingsUpdateResponse,
+  BackupExportResponse,
+  BackupListResponse,
   SwarmRunDetail,
   SwarmRunSummary,
   SwarmTask,
@@ -294,6 +296,10 @@ export const api = {
       api_key: apiKey,
       probe_path: probePath,
     }),
+
+  // ---- Garage artifact vault ----
+  backups: () => get<BackupListResponse>('/backups'),
+  exportBackups: () => post<BackupExportResponse>('/backups/export'),
 
   // ---- AuraBot swarm observability (slice 17d) ----
   swarmRuns: (limit?: number) =>

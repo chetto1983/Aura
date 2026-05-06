@@ -421,3 +421,29 @@ export interface SettingsUpdateResponse {
   runtime_applied?: boolean;
   runtime_error?: string;
 }
+
+export interface BackupObject {
+  key: string;
+  category: 'full_restore' | 'source_originals' | 'extractions' | 'memory_snapshot' | 'embedding_index' | 'audit_bundle' | 'manifest' | 'artifact';
+  timestamp?: string;
+  size_bytes: number;
+  last_modified: string;
+}
+
+export interface BackupListResponse {
+  bucket: string;
+  objects: BackupObject[];
+}
+
+export interface BackupExportObject {
+  category: BackupObject['category'];
+  key: string;
+  size_bytes: number;
+  files: number;
+}
+
+export interface BackupExportResponse {
+  bucket: string;
+  timestamp: string;
+  objects: BackupExportObject[];
+}

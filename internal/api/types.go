@@ -369,6 +369,32 @@ type SkillLifecycle struct {
 	NextStep      string `json:"next_step"`
 }
 
+type BackupObject struct {
+	Key          string    `json:"key"`
+	Category     string    `json:"category"`
+	Timestamp    string    `json:"timestamp,omitempty"`
+	SizeBytes    int64     `json:"size_bytes"`
+	LastModified time.Time `json:"last_modified"`
+}
+
+type BackupListResponse struct {
+	Bucket  string         `json:"bucket"`
+	Objects []BackupObject `json:"objects"`
+}
+
+type BackupExportObject struct {
+	Category  string `json:"category"`
+	Key       string `json:"key"`
+	SizeBytes int64  `json:"size_bytes"`
+	Files     int    `json:"files"`
+}
+
+type BackupExportResponse struct {
+	Bucket    string               `json:"bucket"`
+	Timestamp string               `json:"timestamp"`
+	Objects   []BackupExportObject `json:"objects"`
+}
+
 // SwarmRunSummary is one row of GET /swarm/runs.
 type SwarmRunSummary struct {
 	ID          string     `json:"id"`

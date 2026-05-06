@@ -6,17 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/backup"
 	auraconfig "github.com/aura/aura/internal/config"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func main() {
@@ -46,7 +41,7 @@ func main() {
 		LogDir:     cfg.LogDir,
 		AuditPaths: []string{"reports"},
 	}
-	if missing := missingGarageConfig(bcfg); len(missing) > 0 {
+	if missing := backup.MissingConfig(bcfg); len(missing) > 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: missing Garage backup config: %s\n", strings.Join(missing, ", "))
 		fmt.Fprintf(os.Stderr, "config: %s\n", bcfg.Redacted())
 		os.Exit(1)
@@ -54,7 +49,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	uploader, err := newS3Uploader(ctx, bcfg)
+	uploader, err := backup.NewS3Uploader(ctx, bcfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: create S3 uploader: %v\n", err)
 		os.Exit(1)
@@ -81,55 +76,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FAIL: invalid mode %q (want full, artifacts, or all)\n", *mode)
 		os.Exit(1)
 	}
-}
-
-type s3Uploader struct {
-	client *s3.Client
-}
-
-func newS3Uploader(ctx context.Context, cfg backup.Config) (*s3Uploader, error) {
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion(cfg.Region),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")),
-		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
-	)
-	if err != nil {
-		return nil, err
-	}
-	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(cfg.Endpoint)
-		o.UsePathStyle = true
-	})
-	return &s3Uploader{client: client}, nil
-}
-
-func (u *s3Uploader) PutObject(ctx context.Context, bucket, key string, body io.Reader) error {
-	_, err := u.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   body,
-	})
-	return err
-}
-
-func missingGarageConfig(cfg backup.Config) []string {
-	var missing []string
-	if strings.TrimSpace(cfg.Endpoint) == "" {
-		missing = append(missing, "GARAGE_S3_ENDPOINT")
-	}
-	if strings.TrimSpace(cfg.Region) == "" {
-		missing = append(missing, "GARAGE_S3_REGION")
-	}
-	if strings.TrimSpace(cfg.Bucket) == "" {
-		missing = append(missing, "GARAGE_S3_BUCKET")
-	}
-	if strings.TrimSpace(cfg.AccessKey) == "" {
-		missing = append(missing, "GARAGE_S3_ACCESS_KEY")
-	}
-	if strings.TrimSpace(cfg.SecretKey) == "" {
-		missing = append(missing, "GARAGE_S3_SECRET_KEY")
-	}
-	return missing
 }
 
 func loadDotEnv(path string) error {
