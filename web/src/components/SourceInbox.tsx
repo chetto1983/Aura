@@ -11,10 +11,10 @@ import type { SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
 const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'extracting', 'ocr_complete', 'extract_complete', 'ingested'];
-const ACCEPTED_SOURCE_INPUT = '.pdf,.txt,.md,.json,.csv,.xlsx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const SUPPORTED_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.json', '.csv', '.xlsx'];
+const ACCEPTED_SOURCE_INPUT = '.pdf,.txt,.md,.json,.csv,.xlsx,.docx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const SUPPORTED_SOURCE_EXTENSIONS = ['.pdf', '.txt', '.md', '.json', '.csv', '.xlsx', '.docx'];
 const UPLOAD_EXTENSIONS = new Set(SUPPORTED_SOURCE_EXTENSIONS);
-const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv', 'xlsx']);
+const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv', 'xlsx', 'docx']);
 const DOWNLOADABLE_KINDS = new Set<SourceSummary['kind']>([
   'pdf',
   'text',

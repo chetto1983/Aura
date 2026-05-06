@@ -158,7 +158,7 @@
 
   "sources.title": "Sources",
   "sources.errorTitle": "Failed to load sources",
-  "sources.emptyHint": "No sources yet — drop a PDF, TXT, MD, JSON, CSV, or XLSX above, or upload one in Telegram.",
+  "sources.emptyHint": "No sources yet — drop a PDF, TXT, MD, JSON, CSV, XLSX, or DOCX above, or upload one in Telegram.",
   "sources.status.failed": "❌ Failed",
   "sources.status.stored": "📄 Stored (awaiting OCR)",
   "sources.status.extracting": "Extracting",
@@ -175,7 +175,7 @@
   "sources.table.pages": "Pages",
   "sources.table.wiki": "Wiki",
   "sources.table.actions": "Actions",
-  "sources.drop.idle": "Drag PDF, TXT, MD, JSON, CSV, or XLSX files here, or click to browse",
+  "sources.drop.idle": "Drag PDF, TXT, MD, JSON, CSV, XLSX, or DOCX files here, or click to browse",
   "sources.drop.active": "Drop supported files to upload",
   "sources.drop.uploading": "Uploading…",
   "sources.drop.hint": "PDFs use OCR; text-like files are extracted and queued for wiki ingest.",

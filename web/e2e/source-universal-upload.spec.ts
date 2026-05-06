@@ -52,7 +52,7 @@ test('source inbox accepts text-like uploads and exposes extracted ingest action
   await expect(input).toHaveAttribute('accept', /\.json/);
   await expect(input).toHaveAttribute('accept', /\.csv/);
   await expect(input).toHaveAttribute('accept', /\.xlsx/);
-  await expect(input).not.toHaveAttribute('accept', /\.docx/);
+  await expect(input).toHaveAttribute('accept', /\.docx/);
 
   await input.setInputFiles({
     name: 'notes.txt',

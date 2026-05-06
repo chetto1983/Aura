@@ -15,6 +15,11 @@ func ExtractWithPyodide(ctx context.Context, runner PyodideExtractor, in Extract
 			return ExtractResult{}, fmt.Errorf("source: xlsx extraction requires pyodide runner")
 		}
 		return runner.ExtractXLSX(ctx, in.Bytes)
+	case KindDOCX:
+		if runner == nil {
+			return ExtractResult{}, fmt.Errorf("source: docx extraction requires pyodide runner")
+		}
+		return runner.ExtractDOCX(ctx, in.Bytes)
 	default:
 		return ExtractResult{}, fmt.Errorf("source: no Pyodide extractor for kind %s", in.Source.Kind)
 	}

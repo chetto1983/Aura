@@ -20,6 +20,7 @@ var formatsByExt = map[string]UploadFormat{
 	".json": {Kind: KindJSON, MimeType: "application/json", OriginalName: "original.json"},
 	".csv":  {Kind: KindCSV, MimeType: "text/csv; charset=utf-8", OriginalName: "original.csv"},
 	".xlsx": {Kind: KindXLSX, MimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", OriginalName: "original.xlsx"},
+	".docx": {Kind: KindDOCX, MimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", OriginalName: "original.docx"},
 }
 
 func DetectUploadFormat(filename, mimeType string) (UploadFormat, error) {
@@ -35,7 +36,7 @@ func DetectUploadFormat(filename, mimeType string) (UploadFormat, error) {
 }
 
 func SupportedUploadAccept() string {
-	return ".pdf,.txt,.md,.json,.csv,.xlsx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	return ".pdf,.txt,.md,.json,.csv,.xlsx,.docx,application/pdf,text/plain,text/markdown,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 }
 
 func ValidStatus(s Status) bool {

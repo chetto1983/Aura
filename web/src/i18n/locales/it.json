@@ -158,7 +158,7 @@
 
   "sources.title": "Fonti",
   "sources.errorTitle": "Caricamento fonti fallito",
-  "sources.emptyHint": "Nessuna fonte — carica un PDF, TXT, MD, JSON, CSV o XLSX qui sopra, oppure inviane uno su Telegram.",
+  "sources.emptyHint": "Nessuna fonte — carica un PDF, TXT, MD, JSON, CSV, XLSX o DOCX qui sopra, oppure inviane uno su Telegram.",
   "sources.status.failed": "❌ Fallito",
   "sources.status.stored": "📄 Archiviato (in attesa OCR)",
   "sources.status.extracting": "Estrazione",
@@ -175,7 +175,7 @@
   "sources.table.pages": "Pagine",
   "sources.table.wiki": "Wiki",
   "sources.table.actions": "Azioni",
-  "sources.drop.idle": "Trascina file PDF, TXT, MD, JSON, CSV o XLSX qui, oppure clicca per sfogliare",
+  "sources.drop.idle": "Trascina file PDF, TXT, MD, JSON, CSV, XLSX o DOCX qui, oppure clicca per sfogliare",
   "sources.drop.active": "Rilascia i file supportati per caricarli",
   "sources.drop.uploading": "Caricamento…",
   "sources.drop.hint": "I PDF usano OCR; i file testuali vengono estratti e messi in coda per la wiki.",

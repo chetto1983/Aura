@@ -37,6 +37,21 @@ func (r *fakeDocumentPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (so
 	}, nil
 }
 
+func (r *fakeDocumentPyodideRunner) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+	r.calls++
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+		if err != nil {
+			return source.ExtractResult{}, err
+		}
+	}
+	return source.ExtractResult{
+		Markdown: "# Memo\n\nAura should remember decisions.\n",
+		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_docx", TextBytes: 39},
+	}, nil
+}
+
 func TestValidatePDFAcceptsPDF(t *testing.T) {
 	doc := &tele.Document{
 		File: tele.File{FileSize: 1 * 1024 * 1024},
@@ -59,6 +74,7 @@ func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
 		{"data.json", "application/json", source.KindJSON},
 		{"budget.csv", "text/csv", source.KindCSV},
 		{"sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", source.KindXLSX},
+		{"memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", source.KindDOCX},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -71,18 +87,6 @@ func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
 				t.Fatalf("kind = %s, want %s", format.Kind, tc.kind)
 			}
 		})
-	}
-}
-
-func TestValidateDocumentRejectsDeferredDOCX(t *testing.T) {
-	doc := &tele.Document{
-		File:     tele.File{FileSize: 1024},
-		MIME:     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		FileName: "memo.docx",
-	}
-	_, err := validateDocument(doc, 100)
-	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
-		t.Fatalf("err = %v, want unsupported file type", err)
 	}
 }
 
@@ -439,6 +443,67 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 		t.Fatalf("extract.md missing: %v", err)
 	}
 	if !strings.Contains(string(extract), "sandbox") {
+		t.Fatalf("extract.md = %q", extract)
+	}
+	if got := countTelegramMethods(calls, "getFile"); got != 1 {
+		t.Fatalf("getFile calls = %d, want 1", got)
+	}
+}
+
+func TestDocHandlerAuthorizedDOCXDocumentExtractsSource(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	runner := &fakeDocumentPyodideRunner{}
+	h := newDocHandler(docHandlerConfig{
+		Bot:       tb,
+		Sources:   sources,
+		Extractor: runner,
+		Allowlist: func(string) bool {
+			return true
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Document: &tele.Document{
+			File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+			MIME:     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			FileName: "memo.docx",
+		},
+	}})
+
+	if err := h.onDocument(ctx); err != nil {
+		t.Fatalf("onDocument() error = %v, want nil", err)
+	}
+
+	var stored []*source.Source
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindDOCX})
+		return err == nil && len(stored) == 1 && stored[0].Status == source.StatusExtractComplete
+	})
+	h.Stop()
+
+	if runner.calls != 1 {
+		t.Fatalf("runner calls=%d, want 1", runner.calls)
+	}
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_docx" {
+		t.Fatalf("source extraction metadata = %+v, want pyodide_docx", stored[0].Extract)
+	}
+	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
+	if err != nil {
+		t.Fatalf("extract.md missing: %v", err)
+	}
+	if !strings.Contains(string(extract), "decisions") {
 		t.Fatalf("extract.md = %q", extract)
 	}
 	if got := countTelegramMethods(calls, "getFile"); got != 1 {

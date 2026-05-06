@@ -103,6 +103,31 @@ func TestPyodideRunner_ExtractXLSXUsesInputFileAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestPyodideRunner_ExtractDOCXUsesInputFileAndArtifacts(t *testing.T) {
+	capturePath := filepath.Join(t.TempDir(), "capture.json")
+	runner, _ := newFakePyodideRunner(t, "docx-artifact", capturePath)
+	body := []byte(strings.Repeat("d", 160_000))
+
+	result, err := runner.ExtractDOCX(context.Background(), body)
+	if err != nil {
+		t.Fatalf("ExtractDOCX() error = %v", err)
+	}
+	if result.Metadata.ExtractorName != "pyodide_docx" || !strings.Contains(result.Markdown, "decisions") {
+		t.Fatalf("result = %+v\n%s", result.Metadata, result.Markdown)
+	}
+
+	capture := readFakeRunnerCapture(t, capturePath)
+	if len(capture.Request.Code) >= 100_000 {
+		t.Fatalf("trusted extractor code length = %d, want below execute_code policy limit", len(capture.Request.Code))
+	}
+	if strings.Contains(capture.Request.Code, strings.Repeat("d", 100)) {
+		t.Fatalf("trusted extractor code embeds document bytes")
+	}
+	if len(capture.Request.InputFiles) != 1 || filepath.Base(capture.Request.InputFiles[0]) != "document.docx" {
+		t.Fatalf("input_files = %v, want document.docx input", capture.Request.InputFiles)
+	}
+}
+
 func TestPyodideRunner_ExecuteRejectsArtifactTraversal(t *testing.T) {
 	runner, _ := newFakePyodideRunner(t, "artifact-traversal", filepath.Join(t.TempDir(), "capture.json"))
 
@@ -316,6 +341,9 @@ func TestPyodideRunnerHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "xlsx-artifact":
 		fmt.Print(`{"ok":true,"stdout":"` + strings.Repeat("x", 70000) + `","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"extract.md","mime_type":"text/markdown; charset=utf-8","size_bytes":47,"content_base64":"fCBpdGVtIHwgY29zdCB8CnwgLS0tIHwgLS0tIHwKfCBzYW5kYm94IHwgMTIgfAo="},{"name":"extract.json","mime_type":"application/json","size_bytes":63,"content_base64":"eyJleHRyYWN0b3JfbmFtZSI6InB5b2RpZGVfeGxzeCIsInNoZWV0X2NvdW50IjoxLCJyb3dfY291bnQiOjF9"}]}`)
+		os.Exit(0)
+	case "docx-artifact":
+		fmt.Print(`{"ok":true,"stdout":"docx extraction complete\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"extract.md","mime_type":"text/markdown; charset=utf-8","size_bytes":40,"content_base64":"IyBNZW1vCgpBdXJhIHNob3VsZCByZW1lbWJlciBkZWNpc2lvbnMuCg=="},{"name":"extract.json","mime_type":"application/json","size_bytes":49,"content_base64":"eyJleHRyYWN0b3JfbmFtZSI6InB5b2RpZGVfZG9jeCIsInRleHRfYnl0ZXMiOjQwfQ=="}]}`)
 		os.Exit(0)
 	case "artifact-traversal":
 		fmt.Print(`{"ok":true,"stdout":"made artifact\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"../escape.txt","mime_type":"text/plain; charset=utf-8","size_bytes":4,"content_base64":"bm9wZQ=="}]}`)

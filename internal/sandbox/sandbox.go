@@ -111,6 +111,19 @@ func (m *Manager) ExtractXLSX(ctx context.Context, body []byte) (source.ExtractR
 	return extractor.ExtractXLSX(ctx, body)
 }
 
+func (m *Manager) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {
+	if m == nil || m.runtime == nil {
+		return source.ExtractResult{}, errors.New("sandbox: runtime is required")
+	}
+	extractor, ok := m.runtime.(interface {
+		ExtractDOCX(context.Context, []byte) (source.ExtractResult, error)
+	})
+	if !ok {
+		return source.ExtractResult{}, errors.New("sandbox: runtime does not support docx extraction")
+	}
+	return extractor.ExtractDOCX(ctx, body)
+}
+
 // IsAvailable reports whether the configured runtime can execute code.
 func (m *Manager) IsAvailable() bool {
 	return m.CheckAvailability().Available

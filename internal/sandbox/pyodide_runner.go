@@ -79,6 +79,93 @@ markdown = "\n\n".join(sections).strip() + "\n"
 print("xlsx extraction complete")
 `
 
+const trustedDOCXExtractorCode = `
+import json
+from pathlib import Path
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+
+input_path = Path("document.docx")
+output_dir = Path("/tmp/aura_out")
+output_dir.mkdir(parents=True, exist_ok=True)
+warnings = []
+
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+TEXT_TAG = "{" + WORD_NS + "}t"
+PARA_TAG = "{" + WORD_NS + "}p"
+TAB_TAG = "{" + WORD_NS + "}tab"
+BR_TAG = "{" + WORD_NS + "}br"
+CR_TAG = "{" + WORD_NS + "}cr"
+
+def clean_text(text):
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    return "\n".join(line for line in lines if line).strip()
+
+def paragraph_text(paragraph):
+    parts = []
+    for elem in paragraph.iter():
+        if elem.tag == TEXT_TAG and elem.text:
+            parts.append(elem.text)
+        elif elem.tag == TAB_TAG:
+            parts.append("\t")
+        elif elem.tag in (BR_TAG, CR_TAG):
+            parts.append("\n")
+    return clean_text("".join(parts))
+
+def part_paragraphs(zf, name):
+    try:
+        raw = zf.read(name)
+    except KeyError:
+        return []
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as exc:
+        warnings.append(f"skipped malformed XML part {name}: {exc}")
+        return []
+    return [text for text in (paragraph_text(p) for p in root.iter(PARA_TAG)) if text]
+
+with zipfile.ZipFile(input_path) as zf:
+    names = set(zf.namelist())
+    if "word/document.xml" not in names:
+        raise RuntimeError("DOCX missing word/document.xml")
+
+    sections = []
+    header_parts = sorted(name for name in names if re.match(r"word/header\d+\.xml$", name))
+    footer_parts = sorted(name for name in names if re.match(r"word/footer\d+\.xml$", name))
+
+    for name in header_parts:
+        text = part_paragraphs(zf, name)
+        if text:
+            sections.append("## Header")
+            sections.extend(text)
+
+    body = part_paragraphs(zf, "word/document.xml")
+    sections.extend(body)
+
+    for name in footer_parts:
+        text = part_paragraphs(zf, name)
+        if text:
+            sections.append("## Footer")
+            sections.extend(text)
+
+markdown = "\n\n".join(sections).strip()
+if not markdown:
+    warnings.append("document contained no extractable text")
+markdown += "\n"
+
+(output_dir / "extract.md").write_text(markdown, encoding="utf-8")
+(output_dir / "extract.json").write_text(json.dumps({
+    "extractor_name": "pyodide_docx",
+    "extractor_version": "pyodide_docx_v1",
+    "text_bytes": len(markdown.encode("utf-8")),
+    "page_count": 0,
+    "warnings": warnings
+}), encoding="utf-8")
+print("docx extraction complete")
+`
+
 // PyodideRunnerConfig controls the bundled Pyodide runner adapter.
 type PyodideRunnerConfig struct {
 	RuntimeDir            string
@@ -235,6 +322,41 @@ func (r *PyodideRunner) ExtractXLSX(ctx context.Context, body []byte) (source.Ex
 		return source.ExtractResult{}, fmt.Errorf("sandbox: write xlsx input: %w", err)
 	}
 	res, err := r.execute(ctx, trustedXLSXExtractorCode, false, []string{inputPath})
+	if err != nil {
+		return source.ExtractResult{}, err
+	}
+	if !res.OK {
+		return source.ExtractResult{}, fmt.Errorf("source: pyodide extraction failed: %s", res.Stderr)
+	}
+	md, ok := artifactBytes(res.Artifacts, "extract.md")
+	if !ok || len(md) == 0 {
+		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.md")
+	}
+	metaBytes, ok := artifactBytes(res.Artifacts, "extract.json")
+	if !ok || len(metaBytes) == 0 {
+		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.json")
+	}
+	var meta source.ExtractionMeta
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		return source.ExtractResult{}, fmt.Errorf("source: parse pyodide extract metadata: %w", err)
+	}
+	return source.ExtractResult{Markdown: string(md), Metadata: meta}, nil
+}
+
+func (r *PyodideRunner) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {
+	if r == nil {
+		return source.ExtractResult{}, errors.New("sandbox: Pyodide runner not configured")
+	}
+	tmpDir, err := os.MkdirTemp("", "aura-docx-*")
+	if err != nil {
+		return source.ExtractResult{}, fmt.Errorf("sandbox: create docx input dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	inputPath := filepath.Join(tmpDir, "document.docx")
+	if err := os.WriteFile(inputPath, body, 0o600); err != nil {
+		return source.ExtractResult{}, fmt.Errorf("sandbox: write docx input: %w", err)
+	}
+	res, err := r.execute(ctx, trustedDOCXExtractorCode, false, []string{inputPath})
 	if err != nil {
 		return source.ExtractResult{}, err
 	}

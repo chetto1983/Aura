@@ -397,7 +397,7 @@ func shouldRetryDocumentExtraction(src *source.Source) bool {
 
 func documentExtractableKind(kind source.Kind) bool {
 	switch kind {
-	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX:
+	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX, source.KindDOCX:
 		return true
 	default:
 		return false

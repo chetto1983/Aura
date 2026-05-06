@@ -240,7 +240,7 @@ func shouldRetryDuplicateExtraction(src *source.Source) bool {
 
 func extractableUploadKind(kind source.Kind) bool {
 	switch kind {
-	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX:
+	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX, source.KindDOCX:
 		return true
 	default:
 		return false

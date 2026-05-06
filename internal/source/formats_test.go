@@ -1,9 +1,6 @@
 package source
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
 	cases := []struct {
@@ -18,6 +15,7 @@ func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
 		{"data.json", "application/json", KindJSON, "original.json"},
 		{"budget.csv", "text/csv", KindCSV, "original.csv"},
 		{"sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", KindXLSX, "original.xlsx"},
+		{"memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", KindDOCX, "original.docx"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -29,13 +27,6 @@ func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
 				t.Fatalf("format = (%s, %s), want (%s, %s)", got.Kind, got.OriginalName, tc.kind, tc.raw)
 			}
 		})
-	}
-}
-
-func TestDetectUploadFormatRejectsDeferredDOCX(t *testing.T) {
-	_, err := DetectUploadFormat("memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
-		t.Fatalf("err = %v, want unsupported file type for deferred DOCX", err)
 	}
 }
 
