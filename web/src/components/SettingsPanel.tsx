@@ -6,9 +6,9 @@ import { api, ApiError } from '@/api';
 import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
-type Group = 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+type Group = 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 
-const GROUP_ORDER: Group[] = ['provider', 'search', 'storage', 'embeddings', 'ocr', 'budget', 'summarizer', 'aurabot', 'other'];
+const GROUP_ORDER: Group[] = ['runtime', 'provider', 'search', 'storage', 'embeddings', 'ocr', 'sandbox', 'budget', 'summarizer', 'aurabot', 'other'];
 const SECRET_PLACEHOLDER = '(configured)';
 
 export function SettingsPanel() {
@@ -75,6 +75,7 @@ export function SettingsPanel() {
       const updates = Object.fromEntries(
         Object.entries(pending).filter(([key, value]) => {
           const item = items.find((it) => it.key === key);
+          if (item?.read_only) return false;
           return !(item?.is_secret && value === SECRET_PLACEHOLDER);
         }),
       );
@@ -125,10 +126,12 @@ export function SettingsPanel() {
   const groupLabel = (g: Group): string => {
     switch (g) {
       case 'provider': return t('settings.group.provider');
+      case 'runtime': return t('settings.group.runtime');
       case 'search': return t('settings.group.search');
       case 'storage': return t('settings.group.storage');
       case 'embeddings': return t('settings.group.embeddings');
       case 'ocr': return t('settings.group.ocr');
+      case 'sandbox': return t('settings.group.sandbox');
       case 'budget': return t('settings.group.budget');
       case 'summarizer': return t('settings.group.summarizer');
       case 'aurabot': return t('settings.group.aurabot');
@@ -139,10 +142,12 @@ export function SettingsPanel() {
   const groupHint = (g: Group): string => {
     switch (g) {
       case 'provider': return t('settings.hint.provider');
+      case 'runtime': return t('settings.hint.runtime');
       case 'search': return t('settings.hint.search');
       case 'storage': return t('settings.hint.storage');
       case 'embeddings': return t('settings.hint.embeddings');
       case 'ocr': return t('settings.hint.ocr');
+      case 'sandbox': return t('settings.hint.sandbox');
       case 'budget': return t('settings.hint.budget');
       case 'summarizer': return t('settings.hint.summarizer');
       case 'aurabot': return t('settings.hint.aurabot');
@@ -248,6 +253,7 @@ function SettingRow({
 }) {
   const { t } = useLocale();
   const sourceBadge = (() => {
+    if (item.read_only) return { label: t('settings.badge.readOnly'), cls: 'bg-zinc-500/12 text-zinc-700 dark:text-zinc-300 border-zinc-500/40' };
     if (dirty) return { label: t('settings.badge.edited'), cls: 'bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/40' };
     if (item.restart_required) return { label: t('settings.badge.restart'), cls: 'bg-orange-500/12 text-orange-700 dark:text-orange-300 border-orange-500/40' };
     switch (item.source) {
@@ -260,6 +266,7 @@ function SettingRow({
     }
   })();
   const sourceHint = (() => {
+    if (item.read_only) return t('settings.source.readOnlyHint');
     if (dirty || item.source === 'db') return '';
     if (item.source === 'env') return t('settings.source.envHint');
     if (item.source === 'default') return t('settings.source.defaultHint');
@@ -287,6 +294,7 @@ function SettingRow({
           item={item}
           value={value}
           revealed={revealed}
+          disabled={item.read_only}
           onChange={onChange}
           onToggleReveal={onToggleReveal}
         />
@@ -308,11 +316,12 @@ function SettingRow({
 }
 
 function Control({
-  item, value, revealed, onChange, onToggleReveal,
+  item, value, revealed, disabled = false, onChange, onToggleReveal,
 }: {
   item: SettingItem;
   value: string;
   revealed: boolean;
+  disabled?: boolean;
   onChange: (v: string) => void;
   onToggleReveal: () => void;
 }) {
@@ -337,6 +346,7 @@ function Control({
         role="switch"
         aria-checked={on}
         data-state={on ? 'checked' : 'unchecked'}
+        disabled={disabled}
         onClick={() => onChange(on ? 'false' : 'true')}
         title={on ? t('settings.action.disable') : t('settings.action.enable')}
         style={{
@@ -349,7 +359,8 @@ function Control({
           transition: 'background 120ms ease, border-color 120ms ease',
           position: 'relative',
           padding: 0,
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.65 : 1,
           flexShrink: 0,
         }}
       >
@@ -388,9 +399,10 @@ function Control({
       <select
         id={item.key}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         style={fieldStyle}
-        className={`${fieldCls} pr-8 cursor-pointer`}
+        className={`${fieldCls} pr-8 ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
       >
         {!item.options?.includes(value) && value !== '' && <option value={value}>{value}</option>}
         {item.options?.map((opt) => (
@@ -407,9 +419,10 @@ function Control({
         type="number"
         step={kind === 'float' ? 'any' : '1'}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         style={fieldStyle}
-        className={fieldCls}
+        className={`${fieldCls} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
       />
     );
   }
@@ -422,12 +435,13 @@ function Control({
         id={item.key}
         type={inputType}
         value={value}
+        disabled={disabled}
         placeholder={item.is_secret && item.active_value === SECRET_PLACEHOLDER ? SECRET_PLACEHOLDER : undefined}
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
         spellCheck={false}
         style={fieldStyle}
-        className={fieldCls}
+        className={`${fieldCls} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
       />
       {item.is_secret && (
         <button

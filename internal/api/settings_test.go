@@ -15,13 +15,19 @@ import (
 
 func newSettingsEnv(t *testing.T) (http.Handler, *settings.Store) {
 	t.Helper()
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{Settings: store})
+	return router, store
+}
+
+func mustSettingsStore(t *testing.T) *settings.Store {
+	t.Helper()
 	store, err := settings.OpenStore(filepath.Join(t.TempDir(), "settings.db"))
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	router := NewRouter(Deps{Settings: store})
-	return router, store
+	return store
 }
 
 func TestSettingsList_HappyPath(t *testing.T) {
@@ -64,6 +70,78 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("LLM_API_KEY not in items")
+	}
+}
+
+func TestSettingsCatalogCoversEveryOverridableKey(t *testing.T) {
+	catalog := map[string]SettingItem{}
+	for _, item := range settingsCatalog {
+		catalog[item.Key] = item
+	}
+	for _, key := range settings.OverridableKeys() {
+		item, ok := catalog[key]
+		if !ok {
+			t.Fatalf("%s is overridable but missing from settings catalog", key)
+		}
+		if item.ReadOnly {
+			t.Fatalf("%s is overridable but marked read-only", key)
+		}
+	}
+}
+
+func TestSettingsList_ShowsRuntimeEnvOnlyKeysReadOnly(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings: store,
+		RuntimeConfig: &config.Config{
+			TelegramToken:          "123456:secret",
+			HTTPPort:               "0.0.0.0:8080",
+			Headless:               true,
+			EnvPath:                "/data/.env",
+			DBPath:                 "/data/aura.db",
+			WikiPath:               "/wiki",
+			SkillsPath:             "/skills",
+			MCPServersPath:         "/data/mcp.json",
+			PromptOverlayPath:      "/data",
+			DashboardTokenTTLHours: 720,
+			SandboxEnabled:         false,
+			SandboxRuntimeDir:      "/app/runtime/pyodide",
+			SandboxTimeoutSec:      120,
+			SandboxAutoImproveMode: "dry_run",
+		},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	want := map[string]string{
+		"AURA_ENV_PATH":       "/data/.env",
+		"DB_PATH":             "/data/aura.db",
+		"WIKI_PATH":           "/wiki",
+		"SANDBOX_ENABLED":     "false",
+		"SANDBOX_RUNTIME_DIR": "/app/runtime/pyodide",
+	}
+	for key, value := range want {
+		found := false
+		for _, it := range resp.Items {
+			if it.Key != key {
+				continue
+			}
+			found = true
+			if !it.ReadOnly {
+				t.Fatalf("%s read_only = false, want true", key)
+			}
+			if it.Value != value || it.ActiveValue != value {
+				t.Fatalf("%s = value:%q active:%q, want %q", key, it.Value, it.ActiveValue, value)
+			}
+		}
+		if !found {
+			t.Fatalf("%s not in settings response", key)
+		}
 	}
 }
 

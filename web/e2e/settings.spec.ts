@@ -23,8 +23,14 @@ test.describe('settings page (14d)', () => {
     await page.goto('/settings');
     await expect(page.getByRole('heading', { name: /^settings$/i })).toBeVisible();
     // Each group renders an h2 - check at least the LLM provider one.
+    await expect(page.getByRole('heading', { name: /container runtime/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /llm provider/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /code sandbox/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /budget/i })).toBeVisible();
+    await expect(page.locator('input#AURA_ENV_PATH')).toBeVisible();
+    await expect(page.locator('input#DB_PATH')).toBeVisible();
+    await expect(page.locator('button[role="switch"]#SANDBOX_ENABLED')).toBeVisible();
+    await expect(page.locator('input#AURA_ENV_PATH')).toBeDisabled();
   });
 
   test('Test connection button is present and disabled when no base URL', async ({ authedPage: page }) => {

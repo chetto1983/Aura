@@ -35,6 +35,7 @@ type SettingItem struct {
 	ActiveValue     string   `json:"active_value"`      // value used by this running process after startup config overlay
 	RestartRequired bool     `json:"restart_required"`  // true when Value differs from ActiveValue
 	IsSecret        bool     `json:"is_secret"`         // hint for the UI input type
+	ReadOnly        bool     `json:"read_only"`         // visible diagnostics that must stay in .env / process env
 	Kind            string   `json:"kind,omitempty"`    // text | bool | int | float | enum | url (default "text")
 	Options         []string `json:"options,omitempty"` // populated only when kind=enum
 	Label           string   `json:"label,omitempty"`
@@ -76,12 +77,27 @@ type SettingsTestRequest struct {
 // here; LLM_MAX_RETRIES and other fine-tuning knobs stay overridable
 // programmatically but aren't surfaced in the dashboard form.
 var settingsCatalog = []SettingItem{
+	{Key: "TELEGRAM_TOKEN", Group: "runtime", Kind: "text", IsSecret: true, ReadOnly: true, Label: "Telegram bot token", Hint: "Bootstrap-only; edited in mounted /data/.env or setup wizard"},
+	{Key: "HTTP_PORT", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Dashboard bind address"},
+	{Key: "AURA_HEADLESS", Group: "runtime", Kind: "bool", ReadOnly: true, Label: "Headless/container mode"},
+	{Key: "AURA_ENV_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Env file path"},
+	{Key: "DB_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "SQLite database path"},
+	{Key: "LOG_LEVEL", Group: "runtime", Kind: "enum", Options: []string{"debug", "info", "warn", "error"}, ReadOnly: true, Label: "Log level"},
+	{Key: "LOG_DIR", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Log directory"},
+	{Key: "WIKI_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Wiki path"},
+	{Key: "SKILLS_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Skills path"},
+	{Key: "MCP_SERVERS_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "MCP servers config path"},
+	{Key: "PROMPT_OVERLAY_PATH", Group: "runtime", Kind: "text", ReadOnly: true, Label: "Prompt overlay path"},
+	{Key: "DASHBOARD_TOKEN_TTL_HOURS", Group: "runtime", Kind: "int", ReadOnly: true, Label: "Dashboard token TTL (hours)"},
+
 	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
 	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
 	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
+	{Key: settings.KeyLLMMaxRetries, Group: "provider", Kind: "int", Label: "LLM max retries"},
 	{Key: settings.KeyOllamaBaseURL, Group: "provider", Kind: "url", Label: "Ollama base URL (failover)", Hint: "Bare host, e.g. http://localhost:11434"},
 	{Key: settings.KeyOllamaModel, Group: "provider", Kind: "text", Label: "Ollama model"},
 	{Key: settings.KeyOllamaAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "Ollama API key (rarely needed)"},
+	{Key: settings.KeyOllamaWebBaseURL, Group: "provider", Kind: "url", Label: "Ollama web API base URL"},
 	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng", "ollama"}, Label: "Web search provider", Hint: "SearXNG is the recommended container provider; Ollama needs OLLAMA_API_KEY"},
 	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
 
@@ -97,6 +113,11 @@ var settingsCatalog = []SettingItem{
 
 	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
 	{Key: settings.KeyMistralOCRModel, Group: "ocr", Kind: "text", Label: "OCR model"},
+	{Key: settings.KeyMistralOCRBaseURL, Group: "ocr", Kind: "url", Label: "OCR base URL"},
+	{Key: settings.KeyMistralOCRTableFormat, Group: "ocr", Kind: "enum", Options: []string{"markdown", "html"}, Label: "OCR table format"},
+	{Key: settings.KeyMistralOCRIncludeImages, Group: "ocr", Kind: "bool", Label: "OCR include images"},
+	{Key: settings.KeyMistralOCRExtractHeader, Group: "ocr", Kind: "bool", Label: "OCR extract headers"},
+	{Key: settings.KeyMistralOCRExtractFooter, Group: "ocr", Kind: "bool", Label: "OCR extract footers"},
 	{Key: settings.KeyOCREnabled, Group: "ocr", Kind: "bool", Label: "OCR enabled"},
 	{Key: settings.KeyOCRMaxPages, Group: "ocr", Kind: "int", Label: "OCR max pages", Hint: "Aura refuses PDFs longer than this"},
 	{Key: settings.KeyOCRMaxFileMB, Group: "ocr", Kind: "int", Label: "OCR max file size (MB)"},
@@ -121,9 +142,15 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Applies to new workers when AuraBot is already enabled."},
 	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops. Applies to new workers."},
 
+	{Key: "SANDBOX_ENABLED", Group: "sandbox", Kind: "bool", ReadOnly: true, Label: "Sandbox enabled", Hint: "Container app disables this by default until the runtime is packaged"},
+	{Key: "SANDBOX_RUNTIME_DIR", Group: "sandbox", Kind: "text", ReadOnly: true, Label: "Sandbox runtime directory"},
+	{Key: "SANDBOX_TIMEOUT_SEC", Group: "sandbox", Kind: "int", ReadOnly: true, Label: "Sandbox timeout (seconds)"},
+	{Key: "SANDBOX_AUTO_IMPROVE_MODE", Group: "sandbox", Kind: "enum", Options: []string{"off", "dry_run", "auto"}, ReadOnly: true, Label: "Sandbox auto-improve mode"},
+
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
+	{Key: settings.KeySkillsCatalogURL, Group: "other", Kind: "url", Label: "Skills catalog URL"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
 }
 
@@ -152,6 +179,9 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 				it.Source = "default"
 			}
 			activeValue := activeSettingValue(deps.RuntimeConfig, meta.Key, it.Value)
+			if it.ReadOnly && it.Value == "" {
+				it.Value = activeValue
+			}
 			it.RestartRequired = activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)
 			it.ActiveValue = activeValue
 			redactSecretSetting(&it)
@@ -184,6 +214,30 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 	switch key {
 	case settings.KeyAllowlist:
 		return strings.Join(cfg.Allowlist, ",")
+	case "TELEGRAM_TOKEN":
+		return cfg.TelegramToken
+	case "HTTP_PORT":
+		return cfg.HTTPPort
+	case "AURA_HEADLESS":
+		return strconv.FormatBool(cfg.Headless)
+	case "AURA_ENV_PATH":
+		return cfg.EnvPath
+	case "DB_PATH":
+		return cfg.DBPath
+	case "LOG_LEVEL":
+		return cfg.LogLevel
+	case "LOG_DIR":
+		return cfg.LogDir
+	case "WIKI_PATH":
+		return cfg.WikiPath
+	case "SKILLS_PATH":
+		return cfg.SkillsPath
+	case "MCP_SERVERS_PATH":
+		return cfg.MCPServersPath
+	case "PROMPT_OVERLAY_PATH":
+		return cfg.PromptOverlayPath
+	case "DASHBOARD_TOKEN_TTL_HOURS":
+		return strconv.Itoa(cfg.DashboardTokenTTLHours)
 	case settings.KeyMaxContextTokens:
 		return strconv.Itoa(cfg.MaxContextTokens)
 	case settings.KeyMaxHistoryMessages:
@@ -282,6 +336,14 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.Itoa(cfg.SummarizerLookbackTurns)
 	case settings.KeySummarizerCooldownSeconds:
 		return strconv.Itoa(cfg.SummarizerCooldownSeconds)
+	case "SANDBOX_ENABLED":
+		return strconv.FormatBool(cfg.SandboxEnabled)
+	case "SANDBOX_RUNTIME_DIR":
+		return cfg.SandboxRuntimeDir
+	case "SANDBOX_TIMEOUT_SEC":
+		return strconv.Itoa(cfg.SandboxTimeoutSec)
+	case "SANDBOX_AUTO_IMPROVE_MODE":
+		return cfg.SandboxAutoImproveMode
 	default:
 		return fallback
 	}

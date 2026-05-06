@@ -401,11 +401,12 @@ export interface SettingItem {
   active_value: string;
   restart_required: boolean;
   is_secret: boolean;
+  read_only: boolean;
   kind?: SettingKind;
   options?: string[]; // present when kind === 'enum'
   label?: string;
   hint?: string;
-  group?: 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+  group?: 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'other';
 }
 
 export interface SettingsUpdateResponse {
