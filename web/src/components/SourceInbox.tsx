@@ -10,7 +10,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { SourceSummary, UploadResponse } from '@/types/api';
 
 const POLL_MS = 5000;
-const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'ocr_complete', 'ingested'];
+const STATUS_ORDER: SourceSummary['status'][] = ['failed', 'stored', 'extracting', 'ocr_complete', 'extract_complete', 'ingested'];
+const UPLOAD_ACCEPT = '.pdf,.txt,.md,.json,.csv,application/pdf,text/plain,text/markdown,application/json,text/csv';
+const UPLOAD_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.json', '.csv']);
+const EXTRACT_INGEST_KINDS = new Set<SourceSummary['kind']>(['text', 'markdown', 'json', 'csv']);
+const DOWNLOADABLE_KINDS = new Set<SourceSummary['kind']>([
+  'pdf',
+  'text',
+  'markdown',
+  'json',
+  'csv',
+  'xlsx',
+  'docx',
+  'pdf_generated',
+  'sandbox_artifact',
+]);
 
 export function SourceInbox() {
   const { t, formatDate } = useLocale();
@@ -27,7 +41,9 @@ export function SourceInbox() {
     switch (s) {
       case 'failed': return t('sources.status.failed');
       case 'stored': return t('sources.status.stored');
+      case 'extracting': return t('sources.status.extracting');
       case 'ocr_complete': return t('sources.status.ocrComplete');
+      case 'extract_complete': return t('sources.status.extractComplete');
       case 'ingested': return t('sources.status.ingested');
     }
   };
@@ -96,16 +112,16 @@ export function SourceInbox() {
   const handleFiles = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
     const list = Array.from(files);
-    const pdfs = list.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
-    const skipped = list.length - pdfs.length;
+    const uploadable = list.filter((f) => UPLOAD_EXTENSIONS.has(fileExtension(f.name)));
+    const skipped = list.length - uploadable.length;
     if (skipped > 0) {
       toast.warning(t('sources.toast.uploadSkipped', { count: skipped }));
     }
-    if (pdfs.length === 0) return;
+    if (uploadable.length === 0) return;
 
     setUploading(true);
     try {
-      for (const f of pdfs) {
+      for (const f of uploadable) {
         const toastId = toast.loading(t('sources.toast.uploading', { filename: f.name }));
         try {
           const res: UploadResponse = await api.uploadSource(f);
@@ -172,7 +188,7 @@ export function SourceInbox() {
         ref={fileInputRef}
         type="file"
         aria-label={t('sources.uploadFileLabel')}
-        accept=".pdf,application/pdf"
+        accept={UPLOAD_ACCEPT}
         multiple
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
@@ -356,12 +372,15 @@ function SourceActions({
   };
 
   // Generated and uploaded file kinds are downloadable via /sources/<id>/raw.
-  // Other kinds (text/url) have no on-disk binary worth downloading.
-  const showDownload = s.kind === 'pdf' || s.kind === 'xlsx' || s.kind === 'docx' || s.kind === 'pdf_generated' || s.kind === 'sandbox_artifact';
-  // Re-OCR / Ingest only make sense for OCR-driven kinds (PDFs).
-  // Generated artifacts (xlsx) skip the OCR pipeline entirely.
+  // URLs have no on-disk binary worth downloading.
+  const showDownload = DOWNLOADABLE_KINDS.has(s.kind);
+  // Re-OCR only makes sense for OCR-driven kinds. Text-like uploads are
+  // already normalized to extract.md and can be compiled directly.
   const ocrEligible = s.kind === 'pdf';
-  const showIngest = ocrEligible && (s.status === 'ocr_complete' || s.status === 'failed');
+  const extractEligible = EXTRACT_INGEST_KINDS.has(s.kind);
+  const showIngest =
+    (ocrEligible && (s.status === 'ocr_complete' || s.status === 'failed')) ||
+    (extractEligible && s.status === 'extract_complete');
   const showReocr = ocrEligible && (s.status === 'stored' || s.status === 'failed');
   if (!showIngest && !showReocr && !showDownload) {
     return <span className="text-xs text-muted-foreground">{'—'}</span>;
@@ -413,6 +432,12 @@ function SourceActions({
 // and triggers a browser download. We can't use a plain <a href> because the
 // endpoint is auth-gated and Authorization headers don't tag along on link
 // clicks. Toast surfaces failures so 401s and 404s aren't silent.
+
+function fileExtension(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  const dot = trimmed.lastIndexOf('.');
+  return dot >= 0 ? trimmed.slice(dot) : '';
+}
 
 function formatUploadSummary(filename: string, res: UploadResponse, t: ReturnType<typeof useLocale>['t']): string {
   if (res.duplicate) return t('sources.toast.uploadDuplicate', { filename, id: res.id });

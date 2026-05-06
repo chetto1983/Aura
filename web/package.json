@@ -9,8 +9,11 @@
     "build": "vite build",
     "analyze": "cross-env ANALYZE=true vite build",
     "lint": "eslint .",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
     "e2e": "playwright test",
+    "e2e:pages": "playwright test e2e/all-pages.spec.ts",
+    "audit:frontend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/audit-frontend.ps1",
     "e2e:headed": "playwright test --headed",
     "e2e:debug": "playwright test --debug",
     "e2e:report": "playwright show-report"

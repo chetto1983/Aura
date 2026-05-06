@@ -87,7 +87,12 @@ test.describe('/summaries evidence drill-down', () => {
       });
     });
     await page.route('**/api/conversations**', async (route) => {
-      if (!new URL(route.request().url()).pathname.endsWith('/api/conversations')) {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname.endsWith('/api/conversations/stats')) {
+        await route.fulfill({ json: { total_rows: 1, distinct_chats: 1 } });
+        return;
+      }
+      if (!pathname.endsWith('/api/conversations')) {
         return route.fallback();
       }
       await route.fulfill({

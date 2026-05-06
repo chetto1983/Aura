@@ -10,6 +10,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useLocale } from '@/hooks/useLocale';
 import type { ConversationDetail } from '@/types/api';
 
 interface Props {
@@ -30,6 +31,7 @@ const ROLE_LABEL_COLOR: Record<string, string> = {
 };
 
 export function ConversationDrawer({ turnId, onClose }: Props) {
+  const { t, formatDate } = useLocale();
   const fetcher = useCallback(
     () => (turnId !== null ? api.conversation(turnId) : Promise.reject(new Error('no id'))),
     [turnId],
@@ -49,19 +51,23 @@ export function ConversationDrawer({ turnId, onClose }: Props) {
       <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto" showCloseButton={false}>
         <SheetHeader className="pr-10">
           <div className="flex items-center justify-between">
-            <SheetTitle>Turn detail</SheetTitle>
+            <SheetTitle>{t('conversationDrawer.title')}</SheetTitle>
             <button
               type="button"
               onClick={onClose}
               className="rounded-md p-1 hover:bg-accent/50 text-muted-foreground"
-              aria-label="Close"
+              aria-label={t('common.close')}
             >
               <X size={16} />
             </button>
           </div>
           {data && (
             <SheetDescription>
-              Chat {data.chat_id} · turn #{data.turn_index} · {new Date(data.created_at).toLocaleString()}
+              {t('conversationDrawer.description', {
+                chatId: data.chat_id,
+                turnIndex: data.turn_index,
+                date: formatDate(data.created_at, { dateStyle: 'short', timeStyle: 'short' }),
+              })}
             </SheetDescription>
           )}
         </SheetHeader>
@@ -76,6 +82,7 @@ export function ConversationDrawer({ turnId, onClose }: Props) {
 }
 
 function TurnDetail({ turn }: { turn: ConversationDetail }) {
+  const { t } = useLocale();
   const borderClass = ROLE_COLOR[turn.role] ?? 'border-muted bg-muted/30';
   const labelClass = ROLE_LABEL_COLOR[turn.role] ?? 'text-muted-foreground';
 
@@ -92,14 +99,16 @@ function TurnDetail({ turn }: { turn: ConversationDetail }) {
     <div className={`rounded-lg border p-4 space-y-3 ${borderClass}`}>
       <div className="flex items-center justify-between text-xs">
         <span className={`font-semibold uppercase tracking-wider ${labelClass}`}>{turn.role}</span>
-        <span className="text-muted-foreground">id {turn.id}</span>
+        <span className="text-muted-foreground">{t('conversationDrawer.id', { id: turn.id })}</span>
       </div>
 
       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{turn.content}</p>
 
       {turn.tool_calls && (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tool calls</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {t('conversationDrawer.toolCalls')}
+          </p>
           {parsedToolCalls ? (
             <pre className="text-xs bg-muted/50 rounded p-3 overflow-x-auto whitespace-pre-wrap break-words">
               {JSON.stringify(parsedToolCalls, null, 2)}
@@ -113,11 +122,11 @@ function TurnDetail({ turn }: { turn: ConversationDetail }) {
       )}
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {turn.llm_calls > 0 && <><dt>LLM calls</dt><dd className="tabular-nums">{turn.llm_calls}</dd></>}
-        {turn.tool_calls_count > 0 && <><dt>Tool calls</dt><dd className="tabular-nums">{turn.tool_calls_count}</dd></>}
-        {turn.elapsed_ms > 0 && <><dt>Elapsed</dt><dd className="tabular-nums">{turn.elapsed_ms}ms</dd></>}
-        {turn.tokens_in > 0 && <><dt>Tokens in</dt><dd className="tabular-nums">{turn.tokens_in}</dd></>}
-        {turn.tokens_out > 0 && <><dt>Tokens out</dt><dd className="tabular-nums">{turn.tokens_out}</dd></>}
+        {turn.llm_calls > 0 && <><dt>{t('conversationDrawer.llmCalls')}</dt><dd className="tabular-nums">{turn.llm_calls}</dd></>}
+        {turn.tool_calls_count > 0 && <><dt>{t('conversationDrawer.toolCalls')}</dt><dd className="tabular-nums">{turn.tool_calls_count}</dd></>}
+        {turn.elapsed_ms > 0 && <><dt>{t('conversationDrawer.elapsed')}</dt><dd className="tabular-nums">{turn.elapsed_ms}ms</dd></>}
+        {turn.tokens_in > 0 && <><dt>{t('conversationDrawer.tokensIn')}</dt><dd className="tabular-nums">{turn.tokens_in}</dd></>}
+        {turn.tokens_out > 0 && <><dt>{t('conversationDrawer.tokensOut')}</dt><dd className="tabular-nums">{turn.tokens_out}</dd></>}
       </dl>
     </div>
   );

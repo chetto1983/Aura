@@ -67,12 +67,11 @@ export interface Graph {
 
 export interface SourceSummary {
   id: string;
-  // 'xlsx' (slice 15a), 'docx' (slice 15b), 'pdf_generated'
-  // (slice 15c), and 'sandbox_artifact' are Aura-generated artifacts.
-  // They share the source layout with uploaded PDFs but skip OCR actions.
-  kind: 'pdf' | 'text' | 'url' | 'xlsx' | 'docx' | 'pdf_generated' | 'sandbox_artifact';
+  // Generated artifacts share the source layout with uploaded files but skip
+  // OCR actions. Text-like uploads normalize to extract.md/extract.json.
+  kind: 'pdf' | 'text' | 'markdown' | 'json' | 'csv' | 'url' | 'xlsx' | 'docx' | 'pdf_generated' | 'sandbox_artifact';
   filename: string;
-  status: 'stored' | 'ocr_complete' | 'ingested' | 'failed';
+  status: 'stored' | 'extracting' | 'ocr_complete' | 'extract_complete' | 'ingested' | 'failed';
   created_at: string;
   page_count?: number;
   wiki_pages?: string[];

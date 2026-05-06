@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/source"
 )
 
@@ -45,6 +46,51 @@ func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 	bad := e.uploadFile("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", []byte("pptx"))
 	if bad.Code != http.StatusBadRequest {
 		t.Fatalf("pptx status = %d, want 400 body=%s", bad.Code, bad.Body.String())
+	}
+}
+
+func TestSourceUploadTextCanBeIngested(t *testing.T) {
+	e := newTestEnv(t)
+	pipeline, err := ingest.New(ingest.Config{Sources: e.sources, Wiki: e.wiki})
+	if err != nil {
+		t.Fatalf("ingest.New: %v", err)
+	}
+	e.router = NewRouter(Deps{
+		Wiki:      e.wiki,
+		Sources:   e.sources,
+		Scheduler: e.sched,
+		Ingest:    pipeline,
+	})
+
+	rr := e.uploadFile("notes.txt", "text/plain", []byte("Aura should compile text sources into the wiki."))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("txt upload status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	var upload UploadResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &upload); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+	if upload.Status != string(source.StatusExtractComplete) {
+		t.Fatalf("upload status = %s, want %s", upload.Status, source.StatusExtractComplete)
+	}
+
+	ingestRR := e.do("POST", "/sources/"+upload.ID+"/ingest")
+	if ingestRR.Code != http.StatusOK {
+		t.Fatalf("ingest status = %d body=%s", ingestRR.Code, ingestRR.Body.String())
+	}
+	var ingested IngestResponse
+	if err := json.Unmarshal(ingestRR.Body.Bytes(), &ingested); err != nil {
+		t.Fatalf("decode ingest: %v", err)
+	}
+	if ingested.Status != string(source.StatusIngested) || len(ingested.WikiPages) != 1 {
+		t.Fatalf("ingest response = %+v, want ingested wiki page", ingested)
+	}
+	page, err := e.wiki.ReadPage(ingested.WikiPages[0])
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	if !strings.Contains(page.Body, "extract.md") || !strings.Contains(page.Body, "Aura should compile text sources") {
+		t.Fatalf("page body missing extracted text evidence:\n%s", page.Body)
 	}
 }
 

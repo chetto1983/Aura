@@ -304,6 +304,7 @@ function ProposalCard({
 }
 
 function EvidenceChip({ refItem }: { refItem: ProposalEvidenceRef }) {
+  const { t } = useLocale();
   const label = `${refItem.kind}:${refItem.id}${refItem.page ? ` p.${refItem.page}` : ''}`;
   const href = evidenceHref(refItem);
   const title = [refItem.title, refItem.snippet].filter(Boolean).join(' - ') || label;
@@ -322,7 +323,7 @@ function EvidenceChip({ refItem }: { refItem: ProposalEvidenceRef }) {
       href={href}
       className={className}
       title={title}
-      aria-label={`Open evidence ${label}`}
+      aria-label={t('summaries.evidence.open', { label })}
     >
       {label}
     </a>

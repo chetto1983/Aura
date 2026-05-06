@@ -60,9 +60,9 @@ func handleSourceIngest(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
 			return
 		}
-		if rec.Status != source.StatusOCRComplete && rec.Status != source.StatusIngested {
+		if rec.Status != source.StatusOCRComplete && rec.Status != source.StatusExtractComplete && rec.Status != source.StatusIngested {
 			writeError(w, deps.Logger, http.StatusConflict,
-				"source not ready for ingest (status="+string(rec.Status)+"); run OCR first")
+				"source not ready for ingest (status="+string(rec.Status)+"); run OCR or extraction first")
 			return
 		}
 

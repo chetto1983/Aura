@@ -84,6 +84,34 @@ func putOCRCompleteAs(t *testing.T, store *source.Store, filename, content, ocrB
 	return updated
 }
 
+func putExtractComplete(t *testing.T, store *source.Store, filename, body string) *source.Source {
+	t.Helper()
+	src, _, err := store.Put(context.Background(), source.PutInput{
+		Kind:     source.KindText,
+		Filename: filename,
+		MimeType: "text/plain; charset=utf-8",
+		Bytes:    []byte(body),
+	})
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := source.WriteExtractionFiles(store, src, source.ExtractResult{
+		Markdown: body,
+		Metadata: source.ExtractionMeta{ExtractorName: "go_text", TextBytes: len(body)},
+	}); err != nil {
+		t.Fatalf("WriteExtractionFiles: %v", err)
+	}
+	updated, err := store.Update(src.ID, func(s *source.Source) error {
+		s.Status = source.StatusExtractComplete
+		s.Extract = &source.ExtractionMeta{ExtractorName: "go_text", TextBytes: len(body)}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	return updated
+}
+
 func TestNewValidatesDeps(t *testing.T) {
 	if _, err := New(Config{}); err == nil {
 		t.Error("expected error when sources nil")
@@ -94,6 +122,39 @@ func TestNewValidatesDeps(t *testing.T) {
 	}
 	if _, err := New(Config{Sources: srcStore}); err == nil {
 		t.Error("expected error when wiki nil")
+	}
+}
+
+func TestCompile_ExtractCompleteSource(t *testing.T) {
+	env := newTestPipeline(t)
+	src := putExtractComplete(t, env.sources, "notes.txt", "Aura should remember text uploads.\n")
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if res.Slug != "source-notes" {
+		t.Fatalf("Slug = %q, want source-notes", res.Slug)
+	}
+	page, err := env.wiki.ReadPage(res.Slug)
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	for _, want := range []string{
+		"Kind: text",
+		"wiki/raw/" + src.ID + "/extract.md",
+		"Aura should remember text uploads.",
+	} {
+		if !strings.Contains(page.Body, want) {
+			t.Fatalf("page body missing %q:\n%s", want, page.Body)
+		}
+	}
+	post, err := env.sources.Get(src.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if post.Status != source.StatusIngested {
+		t.Fatalf("status = %s, want ingested", post.Status)
 	}
 }
 
@@ -144,7 +205,7 @@ func TestCompile_HappyPath(t *testing.T) {
 		// Body must reflect the post-flip status, not the pre-flip value — a
 		// re-read of an ingested source page should never say ocr_complete.
 		"Status: ingested",
-		"## Raw OCR",
+		"## Extracted Markdown",
 		"## Preview",
 		"The quick brown fox",
 	} {
@@ -243,7 +304,7 @@ func TestCompile_WrongStatus(t *testing.T) {
 	}
 	if _, err := p.Compile(context.Background(), src.ID); err == nil {
 		t.Fatal("expected wrong-status error")
-	} else if !strings.Contains(err.Error(), "want ocr_complete") {
+	} else if !strings.Contains(err.Error(), "want ocr_complete or extract_complete") {
 		t.Errorf("error should mention required status: %v", err)
 	}
 }
