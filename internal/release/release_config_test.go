@@ -42,6 +42,15 @@ func TestDockerImageWorkflowPublishesGHCRImageOnTags(t *testing.T) {
 	requireContains(t, body, "packages: write")
 	requireContains(t, body, "REGISTRY: ghcr.io")
 	requireContains(t, body, "IMAGE_NAME: chetto1983/aura")
+	requireContains(t, body, "actions/checkout@v6")
+	requireContains(t, body, "actions/setup-node@v6")
+	requireContains(t, body, "node-version: '24'")
+	requireContains(t, body, "cache-dependency-path: web/package-lock.json")
+	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide")
+	requireOrder(t, body,
+		"name: Build Pyodide runtime bundle",
+		"name: Build and push Docker image",
+	)
 	requireContains(t, body, "docker/login-action@v4")
 	requireContains(t, body, "registry: ${{ env.REGISTRY }}")
 	requireContains(t, body, "password: ${{ secrets.GITHUB_TOKEN }}")
