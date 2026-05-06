@@ -202,6 +202,37 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 	}
 
 	if dup {
+		if shouldRetryDocumentExtraction(src) {
+			res, err := source.ExtractUploadedSource(ctx, h.extractor, source.ExtractInput{Source: src, Bytes: pdfBytes})
+			if err != nil {
+				_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
+					s.Status = source.StatusFailed
+					s.Error = err.Error()
+					return nil
+				})
+				editor.fail("Extraction failed: " + err.Error())
+				h.logger.Warn("source extraction failed", "user_id", userID, "source_id", src.ID, "kind", src.Kind, "err", err)
+				return
+			}
+			if err := source.WriteExtractionFiles(h.sources, src, res); err != nil {
+				editor.fail("Write extract files failed: " + err.Error())
+				return
+			}
+			updated, err := h.sources.Update(src.ID, func(s *source.Source) error {
+				s.Status = source.StatusExtractComplete
+				s.Extract = &res.Metadata
+				s.Error = ""
+				return nil
+			})
+			if err != nil {
+				editor.fail("Status update failed: " + err.Error())
+				return
+			}
+			editor.set(fmt.Sprintf("âœ… Done Â· %s Â· %s Â· extracted Â· ready for ingest",
+				updated.ID, formatSize(updated.SizeBytes)))
+			h.logger.Info("source extracted", "user_id", userID, "source_id", updated.ID, "kind", updated.Kind, "size_bytes", updated.SizeBytes)
+			return
+		}
 		editor.set(fmt.Sprintf("🔁 Already stored as %s · status: %s.", src.ID, src.Status))
 		h.logger.Info("source duplicate", "user_id", userID, "source_id", src.ID, "status", src.Status, "kind", src.Kind)
 		return
@@ -358,6 +389,19 @@ func validateDocument(doc *tele.Document, maxFileMB int) (source.UploadFormat, e
 		}
 	}
 	return format, nil
+}
+
+func shouldRetryDocumentExtraction(src *source.Source) bool {
+	return src != nil && src.Status == source.StatusFailed && documentExtractableKind(src.Kind)
+}
+
+func documentExtractableKind(kind source.Kind) bool {
+	switch kind {
+	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX:
+		return true
+	default:
+		return false
+	}
 }
 
 // validatePDF preserves older tests and PDF-only call sites while Telegram

@@ -1,4 +1,4 @@
-package source
+package source_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
+	"github.com/aura/aura/internal/source"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -24,8 +25,8 @@ func TestPyodideXLSXExtractor(t *testing.T) {
 		t.Skipf("pyodide unavailable: %s", avail.Detail)
 	}
 	body := makeTestWorkbook(t)
-	res, err := ExtractWithPyodide(context.Background(), runner, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
+	res, err := source.ExtractWithPyodide(context.Background(), runner, source.ExtractInput{
+		Source: &source.Source{ID: "src_0123456789abcdef", Kind: source.KindXLSX, Filename: "budget.xlsx"},
 		Bytes:  body,
 	})
 	if err != nil {

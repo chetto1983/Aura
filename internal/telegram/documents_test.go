@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/source"
 	tele "gopkg.in/telebot.v4"
 )
@@ -19,15 +19,21 @@ type fakeDocumentPyodideRunner struct {
 	calls        int
 	code         string
 	allowNetwork bool
+	errs         []error
 }
 
-func (r *fakeDocumentPyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+func (r *fakeDocumentPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
 	r.calls++
-	r.code = code
-	r.allowNetwork = allowNetwork
-	return &sandbox.Result{
-		OK:     true,
-		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+		if err != nil {
+			return source.ExtractResult{}, err
+		}
+	}
+	return source.ExtractResult{
+		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
+		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
 	}, nil
 }
 
@@ -422,8 +428,8 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 	})
 	h.Stop()
 
-	if runner.calls != 1 || runner.allowNetwork || !strings.Contains(runner.code, "pd.ExcelFile") {
-		t.Fatalf("runner calls=%d allowNetwork=%v codeContainsExcel=%v", runner.calls, runner.allowNetwork, strings.Contains(runner.code, "pd.ExcelFile"))
+	if runner.calls != 1 {
+		t.Fatalf("runner calls=%d, want 1", runner.calls)
 	}
 	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_xlsx" {
 		t.Fatalf("source extraction metadata = %+v, want pyodide_xlsx", stored[0].Extract)
@@ -437,6 +443,70 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 	}
 	if got := countTelegramMethods(calls, "getFile"); got != 1 {
 		t.Fatalf("getFile calls = %d, want 1", got)
+	}
+}
+
+func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	runner := &fakeDocumentPyodideRunner{errs: []error{errors.New("pyodide unavailable")}}
+	h := newDocHandler(docHandlerConfig{
+		Bot:       tb,
+		Sources:   sources,
+		Extractor: runner,
+		Allowlist: func(string) bool {
+			return true
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+	newCtx := func() tele.Context {
+		return tele.NewContext(tb, tele.Update{Message: &tele.Message{
+			Sender: &tele.User{ID: 123, Username: "owner"},
+			Chat:   &tele.Chat{ID: 123},
+			Document: &tele.Document{
+				File:     tele.File{FileID: "doc-1", FileSize: int64(len(fakeTelegramPDFBytes))},
+				MIME:     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				FileName: "budget.xlsx",
+			},
+		}})
+	}
+
+	if err := h.onDocument(newCtx()); err != nil {
+		t.Fatalf("first onDocument() error = %v, want nil", err)
+	}
+	var stored []*source.Source
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindXLSX})
+		return err == nil && len(stored) == 1 && stored[0].Status == source.StatusFailed
+	})
+
+	if err := h.onDocument(newCtx()); err != nil {
+		t.Fatalf("second onDocument() error = %v, want nil", err)
+	}
+	waitUntil(t, time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Kind: source.KindXLSX})
+		return err == nil && len(stored) == 1 && stored[0].Status == source.StatusExtractComplete
+	})
+	h.Stop()
+
+	if runner.calls != 2 {
+		t.Fatalf("runner calls=%d, want failed attempt plus duplicate retry", runner.calls)
+	}
+	if stored[0].Error != "" || stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_xlsx" {
+		t.Fatalf("source after retry = %+v", stored[0])
+	}
+	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {
+		t.Fatalf("extract.md missing after retry: %v", err)
 	}
 }
 

@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/source"
 )
 
 const (
@@ -25,6 +27,57 @@ const (
 	maxPyodideArtifacts             = 10
 	maxPyodideArtifactBytes         = 5 << 20
 )
+
+const trustedXLSXExtractorCode = `
+import json
+from pathlib import Path
+import pandas as pd
+
+input_path = Path("workbook.xlsx")
+output_dir = Path("/tmp/aura_out")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+book = pd.ExcelFile(input_path, engine="calamine")
+sections = []
+rows_total = 0
+warnings = []
+
+def clean_cell(value):
+    text = "" if value is None else str(value)
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+def markdown_table(df):
+    df = df.fillna("")
+    headers = [clean_cell(c) for c in list(df.columns)]
+    lines = ["| " + " | ".join(headers) + " |"]
+    lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+    for _, row in df.head(200).iterrows():
+        lines.append("| " + " | ".join(clean_cell(row[c]) for c in df.columns) + " |")
+    return "\n".join(lines)
+
+for sheet in book.sheet_names[:10]:
+    df = book.parse(sheet)
+    rows_total += int(len(df.index))
+    sections.append("## Sheet: " + str(sheet))
+    sections.append(markdown_table(df))
+
+if len(book.sheet_names) > 10:
+    warnings.append("workbook truncated to first 10 sheets")
+if rows_total > 200:
+    warnings.append("large workbook rendered with per-sheet row limits")
+
+markdown = "\n\n".join(sections).strip() + "\n"
+(output_dir / "extract.md").write_text(markdown, encoding="utf-8")
+(output_dir / "extract.json").write_text(json.dumps({
+    "extractor_name": "pyodide_xlsx",
+    "extractor_version": "pyodide_xlsx_v1",
+    "text_bytes": len(markdown.encode("utf-8")),
+    "sheet_count": len(book.sheet_names),
+    "row_count": rows_total,
+    "warnings": warnings
+}), encoding="utf-8")
+print("xlsx extraction complete")
+`
 
 // PyodideRunnerConfig controls the bundled Pyodide runner adapter.
 type PyodideRunnerConfig struct {
@@ -165,6 +218,54 @@ func (r *PyodideRunner) ValidateCode(_ string) error {
 }
 
 func (r *PyodideRunner) Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error) {
+	return r.execute(ctx, code, allowNetwork, nil)
+}
+
+func (r *PyodideRunner) ExtractXLSX(ctx context.Context, body []byte) (source.ExtractResult, error) {
+	if r == nil {
+		return source.ExtractResult{}, errors.New("sandbox: Pyodide runner not configured")
+	}
+	tmpDir, err := os.MkdirTemp("", "aura-xlsx-*")
+	if err != nil {
+		return source.ExtractResult{}, fmt.Errorf("sandbox: create xlsx input dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	inputPath := filepath.Join(tmpDir, "workbook.xlsx")
+	if err := os.WriteFile(inputPath, body, 0o600); err != nil {
+		return source.ExtractResult{}, fmt.Errorf("sandbox: write xlsx input: %w", err)
+	}
+	res, err := r.execute(ctx, trustedXLSXExtractorCode, false, []string{inputPath})
+	if err != nil {
+		return source.ExtractResult{}, err
+	}
+	if !res.OK {
+		return source.ExtractResult{}, fmt.Errorf("source: pyodide extraction failed: %s", res.Stderr)
+	}
+	md, ok := artifactBytes(res.Artifacts, "extract.md")
+	if !ok || len(md) == 0 {
+		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.md")
+	}
+	metaBytes, ok := artifactBytes(res.Artifacts, "extract.json")
+	if !ok || len(metaBytes) == 0 {
+		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.json")
+	}
+	var meta source.ExtractionMeta
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		return source.ExtractResult{}, fmt.Errorf("source: parse pyodide extract metadata: %w", err)
+	}
+	return source.ExtractResult{Markdown: string(md), Metadata: meta}, nil
+}
+
+func artifactBytes(artifacts []Artifact, name string) ([]byte, bool) {
+	for _, artifact := range artifacts {
+		if artifact.Name == name {
+			return artifact.Bytes, true
+		}
+	}
+	return nil, false
+}
+
+func (r *PyodideRunner) execute(ctx context.Context, code string, allowNetwork bool, inputFiles []string) (*Result, error) {
 	if r == nil {
 		return nil, errors.New("sandbox: Pyodide runner not configured")
 	}
@@ -184,7 +285,7 @@ func (r *PyodideRunner) Execute(ctx context.Context, code string, allowNetwork b
 		TimeoutMS:           int(timeout.Milliseconds()),
 		AllowNetwork:        allowNetwork,
 		Packages:            append([]string(nil), RequiredPyodideImports...),
-		InputFiles:          []string{},
+		InputFiles:          append([]string(nil), inputFiles...),
 		OutputFileAllowlist: []string{defaultPyodideOutputDir},
 	}
 	requestJSON, err := json.Marshal(request)

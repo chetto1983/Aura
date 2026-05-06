@@ -111,6 +111,19 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		}
 
 		if dup {
+			if shouldRetryDuplicateExtraction(src) {
+				updated, note, err := extractUploadedSource(r.Context(), deps, src, body)
+				if err != nil {
+					writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
+					return
+				}
+				resp.Status = string(updated.Status)
+				resp.PageCount = updated.PageCount
+				resp.WikiPages = updated.WikiPages
+				resp.Note = note
+				writeJSON(w, deps.Logger, http.StatusOK, resp)
+				return
+			}
 			resp.Note = fmt.Sprintf("duplicate · already stored as %s (status %s)", src.ID, src.Status)
 			writeJSON(w, deps.Logger, http.StatusOK, resp)
 			return
@@ -118,30 +131,13 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 
 		// Step 2 — OCR (optional)
 		if format.Kind != source.KindPDF {
-			res, err := source.ExtractUploadedSource(r.Context(), deps.Extractor, source.ExtractInput{Source: src, Bytes: body})
+			updated, note, err := extractUploadedSource(r.Context(), deps, src, body)
 			if err != nil {
-				_, _ = upsertSourceStatus(deps.Sources, src.ID, source.StatusFailed, err.Error())
-				resp.Status = string(source.StatusFailed)
-				resp.Note = "Extraction failed: " + err.Error()
-				writeJSON(w, deps.Logger, http.StatusOK, resp)
-				return
-			}
-			if err := source.WriteExtractionFiles(deps.Sources, src, res); err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, "write extract files: "+err.Error())
-				return
-			}
-			updated, err := deps.Sources.Update(src.ID, func(s *source.Source) error {
-				s.Status = source.StatusExtractComplete
-				s.Extract = &res.Metadata
-				s.Error = ""
-				return nil
-			})
-			if err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, "status update: "+err.Error())
+				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
 				return
 			}
 			resp.Status = string(updated.Status)
-			resp.Note = "extracted Â· ready for ingest"
+			resp.Note = note
 			writeJSON(w, deps.Logger, http.StatusOK, resp)
 			return
 		}
@@ -236,6 +232,45 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 
 		writeJSON(w, deps.Logger, http.StatusOK, resp)
 	}
+}
+
+func shouldRetryDuplicateExtraction(src *source.Source) bool {
+	return src != nil && src.Status == source.StatusFailed && extractableUploadKind(src.Kind)
+}
+
+func extractableUploadKind(kind source.Kind) bool {
+	switch kind {
+	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX:
+		return true
+	default:
+		return false
+	}
+}
+
+func extractUploadedSource(ctx context.Context, deps Deps, src *source.Source, body []byte) (*source.Source, string, error) {
+	res, err := source.ExtractUploadedSource(ctx, deps.Extractor, source.ExtractInput{Source: src, Bytes: body})
+	if err != nil {
+		updated, _ := upsertSourceStatus(deps.Sources, src.ID, source.StatusFailed, err.Error())
+		if updated == nil {
+			updated = src
+			updated.Status = source.StatusFailed
+			updated.Error = err.Error()
+		}
+		return updated, "Extraction failed: " + err.Error(), nil
+	}
+	if err := source.WriteExtractionFiles(deps.Sources, src, res); err != nil {
+		return nil, "", fmt.Errorf("write extract files: %w", err)
+	}
+	updated, err := deps.Sources.Update(src.ID, func(s *source.Source) error {
+		s.Status = source.StatusExtractComplete
+		s.Extract = &res.Metadata
+		s.Error = ""
+		return nil
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("status update: %w", err)
+	}
+	return updated, "extracted · ready for ingest", nil
 }
 
 // safeUploadName mirrors the cleaning telegram/documents.go does: strip

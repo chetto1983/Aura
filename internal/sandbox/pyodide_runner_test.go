@@ -78,6 +78,31 @@ func TestPyodideRunner_ExecuteReturnsArtifacts(t *testing.T) {
 	}
 }
 
+func TestPyodideRunner_ExtractXLSXUsesInputFileAndArtifacts(t *testing.T) {
+	capturePath := filepath.Join(t.TempDir(), "capture.json")
+	runner, _ := newFakePyodideRunner(t, "xlsx-artifact", capturePath)
+	body := []byte(strings.Repeat("x", 160_000))
+
+	result, err := runner.ExtractXLSX(context.Background(), body)
+	if err != nil {
+		t.Fatalf("ExtractXLSX() error = %v", err)
+	}
+	if result.Metadata.ExtractorName != "pyodide_xlsx" || !strings.Contains(result.Markdown, "sandbox") {
+		t.Fatalf("result = %+v\n%s", result.Metadata, result.Markdown)
+	}
+
+	capture := readFakeRunnerCapture(t, capturePath)
+	if len(capture.Request.Code) >= 100_000 {
+		t.Fatalf("trusted extractor code length = %d, want below execute_code policy limit", len(capture.Request.Code))
+	}
+	if strings.Contains(capture.Request.Code, strings.Repeat("x", 100)) {
+		t.Fatalf("trusted extractor code embeds workbook bytes")
+	}
+	if len(capture.Request.InputFiles) != 1 || filepath.Base(capture.Request.InputFiles[0]) != "workbook.xlsx" {
+		t.Fatalf("input_files = %v, want workbook.xlsx input", capture.Request.InputFiles)
+	}
+}
+
 func TestPyodideRunner_ExecuteRejectsArtifactTraversal(t *testing.T) {
 	runner, _ := newFakePyodideRunner(t, "artifact-traversal", filepath.Join(t.TempDir(), "capture.json"))
 
@@ -217,6 +242,7 @@ type fakeRunnerRequestBody struct {
 	TimeoutMS           int      `json:"timeout_ms"`
 	AllowNetwork        bool     `json:"allow_network"`
 	Packages            []string `json:"packages"`
+	InputFiles          []string `json:"input_files"`
 	OutputFileAllowlist []string `json:"output_file_allowlist"`
 }
 
@@ -287,6 +313,9 @@ func TestPyodideRunnerHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "artifact":
 		fmt.Print(`{"ok":true,"stdout":"made artifact\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"report.txt","mime_type":"text/plain; charset=utf-8","size_bytes":5,"content_base64":"aGVsbG8="}]}`)
+		os.Exit(0)
+	case "xlsx-artifact":
+		fmt.Print(`{"ok":true,"stdout":"` + strings.Repeat("x", 70000) + `","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"extract.md","mime_type":"text/markdown; charset=utf-8","size_bytes":47,"content_base64":"fCBpdGVtIHwgY29zdCB8CnwgLS0tIHwgLS0tIHwKfCBzYW5kYm94IHwgMTIgfAo="},{"name":"extract.json","mime_type":"application/json","size_bytes":63,"content_base64":"eyJleHRyYWN0b3JfbmFtZSI6InB5b2RpZGVfeGxzeCIsInNoZWV0X2NvdW50IjoxLCJyb3dfY291bnQiOjF9"}]}`)
 		os.Exit(0)
 	case "artifact-traversal":
 		fmt.Print(`{"ok":true,"stdout":"made artifact\n","stderr":"","exit_code":0,"elapsed_ms":9,"artifacts":[{"name":"../escape.txt","mime_type":"text/plain; charset=utf-8","size_bytes":4,"content_base64":"bm9wZQ=="}]}`)

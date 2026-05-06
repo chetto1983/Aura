@@ -3,15 +3,17 @@ package source
 import (
 	"context"
 	"fmt"
-
-	"github.com/aura/aura/internal/sandbox"
 )
 
-type PyodideRunner interface {
-	Execute(context.Context, string, bool) (*sandbox.Result, error)
+type PyodideExtractor interface {
+	ExtractXLSX(context.Context, []byte) (ExtractResult, error)
 }
 
-func ExtractUploadedSource(ctx context.Context, runner PyodideRunner, in ExtractInput) (ExtractResult, error) {
+type PyodideRunner interface {
+	PyodideExtractor
+}
+
+func ExtractUploadedSource(ctx context.Context, runner PyodideExtractor, in ExtractInput) (ExtractResult, error) {
 	if in.Source == nil {
 		return ExtractResult{}, fmt.Errorf("source: nil source")
 	}

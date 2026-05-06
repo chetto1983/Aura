@@ -6,21 +6,15 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/aura/aura/internal/sandbox"
 )
 
 type fakePyodideRunner struct {
-	called       bool
-	code         string
-	allowNetwork bool
-	result       *sandbox.Result
+	called bool
+	result ExtractResult
 }
 
-func (r *fakePyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
+func (r *fakePyodideRunner) ExtractXLSX(context.Context, []byte) (ExtractResult, error) {
 	r.called = true
-	r.code = code
-	r.allowNetwork = allowNetwork
 	return r.result, nil
 }
 
@@ -72,9 +66,9 @@ func TestExtractUploadedSourceUsesGoForTextLikeFormats(t *testing.T) {
 }
 
 func TestExtractUploadedSourceUsesPyodideForXLSX(t *testing.T) {
-	runner := &fakePyodideRunner{result: &sandbox.Result{
-		OK:     true,
-		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+	runner := &fakePyodideRunner{result: ExtractResult{
+		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
+		Metadata: ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
 	}}
 	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
 		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
@@ -83,11 +77,8 @@ func TestExtractUploadedSourceUsesPyodideForXLSX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractUploadedSource() error = %v", err)
 	}
-	if !runner.called || runner.allowNetwork {
-		t.Fatalf("runner called=%v allowNetwork=%v, want called without network", runner.called, runner.allowNetwork)
-	}
-	if !strings.Contains(runner.code, "pd.ExcelFile") {
-		t.Fatalf("runner code missing XLSX extraction marker")
+	if !runner.called {
+		t.Fatalf("runner called = false")
 	}
 	if res.Metadata.ExtractorName != "pyodide_xlsx" || !strings.Contains(res.Markdown, "sandbox") {
 		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)

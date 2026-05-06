@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -13,23 +14,26 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/ingest"
-	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/source"
 )
 
 type fakeUploadPyodideRunner struct {
-	called       bool
-	code         string
-	allowNetwork bool
+	calls int
+	errs  []error
 }
 
-func (r *fakeUploadPyodideRunner) Execute(_ context.Context, code string, allowNetwork bool) (*sandbox.Result, error) {
-	r.called = true
-	r.code = code
-	r.allowNetwork = allowNetwork
-	return &sandbox.Result{
-		OK:     true,
-		Stdout: `{"markdown":"| item | cost |\n| --- | --- |\n| sandbox | 12 |\n","metadata":{"extractor_name":"pyodide_xlsx","sheet_count":1,"row_count":1}}`,
+func (r *fakeUploadPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+	r.calls++
+	if len(r.errs) > 0 {
+		err := r.errs[0]
+		r.errs = r.errs[1:]
+		if err != nil {
+			return source.ExtractResult{}, err
+		}
+	}
+	return source.ExtractResult{
+		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
+		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
 	}, nil
 }
 
@@ -88,8 +92,8 @@ func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
 	if got.Status != string(source.StatusExtractComplete) {
 		t.Fatalf("status = %s, want %s", got.Status, source.StatusExtractComplete)
 	}
-	if !runner.called || runner.allowNetwork || !strings.Contains(runner.code, "pd.ExcelFile") {
-		t.Fatalf("runner called=%v allowNetwork=%v codeContainsExcel=%v", runner.called, runner.allowNetwork, strings.Contains(runner.code, "pd.ExcelFile"))
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
 	}
 	src, err := e.sources.Get(got.ID)
 	if err != nil {
@@ -99,6 +103,62 @@ func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
 		t.Fatalf("source = %+v, want xlsx with pyodide extraction metadata", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
+	if err != nil {
+		t.Fatalf("read extract.md: %v", err)
+	}
+	if !strings.Contains(string(extract), "sandbox") {
+		t.Fatalf("extract.md = %q", extract)
+	}
+}
+
+func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
+	e := newTestEnv(t)
+	runner := &fakeUploadPyodideRunner{errs: []error{errors.New("pyodide unavailable")}}
+	e.router = NewRouter(Deps{
+		Wiki:      e.wiki,
+		Sources:   e.sources,
+		Scheduler: e.sched,
+		Extractor: runner,
+	})
+
+	body := []byte("same workbook bytes")
+	first := e.uploadFile("budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first xlsx status = %d body=%s", first.Code, first.Body.String())
+	}
+	var firstResp UploadResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstResp); err != nil {
+		t.Fatalf("decode first: %v", err)
+	}
+	if firstResp.Status != string(source.StatusFailed) {
+		t.Fatalf("first status = %s, want failed", firstResp.Status)
+	}
+
+	second := e.uploadFile("budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body)
+	if second.Code != http.StatusOK {
+		t.Fatalf("second xlsx status = %d body=%s", second.Code, second.Body.String())
+	}
+	var secondResp UploadResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &secondResp); err != nil {
+		t.Fatalf("decode second: %v", err)
+	}
+	if secondResp.ID != firstResp.ID || !secondResp.Duplicate {
+		t.Fatalf("second response = %+v, want duplicate retry of %s", secondResp, firstResp.ID)
+	}
+	if secondResp.Status != string(source.StatusExtractComplete) {
+		t.Fatalf("second status = %s, want extract_complete body=%s", secondResp.Status, second.Body.String())
+	}
+	if runner.calls != 2 {
+		t.Fatalf("runner calls = %d, want retry call", runner.calls)
+	}
+	src, err := e.sources.Get(secondResp.ID)
+	if err != nil {
+		t.Fatalf("source get: %v", err)
+	}
+	if src.Status != source.StatusExtractComplete || src.Error != "" || src.Extract == nil || src.Extract.ExtractorName != "pyodide_xlsx" {
+		t.Fatalf("source after retry = %+v", src)
+	}
+	extract, err := os.ReadFile(e.sources.Path(secondResp.ID, source.ExtractMarkdownFile))
 	if err != nil {
 		t.Fatalf("read extract.md: %v", err)
 	}
