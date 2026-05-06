@@ -281,6 +281,7 @@ function npmCommand() {
 
 function runnerMJS() {
   return `import { loadPyodide } from "../pyodide.mjs";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 const OUTPUT_DIR = "/tmp/aura_out";
@@ -319,6 +320,19 @@ function ensureOutputDir(pyodide) {
   const FS = pyodide.FS;
   if (!FS.analyzePath("/tmp").exists) FS.mkdir("/tmp");
   if (!FS.analyzePath(OUTPUT_DIR).exists) FS.mkdirTree(OUTPUT_DIR);
+}
+
+async function mountInputFiles(pyodide, inputFiles) {
+  const FS = pyodide.FS;
+  for (const hostPath of Array.isArray(inputFiles) ? inputFiles : []) {
+    const base = path.basename(hostPath);
+    const name = safeArtifactName(path.basename(hostPath));
+    if (!name || name !== base) {
+      throw new Error("invalid input file name: " + base);
+    }
+    const bytes = await fs.readFile(hostPath);
+    FS.writeFile(name, bytes);
+  }
 }
 
 function collectArtifacts(pyodide) {
@@ -366,6 +380,7 @@ try {
     await pyodide.loadPackage(packages, { messageCallback: () => {}, errorCallback: (msg) => { stderr += msg + "\\n"; } });
   }
   ensureOutputDir(pyodide);
+  await mountInputFiles(pyodide, request.input_files);
   await pyodide.runPythonAsync(String(request.code || ""));
   const artifacts = collectArtifacts(pyodide);
   process.stdout.write(JSON.stringify({ ok: true, stdout, stderr, exit_code: 0, elapsed_ms: Date.now() - started, artifacts }));
