@@ -20,7 +20,6 @@ wiki/raw/
 web/node_modules/
 web/test-results/
 web/playwright-report/
-runtime/pyodide/
 dist/
 test-results/
 tmp/

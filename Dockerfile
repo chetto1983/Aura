@@ -10,12 +10,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/aura ./cmd/aura
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata wget \
+RUN apk add --no-cache ca-certificates nodejs tzdata wget \
     && adduser -D -H -u 10001 aura \
-    && mkdir -p /data/logs /wiki /skills /app \
+    && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app
 
 COPY --from=build /out/aura /usr/local/bin/aura
+COPY --from=build --chown=aura:aura /src/runtime/pyodide /app/runtime/pyodide
 
 USER aura
 WORKDIR /app
@@ -29,7 +30,8 @@ ENV AURA_HEADLESS=true \
     SKILLS_PATH=/skills \
     MCP_SERVERS_PATH=/data/mcp.json \
     PROMPT_OVERLAY_PATH=/data \
-    SANDBOX_ENABLED=false
+    SANDBOX_ENABLED=true \
+    SANDBOX_RUNTIME_DIR=/app/runtime/pyodide
 
 EXPOSE 8080
 

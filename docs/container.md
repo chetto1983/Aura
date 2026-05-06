@@ -124,7 +124,7 @@ Back up these folders before moving hosts or upgrading major versions.
   configured Garage bucket. SQLite and wiki storage remain local files.
 - `docker/searxng/settings.yml` enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
-- The app container disables `SANDBOX_ENABLED` by default because the Pyodide
-  runtime bundle is not included in the production image. The separate `test`
-  service mounts the working tree and includes Node so bundled runtime tests can
-  execute when `runtime/pyodide/` exists locally.
+- The app container enables `SANDBOX_ENABLED=true` and ships the bundled
+  Pyodide runtime at `/app/runtime/pyodide`. Node.js is installed in the image
+  for the runner script. The separate `test` service still mounts the working
+  tree so live runtime tests can exercise the local bundle directly.
