@@ -59,6 +59,11 @@ type EmbedCache struct {
 	misses atomic.Uint64
 }
 
+// EmbedCacheStatsReader is the read-only diagnostics boundary for cache health.
+type EmbedCacheStatsReader interface {
+	Stats() (hits, misses uint64)
+}
+
 // OpenEmbedCache opens (or creates) the cache table on dbPath. If
 // inner is nil, the cache short-circuits to an error on miss — useful
 // for tests where we want to verify cache hits without spinning up a

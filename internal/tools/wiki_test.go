@@ -9,6 +9,7 @@ import (
 
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -88,6 +89,57 @@ func TestWikiToolsAcceptRepositoryInterfaces(t *testing.T) {
 	}
 	if !strings.Contains(out, "# Interface Wiki") {
 		t.Fatalf("read output = %q", out)
+	}
+}
+
+type fakeWikiSearchIndex struct {
+	indexed   bool
+	results   []search.Result
+	reindexed []string
+}
+
+func (f *fakeWikiSearchIndex) IsIndexed() bool { return f.indexed }
+
+func (f *fakeWikiSearchIndex) Search(context.Context, string, int) ([]search.Result, error) {
+	return f.results, nil
+}
+
+func (f *fakeWikiSearchIndex) ReindexWikiPage(_ context.Context, slug string) error {
+	f.reindexed = append(f.reindexed, slug)
+	return nil
+}
+
+func TestWikiToolsAcceptSearchInterfaces(t *testing.T) {
+	repo := newFakeWikiRepository()
+	index := &fakeWikiSearchIndex{
+		indexed: true,
+		results: []search.Result{{
+			Kind:    "wiki_page",
+			Slug:    "interface-search",
+			Title:   "Interface Search",
+			Content: "Repository boundary search result.",
+			Score:   0.9,
+		}},
+	}
+
+	write := NewWriteWikiTool(repo, index)
+	if _, err := write.Execute(t.Context(), map[string]any{
+		"title": "Interface Search",
+		"body":  "Search reindex should use an interface.",
+	}); err != nil {
+		t.Fatalf("write Execute: %v", err)
+	}
+	if len(index.reindexed) != 1 || index.reindexed[0] != "interface-search" {
+		t.Fatalf("reindexed = %+v", index.reindexed)
+	}
+
+	searchTool := NewSearchWikiTool(index)
+	out, err := searchTool.Execute(t.Context(), map[string]any{"query": "interface"})
+	if err != nil {
+		t.Fatalf("search Execute: %v", err)
+	}
+	if !strings.Contains(out, "[[interface-search]] Interface Search") {
+		t.Fatalf("search output = %q", out)
 	}
 }
 

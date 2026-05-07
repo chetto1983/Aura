@@ -7,10 +7,8 @@ import (
 	"github.com/aura/aura/internal/search"
 )
 
-// WikiSearcher is the search surface the Deduper needs. Satisfied by *search.Engine.
-type WikiSearcher interface {
-	Search(ctx context.Context, query string, topK int) ([]search.Result, error)
-}
+// WikiSearcher is the search surface the Deduper needs. Satisfied by search.Engine.
+type WikiSearcher = search.Queryer
 
 // Deduper checks a Candidate against the wiki and returns a dedup Decision.
 type Deduper struct {

@@ -125,6 +125,37 @@ func TestNewValidatesDeps(t *testing.T) {
 	}
 }
 
+type fakeSearchIndexer struct {
+	reindexed []string
+}
+
+func (f *fakeSearchIndexer) ReindexWikiPage(_ context.Context, slug string) error {
+	f.reindexed = append(f.reindexed, slug)
+	return nil
+}
+
+func TestPipelineAcceptsSearchIndexerInterface(t *testing.T) {
+	env := newTestPipeline(t)
+	indexer := &fakeSearchIndexer{}
+	p, err := New(Config{
+		Sources: env.sources,
+		Wiki:    env.wiki,
+		Search:  indexer,
+		Now:     func() time.Time { return time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	src := putExtractComplete(t, env.sources, "boundary.txt", "Boundary source body.")
+	result, err := p.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(indexer.reindexed) != 1 || indexer.reindexed[0] != result.Slug {
+		t.Fatalf("reindexed = %+v, result slug = %s", indexer.reindexed, result.Slug)
+	}
+}
+
 func TestCompile_ExtractCompleteSource(t *testing.T) {
 	env := newTestPipeline(t)
 	src := putExtractComplete(t, env.sources, "notes.txt", "Aura should remember text uploads.\n")

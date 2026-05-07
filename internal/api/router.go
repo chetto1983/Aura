@@ -89,7 +89,7 @@ type Deps struct {
 	// Slice 11j: embedding cache for /health stats. Optional — nil
 	// when EMBEDDING_API_KEY or DB_PATH is unset, in which case the
 	// EmbeddingCache health block stays zero.
-	EmbedCache *search.EmbedCache
+	EmbedCache search.EmbedCacheStatsReader
 	Sandbox    SandboxHealth
 
 	SkillsAdmin bool

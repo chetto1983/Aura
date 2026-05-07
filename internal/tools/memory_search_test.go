@@ -170,6 +170,40 @@ func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
 	}
 }
 
+type fakeMemoryWikiSearch struct {
+	indexed bool
+	results []search.Result
+}
+
+func (f fakeMemoryWikiSearch) IsIndexed() bool { return f.indexed }
+
+func (f fakeMemoryWikiSearch) Search(context.Context, string, int) ([]search.Result, error) {
+	return f.results, nil
+}
+
+func TestSearchMemoryToolAcceptsWikiSearchInterface(t *testing.T) {
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{{
+			Kind:    "wiki_page",
+			Slug:    "memory-boundary",
+			Title:   "Memory Boundary",
+			Content: "Search memory should depend on the wiki search interface.",
+			Score:   0.8,
+		}},
+	}, nil, nil)
+	if tool == nil {
+		t.Fatal("expected search_memory tool")
+	}
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "memory boundary", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "[wiki] [[memory-boundary]]") {
+		t.Fatalf("output = %q", out)
+	}
+}
+
 func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	ctx := context.Background()
 	sourceStore := newTestSourceStore(t)

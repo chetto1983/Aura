@@ -13,10 +13,10 @@ import (
 // WriteWikiTool writes structured knowledge to the wiki.
 type WriteWikiTool struct {
 	store  wiki.PageWriter
-	search *search.Engine
+	search search.WikiPageReindexer
 }
 
-func NewWriteWikiTool(store wiki.PageWriter, searchEngine *search.Engine) *WriteWikiTool {
+func NewWriteWikiTool(store wiki.PageWriter, searchEngine search.WikiPageReindexer) *WriteWikiTool {
 	return &WriteWikiTool{store: store, search: searchEngine}
 }
 
@@ -166,10 +166,10 @@ func (t *ReadWikiTool) Execute(ctx context.Context, args map[string]any) (string
 
 // SearchWikiTool searches indexed wiki pages.
 type SearchWikiTool struct {
-	search *search.Engine
+	search search.Searcher
 }
 
-func NewSearchWikiTool(searchEngine *search.Engine) *SearchWikiTool {
+func NewSearchWikiTool(searchEngine search.Searcher) *SearchWikiTool {
 	return &SearchWikiTool{search: searchEngine}
 }
 

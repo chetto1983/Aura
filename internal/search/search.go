@@ -32,6 +32,48 @@ type Result struct {
 	Score   float32
 }
 
+// EmbeddingFunction is Aura's embedding provider boundary. Provider setup can
+// swap Mistral/OpenAI-compatible/local implementations without coupling search
+// callers to chromem-go directly.
+type EmbeddingFunction = chromem.EmbeddingFunc
+
+// Queryer is the minimal semantic retrieval boundary.
+type Queryer interface {
+	Search(ctx context.Context, query string, topK int) ([]Result, error)
+}
+
+// Searcher is the read-only wiki retrieval boundary used by tools and Telegram
+// context injection.
+type Searcher interface {
+	Queryer
+	IsIndexed() bool
+}
+
+// WikiPageReindexer is the wiki index maintenance boundary used after one wiki
+// page changes.
+type WikiPageReindexer interface {
+	ReindexWikiPage(ctx context.Context, slug string) error
+}
+
+// WikiPageIndexer is the startup/full-rebuild wiki index boundary.
+type WikiPageIndexer interface {
+	IndexWikiPages(ctx context.Context) error
+	WikiPageReindexer
+}
+
+// DocumentIndexer is the lower-level document indexing boundary used by debug
+// and future non-wiki index feeds.
+type DocumentIndexer interface {
+	Index(ctx context.Context, id string, content string, metadata map[string]string) error
+}
+
+// Repository is the full search/index boundary implemented by Engine.
+type Repository interface {
+	Searcher
+	WikiPageIndexer
+	DocumentIndexer
+}
+
 // Engine provides vector search over wiki pages, with chromem-go as primary
 // and SQLite FTS5 as fallback.
 type Engine struct {

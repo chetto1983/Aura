@@ -137,6 +137,16 @@ func TestNewEngine(t *testing.T) {
 	}
 }
 
+var (
+	_ Queryer           = (*Engine)(nil)
+	_ Searcher          = (*Engine)(nil)
+	_ WikiPageReindexer = (*Engine)(nil)
+	_ WikiPageIndexer   = (*Engine)(nil)
+	_ DocumentIndexer   = (*Engine)(nil)
+	_ Repository        = (*Engine)(nil)
+	_ EmbeddingFunction = keywordEmbedding
+)
+
 func TestNewEngineWithFallbackCloseReleasesOwnedDB(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "search.db")

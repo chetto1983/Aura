@@ -13,6 +13,8 @@ import (
 	"github.com/philippgille/chromem-go"
 )
 
+var _ EmbedCacheStatsReader = (*EmbedCache)(nil)
+
 // counterFn is a stub embedFn that returns a deterministic vector and
 // counts how many times it was actually invoked. The counter lets tests
 // verify cache hits skip the upstream call entirely.

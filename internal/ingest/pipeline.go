@@ -35,7 +35,7 @@ import (
 type Pipeline struct {
 	sources source.Repository
 	wiki    wiki.Repository
-	search  *search.Engine // optional; nil when embeddings aren't configured
+	search  search.WikiPageReindexer // optional; nil when embeddings aren't configured
 	logger  *slog.Logger
 	now     func() time.Time
 }
@@ -44,7 +44,7 @@ type Pipeline struct {
 type Config struct {
 	Sources source.Repository
 	Wiki    wiki.Repository
-	Search  *search.Engine
+	Search  search.WikiPageReindexer
 	Logger  *slog.Logger
 	// Now is overridable for tests so created_at/updated_at are deterministic.
 	Now func() time.Time
