@@ -1,10 +1,16 @@
 package telegram
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/orchestration"
+	"github.com/aura/aura/internal/tools"
 )
 
 func TestDebugTextSmokeResultFromMessagesDetectsExecuteCodeAnd5050(t *testing.T) {
@@ -146,7 +152,12 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 		profileSelectReason: "matched swarm_research broad synthesis cues",
 		toolsExposed:        []string{"run_aurabot_swarm"},
 		toolsCalled:         []string{"execute_code"},
+		activeCapabilities:  []string{"swarm_research"},
+		readSkills:          []string{"subagent-driven-development"},
+		loopSteps:           2,
 		hiddenToolRejected:  true,
+		skillPreflightFail:  true,
+		terminalTool:        "run_aurabot_swarm",
 		terminalSwarm:       true,
 		swarmFinalization:   "aggregate",
 		duplicateSwarm:      true,
@@ -167,6 +178,18 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	if !snap.HiddenToolRejected {
 		t.Fatal("HiddenToolRejected = false, want true")
 	}
+	if !snap.SkillPreflightFail {
+		t.Fatal("SkillPreflightFail = false, want true")
+	}
+	if snap.LoopSteps != 2 || snap.TerminalTool != "run_aurabot_swarm" {
+		t.Fatalf("loop/terminal snapshot = steps %d terminal %q", snap.LoopSteps, snap.TerminalTool)
+	}
+	if len(snap.ActiveCapabilities) != 1 || snap.ActiveCapabilities[0] != "swarm_research" {
+		t.Fatalf("ActiveCapabilities = %+v", snap.ActiveCapabilities)
+	}
+	if len(snap.ReadSkills) != 1 || snap.ReadSkills[0] != "subagent-driven-development" {
+		t.Fatalf("ReadSkills = %+v", snap.ReadSkills)
+	}
 	if !snap.TerminalSwarm || snap.SwarmFinalization != "aggregate" {
 		t.Fatalf("terminal swarm snapshot = %v %q", snap.TerminalSwarm, snap.SwarmFinalization)
 	}
@@ -176,6 +199,242 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	if !snap.DuplicateSwarm || snap.WorkerCount != 2 || snap.WorkerFailures != 0 {
 		t.Fatalf("swarm metrics snapshot = duplicate %v workers %d failures %d", snap.DuplicateSwarm, snap.WorkerCount, snap.WorkerFailures)
 	}
+}
+
+func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	dangerous := &countingTelegramTool{name: "execute_code", result: "should not run"}
+	reg.Register(dangerous)
+	b := &Bot{
+		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "hidden-1", Name: "execute_code"}},
+		[]string{"search_memory"},
+		orchestration.ProfileDefault,
+		nil,
+	)
+
+	if !summary.hiddenRejected {
+		t.Fatal("hiddenRejected = false, want true")
+	}
+	if dangerous.calls != 0 {
+		t.Fatalf("hidden tool executed %d times, want 0", dangerous.calls)
+	}
+	if !strings.Contains(summary.lastResult, "not exposed in the active tool profile") {
+		t.Fatalf("lastResult = %q, want hidden fatal", summary.lastResult)
+	}
+}
+
+func TestExecuteToolCallsRequiresApplicableSkillBeforeProtectedTool(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
+	reg.Register(doc)
+	b := &Bot{
+		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	blocked := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
+		[]string{"create_pdf"},
+		orchestration.ProfileDocument,
+		nil,
+	)
+	if !blocked.skillPreflightRejected {
+		t.Fatal("skillPreflightRejected = false, want true")
+	}
+	if doc.calls != 0 {
+		t.Fatalf("protected tool executed %d times before skill read, want 0", doc.calls)
+	}
+	if !strings.Contains(blocked.lastResult, "requires reading an applicable skill") {
+		t.Fatalf("blocked result = %q", blocked.lastResult)
+	}
+
+	allowed := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "pdf-2", Name: "create_pdf"}},
+		[]string{"create_pdf"},
+		orchestration.ProfileDocument,
+		[]string{"document-pdf"},
+	)
+	if allowed.skillPreflightRejected {
+		t.Fatal("skillPreflightRejected = true after applicable skill read")
+	}
+	if doc.calls != 1 {
+		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
+	}
+	if allowed.lastResult != "pdf created" {
+		t.Fatalf("allowed lastResult = %q", allowed.lastResult)
+	}
+}
+
+func TestExecuteToolCallsDoesNotLetSameBatchSkillReadSatisfyProtectedTool(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
+	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
+	reg.Register(read)
+	reg.Register(doc)
+	b := &Bot{
+		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{
+			{ID: "skill-1", Name: "read_skill", Arguments: map[string]any{"name": "document-pdf"}},
+			{ID: "pdf-1", Name: "create_pdf"},
+		},
+		[]string{"read_skill", "create_pdf"},
+		orchestration.ProfileDocument,
+		nil,
+	)
+
+	if !summary.skillPreflightRejected {
+		t.Fatal("skillPreflightRejected = false, want same-batch protected call rejected")
+	}
+	if len(summary.readSkillNames) != 1 || summary.readSkillNames[0] != "document-pdf" {
+		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.readSkillNames)
+	}
+	if read.calls != 1 {
+		t.Fatalf("read_skill calls = %d, want 1", read.calls)
+	}
+	if doc.calls != 0 {
+		t.Fatalf("create_pdf calls = %d, want 0", doc.calls)
+	}
+}
+
+func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
+	reg.Register(exec)
+	b := &Bot{
+		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
+		[]string{"execute_code"},
+		orchestration.ProfileSandboxCompute,
+		[]string{"systematic-debugging"},
+	)
+
+	if summary.terminalTool != "execute_code" {
+		t.Fatalf("terminalTool = %q, want execute_code", summary.terminalTool)
+	}
+	if exec.calls != 1 {
+		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
+	}
+}
+
+func TestExecuteToolCallsHonorsCustomHookVeto(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	safe := &countingTelegramTool{name: "search_memory", result: "should not run"}
+	reg.Register(safe)
+	hookErr := errors.New("blocked by custom hook")
+	b := &Bot{
+		cfg:       &config.Config{SkillPreflight: string(orchestration.SkillPreflightOff)},
+		tools:     reg,
+		orchHooks: &capturingOrchestrationHooks{beforeErr: hookErr},
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "hook-1", Name: "search_memory"}},
+		[]string{"search_memory"},
+		orchestration.ProfileDefault,
+		nil,
+	)
+
+	if summary.fatalResult == "" || !strings.Contains(summary.fatalResult, "blocked by custom hook") {
+		t.Fatalf("fatalResult = %q, want custom hook error", summary.fatalResult)
+	}
+	if safe.calls != 0 {
+		t.Fatalf("tool executed %d times despite hook veto, want 0", safe.calls)
+	}
+}
+
+func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&countingTelegramTool{name: "run_aurabot_swarm", result: `{"metrics":{"tokens_prompt":1000,"tokens_completion":500,"tokens_total":1500}}`})
+	hooks := &capturingOrchestrationHooks{}
+	b := &Bot{
+		cfg: &config.Config{
+			SkillPreflight:       string(orchestration.SkillPreflightRequired),
+			CostInputPerMTokens:  1,
+			CostOutputPerMTokens: 2,
+		},
+		tools:     reg,
+		orchHooks: hooks,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}},
+		[]string{"run_aurabot_swarm"},
+		orchestration.ProfileSwarmResearch,
+		nil,
+	)
+
+	if summary.lastResult == "" {
+		t.Fatal("lastResult is empty")
+	}
+	if len(hooks.after) != 1 {
+		t.Fatalf("after hook calls = %d, want 1", len(hooks.after))
+	}
+	event := hooks.after[0]
+	if event.ResultSizeBytes == 0 || event.DurationMS < 0 {
+		t.Fatalf("event size/duration = %d/%d", event.ResultSizeBytes, event.DurationMS)
+	}
+	if event.TokensPrompt != 1000 || event.TokensCompletion != 500 || event.TokensTotal != 1500 {
+		t.Fatalf("event tokens = %d/%d/%d", event.TokensPrompt, event.TokensCompletion, event.TokensTotal)
+	}
+	if event.CostUSD <= 0 {
+		t.Fatalf("event CostUSD = %f, want positive", event.CostUSD)
+	}
+}
+
+type capturingOrchestrationHooks struct {
+	beforeErr error
+	after     []orchestration.TraceEvent
+}
+
+func (h *capturingOrchestrationHooks) BeforeProfileSelect(orchestration.TraceEvent) {}
+func (h *capturingOrchestrationHooks) AfterProfileSelect(orchestration.TraceEvent)  {}
+func (h *capturingOrchestrationHooks) BeforePromptCompose(orchestration.TraceEvent) {}
+func (h *capturingOrchestrationHooks) AfterPromptCompose(orchestration.TraceEvent)  {}
+func (h *capturingOrchestrationHooks) BeforeExposeTools(orchestration.TraceEvent)   {}
+func (h *capturingOrchestrationHooks) AfterTurn(orchestration.TraceEvent)           {}
+
+func (h *capturingOrchestrationHooks) BeforeToolCall(orchestration.TraceEvent) error {
+	return h.beforeErr
+}
+
+func (h *capturingOrchestrationHooks) AfterToolCall(event orchestration.TraceEvent) {
+	h.after = append(h.after, event)
+}
+
+type countingTelegramTool struct {
+	name   string
+	result string
+	calls  int
+}
+
+func (t *countingTelegramTool) Name() string { return t.name }
+
+func (t *countingTelegramTool) Description() string { return "counting fake tool" }
+
+func (t *countingTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+
+func (t *countingTelegramTool) Execute(context.Context, map[string]any) (string, error) {
+	t.calls++
+	return t.result, nil
 }
 
 func TestFormatTerminalSwarmResultUsesSynthesisAndMetrics(t *testing.T) {

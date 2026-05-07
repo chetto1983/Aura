@@ -30,6 +30,9 @@ type TraceEvent struct {
 	LatencyMS              int64
 	LLMCalls               int
 	ToolCalls              int
+	ResultSizeBytes        int
+	DurationMS             int64
+	ErrorClass             string
 	Metadata               map[string]string
 }
 

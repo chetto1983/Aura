@@ -34,10 +34,15 @@ type DebugTextSmokeResult struct {
 	ToolProfile              string
 	ProfileSelectReason      string
 	ToolsExposed             []string
+	ActiveCapabilities       []string
 	HiddenToolRejected       bool
+	SkillPreflightFailed     bool
 	SkillsRead               bool
+	ReadSkills               []string
+	LoopSteps                int
 	SwarmUsed                bool
 	SandboxUsed              bool
+	TerminalTool             string
 	TerminalSwarm            bool
 	SwarmFinalization        string
 	PostSwarmToolCalls       int
@@ -129,11 +134,16 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.ToolProfile = snap.ToolProfile
 		result.ProfileSelectReason = snap.ProfileSelectReason
 		result.ToolsExposed = snap.ToolsExposed
+		result.ActiveCapabilities = snap.ActiveCapabilities
 		result.HiddenToolRejected = snap.HiddenToolRejected
+		result.SkillPreflightFailed = snap.SkillPreflightFail
 		result.applyOrchestrationToolCalls(snap.ToolsCalled)
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
+		result.ReadSkills = append([]string(nil), snap.ReadSkills...)
+		result.LoopSteps = snap.LoopSteps
 		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed
 		result.SandboxUsed = result.SandboxUsed || snap.SandboxUsed
+		result.TerminalTool = snap.TerminalTool
 		result.TerminalSwarm = snap.TerminalSwarm
 		result.SwarmFinalization = snap.SwarmFinalization
 		result.PostSwarmToolCalls = snap.PostSwarmToolCalls

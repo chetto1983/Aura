@@ -229,6 +229,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"elapsed_ms", time.Since(turnStart).Milliseconds(),
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,
+		"loop_steps", stats.loopSteps,
 		"prompt_version", stats.promptVersion,
 		"prompt_hash", stats.promptHash,
 		"prompt_modules", strings.Join(stats.promptModules, ","),
@@ -236,10 +237,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"profile_select_reason", stats.profileSelectReason,
 		"tools_exposed", strings.Join(stats.toolsExposed, ","),
 		"tools_called", strings.Join(stats.toolsCalled, ","),
+		"active_capabilities", strings.Join(stats.activeCapabilities, ","),
+		"read_skills", strings.Join(stats.readSkills, ","),
 		"hidden_tool_rejected", stats.hiddenToolRejected,
+		"skill_preflight_failed", stats.skillPreflightFail,
 		"skills_read", stats.skillsRead,
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
+		"terminal_tool", stats.terminalTool,
 		"terminal_swarm", stats.terminalSwarm,
 		"swarm_finalization", stats.swarmFinalization,
 		"post_swarm_tool_calls", stats.postSwarmToolCalls,
@@ -260,7 +265,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		ToolsExposed:           stats.toolsExposed,
 		ToolsCalled:            stats.toolsCalled,
 		HiddenToolRejected:     stats.hiddenToolRejected,
-		SkillReads:             boolToCount(stats.skillsRead),
+		SkillReads:             len(stats.readSkills),
 		SwarmUsed:              stats.swarmUsed,
 		SandboxUsed:            stats.sandboxUsed,
 		TokensPrompt:           stats.tokensPrompt,
@@ -336,6 +341,7 @@ func speculativeSearchTimeout(timeoutMS int) time.Duration {
 type turnStats struct {
 	llmCalls            int
 	toolCalls           int
+	loopSteps           int
 	promptVersion       string
 	promptModules       []string
 	promptHash          string
@@ -343,10 +349,14 @@ type turnStats struct {
 	profileSelectReason string
 	toolsExposed        []string
 	toolsCalled         []string
+	activeCapabilities  []string
+	readSkills          []string
 	hiddenToolRejected  bool
+	skillPreflightFail  bool
 	skillsRead          bool
 	swarmUsed           bool
 	sandboxUsed         bool
+	terminalTool        string
 	terminalSwarm       bool
 	swarmFinalization   string
 	postSwarmToolCalls  int
@@ -367,10 +377,15 @@ type orchestrationSnapshot struct {
 	ProfileSelectReason string
 	ToolsExposed        []string
 	ToolsCalled         []string
+	ActiveCapabilities  []string
+	ReadSkills          []string
+	LoopSteps           int
 	HiddenToolRejected  bool
+	SkillPreflightFail  bool
 	SkillsRead          bool
 	SwarmUsed           bool
 	SandboxUsed         bool
+	TerminalTool        string
 	TerminalSwarm       bool
 	SwarmFinalization   string
 	PostSwarmToolCalls  int
@@ -455,6 +470,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	if maxIterations <= 0 {
 		maxIterations = 10
 	}
+	loopPolicy, _ := orchestration.LoopPolicyForProfile(profileDecision.Profile)
+	if loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
+		maxIterations = loopPolicy.MaxSteps
+	}
 
 	stats := turnStats{
 		promptVersion:       promptPlan.Version,
@@ -462,6 +481,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		promptHash:          promptPlan.Hash,
 		toolProfile:         string(profileDecision.Profile),
 		profileSelectReason: profileDecision.Reason,
+		activeCapabilities:  capabilityNames(orchestration.CapabilitiesForProfile(profileDecision.Profile)),
 	}
 	var lastToolResult string
 	toolDefs := b.tools.DefinitionsFor(toolAllowlist)
@@ -496,6 +516,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 
 		stats.llmCalls++
+		stats.loopSteps++
 		ch, err := b.llm.Stream(ctx, req)
 		if err != nil {
 			b.logger.Error("LLM stream failed", "user_id", userID, "error", err)
@@ -555,12 +576,23 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		var hiddenRejected bool
 		callsToExecute, duplicateSwarmCalls := capDuplicateSwarmCalls(profileDecision.Profile, resp.ToolCalls)
 		stats.duplicateSwarm = stats.duplicateSwarm || len(duplicateSwarmCalls) > 0
-		lastToolResult, hiddenRejected = b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed)
+		execution := b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed, profileDecision.Profile, stats.readSkills)
+		lastToolResult, hiddenRejected = execution.lastResult, execution.hiddenRejected
+		stats.skillPreflightFail = stats.skillPreflightFail || execution.skillPreflightRejected
+		stats.readSkills = appendUniqueStrings(stats.readSkills, execution.readSkillNames...)
+		stats.skillsRead = stats.skillsRead || len(stats.readSkills) > 0
+		if execution.terminalTool != "" {
+			stats.terminalTool = execution.terminalTool
+		}
 		for _, duplicate := range duplicateSwarmCalls {
 			convCtx.AddToolResultMessage(duplicate.ID, tools.FormatFatalToolError(fmt.Errorf("run_aurabot_swarm already completed for this turn; use the existing aggregate result")))
 		}
 		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
 		b.storeOrchestrationSnapshot(userID, stats)
+		if execution.fatalResult != "" {
+			convCtx.AddAssistantMessage(execution.fatalResult)
+			return execution.fatalResult, stats
+		}
 		if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
 			stats.terminalSwarm = true
 			stats.swarmFinalization = swarmResearchFinalization()
@@ -577,6 +609,14 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			response := formatTerminalSwarmResult(lastToolResult)
 			convCtx.AddAssistantMessage(response)
 			b.storeOrchestrationSnapshot(userID, stats)
+			return response, stats
+		}
+		if execution.terminalTool != "" && execution.terminalTool != "run_aurabot_swarm" && loopPolicy.AllowNoToolFinalization {
+			response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
+			b.storeOrchestrationSnapshot(userID, stats)
+			if delivered {
+				return "", stats
+			}
 			return response, stats
 		}
 	}
@@ -602,8 +642,18 @@ func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *con
 	stats.swarmUsed = true
 	b.storeOrchestrationSnapshot(userID, stats)
 
-	lastToolResult, hiddenRejected := b.executeToolCalls(ctx, c, convCtx, userID, []llm.ToolCall{call}, stats.toolsExposed)
+	execution := b.executeToolCalls(ctx, c, convCtx, userID, []llm.ToolCall{call}, stats.toolsExposed, orchestration.ProfileSwarmResearch, stats.readSkills)
+	lastToolResult, hiddenRejected := execution.lastResult, execution.hiddenRejected
 	stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
+	stats.skillPreflightFail = stats.skillPreflightFail || execution.skillPreflightRejected
+	if execution.terminalTool != "" {
+		stats.terminalTool = execution.terminalTool
+	}
+	if execution.fatalResult != "" {
+		convCtx.AddAssistantMessage(execution.fatalResult)
+		b.storeOrchestrationSnapshot(userID, stats)
+		return execution.fatalResult, stats
+	}
 	stats.terminalSwarm = true
 	stats.swarmFinalization = swarmResearchFinalization()
 	stats.postSwarmToolCalls = 0
@@ -634,24 +684,44 @@ func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *con
 //
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string) (string, bool) {
+type toolExecutionSummary struct {
+	lastResult             string
+	fatalResult            string
+	hiddenRejected         bool
+	skillPreflightRejected bool
+	readSkillNames         []string
+	terminalTool           string
+}
+
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, profile orchestration.Profile, readSkills []string) toolExecutionSummary {
 	if len(calls) == 0 {
-		return "", false
+		return toolExecutionSummary{}
 	}
 
 	for _, tc := range calls {
-		c.Send(toolActivityMessage(tc.Name))
+		if c != nil {
+			_ = c.Send(toolActivityMessage(tc.Name))
+		}
 	}
 
 	type outcome struct {
-		id      string
-		content string
+		id                     string
+		tool                   string
+		content                string
+		elapsed                time.Duration
+		errorClass             string
+		hiddenRejected         bool
+		skillPreflightRejected bool
+		fatal                  bool
+		readSkillName          string
+		terminalTool           string
 	}
 	results := make([]outcome, len(calls))
 
 	var wg sync.WaitGroup
-	var hiddenMu sync.Mutex
-	hiddenRejected := false
+	var summaryMu sync.Mutex
+	summary := toolExecutionSummary{}
+	loopPolicy, _ := orchestration.LoopPolicyForProfile(profile)
 	for i, tc := range calls {
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
@@ -660,16 +730,75 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			event := orchestration.TraceEvent{
 				ToolName:     tc.Name,
 				ToolsExposed: toolsExposed,
+				ToolProfile:  string(profile),
 			}
-			err := hooks.BeforeToolCall(event)
-			if err != nil {
-				if errors.Is(err, orchestration.ErrHiddenTool) {
-					hiddenMu.Lock()
-					hiddenRejected = true
-					hiddenMu.Unlock()
-					event.HiddenToolRejected = true
+			start := time.Now()
+			if !toolAllowed(tc.Name, toolsExposed) {
+				event.HiddenToolRejected = true
+				event.DurationMS = time.Since(start).Milliseconds()
+				event.ErrorClass = "hidden_tool"
+				event.ResultSizeBytes = 0
+				results[i] = outcome{
+					id:             tc.ID,
+					tool:           tc.Name,
+					content:        tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name)),
+					elapsed:        time.Since(start),
+					errorClass:     "hidden_tool",
+					hiddenRejected: true,
+					fatal:          true,
 				}
-				results[i] = outcome{id: tc.ID, content: tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name))}
+				summaryMu.Lock()
+				summary.hiddenRejected = true
+				summaryMu.Unlock()
+				hooks.AfterToolCall(event)
+				return
+			}
+			if err := hooks.BeforeToolCall(event); err != nil {
+				errorClass := "policy_error"
+				content := tools.FormatFatalToolError(err)
+				hidden := errors.Is(err, orchestration.ErrHiddenTool)
+				if hidden {
+					errorClass = "hidden_tool"
+					content = tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name))
+				}
+				event.HiddenToolRejected = hidden
+				event.DurationMS = time.Since(start).Milliseconds()
+				event.ErrorClass = errorClass
+				results[i] = outcome{
+					id:             tc.ID,
+					tool:           tc.Name,
+					content:        content,
+					elapsed:        time.Since(start),
+					errorClass:     errorClass,
+					hiddenRejected: hidden,
+					fatal:          true,
+				}
+				summaryMu.Lock()
+				summary.hiddenRejected = summary.hiddenRejected || hidden
+				summaryMu.Unlock()
+				hooks.AfterToolCall(event)
+				return
+			}
+			if decision := b.skillPreflightDecision(profile, tc, readSkills); decision.Required && !decision.Satisfied {
+				msg := formatSkillPreflightFatal(tc.Name, decision)
+				event.DurationMS = time.Since(start).Milliseconds()
+				event.ErrorClass = "skill_preflight"
+				event.Metadata = map[string]string{
+					"capability": string(decision.Capability),
+					"reason":     decision.Reason,
+				}
+				results[i] = outcome{
+					id:                     tc.ID,
+					tool:                   tc.Name,
+					content:                tools.FormatFatalToolError(errors.New(msg)),
+					elapsed:                time.Since(start),
+					errorClass:             "skill_preflight",
+					skillPreflightRejected: true,
+					fatal:                  true,
+				}
+				summaryMu.Lock()
+				summary.skillPreflightRejected = true
+				summaryMu.Unlock()
 				hooks.AfterToolCall(event)
 				return
 			}
@@ -679,18 +808,60 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				result = tools.FormatToolError(err)
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
 			}
-			results[i] = outcome{id: tc.ID, content: result}
+			errorClass := ""
+			if err != nil {
+				errorClass = "tool_error"
+			}
+			event.DurationMS = time.Since(start).Milliseconds()
+			event.ResultSizeBytes = len(result)
+			event.ErrorClass = errorClass
+			usage, cost := toolResultUsage(result, b.cfg)
+			event.TokensPrompt = usage.PromptTokens
+			event.TokensCompletion = usage.CompletionTokens
+			event.TokensTotal = usage.TotalTokens
+			event.CostUSD = cost
+			readSkillName := ""
+			if err == nil && tc.Name == "read_skill" {
+				readSkillName = skillNameFromArgs(tc.Arguments)
+			}
+			terminalTool := ""
+			if toolAllowed(tc.Name, loopPolicy.TerminalTools) {
+				terminalTool = tc.Name
+			}
+			results[i] = outcome{
+				id:            tc.ID,
+				tool:          tc.Name,
+				content:       result,
+				elapsed:       time.Since(start),
+				errorClass:    errorClass,
+				readSkillName: readSkillName,
+				terminalTool:  terminalTool,
+			}
 			hooks.AfterToolCall(event)
 		}(i, tc)
 	}
 	wg.Wait()
 
-	var lastToolResult string
 	for _, r := range results {
 		convCtx.AddToolResultMessage(r.id, r.content)
-		lastToolResult = r.content
+		summary.lastResult = r.content
+		if r.hiddenRejected {
+			summary.hiddenRejected = true
+		}
+		if r.skillPreflightRejected {
+			summary.skillPreflightRejected = true
+		}
+		if r.fatal && summary.fatalResult == "" {
+			summary.fatalResult = r.content
+		}
+		if r.readSkillName != "" {
+			summary.readSkillNames = appendUniqueStrings(summary.readSkillNames, r.readSkillName)
+		}
+		if summary.terminalTool == "" && r.terminalTool != "" {
+			summary.terminalTool = r.terminalTool
+		}
 	}
-	return lastToolResult, hiddenRejected
+	return summary
 }
 
 func (b *Bot) finalizeSwarmWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawSwarmResult string, stats *turnStats) (string, bool) {
@@ -730,6 +901,53 @@ func (b *Bot) finalizeSwarmWithNoToolLLM(ctx context.Context, c tele.Context, co
 	return response, delivered
 }
 
+func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
+	req := llm.Request{
+		Messages: convCtx.Messages(),
+		Model:    b.cfg.LLMModel,
+		Tools:    nil,
+	}
+	stats.llmCalls++
+	stats.loopSteps++
+	ch, err := b.llm.Stream(ctx, req)
+	if err != nil {
+		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", err)
+		response := strings.TrimSpace(rawToolResult)
+		if response == "" {
+			response = "The terminal tool completed, but no final summary was returned."
+		}
+		convCtx.AddAssistantMessage(response)
+		return response, false
+	}
+	resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
+	if err != nil {
+		b.logger.Warn("terminal tool finalization stream failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", err)
+		response := strings.TrimSpace(rawToolResult)
+		if response == "" {
+			response = "The terminal tool completed, but no final summary was returned."
+		}
+		convCtx.AddAssistantMessage(response)
+		return response, false
+	}
+	convCtx.TrackTokens(resp.Usage)
+	stats.tokensPrompt += resp.Usage.PromptTokens
+	stats.tokensCompletion += resp.Usage.CompletionTokens
+	stats.tokensTotal += resp.Usage.TotalTokens
+	stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+	if b.budget != nil {
+		b.budget.RecordUsage(resp.Usage)
+	}
+	response := strings.TrimSpace(resp.Content)
+	if response == "" {
+		response = strings.TrimSpace(rawToolResult)
+	}
+	if response == "" {
+		response = "The terminal tool completed."
+	}
+	convCtx.AddAssistantMessage(response)
+	return response, delivered
+}
+
 func swarmFinalizationMessages(messages []llm.Message) []llm.Message {
 	out := append([]llm.Message(nil), messages...)
 	out = append(out, llm.Message{
@@ -751,10 +969,15 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		ProfileSelectReason: stats.profileSelectReason,
 		ToolsExposed:        append([]string(nil), stats.toolsExposed...),
 		ToolsCalled:         append([]string(nil), stats.toolsCalled...),
+		ActiveCapabilities:  append([]string(nil), stats.activeCapabilities...),
+		ReadSkills:          append([]string(nil), stats.readSkills...),
+		LoopSteps:           stats.loopSteps,
 		HiddenToolRejected:  stats.hiddenToolRejected,
+		SkillPreflightFail:  stats.skillPreflightFail,
 		SkillsRead:          stats.skillsRead,
 		SwarmUsed:           stats.swarmUsed,
 		SandboxUsed:         stats.sandboxUsed,
+		TerminalTool:        stats.terminalTool,
 		TerminalSwarm:       stats.terminalSwarm,
 		SwarmFinalization:   stats.swarmFinalization,
 		PostSwarmToolCalls:  stats.postSwarmToolCalls,
@@ -800,6 +1023,79 @@ func latestUserMessage(messages []llm.Message) string {
 func toolAllowed(name string, allowlist []string) bool {
 	for _, allowed := range allowlist {
 		if allowed == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) skillPreflightDecision(profile orchestration.Profile, call llm.ToolCall, readSkills []string) orchestration.SkillPreflightDecision {
+	if isSkillPreflightTool(call.Name) {
+		return orchestration.SkillPreflightDecision{Satisfied: true, Reason: "skill inspection tools are allowed before preflight"}
+	}
+	mode := orchestration.SkillPreflightRequired
+	if b != nil && b.cfg != nil {
+		mode = orchestration.SkillPreflightMode(b.cfg.SkillPreflight)
+	}
+	return orchestration.NeedsSkillPreflight(profile, "", call.Name, orchestration.SkillPreflightState{
+		ReadSkillNames: readSkills,
+	}, mode)
+}
+
+func isSkillPreflightTool(name string) bool {
+	switch name {
+	case "list_skills", "read_skill", "search_skill_catalog":
+		return true
+	default:
+		return false
+	}
+}
+
+func formatSkillPreflightFatal(toolName string, decision orchestration.SkillPreflightDecision) string {
+	var hints []string
+	for _, hint := range decision.Requirement.SkillHints {
+		if strings.TrimSpace(hint) != "" {
+			hints = append(hints, hint)
+		}
+	}
+	if len(hints) == 0 {
+		hints = append(hints, "an applicable skill")
+	}
+	return fmt.Sprintf("tool %q requires reading an applicable skill first for capability %q; call list_skills and read_skill before retrying. Suggested skills: %s", toolName, decision.Capability, strings.Join(hints, ", "))
+}
+
+func skillNameFromArgs(args map[string]any) string {
+	value, ok := args["name"]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func capabilityNames(capabilities []orchestration.Capability) []string {
+	out := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		out = append(out, string(capability))
+	}
+	return out
+}
+
+func appendUniqueStrings(values []string, additions ...string) []string {
+	for _, addition := range additions {
+		addition = strings.TrimSpace(addition)
+		if addition == "" {
+			continue
+		}
+		if !stringSliceContains(values, addition) {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func stringSliceContains(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
 			return true
 		}
 	}
@@ -927,6 +1223,33 @@ func (s *turnStats) applySwarmMetrics(raw string, inputPerM, outputPerM float64)
 	}, inputPerM, outputPerM)
 }
 
+func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
+	var resp struct {
+		Metrics struct {
+			TokensPrompt     int `json:"tokens_prompt"`
+			TokensCompletion int `json:"tokens_completion"`
+			TokensTotal      int `json:"tokens_total"`
+		} `json:"metrics"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &resp); err != nil {
+		return llm.TokenUsage{}, 0
+	}
+	usage := llm.TokenUsage{
+		PromptTokens:     resp.Metrics.TokensPrompt,
+		CompletionTokens: resp.Metrics.TokensCompletion,
+		TotalTokens:      resp.Metrics.TokensTotal,
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
+		return llm.TokenUsage{}, 0
+	}
+	var inputPerM, outputPerM float64
+	if cfg != nil {
+		inputPerM = cfg.CostInputPerMTokens
+		outputPerM = cfg.CostOutputPerMTokens
+	}
+	return usage, estimateUsageCost(usage, inputPerM, outputPerM)
+}
+
 func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {
 	prompt := usage.PromptTokens
 	completion := usage.CompletionTokens
@@ -934,13 +1257,6 @@ func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) floa
 		prompt = usage.TotalTokens
 	}
 	return (float64(prompt)*inputPerM + float64(completion)*outputPerM) / 1_000_000
-}
-
-func boolToCount(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }
 
 func toolActivityMessage(name string) string {

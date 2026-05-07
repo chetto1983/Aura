@@ -317,7 +317,7 @@ Create a small taxonomy. Do not route on raw skill names alone.
 
 ### Phase 4: Live Loop Enforcement
 
-- [ ] Add turn state for:
+- [x] Add turn state for:
   - profile;
   - exposed tools;
   - called tools;
@@ -325,12 +325,12 @@ Create a small taxonomy. Do not route on raw skill names alone.
   - active capabilities;
   - loop step count;
   - terminal tool status.
-- [ ] In `BeforeToolCall`, reject hidden tools as fatal.
-- [ ] In `BeforeToolCall`, reject capability tools when required skill preflight is missing.
-- [ ] In `AfterToolCall`, record duration, error class, result size, tokens, and cost if available.
-- [ ] Stop after terminal tools according to profile policy.
-- [ ] Run `go test ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`.
-- [ ] Commit: `feat: enforce skill and terminal tool policy`.
+- [x] In `BeforeToolCall`, reject hidden tools as fatal.
+- [x] In `BeforeToolCall`, reject capability tools when required skill preflight is missing.
+- [x] In `AfterToolCall`, record duration, error class, result size, tokens, and cost if available.
+- [x] Stop after terminal tools according to profile policy.
+- [x] Run `go test ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`.
+- [x] Commit: `feat: enforce skill and terminal tool policy`.
 
 ### Phase 5: Debug And Telemetry Surface
 
