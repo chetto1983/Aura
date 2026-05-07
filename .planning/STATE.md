@@ -1,30 +1,37 @@
 # State
 
-Date: 2026-05-06
+Date: 2026-05-07
 
-Active milestone: v1.3 Memory Consolidation And Quality (validation)
+Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (planned)
 
-Last closed milestone: v1.2 Source Intake Closure
+Last closed milestone: v1.3 Memory Consolidation And Quality
 
 Current branch: `master`
 
 ## Current Truth
 
-v1.2 closure is merged to `master`. The shipped upload list is PDF, TXT, Markdown, JSON, CSV, XLSX, and DOCX.
+v1.3 is closed. The Docker runtime passes memory closure, embedding/search validation, dashboard settings smoke, full Go/frontend verification, Docker rebuild, and the strict live memory quality gate.
 
-v1.3 memory consolidation has deterministic cleanup and hermetic quality gates in place: operational wiki files are excluded from memory, source wiki pages stay compact, `clean_wiki_memory` can reproduce graph cleanup automatically, and the live wiki currently reports 17 pages, 0 broken links, and 0 orphan pages.
+Closure evidence:
 
-The remaining release caveat is live LLM latency, not tool routing. With `LLM_MODEL=glm-5.1:cloud`, `debug_memory_quality -live-llm` called `search_memory` for every scenario and kept proposals review-gated, but missed the 30s end-user budget on several scenarios.
+- Memory closure audit: 18 wiki pages, 45 expected index docs, 45 actual index docs, `issues=0`.
+- Hermetic memory quality: 20/20 with source/archive evidence and review-gated proposals.
+- Qdrant comparison: Qdrant reachable at `127.0.0.1:6333`, recommendation `ok`, overlap 1.0 against local search.
+- Live memory quality on DB-selected `deepseek/deepseek-v4-flash`: 20/20, `search_memory` 20/20, proposal calls 4/4 where expected, unexpected proposals 0, slow scenarios 0/20, max scenario 20.349 s under the 30 s budget.
+- Dashboard settings now renders the `agent` orchestration group and keeps `SEARCH_BACKEND` as an enum combo.
+- Release checks passed: `verify-go.ps1`, `go test ./... -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `docker compose config --quiet`, Docker rebuild, `/status`, and settings Playwright E2E.
+
+The live quality harness now applies dashboard settings from `aura.db` before selecting the LLM, so future closure runs test the configured app model instead of stale env-only values.
 
 ## Next Milestone Handoff
 
-v3.1 is now the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
+v3.1 is the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
 
 Canonical plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
 
 The implementation direction is Claude Code style orchestration without a separate intent model: versioned prompt modules, runtime tool profiles, skill preflight, swarm-first broad synthesis, sandbox-first compute/artifact work, and per-turn tool/token/cost telemetry.
 
-v4.0 is planned as "MCP Marketplace And Autonomous Plugin Manager" after current release closure.
+v4.0 is planned as "MCP Marketplace And Autonomous Plugin Manager" after v3.1.
 
 Canonical plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
 
@@ -32,15 +39,15 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 
 ## Recent Decisions
 
-- Keep v1.2 extraction narrow and auditable.
-- Treat Microsoft MarkItDown as a future generalized converter candidate, not a v1.2 dependency.
-- Use the local database-backed E2E token path for dashboard E2E.
-- Preserve table semantics in the conversations panel and move keyboard activation onto a real button.
-- Treat `docs/superpowers/` v1.2 generated plan/spec files as stale workflow artifacts; active planning belongs in `.planning/`.
+- Docker is the release runtime.
+- Keep source/wiki cleanup automated through `clean_wiki_memory` and closure audits, not hand-edited wiki repair.
 - Keep `SCHEMA.md`, `index.md`, and `log.md` out of user-facing wiki graph/search memory.
-- Treat `glm-5.1:cloud` live-memory latency as the next quality blocker before calling v1.3 fully closed.
+- Use dedicated `EMBEDDING_*` settings for wiki search; never fall back from embeddings to `LLM_API_KEY`.
+- Treat dashboard settings stored in `aura.db` as authoritative for live debug scorecards when validating the running app.
+- Proceed to v3.1 orchestration before implementing the v4.0 MCP/plugin marketplace.
 
 ## Resume Notes
 
-- Start from `.planning/phases/03-memory-consolidation-quality/VALIDATION.md` for the next milestone decision.
-- If adding new intake formats, update source policy, Telegram validation, API acceptance, dashboard copy, extraction tests, and E2E together.
+- Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
+- Keep v4.0 MCP/plugin work blocked behind v3.1 tool-profile/prompt-versioning clarity.
+- If adding new intake formats later, update source policy, Telegram validation, API acceptance, dashboard copy, extraction tests, and E2E together.

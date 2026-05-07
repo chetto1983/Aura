@@ -25,10 +25,12 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 )
@@ -309,15 +311,16 @@ func run(ctx context.Context, limit int) (report, string, error) {
 }
 
 func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time.Duration) (liveReport, string, error) {
-	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return liveReport{}, "", fmt.Errorf("load .env: %w", err)
+	liveCfg, err := loadLiveConfig(ctx)
+	if err != nil {
+		return liveReport{}, "", err
 	}
-	apiKey := strings.TrimSpace(os.Getenv("LLM_API_KEY"))
+	apiKey := strings.TrimSpace(liveCfg.LLMAPIKey)
 	if apiKey == "" {
 		return liveReport{}, "", fmt.Errorf("LLM_API_KEY is required for -live-llm")
 	}
-	baseURL := envDefault("LLM_BASE_URL", "https://api.openai.com/v1")
-	model := envDefault("LLM_MODEL", "gpt-4")
+	baseURL := emptyDefault(liveCfg.LLMBaseURL, "https://api.openai.com/v1")
+	model := emptyDefault(liveCfg.LLMModel, "gpt-4")
 
 	wikiDir, err := os.MkdirTemp("", "aura-debug-memory-routing-*")
 	if err != nil {
@@ -411,6 +414,32 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 		rep.Warnings = append(rep.Warnings, "live usefulness gate failed: want >=85% pass rate, search_memory on every question, no unexpected proposals, and no slow scenarios over the end-user latency budget")
 	}
 	return rep, wikiDir, nil
+}
+
+func loadLiveConfig(ctx context.Context) (*config.Config, error) {
+	if err := loadDotEnv(config.EnvPathFromEnvironment()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("load .env: %w", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	if strings.TrimSpace(cfg.DBPath) == "" {
+		return cfg, nil
+	}
+	if _, err := os.Stat(cfg.DBPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("stat settings db %s: %w", cfg.DBPath, err)
+	}
+	store, err := settings.OpenStore(cfg.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("open settings db %s: %w", cfg.DBPath, err)
+	}
+	defer store.Close()
+	settings.ApplyToConfig(ctx, store, cfg)
+	return cfg, nil
 }
 
 func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, proposalTool tools.Tool) scenarioResult {
@@ -1033,7 +1062,7 @@ func loadDotEnv(path string) error {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
+		if key != "" && os.Getenv(key) == "" {
 			os.Setenv(key, value)
 		}
 	}

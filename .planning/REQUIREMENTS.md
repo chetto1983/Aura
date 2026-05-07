@@ -27,9 +27,9 @@ Aura must close v1.2 by making the shipped upload and dashboard surfaces truthfu
 
 ## V13-MEM: Memory Consolidation And Quality
 
-Status: validation
+Status: done
 
-Aura must keep durable memory clean, connected, and searchable. The next milestone audits the live wiki graph, checked-in docs, generated artifacts, search index, embedding cache, and `search_memory` answer quality.
+Aura must keep durable memory clean, connected, and searchable. This milestone audited the live wiki graph, checked-in docs, generated artifacts, search index, embedding cache, and `search_memory` answer quality.
 
 ### Acceptance Criteria
 
@@ -44,4 +44,4 @@ Aura must keep durable memory clean, connected, and searchable. The next milesto
 - `search_memory` returns evidence envelopes that combine wiki, source, and archive evidence without silently mutating durable wiki pages.
 - Proposal tools keep requiring evidence when the origin is `search_memory`.
 - Deterministic scorecards and live wiki hygiene pass before closure.
-- Live LLM memory routing either passes the 30s latency gate or the release notes explicitly mark the configured model as a performance caveat.
+- Live LLM memory routing passes the 30s latency gate with the DB-configured model and keeps proposals review-gated.

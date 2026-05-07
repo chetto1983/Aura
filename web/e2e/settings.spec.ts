@@ -27,8 +27,10 @@ test.describe('settings page (14d)', () => {
     await expect(page.getByRole('heading', { name: /llm provider/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /code sandbox/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /budget/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /agent orchestration/i })).toBeVisible();
     await expect(page.locator('input#AURA_ENV_PATH')).toBeVisible();
     await expect(page.locator('input#DB_PATH')).toBeVisible();
+    await expect(page.locator('input#AURA_PROMPT_VERSION')).toBeVisible();
     const sandboxSwitch = page.getByRole('switch', { name: /sandbox enabled/i });
     await expect(sandboxSwitch).toBeVisible();
     await expect(page.locator('input#AURA_ENV_PATH')).toBeEnabled();

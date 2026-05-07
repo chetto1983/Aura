@@ -6,9 +6,9 @@ import { api, ApiError } from '@/api';
 import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
-type Group = 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+type Group = 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'agent' | 'other';
 
-const GROUP_ORDER: Group[] = ['runtime', 'provider', 'search', 'storage', 'embeddings', 'ocr', 'sandbox', 'budget', 'summarizer', 'aurabot', 'other'];
+const GROUP_ORDER: Group[] = ['runtime', 'provider', 'search', 'storage', 'embeddings', 'ocr', 'sandbox', 'budget', 'summarizer', 'aurabot', 'agent', 'other'];
 const SECRET_PLACEHOLDER = '(configured)';
 
 export function SettingsPanel() {
@@ -135,6 +135,7 @@ export function SettingsPanel() {
       case 'budget': return t('settings.group.budget');
       case 'summarizer': return t('settings.group.summarizer');
       case 'aurabot': return t('settings.group.aurabot');
+      case 'agent': return t('settings.group.agent');
       case 'other': return t('settings.group.other');
     }
   };
@@ -151,6 +152,7 @@ export function SettingsPanel() {
       case 'budget': return t('settings.hint.budget');
       case 'summarizer': return t('settings.hint.summarizer');
       case 'aurabot': return t('settings.hint.aurabot');
+      case 'agent': return t('settings.hint.agent');
       case 'other': return t('settings.hint.other');
     }
   };

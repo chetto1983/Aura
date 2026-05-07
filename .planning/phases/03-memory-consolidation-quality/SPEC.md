@@ -1,7 +1,7 @@
 # v1.3 Memory Consolidation And Quality Spec
 
 Date: 2026-05-06
-Status: validation
+Status: closed
 
 ## Goal
 
@@ -53,4 +53,4 @@ The dashboard graph currently shows many isolated nodes. The audit found three r
 
 ## Validation Update
 
-See `VALIDATION.md` for the current closure truth. Deterministic cleanup, embedding/search tests, live wiki hygiene, frontend audit, Go verification, and snapshot packaging passed. Live LLM routing uses `search_memory` correctly, but the configured `glm-5.1:cloud` runtime remains too slow for the 30s memory quality gate.
+See `VALIDATION.md` for the current closure truth. Deterministic cleanup, embedding/search tests, Qdrant comparison, settings smoke, Go/frontend verification, Docker rebuild, and the strict live LLM scorecard all passed. Live routing uses `search_memory` correctly, keeps proposals review-gated, and passes the 30s memory quality gate with the DB-configured `deepseek/deepseek-v4-flash` model.

@@ -18,47 +18,32 @@ Key outcomes:
 - Extracted source ingestion closes the non-PDF path into wiki pages.
 - Dashboard polish and E2E closure for source inbox, graph, conversations, settings, and adjacent panels.
 
-## Next Milestone
-
 ### v1.3 Memory Consolidation And Quality
 
-Status: validation
+Status: closed
+
+Closed on 2026-05-07 with deterministic memory cleanup, compact source anchors, healthy SQLite/Qdrant search, dashboard settings polish, and a strict live memory quality pass under the 30s latency budget.
 
 Goal: make Aura's durable memory graph useful instead of merely populated. The milestone should remove operational/generated docs from user memory, consolidate orphan pages into hubs, repair broken wiki links, verify embedding/search wiring, and measure answer quality through `search_memory`.
 
-Current validation state:
+Key outcomes:
 
 - Deterministic memory cleanup is implemented and reproducible through `clean_wiki_memory` and nightly maintenance.
-- Live wiki dry-run hygiene reports 17 pages, 0 broken links, and 0 orphans.
-- Hermetic memory quality scorecard passes 20/20 with wiki, source, and archive evidence.
-- Live LLM scorecard still misses the 30s latency budget on `glm-5.1:cloud`, even though tool routing is correct.
-
-First success criteria:
-
 - Wiki graph excludes operational files such as `SCHEMA.md`, `index.md`, and `log.md`.
 - Generated planning artifacts stay out of active docs; `.planning/` remains the workflow truth.
-- Existing wiki pages either connect to a useful hub or are archived/deleted when they are low-value test debris.
-- The agent can run `clean_wiki_memory` to reproduce the graph cleanup loop automatically, with dry-run output before write mode, and nightly wiki maintenance runs the same deterministic cleanup before lint/defer handling.
-- Broken links and obsolete aliases are repaired or intentionally replaced by real pages.
+- Source wiki pages stay compact; raw OCR/extract text remains in source artifacts instead of duplicated embeddings.
+- Memory closure audit reports 18 pages, 45 expected index docs, 45 actual index docs, and `issues=0`.
 - Embedding configuration uses `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL`, and `EMBEDDING_MODEL`; it must not fall back to `LLM_API_KEY`.
-- Embed cache behavior is covered by tests and visible through dashboard health.
-- `search_memory` quality is evaluated against real Aura/project questions, with proposals staying review-gated and evidence-backed.
+- Qdrant sidecar search compares cleanly against local search with fallback intact.
+- Hermetic scorecard passes 20/20.
+- Live scorecard on DB-selected `deepseek/deepseek-v4-flash` passes 20/20 with `search_memory` on every scenario, 4/4 expected proposals, 0 unexpected proposals, and 0 slow scenarios over 30s.
+- Settings exposes memory/search/orchestration controls, including `SEARCH_BACKEND` as a combo box and the `agent` settings group.
 
-Remaining before closure:
-
-- Choose a faster live model/runtime path or split the live answer path so `search_memory` responses stay under the 30s end-user budget.
-
-Deferred from this milestone:
-
-- New source formats and cloud connectors.
-- MarkItDown integration.
-- Large UI redesigns beyond memory-quality observability.
-
-## Planned Next After Current Release Closure
+## Next Milestone
 
 ### v3.1 Agent Orchestration And System Prompt Versioning
 
-Status: in progress
+Status: planned
 
 Plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
 
