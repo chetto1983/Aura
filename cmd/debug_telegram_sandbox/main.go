@@ -97,6 +97,15 @@ func main() {
 	}
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = resolveRuntimeDBPath(cfg.DBPath, sourceDBPath, *writeLiveDB)
+	if !*writeLiveDB {
+		wikiPath, cleanup, err := prepareDebugWikiCopy(cfg.WikiPath)
+		if err != nil {
+			fail("prepare temporary debug wiki: %v", err)
+		}
+		defer cleanup()
+		cfg.WikiPath = wikiPath
+		cfg.SummarizerMode = "off"
+	}
 
 	userID := strings.TrimSpace(*userIDFlag)
 	if userID == "" {
@@ -124,6 +133,7 @@ func main() {
 	fmt.Printf("db_path=%s\n", cfg.DBPath)
 	fmt.Printf("db_source_path=%s\n", sourceDBPath)
 	fmt.Printf("db_write_live=%v\n", *writeLiveDB)
+	fmt.Printf("wiki_path=%s\n", cfg.WikiPath)
 	fmt.Printf("model=%s base_url=%s\n", cfg.LLMModel, cfg.LLMBaseURL)
 	fmt.Printf("runtime_dir=%s sandbox_enabled=%v\n", cfg.SandboxRuntimeDir, cfg.SandboxEnabled)
 	fmt.Printf("prompt=%q\n\n", redactForReport(*prompt))
@@ -308,6 +318,76 @@ func resolveRuntimeDBPath(openedDBPath, sourceDBPath string, writeLive bool) str
 		return filepath.Clean(strings.TrimSpace(sourceDBPath))
 	}
 	return filepath.Clean(strings.TrimSpace(openedDBPath))
+}
+
+func prepareDebugWikiCopy(sourcePath string) (string, func(), error) {
+	sourcePath = strings.TrimSpace(sourcePath)
+	if sourcePath == "" {
+		return "", func() {}, errors.New("wiki path is empty")
+	}
+	absSource, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return "", func() {}, err
+	}
+	info, err := os.Stat(absSource)
+	if err != nil {
+		return "", func() {}, err
+	}
+	if !info.IsDir() {
+		return "", func() {}, fmt.Errorf("wiki path is not a directory: %s", absSource)
+	}
+	tmpDir, err := os.MkdirTemp("", "aura-debug-wiki-*")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(tmpDir)
+	}
+	if err := copyDebugDir(absSource, tmpDir); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return tmpDir, cleanup, nil
+}
+
+func copyDebugDir(sourcePath, destPath string) error {
+	return filepath.WalkDir(sourcePath, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(sourcePath, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(destPath, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeType != 0 {
+			return nil
+		}
+		in, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			_ = out.Close()
+			return err
+		}
+		return out.Close()
+	})
 }
 
 func copyOptionalDebugDBSidecar(sourcePath, destPath string) error {

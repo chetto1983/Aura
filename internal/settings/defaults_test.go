@@ -158,7 +158,7 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 	assertSetting(t, s, KeySandboxRuntimeMode, "container")
 	assertSetting(t, s, KeySkillPreflight, config.DefaultSkillPreflight)
 	assertSetting(t, s, KeySkillRoutingMode, config.DefaultSkillRoutingMode)
-	assertSetting(t, s, KeyAgentLoopMaxSteps, "6")
+	assertSetting(t, s, KeyAgentLoopMaxSteps, "8")
 	assertSetting(t, s, KeyTerminalToolPolicy, config.DefaultTerminalToolPolicy)
 	assertSetting(t, s, KeyDelegationMode, config.DefaultDelegationMode)
 	assertSetting(t, s, KeyTraceRetentionDays, "30")

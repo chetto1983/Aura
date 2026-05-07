@@ -198,7 +198,7 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 	}
 }
 
-func TestApplyToConfigInvalidSkillPreflightDegradesRequired(t *testing.T) {
+func TestApplyToConfigInvalidSkillPreflightDegradesToDefault(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	cfg := &config.Config{SkillPreflight: "off"}
@@ -207,8 +207,8 @@ func TestApplyToConfigInvalidSkillPreflightDegradesRequired(t *testing.T) {
 
 	ApplyToConfig(ctx, s, cfg)
 
-	if cfg.SkillPreflight != "required" {
-		t.Fatalf("SkillPreflight = %q, want required", cfg.SkillPreflight)
+	if cfg.SkillPreflight != config.DefaultSkillPreflight {
+		t.Fatalf("SkillPreflight = %q, want %q", cfg.SkillPreflight, config.DefaultSkillPreflight)
 	}
 }
 

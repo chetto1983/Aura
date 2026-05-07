@@ -63,10 +63,10 @@ docker compose -f compose.yaml -f compose.image.yaml up -d
 Open the setup wizard:
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:18080
 ```
 
-If port `8080` is busy:
+To use a different host port:
 
 ```powershell
 $env:AURA_HOST_PORT = "18080"

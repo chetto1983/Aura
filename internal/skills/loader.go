@@ -254,7 +254,7 @@ func PromptBlock(loaded []Skill) string {
 	sb.WriteString("## Available Skills\n\n")
 	sb.WriteString("Aura has the local skills listed below. Each entry's description states when it applies. ")
 	sb.WriteString("Before following a skill's guidance, call the `read_skill` tool with the skill name to load its full instructions, then act on them. ")
-	sb.WriteString("Skip skills whose description does not match the user's request.\n\n")
+	sb.WriteString("Do not read skills just to satisfy a ritual; skip skills whose description does not match the user's request.\n\n")
 	for _, skill := range loaded {
 		if skill.Name == "" {
 			continue

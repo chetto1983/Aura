@@ -223,7 +223,7 @@
   "settings.item.AURA_ORCHESTRATION_LOG_LEVEL.label": "Livello log orchestrazione",
   "settings.item.AURA_ORCHESTRATION_LOG_LEVEL.hint": "summary registra routing sintetico; debug registra dettagli estesi su tool e profilo",
   "settings.item.AURA_SKILL_PREFLIGHT.label": "Preflight skill",
-  "settings.item.AURA_SKILL_PREFLIGHT.hint": "required blocca i tool di capability finché non viene letta una skill pertinente",
+  "settings.item.AURA_SKILL_PREFLIGHT.hint": "advisory suggerisce skill utili senza bloccare il lavoro con i tool",
   "settings.item.AURA_SKILL_ROUTING_MODE.label": "Modalità routing skill",
   "settings.item.AURA_SKILL_ROUTING_MODE.hint": "manifest usa metadati deterministici; manifest_llm_review è riservato a esperimenti di routing",
   "settings.item.AURA_AGENT_LOOP_MAX_STEPS.label": "Passi massimi loop agente",

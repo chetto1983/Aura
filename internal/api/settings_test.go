@@ -338,7 +338,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 			continue
 		}
 		foundSkillPreflight = true
-		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"required", "advisory", "off"}) {
+		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"advisory", "required", "off"}) {
 			t.Fatalf("AURA_SKILL_PREFLIGHT control = group:%q kind:%q options:%v", it.Group, it.Kind, it.Options)
 		}
 	}
@@ -366,7 +366,7 @@ func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
 		if it.Key != settings.KeySkillPreflight {
 			continue
 		}
-		if it.Value != "required" || it.ActiveValue != "advisory" || it.Source != "default" || !it.RestartRequired {
+		if it.Value != "advisory" || it.ActiveValue != "advisory" || it.Source != "default" || it.RestartRequired {
 			t.Fatalf("skill preflight row = value:%q active:%q source:%q restart:%v", it.Value, it.ActiveValue, it.Source, it.RestartRequired)
 		}
 		return
@@ -397,7 +397,7 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	wantEnums := map[string][]string{
-		settings.KeySkillPreflight:     []string{"required", "advisory", "off"},
+		settings.KeySkillPreflight:     []string{"advisory", "required", "off"},
 		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
 		settings.KeyTerminalToolPolicy: []string{"profile", "off"},
 		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},

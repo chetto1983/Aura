@@ -46,15 +46,14 @@ type SkillPreflightDecision struct {
 }
 
 var hardSkillPreflightCapabilities = map[Capability]bool{
-	CapabilityMemoryWriteReviewed: true,
-	CapabilitySourceExtraction:    true,
-	CapabilityDocumentGeneration:  true,
-	CapabilitySandboxCompute:      true,
-	CapabilityBrowserE2E:          true,
-	CapabilityDockerRuntime:       true,
-	CapabilitySecurityReview:      true,
-	CapabilityReleaseGit:          true,
-	CapabilityMCPPlugin:           true,
+	CapabilitySourceExtraction:   true,
+	CapabilityDocumentGeneration: true,
+	CapabilitySandboxCompute:     true,
+	CapabilityBrowserE2E:         true,
+	CapabilityDockerRuntime:      true,
+	CapabilitySecurityReview:     true,
+	CapabilityReleaseGit:         true,
+	CapabilityMCPPlugin:          true,
 }
 
 // SkillRequirementForCapability returns the skill preflight requirement for a

@@ -223,7 +223,7 @@
   "settings.item.AURA_ORCHESTRATION_LOG_LEVEL.label": "Orchestration log level",
   "settings.item.AURA_ORCHESTRATION_LOG_LEVEL.hint": "summary logs routing metadata; debug logs expanded tool/profile details",
   "settings.item.AURA_SKILL_PREFLIGHT.label": "Skill preflight",
-  "settings.item.AURA_SKILL_PREFLIGHT.hint": "required blocks capability tools until a relevant skill is read",
+  "settings.item.AURA_SKILL_PREFLIGHT.hint": "advisory suggests useful skills without blocking tool work",
   "settings.item.AURA_SKILL_ROUTING_MODE.label": "Skill routing mode",
   "settings.item.AURA_SKILL_ROUTING_MODE.hint": "manifest uses deterministic skill metadata; manifest_llm_review is reserved for routing experiments",
   "settings.item.AURA_AGENT_LOOP_MAX_STEPS.label": "Agent loop max steps",

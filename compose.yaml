@@ -46,9 +46,9 @@ services:
       SEARCH_BACKEND: "qdrant"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_TOOL_PROFILE_MODE: "auto"
-      AURA_SKILL_PREFLIGHT: "required"
+      AURA_SKILL_PREFLIGHT: "advisory"
       AURA_SKILL_ROUTING_MODE: "manifest"
-      AURA_AGENT_LOOP_MAX_STEPS: "6"
+      AURA_AGENT_LOOP_MAX_STEPS: "8"
       AURA_TERMINAL_TOOL_POLICY: "profile"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"
@@ -56,7 +56,7 @@ services:
       SUMMARIZER_TURN_INTERVAL: "2"
       SUMMARIZER_COOLDOWN_SECONDS: "0"
     ports:
-      - "127.0.0.1:${AURA_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:${AURA_HOST_PORT:-18080}:8080"
     volumes:
       - ./data:/data
       - ./wiki:/wiki

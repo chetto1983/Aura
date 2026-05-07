@@ -117,8 +117,8 @@ func TestBuildReportRouteEvals(t *testing.T) {
 				}
 			}
 			for _, want := range tt.wantSkills {
-				if !reportMentionsRequiredSkill(report, want) {
-					t.Fatalf("required skill guidance missing %q: %+v", want, report.SkillPreflightGuidance)
+				if !reportMentionsSkillGuidance(report, want) {
+					t.Fatalf("skill guidance missing %q: %+v", want, report.SkillPreflightGuidance)
 				}
 			}
 			for _, want := range tt.wantTerminal {
@@ -242,11 +242,8 @@ func TestBuildReportDoesNotExposeStaleAliasesOrYamlRefs(t *testing.T) {
 	}
 }
 
-func reportMentionsRequiredSkill(report report, skill string) bool {
+func reportMentionsSkillGuidance(report report, skill string) bool {
 	for _, item := range report.SkillPreflightGuidance {
-		if !item.Required {
-			continue
-		}
 		if slices.Contains(item.AllowedSkillNames, skill) || slices.Contains(item.SkillHints, skill) {
 			return true
 		}

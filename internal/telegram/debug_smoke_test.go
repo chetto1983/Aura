@@ -580,7 +580,11 @@ type scriptedTelegramLLM struct {
 	requests  []llm.Request
 }
 
-func (f *scriptedTelegramLLM) Send(context.Context, llm.Request) (llm.Response, error) {
+func (f *scriptedTelegramLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
+	f.requests = append(f.requests, req)
+	if len(f.requests) <= len(f.responses) {
+		return f.responses[len(f.requests)-1], nil
+	}
 	return llm.Response{}, nil
 }
 
@@ -705,5 +709,35 @@ func TestSwarmFinalizationMessagesDoesNotDuplicateRawResult(t *testing.T) {
 	}
 	if rawOccurrences != 1 {
 		t.Fatalf("raw swarm result occurrences = %d, want 1", rawOccurrences)
+	}
+}
+
+func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
+	messages := []llm.Message{
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "wiki-1", Name: "write_wiki"}}},
+		{Role: "tool", ToolCallID: "wiki-1", Content: `{"ok":true}`},
+	}
+
+	got := terminalToolFinalizationMessages(messages, "write_wiki")
+	if len(got) != len(messages)+1 {
+		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
+	}
+	last := got[len(got)-1].Content
+	if !strings.Contains(last, "Do not call tools") || !strings.Contains(last, "Do not emit JSON, XML, DSML, or tool-call markup") {
+		t.Fatalf("terminal finalization instruction = %q", last)
+	}
+}
+
+func TestTerminalToolFallbackRejectsToolMarkup(t *testing.T) {
+	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_wiki">`
+	if !looksLikeToolCallMarkup(raw) {
+		t.Fatal("looksLikeToolCallMarkup = false, want true")
+	}
+	got := terminalToolFallbackResponse("write_wiki", raw)
+	if strings.Contains(got, "DSML") || strings.Contains(got, "tool_calls") {
+		t.Fatalf("fallback leaked tool markup: %q", got)
+	}
+	if !strings.Contains(got, "wiki") {
+		t.Fatalf("fallback = %q, want wiki completion", got)
 	}
 }

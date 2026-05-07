@@ -34,8 +34,8 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	if !strings.Contains(plan.Content, "Prompt Version: aura-agent-v1") {
 		t.Fatalf("prompt missing version marker:\n%s", plan.Content)
 	}
-	if !strings.Contains(plan.Content, "read_skill") || !strings.Contains(plan.Content, "before using typed document/file tools") {
-		t.Fatalf("prompt missing document skill preflight:\n%s", plan.Content)
+	if !strings.Contains(plan.Content, "Read a skill when the user names it") || !strings.Contains(plan.Content, "Do not read skills just to satisfy a ritual") {
+		t.Fatalf("prompt missing advisory skill-use guidance:\n%s", plan.Content)
 	}
 }
 
@@ -128,7 +128,7 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForProfile default: %v", err)
 	}
-	for _, required := range []string{"write_wiki", "propose_wiki_change"} {
+	for _, required := range []string{"list_skills", "read_skill", "write_wiki", "propose_wiki_change"} {
 		if !slices.Contains(def, required) {
 			t.Fatalf("default profile missing memory write tool %q: %+v", required, def)
 		}
@@ -143,14 +143,17 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 		}
 	}
 
-	mem, err := ToolsForProfile(ProfileMemory, Availability{Proposals: true})
+	mem, err := ToolsForProfile(ProfileMemory, Availability{Proposals: true, Swarm: true})
 	if err != nil {
 		t.Fatalf("ToolsForProfile memory: %v", err)
 	}
-	for _, required := range []string{"write_wiki", "propose_wiki_change"} {
+	for _, required := range []string{"run_aurabot_swarm", "read_swarm_result", "list_skills", "read_skill", "write_wiki", "propose_wiki_change"} {
 		if !slices.Contains(mem, required) {
 			t.Fatalf("memory profile missing memory write tool %q: %+v", required, mem)
 		}
+	}
+	if slices.Index(mem, "run_aurabot_swarm") > slices.Index(mem, "search_memory") {
+		t.Fatalf("memory profile should surface swarm before duplicate direct reads: %+v", mem)
 	}
 }
 
@@ -165,12 +168,12 @@ func TestComposePromptOnlyMentionsSkillPreflightWhenSkillToolsExposed(t *testing
 	}
 
 	sw := ComposePrompt(withProfile(base, ProfileSwarmResearch))
-	if strings.Contains(sw.Content, "## Available Skills") || strings.Contains(sw.Content, "Skill Preflight") {
+	if strings.Contains(sw.Content, "## Available Skills") || strings.Contains(sw.Content, "Skill Use") {
 		t.Fatalf("swarm prompt mentions skill tools that are hidden:\n%s", sw.Content)
 	}
 
 	sb := ComposePrompt(withProfile(base, ProfileSandboxCompute))
-	if !strings.Contains(sb.Content, "## Available Skills") || !strings.Contains(sb.Content, "Skill Preflight") {
+	if !strings.Contains(sb.Content, "## Available Skills") || !strings.Contains(sb.Content, "Skill Use") {
 		t.Fatalf("sandbox prompt missing exposed skill guidance:\n%s", sb.Content)
 	}
 }

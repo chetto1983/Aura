@@ -19,7 +19,7 @@ signals.
 - `test`: optional developer test container with Go 1.26.2, Node 22, and the
   Linux sandbox capability needed for no-network skill tests.
 
-The dashboard is bound to `127.0.0.1:8080` on the host. SearXNG is bound to
+The dashboard is bound to `127.0.0.1:18080` on the host by default. SearXNG is bound to
 `127.0.0.1:8088` on the host and is reachable from Aura as
 `http://searxng:8080`. Garage's S3 API is bound to `127.0.0.1:3900` on the
 host and is reachable from Aura as `http://garage:3900`.
@@ -45,11 +45,10 @@ Pin a specific release by setting `AURA_IMAGE` to a tag such as
 Open the dashboard:
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:18080
 ```
 
-If another local service already owns port 8080, pick a host port without
-changing Aura's in-container port:
+To use a different host port without changing Aura's in-container port:
 
 ```powershell
 $env:AURA_HOST_PORT = "18080"

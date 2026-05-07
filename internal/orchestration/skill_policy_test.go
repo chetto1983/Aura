@@ -73,9 +73,9 @@ func TestSkillRequirementForCapabilityInRequiredMode(t *testing.T) {
 			hints:      []string{"subagent-driven-development", "swarm research", "bounded delegation"},
 		},
 		{
-			name:       "memory write reviewed requires memory review guidance",
+			name:       "memory write reviewed is autonomous advisory",
 			capability: CapabilityMemoryWriteReviewed,
-			required:   true,
+			required:   false,
 			hints:      []string{"aura-memory-audit", "review-gated memory write"},
 		},
 	}
@@ -252,8 +252,8 @@ func TestNeedsSkillPreflightInfersAdminReviewWriteReviewBeforeSecurityReview(t *
 	if decision.Capability != CapabilityMemoryWriteReviewed {
 		t.Fatalf("Capability = %q, want %q", decision.Capability, CapabilityMemoryWriteReviewed)
 	}
-	if !decision.Required {
-		t.Fatalf("Required = false for memory write review")
+	if decision.Required {
+		t.Fatalf("Required = true for memory write review; memory writes must stay autonomous advisory")
 	}
 }
 

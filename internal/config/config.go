@@ -16,9 +16,9 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
-const DefaultSkillPreflight = "required"
+const DefaultSkillPreflight = "advisory"
 const DefaultSkillRoutingMode = "manifest"
-const DefaultAgentLoopMaxSteps = 6
+const DefaultAgentLoopMaxSteps = 8
 const DefaultTerminalToolPolicy = "profile"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
@@ -92,9 +92,9 @@ type Config struct {
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	ToolProfileMode            string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
-	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"required"`
+	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"advisory"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
-	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"6"`
+	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
 	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`

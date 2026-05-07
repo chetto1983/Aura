@@ -62,8 +62,8 @@ func TestLoopPolicyForEveryProfileIsConservativeAndBounded(t *testing.T) {
 		if !ok {
 			t.Fatalf("LoopPolicyForProfile(%q) returned false", profile)
 		}
-		if policy.MaxSteps <= 0 || policy.MaxSteps > 6 {
-			t.Fatalf("%q MaxSteps = %d, want 1..6", profile, policy.MaxSteps)
+		if policy.MaxSteps <= 0 || policy.MaxSteps > 8 {
+			t.Fatalf("%q MaxSteps = %d, want 1..8", profile, policy.MaxSteps)
 		}
 		if policy.MaxElapsed <= 0 || policy.MaxElapsed > time.Minute {
 			t.Fatalf("%q MaxElapsed = %s, want positive duration <= 1m", profile, policy.MaxElapsed)

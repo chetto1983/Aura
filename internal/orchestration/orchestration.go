@@ -246,6 +246,7 @@ var profileCardCatalog = []ProfileCard{
 		Access:   AccessDefault,
 		Priority: 100,
 		AllowedTools: []string{
+			"list_skills", "read_skill", "search_skill_catalog",
 			"search_memory", "search_wiki", "read_wiki",
 			"list_wiki", "list_sources", "read_source",
 			"web_search", "web_fetch",
@@ -258,7 +259,7 @@ var profileCardCatalog = []ProfileCard{
 		},
 		DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                6,
+			MaxSteps:                8,
 			AllowNoToolFinalization: true,
 			DuplicateToolPolicy:     "Reject duplicate high-risk or mutation tool calls; keep default turns short and conservative.",
 			MaxElapsed:              30 * time.Second,
@@ -266,22 +267,25 @@ var profileCardCatalog = []ProfileCard{
 	},
 	{
 		Profile:      ProfileMemory,
-		Purpose:      "Source/wiki/memory route with direct durable memory writes and review-gated proposals.",
+		Purpose:      "Source/wiki/memory route with optional swarm evidence, direct durable memory writes, and review-gated proposals.",
 		Access:       AccessWrite,
 		Priority:     50,
 		PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai", "ricordi", "remember", "second brain", "source", "ricordati", "ricorda", "salva", "save", "record", "annota"},
 		NegativeCues: []string{"documento", "docx", "pdf", "xlsx", "grafico", "chart", "csv", "pipeline audit"},
 		AllowedTools: []string{
+			"list_skills", "read_skill", "search_skill_catalog",
 			"search_memory", "list_wiki", "read_wiki", "search_wiki",
 			"list_sources", "read_source", "lint_wiki", "lint_sources",
 			"daily_briefing", "write_wiki",
 		},
 		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                5,
+			MaxSteps:                8,
+			TerminalTools:           []string{"write_wiki"},
 			AllowNoToolFinalization: true,
 			DuplicateToolPolicy:     "Reject duplicate memory writes unless the later call targets distinct durable content.",
 			MaxElapsed:              30 * time.Second,
@@ -502,7 +506,7 @@ func profilePrompt(profile Profile) string {
 	case ProfileDocument:
 		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
 	case ProfileMemory:
-		return "\nUse local memory/source/wiki tools for evidence-backed answers. For facts, preferences, decisions, and ordinary remember/save requests in the current turn, answer normally and let automatic post-turn memory capture create the reviewable memory update. Use write_wiki only when an immediate wiki edit is clearly needed."
+		return "\nUse local memory/source/wiki tools for evidence-backed answers. For broad pipeline, audit, quality, or \"what is missing\" requests, call run_aurabot_swarm first when it is exposed, then use direct memory/write tools only for the final compact action. For facts, preferences, decisions, and ordinary remember/save requests in the current turn, answer normally and let automatic post-turn memory capture create the reviewable memory update. Use write_wiki only when an immediate wiki edit is clearly needed; after a successful write_wiki batch, stop calling tools and summarize."
 	case ProfileAdminReview:
 		return "\nUse review/proposal tools only. Do not silently mutate skills, MCP plugins, settings, files, or wiki pages. Never call write_wiki in this profile; for remember/save requests, answer normally and rely on automatic post-turn memory capture, or use propose_wiki_change when a review item is explicitly needed."
 	default:
@@ -524,6 +528,9 @@ func swarmProfilePrompt(profile Profile) string {
 	if profile == ProfileDocument {
 		return "\n\n## Document Evidence Profile\nFor document summaries, gather compact evidence with search_memory and list_sources, then create the requested file with the typed file tool. Keep source/wiki reads narrow; do not keep expanding the evidence loop once you have enough to draft."
 	}
+	if profile == ProfileMemory {
+		return "\n\n## Memory Swarm Route\nWhen the request spans the whole pipeline, repo, wiki, memory quality, stale references, or asks what is missing, prefer one run_aurabot_swarm call before direct reads. Treat the swarm result as the broad evidence pass; do not duplicate its worker reads unless a narrow fact must be verified before a write."
+	}
 	return ""
 }
 
@@ -543,9 +550,9 @@ func filePrompt(profile Profile) string {
 
 func skillPreflightPrompt(profile Profile) string {
 	if profile == ProfileDocument || profile == ProfileSandboxCompute {
-		return "\n\n## Skill Preflight\nFor this profile, your first relevant tool action must be list_skills and read_skill for the matching capability. Do this before execute_code and before using typed document/file tools, source extraction, DOCX, PDF, XLSX, sandbox/coding workflows, and future MCP/plugin skills. If a protected tool reports a skill-preflight error, read the suggested skill and retry once."
+		return "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it, when you are unsure about a domain-specific workflow, or when a previous tool error suggests one. Do not read skills just to satisfy a ritual; if the next tool is obvious, use it and keep working."
 	}
-	return "\n\n## Skill Preflight\nIf an installed skill description matches the user's request, call read_skill before acting on that skill's guidance."
+	return "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it or when it would materially improve the work. Do not read skills on every turn."
 }
 
 func profileSupportsSkillTools(profile Profile) bool {

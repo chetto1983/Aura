@@ -89,7 +89,7 @@ func NewListSkillsTool(loader *skills.Loader) *ListSkillsTool {
 func (t *ListSkillsTool) Name() string { return "list_skills" }
 
 func (t *ListSkillsTool) Description() string {
-	return "List local Aura skills loaded from SKILL.md files. Read-only; use read_skill for full instructions."
+	return "List local Aura skills loaded from SKILL.md files. Read-only. Use only when the user names a skill, asks about available skills, or a document/sandbox/admin workflow needs procedural guidance; do not call for routine memory or pipeline answers."
 }
 
 func (t *ListSkillsTool) Parameters() map[string]any {
@@ -138,7 +138,7 @@ func NewReadSkillTool(loader *skills.Loader) *ReadSkillTool {
 func (t *ReadSkillTool) Name() string { return "read_skill" }
 
 func (t *ReadSkillTool) Description() string {
-	return "Read the full content of a local Aura skill by name. Read-only; use when a listed skill is relevant."
+	return "Read the full content of a local Aura skill by name. Read-only. Use only after a skill is clearly relevant; do not read skills as a ritual before obvious tool work."
 }
 
 func (t *ReadSkillTool) Parameters() map[string]any {

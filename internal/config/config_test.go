@@ -293,8 +293,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
 	}
-	if cfg.SkillPreflight != "required" {
-		t.Errorf("SkillPreflight = %q, want required", cfg.SkillPreflight)
+	if cfg.SkillPreflight != DefaultSkillPreflight {
+		t.Errorf("SkillPreflight = %q, want %q", cfg.SkillPreflight, DefaultSkillPreflight)
 	}
 	if cfg.SkillRoutingMode != DefaultSkillRoutingMode {
 		t.Errorf("SkillRoutingMode = %q, want %q", cfg.SkillRoutingMode, DefaultSkillRoutingMode)
@@ -393,8 +393,8 @@ func TestLoadSkillPreflight(t *testing.T) {
 	}{
 		{name: "normalizes", env: " Advisory ", want: "advisory"},
 		{name: "allows off", env: "OFF", want: "off"},
-		{name: "invalid degrades required", env: "unsafe", want: "required"},
-		{name: "blank degrades required", env: "   ", want: "required"},
+		{name: "invalid degrades default", env: "unsafe", want: DefaultSkillPreflight},
+		{name: "blank degrades default", env: "   ", want: DefaultSkillPreflight},
 	}
 
 	for _, tt := range tests {

@@ -964,29 +964,16 @@ func (b *Bot) finalizeSwarmWithNoToolLLM(ctx context.Context, c tele.Context, co
 
 func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
 	req := llm.Request{
-		Messages: convCtx.Messages(),
+		Messages: terminalToolFinalizationMessages(convCtx.Messages(), stats.terminalTool),
 		Model:    b.cfg.LLMModel,
 		Tools:    nil,
 	}
 	stats.llmCalls++
 	stats.loopSteps++
-	ch, err := b.llm.Stream(ctx, req)
+	resp, err := b.llm.Send(ctx, req)
 	if err != nil {
 		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", err)
-		response := strings.TrimSpace(rawToolResult)
-		if response == "" {
-			response = "The terminal tool completed, but no final summary was returned."
-		}
-		convCtx.AddAssistantMessage(response)
-		return response, false
-	}
-	resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
-	if err != nil {
-		b.logger.Warn("terminal tool finalization stream failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", err)
-		response := strings.TrimSpace(rawToolResult)
-		if response == "" {
-			response = "The terminal tool completed, but no final summary was returned."
-		}
+		response := terminalToolFallbackResponse(stats.terminalTool, rawToolResult)
 		convCtx.AddAssistantMessage(response)
 		return response, false
 	}
@@ -999,14 +986,66 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 		b.budget.RecordUsage(resp.Usage)
 	}
 	response := strings.TrimSpace(resp.Content)
-	if response == "" {
-		response = strings.TrimSpace(rawToolResult)
-	}
-	if response == "" {
-		response = "The terminal tool completed."
+	if response == "" || resp.HasToolCalls || looksLikeToolCallMarkup(response) {
+		response = terminalToolFallbackResponse(stats.terminalTool, rawToolResult)
 	}
 	convCtx.AddAssistantMessage(response)
-	return response, delivered
+	if c != nil {
+		parts := renderForTelegramEntities(response)
+		if len(parts) > 0 {
+			if placeholder != nil {
+				if _, err := b.editAssistantMessage(c.Bot(), placeholder, parts[0], response); err == nil {
+					b.sendAssistantRemainder(c.Bot(), c.Recipient(), parts, 1)
+					return response, true
+				}
+			}
+			if sent, err := c.Bot().Send(c.Recipient(), parts[0].Text, parts[0].Entities); err == nil {
+				b.sendAssistantRemainder(c.Bot(), c.Recipient(), parts, 1)
+				_ = sent
+				return response, true
+			}
+		}
+	}
+	return response, false
+}
+
+func terminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
+	out := append([]llm.Message(nil), messages...)
+	toolName := strings.TrimSpace(terminalTool)
+	if toolName == "" {
+		toolName = "the terminal tool"
+	}
+	out = append(out, llm.Message{
+		Role:    "user",
+		Content: fmt.Sprintf("The terminal tool %q completed. Do not call tools. Do not emit JSON, XML, DSML, or tool-call markup. Summarize the completed work for the user in their language using only the tool results already present above.", toolName),
+	})
+	return out
+}
+
+func looksLikeToolCallMarkup(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "tool_calls") ||
+		strings.Contains(lower, "dsml") ||
+		strings.Contains(lower, "invoke name=") ||
+		strings.Contains(lower, "parameter name=") ||
+		strings.Contains(lower, "<｜｜dsml｜｜") ||
+		strings.Contains(lower, "<tool_call") ||
+		strings.Contains(lower, `"tool_calls"`)
+}
+
+func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
+	raw := strings.TrimSpace(rawToolResult)
+	if raw != "" && !looksLikeToolCallMarkup(raw) {
+		return raw
+	}
+	toolName := strings.TrimSpace(terminalTool)
+	if toolName == "" {
+		toolName = "the terminal tool"
+	}
+	if toolName == "write_wiki" {
+		return "Fatto: ho aggiornato la wiki e ho fermato il turno dopo il salvataggio."
+	}
+	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
 }
 
 func swarmFinalizationMessages(messages []llm.Message) []llm.Message {

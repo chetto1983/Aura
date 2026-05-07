@@ -71,6 +71,30 @@ func TestPrepareDebugDBCopyCopiesDatabaseAndSidecars(t *testing.T) {
 	assertFileContent(t, got+"-shm", "shm")
 }
 
+func TestPrepareDebugWikiCopyIsIsolated(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "wiki")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("mkdir source wiki: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "note.md"), []byte("original"), 0o644); err != nil {
+		t.Fatalf("write source wiki: %v", err)
+	}
+
+	got, cleanup, err := prepareDebugWikiCopy(source)
+	if err != nil {
+		t.Fatalf("prepareDebugWikiCopy() error = %v", err)
+	}
+	defer cleanup()
+	if got == source {
+		t.Fatalf("prepareDebugWikiCopy() returned live path")
+	}
+	if err := os.WriteFile(filepath.Join(got, "note.md"), []byte("mutated"), 0o644); err != nil {
+		t.Fatalf("mutate copied wiki: %v", err)
+	}
+	assertFileContent(t, filepath.Join(source, "note.md"), "original")
+}
+
 func TestResolveRuntimeDBPathKeepsTempCopyAfterSettingsApply(t *testing.T) {
 	tempDB := filepath.Join(t.TempDir(), "aura.db")
 	liveDB := filepath.Join(t.TempDir(), "live.db")
