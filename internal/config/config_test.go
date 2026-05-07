@@ -124,6 +124,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_HEADLESS")
 	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
+	os.Unsetenv("AURA_SKILL_PREFLIGHT")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_RUNTIME_MODE")
 	os.Unsetenv("SANDBOX_RUNTIME_URL")
@@ -254,6 +255,9 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
 	}
+	if cfg.SkillPreflight != "required" {
+		t.Errorf("SkillPreflight = %q, want required", cfg.SkillPreflight)
+	}
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
 	}
@@ -268,6 +272,33 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
+	}
+}
+
+func TestLoadSkillPreflight(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "normalizes", env: " Advisory ", want: "advisory"},
+		{name: "allows off", env: "OFF", want: "off"},
+		{name: "invalid degrades required", env: "unsafe", want: "required"},
+		{name: "blank degrades required", env: "   ", want: "required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AURA_SKILL_PREFLIGHT", tt.env)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.SkillPreflight != tt.want {
+				t.Fatalf("SkillPreflight = %q, want %q", cfg.SkillPreflight, tt.want)
+			}
+		})
 	}
 }
 

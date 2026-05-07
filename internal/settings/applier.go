@@ -71,6 +71,7 @@ const (
 	KeyPromptVersion              = "AURA_PROMPT_VERSION"
 	KeyToolProfileMode            = "AURA_TOOL_PROFILE_MODE"
 	KeyOrchestrationLogLevel      = "AURA_ORCHESTRATION_LOG_LEVEL"
+	KeySkillPreflight             = "AURA_SKILL_PREFLIGHT"
 	KeyMistralAPIKey              = "MISTRAL_API_KEY"
 	KeyMistralOCRModel            = "MISTRAL_OCR_MODEL"
 	KeyMistralOCRBaseURL          = "MISTRAL_OCR_BASE_URL"
@@ -119,7 +120,7 @@ func OverridableKeys() []string {
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
-		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel,
+		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel, KeySkillPreflight,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
 		KeyMistralOCRTableFormat, KeyMistralOCRIncludeImages,
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
@@ -218,6 +219,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode)))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
+	cfg.SkillPreflight = normalizeSkillPreflight(settingString(ctx, s, KeySkillPreflight, cfg.SkillPreflight))
 
 	cfg.MistralAPIKey = settingString(ctx, s, KeyMistralAPIKey, cfg.MistralAPIKey)
 	cfg.MistralOCRModel = settingString(ctx, s, KeyMistralOCRModel, cfg.MistralOCRModel)
@@ -245,6 +247,15 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
 	cfg.SandboxAutoImproveMode = settingString(ctx, s, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
+}
+
+func normalizeSkillPreflight(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "required", "advisory", "off":
+		return normalized
+	default:
+		return config.DefaultSkillPreflight
+	}
 }
 
 func settingString(ctx context.Context, s Reader, key, fallback string) string {

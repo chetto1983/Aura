@@ -198,6 +198,10 @@ func ToolsForProfile(profile Profile, available Availability) ([]string, error) 
 	}
 	tools := append([]string(nil), card.AllowedTools...)
 	switch profile {
+	case ProfileDefault:
+		if available.Proposals {
+			tools = append(tools, "propose_wiki_change", "propose_skill_change")
+		}
 	case ProfileMemory:
 		if available.Proposals {
 			tools = append(tools, "propose_wiki_change", "propose_skill_change")
@@ -226,18 +230,19 @@ func ProfileCards() map[Profile]ProfileCard {
 				"web_search", "web_fetch",
 				"schedule_task", "list_tasks", "cancel_task",
 				"daily_briefing",
+				"write_wiki",
 			},
-			DeniedTools: []string{"write_wiki", "execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
+			DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
 		},
 		ProfileMemory: {
 			Profile:      ProfileMemory,
-			Purpose:      "Read-heavy source/wiki/memory route with review-gated proposals.",
-			Access:       AccessReadOnly,
+			Purpose:      "Source/wiki/memory route with direct durable memory writes and review-gated proposals.",
+			Access:       AccessWrite,
 			PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai"},
 			AllowedTools: []string{
 				"search_memory", "list_wiki", "read_wiki", "search_wiki",
 				"list_sources", "read_source", "lint_wiki", "lint_sources",
-				"daily_briefing",
+				"daily_briefing", "write_wiki",
 			},
 			DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
 		},
@@ -369,6 +374,7 @@ func looksLikeMemory(text string) bool {
 	return containsAny(text, []string{
 		"ricordi", "remember", "memoria", "memory", "second brain",
 		"wiki", "fonti", "sources", "source", "cosa sai",
+		"ricordati", "ricorda", "salva", "save", "record", "annota",
 	})
 }
 
@@ -390,7 +396,7 @@ func profilePrompt(profile Profile) string {
 	case ProfileDocument:
 		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
 	case ProfileMemory:
-		return "\nUse local memory/source/wiki tools for evidence-backed answers. Keep durable changes review-gated unless the user explicitly asks to remember."
+		return "\nUse local memory/source/wiki tools for evidence-backed answers and autonomous durable memory writes. Use write_wiki for clear stable memory; use proposals only when review is useful."
 	case ProfileAdminReview:
 		return "\nUse review/proposal tools only. Do not silently mutate skills, MCP plugins, settings, or files."
 	default:

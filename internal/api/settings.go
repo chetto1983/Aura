@@ -162,6 +162,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
 	{Key: settings.KeyToolProfileMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "memory", "swarm_research", "sandbox_compute", "document", "admin_review"}, Label: "Tool profile mode", Hint: "auto selects a focused profile per turn"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
+	{Key: settings.KeySkillPreflight, Value: "required", Group: "agent", Kind: "enum", Options: []string{"required", "advisory", "off"}, Label: "Skill preflight", Hint: "required blocks capability tools until a relevant skill is read"},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
 	{Key: settings.KeySkillsCatalogURL, Group: "other", Kind: "url", Label: "Skills catalog URL"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
@@ -337,6 +338,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.ToolProfileMode
 	case settings.KeyOrchestrationLogLevel:
 		return cfg.OrchestrationLogLevel
+	case settings.KeySkillPreflight:
+		return cfg.SkillPreflight
 	case settings.KeyMistralAPIKey:
 		return cfg.MistralAPIKey
 	case settings.KeyMistralOCRModel:

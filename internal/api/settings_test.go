@@ -320,6 +320,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 
 	foundProfileMode := false
+	foundSkillPreflight := false
 	for _, it := range resp.Items {
 		if it.Key != settings.KeyToolProfileMode {
 			continue
@@ -332,6 +333,45 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	if !foundProfileMode {
 		t.Fatal("AURA_TOOL_PROFILE_MODE not in settings response")
 	}
+	for _, it := range resp.Items {
+		if it.Key != settings.KeySkillPreflight {
+			continue
+		}
+		foundSkillPreflight = true
+		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"required", "advisory", "off"}) {
+			t.Fatalf("AURA_SKILL_PREFLIGHT control = group:%q kind:%q options:%v", it.Group, it.Kind, it.Options)
+		}
+	}
+	if !foundSkillPreflight {
+		t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
+	}
+}
+
+func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings:      store,
+		RuntimeConfig: &config.Config{SkillPreflight: "advisory"},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	for _, it := range resp.Items {
+		if it.Key != settings.KeySkillPreflight {
+			continue
+		}
+		if it.Value != "required" || it.ActiveValue != "advisory" || it.Source != "default" || !it.RestartRequired {
+			t.Fatalf("skill preflight row = value:%q active:%q source:%q restart:%v", it.Value, it.ActiveValue, it.Source, it.RestartRequired)
+		}
+		return
+	}
+	t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
 }
 
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {

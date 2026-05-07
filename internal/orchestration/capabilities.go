@@ -56,9 +56,9 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 	},
 	CapabilityMemoryWriteReviewed: {
 		Capability: CapabilityMemoryWriteReviewed,
-		Profiles:   []Profile{ProfileAdminReview},
-		Tools:      []string{"propose_wiki_change", "propose_skill_change"},
-		SkillHints: []string{"aura-memory-audit", "review-gated memory write"},
+		Profiles:   []Profile{ProfileDefault, ProfileMemory, ProfileAdminReview},
+		Tools:      []string{"write_wiki", "propose_wiki_change", "propose_skill_change"},
+		SkillHints: []string{"aura-memory-audit", "durable memory write", "review-gated memory write"},
 	},
 	CapabilitySourceExtraction: {
 		Capability: CapabilitySourceExtraction,

@@ -85,9 +85,9 @@ func runWithTray(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
 	}
 
 	go func() {
-		stop, err := startAura(logger, cleanupLog, cfg)
+		stop, activeLogger, err := startAura(logger, cleanupLog, cfg)
 		if err != nil {
-			logger.Error("aura startup failed", "error", err)
+			activeLogger.Error("aura startup failed", "error", err)
 			tray.Stop()
 			return
 		}
@@ -117,13 +117,13 @@ func runWithTray(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
 }
 
 func runHeadless(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
-	stop, err := startAura(logger, cleanupLog, cfg)
+	stop, activeLogger, err := startAura(logger, cleanupLog, cfg)
 	if err != nil {
-		logger.Error("aura startup failed", "error", err)
+		activeLogger.Error("aura startup failed", "error", err)
 		os.Exit(1)
 	}
 
-	logger.Info("aura running headless", "dashboard_url", "http://"+dashboardHost(cfg.HTTPPort))
+	activeLogger.Info("aura running headless", "dashboard_url", "http://"+dashboardHost(cfg.HTTPPort))
 	waitForShutdownSignal()
 	stop()
 }
@@ -135,7 +135,8 @@ func waitForShutdownSignal() {
 	signal.Stop(sigCh)
 }
 
-func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ func(), err error) {
+func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ func(), activeLogger *slog.Logger, err error) {
+	activeLogger = logger
 	cleanup := cleanupLog
 	defer func() {
 		if err != nil && cleanup != nil {
@@ -145,7 +146,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	pool, err := auradb.Open(cfg.DBPath)
 	if err != nil {
-		return nil, fmt.Errorf("open database %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("open database %s: %w", cfg.DBPath, err)
 	}
 	closePool := true
 	defer func() {
@@ -155,12 +156,12 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}()
 
 	if err := migrations.Run(context.Background(), pool); err != nil {
-		return nil, fmt.Errorf("migrate database %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("migrate database %s: %w", cfg.DBPath, err)
 	}
 	if status, err := auradb.CheckIntegrity(context.Background(), pool); err != nil {
-		return nil, fmt.Errorf("check database integrity %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("check database integrity %s: %w", cfg.DBPath, err)
 	} else if status != "ok" {
-		return nil, fmt.Errorf("database integrity check failed for %s: %s", cfg.DBPath, status)
+		return nil, activeLogger, fmt.Errorf("database integrity check failed for %s: %s", cfg.DBPath, status)
 	}
 
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
@@ -170,7 +171,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// no-op, so this is safe before the dashboard ever writes a setting.
 	settingsStore, err := settings.NewStoreWithDB(pool)
 	if err != nil {
-		return nil, fmt.Errorf("open settings store: %w", err)
+		return nil, activeLogger, fmt.Errorf("open settings store: %w", err)
 	}
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 
@@ -187,7 +188,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			Logger:          logger,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("setup wizard: %w", err)
+			return nil, activeLogger, fmt.Errorf("setup wizard: %w", err)
 		}
 		// Re-load: .env now has TELEGRAM_TOKEN, settings DB now has
 		// LLM_*, etc. Replace cfg in place with the fresh values.
@@ -197,7 +198,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		}
 		newCfg, err := config.Load()
 		if err != nil {
-			return nil, fmt.Errorf("post-setup config load: %w", err)
+			return nil, activeLogger, fmt.Errorf("post-setup config load: %w", err)
 		}
 		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		cfg = newCfg
@@ -208,6 +209,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		cleanup()
 	}
 	logger, cleanup = logging.Setup(cfg.LogLevel, cfg.LogDir)
+	activeLogger = logger
 
 	// Initialize OpenTelemetry tracing (disabled unless OTEL_ENABLED is set)
 	shutdown, err := tracing.SetupIfEnabled("aura", auraVersion, cfg.OTelEnabled, logger)
@@ -230,7 +232,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	bot, err := telegram.New(cfg, settingsStore, pool, logger)
 	if err != nil {
-		return nil, fmt.Errorf("create telegram bot: %w", err)
+		return nil, activeLogger, fmt.Errorf("create telegram bot: %w", err)
 	}
 
 	healthServer.SetBotUsername(bot.Username())
@@ -273,7 +275,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		if cleanup != nil {
 			cleanup()
 		}
-	}, nil
+	}, activeLogger, nil
 }
 
 // configHealthProvider reports the health of the config subsystem.

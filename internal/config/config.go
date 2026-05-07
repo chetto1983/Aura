@@ -15,6 +15,7 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
+const DefaultSkillPreflight = "required"
 const (
 	DefaultEnvPath = ".env"
 
@@ -81,6 +82,7 @@ type Config struct {
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	ToolProfileMode            string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
+	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"required"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -233,6 +235,7 @@ func Load() (*Config, error) {
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
 	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(getEnv("AURA_TOOL_PROFILE_MODE", "auto")))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
+	cfg.SkillPreflight = normalizeSkillPreflight(getEnv("AURA_SKILL_PREFLIGHT", DefaultSkillPreflight))
 
 	cfg.MistralAPIKey = getEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
@@ -262,6 +265,15 @@ func Load() (*Config, error) {
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
 	return cfg, nil
+}
+
+func normalizeSkillPreflight(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "required", "advisory", "off":
+		return normalized
+	default:
+		return DefaultSkillPreflight
+	}
 }
 
 func EnvPathFromEnvironment() string {

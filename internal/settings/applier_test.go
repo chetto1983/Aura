@@ -117,11 +117,13 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 		PromptVersion:         "aura-agent-v1",
 		ToolProfileMode:       "auto",
 		OrchestrationLogLevel: "summary",
+		SkillPreflight:        "required",
 	}
 
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
 	_ = s.Set(ctx, KeyToolProfileMode, "SWARM_RESEARCH")
 	_ = s.Set(ctx, KeyOrchestrationLogLevel, "DEBUG")
+	_ = s.Set(ctx, KeySkillPreflight, " Advisory ")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -134,8 +136,25 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.OrchestrationLogLevel != "debug" {
 		t.Fatalf("OrchestrationLogLevel = %q", cfg.OrchestrationLogLevel)
 	}
-	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) {
+	if cfg.SkillPreflight != "advisory" {
+		t.Fatalf("SkillPreflight = %q", cfg.SkillPreflight)
+	}
+	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) || !IsOverridable(KeySkillPreflight) {
 		t.Fatal("orchestration settings must be dashboard-overridable")
+	}
+}
+
+func TestApplyToConfigInvalidSkillPreflightDegradesRequired(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	cfg := &config.Config{SkillPreflight: "off"}
+
+	_ = s.Set(ctx, KeySkillPreflight, "loose")
+
+	ApplyToConfig(ctx, s, cfg)
+
+	if cfg.SkillPreflight != "required" {
+		t.Fatalf("SkillPreflight = %q, want required", cfg.SkillPreflight)
 	}
 }
 

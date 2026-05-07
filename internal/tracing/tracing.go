@@ -41,9 +41,6 @@ func Setup(serviceName, version string, logger *slog.Logger) (func(context.Conte
 
 	otel.SetTracerProvider(provider)
 
-	// Set global text map propagator for distributed tracing
-	otel.SetTextMapPropagator(otel.GetTextMapPropagator())
-
 	logger.Info("tracing initialized", "service", serviceName, "version", version)
 
 	return provider.Shutdown, nil

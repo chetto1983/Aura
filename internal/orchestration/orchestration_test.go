@@ -67,7 +67,7 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForProfile swarm: %v", err)
 	}
-	for _, forbidden := range []string{"write_wiki", "create_docx", "execute_code", "save_tool", "schedule_task"} {
+	for _, forbidden := range []string{"create_docx", "execute_code", "save_tool", "schedule_task"} {
 		if slices.Contains(sw, forbidden) {
 			t.Fatalf("swarm profile includes forbidden %q: %+v", forbidden, sw)
 		}
@@ -76,6 +76,9 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 		if !slices.Contains(sw, required) {
 			t.Fatalf("swarm profile missing %q: %+v", required, sw)
 		}
+	}
+	if slices.Contains(sw, "write_wiki") {
+		t.Fatalf("swarm profile exposes write_wiki: %+v", sw)
 	}
 	for _, directRead := range []string{"search_memory", "search_wiki", "list_sources", "read_source"} {
 		if slices.Contains(sw, directRead) {
@@ -103,6 +106,26 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	for _, required := range []string{"list_skills", "read_skill", "search_memory", "run_aurabot_swarm", "read_swarm_result", "create_docx", "create_xlsx", "create_pdf"} {
 		if !slices.Contains(doc, required) {
 			t.Fatalf("document profile missing %q: %+v", required, doc)
+		}
+	}
+
+	def, err := ToolsForProfile(ProfileDefault, Availability{Proposals: true})
+	if err != nil {
+		t.Fatalf("ToolsForProfile default: %v", err)
+	}
+	for _, required := range []string{"write_wiki", "propose_wiki_change"} {
+		if !slices.Contains(def, required) {
+			t.Fatalf("default profile missing memory write tool %q: %+v", required, def)
+		}
+	}
+
+	mem, err := ToolsForProfile(ProfileMemory, Availability{Proposals: true})
+	if err != nil {
+		t.Fatalf("ToolsForProfile memory: %v", err)
+	}
+	for _, required := range []string{"write_wiki", "propose_wiki_change"} {
+		if !slices.Contains(mem, required) {
+			t.Fatalf("memory profile missing memory write tool %q: %+v", required, mem)
 		}
 	}
 }

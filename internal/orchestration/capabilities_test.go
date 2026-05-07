@@ -122,6 +122,17 @@ func TestCapabilitiesForToolReturnsAllOverlappingCapabilitiesInPlannedOrder(t *t
 			t.Fatalf("CapabilityForTool(%q) = %q, %v; want primary %q, true", tool, primary, ok, want[0])
 		}
 	}
+
+	got := CapabilitiesForTool("write_wiki")
+	want := []Capability{CapabilityMemoryWriteReviewed}
+	if !slices.Equal(got, want) {
+		t.Fatalf("CapabilitiesForTool(write_wiki) = %+v, want %+v", got, want)
+	}
+
+	primary, ok := CapabilityForTool("write_wiki")
+	if !ok || primary != CapabilityMemoryWriteReviewed {
+		t.Fatalf("CapabilityForTool(write_wiki) = %q, %v; want %q, true", primary, ok, CapabilityMemoryWriteReviewed)
+	}
 }
 
 func TestFutureOnlyCapabilitiesAreExcludedFromNormalV31Profiles(t *testing.T) {
