@@ -10,6 +10,7 @@ const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultQdrantCollection = "aura_memory_v1"
 const DefaultSearchBackend = "chromem"
 const DefaultSpeculativeSearchTimeoutMS = 1500
+const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
@@ -53,6 +54,7 @@ type Config struct {
 	QdrantAPIKey               string  `envconfig:"QDRANT_API_KEY"`
 	SearchBackend              string  `envconfig:"SEARCH_BACKEND" default:"chromem"`
 	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
+	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
@@ -200,6 +202,7 @@ func Load() (*Config, error) {
 	cfg.QdrantAPIKey = getEnv("QDRANT_API_KEY", "")
 	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(getEnv("SEARCH_BACKEND", DefaultSearchBackend)))
 	cfg.SpeculativeSearchTimeoutMS = getEnvInt("SPECULATIVE_SEARCH_TIMEOUT_MS", DefaultSpeculativeSearchTimeoutMS)
+	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")

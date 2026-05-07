@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/aura/aura/internal/conversation"
@@ -17,11 +18,12 @@ import (
 )
 
 const (
-	searchMemoryDefaultLimit = 6
-	searchMemoryMaxLimit     = 12
-	searchMemoryScanLimit    = 120
-	searchMemoryReadLimit    = 16000
-	searchMemorySnippetLimit = 260
+	searchMemoryDefaultLimit   = 6
+	searchMemoryMaxLimit       = 12
+	searchMemoryScanLimit      = 120
+	searchMemoryReadLimit      = 16000
+	searchMemorySnippetLimit   = 260
+	searchMemoryDefaultTimeout = 5 * time.Second
 )
 
 var sourcePageHeadingRE = regexp.MustCompile(`(?m)^## Page ([0-9]+)\s*$`)
@@ -30,13 +32,18 @@ type SearchMemoryTool struct {
 	wiki    search.Searcher
 	sources source.Repository
 	archive conversation.TurnReader
+	timeout time.Duration
 }
 
 func NewSearchMemoryTool(wiki search.Searcher, sources source.Repository, archive conversation.TurnReader) *SearchMemoryTool {
+	return NewSearchMemoryToolWithTimeout(wiki, sources, archive, searchMemoryDefaultTimeout)
+}
+
+func NewSearchMemoryToolWithTimeout(wiki search.Searcher, sources source.Repository, archive conversation.TurnReader, timeout time.Duration) *SearchMemoryTool {
 	if wiki == nil && sources == nil && archive == nil {
 		return nil
 	}
-	return &SearchMemoryTool{wiki: wiki, sources: sources, archive: archive}
+	return &SearchMemoryTool{wiki: wiki, sources: sources, archive: archive, timeout: timeout}
 }
 
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
@@ -87,21 +94,23 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	limit := intArg(args, "limit", searchMemoryDefaultLimit, 1, searchMemoryMaxLimit)
 	chatID := int64Arg(args, "chat_id")
+	searchCtx, cancel := t.searchContext(ctx)
+	defer cancel()
 
 	var warnings []string
 	results := make([]memoryResult, 0, limit*3)
 	if scopes["wiki"] {
-		wikiResults, wikiWarnings := t.searchWiki(ctx, query, limit)
+		wikiResults, wikiWarnings := t.searchWiki(searchCtx, query, limit)
 		results = append(results, wikiResults...)
 		warnings = append(warnings, wikiWarnings...)
 	}
 	if scopes["sources"] {
-		sourceResults, sourceWarnings := t.searchSources(ctx, query)
+		sourceResults, sourceWarnings := t.searchSources(searchCtx, query)
 		results = append(results, sourceResults...)
 		warnings = append(warnings, sourceWarnings...)
 	}
 	if scopes["archive"] {
-		archiveResults, archiveWarnings := t.searchArchive(ctx, query, chatID)
+		archiveResults, archiveWarnings := t.searchArchive(searchCtx, query, chatID)
 		results = append(results, archiveResults...)
 		warnings = append(warnings, archiveWarnings...)
 	}
@@ -116,6 +125,16 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		results = results[:limit]
 	}
 	return formatMemoryResults(query, results, warnings), nil
+}
+
+func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if t == nil || t.timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, t.timeout)
 }
 
 type memoryResult struct {
@@ -153,6 +172,9 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 	}
 	results, err := t.wiki.Search(ctx, query, limit)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, []string{"wiki search timed out"}
+		}
 		return nil, []string{"wiki search failed: " + err.Error()}
 	}
 	out := make([]memoryResult, 0, len(results))
@@ -178,9 +200,11 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 }
 
 func (t *SearchMemoryTool) searchSources(ctx context.Context, query string) ([]memoryResult, []string) {
-	_ = ctx
 	if t.sources == nil {
 		return nil, []string{"source inbox unavailable"}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, memoryContextWarning("source search", err)
 	}
 	sources, err := t.sources.List(source.ListFilter{})
 	if err != nil {
@@ -192,6 +216,10 @@ func (t *SearchMemoryTool) searchSources(ctx context.Context, query string) ([]m
 	out := make([]memoryResult, 0, len(sources))
 	var warnings []string
 	for _, src := range sources {
+		if err := ctx.Err(); err != nil {
+			warnings = append(warnings, memoryContextWarning("source search", err)...)
+			break
+		}
 		body, err := readSourceMarkdown(t.sources, src, searchMemoryReadLimit)
 		if err != nil {
 			continue
@@ -228,6 +256,9 @@ func (t *SearchMemoryTool) searchArchive(ctx context.Context, query string, chat
 		turns, err = t.archive.ListAll(ctx, searchMemoryScanLimit)
 	}
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, []string{"conversation archive search timed out"}
+		}
 		return nil, []string{"conversation archive search failed: " + err.Error()}
 	}
 	out := make([]memoryResult, 0, len(turns))
@@ -252,6 +283,16 @@ func (t *SearchMemoryTool) searchArchive(ctx context.Context, query string, chat
 		})
 	}
 	return out, nil
+}
+
+func memoryContextWarning(prefix string, err error) []string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return []string{prefix + " timed out"}
+	}
+	if errors.Is(err, context.Canceled) {
+		return []string{prefix + " canceled"}
+	}
+	return []string{prefix + " failed: " + err.Error()}
 }
 
 func formatMemoryResults(query string, results []memoryResult, warnings []string) string {

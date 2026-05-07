@@ -112,6 +112,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
 	{Key: settings.KeySearchBackend, Value: "chromem", Group: "storage", Kind: "enum", Options: []string{"chromem", "qdrant"}, Label: "Search backend", Hint: "Keep chromem for local default; choose qdrant to query the Qdrant sidecar first with local fallback"},
 	{Key: settings.KeySpeculativeSearchTimeoutMS, Value: "1500", Group: "storage", Kind: "int", Label: "Speculative search timeout (ms)", Hint: "Caps pre-LLM memory injection so a slow sidecar cannot stall Telegram turns"},
+	{Key: settings.KeyMemorySearchTimeoutMS, Value: "5000", Group: "storage", Kind: "int", Label: "Memory search tool timeout (ms)", Hint: "Caps search_memory calls inside agent tool loops"},
 
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
@@ -300,6 +301,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.QdrantAPIKey
 	case settings.KeySearchBackend:
 		return cfg.SearchBackend
+	case settings.KeySpeculativeSearchTimeoutMS:
+		return strconv.Itoa(cfg.SpeculativeSearchTimeoutMS)
+	case settings.KeyMemorySearchTimeoutMS:
+		return strconv.Itoa(cfg.MemorySearchTimeoutMS)
 	case settings.KeyMaxToolIterations:
 		return strconv.Itoa(cfg.MaxToolIterations)
 	case settings.KeySkillsCatalogURL:

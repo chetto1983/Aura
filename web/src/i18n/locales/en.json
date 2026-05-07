@@ -203,6 +203,8 @@
   "settings.item.SEARCH_BACKEND.hint": "Keep chromem for local default; choose qdrant to query the sidecar first with local fallback",
   "settings.item.SPECULATIVE_SEARCH_TIMEOUT_MS.label": "Speculative search timeout (ms)",
   "settings.item.SPECULATIVE_SEARCH_TIMEOUT_MS.hint": "Caps pre-LLM memory injection so a slow sidecar cannot stall Telegram turns",
+  "settings.item.MEMORY_SEARCH_TIMEOUT_MS.label": "Memory search tool timeout (ms)",
+  "settings.item.MEMORY_SEARCH_TIMEOUT_MS.hint": "Caps search_memory calls inside agent tool loops",
   "settings.item.EMBEDDING_BASE_URL.label": "Embeddings base URL",
   "settings.item.EMBEDDING_MODEL.label": "Embeddings model",
   "settings.item.EMBEDDING_API_KEY.label": "Embeddings API key",

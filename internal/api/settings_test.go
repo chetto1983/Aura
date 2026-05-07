@@ -280,6 +280,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 	foundBackend := false
 	foundTimeout := false
+	foundMemoryTimeout := false
 	for _, it := range resp.Items {
 		if it.Key != settings.KeySearchBackend {
 			continue
@@ -303,6 +304,18 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 	if !foundTimeout {
 		t.Fatal("SPECULATIVE_SEARCH_TIMEOUT_MS not in settings response")
+	}
+	for _, it := range resp.Items {
+		if it.Key != settings.KeyMemorySearchTimeoutMS {
+			continue
+		}
+		foundMemoryTimeout = true
+		if it.Kind != "int" || it.Value != "5000" || it.ReadOnly {
+			t.Fatalf("MEMORY_SEARCH_TIMEOUT_MS control = kind:%q value:%q readonly:%v", it.Kind, it.Value, it.ReadOnly)
+		}
+	}
+	if !foundMemoryTimeout {
+		t.Fatal("MEMORY_SEARCH_TIMEOUT_MS not in settings response")
 	}
 }
 

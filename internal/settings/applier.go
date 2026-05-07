@@ -55,6 +55,7 @@ const (
 	KeyQdrantAPIKey               = "QDRANT_API_KEY"
 	KeySearchBackend              = "SEARCH_BACKEND"
 	KeySpeculativeSearchTimeoutMS = "SPECULATIVE_SEARCH_TIMEOUT_MS"
+	KeyMemorySearchTimeoutMS      = "MEMORY_SEARCH_TIMEOUT_MS"
 	KeyMaxToolIterations          = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL           = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin                = "SKILLS_ADMIN"
@@ -110,7 +111,7 @@ func OverridableKeys() []string {
 		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
-		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySearchBackend, KeySpeculativeSearchTimeoutMS,
+		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySearchBackend, KeySpeculativeSearchTimeoutMS, KeyMemorySearchTimeoutMS,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -197,6 +198,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.QdrantAPIKey = settingString(ctx, s, KeyQdrantAPIKey, cfg.QdrantAPIKey)
 	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySearchBackend, cfg.SearchBackend)))
 	cfg.SpeculativeSearchTimeoutMS = settingInt(ctx, s, KeySpeculativeSearchTimeoutMS, cfg.SpeculativeSearchTimeoutMS)
+	cfg.MemorySearchTimeoutMS = settingInt(ctx, s, KeyMemorySearchTimeoutMS, cfg.MemorySearchTimeoutMS)
 	cfg.MaxToolIterations = settingInt(ctx, s, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = settingString(ctx, s, KeySkillsCatalogURL, cfg.SkillsCatalogURL)

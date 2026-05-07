@@ -204,6 +204,66 @@ func TestSearchMemoryToolAcceptsWikiSearchInterface(t *testing.T) {
 	}
 }
 
+func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
+	wiki := &deadlineMemoryWikiSearch{results: []search.Result{{
+		Kind:    "wiki_page",
+		Slug:    "bounded-memory",
+		Title:   "Bounded Memory",
+		Content: "search_memory calls should receive a bounded context.",
+		Score:   0.9,
+	}}}
+	tool := NewSearchMemoryToolWithTimeout(wiki, nil, nil, 50*time.Millisecond)
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "bounded memory", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "[wiki] [[bounded-memory]]") {
+		t.Fatalf("output = %q", out)
+	}
+	if wiki.deadline.IsZero() {
+		t.Fatal("wiki search did not receive a deadline")
+	}
+	if remaining := time.Until(wiki.deadline); remaining <= 0 || remaining > time.Second {
+		t.Fatalf("deadline remaining = %s, want bounded future deadline", remaining)
+	}
+}
+
+func TestSearchMemoryToolWithTimeoutReturnsWarningOnWikiTimeout(t *testing.T) {
+	tool := NewSearchMemoryToolWithTimeout(blockingMemoryWikiSearch{}, nil, nil, 10*time.Millisecond)
+	start := time.Now()
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "slow qdrant", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Execute took %s, want bounded timeout", elapsed)
+	}
+	if !strings.Contains(out, "wiki search timed out") || !strings.Contains(out, "Evidence envelope:") {
+		t.Fatalf("expected timeout warning and evidence envelope:\n%s", out)
+	}
+}
+
+type deadlineMemoryWikiSearch struct {
+	results  []search.Result
+	deadline time.Time
+}
+
+func (f *deadlineMemoryWikiSearch) IsIndexed() bool { return true }
+
+func (f *deadlineMemoryWikiSearch) Search(ctx context.Context, _ string, _ int) ([]search.Result, error) {
+	f.deadline, _ = ctx.Deadline()
+	return f.results, nil
+}
+
+type blockingMemoryWikiSearch struct{}
+
+func (blockingMemoryWikiSearch) IsIndexed() bool { return true }
+
+func (blockingMemoryWikiSearch) Search(ctx context.Context, _ string, _ int) ([]search.Result, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 type fakeMemoryArchiveReader struct {
 	turns []conversation.Turn
 }

@@ -395,7 +395,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
 		}
 	}
-	if tool := tools.NewSearchMemoryTool(searchEngine, sourceStore, b.archiveDB); tool != nil {
+	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, sourceStore, b.archiveDB, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {
 		toolRegistry.Register(tool)
 	}
 

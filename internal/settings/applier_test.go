@@ -148,6 +148,7 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 		QdrantAPIKey:               "",
 		SearchBackend:              "chromem",
 		SpeculativeSearchTimeoutMS: 1500,
+		MemorySearchTimeoutMS:      5000,
 	}
 
 	_ = s.Set(ctx, KeyQdrantURL, "http://qdrant:6333")
@@ -155,6 +156,7 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	_ = s.Set(ctx, KeyQdrantAPIKey, "secret")
 	_ = s.Set(ctx, KeySearchBackend, " qdrant ")
 	_ = s.Set(ctx, KeySpeculativeSearchTimeoutMS, "900")
+	_ = s.Set(ctx, KeyMemorySearchTimeoutMS, "3000")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -173,7 +175,10 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	if cfg.SpeculativeSearchTimeoutMS != 900 {
 		t.Fatalf("SpeculativeSearchTimeoutMS = %d, want 900", cfg.SpeculativeSearchTimeoutMS)
 	}
-	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) || !IsOverridable(KeySearchBackend) || !IsOverridable(KeySpeculativeSearchTimeoutMS) {
+	if cfg.MemorySearchTimeoutMS != 3000 {
+		t.Fatalf("MemorySearchTimeoutMS = %d, want 3000", cfg.MemorySearchTimeoutMS)
+	}
+	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) || !IsOverridable(KeySearchBackend) || !IsOverridable(KeySpeculativeSearchTimeoutMS) || !IsOverridable(KeyMemorySearchTimeoutMS) {
 		t.Fatal("Qdrant settings must be dashboard-overridable")
 	}
 }

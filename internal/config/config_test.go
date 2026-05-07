@@ -98,6 +98,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("QDRANT_API_KEY")
 	os.Unsetenv("SEARCH_BACKEND")
 	os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
+	os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
@@ -175,6 +176,9 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SpeculativeSearchTimeoutMS != DefaultSpeculativeSearchTimeoutMS {
 		t.Errorf("SpeculativeSearchTimeoutMS = %d, want %d", cfg.SpeculativeSearchTimeoutMS, DefaultSpeculativeSearchTimeoutMS)
+	}
+	if cfg.MemorySearchTimeoutMS != DefaultMemorySearchTimeoutMS {
+		t.Errorf("MemorySearchTimeoutMS = %d, want %d", cfg.MemorySearchTimeoutMS, DefaultMemorySearchTimeoutMS)
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
@@ -265,11 +269,13 @@ func TestLoadQdrantConfig(t *testing.T) {
 	os.Setenv("QDRANT_API_KEY", "secret")
 	os.Setenv("SEARCH_BACKEND", " qdrant ")
 	os.Setenv("SPECULATIVE_SEARCH_TIMEOUT_MS", "750")
+	os.Setenv("MEMORY_SEARCH_TIMEOUT_MS", "2500")
 	defer os.Unsetenv("QDRANT_URL")
 	defer os.Unsetenv("QDRANT_COLLECTION")
 	defer os.Unsetenv("QDRANT_API_KEY")
 	defer os.Unsetenv("SEARCH_BACKEND")
 	defer os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
+	defer os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
 
 	cfg, err := Load()
 	if err != nil {
@@ -289,6 +295,9 @@ func TestLoadQdrantConfig(t *testing.T) {
 	}
 	if cfg.SpeculativeSearchTimeoutMS != 750 {
 		t.Fatalf("SpeculativeSearchTimeoutMS = %d, want 750", cfg.SpeculativeSearchTimeoutMS)
+	}
+	if cfg.MemorySearchTimeoutMS != 2500 {
+		t.Fatalf("MemorySearchTimeoutMS = %d, want 2500", cfg.MemorySearchTimeoutMS)
 	}
 }
 
