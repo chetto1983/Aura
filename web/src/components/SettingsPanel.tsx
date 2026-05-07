@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Settings as SettingsIcon, Save, FlaskConical, Eye, EyeOff, Loader2, RotateCw } from 'lucide-react';
+import TimezoneSelect, { type ITimezoneOption } from 'react-timezone-select';
 import { toast } from 'sonner';
 import { Trans } from 'react-i18next';
 import { api, ApiError } from '@/api';
@@ -364,6 +365,78 @@ function Control({
 }) {
   const { t } = useLocale();
   const kind = item.kind ?? 'text';
+
+  if (item.key === 'AURA_TIMEZONE') {
+    return (
+      <TimezoneSelect
+        inputId={item.key}
+        instanceId={item.key}
+        value={value || 'Europe/Rome'}
+        isDisabled={disabled}
+        onChange={(timezone: ITimezoneOption) => onChange(timezone.value)}
+        labelStyle="original"
+        displayValue="UTC"
+        menuPortalTarget={typeof document === 'undefined' ? undefined : document.body}
+        className="aura-timezone-select min-w-0 flex-1 text-[13px]"
+        styles={{
+          control: (base, state) => ({
+            ...base,
+            minHeight: '44px',
+            borderRadius: '6px',
+            borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--border))',
+            backgroundColor: 'hsl(var(--background))',
+            boxShadow: state.isFocused ? '0 0 0 2px hsl(var(--ring) / 0.25)' : 'none',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? 0.7 : 1,
+          }),
+          valueContainer: (base) => ({
+            ...base,
+            paddingLeft: '12px',
+            paddingRight: '8px',
+          }),
+          singleValue: (base) => ({
+            ...base,
+            color: 'hsl(var(--foreground))',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '13px',
+          }),
+          input: (base) => ({
+            ...base,
+            color: 'hsl(var(--foreground))',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '13px',
+          }),
+          menu: (base) => ({
+            ...base,
+            border: '1px solid hsl(var(--border))',
+            backgroundColor: 'hsl(var(--popover))',
+            color: 'hsl(var(--popover-foreground))',
+            overflow: 'hidden',
+            zIndex: 60,
+          }),
+          menuPortal: (base) => ({
+            ...base,
+            zIndex: 60,
+          }),
+          option: (base, state) => ({
+            ...base,
+            backgroundColor: state.isSelected
+              ? 'hsl(var(--primary))'
+              : state.isFocused
+                ? 'hsl(var(--muted))'
+                : 'hsl(var(--popover))',
+            color: state.isSelected ? 'hsl(var(--primary-foreground))' : 'hsl(var(--popover-foreground))',
+            cursor: 'pointer',
+            fontSize: '13px',
+          }),
+          placeholder: (base) => ({
+            ...base,
+            color: 'hsl(var(--muted-foreground))',
+          }),
+        }}
+      />
+    );
+  }
 
   if (kind === 'bool') {
     const on = value === 'true' || value === '1';

@@ -14,7 +14,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { confirm as confirmModal } from '@/lib/confirmModal';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
+import { useAuraTimeZone } from '@/hooks/useAuraTimeZone';
 import { useLocale } from '@/hooks/useLocale';
+import {
+  fromDateTimeLocalValueInTimeZone,
+  toDateTimeLocalValueInTimeZone,
+} from '@/lib/timezone';
 import type { Task, UpsertTaskRequest } from '@/types/api';
 
 const POLL_MS = 5000;
@@ -23,6 +28,7 @@ const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
 export function TasksPanel() {
   const { t, formatDate } = useLocale();
+  const auraTimeZone = useAuraTimeZone();
   const fetcher = useCallback(() => api.tasks(), []);
   const { data, error, loading, stale, refetch } = useApi(fetcher, POLL_MS);
   const [busyNames, setBusyNames] = useState<Set<string>>(new Set());
@@ -38,10 +44,10 @@ export function TasksPanel() {
     }
   };
 
-  const fmtDate = (iso: string): string => {
+  const fmtDate = useCallback((iso: string): string => {
     if (!iso || iso.startsWith('0001')) return '—';
-    return formatDate(iso, { dateStyle: 'short', timeStyle: 'short' });
-  };
+    return formatDate(iso, { dateStyle: 'short', timeStyle: 'short', timeZone: auraTimeZone });
+  }, [auraTimeZone, formatDate]);
 
   const setBusy = useCallback((name: string, on: boolean) => {
     setBusyNames((prev) => {
@@ -93,7 +99,7 @@ export function TasksPanel() {
     const id = toast.loading(t(editing ? 'tasks.toast.updating' : 'tasks.toast.scheduling', { name: req.name }));
     try {
       const saved = await api.upsertTask(req);
-      toast.success(t(editing ? 'tasks.toast.updated' : 'tasks.toast.scheduled', { name: saved.name, nextRun: saved.next_run_at }), { id });
+      toast.success(t(editing ? 'tasks.toast.updated' : 'tasks.toast.scheduled', { name: saved.name, nextRun: fmtDate(saved.next_run_at) }), { id });
       refetch();
       setDialogOpen(false);
       setEditingTask(null);
@@ -102,7 +108,7 @@ export function TasksPanel() {
       toast.error(t(editing ? 'tasks.toast.updateFailed' : 'tasks.toast.scheduleFailed', { error: msg }), { id });
       // Keep the dialog open so the user can fix the input.
     }
-  }, [refetch, t]);
+  }, [fmtDate, refetch, t]);
 
   if (loading && !data) return <TasksSkeleton />;
   if (error && !data) return <ErrorCard error={error} title={t('tasks.errorTitle')} onRetry={refetch} />;
@@ -116,6 +122,9 @@ export function TasksPanel() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">{t('tasks.title')}</h1>
+          <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+            {t('tasks.timeZone', { timeZone: auraTimeZone })}
+          </span>
           {stale && (
             <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
               {t('common.stale')}
@@ -153,6 +162,7 @@ export function TasksPanel() {
           if (!open) setEditingTask(null);
         }}
         onSubmit={(req) => handleSave(req, editingTask !== null)}
+        timeZone={auraTimeZone}
       />
 
       {STATUS_ORDER.map((s) => {
@@ -174,7 +184,7 @@ export function TasksPanel() {
                     <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{task.status}</span>
                   </div>
                   <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
-                    <p>{t('tasks.mobile.schedule')}: {formatSchedule(task)}</p>
+                    <p>{t('tasks.mobile.schedule')}: {formatSchedule(task, fmtDate)}</p>
                     <p>{t('tasks.mobile.next')}: {task.status === 'active' ? <Countdown iso={task.next_run_at} /> : fmtDate(task.next_run_at)}</p>
                     <p>{t('tasks.mobile.last')}: {task.last_error || fmtDate(task.last_run_at)}</p>
                   </div>
@@ -210,9 +220,9 @@ export function TasksPanel() {
                       <td className="py-2 px-3 font-mono text-xs">{task.name}</td>
                       <td className="py-2 px-3">{task.kind}</td>
                       <td className="py-2 px-3 text-xs">
-                        {task.schedule_kind === 'daily' && formatSchedule(task)}
+                        {task.schedule_kind === 'daily' && formatSchedule(task, fmtDate)}
                         {task.schedule_kind === 'every' && t('tasks.scheduleKind.everyM', { n: task.schedule_every_minutes })}
-                        {task.schedule_kind === 'at' && task.schedule_at}
+                        {task.schedule_kind === 'at' && fmtDate(task.schedule_at)}
                       </td>
                       <td className="py-2 px-3">
                         {task.status === 'active'
@@ -262,11 +272,13 @@ function TaskDialog({
   task,
   onOpenChange,
   onSubmit,
+  timeZone,
 }: {
   open: boolean;
   task: Task | null;
   onOpenChange: (o: boolean) => void;
   onSubmit: (req: UpsertTaskRequest) => Promise<void>;
+  timeZone: string;
 }) {
   const { t } = useLocale();
   const editing = task !== null;
@@ -281,7 +293,15 @@ function TaskDialog({
             {t(editing ? 'tasks.dialog.editDescription' : 'tasks.dialog.description')}
           </DialogDescription>
         </DialogHeader>
-        {open && <TaskForm key={task?.name ?? 'new'} task={task} onCancel={() => onOpenChange(false)} onSubmit={onSubmit} />}
+        {open && (
+          <TaskForm
+            key={`${task?.name ?? 'new'}:${timeZone}`}
+            task={task}
+            onCancel={() => onOpenChange(false)}
+            onSubmit={onSubmit}
+            timeZone={timeZone}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -342,23 +362,25 @@ function TaskActions({
   );
 }
 
-function formatSchedule(t: Task): string {
+function formatSchedule(t: Task, fmtDate: (iso: string) => string): string {
   if (t.schedule_kind === 'daily') {
     const days = t.schedule_weekdays ? ` on ${t.schedule_weekdays}` : '';
     return `daily ${t.schedule_daily}${days}`;
   }
   if (t.schedule_kind === 'every') return `every ${t.schedule_every_minutes}m`;
-  return t.schedule_at || 'not scheduled';
+  return t.schedule_at ? fmtDate(t.schedule_at) : 'not scheduled';
 }
 
 function TaskForm({
   task,
   onCancel,
   onSubmit,
+  timeZone,
 }: {
   task: Task | null;
   onCancel: () => void;
   onSubmit: (req: UpsertTaskRequest) => Promise<void>;
+  timeZone: string;
 }) {
   const { t, locale } = useLocale();
   const editing = task !== null;
@@ -367,7 +389,7 @@ function TaskForm({
   const [payload, setPayload] = useState(task?.payload ?? '');
   const [recipientId, setRecipientId] = useState(task?.recipient_id ?? '');
   const [scheduleMode, setScheduleMode] = useState<'at' | 'daily' | 'every'>(task?.schedule_kind ?? 'daily');
-  const [at, setAt] = useState(toLocalDateTimeValue(task?.schedule_at));
+  const [at, setAt] = useState(toDateTimeLocalValueInTimeZone(task?.schedule_at, timeZone));
   const [daily, setDaily] = useState(task?.schedule_daily || '03:00');
   const [weekdays, setWeekdays] = useState<string[]>(task?.schedule_weekdays ? task.schedule_weekdays.split(',').filter(Boolean) : []);
   const [everyMinutes, setEveryMinutes] = useState(task?.schedule_every_minutes || 60);
@@ -382,12 +404,8 @@ function TaskForm({
       if (kind === 'reminder' && recipientId.trim()) req.recipient_id = recipientId.trim();
       if (kind === 'agent_job') req.language = locale;
       if (scheduleMode === 'at') {
-        // <input type="datetime-local"> emits "YYYY-MM-DDTHH:MM" in local
-        // time. Convert to UTC RFC3339 for the wire.
-        const localDate = new Date(at);
-        if (!isNaN(localDate.getTime())) {
-          req.at = localDate.toISOString();
-        }
+        const instant = fromDateTimeLocalValueInTimeZone(at, timeZone);
+        if (instant) req.at = instant;
       } else if (scheduleMode === 'daily') {
         req.daily = daily.trim();
         if (weekdays.length > 0) req.weekdays = weekdays.join(',');
@@ -547,14 +565,19 @@ function TaskForm({
               </div>
             )}
             {scheduleMode === 'at' && (
-              <input
-                type="datetime-local"
-                required
-                value={at}
-                onChange={(e) => setAt(e.target.value)}
-                aria-label={t('tasks.form.schedule.atAria')}
-                className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
-              />
+              <div className="space-y-1">
+                <input
+                  type="datetime-local"
+                  required
+                  value={at}
+                  onChange={(e) => setAt(e.target.value)}
+                  aria-label={t('tasks.form.schedule.atAria')}
+                  className="block min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('tasks.form.schedule.timeZoneHint', { timeZone })}
+                </p>
+              </div>
             )}
           </fieldset>
 
@@ -576,14 +599,6 @@ function TaskForm({
       </DialogFooter>
     </form>
   );
-}
-
-function toLocalDateTimeValue(iso?: string): string {
-  if (!iso || iso.startsWith('0001')) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
 }
 
 function isEditableTaskKind(kind: Task['kind']): kind is UpsertTaskRequest['kind'] {
