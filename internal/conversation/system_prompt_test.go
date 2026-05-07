@@ -45,3 +45,12 @@ func TestDefaultSystemPromptClarifiesFileGenerationToolChoice(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultSystemPromptRequiresStaleReferenceVerification(t *testing.T) {
+	got := DefaultSystemPrompt()
+	for _, want := range []string{"stale references", "verify it with the narrowest relevant tool"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system prompt missing stale-reference guidance %q", want)
+		}
+	}
+}

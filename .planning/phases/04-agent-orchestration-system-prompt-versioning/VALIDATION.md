@@ -143,3 +143,67 @@ Measured runtime:
 - Tool smoke: `5050`, `elapsed_ms=4`.
 - Artifact smoke: CSV and PNG persisted as source artifacts, `elapsed_ms=4934`.
 - Full all-import `debug_sandbox -smoke` is not a sidecar release gate yet; it exceeded the 15 minute debug timeout because it intentionally loads the legacy full office/data profile.
+
+## 2026-05-07 Hermes-Style Swarm Delegation Hardening
+
+Status: pass for the focused swarm closure smoke. v3.1 remains active until the remaining full release gate is re-run.
+
+Implemented:
+
+- `swarm_research` parent profile now exposes only `run_aurabot_swarm`, `read_swarm_result`, and `list_swarm_tasks`.
+- Parent Telegram loop finalizes immediately after a successful `run_aurabot_swarm` in `swarm_research`.
+- Duplicate `run_aurabot_swarm` calls in one assistant turn are capped to the first execution.
+- Debug smoke reports `terminal_swarm`, `swarm_finalization`, `post_swarm_tool_calls`, `elapsed_ms`, token metrics, and cost.
+- Swarm delegation policy now clamps runtime-owned limits:
+  - `SWARM_RESEARCH_MAX_WORKERS`, default `1`, hard max `3`.
+  - `SWARM_RESEARCH_TIMEOUT_MS`, default `25000`, hard max `30000`.
+  - `SWARM_RESEARCH_CHILD_MAX_ITERATIONS`, default `3`.
+  - `SWARM_RESEARCH_MAX_RESULT_CHARS`, default `12000`.
+  - `SWARM_RESEARCH_FINALIZATION=aggregate|no_tool_llm`.
+- Model-provided worker roles are validated for stale aliases but the fast route uses the runtime-owned worker mix.
+- Default fast worker mix is single-worker `librarian`; `synthesizer`, `researcher`, `critic`, and `skillsmith` remain available behind explicit runtime tuning.
+- The `swarm_research` Telegram route now launches `run_aurabot_swarm` directly from the runtime instead of spending a first parent LLM call deciding to call the swarm.
+- Swarm manager now persists completed task/run state with a non-cancelled context after worker deadlines, so partial/timeout-adjacent metrics are not lost.
+
+Verification:
+
+```powershell
+go test ./internal/orchestration ./internal/swarm ./internal/swarmtools ./internal/telegram ./cmd/debug_orchestration ./cmd/debug_telegram_sandbox -count=1
+go test ./... -count=1
+go run ./cmd/debug_orchestration -prompt "facciamo il punto di tutta la pipeline Aura e dimmi cosa manca per chiudere v3.1"
+$env:AURA_ENV_PATH='data\.env'; go run ./cmd/debug_telegram_sandbox -timeout 90s -no-validate -expect-profile swarm_research -expect-tools run_aurabot_swarm -expect-swarm -expect-terminal-swarm -expect-token-metrics -max-elapsed-ms 30000 -prompt "facciamo il punto di tutta la pipeline Aura e dimmi cosa manca per chiudere v3.1"
+$env:AURA_HOST_PORT='18080'; docker compose up -d --build aura
+Invoke-RestMethod -Uri http://127.0.0.1:18080/status
+```
+
+Measured deterministic route probe:
+
+- `tool_profile=swarm_research`
+- `profile_select_reason=matched swarm_research broad synthesis cues`
+- `tools_exposed=run_aurabot_swarm,read_swarm_result,list_swarm_tasks`
+
+Measured live smoke on configured DB model:
+
+- `model=deepseek/deepseek-v4-flash`
+- `base_url=https://openrouter.ai/api/v1`
+- `tool_calls=run_aurabot_swarm`
+- `tool_profile=swarm_research`
+- `tools_exposed=list_swarm_tasks,read_swarm_result,run_aurabot_swarm`
+- `terminal_swarm=true`
+- `swarm_finalization=aggregate`
+- `post_swarm_tool_calls=0`
+- `duplicate_swarm_rejected=false`
+- `worker_count=1`
+- `worker_failures=0`
+- `final=Run swarm_0c735eb08723b78f (completed): 1/1 completed, 0 failed, 0 running, 0 pending. Roles: librarian=completed.`
+- `token_usage_reported=true`
+- `tokens_prompt=1227`
+- `tokens_completion=218`
+- `tokens_total=1445`
+- `cost_usd=0.002051`
+- `elapsed_ms=25925`
+
+Notes:
+
+- The local debug harness still logs `QDRANT_URL is required` because Compose-only environment values are not present in `data\.env`; this does not affect the swarm delegation smoke, but the full Docker closure gate should run inside Compose or pass the Compose Qdrant env explicitly.
+- Docker rebuild initially failed when `AURA_HOST_PORT` was not exported and Compose tried to bind `127.0.0.1:8080`; rerunning with `AURA_HOST_PORT=18080` recreated Aura successfully and `/status` returned `status=ok`.

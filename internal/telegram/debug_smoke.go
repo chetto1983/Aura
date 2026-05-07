@@ -38,12 +38,19 @@ type DebugTextSmokeResult struct {
 	SkillsRead               bool
 	SwarmUsed                bool
 	SandboxUsed              bool
+	TerminalSwarm            bool
+	SwarmFinalization        string
+	PostSwarmToolCalls       int
+	DuplicateSwarmRejected   bool
+	WorkerCount              int
+	WorkerFailures           int
 	TokenUsageReported       bool
 	TokensPrompt             int
 	TokensCompletion         int
 	TokensTotal              int
 	EstimatedContextTokens   int
 	CostUSD                  float64
+	ElapsedMS                int64
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -90,6 +97,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	c := tele.NewContext(b.bot, update)
 	docSeq := b.debugDocSeq.Load()
 	budgetBefore := b.BudgetStatus()
+	start := time.Now()
 
 	done := make(chan struct{})
 	go func() {
@@ -102,6 +110,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, ctx.Err()
 	case <-done:
 	}
+	elapsedMS := time.Since(start).Milliseconds()
 
 	ctxVal, ok := b.ctxMap.Load(userIDString)
 	if !ok {
@@ -125,14 +134,29 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
 		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed
 		result.SandboxUsed = result.SandboxUsed || snap.SandboxUsed
+		result.TerminalSwarm = snap.TerminalSwarm
+		result.SwarmFinalization = snap.SwarmFinalization
+		result.PostSwarmToolCalls = snap.PostSwarmToolCalls
+		result.DuplicateSwarmRejected = snap.DuplicateSwarm
+		result.WorkerCount = snap.WorkerCount
+		result.WorkerFailures = snap.WorkerFailures
+		if snap.TokensPrompt > 0 || snap.TokensCompletion > 0 || snap.TokensTotal > 0 {
+			result.TokensPrompt = snap.TokensPrompt
+			result.TokensCompletion = snap.TokensCompletion
+			result.TokensTotal = snap.TokensTotal
+			result.CostUSD = snap.CostUSD
+		}
 	}
 	result.EstimatedContextTokens = convCtx.EstimatedTokens()
 	budgetAfter := b.BudgetStatus()
-	result.TokensPrompt = budgetAfter.PromptTokens - budgetBefore.PromptTokens
-	result.TokensCompletion = budgetAfter.CompletionTokens - budgetBefore.CompletionTokens
-	result.TokensTotal = budgetAfter.TotalTokens - budgetBefore.TotalTokens
-	result.CostUSD = budgetAfter.TotalCost - budgetBefore.TotalCost
+	if result.TokensPrompt == 0 && result.TokensCompletion == 0 && result.TokensTotal == 0 {
+		result.TokensPrompt = budgetAfter.PromptTokens - budgetBefore.PromptTokens
+		result.TokensCompletion = budgetAfter.CompletionTokens - budgetBefore.CompletionTokens
+		result.TokensTotal = budgetAfter.TotalTokens - budgetBefore.TotalTokens
+		result.CostUSD = budgetAfter.TotalCost - budgetBefore.TotalCost
+	}
 	result.TokenUsageReported = result.TokensPrompt > 0 || result.TokensCompletion > 0 || result.TokensTotal > 0
+	result.ElapsedMS = elapsedMS
 	return result, nil
 }
 

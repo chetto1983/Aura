@@ -39,7 +39,10 @@ func main() {
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	expectSkillRead := flag.Bool("expect-skill-read", false, "expect the synthetic Telegram turn to call read_skill")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
+	expectTerminalSwarm := flag.Bool("expect-terminal-swarm", false, "expect swarm_research to finalize immediately after run_aurabot_swarm")
+	expectTokenMetrics := flag.Bool("expect-token-metrics", false, "expect non-zero token usage metrics")
 	expectSandbox := flag.Bool("expect-sandbox", false, "expect the synthetic Telegram turn to use the Python sandbox")
+	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
@@ -132,6 +135,12 @@ func main() {
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
 	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
 	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
+	fmt.Printf("terminal_swarm=%v\n", result.TerminalSwarm)
+	fmt.Printf("swarm_finalization=%s\n", result.SwarmFinalization)
+	fmt.Printf("post_swarm_tool_calls=%d\n", result.PostSwarmToolCalls)
+	fmt.Printf("duplicate_swarm_rejected=%v\n", result.DuplicateSwarmRejected)
+	fmt.Printf("worker_count=%d\n", result.WorkerCount)
+	fmt.Printf("worker_failures=%d\n", result.WorkerFailures)
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
@@ -154,13 +163,17 @@ func main() {
 	fmt.Printf("tokens_total=%d\n", result.TokensTotal)
 	fmt.Printf("estimated_context_tokens=%d\n", result.EstimatedContextTokens)
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
+	fmt.Printf("elapsed_ms=%d\n", result.ElapsedMS)
 	expectations := debugExpectations{
-		Profile:     *expectProfile,
-		Tools:       splitCSV(*expectTools),
-		NoTools:     *expectNoTools,
-		SkillRead:   *expectSkillRead,
-		SwarmUsed:   *expectSwarm,
-		SandboxUsed: *expectSandbox,
+		Profile:       *expectProfile,
+		Tools:         splitCSV(*expectTools),
+		NoTools:       *expectNoTools,
+		SkillRead:     *expectSkillRead,
+		SwarmUsed:     *expectSwarm,
+		TerminalSwarm: *expectTerminalSwarm,
+		TokenMetrics:  *expectTokenMetrics,
+		SandboxUsed:   *expectSandbox,
+		MaxElapsedMS:  *maxElapsedMS,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
@@ -180,8 +193,17 @@ func main() {
 	if expectations.SwarmUsed {
 		fmt.Printf("expected_swarm=true\n")
 	}
+	if expectations.TerminalSwarm {
+		fmt.Printf("expected_terminal_swarm=true\n")
+	}
+	if expectations.TokenMetrics {
+		fmt.Printf("expected_token_metrics=true\n")
+	}
 	if expectations.SandboxUsed {
 		fmt.Printf("expected_sandbox=true\n")
+	}
+	if expectations.MaxElapsedMS > 0 {
+		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
@@ -319,12 +341,15 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 }
 
 type debugExpectations struct {
-	Profile     string
-	Tools       []string
-	NoTools     bool
-	SkillRead   bool
-	SwarmUsed   bool
-	SandboxUsed bool
+	Profile       string
+	Tools         []string
+	NoTools       bool
+	SkillRead     bool
+	SwarmUsed     bool
+	TerminalSwarm bool
+	TokenMetrics  bool
+	SandboxUsed   bool
+	MaxElapsedMS  int64
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -348,8 +373,37 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if expectations.SwarmUsed && !result.SwarmUsed {
 		return errors.New("expected swarm usage")
 	}
+	if expectations.TerminalSwarm {
+		if !result.TerminalSwarm {
+			return errors.New("expected terminal swarm finalization")
+		}
+		if strings.TrimSpace(result.FinalText) == "" {
+			return errors.New("expected terminal swarm final text")
+		}
+		if result.SwarmFinalization != "aggregate" && result.SwarmFinalization != "no_tool_llm" {
+			return fmt.Errorf("expected known swarm finalization, got %q", result.SwarmFinalization)
+		}
+		if result.PostSwarmToolCalls != 0 {
+			return fmt.Errorf("expected zero post-swarm tool calls, got %d", result.PostSwarmToolCalls)
+		}
+		if result.WorkerCount < 1 {
+			return fmt.Errorf("expected worker_count >= 1, got %d", result.WorkerCount)
+		}
+		if result.WorkerCount > 3 {
+			return fmt.Errorf("expected worker_count <= 3, got %d", result.WorkerCount)
+		}
+		if result.WorkerFailures != 0 {
+			return fmt.Errorf("expected worker_failures=0, got %d", result.WorkerFailures)
+		}
+	}
+	if expectations.TokenMetrics && !result.TokenUsageReported {
+		return errors.New("expected token usage metrics")
+	}
 	if expectations.SandboxUsed && !result.SandboxUsed {
 		return errors.New("expected sandbox usage")
+	}
+	if expectations.MaxElapsedMS > 0 && result.ElapsedMS > expectations.MaxElapsedMS {
+		return fmt.Errorf("elapsed_ms %d exceeds budget %d", result.ElapsedMS, expectations.MaxElapsedMS)
 	}
 	return nil
 }

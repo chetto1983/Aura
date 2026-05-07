@@ -112,7 +112,7 @@ func ComposePrompt(in PromptInput) PromptPlan {
 		content += "\n\n" + overlay
 		modules = append(modules, ModuleOverlay)
 	}
-	if skills := strings.TrimSpace(in.SkillsBlock); skills != "" {
+	if skills := strings.TrimSpace(in.SkillsBlock); skills != "" && profileSupportsSkillTools(profile) {
 		content += "\n\n" + skills
 		content += skillPreflightPrompt(profile)
 		modules = append(modules, ModuleSkills)
@@ -218,16 +218,16 @@ func ProfileCards() map[Profile]ProfileCard {
 	return map[Profile]ProfileCard{
 		ProfileDefault: {
 			Profile: ProfileDefault,
-			Purpose: "Safe everyday route for simple answers, memory lookup, tasks, and dashboard access.",
+			Purpose: "Safe everyday route for simple answers, memory lookup, search, and routine task scheduling.",
 			Access:  AccessDefault,
 			AllowedTools: []string{
-				"search_memory", "search_wiki", "read_wiki", "write_wiki",
+				"search_memory", "search_wiki", "read_wiki",
 				"list_wiki", "list_sources", "read_source",
 				"web_search", "web_fetch",
-				"schedule_task", "list_tasks", "cancel_task", "run_task_now",
-				"daily_briefing", "request_dashboard_token",
+				"schedule_task", "list_tasks", "cancel_task",
+				"daily_briefing",
 			},
-			DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill"},
+			DeniedTools: []string{"write_wiki", "execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
 		},
 		ProfileMemory: {
 			Profile:      ProfileMemory,
@@ -247,10 +247,7 @@ func ProfileCards() map[Profile]ProfileCard {
 			Access:               AccessReadOnly,
 			PositiveCues:         []string{"facciamo il punto", "pipeline", "what is missing", "audit", "roadmap"},
 			RequiredAvailability: []string{"swarm"},
-			AllowedTools: []string{
-				"search_memory", "list_wiki", "read_wiki", "search_wiki",
-				"list_sources", "read_source", "lint_wiki", "lint_sources",
-			},
+			AllowedTools:         []string{},
 			DeniedTools: []string{
 				"write_wiki", "create_docx", "create_xlsx", "create_pdf",
 				"execute_code", "schedule_task", "cancel_task", "run_task_now",
@@ -265,6 +262,7 @@ func ProfileCards() map[Profile]ProfileCard {
 			RequiredAvailability: []string{"sandbox"},
 			AllowedTools: []string{
 				"execute_code", "list_tools", "read_tool",
+				"list_skills", "read_skill",
 				"search_memory", "list_sources", "read_source", "store_source",
 			},
 			DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
@@ -386,7 +384,7 @@ func containsAny(text string, terms []string) bool {
 func profilePrompt(profile Profile) string {
 	switch profile {
 	case ProfileSwarmResearch:
-		return "\nUse a swarm-first read-only route for broad synthesis, audits, planning, memory quality checks, and pipeline reviews. Do not write or create files in this profile."
+		return "\nUse the swarm-first read-only route for broad synthesis, audits, planning, memory quality checks, and pipeline reviews. Direct wiki/source/memory tools are intentionally hidden in this profile so the parent agent does not duplicate worker reads. Do not write or create files in this profile."
 	case ProfileSandboxCompute:
 		return "\nUse Python sandbox first for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out."
 	case ProfileDocument:
@@ -401,7 +399,7 @@ func profilePrompt(profile Profile) string {
 }
 
 func memoryPrompt(profile Profile) string {
-	if profile == ProfileMemory || profile == ProfileSwarmResearch || profile == ProfileDocument {
+	if profile == ProfileMemory || profile == ProfileDocument {
 		return "\n\n## Memory Route\nFor broad or source-backed answers, gather evidence with search_memory or read-only source/wiki tools before synthesizing. Keep citations compact when the user asks for proof."
 	}
 	return ""
@@ -409,7 +407,7 @@ func memoryPrompt(profile Profile) string {
 
 func swarmProfilePrompt(profile Profile) string {
 	if profile == ProfileSwarmResearch {
-		return "\n\n## Swarm Profile\nCall run_aurabot_swarm before direct sequential reads unless the answer is already obvious from current context. Keep the swarm goal read-only."
+		return "\n\n## Swarm Profile\nCall run_aurabot_swarm as the first and primary tool for this profile. Keep the goal compact and read-only. After the swarm returns, answer from its synthesis; call read_swarm_result only when a returned task is incomplete or the synthesis explicitly says a worker detail is needed."
 	}
 	if profile == ProfileDocument {
 		return "\n\n## Document Evidence Profile\nFor multi-document summaries, use run_aurabot_swarm as a read-only evidence phase before creating the final file."
@@ -436,4 +434,13 @@ func skillPreflightPrompt(profile Profile) string {
 		return "\n\n## Skill Preflight\nIf an installed skill matches the requested capability, call list_skills and read_skill before using that capability and before using typed document/file tools. This applies to DOCX, PDF, XLSX, source extraction, sandbox/coding workflows, and future MCP/plugin skills."
 	}
 	return "\n\n## Skill Preflight\nIf an installed skill description matches the user's request, call read_skill before acting on that skill's guidance."
+}
+
+func profileSupportsSkillTools(profile Profile) bool {
+	switch profile {
+	case ProfileSandboxCompute, ProfileDocument, ProfileAdminReview:
+		return true
+	default:
+		return false
+	}
 }

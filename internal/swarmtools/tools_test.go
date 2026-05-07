@@ -113,17 +113,17 @@ func TestRunAuraBotSwarmTool(t *testing.T) {
 	if !resp.OK || resp.RunID == "" || resp.Status != string(swarm.RunCompleted) {
 		t.Fatalf("response = %+v", resp)
 	}
-	if resp.Goal != "audit wiki health" || len(resp.Roles) != 3 || len(resp.Tasks) != 3 {
+	if resp.Goal != "audit wiki health" || len(resp.Roles) != 1 || len(resp.Tasks) != 1 {
 		t.Fatalf("plan response = %+v", resp)
 	}
-	if resp.Metrics.CompletedTasks != 3 || resp.Metrics.LLMCalls != 6 || resp.Metrics.TokensTotal != 24 {
+	if resp.Metrics.CompletedTasks != 1 || resp.Metrics.LLMCalls != 2 || resp.Metrics.TokensTotal != 8 {
 		t.Fatalf("metrics = %+v", resp.Metrics)
 	}
 	if resp.Summary == "" {
 		t.Fatal("missing synthesis summary")
 	}
 	_, tasks := runner.snapshot()
-	if len(tasks) != 3 {
+	if len(tasks) != 1 {
 		t.Fatalf("runner tasks = %d", len(tasks))
 	}
 	for _, task := range tasks {

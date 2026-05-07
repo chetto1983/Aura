@@ -23,9 +23,14 @@ func TestBuildReportRoutesPipelinePromptToSwarm(t *testing.T) {
 	if report.ProfileSelectReason == "" {
 		t.Fatal("ProfileSelectReason is empty")
 	}
-	for _, want := range []string{"run_aurabot_swarm", "read_swarm_result", "search_memory"} {
+	for _, want := range []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"} {
 		if !slices.Contains(report.ToolsExposed, want) {
 			t.Fatalf("ToolsExposed missing %q: %+v", want, report.ToolsExposed)
+		}
+	}
+	for _, hidden := range []string{"search_memory", "search_wiki", "read_source"} {
+		if slices.Contains(report.ToolsExposed, hidden) {
+			t.Fatalf("ToolsExposed includes parent direct-read tool %q: %+v", hidden, report.ToolsExposed)
 		}
 	}
 }

@@ -7,12 +7,8 @@ import (
 	"strings"
 )
 
-// overlayFiles is the list of optional Markdown files Aura reads from the
-// prompt overlay directory on every conversation turn. Picobot established
-// this set: SOUL.md = identity/tone, AGENTS.md = collaboration norms,
-// USER.md = durable facts about the operator, TOOLS.md = operator hints
-// for tool selection. Each file is read fresh each turn so editing one
-// takes effect on the very next message — no recompile, no restart.
+// overlayFiles is the trusted operator prompt overlay set. Each file is read
+// fresh every turn so edits take effect with no recompile or restart.
 var overlayFiles = []string{"SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md"}
 
 // LoadPromptOverlay reads any of overlayFiles present under dir and

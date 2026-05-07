@@ -6,7 +6,7 @@ Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (active)
 
 Last closed milestone: v1.3 Memory Consolidation And Quality
 
-Current branch: `codex/v31-orchestration-hooks`
+Current branch: `codex/v31-closure-gate`
 
 ## Current Truth
 
@@ -35,6 +35,11 @@ v3.1 implementation evidence:
 - Focused gate passed: `go test ./internal/conversation ./internal/telegram ./internal/tools ./internal/toolsets ./internal/settings ./internal/api ./internal/orchestration ./cmd/debug_telegram_sandbox ./cmd/debug_files ./cmd/debug_orchestration -count=1`.
 - Route probes passed for pipeline review (`swarm_research`) and computed CSV/chart (`sandbox_compute`).
 
+Open v3.1 orchestration blocker:
+
+- Live swarm route originally selected the right `swarm_research` profile but continued extra parent tool reads after `run_aurabot_swarm`, hit max-loop behavior, and did not report token/cost metrics. The Hermes-style hardening slice now passes its focused live smoke with runtime-launched terminal swarm, one default worker, worker failures `0`, token/cost metrics present, and elapsed time under 30 seconds. v3.1 still needs the broader release gate before closure.
+- Canonical sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md`
+
 ## Next Milestone Handoff
 
 v3.1 is the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
@@ -61,6 +66,7 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 ## Resume Notes
 
 - Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
+- For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
 - Before closing v3.1, reconcile the unchecked tasks in that plan with the shipped hook/profile/debug work and append final validation to `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`.
 - Keep v4.0 MCP/plugin work blocked behind v3.1 tool-profile/prompt-versioning clarity.
 - For v4.0 sidecars, copy the Pyodide pattern: keep runtime bloat out of the Aura image, use internal service URLs, health checks, pinned images where possible, and rollback-friendly managed config.

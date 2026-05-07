@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,6 +240,12 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"skills_read", stats.skillsRead,
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
+		"terminal_swarm", stats.terminalSwarm,
+		"swarm_finalization", stats.swarmFinalization,
+		"post_swarm_tool_calls", stats.postSwarmToolCalls,
+		"duplicate_swarm_rejected", stats.duplicateSwarm,
+		"worker_count", stats.workerCount,
+		"worker_failures", stats.workerFailures,
 		"tokens_prompt", stats.tokensPrompt,
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
@@ -340,6 +347,12 @@ type turnStats struct {
 	skillsRead          bool
 	swarmUsed           bool
 	sandboxUsed         bool
+	terminalSwarm       bool
+	swarmFinalization   string
+	postSwarmToolCalls  int
+	duplicateSwarm      bool
+	workerCount         int
+	workerFailures      int
 	tokensPrompt        int
 	tokensCompletion    int
 	tokensTotal         int
@@ -358,6 +371,16 @@ type orchestrationSnapshot struct {
 	SkillsRead          bool
 	SwarmUsed           bool
 	SandboxUsed         bool
+	TerminalSwarm       bool
+	SwarmFinalization   string
+	PostSwarmToolCalls  int
+	DuplicateSwarm      bool
+	WorkerCount         int
+	WorkerFailures      int
+	TokensPrompt        int
+	TokensCompletion    int
+	TokensTotal         int
+	CostUSD             float64
 }
 
 type archiveTurnInput struct {
@@ -452,6 +475,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		ToolsExposed:        stats.toolsExposed,
 	})
 	b.storeOrchestrationSnapshot(userID, stats)
+	if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolAllowed("run_aurabot_swarm", stats.toolsExposed) {
+		return b.runTerminalSwarm(ctx, c, convCtx, userID, placeholder, stats)
+	}
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// Context bounding happens once at the start of handleConversation.
 		// Re-enforcing on every tool iteration triggered a summarizer LLM
@@ -527,9 +553,32 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 		b.storeOrchestrationSnapshot(userID, stats)
 		var hiddenRejected bool
-		lastToolResult, hiddenRejected = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls, stats.toolsExposed)
+		callsToExecute, duplicateSwarmCalls := capDuplicateSwarmCalls(profileDecision.Profile, resp.ToolCalls)
+		stats.duplicateSwarm = stats.duplicateSwarm || len(duplicateSwarmCalls) > 0
+		lastToolResult, hiddenRejected = b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed)
+		for _, duplicate := range duplicateSwarmCalls {
+			convCtx.AddToolResultMessage(duplicate.ID, tools.FormatFatalToolError(fmt.Errorf("run_aurabot_swarm already completed for this turn; use the existing aggregate result")))
+		}
 		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
 		b.storeOrchestrationSnapshot(userID, stats)
+		if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
+			stats.terminalSwarm = true
+			stats.swarmFinalization = swarmResearchFinalization()
+			stats.postSwarmToolCalls = 0
+			stats.applySwarmMetrics(lastToolResult, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+			if stats.swarmFinalization == "no_tool_llm" {
+				response, delivered := b.finalizeSwarmWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
+				b.storeOrchestrationSnapshot(userID, stats)
+				if delivered {
+					return "", stats
+				}
+				return response, stats
+			}
+			response := formatTerminalSwarmResult(lastToolResult)
+			convCtx.AddAssistantMessage(response)
+			b.storeOrchestrationSnapshot(userID, stats)
+			return response, stats
+		}
 	}
 
 	fallback := "Tool loop stopped after reaching the maximum iteration limit."
@@ -538,6 +587,39 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	}
 	convCtx.AddAssistantMessage(fallback)
 	return fallback, stats
+}
+
+func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, stats turnStats) (string, turnStats) {
+	goal := latestUserMessage(convCtx.Messages())
+	call := llm.ToolCall{
+		ID:        "auto_run_aurabot_swarm",
+		Name:      "run_aurabot_swarm",
+		Arguments: map[string]any{"goal": goal, "mode": "wait"},
+	}
+	convCtx.AddAssistantToolCallMessage("", []llm.ToolCall{call})
+	stats.toolCalls++
+	stats.toolsCalled = append(stats.toolsCalled, call.Name)
+	stats.swarmUsed = true
+	b.storeOrchestrationSnapshot(userID, stats)
+
+	lastToolResult, hiddenRejected := b.executeToolCalls(ctx, c, convCtx, userID, []llm.ToolCall{call}, stats.toolsExposed)
+	stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
+	stats.terminalSwarm = true
+	stats.swarmFinalization = swarmResearchFinalization()
+	stats.postSwarmToolCalls = 0
+	stats.applySwarmMetrics(lastToolResult, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+	if stats.swarmFinalization == "no_tool_llm" {
+		response, delivered := b.finalizeSwarmWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
+		b.storeOrchestrationSnapshot(userID, stats)
+		if delivered {
+			return "", stats
+		}
+		return response, stats
+	}
+	response := formatTerminalSwarmResult(lastToolResult)
+	convCtx.AddAssistantMessage(response)
+	b.storeOrchestrationSnapshot(userID, stats)
+	return response, stats
 }
 
 // executeToolCalls runs an assistant turn's tool calls concurrently and
@@ -611,6 +693,52 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	return lastToolResult, hiddenRejected
 }
 
+func (b *Bot) finalizeSwarmWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawSwarmResult string, stats *turnStats) (string, bool) {
+	req := llm.Request{
+		Messages: swarmFinalizationMessages(convCtx.Messages()),
+		Model:    b.cfg.LLMModel,
+		Tools:    nil,
+	}
+	stats.llmCalls++
+	ch, err := b.llm.Stream(ctx, req)
+	if err != nil {
+		b.logger.Warn("swarm finalization LLM failed", "user_id", userID, "error", err)
+		response := formatTerminalSwarmResult(rawSwarmResult)
+		convCtx.AddAssistantMessage(response)
+		return response, false
+	}
+	resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
+	if err != nil {
+		b.logger.Warn("swarm finalization stream failed", "user_id", userID, "error", err)
+		response := formatTerminalSwarmResult(rawSwarmResult)
+		convCtx.AddAssistantMessage(response)
+		return response, false
+	}
+	convCtx.TrackTokens(resp.Usage)
+	stats.tokensPrompt += resp.Usage.PromptTokens
+	stats.tokensCompletion += resp.Usage.CompletionTokens
+	stats.tokensTotal += resp.Usage.TotalTokens
+	stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+	if b.budget != nil {
+		b.budget.RecordUsage(resp.Usage)
+	}
+	response := strings.TrimSpace(resp.Content)
+	if response == "" {
+		response = formatTerminalSwarmResult(rawSwarmResult)
+	}
+	convCtx.AddAssistantMessage(response)
+	return response, delivered
+}
+
+func swarmFinalizationMessages(messages []llm.Message) []llm.Message {
+	out := append([]llm.Message(nil), messages...)
+	out = append(out, llm.Message{
+		Role:    "user",
+		Content: "Synthesize the completed swarm result for the user. Do not call tools. Use only the aggregate tool result already present above.",
+	})
+	return out
+}
+
 func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 	if b == nil || strings.TrimSpace(userID) == "" {
 		return
@@ -627,6 +755,16 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		SkillsRead:          stats.skillsRead,
 		SwarmUsed:           stats.swarmUsed,
 		SandboxUsed:         stats.sandboxUsed,
+		TerminalSwarm:       stats.terminalSwarm,
+		SwarmFinalization:   stats.swarmFinalization,
+		PostSwarmToolCalls:  stats.postSwarmToolCalls,
+		DuplicateSwarm:      stats.duplicateSwarm,
+		WorkerCount:         stats.workerCount,
+		WorkerFailures:      stats.workerFailures,
+		TokensPrompt:        stats.tokensPrompt,
+		TokensCompletion:    stats.tokensCompletion,
+		TokensTotal:         stats.tokensTotal,
+		CostUSD:             stats.costUSD,
 	})
 }
 
@@ -650,6 +788,15 @@ func toolDefinitionNames(defs []llm.ToolDefinition) []string {
 	return out
 }
 
+func latestUserMessage(messages []llm.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" && strings.TrimSpace(messages[i].Content) != "" {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return "Complete the requested broad read-only Aura pipeline review."
+}
+
 func toolAllowed(name string, allowlist []string) bool {
 	for _, allowed := range allowlist {
 		if allowed == name {
@@ -657,6 +804,127 @@ func toolAllowed(name string, allowlist []string) bool {
 		}
 	}
 	return false
+}
+
+func toolCallsContain(calls []llm.ToolCall, name string) bool {
+	for _, call := range calls {
+		if call.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func capDuplicateSwarmCalls(profile orchestration.Profile, calls []llm.ToolCall) ([]llm.ToolCall, []llm.ToolCall) {
+	if profile != orchestration.ProfileSwarmResearch {
+		return calls, nil
+	}
+	out := make([]llm.ToolCall, 0, len(calls))
+	var duplicates []llm.ToolCall
+	seenSwarm := false
+	for _, call := range calls {
+		if call.Name != "run_aurabot_swarm" {
+			out = append(out, call)
+			continue
+		}
+		if seenSwarm {
+			duplicates = append(duplicates, call)
+			continue
+		}
+		seenSwarm = true
+		out = append(out, call)
+	}
+	return out, duplicates
+}
+
+func formatTerminalSwarmResult(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "Swarm research completed, but no synthesis was returned."
+	}
+	var resp struct {
+		OK      bool   `json:"ok"`
+		Status  string `json:"status"`
+		Summary string `json:"summary"`
+		Metrics struct {
+			TotalTasks       int   `json:"total_tasks"`
+			CompletedTasks   int   `json:"completed_tasks"`
+			FailedTasks      int   `json:"failed_tasks"`
+			LLMCalls         int   `json:"llm_calls"`
+			ToolCalls        int   `json:"tool_calls"`
+			TokensTotal      int   `json:"tokens_total"`
+			WallMS           int64 `json:"wall_ms"`
+			TaskElapsedMS    int64 `json:"task_elapsed_ms"`
+			TokensPrompt     int   `json:"tokens_prompt"`
+			TokensCompletion int   `json:"tokens_completion"`
+		} `json:"metrics"`
+		LastError string `json:"last_error"`
+	}
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		return "Swarm research completed.\n\n" + raw
+	}
+	var sb strings.Builder
+	if strings.TrimSpace(resp.Summary) != "" {
+		sb.WriteString(strings.TrimSpace(resp.Summary))
+	} else if resp.LastError != "" {
+		sb.WriteString("Swarm research finished with an error: ")
+		sb.WriteString(resp.LastError)
+	} else {
+		sb.WriteString("Swarm research completed.")
+	}
+	fmt.Fprintf(&sb, "\n\nSwarm metrics: status=%s, tasks=%d/%d completed, failed=%d, llm_calls=%d, tool_calls=%d, tokens=%d, wall_ms=%d.",
+		resp.Status,
+		resp.Metrics.CompletedTasks,
+		resp.Metrics.TotalTasks,
+		resp.Metrics.FailedTasks,
+		resp.Metrics.LLMCalls,
+		resp.Metrics.ToolCalls,
+		resp.Metrics.TokensTotal,
+		resp.Metrics.WallMS,
+	)
+	return sb.String()
+}
+
+func swarmResearchFinalization() string {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SWARM_RESEARCH_FINALIZATION")))
+	if mode == "no_tool_llm" {
+		return mode
+	}
+	return "aggregate"
+}
+
+func (s *turnStats) applySwarmMetrics(raw string, inputPerM, outputPerM float64) {
+	if s == nil {
+		return
+	}
+	var resp struct {
+		Metrics struct {
+			LLMCalls         int `json:"llm_calls"`
+			ToolCalls        int `json:"tool_calls"`
+			TotalTasks       int `json:"total_tasks"`
+			FailedTasks      int `json:"failed_tasks"`
+			RunningTasks     int `json:"running_tasks"`
+			PendingTasks     int `json:"pending_tasks"`
+			TokensPrompt     int `json:"tokens_prompt"`
+			TokensCompletion int `json:"tokens_completion"`
+			TokensTotal      int `json:"tokens_total"`
+		} `json:"metrics"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &resp); err != nil {
+		return
+	}
+	s.llmCalls += resp.Metrics.LLMCalls
+	s.toolCalls += resp.Metrics.ToolCalls
+	s.workerCount = resp.Metrics.TotalTasks
+	s.workerFailures = resp.Metrics.FailedTasks + resp.Metrics.RunningTasks + resp.Metrics.PendingTasks
+	s.tokensPrompt += resp.Metrics.TokensPrompt
+	s.tokensCompletion += resp.Metrics.TokensCompletion
+	s.tokensTotal += resp.Metrics.TokensTotal
+	s.costUSD += estimateUsageCost(llm.TokenUsage{
+		PromptTokens:     resp.Metrics.TokensPrompt,
+		CompletionTokens: resp.Metrics.TokensCompletion,
+		TotalTokens:      resp.Metrics.TokensTotal,
+	}, inputPerM, outputPerM)
 }
 
 func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {

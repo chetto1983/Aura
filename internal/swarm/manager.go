@@ -182,7 +182,7 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				mu.Unlock()
 				return
 			}
-			if err := m.store.CompleteTask(ctx, task.ID, result); err != nil {
+			if err := m.store.CompleteTask(context.Background(), task.ID, result); err != nil {
 				mu.Lock()
 				failed = append(failed, err)
 				mu.Unlock()
@@ -197,7 +197,7 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if err := m.store.FailRun(context.Background(), run.ID, runErr.Error()); err != nil {
 			runErr = errors.Join(runErr, err)
 		}
-	} else if err := m.store.CompleteRun(ctx, run.ID); err != nil {
+	} else if err := m.store.CompleteRun(context.Background(), run.ID); err != nil {
 		runErr = err
 	}
 

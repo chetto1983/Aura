@@ -31,8 +31,7 @@ var idPattern = regexp.MustCompile(`^src_[a-f0-9]{16}$`)
 // Store persists immutable sources under <wiki>/raw/.
 //
 // Atomic-write + per-key mutex pattern is borrowed from internal/wiki/store.go;
-// the regex-based ID validation is borrowed from picobot's memory store
-// (D:\tmp\picobot\internal\agent\memory\store.go isValidMemoryFile).
+// the regex-based ID validation keeps source IDs filename-safe.
 type Store struct {
 	rawDir string
 	mu     sync.Map // id -> *sync.Mutex

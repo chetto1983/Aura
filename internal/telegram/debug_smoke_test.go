@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
@@ -146,6 +147,14 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 		toolsExposed:        []string{"run_aurabot_swarm"},
 		toolsCalled:         []string{"execute_code"},
 		hiddenToolRejected:  true,
+		terminalSwarm:       true,
+		swarmFinalization:   "aggregate",
+		duplicateSwarm:      true,
+		workerCount:         2,
+		workerFailures:      0,
+		tokensPrompt:        10,
+		tokensCompletion:    5,
+		tokensTotal:         15,
 	})
 
 	snap, ok := b.loadOrchestrationSnapshot("1148481707")
@@ -157,5 +166,100 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	}
 	if !snap.HiddenToolRejected {
 		t.Fatal("HiddenToolRejected = false, want true")
+	}
+	if !snap.TerminalSwarm || snap.SwarmFinalization != "aggregate" {
+		t.Fatalf("terminal swarm snapshot = %v %q", snap.TerminalSwarm, snap.SwarmFinalization)
+	}
+	if snap.TokensTotal != 15 {
+		t.Fatalf("TokensTotal = %d, want 15", snap.TokensTotal)
+	}
+	if !snap.DuplicateSwarm || snap.WorkerCount != 2 || snap.WorkerFailures != 0 {
+		t.Fatalf("swarm metrics snapshot = duplicate %v workers %d failures %d", snap.DuplicateSwarm, snap.WorkerCount, snap.WorkerFailures)
+	}
+}
+
+func TestFormatTerminalSwarmResultUsesSynthesisAndMetrics(t *testing.T) {
+	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline is healthy.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
+
+	for _, want := range []string{"Pipeline is healthy.", "tasks=3/3 completed", "tokens=123", "wall_ms=456"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestTurnStatsApplySwarmMetricsRollsUpUsage(t *testing.T) {
+	stats := turnStats{llmCalls: 1, toolCalls: 1, tokensPrompt: 2, tokensCompletion: 3, tokensTotal: 5}
+
+	stats.applySwarmMetrics(`{"metrics":{"llm_calls":2,"tool_calls":4,"tokens_prompt":10,"tokens_completion":20,"tokens_total":30}}`, 1.5, 2.0)
+
+	if stats.llmCalls != 3 || stats.toolCalls != 5 {
+		t.Fatalf("calls = llm %d tools %d", stats.llmCalls, stats.toolCalls)
+	}
+	if stats.tokensPrompt != 12 || stats.tokensCompletion != 23 || stats.tokensTotal != 35 {
+		t.Fatalf("tokens = prompt %d completion %d total %d", stats.tokensPrompt, stats.tokensCompletion, stats.tokensTotal)
+	}
+	if stats.workerCount != 0 || stats.workerFailures != 0 {
+		t.Fatalf("worker metrics = count %d failures %d, want zero without task metrics", stats.workerCount, stats.workerFailures)
+	}
+	if stats.costUSD <= 0 {
+		t.Fatalf("costUSD = %f, want positive", stats.costUSD)
+	}
+}
+
+func TestTurnStatsApplySwarmMetricsRollsUpWorkerCounts(t *testing.T) {
+	stats := turnStats{}
+
+	stats.applySwarmMetrics(`{"metrics":{"total_tasks":3,"failed_tasks":1,"running_tasks":1,"pending_tasks":0}}`, 0, 0)
+
+	if stats.workerCount != 3 || stats.workerFailures != 2 {
+		t.Fatalf("worker metrics = count %d failures %d", stats.workerCount, stats.workerFailures)
+	}
+}
+
+func TestCapDuplicateSwarmCallsKeepsOnlyFirstRun(t *testing.T) {
+	calls := []llm.ToolCall{
+		{ID: "1", Name: "run_aurabot_swarm"},
+		{ID: "2", Name: "read_swarm_result"},
+		{ID: "3", Name: "run_aurabot_swarm"},
+	}
+
+	got, duplicates := capDuplicateSwarmCalls("swarm_research", calls)
+
+	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "2" {
+		t.Fatalf("kept calls = %+v", got)
+	}
+	if len(duplicates) != 1 || duplicates[0].ID != "3" {
+		t.Fatalf("duplicates = %+v", duplicates)
+	}
+}
+
+func TestSwarmFinalizationMessagesDoesNotDuplicateRawResult(t *testing.T) {
+	raw := `{"ok":true,"summary":"large aggregate"}`
+	messages := []llm.Message{
+		{Role: "user", Content: "audit everything"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}}},
+		{Role: "tool", ToolCallID: "swarm-1", Content: raw},
+	}
+
+	got := swarmFinalizationMessages(messages)
+	if len(got) != len(messages)+1 {
+		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
+	}
+	if got[len(got)-1].Role != "user" {
+		t.Fatalf("last role = %q, want user", got[len(got)-1].Role)
+	}
+	if strings.Contains(got[len(got)-1].Content, raw) {
+		t.Fatalf("finalization instruction duplicates raw swarm result: %q", got[len(got)-1].Content)
+	}
+
+	var rawOccurrences int
+	for _, msg := range got {
+		if strings.Contains(msg.Content, raw) {
+			rawOccurrences++
+		}
+	}
+	if rawOccurrences != 1 {
+		t.Fatalf("raw swarm result occurrences = %d, want 1", rawOccurrences)
 	}
 }

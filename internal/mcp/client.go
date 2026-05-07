@@ -1,7 +1,6 @@
 // Package mcp implements a minimal MCP (Model Context Protocol) client.
-// Adapted from picobot's internal/mcp client (D:\tmp\picobot) — same JSON-RPC
-// 2.0 wire format, same stdio + Streamable-HTTP transports. Aura uses it to
-// expose MCP server tools to the LLM through internal/tools.MCPTool.
+// It supports JSON-RPC 2.0 over stdio and Streamable-HTTP transports so Aura
+// can expose MCP server tools to the LLM through internal/tools.MCPTool.
 package mcp
 
 import (

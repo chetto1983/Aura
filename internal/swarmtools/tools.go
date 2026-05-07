@@ -43,14 +43,6 @@ func (t *RunAuraBotSwarmTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Higher-level read-only investigation goal for the AuraBot team. Keep it compact and in the user's language.",
 			},
-			"roles": map[string]any{
-				"type":        "array",
-				"description": "Optional subset of read-only roles. Defaults to librarian, critic, researcher, skillsmith, synthesizer.",
-				"items": map[string]any{
-					"type": "string",
-					"enum": []string{"librarian", "critic", "researcher", "skillsmith", "synthesizer"},
-				},
-			},
 			"mode": map[string]any{
 				"type":        "string",
 				"enum":        []string{"wait"},
@@ -77,14 +69,36 @@ func (t *RunAuraBotSwarmTool) Execute(ctx context.Context, args map[string]any) 
 		return "", fmt.Errorf("run_aurabot_swarm: unsupported mode %q (MVP supports wait)", mode)
 	}
 
+	policy := LoadDelegationPolicyFromEnv()
+	requestedRoles := stringSliceArg(args, "roles")
+	rolesToValidate := requestedRoles
+	if len(rolesToValidate) == 0 {
+		rolesToValidate = defaultDelegationRoles()
+	}
+	if err := ValidateWorkerRoles(rolesToValidate, toolsetWorkerCatalog{}); err != nil {
+		return "", fmt.Errorf("run_aurabot_swarm: %w", err)
+	}
+	// Hermes-style delegation keeps role fan-out runtime-owned. Validate model
+	// requested roles so stale aliases fail loudly, but do not let the model
+	// choose a slower worker mix for this fast research route.
+	roles := workerRolesForPolicy(nil, policy)
 	plan, err := swarm.BuildPlan(goal, swarm.PlanOptions{
-		Roles:  stringSliceArg(args, "roles"),
-		UserID: tools.UserIDFromContext(ctx),
+		Roles:          roles,
+		UserID:         tools.UserIDFromContext(ctx),
+		MaxAssignments: policy.MaxWorkers,
 	})
 	if err != nil {
 		return "", err
 	}
-	run, runErr := t.manager.Run(ctx, swarm.RunRequest{
+	applyDelegationPolicyToAssignments(plan.Assignments, policy)
+
+	runCtx := ctx
+	cancel := func() {}
+	if policy.Timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, policy.Timeout)
+	}
+	defer cancel()
+	run, runErr := t.manager.Run(runCtx, swarm.RunRequest{
 		Goal:        plan.Goal,
 		CreatedBy:   tools.UserIDFromContext(ctx),
 		Assignments: plan.Assignments,
@@ -428,6 +442,34 @@ func roleMaxToolResultChars(role string) int {
 		return 1800
 	}
 	return 2400
+}
+
+func workerRolesForPolicy(requested []string, policy DelegationPolicy) []string {
+	policy = policy.Clamp()
+	roles := cleanList(requested)
+	if len(roles) == 0 {
+		roles = defaultDelegationRoles()
+	}
+	if len(roles) > policy.MaxWorkers {
+		roles = roles[:policy.MaxWorkers]
+	}
+	return roles
+}
+
+func defaultDelegationRoles() []string {
+	return []string{"librarian", "synthesizer", "researcher", "critic", "skillsmith"}
+}
+
+func applyDelegationPolicyToAssignments(assignments []swarm.Assignment, policy DelegationPolicy) {
+	policy = policy.Clamp()
+	for i := range assignments {
+		if assignments[i].MaxToolCalls <= 0 || assignments[i].MaxToolCalls > policy.ChildMaxIterations {
+			assignments[i].MaxToolCalls = policy.ChildMaxIterations
+		}
+		if assignments[i].MaxToolResultChars <= 0 || assignments[i].MaxToolResultChars > policy.MaxResultChars {
+			assignments[i].MaxToolResultChars = policy.MaxResultChars
+		}
+	}
 }
 
 func requiredString(args map[string]any, key string) (string, error) {
