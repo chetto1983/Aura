@@ -34,17 +34,6 @@ type WikiStore interface {
 	Dir() string // for last-update mtime walks
 }
 
-// SourceStore is the read-side surface for source.Store. The two write
-// methods (Put + Update) are used only by the upload endpoint; they're
-// included in the same interface to keep Deps wiring simple.
-type SourceStore interface {
-	Get(id string) (*source.Source, error)
-	List(filter source.ListFilter) ([]*source.Source, error)
-	Path(id, name string) string
-	Put(ctx context.Context, in source.PutInput) (*source.Source, bool, error)
-	Update(id string, mutator func(*source.Source) error) (*source.Source, error)
-}
-
 // SwarmStore is the read-side surface for AuraBot run/task observability.
 type SwarmStore interface {
 	ListRuns(ctx context.Context, limit int) ([]swarm.Run, error)
@@ -71,7 +60,7 @@ type BackupService interface {
 // run. Nil means time.Local — matching the LLM-facing schedule_task tool.
 type Deps struct {
 	Wiki        WikiStore
-	Sources     SourceStore
+	Sources     source.Repository
 	Scheduler   scheduler.Repository
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline

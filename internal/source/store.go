@@ -40,6 +40,32 @@ type Store struct {
 	now    func() time.Time
 }
 
+// Reader is the metadata read side of the source inbox.
+type Reader interface {
+	Get(id string) (*Source, error)
+	List(filter ListFilter) ([]*Source, error)
+}
+
+// Writer is the mutation side for source records and immutable source bytes.
+type Writer interface {
+	Put(ctx context.Context, in PutInput) (*Source, bool, error)
+	Update(id string, mutator func(*Source) error) (*Source, error)
+}
+
+// FileResolver maps a source id + artifact name to a containment-checked
+// filesystem path inside that source's raw directory.
+type FileResolver interface {
+	Path(id, name string) string
+}
+
+// Repository is the full source inbox boundary used by upload, OCR/extract,
+// LLM source tools, generated artifacts, sandbox artifacts, and memory search.
+type Repository interface {
+	Reader
+	Writer
+	FileResolver
+}
+
 // NewStore creates a source store rooted at <wikiDir>/raw/. The directory is
 // created if missing.
 func NewStore(wikiDir string, logger *slog.Logger) (*Store, error) {

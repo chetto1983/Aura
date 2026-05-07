@@ -18,7 +18,7 @@ const dailyBriefingMaxChars = 8000
 // everyday "what needs my attention?" question.
 type DailyBriefingTool struct {
 	tasks     scheduler.TaskReader
-	sources   *source.Store
+	sources   source.Reader
 	summaries *summarizer.SummariesStore
 	issues    *scheduler.IssuesStore
 	archive   *conversation.ArchiveStore
@@ -28,7 +28,7 @@ type DailyBriefingTool struct {
 
 func NewDailyBriefingTool(
 	tasks scheduler.TaskReader,
-	sources *source.Store,
+	sources source.Reader,
 	summaries *summarizer.SummariesStore,
 	issues *scheduler.IssuesStore,
 	archive *conversation.ArchiveStore,

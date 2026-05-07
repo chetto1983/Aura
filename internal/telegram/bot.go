@@ -41,7 +41,7 @@ type Bot struct {
 	search      *search.Engine
 	tools       *tools.Registry
 	budget      *budget.Tracker
-	sources     *source.Store
+	sources     source.Repository
 	ocr         *ocr.Client
 	skills      *auraskills.Loader
 	docs        *docHandler

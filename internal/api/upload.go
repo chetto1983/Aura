@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -297,14 +296,8 @@ func safeUploadName(name string) string {
 // upsertSourceStatus is a small helper that swallows the not-found case so
 // the OCR-failure path doesn't crash if the source was just created — its
 // only purpose is bookkeeping.
-func upsertSourceStatus(store SourceStore, id string, status source.Status, errMsg string) (*source.Source, error) {
-	mut, ok := store.(interface {
-		Update(id string, mutator func(*source.Source) error) (*source.Source, error)
-	})
-	if !ok {
-		return nil, errors.New("source store does not support Update")
-	}
-	return mut.Update(id, func(s *source.Source) error {
+func upsertSourceStatus(store source.Repository, id string, status source.Status, errMsg string) (*source.Source, error) {
+	return store.Update(id, func(s *source.Source) error {
 		s.Status = status
 		s.Error = errMsg
 		return nil
@@ -314,7 +307,7 @@ func upsertSourceStatus(store SourceStore, id string, status source.Status, errM
 // writeNextToSource mirrors the helper in internal/telegram/documents.go.
 // Uses Store.Path so the join is containment-checked. Errors only surface
 // when the path is rejected or the file system itself fails.
-func writeNextToSource(store SourceStore, id, name string, data []byte) error {
+func writeNextToSource(store source.FileResolver, id, name string, data []byte) error {
 	path := store.Path(id, name)
 	if path == "" {
 		return fmt.Errorf("invalid path for %s/%s", id, name)

@@ -33,7 +33,7 @@ import (
 
 // Pipeline turns completed sources into compact wiki summary pages.
 type Pipeline struct {
-	sources *source.Store
+	sources source.Repository
 	wiki    *wiki.Store
 	search  *search.Engine // optional; nil when embeddings aren't configured
 	logger  *slog.Logger
@@ -42,7 +42,7 @@ type Pipeline struct {
 
 // Config wires the pipeline to existing stores.
 type Config struct {
-	Sources *source.Store
+	Sources source.Repository
 	Wiki    *wiki.Store
 	Search  *search.Engine
 	Logger  *slog.Logger

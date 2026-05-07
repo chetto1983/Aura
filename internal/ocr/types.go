@@ -6,9 +6,9 @@
 //
 // What this package does NOT do:
 //   - Persist anything (the caller writes ocr.md / ocr.json next to the
-//     source via internal/source.Store.Path).
+//     source via internal/source.FileResolver.Path).
 //   - Touch source status (the caller flips it to ocr_complete via
-//     internal/source.Store.Update).
+//     internal/source.Repository.Update).
 //
 // Keeping those concerns out lets the package be tested in isolation against
 // a fake Mistral server.

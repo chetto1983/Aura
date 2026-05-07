@@ -38,7 +38,7 @@ type AfterOCRHook func(ctx context.Context, src *source.Source) (note string, er
 // docHandlerConfig is the per-Bot wiring for slice 4 (Telegram → OCR).
 type docHandlerConfig struct {
 	Bot       *tele.Bot
-	Sources   *source.Store
+	Sources   source.Repository
 	OCR       *ocr.Client // may be nil if OCR_ENABLED=false or MISTRAL_API_KEY missing
 	Extractor source.PyodideRunner
 	MaxFileMB int
@@ -49,7 +49,7 @@ type docHandlerConfig struct {
 
 type docHandler struct {
 	bot       *tele.Bot
-	sources   *source.Store
+	sources   source.Repository
 	ocr       *ocr.Client
 	extractor source.PyodideRunner
 	maxFileMB int
@@ -432,9 +432,9 @@ func validatePDF(doc *tele.Document, maxFileMB int) error {
 	return nil
 }
 
-// writeNextToSource writes data to <raw>/<id>/<name> using source.Store.Path
+// writeNextToSource writes data to <raw>/<id>/<name> using source.FileResolver.Path
 // for containment-checked path resolution.
-func writeNextToSource(s *source.Store, id, name string, data []byte) error {
+func writeNextToSource(s source.FileResolver, id, name string, data []byte) error {
 	path := s.Path(id, name)
 	if path == "" {
 		return fmt.Errorf("invalid path for %s/%s", id, name)

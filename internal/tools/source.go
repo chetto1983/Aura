@@ -27,10 +27,10 @@ const (
 // the LLM cannot stream binary content through tool calls, so we deliberately
 // do not expose a "pdf" mode here.
 type StoreSourceTool struct {
-	store *source.Store
+	store source.Writer
 }
 
-func NewStoreSourceTool(store *source.Store) *StoreSourceTool {
+func NewStoreSourceTool(store source.Writer) *StoreSourceTool {
 	return &StoreSourceTool{store: store}
 }
 
@@ -117,11 +117,11 @@ func (t *StoreSourceTool) Execute(ctx context.Context, args map[string]any) (str
 // useful when an upload was queued before OCR was enabled, or to retry a
 // failed source.
 type OCRSourceTool struct {
-	store *source.Store
+	store source.Repository
 	ocr   *ocr.Client
 }
 
-func NewOCRSourceTool(store *source.Store, client *ocr.Client) *OCRSourceTool {
+func NewOCRSourceTool(store source.Repository, client *ocr.Client) *OCRSourceTool {
 	return &OCRSourceTool{store: store, ocr: client}
 }
 
@@ -227,10 +227,10 @@ func (t *OCRSourceTool) Execute(ctx context.Context, args map[string]any) (strin
 
 // ReadSourceTool reads source metadata or extracted markdown.
 type ReadSourceTool struct {
-	store *source.Store
+	store source.Repository
 }
 
-func NewReadSourceTool(store *source.Store) *ReadSourceTool {
+func NewReadSourceTool(store source.Repository) *ReadSourceTool {
 	return &ReadSourceTool{store: store}
 }
 
@@ -293,7 +293,7 @@ func (t *ReadSourceTool) Execute(ctx context.Context, args map[string]any) (stri
 
 // readSourceMarkdown returns ocr.md when present, else falls back to the
 // stored original (text/url kinds) so the LLM can read non-PDF sources too.
-func readSourceMarkdown(store *source.Store, src *source.Source, maxBytes int) (string, error) {
+func readSourceMarkdown(store source.FileResolver, src *source.Source, maxBytes int) (string, error) {
 	mdPath := store.Path(src.ID, "ocr.md")
 	if mdPath == "" {
 		return "", fmt.Errorf("read_source: invalid path for %s", src.ID)
@@ -333,7 +333,7 @@ func isReadableSandboxArtifact(src *source.Source) bool {
 	}
 }
 
-func readOriginalContent(store *source.Store, id, name string, maxBytes int) (string, error) {
+func readOriginalContent(store source.FileResolver, id, name string, maxBytes int) (string, error) {
 	path := store.Path(id, name)
 	if path == "" {
 		return "", fmt.Errorf("read_source: invalid path for %s", id)
@@ -347,10 +347,10 @@ func readOriginalContent(store *source.Store, id, name string, maxBytes int) (st
 
 // ListSourcesTool lists sources matching optional kind/status filters.
 type ListSourcesTool struct {
-	store *source.Store
+	store source.Reader
 }
 
-func NewListSourcesTool(store *source.Store) *ListSourcesTool {
+func NewListSourcesTool(store source.Reader) *ListSourcesTool {
 	return &ListSourcesTool{store: store}
 }
 
@@ -408,10 +408,10 @@ func (t *ListSourcesTool) Execute(ctx context.Context, args map[string]any) (str
 
 // LintSourcesTool reports sources that need attention.
 type LintSourcesTool struct {
-	store *source.Store
+	store source.Reader
 }
 
-func NewLintSourcesTool(store *source.Store) *LintSourcesTool {
+func NewLintSourcesTool(store source.Reader) *LintSourcesTool {
 	return &LintSourcesTool{store: store}
 }
 

@@ -27,14 +27,14 @@ type DocumentSender interface {
 // PDR §15a: file creation milestone — xlsx-first, sources-store
 // persistence, Telegram delivery.
 type CreateXLSXTool struct {
-	store  *source.Store
+	store  source.Writer
 	sender DocumentSender
 }
 
 // NewCreateXLSXTool builds the tool. Sender may be nil — when unset the
 // tool still works as a pure file-generator (callers can fetch via
 // dashboard), it just refuses delivery requests with a clear error.
-func NewCreateXLSXTool(store *source.Store, sender DocumentSender) *CreateXLSXTool {
+func NewCreateXLSXTool(store source.Writer, sender DocumentSender) *CreateXLSXTool {
 	if store == nil {
 		return nil
 	}
@@ -210,13 +210,13 @@ func parseCreateXLSXArgs(args map[string]any) (files.XLSXSpec, bool, string, err
 //
 // PDR §15b: file creation milestone — docx as second file format.
 type CreateDOCXTool struct {
-	store  *source.Store
+	store  source.Writer
 	sender DocumentSender
 }
 
 // NewCreateDOCXTool builds the tool. Same nil-tolerance as
 // NewCreateXLSXTool: store is required, sender is optional.
-func NewCreateDOCXTool(store *source.Store, sender DocumentSender) *CreateDOCXTool {
+func NewCreateDOCXTool(store source.Writer, sender DocumentSender) *CreateDOCXTool {
 	if store == nil {
 		return nil
 	}
@@ -416,13 +416,13 @@ func parseCreateDOCXArgs(args map[string]any) (files.DOCXSpec, bool, string, err
 // PDR §15c: file creation milestone — pdf as third file format. Same
 // block grammar as create_docx so the LLM only has to learn one DSL.
 type CreatePDFTool struct {
-	store  *source.Store
+	store  source.Writer
 	sender DocumentSender
 }
 
 // NewCreatePDFTool builds the tool. Same nil-tolerance as
 // NewCreateXLSXTool / NewCreateDOCXTool.
-func NewCreatePDFTool(store *source.Store, sender DocumentSender) *CreatePDFTool {
+func NewCreatePDFTool(store source.Writer, sender DocumentSender) *CreatePDFTool {
 	if store == nil {
 		return nil
 	}

@@ -8,12 +8,102 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/source"
 )
+
+type fakeSourceRepository struct {
+	dir     string
+	nextID  string
+	records map[string]*source.Source
+}
+
+func newFakeSourceRepository(t *testing.T) *fakeSourceRepository {
+	t.Helper()
+	return &fakeSourceRepository{
+		dir:     t.TempDir(),
+		nextID:  "src_0000000000000001",
+		records: make(map[string]*source.Source),
+	}
+}
+
+func (f *fakeSourceRepository) Put(_ context.Context, in source.PutInput) (*source.Source, bool, error) {
+	id := f.nextID
+	if id == "" {
+		id = "src_0000000000000001"
+	}
+	rec := &source.Source{
+		ID:        id,
+		Kind:      in.Kind,
+		Filename:  in.Filename,
+		MimeType:  in.MimeType,
+		SHA256:    strings.Repeat("a", 64),
+		SizeBytes: int64(len(in.Bytes)),
+		CreatedAt: time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC),
+		Status:    source.StatusStored,
+	}
+	f.records[id] = rec
+	return cloneFakeSource(rec), false, nil
+}
+
+func (f *fakeSourceRepository) Get(id string) (*source.Source, error) {
+	rec, ok := f.records[id]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return cloneFakeSource(rec), nil
+}
+
+func (f *fakeSourceRepository) List(filter source.ListFilter) ([]*source.Source, error) {
+	var out []*source.Source
+	for _, rec := range f.records {
+		if filter.Kind != "" && rec.Kind != filter.Kind {
+			continue
+		}
+		if filter.Status != "" && rec.Status != filter.Status {
+			continue
+		}
+		out = append(out, cloneFakeSource(rec))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (f *fakeSourceRepository) Update(id string, mutator func(*source.Source) error) (*source.Source, error) {
+	rec, ok := f.records[id]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	cp := cloneFakeSource(rec)
+	if err := mutator(cp); err != nil {
+		return nil, err
+	}
+	f.records[id] = cp
+	return cloneFakeSource(cp), nil
+}
+
+func (f *fakeSourceRepository) Path(id, name string) string {
+	if _, ok := f.records[id]; !ok || name == "" || strings.ContainsAny(name, `/\`) {
+		return ""
+	}
+	path := filepath.Join(f.dir, id, name)
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	return path
+}
+
+func cloneFakeSource(src *source.Source) *source.Source {
+	if src == nil {
+		return nil
+	}
+	cp := *src
+	cp.WikiPages = append([]string(nil), src.WikiPages...)
+	return &cp
+}
 
 // newTestSourceStore creates an isolated source.Store rooted at a temp wiki dir.
 func newTestSourceStore(t *testing.T) *source.Store {
@@ -23,6 +113,52 @@ func newTestSourceStore(t *testing.T) *source.Store {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	return store
+}
+
+func TestSourceToolsAcceptRepositoryInterface(t *testing.T) {
+	repo := newFakeSourceRepository(t)
+	storeTool := NewStoreSourceTool(repo)
+	out, err := storeTool.Execute(t.Context(), map[string]any{
+		"kind":     "text",
+		"filename": "note.txt",
+		"content":  "hello from fake repository",
+	})
+	if err != nil {
+		t.Fatalf("store Execute: %v", err)
+	}
+	if !strings.Contains(out, "src_0000000000000001") {
+		t.Fatalf("store output = %q", out)
+	}
+
+	readTool := NewReadSourceTool(repo)
+	out, err = readTool.Execute(t.Context(), map[string]any{
+		"source_id": "src_0000000000000001",
+		"mode":      "metadata",
+	})
+	if err != nil {
+		t.Fatalf("read Execute: %v", err)
+	}
+	if !strings.Contains(out, "Filename: note.txt") {
+		t.Fatalf("read output = %q", out)
+	}
+
+	listTool := NewListSourcesTool(repo)
+	out, err = listTool.Execute(t.Context(), map[string]any{"kind": "text"})
+	if err != nil {
+		t.Fatalf("list Execute: %v", err)
+	}
+	if !strings.Contains(out, "note.txt") {
+		t.Fatalf("list output = %q", out)
+	}
+
+	lintTool := NewLintSourcesTool(repo)
+	out, err = lintTool.Execute(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("lint Execute: %v", err)
+	}
+	if !strings.Contains(out, "Stored, awaiting OCR") {
+		t.Fatalf("lint output = %q", out)
+	}
 }
 
 func TestStoreSourceTool_TextAndDedup(t *testing.T) {

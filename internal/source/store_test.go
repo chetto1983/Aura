@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+var (
+	_ Reader       = (*Store)(nil)
+	_ Writer       = (*Store)(nil)
+	_ FileResolver = (*Store)(nil)
+	_ Repository   = (*Store)(nil)
+)
+
 func TestStorePutCreatesSource(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewStore(dir, nil)

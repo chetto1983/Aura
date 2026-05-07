@@ -28,11 +28,11 @@ var sourcePageHeadingRE = regexp.MustCompile(`(?m)^## Page ([0-9]+)\s*$`)
 
 type SearchMemoryTool struct {
 	wiki    *search.Engine
-	sources *source.Store
+	sources source.Repository
 	archive *conversation.ArchiveStore
 }
 
-func NewSearchMemoryTool(wiki *search.Engine, sources *source.Store, archive *conversation.ArchiveStore) *SearchMemoryTool {
+func NewSearchMemoryTool(wiki *search.Engine, sources source.Repository, archive *conversation.ArchiveStore) *SearchMemoryTool {
 	if wiki == nil && sources == nil && archive == nil {
 		return nil
 	}

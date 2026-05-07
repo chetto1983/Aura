@@ -13,7 +13,7 @@ import (
 type ExecuteCodeTool struct {
 	manager     *sandbox.Manager
 	sender      DocumentSender
-	sourceStore *source.Store
+	sourceStore source.Writer
 }
 
 // NewExecuteCodeTool creates the execute_code tool. Returns nil if manager
@@ -31,7 +31,7 @@ func NewExecuteCodeToolWithSender(manager *sandbox.Manager, sender DocumentSende
 // NewExecuteCodeToolWithStore creates execute_code with optional artifact
 // delivery and source persistence. The store is used only when sandbox code
 // emits artifacts.
-func NewExecuteCodeToolWithStore(manager *sandbox.Manager, sender DocumentSender, sourceStore *source.Store) *ExecuteCodeTool {
+func NewExecuteCodeToolWithStore(manager *sandbox.Manager, sender DocumentSender, sourceStore source.Writer) *ExecuteCodeTool {
 	if manager == nil {
 		return nil
 	}
