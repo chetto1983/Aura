@@ -48,6 +48,26 @@ type Client struct {
 	tools         []Tool
 }
 
+// Server describes one connected MCP server and its advertised tools.
+type Server interface {
+	Name() string
+	Transport() string
+	Tools() []Tool
+}
+
+// ToolCaller invokes one advertised MCP tool.
+type ToolCaller interface {
+	CallTool(ctx context.Context, toolName string, arguments map[string]any) (string, error)
+}
+
+// ConnectedClient is the full runtime MCP client boundary implemented by
+// Client.
+type ConnectedClient interface {
+	Server
+	ToolCaller
+	Close() error
+}
+
 // NewStdioClient creates a client that spawns a child process and
 // communicates via its stdin/stdout pipes.
 func NewStdioClient(name, command string, args []string) (*Client, error) {

@@ -66,7 +66,7 @@ type Deps struct {
 	// (skill detail). Bot wiring populates them when the loader and the
 	// MCP-server snapshot are available.
 	Skills *skills.Loader
-	MCP    []*mcp.Client
+	MCP    []mcp.ConnectedClient
 
 	// Slice 11c: skills.sh catalog + admin-gated install/delete.
 	// SkillsCatalog is the same client the LLM-facing search tool uses;

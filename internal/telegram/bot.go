@@ -51,7 +51,7 @@ type Bot struct {
 	swarmStore  swarm.Reader
 	swarmMgr    swarm.RunRunner
 	authDB      auth.Repository                  // dashboard bearer-token and allowlist repository
-	mcpClients  []*mcp.Client                    // active MCP server connections (slice 11a)
+	mcpClients  []mcp.ConnectedClient            // active MCP server connections (slice 11a)
 	archiveDB   conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
 	archiver    conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
 	summRunner  *summarizer.Runner               // nil when SUMMARIZER_ENABLED=false

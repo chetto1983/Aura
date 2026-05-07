@@ -60,6 +60,12 @@ func TestHTTPClientInitializeAndListTools(t *testing.T) {
 	}
 }
 
+var (
+	_ Server          = (*Client)(nil)
+	_ ToolCaller      = (*Client)(nil)
+	_ ConnectedClient = (*Client)(nil)
+)
+
 func TestHTTPClientCallTool(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req rpcRequest

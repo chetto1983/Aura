@@ -295,7 +295,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if mcpErr != nil {
 		logger.Warn("MCP config load failed; continuing without MCP", "error", mcpErr, "path", cfg.MCPServersPath)
 	}
-	mcpClients := make([]*mcp.Client, 0, len(mcpServers))
+	mcpClients := make([]mcp.ConnectedClient, 0, len(mcpServers))
 	for name, srv := range mcpServers {
 		var client *mcp.Client
 		var err error

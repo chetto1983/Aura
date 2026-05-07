@@ -64,7 +64,7 @@ func TestMCPServers_Empty(t *testing.T) {
 
 func TestMCPServers_ReturnsToolMetadata(t *testing.T) {
 	c := mcpFakeServer(t, "search", "Search the index")
-	router := NewRouter(Deps{MCP: []*mcp.Client{c}})
+	router := NewRouter(Deps{MCP: []mcp.ConnectedClient{c}})
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("GET", "/mcp/servers", nil))
@@ -101,7 +101,7 @@ func TestMCPServers_ReturnsToolMetadata(t *testing.T) {
 }
 
 func TestMCPServers_HandlesNilClient(t *testing.T) {
-	router := NewRouter(Deps{MCP: []*mcp.Client{nil}})
+	router := NewRouter(Deps{MCP: []mcp.ConnectedClient{nil}})
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("GET", "/mcp/servers", nil))
 	if rr.Code != http.StatusOK {

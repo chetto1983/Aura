@@ -82,7 +82,7 @@ func newInvokeRouter(t *testing.T, name string, state *fakeMCPServer, srv *httpt
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	_ = state // captured by handler closure via the server
-	return NewRouter(Deps{MCP: []*mcp.Client{client}})
+	return NewRouter(Deps{MCP: []mcp.ConnectedClient{client}})
 }
 
 func postRaw(t *testing.T, router http.Handler, path, body string) *httptest.ResponseRecorder {

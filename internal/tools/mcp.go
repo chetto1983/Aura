@@ -12,14 +12,14 @@ import (
 // `mcp_<server>_<tool>` to avoid collisions across servers and with native
 // tools.
 type MCPTool struct {
-	client     *mcp.Client
+	client     mcp.ToolCaller
 	serverName string
 	tool       mcp.Tool
 }
 
 // NewMCPTool wraps one server tool. Caller is responsible for keeping the
 // client alive (closing it on shutdown via mcp.Client.Close).
-func NewMCPTool(client *mcp.Client, serverName string, tool mcp.Tool) *MCPTool {
+func NewMCPTool(client mcp.ToolCaller, serverName string, tool mcp.Tool) *MCPTool {
 	return &MCPTool{client: client, serverName: serverName, tool: tool}
 }
 

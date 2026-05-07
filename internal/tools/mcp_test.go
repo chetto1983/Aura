@@ -101,6 +101,27 @@ func TestMCPToolExecuteCallsServer(t *testing.T) {
 	}
 }
 
+type fakeMCPToolCaller struct {
+	called string
+}
+
+func (f *fakeMCPToolCaller) CallTool(_ context.Context, toolName string, _ map[string]any) (string, error) {
+	f.called = toolName
+	return "fake:" + toolName, nil
+}
+
+func TestMCPToolAcceptsToolCallerInterface(t *testing.T) {
+	caller := &fakeMCPToolCaller{}
+	tool := NewMCPTool(caller, "srv1", mcp.Tool{Name: "ping"})
+	out, err := tool.Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if out != "fake:ping" || caller.called != "ping" {
+		t.Fatalf("out=%q called=%q", out, caller.called)
+	}
+}
+
 func TestMCPToolExecuteRejectsNilClient(t *testing.T) {
 	tool := NewMCPTool(nil, "srv1", mcp.Tool{Name: "ping"})
 	if _, err := tool.Execute(context.Background(), nil); err == nil {

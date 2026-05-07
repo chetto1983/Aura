@@ -116,7 +116,7 @@ func clipMCPOutput(s string) string {
 	return s[:mcpInvokeMaxOutput] + "\n…[truncated]"
 }
 
-func serverNameMatchesAny(name string, clients []*mcp.Client) bool {
+func serverNameMatchesAny(name string, clients []mcp.ConnectedClient) bool {
 	for _, c := range clients {
 		if c != nil && c.Name() == name {
 			return true
@@ -125,7 +125,7 @@ func serverNameMatchesAny(name string, clients []*mcp.Client) bool {
 	return false
 }
 
-func findMCPClient(name string, clients []*mcp.Client) *mcp.Client {
+func findMCPClient(name string, clients []mcp.ConnectedClient) mcp.ConnectedClient {
 	for _, c := range clients {
 		if c != nil && c.Name() == name {
 			return c
@@ -134,7 +134,7 @@ func findMCPClient(name string, clients []*mcp.Client) *mcp.Client {
 	return nil
 }
 
-func toolAdvertised(c *mcp.Client, toolName string) bool {
+func toolAdvertised(c mcp.Server, toolName string) bool {
 	for _, t := range c.Tools() {
 		if t.Name == toolName {
 			return true
