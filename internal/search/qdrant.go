@@ -44,6 +44,17 @@ type qdrantClient struct {
 	http       *http.Client
 }
 
+type qdrantSearcher struct {
+	client  *qdrantClient
+	embedFn EmbeddingFunction
+}
+
+type qdrantRepository struct {
+	primary  *qdrantSearcher
+	fallback Repository
+	logger   *slog.Logger
+}
+
 // CheckQdrantReady probes the Qdrant REST service without mutating data.
 func CheckQdrantReady(ctx context.Context, cfg QdrantConfig) error {
 	client, err := newQdrantClient(cfg)
@@ -51,6 +62,64 @@ func CheckQdrantReady(ctx context.Context, cfg QdrantConfig) error {
 		return err
 	}
 	return client.ready(ctx)
+}
+
+// NewQdrantSearcher creates a read-only Qdrant-backed semantic searcher.
+// It uses Qdrant's Query Points endpoint with Aura-owned embeddings and
+// payloads created by RebuildQdrantWikiDocuments.
+func NewQdrantSearcher(cfg QdrantConfig, embedFn EmbeddingFunction) (*qdrantSearcher, error) {
+	if embedFn == nil {
+		return nil, fmt.Errorf("embedding function is required")
+	}
+	client, err := newQdrantClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &qdrantSearcher{client: client, embedFn: embedFn}, nil
+}
+
+// NewQdrantRepository wraps the existing local search repository with an
+// opt-in Qdrant query path. Writes and reindexing still go to the local
+// repository; Qdrant remains a rebuildable sidecar until promotion is complete.
+func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, fallback Repository, logger *slog.Logger) (Repository, error) {
+	if fallback == nil {
+		return nil, fmt.Errorf("fallback search repository is required")
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	primary, err := NewQdrantSearcher(cfg, embedFn)
+	if err != nil {
+		return nil, err
+	}
+	return &qdrantRepository{primary: primary, fallback: fallback, logger: logger}, nil
+}
+
+func (r *qdrantRepository) Search(ctx context.Context, query string, topK int) ([]Result, error) {
+	results, err := r.primary.Search(ctx, query, topK)
+	if err == nil {
+		return results, nil
+	}
+	if r.logger != nil {
+		r.logger.Warn("qdrant search failed, falling back to local search", "error", err)
+	}
+	return r.fallback.Search(ctx, query, topK)
+}
+
+func (r *qdrantRepository) IsIndexed() bool {
+	return r.fallback.IsIndexed()
+}
+
+func (r *qdrantRepository) Index(ctx context.Context, id string, content string, metadata map[string]string) error {
+	return r.fallback.Index(ctx, id, content, metadata)
+}
+
+func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
+	return r.fallback.IndexWikiPages(ctx)
+}
+
+func (r *qdrantRepository) ReindexWikiPage(ctx context.Context, slug string) error {
+	return r.fallback.ReindexWikiPage(ctx, slug)
 }
 
 // RebuildQdrantWikiDocuments recreates the configured collection from Aura's
@@ -150,6 +219,59 @@ func newQdrantClient(cfg QdrantConfig) (*qdrantClient, error) {
 	}, nil
 }
 
+func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]Result, error) {
+	if topK <= 0 {
+		topK = 5
+	}
+	vector, err := s.embedFn(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embedding qdrant query: %w", err)
+	}
+	if len(vector) == 0 {
+		return nil, fmt.Errorf("embedding qdrant query returned empty vector")
+	}
+	points, err := s.client.queryPoints(ctx, vector, topK)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(points))
+	for _, point := range points {
+		payload := point.Payload
+		kind := strings.TrimSpace(payload["kind"])
+		if kind == "" {
+			kind = "wiki_page"
+		}
+		slug := strings.TrimSpace(payload["slug"])
+		if slug == "" {
+			slug = strings.TrimSpace(payload["doc_id"])
+		}
+		results = append(results, Result{
+			Kind:    kind,
+			Slug:    slug,
+			Title:   payload["title"],
+			Content: payload["content"],
+			Score:   point.Score,
+		})
+	}
+	return results, nil
+}
+
+func (c *qdrantClient) queryPoints(ctx context.Context, vector []float32, topK int) ([]qdrantScoredPoint, error) {
+	body := map[string]any{
+		"query":        vector,
+		"limit":        topK,
+		"with_payload": true,
+	}
+	var out qdrantQueryResponse
+	if err := c.doJSONResponse(ctx, http.MethodPost, c.collectionPath()+"/points/query", body, &out, http.StatusOK); err != nil {
+		return nil, err
+	}
+	if out.Status != "" && out.Status != "ok" {
+		return nil, fmt.Errorf("qdrant query returned status %q", out.Status)
+	}
+	return out.Result.Points, nil
+}
+
 func (c *qdrantClient) ready(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/readyz", nil)
 	if err != nil {
@@ -220,6 +342,10 @@ func (c *qdrantClient) upsertPoints(ctx context.Context, points []qdrantPoint) e
 }
 
 func (c *qdrantClient) doJSON(ctx context.Context, method, endpoint string, body any, accepted ...int) error {
+	return c.doJSONResponse(ctx, method, endpoint, body, nil, accepted...)
+}
+
+func (c *qdrantClient) doJSONResponse(ctx context.Context, method, endpoint string, body any, out any, accepted ...int) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -235,16 +361,29 @@ func (c *qdrantClient) doJSON(ctx context.Context, method, endpoint string, body
 		return fmt.Errorf("%s %s: %w", method, endpoint, err)
 	}
 	defer resp.Body.Close()
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	if readErr != nil {
+		return fmt.Errorf("%s %s read response: %w", method, endpoint, readErr)
+	}
 	for _, code := range accepted {
 		if resp.StatusCode == code {
+			if out != nil && len(bodyBytes) > 0 {
+				if err := json.Unmarshal(bodyBytes, out); err != nil {
+					return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
+				}
+			}
 			return nil
 		}
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if out != nil && len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out); err != nil {
+				return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
+			}
+		}
 		return nil
 	}
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return fmt.Errorf("%s %s returned %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(respBody)))
+	return fmt.Errorf("%s %s returned %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(bodyBytes)))
 }
 
 func (c *qdrantClient) collectionPath() string {
@@ -261,6 +400,19 @@ type qdrantPoint struct {
 	ID      string            `json:"id"`
 	Vector  []float32         `json:"vector"`
 	Payload map[string]string `json:"payload"`
+}
+
+type qdrantScoredPoint struct {
+	ID      any               `json:"id"`
+	Score   float32           `json:"score"`
+	Payload map[string]string `json:"payload"`
+}
+
+type qdrantQueryResponse struct {
+	Status string `json:"status"`
+	Result struct {
+		Points []qdrantScoredPoint `json:"points"`
+	} `json:"result"`
 }
 
 func qdrantPointID(docID string) string {

@@ -199,9 +199,10 @@ Back up these folders before moving hosts or upgrading major versions.
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - `compose.yaml` starts Qdrant from `qdrant/qdrant:latest` with storage in the
   Docker-managed `qdrant-storage` volume. Aura exposes `QDRANT_URL`,
-  `QDRANT_COLLECTION`, and optional `QDRANT_API_KEY` in the dashboard settings,
-  but Qdrant is a sidecar index in this release, not the primary source of
-  truth.
+  `QDRANT_COLLECTION`, optional `QDRANT_API_KEY`, and `SEARCH_BACKEND` in the
+  dashboard settings. `SEARCH_BACKEND=chromem` keeps local chromem/SQLite search
+  as the default; `SEARCH_BACKEND=qdrant` queries the Qdrant sidecar first and
+  falls back locally.
 - The app container enables `SANDBOX_ENABLED=true` and ships the bundled
   Pyodide runtime at `/app/runtime/pyodide`. Node.js is installed in the image
   for the runner script. The separate `test` service still mounts the working

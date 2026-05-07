@@ -146,11 +146,13 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 		QdrantURL:        "http://127.0.0.1:6333",
 		QdrantCollection: "aura_memory_v1",
 		QdrantAPIKey:     "",
+		SearchBackend:    "chromem",
 	}
 
 	_ = s.Set(ctx, KeyQdrantURL, "http://qdrant:6333")
 	_ = s.Set(ctx, KeyQdrantCollection, "aura_memory_v2")
 	_ = s.Set(ctx, KeyQdrantAPIKey, "secret")
+	_ = s.Set(ctx, KeySearchBackend, " qdrant ")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -163,7 +165,10 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	if cfg.QdrantAPIKey != "secret" {
 		t.Fatalf("QdrantAPIKey not applied")
 	}
-	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) {
+	if cfg.SearchBackend != "qdrant" {
+		t.Fatalf("SearchBackend = %q, want qdrant", cfg.SearchBackend)
+	}
+	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) || !IsOverridable(KeySearchBackend) {
 		t.Fatal("Qdrant settings must be dashboard-overridable")
 	}
 }

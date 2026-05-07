@@ -96,6 +96,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("QDRANT_URL")
 	os.Unsetenv("QDRANT_COLLECTION")
 	os.Unsetenv("QDRANT_API_KEY")
+	os.Unsetenv("SEARCH_BACKEND")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
@@ -167,6 +168,9 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.QdrantCollection != "aura_memory_v1" {
 		t.Errorf("QdrantCollection = %q, want aura_memory_v1", cfg.QdrantCollection)
+	}
+	if cfg.SearchBackend != "chromem" {
+		t.Errorf("SearchBackend = %q, want chromem", cfg.SearchBackend)
 	}
 	if cfg.MaxToolIterations != 10 {
 		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
@@ -255,9 +259,11 @@ func TestLoadQdrantConfig(t *testing.T) {
 	os.Setenv("QDRANT_URL", "http://qdrant:6333")
 	os.Setenv("QDRANT_COLLECTION", "aura_memory_v2")
 	os.Setenv("QDRANT_API_KEY", "secret")
+	os.Setenv("SEARCH_BACKEND", " qdrant ")
 	defer os.Unsetenv("QDRANT_URL")
 	defer os.Unsetenv("QDRANT_COLLECTION")
 	defer os.Unsetenv("QDRANT_API_KEY")
+	defer os.Unsetenv("SEARCH_BACKEND")
 
 	cfg, err := Load()
 	if err != nil {
@@ -271,6 +277,9 @@ func TestLoadQdrantConfig(t *testing.T) {
 	}
 	if cfg.QdrantAPIKey != "secret" {
 		t.Fatalf("QdrantAPIKey not loaded")
+	}
+	if cfg.SearchBackend != "qdrant" {
+		t.Fatalf("SearchBackend = %q, want qdrant", cfg.SearchBackend)
 	}
 }
 

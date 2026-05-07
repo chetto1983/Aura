@@ -8,6 +8,7 @@ import (
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultQdrantCollection = "aura_memory_v1"
+const DefaultSearchBackend = "chromem"
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxTimeoutSec = 120
@@ -49,6 +50,7 @@ type Config struct {
 	QdrantURL               string  `envconfig:"QDRANT_URL"`
 	QdrantCollection        string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
 	QdrantAPIKey            string  `envconfig:"QDRANT_API_KEY"`
+	SearchBackend           string  `envconfig:"SEARCH_BACKEND" default:"chromem"`
 	MaxToolIterations       int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
 	WikiPath                string  `envconfig:"WIKI_PATH" default:"./wiki"`
 	PromptOverlayPath       string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
@@ -194,6 +196,7 @@ func Load() (*Config, error) {
 	cfg.QdrantURL = getEnv("QDRANT_URL", "")
 	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
 	cfg.QdrantAPIKey = getEnv("QDRANT_API_KEY", "")
+	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(getEnv("SEARCH_BACKEND", DefaultSearchBackend)))
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")

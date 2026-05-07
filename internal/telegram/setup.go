@@ -77,7 +77,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Set up search engine
-	var searchEngine *search.Engine
+	var searchEngine search.Repository
 	var embedCache *search.EmbedCache
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn := createEmbeddingFunc(cfg)
@@ -103,6 +103,19 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 				logger.Warn("failed to index wiki pages on startup", "error", err)
 			}
 			searchEngine = se
+			if cfg.SearchBackend == "qdrant" {
+				qrepo, err := search.NewQdrantRepository(search.QdrantConfig{
+					BaseURL:    cfg.QdrantURL,
+					Collection: cfg.QdrantCollection,
+					APIKey:     cfg.QdrantAPIKey,
+				}, embedFn, searchEngine, logger)
+				if err != nil {
+					logger.Warn("qdrant search backend unavailable, using local search", "error", err)
+				} else {
+					searchEngine = qrepo
+					logger.Info("qdrant search backend enabled", "url", cfg.QdrantURL, "collection", cfg.QdrantCollection)
+				}
+			}
 		}
 	}
 

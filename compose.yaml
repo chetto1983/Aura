@@ -30,6 +30,7 @@ services:
       QDRANT_URL: "http://qdrant:6333"
       QDRANT_COLLECTION: "aura_memory_v1"
       QDRANT_API_KEY: ""
+      SEARCH_BACKEND: "chromem"
     ports:
       - "127.0.0.1:${AURA_HOST_PORT:-8080}:8080"
     volumes:

@@ -126,3 +126,124 @@ func TestQdrantPointIDIsStableUUID(t *testing.T) {
 		t.Fatalf("point id = %q, want UUID string", first)
 	}
 }
+
+func TestQdrantSearcherSearchQueriesPointsAndMapsPayload(t *testing.T) {
+	var queryBody struct {
+		Query       []float32 `json:"query"`
+		Limit       int       `json:"limit"`
+		WithPayload bool      `json:"with_payload"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
+			t.Fatalf("unexpected qdrant query request: %s %s", r.Method, r.URL.String())
+		}
+		if err := json.NewDecoder(r.Body).Decode(&queryBody); err != nil {
+			t.Fatalf("decode query body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "ok",
+			"result": {
+				"points": [{
+					"id": "7f1d5a80-2b6b-5c40-a310-6cab32bc7d4f",
+					"score": 0.87,
+					"payload": {
+						"doc_id": "alpha-contract",
+						"slug": "alpha-contract",
+						"title": "Alpha Contract",
+						"kind": "wiki_page",
+						"content": "Alpha body"
+					}
+				}]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	searcher, err := NewQdrantSearcher(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, keywordEmbedding)
+	if err != nil {
+		t.Fatalf("NewQdrantSearcher: %v", err)
+	}
+	results, err := searcher.Search(context.Background(), "alpha project", 3)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(queryBody.Query) != 5 || queryBody.Limit != 3 || !queryBody.WithPayload {
+		t.Fatalf("query body = %+v", queryBody)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	got := results[0]
+	if got.Kind != "wiki_page" || got.Slug != "alpha-contract" || got.Title != "Alpha Contract" || got.Content != "Alpha body" || got.Score != 0.87 {
+		t.Fatalf("mapped result = %+v", got)
+	}
+}
+
+func TestQdrantRepositoryFallsBackOnQueryError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		http.Error(w, "collection missing", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	fallback := &fakeSearchRepository{
+		results: []Result{{Kind: "wiki_page", Slug: "fallback", Title: "Fallback", Content: "fallback content", Score: 0.42}},
+		indexed: true,
+	}
+	repo, err := NewQdrantRepository(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepository: %v", err)
+	}
+	results, err := repo.Search(context.Background(), "alpha", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if fallback.searchCalls != 1 {
+		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
+	}
+	if len(results) != 1 || results[0].Slug != "fallback" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
+type fakeSearchRepository struct {
+	results     []Result
+	err         error
+	indexed     bool
+	searchCalls int
+}
+
+func (f *fakeSearchRepository) Search(context.Context, string, int) ([]Result, error) {
+	f.searchCalls++
+	return f.results, f.err
+}
+
+func (f *fakeSearchRepository) IsIndexed() bool { return f.indexed }
+
+func (f *fakeSearchRepository) Index(context.Context, string, string, map[string]string) error {
+	f.indexed = true
+	return nil
+}
+
+func (f *fakeSearchRepository) IndexWikiPages(context.Context) error {
+	f.indexed = true
+	return nil
+}
+
+func (f *fakeSearchRepository) ReindexWikiPage(context.Context, string) error {
+	f.indexed = true
+	return nil
+}

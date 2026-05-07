@@ -53,6 +53,7 @@ const (
 	KeyQdrantURL                 = "QDRANT_URL"
 	KeyQdrantCollection          = "QDRANT_COLLECTION"
 	KeyQdrantAPIKey              = "QDRANT_API_KEY"
+	KeySearchBackend             = "SEARCH_BACKEND"
 	KeyMaxToolIterations         = "MAX_TOOL_ITERATIONS"
 	KeySkillsCatalogURL          = "SKILLS_CATALOG_URL"
 	KeySkillsAdmin               = "SKILLS_ADMIN"
@@ -108,7 +109,7 @@ func OverridableKeys() []string {
 		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
-		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey,
+		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySearchBackend,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -193,6 +194,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.QdrantURL = settingString(ctx, s, KeyQdrantURL, cfg.QdrantURL)
 	cfg.QdrantCollection = settingString(ctx, s, KeyQdrantCollection, cfg.QdrantCollection)
 	cfg.QdrantAPIKey = settingString(ctx, s, KeyQdrantAPIKey, cfg.QdrantAPIKey)
+	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySearchBackend, cfg.SearchBackend)))
 	cfg.MaxToolIterations = settingInt(ctx, s, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = settingString(ctx, s, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
