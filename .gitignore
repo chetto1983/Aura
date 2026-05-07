@@ -63,3 +63,4 @@ wiki/*
 /runtime/_downloads/
 dist/*
 skills/.claude/*
+test-results/*

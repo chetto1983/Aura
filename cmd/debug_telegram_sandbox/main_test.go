@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +28,69 @@ func TestMainRunsMigrationsBeforeSharedStoreConstruction(t *testing.T) {
 	}
 }
 
+func TestResolveDebugDBPathUsesEnvFileDirectory(t *testing.T) {
+	envPath := filepath.Join("data", ".env")
+	got := resolveDebugDBPath(envPath, filepath.Join(".", "aura.db"))
+	want := filepath.Join("data", "aura.db")
+	if got != want {
+		t.Fatalf("resolveDebugDBPath() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveDebugDBPathLeavesAbsolutePathUnchanged(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	got := resolveDebugDBPath(filepath.Join("data", ".env"), dbPath)
+	if got != filepath.Clean(dbPath) {
+		t.Fatalf("resolveDebugDBPath() = %q, want %q", got, filepath.Clean(dbPath))
+	}
+}
+
+func TestPrepareDebugDBCopyCopiesDatabaseAndSidecars(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "aura.db")
+	if err := os.WriteFile(source, []byte("main"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if err := os.WriteFile(source+"-wal", []byte("wal"), 0o600); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	if err := os.WriteFile(source+"-shm", []byte("shm"), 0o600); err != nil {
+		t.Fatalf("write shm: %v", err)
+	}
+
+	got, cleanup, err := prepareDebugDBCopy(source)
+	if err != nil {
+		t.Fatalf("prepareDebugDBCopy() error = %v", err)
+	}
+	defer cleanup()
+	if got == source {
+		t.Fatalf("prepareDebugDBCopy() returned live path")
+	}
+	assertFileContent(t, got, "main")
+	assertFileContent(t, got+"-wal", "wal")
+	assertFileContent(t, got+"-shm", "shm")
+}
+
+func TestResolveRuntimeDBPathKeepsTempCopyAfterSettingsApply(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "aura.db")
+	liveDB := filepath.Join(t.TempDir(), "live.db")
+
+	got := resolveRuntimeDBPath(tempDB, liveDB, false)
+	if got != filepath.Clean(tempDB) {
+		t.Fatalf("resolveRuntimeDBPath() = %q, want temp DB %q", got, filepath.Clean(tempDB))
+	}
+}
+
+func TestResolveRuntimeDBPathAllowsLiveDBWhenExplicit(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "aura.db")
+	liveDB := filepath.Join(t.TempDir(), "live.db")
+
+	got := resolveRuntimeDBPath(tempDB, liveDB, true)
+	if got != filepath.Clean(liveDB) {
+		t.Fatalf("resolveRuntimeDBPath() = %q, want live DB %q", got, filepath.Clean(liveDB))
+	}
+}
+
 func TestTelegramSandboxSmokeReportPassesArtifactSmoke(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
 		CalledExecuteCode:        true,
@@ -49,6 +113,17 @@ func TestTelegramSandboxSmokeReportPassesArtifactSmoke(t *testing.T) {
 
 	if err := validateTelegramSandboxSmoke(result, true); err != nil {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v", err)
+	}
+}
+
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("content of %s = %q, want %q", path, got, want)
 	}
 }
 
