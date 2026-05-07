@@ -25,14 +25,6 @@ import (
 	"github.com/aura/aura/internal/wiki"
 )
 
-// SwarmStore is the read-side surface for AuraBot run/task observability.
-type SwarmStore interface {
-	ListRuns(ctx context.Context, limit int) ([]swarm.Run, error)
-	GetRun(ctx context.Context, id string) (*swarm.Run, error)
-	ListTasks(ctx context.Context, runID string) ([]swarm.Task, error)
-	GetTask(ctx context.Context, id string) (*swarm.Task, error)
-}
-
 // BackupService is the dashboard boundary for Garage exports. Production
 // builds this from RuntimeConfig; tests can pass a fake so no S3 server is
 // needed.
@@ -123,7 +115,7 @@ type Deps struct {
 
 	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
 	// dashboard returns empty run lists and 404s for details.
-	Swarm SwarmStore
+	Swarm swarm.Reader
 
 	// Garage artifact vault. Optional; when nil, handlers build a manager
 	// from RuntimeConfig so settings changes are picked up without restart.

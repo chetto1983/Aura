@@ -19,9 +19,19 @@ type AgentRunner interface {
 	Run(ctx context.Context, task agent.Task) (agent.Result, error)
 }
 
+// RunRunner is the execution surface exposed to LLM-facing swarm tools.
+type RunRunner interface {
+	Run(ctx context.Context, req RunRequest) (RunResult, error)
+}
+
+// TaskResultReader is the manager read surface for completed task results.
+type TaskResultReader interface {
+	ReadTask(ctx context.Context, taskID string) (*Task, error)
+}
+
 type Manager struct {
 	runner    AgentRunner
-	store     *Store
+	store     Repository
 	mu        sync.RWMutex
 	maxActive int
 	maxDepth  int
@@ -30,7 +40,7 @@ type Manager struct {
 
 type ManagerConfig struct {
 	Runner    AgentRunner
-	Store     *Store
+	Store     Repository
 	MaxActive int
 	MaxDepth  int
 	Logger    *slog.Logger

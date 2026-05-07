@@ -22,6 +22,18 @@ func newTestStore(t *testing.T) *Store {
 	return store
 }
 
+var (
+	_ RunReader        = (*Store)(nil)
+	_ RunWriter        = (*Store)(nil)
+	_ TaskReader       = (*Store)(nil)
+	_ TaskWriter       = (*Store)(nil)
+	_ Reader           = (*Store)(nil)
+	_ Repository       = (*Store)(nil)
+	_ RunRunner        = (*Manager)(nil)
+	_ TaskLister       = (*Manager)(nil)
+	_ TaskResultReader = (*Manager)(nil)
+)
+
 func TestStoreRunAndTaskLifecycle(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

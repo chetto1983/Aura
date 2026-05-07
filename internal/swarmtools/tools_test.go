@@ -138,6 +138,43 @@ func TestRunAuraBotSwarmTool(t *testing.T) {
 	}
 }
 
+type fakeSwarmRunner struct {
+	result swarm.RunResult
+}
+
+func (f fakeSwarmRunner) Run(context.Context, swarm.RunRequest) (swarm.RunResult, error) {
+	return f.result, nil
+}
+
+func TestRunSwarmToolsAcceptRunnerInterface(t *testing.T) {
+	completed := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	runner := fakeSwarmRunner{result: swarm.RunResult{
+		Run: &swarm.Run{
+			ID:          "swarm_1234567890abcdef",
+			Goal:        "boundary",
+			Status:      swarm.RunCompleted,
+			CreatedAt:   completed.Add(-time.Minute),
+			UpdatedAt:   completed,
+			CompletedAt: &completed,
+		},
+		Tasks: []swarm.Task{{
+			ID:          "task_1234567890abcdef",
+			RunID:       "swarm_1234567890abcdef",
+			Role:        "librarian",
+			Status:      swarm.TaskCompleted,
+			Result:      "done",
+			CreatedAt:   completed.Add(-time.Minute),
+			CompletedAt: &completed,
+		}},
+	}}
+	if tool := NewRunAuraBotSwarmTool(runner); tool == nil {
+		t.Fatal("expected run_aurabot_swarm tool")
+	}
+	if tool := NewSpawnAuraBotTool(runner); tool == nil {
+		t.Fatal("expected spawn_aurabot tool")
+	}
+}
+
 func TestRunAuraBotSwarmRejectsUnknownRole(t *testing.T) {
 	_, _, manager := newToolTest(t)
 	tool := NewRunAuraBotSwarmTool(manager)
@@ -196,5 +233,59 @@ func TestListAndReadSwarmTools(t *testing.T) {
 	}
 	if task.Result != "worker result" || task.Status != string(swarm.TaskCompleted) {
 		t.Fatalf("task summary = %+v", task)
+	}
+}
+
+type fakeSwarmTaskReader struct {
+	tasks []swarm.Task
+}
+
+func (f fakeSwarmTaskReader) ListTasks(_ context.Context, runID string) ([]swarm.Task, error) {
+	var out []swarm.Task
+	for _, task := range f.tasks {
+		if task.RunID == runID {
+			out = append(out, task)
+		}
+	}
+	return out, nil
+}
+
+func (f fakeSwarmTaskReader) GetTask(_ context.Context, id string) (*swarm.Task, error) {
+	for _, task := range f.tasks {
+		if task.ID == id {
+			cp := task
+			return &cp, nil
+		}
+	}
+	return nil, context.Canceled
+}
+
+func TestListAndReadSwarmToolsAcceptTaskReaderInterfaces(t *testing.T) {
+	completed := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	reader := fakeSwarmTaskReader{tasks: []swarm.Task{{
+		ID:          "task_1234567890abcdef",
+		RunID:       "swarm_1234567890abcdef",
+		Role:        "critic",
+		Subject:     "audit",
+		Status:      swarm.TaskCompleted,
+		Result:      "boundary works",
+		CreatedAt:   completed.Add(-time.Minute),
+		CompletedAt: &completed,
+	}}}
+
+	listOut, err := NewListSwarmTasksTool(reader).Execute(context.Background(), map[string]any{"run_id": "swarm_1234567890abcdef"})
+	if err != nil {
+		t.Fatalf("list Execute: %v", err)
+	}
+	if !json.Valid([]byte(listOut)) {
+		t.Fatalf("list output not JSON: %q", listOut)
+	}
+
+	readOut, err := NewReadSwarmResultTool(reader).Execute(context.Background(), map[string]any{"task_id": "task_1234567890abcdef"})
+	if err != nil {
+		t.Fatalf("read Execute: %v", err)
+	}
+	if !json.Valid([]byte(readOut)) {
+		t.Fatalf("read output not JSON: %q", readOut)
 	}
 }

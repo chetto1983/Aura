@@ -22,6 +22,57 @@ type Store struct {
 	newID func(prefix string) (string, error)
 }
 
+// RunReader is the read side for swarm run observability.
+type RunReader interface {
+	ListRuns(ctx context.Context, limit int) ([]Run, error)
+	GetRun(ctx context.Context, id string) (*Run, error)
+}
+
+// RunWriter is the lifecycle write side for swarm runs.
+type RunWriter interface {
+	CreateRun(ctx context.Context, goal, createdBy string) (*Run, error)
+	MarkRunRunning(ctx context.Context, id string) error
+	CompleteRun(ctx context.Context, id string) error
+	FailRun(ctx context.Context, id string, errText string) error
+}
+
+// TaskLister lists tasks for one swarm run.
+type TaskLister interface {
+	ListTasks(ctx context.Context, runID string) ([]Task, error)
+}
+
+// TaskGetter reads one swarm task by primary key.
+type TaskGetter interface {
+	GetTask(ctx context.Context, id string) (*Task, error)
+}
+
+// TaskReader is the read side for swarm task observability.
+type TaskReader interface {
+	TaskLister
+	TaskGetter
+}
+
+// TaskWriter is the lifecycle write side for swarm tasks.
+type TaskWriter interface {
+	CreateTask(ctx context.Context, runID string, a Assignment) (*Task, error)
+	MarkTaskRunning(ctx context.Context, id string) error
+	CompleteTask(ctx context.Context, id string, result agent.Result) error
+	FailTask(ctx context.Context, id string, errText string) error
+}
+
+// Reader is the dashboard/read-only surface for swarm runs and tasks.
+type Reader interface {
+	RunReader
+	TaskReader
+}
+
+// Repository is the full swarm persistence boundary implemented by Store.
+type Repository interface {
+	Reader
+	RunWriter
+	TaskWriter
+}
+
 func OpenStore(path string) (*Store, error) {
 	db, err := auradb.Open(path)
 	if err != nil {

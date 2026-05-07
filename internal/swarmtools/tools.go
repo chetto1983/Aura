@@ -15,14 +15,14 @@ import (
 )
 
 type SpawnAuraBotTool struct {
-	manager *swarm.Manager
+	manager swarm.RunRunner
 }
 
 type RunAuraBotSwarmTool struct {
-	manager *swarm.Manager
+	manager swarm.RunRunner
 }
 
-func NewRunAuraBotSwarmTool(manager *swarm.Manager) *RunAuraBotSwarmTool {
+func NewRunAuraBotSwarmTool(manager swarm.RunRunner) *RunAuraBotSwarmTool {
 	if manager == nil {
 		return nil
 	}
@@ -110,7 +110,7 @@ func (t *RunAuraBotSwarmTool) Execute(ctx context.Context, args map[string]any) 
 	return marshal(resp)
 }
 
-func NewSpawnAuraBotTool(manager *swarm.Manager) *SpawnAuraBotTool {
+func NewSpawnAuraBotTool(manager swarm.RunRunner) *SpawnAuraBotTool {
 	if manager == nil {
 		return nil
 	}
@@ -227,10 +227,10 @@ func (t *SpawnAuraBotTool) Execute(ctx context.Context, args map[string]any) (st
 }
 
 type ListSwarmTasksTool struct {
-	store *swarm.Store
+	store swarm.TaskLister
 }
 
-func NewListSwarmTasksTool(store *swarm.Store) *ListSwarmTasksTool {
+func NewListSwarmTasksTool(store swarm.TaskLister) *ListSwarmTasksTool {
 	if store == nil {
 		return nil
 	}
@@ -273,10 +273,10 @@ func (t *ListSwarmTasksTool) Execute(ctx context.Context, args map[string]any) (
 }
 
 type ReadSwarmResultTool struct {
-	store *swarm.Store
+	store swarm.TaskGetter
 }
 
-func NewReadSwarmResultTool(store *swarm.Store) *ReadSwarmResultTool {
+func NewReadSwarmResultTool(store swarm.TaskGetter) *ReadSwarmResultTool {
 	if store == nil {
 		return nil
 	}
