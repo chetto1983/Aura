@@ -137,12 +137,12 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Label: "Max in-flight messages", Hint: "Hard cap; oldest evicted first"},
 	{Key: settings.KeyMaxToolIterations, Group: "budget", Kind: "int", Label: "Max tool iterations / turn"},
 
-	{Key: settings.KeySummarizerEnabled, Group: "summarizer", Kind: "bool", Label: "Summarizer enabled"},
-	{Key: settings.KeySummarizerMode, Group: "summarizer", Kind: "enum", Options: []string{"off", "review", "auto"}, Label: "Summarizer mode", Hint: "review = queue for dashboard approval; auto = direct wiki write"},
-	{Key: settings.KeySummarizerTurnInterval, Group: "summarizer", Kind: "int", Label: "Run every N turns"},
+	{Key: settings.KeySummarizerEnabled, Group: "summarizer", Kind: "bool", Label: "Automatic memory capture enabled"},
+	{Key: settings.KeySummarizerMode, Value: config.DefaultSummarizerMode, Group: "summarizer", Kind: "enum", Options: []string{"off", "review", "auto"}, Label: "Memory capture mode", Hint: "review = queue for dashboard approval; auto = direct wiki write"},
+	{Key: settings.KeySummarizerTurnInterval, Value: strconv.Itoa(config.DefaultSummarizerTurnInterval), Group: "summarizer", Kind: "int", Label: "Run every N archived turns", Hint: "Default 2 captures after a normal user/assistant turn"},
 	{Key: settings.KeySummarizerMinSalience, Group: "summarizer", Kind: "float", Label: "Min salience"},
 	{Key: settings.KeySummarizerLookbackTurns, Group: "summarizer", Kind: "int", Label: "Lookback turns"},
-	{Key: settings.KeySummarizerCooldownSeconds, Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
+	{Key: settings.KeySummarizerCooldownSeconds, Value: strconv.Itoa(config.DefaultSummarizerCooldownSeconds), Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
 
 	{Key: settings.KeyAuraBotEnabled, Value: "false", Group: "aurabot", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and swarm tools. Restart Aura after changing."},
 	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Applies to new runs when AuraBot is already enabled."},

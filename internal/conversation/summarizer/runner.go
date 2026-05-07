@@ -27,6 +27,7 @@ type DeduperI interface {
 type Extraction struct {
 	ChatID    int64
 	Decisions []Decision
+	Applied   int
 }
 
 // RunnerConfig holds the operational parameters for the Runner.
@@ -36,6 +37,12 @@ type RunnerConfig struct {
 	LookbackTurns int     // how many recent turns to pass to scorer
 	CooldownSecs  int     // minimum seconds between extractions per chat (0 = no cooldown)
 	Applier       Applier // nil = log-only (12e behaviour)
+}
+
+// ChatApplier is implemented by appliers that need the source chat ID for
+// review provenance. Runner falls back to Applier for older/no-op appliers.
+type ChatApplier interface {
+	ApplyForChat(ctx context.Context, chatID int64, d Decision) error
 }
 
 // Runner checks after each turn whether a summarization extraction should run
@@ -130,6 +137,7 @@ func (r *Runner) MaybeExtract(ctx context.Context, chatID int64) (bool, *Extract
 	}
 
 	decisions := make([]Decision, 0, len(candidates))
+	applied := 0
 	for _, c := range candidates {
 		dec, err := r.deduper.Deduplicate(ctx, c)
 		if err != nil {
@@ -146,11 +154,20 @@ func (r *Runner) MaybeExtract(ctx context.Context, chatID int64) (bool, *Extract
 			"target_slug", dec.TargetSlug,
 		)
 		if r.applier != nil {
-			if err := r.applier.Apply(ctx, dec); err != nil {
+			if err := applyDecision(ctx, r.applier, chatID, dec); err != nil {
 				r.logger.Warn("runner apply failed", "fact", c.Fact, "error", err)
+			} else {
+				applied++
 			}
 		}
 	}
 
-	return true, &Extraction{ChatID: chatID, Decisions: decisions}, nil
+	return true, &Extraction{ChatID: chatID, Decisions: decisions, Applied: applied}, nil
+}
+
+func applyDecision(ctx context.Context, applier Applier, chatID int64, dec Decision) error {
+	if chatApplier, ok := applier.(ChatApplier); ok {
+		return chatApplier.ApplyForChat(ctx, chatID, dec)
+	}
+	return applier.Apply(ctx, dec)
 }

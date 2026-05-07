@@ -374,6 +374,48 @@ func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
 	t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
 }
 
+func TestSettingsList_ShowsPostTurnMemoryCaptureDefaults(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings: store,
+		RuntimeConfig: &config.Config{
+			SummarizerEnabled:         true,
+			SummarizerMode:            config.DefaultSummarizerMode,
+			SummarizerTurnInterval:    config.DefaultSummarizerTurnInterval,
+			SummarizerCooldownSeconds: config.DefaultSummarizerCooldownSeconds,
+		},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	want := map[string]string{
+		settings.KeySummarizerMode:            "review",
+		settings.KeySummarizerTurnInterval:    "2",
+		settings.KeySummarizerCooldownSeconds: "0",
+	}
+	for key, value := range want {
+		found := false
+		for _, it := range resp.Items {
+			if it.Key != key {
+				continue
+			}
+			found = true
+			if it.Value != value || it.ActiveValue != value || it.Group != "summarizer" {
+				t.Fatalf("%s row = value:%q active:%q group:%q, want %q", key, it.Value, it.ActiveValue, it.Group, value)
+			}
+		}
+		if !found {
+			t.Fatalf("%s not in settings response", key)
+		}
+	}
+}
+
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {
 	router, store := newSettingsEnv(t)
 	body := `{"updates":{"HTTP_PORT":"0.0.0.0:9090","SANDBOX_TIMEOUT_SEC":"45"}}`

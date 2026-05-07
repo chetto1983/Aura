@@ -235,7 +235,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.ConvArchiveEnabled = settingBool(ctx, s, KeyConvArchiveEnabled, cfg.ConvArchiveEnabled)
 
 	cfg.SummarizerEnabled = settingBool(ctx, s, KeySummarizerEnabled, cfg.SummarizerEnabled)
-	cfg.SummarizerMode = settingString(ctx, s, KeySummarizerMode, cfg.SummarizerMode)
+	cfg.SummarizerMode = config.NormalizeSummarizerMode(settingString(ctx, s, KeySummarizerMode, cfg.SummarizerMode))
 	cfg.SummarizerTurnInterval = settingInt(ctx, s, KeySummarizerTurnInterval, cfg.SummarizerTurnInterval)
 	cfg.SummarizerMinSalience = settingFloat(ctx, s, KeySummarizerMinSalience, cfg.SummarizerMinSalience)
 	cfg.SummarizerLookbackTurns = settingInt(ctx, s, KeySummarizerLookbackTurns, cfg.SummarizerLookbackTurns)

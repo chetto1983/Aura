@@ -35,6 +35,9 @@ services:
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_TOOL_PROFILE_MODE: "auto"
       AURA_SKILL_PREFLIGHT: "required"
+      SUMMARIZER_MODE: "review"
+      SUMMARIZER_TURN_INTERVAL: "2"
+      SUMMARIZER_COOLDOWN_SECONDS: "0"
     ports:
       - "127.0.0.1:${AURA_HOST_PORT:-8080}:8080"
     volumes:

@@ -28,6 +28,23 @@ func (d *noopDeduper) Deduplicate(_ context.Context, c summarizer.Candidate) (su
 	return summarizer.Decision{Candidate: c, Action: summarizer.ActionNew}, nil
 }
 
+type chatRecordingApplier struct {
+	chatIDs   []int64
+	decisions []summarizer.Decision
+}
+
+func (a *chatRecordingApplier) Apply(_ context.Context, d summarizer.Decision) error {
+	a.chatIDs = append(a.chatIDs, 0)
+	a.decisions = append(a.decisions, d)
+	return nil
+}
+
+func (a *chatRecordingApplier) ApplyForChat(_ context.Context, chatID int64, d summarizer.Decision) error {
+	a.chatIDs = append(a.chatIDs, chatID)
+	a.decisions = append(a.decisions, d)
+	return nil
+}
+
 func newRunnerTestArchive(t *testing.T) *conversation.ArchiveStore {
 	t.Helper()
 	db := scheduler.NewTestDB(t)
@@ -87,6 +104,39 @@ func TestRunner_TriggersAfterInterval(t *testing.T) {
 	}
 	if scorer.calls != 1 {
 		t.Fatalf("want scorer called once, got %d", scorer.calls)
+	}
+}
+
+func TestRunner_PassesChatIDToPostTurnMemoryApplier(t *testing.T) {
+	archive := newRunnerTestArchive(t)
+	scorer := &countingScorer{candidates: []summarizer.Candidate{
+		{Fact: "User prefers post-turn memory capture to stay review-gated.", Score: 0.91, Category: "preference", SourceTurnIDs: []int64{1}},
+	}}
+	deduper := &noopDeduper{}
+	applier := &chatRecordingApplier{}
+
+	cfg := summarizer.RunnerConfig{
+		Enabled:       true,
+		TurnInterval:  2,
+		LookbackTurns: 4,
+		CooldownSecs:  0,
+		Applier:       applier,
+	}
+	runner := summarizer.NewRunner(cfg, archive, scorer, deduper)
+	seedTurns(t, archive, 4242, 2)
+
+	triggered, extraction, err := runner.MaybeExtract(context.Background(), 4242)
+	if err != nil {
+		t.Fatalf("MaybeExtract: %v", err)
+	}
+	if !triggered {
+		t.Fatal("want post-turn capture to trigger after one user/assistant pair")
+	}
+	if extraction == nil || extraction.Applied != 1 {
+		t.Fatalf("extraction = %+v, want Applied=1", extraction)
+	}
+	if len(applier.chatIDs) != 1 || applier.chatIDs[0] != 4242 {
+		t.Fatalf("applier chatIDs = %v, want [4242]", applier.chatIDs)
 	}
 }
 

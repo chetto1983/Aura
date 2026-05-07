@@ -192,7 +192,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 				"chat_id", chatID, "error", err)
 		}
 
-		archiveConversationTurns(ctx, b.logger, b.archiver, archiveTurnInput{
+		archiveConversationTurns(ctx, b.logger, b.archiveAppenderForTurn(), archiveTurnInput{
 			ChatID:       chatID,
 			UserID:       c.Sender().ID,
 			NextIndex:    nextIdx,
@@ -203,10 +203,22 @@ func (b *Bot) handleConversation(c tele.Context) {
 			TokensIn:     convCtx.TotalTokensUsed(),
 		})
 
-		// Slice 12e: post-turn summarizer extraction (log-only; apply in 12f).
+		// Phase 5A: post-turn memory capture. When the summarizer is active,
+		// archiveAppenderForTurn writes synchronously through archiveDB so this
+		// extraction sees the just-finished user/assistant turn.
 		if b.summRunner != nil {
-			if _, _, err := b.summRunner.MaybeExtract(ctx, chatID); err != nil {
+			triggered, extraction, err := b.summRunner.MaybeExtract(ctx, chatID)
+			if err != nil {
 				b.logger.Warn("summarizer extraction failed", "chat_id", chatID, "error", err)
+			} else if triggered && extraction != nil {
+				stats.memoryCaptureTriggered = true
+				stats.memoryCaptureDecisions = len(extraction.Decisions)
+				stats.memoryCaptureApplied = extraction.Applied
+				b.logger.Info("post-turn memory capture complete",
+					"chat_id", chatID,
+					"decisions", len(extraction.Decisions),
+					"applied", extraction.Applied,
+				)
 			}
 		}
 	}
@@ -255,6 +267,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
 		"cost_usd", fmt.Sprintf("%.6f", stats.costUSD),
+		"memory_capture_triggered", stats.memoryCaptureTriggered,
+		"memory_capture_decisions", stats.memoryCaptureDecisions,
+		"memory_capture_applied", stats.memoryCaptureApplied,
 	)
 	hooks.AfterTurn(orchestration.TraceEvent{
 		PromptVersion:          stats.promptVersion,
@@ -291,6 +306,16 @@ func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder
 		args = append(args, "message_id", placeholder.ID)
 	}
 	logger.Debug("telegram cleanup: placeholder delete failed", args...)
+}
+
+func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
+	if b == nil {
+		return nil
+	}
+	if b.summRunner != nil && b.archiveDB != nil {
+		return b.archiveDB
+	}
+	return b.archiver
 }
 
 func (b *Bot) swarmToolsAvailable() bool {
@@ -339,34 +364,37 @@ func speculativeSearchTimeout(timeoutMS int) time.Duration {
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
 type turnStats struct {
-	llmCalls            int
-	toolCalls           int
-	loopSteps           int
-	promptVersion       string
-	promptModules       []string
-	promptHash          string
-	toolProfile         string
-	profileSelectReason string
-	toolsExposed        []string
-	toolsCalled         []string
-	activeCapabilities  []string
-	readSkills          []string
-	hiddenToolRejected  bool
-	skillPreflightFail  bool
-	skillsRead          bool
-	swarmUsed           bool
-	sandboxUsed         bool
-	terminalTool        string
-	terminalSwarm       bool
-	swarmFinalization   string
-	postSwarmToolCalls  int
-	duplicateSwarm      bool
-	workerCount         int
-	workerFailures      int
-	tokensPrompt        int
-	tokensCompletion    int
-	tokensTotal         int
-	costUSD             float64
+	llmCalls               int
+	toolCalls              int
+	loopSteps              int
+	promptVersion          string
+	promptModules          []string
+	promptHash             string
+	toolProfile            string
+	profileSelectReason    string
+	toolsExposed           []string
+	toolsCalled            []string
+	activeCapabilities     []string
+	readSkills             []string
+	hiddenToolRejected     bool
+	skillPreflightFail     bool
+	skillsRead             bool
+	swarmUsed              bool
+	sandboxUsed            bool
+	terminalTool           string
+	terminalSwarm          bool
+	swarmFinalization      string
+	postSwarmToolCalls     int
+	duplicateSwarm         bool
+	workerCount            int
+	workerFailures         int
+	tokensPrompt           int
+	tokensCompletion       int
+	tokensTotal            int
+	costUSD                float64
+	memoryCaptureTriggered bool
+	memoryCaptureDecisions int
+	memoryCaptureApplied   int
 }
 
 type orchestrationSnapshot struct {

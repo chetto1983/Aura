@@ -138,22 +138,26 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 		t.Fatalf("NewReviewApplier: %v", err)
 	}
 
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionNew, "")); err != nil {
+	if err := a.ApplyForChat(context.Background(), 4242, makeDecision(summarizer.ActionNew, "")); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	rows, err := db.QueryContext(context.Background(), "SELECT status, category, related_slugs, provenance_json FROM proposed_updates WHERE action='new'")
+	rows, err := db.QueryContext(context.Background(), "SELECT chat_id, status, category, related_slugs, provenance_json FROM proposed_updates WHERE action='new'")
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
 	defer rows.Close()
 	var count int
 	for rows.Next() {
+		var chatID int64
 		var status string
 		var category string
 		var related string
 		var provenance string
-		rows.Scan(&status, &category, &related, &provenance)
+		rows.Scan(&chatID, &status, &category, &related, &provenance)
+		if chatID != 4242 {
+			t.Fatalf("want chat_id=4242, got %d", chatID)
+		}
 		if status != "pending" {
 			t.Fatalf("want status=pending, got %q", status)
 		}
@@ -170,6 +174,28 @@ func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("want 1 row, got %d", count)
+	}
+}
+
+func TestReviewApplier_SkipsDuplicatePendingProposal(t *testing.T) {
+	db := newReviewDB(t)
+	a, err := summarizer.NewReviewApplier(db)
+	if err != nil {
+		t.Fatalf("NewReviewApplier: %v", err)
+	}
+	decision := makeDecision(summarizer.ActionNew, "")
+
+	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+		t.Fatalf("second Apply: %v", err)
+	}
+
+	var count int
+	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE fact = ?", decision.Candidate.Fact).Scan(&count)
+	if count != 1 {
+		t.Fatalf("duplicate pending proposal count = %d, want 1", count)
 	}
 }
 

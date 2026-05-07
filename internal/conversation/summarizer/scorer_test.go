@@ -3,8 +3,10 @@ package summarizer_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation"
@@ -155,5 +157,39 @@ func TestScorer_SystemRoleSkipped(t *testing.T) {
 	// The system turn was skipped; the user turn was included; LLM returned 1 candidate.
 	if len(got) != 1 {
 		t.Fatalf("want 1 candidate, got %d", len(got))
+	}
+}
+
+func TestScorer_PromptIncludesTurnIDsForPostTurnProvenance(t *testing.T) {
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		fakeOpenAIHandler(`{"candidates":[]}`)(w, r)
+	}))
+	defer srv.Close()
+	client := llm.NewOpenAIClient(llm.OpenAIConfig{
+		APIKey:  "test",
+		BaseURL: srv.URL,
+		Model:   "test-model",
+	})
+	scorer := summarizer.NewScorer(client, "test-model", 0.7)
+
+	_, err := scorer.Score(context.Background(), []conversation.Turn{
+		{ID: 41, Role: "user", Content: "I prefer automatic memory proposals."},
+		{ID: 42, Role: "assistant", Content: "I will keep them review-gated."},
+	})
+	if err != nil {
+		t.Fatalf("Score: %v", err)
+	}
+	for _, want := range []string{
+		"automatic post-turn memory capture",
+		"[41:user] I prefer automatic memory proposals.",
+		"[42:assistant] I will keep them review-gated.",
+		"source_turn_ids",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("request body missing %q: %s", want, body)
+		}
 	}
 }

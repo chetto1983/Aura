@@ -33,7 +33,7 @@ func NewScorer(client llm.Client, model string, minSalience float64) *LLMScorer 
 	}
 }
 
-const scorerSystemPrompt = `You are a knowledge extraction assistant. Analyze the conversation turns and identify factual claims worth storing in a personal knowledge base.
+const scorerSystemPrompt = `You are Aura's automatic post-turn memory capture assistant. Analyze the conversation turns and identify durable facts worth proposing for a personal knowledge base.
 
 Return ONLY valid JSON in this exact schema (no markdown, no prose):
 {
@@ -48,7 +48,10 @@ Return ONLY valid JSON in this exact schema (no markdown, no prose):
   ]
 }
 
-Score 1.0 = highly specific, durable, personally relevant fact. Score 0.0 = generic or ephemeral.
+Score 1.0 = highly specific, durable, personally relevant fact. Score 0.0 = generic, redundant, speculative, secret, or ephemeral.
+Prefer user preferences, stable project decisions, recurring workflows, durable constraints, and assistant/tool failures that should change future behavior.
+Do not extract API keys, raw logs, large OCR text, private credentials, one-off chatter, or facts already explicitly rejected by the user.
+Use only the numeric turn IDs shown in each "[turn_id:role]" prefix for source_turn_ids.
 Extract at most 5 candidates. If nothing noteworthy, return {"candidates":[]}.`
 
 type scorerResponse struct {
@@ -67,7 +70,7 @@ func (s *LLMScorer) Score(ctx context.Context, turns []conversation.Turn) ([]Can
 		if t.Role == "system" {
 			continue
 		}
-		fmt.Fprintf(&sb, "[%s] %s\n", t.Role, t.Content)
+		fmt.Fprintf(&sb, "[%d:%s] %s\n", t.ID, t.Role, t.Content)
 	}
 
 	temp := 0.0

@@ -332,6 +332,23 @@ Create a small taxonomy. Do not route on raw skill names alone.
 - [x] Run `go test ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`.
 - [x] Commit: `feat: enforce skill and terminal tool policy`.
 
+### Phase 5A: Automatic Post-Turn Memory Capture
+
+- [x] Treat memory learning as a post-turn pipeline, not extra live-loop write power.
+- [x] Keep the default mutation path review-gated through `proposed_updates`.
+- [x] Change Docker/default config to `SUMMARIZER_MODE=review`, `SUMMARIZER_TURN_INTERVAL=2`, and `SUMMARIZER_COOLDOWN_SECONDS=0`.
+- [x] Preserve `SUMMARIZER_MODE=off` as the no-cost/no-capture escape hatch.
+- [x] Preserve `SUMMARIZER_MODE=auto` only as explicit direct-wiki-write mode.
+- [x] Make review proposals keep the originating `chat_id`.
+- [x] Add duplicate-pending suppression so repeated turns do not flood the review queue before approval.
+- [x] Make summarizer prompts include numeric archived turn IDs so `source_turn_ids` can point at real archive evidence.
+- [x] Use synchronous archive writes when post-turn capture is active so the extractor sees the just-finished turn.
+- [x] Log capture triggered/decision/applied counts in per-turn telemetry.
+- [x] Surface capture defaults in dashboard settings and `.env.example`.
+- [x] Run `go test ./internal/conversation/summarizer ./internal/telegram ./internal/config ./internal/settings ./internal/api -count=1`.
+- [ ] Run full Go verification and Docker smoke before closing the broader phase.
+- [ ] Commit: `feat: add automatic post-turn memory capture`.
+
 ### Phase 5: Debug And Telemetry Surface
 
 - [ ] Extend `cmd/debug_orchestration` to print:

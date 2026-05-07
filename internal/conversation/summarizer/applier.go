@@ -132,20 +132,46 @@ func NewReviewApplier(db *sql.DB) (*ReviewApplier, error) {
 }
 
 func (r *ReviewApplier) Apply(ctx context.Context, d Decision) error {
+	return r.ApplyForChat(ctx, 0, d)
+}
+
+func (r *ReviewApplier) ApplyForChat(ctx context.Context, chatID int64, d Decision) error {
 	if d.Action == ActionSkip {
+		return nil
+	}
+	if exists, err := r.pendingDuplicateExists(ctx, d); err != nil {
+		return err
+	} else if exists {
 		return nil
 	}
 	ids, _ := json.Marshal(d.Candidate.SourceTurnIDs)
 	related, _ := json.Marshal(d.Candidate.RelatedSlugs)
-	provenance, _ := json.Marshal(Provenance{OriginTool: "conversation_summarizer", Evidence: turnEvidenceRefs(d.Candidate.SourceTurnIDs)})
+	provenance, _ := json.Marshal(Provenance{
+		OriginTool:   "conversation_summarizer",
+		OriginReason: "automatic post-turn memory capture",
+		Evidence:     turnEvidenceRefs(d.Candidate.SourceTurnIDs),
+	})
 	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
-		VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
 	_, err := r.db.ExecContext(ctx, q,
-		d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related), string(provenance))
+		chatID, d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related), string(provenance))
 	if err != nil {
 		return fmt.Errorf("review applier insert: %w", err)
 	}
 	return nil
+}
+
+func (r *ReviewApplier) pendingDuplicateExists(ctx context.Context, d Decision) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM proposed_updates
+		 WHERE status = 'pending' AND action = ? AND target_slug = ? AND lower(trim(fact)) = lower(trim(?))`,
+		string(d.Action), strings.TrimSpace(d.TargetSlug), strings.TrimSpace(d.Candidate.Fact),
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("review applier duplicate check: %w", err)
+	}
+	return count > 0, nil
 }
 
 // ---- OffApplier ----

@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -101,6 +103,35 @@ func TestArchiveConversationTurnsLogsAppendFailures(t *testing.T) {
 	}
 }
 
+func TestArchiveAppenderForTurnUsesSynchronousStoreWhenMemoryCaptureActive(t *testing.T) {
+	buffered := &closeFailingArchiver{}
+	store := &recordingArchiveRepository{}
+	bot := &Bot{
+		archiver:   buffered,
+		archiveDB:  store,
+		summRunner: &summarizer.Runner{},
+	}
+
+	got := bot.archiveAppenderForTurn()
+	if got != store {
+		t.Fatalf("archiveAppenderForTurn() = %T, want synchronous archive store", got)
+	}
+}
+
+func TestArchiveAppenderForTurnKeepsBufferedWriterWhenMemoryCaptureInactive(t *testing.T) {
+	buffered := &closeFailingArchiver{}
+	store := &recordingArchiveRepository{}
+	bot := &Bot{
+		archiver:  buffered,
+		archiveDB: store,
+	}
+
+	got := bot.archiveAppenderForTurn()
+	if got != buffered {
+		t.Fatalf("archiveAppenderForTurn() = %T, want buffered archiver", got)
+	}
+}
+
 func assertArchivedTurn(t *testing.T, got, want conversation.Turn) {
 	t.Helper()
 	if got.ChatID != want.ChatID || got.UserID != want.UserID || got.TurnIndex != want.TurnIndex ||
@@ -132,4 +163,40 @@ func (f *failingArchiver) Append(context.Context, conversation.Turn) error {
 
 func (f *failingArchiver) Close(context.Context) error {
 	return nil
+}
+
+type recordingArchiveRepository struct {
+	recordingArchiver
+}
+
+func (r *recordingArchiveRepository) ListByChat(context.Context, int64, int) ([]conversation.Turn, error) {
+	return nil, nil
+}
+
+func (r *recordingArchiveRepository) ListAll(context.Context, int) ([]conversation.Turn, error) {
+	return nil, nil
+}
+
+func (r *recordingArchiveRepository) Get(context.Context, int64) (conversation.Turn, error) {
+	return conversation.Turn{}, nil
+}
+
+func (r *recordingArchiveRepository) MaxTurnIndex(context.Context, int64) (int64, error) {
+	return -1, nil
+}
+
+func (r *recordingArchiveRepository) Stats(context.Context) (conversation.ArchiveStats, error) {
+	return conversation.ArchiveStats{}, nil
+}
+
+func (r *recordingArchiveRepository) DeleteByChat(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+
+func (r *recordingArchiveRepository) DeleteOlderThan(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (r *recordingArchiveRepository) DeleteAll(context.Context) (int64, error) {
+	return 0, nil
 }

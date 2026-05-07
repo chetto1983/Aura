@@ -16,6 +16,9 @@ const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillPreflight = "required"
+const DefaultSummarizerMode = "review"
+const DefaultSummarizerTurnInterval = 2
+const DefaultSummarizerCooldownSeconds = 0
 const (
 	DefaultEnvPath = ".env"
 
@@ -103,11 +106,11 @@ type Config struct {
 
 	// Auto-summarization (Phase 12e+)
 	SummarizerEnabled         bool    `envconfig:"SUMMARIZER_ENABLED" default:"true"`
-	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"off"`
-	SummarizerTurnInterval    int     `envconfig:"SUMMARIZER_TURN_INTERVAL" default:"5"`
+	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"review"`
+	SummarizerTurnInterval    int     `envconfig:"SUMMARIZER_TURN_INTERVAL" default:"2"`
 	SummarizerMinSalience     float64 `envconfig:"SUMMARIZER_MIN_SALIENCE" default:"0.5"`
 	SummarizerLookbackTurns   int     `envconfig:"SUMMARIZER_LOOKBACK_TURNS" default:"10"`
-	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
+	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"0"`
 
 	// Sandbox code execution. Product execution uses a bundled Pyodide
 	// runtime or the container sidecar; no host Python fallback is supported.
@@ -251,11 +254,11 @@ func Load() (*Config, error) {
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 
 	cfg.SummarizerEnabled = getEnvBool("SUMMARIZER_ENABLED", true)
-	cfg.SummarizerMode = getEnv("SUMMARIZER_MODE", "off")
-	cfg.SummarizerTurnInterval = getEnvInt("SUMMARIZER_TURN_INTERVAL", 5)
+	cfg.SummarizerMode = NormalizeSummarizerMode(getEnv("SUMMARIZER_MODE", DefaultSummarizerMode))
+	cfg.SummarizerTurnInterval = getEnvInt("SUMMARIZER_TURN_INTERVAL", DefaultSummarizerTurnInterval)
 	cfg.SummarizerMinSalience = getEnvFloat("SUMMARIZER_MIN_SALIENCE", 0.5)
 	cfg.SummarizerLookbackTurns = getEnvInt("SUMMARIZER_LOOKBACK_TURNS", 10)
-	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", 60)
+	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", DefaultSummarizerCooldownSeconds)
 
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
 	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(getEnv("SANDBOX_RUNTIME_MODE", DefaultSandboxRuntimeMode)))
@@ -273,6 +276,15 @@ func normalizeSkillPreflight(value string) string {
 		return normalized
 	default:
 		return DefaultSkillPreflight
+	}
+}
+
+func NormalizeSummarizerMode(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "off", "review", "auto":
+		return normalized
+	default:
+		return DefaultSummarizerMode
 	}
 }
 
