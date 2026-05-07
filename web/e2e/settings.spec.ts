@@ -109,5 +109,11 @@ test.describe('settings page (14d)', () => {
     await expect(select).toBeVisible({ timeout: 5_000 });
     const optionTexts = await select.locator('option').allTextContents();
     expect(optionTexts).toEqual(expect.arrayContaining(['off', 'review', 'auto']));
+
+    const searchBackend = page.locator('select#SEARCH_BACKEND');
+    await expect(searchBackend).toBeVisible();
+    await expect(searchBackend).toHaveValue(/^(chromem|qdrant)$/);
+    const searchOptions = await searchBackend.locator('option').allTextContents();
+    expect(searchOptions).toEqual(['chromem', 'qdrant']);
   });
 });

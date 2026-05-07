@@ -97,11 +97,15 @@ func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, fallback R
 
 func (r *qdrantRepository) Search(ctx context.Context, query string, topK int) ([]Result, error) {
 	results, err := r.primary.Search(ctx, query, topK)
-	if err == nil {
+	if err == nil && len(results) > 0 {
 		return results, nil
 	}
 	if r.logger != nil {
-		r.logger.Warn("qdrant search failed, falling back to local search", "error", err)
+		if err != nil {
+			r.logger.Warn("qdrant search failed, falling back to local search", "error", err)
+		} else {
+			r.logger.Warn("qdrant search returned no results, falling back to local search")
+		}
 	}
 	return r.fallback.Search(ctx, query, topK)
 }

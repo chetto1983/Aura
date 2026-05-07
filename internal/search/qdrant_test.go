@@ -219,6 +219,39 @@ func TestQdrantRepositoryFallsBackOnQueryError(t *testing.T) {
 	}
 }
 
+func TestQdrantRepositoryFallsBackOnEmptyResults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","result":{"points":[]}}`))
+	}))
+	defer server.Close()
+
+	fallback := &fakeSearchRepository{
+		results: []Result{{Kind: "wiki_page", Slug: "fallback", Title: "Fallback", Content: "fallback content", Score: 0.42}},
+		indexed: true,
+	}
+	repo, err := NewQdrantRepository(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepository: %v", err)
+	}
+	results, err := repo.Search(context.Background(), "alpha", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if fallback.searchCalls != 1 {
+		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
+	}
+	if len(results) != 1 || results[0].Slug != "fallback" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
 type fakeSearchRepository struct {
 	results     []Result
 	err         error

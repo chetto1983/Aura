@@ -265,16 +265,32 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 			t.Fatalf("%s not in settings response", key)
 		}
 	}
+	foundSecret := false
 	for _, it := range resp.Items {
 		if it.Key != settings.KeyQdrantAPIKey {
 			continue
 		}
+		foundSecret = true
 		if it.Value != "" || it.ActiveValue != "(configured)" || !it.IsSecret {
 			t.Fatalf("QDRANT_API_KEY leaked: value=%q active=%q secret=%v", it.Value, it.ActiveValue, it.IsSecret)
 		}
-		return
 	}
-	t.Fatal("QDRANT_API_KEY not in settings response")
+	if !foundSecret {
+		t.Fatal("QDRANT_API_KEY not in settings response")
+	}
+	foundBackend := false
+	for _, it := range resp.Items {
+		if it.Key != settings.KeySearchBackend {
+			continue
+		}
+		foundBackend = true
+		if it.Kind != "enum" || len(it.Options) != 2 || it.Options[0] != "chromem" || it.Options[1] != "qdrant" {
+			t.Fatalf("SEARCH_BACKEND control = kind:%q options:%v", it.Kind, it.Options)
+		}
+	}
+	if !foundBackend {
+		t.Fatal("SEARCH_BACKEND not in settings response")
+	}
 }
 
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {

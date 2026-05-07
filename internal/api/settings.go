@@ -110,7 +110,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
 	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
 	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
-	{Key: settings.KeySearchBackend, Value: "chromem", Group: "storage", Kind: "select", Options: []string{"chromem", "qdrant"}, Label: "Search backend", Hint: "Keep chromem for local default; choose qdrant to query the Qdrant sidecar first with local fallback"},
+	{Key: settings.KeySearchBackend, Value: "chromem", Group: "storage", Kind: "enum", Options: []string{"chromem", "qdrant"}, Label: "Search backend", Hint: "Keep chromem for local default; choose qdrant to query the Qdrant sidecar first with local fallback"},
 
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
