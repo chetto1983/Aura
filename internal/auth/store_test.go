@@ -11,6 +11,19 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 )
 
+var (
+	_ TokenReader         = (*Store)(nil)
+	_ TokenIssuer         = (*Store)(nil)
+	_ TokenRevoker        = (*Store)(nil)
+	_ TokenWriter         = (*Store)(nil)
+	_ TokenRepository     = (*Store)(nil)
+	_ AccessReader        = (*Store)(nil)
+	_ AccessWriter        = (*Store)(nil)
+	_ PendingReader       = (*Store)(nil)
+	_ DashboardRepository = (*Store)(nil)
+	_ Repository          = (*Store)(nil)
+)
+
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "auth.db")

@@ -10,6 +10,29 @@ import (
 	"github.com/aura/aura/internal/auth"
 )
 
+type fakeTokenRepository struct {
+	issuedUserID string
+	revokedToken string
+	issueErr     error
+	revokeErr    error
+}
+
+func (f *fakeTokenRepository) Issue(_ context.Context, userID string) (string, error) {
+	if f.issueErr != nil {
+		return "", f.issueErr
+	}
+	f.issuedUserID = userID
+	return "fake-token", nil
+}
+
+func (f *fakeTokenRepository) Revoke(_ context.Context, token string) error {
+	if f.revokeErr != nil {
+		return f.revokeErr
+	}
+	f.revokedToken = token
+	return nil
+}
+
 // fakeSender records SendToUser calls so tests can assert delivery without
 // a live Telegram client. Thread-safe because the tool may be invoked
 // concurrently in larger fixtures.
@@ -80,6 +103,25 @@ func TestRequestDashboardToken_HappyPath(t *testing.T) {
 		if strings.Contains(got, line) {
 			t.Errorf("tool result leaks token text: result=%q, token=%q", got, line)
 		}
+	}
+}
+
+func TestRequestDashboardToken_AcceptsTokenWriterInterface(t *testing.T) {
+	repo := &fakeTokenRepository{}
+	sender := &fakeSender{}
+	tool := NewRequestDashboardTokenTool(repo, sender, func(uid string) bool { return uid == "alice" })
+	if tool == nil {
+		t.Fatal("tool nil")
+	}
+	got, err := tool.Execute(WithUserID(context.Background(), "alice"), nil)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got == "" || repo.issuedUserID != "alice" {
+		t.Fatalf("issuedUserID=%q result=%q, want alice and non-empty result", repo.issuedUserID, got)
+	}
+	if len(sender.calls) != 1 || !strings.Contains(sender.calls[0].message, "fake-token") {
+		t.Fatalf("send calls = %+v, want one message containing token", sender.calls)
 	}
 }
 

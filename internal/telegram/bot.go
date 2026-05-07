@@ -50,7 +50,7 @@ type Bot struct {
 	agentRunner *agent.Runner
 	swarmStore  *swarm.Store
 	swarmMgr    *swarm.Manager
-	authDB      *auth.Store                // dashboard bearer-token store (slice 10d)
+	authDB      auth.Repository            // dashboard bearer-token and allowlist repository
 	mcpClients  []*mcp.Client              // active MCP server connections (slice 11a)
 	archiveDB   *conversation.ArchiveStore // nil when CONV_ARCHIVE_ENABLED=false
 	archiver    conversationArchiver       // nil when CONV_ARCHIVE_ENABLED=false

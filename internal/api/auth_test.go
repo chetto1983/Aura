@@ -7,9 +7,51 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/auth"
 )
+
+type fakeDashboardAuthRepository struct {
+	tokens     map[string]string
+	revoked    map[string]bool
+	pending    []auth.PendingUser
+	lookupErr  error
+	revokeErr  error
+	pendingErr error
+}
+
+func (f *fakeDashboardAuthRepository) Lookup(_ context.Context, token string) (string, error) {
+	if f.lookupErr != nil {
+		return "", f.lookupErr
+	}
+	if f.revoked[token] {
+		return "", auth.ErrInvalid
+	}
+	userID, ok := f.tokens[token]
+	if !ok {
+		return "", auth.ErrInvalid
+	}
+	return userID, nil
+}
+
+func (f *fakeDashboardAuthRepository) Revoke(_ context.Context, token string) error {
+	if f.revokeErr != nil {
+		return f.revokeErr
+	}
+	if _, ok := f.tokens[token]; !ok {
+		return auth.ErrInvalid
+	}
+	f.revoked[token] = true
+	return nil
+}
+
+func (f *fakeDashboardAuthRepository) ListPending(_ context.Context) ([]auth.PendingUser, error) {
+	if f.pendingErr != nil {
+		return nil, f.pendingErr
+	}
+	return append([]auth.PendingUser(nil), f.pending...), nil
+}
 
 // authedTestEnv is testEnv plus an auth.Store and an Allowlist predicate.
 // Used only for tests that exercise RequireBearer; the bare testEnv keeps
@@ -205,4 +247,55 @@ func TestAuth_LogoutRequiresAuth(t *testing.T) {
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status %d, want 401", rr.Code)
 	}
+}
+
+func TestAuthHandlersAcceptDashboardRepositoryInterface(t *testing.T) {
+	repo := &fakeDashboardAuthRepository{
+		tokens:  map[string]string{"tok_alice": "alice"},
+		revoked: map[string]bool{},
+		pending: []auth.PendingUser{{
+			UserID:      "1234567",
+			Username:    "guest",
+			RequestedAt: time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC),
+		}},
+	}
+	router := NewRouter(Deps{
+		Auth:      repo,
+		Allowlist: func(uid string) bool { return uid == "alice" },
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/pending-users", nil)
+	req.Header.Set("Authorization", "Bearer tok_alice")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("pending status %d, body=%s", rr.Code, rr.Body)
+	}
+	var pending []PendingUserSummary
+	if err := json.Unmarshal(rr.Body.Bytes(), &pending); err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].UserID != "1234567" {
+		t.Fatalf("pending = %+v, want fake row", pending)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer tok_alice")
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("logout status %d, body=%s", rr.Code, rr.Body)
+	}
+	if !repo.revoked["tok_alice"] {
+		t.Fatal("logout did not revoke token in repository fake")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Authorization", "Bearer tok_alice")
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked token status %d, want 401", rr.Code)
+	}
+
 }

@@ -36,7 +36,7 @@ type AllowlistFunc func(userID string) bool
 // dashboard can explain re-login; missing, wrong, revoked, and
 // de-allowlisted tokens remain generic so an attacker can't enumerate
 // token state.
-func RequireBearer(store *Store, allowlist AllowlistFunc, logger *slog.Logger, next http.Handler) http.Handler {
+func RequireBearer(store TokenReader, allowlist AllowlistFunc, logger *slog.Logger, next http.Handler) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}

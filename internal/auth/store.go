@@ -62,6 +62,71 @@ const (
 	SourceE2EBootstrap = "e2e_bootstrap"
 )
 
+// TokenReader is the read side needed by dashboard bearer middleware.
+type TokenReader interface {
+	Lookup(ctx context.Context, token string) (string, error)
+}
+
+// TokenIssuer is the write side needed by token minting flows.
+type TokenIssuer interface {
+	Issue(ctx context.Context, userID string) (string, error)
+}
+
+// TokenRevoker is the write side needed by logout and failed-delivery flows.
+type TokenRevoker interface {
+	Revoke(ctx context.Context, token string) error
+}
+
+// TokenWriter is the complete token mutation side.
+type TokenWriter interface {
+	TokenIssuer
+	TokenRevoker
+}
+
+// TokenRepository is the complete dashboard token persistence boundary.
+type TokenRepository interface {
+	TokenReader
+	TokenWriter
+}
+
+// AccessReader is the read side of persisted Telegram/dashboard allowlists.
+type AccessReader interface {
+	IsUserAllowed(ctx context.Context, userID string) (bool, error)
+	AllowedUserCount(ctx context.Context) (int, error)
+	AllowedUserIDs(ctx context.Context) ([]string, error)
+}
+
+// AccessWriter is the write side of bootstrap and pending-approval flows.
+type AccessWriter interface {
+	BootstrapUser(ctx context.Context, userID string) (bool, error)
+	BootstrapE2EUser(ctx context.Context, userID string) (bool, error)
+	RequestAccess(ctx context.Context, userID, username string) (bool, error)
+	Approve(ctx context.Context, userID string) error
+	Deny(ctx context.Context, userID string) error
+}
+
+// PendingReader is the dashboard read side for open approval requests.
+type PendingReader interface {
+	ListPending(ctx context.Context) ([]PendingUser, error)
+}
+
+// DashboardRepository is the API surface needed by bearer auth, logout, and
+// pending request listing. Approval mutation is handled by PendingApprover in
+// internal/api so plaintext dashboard tokens still travel through Telegram.
+type DashboardRepository interface {
+	TokenReader
+	TokenRevoker
+	PendingReader
+}
+
+// Repository is the full auth persistence boundary used by Telegram wiring.
+type Repository interface {
+	TokenRepository
+	AccessReader
+	AccessWriter
+	PendingReader
+}
+
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
 // API tokens. Callers using OpenStore own the close lifecycle; callers
 // using NewStoreWithDB share a connection with another subsystem.

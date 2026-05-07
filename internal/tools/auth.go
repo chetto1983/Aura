@@ -25,7 +25,7 @@ type AllowlistFunc func(userID string) bool
 // Telegram user and delivers it via Telegram. The LLM never sees the
 // token text; the tool's return value is a bookkeeping confirmation.
 type RequestDashboardTokenTool struct {
-	store     *auth.Store
+	store     auth.TokenWriter
 	sender    TokenSender
 	allowlist AllowlistFunc
 }
@@ -33,7 +33,7 @@ type RequestDashboardTokenTool struct {
 // NewRequestDashboardTokenTool builds the tool. All three deps are
 // required — the constructor returns nil if any is missing so the bot
 // can skip registration when auth isn't configured.
-func NewRequestDashboardTokenTool(store *auth.Store, sender TokenSender, allowlist AllowlistFunc) *RequestDashboardTokenTool {
+func NewRequestDashboardTokenTool(store auth.TokenWriter, sender TokenSender, allowlist AllowlistFunc) *RequestDashboardTokenTool {
 	if store == nil || sender == nil || allowlist == nil {
 		return nil
 	}
