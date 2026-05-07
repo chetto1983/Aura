@@ -100,6 +100,55 @@ func TestDailyBriefingTool_ComposesAttentionSignals(t *testing.T) {
 	}
 }
 
+type fakeBriefingArchiveReader struct {
+	turns []conversation.Turn
+}
+
+func (f fakeBriefingArchiveReader) ListByChat(_ context.Context, chatID int64, limit int) ([]conversation.Turn, error) {
+	var out []conversation.Turn
+	for _, turn := range f.turns {
+		if turn.ChatID == chatID {
+			out = append(out, turn)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f fakeBriefingArchiveReader) ListAll(_ context.Context, limit int) ([]conversation.Turn, error) {
+	if len(f.turns) > limit {
+		return f.turns[:limit], nil
+	}
+	return f.turns, nil
+}
+
+func TestDailyBriefingToolAcceptsArchiveReaderInterface(t *testing.T) {
+	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+	archive := fakeBriefingArchiveReader{turns: []conversation.Turn{{
+		ID:        4,
+		ChatID:    42,
+		UserID:    7,
+		TurnIndex: 2,
+		Role:      "user",
+		Content:   "Use the conversation archive boundary in the morning briefing.",
+		CreatedAt: now.Add(-time.Hour),
+	}}}
+	tool := NewDailyBriefingTool(nil, nil, nil, nil, archive, time.UTC)
+	if tool == nil {
+		t.Fatal("expected daily_briefing tool")
+	}
+	tool.now = func() time.Time { return now }
+	out, err := tool.Execute(context.Background(), map[string]any{"limit": float64(3)})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "conversation archive boundary") {
+		t.Fatalf("briefing missing archive signal:\n%s", out)
+	}
+}
+
 func TestDailyBriefingTool_HandlesEmptyStores(t *testing.T) {
 	tool := NewDailyBriefingTool(nil, nil, nil, nil, nil, time.UTC)
 	if tool != nil {

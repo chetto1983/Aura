@@ -297,7 +297,7 @@ type archiveTurnInput struct {
 	TokensIn     int
 }
 
-func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversationArchiver, input archiveTurnInput) {
+func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input archiveTurnInput) {
 	if archiver == nil {
 		return
 	}

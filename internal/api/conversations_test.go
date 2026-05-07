@@ -2,15 +2,92 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/scheduler"
 )
+
+type fakeConversationArchive struct {
+	turns   []conversation.Turn
+	deleted int64
+}
+
+func (f *fakeConversationArchive) Append(context.Context, conversation.Turn) error { return nil }
+func (f *fakeConversationArchive) ListByChat(_ context.Context, chatID int64, limit int) ([]conversation.Turn, error) {
+	out := make([]conversation.Turn, 0, len(f.turns))
+	for _, turn := range f.turns {
+		if turn.ChatID == chatID {
+			out = append(out, turn)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+func (f *fakeConversationArchive) ListAll(_ context.Context, limit int) ([]conversation.Turn, error) {
+	out := append([]conversation.Turn(nil), f.turns...)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+func (f *fakeConversationArchive) Get(_ context.Context, id int64) (conversation.Turn, error) {
+	for _, turn := range f.turns {
+		if turn.ID == id {
+			return turn, nil
+		}
+	}
+	return conversation.Turn{}, sql.ErrNoRows
+}
+func (f *fakeConversationArchive) MaxTurnIndex(context.Context, int64) (int64, error) { return -1, nil }
+func (f *fakeConversationArchive) Stats(context.Context) (conversation.ArchiveStats, error) {
+	return conversation.ArchiveStats{TotalRows: int64(len(f.turns)), DistinctChats: 1}, nil
+}
+func (f *fakeConversationArchive) DeleteByChat(context.Context, int64) (int64, error) {
+	f.deleted++
+	return 1, nil
+}
+func (f *fakeConversationArchive) DeleteOlderThan(context.Context, time.Time) (int64, error) {
+	f.deleted++
+	return 1, nil
+}
+func (f *fakeConversationArchive) DeleteAll(context.Context) (int64, error) {
+	f.deleted++
+	return 1, nil
+}
+
+func TestConversationHandlersAcceptArchiveRepositoryInterface(t *testing.T) {
+	archive := &fakeConversationArchive{turns: []conversation.Turn{
+		{ID: 7, ChatID: 42, UserID: 1, TurnIndex: 1, Role: "user", Content: "boundary turn", CreatedAt: time.Date(2026, 5, 7, 9, 0, 0, 0, time.UTC)},
+	}}
+	router := NewRouter(Deps{Archive: archive})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{"GET", "/conversations?chat_id=42", http.StatusOK},
+		{"GET", "/conversations/7", http.StatusOK},
+		{"GET", "/conversations/stats", http.StatusOK},
+		{"POST", "/conversations/cleanup?chat_id=42", http.StatusOK},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("%s %s got %d want %d: %s", tc.method, tc.path, w.Code, tc.want, w.Body.String())
+		}
+	}
+}
 
 // newConvTestEnv extends testEnv with an ArchiveStore seeded in a temp DB.
 func newConvTestEnv(t *testing.T) (*testEnv, *conversation.ArchiveStore) {

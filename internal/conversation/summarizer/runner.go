@@ -10,10 +10,8 @@ import (
 	"github.com/aura/aura/internal/conversation"
 )
 
-// TurnArchive is the read side of ArchiveStore needed by the Runner.
-type TurnArchive interface {
-	ListByChat(ctx context.Context, chatID int64, limit int) ([]conversation.Turn, error)
-}
+// TurnArchive is the read side of the conversation archive needed by the Runner.
+type TurnArchive = conversation.ChatTurnReader
 
 // ScorerI is the scoring interface (avoids collision with the concrete LLMScorer).
 type ScorerI interface {

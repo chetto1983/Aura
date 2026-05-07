@@ -204,6 +204,51 @@ func TestSearchMemoryToolAcceptsWikiSearchInterface(t *testing.T) {
 	}
 }
 
+type fakeMemoryArchiveReader struct {
+	turns []conversation.Turn
+}
+
+func (f fakeMemoryArchiveReader) ListByChat(_ context.Context, chatID int64, limit int) ([]conversation.Turn, error) {
+	var out []conversation.Turn
+	for _, turn := range f.turns {
+		if turn.ChatID == chatID {
+			out = append(out, turn)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f fakeMemoryArchiveReader) ListAll(_ context.Context, limit int) ([]conversation.Turn, error) {
+	if len(f.turns) > limit {
+		return f.turns[:limit], nil
+	}
+	return f.turns, nil
+}
+
+func TestSearchMemoryToolAcceptsArchiveReaderInterface(t *testing.T) {
+	tool := NewSearchMemoryTool(nil, nil, fakeMemoryArchiveReader{turns: []conversation.Turn{{
+		ID:        12,
+		ChatID:    42,
+		UserID:    7,
+		TurnIndex: 3,
+		Role:      "user",
+		Content:   "Archive boundary should not require concrete SQLite storage.",
+	}}})
+	if tool == nil {
+		t.Fatal("expected search_memory tool")
+	}
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "archive boundary", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "[archive] conversation:12") {
+		t.Fatalf("output = %q", out)
+	}
+}
+
 func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	ctx := context.Background()
 	sourceStore := newTestSourceStore(t)

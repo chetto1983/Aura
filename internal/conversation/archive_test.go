@@ -12,6 +12,18 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var (
+	_ conversation.TurnAppender        = (*conversation.ArchiveStore)(nil)
+	_ conversation.ChatTurnReader      = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnReader          = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnDetailReader    = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnIndexReader     = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveStatsReader  = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveDeleter      = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveRepository   = (*conversation.ArchiveStore)(nil)
+	_ conversation.ClosingTurnAppender = (*conversation.BufferedAppender)(nil)
+)
+
 func TestArchiveStore_AppendAndList(t *testing.T) {
 	db := scheduler.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)

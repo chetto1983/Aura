@@ -21,7 +21,7 @@ type DailyBriefingTool struct {
 	sources   source.Reader
 	summaries *summarizer.SummariesStore
 	issues    *scheduler.IssuesStore
-	archive   *conversation.ArchiveStore
+	archive   conversation.TurnReader
 	loc       *time.Location
 	now       func() time.Time
 }
@@ -31,7 +31,7 @@ func NewDailyBriefingTool(
 	sources source.Reader,
 	summaries *summarizer.SummariesStore,
 	issues *scheduler.IssuesStore,
-	archive *conversation.ArchiveStore,
+	archive conversation.TurnReader,
 	loc *time.Location,
 ) *DailyBriefingTool {
 	if tasks == nil && sources == nil && summaries == nil && issues == nil && archive == nil {

@@ -32,6 +32,62 @@ type Turn struct {
 	CreatedAt      time.Time
 }
 
+// TurnAppender is the write side of the conversation archive.
+type TurnAppender interface {
+	Append(ctx context.Context, t Turn) error
+}
+
+// ClosingTurnAppender is the non-blocking archive writer lifecycle used by
+// Telegram shutdown.
+type ClosingTurnAppender interface {
+	TurnAppender
+	Close(ctx context.Context) error
+}
+
+// ChatTurnReader is the narrow read side for one chat.
+type ChatTurnReader interface {
+	ListByChat(ctx context.Context, chatID int64, limit int) ([]Turn, error)
+}
+
+// TurnReader is the read side for archive search and dashboard lists.
+type TurnReader interface {
+	ChatTurnReader
+	ListAll(ctx context.Context, limit int) ([]Turn, error)
+}
+
+// TurnDetailReader reads one archived turn by primary key.
+type TurnDetailReader interface {
+	Get(ctx context.Context, id int64) (Turn, error)
+}
+
+// TurnIndexReader allocates durable per-chat turn indexes for append paths.
+type TurnIndexReader interface {
+	MaxTurnIndex(ctx context.Context, chatID int64) (int64, error)
+}
+
+// ArchiveStatsReader is the dashboard retention statistics surface.
+type ArchiveStatsReader interface {
+	Stats(ctx context.Context) (ArchiveStats, error)
+}
+
+// ArchiveDeleter is the dashboard retention mutation surface.
+type ArchiveDeleter interface {
+	DeleteByChat(ctx context.Context, chatID int64) (int64, error)
+	DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
+	DeleteAll(ctx context.Context) (int64, error)
+}
+
+// ArchiveRepository is the full conversation archive boundary implemented by
+// ArchiveStore.
+type ArchiveRepository interface {
+	TurnAppender
+	TurnReader
+	TurnDetailReader
+	TurnIndexReader
+	ArchiveStatsReader
+	ArchiveDeleter
+}
+
 // ArchiveStore persists conversation turns in SQLite.
 type ArchiveStore struct {
 	db *sql.DB
@@ -271,12 +327,6 @@ func scanTurn(r turnScanner) (Turn, error) {
 	}
 	t.CreatedAt = ts.UTC()
 	return t, nil
-}
-
-// TurnAppender is the write side of ArchiveStore — satisfied by *ArchiveStore
-// and by mock implementations in tests.
-type TurnAppender interface {
-	Append(ctx context.Context, t Turn) error
 }
 
 // BufferedAppender wraps a TurnAppender with a buffered channel and a single

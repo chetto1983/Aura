@@ -101,7 +101,7 @@ type Deps struct {
 
 	// Slice 12c: conversation archive. Optional — when nil, list returns
 	// an empty array and detail returns 404.
-	Archive *conversation.ArchiveStore
+	Archive conversation.ArchiveRepository
 
 	// Slice 12k.1: summaries review queue. Optional — when nil, list returns
 	// empty array. SummariesWiki is the WikiWriter used to apply approved

@@ -50,15 +50,15 @@ type Bot struct {
 	agentRunner *agent.Runner
 	swarmStore  *swarm.Store
 	swarmMgr    *swarm.Manager
-	authDB      auth.Repository            // dashboard bearer-token and allowlist repository
-	mcpClients  []*mcp.Client              // active MCP server connections (slice 11a)
-	archiveDB   *conversation.ArchiveStore // nil when CONV_ARCHIVE_ENABLED=false
-	archiver    conversationArchiver       // nil when CONV_ARCHIVE_ENABLED=false
-	summRunner  *summarizer.Runner         // nil when SUMMARIZER_ENABLED=false
-	issues      *scheduler.IssuesStore     // wiki_issues queue, shared by API + maintenance
-	api         http.Handler               // read-only JSON API for the dashboard, mounted on the health server
-	sandboxMgr  *sandbox.Manager           // nil when SANDBOX_ENABLED=false or runtime unavailable
-	toolReg     *tools.ToolRegistry        // persistent LLM-written Python tools
+	authDB      auth.Repository                  // dashboard bearer-token and allowlist repository
+	mcpClients  []*mcp.Client                    // active MCP server connections (slice 11a)
+	archiveDB   conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
+	archiver    conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
+	summRunner  *summarizer.Runner               // nil when SUMMARIZER_ENABLED=false
+	issues      *scheduler.IssuesStore           // wiki_issues queue, shared by API + maintenance
+	api         http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
+	sandboxMgr  *sandbox.Manager                 // nil when SANDBOX_ENABLED=false or runtime unavailable
+	toolReg     *tools.ToolRegistry              // persistent LLM-written Python tools
 	debugDocsMu sync.Mutex
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64
@@ -66,11 +66,6 @@ type Bot struct {
 	ctxMap      sync.Map // maps userID string -> *conversation.Context
 	orchMap     sync.Map // maps userID string -> orchestrationSnapshot
 	started     atomic.Bool
-}
-
-type conversationArchiver interface {
-	Append(context.Context, conversation.Turn) error
-	Close(context.Context) error
 }
 
 // Username returns the bot's Telegram username.
