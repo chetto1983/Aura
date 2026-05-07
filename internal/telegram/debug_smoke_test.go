@@ -135,3 +135,27 @@ func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 		t.Fatal("SandboxUsed = false, want true")
 	}
 }
+
+func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
+	b := &Bot{}
+	b.storeOrchestrationSnapshot("1148481707", turnStats{
+		promptVersion:       "aura-agent-v1",
+		promptHash:          "abc123",
+		toolProfile:         "swarm_research",
+		profileSelectReason: "matched swarm_research broad synthesis cues",
+		toolsExposed:        []string{"run_aurabot_swarm"},
+		toolsCalled:         []string{"execute_code"},
+		hiddenToolRejected:  true,
+	})
+
+	snap, ok := b.loadOrchestrationSnapshot("1148481707")
+	if !ok {
+		t.Fatal("snapshot missing")
+	}
+	if snap.ProfileSelectReason == "" {
+		t.Fatal("ProfileSelectReason is empty")
+	}
+	if !snap.HiddenToolRejected {
+		t.Fatal("HiddenToolRejected = false, want true")
+	}
+}

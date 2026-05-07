@@ -43,7 +43,7 @@ Key outcomes:
 
 ### v3.1 Agent Orchestration And System Prompt Versioning
 
-Status: planned
+Status: active
 
 Plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
 
@@ -54,6 +54,7 @@ Success criteria:
 - Prompt composition logs version, modules, hash, and active tool profile.
 - Telegram exposes only the active profile's tools to the LLM.
 - Skills, swarm, and sandbox are first-class route guidance, not incidental tools.
+- Docker sandbox route uses the `pyodide` sidecar and does not require Node or Pyodide inside the Aura image.
 - Debug Telegram smoke reports exposed tools, called tools, tokens, estimated context, and cost.
 - Document, sandbox-compute, memory, and swarm-research prompts each choose the expected profile in tests.
 

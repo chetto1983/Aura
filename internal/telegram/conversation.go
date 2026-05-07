@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -63,13 +64,25 @@ func (b *Bot) handleConversation(c tele.Context) {
 		Sandbox:   b.sandboxToolsAvailable(),
 		Proposals: b.proposalToolsAvailable(),
 	}
-	toolProfile := orchestration.SelectProfile(userText, b.cfg.ToolProfileMode, available)
+	hooks := orchestration.EnsureHooks(b.orchHooks)
+	hooks.BeforeProfileSelect(orchestration.TraceEvent{ToolProfile: b.cfg.ToolProfileMode})
+	profileDecision := orchestration.SelectProfileDecision(userText, b.cfg.ToolProfileMode, available)
+	hooks.AfterProfileSelect(orchestration.TraceEvent{
+		ToolProfile:         string(profileDecision.Profile),
+		ProfileSelectReason: profileDecision.Reason,
+	})
+	toolProfile := profileDecision.Profile
 	toolAllowlist, err := orchestration.ToolsForProfile(toolProfile, available)
 	if err != nil {
 		b.logger.Warn("orchestration profile failed; falling back to default", "profile", toolProfile, "error", err)
 		toolProfile = orchestration.ProfileDefault
+		profileDecision = orchestration.ProfileDecision{Profile: toolProfile, Reason: "profile allowlist failed; fell back to default"}
 		toolAllowlist, _ = orchestration.ToolsForProfile(toolProfile, available)
 	}
+	hooks.BeforePromptCompose(orchestration.TraceEvent{
+		ToolProfile:         string(profileDecision.Profile),
+		ProfileSelectReason: profileDecision.Reason,
+	})
 	promptPlan := orchestration.ComposePrompt(orchestration.PromptInput{
 		Version:           b.cfg.PromptVersion,
 		Now:               time.Now(),
@@ -80,6 +93,13 @@ func (b *Bot) handleConversation(c tele.Context) {
 		SandboxAvailable:  available.Sandbox,
 		ProposalAvailable: available.Proposals,
 		Profile:           toolProfile,
+	})
+	hooks.AfterPromptCompose(orchestration.TraceEvent{
+		PromptVersion:       promptPlan.Version,
+		PromptHash:          promptPlan.Hash,
+		PromptModules:       promptPlan.Modules,
+		ToolProfile:         string(profileDecision.Profile),
+		ProfileSelectReason: profileDecision.Reason,
 	})
 	convCtx.SetSystemMessage(promptPlan.Content)
 
@@ -140,7 +160,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// their message. consumeStream edits this instead of creating a new one.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolProfile)
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, profileDecision)
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
@@ -212,8 +232,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"prompt_hash", stats.promptHash,
 		"prompt_modules", strings.Join(stats.promptModules, ","),
 		"tool_profile", stats.toolProfile,
+		"profile_select_reason", stats.profileSelectReason,
 		"tools_exposed", strings.Join(stats.toolsExposed, ","),
 		"tools_called", strings.Join(stats.toolsCalled, ","),
+		"hidden_tool_rejected", stats.hiddenToolRejected,
 		"skills_read", stats.skillsRead,
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
@@ -222,6 +244,27 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"tokens_total", stats.tokensTotal,
 		"cost_usd", fmt.Sprintf("%.6f", stats.costUSD),
 	)
+	hooks.AfterTurn(orchestration.TraceEvent{
+		PromptVersion:          stats.promptVersion,
+		PromptHash:             stats.promptHash,
+		PromptModules:          stats.promptModules,
+		ToolProfile:            stats.toolProfile,
+		ProfileSelectReason:    stats.profileSelectReason,
+		ToolsExposed:           stats.toolsExposed,
+		ToolsCalled:            stats.toolsCalled,
+		HiddenToolRejected:     stats.hiddenToolRejected,
+		SkillReads:             boolToCount(stats.skillsRead),
+		SwarmUsed:              stats.swarmUsed,
+		SandboxUsed:            stats.sandboxUsed,
+		TokensPrompt:           stats.tokensPrompt,
+		TokensCompletion:       stats.tokensCompletion,
+		TokensTotal:            stats.tokensTotal,
+		EstimatedContextTokens: convCtx.EstimatedTokens(),
+		CostUSD:                stats.costUSD,
+		LatencyMS:              time.Since(turnStart).Milliseconds(),
+		LLMCalls:               stats.llmCalls,
+		ToolCalls:              stats.toolCalls,
+	})
 }
 
 func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder *tele.Message, err error) {
@@ -284,33 +327,37 @@ func speculativeSearchTimeout(timeoutMS int) time.Duration {
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
 type turnStats struct {
-	llmCalls         int
-	toolCalls        int
-	promptVersion    string
-	promptModules    []string
-	promptHash       string
-	toolProfile      string
-	toolsExposed     []string
-	toolsCalled      []string
-	skillsRead       bool
-	swarmUsed        bool
-	sandboxUsed      bool
-	tokensPrompt     int
-	tokensCompletion int
-	tokensTotal      int
-	costUSD          float64
+	llmCalls            int
+	toolCalls           int
+	promptVersion       string
+	promptModules       []string
+	promptHash          string
+	toolProfile         string
+	profileSelectReason string
+	toolsExposed        []string
+	toolsCalled         []string
+	hiddenToolRejected  bool
+	skillsRead          bool
+	swarmUsed           bool
+	sandboxUsed         bool
+	tokensPrompt        int
+	tokensCompletion    int
+	tokensTotal         int
+	costUSD             float64
 }
 
 type orchestrationSnapshot struct {
-	PromptVersion string
-	PromptModules []string
-	PromptHash    string
-	ToolProfile   string
-	ToolsExposed  []string
-	ToolsCalled   []string
-	SkillsRead    bool
-	SwarmUsed     bool
-	SandboxUsed   bool
+	PromptVersion       string
+	PromptModules       []string
+	PromptHash          string
+	ToolProfile         string
+	ProfileSelectReason string
+	ToolsExposed        []string
+	ToolsCalled         []string
+	HiddenToolRejected  bool
+	SkillsRead          bool
+	SwarmUsed           bool
+	SandboxUsed         bool
 }
 
 type archiveTurnInput struct {
@@ -380,21 +427,30 @@ func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	}
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profile orchestration.Profile) (string, turnStats) {
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profileDecision orchestration.ProfileDecision) (string, turnStats) {
 	maxIterations := b.cfg.MaxToolIterations
 	if maxIterations <= 0 {
 		maxIterations = 10
 	}
 
 	stats := turnStats{
-		promptVersion: promptPlan.Version,
-		promptModules: append([]string(nil), promptPlan.Modules...),
-		promptHash:    promptPlan.Hash,
-		toolProfile:   string(profile),
+		promptVersion:       promptPlan.Version,
+		promptModules:       append([]string(nil), promptPlan.Modules...),
+		promptHash:          promptPlan.Hash,
+		toolProfile:         string(profileDecision.Profile),
+		profileSelectReason: profileDecision.Reason,
 	}
 	var lastToolResult string
 	toolDefs := b.tools.DefinitionsFor(toolAllowlist)
 	stats.toolsExposed = toolDefinitionNames(toolDefs)
+	orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
+		PromptVersion:       promptPlan.Version,
+		PromptHash:          promptPlan.Hash,
+		PromptModules:       promptPlan.Modules,
+		ToolProfile:         string(profileDecision.Profile),
+		ProfileSelectReason: profileDecision.Reason,
+		ToolsExposed:        stats.toolsExposed,
+	})
 	b.storeOrchestrationSnapshot(userID, stats)
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// Context bounding happens once at the start of handleConversation.
@@ -470,7 +526,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			}
 		}
 		b.storeOrchestrationSnapshot(userID, stats)
-		lastToolResult = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls, toolAllowlist)
+		var hiddenRejected bool
+		lastToolResult, hiddenRejected = b.executeToolCalls(ctx, c, convCtx, userID, resp.ToolCalls, stats.toolsExposed)
+		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
+		b.storeOrchestrationSnapshot(userID, stats)
 	}
 
 	fallback := "Tool loop stopped after reaching the maximum iteration limit."
@@ -493,9 +552,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 //
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolAllowlist []string) string {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string) (string, bool) {
 	if len(calls) == 0 {
-		return ""
+		return "", false
 	}
 
 	for _, tc := range calls {
@@ -509,12 +568,27 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	results := make([]outcome, len(calls))
 
 	var wg sync.WaitGroup
+	var hiddenMu sync.Mutex
+	hiddenRejected := false
 	for i, tc := range calls {
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
-			if !toolAllowed(tc.Name, toolAllowlist) {
+			hooks := orchestration.EnsureHooks(b.orchHooks)
+			event := orchestration.TraceEvent{
+				ToolName:     tc.Name,
+				ToolsExposed: toolsExposed,
+			}
+			err := hooks.BeforeToolCall(event)
+			if err != nil {
+				if errors.Is(err, orchestration.ErrHiddenTool) {
+					hiddenMu.Lock()
+					hiddenRejected = true
+					hiddenMu.Unlock()
+					event.HiddenToolRejected = true
+				}
 				results[i] = outcome{id: tc.ID, content: tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name))}
+				hooks.AfterToolCall(event)
 				return
 			}
 			toolCtx := tools.WithUserID(ctx, userID)
@@ -524,6 +598,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
 			}
 			results[i] = outcome{id: tc.ID, content: result}
+			hooks.AfterToolCall(event)
 		}(i, tc)
 	}
 	wg.Wait()
@@ -533,7 +608,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		convCtx.AddToolResultMessage(r.id, r.content)
 		lastToolResult = r.content
 	}
-	return lastToolResult
+	return lastToolResult, hiddenRejected
 }
 
 func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
@@ -541,15 +616,17 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		return
 	}
 	b.orchMap.Store(userID, orchestrationSnapshot{
-		PromptVersion: stats.promptVersion,
-		PromptModules: append([]string(nil), stats.promptModules...),
-		PromptHash:    stats.promptHash,
-		ToolProfile:   stats.toolProfile,
-		ToolsExposed:  append([]string(nil), stats.toolsExposed...),
-		ToolsCalled:   append([]string(nil), stats.toolsCalled...),
-		SkillsRead:    stats.skillsRead,
-		SwarmUsed:     stats.swarmUsed,
-		SandboxUsed:   stats.sandboxUsed,
+		PromptVersion:       stats.promptVersion,
+		PromptModules:       append([]string(nil), stats.promptModules...),
+		PromptHash:          stats.promptHash,
+		ToolProfile:         stats.toolProfile,
+		ProfileSelectReason: stats.profileSelectReason,
+		ToolsExposed:        append([]string(nil), stats.toolsExposed...),
+		ToolsCalled:         append([]string(nil), stats.toolsCalled...),
+		HiddenToolRejected:  stats.hiddenToolRejected,
+		SkillsRead:          stats.skillsRead,
+		SwarmUsed:           stats.swarmUsed,
+		SandboxUsed:         stats.sandboxUsed,
 	})
 }
 
@@ -589,6 +666,13 @@ func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) floa
 		prompt = usage.TotalTokens
 	}
 	return (float64(prompt)*inputPerM + float64(completion)*outputPerM) / 1_000_000
+}
+
+func boolToCount(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func toolActivityMessage(name string) string {

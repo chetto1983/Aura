@@ -32,7 +32,9 @@ type DebugTextSmokeResult struct {
 	PromptHash               string
 	PromptModules            []string
 	ToolProfile              string
+	ProfileSelectReason      string
 	ToolsExposed             []string
+	HiddenToolRejected       bool
 	SkillsRead               bool
 	SwarmUsed                bool
 	SandboxUsed              bool
@@ -116,7 +118,9 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.PromptHash = snap.PromptHash
 		result.PromptModules = snap.PromptModules
 		result.ToolProfile = snap.ToolProfile
+		result.ProfileSelectReason = snap.ProfileSelectReason
 		result.ToolsExposed = snap.ToolsExposed
+		result.HiddenToolRejected = snap.HiddenToolRejected
 		result.applyOrchestrationToolCalls(snap.ToolsCalled)
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
 		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed

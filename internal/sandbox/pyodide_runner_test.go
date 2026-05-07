@@ -39,8 +39,8 @@ func TestPyodideRunner_ExecuteSendsProtocolAndSanitizedEnv(t *testing.T) {
 	if capture.Request.TimeoutMS <= 0 {
 		t.Fatalf("timeout_ms = %d, want positive", capture.Request.TimeoutMS)
 	}
-	if !slices.Contains(capture.Request.Packages, "numpy") || !slices.Contains(capture.Request.Packages, "rich") {
-		t.Fatalf("packages = %v, want baseline package profile", capture.Request.Packages)
+	if len(capture.Request.Packages) != 0 {
+		t.Fatalf("packages = %v, want no package load for stdlib-only code", capture.Request.Packages)
 	}
 	if !slices.Contains(capture.Request.OutputFileAllowlist, "/tmp/aura_out") {
 		t.Fatalf("output_file_allowlist = %v, want /tmp/aura_out", capture.Request.OutputFileAllowlist)

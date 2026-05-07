@@ -20,6 +20,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -357,6 +358,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		mcpClients:  mcpClients,
 		sandboxMgr:  sandboxMgr,
 		toolReg:     toolReg,
+		orchHooks:   orchestration.DefaultHooks{},
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:           cfg.SoftBudget,
 			HardBudget:           cfg.HardBudget,
@@ -697,6 +699,56 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	}
 
 	timeout := time.Duration(cfg.SandboxTimeoutSec) * time.Second
+	runtimeMode := strings.ToLower(strings.TrimSpace(cfg.SandboxRuntimeMode))
+	runtimeURL := strings.TrimSpace(cfg.SandboxRuntimeURL)
+	if runtimeMode == "container" || (runtimeMode == "auto" && runtimeURL != "") {
+		runner, err := sandbox.NewPyodideContainerRunner(sandbox.PyodideContainerRunnerConfig{
+			BaseURL: runtimeURL,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Detail = err.Error()
+			logger.Warn("sandbox container runner configuration invalid, execute_code disabled",
+				"runtime_kind", sandbox.RuntimeKindUnavailable,
+				"runtime_url", runtimeURL,
+				"detail", health.Detail)
+			return nil, health
+		}
+		availability := runner.CheckAvailability()
+		health.Runtime = runtimeURL
+		health.Available = availability.Available
+		health.RuntimeKind = string(availability.Kind)
+		health.Detail = availability.Detail
+		if !availability.Available {
+			if !strings.Contains(availability.Detail, "Pyodide") {
+				health.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
+			}
+			logger.Warn("sandbox container runtime unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"runtime_url", runtimeURL,
+				"detail", availability.Detail)
+			return nil, health
+		}
+		manager, err := sandbox.NewManager(sandbox.Config{
+			Runtime: runner,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Available = false
+			health.Detail = err.Error()
+			logger.Warn("sandbox container manager unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"runtime_url", runtimeURL,
+				"detail", health.Detail)
+			return nil, health
+		}
+		logger.Info("sandbox container runtime available, execute_code enabled",
+			"runtime_kind", health.RuntimeKind,
+			"runtime_url", runtimeURL,
+			"detail", health.Detail)
+		return manager, health
+	}
+
 	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
 		RuntimeDir: cfg.SandboxRuntimeDir,
 		Timeout:    timeout,

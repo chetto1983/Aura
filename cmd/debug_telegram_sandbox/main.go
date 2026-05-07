@@ -12,8 +12,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,12 @@ func main() {
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
+	expectProfile := flag.String("expect-profile", "", "expected orchestration tool profile; used only for reporting/validation when set")
+	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
+	expectSkillRead := flag.Bool("expect-skill-read", false, "expect the synthetic Telegram turn to call read_skill")
+	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
+	expectSandbox := flag.Bool("expect-sandbox", false, "expect the synthetic Telegram turn to use the Python sandbox")
+	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
 	if strings.TrimSpace(*prompt) == "" {
@@ -43,12 +51,24 @@ func main() {
 		}
 	}
 
-	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	envPath := envDefault("AURA_ENV_PATH", ".env")
+	if err := loadDotEnv(envPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fail("load .env: %v", err)
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		fail("load config: %v", err)
+	}
+	sourceDBPath := resolveDebugDBPath(envPath, cfg.DBPath)
+	if *writeLiveDB {
+		cfg.DBPath = sourceDBPath
+	} else {
+		dbPath, cleanup, err := prepareDebugDBCopy(sourceDBPath)
+		if err != nil {
+			fail("prepare temporary debug database: %v", err)
+		}
+		defer cleanup()
+		cfg.DBPath = dbPath
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	pool, err := auradb.Open(cfg.DBPath)
@@ -65,6 +85,7 @@ func main() {
 		fail("open settings store: %v", err)
 	}
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
+	cfg.DBPath = resolveRuntimeDBPath(cfg.DBPath, sourceDBPath, *writeLiveDB)
 
 	userID := strings.TrimSpace(*userIDFlag)
 	if userID == "" {
@@ -89,6 +110,9 @@ func main() {
 
 	fmt.Printf("Aura Telegram sandbox smoke\n")
 	fmt.Printf("user_id=%s\n", userID)
+	fmt.Printf("db_path=%s\n", cfg.DBPath)
+	fmt.Printf("db_source_path=%s\n", sourceDBPath)
+	fmt.Printf("db_write_live=%v\n", *writeLiveDB)
 	fmt.Printf("model=%s base_url=%s\n", cfg.LLMModel, cfg.LLMBaseURL)
 	fmt.Printf("runtime_dir=%s sandbox_enabled=%v\n", cfg.SandboxRuntimeDir, cfg.SandboxEnabled)
 	fmt.Printf("prompt=%q\n\n", *prompt)
@@ -102,7 +126,9 @@ func main() {
 	fmt.Printf("prompt_hash=%s\n", result.PromptHash)
 	fmt.Printf("prompt_modules=%s\n", strings.Join(result.PromptModules, ","))
 	fmt.Printf("tool_profile=%s\n", result.ToolProfile)
+	fmt.Printf("profile_select_reason=%s\n", result.ProfileSelectReason)
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
+	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
 	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
 	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
@@ -128,12 +154,34 @@ func main() {
 	fmt.Printf("tokens_total=%d\n", result.TokensTotal)
 	fmt.Printf("estimated_context_tokens=%d\n", result.EstimatedContextTokens)
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
-	if strings.TrimSpace(*expectTools) != "" {
-		expected := splitCSV(*expectTools)
-		if missing := missingTools(result.ToolCalls, expected); len(missing) > 0 {
-			fail("missing expected tools: %s", strings.Join(missing, ","))
-		}
-		fmt.Printf("expected_tools_present=%s\n", strings.Join(expected, ","))
+	expectations := debugExpectations{
+		Profile:     *expectProfile,
+		Tools:       splitCSV(*expectTools),
+		NoTools:     *expectNoTools,
+		SkillRead:   *expectSkillRead,
+		SwarmUsed:   *expectSwarm,
+		SandboxUsed: *expectSandbox,
+	}
+	if err := validateDebugExpectations(result, expectations); err != nil {
+		fail("%v", err)
+	}
+	if len(expectations.Tools) > 0 {
+		fmt.Printf("expected_tools_present=%s\n", strings.Join(expectations.Tools, ","))
+	}
+	if strings.TrimSpace(expectations.Profile) != "" {
+		fmt.Printf("expected_profile_present=%s\n", strings.TrimSpace(expectations.Profile))
+	}
+	if expectations.NoTools {
+		fmt.Printf("expected_no_tools=true\n")
+	}
+	if expectations.SkillRead {
+		fmt.Printf("expected_skill_read=true\n")
+	}
+	if expectations.SwarmUsed {
+		fmt.Printf("expected_swarm=true\n")
+	}
+	if expectations.SandboxUsed {
+		fmt.Printf("expected_sandbox=true\n")
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
@@ -149,6 +197,82 @@ func main() {
 	} else {
 		fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
 	}
+}
+
+func resolveDebugDBPath(envPath, dbPath string) string {
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" || filepath.IsAbs(dbPath) {
+		return filepath.Clean(dbPath)
+	}
+	envDir := filepath.Dir(strings.TrimSpace(envPath))
+	if envDir == "." || envDir == "" {
+		return filepath.Clean(dbPath)
+	}
+	return filepath.Clean(filepath.Join(envDir, dbPath))
+}
+
+func prepareDebugDBCopy(sourcePath string) (string, func(), error) {
+	sourcePath = strings.TrimSpace(sourcePath)
+	if sourcePath == "" {
+		return "", func() {}, errors.New("DB path is empty")
+	}
+	absSource, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return "", func() {}, err
+	}
+	tmpDir, err := os.MkdirTemp("", "aura-debug-db-*")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(tmpDir)
+	}
+	dest := filepath.Join(tmpDir, filepath.Base(absSource))
+	if err := copyDebugDBFile(absSource, dest); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := copyOptionalDebugDBSidecar(absSource+suffix, dest+suffix); err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+	}
+	return dest, cleanup, nil
+}
+
+func resolveRuntimeDBPath(openedDBPath, sourceDBPath string, writeLive bool) string {
+	if writeLive {
+		return filepath.Clean(strings.TrimSpace(sourceDBPath))
+	}
+	return filepath.Clean(strings.TrimSpace(openedDBPath))
+}
+
+func copyOptionalDebugDBSidecar(sourcePath, destPath string) error {
+	if _, err := os.Stat(sourcePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return copyDebugDBFile(sourcePath, destPath)
+}
+
+func copyDebugDBFile(sourcePath, destPath string) error {
+	in, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func defaultArithmeticSmokePrompt() string {
@@ -190,6 +314,42 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 	}
 	if !result.Contains5050 {
 		return errors.New("expected final/tool output containing 5050")
+	}
+	return nil
+}
+
+type debugExpectations struct {
+	Profile     string
+	Tools       []string
+	NoTools     bool
+	SkillRead   bool
+	SwarmUsed   bool
+	SandboxUsed bool
+}
+
+func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
+	if expectations.NoTools && len(expectations.Tools) > 0 {
+		return errors.New("cannot combine -expect-no-tools with -expect-tools")
+	}
+	if profile := strings.TrimSpace(expectations.Profile); profile != "" && result.ToolProfile != profile {
+		return fmt.Errorf("expected profile %q, got %q", profile, result.ToolProfile)
+	}
+	if len(expectations.Tools) > 0 {
+		if missing := missingTools(result.ToolCalls, expectations.Tools); len(missing) > 0 {
+			return fmt.Errorf("missing expected tools: %s", strings.Join(missing, ","))
+		}
+	}
+	if expectations.NoTools && len(result.ToolCalls) > 0 {
+		return fmt.Errorf("expected no tool calls, got %s", strings.Join(result.ToolCalls, ","))
+	}
+	if expectations.SkillRead && !result.SkillsRead {
+		return errors.New("expected read_skill usage")
+	}
+	if expectations.SwarmUsed && !result.SwarmUsed {
+		return errors.New("expected swarm usage")
+	}
+	if expectations.SandboxUsed && !result.SandboxUsed {
+		return errors.New("expected sandbox usage")
 	}
 	return nil
 }

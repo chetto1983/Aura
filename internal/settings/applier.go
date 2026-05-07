@@ -89,6 +89,8 @@ const (
 	KeySummarizerLookbackTurns    = "SUMMARIZER_LOOKBACK_TURNS"
 	KeySummarizerCooldownSeconds  = "SUMMARIZER_COOLDOWN_SECONDS"
 	KeySandboxEnabled             = "SANDBOX_ENABLED"
+	KeySandboxRuntimeMode         = "SANDBOX_RUNTIME_MODE"
+	KeySandboxRuntimeURL          = "SANDBOX_RUNTIME_URL"
 	KeySandboxRuntimeDir          = "SANDBOX_RUNTIME_DIR"
 	KeySandboxTimeoutSec          = "SANDBOX_TIMEOUT_SEC"
 	KeySandboxAutoImproveMode     = "SANDBOX_AUTO_IMPROVE_MODE"
@@ -125,7 +127,7 @@ func OverridableKeys() []string {
 		KeyConvArchiveEnabled,
 		KeySummarizerEnabled, KeySummarizerMode, KeySummarizerTurnInterval,
 		KeySummarizerMinSalience, KeySummarizerLookbackTurns, KeySummarizerCooldownSeconds,
-		KeySandboxEnabled, KeySandboxRuntimeDir, KeySandboxTimeoutSec, KeySandboxAutoImproveMode,
+		KeySandboxEnabled, KeySandboxRuntimeMode, KeySandboxRuntimeURL, KeySandboxRuntimeDir, KeySandboxTimeoutSec, KeySandboxAutoImproveMode,
 	}
 }
 
@@ -238,6 +240,8 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.SummarizerCooldownSeconds = settingInt(ctx, s, KeySummarizerCooldownSeconds, cfg.SummarizerCooldownSeconds)
 
 	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
+	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySandboxRuntimeMode, cfg.SandboxRuntimeMode)))
+	cfg.SandboxRuntimeURL = settingString(ctx, s, KeySandboxRuntimeURL, cfg.SandboxRuntimeURL)
 	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
 	cfg.SandboxAutoImproveMode = settingString(ctx, s, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)

@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -147,6 +149,63 @@ func TestSetupSandboxRuntime_HealthyBundleEnablesExecuteCode(t *testing.T) {
 	}
 	if !strings.Contains(health.Detail, "available") {
 		t.Fatalf("Detail = %q, want available diagnostic", health.Detail)
+	}
+}
+
+func TestSetupSandboxRuntime_ContainerModeEnablesExecuteCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("path = %q, want /health", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"detail":"ready"}`))
+	}))
+	defer server.Close()
+
+	mgr, health := setupSandboxRuntime(&config.Config{
+		SandboxEnabled:     true,
+		SandboxRuntimeMode: "container",
+		SandboxRuntimeURL:  server.URL,
+		SandboxTimeoutSec:  21,
+	}, slog.Default())
+
+	if mgr == nil {
+		t.Fatal("manager = nil, want configured manager")
+	}
+	if tools.NewExecuteCodeTool(mgr) == nil {
+		t.Fatal("execute_code not registered with container runtime")
+	}
+	if !health.Available {
+		t.Fatalf("health.Available = false, detail=%q", health.Detail)
+	}
+	if health.Runtime != server.URL {
+		t.Fatalf("Runtime = %q, want %q", health.Runtime, server.URL)
+	}
+	if !strings.Contains(health.Detail, "ready") {
+		t.Fatalf("Detail = %q, want ready diagnostic", health.Detail)
+	}
+}
+
+func TestSetupSandboxRuntime_ContainerModeUnavailableDisablesExecuteCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	mgr, health := setupSandboxRuntime(&config.Config{
+		SandboxEnabled:     true,
+		SandboxRuntimeMode: "container",
+		SandboxRuntimeURL:  server.URL,
+		SandboxTimeoutSec:  21,
+	}, slog.Default())
+
+	if mgr != nil {
+		t.Fatal("manager = non-nil, want nil")
+	}
+	if health.Available {
+		t.Fatal("health.Available = true, want false")
+	}
+	if health.RuntimeKind != string(sandbox.RuntimeKindUnavailable) {
+		t.Fatalf("RuntimeKind = %q, want unavailable", health.RuntimeKind)
 	}
 }
 

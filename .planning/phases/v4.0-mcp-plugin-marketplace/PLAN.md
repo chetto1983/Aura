@@ -46,6 +46,8 @@ The milestone is complete when Aura can discover MCP servers, install them as ma
 ### Container-First Runtime
 
 - Prefer MCP servers as Docker/Compose sidecars.
+- Follow the established Pyodide sidecar pattern: keep runtime bloat out of the Aura image, communicate through internal Compose service URLs, require service health checks, and make every sidecar restartable without mutating primary Aura state.
+- Pin images by digest when practical; when tags are unavoidable, record the resolved digest and validation date in plugin audit metadata.
 - Generate managed Compose/config fragments under `/data` instead of rewriting the root Compose file.
 - Install transaction flow:
   - Create managed plugin config.
@@ -58,6 +60,7 @@ The milestone is complete when Aura can discover MCP servers, install them as ma
   - Restore the previous managed config.
   - Mark the plugin `rolled_back`.
   - Preserve install logs for dashboard review.
+- Sidecar lifecycle must be rollback-friendly: plugin data volumes are preserved by default, generated runtime config is versioned, and the previous enabled tool surface remains available until the new probe passes.
 - Remote HTTP MCP remains supported through URL and secret header references.
 - Stdio/uvx MCP remains legacy/manual and should show a warning in the UI.
 

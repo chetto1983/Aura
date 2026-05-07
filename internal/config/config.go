@@ -13,6 +13,7 @@ const DefaultSpeculativeSearchTimeoutMS = 1500
 const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
+const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const (
 	DefaultEnvPath = ".env"
@@ -107,8 +108,10 @@ type Config struct {
 	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"60"`
 
 	// Sandbox code execution. Product execution uses a bundled Pyodide
-	// runtime; no host Python fallback is supported.
+	// runtime or the container sidecar; no host Python fallback is supported.
 	SandboxEnabled         bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxRuntimeMode     string `envconfig:"SANDBOX_RUNTIME_MODE" default:"auto"`
+	SandboxRuntimeURL      string `envconfig:"SANDBOX_RUNTIME_URL"`
 	SandboxRuntimeDir      string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
 	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
 	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
@@ -252,6 +255,8 @@ func Load() (*Config, error) {
 	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", 60)
 
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
+	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(getEnv("SANDBOX_RUNTIME_MODE", DefaultSandboxRuntimeMode)))
+	cfg.SandboxRuntimeURL = strings.TrimSpace(getEnv("SANDBOX_RUNTIME_URL", ""))
 	cfg.SandboxRuntimeDir = getEnv("SANDBOX_RUNTIME_DIR", DefaultSandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", DefaultSandboxTimeoutSec)
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")

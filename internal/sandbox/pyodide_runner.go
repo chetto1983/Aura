@@ -429,22 +429,7 @@ func (r *PyodideRunner) ExtractXLSX(ctx context.Context, body []byte) (source.Ex
 	if err != nil {
 		return source.ExtractResult{}, err
 	}
-	if !res.OK {
-		return source.ExtractResult{}, fmt.Errorf("source: pyodide extraction failed: %s", res.Stderr)
-	}
-	md, ok := artifactBytes(res.Artifacts, "extract.md")
-	if !ok || len(md) == 0 {
-		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.md")
-	}
-	metaBytes, ok := artifactBytes(res.Artifacts, "extract.json")
-	if !ok || len(metaBytes) == 0 {
-		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.json")
-	}
-	var meta source.ExtractionMeta
-	if err := json.Unmarshal(metaBytes, &meta); err != nil {
-		return source.ExtractResult{}, fmt.Errorf("source: parse pyodide extract metadata: %w", err)
-	}
-	return source.ExtractResult{Markdown: string(md), Metadata: meta}, nil
+	return extractPyodideMarkdownResult(res, "pyodide")
 }
 
 func validateXLSXArchive(body []byte) error {
@@ -488,22 +473,7 @@ func (r *PyodideRunner) ExtractDOCX(ctx context.Context, body []byte) (source.Ex
 	if err != nil {
 		return source.ExtractResult{}, err
 	}
-	if !res.OK {
-		return source.ExtractResult{}, fmt.Errorf("source: pyodide extraction failed: %s", res.Stderr)
-	}
-	md, ok := artifactBytes(res.Artifacts, "extract.md")
-	if !ok || len(md) == 0 {
-		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.md")
-	}
-	metaBytes, ok := artifactBytes(res.Artifacts, "extract.json")
-	if !ok || len(metaBytes) == 0 {
-		return source.ExtractResult{}, errors.New("source: pyodide extraction missing extract.json")
-	}
-	var meta source.ExtractionMeta
-	if err := json.Unmarshal(metaBytes, &meta); err != nil {
-		return source.ExtractResult{}, fmt.Errorf("source: parse pyodide extract metadata: %w", err)
-	}
-	return source.ExtractResult{Markdown: string(md), Metadata: meta}, nil
+	return extractPyodideMarkdownResult(res, "pyodide")
 }
 
 func artifactBytes(artifacts []Artifact, name string) ([]byte, bool) {
@@ -534,7 +504,7 @@ func (r *PyodideRunner) execute(ctx context.Context, code string, allowNetwork b
 		Code:                code,
 		TimeoutMS:           int(timeout.Milliseconds()),
 		AllowNetwork:        allowNetwork,
-		Packages:            append([]string(nil), RequiredPyodideImports...),
+		Packages:            PyodidePackagesForCode(code),
 		InputFiles:          append([]string(nil), inputFiles...),
 		OutputFileAllowlist: []string{defaultPyodideOutputDir},
 	}

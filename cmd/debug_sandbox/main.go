@@ -1,11 +1,11 @@
-// debug_sandbox is the repeatable smoke harness for Aura's bundled sandbox runtime.
+// debug_sandbox is the repeatable smoke harness for Aura's Pyodide sandbox runtime.
 //
 //	go run ./cmd/debug_sandbox --smoke
 //	go run ./cmd/debug_sandbox --smoke --runtime-dir runtime/pyodide --runner runtime/pyodide/runner/aura-pyodide-runner.cmd
 //	go run ./cmd/debug_sandbox --tool-smoke
 //	go run ./cmd/debug_sandbox --artifact-smoke
 //
-// It validates the local Pyodide bundle, starts the runner, and executes the
+// It validates the Pyodide runtime, starts the runner, and executes the
 // offline office/data smoke profile without requiring LLM or Telegram services.
 package main
 
@@ -30,6 +30,7 @@ func main() {
 		toolSmoke     = flag.Bool("tool-smoke", false, "run the registered execute_code tool smoke")
 		artifactSmoke = flag.Bool("artifact-smoke", false, "run the execute_code artifact egress smoke")
 		skillE2E      = flag.Bool("skill-e2e", false, "run skills -> execute_code -> persisted script -> read_source E2E")
+		runtimeURL    = flag.String("runtime-url", envDefault("SANDBOX_RUNTIME_URL", ""), "Pyodide sidecar URL; when set, use the container runner")
 		runtimeDir    = flag.String("runtime-dir", envDefault("SANDBOX_RUNTIME_DIR", "runtime/pyodide"), "Pyodide runtime directory")
 		runnerPath    = flag.String("runner", envDefault("SANDBOX_PYODIDE_RUNNER", ""), "Pyodide runner executable/script path")
 		timeout       = flag.Duration("timeout", 2*time.Minute, "per-scenario timeout")
@@ -40,16 +41,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "debug_sandbox: pass --smoke, --tool-smoke, --artifact-smoke, or --skill-e2e")
 		os.Exit(2)
 	}
-	if strings.TrimSpace(*runnerPath) == "" {
-		*runnerPath = defaultDebugRunnerPath(*runtimeDir)
-	}
-
-	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
-		RuntimeDir:  *runtimeDir,
-		RunnerPath:  *runnerPath,
-		Timeout:     *timeout,
-		Environment: os.Environ(),
-	})
+	runner, err := newDebugSandboxRuntime(*runtimeURL, *runtimeDir, *runnerPath, *timeout)
 	if err != nil {
 		fail("configure runner: %v", err)
 	}
@@ -59,8 +51,7 @@ func main() {
 		defer cancel()
 
 		fmt.Printf("Aura sandbox execute_code tool smoke\n")
-		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
-		fmt.Printf("runner=%s\n", *runnerPath)
+		printDebugRuntimeConfig(*runtimeURL, *runtimeDir, *runnerPath)
 		fmt.Printf("timeout=%s\n\n", timeout.String())
 
 		report := runExecuteCodeToolSmoke(ctx, runner)
@@ -81,8 +72,7 @@ func main() {
 		defer cancel()
 
 		fmt.Printf("Aura sandbox execute_code artifact smoke\n")
-		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
-		fmt.Printf("runner=%s\n", *runnerPath)
+		printDebugRuntimeConfig(*runtimeURL, *runtimeDir, *runnerPath)
 		fmt.Printf("timeout=%s\n\n", timeout.String())
 
 		report := runExecuteCodeArtifactSmoke(ctx, runner)
@@ -103,8 +93,7 @@ func main() {
 		defer cancel()
 
 		fmt.Printf("Aura sandbox skill E2E\n")
-		fmt.Printf("runtime_dir=%s\n", *runtimeDir)
-		fmt.Printf("runner=%s\n", *runnerPath)
+		printDebugRuntimeConfig(*runtimeURL, *runtimeDir, *runnerPath)
 		fmt.Printf("timeout=%s\n\n", timeout.String())
 
 		report := runSkillSandboxE2E(ctx, runner)
@@ -124,8 +113,7 @@ func main() {
 	defer cancel()
 
 	fmt.Printf("Aura sandbox Pyodide smoke\n")
-	fmt.Printf("runtime_dir=%s\n", *runtimeDir)
-	fmt.Printf("runner=%s\n", *runnerPath)
+	printDebugRuntimeConfig(*runtimeURL, *runtimeDir, *runnerPath)
 	fmt.Printf("timeout=%s\n\n", timeout.String())
 
 	report := sandbox.RunPyodideSmoke(ctx, runner)
@@ -159,6 +147,36 @@ func main() {
 	if !report.OK {
 		os.Exit(1)
 	}
+}
+
+func newDebugSandboxRuntime(runtimeURL, runtimeDir, runnerPath string, timeout time.Duration) (sandbox.Runtime, error) {
+	if strings.TrimSpace(runtimeURL) != "" {
+		return sandbox.NewPyodideContainerRunner(sandbox.PyodideContainerRunnerConfig{
+			BaseURL: runtimeURL,
+			Timeout: timeout,
+		})
+	}
+	if strings.TrimSpace(runnerPath) == "" {
+		runnerPath = defaultDebugRunnerPath(runtimeDir)
+	}
+	return sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
+		RuntimeDir:  runtimeDir,
+		RunnerPath:  runnerPath,
+		Timeout:     timeout,
+		Environment: os.Environ(),
+	})
+}
+
+func printDebugRuntimeConfig(runtimeURL, runtimeDir, runnerPath string) {
+	if strings.TrimSpace(runtimeURL) != "" {
+		fmt.Printf("runtime_url=%s\n", runtimeURL)
+		return
+	}
+	if strings.TrimSpace(runnerPath) == "" {
+		runnerPath = defaultDebugRunnerPath(runtimeDir)
+	}
+	fmt.Printf("runtime_dir=%s\n", runtimeDir)
+	fmt.Printf("runner=%s\n", runnerPath)
 }
 
 type executeCodeToolSmokeReport struct {
