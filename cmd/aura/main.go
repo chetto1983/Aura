@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -173,6 +174,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("open settings store: %w", err)
 	}
+	reconcileBestDefaults(context.Background(), settingsStore, cfg, logger)
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
@@ -200,6 +202,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		if err != nil {
 			return nil, activeLogger, fmt.Errorf("post-setup config load: %w", err)
 		}
+		reconcileBestDefaults(context.Background(), settingsStore, newCfg, logger)
 		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		cfg = newCfg
 	}
@@ -276,6 +279,23 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			cleanup()
 		}
 	}, activeLogger, nil
+}
+
+func reconcileBestDefaults(ctx context.Context, store settings.Repository, cfg *config.Config, logger *slog.Logger) {
+	changes, err := settings.ApplyBestDefaults(ctx, store, cfg)
+	if err != nil {
+		logger.Warn("settings best-default reconciliation failed", "error", err)
+		return
+	}
+	if len(changes) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(changes))
+	for _, change := range changes {
+		keys = append(keys, change.Key)
+	}
+	sort.Strings(keys)
+	logger.Info("settings best-defaults reconciled", "count", len(keys), "keys", strings.Join(keys, ","))
 }
 
 // configHealthProvider reports the health of the config subsystem.
