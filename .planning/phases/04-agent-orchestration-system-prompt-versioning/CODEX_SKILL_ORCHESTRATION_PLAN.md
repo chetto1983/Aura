@@ -285,16 +285,16 @@ Create a small taxonomy. Do not route on raw skill names alone.
 
 ### Phase 2: Skill Manifest And Preflight Policy
 
-- [ ] Write failing tests in `internal/orchestration/skill_policy_test.go`.
-- [ ] Add `SkillRequirement` with fields:
+- [x] Write failing tests in `internal/orchestration/skill_policy_test.go`.
+- [x] Add `SkillRequirement` with fields:
   - `Capability`
   - `Required`
   - `AllowedSkillNames`
   - `Reason`
   - `FreshnessScope=turn`
-- [ ] Implement `NeedsSkillPreflight(profile, capability, calledTool, turnState)`.
-- [ ] Require `list_skills` and `read_skill` before tools in document, source extraction, PDF, XLSX, sandbox/coding, browser, Docker, security, release, and MCP/plugin families.
-- [ ] Make preflight advisory for simple memory reads.
+- [x] Implement `NeedsSkillPreflight(profile, capability, calledTool, turnState)`.
+- [x] Require `list_skills` and `read_skill` before tools in document, source extraction, PDF, XLSX, sandbox/coding, browser, Docker, security, release, and MCP/plugin families.
+- [x] Make preflight advisory for simple memory reads.
 - [ ] Add setting `AURA_SKILL_PREFLIGHT`.
 - [ ] Run `go test ./internal/orchestration ./internal/settings -count=1`.
 - [ ] Commit: `feat: require skill preflight for capability tools`.
