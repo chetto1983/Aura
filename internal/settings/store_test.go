@@ -6,8 +6,25 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 )
+
+var (
+	_ Reader     = (*Store)(nil)
+	_ Writer     = (*Store)(nil)
+	_ Repository = (*Store)(nil)
+)
+
+type memoryReader map[string]string
+
+func (m memoryReader) Get(_ context.Context, key string) (string, error) {
+	v, ok := m[key]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return v, nil
+}
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -39,6 +56,26 @@ func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
 
 	if tableExists(t, db, "settings") {
 		t.Fatal("NewStoreWithDB created settings; migrations should own schema")
+	}
+}
+
+func TestApplyToConfigAcceptsReaderInterface(t *testing.T) {
+	cfg := &config.Config{
+		LLMModel:          "from-env",
+		AuraBotTimeoutSec: 300,
+	}
+	var reader Reader = memoryReader{
+		KeyLLMModel:          "from-repository",
+		KeyAuraBotTimeoutSec: "600",
+	}
+
+	ApplyToConfig(context.Background(), reader, cfg)
+
+	if cfg.LLMModel != "from-repository" {
+		t.Fatalf("LLMModel = %q, want from-repository", cfg.LLMModel)
+	}
+	if cfg.AuraBotTimeoutSec != 600 {
+		t.Fatalf("AuraBotTimeoutSec = %d, want 600", cfg.AuraBotTimeoutSec)
 	}
 }
 

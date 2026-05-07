@@ -34,7 +34,7 @@ type Config struct {
 
 	// SettingsStore receives every non-bootstrap key (LLM_*, embeddings,
 	// OCR, etc.). Required.
-	SettingsStore *settings.Store
+	SettingsStore settings.Writer
 
 	// Logger receives wizard activity. Required.
 	Logger *slog.Logger

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +13,42 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/settings"
 )
+
+type fakeSettingsRepository struct {
+	values map[string]string
+}
+
+func (f *fakeSettingsRepository) Get(_ context.Context, key string) (string, error) {
+	v, ok := f.values[key]
+	if !ok {
+		return "", settings.ErrNotFound
+	}
+	return v, nil
+}
+
+func (f *fakeSettingsRepository) Set(_ context.Context, key, value string) error {
+	if key == "FAIL_SET" {
+		return errors.New("forced set failure")
+	}
+	if f.values == nil {
+		f.values = map[string]string{}
+	}
+	f.values[key] = value
+	return nil
+}
+
+func (f *fakeSettingsRepository) Delete(_ context.Context, key string) error {
+	delete(f.values, key)
+	return nil
+}
+
+func (f *fakeSettingsRepository) All(_ context.Context) (map[string]string, error) {
+	out := make(map[string]string, len(f.values))
+	for k, v := range f.values {
+		out[k] = v
+	}
+	return out, nil
+}
 
 func newSettingsEnv(t *testing.T) (http.Handler, *settings.Store) {
 	t.Helper()
@@ -70,6 +107,45 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("LLM_API_KEY not in items")
+	}
+}
+
+func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
+	repo := &fakeSettingsRepository{values: map[string]string{
+		settings.KeyLLMModel: "fake-model",
+	}}
+	router := NewRouter(Deps{Settings: repo})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET status %d, body %s", rr.Code, rr.Body)
+	}
+	var list SettingsListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	var found bool
+	for _, it := range list.Items {
+		if it.Key == settings.KeyLLMModel {
+			found = true
+			if it.Value != "fake-model" || it.Source != "db" {
+				t.Fatalf("LLM_MODEL row = value:%q source:%q", it.Value, it.Source)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("LLM_MODEL row missing")
+	}
+
+	body := `{"updates":{"LLM_MODEL":"updated-model"}}`
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST status %d, body %s", rr.Code, rr.Body)
+	}
+	if repo.values[settings.KeyLLMModel] != "updated-model" {
+		t.Fatalf("repo LLM_MODEL = %q, want updated-model", repo.values[settings.KeyLLMModel])
 	}
 }
 

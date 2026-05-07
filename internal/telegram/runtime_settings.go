@@ -15,7 +15,7 @@ import (
 	"github.com/aura/aura/internal/swarm"
 )
 
-func applyRuntimeSettings(ctx context.Context, store *settings.Store, cfg *config.Config, runner *agent.Runner, manager *swarm.Manager, tracker *budget.Tracker, logger *slog.Logger) error {
+func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *config.Config, runner *agent.Runner, manager *swarm.Manager, tracker *budget.Tracker, logger *slog.Logger) error {
 	if store == nil || cfg == nil {
 		return nil
 	}
@@ -60,7 +60,7 @@ func applyRuntimeSettings(ctx context.Context, store *settings.Store, cfg *confi
 	return nil
 }
 
-func intSetting(ctx context.Context, store *settings.Store, key, envKey string, fallback int) int {
+func intSetting(ctx context.Context, store settings.Reader, key, envKey string, fallback int) int {
 	if store != nil {
 		if raw, err := store.Get(ctx, key); err == nil {
 			if v, ok := parsePositiveInt(raw); ok {
@@ -76,7 +76,7 @@ func intSetting(ctx context.Context, store *settings.Store, key, envKey string, 
 	return fallback
 }
 
-func floatSetting(ctx context.Context, store *settings.Store, key, envKey string, fallback float64) float64 {
+func floatSetting(ctx context.Context, store settings.Reader, key, envKey string, fallback float64) float64 {
 	if store != nil {
 		if raw, err := store.Get(ctx, key); err == nil {
 			if v, ok := parsePositiveFloat(raw); ok {

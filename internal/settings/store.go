@@ -34,6 +34,24 @@ import (
 // a fallback should use GetString / GetInt / GetFloat / GetBool instead.
 var ErrNotFound = errors.New("settings: not found")
 
+// Reader is the read side of Aura's settings repository boundary.
+type Reader interface {
+	Get(ctx context.Context, key string) (string, error)
+}
+
+// Writer is the mutation side of Aura's settings repository boundary.
+type Writer interface {
+	Set(ctx context.Context, key, value string) error
+	Delete(ctx context.Context, key string) error
+}
+
+// Repository is the complete settings store contract used by API surfaces.
+type Repository interface {
+	Reader
+	Writer
+	All(ctx context.Context) (map[string]string, error)
+}
+
 // Store is a thin SQLite-backed key/value store.
 type Store struct {
 	db    *sql.DB

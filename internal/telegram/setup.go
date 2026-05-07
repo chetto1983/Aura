@@ -37,11 +37,11 @@ import (
 
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
 //
-// settingsStore is the runtime configuration store opened by main.go on
+// settingsStore is the runtime configuration repository opened by main.go on
 // cfg.DBPath. It's threaded through so the dashboard's /settings page can
 // persist edits on the shared SQLite pool. May be nil (tests) — in that case
 // the dashboard /settings endpoints respond 503.
-func New(cfg *config.Config, settingsStore *settings.Store, pool *sql.DB, logger *slog.Logger) (*Bot, error) {
+func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, logger *slog.Logger) (*Bot, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("telegram: db pool required")
 	}

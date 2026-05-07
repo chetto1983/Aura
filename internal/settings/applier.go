@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aura/aura/internal/config"
@@ -136,12 +137,12 @@ func IsOverridable(key string) bool {
 //
 // Empty store (no rows) is a no-op, so wiring this in produces zero
 // behavior change until the dashboard starts writing settings.
-func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
+func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	if s == nil || cfg == nil {
 		return
 	}
 
-	cfg.TelegramToken = s.GetString(ctx, KeyTelegramToken, cfg.TelegramToken)
+	cfg.TelegramToken = settingString(ctx, s, KeyTelegramToken, cfg.TelegramToken)
 
 	if v, err := s.Get(ctx, KeyAllowlist); err == nil {
 		// Re-use config's allowlist parser so semantics match Load.
@@ -149,91 +150,135 @@ func ApplyToConfig(ctx context.Context, s *Store, cfg *config.Config) {
 		cfg.AllowlistConfigured = len(cfg.Allowlist) > 0
 	}
 
-	cfg.HTTPPort = s.GetString(ctx, KeyHTTPPort, cfg.HTTPPort)
-	cfg.Headless = s.GetBool(ctx, KeyHeadless, cfg.Headless)
-	cfg.EnvPath = s.GetString(ctx, KeyEnvPath, cfg.EnvPath)
-	cfg.DBPath = s.GetString(ctx, KeyDBPath, cfg.DBPath)
-	cfg.LogLevel = s.GetString(ctx, KeyLogLevel, cfg.LogLevel)
-	cfg.LogDir = s.GetString(ctx, KeyLogDir, cfg.LogDir)
-	cfg.WikiPath = s.GetString(ctx, KeyWikiPath, cfg.WikiPath)
-	cfg.SkillsPath = s.GetString(ctx, KeySkillsPath, cfg.SkillsPath)
-	cfg.SkillsInstallProjectDir = s.GetString(ctx, KeySkillsInstallProjectDir, cfg.SkillsInstallProjectDir)
-	cfg.MCPServersPath = s.GetString(ctx, KeyMCPServersPath, cfg.MCPServersPath)
-	cfg.PromptOverlayPath = s.GetString(ctx, KeyPromptOverlayPath, cfg.PromptOverlayPath)
-	cfg.DashboardTokenTTLHours = s.GetInt(ctx, KeyDashboardTokenTTLHours, cfg.DashboardTokenTTLHours)
+	cfg.HTTPPort = settingString(ctx, s, KeyHTTPPort, cfg.HTTPPort)
+	cfg.Headless = settingBool(ctx, s, KeyHeadless, cfg.Headless)
+	cfg.EnvPath = settingString(ctx, s, KeyEnvPath, cfg.EnvPath)
+	cfg.DBPath = settingString(ctx, s, KeyDBPath, cfg.DBPath)
+	cfg.LogLevel = settingString(ctx, s, KeyLogLevel, cfg.LogLevel)
+	cfg.LogDir = settingString(ctx, s, KeyLogDir, cfg.LogDir)
+	cfg.WikiPath = settingString(ctx, s, KeyWikiPath, cfg.WikiPath)
+	cfg.SkillsPath = settingString(ctx, s, KeySkillsPath, cfg.SkillsPath)
+	cfg.SkillsInstallProjectDir = settingString(ctx, s, KeySkillsInstallProjectDir, cfg.SkillsInstallProjectDir)
+	cfg.MCPServersPath = settingString(ctx, s, KeyMCPServersPath, cfg.MCPServersPath)
+	cfg.PromptOverlayPath = settingString(ctx, s, KeyPromptOverlayPath, cfg.PromptOverlayPath)
+	cfg.DashboardTokenTTLHours = settingInt(ctx, s, KeyDashboardTokenTTLHours, cfg.DashboardTokenTTLHours)
 
-	cfg.MaxContextTokens = s.GetInt(ctx, KeyMaxContextTokens, cfg.MaxContextTokens)
-	cfg.MaxHistoryMessages = s.GetInt(ctx, KeyMaxHistoryMessages, cfg.MaxHistoryMessages)
-	cfg.SoftBudget = s.GetFloat(ctx, KeySoftBudget, cfg.SoftBudget)
-	cfg.HardBudget = s.GetFloat(ctx, KeyHardBudget, cfg.HardBudget)
-	if v := s.GetFloat(ctx, KeyCostInputPerMTokens, cfg.CostInputPerMTokens); v > 0 {
+	cfg.MaxContextTokens = settingInt(ctx, s, KeyMaxContextTokens, cfg.MaxContextTokens)
+	cfg.MaxHistoryMessages = settingInt(ctx, s, KeyMaxHistoryMessages, cfg.MaxHistoryMessages)
+	cfg.SoftBudget = settingFloat(ctx, s, KeySoftBudget, cfg.SoftBudget)
+	cfg.HardBudget = settingFloat(ctx, s, KeyHardBudget, cfg.HardBudget)
+	if v := settingFloat(ctx, s, KeyCostInputPerMTokens, cfg.CostInputPerMTokens); v > 0 {
 		cfg.CostInputPerMTokens = v
 	}
-	if v := s.GetFloat(ctx, KeyCostOutputPerMTokens, cfg.CostOutputPerMTokens); v > 0 {
+	if v := settingFloat(ctx, s, KeyCostOutputPerMTokens, cfg.CostOutputPerMTokens); v > 0 {
 		cfg.CostOutputPerMTokens = v
 	}
 
-	cfg.LLMAPIKey = s.GetString(ctx, KeyLLMAPIKey, cfg.LLMAPIKey)
-	cfg.LLMBaseURL = s.GetString(ctx, KeyLLMBaseURL, cfg.LLMBaseURL)
-	cfg.LLMModel = s.GetString(ctx, KeyLLMModel, cfg.LLMModel)
-	cfg.LLMMaxRetries = s.GetInt(ctx, KeyLLMMaxRetries, cfg.LLMMaxRetries)
+	cfg.LLMAPIKey = settingString(ctx, s, KeyLLMAPIKey, cfg.LLMAPIKey)
+	cfg.LLMBaseURL = settingString(ctx, s, KeyLLMBaseURL, cfg.LLMBaseURL)
+	cfg.LLMModel = settingString(ctx, s, KeyLLMModel, cfg.LLMModel)
+	cfg.LLMMaxRetries = settingInt(ctx, s, KeyLLMMaxRetries, cfg.LLMMaxRetries)
 
-	cfg.OllamaBaseURL = s.GetString(ctx, KeyOllamaBaseURL, cfg.OllamaBaseURL)
-	cfg.OllamaModel = s.GetString(ctx, KeyOllamaModel, cfg.OllamaModel)
-	cfg.OllamaAPIKey = s.GetString(ctx, KeyOllamaAPIKey, cfg.OllamaAPIKey)
-	cfg.OllamaWebBaseURL = s.GetString(ctx, KeyOllamaWebBaseURL, cfg.OllamaWebBaseURL)
-	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyWebSearchProvider, cfg.WebSearchProvider)))
-	cfg.SearXNGBaseURL = s.GetString(ctx, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
-	cfg.GarageS3Endpoint = s.GetString(ctx, KeyGarageS3Endpoint, cfg.GarageS3Endpoint)
-	cfg.GarageS3Region = s.GetString(ctx, KeyGarageS3Region, cfg.GarageS3Region)
-	cfg.GarageS3Bucket = s.GetString(ctx, KeyGarageS3Bucket, cfg.GarageS3Bucket)
-	cfg.GarageS3AccessKey = s.GetString(ctx, KeyGarageS3AccessKey, cfg.GarageS3AccessKey)
-	cfg.GarageS3SecretKey = s.GetString(ctx, KeyGarageS3SecretKey, cfg.GarageS3SecretKey)
-	cfg.QdrantURL = s.GetString(ctx, KeyQdrantURL, cfg.QdrantURL)
-	cfg.QdrantCollection = s.GetString(ctx, KeyQdrantCollection, cfg.QdrantCollection)
-	cfg.QdrantAPIKey = s.GetString(ctx, KeyQdrantAPIKey, cfg.QdrantAPIKey)
-	cfg.MaxToolIterations = s.GetInt(ctx, KeyMaxToolIterations, cfg.MaxToolIterations)
+	cfg.OllamaBaseURL = settingString(ctx, s, KeyOllamaBaseURL, cfg.OllamaBaseURL)
+	cfg.OllamaModel = settingString(ctx, s, KeyOllamaModel, cfg.OllamaModel)
+	cfg.OllamaAPIKey = settingString(ctx, s, KeyOllamaAPIKey, cfg.OllamaAPIKey)
+	cfg.OllamaWebBaseURL = settingString(ctx, s, KeyOllamaWebBaseURL, cfg.OllamaWebBaseURL)
+	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyWebSearchProvider, cfg.WebSearchProvider)))
+	cfg.SearXNGBaseURL = settingString(ctx, s, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
+	cfg.GarageS3Endpoint = settingString(ctx, s, KeyGarageS3Endpoint, cfg.GarageS3Endpoint)
+	cfg.GarageS3Region = settingString(ctx, s, KeyGarageS3Region, cfg.GarageS3Region)
+	cfg.GarageS3Bucket = settingString(ctx, s, KeyGarageS3Bucket, cfg.GarageS3Bucket)
+	cfg.GarageS3AccessKey = settingString(ctx, s, KeyGarageS3AccessKey, cfg.GarageS3AccessKey)
+	cfg.GarageS3SecretKey = settingString(ctx, s, KeyGarageS3SecretKey, cfg.GarageS3SecretKey)
+	cfg.QdrantURL = settingString(ctx, s, KeyQdrantURL, cfg.QdrantURL)
+	cfg.QdrantCollection = settingString(ctx, s, KeyQdrantCollection, cfg.QdrantCollection)
+	cfg.QdrantAPIKey = settingString(ctx, s, KeyQdrantAPIKey, cfg.QdrantAPIKey)
+	cfg.MaxToolIterations = settingInt(ctx, s, KeyMaxToolIterations, cfg.MaxToolIterations)
 
-	cfg.SkillsCatalogURL = s.GetString(ctx, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
-	cfg.SkillsAdmin = s.GetBool(ctx, KeySkillsAdmin, cfg.SkillsAdmin)
-	cfg.AuraBotEnabled = s.GetBool(ctx, KeyAuraBotEnabled, cfg.AuraBotEnabled)
-	cfg.AuraBotMaxActive = s.GetInt(ctx, KeyAuraBotMaxActive, cfg.AuraBotMaxActive)
-	cfg.AuraBotMaxDepth = s.GetInt(ctx, KeyAuraBotMaxDepth, cfg.AuraBotMaxDepth)
-	cfg.AuraBotTimeoutSec = s.GetInt(ctx, KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
-	cfg.AuraBotMaxIterations = s.GetInt(ctx, KeyAuraBotMaxIterations, cfg.AuraBotMaxIterations)
+	cfg.SkillsCatalogURL = settingString(ctx, s, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
+	cfg.SkillsAdmin = settingBool(ctx, s, KeySkillsAdmin, cfg.SkillsAdmin)
+	cfg.AuraBotEnabled = settingBool(ctx, s, KeyAuraBotEnabled, cfg.AuraBotEnabled)
+	cfg.AuraBotMaxActive = settingInt(ctx, s, KeyAuraBotMaxActive, cfg.AuraBotMaxActive)
+	cfg.AuraBotMaxDepth = settingInt(ctx, s, KeyAuraBotMaxDepth, cfg.AuraBotMaxDepth)
+	cfg.AuraBotTimeoutSec = settingInt(ctx, s, KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
+	cfg.AuraBotMaxIterations = settingInt(ctx, s, KeyAuraBotMaxIterations, cfg.AuraBotMaxIterations)
 
-	cfg.EmbeddingAPIKey = s.GetString(ctx, KeyEmbeddingAPIKey, cfg.EmbeddingAPIKey)
-	cfg.EmbeddingBaseURL = s.GetString(ctx, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)
-	cfg.EmbeddingModel = s.GetString(ctx, KeyEmbeddingModel, cfg.EmbeddingModel)
-	cfg.OTelEnabled = s.GetBool(ctx, KeyOTelEnabled, cfg.OTelEnabled)
-	cfg.PromptVersion = s.GetString(ctx, KeyPromptVersion, cfg.PromptVersion)
-	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyToolProfileMode, cfg.ToolProfileMode)))
-	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(s.GetString(ctx, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
+	cfg.EmbeddingAPIKey = settingString(ctx, s, KeyEmbeddingAPIKey, cfg.EmbeddingAPIKey)
+	cfg.EmbeddingBaseURL = settingString(ctx, s, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)
+	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
+	cfg.OTelEnabled = settingBool(ctx, s, KeyOTelEnabled, cfg.OTelEnabled)
+	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
+	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode)))
+	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
 
-	cfg.MistralAPIKey = s.GetString(ctx, KeyMistralAPIKey, cfg.MistralAPIKey)
-	cfg.MistralOCRModel = s.GetString(ctx, KeyMistralOCRModel, cfg.MistralOCRModel)
-	cfg.MistralOCRBaseURL = s.GetString(ctx, KeyMistralOCRBaseURL, cfg.MistralOCRBaseURL)
-	cfg.MistralOCRTableFormat = s.GetString(ctx, KeyMistralOCRTableFormat, cfg.MistralOCRTableFormat)
-	cfg.MistralOCRIncludeImages = s.GetBool(ctx, KeyMistralOCRIncludeImages, cfg.MistralOCRIncludeImages)
-	cfg.MistralOCRExtractHeader = s.GetBool(ctx, KeyMistralOCRExtractHeader, cfg.MistralOCRExtractHeader)
-	cfg.MistralOCRExtractFooter = s.GetBool(ctx, KeyMistralOCRExtractFooter, cfg.MistralOCRExtractFooter)
-	cfg.OCREnabled = s.GetBool(ctx, KeyOCREnabled, cfg.OCREnabled)
-	cfg.OCRMaxPages = s.GetInt(ctx, KeyOCRMaxPages, cfg.OCRMaxPages)
-	cfg.OCRMaxFileMB = s.GetInt(ctx, KeyOCRMaxFileMB, cfg.OCRMaxFileMB)
+	cfg.MistralAPIKey = settingString(ctx, s, KeyMistralAPIKey, cfg.MistralAPIKey)
+	cfg.MistralOCRModel = settingString(ctx, s, KeyMistralOCRModel, cfg.MistralOCRModel)
+	cfg.MistralOCRBaseURL = settingString(ctx, s, KeyMistralOCRBaseURL, cfg.MistralOCRBaseURL)
+	cfg.MistralOCRTableFormat = settingString(ctx, s, KeyMistralOCRTableFormat, cfg.MistralOCRTableFormat)
+	cfg.MistralOCRIncludeImages = settingBool(ctx, s, KeyMistralOCRIncludeImages, cfg.MistralOCRIncludeImages)
+	cfg.MistralOCRExtractHeader = settingBool(ctx, s, KeyMistralOCRExtractHeader, cfg.MistralOCRExtractHeader)
+	cfg.MistralOCRExtractFooter = settingBool(ctx, s, KeyMistralOCRExtractFooter, cfg.MistralOCRExtractFooter)
+	cfg.OCREnabled = settingBool(ctx, s, KeyOCREnabled, cfg.OCREnabled)
+	cfg.OCRMaxPages = settingInt(ctx, s, KeyOCRMaxPages, cfg.OCRMaxPages)
+	cfg.OCRMaxFileMB = settingInt(ctx, s, KeyOCRMaxFileMB, cfg.OCRMaxFileMB)
 
-	cfg.ConvArchiveEnabled = s.GetBool(ctx, KeyConvArchiveEnabled, cfg.ConvArchiveEnabled)
+	cfg.ConvArchiveEnabled = settingBool(ctx, s, KeyConvArchiveEnabled, cfg.ConvArchiveEnabled)
 
-	cfg.SummarizerEnabled = s.GetBool(ctx, KeySummarizerEnabled, cfg.SummarizerEnabled)
-	cfg.SummarizerMode = s.GetString(ctx, KeySummarizerMode, cfg.SummarizerMode)
-	cfg.SummarizerTurnInterval = s.GetInt(ctx, KeySummarizerTurnInterval, cfg.SummarizerTurnInterval)
-	cfg.SummarizerMinSalience = s.GetFloat(ctx, KeySummarizerMinSalience, cfg.SummarizerMinSalience)
-	cfg.SummarizerLookbackTurns = s.GetInt(ctx, KeySummarizerLookbackTurns, cfg.SummarizerLookbackTurns)
-	cfg.SummarizerCooldownSeconds = s.GetInt(ctx, KeySummarizerCooldownSeconds, cfg.SummarizerCooldownSeconds)
+	cfg.SummarizerEnabled = settingBool(ctx, s, KeySummarizerEnabled, cfg.SummarizerEnabled)
+	cfg.SummarizerMode = settingString(ctx, s, KeySummarizerMode, cfg.SummarizerMode)
+	cfg.SummarizerTurnInterval = settingInt(ctx, s, KeySummarizerTurnInterval, cfg.SummarizerTurnInterval)
+	cfg.SummarizerMinSalience = settingFloat(ctx, s, KeySummarizerMinSalience, cfg.SummarizerMinSalience)
+	cfg.SummarizerLookbackTurns = settingInt(ctx, s, KeySummarizerLookbackTurns, cfg.SummarizerLookbackTurns)
+	cfg.SummarizerCooldownSeconds = settingInt(ctx, s, KeySummarizerCooldownSeconds, cfg.SummarizerCooldownSeconds)
 
-	cfg.SandboxEnabled = s.GetBool(ctx, KeySandboxEnabled, cfg.SandboxEnabled)
-	cfg.SandboxRuntimeDir = s.GetString(ctx, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
-	cfg.SandboxTimeoutSec = s.GetInt(ctx, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
-	cfg.SandboxAutoImproveMode = s.GetString(ctx, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
+	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
+	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
+	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
+	cfg.SandboxAutoImproveMode = settingString(ctx, s, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
+}
+
+func settingString(ctx context.Context, s Reader, key, fallback string) string {
+	v, err := s.Get(ctx, key)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
+}
+
+func settingInt(ctx context.Context, s Reader, key string, fallback int) int {
+	v, err := s.Get(ctx, key)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func settingFloat(ctx context.Context, s Reader, key string, fallback float64) float64 {
+	v, err := s.Get(ctx, key)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return fallback
+	}
+	return f
+}
+
+func settingBool(ctx context.Context, s Reader, key string, fallback bool) bool {
+	v, err := s.Get(ctx, key)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 // parseAllowlist mirrors the comma-split semantics in config.Load.
