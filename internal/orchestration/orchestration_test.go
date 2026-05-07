@@ -45,11 +45,19 @@ func TestSelectProfileAutoRoutesSwarmSandboxDocumentAndMemory(t *testing.T) {
 		text string
 		want Profile
 	}{
-		{name: "swarm", text: "facciamo il punto di tutta la pipeline e cosa manca", want: ProfileSwarmResearch},
-		{name: "sandbox", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ProfileSandboxCompute},
-		{name: "document", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ProfileDocument},
-		{name: "memory", text: "cosa ricordi del progetto Aura?", want: ProfileMemory},
-		{name: "default", text: "ciao come va", want: ProfileDefault},
+		{name: "swarm english pipeline audit", text: "audit the whole Aura pipeline and tell me what is missing", want: ProfileSwarmResearch},
+		{name: "swarm italian pipeline audit", text: "facciamo il punto di tutta la pipeline e cosa manca", want: ProfileSwarmResearch},
+		{name: "swarm broad memory review", text: "analyze all memory and synthesize the gaps across the knowledge base", want: ProfileSwarmResearch},
+		{name: "sandbox english csv chart", text: "compute a CSV table and chart for the E2E timings", want: ProfileSandboxCompute},
+		{name: "sandbox italian csv chart", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ProfileSandboxCompute},
+		{name: "document english report", text: "create a report from the documents you have", want: ProfileDocument},
+		{name: "document italian report", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ProfileDocument},
+		{name: "memory english remember", text: "remember this note in memory for the Aura project", want: ProfileMemory},
+		{name: "memory italian save", text: "salva questa nota nella memoria di Aura", want: ProfileMemory},
+		{name: "admin english dashboard settings", text: "review the dashboard settings and admin approval queue", want: ProfileAdminReview},
+		{name: "admin italian settings", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ProfileAdminReview},
+		{name: "default english greeting", text: "hello, how are you?", want: ProfileDefault},
+		{name: "default italian greeting", text: "ciao come va", want: ProfileDefault},
 	}
 
 	for _, tt := range tests {
@@ -76,6 +84,9 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 		if !slices.Contains(sw, required) {
 			t.Fatalf("swarm profile missing %q: %+v", required, sw)
 		}
+	}
+	if !slices.Equal(sw[:3], []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}) {
+		t.Fatalf("swarm profile should prepend terminal swarm tools, got %+v", sw)
 	}
 	if slices.Contains(sw, "write_wiki") {
 		t.Fatalf("swarm profile exposes write_wiki: %+v", sw)
@@ -116,6 +127,15 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	for _, required := range []string{"write_wiki", "propose_wiki_change"} {
 		if !slices.Contains(def, required) {
 			t.Fatalf("default profile missing memory write tool %q: %+v", required, def)
+		}
+	}
+	for _, forbidden := range []string{
+		"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill",
+		"settings_update", "request_dashboard_token", "run_task_now",
+		"install_plugin", "delete_plugin", "mcp_install", "mcp_register",
+	} {
+		if slices.Contains(def, forbidden) {
+			t.Fatalf("default profile exposes forbidden admin/plugin/execute/swarm tool %q: %+v", forbidden, def)
 		}
 	}
 
@@ -222,5 +242,109 @@ func TestProfileCardsDeclareCapabilityContracts(t *testing.T) {
 	}
 	if slices.Contains(cards[ProfileAdminReview].AllowedTools, "run_task_now") {
 		t.Fatalf("admin_review exposes run_task_now: %+v", cards[ProfileAdminReview].AllowedTools)
+	}
+}
+
+func TestToolsForProfileOnlyExposesCardDeclaredTools(t *testing.T) {
+	availabilityCases := []Availability{
+		{},
+		{Swarm: true},
+		{Sandbox: true},
+		{Proposals: true},
+		{Swarm: true, Sandbox: true, Proposals: true},
+	}
+
+	for _, profile := range []Profile{ProfileDefault, ProfileMemory, ProfileSwarmResearch, ProfileSandboxCompute, ProfileDocument, ProfileAdminReview} {
+		for _, available := range availabilityCases {
+			tools, err := ToolsForProfile(profile, available)
+			if err != nil {
+				continue
+			}
+			card, ok := ProfileCardFor(profile)
+			if !ok {
+				t.Fatalf("ProfileCardFor(%q) returned false", profile)
+			}
+			declared := declaredToolsForCard(card, available)
+			for _, tool := range tools {
+				if !slices.Contains(declared, tool) {
+					t.Fatalf("%q with availability %+v exposes undeclared tool %q; tools=%+v declared=%+v", profile, available, tool, tools, declared)
+				}
+			}
+		}
+	}
+}
+
+func TestProfileCardForReturnsCopySafeCards(t *testing.T) {
+	card, ok := ProfileCardFor(ProfileSwarmResearch)
+	if !ok {
+		t.Fatal("ProfileCardFor swarm_research returned false")
+	}
+	card.PositiveCues[0] = "mutated"
+	card.NegativeCues[0] = "mutated"
+	card.RequiredAvailability[0] = "mutated"
+	card.ConditionalTools[0].Tools[0] = "mutated"
+	card.DeniedTools[0] = "mutated"
+	card.LoopPolicy.TerminalTools[0] = "mutated"
+
+	reread, ok := ProfileCardFor(ProfileSwarmResearch)
+	if !ok {
+		t.Fatal("ProfileCardFor swarm_research reread returned false")
+	}
+	if reread.PositiveCues[0] == "mutated" {
+		t.Fatalf("mutating PositiveCues changed profile card catalog: %+v", reread.PositiveCues)
+	}
+	if reread.NegativeCues[0] == "mutated" {
+		t.Fatalf("mutating NegativeCues changed profile card catalog: %+v", reread.NegativeCues)
+	}
+	if reread.RequiredAvailability[0] == "mutated" {
+		t.Fatalf("mutating RequiredAvailability changed profile card catalog: %+v", reread.RequiredAvailability)
+	}
+	if reread.ConditionalTools[0].Tools[0] == "mutated" {
+		t.Fatalf("mutating ConditionalTools changed profile card catalog: %+v", reread.ConditionalTools)
+	}
+	if reread.DeniedTools[0] == "mutated" {
+		t.Fatalf("mutating DeniedTools changed profile card catalog: %+v", reread.DeniedTools)
+	}
+	if reread.LoopPolicy.TerminalTools[0] == "mutated" {
+		t.Fatalf("mutating loop terminal tools changed profile card catalog: %+v", reread.LoopPolicy.TerminalTools)
+	}
+
+	cards := ProfileCards()
+	cards[ProfileSandboxCompute].AllowedTools[0] = "mutated"
+	cards[ProfileDocument].ConditionalTools[0].Tools[0] = "mutated"
+	rereadMap := ProfileCards()
+	if rereadMap[ProfileSandboxCompute].AllowedTools[0] == "mutated" {
+		t.Fatalf("mutating ProfileCards result changed profile card catalog: %+v", rereadMap[ProfileSandboxCompute].AllowedTools)
+	}
+	if rereadMap[ProfileDocument].ConditionalTools[0].Tools[0] == "mutated" {
+		t.Fatalf("mutating ProfileCards conditional tools changed profile card catalog: %+v", rereadMap[ProfileDocument].ConditionalTools)
+	}
+}
+
+func declaredToolsForCard(card ProfileCard, available Availability) []string {
+	tools := append([]string(nil), card.AllowedTools...)
+	for _, set := range card.ConditionalTools {
+		if !testAvailabilityEnabled(set.Availability, available) {
+			continue
+		}
+		if set.Prepend {
+			tools = append(append([]string(nil), set.Tools...), tools...)
+			continue
+		}
+		tools = append(tools, set.Tools...)
+	}
+	return tools
+}
+
+func testAvailabilityEnabled(name string, available Availability) bool {
+	switch name {
+	case "swarm":
+		return available.Swarm
+	case "sandbox":
+		return available.Sandbox
+	case "proposals":
+		return available.Proposals
+	default:
+		return false
 	}
 }

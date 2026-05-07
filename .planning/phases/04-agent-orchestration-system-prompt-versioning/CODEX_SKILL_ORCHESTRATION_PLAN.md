@@ -301,19 +301,19 @@ Create a small taxonomy. Do not route on raw skill names alone.
 
 ### Phase 3: Profile Cards And Loop Policy
 
-- [ ] Replace scattered route conditions with declarative profile cards.
-- [ ] Add `LoopPolicy` per profile:
+- [x] Replace scattered route conditions with declarative profile cards.
+- [x] Add `LoopPolicy` per profile:
   - `MaxSteps`
   - `TerminalTools`
   - `AllowNoToolFinalization`
   - `DuplicateToolPolicy`
   - `MaxElapsed`
-- [ ] Set `swarm_research` to terminal after `run_aurabot_swarm`.
-- [ ] Set `sandbox_compute` to allow one final no-tool response after `execute_code`.
-- [ ] Keep `default` conservative with no admin/plugin mutation.
-- [ ] Add English and Italian prompt route tests.
-- [ ] Run `go test ./internal/orchestration ./internal/telegram -count=1`.
-- [ ] Commit: `feat: add profile cards and loop policies`.
+- [x] Set `swarm_research` to terminal after `run_aurabot_swarm`.
+- [x] Set `sandbox_compute` to allow one final no-tool response after `execute_code`.
+- [x] Keep `default` conservative with no admin/plugin mutation.
+- [x] Add English and Italian prompt route tests.
+- [x] Run `go test ./internal/orchestration ./internal/telegram -count=1`.
+- [x] Commit: `feat: add profile cards and loop policies`.
 
 ### Phase 4: Live Loop Enforcement
 

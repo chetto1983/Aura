@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -61,11 +62,21 @@ type ProfileCard struct {
 	Profile              Profile
 	Purpose              string
 	Access               AccessLevel
+	Priority             int
 	PositiveCues         []string
 	NegativeCues         []string
 	RequiredAvailability []string
+	AvailabilityFallback Profile
 	AllowedTools         []string
+	ConditionalTools     []ConditionalToolSet
 	DeniedTools          []string
+	LoopPolicy           LoopPolicy
+}
+
+type ConditionalToolSet struct {
+	Availability string
+	Tools        []string
+	Prepend      bool
 }
 
 type PromptInput struct {
@@ -168,22 +179,23 @@ func SelectProfileDecision(userText, mode string, available Availability) Profil
 	}
 
 	text := routeText(userText)
-	switch {
-	case available.Swarm && looksLikeSwarmResearch(text):
-		return ProfileDecision{Profile: ProfileSwarmResearch, Reason: "matched swarm_research broad synthesis cues"}
-	case !available.Swarm && looksLikeSwarmResearch(text):
-		return ProfileDecision{Profile: ProfileMemory, Reason: "swarm_research cues matched but swarm unavailable; using memory read route"}
-	case available.Sandbox && looksLikeSandboxCompute(text):
-		return ProfileDecision{Profile: ProfileSandboxCompute, Reason: "matched sandbox_compute compute/artifact cues"}
-	case !available.Sandbox && looksLikeSandboxCompute(text):
-		return ProfileDecision{Profile: ProfileDefault, Reason: "sandbox_compute cues matched but sandbox unavailable; using default route"}
-	case looksLikeDocument(text):
-		return ProfileDecision{Profile: ProfileDocument, Reason: "matched document/file-generation cues"}
-	case looksLikeMemory(text):
-		return ProfileDecision{Profile: ProfileMemory, Reason: "matched memory/source/wiki cues"}
-	default:
-		return ProfileDecision{Profile: ProfileDefault, Reason: "no specialized profile cues matched"}
+	for _, card := range profileCardsByPriority() {
+		if card.Profile == ProfileDefault || !card.matches(text) {
+			continue
+		}
+		if missing := missingAvailabilityForCard(card, available); missing != "" {
+			fallback := normalizeProfile(string(card.AvailabilityFallback))
+			return ProfileDecision{
+				Profile: fallback,
+				Reason:  fmt.Sprintf("%s cues matched but %s unavailable; using %s route", card.Profile, missing, fallback),
+			}
+		}
+		return ProfileDecision{
+			Profile: card.Profile,
+			Reason:  fmt.Sprintf("matched %s profile card cues", card.Profile),
+		}
 	}
+	return ProfileDecision{Profile: ProfileDefault, Reason: "no specialized profile card cues matched"}
 }
 
 func ToolsForProfile(profile Profile, available Availability) ([]string, error) {
@@ -197,131 +209,218 @@ func ToolsForProfile(profile Profile, available Availability) ([]string, error) 
 		return nil, fmt.Errorf("profile %q unavailable: missing %s", profile, missing)
 	}
 	tools := append([]string(nil), card.AllowedTools...)
-	switch profile {
-	case ProfileDefault:
-		if available.Proposals {
-			tools = append(tools, "propose_wiki_change", "propose_skill_change")
+	for _, set := range card.ConditionalTools {
+		if !availabilityEnabled(set.Availability, available) {
+			continue
 		}
-	case ProfileMemory:
-		if available.Proposals {
-			tools = append(tools, "propose_wiki_change", "propose_skill_change")
+		if set.Prepend {
+			tools = append(append([]string(nil), set.Tools...), tools...)
+			continue
 		}
-	case ProfileSwarmResearch:
-		if available.Swarm {
-			tools = append([]string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, tools...)
-		}
-	case ProfileDocument:
-		if available.Swarm {
-			tools = append(tools, "run_aurabot_swarm", "read_swarm_result")
-		}
+		tools = append(tools, set.Tools...)
 	}
 	return tools, nil
 }
 
 func ProfileCards() map[Profile]ProfileCard {
-	return map[Profile]ProfileCard{
-		ProfileDefault: {
-			Profile: ProfileDefault,
-			Purpose: "Safe everyday route for simple answers, memory lookup, search, and routine task scheduling.",
-			Access:  AccessDefault,
-			AllowedTools: []string{
-				"search_memory", "search_wiki", "read_wiki",
-				"list_wiki", "list_sources", "read_source",
-				"web_search", "web_fetch",
-				"schedule_task", "list_tasks", "cancel_task",
-				"daily_briefing",
-				"write_wiki",
-			},
-			DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
-		},
-		ProfileMemory: {
-			Profile:      ProfileMemory,
-			Purpose:      "Source/wiki/memory route with direct durable memory writes and review-gated proposals.",
-			Access:       AccessWrite,
-			PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai"},
-			AllowedTools: []string{
-				"search_memory", "list_wiki", "read_wiki", "search_wiki",
-				"list_sources", "read_source", "lint_wiki", "lint_sources",
-				"daily_briefing", "write_wiki",
-			},
-			DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
-		},
-		ProfileSwarmResearch: {
-			Profile:              ProfileSwarmResearch,
-			Purpose:              "Read-only broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
-			Access:               AccessReadOnly,
-			PositiveCues:         []string{"facciamo il punto", "pipeline", "what is missing", "audit", "roadmap"},
-			RequiredAvailability: []string{"swarm"},
-			AllowedTools:         []string{},
-			DeniedTools: []string{
-				"write_wiki", "create_docx", "create_xlsx", "create_pdf",
-				"execute_code", "schedule_task", "cancel_task", "run_task_now",
-				"install_skill", "delete_skill", "settings_update",
-			},
-		},
-		ProfileSandboxCompute: {
-			Profile:              ProfileSandboxCompute,
-			Purpose:              "Compute and artifact route for Python calculations, transformations, charts, simulations, and parser experiments.",
-			Access:               AccessSandbox,
-			PositiveCues:         []string{"calculate", "calcola", "chart", "grafico", "csv", "parser", "simulation"},
-			RequiredAvailability: []string{"sandbox"},
-			AllowedTools: []string{
-				"execute_code", "list_tools", "read_tool",
-				"list_skills", "read_skill",
-				"search_memory", "list_sources", "read_source", "store_source",
-			},
-			DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
-		},
-		ProfileDocument: {
-			Profile:      ProfileDocument,
-			Purpose:      "Skill-first route for DOCX/XLSX/PDF/report generation with memory/source evidence.",
-			Access:       AccessWrite,
-			PositiveCues: []string{"docx", "pdf", "xlsx", "report", "relazione", "documento"},
-			AllowedTools: []string{
-				"list_skills", "read_skill", "search_skill_catalog",
-				"search_memory", "list_wiki", "read_wiki", "search_wiki",
-				"list_sources", "read_source",
-				"create_docx", "create_xlsx", "create_pdf",
-			},
-			DeniedTools: []string{"install_skill", "delete_skill", "settings_update"},
-		},
-		ProfileAdminReview: {
-			Profile:      ProfileAdminReview,
-			Purpose:      "Review-only route for proposals and admin queues without silent mutation.",
-			Access:       AccessReviewOnly,
-			PositiveCues: []string{"review queue", "approval", "proposals", "admin"},
-			AllowedTools: []string{
-				"daily_briefing", "list_tasks",
-				"propose_wiki_change", "propose_skill_change",
-				"list_skills", "read_skill", "search_skill_catalog",
-			},
-			DeniedTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
-		},
+	cards := make(map[Profile]ProfileCard, len(profileCardCatalog))
+	for _, card := range profileCardCatalog {
+		cards[card.Profile] = cloneProfileCard(card)
 	}
+	return cards
+}
+
+func ProfileCardFor(profile Profile) (ProfileCard, bool) {
+	for _, card := range profileCardCatalog {
+		if card.Profile == normalizeProfile(string(profile)) {
+			return cloneProfileCard(card), true
+		}
+	}
+	return ProfileCard{}, false
+}
+
+var profileCardCatalog = []ProfileCard{
+	{
+		Profile:  ProfileDefault,
+		Purpose:  "Safe everyday route for simple answers, memory lookup, search, and routine task scheduling.",
+		Access:   AccessDefault,
+		Priority: 100,
+		AllowedTools: []string{
+			"search_memory", "search_wiki", "read_wiki",
+			"list_wiki", "list_sources", "read_source",
+			"web_search", "web_fetch",
+			"schedule_task", "list_tasks", "cancel_task",
+			"daily_briefing",
+			"write_wiki",
+		},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+		},
+		DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                6,
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject duplicate high-risk or mutation tool calls; keep default turns short and conservative.",
+			MaxElapsed:              30 * time.Second,
+		},
+	},
+	{
+		Profile:      ProfileMemory,
+		Purpose:      "Source/wiki/memory route with direct durable memory writes and review-gated proposals.",
+		Access:       AccessWrite,
+		Priority:     50,
+		PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai", "ricordi", "remember", "second brain", "source", "ricordati", "ricorda", "salva", "save", "record", "annota"},
+		NegativeCues: []string{"documento", "docx", "pdf", "xlsx", "grafico", "chart", "csv", "pipeline audit"},
+		AllowedTools: []string{
+			"search_memory", "list_wiki", "read_wiki", "search_wiki",
+			"list_sources", "read_source", "lint_wiki", "lint_sources",
+			"daily_briefing", "write_wiki",
+		},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+		},
+		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                5,
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject duplicate memory writes unless the later call targets distinct durable content.",
+			MaxElapsed:              30 * time.Second,
+		},
+	},
+	{
+		Profile:  ProfileSwarmResearch,
+		Purpose:  "Read-only broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
+		Access:   AccessReadOnly,
+		Priority: 40,
+		PositiveCues: []string{
+			"facciamo il punto", "pipeline", "tutta la pipeline", "tutta la memoria", "tutto il repo",
+			"cosa manca", "what is missing", "audit", "review", "mappa", "roadmap", "quality",
+			"qualita", "consolidation", "consolidamento", "analyze all memory", "analyse all memory",
+			"review all memory", "audit all memory", "map all memory", "analyze the wiki",
+			"analyse the wiki", "review the wiki", "across the knowledge base", "whole knowledge base",
+			"entire knowledge base", "cross-check", "synthesis", "sintet",
+		},
+		NegativeCues: []string{
+			"dashboard", "settings", "impostazioni", "admin", "documento", "docx", "pdf", "xlsx",
+			"csv", "grafico", "chart", "write_wiki", "scrivi", "scrivere", "salva", "ricorda",
+			"remember", "save", "crea", "create", "genera", "generate", "installa", "install",
+			"delete", "cancella", "rimuovi", "schedule", "program", "ricordami", "invia", "send",
+		},
+		RequiredAvailability: []string{"swarm"},
+		AvailabilityFallback: ProfileMemory,
+		AllowedTools:         []string{},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
+		},
+		DeniedTools: []string{
+			"write_wiki", "create_docx", "create_xlsx", "create_pdf",
+			"execute_code", "schedule_task", "cancel_task", "run_task_now",
+			"install_skill", "delete_skill", "settings_update",
+		},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                2,
+			TerminalTools:           []string{"run_aurabot_swarm"},
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject duplicate run_aurabot_swarm calls after the first completed swarm delegation; answer from the aggregate result.",
+			MaxElapsed:              30 * time.Second,
+		},
+	},
+	{
+		Profile:              ProfileSandboxCompute,
+		Purpose:              "Compute and artifact route for Python calculations, transformations, charts, simulations, and parser experiments.",
+		Access:               AccessSandbox,
+		Priority:             20,
+		PositiveCues:         []string{"calculate", "calcola", "compute", "grafico", "chart", "plot", "csv", "dataframe", "dataset", "simulation", "simulazione", "python", "parser", "script", "debug script", "artifact", "artifacts", "trasforma", "transform", "analisi dati", "data analysis"},
+		NegativeCues:         []string{"documento word", "word modificabile", "docx", "pdf", "relazione"},
+		RequiredAvailability: []string{"sandbox"},
+		AvailabilityFallback: ProfileDefault,
+		AllowedTools: []string{
+			"execute_code", "list_tools", "read_tool",
+			"list_skills", "read_skill",
+			"search_memory", "list_sources", "read_source", "store_source",
+		},
+		DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                3,
+			TerminalTools:           []string{"execute_code"},
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject repeated execute_code calls that recompute the same artifact; allow one final no-tool response after execute_code.",
+			MaxElapsed:              30 * time.Second,
+		},
+	},
+	{
+		Profile:      ProfileDocument,
+		Purpose:      "Skill-first route for DOCX/XLSX/PDF/report generation with memory/source evidence.",
+		Access:       AccessWrite,
+		Priority:     30,
+		PositiveCues: []string{"documento word", "word modificabile", "docx", "pdf", "xlsx", "spreadsheet", "foglio", "presentami un documento", "crea un documento", "genera un documento", "report", "relazione", "documento", "documenti"},
+		NegativeCues: []string{"calcola", "calculate", "compute", "grafico", "chart", "plot", "csv"},
+		AllowedTools: []string{
+			"list_skills", "read_skill", "search_skill_catalog",
+			"search_memory", "list_wiki", "read_wiki", "search_wiki",
+			"list_sources", "read_source",
+			"create_docx", "create_xlsx", "create_pdf",
+		},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result"}},
+		},
+		DeniedTools: []string{"install_skill", "delete_skill", "settings_update"},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                6,
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject duplicate file generation calls for the same target format unless revising a failed artifact.",
+			MaxElapsed:              45 * time.Second,
+		},
+	},
+	{
+		Profile:      ProfileAdminReview,
+		Purpose:      "Review-only route for proposals and admin queues without silent mutation.",
+		Access:       AccessReviewOnly,
+		Priority:     10,
+		PositiveCues: []string{"review queue", "approval", "proposals", "admin", "dashboard", "settings", "impostazioni", "request_dashboard_token", "coda review", "coda approvazioni", "docker release", "plugin", "mcp"},
+		AllowedTools: []string{
+			"daily_briefing", "list_tasks",
+			"propose_wiki_change", "propose_skill_change",
+			"list_skills", "read_skill", "search_skill_catalog",
+		},
+		DeniedTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+		LoopPolicy: LoopPolicy{
+			MaxSteps:                4,
+			AllowNoToolFinalization: true,
+			DuplicateToolPolicy:     "Reject duplicate admin proposal calls that mutate or request the same review action.",
+			MaxElapsed:              30 * time.Second,
+		},
+	},
 }
 
 func missingAvailability(profile Profile, available Availability) string {
-	card, ok := ProfileCards()[normalizeProfile(string(profile))]
+	card, ok := ProfileCardFor(normalizeProfile(string(profile)))
 	if !ok {
 		return ""
 	}
+	return missingAvailabilityForCard(card, available)
+}
+
+func missingAvailabilityForCard(card ProfileCard, available Availability) string {
 	for _, req := range card.RequiredAvailability {
-		switch req {
-		case "swarm":
-			if !available.Swarm {
-				return req
-			}
-		case "sandbox":
-			if !available.Sandbox {
-				return req
-			}
-		case "proposals":
-			if !available.Proposals {
-				return req
-			}
+		if !availabilityEnabled(req, available) {
+			return req
 		}
 	}
 	return ""
+}
+
+func availabilityEnabled(name string, available Availability) bool {
+	switch name {
+	case "swarm":
+		return available.Swarm
+	case "sandbox":
+		return available.Sandbox
+	case "proposals":
+		return available.Proposals
+	default:
+		return false
+	}
 }
 
 func normalizeProfile(value string) Profile {
@@ -345,39 +444,6 @@ func routeText(text string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(text))), " ")
 }
 
-func looksLikeSwarmResearch(text string) bool {
-	return containsAny(text, []string{
-		"facciamo il punto", "tutta la pipeline", "tutta la memoria", "tutto il repo",
-		"cosa manca", "what is missing", "audit", "review", "mappa", "roadmap",
-		"quality", "qualita", "consolidation", "consolidamento",
-	}) || conversation.LooksLikeSwarmReadGoal(text)
-}
-
-func looksLikeSandboxCompute(text string) bool {
-	return containsAny(text, []string{
-		"calcola", "calculate", "compute", "grafico", "chart", "plot",
-		"csv", "dataframe", "dataset", "simulation", "simulazione",
-		"python", "parser", "script", "debug script", "artifact", "artifacts",
-		"trasforma", "transform", "analisi dati", "data analysis",
-	})
-}
-
-func looksLikeDocument(text string) bool {
-	return containsAny(text, []string{
-		"documento word", "word modificabile", "docx", "pdf", "xlsx",
-		"spreadsheet", "foglio", "presentami un documento", "crea un documento",
-		"genera un documento", "report", "relazione",
-	})
-}
-
-func looksLikeMemory(text string) bool {
-	return containsAny(text, []string{
-		"ricordi", "remember", "memoria", "memory", "second brain",
-		"wiki", "fonti", "sources", "source", "cosa sai",
-		"ricordati", "ricorda", "salva", "save", "record", "annota",
-	})
-}
-
 func containsAny(text string, terms []string) bool {
 	for _, term := range terms {
 		if strings.Contains(text, term) {
@@ -385,6 +451,47 @@ func containsAny(text string, terms []string) bool {
 		}
 	}
 	return false
+}
+
+func (card ProfileCard) matches(text string) bool {
+	if containsAny(text, card.NegativeCues) {
+		return false
+	}
+	if containsAny(text, card.PositiveCues) {
+		return true
+	}
+	return false
+}
+
+func cloneProfileCard(card ProfileCard) ProfileCard {
+	card.PositiveCues = append([]string(nil), card.PositiveCues...)
+	card.NegativeCues = append([]string(nil), card.NegativeCues...)
+	card.RequiredAvailability = append([]string(nil), card.RequiredAvailability...)
+	card.AllowedTools = append([]string(nil), card.AllowedTools...)
+	card.ConditionalTools = cloneConditionalToolSets(card.ConditionalTools)
+	card.DeniedTools = append([]string(nil), card.DeniedTools...)
+	card.LoopPolicy = cloneLoopPolicy(card.LoopPolicy)
+	return card
+}
+
+func cloneConditionalToolSets(sets []ConditionalToolSet) []ConditionalToolSet {
+	out := make([]ConditionalToolSet, len(sets))
+	for i, set := range sets {
+		out[i] = set
+		out[i].Tools = append([]string(nil), set.Tools...)
+	}
+	return out
+}
+
+func profileCardsByPriority() []ProfileCard {
+	cards := make([]ProfileCard, len(profileCardCatalog))
+	for i, card := range profileCardCatalog {
+		cards[i] = cloneProfileCard(card)
+	}
+	sort.SliceStable(cards, func(i, j int) bool {
+		return cards[i].Priority < cards[j].Priority
+	})
+	return cards
 }
 
 func profilePrompt(profile Profile) string {
