@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/aura/aura/internal/sandbox"
@@ -11,31 +12,44 @@ import (
 
 // ExecuteCodeTool lets the LLM run Python code in Aura's isolated runtime.
 type ExecuteCodeTool struct {
-	manager     *sandbox.Manager
+	manager     sandbox.Executor
 	sender      DocumentSender
 	sourceStore source.Writer
 }
 
 // NewExecuteCodeTool creates the execute_code tool. Returns nil if manager
 // is nil (sandbox not available).
-func NewExecuteCodeTool(manager *sandbox.Manager) *ExecuteCodeTool {
+func NewExecuteCodeTool(manager sandbox.Executor) *ExecuteCodeTool {
 	return NewExecuteCodeToolWithStore(manager, nil, nil)
 }
 
 // NewExecuteCodeToolWithSender creates execute_code with optional artifact
 // delivery. The sender is used only when sandbox code emits artifacts.
-func NewExecuteCodeToolWithSender(manager *sandbox.Manager, sender DocumentSender) *ExecuteCodeTool {
+func NewExecuteCodeToolWithSender(manager sandbox.Executor, sender DocumentSender) *ExecuteCodeTool {
 	return NewExecuteCodeToolWithStore(manager, sender, nil)
 }
 
 // NewExecuteCodeToolWithStore creates execute_code with optional artifact
 // delivery and source persistence. The store is used only when sandbox code
 // emits artifacts.
-func NewExecuteCodeToolWithStore(manager *sandbox.Manager, sender DocumentSender, sourceStore source.Writer) *ExecuteCodeTool {
-	if manager == nil {
+func NewExecuteCodeToolWithStore(manager sandbox.Executor, sender DocumentSender, sourceStore source.Writer) *ExecuteCodeTool {
+	if isNilExecutor(manager) {
 		return nil
 	}
 	return &ExecuteCodeTool{manager: manager, sender: sender, sourceStore: sourceStore}
+}
+
+func isNilExecutor(manager sandbox.Executor) bool {
+	if manager == nil {
+		return true
+	}
+	v := reflect.ValueOf(manager)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 func (t *ExecuteCodeTool) Name() string { return "execute_code" }

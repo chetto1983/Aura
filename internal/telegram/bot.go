@@ -57,8 +57,8 @@ type Bot struct {
 	summRunner  *summarizer.Runner               // nil when SUMMARIZER_ENABLED=false
 	issues      scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
 	api         http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
-	sandboxMgr  *sandbox.Manager                 // nil when SANDBOX_ENABLED=false or runtime unavailable
-	toolReg     *tools.ToolRegistry              // persistent LLM-written Python tools
+	sandboxMgr  sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
+	toolReg     tools.ToolStore                  // persistent LLM-written Python tools
 	debugDocsMu sync.Mutex
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64

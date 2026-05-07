@@ -9,6 +9,13 @@ import (
 	"github.com/aura/aura/internal/sandbox"
 )
 
+var (
+	_ sandbox.Executor           = (*sandbox.Manager)(nil)
+	_ sandbox.CodeValidator      = (*sandbox.Manager)(nil)
+	_ sandbox.ExecutionRuntime   = (*sandbox.Manager)(nil)
+	_ sandbox.AvailabilityReader = (*sandbox.Manager)(nil)
+)
+
 func TestNewManager_RequiresRuntime(t *testing.T) {
 	_, err := sandbox.NewManager(sandbox.Config{})
 	if err == nil || !strings.Contains(err.Error(), "runtime is required") {

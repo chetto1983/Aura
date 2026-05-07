@@ -35,6 +35,31 @@ func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing
 	}
 }
 
+type fakeSandboxExecutor struct {
+	result *sandbox.Result
+	code   string
+}
+
+func (f *fakeSandboxExecutor) Execute(_ context.Context, code string, _ bool) (*sandbox.Result, error) {
+	f.code = code
+	return f.result, nil
+}
+
+func TestExecuteCodeToolAcceptsExecutorInterface(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{OK: true, Stdout: "ok", ExitCode: 0, ElapsedMs: 1}}
+	tool := tools.NewExecuteCodeTool(executor)
+	if tool == nil {
+		t.Fatal("expected execute_code tool")
+	}
+	out, err := tool.Execute(context.Background(), map[string]any{"code": "print('ok')"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if executor.code != "print('ok')" || !strings.Contains(out, "ok") {
+		t.Fatalf("code=%q out=%q", executor.code, out)
+	}
+}
+
 func TestExecuteCodeTool_DeliversArtifacts(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{

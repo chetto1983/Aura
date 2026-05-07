@@ -57,6 +57,29 @@ type Runtime interface {
 	ValidateCode(code string) error
 }
 
+// Executor is the narrow execute_code runtime surface.
+type Executor interface {
+	Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error)
+}
+
+// CodeValidator validates generated Python before execution or persistence.
+type CodeValidator interface {
+	ValidateCode(code string) error
+}
+
+// AvailabilityReader reports runtime health for dashboard/status surfaces.
+type AvailabilityReader interface {
+	RuntimeKind() RuntimeKind
+	CheckAvailability() Availability
+	IsAvailable() bool
+}
+
+// ExecutionRuntime is the Telegram auto-improve runtime surface.
+type ExecutionRuntime interface {
+	Executor
+	CodeValidator
+}
+
 // Availability describes whether the configured runtime can execute code.
 type Availability struct {
 	Available bool
