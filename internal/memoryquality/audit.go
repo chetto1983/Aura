@@ -20,6 +20,40 @@ type Options struct {
 	DBPath  string
 }
 
+type AuditDependencies struct {
+	WikiDir   string
+	DBPath    string
+	Wiki      WikiRepository
+	WikiFiles WikiFileLister
+	Index     IndexManifestReader
+}
+
+type WikiRepository interface {
+	wiki.PageReader
+	wiki.Linter
+	wiki.MemoryCleaner
+}
+
+type WikiFile struct {
+	Name  string
+	IsDir bool
+}
+
+type WikiFileLister interface {
+	ListWikiFiles(ctx context.Context) ([]WikiFile, error)
+}
+
+type IndexDocument struct {
+	ID       string
+	Content  string
+	Metadata string
+	Title    string
+}
+
+type IndexManifestReader interface {
+	ListIndexDocuments(ctx context.Context) ([]IndexDocument, error)
+}
+
 type IssueKind string
 
 const (
@@ -69,24 +103,55 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 	if opts.WikiDir == "" {
 		return Report{}, errors.New("memory quality: WikiDir required")
 	}
-	report := Report{WikiDir: opts.WikiDir, DBPath: strings.TrimSpace(opts.DBPath)}
 
 	store, err := wiki.NewStore(opts.WikiDir, nil)
 	if err != nil {
-		return report, err
+		return Report{WikiDir: opts.WikiDir, DBPath: strings.TrimSpace(opts.DBPath)}, err
 	}
-	pages, issues, err := scanWiki(ctx, store, opts.WikiDir)
+	deps := AuditDependencies{
+		WikiDir:   opts.WikiDir,
+		DBPath:    strings.TrimSpace(opts.DBPath),
+		Wiki:      store,
+		WikiFiles: DirectoryWikiFiles{Dir: opts.WikiDir},
+	}
+	if deps.DBPath != "" {
+		deps.Index = SQLiteIndexManifestReader{DBPath: deps.DBPath}
+	}
+	return AuditWithDependencies(ctx, deps)
+}
+
+func AuditWithDependencies(ctx context.Context, deps AuditDependencies) (Report, error) {
+	deps.WikiDir = strings.TrimSpace(deps.WikiDir)
+	if deps.WikiDir == "" {
+		return Report{}, errors.New("memory quality: WikiDir required")
+	}
+	report := Report{WikiDir: deps.WikiDir, DBPath: strings.TrimSpace(deps.DBPath)}
+	if deps.Wiki == nil {
+		return report, errors.New("memory quality: wiki repository required")
+	}
+	if deps.WikiFiles == nil {
+		return report, errors.New("memory quality: wiki file lister required")
+	}
+	pages, issues, err := scanWiki(ctx, deps.Wiki, deps.WikiFiles)
 	if err != nil {
 		return report, err
 	}
 	report.Issues = append(report.Issues, issues...)
 	report.Manifest = buildManifest(pages)
 
-	if report.DBPath != "" {
-		dbIssues, actual, err := auditSQLiteIndex(ctx, report.DBPath, expectedIndexIDs(pages))
+	if deps.Index != nil {
+		docs, err := deps.Index.ListIndexDocuments(ctx)
+		if errors.Is(err, errIndexMissing) {
+			report.Manifest.ActualIndexDocs = 0
+			report.Issues = append(report.Issues, Issue{Kind: KindIndexMissing, Severity: "high", Message: "wiki_documents index table is missing"})
+			sortIssues(report.Issues)
+			report.OK = len(report.Issues) == 0
+			return report, nil
+		}
 		if err != nil {
 			return report, err
 		}
+		dbIssues, actual := auditIndexDocuments(docs, expectedIndexIDs(pages))
 		report.Manifest.ActualIndexDocs = actual
 		report.Issues = append(report.Issues, dbIssues...)
 	}
@@ -96,7 +161,7 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 	return report, nil
 }
 
-func scanWiki(ctx context.Context, store *wiki.Store, wikiDir string) ([]pageRecord, []Issue, error) {
+func scanWiki(ctx context.Context, store WikiRepository, files WikiFileLister) ([]pageRecord, []Issue, error) {
 	var issues []Issue
 	lintIssues, err := store.Lint(ctx)
 	if err != nil {
@@ -127,15 +192,15 @@ func scanWiki(ctx context.Context, store *wiki.Store, wikiDir string) ([]pageRec
 		})
 	}
 
-	entries, err := os.ReadDir(wikiDir)
+	entries, err := files.ListWikiFiles(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir {
 			continue
 		}
-		name := entry.Name()
+		name := entry.Name
 		slug := strings.TrimSuffix(name, filepath.Ext(name))
 		if strings.HasSuffix(name, ".yaml") && !wiki.IsOperationalSlug(slug) {
 			issues = append(issues, Issue{Kind: KindLegacyYAML, Severity: "high", Ref: slug, Message: "legacy .yaml page must be migrated before memory closure"})
@@ -163,6 +228,22 @@ func scanWiki(ctx context.Context, store *wiki.Store, wikiDir string) ([]pageRec
 		}
 	}
 	return pages, issues, nil
+}
+
+type DirectoryWikiFiles struct {
+	Dir string
+}
+
+func (d DirectoryWikiFiles) ListWikiFiles(context.Context) ([]WikiFile, error) {
+	entries, err := os.ReadDir(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]WikiFile, 0, len(entries))
+	for _, entry := range entries {
+		files = append(files, WikiFile{Name: entry.Name(), IsDir: entry.IsDir()})
+	}
+	return files, nil
 }
 
 func rawLeakMessage(body string) string {
@@ -206,52 +287,66 @@ func expectedIndexIDs(pages []pageRecord) map[string]bool {
 	return out
 }
 
-func auditSQLiteIndex(ctx context.Context, dbPath string, expected map[string]bool) ([]Issue, int, error) {
-	db, err := auradb.Open(dbPath)
+type SQLiteIndexManifestReader struct {
+	DBPath string
+}
+
+func (r SQLiteIndexManifestReader) ListIndexDocuments(ctx context.Context) ([]IndexDocument, error) {
+	db, err := auradb.Open(r.DBPath)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer db.Close()
 	if err := db.PingContext(ctx); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if !tableExists(ctx, db, "wiki_documents") {
-		return []Issue{{Kind: KindIndexMissing, Severity: "high", Message: "wiki_documents index table is missing"}}, 0, nil
+		return nil, errIndexMissing
 	}
 
 	rows, err := db.QueryContext(ctx, `SELECT id, content, metadata, title FROM wiki_documents`)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	actual := map[string]bool{}
-	var issues []Issue
+	var docs []IndexDocument
 	for rows.Next() {
 		var id, content, metadata, title string
 		if err := rows.Scan(&id, &content, &metadata, &title); err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-		actual[id] = true
-		if !expected[id] {
-			issues = append(issues, Issue{Kind: KindUnexpectedIndexDoc, Severity: "critical", Ref: id, Message: "index contains document outside current wiki manifest"})
-		}
-		if rawLeakMessage(content) != "" {
-			issues = append(issues, Issue{Kind: KindRawLeak, Severity: "critical", Ref: id, Message: "indexed document contains raw OCR/source preview"})
-		}
-		if indexMetadataKind(metadata) == "raw" {
-			issues = append(issues, Issue{Kind: KindUnexpectedIndexDoc, Severity: "critical", Ref: id, Message: "index metadata marks document as raw"})
-		}
+		docs = append(docs, IndexDocument{ID: id, Content: content, Metadata: metadata, Title: title})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, err
+		return nil, err
+	}
+	return docs, nil
+}
+
+var errIndexMissing = errors.New("wiki_documents index table is missing")
+
+func auditIndexDocuments(docs []IndexDocument, expected map[string]bool) ([]Issue, int) {
+	actual := map[string]bool{}
+	var issues []Issue
+	for _, doc := range docs {
+		actual[doc.ID] = true
+		if !expected[doc.ID] {
+			issues = append(issues, Issue{Kind: KindUnexpectedIndexDoc, Severity: "critical", Ref: doc.ID, Message: "index contains document outside current wiki manifest"})
+		}
+		if rawLeakMessage(doc.Content) != "" {
+			issues = append(issues, Issue{Kind: KindRawLeak, Severity: "critical", Ref: doc.ID, Message: "indexed document contains raw OCR/source preview"})
+		}
+		if indexMetadataKind(doc.Metadata) == "raw" {
+			issues = append(issues, Issue{Kind: KindUnexpectedIndexDoc, Severity: "critical", Ref: doc.ID, Message: "index metadata marks document as raw"})
+		}
 	}
 	for id := range expected {
 		if !actual[id] {
 			issues = append(issues, Issue{Kind: KindMissingIndexDoc, Severity: "high", Ref: id, Message: "expected wiki/graph document is missing from index"})
 		}
 	}
-	return issues, len(actual), nil
+	return issues, len(actual)
 }
 
 func tableExists(ctx context.Context, db *sql.DB, name string) bool {

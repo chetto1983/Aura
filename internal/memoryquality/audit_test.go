@@ -3,12 +3,104 @@ package memoryquality
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/aura/aura/internal/wiki"
 	_ "modernc.org/sqlite"
 )
+
+var (
+	_ WikiRepository      = (*fakeAuditWiki)(nil)
+	_ WikiFileLister      = fakeWikiFiles(nil)
+	_ IndexManifestReader = fakeIndexDocs(nil)
+)
+
+type fakeAuditWiki struct {
+	pages  map[string]*wiki.Page
+	lint   []wiki.LintIssue
+	broken []wiki.BrokenLink
+}
+
+func (f *fakeAuditWiki) Lint(context.Context) ([]wiki.LintIssue, error) {
+	return append([]wiki.LintIssue(nil), f.lint...), nil
+}
+
+func (f *fakeAuditWiki) CleanMemory(context.Context, wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error) {
+	return &wiki.MemoryHygieneReport{Pages: len(f.pages), BrokenLinks: append([]wiki.BrokenLink(nil), f.broken...)}, nil
+}
+
+func (f *fakeAuditWiki) ListPages() ([]string, error) {
+	slugs := make([]string, 0, len(f.pages))
+	for slug := range f.pages {
+		slugs = append(slugs, slug)
+	}
+	return slugs, nil
+}
+
+func (f *fakeAuditWiki) ReadPage(slug string) (*wiki.Page, error) {
+	if page, ok := f.pages[slug]; ok {
+		cp := *page
+		return &cp, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+type fakeWikiFiles []WikiFile
+
+func (f fakeWikiFiles) ListWikiFiles(context.Context) ([]WikiFile, error) {
+	return append([]WikiFile(nil), f...), nil
+}
+
+type fakeIndexDocs []IndexDocument
+
+func (f fakeIndexDocs) ListIndexDocuments(context.Context) ([]IndexDocument, error) {
+	return append([]IndexDocument(nil), f...), nil
+}
+
+func TestAuditWithDependenciesAcceptsRepositoryInterfaces(t *testing.T) {
+	deps := AuditDependencies{
+		WikiDir: "mem://wiki",
+		DBPath:  "mem://index",
+		Wiki: &fakeAuditWiki{pages: map[string]*wiki.Page{
+			"aura-memory":                  {Title: "Aura Memory", Category: "project", Body: "Clean page."},
+			"source-4-5942613039617418204": {Title: "Source: opaque", Category: "sources", Body: "Compact source anchor."},
+		}},
+		WikiFiles: fakeWikiFiles{
+			{Name: "aura-memory.md"},
+			{Name: "source-4-5942613039617418204.md"},
+			{Name: "legacy.yaml"},
+		},
+		Index: fakeIndexDocs{
+			{ID: "aura-memory", Content: "Aura Memory\nClean page.", Metadata: `{"kind":"wiki_page"}`, Title: "Aura Memory"},
+			{ID: "raw:src_bad", Content: "raw OCR garbage", Metadata: `{"kind":"raw"}`, Title: "Raw"},
+		},
+	}
+
+	report, err := AuditWithDependencies(context.Background(), deps)
+	if err != nil {
+		t.Fatalf("AuditWithDependencies: %v", err)
+	}
+	if report.OK {
+		t.Fatalf("report.OK = true, want false")
+	}
+	if report.Manifest.WikiPages != 2 || report.Manifest.ActualIndexDocs != 2 {
+		t.Fatalf("manifest = %+v", report.Manifest)
+	}
+	for _, want := range []struct {
+		kind IssueKind
+		ref  string
+	}{
+		{KindSuspiciousPage, "source-4-5942613039617418204"},
+		{KindLegacyYAML, "legacy"},
+		{KindUnexpectedIndexDoc, "raw:src_bad"},
+	} {
+		if !hasIssue(report, want.kind, want.ref) {
+			t.Fatalf("missing issue kind=%s ref=%s: %+v", want.kind, want.ref, report.Issues)
+		}
+	}
+}
 
 func writeAuditPage(t *testing.T, store *wiki.Store, page *wiki.Page) string {
 	t.Helper()
