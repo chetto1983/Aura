@@ -15,7 +15,7 @@ import (
 	"github.com/aura/aura/internal/swarm"
 )
 
-func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *config.Config, runner *agent.Runner, manager *swarm.Manager, tracker *budget.Tracker, logger *slog.Logger) error {
+func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *config.Config, runner agent.LimitController, manager swarm.LimitController, tracker budget.Configurator, logger *slog.Logger) error {
 	if store == nil || cfg == nil {
 		return nil
 	}

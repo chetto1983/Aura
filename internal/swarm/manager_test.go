@@ -20,6 +20,8 @@ type fakeRunner struct {
 	calls     int
 }
 
+var _ LimitController = (*Manager)(nil)
+
 func (r *fakeRunner) Run(ctx context.Context, task agent.Task) (agent.Result, error) {
 	r.mu.Lock()
 	r.active++

@@ -29,6 +29,11 @@ type TaskResultReader interface {
 	ReadTask(ctx context.Context, taskID string) (*Task, error)
 }
 
+// LimitController is the live swarm concurrency/depth tuning surface.
+type LimitController interface {
+	UpdateLimits(maxActive, maxDepth int)
+}
+
 type Manager struct {
 	runner    AgentRunner
 	store     Repository

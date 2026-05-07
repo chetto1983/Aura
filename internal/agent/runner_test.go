@@ -20,6 +20,8 @@ type fakeLLM struct {
 	err      error
 }
 
+var _ LimitController = (*Runner)(nil)
+
 func (f *fakeLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

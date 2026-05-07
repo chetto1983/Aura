@@ -40,7 +40,7 @@ type Bot struct {
 	wiki        wiki.Repository
 	search      search.Searcher
 	tools       *tools.Registry
-	budget      *budget.Tracker
+	budget      budget.Runtime
 	sources     source.Repository
 	ocr         *ocr.Client
 	skills      *auraskills.Loader

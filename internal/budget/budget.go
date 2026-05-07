@@ -34,6 +34,37 @@ type Config struct {
 	LegacyCostPerTokenUSD float64 // compatibility with the old USD/token setting
 }
 
+// Gate is the preflight budget-check surface used before LLM calls.
+type Gate interface {
+	IsHardBudgetExceeded() bool
+	CanAfford(contextTokens int, expectedOutputTokens int) bool
+}
+
+// UsageRecorder records token usage emitted by LLM responses.
+type UsageRecorder interface {
+	RecordUsage(usage llm.TokenUsage)
+}
+
+// Reporter is the observability surface for status commands and warnings.
+type Reporter interface {
+	Status() Status
+	PredictCost(contextTokens int, expectedOutputTokens int) float64
+	ShouldNotifySoftBudget() bool
+}
+
+// Configurator applies live budget settings without resetting usage totals.
+type Configurator interface {
+	ApplyConfig(cfg Config)
+}
+
+// Runtime is the complete budget service contract used by Telegram.
+type Runtime interface {
+	Gate
+	UsageRecorder
+	Reporter
+	Configurator
+}
+
 // NewTracker creates a new budget tracker.
 func NewTracker(cfg Config, logger *slog.Logger) *Tracker {
 	inputPerM, outputPerM := normalizePrices(cfg)

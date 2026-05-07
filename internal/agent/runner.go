@@ -68,6 +68,11 @@ type Result struct {
 	Elapsed   time.Duration
 }
 
+// LimitController is the live runtime tuning surface for a runner.
+type LimitController interface {
+	UpdateLimits(maxIterations int, timeout time.Duration, toolTimeout time.Duration)
+}
+
 func NewRunner(cfg Config) (*Runner, error) {
 	if cfg.LLM == nil {
 		return nil, errors.New("agent runner: llm client required")

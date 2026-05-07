@@ -8,6 +8,14 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
+var (
+	_ Gate          = (*Tracker)(nil)
+	_ UsageRecorder = (*Tracker)(nil)
+	_ Reporter      = (*Tracker)(nil)
+	_ Configurator  = (*Tracker)(nil)
+	_ Runtime       = (*Tracker)(nil)
+)
+
 func newTestTracker(soft, hard, inputPerM, outputPerM float64) *Tracker {
 	return NewTracker(Config{
 		SoftBudget:           soft,
