@@ -275,13 +275,13 @@ Create a small taxonomy. Do not route on raw skill names alone.
 
 ### Phase 1: Capability Taxonomy
 
-- [ ] Write failing tests in `internal/orchestration/capabilities_test.go` for all capability families.
-- [ ] Create `internal/orchestration/capabilities.go`.
-- [ ] Map existing tool names to capabilities.
-- [ ] Map each capability to valid profiles.
-- [ ] Add stale alias tests for old worker names and obsolete `.yaml` skill refs.
-- [ ] Run `go test ./internal/orchestration -count=1`.
-- [ ] Commit: `feat: add orchestration capability taxonomy`.
+- [x] Write failing tests in `internal/orchestration/capabilities_test.go` for all capability families.
+- [x] Create `internal/orchestration/capabilities.go`.
+- [x] Map existing tool names to capabilities.
+- [x] Map each capability to valid profiles.
+- [x] Add stale alias tests for old worker names and obsolete `.yaml` skill refs.
+- [x] Run `go test ./internal/orchestration -count=1`.
+- [x] Commit: `feat: add orchestration capability taxonomy`.
 
 ### Phase 2: Skill Manifest And Preflight Policy
 
