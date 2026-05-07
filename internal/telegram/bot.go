@@ -46,7 +46,7 @@ type Bot struct {
 	skills      *auraskills.Loader
 	docs        *docHandler
 	sched       *scheduler.Scheduler
-	schedDB     *scheduler.Store
+	schedDB     scheduler.AgentJobRepository
 	agentRunner *agent.Runner
 	swarmStore  *swarm.Store
 	swarmMgr    *swarm.Manager

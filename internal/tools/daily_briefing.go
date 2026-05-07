@@ -17,7 +17,7 @@ const dailyBriefingMaxChars = 8000
 // DailyBriefingTool composes the read-only stores that matter for the
 // everyday "what needs my attention?" question.
 type DailyBriefingTool struct {
-	tasks     *scheduler.Store
+	tasks     scheduler.TaskReader
 	sources   *source.Store
 	summaries *summarizer.SummariesStore
 	issues    *scheduler.IssuesStore
@@ -27,7 +27,7 @@ type DailyBriefingTool struct {
 }
 
 func NewDailyBriefingTool(
-	tasks *scheduler.Store,
+	tasks scheduler.TaskReader,
 	sources *source.Store,
 	summaries *summarizer.SummariesStore,
 	issues *scheduler.IssuesStore,

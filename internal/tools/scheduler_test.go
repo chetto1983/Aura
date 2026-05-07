@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,58 @@ func (r *fakeRunTaskNowRunner) RunTaskNow(_ context.Context, name string) (RunTa
 		ElapsedMS: 123,
 		Notified:  true,
 	}, nil
+}
+
+type fakeSchedulerRepository struct {
+	tasks     map[string]*scheduler.Task
+	cancelled []string
+}
+
+func (f *fakeSchedulerRepository) Upsert(_ context.Context, task *scheduler.Task) (*scheduler.Task, error) {
+	if f.tasks == nil {
+		f.tasks = make(map[string]*scheduler.Task)
+	}
+	cp := *task
+	if cp.ID == 0 {
+		cp.ID = int64(len(f.tasks) + 1)
+	}
+	cp.Status = scheduler.StatusActive
+	f.tasks[cp.Name] = &cp
+	return &cp, nil
+}
+
+func (f *fakeSchedulerRepository) GetByName(_ context.Context, name string) (*scheduler.Task, error) {
+	if task, ok := f.tasks[name]; ok {
+		cp := *task
+		return &cp, nil
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (f *fakeSchedulerRepository) List(_ context.Context, status scheduler.Status) ([]*scheduler.Task, error) {
+	var out []*scheduler.Task
+	for _, task := range f.tasks {
+		if status != "" && task.Status != status {
+			continue
+		}
+		cp := *task
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
+func (f *fakeSchedulerRepository) Cancel(_ context.Context, name string) (bool, error) {
+	if task, ok := f.tasks[name]; ok && task.Status == scheduler.StatusActive {
+		task.Status = scheduler.StatusCancelled
+		f.cancelled = append(f.cancelled, name)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (f *fakeSchedulerRepository) Delete(_ context.Context, name string) error {
+	delete(f.tasks, name)
+	return nil
 }
 
 func newTestSchedStore(t *testing.T) *scheduler.Store {
@@ -59,6 +112,41 @@ func TestRunTaskNowTool_ExecutesNamedTask(t *testing.T) {
 	}
 	if !result.OK || result.Name != "morning-watch" || result.Status != "completed" || !result.Notified {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestSchedulerToolsAcceptRepositoryInterface(t *testing.T) {
+	repo := &fakeSchedulerRepository{}
+	scheduleTool := NewScheduleTaskTool(repo, time.UTC)
+	out, err := scheduleTool.Execute(WithUserID(t.Context(), "12345"), map[string]any{
+		"name":    "fake-reminder",
+		"kind":    "reminder",
+		"payload": "check fake repo",
+		"in":      "10m",
+	})
+	if err != nil {
+		t.Fatalf("schedule Execute: %v", err)
+	}
+	if !strings.Contains(out, "fake-reminder") {
+		t.Fatalf("schedule output = %q", out)
+	}
+
+	listTool := NewListTasksTool(repo)
+	out, err = listTool.Execute(t.Context(), map[string]any{"status": "active"})
+	if err != nil {
+		t.Fatalf("list Execute: %v", err)
+	}
+	if !strings.Contains(out, "`fake-reminder`") {
+		t.Fatalf("list output = %q", out)
+	}
+
+	cancelTool := NewCancelTaskTool(repo)
+	out, err = cancelTool.Execute(t.Context(), map[string]any{"name": "fake-reminder"})
+	if err != nil {
+		t.Fatalf("cancel Execute: %v", err)
+	}
+	if !strings.Contains(out, "Cancelled task \"fake-reminder\"") || len(repo.cancelled) != 1 {
+		t.Fatalf("cancel output=%q cancelled=%v", out, repo.cancelled)
 	}
 }
 

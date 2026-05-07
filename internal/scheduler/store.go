@@ -20,6 +20,47 @@ type Store struct {
 	owned bool
 }
 
+// TaskReader is the read side used by dashboards, LLM tools, and wake guards.
+type TaskReader interface {
+	GetByName(ctx context.Context, name string) (*Task, error)
+	List(ctx context.Context, statusFilter Status) ([]*Task, error)
+}
+
+// TaskWriter is the task mutation side used by dashboards and LLM tools.
+type TaskWriter interface {
+	Upsert(ctx context.Context, t *Task) (*Task, error)
+	Cancel(ctx context.Context, name string) (bool, error)
+	Delete(ctx context.Context, name string) error
+}
+
+// Repository is the ordinary task store boundary for read/write task flows.
+type Repository interface {
+	TaskReader
+	TaskWriter
+}
+
+// RuntimeRepository is the narrower tick-loop persistence boundary. It is
+// separate from Repository so future stores can keep scheduler execution
+// internals out of ordinary dashboard/tool fakes.
+type RuntimeRepository interface {
+	DueTasks(ctx context.Context, now time.Time) ([]*Task, error)
+	MarkFired(ctx context.Context, id int64, lastRun, nextRun time.Time, status Status, lastErr string) error
+}
+
+// ManualRunRecorder persists extra agent-job execution metadata without
+// changing the task's schedule.
+type ManualRunRecorder interface {
+	RecordManualRun(ctx context.Context, id int64, lastRun time.Time, lastErr string) error
+	RecordAgentJobResult(ctx context.Context, id int64, output, metricsJSON, wakeSignature string) error
+}
+
+// AgentJobRepository is the Telegram runtime surface for manual agent-job
+// execution and wake-signature history.
+type AgentJobRepository interface {
+	TaskReader
+	ManualRunRecorder
+}
+
 // OpenStore opens (or creates) the SQLite file at path and applies the
 // scheduler schema. The caller is responsible for closing the returned
 // Store.

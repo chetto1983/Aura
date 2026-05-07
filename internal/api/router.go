@@ -45,18 +45,6 @@ type SourceStore interface {
 	Update(id string, mutator func(*source.Source) error) (*source.Source, error)
 }
 
-// SchedulerStore is the surface for scheduler.Store. Upsert/Cancel/Delete
-// are used by the write endpoints (POST /tasks, /tasks/{name}/cancel,
-// /tasks/{name}/delete); they live in the same interface so Deps wiring
-// stays a single field.
-type SchedulerStore interface {
-	List(ctx context.Context, statusFilter scheduler.Status) ([]*scheduler.Task, error)
-	GetByName(ctx context.Context, name string) (*scheduler.Task, error)
-	Upsert(ctx context.Context, t *scheduler.Task) (*scheduler.Task, error)
-	Cancel(ctx context.Context, name string) (bool, error)
-	Delete(ctx context.Context, name string) error
-}
-
 // SwarmStore is the read-side surface for AuraBot run/task observability.
 type SwarmStore interface {
 	ListRuns(ctx context.Context, limit int) ([]swarm.Run, error)
@@ -84,7 +72,7 @@ type BackupService interface {
 type Deps struct {
 	Wiki        WikiStore
 	Sources     SourceStore
-	Scheduler   SchedulerStore
+	Scheduler   scheduler.Repository
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
 	Extractor   source.PyodideRunner

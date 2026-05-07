@@ -19,7 +19,7 @@ type Dispatcher func(ctx context.Context, task *Task) error
 
 // Config wires a scheduler to its store, dispatcher, and timing knobs.
 type Config struct {
-	Store        *Store
+	Store        RuntimeRepository
 	Dispatcher   Dispatcher
 	Logger       *slog.Logger
 	Location     *time.Location // defaults to time.Local
@@ -33,7 +33,7 @@ type Config struct {
 // state lives in SQLite — Start() picks up where the previous run left
 // off.
 type Scheduler struct {
-	store      *Store
+	store      RuntimeRepository
 	dispatcher Dispatcher
 	logger     *slog.Logger
 	loc        *time.Location

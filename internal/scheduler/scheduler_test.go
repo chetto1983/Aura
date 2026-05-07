@@ -12,6 +12,15 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 )
 
+var (
+	_ TaskReader         = (*Store)(nil)
+	_ TaskWriter         = (*Store)(nil)
+	_ Repository         = (*Store)(nil)
+	_ RuntimeRepository  = (*Store)(nil)
+	_ ManualRunRecorder  = (*Store)(nil)
+	_ AgentJobRepository = (*Store)(nil)
+)
+
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "scheduler.db")

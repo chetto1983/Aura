@@ -94,11 +94,11 @@ func (t *RunTaskNowTool) Execute(ctx context.Context, args map[string]any) (stri
 // wiki_maintenance (runs the autonomous wiki pass), and agent_job (runs a
 // bounded propose-only agent routine).
 type ScheduleTaskTool struct {
-	store *scheduler.Store
+	store scheduler.Repository
 	loc   *time.Location
 }
 
-func NewScheduleTaskTool(store *scheduler.Store, loc *time.Location) *ScheduleTaskTool {
+func NewScheduleTaskTool(store scheduler.Repository, loc *time.Location) *ScheduleTaskTool {
 	if loc == nil {
 		loc = time.Local
 	}
@@ -308,10 +308,10 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 // ListTasksTool surfaces every task in the scheduler. Output is sorted
 // by next_run_at so the LLM sees the next-up entry first.
 type ListTasksTool struct {
-	store *scheduler.Store
+	store scheduler.TaskReader
 }
 
-func NewListTasksTool(store *scheduler.Store) *ListTasksTool {
+func NewListTasksTool(store scheduler.TaskReader) *ListTasksTool {
 	return &ListTasksTool{store: store}
 }
 
@@ -413,10 +413,10 @@ func formatScheduleForUser(task *scheduler.Task, when string) string {
 // CancelTaskTool flips an active task to status='cancelled' so the
 // scheduler ignores it.
 type CancelTaskTool struct {
-	store *scheduler.Store
+	store scheduler.TaskWriter
 }
 
-func NewCancelTaskTool(store *scheduler.Store) *CancelTaskTool {
+func NewCancelTaskTool(store scheduler.TaskWriter) *CancelTaskTool {
 	return &CancelTaskTool{store: store}
 }
 
