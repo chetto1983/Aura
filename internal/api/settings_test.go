@@ -279,6 +279,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 		t.Fatal("QDRANT_API_KEY not in settings response")
 	}
 	foundBackend := false
+	foundTimeout := false
 	for _, it := range resp.Items {
 		if it.Key != settings.KeySearchBackend {
 			continue
@@ -290,6 +291,18 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 	if !foundBackend {
 		t.Fatal("SEARCH_BACKEND not in settings response")
+	}
+	for _, it := range resp.Items {
+		if it.Key != settings.KeySpeculativeSearchTimeoutMS {
+			continue
+		}
+		foundTimeout = true
+		if it.Kind != "int" || it.Value != "1500" || it.ReadOnly {
+			t.Fatalf("SPECULATIVE_SEARCH_TIMEOUT_MS control = kind:%q value:%q readonly:%v", it.Kind, it.Value, it.ReadOnly)
+		}
+	}
+	if !foundTimeout {
+		t.Fatal("SPECULATIVE_SEARCH_TIMEOUT_MS not in settings response")
 	}
 }
 

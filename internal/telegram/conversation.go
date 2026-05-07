@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/orchestration"
@@ -102,12 +103,8 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// embed call but save the round-trip. The explicit search_wiki tool
 	// stays available for follow-up queries the model wants to refine.
 	// Picobot equivalent: internal/agent/context.go ranker injection.
-	if b.search != nil && b.search.IsIndexed() {
-		if results, err := b.search.Search(context.Background(), userText, 5); err == nil && len(results) > 0 {
-			convCtx.SetSearchContext(search.FormatResults(results))
-		} else if err != nil {
-			b.logger.Debug("speculative wiki search failed", "user_id", userID, "error", err)
-		}
+	if contextText := runSpeculativeSearch(context.Background(), b.search, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID); contextText != "" {
+		convCtx.SetSearchContext(contextText)
 	}
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
@@ -251,6 +248,36 @@ func (b *Bot) proposalToolsAvailable() bool {
 
 func (b *Bot) sandboxToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("execute_code") != nil
+}
+
+func runSpeculativeSearch(ctx context.Context, repo search.Searcher, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
+	if repo == nil || !repo.IsIndexed() {
+		return ""
+	}
+	timeout := speculativeSearchTimeout(timeoutMS)
+	searchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	start := time.Now()
+	results, err := repo.Search(searchCtx, userText, 5)
+	if err == nil && len(results) > 0 {
+		return search.FormatResults(results)
+	}
+	if err != nil && logger != nil {
+		logger.Debug("speculative wiki search failed",
+			"user_id", userID,
+			"error", err,
+			"timeout_ms", timeout.Milliseconds(),
+			"elapsed_ms", time.Since(start).Milliseconds(),
+		)
+	}
+	return ""
+}
+
+func speculativeSearchTimeout(timeoutMS int) time.Duration {
+	if timeoutMS <= 0 {
+		timeoutMS = config.DefaultSpeculativeSearchTimeoutMS
+	}
+	return time.Duration(timeoutMS) * time.Millisecond
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
