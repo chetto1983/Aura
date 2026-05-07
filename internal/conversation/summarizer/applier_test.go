@@ -129,6 +129,93 @@ func TestAutoApplier_ActionSkip_WritesLogOnly(t *testing.T) {
 	}
 }
 
+// === AutoLowRiskApplier tests ===
+
+func TestAutoLowRiskApplier_HighConfidenceSafeFactWritesWiki(t *testing.T) {
+	db := newReviewDB(t)
+	ws := &fakeWikiStore{}
+	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
+	if err != nil {
+		t.Fatalf("NewAutoLowRiskApplier: %v", err)
+	}
+
+	decision := makeDecision(summarizer.ActionNew, "")
+	decision.Candidate.Fact = "Davide prefers automatic memory capture for safe project preferences"
+	decision.Candidate.Category = "preference"
+	decision.Candidate.Score = 0.95
+	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+		t.Fatalf("ApplyForChat: %v", err)
+	}
+
+	if len(ws.written) != 1 {
+		t.Fatalf("wiki writes = %d, want 1", len(ws.written))
+	}
+	var proposals int
+	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates").Scan(&proposals)
+	if proposals != 0 {
+		t.Fatalf("review proposals = %d, want 0", proposals)
+	}
+}
+
+func TestAutoLowRiskApplier_LowConfidenceFallsBackToReview(t *testing.T) {
+	db := newReviewDB(t)
+	ws := &fakeWikiStore{}
+	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
+	if err != nil {
+		t.Fatalf("NewAutoLowRiskApplier: %v", err)
+	}
+
+	decision := makeDecision(summarizer.ActionNew, "")
+	decision.Candidate.Score = 0.84
+	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+		t.Fatalf("ApplyForChat: %v", err)
+	}
+
+	if len(ws.written) != 0 {
+		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
+	}
+	var proposals int
+	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
+	if proposals != 1 {
+		t.Fatalf("review proposals = %d, want 1", proposals)
+	}
+}
+
+func TestAutoLowRiskApplier_SensitiveFactFallsBackToReview(t *testing.T) {
+	db := newReviewDB(t)
+	ws := &fakeWikiStore{}
+	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
+	if err != nil {
+		t.Fatalf("NewAutoLowRiskApplier: %v", err)
+	}
+
+	decision := makeDecision(summarizer.ActionNew, "")
+	decision.Candidate.Fact = "Davide's API key token is sk-test-123"
+	decision.Candidate.Category = "credential"
+	decision.Candidate.Score = 1.0
+	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+		t.Fatalf("ApplyForChat: %v", err)
+	}
+
+	if len(ws.written) != 0 {
+		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
+	}
+	var proposals int
+	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
+	if proposals != 1 {
+		t.Fatalf("review proposals = %d, want 1", proposals)
+	}
+}
+
+func TestNewAutoLowRiskApplierRejectsMissingDependencies(t *testing.T) {
+	if _, err := summarizer.NewAutoLowRiskApplier(nil, newReviewDB(t)); err == nil {
+		t.Fatal("NewAutoLowRiskApplier(nil, db) error = nil, want error")
+	}
+	if _, err := summarizer.NewAutoLowRiskApplier(&fakeWikiStore{}, nil); err == nil {
+		t.Fatal("NewAutoLowRiskApplier(wiki, nil) error = nil, want error")
+	}
+}
+
 // === ReviewApplier tests ===
 
 func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {

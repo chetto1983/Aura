@@ -300,6 +300,53 @@ func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
 	}
 }
 
+func TestOpenAIClientStreamKeepsUsageAfterFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		chunks := []string{
+			`{"choices":[{"delta":{"content":"ok"}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":2,"total_tokens":13}}`,
+			`[DONE]`,
+		}
+		for _, c := range chunks {
+			w.Write([]byte("data: " + c + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4"})
+	ch, err := client.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+
+	var content string
+	var usage TokenUsage
+	for tok := range ch {
+		if tok.Err != nil {
+			t.Fatalf("token error: %v", tok.Err)
+		}
+		if tok.Done {
+			usage = tok.Usage
+			break
+		}
+		content += tok.Content
+	}
+
+	if content != "ok" {
+		t.Fatalf("content = %q, want ok", content)
+	}
+	if usage.PromptTokens != 11 || usage.CompletionTokens != 2 || usage.TotalTokens != 13 {
+		t.Fatalf("usage = %+v, want 11/2/13", usage)
+	}
+}
+
 func TestOpenAIClientStreamAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

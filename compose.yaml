@@ -47,7 +47,7 @@ services:
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_TOOL_PROFILE_MODE: "auto"
       AURA_SKILL_PREFLIGHT: "required"
-      SUMMARIZER_MODE: "review"
+      SUMMARIZER_MODE: "auto_low_risk"
       SUMMARIZER_TURN_INTERVAL: "2"
       SUMMARIZER_COOLDOWN_SECONDS: "0"
     ports:

@@ -417,10 +417,10 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 				a.argsBuf.WriteString(tc.Function.Arguments)
 			}
 		}
-		if choice.FinishReason != nil {
-			finish()
-			return
-		}
+		// Do not finish on finish_reason alone. OpenAI-compatible streams can
+		// send the usage summary in a later empty-choices chunk, followed by
+		// [DONE]. Returning here would drop token/cost accounting for providers
+		// that honor stream_options.include_usage.
 	}
 
 	if err := scanner.Err(); err != nil {

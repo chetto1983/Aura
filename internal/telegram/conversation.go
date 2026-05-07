@@ -618,8 +618,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
 		b.storeOrchestrationSnapshot(userID, stats)
 		if execution.fatalResult != "" {
-			convCtx.AddAssistantMessage(execution.fatalResult)
-			return execution.fatalResult, stats
+			response := userFacingFatalToolResult(execution.fatalResult)
+			convCtx.AddAssistantMessage(response)
+			return response, stats
 		}
 		if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
 			stats.terminalSwarm = true
@@ -678,9 +679,10 @@ func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *con
 		stats.terminalTool = execution.terminalTool
 	}
 	if execution.fatalResult != "" {
-		convCtx.AddAssistantMessage(execution.fatalResult)
+		response := userFacingFatalToolResult(execution.fatalResult)
+		convCtx.AddAssistantMessage(response)
 		b.storeOrchestrationSnapshot(userID, stats)
-		return execution.fatalResult, stats
+		return response, stats
 	}
 	stats.terminalSwarm = true
 	stats.swarmFinalization = swarmResearchFinalization()
@@ -1276,6 +1278,17 @@ func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
 		outputPerM = cfg.CostOutputPerMTokens
 	}
 	return usage, estimateUsageCost(usage, inputPerM, outputPerM)
+}
+
+func userFacingFatalToolResult(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.Contains(trimmed, "not exposed in the active tool profile") {
+		if strings.Contains(trimmed, "write_wiki") {
+			return "Non posso usare write_wiki nel profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
+		}
+		return "Uno strumento richiesto non e' disponibile nel profilo attivo. Ho fermato l'azione invece di usare un permesso non esposto."
+	}
+	return raw
 }
 
 func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {

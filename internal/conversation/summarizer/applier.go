@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -114,6 +115,81 @@ func containsStr(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// ---- AutoLowRiskApplier ----
+
+const defaultAutoLowRiskMinScore = 0.85
+
+// AutoLowRiskApplier writes low-risk high-confidence memory directly to the
+// wiki and sends everything else through the review queue.
+type AutoLowRiskApplier struct {
+	auto     *AutoApplier
+	review   *ReviewApplier
+	minScore float64
+}
+
+// NewAutoLowRiskApplier returns a conservative hybrid applier backed by the
+// wiki writer and review queue database.
+func NewAutoLowRiskApplier(w WikiWriter, db *sql.DB) (*AutoLowRiskApplier, error) {
+	if w == nil {
+		return nil, errors.New("auto low risk applier: wiki writer required")
+	}
+	review, err := NewReviewApplier(db)
+	if err != nil {
+		return nil, err
+	}
+	return &AutoLowRiskApplier{
+		auto:     NewAutoApplier(w),
+		review:   review,
+		minScore: defaultAutoLowRiskMinScore,
+	}, nil
+}
+
+func (a *AutoLowRiskApplier) Apply(ctx context.Context, d Decision) error {
+	return a.ApplyForChat(ctx, 0, d)
+}
+
+func (a *AutoLowRiskApplier) ApplyForChat(ctx context.Context, chatID int64, d Decision) error {
+	if a == nil {
+		return errors.New("auto low risk applier: nil receiver")
+	}
+	if d.Action == ActionSkip {
+		return a.auto.Apply(ctx, d)
+	}
+	if autoLowRiskDecision(d, a.minScore) {
+		return a.auto.Apply(ctx, d)
+	}
+	return a.review.ApplyForChat(ctx, chatID, d)
+}
+
+var sensitiveFactPattern = regexp.MustCompile(`(?i)\b(api[_ -]?key|bearer|credential|password|passphrase|secret|token|private[_ -]?key|ssh[_ -]?key|seed phrase|recovery phrase|otp|2fa|social security|ssn|codice fiscale|iban|credit card|carta di credito|email|e-mail|phone|telefono|address|indirizzo|diagnos|medical|health|salute|legal|lawyer|avvocato|salary|stipendio|bank|banca)\b`)
+
+func autoLowRiskDecision(d Decision, minScore float64) bool {
+	if !IsWikiAction(d.Action.String()) || d.Action == ActionSkip {
+		return false
+	}
+	fact := strings.TrimSpace(d.Candidate.Fact)
+	if fact == "" || len(fact) > 500 || d.Candidate.Score < minScore {
+		return false
+	}
+	if autoLowRiskSensitiveCategory(d.Candidate.Category) {
+		return false
+	}
+	if sensitiveFactPattern.MatchString(fact) {
+		return false
+	}
+	return true
+}
+
+func autoLowRiskSensitiveCategory(category string) bool {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "secret", "credential", "credentials", "token", "api_key", "password",
+		"health", "medical", "finance", "financial", "legal", "contact", "personal_contact", "pii":
+		return true
+	default:
+		return false
+	}
 }
 
 // ---- ReviewApplier ----

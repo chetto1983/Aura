@@ -108,7 +108,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 			key:       KeySummarizerMode,
 			value:     config.DefaultSummarizerMode,
 			reason:    "repair invalid memory capture mode",
-			shouldSet: missingOrInvalidSet("off", "review", "auto"),
+			shouldSet: missingOrInvalidSet("off", "review", "auto_low_risk", "auto"),
 		},
 		{
 			key:       KeyToolProfileMode,
@@ -160,7 +160,7 @@ func migrationRules(cfg *config.Config) []defaultRule {
 		{
 			key:       KeySummarizerMode,
 			value:     config.DefaultSummarizerMode,
-			reason:    "move old direct-write memory capture to review-gated default",
+			reason:    "move old direct-write memory capture to low-risk automatic default",
 			shouldSet: valueIs("auto"),
 		},
 		{

@@ -444,6 +444,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		switch cfg.SummarizerMode {
 		case "auto":
 			applier = summarizer.NewAutoApplier(wikiStore)
+		case "auto_low_risk":
+			hybrid, err := summarizer.NewAutoLowRiskApplier(wikiStore, schedStore.DB())
+			if err != nil {
+				logger.Warn("auto low risk applier unavailable", "error", err)
+			} else {
+				applier = hybrid
+			}
 		case "review":
 			ra, err := summarizer.NewReviewApplier(schedStore.DB())
 			if err != nil {

@@ -53,6 +53,7 @@ func TestSelectProfileAutoRoutesSwarmSandboxDocumentAndMemory(t *testing.T) {
 		{name: "document english report", text: "create a report from the documents you have", want: ProfileDocument},
 		{name: "document italian report", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ProfileDocument},
 		{name: "memory english remember", text: "remember this note in memory for the Aura project", want: ProfileMemory},
+		{name: "memory capture review gate", text: "auto_low_risk memory capture should keep risky memory review-gated", want: ProfileMemory},
 		{name: "memory italian save", text: "salva questa nota nella memoria di Aura", want: ProfileMemory},
 		{name: "admin english dashboard settings", text: "review the dashboard settings and admin approval queue", want: ProfileAdminReview},
 		{name: "admin italian settings", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ProfileAdminReview},
@@ -168,6 +169,26 @@ func TestComposePromptOnlyMentionsSkillPreflightWhenSkillToolsExposed(t *testing
 	sb := ComposePrompt(withProfile(base, ProfileSandboxCompute))
 	if !strings.Contains(sb.Content, "## Available Skills") || !strings.Contains(sb.Content, "Skill Preflight") {
 		t.Fatalf("sandbox prompt missing exposed skill guidance:\n%s", sb.Content)
+	}
+}
+
+func TestComposePromptDefersCurrentTurnMemoryToPostTurnCapture(t *testing.T) {
+	plan := ComposePrompt(PromptInput{
+		Version:           VersionAuraAgentV1,
+		Now:               time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC),
+		Location:          time.UTC,
+		ProposalAvailable: true,
+		Profile:           ProfileAdminReview,
+	})
+
+	for _, want := range []string{
+		"automatic post-turn memory capture",
+		"Never call write_wiki in this profile",
+		"answer normally",
+	} {
+		if !strings.Contains(plan.Content, want) {
+			t.Fatalf("admin review prompt missing %q:\n%s", want, plan.Content)
+		}
 	}
 }
 

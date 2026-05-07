@@ -17,7 +17,7 @@ const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillPreflight = "required"
-const DefaultSummarizerMode = "review"
+const DefaultSummarizerMode = "auto_low_risk"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
 const (
@@ -299,7 +299,7 @@ func normalizeSkillPreflight(value string) string {
 
 func NormalizeSummarizerMode(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "off", "review", "auto":
+	case "off", "review", "auto_low_risk", "auto":
 		return normalized
 	default:
 		return DefaultSummarizerMode

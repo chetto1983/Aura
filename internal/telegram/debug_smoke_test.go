@@ -229,6 +229,17 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	}
 }
 
+func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteWiki(t *testing.T) {
+	raw := tools.FormatFatalToolError(errors.New(`tool "write_wiki" is not exposed in the active tool profile`))
+	got := userFacingFatalToolResult(raw)
+	if strings.Contains(got, `"ok":false`) || strings.Contains(got, `"retryable":false`) {
+		t.Fatalf("user-facing result leaked raw tool JSON: %q", got)
+	}
+	if !strings.Contains(got, "write_wiki") || !strings.Contains(got, "cattura automatica") {
+		t.Fatalf("user-facing result = %q, want write_wiki/capture explanation", got)
+	}
+}
+
 func TestExecuteToolCallsRequiresApplicableSkillBeforeProtectedTool(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}

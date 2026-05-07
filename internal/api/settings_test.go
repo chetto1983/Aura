@@ -395,7 +395,7 @@ func TestSettingsList_ShowsPostTurnMemoryCaptureDefaults(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	want := map[string]string{
-		settings.KeySummarizerMode:            "review",
+		settings.KeySummarizerMode:            config.DefaultSummarizerMode,
 		settings.KeySummarizerTurnInterval:    "2",
 		settings.KeySummarizerCooldownSeconds: "0",
 	}
@@ -414,6 +414,32 @@ func TestSettingsList_ShowsPostTurnMemoryCaptureDefaults(t *testing.T) {
 			t.Fatalf("%s not in settings response", key)
 		}
 	}
+}
+
+func TestSettingsList_SummarizerModeIncludesAutoLowRisk(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings:      store,
+		RuntimeConfig: &config.Config{SummarizerMode: config.DefaultSummarizerMode},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	for _, it := range resp.Items {
+		if it.Key != settings.KeySummarizerMode {
+			continue
+		}
+		if it.Kind != "enum" || !slices.Contains(it.Options, "auto_low_risk") {
+			t.Fatalf("SUMMARIZER_MODE control = kind:%q options:%v, want auto_low_risk enum option", it.Kind, it.Options)
+		}
+		return
+	}
+	t.Fatal("SUMMARIZER_MODE not in settings response")
 }
 
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {

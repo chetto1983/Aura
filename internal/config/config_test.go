@@ -367,6 +367,15 @@ func TestLoadSummarizerModeCanDisableAutomaticCapture(t *testing.T) {
 	}
 }
 
+func TestNormalizeSummarizerModeAcceptsAutoLowRisk(t *testing.T) {
+	if got := NormalizeSummarizerMode(" AUTO_LOW_RISK "); got != "auto_low_risk" {
+		t.Fatalf("NormalizeSummarizerMode(auto_low_risk) = %q", got)
+	}
+	if got := NormalizeSummarizerMode("nonsense"); got != DefaultSummarizerMode {
+		t.Fatalf("NormalizeSummarizerMode(nonsense) = %q, want default %q", got, DefaultSummarizerMode)
+	}
+}
+
 func TestLoadQdrantConfig(t *testing.T) {
 	os.Setenv("QDRANT_URL", "http://qdrant:6333")
 	os.Setenv("QDRANT_COLLECTION", "aura_memory_v2")

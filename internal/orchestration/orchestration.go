@@ -294,7 +294,7 @@ var profileCardCatalog = []ProfileCard{
 		Priority: 40,
 		PositiveCues: []string{
 			"facciamo il punto", "pipeline", "tutta la pipeline", "tutta la memoria", "tutto il repo",
-			"cosa manca", "what is missing", "audit", "review", "mappa", "roadmap", "quality",
+			"cosa manca", "what is missing", "audit", "review all", "deep review", "mappa", "roadmap", "quality",
 			"qualita", "consolidation", "consolidamento", "analyze all memory", "analyse all memory",
 			"review all memory", "audit all memory", "map all memory", "analyze the wiki",
 			"analyse the wiki", "review the wiki", "across the knowledge base", "whole knowledge base",
@@ -305,6 +305,7 @@ var profileCardCatalog = []ProfileCard{
 			"csv", "grafico", "chart", "write_wiki", "scrivi", "scrivere", "salva", "ricorda",
 			"remember", "save", "crea", "create", "genera", "generate", "installa", "install",
 			"delete", "cancella", "rimuovi", "schedule", "program", "ricordami", "invia", "send",
+			"memory capture", "post-turn", "auto_low_risk", "review-gated", "reviewable proposals",
 		},
 		RequiredAvailability: []string{"swarm"},
 		AvailabilityFallback: ProfileMemory,
@@ -503,9 +504,9 @@ func profilePrompt(profile Profile) string {
 	case ProfileDocument:
 		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
 	case ProfileMemory:
-		return "\nUse local memory/source/wiki tools for evidence-backed answers and autonomous durable memory writes. Use write_wiki for clear stable memory; use proposals only when review is useful."
+		return "\nUse local memory/source/wiki tools for evidence-backed answers. For facts, preferences, decisions, and ordinary remember/save requests in the current turn, answer normally and let automatic post-turn memory capture create the reviewable memory update. Use write_wiki only when an immediate wiki edit is clearly needed."
 	case ProfileAdminReview:
-		return "\nUse review/proposal tools only. Do not silently mutate skills, MCP plugins, settings, or files."
+		return "\nUse review/proposal tools only. Do not silently mutate skills, MCP plugins, settings, files, or wiki pages. Never call write_wiki in this profile; for remember/save requests, answer normally and rely on automatic post-turn memory capture, or use propose_wiki_change when a review item is explicitly needed."
 	default:
 		return "\nUse the smallest relevant tool surface. Prefer direct tools for simple work."
 	}
