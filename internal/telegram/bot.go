@@ -55,7 +55,7 @@ type Bot struct {
 	archiveDB   conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
 	archiver    conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
 	summRunner  *summarizer.Runner               // nil when SUMMARIZER_ENABLED=false
-	issues      *scheduler.IssuesStore           // wiki_issues queue, shared by API + maintenance
+	issues      scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
 	api         http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
 	sandboxMgr  *sandbox.Manager                 // nil when SANDBOX_ENABLED=false or runtime unavailable
 	toolReg     *tools.ToolRegistry              // persistent LLM-written Python tools

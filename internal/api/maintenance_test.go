@@ -7,9 +7,80 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/scheduler"
 )
+
+type fakeIssueRepository struct {
+	rows []scheduler.Issue
+}
+
+func (f *fakeIssueRepository) Enqueue(context.Context, scheduler.Issue) error { return nil }
+
+func (f *fakeIssueRepository) List(_ context.Context, status string) ([]scheduler.Issue, error) {
+	var out []scheduler.Issue
+	for _, row := range f.rows {
+		if status == "" || row.Status == status {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeIssueRepository) Get(_ context.Context, id int64) (scheduler.Issue, error) {
+	for _, row := range f.rows {
+		if row.ID == id {
+			return row, nil
+		}
+	}
+	return scheduler.Issue{}, scheduler.ErrIssueNotFound
+}
+
+func (f *fakeIssueRepository) Resolve(_ context.Context, id int64) error {
+	for i, row := range f.rows {
+		if row.ID == id {
+			if row.Status != "open" {
+				return scheduler.ErrIssueAlreadyResolved
+			}
+			now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+			f.rows[i].Status = "resolved"
+			f.rows[i].ResolvedAt = &now
+			return nil
+		}
+	}
+	return scheduler.ErrIssueNotFound
+}
+
+func TestMaintenanceHandlersAcceptIssueRepositoryInterface(t *testing.T) {
+	repo := &fakeIssueRepository{rows: []scheduler.Issue{{
+		ID:        5,
+		Kind:      "broken_link",
+		Severity:  "high",
+		Slug:      "aura",
+		Message:   "broken link: [[missing]]",
+		Status:    "open",
+		CreatedAt: time.Date(2026, 5, 7, 11, 0, 0, 0, time.UTC),
+	}}}
+	router := NewRouter(Deps{Issues: repo})
+
+	req := httptest.NewRequest("GET", "/maintenance/issues?status=open", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest("POST", "/maintenance/issues/5/resolve", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("resolve got %d: %s", w.Code, w.Body.String())
+	}
+	if repo.rows[0].Status != "resolved" {
+		t.Fatalf("status = %q", repo.rows[0].Status)
+	}
+}
 
 func newIssuesTestStore(t *testing.T) *scheduler.IssuesStore {
 	t.Helper()

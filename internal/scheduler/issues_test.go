@@ -14,6 +14,15 @@ func newIssuesStore(t *testing.T) *scheduler.IssuesStore {
 	return scheduler.NewIssuesStore(db)
 }
 
+var (
+	_ scheduler.IssueLister     = (*scheduler.IssuesStore)(nil)
+	_ scheduler.IssueGetter     = (*scheduler.IssuesStore)(nil)
+	_ scheduler.IssueEnqueuer   = (*scheduler.IssuesStore)(nil)
+	_ scheduler.IssueResolver   = (*scheduler.IssuesStore)(nil)
+	_ scheduler.IssueReader     = (*scheduler.IssuesStore)(nil)
+	_ scheduler.IssueRepository = (*scheduler.IssuesStore)(nil)
+)
+
 func TestIssuesStore_EnqueueAndList(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()

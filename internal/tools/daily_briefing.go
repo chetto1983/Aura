@@ -20,7 +20,7 @@ type DailyBriefingTool struct {
 	tasks     scheduler.TaskReader
 	sources   source.Reader
 	summaries summarizer.ProposalLister
-	issues    *scheduler.IssuesStore
+	issues    scheduler.IssueLister
 	archive   conversation.TurnReader
 	loc       *time.Location
 	now       func() time.Time
@@ -30,7 +30,7 @@ func NewDailyBriefingTool(
 	tasks scheduler.TaskReader,
 	sources source.Reader,
 	summaries summarizer.ProposalLister,
-	issues *scheduler.IssuesStore,
+	issues scheduler.IssueLister,
 	archive conversation.TurnReader,
 	loc *time.Location,
 ) *DailyBriefingTool {

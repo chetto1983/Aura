@@ -304,6 +304,39 @@ func TestMaintenanceJob_PreservesLintIssueKindAndSeverity(t *testing.T) {
 	}
 }
 
+type fakeIssueEnqueuer struct {
+	issues []scheduler.Issue
+	err    error
+}
+
+func (f *fakeIssueEnqueuer) Enqueue(_ context.Context, issue scheduler.Issue) error {
+	f.issues = append(f.issues, issue)
+	return f.err
+}
+
+func TestMaintenanceJobAcceptsIssueEnqueuerInterface(t *testing.T) {
+	w := &mockWiki{
+		lintIssues: []wiki.LintIssue{
+			{Slug: "old-page", Kind: "memory_decay", Severity: "high", Message: "memory decay"},
+		},
+		slugs: []string{"old-page"},
+	}
+	issues := &fakeIssueEnqueuer{}
+	job := scheduler.NewMaintenanceJob(w, nil).
+		WithIssuesStore(issues)
+
+	fixed, deferred, err := job.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fixed != 0 || deferred != 1 {
+		t.Fatalf("want fixed=0 deferred=1, got fixed=%d deferred=%d", fixed, deferred)
+	}
+	if len(issues.issues) != 1 || issues.issues[0].Kind != "memory_decay" {
+		t.Fatalf("enqueued = %+v", issues.issues)
+	}
+}
+
 // TestMaintenanceJob_OwnerNotifier_CalledOnce verifies that when multiple
 // high-severity issues are found, the notifier is called exactly once.
 func TestMaintenanceJob_OwnerNotifier_CalledOnce(t *testing.T) {

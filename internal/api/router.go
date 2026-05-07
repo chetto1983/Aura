@@ -111,7 +111,7 @@ type Deps struct {
 
 	// Slice 12l.1: wiki maintenance issue queue. Optional — when nil, list
 	// returns empty array and resolve returns 404.
-	Issues *scheduler.IssuesStore
+	Issues scheduler.IssueRepository
 
 	// Slice 14d: runtime settings store. Backs GET /settings (list
 	// current values) and POST /settings (bulk upsert) so the dashboard

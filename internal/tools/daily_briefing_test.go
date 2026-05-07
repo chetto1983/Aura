@@ -190,6 +190,45 @@ func TestDailyBriefingToolAcceptsProposalListerInterface(t *testing.T) {
 	}
 }
 
+type fakeBriefingIssueLister struct {
+	issues []scheduler.Issue
+}
+
+func (f fakeBriefingIssueLister) List(_ context.Context, status string) ([]scheduler.Issue, error) {
+	var out []scheduler.Issue
+	for _, issue := range f.issues {
+		if status == "" || issue.Status == status {
+			out = append(out, issue)
+		}
+	}
+	return out, nil
+}
+
+func TestDailyBriefingToolAcceptsIssueListerInterface(t *testing.T) {
+	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+	issues := fakeBriefingIssueLister{issues: []scheduler.Issue{{
+		ID:        3,
+		Kind:      "broken_link",
+		Severity:  "high",
+		Slug:      "aura",
+		Message:   "broken link: [[missing-boundary]]",
+		Status:    "open",
+		CreatedAt: now,
+	}}}
+	tool := NewDailyBriefingTool(nil, nil, nil, issues, nil, time.UTC)
+	if tool == nil {
+		t.Fatal("expected daily_briefing tool")
+	}
+	tool.now = func() time.Time { return now }
+	out, err := tool.Execute(context.Background(), map[string]any{"limit": float64(3)})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "missing-boundary") {
+		t.Fatalf("briefing missing issue signal:\n%s", out)
+	}
+}
+
 func TestDailyBriefingTool_HandlesEmptyStores(t *testing.T) {
 	tool := NewDailyBriefingTool(nil, nil, nil, nil, nil, time.UTC)
 	if tool != nil {

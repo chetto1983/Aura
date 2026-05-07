@@ -33,6 +33,39 @@ type IssuesStore struct {
 	db *sql.DB
 }
 
+// IssueLister is the read side for wiki issue queues.
+type IssueLister interface {
+	List(ctx context.Context, status string) ([]Issue, error)
+}
+
+// IssueGetter reads one wiki issue by primary key.
+type IssueGetter interface {
+	Get(ctx context.Context, id int64) (Issue, error)
+}
+
+// IssueEnqueuer is the maintenance write side for deferred wiki issues.
+type IssueEnqueuer interface {
+	Enqueue(ctx context.Context, issue Issue) error
+}
+
+// IssueResolver marks wiki issues as resolved.
+type IssueResolver interface {
+	Resolve(ctx context.Context, id int64) error
+}
+
+// IssueReader is the dashboard read surface for wiki issues.
+type IssueReader interface {
+	IssueLister
+	IssueGetter
+}
+
+// IssueRepository is the full wiki_issues boundary implemented by IssuesStore.
+type IssueRepository interface {
+	IssueReader
+	IssueEnqueuer
+	IssueResolver
+}
+
 // NewIssuesStore wraps an existing *sql.DB. Migration must already be applied.
 func NewIssuesStore(db *sql.DB) *IssuesStore {
 	return &IssuesStore{db: db}
