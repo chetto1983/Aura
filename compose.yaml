@@ -18,6 +18,7 @@ services:
         required: false
     environment:
       AURA_HEADLESS: "true"
+      AURA_TIMEZONE: "${AURA_TIMEZONE:-Europe/Rome}"
       AURA_ENV_PATH: "/data/.env"
       HTTP_PORT: "0.0.0.0:8080"
       DB_PATH: "/data/aura.db"

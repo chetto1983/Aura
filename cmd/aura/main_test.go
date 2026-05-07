@@ -100,3 +100,14 @@ func TestLoadDotEnvDoesNotOverrideExistingEnvironment(t *testing.T) {
 		t.Fatalf("TELEGRAM_TOKEN = %q, want file fallback", got)
 	}
 }
+
+func TestComposeSetsContainerTimezone(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	source := string(data)
+	if !strings.Contains(source, `AURA_TIMEZONE: "${AURA_TIMEZONE:-Europe/Rome}"`) {
+		t.Fatalf("compose.yaml must set AURA_TIMEZONE so container wall-clock scheduling does not fall back to UTC")
+	}
+}
