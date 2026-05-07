@@ -1,274 +1,189 @@
 # Installing Aura
 
-Aura is your **personal Telegram second brain** — it remembers what you tell it, ingests PDFs and notes, and chats with you through your own private Telegram bot. Everything runs on your own machine. Your data never leaves it.
+Aura is a private Telegram second brain that runs as a self-hosted Docker stack.
+It ingests sources, builds a local wiki, searches memory, runs a sandboxed
+Python tool, and exposes a dashboard on localhost.
 
-This guide gets a non-developer running in **about 5 minutes**, no `.env` editing required.
+Current releases are Docker-image only. Use
+`ghcr.io/chetto1983/aura:<version>` with Docker Compose. The old desktop binary
+path is manual-only for legacy testing.
 
-> Current releases are Docker-image only. Use `ghcr.io/chetto1983/aura:<version>` with Docker Compose. The old desktop binary workflow is manual-only for legacy testing.
+## What You Get
 
----
+- A private Telegram bot.
+- A local dashboard at `http://127.0.0.1:8080`.
+- Local SearXNG web search.
+- A Pyodide sandbox sidecar for `execute_code`, DOCX/XLSX extraction, charts,
+  and generated artifacts.
+- Local Garage backup/artifact storage.
+- Optional Qdrant vector search with local fallback.
+- Your own `data/aura.db`, `wiki/`, `skills/`, and `garage/` folders.
 
-## What you'll end up with
+## Prerequisites
 
-- A private Telegram bot (only you can talk to it).
-- A self-hosted server running on your computer (or a small VPS).
-- A web dashboard at `http://localhost:8080` to browse your wiki, sources, tasks, settings, and skills.
-- A local SQLite database (`aura.db`) and a `wiki/` folder — both on your disk, both yours.
+- Docker Desktop or Docker Engine with Docker Compose.
+- A Telegram bot token from [@BotFather](https://t.me/BotFather).
+- An OpenAI-compatible LLM endpoint, or a local Ollama-compatible endpoint.
 
-## What it costs
+## Step 1 - Create Your Telegram Bot
 
-| Component | Cost |
-|---|---|
-| Aura itself | Free (open source) |
-| Telegram bot | Free |
-| Hosting on your own machine | Free |
-| LLM API (OpenAI / Mistral / Anthropic) | Pay-per-message — typically $1–10/month for personal use |
-| LLM API (local Ollama instead) | Free (your electricity only) |
-| PDF OCR (Mistral, optional) | ~$0.001 per page |
-
-You can run Aura **100% free** by pointing it at a local Ollama install. The setup wizard auto-detects Ollama if it's running.
-
----
-
-## Step 1 — Create your Telegram bot (1 minute)
-
-Each Aura install needs its own bot. Bots are free and take 30 seconds.
-
-1. Open Telegram and search for **@BotFather**. Start a chat.
+1. Open Telegram and search for **@BotFather**.
 2. Send `/newbot`.
-3. Pick a display name (e.g. *My Aura*).
-4. Pick a username ending in `bot` (e.g. `yourname_aura_bot`).
-5. BotFather replies with a token like `123456789:ABCdef...`. Copy it.
+3. Pick a display name.
+4. Pick a username ending in `bot`.
+5. Copy the token BotFather returns.
 
-> Why one bot per person? Aura is a personal second brain — wiki, notes, budget, and ownership are tied to a single bot.
-
----
-
-## Step 2 — Download Aura (1 minute)
-
-Grab the archive for your OS from the [Releases page](https://github.com/chetto1983/Aura/releases):
-
-| OS | Archive |
-|---|---|
-| Windows | `aura_<version>_windows_x86_64.zip` |
-| macOS (Intel) | `aura_<version>_macos_x86_64.tar.gz` |
-| macOS (Apple Silicon) | `aura_<version>_macos_arm64.tar.gz` |
-| Linux (x86_64) | `aura_<version>_linux_x86_64.tar.gz` |
-| Linux (ARM64) | `aura_<version>_linux_arm64.tar.gz` |
-
-Extract the archive into a folder you'll remember (e.g. `~/aura/` or `C:\Aura\`). The Windows archive contains `aura.exe`; macOS and Linux archives contain `aura`.
-
-**On macOS / Linux:** `chmod +x aura`
-
-**On macOS:** the first run may be blocked by Gatekeeper. Right-click → Open → confirm.
-
----
-
-## Step 3 — Run Aura (30 seconds)
-
-Open a terminal in the same folder and run the binary:
-
-**Windows:** double-click `aura.exe` from the extracted release folder, or run `.\aura.exe` from PowerShell. The packaged Windows app runs as a tray-first GUI binary, so it does not keep a console window open during normal use.
-**macOS / Linux:** `./aura`
-
-You'll see something like:
-
-```
-INFO  setup wizard listening url=http://127.0.0.1:8080
-INFO  open the URL above in your browser to finish setup
-```
-
-Leave the terminal open. Aura runs as long as the terminal is open.
-
----
-
-## Step 4 — Finish setup in the browser (2 minutes)
-
-1. Open <http://127.0.0.1:8080> in your browser.
-2. The **first-run wizard** asks for two things:
-   - **Telegram bot token** — paste the token from Step 1.
-   - **LLM provider** — pick a preset (OpenAI / OpenRouter / Mistral / Ollama / Groq / DeepSeek / Together / Custom). Each preset fills the OpenAI-compatible URL and a sensible default model. Paste your API key (or skip the key for Ollama).
-3. Click **Test connection** to verify the URL + key. You'll see "✓ Connected — N models available" if it works.
-4. Optional: open the **Embeddings** and **OCR** sections to add a Mistral key for wiki vector search and PDF ingestion. You can do this later instead.
-5. Click **Save and start Aura**. The wizard writes the token to `.env`, everything else to `aura.db`, and starts the bot.
-
-> Free local mode: install [Ollama](https://ollama.com), `ollama pull llama3.1:8b`, run Aura. The wizard auto-detects Ollama on `localhost:11434` and shows a one-line hint at the top of the page.
-
----
-
-## Step 5 — Claim your bot (30 seconds)
-
-1. Open Telegram and search for the bot username you picked in Step 1.
-2. Tap **Start** (or send `/start`).
-3. Aura remembers you as the owner. From now on, only you can talk to it; new users get queued for your approval at <http://localhost:8080/pending>.
-
-Send any message — "hello" — and you should get a reply within a few seconds.
-
----
-
-## Editing settings later
-
-Open the dashboard at <http://localhost:8080> and click **Settings** in the sidebar.
-
-You can change:
-
-- LLM provider, model, OpenAI-compatible base URL, API key
-- Embeddings + OCR keys
-- Soft / hard budget caps
-- Summarizer mode, allowlist, OCR page limits, etc.
-
-Most edits take effect on the next conversation turn — no restart. Bootstrap fields (Telegram token, dashboard port, file paths) live in `.env` and need a restart to change.
-
-You can also click **Test connection** in Settings to validate a new provider before saving.
-
-## Managing scheduled tasks
-
-The **Tasks** sidebar entry lists every scheduled job. Three recurrence modes are supported:
-
-- **Daily at HH:MM** — runs every day at the same local time. Used for the nightly wiki maintenance pass.
-- **Every N minutes** — fires on a fixed interval. Examples: 60 = hourly, 1440 = daily, 10080 = weekly.
-- **Once at** — one-shot reminder at a specific UTC timestamp.
-
-Each row has two cleanup actions:
-
-- **Cancel** marks the row as cancelled but keeps it in the table (audit trail).
-- **Delete** permanently removes the row.
-
-## Managing the conversation archive
-
-The bot archives every Telegram turn to `aura.db` so the dashboard can show history and the summarizer can surface recurring facts. The **Conversations** page shows total row count + oldest entry next to the title and gives you three cleanup buttons:
-
-- **Purge older than…** prompts for a number of days and deletes anything older.
-- **Wipe this chat** appears when you have a `chat_id` filter set; deletes only that chat's history.
-- **Wipe all** drops every archived turn (confirm prompt; can't be undone).
-
-Set `CONV_ARCHIVE_ENABLED=false` in Settings to stop the bot from archiving in the first place — wiki/source memory still works since those are independent.
-
----
-
-## Keeping Aura running
-
-Aura stops when you close the terminal. To keep it always-on:
-
-### macOS — `launchd`
-Create `~/Library/LaunchAgents/com.aura.plist` with `KeepAlive=true` pointing at the binary. `launchctl load`.
-
-### Linux — `systemd`
-Create `~/.config/systemd/user/aura.service`:
-```ini
-[Unit]
-Description=Aura
-After=network.target
-
-[Service]
-WorkingDirectory=/home/YOU/aura
-ExecStart=/home/YOU/aura/aura
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-Then `systemctl --user enable --now aura`.
-
-### Windows — Task Scheduler
-Run the `.exe` "At log on" with "Restart on failure".
-
-### VPS
-A $5/month Linux box (Hetzner / DigitalOcean / Vultr) runs Aura 24/7. Same install steps; SSH-tunnel the dashboard since `HTTP_PORT=127.0.0.1:8080` stays loopback-only.
-
-### Docker Compose
-For always-on server installs, Aura can run as one Compose stack with local
-SearXNG search beside it. This mode sets `AURA_HEADLESS=true`, so there is no
-desktop tray; Docker handles start/stop.
+## Step 2 - Start Aura
 
 ```powershell
+git clone https://github.com/chetto1983/Aura
+cd Aura
 New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
 Copy-Item .env.example data/.env
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-Then open <http://127.0.0.1:8080>. SearXNG is available on the host at
-<http://127.0.0.1:8088> and inside the stack at `http://searxng:8080`.
-See [docs/container.md](docs/container.md) for volume and debug details.
+If port `8080` is busy:
 
----
+```powershell
+$env:AURA_HOST_PORT = "18080"
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
 
-## Where your data lives
+## Step 3 - Finish Setup
 
-Everything is in the folder where you ran the binary:
+Open `http://127.0.0.1:8080`, or `http://127.0.0.1:18080` if you changed
+`AURA_HOST_PORT`.
 
-| File / folder | What it is |
-|---|---|
-| `aura.db` | SQLite — settings, chat history, tasks, budget, auth, embeddings cache |
-| `wiki/` | Markdown notes Aura builds about your topics |
-| `skills/` | Installed skills (capabilities) |
-| `.env` | Bootstrap-only config: Telegram token, dashboard port, paths |
+The first-run wizard asks for:
 
-**Backups:** zip these four. Restore = unzip into a fresh install.
+- `TELEGRAM_TOKEN`.
+- LLM provider, base URL, model, and API key.
 
-In container installs, Garage can hold the same restore point plus categorized
-artifacts. Run `go run ./cmd/debug_backup` to upload a full restore archive,
-source originals/uploads, OCR and extraction outputs, memory/wiki snapshots
-without raw OCR bloat, embedding/index snapshots, and audit/debug bundles from
-logs and reports.
+Optional settings such as embeddings, OCR, web search, sandbox runtime, and
+Garage backups can be configured from the dashboard later.
 
----
+The wizard writes bootstrap values to `data/.env`; runtime settings are stored
+in `data/aura.db`.
+
+## Step 4 - Claim Your Bot
+
+1. Open Telegram and search for your bot username.
+2. Tap **Start** or send `/start`.
+3. Approve your own user if prompted.
+
+Unknown users go into the dashboard approval queue.
+
+## Data Locations
+
+| Path | Purpose |
+| --- | --- |
+| `data/.env` | Bootstrap config such as Telegram token and paths |
+| `data/aura.db` | SQLite state: settings, auth, tasks, conversations, budget, embedding cache |
+| `wiki/` | Compiled memory pages and source evidence |
+| `skills/` | Installed skills |
+| `garage/` | Garage S3 metadata/object data |
+| Docker volume `qdrant-storage` | Docker-managed derived vector index |
+
+SQLite remains Aura's canonical database. MongoDB is not part of the default
+stack; it was evaluated and deferred until measured repository pressure justifies
+an optional adapter.
 
 ## Updating
 
-1. Stop Aura (Ctrl+C, or stop the service).
-2. Download the new archive, extract it, and replace the old `aura` or `aura.exe`.
-3. Start Aura.
+```powershell
+docker compose -f compose.yaml -f compose.image.yaml pull aura
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
 
-Your `.env`, `aura.db`, `wiki/`, and `skills/` are untouched.
+Pin a release by setting `AURA_IMAGE`:
 
----
+```powershell
+$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:v1.2.3"
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+Your `data/`, `wiki/`, `skills/`, `garage/`, and Qdrant derived volume are not
+deleted by normal updates.
+
+## Useful Operations
+
+```powershell
+docker compose -f compose.yaml -f compose.image.yaml ps
+docker compose -f compose.yaml -f compose.image.yaml logs -f aura
+docker compose -f compose.yaml -f compose.image.yaml restart aura
+```
+
+SearXNG is available on the host at `http://127.0.0.1:8088`.
+The Pyodide sandbox is internal-only at `http://pyodide:8787`.
+Garage S3 is available on the host at `http://127.0.0.1:3900`.
+
+Run a manual backup export from a development checkout:
+
+```powershell
+go run ./cmd/debug_backup
+```
+
+Run sandbox sidecar smokes:
+
+```powershell
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -artifact-smoke -runtime-url http://pyodide:8787 -timeout 5m
+```
 
 ## Troubleshooting
 
-**Setup wizard doesn't appear**
-The wizard only runs when `TELEGRAM_TOKEN` is blank in `.env`. Open `.env`, clear the `TELEGRAM_TOKEN=` line, restart.
+**Setup wizard does not appear**
 
-**Bot doesn't reply after `/start`**
-Check the terminal for errors. Verify the token is correct (no spaces, no quotes). Make sure you're messaging the right bot.
+Clear `TELEGRAM_TOKEN=` in `data/.env` and restart Aura.
 
-**`unauthorized` from the LLM**
-Open `/settings` in the dashboard, click **Test connection**, fix the URL or key, save.
+**Port 8080 is already allocated**
 
-**Dashboard at localhost:8080 shows blank page**
-The binary should have the dashboard built in. If you built from source, `cd web && npm run build`.
+Set `$env:AURA_HOST_PORT = "18080"` and run Compose again.
 
-**Budget exceeded errors**
-`/settings` → Budget section → raise `SOFT_BUDGET` / `HARD_BUDGET`.
+**Bot does not reply after `/start`**
 
-**macOS: "cannot be opened because the developer cannot be verified"**
-Right-click → Open → confirm. One-time.
+Check `docker compose logs -f aura`, verify the Telegram token, and confirm your
+user is allowed in the dashboard approval queue.
 
-**Windows: Defender flags the binary**
-Unsigned binaries from Releases trigger this. Click More info → Run anyway.
+**Unauthorized from the LLM**
 
-**Windows: I do not see a console window**
-This is expected for packaged releases. Aura writes logs under the configured `LOG_DIR` (default: `./logs`). For development troubleshooting, run from source with `go run ./cmd/aura` or use the debug commands; those still print to the console.
+Open `/settings`, click **Test connection**, fix the provider URL/key/model, and
+save.
 
----
+**Budget exceeded**
 
-## Building from source
+Open `/settings` and adjust `SOFT_BUDGET`, `HARD_BUDGET`,
+`COST_INPUT_PER_M_TOKENS`, or `COST_OUTPUT_PER_M_TOKENS`.
 
-```bash
-git clone https://github.com/chetto1983/Aura
-cd aura
-make web-build
-make build
-./aura
+**Sandbox unavailable**
+
+Check `docker compose ps pyodide`. Aura should log
+`sandbox container runtime available` when the sidecar is healthy.
+
+## Development
+
+Build from the working tree:
+
+```powershell
+docker compose up -d --build
 ```
 
-Requires Go 1.26.2+ and Node 20+.
+Run the canonical test container:
 
----
+```powershell
+docker compose --profile test run --rm test
+```
 
-## Getting help
+Local commands:
 
-- Logs: terminal running `aura` shows everything. Set `LOG_LEVEL=debug` for more.
-- Issues: open a GitHub issue with relevant log lines (redact your token).
-- Health check: `curl http://localhost:8080/api/health` should return JSON with the rollup.
+```powershell
+go test ./...
+npm --prefix web run i18n:check
+npm --prefix web run build
+go run ./cmd/debug_llm
+go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
+```
+
+See [docs/container.md](docs/container.md) for the full stack and release gate.

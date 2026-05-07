@@ -1,8 +1,8 @@
 # Aura — Personal AI Agent with Compounding Memory
 
-**Product Requirements Document — Version 4.1**
-**Date:** 2026-05-02
-**Status:** reflects shipped state through slice 12u (Phase 12 complete; compounding memory: conversation archive + auto-summarization + wiki maintenance).
+**Product Requirements Document - Version 4.2**
+**Date:** 2026-05-07
+**Status:** reflects the Docker-first runtime after v1.3 memory closure and the v3.1 orchestration bridge work.
 
 ---
 
@@ -10,7 +10,7 @@
 
 Aura è un agente AI personale, local-first, accessibile via Telegram, che accumula conoscenza in una **wiki markdown maintained-by-the-LLM** e si estende con **tool agentici** (source ingestion, web, scheduler, skills, MCP). Una **dashboard web embedded** offre osservabilità e controllo (sources, wiki/graph, tasks, skills, MCP, pending users) protetta da bearer-token emessi via Telegram.
 
-Rispetto alla v3.0 (planning-only) la v4.0 documenta lo stato realmente in produzione: SQLite invece di PostgreSQL, OpenAI-compat HTTP come client primario, pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
+Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant opzionale con fallback locale, Garage per backup/artifact, Pyodide sidecar per sandbox, pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
 
 Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, fallback sempre disponibili**.
 
@@ -163,7 +163,7 @@ Registry condiviso con il modello. Ogni tool implementa `Name/Description/Parame
 
 | Categoria | Tool |
 | --------- | ---- |
-| Web | `web_search`, `web_fetch` (Ollama API) |
+| Web | `web_search` (SearXNG primary), `web_fetch` (bounded direct HTTP fetcher) |
 | Wiki | `write_wiki`, `read_wiki`, `search_wiki`, `list_wiki`, `lint_wiki`, `rebuild_index`, `append_log` |
 | Source | `store_source`, `ocr_source`, `read_source`, `list_sources`, `lint_sources`, `ingest_source` |
 | Scheduler | `schedule_task`, `list_tasks`, `cancel_task` |
@@ -349,14 +349,17 @@ SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per cha
 
 # 6. Persistence
 
-* **SQLite** (`DB_PATH`, default `./aura.db`):
+* **SQLite** (`DB_PATH`, default `./aura.db`, `/data/aura.db` in containers):
   * `api_tokens` (auth dashboard)
-  * `pending_users` (queue /start)
-  * `allowed_users` (allowlist runtime)
-  * `scheduled_tasks` (scheduler)
-  * `embedding_cache` (search)
-* **File system** (wiki/raw + wiki/<slug>.md + index/log) versionato in Git.
-* **Conversations**: in-memory (history cap), summary durabile via wiki tools quando rilevante.
+  * `pending_users` and `allowed_users` (Telegram approval/allowlist)
+  * dashboard settings overrides
+  * `scheduled_tasks` and agent jobs
+  * `conversations` archive and summarizer evidence
+  * `proposed_updates`, `wiki_issues`, swarm/task state, budget usage, and embedding cache
+* **File system**: `wiki/`, source raw/extraction artifacts, skills, prompt overlays.
+* **Qdrant**: optional Docker sidecar for rebuildable vector search, with local chromem/SQLite fallback.
+* **Garage**: optional S3-compatible artifact/backup layer, not primary state.
+* **MongoDB**: evaluated and deferred; not part of the default stack until measured repository pressure justifies an optional adapter.
 
 ---
 
@@ -384,10 +387,11 @@ SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per cha
 
 # 9. Deployment
 
-* **Cross-platform binari** via GoReleaser (linux/darwin/windows × amd64/arm64).
-* Docker multi-stage Alpine (server-only path).
-* Tray icon su Windows; headless su altre piattaforme (`tray_other.go` no-op).
-* Web dashboard embedded nel binario — single artifact.
+* **Docker Compose is the primary release runtime.**
+* `aura` image is server-only and does not carry Node.js or `/app/runtime/pyodide`.
+* `pyodide` runs as a sidecar based on `pyodide/pyodide-env` and exposes `http://pyodide:8787` inside Compose.
+* `searxng`, `garage`, and `qdrant` are local sidecars; Garage UI remains profile-gated.
+* Desktop/tray builds remain secondary/manual-only.
 
 ---
 

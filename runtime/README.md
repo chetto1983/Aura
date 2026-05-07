@@ -1,8 +1,12 @@
 # Aura Runtime Assets
 
-Release builds should place optional bundled runtimes here.
+Release builds may place optional local runtimes here.
 
-The code-execution sandbox targets a bundled Pyodide runtime:
+Docker is Aura's primary runtime now. In Docker Compose, code execution uses the
+`pyodide` sidecar and Aura talks to it through `SANDBOX_RUNTIME_URL`.
+
+This directory describes the desktop/local fallback bundle used when
+`SANDBOX_RUNTIME_MODE=auto` or `local` and no sidecar URL is configured:
 
 ```text
 runtime/
@@ -16,13 +20,13 @@ runtime/
     runner/
 ```
 
-Do not require end users to install Python, pip, Docker, Node, Pyodide, or a
-developer toolchain. Any runner needed to host Pyodide must be part of Aura's
-release artifact.
+The fallback still must not require end users to install Python, pip, Node,
+Pyodide, or a developer toolchain. Any runner needed to host the local Pyodide
+bundle must be part of the desktop/local release artifact.
 
-## Default Package Profile
+## Package Profile
 
-The bundled sandbox should support everyday office/data work out of the box:
+Aura's sandbox should support everyday office/data work out of the box:
 
 - `numpy`, `pandas`, `scipy`, `statsmodels`
 - spreadsheet/data IO: `xlrd`, `pyarrow`, `python-calamine`; vendor
@@ -32,13 +36,18 @@ The bundled sandbox should support everyday office/data work out of the box:
 - utility stack: `requests`, `pyyaml`, `python-dateutil`, `pytz`, `tzdata`,
   `regex`, `rich`
 
-Package sources must be pinned and bundled. Normal user workflows must not
-download wheels from PyPI/CDNs at execution time.
+Package sources must be pinned. Normal user workflows must not download wheels
+from PyPI/CDNs at execution time.
+
+The Docker sidecar loads Pyodide packages on demand from the submitted Python
+imports. The local fallback runner follows the same request package list, so a
+simple arithmetic call does not load the entire office/data profile.
 
 ## Pyodide Manifest
 
-Every bundled runtime must include `runtime/pyodide/aura-pyodide-manifest.json`.
-Aura validates this file at startup before it can enable `execute_code`.
+Every local fallback runtime must include
+`runtime/pyodide/aura-pyodide-manifest.json`. Aura validates this file before it
+can enable `execute_code` in local mode.
 
 ```json
 {
@@ -104,13 +113,14 @@ Aura validates this file at startup before it can enable `execute_code`.
 
 Manifest paths are relative to `SANDBOX_RUNTIME_DIR` and must stay inside that
 directory. Required files and package artifacts are hash-checked. Aura registers
-`execute_code` only when both the bundle and runner are healthy; missing or
-invalid runtime assets leave the tool disabled and surface sandbox health.
+`execute_code` only when the selected runtime is healthy; missing or invalid
+local runtime assets leave the tool disabled and surface sandbox health.
 
 ## Local Bundle Smoke
 
 The local development bundle is ignored by git because it is a release artifact,
-not source. To rebuild it from pinned release inputs, run:
+not source. To rebuild it from pinned release inputs for desktop/local fallback,
+run:
 
 ```powershell
 node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64
@@ -119,7 +129,7 @@ node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-nod
 That command installs Pyodide 0.29.3 from npm, resolves Aura's baseline package
 closure from `pyodide-lock.json`, downloads package artifacts with hash checks,
 writes `aura-pyodide-manifest.json`, and adds the runner scripts plus a bundled
-Windows Node runtime for release archives.
+Windows Node runtime for desktop/archive fallback builds.
 
 After installing `runtime/pyodide/`, run the repeatable package smoke with:
 
@@ -138,6 +148,13 @@ run:
 go run ./cmd/debug_sandbox --tool-smoke
 ```
 
+To test the Docker sidecar path instead, run from the Compose network:
+
+```powershell
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -artifact-smoke -runtime-url http://pyodide:8787 -timeout 5m
+```
+
 This constructs the Pyodide runner/manager, registers `execute_code`, and checks
 that `sum(range(1, 101))` returns `5050`.
 
@@ -145,8 +162,9 @@ Sandbox code can return files by writing plain files under `/tmp/aura_out`.
 Aura collects only direct child files from that directory, caps artifact count
 and size, decodes them into `execute_code` artifact metadata, and delivers them
 as Telegram documents when the tool call has a Telegram user context.
-`SANDBOX_TIMEOUT_SEC` defaults to 60 seconds because the bundled Pyodide runner
-can take about 20 seconds to cold-start with the office/data package profile.
+`SANDBOX_TIMEOUT_SEC` defaults to 60 seconds because the local Pyodide runner
+and the sidecar may still need a few seconds when a request imports heavier
+packages such as pandas or matplotlib.
 
 To test artifact egress through the same `execute_code` tool boundary, run:
 
@@ -179,9 +197,9 @@ This asks the live LLM to write `/tmp/aura_out/aura_artifact.txt` through
 `execute_code` and fails unless Aura returns artifact metadata and sends a real
 Telegram document to the allowlisted user.
 
-GoReleaser runs the same installer and smoke before building archives. Release
-archives include `runtime/pyodide/**`, so Windows users do not need to install
-Node, Python, pip, Docker, or Pyodide separately.
+The old desktop archive flow runs the same installer and smoke before building
+archives. Normal Aura releases are Docker-image releases; the app image no
+longer installs Node.js or copies `runtime/pyodide/**`.
 
 For the narrower adapter test, run:
 

@@ -24,19 +24,22 @@ container image at `ghcr.io/chetto1983/aura:<version>`.
 
 ## What Runs
 
-The default stack starts four local services:
+The default stack starts local services:
 
 - `aura`: the Telegram bot, memory engine, tools, and embedded dashboard.
 - `searxng`: local web search for the stable `web_search` tool.
+- `pyodide`: warm Python sandbox sidecar for `execute_code`, DOCX, XLSX, charts, and generated artifacts.
+- `qdrant`: optional vector-search sidecar; Aura keeps local search as fallback.
 - `garage`: S3-compatible artifact and backup storage.
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
 
-All user data stays in visible folders beside the Compose file:
+Primary user data stays in visible folders beside the Compose file:
 
 - `data/`: `.env`, SQLite database, logs, MCP config, prompt overlays.
 - `wiki/`: compiled memory pages and source evidence.
 - `skills/`: installed agent skills.
 - `garage/`: Garage object storage data.
+- Docker volume `qdrant-storage`: derived vector index, rebuildable from Aura memory.
 
 ## Quick Start
 
@@ -77,7 +80,7 @@ Then open `http://127.0.0.1:18080`.
 1. Paste your `TELEGRAM_TOKEN`.
 2. Pick an OpenAI-compatible LLM preset or choose **Custom**.
 3. Test the model connection.
-4. Optional: configure embeddings, OCR, search, sandbox, and Garage backup keys.
+4. Optional: configure embeddings, OCR, search, sandbox runtime, and Garage backup keys.
 5. Click **Save and start Aura**.
 6. Open Telegram, start your bot, and approve your own user.
 
@@ -122,6 +125,7 @@ go build ./...
 go run ./cmd/aura
 go run ./cmd/debug_llm
 go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
 ```
 
 ## Release

@@ -110,3 +110,36 @@ Docker health after repair/rebuild:
 
 - Aura container healthy on `127.0.0.1:18080`.
 - `/status` reports `database: integrity ok`.
+
+## 2026-05-07 Pyodide Sidecar And Storage Decision
+
+Status: pass for runtime migration; v3.1 still needs final orchestration closure gates.
+
+Implemented:
+
+- Docker installs use a dedicated `pyodide` sidecar with `SANDBOX_RUNTIME_MODE=container` and `SANDBOX_RUNTIME_URL=http://pyodide:8787`.
+- The Aura image no longer installs Node.js or copies `/app/runtime/pyodide`.
+- The sidecar is based on `pyodide/pyodide-env` and overlays Aura's HTTP runner shim.
+- `execute_code` now loads Pyodide packages from actual Python imports instead of loading the full office/data profile for every call.
+- Dashboard settings expose `SANDBOX_RUNTIME_MODE` and `SANDBOX_RUNTIME_URL`.
+- MongoDB was evaluated and deferred. SQLite remains canonical state; MongoDB is only a future optional adapter candidate for high-volume archives, swarm traces, or audit logs after metrics justify it.
+
+Verification:
+
+```powershell
+docker compose build --no-cache pyodide
+$env:AURA_HOST_PORT='18080'; docker compose up -d --force-recreate pyodide aura
+Invoke-RestMethod -Uri http://127.0.0.1:18080/status
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
+docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -artifact-smoke -runtime-url http://pyodide:8787 -timeout 5m
+go test ./... -count=1
+npm --prefix web run i18n:check
+npm --prefix web run build
+docker compose config --quiet
+```
+
+Measured runtime:
+
+- Tool smoke: `5050`, `elapsed_ms=4`.
+- Artifact smoke: CSV and PNG persisted as source artifacts, `elapsed_ms=4934`.
+- Full all-import `debug_sandbox -smoke` is not a sidecar release gate yet; it exceeded the 15 minute debug timeout because it intentionally loads the legacy full office/data profile.
