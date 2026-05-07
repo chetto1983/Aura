@@ -383,9 +383,9 @@ function Control({
             ...base,
             minHeight: '44px',
             borderRadius: '6px',
-            borderColor: state.isFocused ? 'hsl(var(--ring))' : 'hsl(var(--border))',
-            backgroundColor: 'hsl(var(--background))',
-            boxShadow: state.isFocused ? '0 0 0 2px hsl(var(--ring) / 0.25)' : 'none',
+            borderColor: state.isFocused ? 'var(--ring)' : 'var(--border)',
+            backgroundColor: 'var(--background)',
+            boxShadow: state.isFocused ? '0 0 0 2px var(--brand-ring)' : 'none',
             cursor: disabled ? 'not-allowed' : 'pointer',
             opacity: disabled ? 0.7 : 1,
           }),
@@ -396,21 +396,21 @@ function Control({
           }),
           singleValue: (base) => ({
             ...base,
-            color: 'hsl(var(--foreground))',
+            color: 'var(--foreground)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             fontSize: '13px',
           }),
           input: (base) => ({
             ...base,
-            color: 'hsl(var(--foreground))',
+            color: 'var(--foreground)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             fontSize: '13px',
           }),
           menu: (base) => ({
             ...base,
-            border: '1px solid hsl(var(--border))',
-            backgroundColor: 'hsl(var(--popover))',
-            color: 'hsl(var(--popover-foreground))',
+            border: '1px solid var(--border)',
+            backgroundColor: 'var(--popover)',
+            color: 'var(--popover-foreground)',
             overflow: 'hidden',
             zIndex: 60,
           }),
@@ -421,17 +421,17 @@ function Control({
           option: (base, state) => ({
             ...base,
             backgroundColor: state.isSelected
-              ? 'hsl(var(--primary))'
+              ? 'var(--primary)'
               : state.isFocused
-                ? 'hsl(var(--muted))'
-                : 'hsl(var(--popover))',
-            color: state.isSelected ? 'hsl(var(--primary-foreground))' : 'hsl(var(--popover-foreground))',
+                ? 'var(--muted)'
+                : 'var(--popover)',
+            color: state.isSelected ? 'var(--primary-foreground)' : 'var(--popover-foreground)',
             cursor: 'pointer',
             fontSize: '13px',
           }),
           placeholder: (base) => ({
             ...base,
-            color: 'hsl(var(--muted-foreground))',
+            color: 'var(--muted-foreground)',
           }),
         }}
       />
