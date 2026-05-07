@@ -36,7 +36,8 @@ type defaultRule struct {
 
 // ApplyBestDefaults upgrades stale settings rows that would otherwise hide
 // safer Docker-first defaults from the user. It never touches chat provider
-// credentials, embedding credentials, Telegram tokens, or OCR keys.
+// credentials, embedding credentials, Telegram tokens, or OCR keys. The only
+// secret rows it can rotate are known-public Garage demo credentials.
 func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *config.Config) ([]BestDefaultChange, error) {
 	if repo == nil {
 		return nil, nil
@@ -208,6 +209,16 @@ func migrationRules(cfg *config.Config) []defaultRule {
 	if strings.TrimSpace(cfg.GarageS3Endpoint) != "" {
 		rules = append(rules,
 			containerRule(KeyGarageS3Endpoint, cfg.GarageS3Endpoint, "use container Garage service URL", isLocalURLLike),
+		)
+	}
+	if strings.TrimSpace(cfg.GarageS3AccessKey) != "" {
+		rules = append(rules,
+			containerRule(KeyGarageS3AccessKey, cfg.GarageS3AccessKey, "replace public Garage demo access key", valueIs("aura-local-access")),
+		)
+	}
+	if strings.TrimSpace(cfg.GarageS3SecretKey) != "" {
+		rules = append(rules,
+			containerRule(KeyGarageS3SecretKey, cfg.GarageS3SecretKey, "replace public Garage demo secret key", valueIs("aura-local-secret-change-me")),
 		)
 	}
 	if strings.TrimSpace(cfg.SandboxRuntimeURL) != "" {

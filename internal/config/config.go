@@ -159,7 +159,7 @@ func (c *Config) IsBootstrapped() bool {
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	cfg.TelegramToken = getEnv("TELEGRAM_TOKEN", "")
+	cfg.TelegramToken = getSecretEnv("TELEGRAM_TOKEN", "")
 
 	allowlistStr := getEnv("TELEGRAM_ALLOWLIST", "")
 	cfg.Allowlist = parseAllowlist(allowlistStr)
@@ -189,25 +189,25 @@ func Load() (*Config, error) {
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
 	cfg.LogDir = getEnv("LOG_DIR", "./logs")
 
-	cfg.LLMAPIKey = getEnv("LLM_API_KEY", "")
+	cfg.LLMAPIKey = getSecretEnv("LLM_API_KEY", "")
 	cfg.LLMBaseURL = getEnv("LLM_BASE_URL", "https://api.openai.com/v1")
 	cfg.LLMModel = getEnv("LLM_MODEL", "gpt-4")
 	cfg.LLMMaxRetries = getEnvInt("LLM_MAX_RETRIES", 5)
 
 	cfg.OllamaBaseURL = getEnv("OLLAMA_BASE_URL", "")
 	cfg.OllamaModel = getEnv("OLLAMA_MODEL", "")
-	cfg.OllamaAPIKey = getEnv("OLLAMA_API_KEY", "")
+	cfg.OllamaAPIKey = getSecretEnv("OLLAMA_API_KEY", "")
 	cfg.OllamaWebBaseURL = getEnv("OLLAMA_WEB_BASE_URL", DefaultOllamaWebBaseURL)
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(getEnv("WEB_SEARCH_PROVIDER", "disabled")))
 	cfg.SearXNGBaseURL = getEnv("SEARXNG_BASE_URL", DefaultSearXNGBaseURL)
 	cfg.GarageS3Endpoint = getEnv("GARAGE_S3_ENDPOINT", "")
 	cfg.GarageS3Region = getEnv("GARAGE_S3_REGION", "garage")
 	cfg.GarageS3Bucket = getEnv("GARAGE_S3_BUCKET", "aura-artifacts")
-	cfg.GarageS3AccessKey = getEnv("GARAGE_S3_ACCESS_KEY", "")
-	cfg.GarageS3SecretKey = getEnv("GARAGE_S3_SECRET_KEY", "")
+	cfg.GarageS3AccessKey = getSecretEnv("GARAGE_S3_ACCESS_KEY", "")
+	cfg.GarageS3SecretKey = getSecretEnv("GARAGE_S3_SECRET_KEY", "")
 	cfg.QdrantURL = getEnv("QDRANT_URL", "")
 	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
-	cfg.QdrantAPIKey = getEnv("QDRANT_API_KEY", "")
+	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
 	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(getEnv("SEARCH_BACKEND", DefaultSearchBackend)))
 	cfg.SpeculativeSearchTimeoutMS = getEnvInt("SPECULATIVE_SEARCH_TIMEOUT_MS", DefaultSpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
@@ -226,7 +226,7 @@ func Load() (*Config, error) {
 	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
 	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 5)
 
-	cfg.EmbeddingAPIKey = getEnv("EMBEDDING_API_KEY", "")
+	cfg.EmbeddingAPIKey = getSecretEnv("EMBEDDING_API_KEY", "")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
@@ -240,7 +240,7 @@ func Load() (*Config, error) {
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
 	cfg.SkillPreflight = normalizeSkillPreflight(getEnv("AURA_SKILL_PREFLIGHT", DefaultSkillPreflight))
 
-	cfg.MistralAPIKey = getEnv("MISTRAL_API_KEY", "")
+	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
 	cfg.MistralOCRBaseURL = getEnv("MISTRAL_OCR_BASE_URL", "https://api.mistral.ai/v1")
 	cfg.MistralOCRTableFormat = getEnv("MISTRAL_OCR_TABLE_FORMAT", "markdown")

@@ -179,7 +179,8 @@ releases.
 
 Visible host folders hold user data:
 
-- `data/`: `.env`, SQLite DB, logs, MCP config, prompt overlays.
+- `data/`: `.env`, SQLite DB, logs, generated local service secrets, MCP
+  config, prompt overlays.
 - `wiki/`: compiled wiki and source evidence.
 - `skills/`: installed skills.
 - `garage/`: Garage S3 metadata and object data once the Garage service is enabled.
@@ -199,13 +200,18 @@ Back up these folders before moving hosts or upgrading major versions.
   stable `web_search` tool against the bundled SearXNG service instead of
   requiring Ollama web credentials. The paired `web_fetch` tool uses Aura's
   bounded direct HTTP fetcher in this mode.
+- `compose.yaml` starts `aura-secrets` before SearXNG, Garage, and Aura. That
+  one-shot container generates local service secrets under `data/secrets/` and
+  renders the Garage and SearXNG config files consumed by the stack. Existing
+  files are preserved, so secrets survive rebuilds and container recreates.
 - `compose.yaml` starts Garage with `--single-node --default-bucket`, matching
-  Garage's quick-start path. The local demo keys are intentionally low-trust;
-  rotate them before exposing Garage beyond localhost.
+  Garage's quick-start path. Aura reads the generated Garage S3 key from
+  `data/secrets/aura.env` and also supports `GARAGE_S3_ACCESS_KEY_FILE` /
+  `GARAGE_S3_SECRET_KEY_FILE` for Docker-secret style deployments.
 - Backup export is manual first. It writes a full restore point under
   `backups/YYYY-MM-DD-HHMMSS/` plus categorized artifact archives under
   `artifacts/YYYY-MM-DD-HHMMSS/`. SQLite and wiki storage remain local files.
-- `docker/searxng/settings.yml` enables JSON output. Without `json` in
+- The generated SearXNG settings file enables JSON output. Without `json` in
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - `compose.yaml` starts Qdrant from `qdrant/qdrant:latest` with storage in the
   Docker-managed `qdrant-storage` volume. Aura exposes `QDRANT_URL`,

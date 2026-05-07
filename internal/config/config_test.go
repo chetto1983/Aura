@@ -396,6 +396,31 @@ func TestLoadGarageBackupConfig(t *testing.T) {
 	}
 }
 
+func TestLoadGarageBackupConfigFromSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	accessPath := dir + "/garage_access"
+	secretPath := dir + "/garage_secret"
+	if err := os.WriteFile(accessPath, []byte("file-access\n"), 0o600); err != nil {
+		t.Fatalf("write access secret: %v", err)
+	}
+	if err := os.WriteFile(secretPath, []byte("file-secret\n"), 0o600); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	t.Setenv("GARAGE_S3_ENDPOINT", "http://garage:3900")
+	t.Setenv("GARAGE_S3_ACCESS_KEY", "")
+	t.Setenv("GARAGE_S3_SECRET_KEY", "")
+	t.Setenv("GARAGE_S3_ACCESS_KEY_FILE", accessPath)
+	t.Setenv("GARAGE_S3_SECRET_KEY_FILE", secretPath)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GarageS3AccessKey != "file-access" || cfg.GarageS3SecretKey != "file-secret" {
+		t.Fatalf("garage file secrets not loaded: access=%q secret=%q", cfg.GarageS3AccessKey, cfg.GarageS3SecretKey)
+	}
+}
+
 func TestLoadWebSearchProvider(t *testing.T) {
 	os.Setenv("WEB_SEARCH_PROVIDER", " searxng ")
 	os.Setenv("SEARXNG_BASE_URL", "http://searxng:8080")

@@ -3,11 +3,26 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getSecretEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	if path := os.Getenv(key + "_FILE"); path != "" {
+		if raw, err := os.ReadFile(path); err == nil {
+			if v := strings.TrimSpace(string(raw)); v != "" {
+				return v
+			}
+		}
 	}
 	return fallback
 }

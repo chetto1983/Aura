@@ -65,6 +65,8 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		KeySearchBackend:           "chromem",
 		KeyQdrantURL:               "http://127.0.0.1:6333",
 		KeyGarageS3Endpoint:        "http://localhost:3900",
+		KeyGarageS3AccessKey:       "aura-local-access",
+		KeyGarageS3SecretKey:       "aura-local-secret-change-me",
 		KeySandboxRuntimeMode:      "auto",
 		KeySandboxRuntimeURL:       "http://localhost:8787",
 	} {
@@ -80,7 +82,8 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath, KeyLogDir,
 		KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir, KeyMCPServersPath, KeyPromptOverlayPath,
 		KeyWebSearchProvider, KeySearXNGBaseURL, KeySearchBackend, KeyQdrantURL,
-		KeyGarageS3Endpoint, KeySandboxRuntimeMode, KeySandboxRuntimeURL,
+		KeyGarageS3Endpoint, KeyGarageS3AccessKey, KeyGarageS3SecretKey,
+		KeySandboxRuntimeMode, KeySandboxRuntimeURL,
 	} {
 		assertChanged(t, changes, key)
 	}
@@ -94,6 +97,8 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	assertSetting(t, s, KeySearchBackend, "qdrant")
 	assertSetting(t, s, KeyQdrantURL, "http://qdrant:6333")
 	assertSetting(t, s, KeyGarageS3Endpoint, "http://garage:3900")
+	assertSetting(t, s, KeyGarageS3AccessKey, "generated-access")
+	assertSetting(t, s, KeyGarageS3SecretKey, "generated-secret")
 	assertSetting(t, s, KeySandboxRuntimeMode, "container")
 	assertSetting(t, s, KeySandboxRuntimeURL, "http://pyodide:8787")
 }
@@ -161,6 +166,8 @@ func containerDefaultsConfig() *config.Config {
 		SearXNGBaseURL:          "http://searxng:8080",
 		QdrantURL:               "http://qdrant:6333",
 		GarageS3Endpoint:        "http://garage:3900",
+		GarageS3AccessKey:       "generated-access",
+		GarageS3SecretKey:       "generated-secret",
 		SandboxRuntimeURL:       "http://pyodide:8787",
 	}
 }
