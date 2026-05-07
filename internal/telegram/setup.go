@@ -20,6 +20,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -357,6 +358,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		mcpClients:  mcpClients,
 		sandboxMgr:  sandboxMgr,
 		toolReg:     toolReg,
+		orchHooks:   orchestration.DefaultHooks{},
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:           cfg.SoftBudget,
 			HardBudget:           cfg.HardBudget,

@@ -106,3 +106,74 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutSource(t *testing.
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want source persistence failure", err)
 	}
 }
+
+func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		ToolCalls:    []string{"read_skill", "run_aurabot_swarm", "execute_code"},
+		ToolProfile:  "sandbox_compute",
+		SkillsRead:   true,
+		SwarmUsed:    true,
+		SandboxUsed:  true,
+		ToolsExposed: []string{"read_skill", "run_aurabot_swarm", "execute_code"},
+	}
+
+	err := validateDebugExpectations(result, debugExpectations{
+		Profile:     "sandbox_compute",
+		Tools:       []string{"read_skill", "execute_code"},
+		SkillRead:   true,
+		SwarmUsed:   true,
+		SandboxUsed: true,
+	})
+	if err != nil {
+		t.Fatalf("validateDebugExpectations() error = %v", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMismatchedProfile(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolProfile: "default"}
+
+	err := validateDebugExpectations(result, debugExpectations{Profile: "sandbox_compute"})
+	if err == nil || !strings.Contains(err.Error(), `expected profile "sandbox_compute"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want profile failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsUnexpectedTools(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolCalls: []string{"search_memory"}}
+
+	err := validateDebugExpectations(result, debugExpectations{NoTools: true})
+	if err == nil || !strings.Contains(err.Error(), "expected no tool calls") {
+		t.Fatalf("validateDebugExpectations() error = %v, want no-tools failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingUsageSignals(t *testing.T) {
+	tests := []struct {
+		name string
+		want debugExpectations
+		msg  string
+	}{
+		{name: "skill", want: debugExpectations{SkillRead: true}, msg: "expected read_skill"},
+		{name: "swarm", want: debugExpectations{SwarmUsed: true}, msg: "expected swarm usage"},
+		{name: "sandbox", want: debugExpectations{SandboxUsed: true}, msg: "expected sandbox usage"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, tt.want)
+			if err == nil || !strings.Contains(err.Error(), tt.msg) {
+				t.Fatalf("validateDebugExpectations() error = %v, want %q", err, tt.msg)
+			}
+		})
+	}
+}
+
+func TestValidateDebugExpectationsRejectsConflictingToolExpectations(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{
+		Tools:   []string{"execute_code"},
+		NoTools: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot combine") {
+		t.Fatalf("validateDebugExpectations() error = %v, want conflict failure", err)
+	}
+}

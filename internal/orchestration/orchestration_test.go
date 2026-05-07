@@ -108,3 +108,65 @@ func TestExplicitProfileModeOverridesAuto(t *testing.T) {
 		t.Fatalf("explicit profile = %q, want memory", got)
 	}
 }
+
+func TestExplicitProfileModeFallsBackWhenRequiredRuntimeUnavailable(t *testing.T) {
+	decision := SelectProfileDecision("calcola un CSV", string(ProfileSandboxCompute), Availability{Sandbox: false})
+	if decision.Profile != ProfileDefault {
+		t.Fatalf("Profile = %q, want default when explicit sandbox profile is unavailable", decision.Profile)
+	}
+	if !strings.Contains(decision.Reason, "unavailable") {
+		t.Fatalf("Reason = %q, want unavailable explanation", decision.Reason)
+	}
+
+	if _, err := ToolsForProfile(ProfileSandboxCompute, Availability{Sandbox: false}); err == nil {
+		t.Fatal("ToolsForProfile sandbox without sandbox returned nil error")
+	}
+}
+
+func TestSelectProfileDecisionReportsReasonAndAvailabilityFallback(t *testing.T) {
+	decision := SelectProfileDecision("facciamo il punto di tutta la pipeline", ProfileModeAuto, Availability{Swarm: true})
+	if decision.Profile != ProfileSwarmResearch {
+		t.Fatalf("Profile = %q, want swarm_research", decision.Profile)
+	}
+	if !strings.Contains(decision.Reason, "matched") || !strings.Contains(decision.Reason, string(ProfileSwarmResearch)) {
+		t.Fatalf("Reason = %q, want matched swarm reason", decision.Reason)
+	}
+
+	fallback := SelectProfileDecision("facciamo il punto di tutta la pipeline", ProfileModeAuto, Availability{Swarm: false})
+	if fallback.Profile != ProfileMemory {
+		t.Fatalf("fallback Profile = %q, want memory when swarm unavailable", fallback.Profile)
+	}
+	if !strings.Contains(fallback.Reason, "unavailable") {
+		t.Fatalf("fallback Reason = %q, want unavailable explanation", fallback.Reason)
+	}
+}
+
+func TestProfileCardsDeclareCapabilityContracts(t *testing.T) {
+	cards := ProfileCards()
+	for _, profile := range []Profile{ProfileDefault, ProfileMemory, ProfileSwarmResearch, ProfileSandboxCompute, ProfileDocument, ProfileAdminReview} {
+		card, ok := cards[profile]
+		if !ok {
+			t.Fatalf("ProfileCards missing %q", profile)
+		}
+		if card.Purpose == "" {
+			t.Fatalf("profile %q missing purpose", profile)
+		}
+		if len(card.AllowedTools) == 0 {
+			t.Fatalf("profile %q missing allowed tools", profile)
+		}
+	}
+	if cards[ProfileSwarmResearch].Access != AccessReadOnly {
+		t.Fatalf("swarm access = %q, want read_only", cards[ProfileSwarmResearch].Access)
+	}
+	for _, denied := range []string{"write_wiki", "execute_code", "create_docx", "schedule_task"} {
+		if !slices.Contains(cards[ProfileSwarmResearch].DeniedTools, denied) {
+			t.Fatalf("swarm denied tools missing %q: %+v", denied, cards[ProfileSwarmResearch].DeniedTools)
+		}
+	}
+	if cards[ProfileAdminReview].Access != AccessReviewOnly {
+		t.Fatalf("admin_review access = %q, want review_only", cards[ProfileAdminReview].Access)
+	}
+	if slices.Contains(cards[ProfileAdminReview].AllowedTools, "run_task_now") {
+		t.Fatalf("admin_review exposes run_task_now: %+v", cards[ProfileAdminReview].AllowedTools)
+	}
+}

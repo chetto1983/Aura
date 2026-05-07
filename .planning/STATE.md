@@ -2,15 +2,15 @@
 
 Date: 2026-05-07
 
-Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (planned)
+Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (active)
 
 Last closed milestone: v1.3 Memory Consolidation And Quality
 
-Current branch: `master`
+Current branch: `codex/v31-orchestration-hooks`
 
 ## Current Truth
 
-v1.3 is closed. The Docker runtime passes memory closure, embedding/search validation, dashboard settings smoke, full Go/frontend verification, Docker rebuild, and the strict live memory quality gate.
+v1.3 is closed. v3.1 implementation has started on the orchestration bridge. The Docker runtime passes memory closure, embedding/search validation, dashboard settings smoke, full Go/frontend verification, Docker rebuild, and the strict live memory quality gate.
 
 Closure evidence:
 
@@ -22,6 +22,15 @@ Closure evidence:
 - Release checks passed: `verify-go.ps1`, `go test ./... -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `docker compose config --quiet`, Docker rebuild, `/status`, and settings Playwright E2E.
 
 The live quality harness now applies dashboard settings from `aura.db` before selecting the LLM, so future closure runs test the configured app model instead of stale env-only values.
+
+v3.1 implementation evidence:
+
+- `internal/orchestration` now exposes profile decisions with reasons, profile capability contracts, lifecycle hook primitives, hidden-tool policy, and trace redaction.
+- Telegram debug smoke now records profile selection reason and hidden-tool rejection.
+- `cmd/debug_telegram_sandbox` supports strict expectation flags for profile, no-tools, skill-read, swarm, and sandbox validation.
+- `cmd/debug_orchestration` provides a non-live prompt routing harness.
+- Focused gate passed: `go test ./internal/conversation ./internal/telegram ./internal/tools ./internal/toolsets ./internal/settings ./internal/api ./internal/orchestration ./cmd/debug_telegram_sandbox ./cmd/debug_files ./cmd/debug_orchestration -count=1`.
+- Route probes passed for pipeline review (`swarm_research`) and computed CSV/chart (`sandbox_compute`).
 
 ## Next Milestone Handoff
 

@@ -36,10 +36,36 @@ const (
 
 type Profile string
 
+type AccessLevel string
+
+const (
+	AccessDefault    AccessLevel = "default"
+	AccessReadOnly   AccessLevel = "read_only"
+	AccessWrite      AccessLevel = "write"
+	AccessReviewOnly AccessLevel = "review_only"
+	AccessSandbox    AccessLevel = "sandbox"
+)
+
 type Availability struct {
 	Swarm     bool
 	Sandbox   bool
 	Proposals bool
+}
+
+type ProfileDecision struct {
+	Profile Profile
+	Reason  string
+}
+
+type ProfileCard struct {
+	Profile              Profile
+	Purpose              string
+	Access               AccessLevel
+	PositiveCues         []string
+	NegativeCues         []string
+	RequiredAvailability []string
+	AllowedTools         []string
+	DeniedTools          []string
 }
 
 type PromptInput struct {
@@ -119,84 +145,180 @@ func ComposePrompt(in PromptInput) PromptPlan {
 }
 
 func SelectProfile(userText, mode string, available Availability) Profile {
+	return SelectProfileDecision(userText, mode, available).Profile
+}
+
+func SelectProfileDecision(userText, mode string, available Availability) ProfileDecision {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
 		mode = ProfileModeAuto
 	}
 	if mode != ProfileModeAuto {
-		return normalizeProfile(mode)
+		profile := normalizeProfile(mode)
+		if missing := missingAvailability(profile, available); missing != "" {
+			return ProfileDecision{
+				Profile: ProfileDefault,
+				Reason:  fmt.Sprintf("explicit profile %q unavailable: missing %s; using default route", profile, missing),
+			}
+		}
+		return ProfileDecision{
+			Profile: profile,
+			Reason:  fmt.Sprintf("explicit profile mode %q", profile),
+		}
 	}
 
 	text := routeText(userText)
 	switch {
 	case available.Swarm && looksLikeSwarmResearch(text):
-		return ProfileSwarmResearch
+		return ProfileDecision{Profile: ProfileSwarmResearch, Reason: "matched swarm_research broad synthesis cues"}
+	case !available.Swarm && looksLikeSwarmResearch(text):
+		return ProfileDecision{Profile: ProfileMemory, Reason: "swarm_research cues matched but swarm unavailable; using memory read route"}
 	case available.Sandbox && looksLikeSandboxCompute(text):
-		return ProfileSandboxCompute
+		return ProfileDecision{Profile: ProfileSandboxCompute, Reason: "matched sandbox_compute compute/artifact cues"}
+	case !available.Sandbox && looksLikeSandboxCompute(text):
+		return ProfileDecision{Profile: ProfileDefault, Reason: "sandbox_compute cues matched but sandbox unavailable; using default route"}
 	case looksLikeDocument(text):
-		return ProfileDocument
+		return ProfileDecision{Profile: ProfileDocument, Reason: "matched document/file-generation cues"}
 	case looksLikeMemory(text):
-		return ProfileMemory
+		return ProfileDecision{Profile: ProfileMemory, Reason: "matched memory/source/wiki cues"}
 	default:
-		return ProfileDefault
+		return ProfileDecision{Profile: ProfileDefault, Reason: "no specialized profile cues matched"}
 	}
 }
 
 func ToolsForProfile(profile Profile, available Availability) ([]string, error) {
-	switch normalizeProfile(string(profile)) {
-	case ProfileDefault:
-		return []string{
-			"search_memory", "search_wiki", "read_wiki", "write_wiki",
-			"list_wiki", "list_sources", "read_source",
-			"web_search", "web_fetch",
-			"schedule_task", "list_tasks", "cancel_task", "run_task_now",
-			"daily_briefing", "request_dashboard_token",
-		}, nil
+	profile = normalizeProfile(string(profile))
+	cards := ProfileCards()
+	card, ok := cards[profile]
+	if !ok {
+		return nil, fmt.Errorf("unknown orchestration profile %q", profile)
+	}
+	if missing := missingAvailability(profile, available); missing != "" {
+		return nil, fmt.Errorf("profile %q unavailable: missing %s", profile, missing)
+	}
+	tools := append([]string(nil), card.AllowedTools...)
+	switch profile {
 	case ProfileMemory:
-		tools := []string{
-			"search_memory", "list_wiki", "read_wiki", "search_wiki",
-			"list_sources", "read_source", "lint_wiki", "lint_sources",
-			"daily_briefing",
-		}
 		if available.Proposals {
 			tools = append(tools, "propose_wiki_change", "propose_skill_change")
 		}
-		return tools, nil
 	case ProfileSwarmResearch:
-		tools := []string{
-			"search_memory", "list_wiki", "read_wiki", "search_wiki",
-			"list_sources", "read_source", "lint_wiki", "lint_sources",
-		}
 		if available.Swarm {
 			tools = append([]string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, tools...)
 		}
-		return tools, nil
-	case ProfileSandboxCompute:
-		tools := []string{
-			"execute_code", "list_tools", "read_tool",
-			"search_memory", "list_sources", "read_source", "store_source",
-		}
-		return tools, nil
 	case ProfileDocument:
-		tools := []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "list_wiki", "read_wiki", "search_wiki",
-			"list_sources", "read_source",
-			"create_docx", "create_xlsx", "create_pdf",
-		}
 		if available.Swarm {
 			tools = append(tools, "run_aurabot_swarm", "read_swarm_result")
 		}
-		return tools, nil
-	case ProfileAdminReview:
-		return []string{
-			"daily_briefing", "list_tasks", "run_task_now",
-			"propose_wiki_change", "propose_skill_change",
-			"list_skills", "read_skill", "search_skill_catalog",
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown orchestration profile %q", profile)
 	}
+	return tools, nil
+}
+
+func ProfileCards() map[Profile]ProfileCard {
+	return map[Profile]ProfileCard{
+		ProfileDefault: {
+			Profile: ProfileDefault,
+			Purpose: "Safe everyday route for simple answers, memory lookup, tasks, and dashboard access.",
+			Access:  AccessDefault,
+			AllowedTools: []string{
+				"search_memory", "search_wiki", "read_wiki", "write_wiki",
+				"list_wiki", "list_sources", "read_source",
+				"web_search", "web_fetch",
+				"schedule_task", "list_tasks", "cancel_task", "run_task_now",
+				"daily_briefing", "request_dashboard_token",
+			},
+			DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill"},
+		},
+		ProfileMemory: {
+			Profile:      ProfileMemory,
+			Purpose:      "Read-heavy source/wiki/memory route with review-gated proposals.",
+			Access:       AccessReadOnly,
+			PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai"},
+			AllowedTools: []string{
+				"search_memory", "list_wiki", "read_wiki", "search_wiki",
+				"list_sources", "read_source", "lint_wiki", "lint_sources",
+				"daily_briefing",
+			},
+			DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
+		},
+		ProfileSwarmResearch: {
+			Profile:              ProfileSwarmResearch,
+			Purpose:              "Read-only broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
+			Access:               AccessReadOnly,
+			PositiveCues:         []string{"facciamo il punto", "pipeline", "what is missing", "audit", "roadmap"},
+			RequiredAvailability: []string{"swarm"},
+			AllowedTools: []string{
+				"search_memory", "list_wiki", "read_wiki", "search_wiki",
+				"list_sources", "read_source", "lint_wiki", "lint_sources",
+			},
+			DeniedTools: []string{
+				"write_wiki", "create_docx", "create_xlsx", "create_pdf",
+				"execute_code", "schedule_task", "cancel_task", "run_task_now",
+				"install_skill", "delete_skill", "settings_update",
+			},
+		},
+		ProfileSandboxCompute: {
+			Profile:              ProfileSandboxCompute,
+			Purpose:              "Compute and artifact route for Python calculations, transformations, charts, simulations, and parser experiments.",
+			Access:               AccessSandbox,
+			PositiveCues:         []string{"calculate", "calcola", "chart", "grafico", "csv", "parser", "simulation"},
+			RequiredAvailability: []string{"sandbox"},
+			AllowedTools: []string{
+				"execute_code", "list_tools", "read_tool",
+				"search_memory", "list_sources", "read_source", "store_source",
+			},
+			DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
+		},
+		ProfileDocument: {
+			Profile:      ProfileDocument,
+			Purpose:      "Skill-first route for DOCX/XLSX/PDF/report generation with memory/source evidence.",
+			Access:       AccessWrite,
+			PositiveCues: []string{"docx", "pdf", "xlsx", "report", "relazione", "documento"},
+			AllowedTools: []string{
+				"list_skills", "read_skill", "search_skill_catalog",
+				"search_memory", "list_wiki", "read_wiki", "search_wiki",
+				"list_sources", "read_source",
+				"create_docx", "create_xlsx", "create_pdf",
+			},
+			DeniedTools: []string{"install_skill", "delete_skill", "settings_update"},
+		},
+		ProfileAdminReview: {
+			Profile:      ProfileAdminReview,
+			Purpose:      "Review-only route for proposals and admin queues without silent mutation.",
+			Access:       AccessReviewOnly,
+			PositiveCues: []string{"review queue", "approval", "proposals", "admin"},
+			AllowedTools: []string{
+				"daily_briefing", "list_tasks",
+				"propose_wiki_change", "propose_skill_change",
+				"list_skills", "read_skill", "search_skill_catalog",
+			},
+			DeniedTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+		},
+	}
+}
+
+func missingAvailability(profile Profile, available Availability) string {
+	card, ok := ProfileCards()[normalizeProfile(string(profile))]
+	if !ok {
+		return ""
+	}
+	for _, req := range card.RequiredAvailability {
+		switch req {
+		case "swarm":
+			if !available.Swarm {
+				return req
+			}
+		case "sandbox":
+			if !available.Sandbox {
+				return req
+			}
+		case "proposals":
+			if !available.Proposals {
+				return req
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeProfile(value string) Profile {

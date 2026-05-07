@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/aura/aura/internal/config"
@@ -316,6 +317,20 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 	if !foundMemoryTimeout {
 		t.Fatal("MEMORY_SEARCH_TIMEOUT_MS not in settings response")
+	}
+
+	foundProfileMode := false
+	for _, it := range resp.Items {
+		if it.Key != settings.KeyToolProfileMode {
+			continue
+		}
+		foundProfileMode = true
+		if it.Kind != "enum" || !slices.Contains(it.Options, "admin_review") {
+			t.Fatalf("AURA_TOOL_PROFILE_MODE control = kind:%q options:%v, want admin_review option", it.Kind, it.Options)
+		}
+	}
+	if !foundProfileMode {
+		t.Fatal("AURA_TOOL_PROFILE_MODE not in settings response")
 	}
 }
 

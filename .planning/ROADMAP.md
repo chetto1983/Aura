@@ -43,7 +43,7 @@ Key outcomes:
 
 ### v3.1 Agent Orchestration And System Prompt Versioning
 
-Status: planned
+Status: active
 
 Plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
 
