@@ -112,6 +112,7 @@ type Deps struct {
 	Settings             settings.Repository
 	RuntimeConfig        *config.Config
 	ApplyRuntimeSettings func(context.Context) error
+	Restart              func(context.Context) error
 
 	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
 	// dashboard returns empty run lists and 404s for details.
@@ -222,6 +223,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /settings", handleSettingsList(deps))
 	mux.HandleFunc("POST /settings", handleSettingsUpdate(deps))
 	mux.HandleFunc("POST /settings/test", handleSettingsTest(deps))
+	mux.HandleFunc("POST /restart", handleRestart(deps))
 
 	// Garage backup/artifact vault.
 	mux.HandleFunc("GET /backups", handleBackupList(deps))

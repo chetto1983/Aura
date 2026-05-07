@@ -701,6 +701,35 @@ func TestSettingsUpdate_DoesNotApplyRuntimeHookForRestartOnlyAuraBotEnable(t *te
 	}
 }
 
+func TestRestartEndpointCallsRestartHook(t *testing.T) {
+	var calls int
+	router := NewRouter(Deps{
+		Restart: func(context.Context) error {
+			calls++
+			return nil
+		},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/restart", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if calls != 1 {
+		t.Fatalf("restart calls = %d, want 1", calls)
+	}
+}
+
+func TestRestartEndpointUnavailableWithoutHook(t *testing.T) {
+	router := NewRouter(Deps{})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("POST", "/restart", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503; body=%s", rr.Code, rr.Body)
+	}
+}
+
 func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
 	router, store := newSettingsEnv(t)
 	_ = store.Set(context.Background(), "LLM_API_KEY", "sk-old")

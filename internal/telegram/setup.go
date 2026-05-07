@@ -36,15 +36,37 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+type Option func(*options)
+
+type options struct {
+	Restart func(context.Context) error
+}
+
+func WithRestart(fn func(context.Context) error) Option {
+	return func(o *options) {
+		o.Restart = fn
+	}
+}
+
 // New creates a new Telegram bot with allowlist enforcement and LLM integration.
 //
 // settingsStore is the runtime configuration repository opened by main.go on
 // cfg.DBPath. It's threaded through so the dashboard's /settings page can
 // persist edits on the shared SQLite pool. May be nil (tests) — in that case
 // the dashboard /settings endpoints respond 503.
-func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, logger *slog.Logger) (*Bot, error) {
+func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, logger *slog.Logger, opts ...Option) (*Bot, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("telegram: db pool required")
+	}
+	var opt options
+	for _, apply := range opts {
+		if apply != nil {
+			apply(&opt)
+		}
+	}
+	loc, err := cfg.Location()
+	if err != nil {
+		return nil, fmt.Errorf("loading timezone %q: %w", cfg.Timezone, err)
 	}
 
 	pref := tele.Settings{
@@ -229,7 +251,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		return nil, fmt.Errorf("creating scheduler store: %w", err)
 	}
-	toolRegistry.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
+	toolRegistry.Register(tools.NewScheduleTaskTool(schedStore, loc))
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
@@ -342,6 +364,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	b := &Bot{
 		bot:         tb,
 		cfg:         cfg,
+		loc:         loc,
 		logger:      logger,
 		llm:         client,
 		wiki:        wikiStore,
@@ -404,7 +427,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// Slice 12h/12l.1: shared wiki_issues store. Both the API maintenance
 	// handlers and the nightly maintenance job read/write the same queue.
 	b.issues = scheduler.NewIssuesStore(schedStore.DB())
-	if tool := tools.NewDailyBriefingTool(schedStore, sourceStore, summariesStore, b.issues, b.archiveDB, time.Local); tool != nil {
+	if tool := tools.NewDailyBriefingTool(schedStore, sourceStore, summariesStore, b.issues, b.archiveDB, loc); tool != nil {
 		toolRegistry.Register(tool)
 	}
 
@@ -447,7 +470,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Store:      schedStore,
 		Dispatcher: b.dispatchTask,
 		Logger:     logger,
-		Location:   time.Local,
+		Location:   loc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating scheduler: %w", err)
@@ -458,7 +481,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// upsert keyed by name so restarting the bot won't duplicate it. The
 	// LLM can override the schedule with schedule_task using the same
 	// name, or cancel it with cancel_task.
-	nightlyAt, err := scheduler.NextDailyRun("03:00", time.Local, time.Now())
+	nightlyAt, err := scheduler.NextDailyRun("03:00", loc, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("computing nightly run: %w", err)
 	}
@@ -474,7 +497,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Bootstrap autonomous improvement task (nightly, offset from wiki maintenance)
-	autoImproveAt, err := scheduler.NextDailyRun("04:00", time.Local, time.Now())
+	autoImproveAt, err := scheduler.NextDailyRun("04:00", loc, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("computing auto-improve run: %w", err)
 	}
@@ -535,7 +558,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Auth:        authStore,
 		Allowlist:   b.isAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
-		Location:    time.Local,
+		Location:    loc,
 		// Keep in sync with cmd/aura/main.go's auraVersion. Hardcoded
 		// here because cmd/aura is not importable.
 		Version:   "3.0",
@@ -570,6 +593,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		ApplyRuntimeSettings: func(ctx context.Context) error {
 			return applyRuntimeSettings(ctx, settingsStore, cfg, auraRunner, swarmManager, b.budget, logger)
 		},
+		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
 	})

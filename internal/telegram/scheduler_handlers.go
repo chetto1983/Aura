@@ -148,8 +148,8 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 	}
 	now := time.Now()
 	result, err := b.agentRunner.Run(ctx, agent.Task{
-		SystemPrompt:  agentJobSystemPrompt(payload, now, time.Local),
-		Prompt:        b.agentJobPrompt(ctx, task, payload, now, time.Local),
+		SystemPrompt:  agentJobSystemPrompt(payload, now, b.loc),
+		Prompt:        b.agentJobPrompt(ctx, task, payload, now, b.loc),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
 		Temperature:   llm.Float64Ptr(0),

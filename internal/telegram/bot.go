@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/auth"
@@ -36,6 +37,7 @@ import (
 type Bot struct {
 	bot         *tele.Bot
 	cfg         *config.Config
+	loc         *time.Location
 	logger      *slog.Logger
 	llm         llm.Client
 	wiki        wiki.Repository

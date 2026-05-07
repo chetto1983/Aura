@@ -422,6 +422,11 @@ export interface SettingsUpdateResponse {
   runtime_error?: string;
 }
 
+export interface RestartResponse {
+  ok: boolean;
+  restarting: boolean;
+}
+
 export interface BackupObject {
   key: string;
   category: 'full_restore' | 'source_originals' | 'extractions' | 'memory_snapshot' | 'embedding_index' | 'audit_bundle' | 'manifest' | 'artifact';

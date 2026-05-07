@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
@@ -34,9 +37,12 @@ var (
 	date        = "unknown"
 )
 
+const restartDelayEnv = "AURA_RESTART_DELAY_MS"
+
 func main() {
 	// Initialize structured logger with zap backend and secret sanitization
 	logger, cleanupLog := logging.Setup("info", "./logs")
+	maybeDelayRestartChild(logger)
 
 	initialEnvPath := config.EnvPathFromEnvironment()
 	if err := loadDotEnv(initialEnvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -136,6 +142,38 @@ func waitForShutdownSignal() {
 	signal.Stop(sigCh)
 }
 
+func maybeDelayRestartChild(logger *slog.Logger) {
+	raw := strings.TrimSpace(os.Getenv(restartDelayEnv))
+	if raw == "" {
+		return
+	}
+	os.Unsetenv(restartDelayEnv)
+	ms, err := strconv.Atoi(raw)
+	if err != nil || ms <= 0 {
+		return
+	}
+	if logger != nil {
+		logger.Info("delaying restarted child", "ms", ms)
+	}
+	time.Sleep(time.Duration(ms) * time.Millisecond)
+}
+
+func spawnRestartProcess() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable: %w", err)
+	}
+	cmd := exec.Command(exe, os.Args[1:]...)
+	if wd, err := os.Getwd(); err == nil {
+		cmd.Dir = wd
+	}
+	cmd.Env = append(os.Environ(), restartDelayEnv+"=1500")
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start replacement process: %w", err)
+	}
+	return cmd.Process.Release()
+}
+
 func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ func(), activeLogger *slog.Logger, err error) {
 	activeLogger = logger
 	cleanup := cleanupLog
@@ -233,7 +271,22 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		healthServer.RegisterProvider("web_search", &webSearchHealthProvider{})
 	}
 
-	bot, err := telegram.New(cfg, settingsStore, pool, logger)
+	var stopCurrent func()
+	restart := func(context.Context) error {
+		if err := spawnRestartProcess(); err != nil {
+			return err
+		}
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			if stopCurrent != nil {
+				stopCurrent()
+			}
+			os.Exit(0)
+		}()
+		return nil
+	}
+
+	bot, err := telegram.New(cfg, settingsStore, pool, logger, telegram.WithRestart(restart))
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("create telegram bot: %w", err)
 	}
@@ -262,23 +315,28 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	go bot.Start()
 
-	closePool = false
-	return func() {
-		logger.Info("shutting down")
-		bot.Stop()
-		if err := healthServer.Shutdown(context.Background()); err != nil {
-			logger.Warn("health server shutdown failed", "error", err)
-		}
-		if shutdown != nil {
-			if err := shutdown(context.Background()); err != nil {
-				logger.Warn("tracing shutdown failed", "error", err)
+	var stopOnce sync.Once
+	stopCurrent = func() {
+		stopOnce.Do(func() {
+			logger.Info("shutting down")
+			bot.Stop()
+			if err := healthServer.Shutdown(context.Background()); err != nil {
+				logger.Warn("health server shutdown failed", "error", err)
 			}
-		}
-		pool.Close()
-		if cleanup != nil {
-			cleanup()
-		}
-	}, activeLogger, nil
+			if shutdown != nil {
+				if err := shutdown(context.Background()); err != nil {
+					logger.Warn("tracing shutdown failed", "error", err)
+				}
+			}
+			pool.Close()
+			if cleanup != nil {
+				cleanup()
+			}
+		})
+	}
+
+	closePool = false
+	return stopCurrent, activeLogger, nil
 }
 
 func reconcileBestDefaults(ctx context.Context, store settings.Repository, cfg *config.Config, logger *slog.Logger) {

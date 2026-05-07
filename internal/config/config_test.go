@@ -3,6 +3,9 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
+
+	"github.com/aura/aura/internal/scheduler"
 )
 
 func TestIsAllowlisted(t *testing.T) {
@@ -73,6 +76,29 @@ func TestLoadAllowsEmptyAllowlistForFirstRunBootstrap(t *testing.T) {
 	}
 }
 
+func TestLoadTimezoneResolvesDailySchedulesInConfiguredZone(t *testing.T) {
+	t.Setenv("AURA_TIMEZONE", "Europe/Rome")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	loc, err := cfg.Location()
+	if err != nil {
+		t.Fatalf("Location: %v", err)
+	}
+
+	after := time.Date(2026, 5, 7, 7, 0, 0, 0, time.UTC)
+	got, err := scheduler.NextDailyRun("10:00", loc, after)
+	if err != nil {
+		t.Fatalf("NextDailyRun: %v", err)
+	}
+	want := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("next run = %v, want %v (10:00 Europe/Rome during CEST)", got, want)
+	}
+}
+
 func TestLoadSuccess(t *testing.T) {
 	os.Setenv("TELEGRAM_TOKEN", "test-token")
 	os.Setenv("TELEGRAM_ALLOWLIST", "123,456")
@@ -121,6 +147,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
+	os.Unsetenv("AURA_TIMEZONE")
 	os.Unsetenv("AURA_HEADLESS")
 	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
@@ -251,6 +278,9 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.Headless {
 		t.Errorf("Headless = true, want false by default")
+	}
+	if cfg.Timezone != "" {
+		t.Errorf("Timezone = %q, want empty by default", cfg.Timezone)
 	}
 	if cfg.EnvPath != ".env" {
 		t.Errorf("EnvPath = %q, want .env", cfg.EnvPath)

@@ -79,6 +79,7 @@ type SettingsTestRequest struct {
 var settingsCatalog = []SettingItem{
 	{Key: settings.KeyTelegramToken, Group: "runtime", Kind: "text", IsSecret: true, Label: "Telegram bot token", Hint: "Saved as an override; restart Aura after changing the bot token"},
 	{Key: settings.KeyHTTPPort, Group: "runtime", Kind: "text", Label: "Dashboard bind address", Hint: "Restart Aura after changing the bind address"},
+	{Key: settings.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome; restart Aura after changing"},
 	{Key: settings.KeyHeadless, Group: "runtime", Kind: "bool", Label: "Headless/container mode", Hint: "Takes effect on next process start"},
 	{Key: settings.KeyEnvPath, Group: "runtime", Kind: "text", Label: "Env file path", Hint: "Early boot setting; use carefully and restart after changing"},
 	{Key: settings.KeyDBPath, Group: "runtime", Kind: "text", Label: "SQLite database path", Hint: "Early boot setting; use carefully and restart after changing"},
@@ -232,6 +233,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.TelegramToken
 	case settings.KeyHTTPPort:
 		return cfg.HTTPPort
+	case settings.KeyTimezone:
+		return cfg.Timezone
 	case settings.KeyHeadless:
 		return strconv.FormatBool(cfg.Headless)
 	case settings.KeyEnvPath:
@@ -481,5 +484,19 @@ func handleSettingsTest(deps Deps) http.HandlerFunc {
 		// 6s timeout is enforced inside ProbeProvider.
 		result := setup.ProbeProvider(context.Background(), req.BaseURL, req.APIKey, probePath)
 		writeJSON(w, deps.Logger, http.StatusOK, result)
+	}
+}
+
+func handleRestart(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if deps.Restart == nil {
+			writeError(w, deps.Logger, http.StatusServiceUnavailable, "restart unavailable")
+			return
+		}
+		if err := deps.Restart(r.Context()); err != nil {
+			writeError(w, deps.Logger, http.StatusInternalServerError, "restart failed: "+err.Error())
+			return
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"ok": true, "restarting": true})
 	}
 }

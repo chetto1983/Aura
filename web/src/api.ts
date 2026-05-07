@@ -29,6 +29,7 @@ import type {
   WikiIssue,
   SettingItem,
   SettingsUpdateResponse,
+  RestartResponse,
   BackupExportResponse,
   BackupListResponse,
   SwarmRunDetail,
@@ -290,6 +291,7 @@ export const api = {
   settings: () => get<{ items: SettingItem[] }>(`/settings`),
   updateSettings: (updates: Record<string, string>) =>
     post<SettingsUpdateResponse>(`/settings`, { updates }),
+  restart: () => post<RestartResponse>('/restart'),
   testProvider: (baseURL: string, apiKey: string, probePath?: string) =>
     post<{ ok: boolean; error?: string; models?: string[] }>(`/settings/test`, {
       base_url: baseURL,

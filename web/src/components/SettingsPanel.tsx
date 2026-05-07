@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Settings as SettingsIcon, Save, FlaskConical, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Settings as SettingsIcon, Save, FlaskConical, Eye, EyeOff, Loader2, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from 'react-i18next';
 import { api, ApiError } from '@/api';
@@ -22,6 +22,7 @@ export function SettingsPanel() {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +51,7 @@ export function SettingsPanel() {
 
   const dirtyKeys = Object.keys(pending);
   const hasChanges = dirtyKeys.length > 0;
+  const restartRequired = items.some((it) => it.restart_required);
 
   function valueOf(key: string): string {
     if (key in pending) return pending[key];
@@ -120,6 +122,17 @@ export function SettingsPanel() {
       toast.error(err instanceof ApiError ? err.message : String(err));
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function restartAura() {
+    setRestarting(true);
+    try {
+      await api.restart();
+      toast.success(t('settings.restart.toast'));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : String(err));
+      setRestarting(false);
     }
   }
 
@@ -201,10 +214,30 @@ export function SettingsPanel() {
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {hasChanges ? t('settings.saveCount', { count: dirtyKeys.length }) : t('settings.save')}
           </button>
+          {restartRequired && (
+            <button
+              onClick={() => void restartAura()}
+              disabled={restarting || saving || hasChanges}
+              title={hasChanges ? t('settings.restart.saveFirst') : t('settings.restart.hint')}
+              className="min-h-11 text-[13px] rounded-md px-3.5 border border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-200 hover:bg-orange-500/15 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}
+              {restarting ? t('settings.restart.restarting') : t('settings.restart.button')}
+            </button>
+          )}
           <span id="settings-test-disabled" className="sr-only">{t('settings.testDisabled')}</span>
           <span id="settings-save-disabled" className="sr-only">{t('settings.saveDisabled')}</span>
         </div>
       </header>
+
+      {restartRequired && (
+        <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-[13px] text-orange-800 dark:text-orange-100">
+          <div className="font-medium">{t('settings.restart.title')}</div>
+          <div className="mt-1 text-orange-700/90 dark:text-orange-100/80">
+            {t('settings.restart.description')}
+          </div>
+        </div>
+      )}
 
       {!loaded && <p className="text-[13px] text-muted-foreground">{t('common.loading')}</p>}
 

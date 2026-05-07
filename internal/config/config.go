@@ -3,6 +3,7 @@ package config
 import (
 	"slices"
 	"strings"
+	"time"
 )
 
 const DefaultOllamaWebBaseURL = "https://ollama.com/api"
@@ -78,6 +79,7 @@ type Config struct {
 	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
 	DBPath                     string  `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort                   string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
+	Timezone                   string  `envconfig:"AURA_TIMEZONE"`
 	Headless                   bool    `envconfig:"AURA_HEADLESS" default:"false"`
 	EnvPath                    string  `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
@@ -231,6 +233,7 @@ func Load() (*Config, error) {
 	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
+	cfg.Timezone = strings.TrimSpace(getEnv("AURA_TIMEZONE", ""))
 	cfg.Headless = getEnvBool("AURA_HEADLESS", false)
 	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
@@ -268,6 +271,21 @@ func Load() (*Config, error) {
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
 	return cfg, nil
+}
+
+// Location returns Aura's effective wall-clock location for scheduling and
+// prompts. Blank AURA_TIMEZONE keeps the process local timezone for desktop
+// runs; set an IANA name like Europe/Rome for containers or services that
+// otherwise start in UTC.
+func (c *Config) Location() (*time.Location, error) {
+	if c == nil || strings.TrimSpace(c.Timezone) == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(strings.TrimSpace(c.Timezone))
+	if err != nil {
+		return nil, err
+	}
+	return loc, nil
 }
 
 func normalizeSkillPreflight(value string) string {

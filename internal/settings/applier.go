@@ -18,6 +18,7 @@ const (
 	KeyTelegramToken              = "TELEGRAM_TOKEN"
 	KeyAllowlist                  = "TELEGRAM_ALLOWLIST"
 	KeyHTTPPort                   = "HTTP_PORT"
+	KeyTimezone                   = "AURA_TIMEZONE"
 	KeyHeadless                   = "AURA_HEADLESS"
 	KeyEnvPath                    = "AURA_ENV_PATH"
 	KeyDBPath                     = "DB_PATH"
@@ -104,7 +105,7 @@ func OverridableKeys() []string {
 	return []string{
 		KeyTelegramToken,
 		KeyAllowlist,
-		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath,
+		KeyHTTPPort, KeyTimezone, KeyHeadless, KeyEnvPath, KeyDBPath,
 		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir,
 		KeyMCPServersPath, KeyPromptOverlayPath, KeyDashboardTokenTTLHours,
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
@@ -157,6 +158,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	}
 
 	cfg.HTTPPort = settingString(ctx, s, KeyHTTPPort, cfg.HTTPPort)
+	cfg.Timezone = settingString(ctx, s, KeyTimezone, cfg.Timezone)
 	cfg.Headless = settingBool(ctx, s, KeyHeadless, cfg.Headless)
 	cfg.EnvPath = settingString(ctx, s, KeyEnvPath, cfg.EnvPath)
 	cfg.DBPath = settingString(ctx, s, KeyDBPath, cfg.DBPath)

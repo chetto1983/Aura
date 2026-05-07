@@ -87,7 +87,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	promptPlan := orchestration.ComposePrompt(orchestration.PromptInput{
 		Version:           b.cfg.PromptVersion,
 		Now:               time.Now(),
-		Location:          time.Local,
+		Location:          b.loc,
 		Overlay:           overlay,
 		SkillsBlock:       skillsBlock,
 		SwarmAvailable:    available.Swarm,
