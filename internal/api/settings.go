@@ -38,6 +38,8 @@ type SettingItem struct {
 	ReadOnly        bool     `json:"read_only"`         // visible diagnostics that must stay in .env / process env
 	Kind            string   `json:"kind,omitempty"`    // text | bool | int | float | enum | url (default "text")
 	Options         []string `json:"options,omitempty"` // populated only when kind=enum
+	Min             *float64 `json:"min,omitempty"`     // numeric lower bound for int/float controls
+	Max             *float64 `json:"max,omitempty"`     // numeric upper bound for int/float controls
 	Label           string   `json:"label,omitempty"`
 	Hint            string   `json:"hint,omitempty"` // optional one-line help under the input
 	Group           string   `json:"group,omitempty"`
@@ -163,10 +165,19 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
 	{Key: settings.KeyToolProfileMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "memory", "swarm_research", "sandbox_compute", "document", "admin_review"}, Label: "Tool profile mode", Hint: "auto selects a focused profile per turn"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
-	{Key: settings.KeySkillPreflight, Value: "required", Group: "agent", Kind: "enum", Options: []string{"required", "advisory", "off"}, Label: "Skill preflight", Hint: "required blocks capability tools until a relevant skill is read"},
+	{Key: settings.KeySkillPreflight, Value: config.DefaultSkillPreflight, Group: "agent", Kind: "enum", Options: []string{"required", "advisory", "off"}, Label: "Skill preflight", Hint: "required blocks capability tools until a relevant skill is read"},
+	{Key: settings.KeySkillRoutingMode, Value: config.DefaultSkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode", Hint: "manifest uses deterministic skill metadata; manifest_llm_review is reserved for ambiguous routing experiments"},
+	{Key: settings.KeyAgentLoopMaxSteps, Value: strconv.Itoa(config.DefaultAgentLoopMaxSteps), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps", Hint: "Hard cap for the main model/tool loop"},
+	{Key: settings.KeyTerminalToolPolicy, Value: config.DefaultTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"profile", "off"}, Label: "Terminal tool policy", Hint: "profile lets routes stop after declared aggregate tools"},
+	{Key: settings.KeyDelegationMode, Value: config.DefaultDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode", Hint: "fast keeps delegation small; bounded allows wider swarm execution; async is for future durable tasks"},
+	{Key: settings.KeyTraceRetentionDays, Value: strconv.Itoa(config.DefaultTraceRetentionDays), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(365), Label: "Trace retention days", Hint: "How long orchestration trace records are kept before cleanup"},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
 	{Key: settings.KeySkillsCatalogURL, Group: "other", Kind: "url", Label: "Skills catalog URL"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
+}
+
+func floatPtr(value float64) *float64 {
+	return &value
 }
 
 func handleSettingsList(deps Deps) http.HandlerFunc {
@@ -343,6 +354,16 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.OrchestrationLogLevel
 	case settings.KeySkillPreflight:
 		return cfg.SkillPreflight
+	case settings.KeySkillRoutingMode:
+		return cfg.SkillRoutingMode
+	case settings.KeyAgentLoopMaxSteps:
+		return strconv.Itoa(cfg.AgentLoopMaxSteps)
+	case settings.KeyTerminalToolPolicy:
+		return cfg.TerminalToolPolicy
+	case settings.KeyDelegationMode:
+		return cfg.DelegationMode
+	case settings.KeyTraceRetentionDays:
+		return strconv.Itoa(cfg.TraceRetentionDays)
 	case settings.KeyMistralAPIKey:
 		return cfg.MistralAPIKey
 	case settings.KeyMistralOCRModel:
@@ -459,7 +480,9 @@ func touchesLiveRuntimeSetting(keys []string) bool {
 	for _, key := range keys {
 		switch key {
 		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations,
-			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens:
+			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens,
+			settings.KeySkillPreflight, settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps, settings.KeyTerminalToolPolicy,
+			settings.KeyDelegationMode, settings.KeyTraceRetentionDays:
 			return true
 		}
 	}

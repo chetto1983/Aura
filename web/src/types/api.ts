@@ -409,9 +409,11 @@ export interface SettingItem {
   read_only: boolean;
   kind?: SettingKind;
   options?: string[]; // present when kind === 'enum'
+  min?: number;
+  max?: number;
   label?: string;
   hint?: string;
-  group?: 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'other';
+  group?: 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'agent' | 'other';
 }
 
 export interface SettingsUpdateResponse {

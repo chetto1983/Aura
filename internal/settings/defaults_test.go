@@ -137,18 +137,31 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 	mustSet(t, s, KeyWebSearchProvider, "unknown")
 	mustSet(t, s, KeySandboxRuntimeMode, "bad")
 	mustSet(t, s, KeySkillPreflight, "maybe")
+	mustSet(t, s, KeySkillRoutingMode, "llm")
+	mustSet(t, s, KeyAgentLoopMaxSteps, "0")
+	mustSet(t, s, KeyTerminalToolPolicy, "always")
+	mustSet(t, s, KeyDelegationMode, "unbounded")
+	mustSet(t, s, KeyTraceRetentionDays, "366")
 
 	changes, err := ApplyBestDefaults(ctx, s, containerDefaultsConfig())
 	if err != nil {
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
-	for _, key := range []string{KeySearchBackend, KeyWebSearchProvider, KeySandboxRuntimeMode, KeySkillPreflight} {
+	for _, key := range []string{
+		KeySearchBackend, KeyWebSearchProvider, KeySandboxRuntimeMode, KeySkillPreflight,
+		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
+	} {
 		assertChanged(t, changes, key)
 	}
 	assertSetting(t, s, KeySearchBackend, "qdrant")
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySandboxRuntimeMode, "container")
 	assertSetting(t, s, KeySkillPreflight, config.DefaultSkillPreflight)
+	assertSetting(t, s, KeySkillRoutingMode, config.DefaultSkillRoutingMode)
+	assertSetting(t, s, KeyAgentLoopMaxSteps, "6")
+	assertSetting(t, s, KeyTerminalToolPolicy, config.DefaultTerminalToolPolicy)
+	assertSetting(t, s, KeyDelegationMode, config.DefaultDelegationMode)
+	assertSetting(t, s, KeyTraceRetentionDays, "30")
 }
 
 func containerDefaultsConfig() *config.Config {

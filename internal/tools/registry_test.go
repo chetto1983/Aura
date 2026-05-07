@@ -54,7 +54,7 @@ func TestRegistryExecuteMissingTool(t *testing.T) {
 	}
 }
 
-func TestRegistryDefinitionsForFiltersAndKeepsRegistryOrder(t *testing.T) {
+func TestRegistryDefinitionsForFiltersAndKeepsAllowlistOrder(t *testing.T) {
 	reg := NewRegistry(nil)
 	reg.Register(namedFakeTool{name: "alpha"})
 	reg.Register(namedFakeTool{name: "beta"})
@@ -64,8 +64,8 @@ func TestRegistryDefinitionsForFiltersAndKeepsRegistryOrder(t *testing.T) {
 	if len(defs) != 2 {
 		t.Fatalf("DefinitionsFor length = %d, want 2: %+v", len(defs), defs)
 	}
-	if defs[0].Name != "alpha" || defs[1].Name != "gamma" {
-		t.Fatalf("DefinitionsFor names = %q,%q; want alpha,gamma", defs[0].Name, defs[1].Name)
+	if defs[0].Name != "gamma" || defs[1].Name != "alpha" {
+		t.Fatalf("DefinitionsFor names = %q,%q; want gamma,alpha", defs[0].Name, defs[1].Name)
 	}
 }
 

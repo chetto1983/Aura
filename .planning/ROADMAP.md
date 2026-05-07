@@ -60,6 +60,17 @@ Success criteria:
 - Debug Telegram smoke reports exposed tools, called tools, tokens, estimated context, and cost.
 - Document, sandbox-compute, memory, and swarm-research prompts each choose the expected profile in tests.
 
+Current closure evidence:
+
+- Deterministic route evals pass for pipeline audit, memory answer, document summary, CSV/chart compute, dashboard settings, Docker release, MCP plugin proposal, and ordinary answers.
+- Live swarm smoke passes with terminal swarm, one bounded worker, no post-swarm parent tool calls, token/cost metrics, no stale skill refs, and elapsed time under 30s.
+- Live sandbox smoke passes with `list_skills -> read_skill(aura-python-sandbox) -> execute_code`, artifact persistence, token/cost metrics, no stale skill refs, and elapsed time under 30s.
+- Settings Playwright E2E passes and preserves orchestration enum/numeric values.
+
+Open blocker:
+
+- Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files after reading `docx`, but the configured live model keeps expanding evidence before `create_docx`, causing >30s latency and occasional malformed tool JSON. v3.1 remains active until the document route is bounded with compact evidence or an equivalent deterministic helper.
+
 ### v4.0 MCP Marketplace And Autonomous Plugin Manager
 
 Status: planned

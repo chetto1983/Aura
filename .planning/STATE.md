@@ -34,11 +34,22 @@ v3.1 implementation evidence:
 - SQLite remains canonical state. MongoDB was evaluated and deferred until repository metrics justify an optional adapter for high-volume archives/traces/audit logs.
 - Focused gate passed: `go test ./internal/conversation ./internal/telegram ./internal/tools ./internal/toolsets ./internal/settings ./internal/api ./internal/orchestration ./cmd/debug_telegram_sandbox ./cmd/debug_files ./cmd/debug_orchestration -count=1`.
 - Route probes passed for pipeline review (`swarm_research`) and computed CSV/chart (`sandbox_compute`).
+- Codex-style skill orchestration phases 5-7 are implemented:
+  - debug route reports include profile, capabilities, exposed tools, skill reads, hidden-tool rejection, loop steps, terminal tool, token/cost, and trace fields;
+  - dashboard settings expose orchestration controls as combo boxes/bounded numeric inputs;
+  - deterministic route evals cover common prompts and assert hidden tools/stale refs;
+  - skill-preflight misses are retryable so the model can read the suggested skill and retry in the same turn;
+  - `aura-python-sandbox` satisfies sandbox preflight;
+  - terminal `execute_code` and typed file tools return directly from tool output instead of spending another LLM call.
+- Auto-low-risk memory capture now blocks obvious address/fuel-card/personal facts from automatic wiki writes and routes them to review.
 
 Open v3.1 orchestration blocker:
 
-- Live swarm route originally selected the right `swarm_research` profile but continued extra parent tool reads after `run_aurabot_swarm`, hit max-loop behavior, and did not report token/cost metrics. The Hermes-style hardening slice now passes its focused live smoke with runtime-launched terminal swarm, one default worker, worker failures `0`, token/cost metrics present, and elapsed time under 30 seconds. v3.1 still needs the broader release gate before closure.
+- Live swarm route originally selected the right `swarm_research` profile but continued extra parent tool reads after `run_aurabot_swarm`, hit max-loop behavior, and did not report token/cost metrics. The Hermes-style hardening slice now passes its focused live smoke with runtime-launched terminal swarm, one default worker, worker failures `0`, token/cost metrics present, and elapsed time under 30 seconds.
+- Live sandbox route now passes under 30s with `list_skills -> read_skill(aura-python-sandbox) -> execute_code`, artifact persistence, terminal tool finalization, token/cost metrics, and no stale skill refs.
+- Live document route remains the active closure blocker. It can read `docx`, create, persist, and deliver DOCX files, but the broad "riepilogo documenti e note" prompt still expands evidence too much on the configured live model, exceeding 30s and sometimes producing malformed `create_docx` JSON. v3.1 stays active until this route gets compact bounded evidence or a deterministic document-summary helper.
 - Canonical sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md`
+- Current closure sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`
 
 ## Next Milestone Handoff
 
@@ -68,7 +79,7 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 - Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
 - For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
 - For the next Codex-style route hardening slice, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`. It records the online research, best skills to use, capability taxonomy, required skill preflight, loop policies, dashboard settings, and E2E closure phases.
-- Before closing v3.1, reconcile the unchecked tasks in that plan with the shipped hook/profile/debug work and append final validation to `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`.
+- Before closing v3.1, finish the document-route blocker recorded in `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`, then rerun the full release gate.
 - Keep v4.0 MCP/plugin work blocked behind v3.1 tool-profile/prompt-versioning clarity.
 - For v4.0 sidecars, copy the Pyodide pattern: keep runtime bloat out of the Aura image, use internal service URLs, health checks, pinned images where possible, and rollback-friendly managed config.
 - If adding new intake formats later, update source policy, Telegram validation, API acceptance, dashboard copy, extraction tests, and E2E together.

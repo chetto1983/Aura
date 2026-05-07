@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -52,6 +53,10 @@ func (f *fakeBudgetConfigurator) ApplyConfig(cfg budget.Config) {
 }
 
 func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
+	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "")
+	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "")
+	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
+	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
 	store := fakeSettingsReader{
 		settings.KeyAuraBotMaxActive:     "6",
 		settings.KeyAuraBotMaxDepth:      "2",
@@ -61,12 +66,24 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 		settings.KeyHardBudget:           "8.5",
 		settings.KeyCostInputPerMTokens:  "0.14",
 		settings.KeyCostOutputPerMTokens: "0.42",
+		settings.KeySkillPreflight:       "advisory",
+		settings.KeySkillRoutingMode:     "manifest_llm_review",
+		settings.KeyAgentLoopMaxSteps:    "8",
+		settings.KeyTerminalToolPolicy:   "off",
+		settings.KeyDelegationMode:       "bounded",
+		settings.KeyTraceRetentionDays:   "45",
 	}
 	cfg := &config.Config{
 		SoftBudget:           1,
 		HardBudget:           2,
 		CostInputPerMTokens:  0.2,
 		CostOutputPerMTokens: 0.8,
+		SkillPreflight:       config.DefaultSkillPreflight,
+		SkillRoutingMode:     config.DefaultSkillRoutingMode,
+		AgentLoopMaxSteps:    config.DefaultAgentLoopMaxSteps,
+		TerminalToolPolicy:   config.DefaultTerminalToolPolicy,
+		DelegationMode:       config.DefaultDelegationMode,
+		TraceRetentionDays:   config.DefaultTraceRetentionDays,
 	}
 	runner := &fakeAgentLimits{}
 	manager := &fakeSwarmLimits{}
@@ -87,6 +104,34 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	}
 	if tracker.cfg.SoftBudget != 3.25 || tracker.cfg.HardBudget != 8.5 || tracker.cfg.InputCostPerMTokens != 0.14 || tracker.cfg.OutputCostPerMTokens != 0.42 {
 		t.Fatalf("budget config = %+v", tracker.cfg)
+	}
+	if cfg.SkillPreflight != "advisory" ||
+		cfg.SkillRoutingMode != "manifest_llm_review" ||
+		cfg.AgentLoopMaxSteps != 8 ||
+		cfg.TerminalToolPolicy != "off" ||
+		cfg.DelegationMode != "bounded" ||
+		cfg.TraceRetentionDays != 45 {
+		t.Fatalf("cfg orchestration settings = %+v", cfg)
+	}
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" || os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS") != "16000" {
+		t.Fatalf("bounded delegation env = workers:%q chars:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS"))
+	}
+}
+
+func TestApplyDelegationModeRuntimeFastAndBounded(t *testing.T) {
+	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "")
+	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "")
+	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
+	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
+
+	applyDelegationModeRuntime("fast")
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "1" || os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "25000" {
+		t.Fatalf("fast delegation env = workers:%q timeout:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"))
+	}
+
+	applyDelegationModeRuntime("bounded")
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" || os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "30000" {
+		t.Fatalf("bounded delegation env = workers:%q timeout:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"))
 	}
 }
 

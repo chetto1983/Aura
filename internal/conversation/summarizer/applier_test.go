@@ -207,6 +207,37 @@ func TestAutoLowRiskApplier_SensitiveFactFallsBackToReview(t *testing.T) {
 	}
 }
 
+func TestAutoLowRiskApplier_AddressAndFuelCardFactsFallBackToReview(t *testing.T) {
+	db := newReviewDB(t)
+	ws := &fakeWikiStore{}
+	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
+	if err != nil {
+		t.Fatalf("NewAutoLowRiskApplier: %v", err)
+	}
+
+	for _, fact := range []string{
+		"Davide Marchetto resides at Via Mazzini 2, 12023 Caraglio (CN), Italy.",
+		"Davide is associated with Sacchi Giuseppe SpA through a UTA fuel card.",
+	} {
+		decision := makeDecision(summarizer.ActionNew, "")
+		decision.Candidate.Fact = fact
+		decision.Candidate.Category = "personal"
+		decision.Candidate.Score = 1.0
+		if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
+			t.Fatalf("ApplyForChat(%q): %v", fact, err)
+		}
+	}
+
+	if len(ws.written) != 0 {
+		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
+	}
+	var proposals int
+	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
+	if proposals != 2 {
+		t.Fatalf("review proposals = %d, want 2", proposals)
+	}
+}
+
 func TestNewAutoLowRiskApplierRejectsMissingDependencies(t *testing.T) {
 	if _, err := summarizer.NewAutoLowRiskApplier(nil, newReviewDB(t)); err == nil {
 		t.Fatal("NewAutoLowRiskApplier(nil, db) error = nil, want error")

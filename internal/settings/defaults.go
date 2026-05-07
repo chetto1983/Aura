@@ -129,6 +129,36 @@ func validationRules(cfg *config.Config) []defaultRule {
 			shouldSet: missingOrInvalidSet("required", "advisory", "off"),
 		},
 		{
+			key:       KeySkillRoutingMode,
+			value:     config.DefaultSkillRoutingMode,
+			reason:    "repair invalid skill routing mode",
+			shouldSet: missingOrInvalidSet("manifest", "manifest_llm_review"),
+		},
+		{
+			key:       KeyAgentLoopMaxSteps,
+			value:     strconv.Itoa(config.DefaultAgentLoopMaxSteps),
+			reason:    "repair invalid agent loop step limit",
+			shouldSet: missingOrOutOfRangeInt(1, 50),
+		},
+		{
+			key:       KeyTerminalToolPolicy,
+			value:     config.DefaultTerminalToolPolicy,
+			reason:    "repair invalid terminal tool policy",
+			shouldSet: missingOrInvalidSet("profile", "off"),
+		},
+		{
+			key:       KeyDelegationMode,
+			value:     config.DefaultDelegationMode,
+			reason:    "repair invalid delegation mode",
+			shouldSet: missingOrInvalidSet("fast", "bounded", "async"),
+		},
+		{
+			key:       KeyTraceRetentionDays,
+			value:     strconv.Itoa(config.DefaultTraceRetentionDays),
+			reason:    "repair invalid trace retention days",
+			shouldSet: missingOrOutOfRangeInt(1, 365),
+		},
+		{
 			key:       KeySearchBackend,
 			value:     searchBackendDefault,
 			reason:    "repair invalid search backend",
@@ -253,6 +283,17 @@ func missingOrInvalidSet(allowed ...string) func(string, bool) bool {
 		}
 		_, ok := valid[normalized]
 		return !ok
+	}
+}
+
+func missingOrOutOfRangeInt(min, max int) func(string, bool) bool {
+	return func(current string, exists bool) bool {
+		normalized := strings.TrimSpace(current)
+		if normalized == "" {
+			return false
+		}
+		value, err := strconv.Atoi(normalized)
+		return err != nil || value < min || value > max
 	}
 }
 

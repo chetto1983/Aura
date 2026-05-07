@@ -163,7 +163,7 @@ func (a *AutoLowRiskApplier) ApplyForChat(ctx context.Context, chatID int64, d D
 	return a.review.ApplyForChat(ctx, chatID, d)
 }
 
-var sensitiveFactPattern = regexp.MustCompile(`(?i)\b(api[_ -]?key|bearer|credential|password|passphrase|secret|token|private[_ -]?key|ssh[_ -]?key|seed phrase|recovery phrase|otp|2fa|social security|ssn|codice fiscale|iban|credit card|carta di credito|email|e-mail|phone|telefono|address|indirizzo|diagnos|medical|health|salute|legal|lawyer|avvocato|salary|stipendio|bank|banca)\b`)
+var sensitiveFactPattern = regexp.MustCompile(`(?i)\b(api[_ -]?key|bearer|credential|password|passphrase|secret|token|private[_ -]?key|ssh[_ -]?key|seed phrase|recovery phrase|otp|2fa|social security|ssn|codice fiscale|iban|credit card|carta di credito|fuel card|carta carburante|email|e-mail|phone|telefono|address|indirizzo|resides at|lives at|abita|residenza|via\s+[[:alnum:]]|viale\s+[[:alnum:]]|piazza\s+[[:alnum:]]|corso\s+[[:alnum:]]|strada\s+[[:alnum:]]|diagnos|medical|health|salute|legal|lawyer|avvocato|salary|stipendio|bank|banca)\b`)
 
 func autoLowRiskDecision(d Decision, minScore float64) bool {
 	if !IsWikiAction(d.Action.String()) || d.Action == ActionSkip {
@@ -185,7 +185,7 @@ func autoLowRiskDecision(d Decision, minScore float64) bool {
 func autoLowRiskSensitiveCategory(category string) bool {
 	switch strings.ToLower(strings.TrimSpace(category)) {
 	case "secret", "credential", "credentials", "token", "api_key", "password",
-		"health", "medical", "finance", "financial", "legal", "contact", "personal_contact", "pii":
+		"health", "medical", "finance", "financial", "legal", "contact", "personal_contact", "personal", "pii":
 		return true
 	default:
 		return false

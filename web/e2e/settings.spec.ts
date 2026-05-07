@@ -118,4 +118,46 @@ test.describe('settings page (14d)', () => {
     const searchOptions = await searchBackend.locator('option').allTextContents();
     expect(searchOptions).toEqual(['chromem', 'qdrant']);
   });
+
+  test('orchestration settings save and reload with enum and bounded numeric controls', async ({ authedPage: page, request }) => {
+    await page.goto('/settings');
+
+    const delegation = page.locator('select#AURA_DELEGATION_MODE');
+    const retention = page.locator('input#AURA_TRACE_RETENTION_DAYS');
+    await expect(delegation).toBeVisible({ timeout: 5_000 });
+    await expect(retention).toBeVisible();
+
+    const originalDelegation = await delegation.inputValue();
+    const originalRetention = await retention.inputValue();
+    const probeDelegation = originalDelegation === 'bounded' ? 'fast' : 'bounded';
+    const probeRetention = originalRetention === '31' ? '32' : '31';
+    const token = process.env.AURA_E2E_TOKEN!;
+
+    try {
+      await delegation.selectOption(probeDelegation);
+      await retention.fill(probeRetention);
+      await expect(page.getByRole('button', { name: /save\s+(\(\d+\)|\u00b7\s*\d+)/i })).toBeEnabled();
+
+      await Promise.all([
+        page.waitForResponse((r) => r.url().endsWith('/api/settings') && r.request().method() === 'POST'),
+        page.getByRole('button', { name: /save/i }).click(),
+      ]);
+      await expect(page.getByRole('button', { name: /^save$/i })).toBeDisabled({ timeout: 5_000 });
+
+      await page.reload();
+      await expect(page.locator('select#AURA_DELEGATION_MODE')).toHaveValue(probeDelegation);
+      await expect(page.locator('input#AURA_TRACE_RETENTION_DAYS')).toHaveValue(probeRetention);
+    } finally {
+      const reset = await request.post('/api/settings', {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          updates: {
+            AURA_DELEGATION_MODE: originalDelegation,
+            AURA_TRACE_RETENTION_DAYS: originalRetention,
+          },
+        },
+      });
+      expect(reset.status()).toBe(200);
+    }
+  });
 });

@@ -187,6 +187,7 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		ToolCalls:          []string{"read_skill", "run_aurabot_swarm", "execute_code"},
 		ToolProfile:        "sandbox_compute",
 		FinalText:          "Swarm research completed.",
+		PromptHash:         "abc123",
 		SkillsRead:         true,
 		SwarmUsed:          true,
 		TerminalSwarm:      true,
@@ -197,18 +198,29 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		TokensTotal:        10,
 		ElapsedMS:          100,
 		SandboxUsed:        true,
+		HiddenToolRejected: true,
+		LoopSteps:          3,
+		TerminalTool:       "execute_code",
+		ReadSkills:         []string{"test-driven-development"},
+		ActiveCapabilities: []string{"sandbox_compute"},
 		ToolsExposed:       []string{"read_skill", "run_aurabot_swarm", "execute_code"},
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
-		Profile:       "sandbox_compute",
-		Tools:         []string{"read_skill", "execute_code"},
-		SkillRead:     true,
-		SwarmUsed:     true,
-		TerminalSwarm: true,
-		TokenMetrics:  true,
-		SandboxUsed:   true,
-		MaxElapsedMS:  1000,
+		Profile:            "sandbox_compute",
+		Tools:              []string{"read_skill", "execute_code"},
+		SkillRead:          true,
+		SkillReadNames:     []string{"test-driven-development", "sandbox_compute"},
+		SwarmUsed:          true,
+		TerminalSwarm:      true,
+		TokenMetrics:       true,
+		SandboxUsed:        true,
+		HiddenToolRejected: true,
+		TerminalTool:       "execute_code",
+		MaxLoopSteps:       3,
+		TraceFields:        []string{"PromptHash", "ToolProfile", "ReadSkills", "ActiveCapabilities"},
+		NoStaleSkillRef:    true,
+		MaxElapsedMS:       1000,
 	})
 	if err != nil {
 		t.Fatalf("validateDebugExpectations() error = %v", err)
@@ -256,12 +268,106 @@ func TestValidateDebugExpectationsRejectsMissingUsageSignals(t *testing.T) {
 	}
 }
 
+func TestValidateDebugExpectationsRejectsMissingNamedSkillRead(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		SkillsRead: true,
+		ReadSkills: []string{"document-pdf"},
+	}
+
+	err := validateDebugExpectations(result, debugExpectations{SkillReadNames: []string{"docx"}})
+	if err == nil || !strings.Contains(err.Error(), `expected read_skill for "docx"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want named skill failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsAcceptsCapabilitySkillRead(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		SkillsRead:         true,
+		ReadSkills:         []string{"document-pdf"},
+		ActiveCapabilities: []string{"document_generation"},
+	}
+
+	err := validateDebugExpectations(result, debugExpectations{SkillReadNames: []string{"document_generation"}})
+	if err != nil {
+		t.Fatalf("validateDebugExpectations() error = %v", err)
+	}
+}
+
+func TestOptionalCSVFlagPreservesBooleanAndNamedSkillModes(t *testing.T) {
+	var f optionalCSVFlag
+	if err := f.Set("true"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Any || len(f.Values) != 0 {
+		t.Fatalf("bool flag = any:%v values:%v", f.Any, f.Values)
+	}
+	if err := f.Set("docx, sandbox_compute"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Any || !hasAll(f.Values, "docx", "sandbox_compute") {
+		t.Fatalf("named flag = any:%v values:%v", f.Any, f.Values)
+	}
+}
+
 func TestValidateDebugExpectationsRejectsSlowRun(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{ElapsedMS: 2000}
 
 	err := validateDebugExpectations(result, debugExpectations{MaxElapsedMS: 1000})
 	if err == nil || !strings.Contains(err.Error(), "exceeds budget") {
 		t.Fatalf("validateDebugExpectations() error = %v, want elapsed failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingHiddenToolRejection(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{HiddenToolRejected: true})
+	if err == nil || !strings.Contains(err.Error(), "hidden tool rejection") {
+		t.Fatalf("validateDebugExpectations() error = %v, want hidden tool rejection failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsWrongTerminalTool(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{TerminalTool: "run_aurabot_swarm"}
+
+	err := validateDebugExpectations(result, debugExpectations{TerminalTool: "execute_code"})
+	if err == nil || !strings.Contains(err.Error(), `expected terminal tool "execute_code"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want terminal tool failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsLoopStepOverBudget(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{LoopSteps: 7}
+
+	err := validateDebugExpectations(result, debugExpectations{MaxLoopSteps: 6})
+	if err == nil || !strings.Contains(err.Error(), "loop_steps 7 exceeds budget 6") {
+		t.Fatalf("validateDebugExpectations() error = %v, want loop step budget failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingTraceField(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolProfile: "sandbox_compute"}
+
+	err := validateDebugExpectations(result, debugExpectations{TraceFields: []string{"ToolProfile", "PromptHash"}})
+	if err == nil || !strings.Contains(err.Error(), `expected trace/result field "PromptHash"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want trace field failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsUnknownTraceField(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{TraceFields: []string{"NoSuchField"}})
+	if err == nil || !strings.Contains(err.Error(), `unknown trace/result field "NoSuchField"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want unknown trace field failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsStaleSkillReferences(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		ReadSkills: []string{"golem.yaml"},
+		ToolCalls:  []string{"run_aurabot_worker"},
+	}
+
+	err := validateDebugExpectations(result, debugExpectations{NoStaleSkillRef: true})
+	if err == nil || !strings.Contains(err.Error(), "stale skill/reference") {
+		t.Fatalf("validateDebugExpectations() error = %v, want stale reference failure", err)
 	}
 }
 
@@ -326,5 +432,19 @@ func TestValidateDebugExpectationsRejectsConflictingToolExpectations(t *testing.
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot combine") {
 		t.Fatalf("validateDebugExpectations() error = %v, want conflict failure", err)
+	}
+}
+
+func TestRedactForReportRemovesKnownSecretValues(t *testing.T) {
+	input := `LLM_API_KEY=sk-live TELEGRAM_BOT_TOKEN=123:abc Authorization: Bearer dashboard-token final Bearer inline-token raw sk-rawsecret`
+
+	got := redactForReport(input)
+	for _, secret := range []string{"sk-live", "123:abc", "dashboard-token", "inline-token", "sk-rawsecret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redactForReport() leaked %q in %q", secret, got)
+		}
+	}
+	if strings.Count(got, "[REDACTED]")+strings.Count(got, "[redacted]") != 5 {
+		t.Fatalf("redactForReport() = %q, want five redactions", got)
 	}
 }

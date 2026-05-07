@@ -76,7 +76,7 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 		Capability: CapabilitySandboxCompute,
 		Profiles:   []Profile{ProfileSandboxCompute},
 		Tools:      []string{"execute_code"},
-		SkillHints: []string{"systematic-debugging", "test-driven-development", "sandbox compute"},
+		SkillHints: []string{"aura-python-sandbox", "systematic-debugging", "test-driven-development", "sandbox compute"},
 	},
 	CapabilitySwarmResearch: {
 		Capability: CapabilitySwarmResearch,

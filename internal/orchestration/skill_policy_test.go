@@ -173,6 +173,18 @@ func TestNeedsSkillPreflightAcceptsSkillHintReadsForXLSXAndPDF(t *testing.T) {
 	}
 }
 
+func TestNeedsSkillPreflightAcceptsAuraPythonSandboxSkill(t *testing.T) {
+	decision := NeedsSkillPreflight(ProfileSandboxCompute, CapabilitySandboxCompute, "execute_code", SkillPreflightState{
+		ReadSkillNames: []string{"aura-python-sandbox"},
+	}, SkillPreflightRequired)
+	if decision.Required && !decision.Satisfied {
+		t.Fatalf("aura-python-sandbox read did not satisfy sandbox preflight: %+v", decision)
+	}
+	if decision.MatchedSkill != "aura-python-sandbox" {
+		t.Fatalf("MatchedSkill = %q, want aura-python-sandbox", decision.MatchedSkill)
+	}
+}
+
 func TestNeedsSkillPreflightInfersProfileAwareSourceExtractionForDocumentTools(t *testing.T) {
 	decision := NeedsSkillPreflight(ProfileDocument, "", "read_source", SkillPreflightState{}, SkillPreflightRequired)
 	if !decision.Applies {
@@ -189,7 +201,7 @@ func TestNeedsSkillPreflightInfersProfileAwareSourceExtractionForDocumentTools(t
 	}
 
 	for _, profile := range []Profile{ProfileDocument, ProfileSandboxCompute} {
-		for _, tool := range []string{"read_source", "list_sources"} {
+		for _, tool := range []string{"read_source"} {
 			decision := NeedsSkillPreflight(profile, CapabilityMemoryRead, tool, SkillPreflightState{}, SkillPreflightRequired)
 			if decision.Capability != CapabilitySourceExtraction {
 				t.Fatalf("NeedsSkillPreflight(%q, memory_read, %q) Capability = %q, want source_extraction", profile, tool, decision.Capability)
@@ -198,6 +210,16 @@ func TestNeedsSkillPreflightInfersProfileAwareSourceExtractionForDocumentTools(t
 				t.Fatalf("NeedsSkillPreflight(%q, memory_read, %q) Required = false, want true", profile, tool)
 			}
 		}
+	}
+}
+
+func TestNeedsSkillPreflightKeepsListSourcesAsReadOnlyMemory(t *testing.T) {
+	decision := NeedsSkillPreflight(ProfileDocument, "", "list_sources", SkillPreflightState{}, SkillPreflightRequired)
+	if decision.Capability != CapabilityMemoryRead {
+		t.Fatalf("Capability = %q, want memory_read for read-only source listing", decision.Capability)
+	}
+	if decision.Required {
+		t.Fatalf("Required = true, want advisory/read-only list_sources preflight: %+v", decision)
 	}
 }
 

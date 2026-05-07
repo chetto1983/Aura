@@ -336,8 +336,8 @@ var profileCardCatalog = []ProfileCard{
 		RequiredAvailability: []string{"sandbox"},
 		AvailabilityFallback: ProfileDefault,
 		AllowedTools: []string{
-			"execute_code", "list_tools", "read_tool",
 			"list_skills", "read_skill",
+			"execute_code", "list_tools", "read_tool",
 			"search_memory", "list_sources", "read_source", "store_source",
 		},
 		DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
@@ -358,16 +358,14 @@ var profileCardCatalog = []ProfileCard{
 		NegativeCues: []string{"calcola", "calculate", "compute", "grafico", "chart", "plot", "csv"},
 		AllowedTools: []string{
 			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "list_wiki", "read_wiki", "search_wiki",
-			"list_sources", "read_source",
+			"search_memory", "list_sources",
 			"create_docx", "create_xlsx", "create_pdf",
-		},
-		ConditionalTools: []ConditionalToolSet{
-			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result"}},
+			"read_wiki", "read_source",
 		},
 		DeniedTools: []string{"install_skill", "delete_skill", "settings_update"},
 		LoopPolicy: LoopPolicy{
 			MaxSteps:                6,
+			TerminalTools:           []string{"create_docx", "create_xlsx", "create_pdf"},
 			AllowNoToolFinalization: true,
 			DuplicateToolPolicy:     "Reject duplicate file generation calls for the same target format unless revising a failed artifact.",
 			MaxElapsed:              45 * time.Second,
@@ -500,7 +498,7 @@ func profilePrompt(profile Profile) string {
 	case ProfileSwarmResearch:
 		return "\nUse the swarm-first read-only route for broad synthesis, audits, planning, memory quality checks, and pipeline reviews. Direct wiki/source/memory tools are intentionally hidden in this profile so the parent agent does not duplicate worker reads. Do not write or create files in this profile."
 	case ProfileSandboxCompute:
-		return "\nUse Python sandbox first for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out."
+		return "\nUse Python sandbox for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Load applicable skill guidance before executing sandbox code. Keep generated files under /tmp/aura_out."
 	case ProfileDocument:
 		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
 	case ProfileMemory:
@@ -524,14 +522,14 @@ func swarmProfilePrompt(profile Profile) string {
 		return "\n\n## Swarm Profile\nCall run_aurabot_swarm as the first and primary tool for this profile. Keep the goal compact and read-only. After the swarm returns, answer from its synthesis; call read_swarm_result only when a returned task is incomplete or the synthesis explicitly says a worker detail is needed."
 	}
 	if profile == ProfileDocument {
-		return "\n\n## Document Evidence Profile\nFor multi-document summaries, use run_aurabot_swarm as a read-only evidence phase before creating the final file."
+		return "\n\n## Document Evidence Profile\nFor document summaries, gather compact evidence with search_memory and list_sources, then create the requested file with the typed file tool. Keep source/wiki reads narrow; do not keep expanding the evidence loop once you have enough to draft."
 	}
 	return ""
 }
 
 func sandboxPrompt(profile Profile) string {
 	if profile == ProfileSandboxCompute {
-		return "\n\n## Python Sandbox Route\nUse execute_code for calculations, transformations, charts, generated artifacts, parser experiments, and repeatable debug scripts. Write deliverable files under /tmp/aura_out so Aura persists and can deliver them."
+		return "\n\n## Python Sandbox Route\nFirst inspect the applicable sandbox/coding skill with list_skills and read_skill. Then use execute_code for calculations, transformations, charts, generated artifacts, parser experiments, and repeatable debug scripts. Write deliverable files under /tmp/aura_out so Aura persists and can deliver them."
 	}
 	return "\n\n## Python Sandbox Route\nUse execute_code only when the request genuinely needs computation, data processing, custom generated files, plots, simulations, or parser/debug scripts."
 }
@@ -545,7 +543,7 @@ func filePrompt(profile Profile) string {
 
 func skillPreflightPrompt(profile Profile) string {
 	if profile == ProfileDocument || profile == ProfileSandboxCompute {
-		return "\n\n## Skill Preflight\nIf an installed skill matches the requested capability, call list_skills and read_skill before using that capability and before using typed document/file tools. This applies to DOCX, PDF, XLSX, source extraction, sandbox/coding workflows, and future MCP/plugin skills."
+		return "\n\n## Skill Preflight\nFor this profile, your first relevant tool action must be list_skills and read_skill for the matching capability. Do this before execute_code and before using typed document/file tools, source extraction, DOCX, PDF, XLSX, sandbox/coding workflows, and future MCP/plugin skills. If a protected tool reports a skill-preflight error, read the suggested skill and retry once."
 	}
 	return "\n\n## Skill Preflight\nIf an installed skill description matches the user's request, call read_skill before acting on that skill's guidance."
 }

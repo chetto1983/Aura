@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -398,6 +399,7 @@ type turnStats struct {
 }
 
 type orchestrationSnapshot struct {
+	StoredAt            time.Time
 	PromptVersion       string
 	PromptModules       []string
 	PromptHash          string
@@ -494,14 +496,8 @@ func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 }
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profileDecision orchestration.ProfileDecision) (string, turnStats) {
-	maxIterations := b.cfg.MaxToolIterations
-	if maxIterations <= 0 {
-		maxIterations = 10
-	}
 	loopPolicy, _ := orchestration.LoopPolicyForProfile(profileDecision.Profile)
-	if loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
-		maxIterations = loopPolicy.MaxSteps
-	}
+	maxIterations := b.maxToolLoopIterations(profileDecision.Profile)
 
 	stats := turnStats{
 		promptVersion:       promptPlan.Version,
@@ -512,7 +508,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		activeCapabilities:  capabilityNames(orchestration.CapabilitiesForProfile(profileDecision.Profile)),
 	}
 	var lastToolResult string
-	toolDefs := b.tools.DefinitionsFor(toolAllowlist)
+	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
 	stats.toolsExposed = toolDefinitionNames(toolDefs)
 	orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
 		PromptVersion:       promptPlan.Version,
@@ -523,7 +519,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		ToolsExposed:        stats.toolsExposed,
 	})
 	b.storeOrchestrationSnapshot(userID, stats)
-	if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolAllowed("run_aurabot_swarm", stats.toolsExposed) {
+	if b.terminalToolPolicyEnabled() && profileDecision.Profile == orchestration.ProfileSwarmResearch && toolAllowed("run_aurabot_swarm", stats.toolsExposed) {
 		return b.runTerminalSwarm(ctx, c, convCtx, userID, placeholder, stats)
 	}
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -622,7 +618,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			convCtx.AddAssistantMessage(response)
 			return response, stats
 		}
-		if profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
+		if b.terminalToolPolicyEnabled() && profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
 			stats.terminalSwarm = true
 			stats.swarmFinalization = swarmResearchFinalization()
 			stats.postSwarmToolCalls = 0
@@ -640,7 +636,19 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			b.storeOrchestrationSnapshot(userID, stats)
 			return response, stats
 		}
-		if execution.terminalTool != "" && execution.terminalTool != "run_aurabot_swarm" && loopPolicy.AllowNoToolFinalization {
+		if b.terminalToolPolicyEnabled() && execution.terminalTool != "" && execution.terminalTool != "run_aurabot_swarm" && loopPolicy.AllowNoToolFinalization {
+			if execution.terminalTool == "execute_code" {
+				response := formatTerminalExecuteCodeResult(lastToolResult)
+				convCtx.AddAssistantMessage(response)
+				b.storeOrchestrationSnapshot(userID, stats)
+				return response, stats
+			}
+			if isFileGenerationTool(execution.terminalTool) {
+				response := formatTerminalFileResult(execution.terminalTool, lastToolResult)
+				convCtx.AddAssistantMessage(response)
+				b.storeOrchestrationSnapshot(userID, stats)
+				return response, stats
+			}
 			response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
 			b.storeOrchestrationSnapshot(userID, stats)
 			if delivered {
@@ -656,6 +664,30 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	}
 	convCtx.AddAssistantMessage(fallback)
 	return fallback, stats
+}
+
+func (b *Bot) maxToolLoopIterations(profile orchestration.Profile) int {
+	maxIterations := 10
+	if b != nil && b.cfg != nil && b.cfg.MaxToolIterations > 0 {
+		maxIterations = b.cfg.MaxToolIterations
+	}
+	if b != nil && b.cfg != nil && b.cfg.AgentLoopMaxSteps > 0 && b.cfg.AgentLoopMaxSteps < maxIterations {
+		maxIterations = b.cfg.AgentLoopMaxSteps
+	}
+	if loopPolicy, ok := orchestration.LoopPolicyForProfile(profile); ok && loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
+		maxIterations = loopPolicy.MaxSteps
+	}
+	if maxIterations < 1 {
+		return 1
+	}
+	return maxIterations
+}
+
+func (b *Bot) terminalToolPolicyEnabled() bool {
+	if b == nil || b.cfg == nil {
+		return true
+	}
+	return config.NormalizeTerminalToolPolicy(b.cfg.TerminalToolPolicy) != "off"
 }
 
 func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, stats turnStats) (string, turnStats) {
@@ -820,11 +852,10 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				results[i] = outcome{
 					id:                     tc.ID,
 					tool:                   tc.Name,
-					content:                tools.FormatFatalToolError(errors.New(msg)),
+					content:                tools.FormatToolError(errors.New(msg)),
 					elapsed:                time.Since(start),
 					errorClass:             "skill_preflight",
 					skillPreflightRejected: true,
-					fatal:                  true,
 				}
 				summaryMu.Lock()
 				summary.skillPreflightRejected = true
@@ -855,7 +886,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				readSkillName = skillNameFromArgs(tc.Arguments)
 			}
 			terminalTool := ""
-			if toolAllowed(tc.Name, loopPolicy.TerminalTools) {
+			if b.terminalToolPolicyEnabled() && toolAllowed(tc.Name, loopPolicy.TerminalTools) {
 				terminalTool = tc.Name
 			}
 			results[i] = outcome{
@@ -991,7 +1022,9 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 	if b == nil || strings.TrimSpace(userID) == "" {
 		return
 	}
+	now := time.Now()
 	b.orchMap.Store(userID, orchestrationSnapshot{
+		StoredAt:            now,
 		PromptVersion:       stats.promptVersion,
 		PromptModules:       append([]string(nil), stats.promptModules...),
 		PromptHash:          stats.promptHash,
@@ -1019,6 +1052,7 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		TokensTotal:         stats.tokensTotal,
 		CostUSD:             stats.costUSD,
 	})
+	b.pruneOrchestrationSnapshots(now)
 }
 
 func (b *Bot) loadOrchestrationSnapshot(userID string) (orchestrationSnapshot, bool) {
@@ -1033,11 +1067,56 @@ func (b *Bot) loadOrchestrationSnapshot(userID string) (orchestrationSnapshot, b
 	return snap, ok
 }
 
+func (b *Bot) pruneOrchestrationSnapshots(now time.Time) {
+	if b == nil || b.cfg == nil || b.cfg.TraceRetentionDays <= 0 {
+		return
+	}
+	cutoff := now.Add(-time.Duration(b.cfg.TraceRetentionDays) * 24 * time.Hour)
+	b.orchMap.Range(func(key, value any) bool {
+		snap, ok := value.(orchestrationSnapshot)
+		if !ok {
+			return true
+		}
+		if !snap.StoredAt.IsZero() && snap.StoredAt.Before(cutoff) {
+			b.orchMap.Delete(key)
+		}
+		return true
+	})
+}
+
 func toolDefinitionNames(defs []llm.ToolDefinition) []string {
 	out := make([]string, 0, len(defs))
 	for _, def := range defs {
 		out = append(out, def.Name)
 	}
+	return out
+}
+
+func orderToolDefinitionsForAllowlist(defs []llm.ToolDefinition, allowlist []string) []llm.ToolDefinition {
+	if len(defs) <= 1 || len(allowlist) == 0 {
+		return defs
+	}
+	positions := make(map[string]int, len(allowlist))
+	for i, name := range allowlist {
+		if _, ok := positions[name]; !ok {
+			positions[name] = i
+		}
+	}
+	out := append([]llm.ToolDefinition(nil), defs...)
+	sort.SliceStable(out, func(i, j int) bool {
+		left, leftOK := positions[out[i].Name]
+		right, rightOK := positions[out[j].Name]
+		if !leftOK && !rightOK {
+			return false
+		}
+		if !leftOK {
+			return false
+		}
+		if !rightOK {
+			return true
+		}
+		return left < right
+	})
 	return out
 }
 
@@ -1208,6 +1287,79 @@ func formatTerminalSwarmResult(raw string) string {
 		resp.Metrics.TokensTotal,
 		resp.Metrics.WallMS,
 	)
+	return sb.String()
+}
+
+func formatTerminalExecuteCodeResult(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "Sandbox execution completed, but no result was returned."
+	}
+	body := raw
+	if idx := strings.Index(body, "\n\n"); idx >= 0 {
+		body = strings.TrimSpace(body[idx+2:])
+	}
+	artifacts := ""
+	if idx := strings.Index(body, "\n\nartifacts:"); idx >= 0 {
+		artifacts = strings.TrimSpace(body[idx+len("\n\nartifacts:"):])
+		body = strings.TrimSpace(body[:idx])
+	}
+	if body == "" {
+		body = "Sandbox execution completed."
+	}
+	if artifacts == "" {
+		return body
+	}
+	return body + "\n\nArtifacts:\n" + artifacts
+}
+
+func isFileGenerationTool(name string) bool {
+	switch name {
+	case "create_docx", "create_xlsx", "create_pdf":
+		return true
+	default:
+		return false
+	}
+}
+
+func formatTerminalFileResult(toolName, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "File created, but no metadata was returned."
+	}
+	var resp struct {
+		SourceID  string `json:"source_id"`
+		Filename  string `json:"filename"`
+		SizeBytes int64  `json:"size_bytes"`
+		Delivered bool   `json:"delivered"`
+		Duplicate bool   `json:"duplicate"`
+	}
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		return "File created.\n\n" + raw
+	}
+	kind := strings.TrimPrefix(toolName, "create_")
+	if kind == "" {
+		kind = "file"
+	}
+	var sb strings.Builder
+	if strings.TrimSpace(resp.Filename) != "" {
+		fmt.Fprintf(&sb, "Created %s file `%s`", strings.ToUpper(kind), resp.Filename)
+	} else {
+		fmt.Fprintf(&sb, "Created %s file", strings.ToUpper(kind))
+	}
+	if resp.SizeBytes > 0 {
+		fmt.Fprintf(&sb, " (%d bytes)", resp.SizeBytes)
+	}
+	if resp.SourceID != "" {
+		fmt.Fprintf(&sb, ", persisted as `%s`", resp.SourceID)
+	}
+	if resp.Delivered {
+		sb.WriteString(", delivered to Telegram")
+	}
+	if resp.Duplicate {
+		sb.WriteString(" (duplicate)")
+	}
+	sb.WriteString(".")
 	return sb.String()
 }
 

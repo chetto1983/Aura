@@ -374,6 +374,74 @@ func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
 	t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
 }
 
+func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testing.T) {
+	store := mustSettingsStore(t)
+	router := NewRouter(Deps{
+		Settings: store,
+		RuntimeConfig: &config.Config{
+			SkillPreflight:     "required",
+			SkillRoutingMode:   "manifest_llm_review",
+			AgentLoopMaxSteps:  9,
+			TerminalToolPolicy: "off",
+			DelegationMode:     "bounded",
+			TraceRetentionDays: 90,
+		},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp SettingsListResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	wantEnums := map[string][]string{
+		settings.KeySkillPreflight:     []string{"required", "advisory", "off"},
+		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
+		settings.KeyTerminalToolPolicy: []string{"profile", "off"},
+		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},
+	}
+	wantActive := map[string]string{
+		settings.KeySkillRoutingMode:   "manifest_llm_review",
+		settings.KeyAgentLoopMaxSteps:  "9",
+		settings.KeyTerminalToolPolicy: "off",
+		settings.KeyDelegationMode:     "bounded",
+		settings.KeyTraceRetentionDays: "90",
+	}
+	for key, options := range wantEnums {
+		it := findSettingItem(t, resp.Items, key)
+		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, options) {
+			t.Fatalf("%s row = group:%q kind:%q options:%v", key, it.Group, it.Kind, it.Options)
+		}
+	}
+	for key, active := range wantActive {
+		it := findSettingItem(t, resp.Items, key)
+		if it.Group != "agent" || it.ActiveValue != active {
+			t.Fatalf("%s row = group:%q active:%q, want agent/%q", key, it.Group, it.ActiveValue, active)
+		}
+	}
+	loop := findSettingItem(t, resp.Items, settings.KeyAgentLoopMaxSteps)
+	if loop.Kind != "int" || loop.Min == nil || loop.Max == nil || *loop.Min != 1 || *loop.Max != 50 {
+		t.Fatalf("AURA_AGENT_LOOP_MAX_STEPS bounds = kind:%q min:%v max:%v", loop.Kind, loop.Min, loop.Max)
+	}
+	retention := findSettingItem(t, resp.Items, settings.KeyTraceRetentionDays)
+	if retention.Kind != "int" || retention.Min == nil || retention.Max == nil || *retention.Min != 1 || *retention.Max != 365 {
+		t.Fatalf("AURA_TRACE_RETENTION_DAYS bounds = kind:%q min:%v max:%v", retention.Kind, retention.Min, retention.Max)
+	}
+}
+
+func findSettingItem(t *testing.T, items []SettingItem, key string) SettingItem {
+	t.Helper()
+	for _, it := range items {
+		if it.Key == key {
+			return it
+		}
+	}
+	t.Fatalf("%s not in settings response", key)
+	return SettingItem{}
+}
+
 func TestSettingsList_ShowsPostTurnMemoryCaptureDefaults(t *testing.T) {
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{

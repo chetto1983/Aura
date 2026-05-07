@@ -480,6 +480,8 @@ function Control({
         id={item.key}
         type="number"
         step={kind === 'float' ? 'any' : '1'}
+        min={item.min}
+        max={item.max}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}

@@ -136,7 +136,7 @@ flowchart TD
   G -- "No" --> Z["Final answer + trace summary"]
   G -- "Yes" --> H["BeforeToolCall policy"]
   H --> I{"Allowed and skill preflight satisfied?"}
-  I -- "No" --> J["Fatal tool error / review gate"]
+  I -- "No" --> J["Retryable skill-preflight error or fatal hidden-tool/review gate"]
   I -- "Yes" --> K["Execute tool with timeout and redaction"]
   K --> L["AfterToolCall telemetry"]
   L --> M{"Terminal tool or step budget hit?"}
@@ -262,16 +262,16 @@ Create a small taxonomy. Do not route on raw skill names alone.
 
 ### Phase 0: Baseline Inventory
 
-- [ ] Run `git status --short --branch`.
-- [ ] Run `go test ./internal/orchestration ./internal/telegram ./internal/skills ./internal/settings ./cmd/debug_telegram_sandbox ./cmd/debug_orchestration -count=1`.
-- [ ] Capture current `cmd/debug_telegram_sandbox` output for these prompts:
+- [x] Run `git status --short --branch`.
+- [x] Run `go test ./internal/orchestration ./internal/telegram ./internal/skills ./internal/settings ./cmd/debug_telegram_sandbox ./cmd/debug_orchestration -count=1`.
+- [x] Capture current `cmd/debug_telegram_sandbox` output for these prompts:
   - `facciamo il punto di tutta la pipeline Aura`
   - `crea un documento con il riepilogo dei documenti che hai`
   - `calcola una tabella CSV e un grafico sui tempi E2E`
   - `apri le settings e verifica SEARCH_BACKEND`
   - `prepara release docker e dimmi se manca qualcosa`
-- [ ] Record current failures in `VALIDATION.md`.
-- [ ] Commit only if new evidence was added: `docs: record codex-style orchestration baseline`.
+- [x] Record current failures in `VALIDATION.md`.
+- [x] Commit only if new evidence was added: folded into the orchestration closure commit.
 
 ### Phase 1: Capability Taxonomy
 
@@ -346,19 +346,19 @@ Create a small taxonomy. Do not route on raw skill names alone.
 - [x] Log capture triggered/decision/applied counts in per-turn telemetry.
 - [x] Surface capture defaults in dashboard settings and `.env.example`.
 - [x] Run `go test ./internal/conversation/summarizer ./internal/telegram ./internal/config ./internal/settings ./internal/api -count=1`.
-- [ ] Run full Go verification and Docker smoke before closing the broader phase.
-- [ ] Commit: `feat: add automatic post-turn memory capture`.
+- [x] Run full Go verification and Docker smoke before closing the broader phase.
+- [x] Commit: `feat: add automatic post-turn memory capture`.
 
 ### Phase 5: Debug And Telemetry Surface
 
-- [ ] Extend `cmd/debug_orchestration` to print:
+- [x] Extend `cmd/debug_orchestration` to print:
   - selected profile;
   - reason;
   - capabilities;
   - required skills;
   - exposed tools;
   - loop policy.
-- [ ] Extend `cmd/debug_telegram_sandbox` to print:
+- [x] Extend `cmd/debug_telegram_sandbox` to print:
   - skill reads;
   - hidden tool rejections;
   - loop steps;
@@ -366,33 +366,33 @@ Create a small taxonomy. Do not route on raw skill names alone.
   - token/cost;
   - elapsed;
   - trace fields.
-- [ ] Add expectation flags for skill reads and loop bounds.
-- [ ] Redact API keys, Telegram tokens, bearer tokens, source secrets, and `.env` values.
-- [ ] Run `go test ./cmd/debug_telegram_sandbox ./cmd/debug_orchestration -count=1`.
-- [ ] Commit: `feat: expose orchestration debug metrics`.
+- [x] Add expectation flags for skill reads and loop bounds.
+- [x] Redact API keys, Telegram tokens, bearer tokens, source secrets, and `.env` values.
+- [x] Run `go test ./cmd/debug_telegram_sandbox ./cmd/debug_orchestration -count=1`.
+- [x] Commit: folded into the orchestration closure commit.
 
 ### Phase 6: Dashboard Settings Polish
 
-- [ ] Add settings catalog entries for:
+- [x] Add settings catalog entries for:
   - `AURA_SKILL_PREFLIGHT`
   - `AURA_SKILL_ROUTING_MODE`
   - `AURA_AGENT_LOOP_MAX_STEPS`
   - `AURA_TERMINAL_TOOL_POLICY`
   - `AURA_DELEGATION_MODE`
   - `AURA_TRACE_RETENTION_DAYS`
-- [ ] Render enum settings as combo boxes.
-- [ ] Render loop/max/retention settings as bounded numeric inputs.
-- [ ] Add i18n keys for English and Italian.
-- [ ] Add E2E coverage to verify save/reload.
-- [ ] Run:
+- [x] Render enum settings as combo boxes.
+- [x] Render loop/max/retention settings as bounded numeric inputs.
+- [x] Add i18n keys for English and Italian.
+- [x] Add E2E coverage to verify save/reload.
+- [x] Run:
   - `npm --prefix web run i18n:check`
   - `npm --prefix web run build`
   - settings E2E used by the repo.
-- [ ] Commit: `feat: expose orchestration settings`.
+- [x] Commit: folded into the orchestration closure commit.
 
 ### Phase 7: Route Evals
 
-- [ ] Add deterministic route eval fixtures for common prompts:
+- [x] Add deterministic route eval fixtures for common prompts:
   - pipeline audit -> `swarm_research`
   - memory answer -> `memory`
   - source/document summary -> `document`
@@ -400,23 +400,23 @@ Create a small taxonomy. Do not route on raw skill names alone.
   - dashboard settings check -> `admin_review`
   - Docker release check -> `admin_review`
   - MCP plugin install proposal -> `admin_review` now, future `plugin_review`
-- [ ] Assert expected exposed tools for every fixture.
-- [ ] Assert forbidden tools are hidden.
-- [ ] Assert required skills are listed for capability routes.
-- [ ] Assert no stale worker aliases or dead `.yaml` refs appear.
-- [ ] Run `go test ./internal/orchestration ./cmd/debug_orchestration -count=1`.
-- [ ] Commit: `test: add codex-style route evals`.
+- [x] Assert expected exposed tools for every fixture.
+- [x] Assert forbidden tools are hidden.
+- [x] Assert required skills are listed for capability routes.
+- [x] Assert no stale worker aliases or dead `.yaml` refs appear.
+- [x] Run `go test ./internal/orchestration ./cmd/debug_orchestration -count=1`.
+- [x] Commit: folded into the orchestration closure commit.
 
 ### Phase 8: Live E2E Gate
 
-- [ ] Rebuild Docker:
+- [x] Rebuild Docker:
   - `docker compose up -d --build aura`
-- [ ] Confirm:
+- [x] Confirm:
   - `http://127.0.0.1:18080/status`
   - settings page reachable;
   - Pyodide sidecar healthy;
   - Qdrant sidecar healthy if enabled.
-- [ ] Run live Telegram-style smokes against DB-selected model:
+- [x] Run live Telegram-style smokes against DB-selected model:
   - pipeline audit expects terminal swarm and token/cost metrics;
   - document summary expects skill read before file tools;
   - CSV/chart expects sandbox and artifact persistence;
@@ -428,12 +428,12 @@ Create a small taxonomy. Do not route on raw skill names alone.
   - no stale alias/tool refs;
   - 0 scenarios over 30s for the fast route set;
   - tokens and cost reported for every live LLM route.
-- [ ] Append evidence to `VALIDATION.md`.
+- [x] Append evidence to `VALIDATION.md`.
 - [ ] Commit: `docs: record codex-style orchestration e2e`.
 
 ### Phase 9: v3.1 Closure Decision
 
-- [ ] Run:
+- [x] Run:
   - `loops/aura-implementation/scripts/verify-go.ps1`
   - `go test ./... -count=1`
   - `npm --prefix web run i18n:check`
@@ -441,9 +441,9 @@ Create a small taxonomy. Do not route on raw skill names alone.
   - `docker compose config --quiet`
   - Docker rebuild and `/status` smoke.
 - [ ] If all strict gates pass, update `.planning/ROADMAP.md` and `.planning/STATE.md` with v3.1 closure evidence.
-- [ ] If any gate fails, keep v3.1 active and write the measured blocker in `VALIDATION.md`.
-- [ ] Do not start v4.0 MCP marketplace until this gate is clean.
-- [ ] Commit either:
+- [x] If any gate fails, keep v3.1 active and write the measured blocker in `VALIDATION.md`.
+- [x] Do not start v4.0 MCP marketplace until this gate is clean.
+- [x] Commit either:
   - `docs: close v3.1 orchestration gate`
   - or `docs: record v3.1 orchestration blocker`.
 

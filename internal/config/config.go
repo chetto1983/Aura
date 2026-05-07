@@ -17,6 +17,11 @@ const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillPreflight = "required"
+const DefaultSkillRoutingMode = "manifest"
+const DefaultAgentLoopMaxSteps = 6
+const DefaultTerminalToolPolicy = "profile"
+const DefaultDelegationMode = "fast"
+const DefaultTraceRetentionDays = 30
 const DefaultSummarizerMode = "auto_low_risk"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
@@ -88,6 +93,11 @@ type Config struct {
 	ToolProfileMode            string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
 	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"required"`
+	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
+	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"6"`
+	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
+	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
+	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -242,6 +252,11 @@ func Load() (*Config, error) {
 	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(getEnv("AURA_TOOL_PROFILE_MODE", "auto")))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
 	cfg.SkillPreflight = normalizeSkillPreflight(getEnv("AURA_SKILL_PREFLIGHT", DefaultSkillPreflight))
+	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
+	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 50, DefaultAgentLoopMaxSteps)
+	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
+	cfg.DelegationMode = NormalizeDelegationMode(getEnv("AURA_DELEGATION_MODE", DefaultDelegationMode))
+	cfg.TraceRetentionDays = normalizeIntRange(getEnvInt("AURA_TRACE_RETENTION_DAYS", DefaultTraceRetentionDays), 1, 365, DefaultTraceRetentionDays)
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
@@ -295,6 +310,40 @@ func normalizeSkillPreflight(value string) string {
 	default:
 		return DefaultSkillPreflight
 	}
+}
+
+func NormalizeSkillRoutingMode(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "manifest", "manifest_llm_review":
+		return normalized
+	default:
+		return DefaultSkillRoutingMode
+	}
+}
+
+func NormalizeTerminalToolPolicy(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "profile", "off":
+		return normalized
+	default:
+		return DefaultTerminalToolPolicy
+	}
+}
+
+func NormalizeDelegationMode(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "fast", "bounded", "async":
+		return normalized
+	default:
+		return DefaultDelegationMode
+	}
+}
+
+func normalizeIntRange(value, min, max, fallback int) int {
+	if value < min || value > max {
+		return fallback
+	}
+	return value
 }
 
 func NormalizeSummarizerMode(value string) string {

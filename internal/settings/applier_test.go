@@ -118,12 +118,22 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 		ToolProfileMode:       "auto",
 		OrchestrationLogLevel: "summary",
 		SkillPreflight:        "required",
+		SkillRoutingMode:      "manifest",
+		AgentLoopMaxSteps:     6,
+		TerminalToolPolicy:    "profile",
+		DelegationMode:        "fast",
+		TraceRetentionDays:    30,
 	}
 
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
 	_ = s.Set(ctx, KeyToolProfileMode, "SWARM_RESEARCH")
 	_ = s.Set(ctx, KeyOrchestrationLogLevel, "DEBUG")
 	_ = s.Set(ctx, KeySkillPreflight, " Advisory ")
+	_ = s.Set(ctx, KeySkillRoutingMode, " MANIFEST_LLM_REVIEW ")
+	_ = s.Set(ctx, KeyAgentLoopMaxSteps, "9")
+	_ = s.Set(ctx, KeyTerminalToolPolicy, "OFF")
+	_ = s.Set(ctx, KeyDelegationMode, "BOUNDED")
+	_ = s.Set(ctx, KeyTraceRetentionDays, "60")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -139,8 +149,52 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.SkillPreflight != "advisory" {
 		t.Fatalf("SkillPreflight = %q", cfg.SkillPreflight)
 	}
-	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) || !IsOverridable(KeySkillPreflight) {
+	if cfg.SkillRoutingMode != "manifest_llm_review" {
+		t.Fatalf("SkillRoutingMode = %q", cfg.SkillRoutingMode)
+	}
+	if cfg.AgentLoopMaxSteps != 9 {
+		t.Fatalf("AgentLoopMaxSteps = %d", cfg.AgentLoopMaxSteps)
+	}
+	if cfg.TerminalToolPolicy != "off" {
+		t.Fatalf("TerminalToolPolicy = %q", cfg.TerminalToolPolicy)
+	}
+	if cfg.DelegationMode != "bounded" {
+		t.Fatalf("DelegationMode = %q", cfg.DelegationMode)
+	}
+	if cfg.TraceRetentionDays != 60 {
+		t.Fatalf("TraceRetentionDays = %d", cfg.TraceRetentionDays)
+	}
+	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) || !IsOverridable(KeySkillPreflight) ||
+		!IsOverridable(KeySkillRoutingMode) || !IsOverridable(KeyAgentLoopMaxSteps) || !IsOverridable(KeyTerminalToolPolicy) || !IsOverridable(KeyDelegationMode) || !IsOverridable(KeyTraceRetentionDays) {
 		t.Fatal("orchestration settings must be dashboard-overridable")
+	}
+}
+
+func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	cfg := &config.Config{
+		SkillRoutingMode:   "manifest_llm_review",
+		AgentLoopMaxSteps:  8,
+		TerminalToolPolicy: "off",
+		DelegationMode:     "bounded",
+		TraceRetentionDays: 90,
+	}
+
+	_ = s.Set(ctx, KeySkillRoutingMode, "router")
+	_ = s.Set(ctx, KeyAgentLoopMaxSteps, "0")
+	_ = s.Set(ctx, KeyTerminalToolPolicy, "always")
+	_ = s.Set(ctx, KeyDelegationMode, "recursive")
+	_ = s.Set(ctx, KeyTraceRetentionDays, "999")
+
+	ApplyToConfig(ctx, s, cfg)
+
+	if cfg.SkillRoutingMode != config.DefaultSkillRoutingMode ||
+		cfg.AgentLoopMaxSteps != config.DefaultAgentLoopMaxSteps ||
+		cfg.TerminalToolPolicy != config.DefaultTerminalToolPolicy ||
+		cfg.DelegationMode != config.DefaultDelegationMode ||
+		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays {
+		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
 	}
 }
 
@@ -390,6 +444,7 @@ func TestIsOverridable(t *testing.T) {
 		KeyLogLevel, KeyPromptOverlayPath, KeyMCPServersPath,
 		KeySkillsPath, KeySkillsInstallProjectDir, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
 		KeySandboxEnabled, KeySandboxTimeoutSec,
+		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 	} {
 		if !IsOverridable(key) {
 			t.Errorf("%s should be overridable", key)

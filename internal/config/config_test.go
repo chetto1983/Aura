@@ -152,6 +152,11 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("AURA_SKILL_PREFLIGHT")
+	os.Unsetenv("AURA_SKILL_ROUTING_MODE")
+	os.Unsetenv("AURA_AGENT_LOOP_MAX_STEPS")
+	os.Unsetenv("AURA_TERMINAL_TOOL_POLICY")
+	os.Unsetenv("AURA_DELEGATION_MODE")
+	os.Unsetenv("AURA_TRACE_RETENTION_DAYS")
 	os.Unsetenv("SUMMARIZER_MODE")
 	os.Unsetenv("SUMMARIZER_TURN_INTERVAL")
 	os.Unsetenv("SUMMARIZER_COOLDOWN_SECONDS")
@@ -291,6 +296,21 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.SkillPreflight != "required" {
 		t.Errorf("SkillPreflight = %q, want required", cfg.SkillPreflight)
 	}
+	if cfg.SkillRoutingMode != DefaultSkillRoutingMode {
+		t.Errorf("SkillRoutingMode = %q, want %q", cfg.SkillRoutingMode, DefaultSkillRoutingMode)
+	}
+	if cfg.AgentLoopMaxSteps != DefaultAgentLoopMaxSteps {
+		t.Errorf("AgentLoopMaxSteps = %d, want %d", cfg.AgentLoopMaxSteps, DefaultAgentLoopMaxSteps)
+	}
+	if cfg.TerminalToolPolicy != DefaultTerminalToolPolicy {
+		t.Errorf("TerminalToolPolicy = %q, want %q", cfg.TerminalToolPolicy, DefaultTerminalToolPolicy)
+	}
+	if cfg.DelegationMode != DefaultDelegationMode {
+		t.Errorf("DelegationMode = %q, want %q", cfg.DelegationMode, DefaultDelegationMode)
+	}
+	if cfg.TraceRetentionDays != DefaultTraceRetentionDays {
+		t.Errorf("TraceRetentionDays = %d, want %d", cfg.TraceRetentionDays, DefaultTraceRetentionDays)
+	}
 	if cfg.SummarizerMode != DefaultSummarizerMode {
 		t.Errorf("SummarizerMode = %q, want %q", cfg.SummarizerMode, DefaultSummarizerMode)
 	}
@@ -314,6 +334,54 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
+	}
+}
+
+func TestLoadOrchestrationSettings(t *testing.T) {
+	t.Setenv("AURA_SKILL_ROUTING_MODE", " MANIFEST_LLM_REVIEW ")
+	t.Setenv("AURA_AGENT_LOOP_MAX_STEPS", "12")
+	t.Setenv("AURA_TERMINAL_TOOL_POLICY", "OFF")
+	t.Setenv("AURA_DELEGATION_MODE", "Bounded")
+	t.Setenv("AURA_TRACE_RETENTION_DAYS", "90")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SkillRoutingMode != "manifest_llm_review" {
+		t.Fatalf("SkillRoutingMode = %q", cfg.SkillRoutingMode)
+	}
+	if cfg.AgentLoopMaxSteps != 12 {
+		t.Fatalf("AgentLoopMaxSteps = %d", cfg.AgentLoopMaxSteps)
+	}
+	if cfg.TerminalToolPolicy != "off" {
+		t.Fatalf("TerminalToolPolicy = %q", cfg.TerminalToolPolicy)
+	}
+	if cfg.DelegationMode != "bounded" {
+		t.Fatalf("DelegationMode = %q", cfg.DelegationMode)
+	}
+	if cfg.TraceRetentionDays != 90 {
+		t.Fatalf("TraceRetentionDays = %d", cfg.TraceRetentionDays)
+	}
+}
+
+func TestLoadInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
+	t.Setenv("AURA_SKILL_ROUTING_MODE", "llm")
+	t.Setenv("AURA_AGENT_LOOP_MAX_STEPS", "0")
+	t.Setenv("AURA_TERMINAL_TOOL_POLICY", "always")
+	t.Setenv("AURA_DELEGATION_MODE", "unbounded")
+	t.Setenv("AURA_TRACE_RETENTION_DAYS", "366")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SkillRoutingMode != DefaultSkillRoutingMode ||
+		cfg.AgentLoopMaxSteps != DefaultAgentLoopMaxSteps ||
+		cfg.TerminalToolPolicy != DefaultTerminalToolPolicy ||
+		cfg.DelegationMode != DefaultDelegationMode ||
+		cfg.TraceRetentionDays != DefaultTraceRetentionDays {
+		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
 	}
 }
 

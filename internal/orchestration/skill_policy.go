@@ -144,7 +144,7 @@ func inferCapabilityForToolProfile(tool string, profile Profile) (Capability, bo
 	}
 
 	if profile == ProfileDocument || profile == ProfileSandboxCompute {
-		if containsCapability(profileMatches, CapabilitySourceExtraction) {
+		if tool != "list_sources" && containsCapability(profileMatches, CapabilitySourceExtraction) {
 			return CapabilitySourceExtraction, true
 		}
 	}

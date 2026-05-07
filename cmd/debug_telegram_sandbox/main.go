@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/telegram"
@@ -37,9 +39,15 @@ func main() {
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
 	expectProfile := flag.String("expect-profile", "", "expected orchestration tool profile; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
-	expectSkillRead := flag.Bool("expect-skill-read", false, "expect the synthetic Telegram turn to call read_skill")
+	var expectSkillRead optionalCSVFlag
+	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to call read_skill; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
 	expectTerminalSwarm := flag.Bool("expect-terminal-swarm", false, "expect swarm_research to finalize immediately after run_aurabot_swarm")
+	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected by orchestration policy")
+	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by orchestration policy")
+	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if orchestration loop_steps exceeds this budget")
+	expectTraceField := flag.String("expect-trace-field", "", "comma-separated DebugTextSmokeResult field names expected to be present/non-zero")
+	expectNoStaleSkillRef := flag.Bool("expect-no-stale-skill-ref", false, "expect debug result skill/reference fields to contain no stale worker aliases or legacy .yaml/.yml refs")
 	expectTokenMetrics := flag.Bool("expect-token-metrics", false, "expect non-zero token usage metrics")
 	expectSandbox := flag.Bool("expect-sandbox", false, "expect the synthetic Telegram turn to use the Python sandbox")
 	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
@@ -118,7 +126,7 @@ func main() {
 	fmt.Printf("db_write_live=%v\n", *writeLiveDB)
 	fmt.Printf("model=%s base_url=%s\n", cfg.LLMModel, cfg.LLMBaseURL)
 	fmt.Printf("runtime_dir=%s sandbox_enabled=%v\n", cfg.SandboxRuntimeDir, cfg.SandboxEnabled)
-	fmt.Printf("prompt=%q\n\n", *prompt)
+	fmt.Printf("prompt=%q\n\n", redactForReport(*prompt))
 
 	result, err := bot.RunDebugTextSmoke(ctx, uid, *username, *prompt)
 	if err != nil {
@@ -131,10 +139,17 @@ func main() {
 	fmt.Printf("tool_profile=%s\n", result.ToolProfile)
 	fmt.Printf("profile_select_reason=%s\n", result.ProfileSelectReason)
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
+	fmt.Printf("active_capabilities=%s\n", strings.Join(result.ActiveCapabilities, ","))
 	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
+	fmt.Printf("skill_preflight_failed=%v\n", result.SkillPreflightFailed)
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
+	if len(result.ReadSkills) > 0 {
+		fmt.Printf("read_skills=%s\n", strings.Join(result.ReadSkills, ","))
+	}
+	fmt.Printf("loop_steps=%d\n", result.LoopSteps)
 	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
 	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
+	fmt.Printf("terminal_tool=%s\n", result.TerminalTool)
 	fmt.Printf("terminal_swarm=%v\n", result.TerminalSwarm)
 	fmt.Printf("swarm_finalization=%s\n", result.SwarmFinalization)
 	fmt.Printf("post_swarm_tool_calls=%d\n", result.PostSwarmToolCalls)
@@ -152,10 +167,10 @@ func main() {
 	}
 	fmt.Printf("document_sends=%d\n", len(result.DocumentSends))
 	for _, send := range result.DocumentSends {
-		fmt.Printf("document=%s size=%d caption=%q\n", send.Filename, send.SizeBytes, singleLine(send.Caption, 160))
+		fmt.Printf("document=%s size=%d caption=%q\n", send.Filename, send.SizeBytes, singleLine(redactForReport(send.Caption), 160))
 	}
 	if result.FinalText != "" {
-		fmt.Printf("final=%s\n", singleLine(result.FinalText, 500))
+		fmt.Printf("final=%s\n", singleLine(redactForReport(result.FinalText), 500))
 	}
 	fmt.Printf("token_usage_reported=%v\n", result.TokenUsageReported)
 	fmt.Printf("tokens_prompt=%d\n", result.TokensPrompt)
@@ -165,15 +180,21 @@ func main() {
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
 	fmt.Printf("elapsed_ms=%d\n", result.ElapsedMS)
 	expectations := debugExpectations{
-		Profile:       *expectProfile,
-		Tools:         splitCSV(*expectTools),
-		NoTools:       *expectNoTools,
-		SkillRead:     *expectSkillRead,
-		SwarmUsed:     *expectSwarm,
-		TerminalSwarm: *expectTerminalSwarm,
-		TokenMetrics:  *expectTokenMetrics,
-		SandboxUsed:   *expectSandbox,
-		MaxElapsedMS:  *maxElapsedMS,
+		Profile:            *expectProfile,
+		Tools:              splitCSV(*expectTools),
+		NoTools:            *expectNoTools,
+		SkillRead:          expectSkillRead.Any,
+		SkillReadNames:     expectSkillRead.Values,
+		SwarmUsed:          *expectSwarm,
+		TerminalSwarm:      *expectTerminalSwarm,
+		HiddenToolRejected: *expectHiddenToolRejected,
+		TerminalTool:       *expectTerminalTool,
+		MaxLoopSteps:       *expectLoopStepsMax,
+		TraceFields:        splitCSV(*expectTraceField),
+		NoStaleSkillRef:    *expectNoStaleSkillRef,
+		TokenMetrics:       *expectTokenMetrics,
+		SandboxUsed:        *expectSandbox,
+		MaxElapsedMS:       *maxElapsedMS,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
@@ -187,14 +208,33 @@ func main() {
 	if expectations.NoTools {
 		fmt.Printf("expected_no_tools=true\n")
 	}
-	if expectations.SkillRead {
-		fmt.Printf("expected_skill_read=true\n")
+	if expectations.SkillRead || len(expectations.SkillReadNames) > 0 {
+		if len(expectations.SkillReadNames) > 0 {
+			fmt.Printf("expected_skill_read=%s\n", strings.Join(expectations.SkillReadNames, ","))
+		} else {
+			fmt.Printf("expected_skill_read=true\n")
+		}
 	}
 	if expectations.SwarmUsed {
 		fmt.Printf("expected_swarm=true\n")
 	}
 	if expectations.TerminalSwarm {
 		fmt.Printf("expected_terminal_swarm=true\n")
+	}
+	if expectations.HiddenToolRejected {
+		fmt.Printf("expected_hidden_tool_rejected=true\n")
+	}
+	if strings.TrimSpace(expectations.TerminalTool) != "" {
+		fmt.Printf("expected_terminal_tool=%s\n", strings.TrimSpace(expectations.TerminalTool))
+	}
+	if expectations.MaxLoopSteps > 0 {
+		fmt.Printf("expected_loop_steps_max=%d\n", expectations.MaxLoopSteps)
+	}
+	if len(expectations.TraceFields) > 0 {
+		fmt.Printf("expected_trace_fields_present=%s\n", strings.Join(expectations.TraceFields, ","))
+	}
+	if expectations.NoStaleSkillRef {
+		fmt.Printf("expected_no_stale_skill_ref=true\n")
 	}
 	if expectations.TokenMetrics {
 		fmt.Printf("expected_token_metrics=true\n")
@@ -341,15 +381,21 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 }
 
 type debugExpectations struct {
-	Profile       string
-	Tools         []string
-	NoTools       bool
-	SkillRead     bool
-	SwarmUsed     bool
-	TerminalSwarm bool
-	TokenMetrics  bool
-	SandboxUsed   bool
-	MaxElapsedMS  int64
+	Profile            string
+	Tools              []string
+	NoTools            bool
+	SkillRead          bool
+	SkillReadNames     []string
+	SwarmUsed          bool
+	TerminalSwarm      bool
+	HiddenToolRejected bool
+	TerminalTool       string
+	MaxLoopSteps       int
+	TraceFields        []string
+	NoStaleSkillRef    bool
+	TokenMetrics       bool
+	SandboxUsed        bool
+	MaxElapsedMS       int64
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -367,8 +413,13 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if expectations.NoTools && len(result.ToolCalls) > 0 {
 		return fmt.Errorf("expected no tool calls, got %s", strings.Join(result.ToolCalls, ","))
 	}
-	if expectations.SkillRead && !result.SkillsRead {
+	if (expectations.SkillRead || len(expectations.SkillReadNames) > 0) && !result.SkillsRead {
 		return errors.New("expected read_skill usage")
+	}
+	for _, expected := range expectations.SkillReadNames {
+		if !expectedSkillReadSatisfied(result, expected) {
+			return fmt.Errorf("expected read_skill for %q, got read_skills=%s active_capabilities=%s", expected, strings.Join(result.ReadSkills, ","), strings.Join(result.ActiveCapabilities, ","))
+		}
 	}
 	if expectations.SwarmUsed && !result.SwarmUsed {
 		return errors.New("expected swarm usage")
@@ -396,6 +447,25 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 			return fmt.Errorf("expected worker_failures=0, got %d", result.WorkerFailures)
 		}
 	}
+	if expectations.HiddenToolRejected && !result.HiddenToolRejected {
+		return errors.New("expected hidden tool rejection")
+	}
+	if terminalTool := strings.TrimSpace(expectations.TerminalTool); terminalTool != "" && result.TerminalTool != terminalTool {
+		return fmt.Errorf("expected terminal tool %q, got %q", terminalTool, result.TerminalTool)
+	}
+	if expectations.MaxLoopSteps > 0 && result.LoopSteps > expectations.MaxLoopSteps {
+		return fmt.Errorf("loop_steps %d exceeds budget %d", result.LoopSteps, expectations.MaxLoopSteps)
+	}
+	for _, field := range expectations.TraceFields {
+		if err := expectResultFieldPresent(result, field); err != nil {
+			return err
+		}
+	}
+	if expectations.NoStaleSkillRef {
+		if stale := staleDebugReferences(result); len(stale) > 0 {
+			return fmt.Errorf("stale skill/reference values found: %s", strings.Join(stale, ","))
+		}
+	}
 	if expectations.TokenMetrics && !result.TokenUsageReported {
 		return errors.New("expected token usage metrics")
 	}
@@ -406,6 +476,88 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 		return fmt.Errorf("elapsed_ms %d exceeds budget %d", result.ElapsedMS, expectations.MaxElapsedMS)
 	}
 	return nil
+}
+
+func expectedSkillReadSatisfied(result telegram.DebugTextSmokeResult, expected string) bool {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	if expected == "" {
+		return true
+	}
+	for _, read := range result.ReadSkills {
+		if strings.ToLower(strings.TrimSpace(read)) == expected {
+			return true
+		}
+	}
+	capability := orchestration.Capability(expected)
+	req, ok := orchestration.SkillRequirementForCapability(capability, orchestration.SkillPreflightRequired)
+	if !ok {
+		return false
+	}
+	for _, active := range result.ActiveCapabilities {
+		if strings.ToLower(strings.TrimSpace(active)) != expected {
+			continue
+		}
+		decision := orchestration.NeedsSkillPreflight("", capability, "", orchestration.SkillPreflightState{
+			ReadSkillNames: result.ReadSkills,
+		}, orchestration.SkillPreflightRequired)
+		if decision.Satisfied {
+			return true
+		}
+		for _, read := range result.ReadSkills {
+			for _, hint := range append(req.AllowedSkillNames, req.SkillHints...) {
+				if strings.ToLower(strings.TrimSpace(read)) == strings.ToLower(strings.TrimSpace(hint)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func expectResultFieldPresent(result telegram.DebugTextSmokeResult, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	v := reflect.ValueOf(result)
+	field := v.FieldByName(name)
+	if !field.IsValid() {
+		return fmt.Errorf("unknown trace/result field %q", name)
+	}
+	if field.IsZero() {
+		return fmt.Errorf("expected trace/result field %q to be present", name)
+	}
+	return nil
+}
+
+func staleDebugReferences(result telegram.DebugTextSmokeResult) []string {
+	var stale []string
+	for _, value := range appendDebugReferenceValues(nil, result) {
+		if isStaleDebugReference(value) {
+			stale = append(stale, value)
+		}
+	}
+	return stale
+}
+
+func appendDebugReferenceValues(values []string, result telegram.DebugTextSmokeResult) []string {
+	values = append(values, result.ToolCalls...)
+	values = append(values, result.ToolsExposed...)
+	values = append(values, result.PromptModules...)
+	values = append(values, result.ActiveCapabilities...)
+	values = append(values, result.ReadSkills...)
+	if result.TerminalTool != "" {
+		values = append(values, result.TerminalTool)
+	}
+	return values
+}
+
+func isStaleDebugReference(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	return normalized == "golem" ||
+		strings.Contains(normalized, "golem.yaml") ||
+		strings.HasSuffix(normalized, ".yaml") ||
+		strings.HasSuffix(normalized, ".yml")
 }
 
 func hasAll(got []string, want ...string) bool {
@@ -514,6 +666,84 @@ func singleLine(s string, max int) string {
 	}
 	return s[:max] + "..."
 }
+
+func redactForReport(s string) string {
+	out := orchestration.RedactTraceValue(s)
+	for _, marker := range []string{
+		"LLM_API_KEY=",
+		"EMBEDDING_API_KEY=",
+		"TELEGRAM_BOT_TOKEN=",
+		"DASHBOARD_TOKEN=",
+		"Authorization: Bearer ",
+		"Bearer ",
+	} {
+		out = redactAfterMarker(out, marker)
+	}
+	return out
+}
+
+func redactAfterMarker(s, marker string) string {
+	var b strings.Builder
+	offset := 0
+	for {
+		idx := strings.Index(s[offset:], marker)
+		if idx < 0 {
+			b.WriteString(s[offset:])
+			return b.String()
+		}
+		idx += offset
+		start := idx + len(marker)
+		end := start
+		for end < len(s) {
+			switch s[end] {
+			case ' ', '\t', '\r', '\n', '"', '\'', ',', ';':
+				goto done
+			default:
+				end++
+			}
+		}
+	done:
+		b.WriteString(s[offset:start])
+		b.WriteString("[REDACTED]")
+		offset = end
+	}
+}
+
+type optionalCSVFlag struct {
+	Any    bool
+	Values []string
+}
+
+func (f *optionalCSVFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	if len(f.Values) > 0 {
+		return strings.Join(f.Values, ",")
+	}
+	if f.Any {
+		return "true"
+	}
+	return "false"
+}
+
+func (f *optionalCSVFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "true") {
+		f.Any = true
+		return nil
+	}
+	if strings.EqualFold(value, "false") {
+		f.Any = false
+		f.Values = nil
+		return nil
+	}
+	f.Any = true
+	f.Values = splitCSV(value)
+	return nil
+}
+
+func (f *optionalCSVFlag) IsBoolFlag() bool { return true }
 
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "FAIL: "+format+"\n", args...)

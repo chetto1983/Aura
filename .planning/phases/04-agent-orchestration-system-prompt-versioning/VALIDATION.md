@@ -232,3 +232,135 @@ Measured after container rebuild:
 - `tokens_total=4618`
 - `cost_usd=0.008281`
 - `elapsed_ms=21706`
+
+## 2026-05-07 Codex-Style Skill Orchestration Gate
+
+Status: partial pass. Implementation phases 5-7 are complete; the strict live gate remains open because the broad document-summary prompt still exceeds the fast-route budget on the configured live model.
+
+Implemented:
+
+- `cmd/debug_orchestration` now reports profile, reason, capabilities, exposed tools, hidden tools, required skill guidance, loop policy, and terminal tools.
+- `cmd/debug_telegram_sandbox` now reports skill reads, hidden-tool rejection, loop steps, terminal tool, token/cost metrics, trace fields, and stale skill/reference checks.
+- Debug expectations now cover named skill reads, hidden-tool rejection, terminal tools, loop-step ceilings, trace fields, and no stale skill refs.
+- Dashboard settings expose orchestration keys as enums/bounded numeric inputs:
+  - `AURA_SKILL_ROUTING_MODE`
+  - `AURA_AGENT_LOOP_MAX_STEPS`
+  - `AURA_TERMINAL_TOOL_POLICY`
+  - `AURA_DELEGATION_MODE`
+  - `AURA_TRACE_RETENTION_DAYS`
+- Runtime settings now affect live behavior:
+  - agent loop max steps cap tool loops;
+  - terminal tool policy can disable terminal finalization;
+  - delegation mode shapes swarm worker count/timeouts/result size;
+  - trace retention prunes in-memory orchestration snapshots.
+- Profile tool exposure preserves profile allowlist order so preflight tools are shown before protected tools.
+- Skill-preflight failures are retryable tool errors instead of final user-facing fatal stops; hidden tools still fail closed.
+- `aura-python-sandbox` is an accepted sandbox preflight skill.
+- `execute_code` terminal output now returns directly from tool results, avoiding an extra no-tool LLM finalization pass.
+- Typed file tools are terminal in the document profile and return compact metadata directly.
+- `list_sources` is treated as read-only memory evidence and no longer requires source-extraction skill preflight by itself.
+- Auto-low-risk memory capture now treats obvious addresses, fuel-card facts, and `personal` category facts as review-only, not automatic wiki writes.
+
+Focused verification:
+
+```powershell
+go test ./cmd/debug_telegram_sandbox ./cmd/debug_orchestration ./internal/telegram ./internal/api ./internal/config ./internal/settings ./internal/orchestration -count=1
+go test ./internal/conversation/summarizer ./internal/orchestration ./cmd/debug_orchestration ./internal/telegram ./internal/tools ./cmd/debug_telegram_sandbox -count=1
+loops/aura-implementation/scripts/verify-go.ps1
+go test ./... -count=1
+npm --prefix web run i18n:check
+npm --prefix web run build
+docker compose config --quiet
+$env:AURA_HOST_PORT='18080'; docker compose up -d --build aura
+Invoke-RestMethod -Uri http://127.0.0.1:18080/status
+$env:AURA_DASHBOARD_URL='http://127.0.0.1:18080'; npm --prefix web run e2e -- e2e/settings.spec.ts
+```
+
+Settings E2E:
+
+- `web/e2e/settings.spec.ts`: 7/7 passed after seeding dashboard token from `data/aura.db` and restarting Aura so the running process could see the new token.
+- Initial E2E failures were environmental:
+  - wrong env var (`PLAYWRIGHT_BASE_URL` instead of `AURA_DASHBOARD_URL`);
+  - token minted after container startup, fixed by `docker compose restart aura`.
+
+Live swarm smoke on DB-selected model:
+
+- prompt: `facciamo il punto di tutta la pipeline Aura e dimmi cosa manca per chiudere v3.1`
+- `model=deepseek/deepseek-v4-flash`
+- `base_url=https://openrouter.ai/api/v1`
+- `tool_profile=swarm_research`
+- `tools_exposed=list_swarm_tasks,read_swarm_result,run_aurabot_swarm`
+- `tool_calls=run_aurabot_swarm`
+- `terminal_swarm=true`
+- `terminal_tool=run_aurabot_swarm`
+- `post_swarm_tool_calls=0`
+- `worker_count=1`
+- `worker_failures=0`
+- `token_usage_reported=true`
+- `tokens_prompt=3257`
+- `tokens_completion=1274`
+- `tokens_total=4531`
+- `cost_usd=0.007879`
+- `elapsed_ms=23170`
+- `expect-no-stale-skill-ref=true`
+
+Live sandbox smoke on DB-selected model:
+
+- prompt: `calcola con Python la somma da 1 a 100 e crea un piccolo CSV in /tmp/aura_out/aura_sum.csv`
+- `model=deepseek/deepseek-v4-flash`
+- `tool_profile=sandbox_compute`
+- `tools_exposed=list_skills,read_skill,execute_code,list_tools,read_tool,search_memory,list_sources,read_source,store_source`
+- `tool_calls=list_skills,read_skill,execute_code`
+- `read_skills=aura-python-sandbox`
+- `sandbox_used=true`
+- `terminal_tool=execute_code`
+- `hidden_tool_rejected=false`
+- `skill_preflight_failed=false`
+- `contains_5050=true`
+- `contains_artifact_metadata=true`
+- `artifact_filenames=aura_sum-result.md,aura_sum.csv,aura_sum.py`
+- `document_sends=3`
+- `token_usage_reported=true`
+- `tokens_prompt=14636`
+- `tokens_completion=608`
+- `tokens_total=15244`
+- `cost_usd=0.017496`
+- `loop_steps=2`
+- `elapsed_ms=12825`
+
+Live document smoke evidence:
+
+- prompt: `crea un breve documento Word con il riepilogo dei documenti e delle note disponibili in Aura; prima leggi la skill docx e poi genera il file`
+- Functional pass observed after terminal file-tool change:
+  - `tool_profile=document`
+  - `read_skills=docx,aura-source-extraction`
+  - `tool_calls=read_skill,search_memory,list_sources,read_skill,list_sources,search_memory,create_docx`
+  - `terminal_tool=create_docx`
+  - `document=Aura-Riepilogo-Documenti-e-Note.docx`
+  - `final=Created DOCX file ... persisted as src_afefd8adba8b141d, delivered to Telegram.`
+- Strict gate failure:
+  - `loop_steps=5`, over the target `4`;
+  - `elapsed_ms=62894`, over the target `30000`;
+  - `tokens_total=66119`, `cost_usd=0.074193`.
+- Additional runs showed the same root issue: the live model keeps expanding document evidence with repeated memory/wiki/source reads and sometimes emits malformed `create_docx` JSON after a large context.
+
+Blocker:
+
+- v3.1 should remain active until the document route gets a bounded evidence packet or deterministic document-summary helper. The likely next fix is a runtime-owned `document_summary_evidence`/swarm-lite evidence step that returns a compact schema for file tools, instead of letting the LLM repeatedly expand wiki/source context before `create_docx`.
+- Auto-low-risk memory capture also ran during debug smokes and attempted to capture sensitive personal facts from existing memory. The applier now blocks obvious address/fuel-card/personal facts from automatic wiki writes; this needs to stay in the release gate.
+
+Final verification after fixes:
+
+- `go test ./... -count=1`: pass.
+- `loops/aura-implementation/scripts/verify-go.ps1`: pass.
+- `npm --prefix web run i18n:check`: pass.
+- `npm --prefix web run build`: pass.
+- `docker compose config --quiet`: pass.
+- `$env:AURA_HOST_PORT='18080'; docker compose up -d --build aura`: pass.
+- `http://127.0.0.1:18080/status`: `status=ok`, database integrity ok, web search configured.
+
+Closure decision:
+
+- Keep v3.1 active.
+- Do not promote v4.0 MCP/plugin marketplace yet.
+- Next slice should be document-route bounded evidence and typed file JSON reliability.

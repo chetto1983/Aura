@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
@@ -144,7 +145,7 @@ func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 }
 
 func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
-	b := &Bot{}
+	b := &Bot{cfg: &config.Config{TraceRetentionDays: config.DefaultTraceRetentionDays}}
 	b.storeOrchestrationSnapshot("1148481707", turnStats{
 		promptVersion:       "aura-agent-v1",
 		promptHash:          "abc123",
@@ -198,6 +199,22 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	}
 	if !snap.DuplicateSwarm || snap.WorkerCount != 2 || snap.WorkerFailures != 0 {
 		t.Fatalf("swarm metrics snapshot = duplicate %v workers %d failures %d", snap.DuplicateSwarm, snap.WorkerCount, snap.WorkerFailures)
+	}
+}
+
+func TestPruneOrchestrationSnapshotsHonorsTraceRetentionDays(t *testing.T) {
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	b := &Bot{cfg: &config.Config{TraceRetentionDays: 7}}
+	b.orchMap.Store("old", orchestrationSnapshot{StoredAt: now.Add(-8 * 24 * time.Hour)})
+	b.orchMap.Store("fresh", orchestrationSnapshot{StoredAt: now.Add(-6 * 24 * time.Hour)})
+
+	b.pruneOrchestrationSnapshots(now)
+
+	if _, ok := b.loadOrchestrationSnapshot("old"); ok {
+		t.Fatal("old snapshot survived retention pruning")
+	}
+	if _, ok := b.loadOrchestrationSnapshot("fresh"); !ok {
+		t.Fatal("fresh snapshot was pruned")
 	}
 }
 
@@ -264,6 +281,9 @@ func TestExecuteToolCallsRequiresApplicableSkillBeforeProtectedTool(t *testing.T
 	}
 	if !strings.Contains(blocked.lastResult, "requires reading an applicable skill") {
 		t.Fatalf("blocked result = %q", blocked.lastResult)
+	}
+	if blocked.fatalResult != "" {
+		t.Fatalf("fatalResult = %q, want retryable preflight error to stay in loop", blocked.fatalResult)
 	}
 
 	allowed := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
@@ -341,6 +361,113 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	}
 	if exec.calls != 1 {
 		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
+	}
+}
+
+func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
+	reg.Register(exec)
+	b := &Bot{
+		cfg: &config.Config{
+			SkillPreflight:     string(orchestration.SkillPreflightRequired),
+			TerminalToolPolicy: "off",
+		},
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
+		[]string{"execute_code"},
+		orchestration.ProfileSandboxCompute,
+		[]string{"systematic-debugging"},
+	)
+
+	if summary.terminalTool != "" {
+		t.Fatalf("terminalTool = %q, want disabled terminal policy", summary.terminalTool)
+	}
+	if exec.calls != 1 {
+		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
+	}
+}
+
+func TestRunToolCallingLoopRetriesAfterSandboxSkillPreflightError(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	list := &countingTelegramTool{name: "list_skills", result: "systematic-debugging"}
+	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
+	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
+	reg.Register(list)
+	reg.Register(read)
+	reg.Register(exec)
+	fake := &scriptedTelegramLLM{responses: []llm.Response{
+		{
+			ToolCalls: []llm.ToolCall{{ID: "exec-early", Name: "execute_code"}},
+		},
+		{
+			ToolCalls: []llm.ToolCall{
+				{ID: "list-1", Name: "list_skills"},
+				{ID: "skill-1", Name: "read_skill", Arguments: map[string]any{"name": "systematic-debugging"}},
+			},
+		},
+		{
+			ToolCalls: []llm.ToolCall{{ID: "exec-final", Name: "execute_code"}},
+		},
+		{Content: "5050"},
+	}}
+	b := &Bot{
+		cfg: &config.Config{
+			SkillPreflight: string(orchestration.SkillPreflightRequired),
+		},
+		llm:   fake,
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+	convCtx.AddUserMessage("Use execute_code to compute sum(range(1, 101)).")
+	allowlist, err := orchestration.ToolsForProfile(orchestration.ProfileSandboxCompute, orchestration.Availability{Sandbox: true})
+	if err != nil {
+		t.Fatalf("ToolsForProfile: %v", err)
+	}
+
+	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, orchestration.PromptPlan{
+		Version: "test",
+		Hash:    "hash",
+	}, orchestration.ProfileDecision{Profile: orchestration.ProfileSandboxCompute, Reason: "test"})
+
+	if response != "5050" {
+		t.Fatalf("response = %q, want 5050", response)
+	}
+	if !stats.skillPreflightFail {
+		t.Fatal("skillPreflightFail = false, want true for first rejected execute_code")
+	}
+	if stats.terminalTool != "execute_code" {
+		t.Fatalf("terminalTool = %q, want execute_code", stats.terminalTool)
+	}
+	if !stringSliceContains(stats.readSkills, "systematic-debugging") {
+		t.Fatalf("readSkills = %+v, want systematic-debugging", stats.readSkills)
+	}
+	if exec.calls != 1 {
+		t.Fatalf("execute_code calls = %d, want only the post-preflight call to execute", exec.calls)
+	}
+	if list.calls != 1 || read.calls != 1 {
+		t.Fatalf("preflight calls = list %d read %d, want 1/1", list.calls, read.calls)
+	}
+	if len(fake.requests) != 3 {
+		t.Fatalf("LLM requests = %d, want 3 without no-tool terminal finalization", len(fake.requests))
+	}
+	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "list_skills" {
+		t.Fatalf("first exposed tool = %+v, want list_skills first", fake.requests[0].Tools)
+	}
+}
+
+func TestMaxToolLoopIterationsHonorsRuntimeCapAndProfilePolicy(t *testing.T) {
+	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 4}}
+
+	if got := b.maxToolLoopIterations(orchestration.ProfileDocument); got != 4 {
+		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 4", got)
+	}
+	if got := b.maxToolLoopIterations(orchestration.ProfileSwarmResearch); got != 2 {
+		t.Fatalf("swarm maxToolLoopIterations = %d, want profile cap 2", got)
 	}
 }
 
@@ -448,12 +575,59 @@ func (t *countingTelegramTool) Execute(context.Context, map[string]any) (string,
 	return t.result, nil
 }
 
+type scriptedTelegramLLM struct {
+	responses []llm.Response
+	requests  []llm.Request
+}
+
+func (f *scriptedTelegramLLM) Send(context.Context, llm.Request) (llm.Response, error) {
+	return llm.Response{}, nil
+}
+
+func (f *scriptedTelegramLLM) Stream(_ context.Context, req llm.Request) (<-chan llm.Token, error) {
+	f.requests = append(f.requests, req)
+	resp := llm.Response{}
+	if len(f.requests) <= len(f.responses) {
+		resp = f.responses[len(f.requests)-1]
+	}
+	ch := make(chan llm.Token, 1)
+	ch <- llm.Token{
+		Content:   resp.Content,
+		ToolCalls: resp.ToolCalls,
+		Usage:     resp.Usage,
+		Done:      true,
+	}
+	close(ch)
+	return ch, nil
+}
+
 func TestFormatTerminalSwarmResultUsesSynthesisAndMetrics(t *testing.T) {
 	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline is healthy.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
 
 	for _, want := range []string{"Pipeline is healthy.", "tasks=3/3 completed", "tokens=123", "wall_ms=456"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
+	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
+
+	got := formatTerminalExecuteCodeResult(raw)
+	if !strings.Contains(got, "5050") || !strings.Contains(got, "Artifacts:") || !strings.Contains(got, "aura_sum.csv") {
+		t.Fatalf("formatTerminalExecuteCodeResult() = %q", got)
+	}
+	if strings.Contains(got, "exit_code") || strings.Contains(got, "elapsed_ms") {
+		t.Fatalf("formatTerminalExecuteCodeResult leaked raw execution header: %q", got)
+	}
+}
+
+func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
+	got := formatTerminalFileResult("create_docx", `{"source_id":"src_123","filename":"report.docx","size_bytes":42,"delivered":true}`)
+	for _, want := range []string{"DOCX", "report.docx", "src_123", "delivered"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTerminalFileResult() = %q, missing %q", got, want)
 		}
 	}
 }

@@ -107,6 +107,9 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 			t.Fatalf("sandbox profile missing %q: %+v", required, sb)
 		}
 	}
+	if slices.Index(sb, "list_skills") > slices.Index(sb, "execute_code") || slices.Index(sb, "read_skill") > slices.Index(sb, "execute_code") {
+		t.Fatalf("sandbox profile should expose skill preflight tools before execute_code: %+v", sb)
+	}
 	if slices.Contains(sb, "save_tool") || slices.Contains(sb, "write_wiki") {
 		t.Fatalf("sandbox profile exposes admin/write tools: %+v", sb)
 	}
@@ -115,7 +118,7 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForProfile document: %v", err)
 	}
-	for _, required := range []string{"list_skills", "read_skill", "search_memory", "run_aurabot_swarm", "read_swarm_result", "create_docx", "create_xlsx", "create_pdf"} {
+	for _, required := range []string{"list_skills", "read_skill", "search_memory", "list_sources", "create_docx", "create_xlsx", "create_pdf"} {
 		if !slices.Contains(doc, required) {
 			t.Fatalf("document profile missing %q: %+v", required, doc)
 		}
@@ -332,13 +335,13 @@ func TestProfileCardForReturnsCopySafeCards(t *testing.T) {
 
 	cards := ProfileCards()
 	cards[ProfileSandboxCompute].AllowedTools[0] = "mutated"
-	cards[ProfileDocument].ConditionalTools[0].Tools[0] = "mutated"
+	cards[ProfileSwarmResearch].ConditionalTools[0].Tools[0] = "mutated"
 	rereadMap := ProfileCards()
 	if rereadMap[ProfileSandboxCompute].AllowedTools[0] == "mutated" {
 		t.Fatalf("mutating ProfileCards result changed profile card catalog: %+v", rereadMap[ProfileSandboxCompute].AllowedTools)
 	}
-	if rereadMap[ProfileDocument].ConditionalTools[0].Tools[0] == "mutated" {
-		t.Fatalf("mutating ProfileCards conditional tools changed profile card catalog: %+v", rereadMap[ProfileDocument].ConditionalTools)
+	if rereadMap[ProfileSwarmResearch].ConditionalTools[0].Tools[0] == "mutated" {
+		t.Fatalf("mutating ProfileCards conditional tools changed profile card catalog: %+v", rereadMap[ProfileSwarmResearch].ConditionalTools)
 	}
 }
 

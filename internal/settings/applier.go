@@ -73,6 +73,11 @@ const (
 	KeyToolProfileMode            = "AURA_TOOL_PROFILE_MODE"
 	KeyOrchestrationLogLevel      = "AURA_ORCHESTRATION_LOG_LEVEL"
 	KeySkillPreflight             = "AURA_SKILL_PREFLIGHT"
+	KeySkillRoutingMode           = "AURA_SKILL_ROUTING_MODE"
+	KeyAgentLoopMaxSteps          = "AURA_AGENT_LOOP_MAX_STEPS"
+	KeyTerminalToolPolicy         = "AURA_TERMINAL_TOOL_POLICY"
+	KeyDelegationMode             = "AURA_DELEGATION_MODE"
+	KeyTraceRetentionDays         = "AURA_TRACE_RETENTION_DAYS"
 	KeyMistralAPIKey              = "MISTRAL_API_KEY"
 	KeyMistralOCRModel            = "MISTRAL_OCR_MODEL"
 	KeyMistralOCRBaseURL          = "MISTRAL_OCR_BASE_URL"
@@ -122,6 +127,7 @@ func OverridableKeys() []string {
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
 		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel, KeySkillPreflight,
+		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
 		KeyMistralOCRTableFormat, KeyMistralOCRIncludeImages,
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
@@ -222,6 +228,11 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode)))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
 	cfg.SkillPreflight = normalizeSkillPreflight(settingString(ctx, s, KeySkillPreflight, cfg.SkillPreflight))
+	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
+	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
+	cfg.TerminalToolPolicy = config.NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
+	cfg.DelegationMode = config.NormalizeDelegationMode(settingString(ctx, s, KeyDelegationMode, cfg.DelegationMode))
+	cfg.TraceRetentionDays = settingIntRange(ctx, s, KeyTraceRetentionDays, cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
 
 	cfg.MistralAPIKey = settingString(ctx, s, KeyMistralAPIKey, cfg.MistralAPIKey)
 	cfg.MistralOCRModel = settingString(ctx, s, KeyMistralOCRModel, cfg.MistralOCRModel)
@@ -278,6 +289,14 @@ func settingInt(ctx context.Context, s Reader, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func settingIntRange(ctx context.Context, s Reader, key string, fallback, min, max, defaultValue int) int {
+	value := settingInt(ctx, s, key, fallback)
+	if value < min || value > max {
+		return defaultValue
+	}
+	return value
 }
 
 func settingFloat(ctx context.Context, s Reader, key string, fallback float64) float64 {
