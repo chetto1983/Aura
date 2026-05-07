@@ -67,6 +67,7 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 
 - Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
 - For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
+- For the next Codex-style route hardening slice, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`. It records the online research, best skills to use, capability taxonomy, required skill preflight, loop policies, dashboard settings, and E2E closure phases.
 - Before closing v3.1, reconcile the unchecked tasks in that plan with the shipped hook/profile/debug work and append final validation to `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`.
 - Keep v4.0 MCP/plugin work blocked behind v3.1 tool-profile/prompt-versioning clarity.
 - For v4.0 sidecars, copy the Pyodide pattern: keep runtime bloat out of the Aura image, use internal service URLs, health checks, pinned images where possible, and rollback-friendly managed config.

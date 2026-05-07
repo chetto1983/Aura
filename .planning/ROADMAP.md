@@ -55,6 +55,7 @@ Success criteria:
 - Telegram exposes only the active profile's tools to the LLM.
 - Skills, swarm, and sandbox are first-class route guidance, not incidental tools.
 - Swarm research follows the Hermes-style bounded delegation plan: narrow parent tools, capped workers, stale alias rejection, terminal finalization, and worker token/cost aggregation.
+- Codex-style skill orchestration is planned as the final v3.1 hardening slice: capability taxonomy, required skill preflight, profile loop policies, and route evals before v4.0 expands MCP/plugin tools.
 - Docker sandbox route uses the `pyodide` sidecar and does not require Node or Pyodide inside the Aura image.
 - Debug Telegram smoke reports exposed tools, called tools, tokens, estimated context, and cost.
 - Document, sandbox-compute, memory, and swarm-research prompts each choose the expected profile in tests.
