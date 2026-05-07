@@ -151,6 +151,8 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops. Applies to new workers."},
 
 	{Key: settings.KeySandboxEnabled, Group: "sandbox", Kind: "bool", Label: "Sandbox enabled", Hint: "Restart Aura after enabling or disabling the code execution tool"},
+	{Key: settings.KeySandboxRuntimeMode, Group: "sandbox", Kind: "enum", Options: []string{"auto", "container", "local"}, Label: "Sandbox runtime mode", Hint: "Container uses the Pyodide sidecar; local uses the bundled desktop runner"},
+	{Key: settings.KeySandboxRuntimeURL, Group: "sandbox", Kind: "url", Label: "Sandbox runtime URL", Hint: "Compose default is http://pyodide:8787"},
 	{Key: settings.KeySandboxRuntimeDir, Group: "sandbox", Kind: "text", Label: "Sandbox runtime directory", Hint: "Container default is /app/runtime/pyodide"},
 	{Key: settings.KeySandboxTimeoutSec, Group: "sandbox", Kind: "int", Label: "Sandbox timeout (seconds)"},
 	{Key: settings.KeySandboxAutoImproveMode, Group: "sandbox", Kind: "enum", Options: []string{"off", "dry_run", "auto"}, Label: "Sandbox auto-improve mode"},
@@ -371,6 +373,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.Itoa(cfg.SummarizerCooldownSeconds)
 	case settings.KeySandboxEnabled:
 		return strconv.FormatBool(cfg.SandboxEnabled)
+	case settings.KeySandboxRuntimeMode:
+		return cfg.SandboxRuntimeMode
+	case settings.KeySandboxRuntimeURL:
+		return cfg.SandboxRuntimeURL
 	case settings.KeySandboxRuntimeDir:
 		return cfg.SandboxRuntimeDir
 	case settings.KeySandboxTimeoutSec:

@@ -40,6 +40,73 @@ var RequiredPyodideImports = []string{
 	"rich",
 }
 
+// PyodidePackagesForCode returns the known Pyodide package imports needed by a
+// Python snippet. Keeping this list demand-driven avoids loading the full
+// office/data profile for tiny execute_code calls.
+func PyodidePackagesForCode(code string) []string {
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(code, "\n") {
+		for _, name := range pythonImportsFromLine(line) {
+			seen[strings.ToLower(name)] = true
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for _, importName := range RequiredPyodideImports {
+		if seen[strings.ToLower(importName)] {
+			out = append(out, importName)
+		}
+	}
+	return out
+}
+
+func pythonImportsFromLine(line string) []string {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return nil
+	}
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if strings.HasPrefix(line, "import ") {
+		return pythonImportList(strings.TrimSpace(strings.TrimPrefix(line, "import ")))
+	}
+	if strings.HasPrefix(line, "from ") {
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "from "))
+		module, _, ok := strings.Cut(rest, " import ")
+		if !ok {
+			return nil
+		}
+		return []string{pythonTopLevelImport(module)}
+	}
+	return nil
+}
+
+func pythonImportList(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := pythonTopLevelImport(part)
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func pythonTopLevelImport(s string) string {
+	fields := strings.Fields(strings.TrimSpace(s))
+	if len(fields) == 0 {
+		return ""
+	}
+	name := strings.TrimSpace(fields[0])
+	name = strings.Trim(name, "();")
+	name, _, _ = strings.Cut(name, ".")
+	return name
+}
+
 var requiredPyodideRuntimeFileGroups = [][]string{
 	{"pyodide.js", "pyodide.mjs"},
 	{"pyodide.asm.wasm"},

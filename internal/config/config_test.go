@@ -125,6 +125,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("SANDBOX_ENABLED")
+	os.Unsetenv("SANDBOX_RUNTIME_MODE")
+	os.Unsetenv("SANDBOX_RUNTIME_URL")
 	os.Unsetenv("SANDBOX_RUNTIME_DIR")
 	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
 
@@ -254,6 +256,12 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
+	}
+	if cfg.SandboxRuntimeMode != "auto" {
+		t.Errorf("SandboxRuntimeMode = %q, want auto", cfg.SandboxRuntimeMode)
+	}
+	if cfg.SandboxRuntimeURL != "" {
+		t.Errorf("SandboxRuntimeURL = %q, want empty", cfg.SandboxRuntimeURL)
 	}
 	if cfg.SandboxRuntimeDir != DefaultSandboxRuntimeDir {
 		t.Errorf("SandboxRuntimeDir = %q, want %q", cfg.SandboxRuntimeDir, DefaultSandboxRuntimeDir)
@@ -402,6 +410,24 @@ func TestLoadSandboxRuntimeDir(t *testing.T) {
 	}
 	if cfg.SandboxRuntimeDir != "D:/Aura/runtime/pyodide" {
 		t.Fatalf("SandboxRuntimeDir = %q", cfg.SandboxRuntimeDir)
+	}
+}
+
+func TestLoadSandboxContainerRuntime(t *testing.T) {
+	os.Setenv("SANDBOX_RUNTIME_MODE", "container")
+	os.Setenv("SANDBOX_RUNTIME_URL", "http://pyodide:8787")
+	defer os.Unsetenv("SANDBOX_RUNTIME_MODE")
+	defer os.Unsetenv("SANDBOX_RUNTIME_URL")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SandboxRuntimeMode != "container" {
+		t.Fatalf("SandboxRuntimeMode = %q, want container", cfg.SandboxRuntimeMode)
+	}
+	if cfg.SandboxRuntimeURL != "http://pyodide:8787" {
+		t.Fatalf("SandboxRuntimeURL = %q", cfg.SandboxRuntimeURL)
 	}
 }
 

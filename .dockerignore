@@ -16,6 +16,9 @@ $cover
 aura
 logs/
 reports/
+runtime/_downloads/
+runtime/pyodide/
+runtime/pyodide/runner/node-*/
 wiki/raw/
 web/node_modules/
 web/test-results/

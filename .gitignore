@@ -61,6 +61,7 @@ wiki/*
 # Local sandbox runtime bundle (release artifact, not source)
 /runtime/pyodide/
 /runtime/_downloads/
+/runtime/pyodide/runner/node-*/
 dist/*
 skills/.claude/*
 test-results/*
