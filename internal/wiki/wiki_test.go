@@ -12,6 +12,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var (
+	_ PageReader   = (*Store)(nil)
+	_ SlugResolver = (*Store)(nil)
+	_ PageWriter   = (*Store)(nil)
+	_ Directory    = (*Store)(nil)
+	_ Journal      = (*Store)(nil)
+	_ Maintainer   = (*Store)(nil)
+	_ Repository   = (*Store)(nil)
+)
+
 func validPage() *Page {
 	return &Page{
 		Title:         "Test Page",

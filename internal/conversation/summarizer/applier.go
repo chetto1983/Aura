@@ -12,7 +12,7 @@ import (
 	"github.com/aura/aura/internal/wiki"
 )
 
-// WikiWriter is the write surface of wiki.Store needed by AutoApplier.
+// WikiWriter is the wiki write/read journal surface needed by AutoApplier.
 type WikiWriter interface {
 	WritePage(ctx context.Context, page *wiki.Page) error
 	ReadPage(slug string) (*wiki.Page, error)

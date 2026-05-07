@@ -10,12 +10,7 @@ import (
 )
 
 // WikiMaintainer is the wiki surface MaintenanceJob needs.
-type WikiMaintainer interface {
-	CleanMemory(ctx context.Context, opts wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error)
-	Lint(ctx context.Context) ([]wiki.LintIssue, error)
-	ListPages() ([]string, error)
-	RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error
-}
+type WikiMaintainer = wiki.Maintainer
 
 // OwnerNotifier is called when high-severity issues are found. Passed as a
 // function to avoid an import cycle between scheduler and telegram packages.

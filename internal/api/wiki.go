@@ -120,7 +120,7 @@ func handleWikiGraph(deps Deps) http.HandlerFunc {
 	}
 }
 
-func loadWikiSummaries(store WikiStore) ([]WikiPageSummary, error) {
+func loadWikiSummaries(store wiki.PageReader) ([]WikiPageSummary, error) {
 	slugs, err := store.ListPages()
 	if err != nil {
 		return nil, err

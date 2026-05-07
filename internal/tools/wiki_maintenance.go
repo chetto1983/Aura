@@ -26,10 +26,10 @@ const (
 // without re-reading index.md every time. Returns slug, title, and
 // category for each page, sorted by category then slug.
 type ListWikiTool struct {
-	store *wiki.Store
+	store wiki.PageReader
 }
 
-func NewListWikiTool(store *wiki.Store) *ListWikiTool {
+func NewListWikiTool(store wiki.PageReader) *ListWikiTool {
 	return &ListWikiTool{store: store}
 }
 
@@ -136,10 +136,10 @@ func (t *ListWikiTool) Execute(ctx context.Context, args map[string]any) (string
 // [[wiki-links]], broken related refs). Returns a grouped report so the
 // LLM can decide which pages to fix.
 type LintWikiTool struct {
-	store *wiki.Store
+	store wiki.Linter
 }
 
-func NewLintWikiTool(store *wiki.Store) *LintWikiTool {
+func NewLintWikiTool(store wiki.Linter) *LintWikiTool {
 	return &LintWikiTool{store: store}
 }
 
@@ -193,10 +193,10 @@ func (t *LintWikiTool) Execute(ctx context.Context, args map[string]any) (string
 // CleanWikiMemoryTool turns the lint-and-fix playbook into an automated agent
 // action: dry-run by default, apply only when explicitly requested.
 type CleanWikiMemoryTool struct {
-	store *wiki.Store
+	store wiki.MemoryCleaner
 }
 
-func NewCleanWikiMemoryTool(store *wiki.Store) *CleanWikiMemoryTool {
+func NewCleanWikiMemoryTool(store wiki.MemoryCleaner) *CleanWikiMemoryTool {
 	return &CleanWikiMemoryTool{store: store}
 }
 
@@ -275,10 +275,16 @@ func formatMemoryHygieneReport(report *wiki.MemoryHygieneReport, applied bool) s
 // Useful after manual edits or recovery — WritePage / DeletePage already
 // keep the index current automatically.
 type RebuildIndexTool struct {
-	store *wiki.Store
+	store interface {
+		wiki.Journal
+		wiki.PageReader
+	}
 }
 
-func NewRebuildIndexTool(store *wiki.Store) *RebuildIndexTool {
+func NewRebuildIndexTool(store interface {
+	wiki.Journal
+	wiki.PageReader
+}) *RebuildIndexTool {
 	return &RebuildIndexTool{store: store}
 }
 
@@ -311,10 +317,10 @@ func (t *RebuildIndexTool) Execute(ctx context.Context, args map[string]any) (st
 // WritePage / DeletePage — query logs, lint passes, periodic syntheses.
 // Slug is optional; empty means the entry is not tied to a single page.
 type AppendLogTool struct {
-	store *wiki.Store
+	store wiki.Journal
 }
 
-func NewAppendLogTool(store *wiki.Store) *AppendLogTool {
+func NewAppendLogTool(store wiki.Journal) *AppendLogTool {
 	return &AppendLogTool{store: store}
 }
 

@@ -33,12 +33,18 @@ type ToolInfo struct {
 // ToolRegistry manages persistent LLM-written Python tools stored under
 // wiki/tools/. Each tool is a .py file with a companion .md wiki page.
 type ToolRegistry struct {
-	wikiStore *wiki.Store
-	toolsDir  string
+	wikiStore interface {
+		wiki.Directory
+		wiki.PageWriter
+	}
+	toolsDir string
 }
 
 // NewToolRegistry creates a tool registry backed by the wiki/tools/ directory.
-func NewToolRegistry(wikiStore *wiki.Store) (*ToolRegistry, error) {
+func NewToolRegistry(wikiStore interface {
+	wiki.Directory
+	wiki.PageWriter
+}) (*ToolRegistry, error) {
 	toolsDir := filepath.Join(wikiStore.Dir(), "tools")
 	if err := os.MkdirAll(toolsDir, 0755); err != nil {
 		return nil, fmt.Errorf("create tools dir: %w", err)

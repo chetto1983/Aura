@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -9,6 +11,85 @@ import (
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/wiki"
 )
+
+type fakeWikiRepository struct {
+	pages map[string]*wiki.Page
+	logs  []string
+}
+
+func newFakeWikiRepository() *fakeWikiRepository {
+	return &fakeWikiRepository{pages: make(map[string]*wiki.Page)}
+}
+
+func (f *fakeWikiRepository) WritePage(_ context.Context, page *wiki.Page) error {
+	if page == nil {
+		return fmt.Errorf("nil page")
+	}
+	cp := *page
+	f.pages[wiki.Slug(page.Title)] = &cp
+	return nil
+}
+
+func (f *fakeWikiRepository) ReadPage(slug string) (*wiki.Page, error) {
+	if page, ok := f.pages[wiki.Slug(slug)]; ok {
+		cp := *page
+		return &cp, nil
+	}
+	return nil, fmt.Errorf("missing")
+}
+
+func (f *fakeWikiRepository) ListPages() ([]string, error) {
+	slugs := make([]string, 0, len(f.pages))
+	for slug := range f.pages {
+		slugs = append(slugs, slug)
+	}
+	return slugs, nil
+}
+
+func (f *fakeWikiRepository) ResolveSlug(input string) (string, []string, error) {
+	slug := wiki.Slug(input)
+	if _, ok := f.pages[slug]; ok {
+		return slug, nil, nil
+	}
+	return "", nil, nil
+}
+
+func (f *fakeWikiRepository) DeletePage(_ context.Context, slug string) error {
+	delete(f.pages, wiki.Slug(slug))
+	return nil
+}
+
+func (f *fakeWikiRepository) Dir() string                  { return "" }
+func (f *fakeWikiRepository) RebuildIndex(context.Context) {}
+func (f *fakeWikiRepository) AppendLog(_ context.Context, action, slug string) {
+	f.logs = append(f.logs, action+":"+slug)
+}
+func (f *fakeWikiRepository) Lint(context.Context) ([]wiki.LintIssue, error) { return nil, nil }
+func (f *fakeWikiRepository) CleanMemory(context.Context, wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error) {
+	return &wiki.MemoryHygieneReport{Pages: len(f.pages)}, nil
+}
+func (f *fakeWikiRepository) RepairLink(context.Context, string, string) error { return nil }
+
+func TestWikiToolsAcceptRepositoryInterfaces(t *testing.T) {
+	repo := newFakeWikiRepository()
+	write := NewWriteWikiTool(repo, nil)
+	if _, err := write.Execute(t.Context(), map[string]any{
+		"title":    "Interface Wiki",
+		"body":     "Uses a fake wiki repository.",
+		"category": "engineering",
+	}); err != nil {
+		t.Fatalf("write Execute: %v", err)
+	}
+
+	read := NewReadWikiTool(repo)
+	out, err := read.Execute(t.Context(), map[string]any{"slug": "interface-wiki"})
+	if err != nil {
+		t.Fatalf("read Execute: %v", err)
+	}
+	if !strings.Contains(out, "# Interface Wiki") {
+		t.Fatalf("read output = %q", out)
+	}
+}
 
 func TestWriteAndReadWikiTools(t *testing.T) {
 	store, err := wiki.NewStore(t.TempDir(), nil)

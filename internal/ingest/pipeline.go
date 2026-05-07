@@ -34,7 +34,7 @@ import (
 // Pipeline turns completed sources into compact wiki summary pages.
 type Pipeline struct {
 	sources source.Repository
-	wiki    *wiki.Store
+	wiki    wiki.Repository
 	search  *search.Engine // optional; nil when embeddings aren't configured
 	logger  *slog.Logger
 	now     func() time.Time
@@ -43,7 +43,7 @@ type Pipeline struct {
 // Config wires the pipeline to existing stores.
 type Config struct {
 	Sources source.Repository
-	Wiki    *wiki.Store
+	Wiki    wiki.Repository
 	Search  *search.Engine
 	Logger  *slog.Logger
 	// Now is overridable for tests so created_at/updated_at are deterministic.
@@ -108,8 +108,8 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 
 	// Collision-aware: when a different source already owns the candidate
 	// slug, the title gets a short id suffix so the slug derived from it
-	// stays unique. Slug is always wiki.Slug(title) so wiki.Store.WritePage
-	// (which keys off the title) and our recorded slug never disagree.
+	// stays unique. Slug is always wiki.Slug(title) so the wiki repository
+	// WritePage implementation and our recorded slug never disagree.
 	title := p.resolveTitle(buildTitle(src, sourceID), sourceID)
 	slug := wiki.Slug(title)
 
@@ -200,7 +200,7 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 // disambiguating with a short id suffix when the candidate slug is
 // already owned by a different source. Returning a title (rather than a
 // slug) keeps page.Title and the on-disk filename in sync since
-// wiki.Store.WritePage keys off the title.
+// the wiki repository WritePage implementation keys off the title.
 func (p *Pipeline) resolveTitle(candidate, sourceID string) string {
 	existing, err := p.wiki.ReadPage(wiki.Slug(candidate))
 	if err != nil {

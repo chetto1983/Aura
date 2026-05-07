@@ -25,15 +25,6 @@ import (
 	"github.com/aura/aura/internal/wiki"
 )
 
-// WikiStore is the read-side surface the API needs. The package depends on
-// the interface (not the concrete type) so tests can swap in fakes if they
-// later prove cheaper than spinning up a real wiki dir on tmpfs.
-type WikiStore interface {
-	ReadPage(slug string) (*wiki.Page, error)
-	ListPages() ([]string, error)
-	Dir() string // for last-update mtime walks
-}
-
 // SwarmStore is the read-side surface for AuraBot run/task observability.
 type SwarmStore interface {
 	ListRuns(ctx context.Context, limit int) ([]swarm.Run, error)
@@ -59,7 +50,7 @@ type BackupService interface {
 // Location is used by POST /tasks to resolve daily HH:MM into the next UTC
 // run. Nil means time.Local — matching the LLM-facing schedule_task tool.
 type Deps struct {
-	Wiki        WikiStore
+	Wiki        wiki.Repository
 	Sources     source.Repository
 	Scheduler   scheduler.Repository
 	OCR         *ocr.Client

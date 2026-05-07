@@ -4,11 +4,93 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/wiki"
 )
+
+type fakeWikiMaintenanceRepository struct {
+	pages   map[string]*wiki.Page
+	issues  []wiki.LintIssue
+	logs    []string
+	rebuild bool
+}
+
+func newFakeWikiMaintenanceRepository() *fakeWikiMaintenanceRepository {
+	return &fakeWikiMaintenanceRepository{pages: make(map[string]*wiki.Page)}
+}
+
+func (f *fakeWikiMaintenanceRepository) ReadPage(slug string) (*wiki.Page, error) {
+	if page, ok := f.pages[wiki.Slug(slug)]; ok {
+		cp := *page
+		return &cp, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+func (f *fakeWikiMaintenanceRepository) ListPages() ([]string, error) {
+	slugs := make([]string, 0, len(f.pages))
+	for slug := range f.pages {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	return slugs, nil
+}
+
+func (f *fakeWikiMaintenanceRepository) Lint(context.Context) ([]wiki.LintIssue, error) {
+	return append([]wiki.LintIssue(nil), f.issues...), nil
+}
+
+func (f *fakeWikiMaintenanceRepository) CleanMemory(context.Context, wiki.MemoryHygieneOptions) (*wiki.MemoryHygieneReport, error) {
+	return &wiki.MemoryHygieneReport{Pages: len(f.pages)}, nil
+}
+
+func (f *fakeWikiMaintenanceRepository) RebuildIndex(context.Context) {
+	f.rebuild = true
+}
+
+func (f *fakeWikiMaintenanceRepository) AppendLog(_ context.Context, action, slug string) {
+	f.logs = append(f.logs, action+":"+slug)
+}
+
+func TestWikiMaintenanceToolsAcceptRepositoryInterfaces(t *testing.T) {
+	repo := newFakeWikiMaintenanceRepository()
+	repo.pages["alpha"] = &wiki.Page{Title: "Alpha", Category: "engineering", Body: "body"}
+	repo.issues = []wiki.LintIssue{{Slug: "alpha", Message: "broken link: [[ghost]]"}}
+
+	list := NewListWikiTool(repo)
+	out, err := list.Execute(t.Context(), nil)
+	if err != nil || !strings.Contains(out, "[[alpha]] Alpha") {
+		t.Fatalf("list output=%q err=%v", out, err)
+	}
+
+	lint := NewLintWikiTool(repo)
+	out, err = lint.Execute(t.Context(), nil)
+	if err != nil || !strings.Contains(out, "broken link") {
+		t.Fatalf("lint output=%q err=%v", out, err)
+	}
+
+	clean := NewCleanWikiMemoryTool(repo)
+	out, err = clean.Execute(t.Context(), map[string]any{"apply": true})
+	if err != nil || !strings.Contains(out, "Applied") {
+		t.Fatalf("clean output=%q err=%v", out, err)
+	}
+
+	rebuild := NewRebuildIndexTool(repo)
+	if _, err = rebuild.Execute(t.Context(), nil); err != nil || !repo.rebuild {
+		t.Fatalf("rebuild err=%v rebuild=%v", err, repo.rebuild)
+	}
+
+	appendLog := NewAppendLogTool(repo)
+	if _, err = appendLog.Execute(t.Context(), map[string]any{"action": "query", "slug": "alpha"}); err != nil {
+		t.Fatalf("append log err=%v", err)
+	}
+	if len(repo.logs) != 1 || repo.logs[0] != "query:alpha" {
+		t.Fatalf("logs = %+v", repo.logs)
+	}
+}
 
 // newTestWikiStore wires a fresh wiki.Store rooted at t.TempDir().
 func newTestWikiStore(t *testing.T) (*wiki.Store, string) {

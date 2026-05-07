@@ -12,11 +12,11 @@ import (
 
 // WriteWikiTool writes structured knowledge to the wiki.
 type WriteWikiTool struct {
-	store  *wiki.Store
+	store  wiki.PageWriter
 	search *search.Engine
 }
 
-func NewWriteWikiTool(store *wiki.Store, searchEngine *search.Engine) *WriteWikiTool {
+func NewWriteWikiTool(store wiki.PageWriter, searchEngine *search.Engine) *WriteWikiTool {
 	return &WriteWikiTool{store: store, search: searchEngine}
 }
 
@@ -104,10 +104,16 @@ func (t *WriteWikiTool) Execute(ctx context.Context, args map[string]any) (strin
 
 // ReadWikiTool reads a wiki page by slug.
 type ReadWikiTool struct {
-	store *wiki.Store
+	store interface {
+		wiki.PageReader
+		wiki.SlugResolver
+	}
 }
 
-func NewReadWikiTool(store *wiki.Store) *ReadWikiTool {
+func NewReadWikiTool(store interface {
+	wiki.PageReader
+	wiki.SlugResolver
+}) *ReadWikiTool {
 	return &ReadWikiTool{store: store}
 }
 

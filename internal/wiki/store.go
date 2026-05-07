@@ -26,6 +26,72 @@ type Store struct {
 	logger  *slog.Logger
 }
 
+// PageCatalog is the read side for enumerating wiki pages.
+type PageCatalog interface {
+	ListPages() ([]string, error)
+}
+
+// PageReader is the read side for wiki pages and page catalogs.
+type PageReader interface {
+	ReadPage(slug string) (*Page, error)
+	PageCatalog
+}
+
+// SlugResolver maps user/model supplied slugs or aliases to canonical pages.
+type SlugResolver interface {
+	ResolveSlug(input string) (resolved string, candidates []string, err error)
+}
+
+// PageWriter is the mutation side for wiki pages.
+type PageWriter interface {
+	WritePage(ctx context.Context, page *Page) error
+	DeletePage(ctx context.Context, slug string) error
+}
+
+// Directory exposes the wiki root for file-backed auxiliary stores.
+type Directory interface {
+	Dir() string
+}
+
+// Linter is the wiki health check surface.
+type Linter interface {
+	Lint(ctx context.Context) ([]LintIssue, error)
+}
+
+// MemoryCleaner is the automated memory hygiene surface.
+type MemoryCleaner interface {
+	CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*MemoryHygieneReport, error)
+}
+
+// LinkRepairer repairs broken wiki links.
+type LinkRepairer interface {
+	RepairLink(ctx context.Context, brokenSlug, fixedSlug string) error
+}
+
+// Maintainer is the nightly/wiki-health maintenance boundary.
+type Maintainer interface {
+	PageCatalog
+	Linter
+	MemoryCleaner
+	LinkRepairer
+}
+
+// Journal is the operational index/log surface.
+type Journal interface {
+	RebuildIndex(ctx context.Context)
+	AppendLog(ctx context.Context, action, slug string)
+}
+
+// Repository is the full wiki store boundary used by runtime wiring.
+type Repository interface {
+	PageReader
+	SlugResolver
+	PageWriter
+	Directory
+	Maintainer
+	Journal
+}
+
 const (
 	memoryDecayMediumAge = 90 * 24 * time.Hour
 	memoryDecayHighAge   = 180 * 24 * time.Hour

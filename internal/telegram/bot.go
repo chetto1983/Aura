@@ -37,7 +37,7 @@ type Bot struct {
 	cfg         *config.Config
 	logger      *slog.Logger
 	llm         llm.Client
-	wiki        *wiki.Store
+	wiki        wiki.Repository
 	search      *search.Engine
 	tools       *tools.Registry
 	budget      *budget.Tracker
