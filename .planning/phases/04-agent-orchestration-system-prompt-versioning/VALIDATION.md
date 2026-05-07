@@ -207,3 +207,28 @@ Notes:
 
 - The local debug harness still logs `QDRANT_URL is required` because Compose-only environment values are not present in `data\.env`; this does not affect the swarm delegation smoke, but the full Docker closure gate should run inside Compose or pass the Compose Qdrant env explicitly.
 - Docker rebuild initially failed when `AURA_HOST_PORT` was not exported and Compose tried to bind `127.0.0.1:8080`; rerunning with `AURA_HOST_PORT=18080` recreated Aura successfully and `/status` returned `status=ok`.
+
+Post-commit Docker E2E:
+
+```powershell
+$env:AURA_HOST_PORT='18080'; docker compose up -d --build aura
+Invoke-RestMethod -Uri http://127.0.0.1:18080/status
+$env:AURA_ENV_PATH='data\.env'; go run ./cmd/debug_telegram_sandbox -timeout 90s -no-validate -expect-profile swarm_research -expect-tools run_aurabot_swarm -expect-swarm -expect-terminal-swarm -expect-token-metrics -max-elapsed-ms 30000 -prompt "facciamo il punto di tutta la pipeline Aura e dimmi cosa manca per chiudere v3.1"
+```
+
+Measured after container rebuild:
+
+- `/status`: `status=ok`, `version=3.0`.
+- `tool_profile=swarm_research`
+- `tool_calls=run_aurabot_swarm`
+- `terminal_swarm=true`
+- `post_swarm_tool_calls=0`
+- `duplicate_swarm_rejected=false`
+- `worker_count=1`
+- `worker_failures=0`
+- `token_usage_reported=true`
+- `tokens_prompt=3217`
+- `tokens_completion=1401`
+- `tokens_total=4618`
+- `cost_usd=0.008281`
+- `elapsed_ms=21706`
