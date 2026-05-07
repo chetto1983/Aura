@@ -19,7 +19,7 @@ const dailyBriefingMaxChars = 8000
 type DailyBriefingTool struct {
 	tasks     scheduler.TaskReader
 	sources   source.Reader
-	summaries *summarizer.SummariesStore
+	summaries summarizer.ProposalLister
 	issues    *scheduler.IssuesStore
 	archive   conversation.TurnReader
 	loc       *time.Location
@@ -29,7 +29,7 @@ type DailyBriefingTool struct {
 func NewDailyBriefingTool(
 	tasks scheduler.TaskReader,
 	sources source.Reader,
-	summaries *summarizer.SummariesStore,
+	summaries summarizer.ProposalLister,
 	issues *scheduler.IssuesStore,
 	archive conversation.TurnReader,
 	loc *time.Location,

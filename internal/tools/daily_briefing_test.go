@@ -149,6 +149,47 @@ func TestDailyBriefingToolAcceptsArchiveReaderInterface(t *testing.T) {
 	}
 }
 
+type fakeBriefingProposalLister struct {
+	proposals []summarizer.ProposedUpdate
+}
+
+func (f fakeBriefingProposalLister) List(_ context.Context, status string, limit int) ([]summarizer.ProposedUpdate, error) {
+	var out []summarizer.ProposedUpdate
+	for _, proposal := range f.proposals {
+		if status == "" || proposal.Status == status {
+			out = append(out, proposal)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func TestDailyBriefingToolAcceptsProposalListerInterface(t *testing.T) {
+	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+	proposals := fakeBriefingProposalLister{proposals: []summarizer.ProposedUpdate{{
+		ID:         9,
+		Fact:       "Promote summaries store behind a proposal boundary.",
+		Action:     "patch",
+		TargetSlug: "aura",
+		Status:     "pending",
+		CreatedAt:  now,
+	}}}
+	tool := NewDailyBriefingTool(nil, nil, proposals, nil, nil, time.UTC)
+	if tool == nil {
+		t.Fatal("expected daily_briefing tool")
+	}
+	tool.now = func() time.Time { return now }
+	out, err := tool.Execute(context.Background(), map[string]any{"limit": float64(3)})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "proposal boundary") {
+		t.Fatalf("briefing missing proposal signal:\n%s", out)
+	}
+}
+
 func TestDailyBriefingTool_HandlesEmptyStores(t *testing.T) {
 	tool := NewDailyBriefingTool(nil, nil, nil, nil, nil, time.UTC)
 	if tool != nil {

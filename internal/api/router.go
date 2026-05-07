@@ -106,7 +106,7 @@ type Deps struct {
 	// Slice 12k.1: summaries review queue. Optional — when nil, list returns
 	// empty array. SummariesWiki is the WikiWriter used to apply approved
 	// decisions; when nil, approve still flips status but skips wiki mutation.
-	Summaries     *summarizer.SummariesStore
+	Summaries     summarizer.ProposalReviewRepository
 	SummariesWiki summarizer.WikiWriter
 
 	// Slice 12l.1: wiki maintenance issue queue. Optional — when nil, list

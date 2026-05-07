@@ -71,6 +71,41 @@ type SummariesStore struct {
 	db *sql.DB
 }
 
+// ProposalCreator is the write side for review-gated proposal creation.
+type ProposalCreator interface {
+	Propose(ctx context.Context, in ProposalInput) (ProposedUpdate, error)
+}
+
+// ProposalLister is the read side for proposal queues.
+type ProposalLister interface {
+	List(ctx context.Context, status string, limit int) ([]ProposedUpdate, error)
+}
+
+// ProposalGetter reads one proposed update by primary key.
+type ProposalGetter interface {
+	Get(ctx context.Context, id int64) (ProposedUpdate, error)
+}
+
+// ProposalDecider flips proposal review status.
+type ProposalDecider interface {
+	SetStatus(ctx context.Context, id int64, newStatus string) (ProposedUpdate, error)
+}
+
+// ProposalReviewRepository is the dashboard review queue surface.
+type ProposalReviewRepository interface {
+	ProposalLister
+	ProposalDecider
+}
+
+// ProposalRepository is the full proposed_updates boundary implemented by
+// SummariesStore.
+type ProposalRepository interface {
+	ProposalCreator
+	ProposalLister
+	ProposalGetter
+	ProposalDecider
+}
+
 // ProposalInput is a manually-created wiki proposal. It uses the same
 // proposed_updates queue as review-mode summarization so dashboard approval
 // remains the single mutation gate.

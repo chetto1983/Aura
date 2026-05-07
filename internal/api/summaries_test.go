@@ -61,6 +61,67 @@ func seedSkillProposal(t *testing.T, db *sql.DB, action, status string) int64 {
 	return id
 }
 
+type fakeSummaryReviewRepository struct {
+	rows []summarizer.ProposedUpdate
+}
+
+func (f *fakeSummaryReviewRepository) List(_ context.Context, status string, limit int) ([]summarizer.ProposedUpdate, error) {
+	out := make([]summarizer.ProposedUpdate, 0, len(f.rows))
+	for _, row := range f.rows {
+		if status == "" || row.Status == status {
+			out = append(out, row)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakeSummaryReviewRepository) SetStatus(_ context.Context, id int64, newStatus string) (summarizer.ProposedUpdate, error) {
+	for i, row := range f.rows {
+		if row.ID == id {
+			if row.Status != "pending" {
+				return summarizer.ProposedUpdate{}, summarizer.ErrProposalConflict
+			}
+			f.rows[i].Status = newStatus
+			return f.rows[i], nil
+		}
+	}
+	return summarizer.ProposedUpdate{}, summarizer.ErrProposalNotFound
+}
+
+func TestHandleSummariesAcceptsReviewRepositoryInterface(t *testing.T) {
+	repo := &fakeSummaryReviewRepository{rows: []summarizer.ProposedUpdate{{
+		ID:         7,
+		ChatID:     42,
+		Fact:       "Review repository boundary",
+		Action:     "patch",
+		TargetSlug: "aura",
+		Similarity: 0.8,
+		Status:     "pending",
+		CreatedAt:  time.Date(2026, 5, 7, 11, 0, 0, 0, time.UTC),
+	}}}
+	router := NewRouter(Deps{Summaries: repo})
+
+	req := httptest.NewRequest("GET", "/summaries", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest("POST", "/summaries/7/reject", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reject got %d: %s", w.Code, w.Body.String())
+	}
+	if repo.rows[0].Status != "rejected" {
+		t.Fatalf("status = %q", repo.rows[0].Status)
+	}
+}
+
 func TestHandleSummariesList_HappyPath(t *testing.T) {
 	db, store := newSummariesDB(t)
 	seedProposal(t, db, "new", "pending")

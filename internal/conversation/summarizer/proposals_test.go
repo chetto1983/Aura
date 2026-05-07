@@ -25,6 +25,15 @@ func newProposalStore(t *testing.T) (*sql.DB, *SummariesStore) {
 	return db, NewSummariesStore(db)
 }
 
+var (
+	_ ProposalCreator          = (*SummariesStore)(nil)
+	_ ProposalLister           = (*SummariesStore)(nil)
+	_ ProposalDecider          = (*SummariesStore)(nil)
+	_ ProposalGetter           = (*SummariesStore)(nil)
+	_ ProposalReviewRepository = (*SummariesStore)(nil)
+	_ ProposalRepository       = (*SummariesStore)(nil)
+)
+
 func insertProposal(t *testing.T, db *sql.DB, status string) int64 {
 	t.Helper()
 	res, err := db.ExecContext(context.Background(),

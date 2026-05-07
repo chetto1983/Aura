@@ -22,10 +22,10 @@ var (
 // the same human review queue used by wiki proposals. It never writes skill
 // files; installation remains an explicit reviewed/admin action.
 type ProposeSkillChangeTool struct {
-	store *summarizer.SummariesStore
+	store summarizer.ProposalCreator
 }
 
-func NewProposeSkillChangeTool(store *summarizer.SummariesStore) *ProposeSkillChangeTool {
+func NewProposeSkillChangeTool(store summarizer.ProposalCreator) *ProposeSkillChangeTool {
 	if store == nil {
 		return nil
 	}

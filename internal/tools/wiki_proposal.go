@@ -13,10 +13,10 @@ import (
 // ProposeWikiChangeTool inserts a pending wiki update into the review queue.
 // It deliberately does not mutate wiki files; dashboard approval applies it.
 type ProposeWikiChangeTool struct {
-	store *summarizer.SummariesStore
+	store summarizer.ProposalCreator
 }
 
-func NewProposeWikiChangeTool(store *summarizer.SummariesStore) *ProposeWikiChangeTool {
+func NewProposeWikiChangeTool(store summarizer.ProposalCreator) *ProposeWikiChangeTool {
 	if store == nil {
 		return nil
 	}
