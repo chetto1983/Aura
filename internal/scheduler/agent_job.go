@@ -17,7 +17,7 @@ var DefaultAgentJobTools = toolsets.SchedulerSafeTools()
 var AgentJobAllowedTools = buildAgentJobAllowedTools()
 
 func buildAgentJobAllowedTools() []string {
-	skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+	skillTools, err := toolsets.ResolveToolsets(toolsets.ToolsetSkillsRead)
 	if err != nil {
 		return append([]string(nil), DefaultAgentJobTools...)
 	}
@@ -58,8 +58,8 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 	payload.ContextFrom = cleanUniqueStrings(payload.ContextFrom)
 	payload.WakeIfChanged = cleanUniqueStrings(payload.WakeIfChanged)
 	payload.Language = NormalizeAgentJobLanguage(payload.Language)
-	if len(payload.Skills) > 0 && !containsString(payload.EnabledToolsets, toolsets.ProfileSkillsRead) {
-		payload.EnabledToolsets = append(payload.EnabledToolsets, toolsets.ProfileSkillsRead)
+	if len(payload.Skills) > 0 && !containsString(payload.EnabledToolsets, toolsets.ToolsetSkillsRead) {
+		payload.EnabledToolsets = append(payload.EnabledToolsets, toolsets.ToolsetSkillsRead)
 	}
 	tools, err := ResolveAgentJobTools(payload.EnabledToolsets, payload.ToolAllowlist, len(payload.Skills) > 0)
 	if err != nil {
@@ -106,7 +106,7 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 	var base []string
 	var err error
 	if len(enabledToolsets) > 0 {
-		base, err = toolsets.ResolveProfiles(enabledToolsets...)
+		base, err = toolsets.ResolveToolsets(enabledToolsets...)
 		if err != nil {
 			return nil, fmt.Errorf("agent_job enabled_toolsets: %w", err)
 		}
@@ -118,7 +118,7 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 		base = append([]string(nil), DefaultAgentJobTools...)
 	}
 	if forceSkillsRead {
-		skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+		skillTools, err := toolsets.ResolveToolsets(toolsets.ToolsetSkillsRead)
 		if err != nil {
 			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
 		}
@@ -130,7 +130,7 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 	}
 	filtered := toolsets.FilterAllowed(requestedTools, base)
 	if forceSkillsRead {
-		skillTools, err := toolsets.ResolveProfiles(toolsets.ProfileSkillsRead)
+		skillTools, err := toolsets.ResolveToolsets(toolsets.ToolsetSkillsRead)
 		if err != nil {
 			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
 		}

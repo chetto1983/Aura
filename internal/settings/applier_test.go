@@ -115,12 +115,11 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{
 		PromptVersion:         "aura-agent-v1",
-		ToolProfileMode:       "auto",
+		ToolsetMode:           "auto",
 		OrchestrationLogLevel: "summary",
-		SkillPreflight:        config.DefaultSkillPreflight,
 		SkillRoutingMode:      "manifest",
 		AgentLoopMaxSteps:     6,
-		TerminalToolPolicy:    "profile",
+		TerminalToolPolicy:    "toolset",
 		DelegationMode:        "fast",
 		TraceRetentionDays:    30,
 		WorkspaceTools:        "disabled",
@@ -128,9 +127,8 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	}
 
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
-	_ = s.Set(ctx, KeyToolProfileMode, "SWARM_RESEARCH")
+	_ = s.Set(ctx, KeyToolsetMode, "DOCUMENT")
 	_ = s.Set(ctx, KeyOrchestrationLogLevel, "DEBUG")
-	_ = s.Set(ctx, KeySkillPreflight, " Advisory ")
 	_ = s.Set(ctx, KeySkillRoutingMode, " MANIFEST_LLM_REVIEW ")
 	_ = s.Set(ctx, KeyAgentLoopMaxSteps, "9")
 	_ = s.Set(ctx, KeyTerminalToolPolicy, "OFF")
@@ -144,14 +142,11 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.PromptVersion != "aura-agent-v2" {
 		t.Fatalf("PromptVersion = %q", cfg.PromptVersion)
 	}
-	if cfg.ToolProfileMode != "default" {
-		t.Fatalf("ToolProfileMode = %q", cfg.ToolProfileMode)
+	if cfg.ToolsetMode != "document" {
+		t.Fatalf("ToolsetMode = %q", cfg.ToolsetMode)
 	}
 	if cfg.OrchestrationLogLevel != "debug" {
 		t.Fatalf("OrchestrationLogLevel = %q", cfg.OrchestrationLogLevel)
-	}
-	if cfg.SkillPreflight != "advisory" {
-		t.Fatalf("SkillPreflight = %q", cfg.SkillPreflight)
 	}
 	if cfg.SkillRoutingMode != "manifest_llm_review" {
 		t.Fatalf("SkillRoutingMode = %q", cfg.SkillRoutingMode)
@@ -174,7 +169,7 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.WorkspaceRoot != "D:/Aura" {
 		t.Fatalf("WorkspaceRoot = %q", cfg.WorkspaceRoot)
 	}
-	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) || !IsOverridable(KeySkillPreflight) ||
+	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolsetMode) || !IsOverridable(KeyOrchestrationLogLevel) ||
 		!IsOverridable(KeySkillRoutingMode) || !IsOverridable(KeyAgentLoopMaxSteps) || !IsOverridable(KeyTerminalToolPolicy) || !IsOverridable(KeyDelegationMode) || !IsOverridable(KeyTraceRetentionDays) ||
 		!IsOverridable(KeyWorkspaceTools) || !IsOverridable(KeyWorkspaceRoot) {
 		t.Fatal("orchestration settings must be dashboard-overridable")
@@ -209,20 +204,6 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays ||
 		cfg.WorkspaceTools != config.DefaultWorkspaceTools {
 		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
-	}
-}
-
-func TestApplyToConfigInvalidSkillPreflightDegradesToDefault(t *testing.T) {
-	s := openTestStore(t)
-	ctx := context.Background()
-	cfg := &config.Config{SkillPreflight: "off"}
-
-	_ = s.Set(ctx, KeySkillPreflight, "loose")
-
-	ApplyToConfig(ctx, s, cfg)
-
-	if cfg.SkillPreflight != config.DefaultSkillPreflight {
-		t.Fatalf("SkillPreflight = %q, want %q", cfg.SkillPreflight, config.DefaultSkillPreflight)
 	}
 }
 

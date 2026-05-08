@@ -319,59 +319,19 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 		t.Fatal("MEMORY_SEARCH_TIMEOUT_MS not in settings response")
 	}
 
-	foundProfileMode := false
-	foundSkillPreflight := false
+	foundToolsetMode := false
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyToolProfileMode {
+		if it.Key != settings.KeyToolsetMode {
 			continue
 		}
-		foundProfileMode = true
+		foundToolsetMode = true
 		if it.Kind != "enum" || !slices.Equal(it.Options, []string{"auto", "default", "compute", "document", "admin"}) {
-			t.Fatalf("AURA_TOOL_PROFILE_MODE control = kind:%q options:%v, want toolset options", it.Kind, it.Options)
+			t.Fatalf("AURA_TOOLSET_MODE control = kind:%q options:%v, want toolset options", it.Kind, it.Options)
 		}
 	}
-	if !foundProfileMode {
-		t.Fatal("AURA_TOOL_PROFILE_MODE not in settings response")
+	if !foundToolsetMode {
+		t.Fatal("AURA_TOOLSET_MODE not in settings response")
 	}
-	for _, it := range resp.Items {
-		if it.Key != settings.KeySkillPreflight {
-			continue
-		}
-		foundSkillPreflight = true
-		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"off", "advisory"}) {
-			t.Fatalf("AURA_SKILL_PREFLIGHT control = group:%q kind:%q options:%v", it.Group, it.Kind, it.Options)
-		}
-	}
-	if !foundSkillPreflight {
-		t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
-	}
-}
-
-func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
-	store := mustSettingsStore(t)
-	router := NewRouter(Deps{
-		Settings:      store,
-		RuntimeConfig: &config.Config{SkillPreflight: "off"},
-	})
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	if rr.Code != 200 {
-		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
-	}
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-
-	for _, it := range resp.Items {
-		if it.Key != settings.KeySkillPreflight {
-			continue
-		}
-		if it.Value != "off" || it.ActiveValue != "off" || it.Source != "default" || it.RestartRequired {
-			t.Fatalf("skill preflight row = value:%q active:%q source:%q restart:%v", it.Value, it.ActiveValue, it.Source, it.RestartRequired)
-		}
-		return
-	}
-	t.Fatal("AURA_SKILL_PREFLIGHT not in settings response")
 }
 
 func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testing.T) {
@@ -379,7 +339,6 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 	router := NewRouter(Deps{
 		Settings: store,
 		RuntimeConfig: &config.Config{
-			SkillPreflight:     "off",
 			SkillRoutingMode:   "manifest_llm_review",
 			AgentLoopMaxSteps:  9,
 			TerminalToolPolicy: "off",
@@ -397,9 +356,8 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	wantEnums := map[string][]string{
-		settings.KeySkillPreflight:     []string{"off", "advisory"},
 		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
-		settings.KeyTerminalToolPolicy: []string{"profile", "off"},
+		settings.KeyTerminalToolPolicy: []string{"toolset", "off"},
 		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},
 	}
 	wantActive := map[string]string{

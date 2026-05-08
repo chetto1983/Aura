@@ -70,9 +70,8 @@ const (
 	KeyEmbeddingModel             = "EMBEDDING_MODEL"
 	KeyOTelEnabled                = "OTEL_ENABLED"
 	KeyPromptVersion              = "AURA_PROMPT_VERSION"
-	KeyToolProfileMode            = "AURA_TOOL_PROFILE_MODE"
+	KeyToolsetMode                = "AURA_TOOLSET_MODE"
 	KeyOrchestrationLogLevel      = "AURA_ORCHESTRATION_LOG_LEVEL"
-	KeySkillPreflight             = "AURA_SKILL_PREFLIGHT"
 	KeySkillRoutingMode           = "AURA_SKILL_ROUTING_MODE"
 	KeyAgentLoopMaxSteps          = "AURA_AGENT_LOOP_MAX_STEPS"
 	KeyTerminalToolPolicy         = "AURA_TERMINAL_TOOL_POLICY"
@@ -128,7 +127,7 @@ func OverridableKeys() []string {
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
-		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel, KeySkillPreflight,
+		KeyOTelEnabled, KeyPromptVersion, KeyToolsetMode, KeyOrchestrationLogLevel,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyWorkspaceTools, KeyWorkspaceRoot,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
@@ -228,9 +227,8 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
 	cfg.OTelEnabled = settingBool(ctx, s, KeyOTelEnabled, cfg.OTelEnabled)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
-	cfg.ToolProfileMode = config.NormalizeToolProfileMode(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode))
+	cfg.ToolsetMode = config.NormalizeToolsetMode(settingString(ctx, s, KeyToolsetMode, cfg.ToolsetMode))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
-	cfg.SkillPreflight = normalizeSkillPreflight(settingString(ctx, s, KeySkillPreflight, cfg.SkillPreflight))
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
 	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
 	cfg.TerminalToolPolicy = config.NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
@@ -265,15 +263,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
 	cfg.SandboxAutoImproveMode = settingString(ctx, s, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
-}
-
-func normalizeSkillPreflight(value string) string {
-	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "advisory", "off":
-		return normalized
-	default:
-		return config.DefaultSkillPreflight
-	}
 }
 
 func settingString(ctx context.Context, s Reader, key, fallback string) string {

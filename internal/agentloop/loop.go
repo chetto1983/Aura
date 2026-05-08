@@ -38,12 +38,11 @@ func (f ToolExecutorFunc) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 }
 
 type ExecutionSummary struct {
-	LastResult             string
-	FatalResult            string
-	HiddenRejected         bool
-	SkillPreflightRejected bool
-	ReadSkillNames         []string
-	TerminalTool           string
+	LastResult     string
+	FatalResult    string
+	HiddenRejected bool
+	ReadSkillNames []string
+	TerminalTool   string
 }
 
 type TerminalHandler func(ctx context.Context, terminalTool, lastToolResult string, stats *Stats) (text string, delivered bool, handled bool)
@@ -69,24 +68,23 @@ type Result struct {
 }
 
 type Stats struct {
-	LLMCalls               int
-	ToolCalls              int
-	LoopSteps              int
-	ToolsCalled            []string
-	ReadSkills             []string
-	HiddenToolRejected     bool
-	SkillPreflightRejected bool
-	SkillsRead             bool
-	SwarmUsed              bool
-	SandboxUsed            bool
-	TerminalTool           string
-	DuplicateToolCall      bool
-	TokensPrompt           int
-	TokensCompletion       int
-	TokensTotal            int
-	CostUSD                float64
-	MaxIterationsHit       bool
-	MaxElapsedHit          bool
+	LLMCalls           int
+	ToolCalls          int
+	LoopSteps          int
+	ToolsCalled        []string
+	ReadSkills         []string
+	HiddenToolRejected bool
+	SkillsRead         bool
+	SwarmUsed          bool
+	SandboxUsed        bool
+	TerminalTool       string
+	DuplicateToolCall  bool
+	TokensPrompt       int
+	TokensCompletion   int
+	TokensTotal        int
+	CostUSD            float64
+	MaxIterationsHit   bool
+	MaxElapsedHit      bool
 }
 
 func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (Result, error) {
@@ -175,7 +173,6 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		execution := executor.ExecuteToolCalls(ctx, callsToExecute)
 		lastToolResult = execution.LastResult
 		stats.HiddenToolRejected = stats.HiddenToolRejected || execution.HiddenRejected
-		stats.SkillPreflightRejected = stats.SkillPreflightRejected || execution.SkillPreflightRejected
 		stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
 		stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
 		if execution.TerminalTool != "" {

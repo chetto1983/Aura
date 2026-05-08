@@ -33,12 +33,10 @@ type DebugTextSmokeResult struct {
 	PromptVersion             string
 	PromptHash                string
 	PromptModules             []string
-	ToolProfile               string
-	ProfileSelectReason       string
+	Toolset                   string
+	ToolsetSelectReason       string
 	ToolsExposed              []string
-	ActiveCapabilities        []string
 	HiddenToolRejected        bool
-	SkillPreflightFailed      bool
 	SkillsRead                bool
 	ReadSkills                []string
 	LoopSteps                 int
@@ -130,12 +128,10 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.PromptVersion = snap.PromptVersion
 		result.PromptHash = snap.PromptHash
 		result.PromptModules = snap.PromptModules
-		result.ToolProfile = snap.ToolProfile
-		result.ProfileSelectReason = snap.ProfileSelectReason
+		result.Toolset = snap.Toolset
+		result.ToolsetSelectReason = snap.ToolsetSelectReason
 		result.ToolsExposed = snap.ToolsExposed
-		result.ActiveCapabilities = snap.ActiveCapabilities
 		result.HiddenToolRejected = snap.HiddenToolRejected
-		result.SkillPreflightFailed = snap.SkillPreflightFail
 		result.applyOrchestrationToolCalls(snap.ToolsCalled)
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
 		result.ReadSkills = append([]string(nil), snap.ReadSkills...)

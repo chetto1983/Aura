@@ -38,7 +38,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
 	userText := c.Text()
 
-	// Build the versioned prompt and focused tool profile fresh on every
+	// Build the versioned prompt and focused tool toolset fresh on every
 	// turn so runtime time, overlays, skills, swarm, and sandbox state stay
 	// accurate without restarting the bot.
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
@@ -63,23 +63,23 @@ func (b *Bot) handleConversation(c tele.Context) {
 		WorkspaceFiles: b.workspaceToolsAvailable(),
 	}
 	hooks := orchestration.EnsureHooks(b.orchHooks)
-	hooks.BeforeProfileSelect(orchestration.TraceEvent{ToolProfile: b.cfg.ToolProfileMode})
-	profileDecision := orchestration.SelectProfileDecision(userText, b.cfg.ToolProfileMode, available)
-	hooks.AfterProfileSelect(orchestration.TraceEvent{
-		ToolProfile:         string(profileDecision.Profile),
-		ProfileSelectReason: profileDecision.Reason,
+	hooks.BeforeToolsetSelect(orchestration.TraceEvent{Toolset: b.cfg.ToolsetMode})
+	toolsetDecision := orchestration.SelectToolsetDecision(userText, b.cfg.ToolsetMode, available)
+	hooks.AfterToolsetSelect(orchestration.TraceEvent{
+		Toolset:             string(toolsetDecision.Toolset),
+		ToolsetSelectReason: toolsetDecision.Reason,
 	})
-	toolProfile := profileDecision.Profile
-	toolAllowlist, err := orchestration.ToolsForProfile(toolProfile, available)
+	toolset := toolsetDecision.Toolset
+	toolAllowlist, err := orchestration.ToolsForToolset(toolset, available)
 	if err != nil {
-		b.logger.Warn("orchestration profile failed; falling back to default", "profile", toolProfile, "error", err)
-		toolProfile = orchestration.ProfileDefault
-		profileDecision = orchestration.ProfileDecision{Profile: toolProfile, Reason: "profile allowlist failed; fell back to default"}
-		toolAllowlist, _ = orchestration.ToolsForProfile(toolProfile, available)
+		b.logger.Warn("orchestration toolset failed; falling back to default", "toolset", toolset, "error", err)
+		toolset = orchestration.ToolsetDefault
+		toolsetDecision = orchestration.ToolsetDecision{Toolset: toolset, Reason: "toolset allowlist failed; fell back to default"}
+		toolAllowlist, _ = orchestration.ToolsForToolset(toolset, available)
 	}
 	hooks.BeforePromptCompose(orchestration.TraceEvent{
-		ToolProfile:         string(profileDecision.Profile),
-		ProfileSelectReason: profileDecision.Reason,
+		Toolset:             string(toolsetDecision.Toolset),
+		ToolsetSelectReason: toolsetDecision.Reason,
 	})
 	promptPlan := orchestration.ComposePrompt(orchestration.PromptInput{
 		Version:           b.cfg.PromptVersion,
@@ -90,14 +90,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 		SwarmAvailable:    available.Swarm,
 		SandboxAvailable:  available.Sandbox,
 		ProposalAvailable: available.Proposals,
-		Profile:           toolProfile,
+		Toolset:           toolset,
 	})
 	hooks.AfterPromptCompose(orchestration.TraceEvent{
 		PromptVersion:       promptPlan.Version,
 		PromptHash:          promptPlan.Hash,
 		PromptModules:       promptPlan.Modules,
-		ToolProfile:         string(profileDecision.Profile),
-		ProfileSelectReason: profileDecision.Reason,
+		Toolset:             string(toolsetDecision.Toolset),
+		ToolsetSelectReason: toolsetDecision.Reason,
 	})
 	convCtx.SetSystemMessage(promptPlan.Content)
 
@@ -154,7 +154,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// their message. consumeStream edits this instead of creating a new one.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, profileDecision)
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolsetDecision)
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
@@ -238,14 +238,12 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"prompt_version", stats.promptVersion,
 		"prompt_hash", stats.promptHash,
 		"prompt_modules", strings.Join(stats.promptModules, ","),
-		"tool_profile", stats.toolProfile,
-		"profile_select_reason", stats.profileSelectReason,
+		"toolset", stats.toolset,
+		"toolset_select_reason", stats.toolsetSelectReason,
 		"tools_exposed", strings.Join(stats.toolsExposed, ","),
 		"tools_called", strings.Join(stats.toolsCalled, ","),
-		"active_capabilities", strings.Join(stats.activeCapabilities, ","),
 		"read_skills", strings.Join(stats.readSkills, ","),
 		"hidden_tool_rejected", stats.hiddenToolRejected,
-		"skill_preflight_failed", stats.skillPreflightFail,
 		"skills_read", stats.skillsRead,
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
@@ -263,8 +261,8 @@ func (b *Bot) handleConversation(c tele.Context) {
 		PromptVersion:          stats.promptVersion,
 		PromptHash:             stats.promptHash,
 		PromptModules:          stats.promptModules,
-		ToolProfile:            stats.toolProfile,
-		ProfileSelectReason:    stats.profileSelectReason,
+		Toolset:                stats.toolset,
+		ToolsetSelectReason:    stats.toolsetSelectReason,
 		ToolsExposed:           stats.toolsExposed,
 		ToolsCalled:            stats.toolsCalled,
 		HiddenToolRejected:     stats.hiddenToolRejected,
@@ -354,14 +352,12 @@ type turnStats struct {
 	promptVersion          string
 	promptModules          []string
 	promptHash             string
-	toolProfile            string
-	profileSelectReason    string
+	toolset                string
+	toolsetSelectReason    string
 	toolsExposed           []string
 	toolsCalled            []string
-	activeCapabilities     []string
 	readSkills             []string
 	hiddenToolRejected     bool
-	skillPreflightFail     bool
 	skillsRead             bool
 	swarmUsed              bool
 	sandboxUsed            bool
@@ -376,16 +372,15 @@ type turnStats struct {
 	memoryCaptureApplied   int
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profileDecision orchestration.ProfileDecision) (string, turnStats) {
-	loopPolicy, _ := orchestration.LoopPolicyForProfile(profileDecision.Profile)
-	maxIterations := b.maxToolLoopIterations(profileDecision.Profile)
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, toolsetDecision orchestration.ToolsetDecision) (string, turnStats) {
+	loopPolicy, _ := orchestration.LoopPolicyForToolset(toolsetDecision.Toolset)
+	maxIterations := b.maxToolLoopIterations(toolsetDecision.Toolset)
 	baseStats := turnStats{
 		promptVersion:       promptPlan.Version,
 		promptModules:       append([]string(nil), promptPlan.Modules...),
 		promptHash:          promptPlan.Hash,
-		toolProfile:         string(profileDecision.Profile),
-		profileSelectReason: profileDecision.Reason,
-		activeCapabilities:  capabilityNames(orchestration.CapabilitiesForProfile(profileDecision.Profile)),
+		toolset:             string(toolsetDecision.Toolset),
+		toolsetSelectReason: toolsetDecision.Reason,
 	}
 	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
@@ -393,22 +388,21 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		PromptVersion:       promptPlan.Version,
 		PromptHash:          promptPlan.Hash,
 		PromptModules:       promptPlan.Modules,
-		ToolProfile:         string(profileDecision.Profile),
-		ProfileSelectReason: profileDecision.Reason,
+		Toolset:             string(toolsetDecision.Toolset),
+		ToolsetSelectReason: toolsetDecision.Reason,
 		ToolsExposed:        baseStats.toolsExposed,
 	})
 	var currentStats turnStats
 	result, err := agentloop.Run(ctx,
 		telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
 		agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, profileDecision.Profile, currentStats.readSkills)
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, toolsetDecision.Toolset, currentStats.readSkills)
 			return agentloop.ExecutionSummary{
-				LastResult:             execution.lastResult,
-				FatalResult:            userFacingFatalToolResult(execution.fatalResult),
-				HiddenRejected:         execution.hiddenRejected,
-				SkillPreflightRejected: execution.skillPreflightRejected,
-				ReadSkillNames:         execution.readSkillNames,
-				TerminalTool:           execution.terminalTool,
+				LastResult:     execution.lastResult,
+				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
+				HiddenRejected: execution.hiddenRejected,
+				ReadSkillNames: execution.readSkillNames,
+				TerminalTool:   execution.terminalTool,
 			}
 		}),
 		convCtx,
@@ -508,7 +502,6 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	base.toolsCalled = append([]string(nil), stats.ToolsCalled...)
 	base.readSkills = append([]string(nil), stats.ReadSkills...)
 	base.hiddenToolRejected = stats.HiddenToolRejected
-	base.skillPreflightFail = stats.SkillPreflightRejected
 	base.skillsRead = stats.SkillsRead
 	base.swarmUsed = stats.SwarmUsed
 	base.sandboxUsed = stats.SandboxUsed
@@ -531,7 +524,7 @@ func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) 
 	return stats
 }
 
-func (b *Bot) maxToolLoopIterations(profile orchestration.Profile) int {
+func (b *Bot) maxToolLoopIterations(toolset orchestration.Toolset) int {
 	maxIterations := 10
 	if b != nil && b.cfg != nil && b.cfg.MaxToolIterations > 0 {
 		maxIterations = b.cfg.MaxToolIterations
@@ -539,7 +532,7 @@ func (b *Bot) maxToolLoopIterations(profile orchestration.Profile) int {
 	if b != nil && b.cfg != nil && b.cfg.AgentLoopMaxSteps > 0 && b.cfg.AgentLoopMaxSteps < maxIterations {
 		maxIterations = b.cfg.AgentLoopMaxSteps
 	}
-	if loopPolicy, ok := orchestration.LoopPolicyForProfile(profile); ok && loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
+	if loopPolicy, ok := orchestration.LoopPolicyForToolset(toolset); ok && loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
 		maxIterations = loopPolicy.MaxSteps
 	}
 	if maxIterations < 1 {

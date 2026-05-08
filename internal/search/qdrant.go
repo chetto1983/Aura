@@ -96,18 +96,30 @@ func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, fallback R
 }
 
 func (r *qdrantRepository) Search(ctx context.Context, query string, topK int) ([]Result, error) {
-	results, err := r.primary.Search(ctx, query, topK)
-	if err == nil && len(results) > 0 {
-		return results, nil
+	primaryResults, primaryErr := r.primary.Search(ctx, query, topK)
+	fallbackResults, fallbackErr := r.fallback.Search(ctx, query, topK)
+	merged := mergeHybridResults(query, topK, fallbackResults, primaryResults)
+	if len(merged) > 0 {
+		if primaryErr != nil && r.logger != nil {
+			r.logger.Warn("qdrant search failed; returned local hybrid results", "error", primaryErr)
+		}
+		if fallbackErr != nil && r.logger != nil {
+			r.logger.Warn("local hybrid search failed; returned qdrant results", "error", fallbackErr)
+		}
+		return merged, nil
 	}
 	if r.logger != nil {
-		if err != nil {
-			r.logger.Warn("qdrant search failed, falling back to local search", "error", err)
-		} else {
-			r.logger.Warn("qdrant search returned no results, falling back to local search")
+		if primaryErr != nil {
+			r.logger.Warn("qdrant search failed", "error", primaryErr)
+		}
+		if fallbackErr != nil {
+			r.logger.Warn("local hybrid search failed", "error", fallbackErr)
 		}
 	}
-	return r.fallback.Search(ctx, query, topK)
+	if primaryErr != nil {
+		return nil, primaryErr
+	}
+	return nil, fallbackErr
 }
 
 func (r *qdrantRepository) IsIndexed() bool {

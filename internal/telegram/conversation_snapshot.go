@@ -10,15 +10,13 @@ type orchestrationSnapshot struct {
 	PromptVersion       string
 	PromptModules       []string
 	PromptHash          string
-	ToolProfile         string
-	ProfileSelectReason string
+	Toolset             string
+	ToolsetSelectReason string
 	ToolsExposed        []string
 	ToolsCalled         []string
-	ActiveCapabilities  []string
 	ReadSkills          []string
 	LoopSteps           int
 	HiddenToolRejected  bool
-	SkillPreflightFail  bool
 	SkillsRead          bool
 	SwarmUsed           bool
 	SandboxUsed         bool
@@ -40,15 +38,13 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		PromptVersion:       stats.promptVersion,
 		PromptModules:       append([]string(nil), stats.promptModules...),
 		PromptHash:          stats.promptHash,
-		ToolProfile:         stats.toolProfile,
-		ProfileSelectReason: stats.profileSelectReason,
+		Toolset:             stats.toolset,
+		ToolsetSelectReason: stats.toolsetSelectReason,
 		ToolsExposed:        append([]string(nil), stats.toolsExposed...),
 		ToolsCalled:         append([]string(nil), stats.toolsCalled...),
-		ActiveCapabilities:  append([]string(nil), stats.activeCapabilities...),
 		ReadSkills:          append([]string(nil), stats.readSkills...),
 		LoopSteps:           stats.loopSteps,
 		HiddenToolRejected:  stats.hiddenToolRejected,
-		SkillPreflightFail:  stats.skillPreflightFail,
 		SkillsRead:          stats.skillsRead,
 		SwarmUsed:           stats.swarmUsed,
 		SandboxUsed:         stats.sandboxUsed,

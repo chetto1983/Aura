@@ -346,8 +346,9 @@ func (e *Engine) resetCollectionLocked() error {
 	return nil
 }
 
-// Search performs a vector similarity search and returns the top-k results.
-// Falls back to SQLite FTS if chromem search fails.
+// Search performs hybrid wiki retrieval. Exact slug/title and SQLite FTS
+// results always get a chance before vector similarity; vector errors only
+// fail the request when the local lexical index cannot answer either.
 func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -360,24 +361,75 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, 
 		topK = 5
 	}
 
-	// Try primary (chromem) first
-	results, err := e.queryChromem(ctx, query, topK)
-	if err == nil {
+	var exactResults []Result
+	var ftsResults []Result
+	var sqliteErr error
+	if e.sqlite != nil {
+		if exactResults, sqliteErr = e.sqlite.exactSearch(ctx, query, topK); sqliteErr != nil {
+			e.logger.Warn("sqlite exact search failed", "error", sqliteErr)
+		}
+		var ftsErr error
+		if ftsResults, ftsErr = e.sqlite.search(ctx, query, topK); ftsErr != nil {
+			e.logger.Warn("sqlite FTS search failed", "error", ftsErr)
+			if sqliteErr == nil {
+				sqliteErr = ftsErr
+			}
+		}
+	}
+
+	vectorResults, vectorErr := e.queryChromem(ctx, query, topK)
+	if vectorErr != nil {
+		e.logger.Warn("chromem search failed", "error", vectorErr)
+	}
+
+	results := mergeHybridResults(query, topK, exactResults, ftsResults, vectorResults)
+	if len(results) > 0 {
 		return results, nil
 	}
-
-	e.logger.Warn("chromem search failed, trying sqlite fallback", "error", err)
-
-	// Try fallback (SQLite FTS) if available.
-	if e.sqlite != nil {
-		results, pgErr := e.sqlite.search(ctx, query, topK)
-		if pgErr == nil {
-			return results, nil
+	if vectorErr != nil {
+		if sqliteErr != nil {
+			return nil, fmt.Errorf("search failed: chromem: %v; sqlite: %v", vectorErr, sqliteErr)
 		}
-		e.logger.Warn("sqlite fallback also failed", "error", pgErr)
+		return nil, fmt.Errorf("search failed: chromem: %w", vectorErr)
 	}
+	return nil, nil
+}
 
-	return nil, fmt.Errorf("search failed: both chromem and sqlite unavailable")
+func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
+	if topK <= 0 {
+		topK = 5
+	}
+	out := make([]Result, 0, topK)
+	seen := make(map[string]bool, topK)
+	for _, group := range groups {
+		for _, result := range group {
+			key := resultKey(result)
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, result)
+			if len(out) >= topK {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+func resultKey(result Result) string {
+	kind := strings.TrimSpace(result.Kind)
+	if kind == "" {
+		kind = "wiki_page"
+	}
+	slug := strings.TrimSpace(result.Slug)
+	if slug == "" {
+		slug = strings.TrimSpace(result.Title)
+	}
+	if slug == "" {
+		return ""
+	}
+	return kind + "\x00" + strings.ToLower(slug)
 }
 
 // IsIndexed returns whether pages have been indexed.

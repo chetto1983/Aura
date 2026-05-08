@@ -198,6 +198,105 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 	return results, rows.Err()
 }
 
+func (s *sqliteSearcher) exactSearch(ctx context.Context, query string, topK int) ([]Result, error) {
+	candidates := exactQueryCandidates(query)
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+	args := make([]any, 0, len(candidates)*2+1)
+	clauses := make([]string, 0, len(candidates)*2)
+	for _, candidate := range candidates {
+		clauses = append(clauses, `lower(id) = ?`, `lower(title) = ?`)
+		args = append(args, candidate, candidate)
+	}
+	args = append(args, topK)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, content, metadata, title
+		FROM wiki_documents
+		WHERE `+strings.Join(clauses, " OR ")+`
+		ORDER BY length(id), id
+		LIMIT ?
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite exact search: %w", err)
+	}
+	defer rows.Close()
+
+	var results []Result
+	for rows.Next() {
+		var id, content, metaJSON, title string
+		if err := rows.Scan(&id, &content, &metaJSON, &title); err != nil {
+			s.logger.Warn("scanning exact search result", "error", err)
+			continue
+		}
+		slug := extractMetaField(metaJSON, "slug")
+		if slug == "" {
+			slug = id
+		}
+		kind := extractMetaField(metaJSON, "kind")
+		if kind == "" {
+			kind = "wiki_page"
+		}
+		results = append(results, Result{
+			Kind:    kind,
+			Slug:    slug,
+			Title:   title,
+			Content: content,
+			Score:   1,
+		})
+	}
+	return results, rows.Err()
+}
+
+func exactQueryCandidates(query string) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return nil
+	}
+	fields := strings.Fields(query)
+	values := []string{query}
+	rest := query
+	for {
+		start := strings.Index(rest, "[[")
+		if start < 0 {
+			break
+		}
+		rest = rest[start+2:]
+		end := strings.Index(rest, "]]")
+		if end < 0 {
+			break
+		}
+		values = append(values, rest[:end])
+		rest = rest[end+2:]
+	}
+	if strings.HasPrefix(query, "[[") && strings.HasSuffix(query, "]]") {
+		values = append(values, strings.TrimPrefix(strings.TrimSuffix(query, "]]"), "[["))
+	}
+	if len(fields) > 1 {
+		values = append(values, strings.Join(fields, "-"))
+	}
+	values = append(values, strings.ReplaceAll(query, "-", " "))
+	return uniqueLowerStrings(values)
+}
+
+func uniqueLowerStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
 // escapeFTS5Query strips FTS5 special characters and operators from a query string.
 // FTS5 treats ?, *, ", (, ), {, } as special syntax which causes errors if unescaped.
 func escapeFTS5Query(query string) string {
@@ -210,6 +309,9 @@ func escapeFTS5Query(query string) string {
 		"{", " ",
 		"}", " ",
 		":", " ",
+		"[", " ",
+		"]", " ",
+		"-", " ",
 	)
 	escaped := replacer.Replace(query)
 	fields := strings.Fields(escaped)

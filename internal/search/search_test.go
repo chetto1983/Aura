@@ -3,10 +3,12 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -248,6 +250,101 @@ func TestIndexWikiPages(t *testing.T) {
 	// Indexing may fail without a real embedding API, but the function
 	// should at least attempt to read and parse files
 	_ = err
+}
+
+func TestSearchMergesExactFTSAndVectorResults(t *testing.T) {
+	wikiDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Narrow renewal memo.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Beta Review",
+		Body:          "Beta project review links to [[alpha-contract]].",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	engine, err := NewEngineWithFallback(wikiDir, keywordEmbedding, dbPath, logger)
+	if err != nil {
+		t.Fatalf("NewEngineWithFallback: %v", err)
+	}
+	defer engine.Close()
+	if err := engine.IndexWikiPages(context.Background()); err != nil {
+		t.Fatalf("IndexWikiPages: %v", err)
+	}
+
+	results, err := engine.Search(context.Background(), "[[alpha-contract]] beta", 6)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("results = %#v, want exact plus lexical/vector results", results)
+	}
+	if results[0].Slug != "alpha-contract" {
+		t.Fatalf("first result = %#v, want exact alpha-contract first", results[0])
+	}
+	if !hasResult(results, "wiki_page", "beta-review") && !hasResult(results, "graph_node", "beta-review") {
+		t.Fatalf("missing merged beta-review result: %#v", results)
+	}
+}
+
+func TestSearchFallsBackToSQLiteWhenVectorQueryFails(t *testing.T) {
+	wikiDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Alpha fallback memo.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	embed := func(ctx context.Context, text string) ([]float32, error) {
+		if strings.Contains(text, "fail-vector") {
+			return nil, errors.New("vector query failed")
+		}
+		return keywordEmbedding(ctx, text)
+	}
+	engine, err := NewEngineWithFallback(wikiDir, embed, dbPath, logger)
+	if err != nil {
+		t.Fatalf("NewEngineWithFallback: %v", err)
+	}
+	defer engine.Close()
+	if err := engine.IndexWikiPages(context.Background()); err != nil {
+		t.Fatalf("IndexWikiPages: %v", err)
+	}
+
+	results, err := engine.Search(context.Background(), "fail-vector alpha", 3)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 || results[0].Slug != "alpha-contract" {
+		t.Fatalf("results = %#v, want sqlite alpha result", results)
+	}
+}
+
+func TestMergeHybridResultsDedupesByKindAndSlug(t *testing.T) {
+	exact := []Result{{Kind: "wiki_page", Slug: "alpha", Title: "Alpha"}}
+	fts := []Result{{Kind: "wiki_page", Slug: "alpha", Title: "Alpha duplicate"}, {Kind: "wiki_page", Slug: "beta", Title: "Beta"}}
+	vector := []Result{{Kind: "graph_node", Slug: "alpha", Title: "Alpha graph"}, {Kind: "wiki_page", Slug: "gamma", Title: "Gamma"}}
+
+	results := mergeHybridResults("alpha", 3, exact, fts, vector)
+	if got := []string{results[0].Kind + ":" + results[0].Slug, results[1].Kind + ":" + results[1].Slug, results[2].Kind + ":" + results[2].Slug}; !slices.Equal(got, []string{"wiki_page:alpha", "wiki_page:beta", "graph_node:alpha"}) {
+		t.Fatalf("merged order = %#v", got)
+	}
 }
 
 func TestIndexWikiPagesAddsGraphNodeCards(t *testing.T) {

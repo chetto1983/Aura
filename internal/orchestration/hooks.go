@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-var ErrHiddenTool = errors.New("tool is not exposed in the active tool profile")
+var ErrHiddenTool = errors.New("tool is not exposed in the active toolset")
 
 type TraceEvent struct {
 	PromptVersion          string
 	PromptHash             string
 	PromptModules          []string
-	ToolProfile            string
-	ProfileSelectReason    string
+	Toolset                string
+	ToolsetSelectReason    string
 	ToolsExposed           []string
 	ToolsCalled            []string
 	ToolName               string
@@ -37,8 +37,8 @@ type TraceEvent struct {
 }
 
 type Hooks interface {
-	BeforeProfileSelect(TraceEvent)
-	AfterProfileSelect(TraceEvent)
+	BeforeToolsetSelect(TraceEvent)
+	AfterToolsetSelect(TraceEvent)
 	BeforePromptCompose(TraceEvent)
 	AfterPromptCompose(TraceEvent)
 	BeforeExposeTools(TraceEvent)
@@ -56,8 +56,8 @@ func EnsureHooks(h Hooks) Hooks {
 	return h
 }
 
-func (DefaultHooks) BeforeProfileSelect(TraceEvent) {}
-func (DefaultHooks) AfterProfileSelect(TraceEvent)  {}
+func (DefaultHooks) BeforeToolsetSelect(TraceEvent) {}
+func (DefaultHooks) AfterToolsetSelect(TraceEvent)  {}
 func (DefaultHooks) BeforePromptCompose(TraceEvent) {}
 func (DefaultHooks) AfterPromptCompose(TraceEvent)  {}
 func (DefaultHooks) BeforeExposeTools(TraceEvent)   {}
@@ -80,10 +80,10 @@ func (event TraceEvent) RedactedSummary() map[string]string {
 	out := map[string]string{
 		"prompt_version": event.PromptVersion,
 		"prompt_hash":    event.PromptHash,
-		"tool_profile":   event.ToolProfile,
+		"toolset":        event.Toolset,
 	}
-	if event.ProfileSelectReason != "" {
-		out["profile_select_reason"] = event.ProfileSelectReason
+	if event.ToolsetSelectReason != "" {
+		out["toolset_select_reason"] = event.ToolsetSelectReason
 	}
 	for key, value := range event.Metadata {
 		out[key] = RedactTraceValue(value)

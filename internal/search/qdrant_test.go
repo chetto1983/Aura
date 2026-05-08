@@ -252,6 +252,54 @@ func TestQdrantRepositoryFallsBackOnEmptyResults(t *testing.T) {
 	}
 }
 
+func TestQdrantRepositoryMergesPrimaryWithFallbackResults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "ok",
+			"result": {
+				"points": [{
+					"id": "7f1d5a80-2b6b-5c40-a310-6cab32bc7d4f",
+					"score": 0.77,
+					"payload": {
+						"doc_id": "vector-only",
+						"slug": "vector-only",
+						"title": "Vector Only",
+						"kind": "wiki_page",
+						"content": "qdrant result"
+					}
+				}]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	fallback := &fakeSearchRepository{
+		results: []Result{{Kind: "wiki_page", Slug: "exact-local", Title: "Exact Local", Content: "local result", Score: 1}},
+		indexed: true,
+	}
+	repo, err := NewQdrantRepository(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepository: %v", err)
+	}
+	results, err := repo.Search(context.Background(), "alpha", 5)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if fallback.searchCalls != 1 {
+		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
+	}
+	if len(results) != 2 || results[0].Slug != "exact-local" || results[1].Slug != "vector-only" {
+		t.Fatalf("merged results = %+v", results)
+	}
+}
+
 type fakeSearchRepository struct {
 	results     []Result
 	err         error

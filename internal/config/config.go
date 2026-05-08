@@ -16,10 +16,9 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
-const DefaultSkillPreflight = "off"
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 8
-const DefaultTerminalToolPolicy = "profile"
+const DefaultTerminalToolPolicy = "toolset"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
@@ -93,12 +92,11 @@ type Config struct {
 	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	OTelEnabled                bool    `envconfig:"OTEL_ENABLED" default:"false"`
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
-	ToolProfileMode            string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
+	ToolsetMode                string  `envconfig:"AURA_TOOLSET_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
-	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"off"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
 	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
-	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
+	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"toolset"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
 	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
@@ -256,9 +254,8 @@ func Load() (*Config, error) {
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
-	cfg.ToolProfileMode = NormalizeToolProfileMode(getEnv("AURA_TOOL_PROFILE_MODE", "auto"))
+	cfg.ToolsetMode = NormalizeToolsetMode(getEnv("AURA_TOOLSET_MODE", "auto"))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
-	cfg.SkillPreflight = normalizeSkillPreflight(getEnv("AURA_SKILL_PREFLIGHT", DefaultSkillPreflight))
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
 	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 50, DefaultAgentLoopMaxSteps)
 	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
@@ -304,17 +301,17 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func NormalizeToolProfileMode(value string) string {
+func NormalizeToolsetMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "compute", "sandbox_compute":
+	case "compute":
 		return "compute"
 	case "document":
 		return "document"
-	case "admin", "admin_review":
+	case "admin":
 		return "admin"
 	case "auto":
 		return "auto"
-	case "default", "memory", "swarm_research":
+	case "default":
 		return "default"
 	default:
 		return "auto"
@@ -336,15 +333,6 @@ func (c *Config) Location() (*time.Location, error) {
 	return loc, nil
 }
 
-func normalizeSkillPreflight(value string) string {
-	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "advisory", "off":
-		return normalized
-	default:
-		return DefaultSkillPreflight
-	}
-}
-
 func NormalizeSkillRoutingMode(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
 	case "manifest", "manifest_llm_review":
@@ -356,7 +344,7 @@ func NormalizeSkillRoutingMode(value string) string {
 
 func NormalizeTerminalToolPolicy(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "profile", "off":
+	case "toolset", "off":
 		return normalized
 	default:
 		return DefaultTerminalToolPolicy

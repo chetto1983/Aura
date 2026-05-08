@@ -175,15 +175,13 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	b.storeOrchestrationSnapshot("1148481707", turnStats{
 		promptVersion:       "aura-agent-v1",
 		promptHash:          "abc123",
-		toolProfile:         "default",
-		profileSelectReason: "no specialized toolset cues matched",
+		toolset:             "default",
+		toolsetSelectReason: "no specialized toolset cues matched",
 		toolsExposed:        []string{"run_aurabot_swarm"},
 		toolsCalled:         []string{"execute_code"},
-		activeCapabilities:  []string{"swarm_research"},
 		readSkills:          []string{"subagent-driven-development"},
 		loopSteps:           2,
 		hiddenToolRejected:  true,
-		skillPreflightFail:  true,
 		terminalTool:        "run_aurabot_swarm",
 		duplicateToolCall:   true,
 		tokensPrompt:        10,
@@ -195,20 +193,14 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	if !ok {
 		t.Fatal("snapshot missing")
 	}
-	if snap.ProfileSelectReason == "" {
-		t.Fatal("ProfileSelectReason is empty")
+	if snap.ToolsetSelectReason == "" {
+		t.Fatal("ToolsetSelectReason is empty")
 	}
 	if !snap.HiddenToolRejected {
 		t.Fatal("HiddenToolRejected = false, want true")
 	}
-	if !snap.SkillPreflightFail {
-		t.Fatal("SkillPreflightFail = false, want true")
-	}
 	if snap.LoopSteps != 2 || snap.TerminalTool != "run_aurabot_swarm" {
 		t.Fatalf("loop/terminal snapshot = steps %d terminal %q", snap.LoopSteps, snap.TerminalTool)
-	}
-	if len(snap.ActiveCapabilities) != 1 || snap.ActiveCapabilities[0] != "swarm_research" {
-		t.Fatalf("ActiveCapabilities = %+v", snap.ActiveCapabilities)
 	}
 	if len(snap.ReadSkills) != 1 || snap.ReadSkills[0] != "subagent-driven-development" {
 		t.Fatalf("ReadSkills = %+v", snap.ReadSkills)
@@ -242,7 +234,7 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	dangerous := &countingTelegramTool{name: "execute_code", result: "should not run"}
 	reg.Register(dangerous)
 	b := &Bot{
-		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		cfg:   &config.Config{},
 		tools: reg,
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
@@ -250,7 +242,7 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "hidden-1", Name: "execute_code"}},
 		[]string{"search_memory"},
-		orchestration.ProfileDefault,
+		orchestration.ToolsetDefault,
 		nil,
 	)
 
@@ -269,7 +261,7 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 }
 
 func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteFile(t *testing.T) {
-	raw := tools.FormatFatalToolError(errors.New(`tool "write_file" is not exposed in the active tool profile`))
+	raw := tools.FormatFatalToolError(errors.New(`tool "write_file" is not exposed in the active toolset`))
 	got := userFacingFatalToolResult(raw)
 	if strings.Contains(got, `"ok":false`) || strings.Contains(got, `"retryable":false`) {
 		t.Fatalf("user-facing result leaked raw tool JSON: %q", got)
@@ -282,12 +274,12 @@ func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteFile(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallsDoesNotRequireApplicableSkillBeforeProtectedTool(t *testing.T) {
+func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
 	reg.Register(doc)
 	b := &Bot{
-		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		cfg:   &config.Config{},
 		tools: reg,
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
@@ -295,12 +287,9 @@ func TestExecuteToolCallsDoesNotRequireApplicableSkillBeforeProtectedTool(t *tes
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
 		[]string{"create_pdf"},
-		orchestration.ProfileDocument,
+		orchestration.ToolsetDocument,
 		nil,
 	)
-	if summary.skillPreflightRejected {
-		t.Fatal("skillPreflightRejected = true, want advisory-only skill guidance")
-	}
 	if doc.calls != 1 {
 		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
 	}
@@ -316,7 +305,7 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 	reg.Register(read)
 	reg.Register(doc)
 	b := &Bot{
-		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		cfg:   &config.Config{},
 		tools: reg,
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
@@ -327,13 +316,10 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 			{ID: "pdf-1", Name: "create_pdf"},
 		},
 		[]string{"read_file", "create_pdf"},
-		orchestration.ProfileDocument,
+		orchestration.ToolsetDocument,
 		nil,
 	)
 
-	if summary.skillPreflightRejected {
-		t.Fatal("skillPreflightRejected = true, want advisory-only skill guidance")
-	}
 	if len(summary.readSkillNames) != 1 || summary.readSkillNames[0] != "document-pdf" {
 		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.readSkillNames)
 	}
@@ -350,7 +336,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
 	reg.Register(exec)
 	b := &Bot{
-		cfg:   &config.Config{SkillPreflight: string(orchestration.SkillPreflightRequired)},
+		cfg:   &config.Config{},
 		tools: reg,
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
@@ -358,7 +344,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ProfileCompute,
+		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
 	)
 
@@ -376,7 +362,6 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	reg.Register(exec)
 	b := &Bot{
 		cfg: &config.Config{
-			SkillPreflight:     string(orchestration.SkillPreflightRequired),
 			TerminalToolPolicy: "off",
 		},
 		tools: reg,
@@ -386,7 +371,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ProfileCompute,
+		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
 	)
 
@@ -398,7 +383,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	}
 }
 
-func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.T) {
+func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
 	reg.Register(exec)
@@ -409,29 +394,24 @@ func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.
 		{Content: "5050"},
 	}}
 	b := &Bot{
-		cfg: &config.Config{
-			SkillPreflight: string(orchestration.SkillPreflightRequired),
-		},
+		cfg:   &config.Config{},
 		llm:   fake,
 		tools: reg,
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 	convCtx.AddUserMessage("Use execute_code to compute sum(range(1, 101)).")
-	allowlist, err := orchestration.ToolsForProfile(orchestration.ProfileCompute, orchestration.Availability{Sandbox: true})
+	allowlist, err := orchestration.ToolsForToolset(orchestration.ToolsetCompute, orchestration.Availability{Sandbox: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile: %v", err)
+		t.Fatalf("ToolsForToolset: %v", err)
 	}
 
 	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, orchestration.PromptPlan{
 		Version: "test",
 		Hash:    "hash",
-	}, orchestration.ProfileDecision{Profile: orchestration.ProfileCompute, Reason: "test"})
+	}, orchestration.ToolsetDecision{Toolset: orchestration.ToolsetCompute, Reason: "test"})
 
 	if response != "5050" {
 		t.Fatalf("response = %q, want 5050", response)
-	}
-	if stats.skillPreflightFail {
-		t.Fatal("skillPreflightFail = true, want no skill preflight block")
 	}
 	if stats.terminalTool != "execute_code" {
 		t.Fatalf("terminalTool = %q, want execute_code", stats.terminalTool)
@@ -450,13 +430,13 @@ func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.
 	}
 }
 
-func TestMaxToolLoopIterationsHonorsRuntimeCapAndProfilePolicy(t *testing.T) {
+func TestMaxToolLoopIterationsHonorsRuntimeCapAndToolsetPolicy(t *testing.T) {
 	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 4}}
 
-	if got := b.maxToolLoopIterations(orchestration.ProfileDocument); got != 4 {
+	if got := b.maxToolLoopIterations(orchestration.ToolsetDocument); got != 4 {
 		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
-	if got := b.maxToolLoopIterations(orchestration.ProfileDefault); got != 4 {
+	if got := b.maxToolLoopIterations(orchestration.ToolsetDefault); got != 4 {
 		t.Fatalf("default maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
 }
@@ -467,7 +447,7 @@ func TestExecuteToolCallsHonorsCustomHookVeto(t *testing.T) {
 	reg.Register(safe)
 	hookErr := errors.New("blocked by custom hook")
 	b := &Bot{
-		cfg:       &config.Config{SkillPreflight: string(orchestration.SkillPreflightOff)},
+		cfg:       &config.Config{},
 		tools:     reg,
 		orchHooks: &capturingOrchestrationHooks{beforeErr: hookErr},
 	}
@@ -476,7 +456,7 @@ func TestExecuteToolCallsHonorsCustomHookVeto(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "hook-1", Name: "search_memory"}},
 		[]string{"search_memory"},
-		orchestration.ProfileDefault,
+		orchestration.ToolsetDefault,
 		nil,
 	)
 
@@ -494,7 +474,6 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 	hooks := &capturingOrchestrationHooks{}
 	b := &Bot{
 		cfg: &config.Config{
-			SkillPreflight:       string(orchestration.SkillPreflightRequired),
 			CostInputPerMTokens:  1,
 			CostOutputPerMTokens: 2,
 		},
@@ -506,7 +485,7 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}},
 		[]string{"run_aurabot_swarm"},
-		orchestration.ProfileDefault,
+		orchestration.ToolsetDefault,
 		nil,
 	)
 
@@ -577,8 +556,8 @@ type capturingOrchestrationHooks struct {
 	after     []orchestration.TraceEvent
 }
 
-func (h *capturingOrchestrationHooks) BeforeProfileSelect(orchestration.TraceEvent) {}
-func (h *capturingOrchestrationHooks) AfterProfileSelect(orchestration.TraceEvent)  {}
+func (h *capturingOrchestrationHooks) BeforeToolsetSelect(orchestration.TraceEvent) {}
+func (h *capturingOrchestrationHooks) AfterToolsetSelect(orchestration.TraceEvent)  {}
 func (h *capturingOrchestrationHooks) BeforePromptCompose(orchestration.TraceEvent) {}
 func (h *capturingOrchestrationHooks) AfterPromptCompose(orchestration.TraceEvent)  {}
 func (h *capturingOrchestrationHooks) BeforeExposeTools(orchestration.TraceEvent)   {}

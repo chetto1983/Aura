@@ -9,7 +9,6 @@ import (
 
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/orchestration"
 )
 
 func toolDefinitionNames(defs []llm.ToolDefinition) []string {
@@ -77,14 +76,6 @@ func skillNameFromReadFileArgs(args map[string]any) string {
 	return name
 }
 
-func capabilityNames(capabilities []orchestration.Capability) []string {
-	out := make([]string, 0, len(capabilities))
-	for _, capability := range capabilities {
-		out = append(out, string(capability))
-	}
-	return out
-}
-
 func appendUniqueStrings(values []string, additions ...string) []string {
 	for _, addition := range additions {
 		addition = strings.TrimSpace(addition)
@@ -136,11 +127,11 @@ func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
 
 func userFacingFatalToolResult(raw string) string {
 	trimmed := strings.TrimSpace(raw)
-	if strings.Contains(trimmed, "not exposed in the active tool profile") {
+	if strings.Contains(trimmed, "not exposed in the active toolset") {
 		if strings.Contains(trimmed, "write_file") || strings.Contains(trimmed, "apply_patch") {
-			return "Non posso modificare direttamente i file con il profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
+			return "Non posso modificare direttamente i file con il toolset attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
 		}
-		return "Una capacita' interna richiesta non e' disponibile nel profilo attivo. Ho fermato l'azione invece di usare un permesso non esposto."
+		return "Una capacita' interna richiesta non e' disponibile nel toolset attivo. Ho fermato l'azione invece di usare un permesso non esposto."
 	}
 	return raw
 }

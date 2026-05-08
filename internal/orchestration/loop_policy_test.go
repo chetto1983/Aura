@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
-	def, ok := LoopPolicyForToolset(ProfileDefault)
+	def, ok := LoopPolicyForToolset(ToolsetDefault)
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
@@ -19,7 +19,7 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 		t.Fatalf("default TerminalTools missing run_aurabot_swarm: %+v", def.TerminalTools)
 	}
 
-	compute, ok := LoopPolicyForToolset(ProfileCompute)
+	compute, ok := LoopPolicyForToolset(ToolsetCompute)
 	if !ok {
 		t.Fatal("LoopPolicyForToolset compute returned false")
 	}
@@ -34,16 +34,16 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	}
 }
 
-func TestLoopPolicyForProfileReturnsCopySafePolicy(t *testing.T) {
-	policy, ok := LoopPolicyForProfile(ProfileDefault)
+func TestLoopPolicyForToolsetReturnsCopySafePolicy(t *testing.T) {
+	policy, ok := LoopPolicyForToolset(ToolsetDefault)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile default returned false")
+		t.Fatal("LoopPolicyForToolset default returned false")
 	}
 	policy.MaxSteps = 99
 
-	reread, ok := LoopPolicyForProfile(ProfileDefault)
+	reread, ok := LoopPolicyForToolset(ToolsetDefault)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile default reread returned false")
+		t.Fatal("LoopPolicyForToolset default reread returned false")
 	}
 	if reread.MaxSteps == 99 {
 		t.Fatalf("mutating policy changed policy catalog: %+v", reread)
@@ -51,19 +51,19 @@ func TestLoopPolicyForProfileReturnsCopySafePolicy(t *testing.T) {
 }
 
 func TestLoopPolicyForEveryToolsetIsConservativeAndBounded(t *testing.T) {
-	for _, profile := range []Profile{ProfileDefault, ProfileCompute, ProfileDocument, ProfileAdmin, ProfileMemory, ProfileSwarmResearch, ProfileSandboxCompute, ProfileAdminReview} {
-		policy, ok := LoopPolicyForProfile(profile)
+	for _, toolset := range []Toolset{ToolsetDefault, ToolsetCompute, ToolsetDocument, ToolsetAdmin} {
+		policy, ok := LoopPolicyForToolset(toolset)
 		if !ok {
-			t.Fatalf("LoopPolicyForProfile(%q) returned false", profile)
+			t.Fatalf("LoopPolicyForToolset(%q) returned false", toolset)
 		}
 		if policy.MaxSteps <= 0 || policy.MaxSteps > 8 {
-			t.Fatalf("%q MaxSteps = %d, want 1..8", profile, policy.MaxSteps)
+			t.Fatalf("%q MaxSteps = %d, want 1..8", toolset, policy.MaxSteps)
 		}
 		if policy.MaxElapsed <= 0 || policy.MaxElapsed > time.Minute {
-			t.Fatalf("%q MaxElapsed = %s, want positive duration <= 1m", profile, policy.MaxElapsed)
+			t.Fatalf("%q MaxElapsed = %s, want positive duration <= 1m", toolset, policy.MaxElapsed)
 		}
 		if strings.TrimSpace(policy.DuplicateToolPolicy) == "" {
-			t.Fatalf("%q DuplicateToolPolicy is empty", profile)
+			t.Fatalf("%q DuplicateToolPolicy is empty", toolset)
 		}
 	}
 }

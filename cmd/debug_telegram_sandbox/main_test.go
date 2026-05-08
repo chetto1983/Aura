@@ -324,7 +324,7 @@ func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacyExecuteCodeOr5050(t
 func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
 		ToolCalls:          []string{"read_file", "run_aurabot_swarm", "execute_code"},
-		ToolProfile:        "compute",
+		Toolset:            "compute",
 		FinalText:          "Swarm research completed.",
 		PromptHash:         "abc123",
 		SkillsRead:         true,
@@ -337,24 +337,23 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		LoopSteps:          3,
 		TerminalTool:       "execute_code",
 		ReadSkills:         []string{"test-driven-development"},
-		ActiveCapabilities: []string{"sandbox_compute"},
 		ToolsExposed:       []string{"read_file", "run_aurabot_swarm", "execute_code"},
 		WorkspaceRoot:      "/workspace",
 		MemoryPackPresent:  true,
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
-		Profile:            "compute",
+		Toolset:            "compute",
 		Tools:              []string{"read_file", "execute_code"},
 		SkillRead:          true,
-		SkillReadNames:     []string{"test-driven-development", "sandbox_compute"},
+		SkillReadNames:     []string{"test-driven-development"},
 		SwarmUsed:          true,
 		TokenMetrics:       true,
 		SandboxUsed:        true,
 		HiddenToolRejected: true,
 		TerminalTool:       "execute_code",
 		MaxLoopSteps:       3,
-		TraceFields:        []string{"PromptHash", "ToolProfile", "ReadSkills", "ActiveCapabilities"},
+		TraceFields:        []string{"PromptHash", "Toolset", "ReadSkills"},
 		NoStaleSkillRef:    true,
 		WorkspaceRoot:      "/workspace",
 		ForbidFragments:    []string{"internal/", ".git/"},
@@ -366,12 +365,12 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 	}
 }
 
-func TestValidateDebugExpectationsRejectsMismatchedProfile(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{ToolProfile: "default"}
+func TestValidateDebugExpectationsRejectsMismatchedToolset(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{Toolset: "default"}
 
-	err := validateDebugExpectations(result, debugExpectations{Profile: "compute"})
-	if err == nil || !strings.Contains(err.Error(), `expected profile "compute"`) {
-		t.Fatalf("validateDebugExpectations() error = %v, want profile failure", err)
+	err := validateDebugExpectations(result, debugExpectations{Toolset: "compute"})
+	if err == nil || !strings.Contains(err.Error(), `expected toolset "compute"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want toolset failure", err)
 	}
 }
 
@@ -418,19 +417,6 @@ func TestValidateDebugExpectationsRejectsMissingNamedSkillRead(t *testing.T) {
 	}
 }
 
-func TestValidateDebugExpectationsAcceptsCapabilitySkillRead(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{
-		SkillsRead:         true,
-		ReadSkills:         []string{"document-pdf"},
-		ActiveCapabilities: []string{"document_generation"},
-	}
-
-	err := validateDebugExpectations(result, debugExpectations{SkillReadNames: []string{"document_generation"}})
-	if err != nil {
-		t.Fatalf("validateDebugExpectations() error = %v", err)
-	}
-}
-
 func TestOptionalCSVFlagPreservesBooleanAndNamedSkillModes(t *testing.T) {
 	var f optionalCSVFlag
 	if err := f.Set("true"); err != nil {
@@ -439,10 +425,10 @@ func TestOptionalCSVFlagPreservesBooleanAndNamedSkillModes(t *testing.T) {
 	if !f.Any || len(f.Values) != 0 {
 		t.Fatalf("bool flag = any:%v values:%v", f.Any, f.Values)
 	}
-	if err := f.Set("docx, sandbox_compute"); err != nil {
+	if err := f.Set("docx, compute"); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Any || !hasAll(f.Values, "docx", "sandbox_compute") {
+	if !f.Any || !hasAll(f.Values, "docx", "compute") {
 		t.Fatalf("named flag = any:%v values:%v", f.Any, f.Values)
 	}
 }
@@ -516,9 +502,9 @@ func TestValidateDebugExpectationsRejectsMissingMemoryPack(t *testing.T) {
 }
 
 func TestValidateDebugExpectationsRejectsMissingTraceField(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{ToolProfile: "compute"}
+	result := telegram.DebugTextSmokeResult{Toolset: "compute"}
 
-	err := validateDebugExpectations(result, debugExpectations{TraceFields: []string{"ToolProfile", "PromptHash"}})
+	err := validateDebugExpectations(result, debugExpectations{TraceFields: []string{"Toolset", "PromptHash"}})
 	if err == nil || !strings.Contains(err.Error(), `expected trace/result field "PromptHash"`) {
 		t.Fatalf("validateDebugExpectations() error = %v, want trace field failure", err)
 	}

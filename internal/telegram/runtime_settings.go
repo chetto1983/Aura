@@ -28,7 +28,6 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 	hardBudget := floatSetting(ctx, store, settings.KeyHardBudget, "HARD_BUDGET", cfg.HardBudget)
 	inputPerM := floatSetting(ctx, store, settings.KeyCostInputPerMTokens, "COST_INPUT_PER_M_TOKENS", cfg.CostInputPerMTokens)
 	outputPerM := floatSetting(ctx, store, settings.KeyCostOutputPerMTokens, "COST_OUTPUT_PER_M_TOKENS", cfg.CostOutputPerMTokens)
-	skillPreflight := skillPreflightSetting(ctx, store, cfg.SkillPreflight)
 	skillRoutingMode := config.NormalizeSkillRoutingMode(stringSetting(ctx, store, settings.KeySkillRoutingMode, "AURA_SKILL_ROUTING_MODE", cfg.SkillRoutingMode))
 	agentLoopMaxSteps := intRangeSetting(ctx, store, settings.KeyAgentLoopMaxSteps, "AURA_AGENT_LOOP_MAX_STEPS", cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
 	terminalToolPolicy := config.NormalizeTerminalToolPolicy(stringSetting(ctx, store, settings.KeyTerminalToolPolicy, "AURA_TERMINAL_TOOL_POLICY", cfg.TerminalToolPolicy))
@@ -50,7 +49,6 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 	cfg.HardBudget = hardBudget
 	cfg.CostInputPerMTokens = inputPerM
 	cfg.CostOutputPerMTokens = outputPerM
-	cfg.SkillPreflight = skillPreflight
 	cfg.SkillRoutingMode = skillRoutingMode
 	cfg.AgentLoopMaxSteps = agentLoopMaxSteps
 	cfg.TerminalToolPolicy = terminalToolPolicy
@@ -77,7 +75,6 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 			"hard_budget", hardBudget,
 			"input_per_m_tokens", inputPerM,
 			"output_per_m_tokens", outputPerM,
-			"skill_preflight", skillPreflight,
 			"skill_routing_mode", skillRoutingMode,
 			"agent_loop_max_steps", agentLoopMaxSteps,
 			"terminal_tool_policy", terminalToolPolicy,
@@ -122,15 +119,6 @@ func stringSetting(ctx context.Context, store settings.Reader, key, envKey, fall
 		return raw
 	}
 	return fallback
-}
-
-func skillPreflightSetting(ctx context.Context, store settings.Reader, fallback string) string {
-	switch normalized := strings.ToLower(strings.TrimSpace(stringSetting(ctx, store, settings.KeySkillPreflight, "AURA_SKILL_PREFLIGHT", fallback))); normalized {
-	case "advisory", "off":
-		return normalized
-	default:
-		return config.DefaultSkillPreflight
-	}
 }
 
 func applyDelegationModeRuntime(mode string) {

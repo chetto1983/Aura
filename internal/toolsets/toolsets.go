@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	ProfileMemoryRead    = "memory_read"
-	ProfileWikiReview    = "wiki_review"
-	ProfileSkillsRead    = "skills_read"
-	ProfileWebResearch   = "web_research"
-	ProfileSandboxCode   = "sandbox_code"
-	ProfileSchedulerSafe = "scheduler_safe"
+	ToolsetMemoryRead    = "memory_read"
+	ToolsetWikiReview    = "wiki_review"
+	ToolsetSkillsRead    = "skills_read"
+	ToolsetWebResearch   = "web_research"
+	ToolsetSandboxCode   = "sandbox_code"
+	ToolsetSchedulerSafe = "scheduler_safe"
 )
 
-var profiles = map[string][]string{
-	ProfileMemoryRead: {
+var toolsets = map[string][]string{
+	ToolsetMemoryRead: {
 		"search_memory",
 		"list_files",
 		"read_file",
@@ -23,7 +23,7 @@ var profiles = map[string][]string{
 		"list_sources",
 		"read_source",
 	},
-	ProfileWikiReview: {
+	ToolsetWikiReview: {
 		"search_memory",
 		"list_files",
 		"read_file",
@@ -31,21 +31,21 @@ var profiles = map[string][]string{
 		"lint_sources",
 		"list_sources",
 	},
-	ProfileSkillsRead: {
+	ToolsetSkillsRead: {
 		"list_files",
 		"read_file",
 		"search_files",
 	},
-	ProfileWebResearch: {
+	ToolsetWebResearch: {
 		"web_search",
 		"web_fetch",
 	},
-	ProfileSandboxCode: {
+	ToolsetSandboxCode: {
 		"execute_code",
 		"list_tools",
 		"read_tool",
 	},
-	ProfileSchedulerSafe: {
+	ToolsetSchedulerSafe: {
 		"search_memory",
 		"list_files",
 		"read_file",
@@ -95,24 +95,24 @@ var rolePresets = map[string][]string{
 	},
 }
 
-func Profile(name string) ([]string, bool) {
-	tools, ok := profiles[strings.TrimSpace(name)]
+func Toolset(name string) ([]string, bool) {
+	tools, ok := toolsets[strings.TrimSpace(name)]
 	if !ok {
 		return nil, false
 	}
 	return cloneStrings(tools), true
 }
 
-func ResolveProfiles(names ...string) ([]string, error) {
+func ResolveToolsets(names ...string) ([]string, error) {
 	out := []string{}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		tools, ok := profiles[name]
+		tools, ok := toolsets[name]
 		if !ok {
-			return nil, fmt.Errorf("unknown toolset profile %q", name)
+			return nil, fmt.Errorf("unknown toolset %q", name)
 		}
 		out = appendUnique(out, tools...)
 	}
@@ -120,7 +120,7 @@ func ResolveProfiles(names ...string) ([]string, error) {
 }
 
 func SchedulerSafeTools() []string {
-	return cloneStrings(profiles[ProfileSchedulerSafe])
+	return cloneStrings(toolsets[ToolsetSchedulerSafe])
 }
 
 func FilterAllowed(requested []string, allowed []string) []string {

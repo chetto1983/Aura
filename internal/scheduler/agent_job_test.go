@@ -65,7 +65,7 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	if got.Goal != "Check markets" {
 		t.Fatalf("Goal = %q", got.Goal)
 	}
-	wantToolsets := []string{toolsets.ProfileMemoryRead, toolsets.ProfileWebResearch, toolsets.ProfileSkillsRead}
+	wantToolsets := []string{toolsets.ToolsetMemoryRead, toolsets.ToolsetWebResearch, toolsets.ToolsetSkillsRead}
 	if !reflect.DeepEqual(got.EnabledToolsets, wantToolsets) {
 		t.Fatalf("EnabledToolsets = %+v, want %+v", got.EnabledToolsets, wantToolsets)
 	}
@@ -106,7 +106,7 @@ func TestNormalizeAgentJobPayload_RejectsSandboxCodeToolset(t *testing.T) {
 }
 
 func TestResolveAgentJobTools_RejectsRequestedToolOutsideEnabledToolsets(t *testing.T) {
-	_, err := ResolveAgentJobTools([]string{toolsets.ProfileMemoryRead}, []string{"web_search"}, false)
+	_, err := ResolveAgentJobTools([]string{toolsets.ToolsetMemoryRead}, []string{"web_search"}, false)
 	if err == nil {
 		t.Fatal("expected tool allowlist/toolset mismatch error")
 	}

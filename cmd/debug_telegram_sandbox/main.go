@@ -37,7 +37,7 @@ func main() {
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
-	expectProfile := flag.String("expect-profile", "", "expected orchestration toolset; used only for reporting/validation when set")
+	expectToolset := flag.String("expect-toolset", "", "expected orchestration toolset; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	var expectSkillRead optionalCSVFlag
 	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to inspect a skill via file tools; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
@@ -168,14 +168,12 @@ func main() {
 	fmt.Printf("prompt_version=%s\n", result.PromptVersion)
 	fmt.Printf("prompt_hash=%s\n", result.PromptHash)
 	fmt.Printf("prompt_modules=%s\n", strings.Join(result.PromptModules, ","))
-	fmt.Printf("tool_profile=%s\n", result.ToolProfile)
-	fmt.Printf("profile_select_reason=%s\n", result.ProfileSelectReason)
+	fmt.Printf("toolset=%s\n", result.Toolset)
+	fmt.Printf("toolset_select_reason=%s\n", result.ToolsetSelectReason)
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
 	fmt.Printf("workspace_root=%s\n", result.WorkspaceRoot)
 	fmt.Printf("memory_pack_present=%v\n", result.MemoryPackPresent)
-	fmt.Printf("active_capabilities=%s\n", strings.Join(result.ActiveCapabilities, ","))
 	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
-	fmt.Printf("skill_preflight_failed=%v\n", result.SkillPreflightFailed)
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
 	if len(result.ReadSkills) > 0 {
 		fmt.Printf("read_skills=%s\n", strings.Join(result.ReadSkills, ","))
@@ -209,7 +207,7 @@ func main() {
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
 	fmt.Printf("elapsed_ms=%d\n", result.ElapsedMS)
 	expectations := debugExpectations{
-		Profile:            *expectProfile,
+		Toolset:            *expectToolset,
 		Tools:              splitCSV(*expectTools),
 		NoTools:            *expectNoTools,
 		SkillRead:          expectSkillRead.Any,
@@ -233,8 +231,8 @@ func main() {
 	if len(expectations.Tools) > 0 {
 		fmt.Printf("expected_tools_present=%s\n", strings.Join(expectations.Tools, ","))
 	}
-	if strings.TrimSpace(expectations.Profile) != "" {
-		fmt.Printf("expected_profile_present=%s\n", strings.TrimSpace(expectations.Profile))
+	if strings.TrimSpace(expectations.Toolset) != "" {
+		fmt.Printf("expected_toolset_present=%s\n", strings.TrimSpace(expectations.Toolset))
 	}
 	if expectations.NoTools {
 		fmt.Printf("expected_no_tools=true\n")
@@ -627,7 +625,7 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 }
 
 type debugExpectations struct {
-	Profile            string
+	Toolset            string
 	Tools              []string
 	NoTools            bool
 	SkillRead          bool
@@ -650,8 +648,8 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if expectations.NoTools && len(expectations.Tools) > 0 {
 		return errors.New("cannot combine -expect-no-tools with -expect-tools")
 	}
-	if profile := strings.TrimSpace(expectations.Profile); profile != "" && result.ToolProfile != profile {
-		return fmt.Errorf("expected profile %q, got %q", profile, result.ToolProfile)
+	if toolset := strings.TrimSpace(expectations.Toolset); toolset != "" && result.Toolset != toolset {
+		return fmt.Errorf("expected toolset %q, got %q", toolset, result.Toolset)
 	}
 	if len(expectations.Tools) > 0 {
 		if missing := missingTools(result.ToolCalls, expectations.Tools); len(missing) > 0 {
@@ -666,7 +664,7 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	for _, expected := range expectations.SkillReadNames {
 		if !expectedSkillReadSatisfied(result, expected) {
-			return fmt.Errorf("expected skill file read for %q, got read_skills=%s active_capabilities=%s", expected, strings.Join(result.ReadSkills, ","), strings.Join(result.ActiveCapabilities, ","))
+			return fmt.Errorf("expected skill file read for %q, got read_skills=%s", expected, strings.Join(result.ReadSkills, ","))
 		}
 	}
 	if expectations.SwarmUsed && !result.SwarmUsed {
@@ -727,14 +725,13 @@ func debugVisibleText(result telegram.DebugTextSmokeResult) string {
 		result.FinalText,
 		result.MessageText,
 		result.WorkspaceRoot,
-		result.ToolProfile,
-		result.ProfileSelectReason,
+		result.Toolset,
+		result.ToolsetSelectReason,
 		result.TerminalTool,
 	}
 	values = append(values, result.ToolCalls...)
 	values = append(values, result.ToolsExposed...)
 	values = append(values, result.PromptModules...)
-	values = append(values, result.ActiveCapabilities...)
 	values = append(values, result.ReadSkills...)
 	values = append(values, result.ArtifactFilenames...)
 	values = append(values, result.ArtifactSourceIDs...)
@@ -752,29 +749,6 @@ func expectedSkillReadSatisfied(result telegram.DebugTextSmokeResult, expected s
 	for _, read := range result.ReadSkills {
 		if strings.ToLower(strings.TrimSpace(read)) == expected {
 			return true
-		}
-	}
-	capability := orchestration.Capability(expected)
-	req, ok := orchestration.SkillRequirementForCapability(capability, orchestration.SkillPreflightRequired)
-	if !ok {
-		return false
-	}
-	for _, active := range result.ActiveCapabilities {
-		if strings.ToLower(strings.TrimSpace(active)) != expected {
-			continue
-		}
-		decision := orchestration.NeedsSkillPreflight("", capability, "", orchestration.SkillPreflightState{
-			ReadSkillNames: result.ReadSkills,
-		}, orchestration.SkillPreflightRequired)
-		if decision.Satisfied {
-			return true
-		}
-		for _, read := range result.ReadSkills {
-			for _, hint := range append(req.AllowedSkillNames, req.SkillHints...) {
-				if strings.ToLower(strings.TrimSpace(read)) == strings.ToLower(strings.TrimSpace(hint)) {
-					return true
-				}
-			}
 		}
 	}
 	return false
@@ -810,7 +784,6 @@ func appendDebugReferenceValues(values []string, result telegram.DebugTextSmokeR
 	values = append(values, result.ToolCalls...)
 	values = append(values, result.ToolsExposed...)
 	values = append(values, result.PromptModules...)
-	values = append(values, result.ActiveCapabilities...)
 	values = append(values, result.ReadSkills...)
 	if result.TerminalTool != "" {
 		values = append(values, result.TerminalTool)

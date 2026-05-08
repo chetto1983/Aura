@@ -151,7 +151,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_HEADLESS")
 	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
-	os.Unsetenv("AURA_SKILL_PREFLIGHT")
 	os.Unsetenv("AURA_SKILL_ROUTING_MODE")
 	os.Unsetenv("AURA_AGENT_LOOP_MAX_STEPS")
 	os.Unsetenv("AURA_TERMINAL_TOOL_POLICY")
@@ -296,9 +295,6 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
 	}
-	if cfg.SkillPreflight != DefaultSkillPreflight {
-		t.Errorf("SkillPreflight = %q, want %q", cfg.SkillPreflight, DefaultSkillPreflight)
-	}
 	if cfg.SkillRoutingMode != DefaultSkillRoutingMode {
 		t.Errorf("SkillRoutingMode = %q, want %q", cfg.SkillRoutingMode, DefaultSkillRoutingMode)
 	}
@@ -394,34 +390,6 @@ func TestLoadInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
 		cfg.DelegationMode != DefaultDelegationMode ||
 		cfg.TraceRetentionDays != DefaultTraceRetentionDays {
 		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
-	}
-}
-
-func TestLoadSkillPreflight(t *testing.T) {
-	tests := []struct {
-		name string
-		env  string
-		want string
-	}{
-		{name: "normalizes", env: " Advisory ", want: "advisory"},
-		{name: "allows off", env: "OFF", want: "off"},
-		{name: "legacy required degrades default", env: "required", want: DefaultSkillPreflight},
-		{name: "invalid degrades default", env: "unsafe", want: DefaultSkillPreflight},
-		{name: "blank degrades default", env: "   ", want: DefaultSkillPreflight},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("AURA_SKILL_PREFLIGHT", tt.env)
-
-			cfg, err := Load()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.SkillPreflight != tt.want {
-				t.Fatalf("SkillPreflight = %q, want %q", cfg.SkillPreflight, tt.want)
-			}
-		})
 	}
 }
 

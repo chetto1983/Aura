@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func TestResolveProfilesComposesAndDedupes(t *testing.T) {
-	got, err := ResolveProfiles(ProfileMemoryRead, ProfileWebResearch, ProfileMemoryRead)
+func TestResolveToolsetsComposesAndDedupes(t *testing.T) {
+	got, err := ResolveToolsets(ToolsetMemoryRead, ToolsetWebResearch, ToolsetMemoryRead)
 	if err != nil {
-		t.Fatalf("ResolveProfiles: %v", err)
+		t.Fatalf("ResolveToolsets: %v", err)
 	}
 	want := []string{"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "web_search", "web_fetch"}
 	if !reflect.DeepEqual(got, want) {
@@ -17,32 +17,32 @@ func TestResolveProfilesComposesAndDedupes(t *testing.T) {
 	}
 }
 
-func TestResolveProfilesRejectsUnknownProfile(t *testing.T) {
-	if _, err := ResolveProfiles("memory_write"); err == nil {
-		t.Fatal("expected unknown profile error")
+func TestResolveToolsetsRejectsUnknownToolset(t *testing.T) {
+	if _, err := ResolveToolsets("memory_write"); err == nil {
+		t.Fatal("expected unknown toolset error")
 	}
 }
 
-func TestResolveProfilesUnknownProfileDoesNotPanic(t *testing.T) {
+func TestResolveToolsetsUnknownToolsetDoesNotPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("ResolveProfiles panicked for unknown profile: %v", r)
+			t.Fatalf("ResolveToolsets panicked for unknown toolset: %v", r)
 		}
 	}()
-	if _, err := ResolveProfiles("not-a-profile"); err == nil {
-		t.Fatal("ResolveProfiles unknown profile error = nil, want error")
+	if _, err := ResolveToolsets("not-a-toolset"); err == nil {
+		t.Fatal("ResolveToolsets unknown toolset error = nil, want error")
 	}
 }
 
-func TestProfilesReturnClones(t *testing.T) {
-	got, ok := Profile(ProfileMemoryRead)
+func TestToolsetsReturnClones(t *testing.T) {
+	got, ok := Toolset(ToolsetMemoryRead)
 	if !ok {
-		t.Fatal("missing memory_read profile")
+		t.Fatal("missing memory_read toolset")
 	}
 	got[0] = "mutated"
-	again, _ := Profile(ProfileMemoryRead)
+	again, _ := Toolset(ToolsetMemoryRead)
 	if again[0] == "mutated" {
-		t.Fatal("profile result aliases internal slice")
+		t.Fatal("toolset result aliases internal slice")
 	}
 }
 
@@ -71,10 +71,10 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 	}
 }
 
-func TestSandboxCodeProfileIsExplicit(t *testing.T) {
-	got, err := ResolveProfiles(ProfileSandboxCode)
+func TestSandboxCodeToolsetIsExplicit(t *testing.T) {
+	got, err := ResolveToolsets(ToolsetSandboxCode)
 	if err != nil {
-		t.Fatalf("ResolveProfiles: %v", err)
+		t.Fatalf("ResolveToolsets: %v", err)
 	}
 	want := []string{"execute_code", "list_tools", "read_tool"}
 	if !reflect.DeepEqual(got, want) {

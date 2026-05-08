@@ -44,7 +44,7 @@ func TestTraceEventSummaryRedactsMetadata(t *testing.T) {
 	event := TraceEvent{
 		PromptVersion: "aura-agent-v1",
 		PromptHash:    "abc123",
-		ToolProfile:   string(ProfileCompute),
+		Toolset:       string(ToolsetCompute),
 		Metadata: map[string]string{
 			"raw": "LLM_API_KEY=sk-leaky",
 		},

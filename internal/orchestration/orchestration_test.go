@@ -17,13 +17,13 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 		SwarmAvailable:    true,
 		SandboxAvailable:  true,
 		ProposalAvailable: true,
-		Profile:           ProfileDocument,
+		Toolset:           ToolsetDocument,
 	})
 
 	if plan.Version != VersionAuraAgentV1 {
 		t.Fatalf("Version = %q", plan.Version)
 	}
-	for _, want := range []string{ModuleBase, ModuleRuntime, ModuleOverlay, ModuleSkills, ModuleSwarm, ModuleSandbox, ModuleFileGeneration, ModuleSecurity} {
+	for _, want := range []string{ModuleBase, ModuleRuntime, ModuleOverlay, ModuleSkills, ModuleSandbox, ModuleFileGeneration, ModuleSecurity} {
 		if !slices.Contains(plan.Modules, want) {
 			t.Fatalf("modules missing %q: %+v", want, plan.Modules)
 		}
@@ -39,38 +39,38 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	}
 }
 
-func TestSelectProfileAutoRoutesToFourToolsets(t *testing.T) {
+func TestSelectToolsetAutoRoutesToFourToolsets(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
-		want Profile
+		want Toolset
 	}{
-		{name: "broad pipeline audit stays default", text: "audit the whole Aura pipeline and tell me what is missing", want: ProfileDefault},
-		{name: "italian conversation log debug stays default", text: "guarda i log delle conversazioni e dimmi dove ti blocchi", want: ProfileDefault},
-		{name: "memory remember stays default", text: "remember this note in memory for the Aura project", want: ProfileDefault},
-		{name: "sandbox english csv chart", text: "compute a CSV table and chart for the E2E timings", want: ProfileCompute},
-		{name: "sandbox italian csv chart", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ProfileCompute},
-		{name: "document english report", text: "create a report from the documents you have", want: ProfileDocument},
-		{name: "document italian report", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ProfileDocument},
-		{name: "admin english dashboard settings", text: "review the dashboard settings and admin approval queue", want: ProfileAdmin},
-		{name: "admin italian settings", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ProfileAdmin},
-		{name: "default english greeting", text: "hello, how are you?", want: ProfileDefault},
+		{name: "broad pipeline audit stays default", text: "audit the whole Aura pipeline and tell me what is missing", want: ToolsetDefault},
+		{name: "italian conversation log debug stays default", text: "guarda i log delle conversazioni e dimmi dove ti blocchi", want: ToolsetDefault},
+		{name: "memory remember stays default", text: "remember this note in memory for the Aura project", want: ToolsetDefault},
+		{name: "sandbox english csv chart", text: "compute a CSV table and chart for the E2E timings", want: ToolsetCompute},
+		{name: "sandbox italian csv chart", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ToolsetCompute},
+		{name: "document english report", text: "create a report from the documents you have", want: ToolsetDocument},
+		{name: "document italian report", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ToolsetDocument},
+		{name: "admin english dashboard settings", text: "review the dashboard settings and admin approval queue", want: ToolsetAdmin},
+		{name: "admin italian settings", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ToolsetAdmin},
+		{name: "default english greeting", text: "hello, how are you?", want: ToolsetDefault},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SelectProfile(tt.text, ProfileModeAuto, Availability{Swarm: true, Sandbox: true, Proposals: true})
+			got := SelectToolset(tt.text, ToolsetModeAuto, Availability{Swarm: true, Sandbox: true, Proposals: true})
 			if got != tt.want {
-				t.Fatalf("SelectProfile(%q) = %q, want %q", tt.text, got, tt.want)
+				t.Fatalf("SelectToolset(%q) = %q, want %q", tt.text, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
-	def, err := ToolsForProfile(ProfileDefault, Availability{Swarm: true, WorkspaceFiles: true})
+	def, err := ToolsForToolset(ToolsetDefault, Availability{Swarm: true, WorkspaceFiles: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile default: %v", err)
+		t.Fatalf("ToolsForToolset default: %v", err)
 	}
 	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "search_memory", "list_sources", "read_source", "web_search", "web_fetch", "run_aurabot_swarm"} {
 		if !slices.Contains(def, required) {
@@ -82,13 +82,9 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 			t.Fatalf("default toolset exposes specialized/admin tool %q: %+v", forbidden, def)
 		}
 	}
-	if def[0] != "run_aurabot_swarm" {
-		t.Fatalf("default toolset should expose swarm first for broad audits, got first %q in %+v", def[0], def)
-	}
-
-	compute, err := ToolsForProfile(ProfileCompute, Availability{Sandbox: true, WorkspaceFiles: true})
+	compute, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: true, WorkspaceFiles: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile compute: %v", err)
+		t.Fatalf("ToolsForToolset compute: %v", err)
 	}
 	for _, required := range []string{"execute_code", "list_tools", "read_tool", "search_memory", "read_source", "web_fetch"} {
 		if !slices.Contains(compute, required) {
@@ -96,9 +92,9 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 		}
 	}
 
-	doc, err := ToolsForProfile(ProfileDocument, Availability{Swarm: true, WorkspaceFiles: true})
+	doc, err := ToolsForToolset(ToolsetDocument, Availability{Swarm: true, WorkspaceFiles: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile document: %v", err)
+		t.Fatalf("ToolsForToolset document: %v", err)
 	}
 	for _, required := range []string{"create_docx", "create_xlsx", "create_pdf", "search_memory", "read_source", "run_aurabot_swarm"} {
 		if !slices.Contains(doc, required) {
@@ -106,9 +102,9 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 		}
 	}
 
-	admin, err := ToolsForProfile(ProfileAdmin, Availability{Swarm: true})
+	admin, err := ToolsForToolset(ToolsetAdmin, Availability{Swarm: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile admin: %v", err)
+		t.Fatalf("ToolsForToolset admin: %v", err)
 	}
 	for _, required := range []string{"request_dashboard_token", "install_skill", "delete_skill", "settings_update", "run_task_now", "search_memory"} {
 		if !slices.Contains(admin, required) {
@@ -121,17 +117,17 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 }
 
 func TestWorkspaceToolsAreConditional(t *testing.T) {
-	without, err := ToolsForProfile(ProfileDefault, Availability{})
+	without, err := ToolsForToolset(ToolsetDefault, Availability{})
 	if err != nil {
-		t.Fatalf("ToolsForProfile default: %v", err)
+		t.Fatalf("ToolsForToolset default: %v", err)
 	}
 	if slices.Contains(without, "read_file") {
 		t.Fatalf("workspace tools exposed while unavailable: %+v", without)
 	}
 
-	with, err := ToolsForProfile(ProfileDefault, Availability{WorkspaceFiles: true})
+	with, err := ToolsForToolset(ToolsetDefault, Availability{WorkspaceFiles: true})
 	if err != nil {
-		t.Fatalf("ToolsForProfile default workspace: %v", err)
+		t.Fatalf("ToolsForToolset default workspace: %v", err)
 	}
 	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"} {
 		if !slices.Contains(with, required) {
@@ -140,41 +136,17 @@ func TestWorkspaceToolsAreConditional(t *testing.T) {
 	}
 }
 
-func TestLegacyProfileModesNormalizeToToolsets(t *testing.T) {
-	tests := []struct {
-		mode string
-		want Profile
-	}{
-		{mode: "memory", want: ProfileDefault},
-		{mode: "swarm_research", want: ProfileDefault},
-		{mode: "sandbox_compute", want: ProfileCompute},
-		{mode: "admin_review", want: ProfileAdmin},
-		{mode: "compute", want: ProfileCompute},
-	}
-	for _, tt := range tests {
-		t.Run(tt.mode, func(t *testing.T) {
-			got := SelectProfile("hello", tt.mode, Availability{Sandbox: true, Swarm: true})
-			if got != tt.want {
-				t.Fatalf("SelectProfile legacy mode %q = %q, want %q", tt.mode, got, tt.want)
-			}
-			if _, err := ToolsForProfile(Profile(tt.mode), Availability{Sandbox: true, Swarm: true}); err != nil {
-				t.Fatalf("ToolsForProfile legacy mode %q: %v", tt.mode, err)
-			}
-		})
-	}
-}
-
 func TestExplicitComputeFallsBackWhenSandboxUnavailable(t *testing.T) {
-	decision := SelectProfileDecision("calcola un CSV", "compute", Availability{Sandbox: false})
-	if decision.Profile != ProfileDefault {
-		t.Fatalf("Profile = %q, want default when explicit compute toolset is unavailable", decision.Profile)
+	decision := SelectToolsetDecision("calcola un CSV", "compute", Availability{Sandbox: false})
+	if decision.Toolset != ToolsetDefault {
+		t.Fatalf("Toolset = %q, want default when explicit compute toolset is unavailable", decision.Toolset)
 	}
 	if !strings.Contains(decision.Reason, "unavailable") {
 		t.Fatalf("Reason = %q, want unavailable explanation", decision.Reason)
 	}
 
-	if _, err := ToolsForProfile(ProfileCompute, Availability{Sandbox: false}); err == nil {
-		t.Fatal("ToolsForProfile compute without sandbox returned nil error")
+	if _, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: false}); err == nil {
+		t.Fatal("ToolsForToolset compute without sandbox returned nil error")
 	}
 }
 
@@ -188,102 +160,18 @@ func TestComposePromptIncludesSkillsForDefaultAndCompute(t *testing.T) {
 		SandboxAvailable: true,
 	}
 
-	def := ComposePrompt(withProfile(base, ProfileDefault))
+	def := ComposePrompt(withToolset(base, ToolsetDefault))
 	if !strings.Contains(def.Content, "## Available Skills") || !strings.Contains(def.Content, "Skill Use") {
 		t.Fatalf("default prompt missing exposed skill guidance:\n%s", def.Content)
 	}
 
-	compute := ComposePrompt(withProfile(base, ProfileCompute))
+	compute := ComposePrompt(withToolset(base, ToolsetCompute))
 	if !strings.Contains(compute.Content, "## Available Skills") || !strings.Contains(compute.Content, "Skill Use") {
 		t.Fatalf("compute prompt missing exposed skill guidance:\n%s", compute.Content)
 	}
 }
 
-func withProfile(in PromptInput, profile Profile) PromptInput {
-	in.Profile = profile
+func withToolset(in PromptInput, toolset Toolset) PromptInput {
+	in.Toolset = toolset
 	return in
-}
-
-func TestProfileCardsDeclareFourToolsets(t *testing.T) {
-	cards := ProfileCards()
-	for _, profile := range []Profile{ProfileDefault, ProfileCompute, ProfileDocument, ProfileAdmin} {
-		card, ok := cards[profile]
-		if !ok {
-			t.Fatalf("ProfileCards missing %q", profile)
-		}
-		if card.Purpose == "" || len(card.AllowedTools) == 0 {
-			t.Fatalf("toolset %q missing purpose or tools: %+v", profile, card)
-		}
-	}
-	if len(cards) != 4 {
-		t.Fatalf("ProfileCards len = %d, want 4: %+v", len(cards), cards)
-	}
-	if cards[ProfileAdmin].Access != AccessReviewOnly {
-		t.Fatalf("admin access = %q, want review_only", cards[ProfileAdmin].Access)
-	}
-}
-
-func TestToolsForProfileOnlyExposesCardDeclaredTools(t *testing.T) {
-	availabilityCases := []Availability{
-		{},
-		{Swarm: true},
-		{Sandbox: true},
-		{Proposals: true},
-		{WorkspaceFiles: true},
-		{Swarm: true, Sandbox: true, Proposals: true},
-	}
-
-	for _, profile := range []Profile{ProfileDefault, ProfileCompute, ProfileDocument, ProfileAdmin} {
-		for _, available := range availabilityCases {
-			tools, err := ToolsForProfile(profile, available)
-			if err != nil {
-				continue
-			}
-			card, ok := ProfileCardFor(profile)
-			if !ok {
-				t.Fatalf("ProfileCardFor(%q) returned false", profile)
-			}
-			declared := append([]string(nil), card.AllowedTools...)
-			for _, set := range card.ConditionalTools {
-				declared = append(declared, set.Tools...)
-			}
-			for _, tool := range tools {
-				if !slices.Contains(declared, tool) {
-					t.Fatalf("%q with availability %+v exposes undeclared tool %q; tools=%+v declared=%+v", profile, available, tool, tools, declared)
-				}
-			}
-		}
-	}
-}
-
-func TestProfileCardResultsAreCopySafe(t *testing.T) {
-	card, ok := ProfileCardFor(ProfileDefault)
-	if !ok {
-		t.Fatal("ProfileCardFor default returned false")
-	}
-	card.PositiveCues = append(card.PositiveCues, "mutated")
-	card.NegativeCues = append(card.NegativeCues, "mutated")
-	card.ConditionalTools[0].Tools[0] = "mutated"
-	card.DeniedTools[0] = "mutated"
-	card.LoopPolicy.MaxSteps = 99
-
-	reread, ok := ProfileCardFor(ProfileDefault)
-	if !ok {
-		t.Fatal("ProfileCardFor default reread returned false")
-	}
-	if slices.Contains(reread.PositiveCues, "mutated") {
-		t.Fatalf("mutating PositiveCues changed profile card catalog: %+v", reread.PositiveCues)
-	}
-	if slices.Contains(reread.NegativeCues, "mutated") {
-		t.Fatalf("mutating NegativeCues changed profile card catalog: %+v", reread.NegativeCues)
-	}
-	if reread.ConditionalTools[0].Tools[0] == "mutated" {
-		t.Fatalf("mutating ConditionalTools changed profile card catalog: %+v", reread.ConditionalTools)
-	}
-	if reread.DeniedTools[0] == "mutated" {
-		t.Fatalf("mutating DeniedTools changed profile card catalog: %+v", reread.DeniedTools)
-	}
-	if reread.LoopPolicy.MaxSteps == 99 {
-		t.Fatalf("mutating loop policy changed profile card catalog: %+v", reread.LoopPolicy)
-	}
 }

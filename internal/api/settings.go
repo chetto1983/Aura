@@ -163,12 +163,11 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
-	{Key: settings.KeyToolProfileMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto selects a broad safe toolset per turn"},
+	{Key: settings.KeyToolsetMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto selects a broad safe toolset per turn"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
-	{Key: settings.KeySkillPreflight, Value: config.DefaultSkillPreflight, Group: "agent", Kind: "enum", Options: []string{"off", "advisory"}, Label: "Skill guidance", Hint: "Optional skill hints; never blocks tool work"},
 	{Key: settings.KeySkillRoutingMode, Value: config.DefaultSkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode", Hint: "manifest uses deterministic skill metadata; manifest_llm_review is reserved for ambiguous routing experiments"},
 	{Key: settings.KeyAgentLoopMaxSteps, Value: strconv.Itoa(config.DefaultAgentLoopMaxSteps), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps", Hint: "Hard cap for the main model/tool loop"},
-	{Key: settings.KeyTerminalToolPolicy, Value: config.DefaultTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"profile", "off"}, Label: "Terminal tool policy", Hint: "profile lets routes stop after declared aggregate tools"},
+	{Key: settings.KeyTerminalToolPolicy, Value: config.DefaultTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"toolset", "off"}, Label: "Terminal tool policy", Hint: "toolset lets routes stop after declared aggregate tools"},
 	{Key: settings.KeyDelegationMode, Value: config.DefaultDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode", Hint: "fast keeps delegation small; bounded allows wider swarm execution; async is for future durable tasks"},
 	{Key: settings.KeyTraceRetentionDays, Value: strconv.Itoa(config.DefaultTraceRetentionDays), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(365), Label: "Trace retention days", Hint: "How long orchestration trace records are kept before cleanup"},
 	{Key: settings.KeyWorkspaceTools, Value: config.DefaultWorkspaceTools, Group: "agent", Kind: "enum", Options: []string{"enabled", "disabled"}, Label: "Workspace file tools", Hint: "Enabled by default. Aura exposes bounded list/read/search/write/patch tools inside the configured workspace root."},
@@ -350,12 +349,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.FormatBool(cfg.OTelEnabled)
 	case settings.KeyPromptVersion:
 		return cfg.PromptVersion
-	case settings.KeyToolProfileMode:
-		return cfg.ToolProfileMode
+	case settings.KeyToolsetMode:
+		return cfg.ToolsetMode
 	case settings.KeyOrchestrationLogLevel:
 		return cfg.OrchestrationLogLevel
-	case settings.KeySkillPreflight:
-		return cfg.SkillPreflight
 	case settings.KeySkillRoutingMode:
 		return cfg.SkillRoutingMode
 	case settings.KeyAgentLoopMaxSteps:
@@ -487,7 +484,7 @@ func touchesLiveRuntimeSetting(keys []string) bool {
 		switch key {
 		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations,
 			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens,
-			settings.KeySkillPreflight, settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps, settings.KeyTerminalToolPolicy,
+			settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps, settings.KeyTerminalToolPolicy,
 			settings.KeyDelegationMode, settings.KeyTraceRetentionDays:
 			return true
 		}

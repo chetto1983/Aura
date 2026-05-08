@@ -67,7 +67,6 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 		settings.KeyHardBudget:           "8.5",
 		settings.KeyCostInputPerMTokens:  "0.14",
 		settings.KeyCostOutputPerMTokens: "0.42",
-		settings.KeySkillPreflight:       "advisory",
 		settings.KeySkillRoutingMode:     "manifest_llm_review",
 		settings.KeyAgentLoopMaxSteps:    "8",
 		settings.KeyTerminalToolPolicy:   "off",
@@ -79,7 +78,6 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 		HardBudget:           2,
 		CostInputPerMTokens:  0.2,
 		CostOutputPerMTokens: 0.8,
-		SkillPreflight:       config.DefaultSkillPreflight,
 		SkillRoutingMode:     config.DefaultSkillRoutingMode,
 		AgentLoopMaxSteps:    config.DefaultAgentLoopMaxSteps,
 		TerminalToolPolicy:   config.DefaultTerminalToolPolicy,
@@ -106,8 +104,7 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	if tracker.cfg.SoftBudget != 3.25 || tracker.cfg.HardBudget != 8.5 || tracker.cfg.InputCostPerMTokens != 0.14 || tracker.cfg.OutputCostPerMTokens != 0.42 {
 		t.Fatalf("budget config = %+v", tracker.cfg)
 	}
-	if cfg.SkillPreflight != "advisory" ||
-		cfg.SkillRoutingMode != "manifest_llm_review" ||
+	if cfg.SkillRoutingMode != "manifest_llm_review" ||
 		cfg.AgentLoopMaxSteps != 8 ||
 		cfg.TerminalToolPolicy != "off" ||
 		cfg.DelegationMode != "bounded" ||

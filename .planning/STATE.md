@@ -45,7 +45,9 @@ Evidence:
 
 Phase 08 slice 1 cut the first hot-path weight: the hardcoded fallback is gone, generic turns skip speculative Memory Pack injection, skill manifests and swarm tools are explicit-only, and summarizer/nightly auto-improve default to off.
 
-Next implementation should keep following `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: finish reducing profile/preflight ceremony, then fix embedding retrieval quality through hybrid search.
+Phase 08 profile/preflight deletion pass cut the remaining taxonomy code instead of leaving compatibility switches: `ProfileCard`/capability policy, skill preflight policy, swarm routing prompt helper, `cmd/debug_orchestration`, `AURA_SKILL_PREFLIGHT`, `AURA_TOOL_PROFILE_MODE`, and legacy profile aliases are gone. Search now merges exact wiki slug/title/link hits, SQLite FTS, and vector results; Qdrant merges local hybrid evidence instead of hiding it.
+
+Next implementation should keep following `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: compact source/archive recall, then make the document generation route boring and fast.
 
 ## Cleaned-Up Plan Map
 
@@ -58,19 +60,19 @@ Next implementation should keep following `.planning/phases/08-runtime-diet-embe
 
 ## Next Slice
 
-Recommended slice: Phase 08 Task 2 continuation and Task 4.
+Recommended slice: Phase 08 Task 5 and Task 6.
 
 Goal:
 
-- continue deleting live profile/preflight telemetry that no longer affects behavior;
-- replace raw vector top-K trust with hybrid exact/FTS/vector retrieval;
-- keep `search_memory` useful as Aura's compact graph-memory entrypoint.
+- index compact source/archive facts and stable handles;
+- calibrate `search_memory` evidence across wiki/source/archive kinds;
+- make document prompts do one retrieval capsule, then a typed document tool.
 
 Suggested acceptance:
 
 - `go test ./internal/search ./internal/tools ./internal/telegram -count=1`;
-- curated retrieval queries hit expected wiki/source/archive evidence;
-- Qdrant low-confidence results no longer suppress better local lexical hits.
+- curated source/archive queries return compact facts before raw bodies;
+- broad document prompt stays under the Phase 08 loop/time budget in the debug sandbox.
 
 ## Deferred Follow-Ups
 

@@ -1,6 +1,6 @@
 # Phase 08: Runtime Diet
 
-Status: planned
+Status: in progress
 Owner: Codex
 Date: 2026-05-08
 
@@ -9,6 +9,9 @@ Progress:
 - 2026-05-08: Task 1 complete. The live `agentloop` fallback string/function is gone; budget exhaustion returns last useful tool output.
 - 2026-05-08: Task 2 partial. Skill manifest, swarm exposure, summarizer, and nightly auto-improve are no longer default-turn ceremony.
 - 2026-05-08: Task 3 partial. Generic turns skip speculative search/Memory Pack injection; memory/wiki/document routes still get a bounded pack when needed.
+- 2026-05-08: Task 2 deletion pass complete for profile/preflight. The live `ProfileCard`/capability taxonomy, skill-preflight runtime policy, swarm-routing prompt helper, debug orchestration command, `AURA_SKILL_PREFLIGHT`, `AURA_TOOL_PROFILE_MODE`, and legacy profile aliases were physically removed. Remaining Docker Compose `profiles` are Docker service metadata, not Aura runtime routing.
+- 2026-05-08: Task 4 complete for the local wiki path. `search_memory` now merges exact slug/title/wiki-link hits, SQLite FTS, and vector results; Qdrant search merges local hybrid results instead of hiding lexical hits behind any non-empty vector response.
+- 2026-05-08: Task 7 partial. Anti-residue grep over `internal`, `cmd`, `web/src`, `.env.example`, `compose.yaml`, and `internal/api/dist` returned no legacy profile/preflight symbols after the dashboard rebuild.
 
 ## Thesis
 
@@ -147,7 +150,7 @@ Acceptance:
 
 ### Task 2: Cut The Loop Down
 
-- Status: partial. Default skill manifest, swarm exposure, summarizer, and nightly auto-improve were cut from ordinary turns/defaults. Profile taxonomy remains for a later deletion pass.
+- Status: done for the profile/preflight path. Default skill manifest, swarm exposure, summarizer, and nightly auto-improve were cut from ordinary turns/defaults in slice 1; this deletion pass removed the remaining live profile/preflight taxonomy and config surface.
 
 - Remove default-turn profile/preflight ceremony from the live loop.
 - Keep only simple tool availability, bounded execution, and finalization.
@@ -177,6 +180,8 @@ Acceptance:
 - Debug smoke reports route, capsule bytes, LLM calls, tool calls, and elapsed time.
 
 ### Task 4: Fix Embedding Retrieval
+
+- Status: done for exact/FTS/vector merge and Qdrant/local fallback merge. Source/archive score normalization remains in Task 5.
 
 - Merge exact/FTS/vector results instead of trusting vector top-K alone.
 - Normalize scores by result kind.
@@ -213,6 +218,8 @@ Acceptance:
 - Live smoke stays under 30s and `loop_steps <= 4`.
 
 ### Task 7: Delete The Leftovers
+
+- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. Continue with wrappers/debug paths only if they are still production-reachable after Task 5/6.
 
 - Audit with `rg` for old profiles, preflight, wrappers, old wiki tools, and production-reachable debug paths.
 - Delete what is dead.

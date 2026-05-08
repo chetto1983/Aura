@@ -111,22 +111,16 @@ func validationRules(cfg *config.Config) []defaultRule {
 			shouldSet: missingOrInvalidSet("off", "review", "auto_low_risk", "auto"),
 		},
 		{
-			key:       KeyToolProfileMode,
+			key:       KeyToolsetMode,
 			value:     "auto",
-			reason:    "repair invalid tool profile mode",
-			shouldSet: missingOrInvalidSet("auto", "default", "compute", "document", "admin", "memory", "swarm_research", "sandbox_compute", "admin_review"),
+			reason:    "repair invalid toolset mode",
+			shouldSet: missingOrInvalidSet("auto", "default", "compute", "document", "admin"),
 		},
 		{
 			key:       KeyOrchestrationLogLevel,
 			value:     "summary",
 			reason:    "repair invalid orchestration log level",
 			shouldSet: missingOrInvalidSet("summary", "debug"),
-		},
-		{
-			key:       KeySkillPreflight,
-			value:     config.DefaultSkillPreflight,
-			reason:    "repair invalid skill preflight policy",
-			shouldSet: missingOrInvalidSet("advisory", "off"),
 		},
 		{
 			key:       KeySkillRoutingMode,
@@ -144,7 +138,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 			key:       KeyTerminalToolPolicy,
 			value:     config.DefaultTerminalToolPolicy,
 			reason:    "repair invalid terminal tool policy",
-			shouldSet: missingOrInvalidSet("profile", "off"),
+			shouldSet: missingOrInvalidSet("toolset", "off"),
 		},
 		{
 			key:       KeyDelegationMode,

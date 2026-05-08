@@ -29,37 +29,35 @@ import (
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
 type toolExecutionSummary struct {
-	lastResult             string
-	fatalResult            string
-	hiddenRejected         bool
-	skillPreflightRejected bool
-	readSkillNames         []string
-	terminalTool           string
+	lastResult     string
+	fatalResult    string
+	hiddenRejected bool
+	readSkillNames []string
+	terminalTool   string
 }
 
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, profile orchestration.Profile, readSkills []string) toolExecutionSummary {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, toolset orchestration.Toolset, readSkills []string) toolExecutionSummary {
 	if len(calls) == 0 {
 		return toolExecutionSummary{}
 	}
 
 	type outcome struct {
-		id                     string
-		tool                   string
-		content                string
-		elapsed                time.Duration
-		errorClass             string
-		hiddenRejected         bool
-		skillPreflightRejected bool
-		fatal                  bool
-		readSkillName          string
-		terminalTool           string
+		id             string
+		tool           string
+		content        string
+		elapsed        time.Duration
+		errorClass     string
+		hiddenRejected bool
+		fatal          bool
+		readSkillName  string
+		terminalTool   string
 	}
 	results := make([]outcome, len(calls))
 
 	var wg sync.WaitGroup
 	var summaryMu sync.Mutex
 	summary := toolExecutionSummary{}
-	loopPolicy, _ := orchestration.LoopPolicyForProfile(profile)
+	loopPolicy, _ := orchestration.LoopPolicyForToolset(toolset)
 	for i, tc := range calls {
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
@@ -68,7 +66,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			event := orchestration.TraceEvent{
 				ToolName:     tc.Name,
 				ToolsExposed: toolsExposed,
-				ToolProfile:  string(profile),
+				Toolset:      string(toolset),
 			}
 			start := time.Now()
 			if !toolAllowed(tc.Name, toolsExposed) {
@@ -96,7 +94,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				hidden := errors.Is(err, orchestration.ErrHiddenTool)
 				if hidden {
 					errorClass = "hidden_tool"
-					content = tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name))
+					content = tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active toolset", tc.Name))
 				}
 				event.HiddenToolRejected = hidden
 				event.DurationMS = time.Since(start).Milliseconds()
@@ -164,9 +162,6 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		summary.lastResult = r.content
 		if r.hiddenRejected {
 			summary.hiddenRejected = true
-		}
-		if r.skillPreflightRejected {
-			summary.skillPreflightRejected = true
 		}
 		if r.fatal && summary.fatalResult == "" {
 			summary.fatalResult = r.content
