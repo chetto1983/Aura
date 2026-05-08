@@ -52,8 +52,8 @@ func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 	if toolName == "" {
 		toolName = "the terminal tool"
 	}
-	if toolName == "write_wiki" {
-		return "Fatto: ho aggiornato la wiki e ho fermato il turno dopo il salvataggio."
+	if toolName == "write_file" || toolName == "apply_patch" {
+		return "Fatto: ho aggiornato i file richiesti e ho fermato il turno dopo il salvataggio."
 	}
 	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
 }

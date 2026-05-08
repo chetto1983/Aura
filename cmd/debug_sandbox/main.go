@@ -272,38 +272,42 @@ func runSkillSandboxE2E(ctx context.Context, rt sandbox.Runtime) executeCodeTool
 	}
 
 	loader := skills.NewLoader("skills")
-	listOut, err := tools.NewListSkillsTool(loader).Execute(ctx, map[string]any{})
+	loaded, err := loader.LoadAll()
 	if err != nil {
-		report.Error = "list skills: " + err.Error()
+		report.Error = "load skills: " + err.Error()
 		return report
 	}
+	names := make([]string, 0, len(loaded))
+	for _, skill := range loaded {
+		names = append(names, skill.Name)
+	}
+	listOut := strings.Join(names, "\n")
 	if !strings.Contains(listOut, "aura-python-sandbox") || !strings.Contains(listOut, "aura-source-extraction") {
 		report.Output = listOut
-		report.Error = "runtime skills missing from list_skills output"
+		report.Error = "runtime skills missing from loader output"
 		return report
 	}
 
-	readSkill := tools.NewReadSkillTool(loader)
-	pythonSkill, err := readSkill.Execute(ctx, map[string]any{"name": "aura-python-sandbox"})
+	pythonSkill, err := loader.LoadByName("aura-python-sandbox")
 	if err != nil {
-		report.Error = "read aura-python-sandbox: " + err.Error()
+		report.Error = "load aura-python-sandbox: " + err.Error()
 		return report
 	}
-	sourceSkill, err := readSkill.Execute(ctx, map[string]any{"name": "aura-source-extraction"})
+	sourceSkill, err := loader.LoadByName("aura-source-extraction")
 	if err != nil {
-		report.Error = "read aura-source-extraction: " + err.Error()
+		report.Error = "load aura-source-extraction: " + err.Error()
 		return report
 	}
 	for _, want := range []string{"/tmp/aura_out", "allow_network=false", "sandbox_artifact"} {
-		if !strings.Contains(pythonSkill, want) {
-			report.Output = pythonSkill
+		if !strings.Contains(pythonSkill.Content, want) {
+			report.Output = pythonSkill.Content
 			report.Error = "aura-python-sandbox missing guidance: " + want
 			return report
 		}
 	}
 	for _, want := range []string{"extract.md", "Do not run arbitrary user Python"} {
-		if !strings.Contains(sourceSkill, want) {
-			report.Output = sourceSkill
+		if !strings.Contains(sourceSkill.Content, want) {
+			report.Output = sourceSkill.Content
 			report.Error = "aura-source-extraction missing guidance: " + want
 			return report
 		}

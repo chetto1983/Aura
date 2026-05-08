@@ -19,11 +19,11 @@ import (
 )
 
 func TestToolActivityMessageDoesNotExposeArgs(t *testing.T) {
-	got := toolActivityMessage("write_wiki")
+	got := toolActivityMessage("write_file")
 	if got != "Sto lavorando alla richiesta..." {
 		t.Fatalf("toolActivityMessage() = %q, want generic activity text", got)
 	}
-	if strings.Contains(got, "write_wiki") {
+	if strings.Contains(got, "write_file") {
 		t.Fatalf("toolActivityMessage leaked tool name: %q", got)
 	}
 }
@@ -248,16 +248,16 @@ func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {
 	}
 }
 
-func TestProposalToolsAvailableRequiresRegisteredTool(t *testing.T) {
+func TestProposalToolsAreRetiredFromPromptAvailability(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	b := &Bot{tools: reg}
 	if b.proposalToolsAvailable() {
-		t.Fatal("proposal tools should be unavailable without propose_wiki_change")
+		t.Fatal("proposal tools should be unavailable")
 	}
 
 	reg.Register(fakeTelegramTool{name: "propose_wiki_change"})
-	if !b.proposalToolsAvailable() {
-		t.Fatal("proposal tools should be available with registered proposal tool")
+	if b.proposalToolsAvailable() {
+		t.Fatal("proposal tools should remain unavailable even if a legacy tool is registered")
 	}
 }
 

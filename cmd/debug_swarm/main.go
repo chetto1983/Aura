@@ -283,8 +283,8 @@ func smokeSpawnTool(ctx context.Context, manager *swarm.Manager) bool {
 	out, err := swarmtools.NewSpawnAuraBotTool(manager).Execute(ctx, map[string]any{
 		"name":  "debug spawn tool smoke",
 		"role":  "librarian",
-		"task":  "Use the wiki listing path and return a concise debug result.",
-		"tools": []any{"list_wiki"},
+		"task":  "Use the workspace listing path and return a concise debug result.",
+		"tools": []any{"list_files"},
 	})
 	return err == nil && json.Valid([]byte(out))
 }
@@ -650,10 +650,9 @@ func appendUnique(values []string, value string) []string {
 func fakeRegistry(logger *slog.Logger) *tools.Registry {
 	reg := tools.NewRegistry(logger)
 	for _, name := range []string{
-		"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki",
+		"list_files", "read_file", "search_files", "search_memory",
 		"list_sources", "read_source", "lint_sources",
 		"web_search", "web_fetch",
-		"list_skills", "read_skill", "search_skill_catalog",
 	} {
 		reg.Register(fakeTool{name: name})
 	}
@@ -695,7 +694,7 @@ func (t fakeTool) Execute(ctx context.Context, args map[string]any) (string, err
 }
 
 func preferredTool(defs []llm.ToolDefinition) string {
-	preferred := []string{"search_memory", "list_wiki", "read_wiki", "lint_wiki", "search_wiki", "list_sources", "read_source", "list_skills", "web_search", "web_fetch"}
+	preferred := []string{"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "web_search", "web_fetch"}
 	for _, want := range preferred {
 		for _, def := range defs {
 			if def.Name == want {
@@ -708,14 +707,14 @@ func preferredTool(defs []llm.ToolDefinition) string {
 
 func fakeArgs(tool string) map[string]any {
 	switch tool {
-	case "read_wiki":
-		return map[string]any{"slug": "index"}
+	case "read_file":
+		return map[string]any{"path": "wiki/index.md"}
 	case "read_source":
 		return map[string]any{"source": "source-inbox"}
-	case "read_skill":
-		return map[string]any{"name": "aura-implementation"}
-	case "search_memory", "search_wiki", "web_search", "search_skill_catalog":
+	case "search_memory", "search_files", "web_search":
 		return map[string]any{"query": "Aura second brain"}
+	case "list_files":
+		return map[string]any{"path": "."}
 	default:
 		return map[string]any{}
 	}

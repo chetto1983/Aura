@@ -49,10 +49,8 @@ func TestProfilesReturnClones(t *testing.T) {
 func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 	safe := SchedulerSafeTools()
 	for _, forbidden := range []string{
-		"write_wiki",
-		"append_log",
-		"propose_wiki_change",
-		"propose_skill_change",
+		"write_file",
+		"apply_patch",
 		"schedule_task",
 		"run_task_now",
 		"spawn_aurabot",
@@ -88,7 +86,7 @@ func TestSandboxCodeProfileIsExplicit(t *testing.T) {
 }
 
 func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
-	got := FilterAllowed([]string{" web_search ", "write_wiki", "web_search", "read_file"}, SchedulerSafeTools())
+	got := FilterAllowed([]string{" web_search ", "write_file", "web_search", "read_file"}, SchedulerSafeTools())
 	want := []string{"web_search", "read_file"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("filtered = %+v, want %+v", got, want)

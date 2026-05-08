@@ -8,10 +8,10 @@ import (
 
 func TestDedupeToolCallsSkipsIdenticalCalls(t *testing.T) {
 	calls := []llm.ToolCall{
-		{ID: "1", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
-		{ID: "2", Name: "search_wiki", Arguments: map[string]any{"query": "memory"}},
-		{ID: "3", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
-		{ID: "4", Name: "read_wiki", Arguments: map[string]any{"slug": "agent-loop"}},
+		{ID: "1", Name: "search_files", Arguments: map[string]any{"query": "agent loop"}},
+		{ID: "2", Name: "search_files", Arguments: map[string]any{"query": "memory"}},
+		{ID: "3", Name: "search_files", Arguments: map[string]any{"query": "agent loop"}},
+		{ID: "4", Name: "read_file", Arguments: map[string]any{"path": "wiki/agent-loop.md"}},
 	}
 
 	kept, duplicates := DedupeToolCalls(calls)
@@ -26,8 +26,8 @@ func TestDedupeToolCallsSkipsIdenticalCalls(t *testing.T) {
 
 func TestDedupeToolCallsCanonicalizesArgumentOrder(t *testing.T) {
 	calls := []llm.ToolCall{
-		{ID: "1", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop", "limit": 5}},
-		{ID: "2", Name: "search_wiki", Arguments: map[string]any{"limit": 5, "query": "agent loop"}},
+		{ID: "1", Name: "search_files", Arguments: map[string]any{"query": "agent loop", "limit": 5}},
+		{ID: "2", Name: "search_files", Arguments: map[string]any{"limit": 5, "query": "agent loop"}},
 	}
 
 	kept, duplicates := DedupeToolCalls(calls)

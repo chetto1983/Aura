@@ -18,15 +18,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/workspace"
 )
 
 type scenario struct {
@@ -95,9 +94,13 @@ func main() {
 	reg.Register(tools.NewCreateDOCXTool(store, sender))
 	reg.Register(tools.NewCreatePDFTool(store, sender))
 	if *skillDocx {
-		loader := newDebugSkillLoader(envDefault("SKILLS_PATH", "skills"), os.Getenv("SKILLS_INSTALL_PROJECT_DIR"))
-		reg.Register(tools.NewListSkillsTool(loader))
-		reg.Register(tools.NewReadSkillTool(loader))
+		root, err := workspace.New(".")
+		if err != nil {
+			fail("workspace.New: %v", err)
+		}
+		for _, tool := range tools.NewWorkspaceFileTools(root) {
+			reg.Register(tool)
+		}
 	}
 
 	client := llm.NewOpenAIClient(llm.OpenAIConfig{
@@ -235,7 +238,7 @@ func buildSystemPrompt(skillAware bool) string {
 		"\n\nFor this smoke test, choose exactly the file creation tool that matches the requested output format. " +
 		"Set deliver=true or omit it so the file is sent. Do not answer without creating the file."
 	if skillAware {
-		prompt += " Inspect installed local skills with list_skills, then call read_skill for the matching document skill before create_docx. The expected order is list_skills/read_skill before create_docx."
+		prompt += " Inspect installed local skills with search_files, then call read_file for the matching document skill before create_docx. The expected order is search_files/read_file before create_docx."
 	}
 	return prompt
 }
@@ -248,31 +251,11 @@ func skillBackedDocxScenario() scenario {
 			"README installazione Docker, docs/container.md stack e backup, docs/implementation-tracker.md stato shipped, e il piano v4.0 MCP Marketplace. " +
 			"Includi titolo, breve panoramica, punti chiave, tabella dei documenti e prossimi passi.",
 		wantTool:  "create_docx",
-		wantTools: []string{"list_skills", "read_skill", "create_docx"},
+		wantTools: []string{"search_files", "read_file", "create_docx"},
 		wantKind:  source.KindDOCX,
 		wantAsset: "original.docx",
 		wantExt:   ".docx",
 	}
-}
-
-func newDebugSkillLoader(skillsPath, installProjectDir string) *skills.Loader {
-	skillsPath = strings.TrimSpace(skillsPath)
-	if skillsPath == "" {
-		skillsPath = "skills"
-	}
-	installRoot := strings.TrimSpace(installProjectDir)
-	if installRoot == "" {
-		installRoot = "."
-	}
-	return skills.NewLoader(
-		skillsPath,
-		".agents/skills",
-		".claude/skills",
-		filepath.Join(skillsPath, ".agents", "skills"),
-		filepath.Join(skillsPath, ".claude", "skills"),
-		filepath.Join(installRoot, ".agents", "skills"),
-		filepath.Join(installRoot, ".claude", "skills"),
-	)
 }
 
 type toolResult struct {

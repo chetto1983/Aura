@@ -128,7 +128,7 @@ func TestOpenAIClientSendTools(t *testing.T) {
 						"id": "call_1",
 						"type": "function",
 						"function": {
-							"name": "search_wiki",
+							"name": "search_files",
 							"arguments": "{\"query\":\"aura\"}"
 						}
 					}]
@@ -151,7 +151,7 @@ func TestOpenAIClientSendTools(t *testing.T) {
 		},
 		Tools: []ToolDefinition{
 			{
-				Name:        "search_wiki",
+				Name:        "search_files",
 				Description: "Search wiki",
 				Parameters: map[string]any{
 					"type":       "object",
@@ -164,14 +164,14 @@ func TestOpenAIClientSendTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
-	if len(received.Tools) != 1 || received.Tools[0].Function.Name != "search_wiki" {
+	if len(received.Tools) != 1 || received.Tools[0].Function.Name != "search_files" {
 		t.Fatalf("tools not sent correctly: %+v", received.Tools)
 	}
 	if !result.HasToolCalls || len(result.ToolCalls) != 1 {
 		t.Fatalf("expected one tool call, got has=%v len=%d", result.HasToolCalls, len(result.ToolCalls))
 	}
-	if result.ToolCalls[0].Name != "search_wiki" {
-		t.Errorf("tool name = %q, want search_wiki", result.ToolCalls[0].Name)
+	if result.ToolCalls[0].Name != "search_files" {
+		t.Errorf("tool name = %q, want search_files", result.ToolCalls[0].Name)
 	}
 	if result.ToolCalls[0].Arguments["query"] != "aura" {
 		t.Errorf("query arg = %v, want aura", result.ToolCalls[0].Arguments["query"])
@@ -246,7 +246,7 @@ func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
 		// Realistic OpenAI streaming shape: id+name in first chunk,
 		// arguments built up in fragments, finish_reason on terminator.
 		chunks := []string{
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"search_wiki","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"search_files","arguments":""}}]}}]}`,
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"que"}}]}}]}`,
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ry\":"}}]}}]}`,
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"hi\"}"}}]}}]}`,
@@ -263,7 +263,7 @@ func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
 	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4"})
 	ch, err := client.Stream(context.Background(), Request{
 		Messages: []Message{{Role: "user", Content: "search hi"}},
-		Tools:    []ToolDefinition{{Name: "search_wiki", Description: "search"}},
+		Tools:    []ToolDefinition{{Name: "search_files", Description: "search"}},
 	})
 	if err != nil {
 		t.Fatalf("Stream() error = %v", err)
@@ -292,8 +292,8 @@ func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
 	if tc.ID != "call_abc" {
 		t.Errorf("tool call ID = %q, want call_abc", tc.ID)
 	}
-	if tc.Name != "search_wiki" {
-		t.Errorf("tool call name = %q, want search_wiki", tc.Name)
+	if tc.Name != "search_files" {
+		t.Errorf("tool call name = %q, want search_files", tc.Name)
 	}
 	if got, want := tc.Arguments["query"], "hi"; got != want {
 		t.Errorf("tool call arguments[query] = %v, want %q (full args: %#v)", got, want, tc.Arguments)

@@ -1,7 +1,7 @@
 // debug_memory_quality is a hermetic scorecard for Aura's daily second-brain
 // usefulness. It seeds realistic source/archive evidence, runs everyday
-// memory questions through search_memory, creates review-gated proposals for
-// scenarios that should grow the wiki, and reports quality metrics.
+// memory questions through search_memory, applies bounded workspace file edits
+// for scenarios that should grow durable memory, and reports quality metrics.
 //
 //	go run ./cmd/debug_memory_quality
 //	go run ./cmd/debug_memory_quality -json
@@ -27,24 +27,24 @@ import (
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/workspace"
 )
 
 type scenario struct {
-	Name             string   `json:"name"`
-	Question         string   `json:"question"`
-	Query            string   `json:"query"`
-	Scope            string   `json:"scope,omitempty"`
-	ExpectKinds      []string `json:"expect_kinds,omitempty"`
-	ShouldPropose    bool     `json:"should_propose,omitempty"`
-	ProposalAction   string   `json:"proposal_action,omitempty"`
-	ProposalTarget   string   `json:"proposal_target,omitempty"`
-	ProposalCategory string   `json:"proposal_category,omitempty"`
+	Name         string   `json:"name"`
+	Question     string   `json:"question"`
+	Query        string   `json:"query"`
+	Scope        string   `json:"scope,omitempty"`
+	ExpectKinds  []string `json:"expect_kinds,omitempty"`
+	ShouldEdit   bool     `json:"should_edit,omitempty"`
+	EditAction   string   `json:"edit_action,omitempty"`
+	EditTarget   string   `json:"edit_target,omitempty"`
+	EditCategory string   `json:"edit_category,omitempty"`
 }
 
 type scenarioResult struct {
@@ -54,8 +54,8 @@ type scenarioResult struct {
 	Pass            bool     `json:"pass"`
 	EvidenceCount   int      `json:"evidence_count"`
 	EvidenceKinds   []string `json:"evidence_kinds"`
-	ProposalID      int64    `json:"proposal_id,omitempty"`
-	ProposalOK      bool     `json:"proposal_ok,omitempty"`
+	EditPath        string   `json:"edit_path,omitempty"`
+	EditOK          bool     `json:"edit_ok,omitempty"`
 	QualityIssues   []string `json:"quality_issues,omitempty"`
 	MissingEvidence []string `json:"missing_evidence,omitempty"`
 }
@@ -65,9 +65,9 @@ type report struct {
 	Questions           int              `json:"questions"`
 	Passed              int              `json:"passed"`
 	EvidenceHitRate     float64          `json:"evidence_hit_rate"`
-	ProposalScenarios   int              `json:"proposal_scenarios"`
-	ProposalsCreated    int              `json:"proposals_created"`
-	ProposalQualityRate float64          `json:"proposal_quality_rate"`
+	EditScenarios       int              `json:"edit_scenarios"`
+	EditsApplied        int              `json:"edits_applied"`
+	EditQualityRate     float64          `json:"edit_quality_rate"`
 	SourceEvidenceHits  int              `json:"source_evidence_hits"`
 	ArchiveEvidenceHits int              `json:"archive_evidence_hits"`
 	Warnings            []string         `json:"warnings,omitempty"`
@@ -75,39 +75,41 @@ type report struct {
 }
 
 type liveReport struct {
-	OK                      bool                 `json:"ok"`
-	Model                   string               `json:"model"`
-	Questions               int                  `json:"questions"`
-	Passed                  int                  `json:"passed"`
-	RoutingPassRate         float64              `json:"routing_pass_rate"`
-	LatencyBudgetMS         int64                `json:"latency_budget_ms"`
-	AvgScenarioMS           int64                `json:"avg_scenario_ms"`
-	MaxScenarioMS           int64                `json:"max_scenario_ms"`
-	SlowScenarios           int                  `json:"slow_scenarios"`
-	SearchMemoryCalls       int                  `json:"search_memory_calls"`
-	ProposalCalls           int                  `json:"proposal_calls"`
-	UnexpectedProposalCalls int                  `json:"unexpected_proposal_calls"`
-	LLMCalls                int                  `json:"llm_calls"`
-	ToolCalls               int                  `json:"tool_calls"`
-	ElapsedMS               int64                `json:"elapsed_ms"`
-	Warnings                []string             `json:"warnings,omitempty"`
-	Results                 []liveScenarioResult `json:"results"`
+	OK                     bool                 `json:"ok"`
+	Model                  string               `json:"model"`
+	Questions              int                  `json:"questions"`
+	Passed                 int                  `json:"passed"`
+	RoutingPassRate        float64              `json:"routing_pass_rate"`
+	LatencyBudgetMS        int64                `json:"latency_budget_ms"`
+	AvgScenarioMS          int64                `json:"avg_scenario_ms"`
+	MaxScenarioMS          int64                `json:"max_scenario_ms"`
+	SlowScenarios          int                  `json:"slow_scenarios"`
+	SearchMemoryCalls      int                  `json:"search_memory_calls"`
+	ReadFileCalls          int                  `json:"read_file_calls"`
+	ApplyPatchCalls        int                  `json:"apply_patch_calls"`
+	WriteFileCalls         int                  `json:"write_file_calls"`
+	ForbiddenProposalCalls int                  `json:"forbidden_proposal_calls"`
+	LLMCalls               int                  `json:"llm_calls"`
+	ToolCalls              int                  `json:"tool_calls"`
+	ElapsedMS              int64                `json:"elapsed_ms"`
+	Warnings               []string             `json:"warnings,omitempty"`
+	Results                []liveScenarioResult `json:"results"`
 }
 
 type liveScenarioResult struct {
-	Name               string   `json:"name"`
-	Question           string   `json:"question"`
-	Pass               bool     `json:"pass"`
-	ToolCalls          []string `json:"tool_calls"`
-	LLMCalls           int      `json:"llm_calls"`
-	ElapsedMS          int64    `json:"elapsed_ms"`
-	LatencyBudgetMS    int64    `json:"latency_budget_ms,omitempty"`
-	EvidenceCount      int      `json:"evidence_count"`
-	EvidenceKinds      []string `json:"evidence_kinds"`
-	ProposalOK         bool     `json:"proposal_ok,omitempty"`
-	UnexpectedProposal bool     `json:"unexpected_proposal,omitempty"`
-	Issues             []string `json:"issues,omitempty"`
-	Final              string   `json:"final,omitempty"`
+	Name              string   `json:"name"`
+	Question          string   `json:"question"`
+	Pass              bool     `json:"pass"`
+	ToolCalls         []string `json:"tool_calls"`
+	LLMCalls          int      `json:"llm_calls"`
+	ElapsedMS         int64    `json:"elapsed_ms"`
+	LatencyBudgetMS   int64    `json:"latency_budget_ms,omitempty"`
+	EvidenceCount     int      `json:"evidence_count"`
+	EvidenceKinds     []string `json:"evidence_kinds"`
+	EditOK            bool     `json:"edit_ok,omitempty"`
+	ForbiddenProposal bool     `json:"forbidden_proposal,omitempty"`
+	Issues            []string `json:"issues,omitempty"`
+	Final             string   `json:"final,omitempty"`
 }
 
 type savedReport struct {
@@ -155,6 +157,8 @@ type evidenceItem struct {
 	Score   float64 `json:"score"`
 	Snippet string  `json:"snippet,omitempty"`
 }
+
+const durableMemoryFile = "wiki/aura-memory.md"
 
 func main() {
 	jsonOut := flag.Bool("json", false, "print machine-readable JSON only")
@@ -261,20 +265,25 @@ func run(ctx context.Context, limit int) (report, string, error) {
 	if err != nil {
 		return report{}, wikiDir, fmt.Errorf("archive store: %w", err)
 	}
-	summaries := summarizer.NewSummariesStore(sched.DB())
 	if err := seedMemory(ctx, srcStore, archive); err != nil {
+		return report{}, wikiDir, err
+	}
+	workspaceRoot, err := seedWorkspace(filepath.Join(wikiDir, "workspace"))
+	if err != nil {
 		return report{}, wikiDir, err
 	}
 
 	searchTool := tools.NewSearchMemoryTool(nil, srcStore, archive)
-	proposalTool := tools.NewProposeWikiChangeTool(summaries)
-	if searchTool == nil || proposalTool == nil {
+	if searchTool == nil {
 		return report{}, wikiDir, fmt.Errorf("memory tools unavailable")
 	}
+	readTool := tools.NewReadFileTool(workspaceRoot)
+	patchTool := tools.NewApplyPatchTool(workspaceRoot)
+	writeTool := tools.NewWriteFileTool(workspaceRoot)
 
 	rep := report{Results: make([]scenarioResult, 0, len(scenarios()))}
 	for _, sc := range selectedScenarios(limit) {
-		result := runScenario(ctx, sc, searchTool, proposalTool)
+		result := runScenario(ctx, sc, searchTool, readTool, patchTool, writeTool)
 		rep.Results = append(rep.Results, result)
 		rep.Questions++
 		if result.EvidenceCount > 0 {
@@ -286,26 +295,26 @@ func run(ctx context.Context, limit int) (report, string, error) {
 		if hasKind(result.EvidenceKinds, "archive") {
 			rep.ArchiveEvidenceHits++
 		}
-		if sc.ShouldPropose {
-			rep.ProposalScenarios++
-			if result.ProposalID > 0 {
-				rep.ProposalsCreated++
+		if sc.ShouldEdit {
+			rep.EditScenarios++
+			if result.EditPath != "" {
+				rep.EditsApplied++
 			}
-			if result.ProposalOK {
-				rep.ProposalQualityRate++
+			if result.EditOK {
+				rep.EditQualityRate++
 			}
 		}
 	}
 	if rep.Questions > 0 {
 		rep.EvidenceHitRate = float64(rep.Passed) / float64(rep.Questions)
 	}
-	if rep.ProposalScenarios > 0 {
-		rep.ProposalQualityRate = rep.ProposalQualityRate / float64(rep.ProposalScenarios)
+	if rep.EditScenarios > 0 {
+		rep.EditQualityRate = rep.EditQualityRate / float64(rep.EditScenarios)
 	}
-	proposalGate := rep.ProposalScenarios == 0 || rep.ProposalQualityRate >= 0.90
-	rep.OK = rep.EvidenceHitRate >= 0.90 && proposalGate && rep.SourceEvidenceHits > 0 && rep.ArchiveEvidenceHits > 0
+	editGate := rep.EditScenarios == 0 || rep.EditQualityRate >= 0.90
+	rep.OK = rep.EvidenceHitRate >= 0.90 && editGate && rep.SourceEvidenceHits > 0 && rep.ArchiveEvidenceHits > 0
 	if !rep.OK {
-		rep.Warnings = append(rep.Warnings, "memory quality gate failed: want >=90% evidence hit rate and >=90% proposal quality")
+		rep.Warnings = append(rep.Warnings, "memory quality gate failed: want >=90% evidence hit rate and >=90% file-edit quality")
 	}
 	return rep, wikiDir, nil
 }
@@ -341,8 +350,11 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 	if err != nil {
 		return liveReport{}, wikiDir, fmt.Errorf("archive store: %w", err)
 	}
-	summaries := summarizer.NewSummariesStore(sched.DB())
 	if err := seedMemory(ctx, srcStore, archive); err != nil {
+		return liveReport{}, wikiDir, err
+	}
+	workspaceRoot, err := seedWorkspace(filepath.Join(wikiDir, "workspace"))
+	if err != nil {
 		return liveReport{}, wikiDir, err
 	}
 
@@ -350,7 +362,7 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 	if tool := tools.NewSearchMemoryTool(nil, srcStore, archive); tool != nil {
 		reg.Register(tool)
 	}
-	if tool := tools.NewProposeWikiChangeTool(summaries); tool != nil {
+	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
 		reg.Register(tool)
 	}
 
@@ -393,11 +405,14 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 			switch name {
 			case "search_memory":
 				rep.SearchMemoryCalls++
+			case "read_file":
+				rep.ReadFileCalls++
+			case "apply_patch":
+				rep.ApplyPatchCalls++
+			case "write_file":
+				rep.WriteFileCalls++
 			case "propose_wiki_change":
-				rep.ProposalCalls++
-				if !sc.ShouldPropose {
-					rep.UnexpectedProposalCalls++
-				}
+				rep.ForbiddenProposalCalls++
 			}
 		}
 	}
@@ -408,10 +423,10 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 	}
 	rep.OK = rep.RoutingPassRate >= 0.85 &&
 		rep.SearchMemoryCalls >= rep.Questions &&
-		rep.UnexpectedProposalCalls == 0 &&
+		rep.ForbiddenProposalCalls == 0 &&
 		rep.SlowScenarios == 0
 	if !rep.OK {
-		rep.Warnings = append(rep.Warnings, "live usefulness gate failed: want >=85% pass rate, search_memory on every question, no unexpected proposals, and no slow scenarios over the end-user latency budget")
+		rep.Warnings = append(rep.Warnings, "live usefulness gate failed: want >=85% pass rate, search_memory on every question, no propose_wiki_change calls, and no slow scenarios over the end-user latency budget")
 	}
 	return rep, wikiDir, nil
 }
@@ -442,7 +457,7 @@ func loadLiveConfig(ctx context.Context) (*config.Config, error) {
 	return cfg, nil
 }
 
-func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, proposalTool tools.Tool) scenarioResult {
+func runScenario(ctx context.Context, sc scenario, searchTool, readTool, patchTool, writeTool tools.Tool) scenarioResult {
 	res := scenarioResult{Name: sc.Name, Question: sc.Question, Query: sc.Query}
 	args := map[string]any{"query": sc.Query, "limit": 6}
 	if sc.Scope != "" {
@@ -466,9 +481,9 @@ func runScenario(ctx context.Context, sc scenario, searchTool tools.Tool, propos
 		}
 	}
 	res.Pass = len(res.MissingEvidence) == 0 && res.EvidenceCount > 0
-	if sc.ShouldPropose {
-		res.ProposalID, res.ProposalOK, res.QualityIssues = createAndScoreProposal(ctx, sc, env.Items, proposalTool)
-		res.Pass = res.Pass && res.ProposalOK
+	if sc.ShouldEdit {
+		res.EditPath, res.EditOK, res.QualityIssues = createAndScoreFileEdit(ctx, sc, env.Items, readTool, patchTool, writeTool)
+		res.Pass = res.Pass && res.EditOK
 	}
 	return res
 }
@@ -477,9 +492,9 @@ func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liv
 	res := liveScenarioResult{Name: sc.Name, Question: sc.Question}
 	toolAllowlist := []string{"search_memory"}
 	maxToolCalls := 1
-	if sc.ShouldPropose {
-		toolAllowlist = append(toolAllowlist, "propose_wiki_change")
-		maxToolCalls = 2
+	if sc.ShouldEdit {
+		toolAllowlist = append(toolAllowlist, "read_file", "apply_patch", "write_file")
+		maxToolCalls = 4
 	}
 	started := time.Now()
 	result, err := runner.Run(ctx, agent.Task{
@@ -507,10 +522,10 @@ func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liv
 	if strings.Contains(result.Content, "interrupted before a final answer") {
 		res.Issues = append(res.Issues, "runner returned a deadline partial instead of a final answer")
 	}
-	envelopes, proposalOK := inspectLiveMessages(result.Messages)
+	envelopes, editOK := inspectLiveMessages(result.Messages)
 	res.EvidenceKinds = evidenceKinds(envelopes)
 	res.EvidenceCount = len(envelopes)
-	res.ProposalOK = proposalOK
+	res.EditOK = editOK
 	res.ToolCalls = toolCallNames(result.Messages)
 
 	if !hasString(res.ToolCalls, "search_memory") {
@@ -521,69 +536,89 @@ func runLiveScenario(ctx context.Context, runner *agent.Runner, sc scenario, liv
 			res.Issues = append(res.Issues, "missing evidence kind "+kind)
 		}
 	}
-	if sc.ShouldPropose {
-		if !hasString(res.ToolCalls, "propose_wiki_change") {
-			res.Issues = append(res.Issues, "missing propose_wiki_change call")
+	if sc.ShouldEdit {
+		if !hasString(res.ToolCalls, "read_file") {
+			res.Issues = append(res.Issues, "missing read_file call for durable memory edit")
 		}
-		if !res.ProposalOK {
-			res.Issues = append(res.Issues, "proposal was not created cleanly")
+		if !hasString(res.ToolCalls, "apply_patch") && !hasString(res.ToolCalls, "write_file") {
+			res.Issues = append(res.Issues, "missing apply_patch or write_file call for durable memory edit")
 		}
-	} else if hasString(res.ToolCalls, "propose_wiki_change") {
-		res.UnexpectedProposal = true
-		res.Issues = append(res.Issues, "unexpected proposal for answer-only question")
+		if !res.EditOK {
+			res.Issues = append(res.Issues, "durable memory file edit was not applied cleanly")
+		}
+	}
+	if hasString(res.ToolCalls, "propose_wiki_change") {
+		res.ForbiddenProposal = true
+		res.Issues = append(res.Issues, "forbidden propose_wiki_change call")
 	}
 	res.Pass = len(res.Issues) == 0 && res.EvidenceCount > 0
 	return res
 }
 
-func createAndScoreProposal(ctx context.Context, sc scenario, evidence []evidenceItem, proposalTool tools.Tool) (int64, bool, []string) {
+func createAndScoreFileEdit(ctx context.Context, sc scenario, evidence []evidenceItem, readTool, patchTool, writeTool tools.Tool) (string, bool, []string) {
 	issues := []string{}
 	if len(evidence) == 0 {
-		issues = append(issues, "proposal has no evidence")
+		issues = append(issues, "file edit has no evidence")
 	}
-	action := sc.ProposalAction
-	if action == "" {
-		action = "patch"
-	}
-	args := map[string]any{
-		"action":        action,
-		"fact":          proposalFact(sc),
-		"category":      sc.ProposalCategory,
-		"origin_tool":   "search_memory",
-		"origin_reason": "debug_memory_quality scenario: " + sc.Name,
-		"confidence":    0.82,
-		"evidence":      evidenceArgs(evidence),
-	}
-	if action == "patch" {
-		args["target_slug"] = sc.ProposalTarget
-	}
-	out, err := proposalTool.Execute(tools.WithUserID(ctx, "9001"), args)
+	target := durableEditTarget(sc)
+	content, err := readWorkspaceText(ctx, readTool, target)
 	if err != nil {
-		issues = append(issues, err.Error())
-		return 0, false, issues
+		issues = append(issues, "read_file: "+err.Error())
+		return target, false, issues
+	}
+	line := durableEditLine(sc, evidence)
+	marker := "## Durable Insights\n"
+	updated := content
+	if strings.Contains(content, marker) {
+		_, err = patchTool.Execute(ctx, map[string]any{
+			"path": target,
+			"old":  marker,
+			"new":  marker + line,
+		})
+	} else {
+		if !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		updated += marker + line
+		_, err = writeTool.Execute(ctx, map[string]any{"path": target, "content": updated})
+	}
+	if err != nil {
+		issues = append(issues, "file edit: "+err.Error())
+		return target, false, issues
+	}
+	verifyContent, err := readWorkspaceText(ctx, readTool, target)
+	if err != nil {
+		issues = append(issues, "verify read_file: "+err.Error())
+		return target, false, issues
+	}
+	if !strings.Contains(verifyContent, line) {
+		issues = append(issues, "file edit missing expected durable insight")
+	}
+	if strings.TrimSpace(sc.EditCategory) == "" {
+		issues = append(issues, "edit category is empty")
+	}
+	if strings.TrimSpace(sc.EditTarget) == "" {
+		issues = append(issues, "edit target is empty")
+	}
+	return target, len(issues) == 0, issues
+}
+
+func readWorkspaceText(ctx context.Context, readTool tools.Tool, target string) (string, error) {
+	out, err := readTool.Execute(ctx, map[string]any{"path": target, "max_bytes": 64 * 1024})
+	if err != nil {
+		return "", err
 	}
 	var resp struct {
-		OK       bool  `json:"ok"`
-		ID       int64 `json:"id"`
-		Evidence int   `json:"evidence"`
+		Encoding string `json:"encoding"`
+		Content  string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
-		issues = append(issues, "proposal response JSON: "+err.Error())
-		return 0, false, issues
+		return "", fmt.Errorf("read_file response JSON: %w", err)
 	}
-	if !resp.OK || resp.ID == 0 {
-		issues = append(issues, "proposal response not ok")
+	if resp.Encoding != "utf-8" {
+		return "", fmt.Errorf("read_file returned %s content", resp.Encoding)
 	}
-	if resp.Evidence == 0 {
-		issues = append(issues, "proposal lost evidence refs")
-	}
-	if strings.TrimSpace(sc.ProposalCategory) == "" {
-		issues = append(issues, "proposal category is empty")
-	}
-	if action == "patch" && strings.TrimSpace(sc.ProposalTarget) == "" {
-		issues = append(issues, "patch proposal target is empty")
-	}
-	return resp.ID, len(issues) == 0, issues
+	return resp.Content, nil
 }
 
 func seedMemory(ctx context.Context, sources *source.Store, archive *conversation.ArchiveStore) error {
@@ -623,6 +658,25 @@ Cancellation clause: tenant must notify 60 days before leaving. Keep this clause
 	return seedArchive(ctx, archive)
 }
 
+func seedWorkspace(root string) (*workspace.Root, error) {
+	if err := os.MkdirAll(filepath.Join(root, "wiki"), 0o755); err != nil {
+		return nil, fmt.Errorf("seed workspace: %w", err)
+	}
+	body := `# Aura Memory
+
+## Durable Insights
+- Baseline: durable memory updates must be backed by search evidence and written through bounded workspace file tools.
+`
+	if err := os.WriteFile(filepath.Join(root, durableMemoryFile), []byte(body), 0o644); err != nil {
+		return nil, fmt.Errorf("seed workspace file: %w", err)
+	}
+	ws, err := workspace.New(root)
+	if err != nil {
+		return nil, fmt.Errorf("workspace root: %w", err)
+	}
+	return ws, nil
+}
+
 func seedSource(ctx context.Context, store *source.Store, kind source.Kind, filename, mime string, body []byte) (*source.Source, error) {
 	src, _, err := store.Put(ctx, source.PutInput{Kind: kind, Filename: filename, MimeType: mime, Bytes: body})
 	if err != nil {
@@ -657,20 +711,20 @@ func scenarios() []scenario {
 		{Name: "friday_planning", Question: "Cosa devo mettere nel planning di venerdi?", Query: "Q2 KPI report Friday planning commercialista", Scope: "all", ExpectKinds: []string{"source", "archive"}},
 		{Name: "passport_trip", Question: "Prima del viaggio cosa devo controllare?", Query: "passport renewal Lisbon trip", Scope: "sources", ExpectKinds: []string{"source"}},
 		{Name: "housing_decision", Question: "Se cambio casa, quale vincolo devo ricordare?", Query: "housing decisions cancellation clause 60 days", Scope: "sources", ExpectKinds: []string{"source"}},
-		{Name: "second_brain_audit", Question: "Fai audit del mio second brain: cosa va controllato?", Query: "second brain audit stale pages missing evidence workflow proposals", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldPropose: true, ProposalAction: "patch", ProposalTarget: "aura-memory", ProposalCategory: "project"},
-		{Name: "review_policy", Question: "Come deve comportarsi Aura prima di scrivere in wiki?", Query: "proposal review review-gated evidence before wiki writes", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldPropose: true, ProposalAction: "patch", ProposalTarget: "aura-memory", ProposalCategory: "project"},
+		{Name: "second_brain_audit", Question: "Fai audit del mio second brain: cosa va controllato?", Query: "second brain audit stale pages missing evidence workflow proposals", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldEdit: true, EditAction: "patch", EditTarget: durableMemoryFile, EditCategory: "project"},
+		{Name: "review_policy", Question: "Come deve comportarsi Aura prima di scrivere in wiki?", Query: "proposal review review-gated evidence before wiki writes", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldEdit: true, EditAction: "patch", EditTarget: durableMemoryFile, EditCategory: "project"},
 		{Name: "weekly_ritual", Question: "Che rituale ricorrente dovrei avere questa settimana?", Query: "budget review weekly planning ritual", Scope: "sources", ExpectKinds: []string{"source"}},
 		{Name: "admin_timing", Question: "Quando e' meglio fare task amministrativi?", Query: "admin tasks after lunch", Scope: "archive", ExpectKinds: []string{"archive"}},
 		{Name: "invoice_docs", Question: "Cosa devo mandare al commercialista?", Query: "send invoice documents commercialista Friday morning", Scope: "sources", ExpectKinds: []string{"source"}},
 		{Name: "remembered_milestone", Question: "Qual e' il milestone Aura sulla memoria?", Query: "Aura milestone proposal review evidence wiki writes", Scope: "archive", ExpectKinds: []string{"archive"}},
 		{Name: "tuesday_appointment", Question: "Che appuntamento ho martedi?", Query: "dentist appointment Tuesday 18:00", Scope: "sources", ExpectKinds: []string{"source"}},
 		{Name: "budget_memory", Question: "Dove abbiamo parlato del budget?", Query: "budget review weekly planning ritual", Scope: "all", ExpectKinds: []string{"source"}},
-		{Name: "research_policy", Question: "Se cerco online una cosa, quando va salvata?", Query: "important web research propose durable memory source-backed provenance", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldPropose: true, ProposalAction: "patch", ProposalTarget: "aura-memory", ProposalCategory: "workflow"},
+		{Name: "research_policy", Question: "Se cerco online una cosa, quando va salvata?", Query: "important web research propose durable memory source-backed provenance", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldEdit: true, EditAction: "patch", EditTarget: durableMemoryFile, EditCategory: "workflow"},
 		{Name: "daily_briefing_focus", Question: "Cosa deve includere il briefing giornaliero?", Query: "daily briefings deadlines stale memory pending proposals source inbox calendar tasks", Scope: "archive", ExpectKinds: []string{"archive"}},
 		{Name: "missing_evidence_rule", Question: "Cosa controllo quando faccio audit?", Query: "stale pages missing evidence workflow proposals", Scope: "archive", ExpectKinds: []string{"archive"}},
 		{Name: "contract_document", Question: "Quale documento contiene la clausola di uscita?", Query: "rental-contract.pdf cancellation clause tenant", Scope: "sources", ExpectKinds: []string{"source"}},
 		{Name: "after_lunch_admin", Question: "Che lavoro metto dopo pranzo?", Query: "admin tasks after lunch", Scope: "all", ExpectKinds: []string{"archive"}},
-		{Name: "provenance_requirement", Question: "Che prove deve portare una proposta wiki?", Query: "proposal durable memory source-backed include provenance", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldPropose: true, ProposalAction: "patch", ProposalTarget: "aura-memory", ProposalCategory: "workflow"},
+		{Name: "provenance_requirement", Question: "Che prove deve portare una proposta wiki?", Query: "proposal durable memory source-backed include provenance", Scope: "archive", ExpectKinds: []string{"archive"}, ShouldEdit: true, EditAction: "patch", EditTarget: durableMemoryFile, EditCategory: "workflow"},
 	}
 }
 
@@ -688,9 +742,9 @@ For every user question:
 - Call search_memory first with the most useful query.
 - Use limit=3 for answer-only questions unless evidence is missing.
 - Answer only from the returned evidence.
-- If the question asks about durable Aura/project/workflow memory policy, call propose_wiki_change after search_memory so the wiki can grow through review.
-- Do not call propose_wiki_change for ordinary answer-only questions.
-- When calling propose_wiki_change from search_memory, set origin_tool="search_memory" and pass evidence refs copied from the Evidence envelope. Include kind, id, title/page/snippet when available.
+- Never call propose_wiki_change; it is forbidden in this evaluator.
+- If the question asks about durable Aura/project/workflow memory policy, read the target workspace file after search_memory, then use apply_patch to add one evidence-backed durable insight. Use write_file only if the target file is missing or lacks the expected section.
+- When editing, include evidence IDs or snippets copied from the Evidence envelope.
 - Do not repeat search_memory unless the first call returned no matching evidence.
 - If a tool returns {"ok":false,...} and retryable=true, fix the arguments from the hint and retry that tool once.
 - Keep the final answer under 25 words for answer-only questions. Mention one evidence ID naturally.`
@@ -703,17 +757,38 @@ func liveScenarioPrompt(sc scenario) string {
 	if sc.Scope != "" {
 		fmt.Fprintf(&sb, "Preferred memory scope: %s\n", sc.Scope)
 	}
-	if sc.ShouldPropose {
-		fmt.Fprintf(&sb, "This should create a reviewed wiki proposal. action=%s target_slug=%s category=%s\n",
-			emptyDefault(sc.ProposalAction, "patch"), sc.ProposalTarget, sc.ProposalCategory)
+	if sc.ShouldEdit {
+		fmt.Fprintf(&sb, "This should update durable memory through workspace files. action=%s path=%s category=%s\n",
+			emptyDefault(sc.EditAction, "patch"), durableEditTarget(sc), sc.EditCategory)
+		sb.WriteString("Required tool path for this durable scenario: search_memory, then read_file, then apply_patch or write_file. Do not call propose_wiki_change.\n")
 	} else {
-		sb.WriteString("This is answer-only. Do not create a wiki proposal.\n")
+		sb.WriteString("This is answer-only. Do not edit workspace files and do not call propose_wiki_change.\n")
 	}
 	return sb.String()
 }
 
-func proposalFact(sc scenario) string {
-	return fmt.Sprintf("For [[%s]], preserve this durable memory insight from the daily question %q: %s.", sc.ProposalTarget, sc.Question, sc.Query)
+func durableEditTarget(sc scenario) string {
+	if strings.TrimSpace(sc.EditTarget) != "" {
+		return sc.EditTarget
+	}
+	return durableMemoryFile
+}
+
+func durableEditLine(sc scenario, evidence []evidenceItem) string {
+	category := emptyDefault(sc.EditCategory, "memory")
+	refs := make([]string, 0, min(len(evidence), 3))
+	for _, item := range evidence {
+		if strings.TrimSpace(item.ID) != "" {
+			refs = append(refs, item.ID)
+		}
+		if len(refs) >= 3 {
+			break
+		}
+	}
+	if len(refs) == 0 {
+		refs = append(refs, "search_memory")
+	}
+	return fmt.Sprintf("- %s: %s. Evidence: %s.\n", category, sc.Query, strings.Join(refs, ", "))
 }
 
 func parseEnvelope(out string) (evidenceEnvelope, error) {
@@ -744,20 +819,6 @@ func evidenceKinds(items []evidenceItem) []string {
 	return out
 }
 
-func evidenceArgs(items []evidenceItem) []any {
-	out := make([]any, 0, len(items))
-	for _, item := range items {
-		out = append(out, map[string]any{
-			"kind":    item.Kind,
-			"id":      item.ID,
-			"title":   item.Title,
-			"page":    item.Page,
-			"snippet": item.Snippet,
-		})
-	}
-	return out
-}
-
 func hasKind(kinds []string, want string) bool {
 	for _, kind := range kinds {
 		if kind == want {
@@ -769,7 +830,7 @@ func hasKind(kinds []string, want string) bool {
 
 func inspectLiveMessages(messages []llm.Message) ([]evidenceItem, bool) {
 	var evidence []evidenceItem
-	proposalOK := false
+	editOK := false
 	for _, msg := range messages {
 		if msg.Role != "tool" {
 			continue
@@ -777,18 +838,17 @@ func inspectLiveMessages(messages []llm.Message) ([]evidenceItem, bool) {
 		if env, err := parseEnvelope(msg.Content); err == nil {
 			evidence = append(evidence, env.Items...)
 		}
-		var proposal struct {
-			OK       bool  `json:"ok"`
-			ID       int64 `json:"id"`
-			Evidence int   `json:"evidence"`
+		var fileEdit struct {
+			Path   string `json:"path"`
+			Status string `json:"status"`
 		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(msg.Content)), &proposal); err == nil {
-			if proposal.OK && proposal.ID > 0 && proposal.Evidence > 0 {
-				proposalOK = true
+		if err := json.Unmarshal([]byte(strings.TrimSpace(msg.Content)), &fileEdit); err == nil {
+			if fileEdit.Path != "" && (fileEdit.Status == "patched" || fileEdit.Status == "written") {
+				editOK = true
 			}
 		}
 	}
-	return evidence, proposalOK
+	return evidence, editOK
 }
 
 func toolCallNames(messages []llm.Message) []string {
@@ -822,9 +882,9 @@ func saveHermeticQualityReport(dir string, rep report) (string, error) {
 			"questions":             rep.Questions,
 			"passed":                rep.Passed,
 			"evidence_hit_rate":     rep.EvidenceHitRate,
-			"proposal_scenarios":    rep.ProposalScenarios,
-			"proposals_created":     rep.ProposalsCreated,
-			"proposal_quality_rate": rep.ProposalQualityRate,
+			"edit_scenarios":        rep.EditScenarios,
+			"edits_applied":         rep.EditsApplied,
+			"edit_quality_rate":     rep.EditQualityRate,
 			"source_evidence_hits":  rep.SourceEvidenceHits,
 			"archive_evidence_hits": rep.ArchiveEvidenceHits,
 		},
@@ -840,20 +900,22 @@ func saveLiveQualityReport(dir string, rep liveReport) (string, error) {
 		Mode:        "live-llm",
 		OK:          rep.OK,
 		Summary: map[string]any{
-			"model":                     rep.Model,
-			"questions":                 rep.Questions,
-			"passed":                    rep.Passed,
-			"routing_pass_rate":         rep.RoutingPassRate,
-			"latency_budget_ms":         rep.LatencyBudgetMS,
-			"avg_scenario_ms":           rep.AvgScenarioMS,
-			"max_scenario_ms":           rep.MaxScenarioMS,
-			"slow_scenarios":            rep.SlowScenarios,
-			"search_memory_calls":       rep.SearchMemoryCalls,
-			"proposal_calls":            rep.ProposalCalls,
-			"unexpected_proposal_calls": rep.UnexpectedProposalCalls,
-			"llm_calls":                 rep.LLMCalls,
-			"tool_calls":                rep.ToolCalls,
-			"elapsed_ms":                rep.ElapsedMS,
+			"model":                    rep.Model,
+			"questions":                rep.Questions,
+			"passed":                   rep.Passed,
+			"routing_pass_rate":        rep.RoutingPassRate,
+			"latency_budget_ms":        rep.LatencyBudgetMS,
+			"avg_scenario_ms":          rep.AvgScenarioMS,
+			"max_scenario_ms":          rep.MaxScenarioMS,
+			"slow_scenarios":           rep.SlowScenarios,
+			"search_memory_calls":      rep.SearchMemoryCalls,
+			"read_file_calls":          rep.ReadFileCalls,
+			"apply_patch_calls":        rep.ApplyPatchCalls,
+			"write_file_calls":         rep.WriteFileCalls,
+			"forbidden_proposal_calls": rep.ForbiddenProposalCalls,
+			"llm_calls":                rep.LLMCalls,
+			"tool_calls":               rep.ToolCalls,
+			"elapsed_ms":               rep.ElapsedMS,
 		},
 		Live:  &rep,
 		Graph: liveQualityGraph(rep),
@@ -889,13 +951,15 @@ func hermeticQualityGraph(rep report) qualityGraph {
 		Kind:   "scorecard",
 		Status: passStatus(rep.OK),
 		Metrics: map[string]any{
-			"questions":             rep.Questions,
-			"evidence_hit_rate":     rep.EvidenceHitRate,
-			"proposal_quality_rate": rep.ProposalQualityRate,
+			"questions":         rep.Questions,
+			"evidence_hit_rate": rep.EvidenceHitRate,
+			"edit_quality_rate": rep.EditQualityRate,
 		},
 	})
 	g.addNode(graphNode{ID: "tool:search_memory", Label: "search_memory", Kind: "tool"})
-	g.addNode(graphNode{ID: "tool:propose_wiki_change", Label: "propose_wiki_change", Kind: "tool"})
+	g.addNode(graphNode{ID: "tool:read_file", Label: "read_file", Kind: "tool"})
+	g.addNode(graphNode{ID: "tool:apply_patch", Label: "apply_patch", Kind: "tool"})
+	g.addNode(graphNode{ID: "tool:write_file", Label: "write_file", Kind: "tool"})
 	for _, r := range rep.Results {
 		scenarioID := "scenario:" + r.Name
 		g.addNode(graphNode{
@@ -914,11 +978,12 @@ func hermeticQualityGraph(rep report) qualityGraph {
 			g.addNode(graphNode{ID: evidenceID, Label: kind, Kind: "evidence_kind"})
 			g.addEdge(scenarioID, evidenceID, "found_evidence", 1)
 		}
-		if r.ProposalID > 0 {
-			proposalID := fmt.Sprintf("proposal:%s:%d", r.Name, r.ProposalID)
-			g.addNode(graphNode{ID: proposalID, Label: fmt.Sprintf("%s proposal", r.Name), Kind: "proposal", Status: passStatus(r.ProposalOK)})
-			g.addEdge(scenarioID, "tool:propose_wiki_change", "uses", 1)
-			g.addEdge(scenarioID, proposalID, "proposes", 1)
+		if r.EditPath != "" {
+			editID := "file_edit:" + r.Name
+			g.addNode(graphNode{ID: editID, Label: fmt.Sprintf("%s file edit", r.Name), Kind: "file_edit", Status: passStatus(r.EditOK)})
+			g.addEdge(scenarioID, "tool:read_file", "uses", 1)
+			g.addEdge(scenarioID, "tool:apply_patch", "uses", 1)
+			g.addEdge(scenarioID, editID, "edits", 1)
 		}
 	}
 	return g.graph()
@@ -969,10 +1034,10 @@ func liveQualityGraph(rep liveReport) qualityGraph {
 			g.addNode(graphNode{ID: evidenceID, Label: kind, Kind: "evidence_kind"})
 			g.addEdge(scenarioID, evidenceID, "found_evidence", 1)
 		}
-		if r.ProposalOK || hasString(r.ToolCalls, "propose_wiki_change") {
-			proposalID := "proposal:" + r.Name
-			g.addNode(graphNode{ID: proposalID, Label: r.Name + " proposal", Kind: "proposal", Status: passStatus(r.ProposalOK)})
-			g.addEdge(scenarioID, proposalID, "proposes", 1)
+		if r.EditOK || hasString(r.ToolCalls, "apply_patch") || hasString(r.ToolCalls, "write_file") {
+			editID := "file_edit:" + r.Name
+			g.addNode(graphNode{ID: editID, Label: r.Name + " file edit", Kind: "file_edit", Status: passStatus(r.EditOK)})
+			g.addEdge(scenarioID, editID, "edits", 1)
 		}
 	}
 	return g.graph()
@@ -1098,13 +1163,13 @@ func printReport(rep report, wikiDir string) {
 	}
 	fmt.Printf("%s debug_memory_quality\n", status)
 	fmt.Printf("wiki_dir=%s\n", wikiDir)
-	fmt.Printf("questions=%d passed=%d evidence_hit_rate=%.0f%% proposals=%d/%d proposal_quality=%.0f%% source_hits=%d archive_hits=%d\n",
+	fmt.Printf("questions=%d passed=%d evidence_hit_rate=%.0f%% edits=%d/%d edit_quality=%.0f%% source_hits=%d archive_hits=%d\n",
 		rep.Questions,
 		rep.Passed,
 		rep.EvidenceHitRate*100,
-		rep.ProposalsCreated,
-		rep.ProposalScenarios,
-		rep.ProposalQualityRate*100,
+		rep.EditsApplied,
+		rep.EditScenarios,
+		rep.EditQualityRate*100,
 		rep.SourceEvidenceHits,
 		rep.ArchiveEvidenceHits,
 	)
@@ -1114,8 +1179,8 @@ func printReport(rep report, wikiDir string) {
 			mark = "FAIL"
 		}
 		fmt.Printf("- %s %s evidence=%d kinds=%s", mark, r.Name, r.EvidenceCount, strings.Join(r.EvidenceKinds, ","))
-		if r.ProposalID > 0 {
-			fmt.Printf(" proposal=%d quality=%t", r.ProposalID, r.ProposalOK)
+		if r.EditPath != "" {
+			fmt.Printf(" edit=%s quality=%t", r.EditPath, r.EditOK)
 		}
 		if len(r.MissingEvidence) > 0 {
 			fmt.Printf(" missing=%s", strings.Join(r.MissingEvidence, ","))
@@ -1137,7 +1202,7 @@ func printLiveReport(rep liveReport, wikiDir string) {
 	}
 	fmt.Printf("%s debug_memory_quality live-llm\n", status)
 	fmt.Printf("model=%s wiki_dir=%s\n", rep.Model, wikiDir)
-	fmt.Printf("questions=%d passed=%d routing_pass_rate=%.0f%% slow=%d budget_ms=%d avg_ms=%d max_ms=%d search_memory_calls=%d proposal_calls=%d unexpected_proposals=%d llm_calls=%d tool_calls=%d elapsed_ms=%d\n",
+	fmt.Printf("questions=%d passed=%d routing_pass_rate=%.0f%% slow=%d budget_ms=%d avg_ms=%d max_ms=%d search_memory_calls=%d read_file_calls=%d apply_patch_calls=%d write_file_calls=%d forbidden_proposals=%d llm_calls=%d tool_calls=%d elapsed_ms=%d\n",
 		rep.Questions,
 		rep.Passed,
 		rep.RoutingPassRate*100,
@@ -1146,8 +1211,10 @@ func printLiveReport(rep liveReport, wikiDir string) {
 		rep.AvgScenarioMS,
 		rep.MaxScenarioMS,
 		rep.SearchMemoryCalls,
-		rep.ProposalCalls,
-		rep.UnexpectedProposalCalls,
+		rep.ReadFileCalls,
+		rep.ApplyPatchCalls,
+		rep.WriteFileCalls,
+		rep.ForbiddenProposalCalls,
 		rep.LLMCalls,
 		rep.ToolCalls,
 		rep.ElapsedMS,
@@ -1166,11 +1233,11 @@ func printLiveReport(rep liveReport, wikiDir string) {
 			r.LLMCalls,
 			r.ElapsedMS,
 		)
-		if r.ProposalOK {
-			fmt.Printf(" proposal=true")
+		if r.EditOK {
+			fmt.Printf(" edit=true")
 		}
-		if r.UnexpectedProposal {
-			fmt.Printf(" unexpected_proposal=true")
+		if r.ForbiddenProposal {
+			fmt.Printf(" forbidden_proposal=true")
 		}
 		if len(r.Issues) > 0 {
 			fmt.Printf(" issues=%s", strings.Join(r.Issues, "; "))

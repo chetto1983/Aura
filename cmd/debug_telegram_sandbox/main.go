@@ -40,7 +40,7 @@ func main() {
 	expectProfile := flag.String("expect-profile", "", "expected orchestration toolset; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	var expectSkillRead optionalCSVFlag
-	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to call read_skill; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
+	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to inspect a skill via file tools; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
 	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected by orchestration policy")
 	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by orchestration policy")
@@ -489,11 +489,11 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 		return fmt.Errorf("expected no tool calls, got %s", strings.Join(result.ToolCalls, ","))
 	}
 	if (expectations.SkillRead || len(expectations.SkillReadNames) > 0) && !result.SkillsRead {
-		return errors.New("expected read_skill usage")
+		return errors.New("expected skill file read")
 	}
 	for _, expected := range expectations.SkillReadNames {
 		if !expectedSkillReadSatisfied(result, expected) {
-			return fmt.Errorf("expected read_skill for %q, got read_skills=%s active_capabilities=%s", expected, strings.Join(result.ReadSkills, ","), strings.Join(result.ActiveCapabilities, ","))
+			return fmt.Errorf("expected skill file read for %q, got read_skills=%s active_capabilities=%s", expected, strings.Join(result.ReadSkills, ","), strings.Join(result.ActiveCapabilities, ","))
 		}
 	}
 	if expectations.SwarmUsed && !result.SwarmUsed {

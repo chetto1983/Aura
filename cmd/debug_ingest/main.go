@@ -1,5 +1,5 @@
 // debug_ingest is the slice-9 natural-prompt smoke harness for the
-// source / ingest / wiki-maintenance / scheduler tools.
+// source / ingest / workspace-file / scheduler tools.
 //
 //	go run ./cmd/debug_ingest               # all default scenarios
 //	go run ./cmd/debug_ingest -keep-wiki    # keep temp wiki for inspection
@@ -37,6 +37,7 @@ import (
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
+	"github.com/aura/aura/internal/workspace"
 	"github.com/philippgille/chromem-go"
 )
 
@@ -108,6 +109,11 @@ func main() {
 		fmt.Printf("FAIL: ingest.New: %v\n", err)
 		os.Exit(1)
 	}
+	workspaceRoot, err := workspace.New(wikiDir)
+	if err != nil {
+		fmt.Printf("FAIL: workspace.New: %v\n", err)
+		os.Exit(1)
+	}
 
 	schedDB := filepath.Join(wikiDir, "scheduler.db")
 	schedStore, err := scheduler.OpenStore(schedDB)
@@ -146,10 +152,9 @@ func main() {
 	if tool := tools.NewSearchMemoryTool(engine, srcStore, archiveStore); tool != nil {
 		reg.Register(tool)
 	}
-	reg.Register(tools.NewListWikiTool(wikiStore))
-	reg.Register(tools.NewLintWikiTool(wikiStore))
-	reg.Register(tools.NewRebuildIndexTool(wikiStore))
-	reg.Register(tools.NewAppendLogTool(wikiStore))
+	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
+		reg.Register(tool)
+	}
 	reg.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
 	reg.Register(tools.NewListTasksTool(schedStore))
 	reg.Register(tools.NewCancelTaskTool(schedStore))
@@ -192,20 +197,21 @@ func main() {
 			wantText:  []string{"compiled"},
 		},
 		{
-			name:      "list_wiki_after_ingest",
-			prompt:    "List every wiki page in the sources category.",
-			wantTools: []string{"list_wiki"},
+			name:      "list_workspace_files_after_ingest",
+			prompt:    "Use list_files on the workspace root to list markdown wiki files after ingest. Tell me the source page filename.",
+			wantTools: []string{"list_files"},
 			wantText:  []string{"source-aura-debug-ingest-fixture"},
 		},
 		{
-			name:      "lint_wiki",
-			prompt:    "Run a wiki health check and report broken links or missing categories. Use the lint tool.",
-			wantTools: []string{"lint_wiki"},
+			name:      "search_ingested_wiki_file",
+			prompt:    "Use search_files over markdown files to find the ingested marker gold-742 and report the source page evidence.",
+			wantTools: []string{"search_files"},
+			wantText:  []string{"gold-742", "source-aura-debug-ingest-fixture"},
 		},
 		{
-			name:      "append_log",
-			prompt:    "Append a log entry with action \"smoke-test\" so we have a record this run happened.",
-			wantTools: []string{"append_log"},
+			name:      "write_audit_file",
+			prompt:    "Use write_file to create audit/smoke-log.md with action \"smoke-test\", then read_file it back and report the action.",
+			wantTools: []string{"write_file", "read_file"},
 			wantText:  []string{"smoke-test"},
 		},
 		{

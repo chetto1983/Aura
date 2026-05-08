@@ -293,7 +293,7 @@ func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacy5050(t *testing.T) 
 
 func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
-		ToolCalls:          []string{"read_skill", "run_aurabot_swarm", "execute_code"},
+		ToolCalls:          []string{"read_file", "run_aurabot_swarm", "execute_code"},
 		ToolProfile:        "compute",
 		FinalText:          "Swarm research completed.",
 		PromptHash:         "abc123",
@@ -308,12 +308,12 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		TerminalTool:       "execute_code",
 		ReadSkills:         []string{"test-driven-development"},
 		ActiveCapabilities: []string{"sandbox_compute"},
-		ToolsExposed:       []string{"read_skill", "run_aurabot_swarm", "execute_code"},
+		ToolsExposed:       []string{"read_file", "run_aurabot_swarm", "execute_code"},
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
 		Profile:            "compute",
-		Tools:              []string{"read_skill", "execute_code"},
+		Tools:              []string{"read_file", "execute_code"},
 		SkillRead:          true,
 		SkillReadNames:     []string{"test-driven-development", "sandbox_compute"},
 		SwarmUsed:          true,
@@ -355,7 +355,7 @@ func TestValidateDebugExpectationsRejectsMissingUsageSignals(t *testing.T) {
 		want debugExpectations
 		msg  string
 	}{
-		{name: "skill", want: debugExpectations{SkillRead: true}, msg: "expected read_skill"},
+		{name: "skill", want: debugExpectations{SkillRead: true}, msg: "expected skill file read"},
 		{name: "swarm", want: debugExpectations{SwarmUsed: true}, msg: "expected swarm usage"},
 		{name: "token metrics", want: debugExpectations{TokenMetrics: true}, msg: "expected token usage metrics"},
 		{name: "sandbox", want: debugExpectations{SandboxUsed: true}, msg: "expected sandbox usage"},
@@ -378,7 +378,7 @@ func TestValidateDebugExpectationsRejectsMissingNamedSkillRead(t *testing.T) {
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{SkillReadNames: []string{"docx"}})
-	if err == nil || !strings.Contains(err.Error(), `expected read_skill for "docx"`) {
+	if err == nil || !strings.Contains(err.Error(), `expected skill file read for "docx"`) {
 		t.Fatalf("validateDebugExpectations() error = %v, want named skill failure", err)
 	}
 }

@@ -8,16 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/tools"
-	"github.com/aura/aura/internal/wiki"
-	"github.com/philippgille/chromem-go"
+	"github.com/aura/aura/internal/workspace"
 )
 
 type scenario struct {
@@ -30,7 +29,9 @@ type scenario struct {
 
 func main() {
 	liveWeb := flag.Bool("live-web", false, "run real web_search and web_fetch calls with WEB_SEARCH_PROVIDER")
-	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
+	var keepWorkspace bool
+	flag.BoolVar(&keepWorkspace, "keep-workspace", false, "keep the temporary workspace directory after the run")
+	flag.BoolVar(&keepWorkspace, "keep-wiki", false, "deprecated alias for -keep-workspace")
 	flag.Parse()
 
 	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -48,49 +49,35 @@ func main() {
 	webSearchProvider := strings.ToLower(envDefault("WEB_SEARCH_PROVIDER", "disabled"))
 	searxngBaseURL := envDefault("SEARXNG_BASE_URL", config.DefaultSearXNGBaseURL)
 	ollamaWebBaseURL := envDefault("OLLAMA_WEB_BASE_URL", config.DefaultOllamaWebBaseURL)
-	embeddingAPIKey := os.Getenv("EMBEDDING_API_KEY")
-	if embeddingAPIKey == "" {
-		fmt.Println("FAIL: EMBEDDING_API_KEY is required for wiki search; configure it for Mistral embeddings")
-		os.Exit(1)
-	}
-	embeddingBaseURL := envDefault("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
-	embeddingModel := envDefault("EMBEDDING_MODEL", "mistral-embed")
 
-	wikiDir, err := os.MkdirTemp("", "aura-debug-tools-*")
+	workspaceDir, err := os.MkdirTemp("", "aura-debug-tools-*")
 	if err != nil {
-		fmt.Printf("FAIL: create temp wiki: %v\n", err)
+		fmt.Printf("FAIL: create temp workspace: %v\n", err)
 		os.Exit(1)
 	}
-	if !*keepWiki {
-		defer os.RemoveAll(wikiDir)
+	if !keepWorkspace {
+		defer os.RemoveAll(workspaceDir)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	store, err := wiki.NewStore(wikiDir, logger)
+	root, err := workspace.New(workspaceDir)
 	if err != nil {
-		fmt.Printf("FAIL: create wiki store: %v\n", err)
-		os.Exit(1)
-	}
-
-	embedFn := createEmbeddingFunc(embeddingAPIKey, embeddingBaseURL, embeddingModel)
-	engine, err := search.NewEngine(wikiDir, embedFn, logger)
-	if err != nil {
-		fmt.Printf("FAIL: create search engine: %v\n", err)
+		fmt.Printf("FAIL: create workspace root: %v\n", err)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	if err := seedWiki(ctx, store, engine); err != nil {
-		fmt.Printf("FAIL: seed wiki: %v\n", err)
+	if err := seedWorkspace(workspaceDir); err != nil {
+		fmt.Printf("FAIL: seed workspace: %v\n", err)
 		os.Exit(1)
 	}
 
 	reg := tools.NewRegistry(logger)
-	reg.Register(tools.NewWriteWikiTool(store, engine))
-	reg.Register(tools.NewReadWikiTool(store))
-	reg.Register(tools.NewSearchWikiTool(engine))
+	for _, tool := range tools.NewWorkspaceFileTools(root) {
+		reg.Register(tool)
+	}
 	if *liveWeb {
 		switch webSearchProvider {
 		case "searxng":
@@ -118,30 +105,41 @@ func main() {
 
 	scenarios := []scenario{
 		{
-			name: "write_wiki",
-			prompt: "Remember this exact durable fact using the wiki: " +
+			name: "write_file",
+			prompt: "Remember this exact durable fact using write_file at notes/aura-natural-tool-smoke-marker.md: " +
 				"Project Aura natural tool smoke marker is cerulean-731. " +
-				"Use the exact title Aura Natural Tool Smoke Marker. " +
-				"Save it as a concise wiki page with category debug and tag smoke-test.",
-			wantTools: []string{"write_wiki"},
+				"Use a concise markdown note with title Aura Natural Tool Smoke Marker.",
+			wantTools: []string{"write_file"},
 		},
 		{
-			name:      "read_written_wiki",
-			prompt:    "Read the wiki page slug aura-natural-tool-smoke-marker and tell me the marker.",
-			wantTools: []string{"read_wiki"},
+			name:      "read_written_file",
+			prompt:    "Use read_file to read notes/aura-natural-tool-smoke-marker.md and tell me the marker.",
+			wantTools: []string{"read_file"},
 			wantText:  []string{"cerulean-731"},
 		},
 		{
-			name:      "read_wiki",
-			prompt:    "Read the wiki page slug aura-seeded-tool-smoke-marker and tell me the marker.",
-			wantTools: []string{"read_wiki"},
+			name:      "read_seeded_file",
+			prompt:    "Use read_file to read notes/seeded-tool-smoke-marker.md and tell me the marker.",
+			wantTools: []string{"read_file"},
 			wantText:  []string{"magenta-284"},
 		},
 		{
-			name:      "search_wiki",
-			prompt:    "Search the wiki for seeded tool smoke marker magenta and report the saved marker.",
-			wantTools: []string{"search_wiki"},
+			name:      "search_files",
+			prompt:    "Use search_files to search markdown notes for seeded tool smoke marker magenta and report the saved marker.",
+			wantTools: []string{"search_files"},
 			wantText:  []string{"magenta-284"},
+		},
+		{
+			name:      "apply_patch",
+			prompt:    "Use apply_patch to replace magenta-284 with magenta-285 in notes/seeded-tool-smoke-marker.md, then read_file to report the updated marker.",
+			wantTools: []string{"apply_patch", "read_file"},
+			wantText:  []string{"magenta-285"},
+		},
+		{
+			name:      "list_files",
+			prompt:    "Use list_files to list the notes directory and tell me which smoke marker files are there.",
+			wantTools: []string{"list_files"},
+			wantText:  []string{"seeded-tool-smoke-marker.md", "aura-natural-tool-smoke-marker.md"},
 		},
 	}
 	if *liveWeb {
@@ -162,10 +160,10 @@ func main() {
 	}
 
 	fmt.Printf("Natural tool smoke test\n")
-	fmt.Printf("model=%s base_url=%s live_web=%v wiki=%s\n", model, baseURL, *liveWeb, wikiDir)
+	fmt.Printf("model=%s base_url=%s live_web=%v workspace=%s\n", model, baseURL, *liveWeb, workspaceDir)
 	fmt.Printf("llm_api_key=SET\n")
 	fmt.Printf("web_search_provider=%s searxng_base_url=%s\n", webSearchProvider, searxngBaseURL)
-	fmt.Printf("embedding_base_url=%s embedding_model=%s\n\n", embeddingBaseURL, embeddingModel)
+	fmt.Println()
 
 	failures := 0
 	for _, sc := range scenarios {
@@ -196,8 +194,8 @@ func main() {
 		fmt.Println()
 	}
 
-	if *keepWiki {
-		fmt.Printf("kept wiki: %s\n", wikiDir)
+	if keepWorkspace {
+		fmt.Printf("kept workspace: %s\n", workspaceDir)
 	}
 	if failures > 0 {
 		os.Exit(1)
@@ -246,27 +244,13 @@ func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, mo
 	return called, lastToolResult, toolResults, fmt.Errorf("max tool iterations reached")
 }
 
-func seedWiki(ctx context.Context, store *wiki.Store, engine *search.Engine) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	page := &wiki.Page{
-		Title:         "Aura Seeded Tool Smoke Marker",
-		Body:          "The seeded natural tool smoke marker is magenta-284.",
-		Tags:          []string{"smoke-test"},
-		Category:      "debug",
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "ingest_v1",
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	if err := store.WritePage(ctx, page); err != nil {
+func seedWorkspace(root string) error {
+	notesDir := filepath.Join(root, "notes")
+	if err := os.MkdirAll(notesDir, 0o755); err != nil {
 		return err
 	}
-	return engine.ReindexWikiPage(ctx, "aura-seeded-tool-smoke-marker")
-}
-
-func createEmbeddingFunc(apiKey, baseURL, model string) chromem.EmbeddingFunc {
-	normalized := true
-	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, apiKey, model, &normalized)
+	content := "# Aura Seeded Tool Smoke Marker\n\nThe seeded natural tool smoke marker is magenta-284.\n"
+	return os.WriteFile(filepath.Join(notesDir, "seeded-tool-smoke-marker.md"), []byte(content), 0o644)
 }
 
 func loadDotEnv(path string) error {

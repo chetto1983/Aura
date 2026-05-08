@@ -64,7 +64,7 @@ func TestSwarmRunListAndDetail(t *testing.T) {
 	if detail.ID != run.ID || len(detail.Tasks) != 1 || detail.Tasks[0].ID != task.ID {
 		t.Fatalf("detail = %+v", detail)
 	}
-	if detail.Tasks[0].Result != "done" || detail.Tasks[0].ToolAllowlist[0] != "read_wiki" {
+	if detail.Tasks[0].Result != "done" || detail.Tasks[0].ToolAllowlist[0] != "read_file" {
 		t.Fatalf("task = %+v", detail.Tasks[0])
 	}
 
@@ -126,7 +126,7 @@ func seedCompletedSwarmRun(t *testing.T, store *swarm.Store) (*swarm.Run, *swarm
 		Role:          "librarian",
 		Subject:       "read",
 		Prompt:        "read",
-		ToolAllowlist: []string{"read_wiki"},
+		ToolAllowlist: []string{"read_file"},
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)

@@ -33,7 +33,7 @@ func TestRunNoToolCallsReturnsAssistantText(t *testing.T) {
 func TestRunToolCallContinuesToFinalResponse(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_wiki", Arguments: map[string]any{"query": "aura"}}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}}}}},
 		{Response: llm.Response{Content: "found it"}},
 	}}
 	var executed []llm.ToolCall
@@ -49,7 +49,7 @@ func TestRunToolCallContinuesToFinalResponse(t *testing.T) {
 	if result.Text != "found it" {
 		t.Fatalf("Text = %q", result.Text)
 	}
-	if len(executed) != 1 || executed[0].Name != "search_wiki" {
+	if len(executed) != 1 || executed[0].Name != "search_files" {
 		t.Fatalf("executed = %+v", executed)
 	}
 	if result.Stats.LLMCalls != 2 || result.Stats.ToolCalls != 1 {
@@ -61,8 +61,8 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
-			{ID: "call-1", Name: "search_wiki", Arguments: map[string]any{"query": "aura"}},
-			{ID: "call-2", Name: "search_wiki", Arguments: map[string]any{"query": "aura"}},
+			{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
+			{ID: "call-2", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
 		}}},
 		{Response: llm.Response{Content: "ok"}},
 	}}
@@ -93,7 +93,7 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 func TestRunMaxIterationProducesFallback(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_wiki"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 	}}
 
 	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {

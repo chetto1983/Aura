@@ -3,6 +3,7 @@ package agentloop
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/aura/aura/internal/llm"
@@ -146,8 +147,11 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		for _, call := range resp.Response.ToolCalls {
 			stats.ToolsCalled = append(stats.ToolsCalled, call.Name)
 			switch call.Name {
-			case "read_skill":
-				stats.SkillsRead = true
+			case "read_file":
+				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
+					stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, skill)
+					stats.SkillsRead = true
+				}
 			case "run_aurabot_swarm":
 				stats.SwarmUsed = true
 			case "execute_code":
@@ -230,4 +234,24 @@ func stringSliceContains(values []string, candidate string) bool {
 		}
 	}
 	return false
+}
+
+func skillNameFromReadFileArgs(args map[string]any) string {
+	value, ok := args["path"]
+	if !ok {
+		return ""
+	}
+	path := strings.TrimSpace(fmt.Sprint(value))
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
+		return ""
+	}
+	name := strings.TrimSpace(parts[len(parts)-2])
+	if name == "" || strings.EqualFold(name, "skills") {
+		return ""
+	}
+	return name
 }

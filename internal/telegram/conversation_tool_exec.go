@@ -17,7 +17,7 @@ import (
 
 // executeToolCalls runs an assistant turn's tool calls concurrently and
 // appends results in original order. The LLM batches independent calls into
-// one assistant turn (e.g. search_wiki + web_search side-by-side); running
+// one assistant turn (e.g. search_files + web_search side-by-side); running
 // them sequentially serialized N round-trips of latency for no reason.
 //
 // Concurrency safety: Registry.Execute is RWMutex-guarded for lookup, and
@@ -135,8 +135,11 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			event.TokensTotal = usage.TotalTokens
 			event.CostUSD = cost
 			readSkillName := ""
-			if err == nil && tc.Name == "read_skill" {
-				readSkillName = skillNameFromArgs(tc.Arguments)
+			if err == nil {
+				switch tc.Name {
+				case "read_file":
+					readSkillName = skillNameFromReadFileArgs(tc.Arguments)
+				}
 			}
 			terminalTool := ""
 			if b.terminalToolPolicyEnabled() && toolAllowed(tc.Name, loopPolicy.TerminalTools) {

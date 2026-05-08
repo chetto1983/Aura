@@ -111,15 +111,15 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// EnforceLimit (below) trims it out of convCtx.
 	convCtx.AddUserMessage(userText)
 
-	// Slice 11p: speculative wiki retrieval. The model used to discover
-	// durable memory only by emitting a search_wiki tool call, which cost
+	// Slice 11p/06: speculative memory retrieval. The model used to discover
+	// durable memory only after an explicit wiki search round-trip, which cost
 	// a full extra LLM round-trip per turn ("reason → emit tool call →
 	// read result → re-reason → answer"). We now run the search up-front
 	// and inject the top hits into the system prompt so the very first
 	// inference already has relevant context. The embedding cache (slice
 	// 11h) makes repeat queries effectively free; cold queries pay one
-	// embed call but save the round-trip. The explicit search_wiki tool
-	// stays available for follow-up queries the model wants to refine.
+	// embed call but save the round-trip. Further exact inspection uses bounded
+	// workspace file tools.
 	// Picobot equivalent: internal/agent/context.go ranker injection.
 	if contextText := runSpeculativeSearch(context.Background(), b.search, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID); contextText != "" {
 		convCtx.SetSearchContext(contextText)
@@ -305,7 +305,7 @@ func (b *Bot) swarmToolsAvailable() bool {
 }
 
 func (b *Bot) proposalToolsAvailable() bool {
-	return b.tools != nil && b.tools.Get("propose_wiki_change") != nil
+	return false
 }
 
 func (b *Bot) sandboxToolsAvailable() bool {

@@ -219,7 +219,7 @@ func TestHandleConversationDetail_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	toolCallsJSON := `[{"id":"tc1","type":"function","function":{"name":"search_wiki","arguments":"{}"}}]`
+	toolCallsJSON := `[{"id":"tc1","type":"function","function":{"name":"search_files","arguments":"{}"}}]`
 	seedTurn(t, store, conversation.Turn{
 		ChatID: 5, UserID: 2, TurnIndex: 0,
 		Role: "assistant", Content: "", ToolCalls: toolCallsJSON,

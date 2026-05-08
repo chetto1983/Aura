@@ -2,11 +2,10 @@
 //
 // Task kinds:
 //   - reminder         a Telegram message dispatched to a user/chat.
-//   - wiki_maintenance the autonomous nightly pass that runs list_wiki +
-//     lint_wiki + rebuild_index + append_log so the
-//     wiki stays healthy without user intervention.
-//   - agent_job        a bounded scheduled agent routine with propose-only
-//     memory growth by default.
+//   - wiki_maintenance the autonomous nightly pass that calls wiki domain
+//     services directly so the wiki stays healthy without user intervention.
+//   - agent_job        a bounded scheduled agent routine with read-only
+//     tool access and patch recommendations by default.
 //
 // Three schedule kinds:
 //   - at    fires once at an absolute UTC timestamp; status flips to done.

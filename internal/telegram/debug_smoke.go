@@ -172,8 +172,11 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 				result.CalledExecuteCode = true
 			}
 			switch call.Name {
-			case "read_skill":
-				result.SkillsRead = true
+			case "read_file":
+				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
+					result.SkillsRead = true
+					result.ReadSkills = appendUniqueStrings(result.ReadSkills, skill)
+				}
 			case "run_aurabot_swarm":
 				result.SwarmUsed = true
 			case "execute_code":

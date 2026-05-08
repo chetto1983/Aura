@@ -85,7 +85,7 @@ func TestConsumeStreamToolCallDoesNotMarkDelivered(t *testing.T) {
 		Chat:   &tele.Chat{ID: 123},
 	}})
 	ch := make(chan llm.Token, 1)
-	ch <- llm.Token{Done: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_wiki"}}}
+	ch <- llm.Token{Done: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}
 	close(ch)
 
 	b := &Bot{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}

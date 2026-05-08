@@ -127,8 +127,8 @@ func TestDebugTextSmokeResultDefaultsTokenFieldsToMissingUsage(t *testing.T) {
 
 func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 	result := debugTextSmokeResultFromMessages("1148481707", "summary", []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "1", Name: "list_skills"}}},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "2", Name: "read_skill"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "1", Name: "search_files", Arguments: map[string]any{"pattern": "name: subagent-driven-development", "globs": []any{".agents/skills/**/SKILL.md"}}}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "2", Name: "read_file", Arguments: map[string]any{"path": ".agents/skills/subagent-driven-development/SKILL.md"}}}},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "3", Name: "run_aurabot_swarm"}}},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "4", Name: "execute_code"}}},
 	})
@@ -242,13 +242,13 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	}
 }
 
-func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteWiki(t *testing.T) {
-	raw := tools.FormatFatalToolError(errors.New(`tool "write_wiki" is not exposed in the active tool profile`))
+func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteFile(t *testing.T) {
+	raw := tools.FormatFatalToolError(errors.New(`tool "write_file" is not exposed in the active tool profile`))
 	got := userFacingFatalToolResult(raw)
 	if strings.Contains(got, `"ok":false`) || strings.Contains(got, `"retryable":false`) {
 		t.Fatalf("user-facing result leaked raw tool JSON: %q", got)
 	}
-	if strings.Contains(got, "write_wiki") {
+	if strings.Contains(got, "write_file") {
 		t.Fatalf("user-facing result leaked tool name: %q", got)
 	}
 	if !strings.Contains(got, "cattura automatica") {
@@ -285,7 +285,7 @@ func TestExecuteToolCallsDoesNotRequireApplicableSkillBeforeProtectedTool(t *tes
 
 func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T) {
 	reg := tools.NewRegistry(nil)
-	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
+	read := &countingTelegramTool{name: "read_file", result: "skill body"}
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
 	reg.Register(read)
 	reg.Register(doc)
@@ -297,10 +297,10 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{
-			{ID: "skill-1", Name: "read_skill", Arguments: map[string]any{"name": "document-pdf"}},
+			{ID: "skill-1", Name: "read_file", Arguments: map[string]any{"path": ".agents/skills/document-pdf/SKILL.md"}},
 			{ID: "pdf-1", Name: "create_pdf"},
 		},
-		[]string{"read_skill", "create_pdf"},
+		[]string{"read_file", "create_pdf"},
 		orchestration.ProfileDocument,
 		nil,
 	)
@@ -312,7 +312,7 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.readSkillNames)
 	}
 	if read.calls != 1 {
-		t.Fatalf("read_skill calls = %d, want 1", read.calls)
+		t.Fatalf("read_file calls = %d, want 1", read.calls)
 	}
 	if doc.calls != 1 {
 		t.Fatalf("create_pdf calls = %d, want 1", doc.calls)
@@ -643,11 +643,11 @@ func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 
 func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 	messages := []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "wiki-1", Name: "write_wiki"}}},
-		{Role: "tool", ToolCallID: "wiki-1", Content: `{"ok":true}`},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},
+		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
 	}
 
-	got := terminalToolFinalizationMessages(messages, "write_wiki")
+	got := terminalToolFinalizationMessages(messages, "write_file")
 	if len(got) != len(messages)+1 {
 		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
 	}
@@ -658,15 +658,15 @@ func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 }
 
 func TestTerminalToolFallbackRejectsToolMarkup(t *testing.T) {
-	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_wiki">`
+	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !looksLikeToolCallMarkup(raw) {
 		t.Fatal("looksLikeToolCallMarkup = false, want true")
 	}
-	got := terminalToolFallbackResponse("write_wiki", raw)
+	got := terminalToolFallbackResponse("write_file", raw)
 	if strings.Contains(got, "DSML") || strings.Contains(got, "tool_calls") {
 		t.Fatalf("fallback leaked tool markup: %q", got)
 	}
-	if !strings.Contains(got, "wiki") {
-		t.Fatalf("fallback = %q, want wiki completion", got)
+	if !strings.Contains(got, "file") {
+		t.Fatalf("fallback = %q, want file completion", got)
 	}
 }

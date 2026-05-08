@@ -3,6 +3,7 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -56,12 +57,24 @@ func toolAllowed(name string, allowlist []string) bool {
 	return false
 }
 
-func skillNameFromArgs(args map[string]any) string {
-	value, ok := args["name"]
+func skillNameFromReadFileArgs(args map[string]any) string {
+	value, ok := args["path"]
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(fmt.Sprint(value))
+	path := strings.TrimSpace(fmt.Sprint(value))
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
+		return ""
+	}
+	name := strings.TrimSpace(parts[len(parts)-2])
+	if name == "" || strings.EqualFold(name, "skills") {
+		return ""
+	}
+	return name
 }
 
 func capabilityNames(capabilities []orchestration.Capability) []string {
@@ -124,8 +137,8 @@ func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
 func userFacingFatalToolResult(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if strings.Contains(trimmed, "not exposed in the active tool profile") {
-		if strings.Contains(trimmed, "write_wiki") {
-			return "Non posso scrivere direttamente nella memoria con il profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
+		if strings.Contains(trimmed, "write_file") || strings.Contains(trimmed, "apply_patch") {
+			return "Non posso modificare direttamente i file con il profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
 		}
 		return "Una capacita' interna richiesta non e' disponibile nel profilo attivo. Ho fermato l'azione invece di usare un permesso non esposto."
 	}
