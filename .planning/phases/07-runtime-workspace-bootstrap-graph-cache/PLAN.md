@@ -70,7 +70,7 @@ Docker can mount this as `/workspace` while still mounting implementation code a
 - Modify: `compose.yaml`
 - Test: `internal/config/config_test.go`
 
-- [ ] **Step 1: Add config defaults**
+- [x] **Step 1: Add config defaults**
 
 Add or confirm these config fields:
 
@@ -87,7 +87,7 @@ AURA_WORKSPACE_ROOT: "/workspace"
 PROMPT_OVERLAY_PATH: "/workspace"
 ```
 
-- [ ] **Step 2: Write config tests**
+- [x] **Step 2: Write config tests**
 
 Add coverage proving:
 
@@ -106,7 +106,7 @@ WorkspaceRoot == "/workspace"
 PromptOverlayPath == "/workspace"
 ```
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run:
 

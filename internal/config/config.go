@@ -24,6 +24,7 @@ const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
+const DefaultRuntimeWorkspacePath = "./runtime-workspace"
 const DefaultSummarizerMode = "auto_low_risk"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
@@ -102,6 +103,7 @@ type Config struct {
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
 	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
 	WorkspaceRoot              string  `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
+	RuntimeWorkspacePath       string  `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -265,6 +267,10 @@ func Load() (*Config, error) {
 	cfg.WorkspaceRoot = strings.TrimSpace(getEnv("AURA_WORKSPACE_ROOT", DefaultWorkspaceRoot))
 	if cfg.WorkspaceRoot == "" {
 		cfg.WorkspaceRoot = DefaultWorkspaceRoot
+	}
+	cfg.RuntimeWorkspacePath = strings.TrimSpace(getEnv("AURA_RUNTIME_WORKSPACE_PATH", DefaultRuntimeWorkspacePath))
+	if cfg.RuntimeWorkspacePath == "" {
+		cfg.RuntimeWorkspacePath = DefaultRuntimeWorkspacePath
 	}
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
