@@ -200,6 +200,51 @@ export interface ConnectorProbeResponse {
   error?: string;
 }
 
+export type MailSetupProvider = 'gmail' | 'outlook' | 'imap';
+
+export interface MailSetupStatus {
+  configured: boolean;
+  connected: boolean;
+  needs_restart: boolean;
+  restart_required: boolean;
+  can_restart: boolean;
+  binary_present: boolean;
+  command?: string;
+  provider?: MailSetupProvider;
+  account_id?: string;
+  email?: string;
+  configured_email?: string;
+  imap_host?: string;
+  imap_port?: number;
+  imap_secure?: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_secure?: boolean;
+  enable_smtp?: boolean;
+  secret_configured?: boolean;
+  updated_at?: string;
+  error?: string;
+}
+
+export interface MailSetupRequest {
+  provider: MailSetupProvider;
+  account_id: string;
+  email: string;
+  imap_host?: string;
+  imap_port?: number;
+  imap_secure?: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_secure?: boolean;
+  app_password?: string;
+  enable_smtp?: boolean;
+}
+
+export interface MailSetupResponse {
+  ok: boolean;
+  status: MailSetupStatus;
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 export interface SkillCatalogItem {

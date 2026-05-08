@@ -184,6 +184,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /skills/{name}", handleSkillGet(deps))
 	mux.HandleFunc("GET /mcp/servers", handleMCPServers(deps))
 	mux.HandleFunc("GET /mcp/providers", handleMCPProviders(deps))
+	mux.HandleFunc("GET /mcp/setup/mail", handleMCPMailSetupStatus(deps))
+	mux.HandleFunc("POST /mcp/setup/mail", handleMCPMailSetupSave(deps))
 	mux.HandleFunc("POST /mcp/providers/{id}/actions/probe", handleMCPProviderProbe(deps))
 	mux.HandleFunc("POST /mcp/providers/{id}/mail/search", handleMCPProviderMailSearch(deps))
 	mux.HandleFunc("POST /mcp/providers/{id}/mail/read", handleMCPProviderMailRead(deps))

@@ -17,6 +17,9 @@ import type {
   MCPServerSummary,
   ConnectorProviderSummary,
   ConnectorProbeResponse,
+  MailSetupRequest,
+  MailSetupResponse,
+  MailSetupStatus,
   SkillCatalogItem,
   SkillInstallRequest,
   SkillInstallResponse,
@@ -225,6 +228,9 @@ export const api = {
   mcpProviders: () => get<ConnectorProviderSummary[]>(`/mcp/providers`),
   probeMCPProvider: (id: string) =>
     post<ConnectorProbeResponse>(`/mcp/providers/${encodeURIComponent(id)}/actions/probe`),
+  mailSetupStatus: () => get<MailSetupStatus>(`/mcp/setup/mail`),
+  saveMailSetup: (req: MailSetupRequest) =>
+    post<MailSetupResponse>(`/mcp/setup/mail`, req),
 
   // ---- skills.sh catalog + admin install/delete (slice 11c) ----
   skillsCatalog: (q?: string, limit?: number) =>

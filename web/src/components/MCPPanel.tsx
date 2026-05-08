@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +14,8 @@ import {
   Play,
   Plug,
   RefreshCw,
+  RotateCw,
+  Save,
   Server,
   ShieldAlert,
   ShieldCheck,
@@ -31,6 +33,9 @@ import type {
   ConnectorProbeResponse,
   ConnectorProviderSummary,
   ConnectorRiskBadge,
+  MailSetupProvider,
+  MailSetupRequest,
+  MailSetupStatus,
   MCPInvokeResponse,
   MCPServerSummary,
   MCPToolInfo,
@@ -39,6 +44,13 @@ import type {
 // MCPPanel is now split into operator-facing connector configuration and the
 // original raw MCP diagnostic surface. Raw tool invocation stays available, but
 // provider setup starts from approved Aura connector profiles.
+const MAIL_SETUP_PROVIDER_ID = 'mail-mcp';
+const MCP_FIELD_CLASS = 'min-h-11 w-full rounded-md border bg-background px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30';
+
+function ariaExpanded(expanded: boolean): { 'aria-expanded': 'true' | 'false' } {
+  return { 'aria-expanded': expanded ? 'true' : 'false' };
+}
+
 export function MCPPanel() {
   const { t } = useLocale();
   const fetchProviders = useCallback(() => api.mcpProviders(), []);
@@ -272,6 +284,8 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
         </div>
       )}
 
+      {provider.id === MAIL_SETUP_PROVIDER_ID && <MailSetupWizard />}
+
       {probe && (
         <div
           className={`mt-3 rounded-md border px-3 py-2 text-xs ${
@@ -331,6 +345,445 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
       </div>
     </article>
   );
+}
+
+type MailSetupForm = {
+  provider: MailSetupProvider;
+  account_id: string;
+  email: string;
+  imap_host: string;
+  imap_port: string;
+  imap_secure: boolean;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_secure: boolean;
+  app_password: string;
+  enable_smtp: boolean;
+};
+
+const MAIL_PROVIDER_DEFAULTS: Record<MailSetupProvider, Pick<MailSetupForm, 'imap_host' | 'imap_port' | 'imap_secure' | 'smtp_host' | 'smtp_port' | 'smtp_secure'>> = {
+  gmail: {
+    imap_host: 'imap.gmail.com',
+    imap_port: '993',
+    imap_secure: true,
+    smtp_host: 'smtp.gmail.com',
+    smtp_port: '465',
+    smtp_secure: true,
+  },
+  outlook: {
+    imap_host: 'outlook.office365.com',
+    imap_port: '993',
+    imap_secure: true,
+    smtp_host: 'smtp.office365.com',
+    smtp_port: '587',
+    smtp_secure: true,
+  },
+  imap: {
+    imap_host: '',
+    imap_port: '993',
+    imap_secure: true,
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_secure: true,
+  },
+};
+
+function MailSetupWizard() {
+  const { t } = useLocale();
+  const [status, setStatus] = useState<MailSetupStatus | null>(null);
+  const [form, setForm] = useState<MailSetupForm>(() => mailStatusToForm(null));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartReady, setRestartReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.mailSetupStatus()
+      .then((nextStatus) => {
+        if (cancelled) return;
+        setStatus(nextStatus);
+        setForm(mailStatusToForm(nextStatus));
+        setRestartReady(Boolean(nextStatus.restart_required));
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const update = <K extends keyof MailSetupForm>(key: K, value: MailSetupForm[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const changeProvider = (provider: MailSetupProvider) => {
+    const defaults = MAIL_PROVIDER_DEFAULTS[provider];
+    setForm((prev) => ({
+      ...prev,
+      provider,
+      imap_host: defaults.imap_host,
+      imap_port: defaults.imap_port,
+      imap_secure: defaults.imap_secure,
+      smtp_host: defaults.smtp_host,
+      smtp_port: defaults.smtp_port,
+      smtp_secure: defaults.smtp_secure,
+    }));
+  };
+
+  const save = async () => {
+    const request = mailFormToRequest(form);
+    if (!request.account_id || !request.email) {
+      toast.error(t('mcp.mail.validationRequired'));
+      return;
+    }
+    if (!request.imap_host || !request.imap_port) {
+      toast.error(t('mcp.mail.validationImap'));
+      return;
+    }
+    if (request.enable_smtp && (!request.smtp_host || !request.smtp_port)) {
+      toast.error(t('mcp.mail.validationSmtp'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await api.saveMailSetup(request);
+      if (!result.ok || !result.status) {
+        toast.error(t('mcp.mail.saveFailed'));
+        return;
+      }
+      const nextStatus = result.status;
+      setStatus(nextStatus);
+      setForm(mailStatusToForm(nextStatus));
+      setRestartReady(Boolean(nextStatus.restart_required || nextStatus.needs_restart));
+      setError(null);
+      toast.success(t('mcp.mail.saveOk'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restartAura = async () => {
+    setRestarting(true);
+    try {
+      await api.restart();
+      toast.success(t('mcp.mail.restartOk'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+      setRestarting(false);
+    }
+  };
+
+  return (
+    <section className="mt-4 rounded-lg border bg-muted/10 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{t('mcp.mail.title')}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {t('mcp.mail.description')}
+          </p>
+        </div>
+        <StatusPill status={status?.configured ? 'configured' : 'not_configured'} />
+      </div>
+
+      {loading ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 size={13} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <AlertTriangle size={13} />
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label={t('mcp.mail.providerLabel')} htmlFor="mail-provider">
+              <select
+                id="mail-provider"
+                aria-label={t('mcp.mail.providerLabel')}
+                title={t('mcp.mail.providerLabel')}
+                value={form.provider}
+                onChange={(e) => changeProvider(e.target.value as MailSetupProvider)}
+                className={MCP_FIELD_CLASS}
+              >
+                <option value="gmail">{t('mcp.mail.provider.gmail')}</option>
+                <option value="outlook">{t('mcp.mail.provider.outlook')}</option>
+                <option value="imap">{t('mcp.mail.provider.imap')}</option>
+              </select>
+            </Field>
+            <Field label={t('mcp.mail.emailLabel')} htmlFor="mail-email">
+              <input
+                id="mail-email"
+                type="email"
+                aria-label={t('mcp.mail.emailLabel')}
+                title={t('mcp.mail.emailLabel')}
+                value={form.email}
+                onChange={(e) => {
+                  update('email', e.target.value);
+                  if (!form.account_id || form.account_id === form.email) {
+                    update('account_id', e.target.value);
+                  }
+                }}
+                autoComplete="email"
+                className={MCP_FIELD_CLASS}
+                placeholder={t('mcp.mail.emailPlaceholder')}
+              />
+            </Field>
+            <Field label={t('mcp.mail.accountLabel')} htmlFor="mail-account">
+              <input
+                id="mail-account"
+                type="text"
+                aria-label={t('mcp.mail.accountLabel')}
+                title={t('mcp.mail.accountLabel')}
+                value={form.account_id}
+                onChange={(e) => update('account_id', e.target.value)}
+                autoComplete="off"
+                className={`${MCP_FIELD_CLASS} font-mono`}
+                placeholder={t('mcp.mail.accountPlaceholder')}
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_120px_auto]">
+            <Field label={t('mcp.mail.imapHostLabel')} htmlFor="mail-imap-host">
+              <input
+                id="mail-imap-host"
+                type="text"
+                aria-label={t('mcp.mail.imapHostLabel')}
+                title={t('mcp.mail.imapHostLabel')}
+                value={form.imap_host}
+                onChange={(e) => update('imap_host', e.target.value)}
+                autoComplete="off"
+                className={`${MCP_FIELD_CLASS} font-mono`}
+              />
+            </Field>
+            <Field label={t('mcp.mail.imapPortLabel')} htmlFor="mail-imap-port">
+              <input
+                id="mail-imap-port"
+                type="number"
+                aria-label={t('mcp.mail.imapPortLabel')}
+                title={t('mcp.mail.imapPortLabel')}
+                min={1}
+                max={65535}
+                value={form.imap_port}
+                onChange={(e) => update('imap_port', e.target.value)}
+                className={`${MCP_FIELD_CLASS} font-mono`}
+              />
+            </Field>
+            <CheckField
+              id="mail-imap-secure"
+              checked={form.imap_secure}
+              onChange={(value) => update('imap_secure', value)}
+              label={t('mcp.mail.secureLabel')}
+            />
+          </div>
+
+          <div className="rounded-md border bg-background/60 p-3">
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <input
+                type="checkbox"
+                aria-label={t('mcp.mail.smtpToggle')}
+                title={t('mcp.mail.smtpToggle')}
+                checked={form.enable_smtp}
+                onChange={(e) => update('enable_smtp', e.target.checked)}
+                className="size-4"
+              />
+              {t('mcp.mail.smtpToggle')}
+            </label>
+            {form.enable_smtp && (
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_120px_auto]">
+                <Field label={t('mcp.mail.smtpHostLabel')} htmlFor="mail-smtp-host">
+                  <input
+                    id="mail-smtp-host"
+                    type="text"
+                    aria-label={t('mcp.mail.smtpHostLabel')}
+                    title={t('mcp.mail.smtpHostLabel')}
+                    value={form.smtp_host}
+                    onChange={(e) => update('smtp_host', e.target.value)}
+                    autoComplete="off"
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                  />
+                </Field>
+                <Field label={t('mcp.mail.smtpPortLabel')} htmlFor="mail-smtp-port">
+                  <input
+                    id="mail-smtp-port"
+                    type="number"
+                    aria-label={t('mcp.mail.smtpPortLabel')}
+                    title={t('mcp.mail.smtpPortLabel')}
+                    min={1}
+                    max={65535}
+                    value={form.smtp_port}
+                    onChange={(e) => update('smtp_port', e.target.value)}
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                  />
+                </Field>
+                <CheckField
+                  id="mail-smtp-secure"
+                  checked={form.smtp_secure}
+                  onChange={(value) => update('smtp_secure', value)}
+                  label={t('mcp.mail.secureLabel')}
+                />
+              </div>
+            )}
+          </div>
+
+          <Field label={t('mcp.mail.secretLabel')} htmlFor="mail-app-password">
+            <input
+              id="mail-app-password"
+              type="password"
+              aria-label={t('mcp.mail.secretLabel')}
+              title={t('mcp.mail.secretLabel')}
+              value={form.app_password}
+              onChange={(e) => update('app_password', e.target.value)}
+              autoComplete="new-password"
+              spellCheck={false}
+              className={MCP_FIELD_CLASS}
+              placeholder={status?.secret_configured ? t('mcp.mail.secretConfigured') : t('mcp.mail.secretPlaceholder')}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {status?.secret_configured ? t('mcp.mail.secretKeepHint') : t('mcp.mail.secretHint')}
+            </p>
+          </Field>
+
+          {restartReady && (
+            <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-800 dark:text-orange-100">
+              <div className="font-medium">{t('mcp.mail.restartTitle')}</div>
+              <div className="mt-1">{t('mcp.mail.restartDescription')}</div>
+            </div>
+          )}
+
+          {status?.configured && !status.binary_present && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-100">
+              <div className="font-medium">{t('mcp.mail.binaryMissingTitle')}</div>
+              <div className="mt-1">{t('mcp.mail.binaryMissingDescription', { command: status.command || '/usr/local/bin/mail-mcp' })}</div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">
+              {status?.configured ? t('mcp.mail.configuredAs', { email: status.email || status.configured_email || status.account_id || '' }) : t('mcp.mail.notConfigured')}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {saving ? t('mcp.mail.saving') : t('mcp.mail.save')}
+              </button>
+              {restartReady && (
+                <button
+                  type="button"
+                  onClick={() => void restartAura()}
+                  disabled={restarting || saving}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-orange-500/50 bg-orange-500/10 px-3 py-2 text-xs text-orange-700 hover:bg-orange-500/15 disabled:opacity-60 dark:text-orange-200"
+                >
+                  {restarting ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+                  {restarting ? t('mcp.mail.restarting') : t('mcp.mail.restartButton')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block min-w-0 text-xs font-medium" htmlFor={htmlFor}>
+      <span className="mb-1 block text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function CheckField({
+  id,
+  checked,
+  onChange,
+  label,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex min-h-11 items-end gap-2 pb-2 text-xs font-medium text-muted-foreground" htmlFor={id}>
+      <input
+        id={id}
+        type="checkbox"
+        aria-label={label}
+        title={label}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mb-0.5 size-4"
+      />
+      {label}
+    </label>
+  );
+}
+
+function mailStatusToForm(status: MailSetupStatus | null): MailSetupForm {
+  const provider = status?.provider ?? 'gmail';
+  const defaults = MAIL_PROVIDER_DEFAULTS[provider];
+  return {
+    provider,
+    account_id: status?.account_id ?? status?.email ?? '',
+    email: status?.email ?? '',
+    imap_host: status?.imap_host ?? defaults.imap_host,
+    imap_port: String(status?.imap_port ?? defaults.imap_port),
+    imap_secure: status?.imap_secure ?? defaults.imap_secure,
+    smtp_host: status?.smtp_host ?? defaults.smtp_host,
+    smtp_port: String(status?.smtp_port ?? defaults.smtp_port),
+    smtp_secure: status?.smtp_secure ?? defaults.smtp_secure,
+    app_password: '',
+    enable_smtp: status?.enable_smtp ?? false,
+  };
+}
+
+function mailFormToRequest(form: MailSetupForm): MailSetupRequest {
+  const request: MailSetupRequest = {
+    provider: form.provider,
+    account_id: form.account_id.trim(),
+    email: form.email.trim(),
+    imap_host: form.imap_host.trim(),
+    imap_port: Number(form.imap_port),
+    imap_secure: form.imap_secure,
+    enable_smtp: form.enable_smtp,
+  };
+  if (form.enable_smtp) {
+    request.smtp_host = form.smtp_host.trim();
+    request.smtp_port = Number(form.smtp_port);
+    request.smtp_secure = form.smtp_secure;
+  }
+  if (form.app_password.trim() !== '') {
+    request.app_password = form.app_password;
+  }
+  return request;
 }
 
 function InstalledView({ providers }: { providers: ConnectorProviderSummary[] }) {
@@ -431,7 +884,7 @@ function ServerCard({
       <button
         type="button"
         onClick={onToggle}
-        aria-expanded={isOpen}
+        {...ariaExpanded(isOpen)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30"
       >
         {isOpen ? <ChevronDown size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />}
@@ -522,7 +975,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
           <button
             type="button"
             onClick={() => setShowSchema((v) => !v)}
-            aria-expanded={showSchema}
+            {...ariaExpanded(showSchema)}
             className="min-h-[28px] px-1 text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
             {showSchema ? t('mcp.hideSchema') : t('mcp.showSchema')}
@@ -531,7 +984,7 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
         <button
           type="button"
           onClick={() => setShowRun((v) => !v)}
-          aria-expanded={showRun}
+          {...ariaExpanded(showRun)}
           className="ml-auto inline-flex min-h-[36px] items-center justify-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] text-primary hover:bg-primary/10"
         >
           <Play size={11} />
@@ -556,6 +1009,8 @@ function ToolRow({ server, tool }: { server: string; tool: MCPToolInfo }) {
           </label>
           <textarea
             id={`mcp-args-${server}-${tool.name}`}
+            aria-label={t('mcp.argsLabel')}
+            title={t('mcp.argsLabel')}
             value={args}
             onChange={(e) => setArgs(e.target.value)}
             spellCheck={false}

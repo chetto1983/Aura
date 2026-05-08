@@ -8,12 +8,24 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/aura ./cmd/aura
 
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates git tzdata wget \
-    && adduser -D -H -u 10001 aura \
+ARG MAIL_MCP_VERSION=0.4.5
+ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c92388249bf
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git tzdata wget xz-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app
+
+RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/releases/download/v${MAIL_MCP_VERSION}/mail-mcp-x86_64-unknown-linux-gnu.tar.xz" \
+    && echo "${MAIL_MCP_SHA256}  /tmp/mail-mcp.tar.xz" | sha256sum -c - \
+    && tar -xJf /tmp/mail-mcp.tar.xz -C /tmp \
+    && install -m 0755 "/tmp/mail-mcp-x86_64-unknown-linux-gnu/mail-mcp" /usr/local/bin/mail-mcp \
+    && test -x /usr/local/bin/mail-mcp \
+    && rm -rf /tmp/mail-mcp.tar.xz /tmp/mail-mcp-x86_64-unknown-linux-gnu
 
 COPY --from=build /out/aura /usr/local/bin/aura
 
