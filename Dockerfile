@@ -8,6 +8,14 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/aura ./cmd/aura
 
+FROM node:22-bookworm-slim AS mcp-node
+
+ARG DATABASE_MCP_VERSION=1.1.0
+
+RUN npm install -g "@executeautomation/database-server@${DATABASE_MCP_VERSION}" \
+    && npm cache clean --force \
+    && test -x /usr/local/bin/ea-database-server
+
 FROM debian:bookworm-slim
 
 ARG MAIL_MCP_VERSION=0.4.5
@@ -26,6 +34,13 @@ RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/
     && install -m 0755 "/tmp/mail-mcp-x86_64-unknown-linux-gnu/mail-mcp" /usr/local/bin/mail-mcp \
     && test -x /usr/local/bin/mail-mcp \
     && rm -rf /tmp/mail-mcp.tar.xz /tmp/mail-mcp-x86_64-unknown-linux-gnu
+
+COPY --from=mcp-node /usr/local/bin/node /usr/local/bin/node
+COPY --from=mcp-node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/node /usr/local/lib/node_modules/@executeautomation/database-server/dist/src/index.js "$@"' > /usr/local/bin/ea-database-server \
+    && chmod 0755 /usr/local/bin/ea-database-server \
+    && test -x /usr/local/bin/node \
+    && test -x /usr/local/bin/ea-database-server
 
 COPY --from=build /out/aura /usr/local/bin/aura
 

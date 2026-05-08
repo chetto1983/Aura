@@ -245,6 +245,43 @@ export interface MailSetupResponse {
   status: MailSetupStatus;
 }
 
+export type DatabaseSetupProvider = 'sqlite' | 'postgresql' | 'mysql' | 'sqlserver';
+
+export interface DatabaseSetupStatus {
+  configured: boolean;
+  connected: boolean;
+  needs_restart: boolean;
+  restart_required: boolean;
+  can_restart: boolean;
+  binary_present: boolean;
+  command?: string;
+  provider?: DatabaseSetupProvider;
+  sqlite_path?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  ssl?: boolean;
+  password_configured?: boolean;
+  error?: string;
+}
+
+export interface DatabaseSetupRequest {
+  provider: DatabaseSetupProvider;
+  sqlite_path?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  password?: string;
+  ssl?: boolean;
+}
+
+export interface DatabaseSetupResponse {
+  ok: boolean;
+  status: DatabaseSetupStatus;
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 export interface SkillCatalogItem {

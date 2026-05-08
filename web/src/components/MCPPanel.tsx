@@ -33,6 +33,9 @@ import type {
   ConnectorProbeResponse,
   ConnectorProviderSummary,
   ConnectorRiskBadge,
+  DatabaseSetupProvider,
+  DatabaseSetupRequest,
+  DatabaseSetupStatus,
   MailSetupProvider,
   MailSetupRequest,
   MailSetupStatus,
@@ -45,6 +48,7 @@ import type {
 // original raw MCP diagnostic surface. Raw tool invocation stays available, but
 // provider setup starts from approved Aura connector profiles.
 const MAIL_SETUP_PROVIDER_ID = 'mail-mcp';
+const DATABASE_SETUP_PROVIDER_ID = 'database';
 const MCP_FIELD_CLASS = 'min-h-11 w-full rounded-md border bg-background px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30';
 
 function ariaExpanded(expanded: boolean): { 'aria-expanded': 'true' | 'false' } {
@@ -285,6 +289,7 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
       )}
 
       {provider.id === MAIL_SETUP_PROVIDER_ID && <MailSetupWizard />}
+      {provider.id === DATABASE_SETUP_PROVIDER_ID && <DatabaseSetupWizard />}
 
       {probe && (
         <div
@@ -784,6 +789,338 @@ function mailFormToRequest(form: MailSetupForm): MailSetupRequest {
     request.app_password = form.app_password;
   }
   return request;
+}
+
+type DatabaseSetupForm = {
+  provider: DatabaseSetupProvider;
+  sqlite_path: string;
+  host: string;
+  port: string;
+  database: string;
+  user: string;
+  password: string;
+  ssl: boolean;
+};
+
+const DATABASE_DEFAULT_PORTS: Record<DatabaseSetupProvider, string> = {
+  sqlite: '',
+  postgresql: '5432',
+  mysql: '3306',
+  sqlserver: '1433',
+};
+
+function DatabaseSetupWizard() {
+  const { t } = useLocale();
+  const [status, setStatus] = useState<DatabaseSetupStatus | null>(null);
+  const [form, setForm] = useState<DatabaseSetupForm>(() => databaseStatusToForm(null));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartReady, setRestartReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.databaseSetupStatus()
+      .then((nextStatus) => {
+        if (cancelled) return;
+        setStatus(nextStatus);
+        setForm(databaseStatusToForm(nextStatus));
+        setRestartReady(Boolean(nextStatus.restart_required));
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const update = <K extends keyof DatabaseSetupForm>(key: K, value: DatabaseSetupForm[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const changeProvider = (provider: DatabaseSetupProvider) => {
+    setForm((prev) => ({
+      ...prev,
+      provider,
+      port: DATABASE_DEFAULT_PORTS[provider],
+      ssl: provider === 'postgresql',
+    }));
+  };
+
+  const save = async () => {
+    const request = databaseFormToRequest(form);
+    if (request.provider === 'sqlite' && !request.sqlite_path) {
+      toast.error(t('mcp.database.validationSqlite'));
+      return;
+    }
+    if (request.provider !== 'sqlite' && (!request.host || !request.database)) {
+      toast.error(t('mcp.database.validationNetwork'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await api.saveDatabaseSetup(request);
+      if (!result.ok || !result.status) {
+        toast.error(t('mcp.database.saveFailed'));
+        return;
+      }
+      const nextStatus = result.status;
+      setStatus(nextStatus);
+      setForm(databaseStatusToForm(nextStatus));
+      setRestartReady(Boolean(nextStatus.restart_required || nextStatus.needs_restart));
+      setError(null);
+      toast.success(t('mcp.database.saveOk'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restartAura = async () => {
+    setRestarting(true);
+    try {
+      await api.restart();
+      toast.success(t('mcp.database.restartOk'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+      setRestarting(false);
+    }
+  };
+
+  const networkDatabase = form.provider !== 'sqlite';
+
+  return (
+    <section className="mt-4 rounded-lg border bg-muted/10 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{t('mcp.database.title')}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {t('mcp.database.description')}
+          </p>
+        </div>
+        <StatusPill status={status?.configured ? 'configured' : 'not_configured'} />
+      </div>
+
+      {loading ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 size={13} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <AlertTriangle size={13} />
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label={t('mcp.database.providerLabel')} htmlFor="database-provider">
+              <select
+                id="database-provider"
+                aria-label={t('mcp.database.providerLabel')}
+                title={t('mcp.database.providerLabel')}
+                value={form.provider}
+                onChange={(e) => changeProvider(e.target.value as DatabaseSetupProvider)}
+                className={MCP_FIELD_CLASS}
+              >
+                <option value="sqlite">{t('mcp.database.provider.sqlite')}</option>
+                <option value="postgresql">{t('mcp.database.provider.postgresql')}</option>
+                <option value="mysql">{t('mcp.database.provider.mysql')}</option>
+                <option value="sqlserver">{t('mcp.database.provider.sqlserver')}</option>
+              </select>
+            </Field>
+
+            {networkDatabase ? (
+              <>
+                <Field label={t('mcp.database.hostLabel')} htmlFor="database-host">
+                  <input
+                    id="database-host"
+                    type="text"
+                    aria-label={t('mcp.database.hostLabel')}
+                    title={t('mcp.database.hostLabel')}
+                    value={form.host}
+                    onChange={(e) => update('host', e.target.value)}
+                    autoComplete="off"
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                    placeholder="localhost"
+                  />
+                </Field>
+                <Field label={t('mcp.database.portLabel')} htmlFor="database-port">
+                  <input
+                    id="database-port"
+                    type="number"
+                    aria-label={t('mcp.database.portLabel')}
+                    title={t('mcp.database.portLabel')}
+                    min={1}
+                    max={65535}
+                    value={form.port}
+                    onChange={(e) => update('port', e.target.value)}
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                  />
+                </Field>
+              </>
+            ) : (
+              <div className="md:col-span-2">
+                <Field label={t('mcp.database.sqlitePathLabel')} htmlFor="database-sqlite-path">
+                  <input
+                    id="database-sqlite-path"
+                    type="text"
+                    aria-label={t('mcp.database.sqlitePathLabel')}
+                    title={t('mcp.database.sqlitePathLabel')}
+                    value={form.sqlite_path}
+                    onChange={(e) => update('sqlite_path', e.target.value)}
+                    autoComplete="off"
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                    placeholder="/workspace/data/customer.db"
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
+
+          {networkDatabase && (
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Field label={t('mcp.database.databaseLabel')} htmlFor="database-name">
+                  <input
+                    id="database-name"
+                    type="text"
+                    aria-label={t('mcp.database.databaseLabel')}
+                    title={t('mcp.database.databaseLabel')}
+                    value={form.database}
+                    onChange={(e) => update('database', e.target.value)}
+                    autoComplete="off"
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                  />
+                </Field>
+                <Field label={t('mcp.database.userLabel')} htmlFor="database-user">
+                  <input
+                    id="database-user"
+                    type="text"
+                    aria-label={t('mcp.database.userLabel')}
+                    title={t('mcp.database.userLabel')}
+                    value={form.user}
+                    onChange={(e) => update('user', e.target.value)}
+                    autoComplete="username"
+                    className={`${MCP_FIELD_CLASS} font-mono`}
+                  />
+                </Field>
+                <CheckField
+                  id="database-ssl"
+                  checked={form.ssl}
+                  onChange={(value) => update('ssl', value)}
+                  label={t('mcp.database.sslLabel')}
+                />
+              </div>
+              <Field label={t('mcp.database.passwordLabel')} htmlFor="database-password">
+                <input
+                  id="database-password"
+                  type="password"
+                  aria-label={t('mcp.database.passwordLabel')}
+                  title={t('mcp.database.passwordLabel')}
+                  value={form.password}
+                  onChange={(e) => update('password', e.target.value)}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  className={MCP_FIELD_CLASS}
+                  placeholder={status?.password_configured ? t('mcp.database.passwordConfigured') : t('mcp.database.passwordPlaceholder')}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {status?.password_configured ? t('mcp.database.passwordKeepHint') : t('mcp.database.passwordHint')}
+                </p>
+              </Field>
+            </>
+          )}
+
+          {restartReady && (
+            <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-800 dark:text-orange-100">
+              <div className="font-medium">{t('mcp.database.restartTitle')}</div>
+              <div className="mt-1">{t('mcp.database.restartDescription')}</div>
+            </div>
+          )}
+
+          {status?.configured && !status.binary_present && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-100">
+              <div className="font-medium">{t('mcp.database.binaryMissingTitle')}</div>
+              <div className="mt-1">{t('mcp.database.binaryMissingDescription', { command: status.command || '/usr/local/bin/ea-database-server' })}</div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">
+              {status?.configured ? t('mcp.database.configuredAs', { target: databaseConfiguredTarget(status) }) : t('mcp.database.notConfigured')}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {saving ? t('mcp.database.saving') : t('mcp.database.save')}
+              </button>
+              {restartReady && (
+                <button
+                  type="button"
+                  onClick={() => void restartAura()}
+                  disabled={restarting || saving}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-orange-500/50 bg-orange-500/10 px-3 py-2 text-xs text-orange-700 hover:bg-orange-500/15 disabled:opacity-60 dark:text-orange-200"
+                >
+                  {restarting ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+                  {restarting ? t('mcp.database.restarting') : t('mcp.database.restartButton')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function databaseStatusToForm(status: DatabaseSetupStatus | null): DatabaseSetupForm {
+  const provider = status?.provider ?? 'sqlite';
+  return {
+    provider,
+    sqlite_path: status?.sqlite_path ?? '',
+    host: status?.host ?? '',
+    port: String(status?.port ?? DATABASE_DEFAULT_PORTS[provider]),
+    database: status?.database ?? '',
+    user: status?.user ?? '',
+    password: '',
+    ssl: status?.ssl ?? provider === 'postgresql',
+  };
+}
+
+function databaseFormToRequest(form: DatabaseSetupForm): DatabaseSetupRequest {
+  const request: DatabaseSetupRequest = { provider: form.provider };
+  if (form.provider === 'sqlite') {
+    request.sqlite_path = form.sqlite_path.trim();
+    return request;
+  }
+  request.host = form.host.trim();
+  request.port = Number(form.port);
+  request.database = form.database.trim();
+  request.user = form.user.trim();
+  request.ssl = form.ssl;
+  if (form.password.trim() !== '') {
+    request.password = form.password;
+  }
+  return request;
+}
+
+function databaseConfiguredTarget(status: DatabaseSetupStatus): string {
+  if (status.provider === 'sqlite') return status.sqlite_path || 'sqlite';
+  return `${status.host || 'host'}/${status.database || 'database'}`;
 }
 
 function InstalledView({ providers }: { providers: ConnectorProviderSummary[] }) {

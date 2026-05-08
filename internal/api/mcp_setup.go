@@ -71,6 +71,7 @@ func currentMailSetupStatus(deps Deps) (MailSetupStatus, error) {
 		CanRestart: deps.Restart != nil,
 		Command:    defaultMailMCPCommand(deps),
 	}
+	status.BinaryPresent = fileExists(status.Command)
 	if path == "" {
 		return status, errors.New("MCP config path unavailable")
 	}

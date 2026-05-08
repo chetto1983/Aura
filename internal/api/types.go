@@ -311,6 +311,46 @@ type MailSetupResponse struct {
 	Status MailSetupStatus `json:"status"`
 }
 
+// DatabaseSetupStatus is the dashboard-facing state for the guided database
+// MCP wizard. Passwords are never returned; PasswordConfigured only reports
+// whether the saved server args include one.
+type DatabaseSetupStatus struct {
+	Configured         bool   `json:"configured"`
+	Connected          bool   `json:"connected"`
+	NeedsRestart       bool   `json:"needs_restart"`
+	RestartRequired    bool   `json:"restart_required"`
+	CanRestart         bool   `json:"can_restart"`
+	BinaryPresent      bool   `json:"binary_present"`
+	Command            string `json:"command,omitempty"`
+	Provider           string `json:"provider,omitempty"`
+	SQLitePath         string `json:"sqlite_path,omitempty"`
+	Host               string `json:"host,omitempty"`
+	Port               int    `json:"port,omitempty"`
+	Database           string `json:"database,omitempty"`
+	User               string `json:"user,omitempty"`
+	SSL                bool   `json:"ssl,omitempty"`
+	PasswordConfigured bool   `json:"password_configured,omitempty"`
+	Error              string `json:"error,omitempty"`
+}
+
+// DatabaseSetupRequest writes the single managed ExecuteAutomation database
+// MCP entry. Provider is one of sqlite, postgresql, mysql, or sqlserver.
+type DatabaseSetupRequest struct {
+	Provider   string `json:"provider"`
+	SQLitePath string `json:"sqlite_path,omitempty"`
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	Database   string `json:"database,omitempty"`
+	User       string `json:"user,omitempty"`
+	Password   string `json:"password,omitempty"`
+	SSL        bool   `json:"ssl,omitempty"`
+}
+
+type DatabaseSetupResponse struct {
+	OK     bool                `json:"ok"`
+	Status DatabaseSetupStatus `json:"status"`
+}
+
 // MailMessage is Aura's provider-agnostic mail record. Provider-specific
 // payloads stay behind adapters.
 type MailMessage struct {

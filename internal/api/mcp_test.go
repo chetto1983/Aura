@@ -126,8 +126,8 @@ func TestMCPProviders_ReturnsMailAndDatabaseProfiles(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) == 0 {
-		t.Fatal("expected provider manifests")
+	if len(got) != 2 {
+		t.Fatalf("providers = %d, want 2: %+v", len(got), got)
 	}
 
 	var mailFound, databaseFound bool
@@ -141,7 +141,7 @@ func TestMCPProviders_ReturnsMailAndDatabaseProfiles(t *testing.T) {
 			if len(p.Capabilities) == 0 {
 				t.Errorf("mail-mcp capabilities empty")
 			}
-		case "executeautomation-database":
+		case "database":
 			databaseFound = true
 			if p.Kind != "database" {
 				t.Errorf("database kind = %q, want database", p.Kind)
@@ -158,7 +158,7 @@ func TestMCPProviders_ReturnsMailAndDatabaseProfiles(t *testing.T) {
 		t.Fatalf("mail-mcp provider missing from %+v", got)
 	}
 	if !databaseFound {
-		t.Fatalf("executeautomation database provider missing from %+v", got)
+		t.Fatalf("database provider missing from %+v", got)
 	}
 }
 

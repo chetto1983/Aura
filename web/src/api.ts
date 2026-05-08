@@ -17,6 +17,9 @@ import type {
   MCPServerSummary,
   ConnectorProviderSummary,
   ConnectorProbeResponse,
+  DatabaseSetupRequest,
+  DatabaseSetupResponse,
+  DatabaseSetupStatus,
   MailSetupRequest,
   MailSetupResponse,
   MailSetupStatus,
@@ -231,6 +234,9 @@ export const api = {
   mailSetupStatus: () => get<MailSetupStatus>(`/mcp/setup/mail`),
   saveMailSetup: (req: MailSetupRequest) =>
     post<MailSetupResponse>(`/mcp/setup/mail`, req),
+  databaseSetupStatus: () => get<DatabaseSetupStatus>(`/mcp/setup/database`),
+  saveDatabaseSetup: (req: DatabaseSetupRequest) =>
+    post<DatabaseSetupResponse>(`/mcp/setup/database`, req),
 
   // ---- skills.sh catalog + admin install/delete (slice 11c) ----
   skillsCatalog: (q?: string, limit?: number) =>

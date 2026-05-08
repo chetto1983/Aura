@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "mail": {
-      "command": "D:/path/to/mail-mcp/target/release/mail-mcp.exe",
+      "command": "/usr/local/bin/mail-mcp",
       "env": {
         "MAIL_IMAP_DEFAULT_HOST": "imap.example.com",
         "MAIL_IMAP_DEFAULT_USER": "user@example.com",
@@ -9,15 +9,9 @@
         "MAIL_IMAP_DEFAULT_SECURE": "true"
       }
     },
-    "fetch_example": {
-      "command": "uvx",
-      "args": ["mcp-server-fetch"]
-    },
-    "remote_example": {
-      "url": "https://example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer REPLACE_ME"
-      }
+    "database": {
+      "command": "/usr/local/bin/ea-database-server",
+      "args": ["/workspace/data/example.db"]
     }
   }
 }

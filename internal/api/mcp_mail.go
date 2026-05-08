@@ -199,9 +199,6 @@ func selectMailProviderAdapter(providerID string, advertised map[string]bool) (m
 		{"imap_search_messages", "imap_get_message"},
 		{"ews_search_messages", "ews_get_message"},
 	}
-	if providerID == "gmail-dedicated" {
-		candidates = [][]string{{"list_emails", "get_email"}}
-	}
 	for _, pair := range candidates {
 		if advertised[pair[0]] && advertised[pair[1]] {
 			return mailProviderAdapter{providerID: providerID, searchTool: pair[0], readTool: pair[1]}, nil
