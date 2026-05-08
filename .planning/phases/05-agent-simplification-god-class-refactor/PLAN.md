@@ -70,6 +70,7 @@ Create or reshape these boundaries:
 ## Execution Log
 
 - 2026-05-08 process correction: active execution must explicitly use `using-superpowers`, `aura-implementation`, and `executing-plans`; use `subagent-driven-development` when dispatching independent implementation/review tasks. `D:\Aura\AGENTS.md` is the project agent contract, while this plan is the slice execution contract. Each slice must start with the Aura Ralph status check, update this plan before/after work, verify, update the tracker when behavior changes, and commit atomically by explicit paths.
+- 2026-05-08: Persisted the mandatory skill-driven work protocol into `AGENTS.md` so future sessions remember it before reading phase-specific plans.
 - 2026-05-08: Merged `codex/v31-closure-gate` into `master` via fast-forward at `62d0d9a`, then created `codex/simplify-agent-god-classes`.
 - 2026-05-08: Focused baseline passed: `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config`.
 - 2026-05-08: Commit `b0fb0cc` removed required skill preflight. `AURA_SKILL_PREFLIGHT` now defaults to `off`, settings expose only `off|advisory`, and tool execution no longer blocks on `read_skill`.

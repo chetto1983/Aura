@@ -37,6 +37,10 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 
 - Preserve user edits in the working tree.
 - Prefer small, focused changes that follow the existing Go package layout.
+- For non-trivial implementation work, use the active skills explicitly before editing: `using-superpowers`, `aura-implementation`, and `executing-plans` when a phase plan exists. Use `subagent-driven-development` for independent implementation/review tasks.
+- Run the Aura Ralph status check before edits when `loops/aura-implementation/scripts/status.ps1` exists.
+- Keep the active phase plan updated before and after each implementation slice; for the current agent cleanup phase this is `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`.
+- Commit one small atomic slice at a time, staging explicit paths only.
 - Use `Body` for wiki page content; the project has migrated from YAML page files to markdown with frontmatter.
 - Keep wiki links in `[[slug]]` form.
 - Use `LLM_API_KEY` only for the chat model. Web search is controlled by `WEB_SEARCH_PROVIDER` (`searxng`, `ollama`, or `disabled`) with provider-specific settings; do not assume the chat key unlocks search. Use dedicated Mistral embedding settings (`EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) for wiki search; do not fall back from embeddings to `LLM_API_KEY`.
