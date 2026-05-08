@@ -105,6 +105,51 @@ func TestCompactMemoryQdrantIndexRecreatesCollectionAndUpsertsPayloads(t *testin
 	}
 }
 
+func TestCompactMemoryQdrantIndexUsesBatchEmbeddings(t *testing.T) {
+	batchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+	index, err := NewCompactMemoryQdrantIndexWithBatch(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+	}, keywordEmbedding, func(ctx context.Context, texts []string) ([][]float32, error) {
+		batchCalls++
+		vectors := make([][]float32, len(texts))
+		for i, text := range texts {
+			vec, err := keywordEmbedding(ctx, text)
+			if err != nil {
+				return nil, err
+			}
+			vectors[i] = vec
+		}
+		return vectors, nil
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndexWithBatch: %v", err)
+	}
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{
+		{ID: "source:1", Kind: memoryindex.KindSource, Body: "first compact source", UpdatedAt: time.Now().UTC()},
+		{ID: "archive:2", Kind: memoryindex.KindArchive, Body: "second compact archive", UpdatedAt: time.Now().UTC()},
+	})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if batchCalls != 1 {
+		t.Fatalf("batchCalls = %d, want 1", batchCalls)
+	}
+}
+
 func TestCompactMemoryQdrantIndexSearchMapsPayloadAndFilters(t *testing.T) {
 	var queryBody struct {
 		Query       []float32 `json:"query"`

@@ -105,19 +105,22 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// Set up search engine
 	var searchEngine search.Repository
 	var embedFn search.EmbeddingFunction
+	var batchEmbedFn search.BatchEmbeddingFunction
 	var embedCache *search.EmbedCache
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn = createEmbeddingFunc(cfg)
+		batchEmbedFn = search.NewOpenAICompatBatchEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, nil)
 		// Slice 11h: wrap the upstream embedding fn with a SHA-keyed
 		// SQLite cache so unchanged wiki pages don't re-embed on every
 		// restart. Same cache also serves query embeddings, so repeat
 		// questions skip the Mistral round trip too.
 		cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
-		cache, err := search.NewEmbedCacheWithDB(pool, cacheNamespace, embedFn, logger)
+		cache, err := search.NewEmbedCacheWithBatchWithDB(pool, cacheNamespace, embedFn, batchEmbedFn, logger)
 		if err != nil {
 			logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
 		} else {
 			embedFn = cache.EmbedFunc()
+			batchEmbedFn = cache.BatchEmbed
 			embedCache = cache
 		}
 		var se *search.Engine
@@ -258,11 +261,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	var compactVector memoryindex.VectorIndex
 	if cfg.SearchBackend == "qdrant" && embedFn != nil {
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
-		qindex, err := search.NewCompactMemoryQdrantIndex(search.QdrantConfig{
+		qindex, err := search.NewCompactMemoryQdrantIndexWithBatch(search.QdrantConfig{
 			BaseURL:    cfg.QdrantURL,
 			Collection: collection,
 			APIKey:     cfg.QdrantAPIKey,
-		}, embedFn, logger)
+		}, embedFn, batchEmbedFn, logger)
 		if err != nil {
 			logger.Warn("compact qdrant memory mirror unavailable; using SQLite compact memory only", "error", err)
 		} else {
@@ -440,15 +443,29 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if memoryStore != nil {
 		rebuildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		report, err := memoryindex.Rebuild(rebuildCtx, memoryStore, memoryindex.RebuildInput{
-			Sources:   sourceStore,
-			Archive:   b.archiveDB,
-			Proposals: summariesStore,
+			Sources:    sourceStore,
+			Archive:    b.archiveDB,
+			Proposals:  summariesStore,
+			SkipVector: compactVector != nil,
 		})
 		cancel()
 		if err != nil {
 			logger.Warn("compact memory index rebuild failed", "error", err)
 		} else {
 			logger.Info("compact memory index rebuilt", "sources", report.SourcesIndexed, "archive", report.ArchiveIndexed, "proposals", report.ProposalsIndexed, "vector_collection", report.Vector.Collection, "vector_docs", report.Vector.DocsIndexed)
+		}
+		if compactVector != nil {
+			go func() {
+				vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				logger.Info("compact memory vector mirror sync started")
+				report, err := memoryStore.SyncVector(vectorCtx)
+				if err != nil {
+					logger.Warn("compact memory vector mirror sync failed", "error", err)
+					return
+				}
+				logger.Info("compact memory vector mirror synced", "vector_collection", report.Collection, "vector_docs", report.DocsIndexed, "vector_size", report.VectorSize)
+			}()
 		}
 	}
 	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, memoryStore, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {

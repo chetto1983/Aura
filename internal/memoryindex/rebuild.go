@@ -26,9 +26,10 @@ const (
 var sourcePageHeadingRE = regexp.MustCompile(`(?m)^## Page ([0-9]+)\s*$`)
 
 type RebuildInput struct {
-	Sources   source.Repository
-	Archive   conversation.TurnReader
-	Proposals summarizer.ProposalLister
+	Sources    source.Repository
+	Archive    conversation.TurnReader
+	Proposals  summarizer.ProposalLister
+	SkipVector bool
 }
 
 type RebuildReport struct {
@@ -85,11 +86,13 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		}
 		report.ProposalsIndexed = len(docs)
 	}
-	vectorReport, err := store.SyncVector(ctx)
-	if err != nil {
-		return report, fmt.Errorf("memoryindex: sync vector mirror: %w", err)
+	if !in.SkipVector {
+		vectorReport, err := store.SyncVector(ctx)
+		if err != nil {
+			return report, fmt.Errorf("memoryindex: sync vector mirror: %w", err)
+		}
+		report.Vector = vectorReport
 	}
-	report.Vector = vectorReport
 	return report, nil
 }
 

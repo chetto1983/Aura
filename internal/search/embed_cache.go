@@ -19,6 +19,8 @@ import (
 	"github.com/philippgille/chromem-go"
 )
 
+const embedCacheBatchSize = 8
+
 // EmbedCacheNamespace returns the provider-scoped cache namespace for
 // embedding vectors. Model alone is not enough: OpenAI-compatible endpoints can
 // expose the same model name with different dimensions or semantics.
@@ -50,13 +52,14 @@ func EmbedCacheNamespace(baseURL, model string) string {
 // EMBEDDING_BASE_URL or EMBEDDING_MODEL invalidates entries automatically.
 // Stale entries linger but cost nothing — pruning is a manual op.
 type EmbedCache struct {
-	db     *sql.DB
-	model  string
-	inner  chromem.EmbeddingFunc
-	logger *slog.Logger
-	owned  bool
-	hits   atomic.Uint64
-	misses atomic.Uint64
+	db         *sql.DB
+	model      string
+	inner      chromem.EmbeddingFunc
+	batchInner BatchEmbeddingFunction
+	logger     *slog.Logger
+	owned      bool
+	hits       atomic.Uint64
+	misses     atomic.Uint64
 }
 
 // EmbedCacheStatsReader is the read-only diagnostics boundary for cache health.
@@ -91,10 +94,14 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 
 // NewEmbedCacheWithDB wraps a caller-owned migrated SQLite pool.
 func NewEmbedCacheWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+	return NewEmbedCacheWithBatchWithDB(db, model, inner, nil, logger)
+}
+
+func NewEmbedCacheWithBatchWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, batchInner BatchEmbeddingFunction, logger *slog.Logger) (*EmbedCache, error) {
 	if db == nil {
 		return nil, errors.New("embed cache: db required")
 	}
-	return &EmbedCache{db: db, model: model, inner: inner, logger: logger, owned: false}, nil
+	return &EmbedCache{db: db, model: model, inner: inner, batchInner: batchInner, logger: logger, owned: false}, nil
 }
 
 // Close releases the SQLite handle. Idempotent.
@@ -121,6 +128,121 @@ func (c *EmbedCache) Embed(ctx context.Context, text string) ([]float32, error) 
 	if c == nil {
 		return nil, errors.New("embed cache: nil receiver")
 	}
+	if vec, ok, err := c.cached(ctx, text); ok || err != nil {
+		return vec, err
+	}
+	c.misses.Add(1)
+	if c.inner == nil {
+		return nil, errors.New("embed cache: miss with no upstream embedFn")
+	}
+	vec, err := c.inner(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+	c.store(ctx, text, vec)
+	return vec, nil
+}
+
+func (c *EmbedCache) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
+	if c == nil {
+		return nil, errors.New("embed cache: nil receiver")
+	}
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	out := make([][]float32, len(texts))
+	var missTexts []string
+	var missIndexes []int
+	for i, text := range texts {
+		vec, ok, err := c.cached(ctx, text)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out[i] = vec
+			continue
+		}
+		c.misses.Add(1)
+		missTexts = append(missTexts, text)
+		missIndexes = append(missIndexes, i)
+	}
+	if len(missTexts) == 0 {
+		return out, nil
+	}
+	var vectors [][]float32
+	var err error
+	if c.batchInner != nil {
+		vectors, err = c.embedBatchAdaptive(ctx, missTexts)
+	} else if c.inner != nil {
+		vectors = make([][]float32, 0, len(missTexts))
+		for _, text := range missTexts {
+			vec, embedErr := c.inner(ctx, text)
+			if embedErr != nil {
+				err = embedErr
+				break
+			}
+			vectors = append(vectors, vec)
+		}
+	} else {
+		err = errors.New("embed cache: miss with no upstream embedFn")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != len(missTexts) {
+		return nil, fmt.Errorf("embed cache: batch returned %d vectors for %d inputs", len(vectors), len(missTexts))
+	}
+	for i, vec := range vectors {
+		if len(vec) == 0 {
+			return nil, fmt.Errorf("embed cache: batch returned empty vector at index %d", i)
+		}
+		target := missIndexes[i]
+		out[target] = vec
+		c.store(ctx, missTexts[i], vec)
+	}
+	return out, nil
+}
+
+func (c *EmbedCache) embedBatchAdaptive(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	out := make([][]float32, 0, len(texts))
+	for start := 0; start < len(texts); start += embedCacheBatchSize {
+		end := start + embedCacheBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		vectors, err := c.embedBatchSplitOnFailure(ctx, texts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vectors...)
+	}
+	return out, nil
+}
+
+func (c *EmbedCache) embedBatchSplitOnFailure(ctx context.Context, texts []string) ([][]float32, error) {
+	vectors, err := c.batchInner(ctx, texts)
+	if err == nil {
+		return vectors, nil
+	}
+	if len(texts) <= 1 {
+		return nil, err
+	}
+	mid := len(texts) / 2
+	left, leftErr := c.embedBatchSplitOnFailure(ctx, texts[:mid])
+	if leftErr != nil {
+		return nil, leftErr
+	}
+	right, rightErr := c.embedBatchSplitOnFailure(ctx, texts[mid:])
+	if rightErr != nil {
+		return nil, rightErr
+	}
+	return append(left, right...), nil
+}
+
+func (c *EmbedCache) cached(ctx context.Context, text string) ([]float32, bool, error) {
 	key := contentSHA(text)
 
 	var blob []byte
@@ -130,7 +252,7 @@ func (c *EmbedCache) Embed(ctx context.Context, text string) ([]float32, error) 
 		c.hits.Add(1)
 		vec, decErr := decodeFloats(blob)
 		if decErr == nil {
-			return vec, nil
+			return vec, true, nil
 		}
 		// Corrupt entry: log + delete + fall through to fresh embed.
 		c.logger.Warn("embed cache: corrupt blob, refetching", "sha", key, "error", decErr)
@@ -140,22 +262,17 @@ func (c *EmbedCache) Embed(ctx context.Context, text string) ([]float32, error) 
 	default:
 		c.logger.Warn("embed cache: lookup failed, embedding fresh", "error", err)
 	}
+	return nil, false, nil
+}
 
-	c.misses.Add(1)
-	if c.inner == nil {
-		return nil, errors.New("embed cache: miss with no upstream embedFn")
-	}
-	vec, err := c.inner(ctx, text)
-	if err != nil {
-		return nil, err
-	}
+func (c *EmbedCache) store(ctx context.Context, text string, vec []float32) {
+	key := contentSHA(text)
 	if _, err := c.db.ExecContext(ctx,
 		"INSERT OR REPLACE INTO embedding_cache (content_sha, model, embedding, created_at) VALUES (?, ?, ?, ?)",
 		key, c.model, encodeFloats(vec), time.Now().UTC(),
 	); err != nil {
 		c.logger.Warn("embed cache: write failed", "error", err)
 	}
-	return vec, nil
 }
 
 // EmbedFunc returns the cache's Embed method as a chromem-compatible

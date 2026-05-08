@@ -37,6 +37,8 @@ type Result struct {
 // callers to chromem-go directly.
 type EmbeddingFunction = chromem.EmbeddingFunc
 
+type BatchEmbeddingFunction func(ctx context.Context, texts []string) ([][]float32, error)
+
 // Queryer is the minimal semantic retrieval boundary.
 type Queryer interface {
 	Search(ctx context.Context, query string, topK int) ([]Result, error)

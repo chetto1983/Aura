@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/philippgille/chromem-go"
 )
 
@@ -134,6 +135,56 @@ func TestEmbedCache_DifferentTextMisses(t *testing.T) {
 	}
 	if invocations.Load() != 2 {
 		t.Fatalf("two distinct inputs should miss twice, got %d invocations", invocations.Load())
+	}
+}
+
+func TestEmbedCacheBatchEmbedChunksAndSplitsLargeBatches(t *testing.T) {
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "batch-cache.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("Run migrations: %v", err)
+	}
+	calls := 0
+	cache, err := NewEmbedCacheWithBatchWithDB(db, "mistral-embed", nil, func(_ context.Context, texts []string) ([][]float32, error) {
+		calls++
+		if len(texts) > 4 {
+			return nil, errors.New("too many tokens overall")
+		}
+		vectors := make([][]float32, len(texts))
+		for i := range texts {
+			vectors[i] = []float32{float32(len(texts)), float32(i)}
+		}
+		return vectors, nil
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewEmbedCacheWithBatchWithDB: %v", err)
+	}
+
+	inputs := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
+	vectors, err := cache.BatchEmbed(context.Background(), inputs)
+	if err != nil {
+		t.Fatalf("BatchEmbed: %v", err)
+	}
+	if len(vectors) != len(inputs) {
+		t.Fatalf("vectors = %d, want %d", len(vectors), len(inputs))
+	}
+	if calls < 3 {
+		t.Fatalf("calls = %d, want chunk plus split calls", calls)
+	}
+	hits, misses := cache.Stats()
+	if hits != 0 || misses != uint64(len(inputs)) {
+		t.Fatalf("stats hits=%d misses=%d", hits, misses)
+	}
+	_, err = cache.BatchEmbed(context.Background(), inputs)
+	if err != nil {
+		t.Fatalf("BatchEmbed cached: %v", err)
+	}
+	hits, _ = cache.Stats()
+	if hits != uint64(len(inputs)) {
+		t.Fatalf("cached hits = %d, want %d", hits, len(inputs))
 	}
 }
 

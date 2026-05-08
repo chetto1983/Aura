@@ -12,9 +12,10 @@ import (
 )
 
 type CompactMemoryQdrantIndex struct {
-	client  *qdrantClient
-	embedFn EmbeddingFunction
-	logger  *slog.Logger
+	client       *qdrantClient
+	embedFn      EmbeddingFunction
+	batchEmbedFn BatchEmbeddingFunction
+	logger       *slog.Logger
 }
 
 func CompactMemoryQdrantCollection(base string) string {
@@ -26,6 +27,10 @@ func CompactMemoryQdrantCollection(base string) string {
 }
 
 func NewCompactMemoryQdrantIndex(cfg QdrantConfig, embedFn EmbeddingFunction, logger *slog.Logger) (*CompactMemoryQdrantIndex, error) {
+	return NewCompactMemoryQdrantIndexWithBatch(cfg, embedFn, nil, logger)
+}
+
+func NewCompactMemoryQdrantIndexWithBatch(cfg QdrantConfig, embedFn EmbeddingFunction, batchEmbedFn BatchEmbeddingFunction, logger *slog.Logger) (*CompactMemoryQdrantIndex, error) {
 	if embedFn == nil {
 		return nil, fmt.Errorf("embedding function is required")
 	}
@@ -36,7 +41,7 @@ func NewCompactMemoryQdrantIndex(cfg QdrantConfig, embedFn EmbeddingFunction, lo
 	if err != nil {
 		return nil, err
 	}
-	return &CompactMemoryQdrantIndex{client: client, embedFn: embedFn, logger: logger}, nil
+	return &CompactMemoryQdrantIndex{client: client, embedFn: embedFn, batchEmbedFn: batchEmbedFn, logger: logger}, nil
 }
 
 func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryindex.Document) (memoryindex.VectorReport, error) {
@@ -149,35 +154,70 @@ func (i *CompactMemoryQdrantIndex) Search(ctx context.Context, query string, fil
 }
 
 func (i *CompactMemoryQdrantIndex) pointsForDocuments(ctx context.Context, docs []memoryindex.Document) ([]qdrantPoint, int, error) {
-	points := make([]qdrantPoint, 0, len(docs))
-	vectorSize := 0
+	type pendingDoc struct {
+		doc     memoryindex.Document
+		content string
+	}
+	pending := make([]pendingDoc, 0, len(docs))
 	for _, doc := range docs {
 		if strings.TrimSpace(doc.ID) == "" || strings.TrimSpace(doc.Body) == "" {
 			continue
 		}
 		content := compactDocumentContent(doc)
-		vector, err := i.embedFn(ctx, content)
-		if err != nil {
-			return nil, 0, fmt.Errorf("embedding compact memory %s: %w", doc.ID, err)
-		}
+		pending = append(pending, pendingDoc{doc: doc, content: content})
+	}
+	if len(pending) == 0 {
+		return nil, 0, fmt.Errorf("no compact memory documents to index")
+	}
+	texts := make([]string, len(pending))
+	for idx, item := range pending {
+		texts[idx] = item.content
+	}
+	vectors, err := i.embedDocuments(ctx, texts)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(vectors) != len(pending) {
+		return nil, 0, fmt.Errorf("embedding compact memory returned %d vectors for %d documents", len(vectors), len(pending))
+	}
+	points := make([]qdrantPoint, 0, len(pending))
+	vectorSize := 0
+	for idx, item := range pending {
+		vector := vectors[idx]
 		if len(vector) == 0 {
-			return nil, 0, fmt.Errorf("embedding compact memory %s returned empty vector", doc.ID)
+			return nil, 0, fmt.Errorf("embedding compact memory %s returned empty vector", item.doc.ID)
 		}
 		if vectorSize == 0 {
 			vectorSize = len(vector)
 		} else if len(vector) != vectorSize {
-			return nil, 0, fmt.Errorf("embedding compact memory %s returned vector size %d, want %d", doc.ID, len(vector), vectorSize)
+			return nil, 0, fmt.Errorf("embedding compact memory %s returned vector size %d, want %d", item.doc.ID, len(vector), vectorSize)
 		}
 		points = append(points, qdrantPoint{
-			ID:      qdrantPointID("compact:" + doc.ID),
+			ID:      qdrantPointID("compact:" + item.doc.ID),
 			Vector:  vector,
-			Payload: compactPayload(doc, content),
+			Payload: compactPayload(item.doc, item.content),
 		})
 	}
-	if len(points) == 0 {
-		return nil, 0, fmt.Errorf("no compact memory documents to index")
-	}
 	return points, vectorSize, nil
+}
+
+func (i *CompactMemoryQdrantIndex) embedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	if i.batchEmbedFn != nil {
+		vectors, err := i.batchEmbedFn(ctx, texts)
+		if err != nil {
+			return nil, fmt.Errorf("batch embedding compact memory: %w", err)
+		}
+		return vectors, nil
+	}
+	vectors := make([][]float32, 0, len(texts))
+	for idx, text := range texts {
+		vector, err := i.embedFn(ctx, text)
+		if err != nil {
+			return nil, fmt.Errorf("embedding compact memory index %d: %w", idx, err)
+		}
+		vectors = append(vectors, vector)
+	}
+	return vectors, nil
 }
 
 func compactPayload(doc memoryindex.Document, content string) map[string]string {

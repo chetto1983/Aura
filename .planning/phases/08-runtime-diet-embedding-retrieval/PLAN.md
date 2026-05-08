@@ -28,6 +28,8 @@ Progress:
 - 2026-05-08 compact-memory Qdrant PoC: added a throwaway script that indexes synthetic `source/archive/proposal/wiki` facts plus graph entity nodes into a temporary Qdrant collection, fuses Qdrant vector hits with local lexical hits, expands graph neighbors, and prints a compact Retrieval Capsule. This validates the intended shape before touching production schema.
 - 2026-05-08 Task 5 production indexing slice: added the `internal/memoryindex` compact source/archive/proposal index with SQLite + FTS tables (`compact_memory_documents`, `compact_memory_fts`), startup rebuild, and archive append mirroring. `search_memory` no longer depends on `source.Repository` or `conversation.TurnReader` and the old hot-path raw source/archive scans (`searchSources`, `searchArchive`, scan/read limits, lexical scan scorer) were physically deleted. Source OCR pages keep stable `source:<id>#page=N` handles; archive/proposal facts return compact handles from the index.
 - 2026-05-08 Task 5 Qdrant mirror slice complete: compact memory now has an optional production Qdrant mirror using a separate collection (`<QDRANT_COLLECTION>_compact`). Startup rebuild recreates that compact collection from SQLite compact docs; new archive turns upsert into both SQLite and Qdrant after persistence, and upsert recreates the compact collection if an empty rebuild removed it. Archive cleanup APIs purge compact archive rows and Qdrant points. Telegram injects the real chat `chat_id` into `search_memory` calls, overriding model-supplied archive scope, and `scope=all` now performs one compact exact/FTS/vector query for source/archive/proposal facts instead of three vector round-trips.
+- 2026-05-08 container E2E repair: live Docker rebuild exposed a real startup warning: compact Qdrant sync timed out while embedding archive rows one by one. The local compact SQLite/FTS rebuild now stays on the short startup budget, while Qdrant mirror sync runs in a background maintenance context. Added OpenAI-compatible batch embeddings for compact Qdrant rebuilds so Mistral-compatible providers receive one batched `/embeddings` request for cold misses instead of hundreds of sequential calls through the hot startup path.
+- 2026-05-08 phase-close E2E: rebuilt the Docker container and verified Aura healthy on `/status`. The compact memory vector mirror synced in the container with `vector_collection=aura_memory_v1_compact`, `vector_docs=487`, `vector_size=1024`; warm restart sync completed in about 1.5s after cache/batch repair. Qdrant compact-memory PoC passed against local Qdrant, returning compact facts plus graph-expanded nodes. Telegram document E2E passed with `toolset=document`, `retrieval_capsule_present=true`, `tools_called=create_docx`, `terminal_tool=create_docx`, `loop_steps=1`, `llm_calls=1`, `tool_calls=1`, `elapsed_ms=13972`.
 
 ## Thesis
 
@@ -211,7 +213,7 @@ Acceptance:
 
 ### Task 5: Compact Source And Archive Recall
 
-- Status: done for the production SQLite/FTS/vector path. Compact source/archive/proposal facts live in `compact_memory_documents`, are mirrored to `compact_memory_fts`, and optionally mirror into Qdrant collection `<QDRANT_COLLECTION>_compact`. Startup rebuild happens outside the turn, archive appends are mirrored through an indexing archive repository, archive delete/retention purges compact rows plus Qdrant points, and `search_memory` queries exact/FTS/vector compact retrieval instead of scanning raw sources or conversation rows. The graph remains powerful via source/proposal/archive facts and later neighbor expansion, but raw scans are out of the default turn.
+- Status: done for the production SQLite/FTS/vector path. Compact source/archive/proposal facts live in `compact_memory_documents`, are mirrored to `compact_memory_fts`, and optionally mirror into Qdrant collection `<QDRANT_COLLECTION>_compact`. Startup rebuild happens outside the turn, archive appends are mirrored through an indexing archive repository, archive delete/retention purges compact rows plus Qdrant points, and `search_memory` queries exact/FTS/vector compact retrieval instead of scanning raw sources or conversation rows. The Qdrant mirror sync runs as background maintenance and uses batch embeddings for cold compact rebuilds. The graph remains powerful via source/proposal/archive facts and later neighbor expansion, but raw scans are out of the default turn.
 
 - Index compact source summaries, anchors, accepted proposals, preferences, and decisions.
 - Keep raw source bodies and raw archive turns behind explicit handles.
@@ -291,6 +293,8 @@ go fmt ./...
 go test ./...
 docker compose config --quiet
 docker compose up -d --build aura
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-compact-memory-qdrant.ps1 -QdrantUrl http://localhost:6333
+go run ./cmd/debug_telegram_sandbox -timeout 120s -prompt "Crea un breve documento docx che riassume perche Picobot e veloce e Aura deve restare semplice." -expect-toolset document -expect-retrieval-capsule -expect-tools create_docx -expect-terminal-tool create_docx -expect-loop-steps-max 1 -max-elapsed-ms 30000
 ```
 
 Live smokes with the DB-selected model:
