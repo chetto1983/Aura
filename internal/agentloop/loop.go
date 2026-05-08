@@ -60,7 +60,6 @@ type Options struct {
 	EstimateCost            func(llm.TokenUsage) float64
 	OnStats                 func(Stats)
 	TerminalHandler         TerminalHandler
-	FallbackMessage         func(lastToolResult string) string
 }
 
 type Result struct {
@@ -107,10 +106,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
 		if opts.MaxElapsed > 0 && time.Since(start) >= opts.MaxElapsed {
 			stats.MaxElapsedHit = true
-			fallback := fallbackMessage(lastToolResult, opts)
-			state.AddAssistantMessage(fallback)
+			answer := finalAnswerOnBudget(lastToolResult)
+			state.AddAssistantMessage(answer)
 			emitStats()
-			return Result{Text: fallback, Stats: stats}, nil
+			return Result{Text: answer, Stats: stats}, nil
 		}
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
@@ -201,10 +200,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 
 	stats.MaxIterationsHit = true
-	fallback := fallbackMessage(lastToolResult, opts)
-	state.AddAssistantMessage(fallback)
+	answer := finalAnswerOnBudget(lastToolResult)
+	state.AddAssistantMessage(answer)
 	emitStats()
-	return Result{Text: fallback, Stats: stats}, nil
+	return Result{Text: answer, Stats: stats}, nil
 }
 
 func duplicateToolResult(call llm.ToolCall, opts Options) string {
@@ -214,15 +213,11 @@ func duplicateToolResult(call llm.ToolCall, opts Options) string {
 	return fmt.Sprintf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name)
 }
 
-func fallbackMessage(lastToolResult string, opts Options) string {
-	if opts.FallbackMessage != nil {
-		return opts.FallbackMessage(lastToolResult)
+func finalAnswerOnBudget(lastToolResult string) string {
+	if result := strings.TrimSpace(lastToolResult); result != "" {
+		return result
 	}
-	fallback := "Mi sono fermato prima di completare una risposta finale affidabile."
-	if strings.TrimSpace(lastToolResult) != "" {
-		fallback += "\n\nHo completato alcuni passaggi interni, ma mi sono fermato prima di generare una risposta finale pulita."
-	}
-	return fallback
+	return "Ho raggiunto il limite del turno senza ottenere risultati utilizzabili."
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {

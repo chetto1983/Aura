@@ -4,6 +4,12 @@ Status: planned
 Owner: Codex
 Date: 2026-05-08
 
+Progress:
+
+- 2026-05-08: Task 1 complete. The live `agentloop` fallback string/function is gone; budget exhaustion returns last useful tool output.
+- 2026-05-08: Task 2 partial. Skill manifest, swarm exposure, summarizer, and nightly auto-improve are no longer default-turn ceremony.
+- 2026-05-08: Task 3 partial. Generic turns skip speculative search/Memory Pack injection; memory/wiki/document routes still get a bounded pack when needed.
+
 ## Thesis
 
 Aura has enough intelligence. The problem is that too much of it runs in the hot path.
@@ -128,6 +134,8 @@ The output is a compact evidence capsule under a byte cap, not a new exploration
 
 ### Task 1: Stop The Bad Final Answer
 
+- Status: done in slice 1.
+
 - Add regression coverage that fails on user-facing `"Mi sono fermato"`.
 - Replace `fallbackMessage` with best-effort finalization from the last successful tool result.
 - Keep hard failure only when Aura has no model output and no usable evidence.
@@ -138,6 +146,8 @@ Acceptance:
 - `rg -n "Mi sono fermato|fallbackMessage" internal` shows no live user-facing fallback path.
 
 ### Task 2: Cut The Loop Down
+
+- Status: partial. Default skill manifest, swarm exposure, summarizer, and nightly auto-improve were cut from ordinary turns/defaults. Profile taxonomy remains for a later deletion pass.
 
 - Remove default-turn profile/preflight ceremony from the live loop.
 - Keep only simple tool availability, bounded execution, and finalization.
@@ -151,6 +161,8 @@ Acceptance:
 - No live path requires reading a skill before answering unless the user asked for skill work.
 
 ### Task 3: Replace Memory Pack With Retrieval Capsule
+
+- Status: partial. Generic turns now inject no pack. Memory/wiki/document turns still use `ComposeMemoryPack`; the later task is to rename/reshape it into a calibrated evidence capsule.
 
 - Stop injecting graph context and recent wiki log on every turn.
 - Add a simple route: `minimal`, `retrieve`, `produce`.

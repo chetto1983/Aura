@@ -478,15 +478,15 @@ If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String()
 	case "auto_apply":
 		return b.applyAutoImproveTools(ctx, proposals, logger)
 	default:
-		logger.Warn("auto_improve: unknown mode, defaulting to dry_run", "mode", b.cfg.SandboxAutoImproveMode)
-		return b.proposeAutoImproveTools(ctx, proposals, logger)
+		logger.Warn("auto_improve: unknown mode, defaulting to off", "mode", b.cfg.SandboxAutoImproveMode)
+		return nil
 	}
 }
 
 func normalizeAutoImproveMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "":
-		return "dry_run"
+		return "off"
 	case "off":
 		return "off"
 	case "dry_run":

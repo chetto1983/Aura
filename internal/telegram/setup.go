@@ -495,20 +495,30 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
 
-	// Bootstrap autonomous improvement task (nightly, offset from wiki maintenance)
-	autoImproveAt, err := scheduler.NextDailyRun("04:00", loc, time.Now())
-	if err != nil {
-		return nil, fmt.Errorf("computing auto-improve run: %w", err)
-	}
-	if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
-		Name:          "nightly-auto-improve",
-		Kind:          scheduler.KindAutoImprove,
-		ScheduleKind:  scheduler.ScheduleDaily,
-		ScheduleDaily: "04:00",
-		NextRunAt:     autoImproveAt,
-		Status:        scheduler.StatusActive,
-	}); err != nil {
-		logger.Warn("failed to bootstrap auto-improve task", "err", err)
+	// Bootstrap autonomous improvement only when explicitly enabled. It can
+	// call the LLM and inspect archive state, so Runtime Diet keeps it out of
+	// the default runtime path.
+	if normalizeAutoImproveMode(cfg.SandboxAutoImproveMode) == "off" {
+		if cancelled, err := schedStore.Cancel(context.Background(), "nightly-auto-improve"); err != nil {
+			logger.Warn("failed to disable auto-improve task", "err", err)
+		} else if cancelled {
+			logger.Info("auto-improve task disabled by runtime diet default")
+		}
+	} else {
+		autoImproveAt, err := scheduler.NextDailyRun("04:00", loc, time.Now())
+		if err != nil {
+			return nil, fmt.Errorf("computing auto-improve run: %w", err)
+		}
+		if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
+			Name:          "nightly-auto-improve",
+			Kind:          scheduler.KindAutoImprove,
+			ScheduleKind:  scheduler.ScheduleDaily,
+			ScheduleDaily: "04:00",
+			NextRunAt:     autoImproveAt,
+			Status:        scheduler.StatusActive,
+		}); err != nil {
+			logger.Warn("failed to bootstrap auto-improve task", "err", err)
+		}
 	}
 
 	b.docs = newDocHandler(docHandlerConfig{

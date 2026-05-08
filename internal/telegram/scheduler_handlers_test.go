@@ -390,7 +390,7 @@ func TestAgentJobNotificationLocalizesPrefix(t *testing.T) {
 
 func TestNormalizeAutoImproveMode(t *testing.T) {
 	tests := map[string]string{
-		"":           "dry_run",
+		"":           "off",
 		"dry_run":    "dry_run",
 		"off":        "off",
 		"auto":       "auto_apply",

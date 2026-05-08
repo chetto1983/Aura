@@ -43,7 +43,9 @@ Evidence:
 - `composeTurnMemoryPack` still injects speculative search, graph context, and recent wiki log on every turn;
 - embeddings are used as raw top-K evidence instead of calibrated hybrid retrieval.
 
-Next implementation should follow `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: delete useless hot-path machinery, reduce the loop to Picobot-style basics, replace always-on memory injection with retrieval capsules only when needed, and make embeddings useful through hybrid search.
+Phase 08 slice 1 cut the first hot-path weight: the hardcoded fallback is gone, generic turns skip speculative Memory Pack injection, skill manifests and swarm tools are explicit-only, and summarizer/nightly auto-improve default to off.
+
+Next implementation should keep following `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: finish reducing profile/preflight ceremony, then fix embedding retrieval quality through hybrid search.
 
 ## Cleaned-Up Plan Map
 
@@ -56,19 +58,19 @@ Next implementation should follow `.planning/phases/08-runtime-diet-embedding-re
 
 ## Next Slice
 
-Recommended slice: Phase 08 Task 1 and Task 2.
+Recommended slice: Phase 08 Task 2 continuation and Task 4.
 
 Goal:
 
-- capture baseline evidence for current slow/fallback behavior;
-- add the regression test that fails on the hardcoded `"Mi sono fermato"` phrase;
-- replace dead-end fallback behavior with best-effort finalization from the last successful tool results.
+- continue deleting live profile/preflight telemetry that no longer affects behavior;
+- replace raw vector top-K trust with hybrid exact/FTS/vector retrieval;
+- keep `search_memory` useful as Aura's compact graph-memory entrypoint.
 
 Suggested acceptance:
 
-- `go test ./internal/agentloop -count=1`;
-- `rg -n "Mi sono fermato|fallbackMessage" internal .planning docs`;
-- updated Phase 08 evidence notes.
+- `go test ./internal/search ./internal/tools ./internal/telegram -count=1`;
+- curated retrieval queries hit expected wiki/source/archive evidence;
+- Qdrant low-confidence results no longer suppress better local lexical hits.
 
 ## Deferred Follow-Ups
 

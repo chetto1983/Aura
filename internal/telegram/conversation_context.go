@@ -14,11 +14,19 @@ import (
 )
 
 func composeTurnMemoryPack(ctx context.Context, repo search.Searcher, wikiDir, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
+	route := retrievalRouteForTurn(userText)
+	if route == "minimal" {
+		return ""
+	}
 	searchContext := runSpeculativeSearch(ctx, repo, userText, timeoutMS, logger, userID)
 	var graphContext, recentLog string
 	if strings.TrimSpace(wikiDir) != "" {
-		graphContext = readWorkspaceText(filepath.Join(wikiDir, "graph", "context.md"), 4096)
-		recentLog = recentWikiLog(filepath.Join(wikiDir, "log.md"), 4096, 12)
+		if route == "graph" || route == "produce" {
+			graphContext = readWorkspaceText(filepath.Join(wikiDir, "graph", "context.md"), 2048)
+		}
+		if route == "log" {
+			recentLog = recentWikiLog(filepath.Join(wikiDir, "log.md"), 2048, 8)
+		}
 	}
 	return conversation.ComposeMemoryPack(conversation.MemoryPackInput{
 		UserText:      userText,
@@ -26,6 +34,42 @@ func composeTurnMemoryPack(ctx context.Context, repo search.Searcher, wikiDir, u
 		GraphContext:  graphContext,
 		RecentLog:     recentLog,
 	})
+}
+
+func retrievalRouteForTurn(userText string) string {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return "minimal"
+	}
+	for _, needle := range []string{
+		"crea documento", "creami documento", "documento word", "docx", "pdf", "xlsx",
+		"riassumi i documenti", "riepilogo dei documenti", "documenti e note",
+	} {
+		if strings.Contains(text, needle) {
+			return "produce"
+		}
+	}
+	for _, needle := range []string{"grafo", "graph", "wiki graph", "mappa", "collegamenti"} {
+		if strings.Contains(text, needle) {
+			return "graph"
+		}
+	}
+	for _, needle := range []string{"log", "ultime modifiche", "cosa e cambiato", "cosa è cambiato"} {
+		if strings.Contains(text, needle) {
+			return "log"
+		}
+	}
+	for _, needle := range []string{
+		"memoria", "memory", "ricordi", "ricord", "wiki", "source", "fonti", "fonte",
+		"archivio", "conversaz", "decisioni", "preferenze", "note", "documenti",
+		"cosa resta", "cosa sai", "cosa conosci", "come funziona aura",
+		"picobot", "perche aura", "perché aura",
+	} {
+		if strings.Contains(text, needle) {
+			return "retrieve"
+		}
+	}
+	return "minimal"
 }
 
 func runSpeculativeSearch(ctx context.Context, repo search.Searcher, userText string, timeoutMS int, logger *slog.Logger, userID string) string {

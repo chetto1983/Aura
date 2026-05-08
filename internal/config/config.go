@@ -25,7 +25,7 @@ const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
-const DefaultSummarizerMode = "auto_low_risk"
+const DefaultSummarizerMode = "off"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
 const (
@@ -122,9 +122,10 @@ type Config struct {
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 
-	// Auto-summarization (Phase 12e+)
-	SummarizerEnabled         bool    `envconfig:"SUMMARIZER_ENABLED" default:"true"`
-	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"review"`
+	// Auto-summarization is opt-in. Runtime Diet keeps memory capture out of
+	// the hot path unless the operator explicitly enables it.
+	SummarizerEnabled         bool    `envconfig:"SUMMARIZER_ENABLED" default:"false"`
+	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"off"`
 	SummarizerTurnInterval    int     `envconfig:"SUMMARIZER_TURN_INTERVAL" default:"2"`
 	SummarizerMinSalience     float64 `envconfig:"SUMMARIZER_MIN_SALIENCE" default:"0.5"`
 	SummarizerLookbackTurns   int     `envconfig:"SUMMARIZER_LOOKBACK_TURNS" default:"10"`
@@ -137,7 +138,7 @@ type Config struct {
 	SandboxRuntimeURL      string `envconfig:"SANDBOX_RUNTIME_URL"`
 	SandboxRuntimeDir      string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
 	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
-	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"dry_run"`
+	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"off"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -286,7 +287,7 @@ func Load() (*Config, error) {
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 
-	cfg.SummarizerEnabled = getEnvBool("SUMMARIZER_ENABLED", true)
+	cfg.SummarizerEnabled = getEnvBool("SUMMARIZER_ENABLED", false)
 	cfg.SummarizerMode = NormalizeSummarizerMode(getEnv("SUMMARIZER_MODE", DefaultSummarizerMode))
 	cfg.SummarizerTurnInterval = getEnvInt("SUMMARIZER_TURN_INTERVAL", DefaultSummarizerTurnInterval)
 	cfg.SummarizerMinSalience = getEnvFloat("SUMMARIZER_MIN_SALIENCE", 0.5)
@@ -298,7 +299,7 @@ func Load() (*Config, error) {
 	cfg.SandboxRuntimeURL = strings.TrimSpace(getEnv("SANDBOX_RUNTIME_URL", ""))
 	cfg.SandboxRuntimeDir = getEnv("SANDBOX_RUNTIME_DIR", DefaultSandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", DefaultSandboxTimeoutSec)
-	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
+	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "off")
 
 	return cfg, nil
 }

@@ -91,7 +91,7 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 	}
 }
 
-func TestRunMaxIterationProducesFallback(t *testing.T) {
+func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
@@ -107,12 +107,15 @@ func TestRunMaxIterationProducesFallback(t *testing.T) {
 	if !result.Stats.MaxIterationsHit {
 		t.Fatal("MaxIterationsHit = false")
 	}
-	if !strings.Contains(result.Text, "Mi sono fermato") {
-		t.Fatalf("fallback = %q", result.Text)
+	if result.Text != "partial result" {
+		t.Fatalf("answer = %q, want last useful tool result", result.Text)
+	}
+	if strings.Contains(result.Text, deadEndFallbackText()) {
+		t.Fatalf("answer contains dead-end fallback: %q", result.Text)
 	}
 }
 
-func TestRunMaxElapsedProducesFallbackBeforeNextLLM(t *testing.T) {
+func TestRunMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
@@ -133,8 +136,32 @@ func TestRunMaxElapsedProducesFallbackBeforeNextLLM(t *testing.T) {
 	if client.requests != 1 {
 		t.Fatalf("LLM requests = %d, want 1", client.requests)
 	}
-	if !strings.Contains(result.Text, "Mi sono fermato") {
-		t.Fatalf("fallback = %q", result.Text)
+	if result.Text != "partial result" {
+		t.Fatalf("answer = %q, want last useful tool result", result.Text)
+	}
+	if strings.Contains(result.Text, deadEndFallbackText()) {
+		t.Fatalf("answer contains dead-end fallback: %q", result.Text)
+	}
+}
+
+func TestRunBudgetWithoutToolResultReturnsBriefLimitAnswer(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 1})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.Contains(result.Text, deadEndFallbackText()) {
+		t.Fatalf("answer contains dead-end fallback: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "limite del turno") {
+		t.Fatalf("answer = %q, want brief limit answer", result.Text)
 	}
 }
 
@@ -242,4 +269,8 @@ func (s *fakeLoopState) toolResult(id string) string {
 		}
 	}
 	return ""
+}
+
+func deadEndFallbackText() string {
+	return "Mi sono " + "fermato"
 }

@@ -48,7 +48,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// personality, Aura runtime notes, durable user facts, and tool guidance by
 	// file; the next user turn picks up the change with no recompile or
 	// restart. AGENTS.md stays development-only and is not injected into Aura's prompt.
-	if b.skills != nil {
+	if b.skills != nil && turnNeedsSkillManifest(userText) {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
 			b.logger.Warn("failed to load local skills", "error", err)
@@ -57,7 +57,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 	}
 	available := orchestration.Availability{
-		Swarm:          b.swarmToolsAvailable(),
+		Swarm:          b.swarmToolsAvailable() && turnAllowsSwarm(userText),
 		Sandbox:        b.sandboxToolsAvailable(),
 		Proposals:      b.proposalToolsAvailable(),
 		WorkspaceFiles: b.workspaceToolsAvailable(),
@@ -85,7 +85,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		Version:           b.cfg.PromptVersion,
 		Now:               time.Now(),
 		Location:          b.loc,
-		Overlay:           appendPromptOverlay(overlay, conversation.SwarmTurnHint(userText)),
+		Overlay:           overlay,
 		SkillsBlock:       skillsBlock,
 		SwarmAvailable:    available.Swarm,
 		SandboxAvailable:  available.Sandbox,
@@ -111,25 +111,15 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// EnforceLimit (below) trims it out of convCtx.
 	convCtx.AddUserMessage(userText)
 
-	// Slice 07: compact memory pack. The model used to discover
-	// durable memory only after an explicit wiki search round-trip, which cost
-	// a full extra LLM round-trip per turn ("reason → emit tool call →
-	// read result → re-reason → answer"). We now run the search up-front
-	// and inject the top hits into the system prompt so the very first
-	// inference already has relevant context. The embedding cache (slice
-	// 11h) makes repeat queries effectively free; cold queries pay one
-	// embed call but save the round-trip. Further exact inspection uses bounded
-	// workspace file tools.
-	// Picobot equivalent: internal/agent/context.go ranker injection.
-	// The injected block now also includes materialized graph context and the
-	// recent wiki log, under one bounded Memory Pack heading.
+	// Phase 08 Runtime Diet: retrieval context is now routed, not automatic.
+	// Generic chat/status/code turns clear this slot so stale Memory Pack
+	// content does not leak into the next answer. Retrieval/document turns may
+	// still get a compact capsule below.
 	wikiDir := ""
 	if b.wiki != nil {
 		wikiDir = b.wiki.Dir()
 	}
-	if memoryPack := composeTurnMemoryPack(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID); memoryPack != "" {
-		convCtx.SetSearchContext(memoryPack)
-	}
+	convCtx.SetSearchContext(composeTurnMemoryPack(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID))
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
 	// completes so summarizer latency doesn't add to perceived wait time.
@@ -322,17 +312,36 @@ func (b *Bot) workspaceToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("read_file") != nil && b.tools.Get("write_file") != nil
 }
 
-func appendPromptOverlay(base, extra string) string {
-	base = strings.TrimSpace(base)
-	extra = strings.TrimSpace(extra)
-	switch {
-	case base == "":
-		return extra
-	case extra == "":
-		return base
-	default:
-		return base + "\n\n" + extra
+func turnNeedsSkillManifest(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
 	}
+	for _, needle := range []string{
+		"skill", "skills", "procedura", "procedure", "istruzioni", "superpowers",
+		"come lavori", "agent.md", "skil",
+	} {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func turnAllowsSwarm(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"swarm", "aurabot", "subagenti", "sub agent", "sub-agent", "agenti paralleli",
+		"parallel agents", "agent paralleli",
+	} {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop

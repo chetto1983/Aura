@@ -184,7 +184,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 		},
 		{
 			key:       KeySandboxAutoImproveMode,
-			value:     "dry_run",
+			value:     "off",
 			reason:    "repair invalid sandbox auto-improve mode",
 			shouldSet: missingOrInvalidSet("off", "dry_run", "auto"),
 		},
