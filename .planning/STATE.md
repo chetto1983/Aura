@@ -51,6 +51,16 @@ Open v3.1 orchestration blocker:
 - Canonical sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md`
 - Current closure sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`
 
+2026-05-08 simplification pivot:
+
+- The live conversation logs showed the v3.1 guardrail stack is now hurting autonomy: repeated memory searches for simple recall, max-loop fallback answers, skill preflight deadlocks, terminal swarm routing, and skill-approval confusion.
+- User direction: stop adding guardrails; first delete the superfluous orchestration layers, refactor the god classes, then add bounded Codex/Picobot-style workspace file tools (`read_file`, `write_file`, `search_files`/`rg`, `apply_patch`, later limited commands).
+- New canonical cleanup plan: `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`.
+- Context handoff files for this pivot:
+  - `.planning/phases/05-agent-simplification-god-class-refactor/CONTEXT.md`
+  - `.planning/phases/05-agent-simplification-god-class-refactor/EVIDENCE.md`
+- No runtime code edits have started for this pivot yet; only planning/context files should be present before execution starts.
+
 ## Next Milestone Handoff
 
 v3.1 is the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
