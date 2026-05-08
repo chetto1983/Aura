@@ -8,7 +8,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
@@ -110,7 +110,7 @@ func main() {
 
 	userID := strings.TrimSpace(*userIDFlag)
 	if userID == "" {
-		userID, err = firstAllowedUserID(cfg.DBPath)
+		userID, err = firstAllowedUserID(cfg.DBPath, cfg.Allowlist)
 		if err != nil {
 			fail("resolve first allowed user: %v", err)
 		}
@@ -692,24 +692,63 @@ func missingTools(got, expected []string) []string {
 	return missing
 }
 
-func firstAllowedUserID(dbPath string) (string, error) {
+func firstAllowedUserID(dbPath string, preferred []string) (string, error) {
 	store, err := scheduler.OpenStore(dbPath)
 	if err != nil {
 		return "", err
 	}
 	defer store.Close()
 
-	var userID string
-	err = store.DB().QueryRowContext(context.Background(),
-		`SELECT user_id FROM allowed_users ORDER BY created_at ASC LIMIT 1`).
-		Scan(&userID)
-	if err == sql.ErrNoRows {
-		return "", errors.New("allowed_users is empty; bootstrap Telegram /start first")
-	}
+	rows, err := store.DB().QueryContext(context.Background(),
+		`SELECT user_id, source FROM allowed_users ORDER BY created_at ASC`)
 	if err != nil {
 		return "", err
 	}
-	return userID, nil
+	defer rows.Close()
+
+	type allowedCandidate struct {
+		userID string
+		source string
+	}
+	var real []allowedCandidate
+	var synthetic []allowedCandidate
+	for rows.Next() {
+		var candidate allowedCandidate
+		if err := rows.Scan(&candidate.userID, &candidate.source); err != nil {
+			return "", err
+		}
+		candidate.userID = strings.TrimSpace(candidate.userID)
+		candidate.source = strings.TrimSpace(candidate.source)
+		if candidate.userID == "" {
+			continue
+		}
+		if candidate.source == auth.SourceE2EBootstrap {
+			synthetic = append(synthetic, candidate)
+			continue
+		}
+		real = append(real, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if len(real) == 0 && len(synthetic) == 0 {
+		return "", errors.New("allowed_users is empty; bootstrap Telegram /start first")
+	}
+	if len(real) == 0 {
+		return "", errors.New("allowed_users only contains e2e_bootstrap users; pass -user with a real Telegram user ID or send /start from Telegram first")
+	}
+	for _, id := range preferred {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		for _, candidate := range real {
+			if candidate.userID == id {
+				return candidate.userID, nil
+			}
+		}
+	}
+	return real[0].userID, nil
 }
 
 func loadDotEnv(path string) error {

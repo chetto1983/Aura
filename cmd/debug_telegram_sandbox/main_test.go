@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/telegram"
 )
 
@@ -112,6 +115,77 @@ func TestResolveRuntimeDBPathAllowsLiveDBWhenExplicit(t *testing.T) {
 	got := resolveRuntimeDBPath(tempDB, liveDB, true)
 	if got != filepath.Clean(liveDB) {
 		t.Fatalf("resolveRuntimeDBPath() = %q, want live DB %q", got, filepath.Clean(liveDB))
+	}
+}
+
+func TestFirstAllowedUserIDSkipsSyntheticE2EUsers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	store, err := scheduler.OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	_, err = store.DB().ExecContext(context.Background(), `
+		INSERT INTO allowed_users (user_id, source, created_at) VALUES
+			('1000001', ?, '2026-05-08T09:00:00Z'),
+			('1148481707', ?, '2026-05-08T10:00:00Z')
+	`, auth.SourceE2EBootstrap, auth.SourceTelegramBootstrap)
+	if err != nil {
+		t.Fatalf("seed allowed users: %v", err)
+	}
+
+	got, err := firstAllowedUserID(dbPath, nil)
+	if err != nil {
+		t.Fatalf("firstAllowedUserID() error = %v", err)
+	}
+	if got != "1148481707" {
+		t.Fatalf("firstAllowedUserID() = %q, want real Telegram owner", got)
+	}
+}
+
+func TestFirstAllowedUserIDPrefersConfiguredRealAllowlist(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	store, err := scheduler.OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	_, err = store.DB().ExecContext(context.Background(), `
+		INSERT INTO allowed_users (user_id, source, created_at) VALUES
+			('111', ?, '2026-05-08T09:00:00Z'),
+			('222', ?, '2026-05-08T10:00:00Z')
+	`, auth.SourceTelegramBootstrap, "manual")
+	if err != nil {
+		t.Fatalf("seed allowed users: %v", err)
+	}
+
+	got, err := firstAllowedUserID(dbPath, []string{"222"})
+	if err != nil {
+		t.Fatalf("firstAllowedUserID() error = %v", err)
+	}
+	if got != "222" {
+		t.Fatalf("firstAllowedUserID() = %q, want configured allowlist user", got)
+	}
+}
+
+func TestFirstAllowedUserIDRejectsOnlySyntheticUsers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	store, err := scheduler.OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	_, err = store.DB().ExecContext(context.Background(), `
+		INSERT INTO allowed_users (user_id, source, created_at)
+		VALUES ('1000001', ?, '2026-05-08T09:00:00Z')
+	`, auth.SourceE2EBootstrap)
+	if err != nil {
+		t.Fatalf("seed allowed users: %v", err)
+	}
+
+	_, err = firstAllowedUserID(dbPath, nil)
+	if err == nil || !strings.Contains(err.Error(), "only contains e2e_bootstrap") {
+		t.Fatalf("firstAllowedUserID() error = %v, want e2e rejection", err)
 	}
 }
 

@@ -302,7 +302,9 @@ var profileCardCatalog = []ProfileCard{
 			"qualita", "consolidation", "consolidamento", "analyze all memory", "analyse all memory",
 			"review all memory", "audit all memory", "map all memory", "analyze the wiki",
 			"analyse the wiki", "review the wiki", "across the knowledge base", "whole knowledge base",
-			"entire knowledge base", "cross-check", "synthesis", "sintet",
+			"entire knowledge base", "cross-check", "synthesis", "sintet", "stato del sistema",
+			"come posso migliorarti", "dove ti blocchi", "conversazioni recenti", "recent conversations",
+			"conversation logs", "log delle conversazioni", "agent chat", "chat dell'agente",
 		},
 		NegativeCues: []string{
 			"dashboard", "settings", "impostazioni", "admin", "documento", "docx", "pdf", "xlsx",
