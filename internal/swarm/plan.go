@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultMaxPlanAssignments = 6
-	resultPreviewLimit        = 240
+	resultPreviewLimit        = 1200
 )
 
 var defaultPlanRoles = []string{"librarian", "critic", "researcher", "skillsmith", "synthesizer"}

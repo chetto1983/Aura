@@ -1297,6 +1297,12 @@ func formatTerminalSwarmResult(raw string) string {
 		OK      bool   `json:"ok"`
 		Status  string `json:"status"`
 		Summary string `json:"summary"`
+		Tasks   []struct {
+			Role          string `json:"role"`
+			Status        string `json:"status"`
+			ResultPreview string `json:"result_preview"`
+			LastError     string `json:"last_error"`
+		} `json:"tasks"`
 		Metrics struct {
 			TotalTasks       int   `json:"total_tasks"`
 			CompletedTasks   int   `json:"completed_tasks"`
@@ -1315,11 +1321,20 @@ func formatTerminalSwarmResult(raw string) string {
 		return "Ho completato la verifica parallela, ma non sono riuscito a trasformare il risultato interno in un riassunto pulito."
 	}
 	var sb strings.Builder
-	if strings.TrimSpace(resp.Summary) != "" {
+	taskSummary := terminalSwarmTaskSummary(resp.Tasks)
+	if taskSummary != "" && isTechnicalSwarmSummary(resp.Summary) {
+		sb.WriteString(taskSummary)
+	} else if strings.TrimSpace(resp.Summary) != "" {
 		sb.WriteString(strings.TrimSpace(resp.Summary))
+		if taskSummary != "" {
+			sb.WriteString("\n\n")
+			sb.WriteString(taskSummary)
+		}
 	} else if resp.LastError != "" {
 		sb.WriteString("Swarm research finished with an error: ")
 		sb.WriteString(resp.LastError)
+	} else if taskSummary != "" {
+		sb.WriteString(taskSummary)
 	} else {
 		sb.WriteString("Swarm research completed.")
 	}
@@ -1334,6 +1349,35 @@ func formatTerminalSwarmResult(raw string) string {
 		sb.WriteString(".")
 	}
 	return sb.String()
+}
+
+func terminalSwarmTaskSummary(tasks []struct {
+	Role          string `json:"role"`
+	Status        string `json:"status"`
+	ResultPreview string `json:"result_preview"`
+	LastError     string `json:"last_error"`
+}) string {
+	var lines []string
+	for _, task := range tasks {
+		body := strings.TrimSpace(task.ResultPreview)
+		if body == "" {
+			body = strings.TrimSpace(task.LastError)
+		}
+		if body == "" {
+			continue
+		}
+		role := strings.TrimSpace(task.Role)
+		if role != "" && len(tasks) > 1 {
+			body = role + ": " + body
+		}
+		lines = append(lines, body)
+	}
+	return strings.Join(lines, "\n\n")
+}
+
+func isTechnicalSwarmSummary(summary string) bool {
+	summary = strings.TrimSpace(summary)
+	return strings.HasPrefix(summary, "Run ") && strings.Contains(summary, " Metrics:")
 }
 
 func formatTerminalExecuteCodeResult(raw string) string {

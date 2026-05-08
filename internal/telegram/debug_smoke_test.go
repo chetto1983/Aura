@@ -680,6 +680,23 @@ func TestFormatTerminalSwarmResultUsesSynthesisAndCompactSummary(t *testing.T) {
 	}
 }
 
+func TestFormatTerminalSwarmResultUsesWorkerPreviewWhenSummaryIsTechnical(t *testing.T) {
+	raw := `{"ok":true,"status":"completed","summary":"Run swarm_123 (completed): 1/1 completed, 0 failed, 0 running, 0 pending. Roles: librarian=completed. Metrics: llm=3 tools=3 tokens=3758 task_elapsed_ms=24999 wall_ms=25000 speedup=1.00.","tasks":[{"role":"librarian","status":"completed","result_preview":"CONFERMATO: wiki link rotto in aura-skills-installate. STALE: Pyodide timeout non ricorre nei log recenti. Prossima azione: riparare il related rotto e rilanciare lint_wiki."}],"metrics":{"total_tasks":1,"completed_tasks":1,"failed_tasks":0,"llm_calls":3,"tool_calls":3,"tokens_total":3758,"wall_ms":25000}}`
+
+	got := formatTerminalSwarmResult(raw)
+
+	for _, want := range []string{"CONFERMATO: wiki link rotto", "STALE: Pyodide timeout", "1/1 controlli riusciti"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
+		}
+	}
+	for _, leaked := range []string{"Run swarm_123", "Metrics:", "tokens=3758", "wall_ms"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalSwarmResult() leaked %q in %q", leaked, got)
+		}
+	}
+}
+
 func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
 	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
 

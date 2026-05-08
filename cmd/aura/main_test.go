@@ -81,6 +81,42 @@ func TestMainUsesConfiguredEnvPath(t *testing.T) {
 	}
 }
 
+func TestHandleCLIArgsPrintsHelpWithoutStartingAura(t *testing.T) {
+	var out strings.Builder
+
+	if !handleCLIArgs([]string{"--help"}, &out) {
+		t.Fatal("handleCLIArgs(--help) = false, want true")
+	}
+	got := out.String()
+	for _, want := range []string{"Aura ", "Usage:", "AURA_ENV_PATH"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help output = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestHandleCLIArgsPrintsVersionWithoutStartingAura(t *testing.T) {
+	var out strings.Builder
+
+	if !handleCLIArgs([]string{"--version"}, &out) {
+		t.Fatal("handleCLIArgs(--version) = false, want true")
+	}
+	if !strings.Contains(out.String(), "Aura ") {
+		t.Fatalf("version output = %q", out.String())
+	}
+}
+
+func TestHandleCLIArgsIgnoresUnknownArgs(t *testing.T) {
+	var out strings.Builder
+
+	if handleCLIArgs([]string{"--not-a-real-flag"}, &out) {
+		t.Fatal("handleCLIArgs(unknown) = true, want false")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("unknown arg wrote output %q", out.String())
+	}
+}
+
 func TestMainKeepsOpenedDBPathAfterSettingsOverlay(t *testing.T) {
 	data, err := os.ReadFile("main.go")
 	if err != nil {

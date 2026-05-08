@@ -50,6 +50,7 @@ func TestSelectProfileAutoRoutesSwarmSandboxDocumentAndMemory(t *testing.T) {
 		{name: "swarm broad memory review", text: "analyze all memory and synthesize the gaps across the knowledge base", want: ProfileSwarmResearch},
 		{name: "swarm italian self diagnostic", text: "controlla lo stato del sistema e dimmi come posso migliorarti", want: ProfileSwarmResearch},
 		{name: "swarm italian conversation log debug", text: "guarda i log delle conversazioni e dimmi dove ti blocchi", want: ProfileSwarmResearch},
+		{name: "swarm italian blocker classification", text: "verifica i 7 blocchi e classificane ciascuno come confermato stale o incerto", want: ProfileSwarmResearch},
 		{name: "sandbox english csv chart", text: "compute a CSV table and chart for the E2E timings", want: ProfileSandboxCompute},
 		{name: "sandbox italian csv chart", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ProfileSandboxCompute},
 		{name: "document english report", text: "create a report from the documents you have", want: ProfileDocument},

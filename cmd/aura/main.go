@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,6 +41,9 @@ var (
 const restartDelayEnv = "AURA_RESTART_DELAY_MS"
 
 func main() {
+	if handleCLIArgs(os.Args[1:], os.Stdout) {
+		return
+	}
 	// Initialize structured logger with zap backend and secret sanitization
 	logger, cleanupLog := logging.Setup("info", "./logs")
 	maybeDelayRestartChild(logger)
@@ -61,6 +65,22 @@ func main() {
 		return
 	}
 	runWithTray(logger, cleanupLog, cfg)
+}
+
+func handleCLIArgs(args []string, out io.Writer) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch strings.TrimSpace(args[0]) {
+	case "-h", "--help", "help":
+		fmt.Fprintf(out, "Aura %s\n\nUsage:\n  aura\n\nEnvironment:\n  AURA_HEADLESS=true       run without desktop tray\n  AURA_ENV_PATH=/data/.env load container/runtime configuration\n  HTTP_PORT=0.0.0.0:8080  dashboard listen address\n", auraVersion)
+		return true
+	case "-v", "--version", "version":
+		fmt.Fprintf(out, "Aura %s (%s, %s)\n", auraVersion, commit, date)
+		return true
+	default:
+		return false
+	}
 }
 
 func runWithTray(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {

@@ -305,6 +305,8 @@ var profileCardCatalog = []ProfileCard{
 			"entire knowledge base", "cross-check", "synthesis", "sintet", "stato del sistema",
 			"come posso migliorarti", "dove ti blocchi", "conversazioni recenti", "recent conversations",
 			"conversation logs", "log delle conversazioni", "agent chat", "chat dell'agente",
+			"blocchi", "blocking issues", "stallo", "stalli", "in stallo", "stuck", "stale o incerto",
+			"classificane ciascuno", "classify each", "parti dallo swarm", "start with swarm",
 		},
 		NegativeCues: []string{
 			"dashboard", "settings", "impostazioni", "admin", "documento", "docx", "pdf", "xlsx",
