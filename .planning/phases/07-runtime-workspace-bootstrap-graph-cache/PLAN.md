@@ -380,7 +380,7 @@ git commit -m "slice 07: materialize wiki graph cache"
 - Modify: `internal/telegram/conversation_context.go` or current speculative search injection point
 - Modify: `internal/conversation/system_prompt.go`
 
-- [ ] **Step 1: Write tests for pack composition**
+- [x] **Step 1: Write tests for pack composition**
 
 Given:
 
@@ -407,7 +407,7 @@ Expected pack:
 
 Pack must stay under a byte/token budget.
 
-- [ ] **Step 2: Implement pack budget**
+- [x] **Step 2: Implement pack budget**
 
 Function shape:
 
@@ -425,11 +425,11 @@ func ComposeMemoryPack(input MemoryPackInput) string
 
 Default max: 8-12 KB.
 
-- [ ] **Step 3: Inject pack once per turn**
+- [x] **Step 3: Inject pack once per turn**
 
 Replace scattered broad prompt additions with a single compact pack after overlay/skills and before tool profile instructions.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 ```powershell
 go test ./internal/conversation ./internal/telegram -count=1
@@ -437,7 +437,7 @@ go test ./internal/conversation ./internal/telegram -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add internal/conversation internal/telegram docs/implementation-tracker.md

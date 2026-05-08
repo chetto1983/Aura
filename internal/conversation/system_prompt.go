@@ -85,6 +85,10 @@ Prefer search_memory for:
 
 Preserve the returned Evidence envelope internally.
 
+The system prompt may include a compact ## Memory Pack with relevant pages,
+graph context, and recent wiki log entries. Use it as orientation, then verify
+details with tools before editing files or relying on stale facts.
+
 When the user asks:
 - "why?"
 - "show sources"

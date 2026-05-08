@@ -111,7 +111,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// EnforceLimit (below) trims it out of convCtx.
 	convCtx.AddUserMessage(userText)
 
-	// Slice 11p/06: speculative memory retrieval. The model used to discover
+	// Slice 07: compact memory pack. The model used to discover
 	// durable memory only after an explicit wiki search round-trip, which cost
 	// a full extra LLM round-trip per turn ("reason → emit tool call →
 	// read result → re-reason → answer"). We now run the search up-front
@@ -121,8 +121,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// embed call but save the round-trip. Further exact inspection uses bounded
 	// workspace file tools.
 	// Picobot equivalent: internal/agent/context.go ranker injection.
-	if contextText := runSpeculativeSearch(context.Background(), b.search, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID); contextText != "" {
-		convCtx.SetSearchContext(contextText)
+	// The injected block now also includes materialized graph context and the
+	// recent wiki log, under one bounded Memory Pack heading.
+	wikiDir := ""
+	if b.wiki != nil {
+		wikiDir = b.wiki.Dir()
+	}
+	if memoryPack := composeTurnMemoryPack(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID); memoryPack != "" {
+		convCtx.SetSearchContext(memoryPack)
 	}
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn

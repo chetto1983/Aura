@@ -4,6 +4,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +42,40 @@ func TestSpeculativeSearchUsesConfiguredTimeout(t *testing.T) {
 func TestSpeculativeSearchTimeoutFallsBackToDefault(t *testing.T) {
 	if got := speculativeSearchTimeout(0); got != time.Duration(config.DefaultSpeculativeSearchTimeoutMS)*time.Millisecond {
 		t.Fatalf("timeout = %s", got)
+	}
+}
+
+func TestComposeTurnMemoryPackLoadsGraphAndRecentLog(t *testing.T) {
+	repo := &recordingSearch{indexed: true, results: []search.Result{{
+		Kind:    "wiki_page",
+		Slug:    "aura-operating-memory",
+		Title:   "Aura Operating Memory",
+		Content: "Aura should use compact context.",
+		Score:   0.9,
+	}}}
+	wikiDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wikiDir, "graph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wikiDir, "graph", "context.md"), []byte("# Wiki Graph Context\n\n- Pages: 22\n- Edges: 53\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wikiDir, "log.md"), []byte("# Wiki Log\n\n| old | row |\n| 2026-05-08T10:00:00Z | update | [[aura-operating-memory]] |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := composeTurnMemoryPack(context.Background(), repo, wikiDir, "come posso migliorare Aura?", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
+	for _, want := range []string{
+		"## Memory Pack",
+		"[[aura-operating-memory]]",
+		"### Graph Context",
+		"- Pages: 22",
+		"### Recent Wiki Log",
+		"update",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("memory pack missing %q:\n%s", want, got)
+		}
 	}
 }
 
