@@ -39,11 +39,9 @@ Key outcomes:
 - Live scorecard on DB-selected `deepseek/deepseek-v4-flash` passes 20/20 with `search_memory` on every scenario, 4/4 expected proposals, 0 unexpected proposals, and 0 slow scenarios over 30s.
 - Settings exposes memory/search/orchestration controls, including `SEARCH_BACKEND` as a combo box and the `agent` settings group.
 
-## Active Milestone
-
 ### v3.1 Agent Runtime Stabilization
 
-Status: active
+Status: closed
 
 Primary blocker evidence: `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`
 
@@ -60,7 +58,7 @@ Success criteria:
 - Debug smokes report tools, token/cost metrics, loop steps, latency, and runtime root.
 - Common live routes stay under the accepted 30s budget.
 
-Current closure evidence:
+Closure evidence:
 
 - Phase 05 simplification is implemented and merged to `master`.
 - Phase 06 filesystem-first wiki/skills cleanup is implemented.
@@ -68,9 +66,30 @@ Current closure evidence:
 - Docker runtime cleanup is implemented: `/app` no longer exposes the developer repo; `/workspace` is the runtime root.
 - Live swarm/wiki/graph and skill discovery smokes pass under the 30s target after latency repair.
 
-Open blocker:
+Carry-forward blocker:
 
-- Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files, but the configured live model still expands evidence too much before `create_docx`, causing >30s latency and occasional malformed tool JSON. v3.1 remains active until the document route gets compact bounded evidence or an equivalent deterministic helper.
+- Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files, but the configured live model still expands evidence too much before `create_docx`, causing >30s latency and occasional malformed tool JSON. Phase 08 treats this as one symptom of the broader runtime diet and retrieval problem.
+
+## Active Milestone
+
+### v3.2 Runtime Diet
+
+Status: active
+
+Plan: `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`
+
+Goal: make Aura fast and intelligent by deleting useless runtime complexity, reducing the loop to Picobot-style basics, and using retrieval only when it helps the current answer.
+
+Success criteria:
+
+- Aura no longer emits the hardcoded stopped-before-final-answer fallback after successful tool work.
+- Always-on speculative Memory Pack injection is gone from generic turns.
+- Retrieval is routing-aware: `minimal`, `retrieve`, and `produce`.
+- Embeddings are used through calibrated hybrid retrieval rather than raw top-K trust.
+- Qdrant merges or falls back to local search on low-confidence results.
+- Source/archive memory uses compact indexed facts, not raw OCR dumps or entire chat archives.
+- Document generation consumes one compact evidence capsule before typed file tools.
+- Common live routes stay under 30s without repeated broad file/source/archive loops.
 
 ## Next Milestone
 
