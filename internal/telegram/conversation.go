@@ -17,7 +17,6 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/orchestration"
-	"github.com/aura/aura/internal/search"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/tools"
 
@@ -304,16 +303,6 @@ func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder
 	logger.Debug("telegram cleanup: placeholder delete failed", args...)
 }
 
-func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
-	if b == nil {
-		return nil
-	}
-	if b.summRunner != nil && b.archiveDB != nil {
-		return b.archiveDB
-	}
-	return b.archiver
-}
-
 func (b *Bot) swarmToolsAvailable() bool {
 	return b.swarmMgr != nil && b.tools != nil && b.tools.Get("run_aurabot_swarm") != nil
 }
@@ -324,36 +313,6 @@ func (b *Bot) proposalToolsAvailable() bool {
 
 func (b *Bot) sandboxToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("execute_code") != nil
-}
-
-func runSpeculativeSearch(ctx context.Context, repo search.Searcher, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
-	if repo == nil || !repo.IsIndexed() {
-		return ""
-	}
-	timeout := speculativeSearchTimeout(timeoutMS)
-	searchCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	start := time.Now()
-	results, err := repo.Search(searchCtx, userText, 5)
-	if err == nil && len(results) > 0 {
-		return search.FormatResults(results)
-	}
-	if err != nil && logger != nil {
-		logger.Debug("speculative wiki search failed",
-			"user_id", userID,
-			"error", err,
-			"timeout_ms", timeout.Milliseconds(),
-			"elapsed_ms", time.Since(start).Milliseconds(),
-		)
-	}
-	return ""
-}
-
-func speculativeSearchTimeout(timeoutMS int) time.Duration {
-	if timeoutMS <= 0 {
-		timeoutMS = config.DefaultSpeculativeSearchTimeoutMS
-	}
-	return time.Duration(timeoutMS) * time.Millisecond
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
@@ -386,98 +345,6 @@ type turnStats struct {
 	memoryCaptureTriggered bool
 	memoryCaptureDecisions int
 	memoryCaptureApplied   int
-}
-
-type orchestrationSnapshot struct {
-	StoredAt            time.Time
-	PromptVersion       string
-	PromptModules       []string
-	PromptHash          string
-	ToolProfile         string
-	ProfileSelectReason string
-	ToolsExposed        []string
-	ToolsCalled         []string
-	ActiveCapabilities  []string
-	ReadSkills          []string
-	LoopSteps           int
-	HiddenToolRejected  bool
-	SkillPreflightFail  bool
-	SkillsRead          bool
-	SwarmUsed           bool
-	SandboxUsed         bool
-	TerminalTool        string
-	DuplicateToolCall   bool
-	TokensPrompt        int
-	TokensCompletion    int
-	TokensTotal         int
-	CostUSD             float64
-}
-
-type archiveTurnInput struct {
-	ChatID       int64
-	UserID       int64
-	NextIndex    int64
-	UserText     string
-	LoopMessages []llm.Message
-	Stats        turnStats
-	ElapsedMS    int64
-	TokensIn     int
-}
-
-func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input archiveTurnInput) {
-	if archiver == nil {
-		return
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	nextIdx := input.NextIndex
-	appendTurn := func(turn conversation.Turn) {
-		if err := archiver.Append(ctx, turn); err != nil {
-			logger.Error("archive: append failed",
-				"chat_id", turn.ChatID,
-				"turn_index", turn.TurnIndex,
-				"role", turn.Role,
-				"error", err)
-		}
-	}
-
-	appendTurn(conversation.Turn{
-		ChatID:    input.ChatID,
-		UserID:    input.UserID,
-		TurnIndex: nextIdx,
-		Role:      "user",
-		Content:   input.UserText,
-	})
-	nextIdx++
-
-	for i, msg := range input.LoopMessages {
-		turn := conversation.Turn{
-			ChatID:     input.ChatID,
-			UserID:     input.UserID,
-			TurnIndex:  nextIdx,
-			Role:       msg.Role,
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
-		}
-		if len(msg.ToolCalls) > 0 {
-			if raw, err := json.Marshal(msg.ToolCalls); err == nil {
-				turn.ToolCalls = string(raw)
-			} else {
-				logger.Warn("archive: tool_calls marshal failed",
-					"chat_id", input.ChatID, "turn_index", nextIdx, "error", err)
-			}
-		}
-		if msg.Role == "assistant" && i == len(input.LoopMessages)-1 {
-			turn.LLMCalls = input.Stats.llmCalls
-			turn.ToolCallsCount = input.Stats.toolCalls
-			turn.ElapsedMS = input.ElapsedMS
-			turn.TokensIn = input.TokensIn
-		}
-		appendTurn(turn)
-		nextIdx++
-	}
 }
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profileDecision orchestration.ProfileDecision) (string, turnStats) {
@@ -864,67 +731,6 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 	return response, false
 }
 
-func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
-	if b == nil || strings.TrimSpace(userID) == "" {
-		return
-	}
-	now := time.Now()
-	b.orchMap.Store(userID, orchestrationSnapshot{
-		StoredAt:            now,
-		PromptVersion:       stats.promptVersion,
-		PromptModules:       append([]string(nil), stats.promptModules...),
-		PromptHash:          stats.promptHash,
-		ToolProfile:         stats.toolProfile,
-		ProfileSelectReason: stats.profileSelectReason,
-		ToolsExposed:        append([]string(nil), stats.toolsExposed...),
-		ToolsCalled:         append([]string(nil), stats.toolsCalled...),
-		ActiveCapabilities:  append([]string(nil), stats.activeCapabilities...),
-		ReadSkills:          append([]string(nil), stats.readSkills...),
-		LoopSteps:           stats.loopSteps,
-		HiddenToolRejected:  stats.hiddenToolRejected,
-		SkillPreflightFail:  stats.skillPreflightFail,
-		SkillsRead:          stats.skillsRead,
-		SwarmUsed:           stats.swarmUsed,
-		SandboxUsed:         stats.sandboxUsed,
-		TerminalTool:        stats.terminalTool,
-		DuplicateToolCall:   stats.duplicateToolCall,
-		TokensPrompt:        stats.tokensPrompt,
-		TokensCompletion:    stats.tokensCompletion,
-		TokensTotal:         stats.tokensTotal,
-		CostUSD:             stats.costUSD,
-	})
-	b.pruneOrchestrationSnapshots(now)
-}
-
-func (b *Bot) loadOrchestrationSnapshot(userID string) (orchestrationSnapshot, bool) {
-	if b == nil {
-		return orchestrationSnapshot{}, false
-	}
-	value, ok := b.orchMap.Load(userID)
-	if !ok {
-		return orchestrationSnapshot{}, false
-	}
-	snap, ok := value.(orchestrationSnapshot)
-	return snap, ok
-}
-
-func (b *Bot) pruneOrchestrationSnapshots(now time.Time) {
-	if b == nil || b.cfg == nil || b.cfg.TraceRetentionDays <= 0 {
-		return
-	}
-	cutoff := now.Add(-time.Duration(b.cfg.TraceRetentionDays) * 24 * time.Hour)
-	b.orchMap.Range(func(key, value any) bool {
-		snap, ok := value.(orchestrationSnapshot)
-		if !ok {
-			return true
-		}
-		if !snap.StoredAt.IsZero() && snap.StoredAt.Before(cutoff) {
-			b.orchMap.Delete(key)
-		}
-		return true
-	})
-}
-
 func toolDefinitionNames(defs []llm.ToolDefinition) []string {
 	out := make([]string, 0, len(defs))
 	for _, def := range defs {
@@ -1053,25 +859,4 @@ func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) floa
 		prompt = usage.TotalTokens
 	}
 	return (float64(prompt)*inputPerM + float64(completion)*outputPerM) / 1_000_000
-}
-
-func toolActivityMessage(name string) string {
-	return "Sto lavorando alla richiesta..."
-}
-
-func artifactNamesFromSandboxResult(artifacts string) []string {
-	var names []string
-	for _, line := range strings.Split(artifacts, "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		if line == "" {
-			continue
-		}
-		if idx := strings.Index(line, " ("); idx >= 0 {
-			line = strings.TrimSpace(line[:idx])
-		}
-		if line != "" {
-			names = append(names, line)
-		}
-	}
-	return names
 }

@@ -58,6 +58,10 @@ func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
 }
 
+func toolActivityMessage(name string) string {
+	return "Sto lavorando alla richiesta..."
+}
+
 func formatTerminalExecuteCodeResult(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -83,6 +87,23 @@ func formatTerminalExecuteCodeResult(raw string) string {
 		return body + "\n\nHo generato gli allegati richiesti."
 	}
 	return body + "\n\nFile generati: " + strings.Join(names, ", ") + "."
+}
+
+func artifactNamesFromSandboxResult(artifacts string) []string {
+	var names []string
+	for _, line := range strings.Split(artifacts, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+		if line == "" {
+			continue
+		}
+		if idx := strings.Index(line, " ("); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line != "" {
+			names = append(names, line)
+		}
+	}
+	return names
 }
 
 func isFileGenerationTool(name string) bool {
