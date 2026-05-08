@@ -67,12 +67,21 @@ Create or reshape these boundaries:
   - Becomes prompt/toolset selection only.
   - No runtime blocking except toolset selection.
 
+## Execution Log
+
+- 2026-05-08: Merged `codex/v31-closure-gate` into `master` via fast-forward at `62d0d9a`, then created `codex/simplify-agent-god-classes`.
+- 2026-05-08: Focused baseline passed: `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config`.
+- 2026-05-08: Commit `b0fb0cc` removed required skill preflight. `AURA_SKILL_PREFLIGHT` now defaults to `off`, settings expose only `off|advisory`, and tool execution no longer blocks on `read_skill`.
+- 2026-05-08: Commit `05ad47d` defanged `swarm_research`: it no longer requires swarm availability, no longer hides direct wiki/source/memory reads, and no longer declares `run_aurabot_swarm` as terminal.
+- 2026-05-08: Commit `e1e4536` made hidden/unavailable tool calls recoverable instead of fatal.
+- 2026-05-08: Removed remaining dead terminal-swarm helpers and tests from `internal/telegram/conversation.go` and `internal/telegram/debug_smoke_test.go`; verified with `go test ./internal/telegram`.
+
 ## Task 0: Baseline And Branch
 
 **Files:**
 - Modify: none.
 
-- [ ] Step 1: Check working tree.
+- [x] Step 1: Check working tree.
 
 Run:
 
@@ -82,7 +91,7 @@ git status --short -uall
 
 Expected: either clean, or only unrelated user files that must not be touched.
 
-- [ ] Step 2: Create branch.
+- [x] Step 2: Create branch.
 
 Run:
 
@@ -92,7 +101,7 @@ git switch -c codex/simplify-agent-god-classes
 
 Expected: branch created.
 
-- [ ] Step 3: Run focused baseline.
+- [x] Step 3: Run focused baseline.
 
 Run:
 
@@ -112,6 +121,8 @@ go test ./...
 
 Expected: pass or document existing failures before edits.
 
+Status: deferred. Focused baseline passed before edits; full `go test ./...` has not yet been run in this cleanup branch.
+
 ## Task 1: Remove Required Skill Preflight
 
 **Files:**
@@ -129,7 +140,7 @@ Expected: pass or document existing failures before edits.
 - Modify: `.env.example`
 - Modify: `compose.yaml`
 
-- [ ] Step 1: Change config semantics.
+- [x] Step 1: Change config semantics.
 
 Remove `required` from user-facing settings. Keep only:
 
@@ -145,7 +156,7 @@ case "advisory", "off":
 
 Invalid values should normalize to `off`.
 
-- [ ] Step 2: Remove runtime blocking.
+- [x] Step 2: Remove runtime blocking.
 
 Delete this behavior from the live loop:
 
@@ -157,7 +168,7 @@ if decision := b.skillPreflightDecision(...); decision.Required && !decision.Sat
 
 The replacement is no runtime block. Optional advisory can be prompt-only.
 
-- [ ] Step 3: Rewrite tests.
+- [x] Step 3: Rewrite tests.
 
 Delete tests whose only assertion is that a tool is blocked until `read_skill` is called.
 
@@ -167,7 +178,7 @@ Keep tests that verify:
 - prompts can mention relevant skills;
 - no live tool call is blocked by missing skill reads.
 
-- [ ] Step 4: Verify.
+- [x] Step 4: Verify.
 
 Run:
 
@@ -177,7 +188,7 @@ go test ./internal/orchestration ./internal/telegram ./internal/config ./interna
 
 Expected: pass.
 
-- [ ] Step 5: Commit.
+- [x] Step 5: Commit.
 
 Run:
 

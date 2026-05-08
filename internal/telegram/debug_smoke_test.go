@@ -516,19 +516,6 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 	}
 }
 
-func TestTerminalSwarmResultMasksTechnicalMetrics(t *testing.T) {
-	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline sana.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
-
-	for _, leaked := range []string{"llm_calls", "tool_calls", "tokens", "wall_ms", "Swarm metrics"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalSwarmResult leaked %q in %q", leaked, got)
-		}
-	}
-	if !strings.Contains(got, "Pipeline sana.") || !strings.Contains(got, "3/3") {
-		t.Fatalf("formatTerminalSwarmResult = %q, want summary and compact check count", got)
-	}
-}
-
 func TestTerminalExecuteCodeResultMasksArtifactMetadata(t *testing.T) {
 	raw := "exit_code: 0\nelapsed_ms: 42\n\nwrote files\n\nartifacts:\n- aura_sales_summary.csv (22 bytes, text/csv, delivered=true, persisted=true, source_id=src_0123456789abcdef)\n- aura_sales_plot.png (2048 bytes, image/png, delivered=true, persisted=true, source_id=src_fedcba9876543210)"
 
@@ -640,38 +627,6 @@ func (f *scriptedTelegramLLM) Stream(_ context.Context, req llm.Request) (<-chan
 	return ch, nil
 }
 
-func TestFormatTerminalSwarmResultUsesSynthesisAndCompactSummary(t *testing.T) {
-	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline is healthy.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
-
-	for _, want := range []string{"Pipeline is healthy.", "3/3 controlli riusciti"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
-		}
-	}
-	for _, leaked := range []string{"llm_calls", "tool_calls", "tokens=123", "wall_ms=456"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalSwarmResult() leaked %q in %q", leaked, got)
-		}
-	}
-}
-
-func TestFormatTerminalSwarmResultUsesWorkerPreviewWhenSummaryIsTechnical(t *testing.T) {
-	raw := `{"ok":true,"status":"completed","summary":"Run swarm_123 (completed): 1/1 completed, 0 failed, 0 running, 0 pending. Roles: librarian=completed. Metrics: llm=3 tools=3 tokens=3758 task_elapsed_ms=24999 wall_ms=25000 speedup=1.00.","tasks":[{"role":"librarian","status":"completed","result_preview":"CONFERMATO: wiki link rotto in aura-skills-installate. STALE: Pyodide timeout non ricorre nei log recenti. Prossima azione: riparare il related rotto e rilanciare lint_wiki."}],"metrics":{"total_tasks":1,"completed_tasks":1,"failed_tasks":0,"llm_calls":3,"tool_calls":3,"tokens_total":3758,"wall_ms":25000}}`
-
-	got := formatTerminalSwarmResult(raw)
-
-	for _, want := range []string{"CONFERMATO: wiki link rotto", "STALE: Pyodide timeout", "1/1 controlli riusciti"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
-		}
-	}
-	for _, leaked := range []string{"Run swarm_123", "Metrics:", "tokens=3758", "wall_ms"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalSwarmResult() leaked %q in %q", leaked, got)
-		}
-	}
-}
-
 func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
 	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
 
@@ -700,35 +655,6 @@ func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 	}
 }
 
-func TestTurnStatsApplySwarmMetricsRollsUpUsage(t *testing.T) {
-	stats := turnStats{llmCalls: 1, toolCalls: 1, tokensPrompt: 2, tokensCompletion: 3, tokensTotal: 5}
-
-	stats.applySwarmMetrics(`{"metrics":{"llm_calls":2,"tool_calls":4,"tokens_prompt":10,"tokens_completion":20,"tokens_total":30}}`, 1.5, 2.0)
-
-	if stats.llmCalls != 3 || stats.toolCalls != 5 {
-		t.Fatalf("calls = llm %d tools %d", stats.llmCalls, stats.toolCalls)
-	}
-	if stats.tokensPrompt != 12 || stats.tokensCompletion != 23 || stats.tokensTotal != 35 {
-		t.Fatalf("tokens = prompt %d completion %d total %d", stats.tokensPrompt, stats.tokensCompletion, stats.tokensTotal)
-	}
-	if stats.workerCount != 0 || stats.workerFailures != 0 {
-		t.Fatalf("worker metrics = count %d failures %d, want zero without task metrics", stats.workerCount, stats.workerFailures)
-	}
-	if stats.costUSD <= 0 {
-		t.Fatalf("costUSD = %f, want positive", stats.costUSD)
-	}
-}
-
-func TestTurnStatsApplySwarmMetricsRollsUpWorkerCounts(t *testing.T) {
-	stats := turnStats{}
-
-	stats.applySwarmMetrics(`{"metrics":{"total_tasks":3,"failed_tasks":1,"running_tasks":1,"pending_tasks":0}}`, 0, 0)
-
-	if stats.workerCount != 3 || stats.workerFailures != 2 {
-		t.Fatalf("worker metrics = count %d failures %d", stats.workerCount, stats.workerFailures)
-	}
-}
-
 func TestCapDuplicateSwarmCallsKeepsOnlyFirstRun(t *testing.T) {
 	calls := []llm.ToolCall{
 		{ID: "1", Name: "run_aurabot_swarm"},
@@ -743,36 +669,6 @@ func TestCapDuplicateSwarmCallsKeepsOnlyFirstRun(t *testing.T) {
 	}
 	if len(duplicates) != 1 || duplicates[0].ID != "3" {
 		t.Fatalf("duplicates = %+v", duplicates)
-	}
-}
-
-func TestSwarmFinalizationMessagesDoesNotDuplicateRawResult(t *testing.T) {
-	raw := `{"ok":true,"summary":"large aggregate"}`
-	messages := []llm.Message{
-		{Role: "user", Content: "audit everything"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}}},
-		{Role: "tool", ToolCallID: "swarm-1", Content: raw},
-	}
-
-	got := swarmFinalizationMessages(messages)
-	if len(got) != len(messages)+1 {
-		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
-	}
-	if got[len(got)-1].Role != "user" {
-		t.Fatalf("last role = %q, want user", got[len(got)-1].Role)
-	}
-	if strings.Contains(got[len(got)-1].Content, raw) {
-		t.Fatalf("finalization instruction duplicates raw swarm result: %q", got[len(got)-1].Content)
-	}
-
-	var rawOccurrences int
-	for _, msg := range got {
-		if strings.Contains(msg.Content, raw) {
-			rawOccurrences++
-		}
-	}
-	if rawOccurrences != 1 {
-		t.Fatalf("raw swarm result occurrences = %d, want 1", rawOccurrences)
 	}
 }
 

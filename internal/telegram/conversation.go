@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -669,50 +668,6 @@ func (b *Bot) terminalToolPolicyEnabled() bool {
 	return config.NormalizeTerminalToolPolicy(b.cfg.TerminalToolPolicy) != "off"
 }
 
-func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, stats turnStats) (string, turnStats) {
-	goal := latestUserMessage(convCtx.Messages())
-	call := llm.ToolCall{
-		ID:        "auto_run_aurabot_swarm",
-		Name:      "run_aurabot_swarm",
-		Arguments: map[string]any{"goal": goal, "mode": "wait"},
-	}
-	convCtx.AddAssistantToolCallMessage("", []llm.ToolCall{call})
-	stats.toolCalls++
-	stats.toolsCalled = append(stats.toolsCalled, call.Name)
-	stats.swarmUsed = true
-	b.storeOrchestrationSnapshot(userID, stats)
-
-	execution := b.executeToolCalls(ctx, c, convCtx, userID, []llm.ToolCall{call}, stats.toolsExposed, orchestration.ProfileSwarmResearch, stats.readSkills)
-	lastToolResult, hiddenRejected := execution.lastResult, execution.hiddenRejected
-	stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
-	stats.skillPreflightFail = stats.skillPreflightFail || execution.skillPreflightRejected
-	if execution.terminalTool != "" {
-		stats.terminalTool = execution.terminalTool
-	}
-	if execution.fatalResult != "" {
-		response := userFacingFatalToolResult(execution.fatalResult)
-		convCtx.AddAssistantMessage(response)
-		b.storeOrchestrationSnapshot(userID, stats)
-		return response, stats
-	}
-	stats.terminalSwarm = true
-	stats.swarmFinalization = swarmResearchFinalization()
-	stats.postSwarmToolCalls = 0
-	stats.applySwarmMetrics(lastToolResult, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-	if stats.swarmFinalization == "no_tool_llm" {
-		response, delivered := b.finalizeSwarmWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
-		b.storeOrchestrationSnapshot(userID, stats)
-		if delivered {
-			return "", stats
-		}
-		return response, stats
-	}
-	response := formatTerminalSwarmResult(lastToolResult)
-	convCtx.AddAssistantMessage(response)
-	b.storeOrchestrationSnapshot(userID, stats)
-	return response, stats
-}
-
 // executeToolCalls runs an assistant turn's tool calls concurrently and
 // appends results in original order. The LLM batches independent calls into
 // one assistant turn (e.g. search_wiki + web_search side-by-side); running
@@ -876,43 +831,6 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	return summary
 }
 
-func (b *Bot) finalizeSwarmWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawSwarmResult string, stats *turnStats) (string, bool) {
-	req := llm.Request{
-		Messages: swarmFinalizationMessages(convCtx.Messages()),
-		Model:    b.cfg.LLMModel,
-		Tools:    nil,
-	}
-	stats.llmCalls++
-	ch, err := b.llm.Stream(ctx, req)
-	if err != nil {
-		b.logger.Warn("swarm finalization LLM failed", "user_id", userID, "error", err)
-		response := formatTerminalSwarmResult(rawSwarmResult)
-		convCtx.AddAssistantMessage(response)
-		return response, false
-	}
-	resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
-	if err != nil {
-		b.logger.Warn("swarm finalization stream failed", "user_id", userID, "error", err)
-		response := formatTerminalSwarmResult(rawSwarmResult)
-		convCtx.AddAssistantMessage(response)
-		return response, false
-	}
-	convCtx.TrackTokens(resp.Usage)
-	stats.tokensPrompt += resp.Usage.PromptTokens
-	stats.tokensCompletion += resp.Usage.CompletionTokens
-	stats.tokensTotal += resp.Usage.TotalTokens
-	stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-	if b.budget != nil {
-		b.budget.RecordUsage(resp.Usage)
-	}
-	response := strings.TrimSpace(resp.Content)
-	if response == "" {
-		response = formatTerminalSwarmResult(rawSwarmResult)
-	}
-	convCtx.AddAssistantMessage(response)
-	return response, delivered
-}
-
 func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
 	req := llm.Request{
 		Messages: terminalToolFinalizationMessages(convCtx.Messages(), stats.terminalTool),
@@ -1009,15 +927,6 @@ func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 		return "Fatto: ho aggiornato la wiki e ho fermato il turno dopo il salvataggio."
 	}
 	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
-}
-
-func swarmFinalizationMessages(messages []llm.Message) []llm.Message {
-	out := append([]llm.Message(nil), messages...)
-	out = append(out, llm.Message{
-		Role:    "user",
-		Content: "Synthesize the completed swarm result for the user. Do not call tools. Use only the aggregate tool result already present above.",
-	})
-	return out
 }
 
 func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
@@ -1209,98 +1118,6 @@ func capDuplicateSwarmCalls(profile orchestration.Profile, calls []llm.ToolCall)
 	return out, duplicates
 }
 
-func formatTerminalSwarmResult(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "Swarm research completed, but no synthesis was returned."
-	}
-	var resp struct {
-		OK      bool   `json:"ok"`
-		Status  string `json:"status"`
-		Summary string `json:"summary"`
-		Tasks   []struct {
-			Role          string `json:"role"`
-			Status        string `json:"status"`
-			ResultPreview string `json:"result_preview"`
-			LastError     string `json:"last_error"`
-		} `json:"tasks"`
-		Metrics struct {
-			TotalTasks       int   `json:"total_tasks"`
-			CompletedTasks   int   `json:"completed_tasks"`
-			FailedTasks      int   `json:"failed_tasks"`
-			LLMCalls         int   `json:"llm_calls"`
-			ToolCalls        int   `json:"tool_calls"`
-			TokensTotal      int   `json:"tokens_total"`
-			WallMS           int64 `json:"wall_ms"`
-			TaskElapsedMS    int64 `json:"task_elapsed_ms"`
-			TokensPrompt     int   `json:"tokens_prompt"`
-			TokensCompletion int   `json:"tokens_completion"`
-		} `json:"metrics"`
-		LastError string `json:"last_error"`
-	}
-	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
-		return "Ho completato la verifica parallela, ma non sono riuscito a trasformare il risultato interno in un riassunto pulito."
-	}
-	var sb strings.Builder
-	taskSummary := terminalSwarmTaskSummary(resp.Tasks)
-	if taskSummary != "" && isTechnicalSwarmSummary(resp.Summary) {
-		sb.WriteString(taskSummary)
-	} else if strings.TrimSpace(resp.Summary) != "" {
-		sb.WriteString(strings.TrimSpace(resp.Summary))
-		if taskSummary != "" {
-			sb.WriteString("\n\n")
-			sb.WriteString(taskSummary)
-		}
-	} else if resp.LastError != "" {
-		sb.WriteString("Swarm research finished with an error: ")
-		sb.WriteString(resp.LastError)
-	} else if taskSummary != "" {
-		sb.WriteString(taskSummary)
-	} else {
-		sb.WriteString("Swarm research completed.")
-	}
-	if resp.Metrics.TotalTasks > 0 {
-		fmt.Fprintf(&sb, "\n\nHo completato la verifica parallela: %d/%d controlli riusciti",
-			resp.Metrics.CompletedTasks,
-			resp.Metrics.TotalTasks,
-		)
-		if resp.Metrics.FailedTasks > 0 {
-			fmt.Fprintf(&sb, ", %d da rivedere", resp.Metrics.FailedTasks)
-		}
-		sb.WriteString(".")
-	}
-	return sb.String()
-}
-
-func terminalSwarmTaskSummary(tasks []struct {
-	Role          string `json:"role"`
-	Status        string `json:"status"`
-	ResultPreview string `json:"result_preview"`
-	LastError     string `json:"last_error"`
-}) string {
-	var lines []string
-	for _, task := range tasks {
-		body := strings.TrimSpace(task.ResultPreview)
-		if body == "" {
-			body = strings.TrimSpace(task.LastError)
-		}
-		if body == "" {
-			continue
-		}
-		role := strings.TrimSpace(task.Role)
-		if role != "" && len(tasks) > 1 {
-			body = role + ": " + body
-		}
-		lines = append(lines, body)
-	}
-	return strings.Join(lines, "\n\n")
-}
-
-func isTechnicalSwarmSummary(summary string) bool {
-	summary = strings.TrimSpace(summary)
-	return strings.HasPrefix(summary, "Run ") && strings.Contains(summary, " Metrics:")
-}
-
 func formatTerminalExecuteCodeResult(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -1373,48 +1190,6 @@ func formatTerminalFileResult(toolName, raw string) string {
 	}
 	sb.WriteString(".")
 	return sb.String()
-}
-
-func swarmResearchFinalization() string {
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SWARM_RESEARCH_FINALIZATION")))
-	if mode == "no_tool_llm" {
-		return mode
-	}
-	return "aggregate"
-}
-
-func (s *turnStats) applySwarmMetrics(raw string, inputPerM, outputPerM float64) {
-	if s == nil {
-		return
-	}
-	var resp struct {
-		Metrics struct {
-			LLMCalls         int `json:"llm_calls"`
-			ToolCalls        int `json:"tool_calls"`
-			TotalTasks       int `json:"total_tasks"`
-			FailedTasks      int `json:"failed_tasks"`
-			RunningTasks     int `json:"running_tasks"`
-			PendingTasks     int `json:"pending_tasks"`
-			TokensPrompt     int `json:"tokens_prompt"`
-			TokensCompletion int `json:"tokens_completion"`
-			TokensTotal      int `json:"tokens_total"`
-		} `json:"metrics"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &resp); err != nil {
-		return
-	}
-	s.llmCalls += resp.Metrics.LLMCalls
-	s.toolCalls += resp.Metrics.ToolCalls
-	s.workerCount = resp.Metrics.TotalTasks
-	s.workerFailures = resp.Metrics.FailedTasks + resp.Metrics.RunningTasks + resp.Metrics.PendingTasks
-	s.tokensPrompt += resp.Metrics.TokensPrompt
-	s.tokensCompletion += resp.Metrics.TokensCompletion
-	s.tokensTotal += resp.Metrics.TokensTotal
-	s.costUSD += estimateUsageCost(llm.TokenUsage{
-		PromptTokens:     resp.Metrics.TokensPrompt,
-		CompletionTokens: resp.Metrics.TokensCompletion,
-		TotalTokens:      resp.Metrics.TokensTotal,
-	}, inputPerM, outputPerM)
 }
 
 func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
