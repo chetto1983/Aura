@@ -31,6 +31,7 @@ import (
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/debugguard"
 	"github.com/aura/aura/internal/scheduler"
 )
 
@@ -44,6 +45,9 @@ func main() {
 
 	if _, err := os.Stat(*dbPath); err != nil {
 		log.Fatalf("database not found at %s: %v", *dbPath, err)
+	}
+	if err := guardLiveDBWriteForSeed(context.Background(), *dbPath, debugguard.IsComposeAuraRunning); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Open via scheduler.OpenStore so all migrations run; auth shares the DB.
@@ -148,6 +152,10 @@ func main() {
 	if !chatID.Valid {
 		fmt.Println("note: no archived conversations yet — drawer-click test will skip until a turn is seeded")
 	}
+}
+
+func guardLiveDBWriteForSeed(ctx context.Context, dbPath string, auraRunning debugguard.AuraRunningFunc) error {
+	return debugguard.RefuseLiveDockerDBWrite(ctx, dbPath, "seed_e2e_env", auraRunning)
 }
 
 // patchEnv updates only the listed keys in path. Lines outside the keys

@@ -72,13 +72,12 @@ func main() {
 			fail(*jsonOut, output{URL: *qdrantURL, Collection: *collection, Error: "EMBEDDING_API_KEY is required for Qdrant query smoke"})
 		}
 		embedFn := createEmbeddingFunc(cfg)
-		if cfg.DBPath != "" {
-			cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
-			if cache, err := search.OpenEmbedCache(cfg.DBPath, cacheNamespace, embedFn, slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil {
-				defer cache.Close()
-				embedFn = cache.EmbedFunc()
-			}
-		}
+		embedFn, closeCache := maybeWrapQueryEmbeddingWithCache(queryCacheConfig{
+			DBPath:           cfg.DBPath,
+			EmbeddingBaseURL: cfg.EmbeddingBaseURL,
+			EmbeddingModel:   cfg.EmbeddingModel,
+		}, embedFn, slog.New(slog.NewTextHandler(io.Discard, nil)), search.OpenEmbedCache)
+		defer closeCache()
 		report, err := runQuerySmoke(ctx, querySmokeConfig{
 			Query:   *query,
 			TopK:    *topK,
@@ -124,6 +123,20 @@ func main() {
 		fail(*jsonOut, output{URL: *qdrantURL, Collection: *collection, Error: err.Error()})
 	}
 	printOutput(*jsonOut, output{OK: true, URL: *qdrantURL, Collection: *collection, Rebuild: &report})
+}
+
+type queryCacheConfig struct {
+	DBPath           string
+	EmbeddingBaseURL string
+	EmbeddingModel   string
+}
+
+type openEmbedCacheFunc func(string, string, search.EmbeddingFunction, *slog.Logger) (*search.EmbedCache, error)
+
+func maybeWrapQueryEmbeddingWithCache(cfg queryCacheConfig, embedFn search.EmbeddingFunction, logger *slog.Logger, openCache openEmbedCacheFunc) (search.EmbeddingFunction, func()) {
+	// Query/compare smoke is documented as non-mutating. Do not open the
+	// SQLite embedding cache here: cache misses would write the live DB.
+	return embedFn, func() {}
 }
 
 func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {

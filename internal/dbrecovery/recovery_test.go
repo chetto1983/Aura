@@ -80,6 +80,68 @@ func TestRecoverReplaceBacksUpCorruptSourcePath(t *testing.T) {
 	assertScalar(t, recovered, `SELECT value FROM settings WHERE key = 'LLM_MODEL'`, "deepseek-test")
 }
 
+func TestRecoverReplaceRemovesStaleSourceSidecars(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "aura.db")
+	backupPath := filepath.Join(dir, "aura.corrupt-test.db")
+	src := openMigratedDB(t, srcPath)
+	seedRecoverableRows(t, src)
+	if err := src.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+	writeFile(t, srcPath+"-wal", []byte("stale wal"))
+	writeFile(t, srcPath+"-shm", []byte("stale shm"))
+
+	report, err := Recover(context.Background(), Options{
+		SourcePath: srcPath,
+		Replace:    true,
+		BackupPath: backupPath,
+	})
+	if err != nil {
+		t.Fatalf("Recover replace: %v", err)
+	}
+	if !report.Replaced {
+		t.Fatal("Replaced = false, want true")
+	}
+	assertNoFile(t, srcPath+"-wal")
+	assertNoFile(t, srcPath+"-shm")
+
+	recovered := openExistingDB(t, srcPath)
+	defer recovered.Close()
+	assertScalar(t, recovered, `SELECT value FROM settings WHERE key = 'LLM_MODEL'`, "deepseek-test")
+}
+
+func TestReplaceSourceWithRecoveredRemovesStaleSourceSidecars(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "aura.db")
+	recoveredPath := filepath.Join(dir, "aura.db.recovered")
+	backupPath := filepath.Join(dir, "aura.corrupt-test.db")
+	writeFile(t, srcPath, []byte("old main"))
+	writeFile(t, srcPath+"-wal", []byte("stale wal"))
+	writeFile(t, srcPath+"-shm", []byte("stale shm"))
+	writeFile(t, recoveredPath, []byte("fresh main"))
+
+	gotBackup, err := replaceSourceWithRecovered(Options{
+		SourcePath: srcPath,
+		BackupPath: backupPath,
+	}, recoveredPath)
+	if err != nil {
+		t.Fatalf("replaceSourceWithRecovered: %v", err)
+	}
+	if gotBackup != backupPath {
+		t.Fatalf("backup path = %q, want %q", gotBackup, backupPath)
+	}
+	assertFileContent(t, srcPath, []byte("fresh main"))
+	assertNoFile(t, srcPath+"-wal")
+	assertNoFile(t, srcPath+"-shm")
+	assertFileContent(t, backupPath+"-wal", []byte("stale wal"))
+	assertFileContent(t, backupPath+"-shm", []byte("stale shm"))
+}
+
 func TestSkipTableSkipsFTSShadowsAndMigrationState(t *testing.T) {
 	t.Parallel()
 
@@ -153,6 +215,33 @@ func seedRecoverableRows(t *testing.T, db *sql.DB) {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("seed %q: %v", statement, err)
 		}
+	}
+}
+
+func writeFile(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func assertNoFile(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("%s exists, want removed", path)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+}
+
+func assertFileContent(t *testing.T, path string, want []byte) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("%s = %q, want %q", path, got, want)
 	}
 }
 

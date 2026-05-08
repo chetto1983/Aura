@@ -103,8 +103,8 @@ By default this writes a complete artifact set:
   and extracted assets.
 - `artifacts/<timestamp>/memory-snapshot.tar.gz`: compiled wiki/memory pages,
   excluding raw sources so OCR bloat does not get duplicated into memory.
-- `artifacts/<timestamp>/embedding-index.tar.gz`: `aura.db` plus SQLite
-  WAL/SHM sidecars and `wiki/index.md`, enough to preserve embedding cache and
+- `artifacts/<timestamp>/embedding-index.tar.gz`: a consistent SQLite snapshot
+  of `aura.db` plus `wiki/index.md`, enough to preserve embedding cache and
   search/index state without making S3 the live database.
 - `artifacts/<timestamp>/audit-bundle.tar.gz`: logs and `reports/` when
   present, for failed ingest cases, E2E artifacts, and debug bundles.
@@ -190,11 +190,38 @@ Visible host folders hold user data:
 
 Back up these folders before moving hosts or upgrading major versions.
 
+### SQLite Safety
+
+The Docker stack bind-mounts `./data` into the Aura container. On Docker
+Desktop, that path crosses the Windows host / Linux VM filesystem boundary.
+Aura therefore sets `AURA_SQLITE_JOURNAL_MODE=DELETE` in `compose.yaml` so the
+live bind-mounted `aura.db` does not depend on WAL's shared-memory `-shm`
+sidecar.
+
+Do not run host-side write/debug commands directly against `data/aura.db` while
+the Aura container is running. Use the dashboard/API or run the command inside
+the Compose network instead. If a host command must mutate the DB, stop Aura
+first:
+
+```powershell
+docker compose stop aura
+# run the repair/debug command that writes data/aura.db
+docker compose up -d aura
+```
+
+Manual file copies of a live SQLite DB are not a reliable backup mechanism.
+`cmd/debug_backup` and the dashboard backup action create a temporary SQLite
+snapshot first, then archive that snapshot. Host-side debug commands that write
+`data/aura.db`, such as `debug_memory_closure -apply` and `seed_e2e_env`, refuse
+to run while the Compose `aura` service is up.
+
 ## Notes
 
 - `compose.yaml` sets `AURA_HEADLESS=true`; desktop builds still keep the tray.
 - `compose.yaml` sets `AURA_ENV_PATH=/data/.env`; the setup wizard writes the
   Telegram token there rather than to an ephemeral container filesystem.
+- `compose.yaml` sets `AURA_SQLITE_JOURNAL_MODE=DELETE` for Docker Desktop
+  safety. Desktop/local runs still default to WAL unless explicitly overridden.
 - `compose.yaml` sets `WEB_SEARCH_PROVIDER=searxng`, so Aura registers the
   stable `web_search` tool against the bundled SearXNG service instead of
   requiring Ollama web credentials. The paired `web_fetch` tool uses Aura's

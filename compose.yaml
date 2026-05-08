@@ -22,6 +22,7 @@ services:
       AURA_ENV_PATH: "/data/.env"
       HTTP_PORT: "0.0.0.0:8080"
       DB_PATH: "/data/aura.db"
+      AURA_SQLITE_JOURNAL_MODE: "DELETE"
       LOG_DIR: "/data/logs"
       HOME: "/data"
       NPM_CONFIG_CACHE: "/data/.npm"

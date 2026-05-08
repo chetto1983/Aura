@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/debugguard"
 	"github.com/aura/aura/internal/memoryquality"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/wiki"
@@ -49,6 +50,12 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	if *apply {
+		if strings.TrimSpace(*dbPath) != "" {
+			if err := debugguard.RefuseLiveDockerDBWriteWithCompose(ctx, *dbPath, "debug_memory_closure -apply"); err != nil {
+				fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
+				os.Exit(2)
+			}
+		}
 		cleanReport, err := applyWikiMemoryHygiene(ctx, *wikiDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FAIL: apply memory hygiene: %v\n", err)

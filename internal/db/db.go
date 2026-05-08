@@ -7,13 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
-var pragmas = []string{
-	"journal_mode=WAL",
+const sqliteJournalModeEnv = "AURA_SQLITE_JOURNAL_MODE"
+
+var fixedPragmas = []string{
 	"busy_timeout=5000",
 	"foreign_keys=ON",
 	"synchronous=NORMAL",
@@ -79,9 +82,81 @@ func CheckIntegrity(ctx context.Context, db *sql.DB) (string, error) {
 	return status, nil
 }
 
+// JournalMode reports the active SQLite journal mode for health checks and
+// Docker diagnostics.
+func JournalMode(ctx context.Context, db *sql.DB) (string, error) {
+	if db == nil {
+		return "", errors.New("db is required")
+	}
+	var mode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		return "", fmt.Errorf("sqlite journal mode: %w", err)
+	}
+	return strings.ToLower(strings.TrimSpace(mode)), nil
+}
+
+// Snapshot writes a transactionally consistent copy of sourcePath to destPath.
+// It is intended for backups of live databases; callers should archive the
+// snapshot rather than copying aura.db, aura.db-wal, and aura.db-shm directly.
+func Snapshot(ctx context.Context, sourcePath, destPath string) error {
+	if strings.TrimSpace(sourcePath) == "" {
+		return errors.New("source path is required")
+	}
+	if strings.TrimSpace(destPath) == "" {
+		return errors.New("destination path is required")
+	}
+	sourcePath = filepath.Clean(sourcePath)
+	destPath = filepath.Clean(destPath)
+	if samePath(sourcePath, destPath) {
+		return errors.New("snapshot destination must differ from source")
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create snapshot directory: %w", err)
+	}
+	if err := removeSQLiteFiles(destPath); err != nil {
+		return err
+	}
+
+	db, err := openForSnapshot(sourcePath)
+	if err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "VACUUM INTO "+quoteSQLiteString(destPath)); err != nil {
+		_ = db.Close()
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("sqlite snapshot: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("close snapshot source: %w", err)
+	}
+
+	snapshot, err := OpenReadOnly(destPath)
+	if err != nil {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("open snapshot: %w", err)
+	}
+	status, checkErr := CheckIntegrity(ctx, snapshot)
+	closeErr := snapshot.Close()
+	if checkErr != nil {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("check snapshot integrity: %w", checkErr)
+	}
+	if closeErr != nil {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("close snapshot: %w", closeErr)
+	}
+	if status != "ok" {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("snapshot integrity check failed: %s", status)
+	}
+	return nil
+}
+
 func withPragmas(path string) string {
 	values := url.Values{}
-	for _, pragma := range pragmas {
+	values.Add("_pragma", "journal_mode="+sqliteJournalMode())
+	for _, pragma := range fixedPragmas {
 		values.Add("_pragma", pragma)
 	}
 
@@ -90,4 +165,61 @@ func withPragmas(path string) string {
 		separator = "&"
 	}
 	return path + separator + values.Encode()
+}
+
+func openForSnapshot(path string) (*sql.DB, error) {
+	values := url.Values{}
+	values.Add("_pragma", "busy_timeout=5000")
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	db, err := sql.Open("sqlite", path+separator+values.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite database for snapshot: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ping sqlite database for snapshot: %w", err)
+	}
+	return db, nil
+}
+
+func quoteSQLiteString(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func removeSQLiteFiles(path string) error {
+	for _, candidate := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Remove(candidate); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", candidate, err)
+		}
+	}
+	return nil
+}
+
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA == nil && errB == nil {
+		a, b = absA, absB
+	}
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+func sqliteJournalMode() string {
+	switch strings.ToUpper(strings.TrimSpace(os.Getenv(sqliteJournalModeEnv))) {
+	case "":
+		return "WAL"
+	case "WAL":
+		return "WAL"
+	case "DELETE":
+		return "DELETE"
+	case "TRUNCATE":
+		return "TRUNCATE"
+	case "PERSIST":
+		return "PERSIST"
+	default:
+		return "WAL"
+	}
 }

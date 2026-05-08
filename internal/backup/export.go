@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	auradb "github.com/aura/aura/internal/db"
 )
 
 // Config describes one backup export. Secrets are used only by command-level
@@ -195,8 +197,10 @@ func writeFullRestoreArchive(w io.Writer, cfg Config) (int, error) {
 	if err := addFile(cfg.EnvPath, "env/.env"); err != nil {
 		return total, err
 	}
-	if err := addFile(cfg.DBPath, "data/"+filepath.Base(cfg.DBPath)); err != nil {
+	if n, err := addDBSnapshot(tw, cfg.DBPath, "data/"+filepath.Base(cfg.DBPath)); err != nil {
 		return total, err
+	} else {
+		total += n
 	}
 	if err := addFile(cfg.WikiPath, "wiki"); err != nil {
 		return total, err
@@ -266,14 +270,11 @@ func writeEmbeddingIndexArchive(w io.Writer, cfg Config) (int, error) {
 	}
 	if strings.TrimSpace(cfg.DBPath) != "" {
 		base := filepath.Base(cfg.DBPath)
-		if err := add(cfg.DBPath, "embedding-index/"+base); err != nil {
+		n, err := addDBSnapshot(tw, cfg.DBPath, "embedding-index/"+base)
+		if err != nil {
 			return total, err
 		}
-		for _, suffix := range []string{"-wal", "-shm"} {
-			if err := add(cfg.DBPath+suffix, "embedding-index/"+base+suffix); err != nil {
-				return total, err
-			}
-		}
+		total += n
 	}
 	if strings.TrimSpace(cfg.WikiPath) != "" {
 		if err := add(filepath.Join(cfg.WikiPath, "index.md"), "embedding-index/wiki/index.md"); err != nil {
@@ -336,6 +337,36 @@ func writeFilteredSourceArchive(w io.Writer, cfg Config, include func(name strin
 		name := strings.Join(parts[1:], "/")
 		return include(name)
 	})
+}
+
+func addDBSnapshot(tw *tar.Writer, dbPath, archiveName string) (int, error) {
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" {
+		return 0, nil
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	tmpDir, err := os.MkdirTemp("", "aura-db-snapshot-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(tmpDir)
+	snapshotPath := filepath.Join(tmpDir, filepath.Base(dbPath))
+	if err := auradb.Snapshot(context.Background(), dbPath, snapshotPath); err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(snapshotPath)
+	if err != nil {
+		return 0, err
+	}
+	if err := addOneFile(tw, snapshotPath, archiveName, info); err != nil {
+		return 0, err
+	}
+	return 1, nil
 }
 
 func addPath(tw *tar.Writer, src, archiveName string) (int, error) {

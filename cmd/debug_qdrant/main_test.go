@@ -117,6 +117,25 @@ func TestQueryRecommendationDetectsStaleQdrantIndex(t *testing.T) {
 	}
 }
 
+func TestQueryModeDoesNotUseSQLiteEmbedCache(t *testing.T) {
+	cfg := queryCacheConfig{
+		DBPath:           filepath.Join(t.TempDir(), "aura.db"),
+		EmbeddingBaseURL: "https://api.mistral.ai/v1",
+		EmbeddingModel:   "mistral-embed",
+	}
+	called := false
+
+	_, closeCache := maybeWrapQueryEmbeddingWithCache(cfg, querySmokeEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)), func(string, string, search.EmbeddingFunction, *slog.Logger) (*search.EmbedCache, error) {
+		called = true
+		return nil, nil
+	})
+	defer closeCache()
+
+	if called {
+		t.Fatal("query mode opened the SQLite embedding cache; want non-mutating query smoke")
+	}
+}
+
 func writeQuerySmokePage(t *testing.T, dir string, page *wiki.Page) {
 	t.Helper()
 	data, err := wiki.MarshalMD(page)

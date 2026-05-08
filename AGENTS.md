@@ -40,3 +40,4 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 - Use `Body` for wiki page content; the project has migrated from YAML page files to markdown with frontmatter.
 - Keep wiki links in `[[slug]]` form.
 - Use `LLM_API_KEY` only for the chat model. Web search is controlled by `WEB_SEARCH_PROVIDER` (`searxng`, `ollama`, or `disabled`) with provider-specific settings; do not assume the chat key unlocks search. Use dedicated Mistral embedding settings (`EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) for wiki search; do not fall back from embeddings to `LLM_API_KEY`.
+- In the Docker-first runtime, treat `data/aura.db` as a live container-owned SQLite file. Do not run host-side commands that mutate it while the Compose `aura` service is running; stop Aura or run the command inside Compose. Backups must use the SQLite snapshot path, not raw live DB/WAL/SHM file copies.

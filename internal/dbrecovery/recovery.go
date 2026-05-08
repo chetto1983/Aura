@@ -332,12 +332,28 @@ func replaceSourceWithRecovered(opts Options, recoveredPath string) (string, err
 	if err := os.Rename(opts.SourcePath, backupPath); err != nil {
 		return "", fmt.Errorf("backup source: %w", err)
 	}
+	if err := moveSQLiteSidecars(opts.SourcePath, backupPath); err != nil {
+		_ = os.Rename(backupPath, opts.SourcePath)
+		return "", err
+	}
 	if err := os.Rename(recoveredPath, opts.SourcePath); err != nil {
 		_ = os.Rename(backupPath, opts.SourcePath)
+		_ = moveSQLiteSidecars(backupPath, opts.SourcePath)
 		return "", fmt.Errorf("replace source with recovered database: %w", err)
 	}
 	_ = removeSQLiteFiles(recoveredPath)
 	return backupPath, nil
+}
+
+func moveSQLiteSidecars(srcPath, dstPath string) error {
+	for _, suffix := range []string{"-wal", "-shm"} {
+		src := srcPath + suffix
+		dst := dstPath + suffix
+		if err := os.Rename(src, dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("move %s to %s: %w", src, dst, err)
+		}
+	}
+	return nil
 }
 
 func removeSQLiteFiles(path string) error {

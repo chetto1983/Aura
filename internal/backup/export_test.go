@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	auradb "github.com/aura/aura/internal/db"
 )
 
 type fakeUploader struct {
@@ -42,7 +44,7 @@ func (f *fakeUploader) PutObject(ctx context.Context, bucket, key string, body i
 func TestExportNamesAndArchivesState(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".env"), []byte("LLM_API_KEY=secret\n"))
-	mustWrite(t, filepath.Join(dir, "aura.db"), []byte("sqlite"))
+	mustCreateSQLiteDB(t, filepath.Join(dir, "aura.db"))
 	mustWrite(t, filepath.Join(dir, "wiki", "page.md"), []byte("# Page\n"))
 	mustWrite(t, filepath.Join(dir, "skills", "demo", "SKILL.md"), []byte("---\nname: demo\n---\n"))
 	mustWrite(t, filepath.Join(dir, "wiki", "sources", "source-1", "ocr.md"), []byte("ocr"))
@@ -75,8 +77,7 @@ func TestExportNamesAndArchivesState(t *testing.T) {
 func TestExportArtifactSetUploadsCategorizedArchives(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".env"), []byte("LLM_API_KEY=secret\n"))
-	mustWrite(t, filepath.Join(dir, "aura.db"), []byte("sqlite"))
-	mustWrite(t, filepath.Join(dir, "aura.db-wal"), []byte("wal"))
+	mustCreateSQLiteDB(t, filepath.Join(dir, "aura.db"))
 	mustWrite(t, filepath.Join(dir, "wiki", "index.md"), []byte("# Index\n"))
 	mustWrite(t, filepath.Join(dir, "wiki", "page.md"), []byte("# Page\n"))
 	mustWrite(t, filepath.Join(dir, "wiki", "raw", "src_0123456789abcdef", "original.pdf"), []byte("%PDF"))
@@ -122,7 +123,7 @@ func TestExportArtifactSetUploadsCategorizedArchives(t *testing.T) {
 	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/memory-snapshot.tar.gz", "memory/wiki/page.md")
 	assertArchiveNotContains(t, uploader, "artifacts/2026-05-06-070809/memory-snapshot.tar.gz", "memory/wiki/raw/src_0123456789abcdef/ocr.md")
 	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/aura.db")
-	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/aura.db-wal")
+	assertArchiveNotContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/aura.db-wal")
 	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/embedding-index.tar.gz", "embedding-index/wiki/index.md")
 	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/audit-bundle.tar.gz", "audit/logs/aura.log")
 	assertArchiveContains(t, uploader, "artifacts/2026-05-06-070809/audit-bundle.tar.gz", "audit/reports/e2e.json")
@@ -200,6 +201,28 @@ func TestConfigRedaction(t *testing.T) {
 	}
 	if !strings.Contains(got, "aura-artifacts") || !strings.Contains(got, "(configured)") {
 		t.Fatalf("redacted config missing useful detail: %s", got)
+	}
+}
+
+func mustCreateSQLiteDB(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	db, err := auradb.Open(path)
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE backup_smoke (id INTEGER PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
+		_ = db.Close()
+		t.Fatalf("create backup smoke table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO backup_smoke (value) VALUES ('ok')`); err != nil {
+		_ = db.Close()
+		t.Fatalf("insert backup smoke row: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite db: %v", err)
 	}
 }
 

@@ -183,9 +183,10 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		}
 	}()
 
-	pool, err := auradb.Open(cfg.DBPath)
+	openedDBPath := cfg.DBPath
+	pool, err := auradb.Open(openedDBPath)
 	if err != nil {
-		return nil, activeLogger, fmt.Errorf("open database %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("open database %s: %w", openedDBPath, err)
 	}
 	closePool := true
 	defer func() {
@@ -195,12 +196,17 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}()
 
 	if err := migrations.Run(context.Background(), pool); err != nil {
-		return nil, activeLogger, fmt.Errorf("migrate database %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("migrate database %s: %w", openedDBPath, err)
 	}
 	if status, err := auradb.CheckIntegrity(context.Background(), pool); err != nil {
-		return nil, activeLogger, fmt.Errorf("check database integrity %s: %w", cfg.DBPath, err)
+		return nil, activeLogger, fmt.Errorf("check database integrity %s: %w", openedDBPath, err)
 	} else if status != "ok" {
-		return nil, activeLogger, fmt.Errorf("database integrity check failed for %s: %s", cfg.DBPath, status)
+		return nil, activeLogger, fmt.Errorf("database integrity check failed for %s: %s", openedDBPath, status)
+	}
+	if journalMode, err := auradb.JournalMode(context.Background(), pool); err != nil {
+		return nil, activeLogger, fmt.Errorf("check database journal mode %s: %w", openedDBPath, err)
+	} else {
+		activeLogger.Info("sqlite database ready", "path", openedDBPath, "integrity", "ok", "journal_mode", journalMode)
 	}
 
 	// Slice 14a: overlay user-tunable settings from the SQLite settings
@@ -214,6 +220,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}
 	reconcileBestDefaults(context.Background(), settingsStore, cfg, logger)
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
+	cfg.DBPath = openedDBPath
 
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
 	// env + settings overlay, the install is fresh. Open a loopback-only
@@ -242,6 +249,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		}
 		reconcileBestDefaults(context.Background(), settingsStore, newCfg, logger)
 		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
+		newCfg.DBPath = openedDBPath
 		cfg = newCfg
 	}
 
@@ -386,9 +394,16 @@ func (p *databaseHealthProvider) HealthStatus() health.ComponentHealth {
 			Detail: status,
 		}
 	}
+	journalMode, err := auradb.JournalMode(context.Background(), p.db)
+	if err != nil {
+		return health.ComponentHealth{
+			Status: "error",
+			Detail: err.Error(),
+		}
+	}
 	return health.ComponentHealth{
 		Status: "ok",
-		Detail: "integrity ok",
+		Detail: "integrity ok; journal=" + journalMode,
 	}
 }
 

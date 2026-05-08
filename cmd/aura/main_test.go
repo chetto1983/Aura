@@ -13,7 +13,7 @@ func TestMainRunsMigrationsBeforeStoreConstruction(t *testing.T) {
 		t.Fatalf("read main.go: %v", err)
 	}
 	source := string(data)
-	openIdx := strings.Index(source, "auradb.Open(cfg.DBPath)")
+	openIdx := strings.Index(source, "auradb.Open(openedDBPath)")
 	migrateIdx := strings.Index(source, "migrations.Run(context.Background(), pool)")
 	integrityIdx := strings.Index(source, "auradb.CheckIntegrity(context.Background(), pool)")
 	settingsIdx := strings.Index(source, "settings.NewStoreWithDB(pool)")
@@ -81,6 +81,24 @@ func TestMainUsesConfiguredEnvPath(t *testing.T) {
 	}
 }
 
+func TestMainKeepsOpenedDBPathAfterSettingsOverlay(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`openedDBPath := cfg.DBPath`,
+		`auradb.Open(openedDBPath)`,
+		`cfg.DBPath = openedDBPath`,
+		`newCfg.DBPath = openedDBPath`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("main.go missing %q", want)
+		}
+	}
+}
+
 func TestLoadDotEnvDoesNotOverrideExistingEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	if err := os.WriteFile(path, []byte("HTTP_PORT=127.0.0.1:8080\nTELEGRAM_TOKEN=from-file\n"), 0o600); err != nil {
@@ -109,5 +127,16 @@ func TestComposeSetsContainerTimezone(t *testing.T) {
 	source := string(data)
 	if !strings.Contains(source, `AURA_TIMEZONE: "${AURA_TIMEZONE:-Europe/Rome}"`) {
 		t.Fatalf("compose.yaml must set AURA_TIMEZONE so container wall-clock scheduling does not fall back to UTC")
+	}
+}
+
+func TestComposeSetsContainerSQLiteJournalMode(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	source := string(data)
+	if !strings.Contains(source, `AURA_SQLITE_JOURNAL_MODE: "DELETE"`) {
+		t.Fatalf("compose.yaml must set AURA_SQLITE_JOURNAL_MODE=DELETE so Docker bind-mounted SQLite avoids WAL shared-memory sidecars")
 	}
 }

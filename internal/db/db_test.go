@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,6 +31,34 @@ func TestOpenFreshDatabaseUsesWALJournalMode(t *testing.T) {
 		t.Fatalf("query journal_mode: %v", err)
 	}
 	if strings.ToLower(mode) != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+}
+
+func TestOpenHonorsConfiguredJournalMode(t *testing.T) {
+	t.Setenv(sqliteJournalModeEnv, "DELETE")
+
+	db := openTempDB(t)
+
+	mode, err := JournalMode(context.Background(), db)
+	if err != nil {
+		t.Fatalf("JournalMode: %v", err)
+	}
+	if mode != "delete" {
+		t.Fatalf("journal_mode = %q, want delete", mode)
+	}
+}
+
+func TestOpenFallsBackToWALForUnsafeJournalMode(t *testing.T) {
+	t.Setenv(sqliteJournalModeEnv, "OFF")
+
+	db := openTempDB(t)
+
+	mode, err := JournalMode(context.Background(), db)
+	if err != nil {
+		t.Fatalf("JournalMode: %v", err)
+	}
+	if mode != "wal" {
 		t.Fatalf("journal_mode = %q, want wal", mode)
 	}
 }
@@ -156,6 +185,65 @@ func TestCheckIntegrityRejectsNilDB(t *testing.T) {
 	}
 }
 
+func TestJournalModeRejectsNilDB(t *testing.T) {
+	t.Parallel()
+
+	if _, err := JournalMode(context.Background(), nil); err == nil {
+		t.Fatal("JournalMode(nil) error = nil, want error")
+	}
+}
+
+func TestSnapshotCreatesConsistentStandaloneCopy(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "source.db")
+	dstPath := filepath.Join(dir, "snapshot.db")
+	src, err := Open(srcPath)
+	if err != nil {
+		t.Fatalf("Open source: %v", err)
+	}
+	if _, err := src.Exec(`CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := src.Exec(`INSERT INTO notes (body) VALUES ('before snapshot')`); err != nil {
+		t.Fatalf("insert note: %v", err)
+	}
+
+	if err := Snapshot(context.Background(), srcPath, dstPath); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if _, err := src.Exec(`INSERT INTO notes (body) VALUES ('after snapshot')`); err != nil {
+		t.Fatalf("insert second note: %v", err)
+	}
+	if err := src.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+
+	dst, err := OpenReadOnly(dstPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly snapshot: %v", err)
+	}
+	defer dst.Close()
+	var count int
+	if err := dst.QueryRow(`SELECT COUNT(*) FROM notes`).Scan(&count); err != nil {
+		t.Fatalf("count notes: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("snapshot note count = %d, want 1", count)
+	}
+	assertMissingSQLiteSidecars(t, dstPath)
+}
+
+func TestSnapshotRejectsSamePath(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "aura.db")
+	if err := Snapshot(context.Background(), path, path); err == nil {
+		t.Fatal("Snapshot same path error = nil, want error")
+	}
+}
+
 func openTempDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -170,4 +258,15 @@ func openTempDB(t *testing.T) *sql.DB {
 		}
 	})
 	return db
+}
+
+func assertMissingSQLiteSidecars(t *testing.T, path string) {
+	t.Helper()
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); err == nil {
+			t.Fatalf("%s exists, want standalone snapshot without sidecar", path+suffix)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("stat %s: %v", path+suffix, err)
+		}
+	}
 }
