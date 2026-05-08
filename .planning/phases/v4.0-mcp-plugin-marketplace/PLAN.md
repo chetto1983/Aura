@@ -8,6 +8,10 @@ Existing skills remain supported, but the main v4.0 plugin model is MCP marketpl
 
 Planning reference: <https://modelcontextprotocol.io/registry/about>
 
+First approved slice: **v4.0a Mail-First Provider-Agnostic MCP**. Aura starts with mail value, not a generic plugin catalog. It exposes a small canonical Aura mail contract while provider-specific MCP servers remain behind adapters, allowlists, review, and audit. Enterprise database MCP support is planned in the same slice as a separate read-only business profile.
+
+Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
+
 ## User Decisions
 
 - Plugin model: MCP marketplace.
@@ -15,6 +19,10 @@ Planning reference: <https://modelcontextprotocol.io/registry/about>
 - Registry source: official MCP Registry plus local cache.
 - Security model: review-gated.
 - Agent autonomy: agent may stage, test, and auto-rollback approved proposals, but may not silently enable tools.
+- First value surface: provider-agnostic mail, then enterprise database read-only profile.
+- Mail provider strategy: stable Aura mail contract over approved MCP provider adapters.
+- Initial mail candidates: `tecnologicachile/mail-mcp`, `aaronsb/google-workspace-mcp`, `navbuildz/gmail-mcp-server`, and `littlebearapps/outlook-assistant`.
+- Initial enterprise database candidate: `executeautomation/mcp-database-server`, read-only allowlist only.
 
 ## Goal
 
@@ -23,6 +31,34 @@ Make Aura's plugin system MCP-first, Docker-first, review-gated, and agent-audit
 The milestone is complete when Aura can discover MCP servers, install them as managed container sidecars or remote HTTP connections, smoke-test and roll back failures, show plugin state in the dashboard, and expose only enabled approved MCP tools to the agent.
 
 ## Key Changes
+
+### v4.0a Mail-First Provider-Agnostic Slice
+
+- Add canonical Aura mail capabilities instead of exposing raw provider tool sprawl:
+  - `mail.accounts`
+  - `mail.search`
+  - `mail.read`
+  - `mail.thread`
+  - `mail.draft_reply`
+  - `mail.extract_tasks`
+  - optional reviewed `mail.label`
+  - optional reviewed `mail.archive`
+- Keep mail outside the default toolset. Default remains `search_memory` plus `schedule_task`.
+- Add an explicit `mail` toolset or equivalent review-enabled provider surface.
+- Map canonical mail capabilities to approved MCP providers through provider manifests/adapters.
+- Start with search/read/task extraction/draft preparation. No silent send/delete/bulk move/unsubscribe in the first slice.
+- Add Italian workflow skills/procedures on top of mail:
+  - triage importante;
+  - risposta professionale;
+  - follow-up clienti/fornitori;
+  - meeting brief;
+  - scadenze amministrative.
+- Add enterprise database support as a separate business profile using read-only capabilities only:
+  - list tables;
+  - describe table;
+  - read query;
+  - export query.
+- Block database writes/schema mutation by default.
 
 ### MCP Registry Cache
 
@@ -72,6 +108,10 @@ The milestone is complete when Aura can discover MCP servers, install them as ma
 - Redact secrets from API responses, logs, and UI.
 - MCP tools are not registered for the agent until the plugin is enabled.
 - Audit every proposal, install, enable, disable, rollback, and invoke failure.
+- Treat mail and database plugins as high-sensitivity by default.
+- Pin package/image/version where practical and flag `npx -y latest` style runtime as development-only.
+- Detect tool metadata drift between probes before enabling an already-known plugin.
+- Provider adapters must enforce allowlists before calling MCP, even if the raw MCP server exposes wider tools.
 
 ### Agent Autonomy
 
@@ -93,6 +133,12 @@ The milestone is complete when Aura can discover MCP servers, install them as ma
   - Installed plugins.
   - Health.
   - Review queue.
+- Add Mail Connectors provider cards for:
+  - generic mail (`mail-mcp`);
+  - Google Workspace;
+  - Gmail fallback;
+  - Outlook/Microsoft fallback.
+- Add an Enterprise Database card/profile for read-only database MCP.
 - Show runtime type, risk badges, required secrets, install status, smoke result, last error, tool list, logs, enable/disable, and rollback controls.
 - Keep manual invoke for enabled tools.
 - Add Italian and English locale coverage for all new UI text.
@@ -129,6 +175,14 @@ Add HTTP APIs under `/api/mcp`:
 - `POST /plugins/{id}/rollback`
 - `GET /plugins/{id}/logs`
 
+Add mail/provider APIs only after the provider adapter exists:
+
+- `GET /api/mail/providers`
+- `POST /api/mail/providers/{id}/probe`
+- `POST /api/mail/providers/{id}/enable`
+- `POST /api/mail/providers/{id}/disable`
+- `GET /api/mail/audit`
+
 Add settings:
 
 - `MCP_REGISTRY_URL`
@@ -145,6 +199,9 @@ Add settings:
 - Registry cache TTL and failed-sync behavior.
 - Secret redaction in API and log output.
 - Risk classifier.
+- Mail provider manifest parsing and allowlist enforcement.
+- Mail adapter maps fake MCP search/read responses into canonical Aura results.
+- Database provider manifest blocks write/schema tools.
 - Install transaction success and rollback paths.
 - MCP manager enable/disable/hot reload.
 - Tool registration exposes only enabled approved plugins.
@@ -152,6 +209,8 @@ Add settings:
 ### Integration
 
 - Fake HTTP MCP server install, enable, list tools, and invoke tool.
+- Fake mail MCP server probe, search, read, and blocked send/delete call.
+- Fake database MCP server probe, list/read success, and blocked write/drop call.
 - Failed MCP server rolls back without breaking existing tools.
 - Managed Compose/config generation validates with `docker compose config --quiet`.
 - Dashboard E2E covers marketplace search, proposal review, install smoke, enable, disable, and logs.
@@ -174,3 +233,5 @@ Add settings:
 - Agent autonomy means propose, stage, smoke-test, and rollback. It does not silently enable new tools.
 - Existing skills remain separate from MCP plugins in v4.0.
 - Garage may back up registry cache, logs, and audit bundles, but it is not primary plugin runtime storage.
+- v4.0a starts provider-agnostic at Aura's contract boundary, even if the first live provider tested is a single MCP server.
+- Mail send/delete/bulk mutation and database writes require a later reviewed slice.

@@ -70,12 +70,22 @@ Active phase: **v4.0 MCP Marketplace And Autonomous Plugin Manager**.
 
 Plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
 
+Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
+
 Goal:
 
 - make Aura's plugin system MCP-first, Docker-first, review-gated, and agent-auditable;
 - sync the official MCP Registry without blocking startup;
 - install MCP plugins as managed sidecars or remote HTTP connections;
 - keep marketplace actions dashboard-reviewed and smoke-tested before tool exposure.
+
+First slice:
+
+- provider-agnostic mail adapter over approved MCP providers;
+- canonical Aura mail contract instead of raw provider tool sprawl;
+- initial candidates: `tecnologicachile/mail-mcp`, `aaronsb/google-workspace-mcp`, `navbuildz/gmail-mcp-server`, `littlebearapps/outlook-assistant`;
+- enterprise database MCP as read-only business profile using `executeautomation/mcp-database-server`;
+- mail send/delete/bulk mutation and database writes deferred to later reviewed slices.
 
 Suggested acceptance:
 

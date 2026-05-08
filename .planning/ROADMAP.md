@@ -140,10 +140,15 @@ Status: active
 
 Plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
 
+Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
+
 Goal: make Aura's plugin system MCP-first, Docker-first, review-gated, and agent-auditable.
 
 Success criteria:
 
+- v4.0a starts with provider-agnostic mail value: Aura exposes stable mail capabilities over approved MCP provider adapters.
+- Initial mail candidates are researched and encoded as provider manifests: `tecnologicachile/mail-mcp`, `aaronsb/google-workspace-mcp`, `navbuildz/gmail-mcp-server`, and `littlebearapps/outlook-assistant`.
+- Enterprise database MCP support starts as a read-only business profile with `executeautomation/mcp-database-server`.
 - Aura syncs the official MCP Registry into a local cache without blocking startup.
 - Aura can install MCP plugins as managed container sidecars or remote HTTP connections.
 - Failed plugin installs smoke-test and roll back automatically without breaking existing tools.
