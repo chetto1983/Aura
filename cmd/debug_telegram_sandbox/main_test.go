@@ -294,7 +294,7 @@ func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacy5050(t *testing.T) 
 func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
 		ToolCalls:          []string{"read_skill", "run_aurabot_swarm", "execute_code"},
-		ToolProfile:        "sandbox_compute",
+		ToolProfile:        "compute",
 		FinalText:          "Swarm research completed.",
 		PromptHash:         "abc123",
 		SkillsRead:         true,
@@ -312,7 +312,7 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
-		Profile:            "sandbox_compute",
+		Profile:            "compute",
 		Tools:              []string{"read_skill", "execute_code"},
 		SkillRead:          true,
 		SkillReadNames:     []string{"test-driven-development", "sandbox_compute"},
@@ -334,8 +334,8 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 func TestValidateDebugExpectationsRejectsMismatchedProfile(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{ToolProfile: "default"}
 
-	err := validateDebugExpectations(result, debugExpectations{Profile: "sandbox_compute"})
-	if err == nil || !strings.Contains(err.Error(), `expected profile "sandbox_compute"`) {
+	err := validateDebugExpectations(result, debugExpectations{Profile: "compute"})
+	if err == nil || !strings.Contains(err.Error(), `expected profile "compute"`) {
 		t.Fatalf("validateDebugExpectations() error = %v, want profile failure", err)
 	}
 }
@@ -447,7 +447,7 @@ func TestValidateDebugExpectationsRejectsLoopStepOverBudget(t *testing.T) {
 }
 
 func TestValidateDebugExpectationsRejectsMissingTraceField(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{ToolProfile: "sandbox_compute"}
+	result := telegram.DebugTextSmokeResult{ToolProfile: "compute"}
 
 	err := validateDebugExpectations(result, debugExpectations{TraceFields: []string{"ToolProfile", "PromptHash"}})
 	if err == nil || !strings.Contains(err.Error(), `expected trace/result field "PromptHash"`) {

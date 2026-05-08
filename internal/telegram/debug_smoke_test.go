@@ -149,8 +149,8 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	b.storeOrchestrationSnapshot("1148481707", turnStats{
 		promptVersion:       "aura-agent-v1",
 		promptHash:          "abc123",
-		toolProfile:         "swarm_research",
-		profileSelectReason: "matched swarm_research broad synthesis cues",
+		toolProfile:         "default",
+		profileSelectReason: "no specialized toolset cues matched",
 		toolsExposed:        []string{"run_aurabot_swarm"},
 		toolsCalled:         []string{"execute_code"},
 		activeCapabilities:  []string{"swarm_research"},
@@ -332,7 +332,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ProfileSandboxCompute,
+		orchestration.ProfileCompute,
 		[]string{"systematic-debugging"},
 	)
 
@@ -360,7 +360,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ProfileSandboxCompute,
+		orchestration.ProfileCompute,
 		[]string{"systematic-debugging"},
 	)
 
@@ -395,7 +395,7 @@ func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 	convCtx.AddUserMessage("Use execute_code to compute sum(range(1, 101)).")
-	allowlist, err := orchestration.ToolsForProfile(orchestration.ProfileSandboxCompute, orchestration.Availability{Sandbox: true})
+	allowlist, err := orchestration.ToolsForProfile(orchestration.ProfileCompute, orchestration.Availability{Sandbox: true})
 	if err != nil {
 		t.Fatalf("ToolsForProfile: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.
 	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, orchestration.PromptPlan{
 		Version: "test",
 		Hash:    "hash",
-	}, orchestration.ProfileDecision{Profile: orchestration.ProfileSandboxCompute, Reason: "test"})
+	}, orchestration.ProfileDecision{Profile: orchestration.ProfileCompute, Reason: "test"})
 
 	if response != "5050" {
 		t.Fatalf("response = %q, want 5050", response)
@@ -437,8 +437,8 @@ func TestMaxToolLoopIterationsHonorsRuntimeCapAndProfilePolicy(t *testing.T) {
 	if got := b.maxToolLoopIterations(orchestration.ProfileDocument); got != 4 {
 		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
-	if got := b.maxToolLoopIterations(orchestration.ProfileSwarmResearch); got != 4 {
-		t.Fatalf("swarm maxToolLoopIterations = %d, want runtime cap 4", got)
+	if got := b.maxToolLoopIterations(orchestration.ProfileDefault); got != 4 {
+		t.Fatalf("default maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
 }
 
@@ -487,7 +487,7 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}},
 		[]string{"run_aurabot_swarm"},
-		orchestration.ProfileSwarmResearch,
+		orchestration.ProfileDefault,
 		nil,
 	)
 

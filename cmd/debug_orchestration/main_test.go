@@ -20,19 +20,18 @@ func TestBuildReportRouteEvals(t *testing.T) {
 		wantTerminal   []string
 	}{
 		{
-			name:           "pipeline audit routes to swarm research",
+			name:           "pipeline audit stays on default with swarm available",
 			prompt:         "facciamo il punto di tutta la pipeline Aura e dimmi cosa manca",
-			wantProfile:    orchestration.ProfileSwarmResearch,
-			wantTools:      []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"},
-			forbiddenTools: []string{"search_memory", "search_wiki", "read_source", "execute_code", "write_wiki"},
-			wantTerminal:   []string{"run_aurabot_swarm"},
+			wantProfile:    orchestration.ProfileDefault,
+			wantTools:      []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks", "search_memory", "search_wiki", "read_source"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 		},
 		{
-			name:           "memory answer routes to memory",
+			name:           "memory answer stays on default",
 			prompt:         "cosa sai dalla memoria sul progetto Aura?",
-			wantProfile:    orchestration.ProfileMemory,
+			wantProfile:    orchestration.ProfileDefault,
 			wantTools:      []string{"search_memory", "search_wiki", "read_wiki", "read_source"},
-			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 			wantSkills:     []string{"aura-memory-audit"},
 		},
 		{
@@ -46,34 +45,34 @@ func TestBuildReportRouteEvals(t *testing.T) {
 		{
 			name:           "computed csv chart routes to sandbox compute",
 			prompt:         "calcola una tabella CSV e un grafico sui tempi E2E",
-			wantProfile:    orchestration.ProfileSandboxCompute,
+			wantProfile:    orchestration.ProfileCompute,
 			wantTools:      []string{"execute_code", "list_skills", "read_skill", "read_source", "store_source"},
-			forbiddenTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
+			forbiddenTools: []string{"install_skill", "delete_skill", "settings_update"},
 			wantSkills:     []string{"aura-source-extraction", "systematic-debugging", "test-driven-development"},
 			wantTerminal:   []string{"execute_code"},
 		},
 		{
-			name:           "admin review routes to admin review",
+			name:           "admin review routes to admin toolset",
 			prompt:         "apri le settings e verifica SEARCH_BACKEND nella coda review",
-			wantProfile:    orchestration.ProfileAdminReview,
-			wantTools:      []string{"daily_briefing", "list_tasks", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill"},
-			forbiddenTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+			wantProfile:    orchestration.ProfileAdmin,
+			wantTools:      []string{"daily_briefing", "list_tasks", "run_task_now", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill", "settings_update"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 			wantSkills:     []string{"aura-memory-audit", "codex-security:security-scan"},
 		},
 		{
 			name:           "docker release check routes to admin review",
 			prompt:         "prepara la docker release e controlla la review queue prima di pubblicare",
-			wantProfile:    orchestration.ProfileAdminReview,
-			wantTools:      []string{"daily_briefing", "list_tasks", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill"},
-			forbiddenTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+			wantProfile:    orchestration.ProfileAdmin,
+			wantTools:      []string{"daily_briefing", "list_tasks", "run_task_now", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill", "settings_update"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 			wantSkills:     []string{"aura-memory-audit", "codex-security:security-scan"},
 		},
 		{
 			name:           "mcp plugin install proposal routes to admin review",
 			prompt:         "proponi installazione plugin MCP dal marketplace e mettila in approval queue",
-			wantProfile:    orchestration.ProfileAdminReview,
-			wantTools:      []string{"daily_briefing", "list_tasks", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill"},
-			forbiddenTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+			wantProfile:    orchestration.ProfileAdmin,
+			wantTools:      []string{"daily_briefing", "list_tasks", "run_task_now", "propose_wiki_change", "propose_skill_change", "list_skills", "read_skill", "settings_update"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 			wantSkills:     []string{"aura-memory-audit", "codex-security:security-scan"},
 		},
 		{
@@ -81,7 +80,7 @@ func TestBuildReportRouteEvals(t *testing.T) {
 			prompt:         "spiegami in due righe cosa significa retrieval augmented generation",
 			wantProfile:    orchestration.ProfileDefault,
 			wantTools:      []string{"search_memory", "web_search", "daily_briefing", "write_wiki"},
-			forbiddenTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
+			forbiddenTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token"},
 			wantSkills:     []string{"aura-memory-audit"},
 		},
 	}
@@ -146,8 +145,8 @@ func TestBuildReportRoutesPipelinePromptToSwarm(t *testing.T) {
 		PromptVersion: orchestration.VersionAuraAgentV1,
 	})
 
-	if report.Profile != string(orchestration.ProfileSwarmResearch) {
-		t.Fatalf("Profile = %q, want swarm_research", report.Profile)
+	if report.Profile != string(orchestration.ProfileDefault) {
+		t.Fatalf("Profile = %q, want default", report.Profile)
 	}
 	if report.ProfileSelectReason == "" {
 		t.Fatal("ProfileSelectReason is empty")
@@ -157,9 +156,9 @@ func TestBuildReportRoutesPipelinePromptToSwarm(t *testing.T) {
 			t.Fatalf("ToolsExposed missing %q: %+v", want, report.ToolsExposed)
 		}
 	}
-	for _, hidden := range []string{"search_memory", "search_wiki", "read_source"} {
-		if slices.Contains(report.ToolsExposed, hidden) {
-			t.Fatalf("ToolsExposed includes parent direct-read tool %q: %+v", hidden, report.ToolsExposed)
+	for _, direct := range []string{"search_memory", "search_wiki", "read_source"} {
+		if !slices.Contains(report.ToolsExposed, direct) {
+			t.Fatalf("ToolsExposed missing direct-read tool %q: %+v", direct, report.ToolsExposed)
 		}
 	}
 }
@@ -172,8 +171,8 @@ func TestBuildReportReportsPromptMetadata(t *testing.T) {
 		PromptVersion: orchestration.VersionAuraAgentV1,
 	})
 
-	if report.Profile != string(orchestration.ProfileSandboxCompute) {
-		t.Fatalf("Profile = %q, want sandbox_compute", report.Profile)
+	if report.Profile != string(orchestration.ProfileCompute) {
+		t.Fatalf("Profile = %q, want compute", report.Profile)
 	}
 	if report.PromptVersion != orchestration.VersionAuraAgentV1 {
 		t.Fatalf("PromptVersion = %q", report.PromptVersion)

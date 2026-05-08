@@ -1,7 +1,8 @@
 package orchestration
 
-// Capability names the coarse orchestration capability family behind a tool
-// profile. Capabilities are policy inputs; enforcement is added in later slices.
+// Capability names the coarse orchestration capability family behind a
+// toolset. Capabilities are policy inputs; enforcement happens at tool
+// boundaries.
 type Capability string
 
 const (
@@ -19,16 +20,16 @@ const (
 )
 
 // CapabilityDefinition is the declarative bridge from capability families to
-// current profiles, current tools, and future skill-preflight policy hints.
+// current toolsets, current tools, and future skill-preflight policy hints.
 type CapabilityDefinition struct {
 	Capability Capability
-	Profiles   []Profile
+	Toolsets   []Profile
 	Tools      []string
 	SkillHints []string
 	FutureOnly bool
 }
 
-const profilePluginReview Profile = "plugin_review"
+const toolsetPluginReview Profile = "plugin_review"
 
 var plannedCapabilities = []Capability{
 	CapabilityMemoryRead,
@@ -47,7 +48,7 @@ var plannedCapabilities = []Capability{
 var capabilityDefinitions = map[Capability]CapabilityDefinition{
 	CapabilityMemoryRead: {
 		Capability: CapabilityMemoryRead,
-		Profiles:   []Profile{ProfileDefault, ProfileMemory, ProfileSwarmResearch, ProfileDocument},
+		Toolsets:   []Profile{ProfileDefault, ProfileDocument, ProfileAdmin},
 		Tools: []string{
 			"search_memory", "search_wiki", "read_wiki", "list_wiki",
 			"list_sources", "read_source", "daily_briefing",
@@ -56,61 +57,61 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 	},
 	CapabilityMemoryWriteReviewed: {
 		Capability: CapabilityMemoryWriteReviewed,
-		Profiles:   []Profile{ProfileDefault, ProfileMemory, ProfileAdminReview},
+		Toolsets:   []Profile{ProfileDefault, ProfileAdmin},
 		Tools:      []string{"write_wiki", "propose_wiki_change", "propose_skill_change"},
 		SkillHints: []string{"aura-memory-audit", "durable memory write", "review-gated memory write"},
 	},
 	CapabilitySourceExtraction: {
 		Capability: CapabilitySourceExtraction,
-		Profiles:   []Profile{ProfileDocument, ProfileSandboxCompute, ProfileAdminReview},
+		Toolsets:   []Profile{ProfileDefault, ProfileCompute, ProfileDocument, ProfileAdmin},
 		Tools:      []string{"list_sources", "read_source", "store_source"},
 		SkillHints: []string{"aura-source-extraction", "source extraction", "OCR"},
 	},
 	CapabilityDocumentGeneration: {
 		Capability: CapabilityDocumentGeneration,
-		Profiles:   []Profile{ProfileDocument},
+		Toolsets:   []Profile{ProfileDocument},
 		Tools:      []string{"create_docx", "create_xlsx", "create_pdf"},
 		SkillHints: []string{"documents:documents", "docx", "document-pdf", "xlsx"},
 	},
 	CapabilitySandboxCompute: {
 		Capability: CapabilitySandboxCompute,
-		Profiles:   []Profile{ProfileSandboxCompute},
+		Toolsets:   []Profile{ProfileCompute},
 		Tools:      []string{"execute_code"},
 		SkillHints: []string{"aura-python-sandbox", "systematic-debugging", "test-driven-development", "sandbox compute"},
 	},
 	CapabilitySwarmResearch: {
 		Capability: CapabilitySwarmResearch,
-		Profiles:   []Profile{ProfileSwarmResearch},
+		Toolsets:   []Profile{ProfileDefault, ProfileDocument, ProfileAdmin},
 		Tools:      []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"},
 		SkillHints: []string{"subagent-driven-development", "swarm research", "bounded delegation"},
 	},
 	CapabilityBrowserE2E: {
 		Capability: CapabilityBrowserE2E,
-		Profiles:   []Profile{ProfileAdminReview},
+		Toolsets:   []Profile{ProfileAdmin},
 		SkillHints: []string{"browser-use", "aura-dashboard-e2e"},
 		FutureOnly: true,
 	},
 	CapabilityDockerRuntime: {
 		Capability: CapabilityDockerRuntime,
-		Profiles:   []Profile{ProfileAdminReview},
+		Toolsets:   []Profile{ProfileAdmin},
 		SkillHints: []string{"docker-compose-orchestration", "aura-release-docker"},
 		FutureOnly: true,
 	},
 	CapabilitySecurityReview: {
 		Capability: CapabilitySecurityReview,
-		Profiles:   []Profile{ProfileSwarmResearch, ProfileAdminReview},
+		Toolsets:   []Profile{ProfileDefault, ProfileAdmin},
 		Tools:      []string{"list_skills", "read_skill", "search_skill_catalog", "propose_wiki_change", "propose_skill_change"},
 		SkillHints: []string{"codex-security:security-scan", "security review", "MCP security"},
 	},
 	CapabilityReleaseGit: {
 		Capability: CapabilityReleaseGit,
-		Profiles:   []Profile{ProfileAdminReview},
+		Toolsets:   []Profile{ProfileAdmin},
 		SkillHints: []string{"github:yeet", "aura-release-docker", "release git"},
 		FutureOnly: true,
 	},
 	CapabilityMCPPlugin: {
 		Capability: CapabilityMCPPlugin,
-		Profiles:   []Profile{profilePluginReview},
+		Toolsets:   []Profile{toolsetPluginReview},
 		SkillHints: []string{"aura-mcp-plugin-review", "MCP plugin review"},
 		FutureOnly: true,
 	},
@@ -130,17 +131,22 @@ func CapabilityDefinitionFor(capability Capability) (CapabilityDefinition, bool)
 	return cloneCapabilityDefinition(def), true
 }
 
-// CapabilityProfileNames returns profile names for capability in stable order.
-func CapabilityProfileNames(capability Capability) []string {
+// CapabilityToolsetNames returns toolset names for capability in stable order.
+func CapabilityToolsetNames(capability Capability) []string {
 	def, ok := CapabilityDefinitionFor(capability)
 	if !ok {
 		return nil
 	}
-	names := make([]string, 0, len(def.Profiles))
-	for _, profile := range def.Profiles {
-		names = append(names, string(profile))
+	names := make([]string, 0, len(def.Toolsets))
+	for _, toolset := range def.Toolsets {
+		names = append(names, string(toolset))
 	}
 	return names
+}
+
+// CapabilityProfileNames is a compatibility wrapper for older tests/debug code.
+func CapabilityProfileNames(capability Capability) []string {
+	return CapabilityToolsetNames(capability)
 }
 
 // CapabilityToolNames returns tool names for capability in stable order.
@@ -187,10 +193,11 @@ func CapabilityForTool(tool string) (Capability, bool) {
 	return capabilities[0], true
 }
 
-// CapabilitiesForProfile returns non-future capabilities exposed by profile.
-func CapabilitiesForProfile(profile Profile) []Capability {
-	if profile == "" {
-		profile = ProfileDefault
+// CapabilitiesForToolset returns non-future capabilities exposed by toolset.
+func CapabilitiesForToolset(toolset Profile) []Capability {
+	toolset = normalizeProfile(string(toolset))
+	if toolset == "" {
+		toolset = ProfileDefault
 	}
 	capabilities := make([]Capability, 0)
 	for _, capability := range plannedCapabilities {
@@ -198,8 +205,8 @@ func CapabilitiesForProfile(profile Profile) []Capability {
 		if def.FutureOnly {
 			continue
 		}
-		for _, candidate := range def.Profiles {
-			if candidate == profile {
+		for _, candidate := range def.Toolsets {
+			if normalizeProfile(string(candidate)) == toolset {
 				capabilities = append(capabilities, capability)
 				break
 			}
@@ -208,8 +215,14 @@ func CapabilitiesForProfile(profile Profile) []Capability {
 	return capabilities
 }
 
+// CapabilitiesForProfile is a compatibility wrapper while callers migrate to
+// toolset terminology.
+func CapabilitiesForProfile(profile Profile) []Capability {
+	return CapabilitiesForToolset(profile)
+}
+
 func cloneCapabilityDefinition(def CapabilityDefinition) CapabilityDefinition {
-	def.Profiles = append([]Profile(nil), def.Profiles...)
+	def.Toolsets = append([]Profile(nil), def.Toolsets...)
 	def.Tools = append([]string(nil), def.Tools...)
 	def.SkillHints = append([]string(nil), def.SkillHints...)
 	return def

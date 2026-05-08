@@ -37,7 +37,7 @@ func main() {
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
-	expectProfile := flag.String("expect-profile", "", "expected orchestration tool profile; used only for reporting/validation when set")
+	expectProfile := flag.String("expect-profile", "", "expected orchestration toolset; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	var expectSkillRead optionalCSVFlag
 	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to call read_skill; optional comma-separated skill names or capabilities via -expect-skill-read=docx")

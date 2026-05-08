@@ -326,8 +326,8 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 			continue
 		}
 		foundProfileMode = true
-		if it.Kind != "enum" || !slices.Contains(it.Options, "admin_review") {
-			t.Fatalf("AURA_TOOL_PROFILE_MODE control = kind:%q options:%v, want admin_review option", it.Kind, it.Options)
+		if it.Kind != "enum" || !slices.Equal(it.Options, []string{"auto", "default", "compute", "document", "admin"}) {
+			t.Fatalf("AURA_TOOL_PROFILE_MODE control = kind:%q options:%v, want toolset options", it.Kind, it.Options)
 		}
 	}
 	if !foundProfileMode {

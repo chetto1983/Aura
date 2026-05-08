@@ -7,57 +7,51 @@ import (
 	"time"
 )
 
-func TestLoopPolicyForProfileDefangsSwarmAndKeepsSandboxFinalization(t *testing.T) {
-	swarm, ok := LoopPolicyForProfile(ProfileSwarmResearch)
+func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
+	def, ok := LoopPolicyForToolset(ProfileDefault)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile swarm_research returned false")
+		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	if swarm.MaxSteps != 8 {
-		t.Fatalf("swarm MaxSteps = %d, want normal 8-step budget", swarm.MaxSteps)
+	if def.MaxSteps != 8 {
+		t.Fatalf("default MaxSteps = %d, want 8-step budget", def.MaxSteps)
 	}
-	if slices.Contains(swarm.TerminalTools, "run_aurabot_swarm") {
-		t.Fatalf("swarm TerminalTools contains run_aurabot_swarm: %+v", swarm.TerminalTools)
-	}
-	if !strings.Contains(swarm.DuplicateToolPolicy, "Reject duplicate run_aurabot_swarm") {
-		t.Fatalf("swarm DuplicateToolPolicy = %q, want duplicate swarm rejection", swarm.DuplicateToolPolicy)
-	}
-	if swarm.MaxElapsed <= 0 {
-		t.Fatalf("swarm MaxElapsed = %s, want positive duration", swarm.MaxElapsed)
+	if len(def.TerminalTools) != 0 {
+		t.Fatalf("default TerminalTools = %+v, want none", def.TerminalTools)
 	}
 
-	sandbox, ok := LoopPolicyForProfile(ProfileSandboxCompute)
+	compute, ok := LoopPolicyForToolset(ProfileCompute)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile sandbox_compute returned false")
+		t.Fatal("LoopPolicyForToolset compute returned false")
 	}
-	if !slices.Contains(sandbox.TerminalTools, "execute_code") {
-		t.Fatalf("sandbox TerminalTools missing execute_code: %+v", sandbox.TerminalTools)
+	if !slices.Contains(compute.TerminalTools, "execute_code") {
+		t.Fatalf("compute TerminalTools missing execute_code: %+v", compute.TerminalTools)
 	}
-	if !sandbox.AllowNoToolFinalization {
-		t.Fatal("sandbox should allow one final no-tool response after execute_code")
+	if !compute.AllowNoToolFinalization {
+		t.Fatal("compute should allow one final no-tool response after execute_code")
 	}
-	if !strings.Contains(sandbox.DuplicateToolPolicy, "execute_code") {
-		t.Fatalf("sandbox DuplicateToolPolicy = %q, want execute_code duplicate guidance", sandbox.DuplicateToolPolicy)
+	if !strings.Contains(compute.DuplicateToolPolicy, "execute_code") {
+		t.Fatalf("compute DuplicateToolPolicy = %q, want execute_code duplicate guidance", compute.DuplicateToolPolicy)
 	}
 }
 
 func TestLoopPolicyForProfileReturnsCopySafePolicy(t *testing.T) {
-	policy, ok := LoopPolicyForProfile(ProfileSwarmResearch)
+	policy, ok := LoopPolicyForProfile(ProfileDefault)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile swarm_research returned false")
+		t.Fatal("LoopPolicyForProfile default returned false")
 	}
 	policy.MaxSteps = 99
 
-	reread, ok := LoopPolicyForProfile(ProfileSwarmResearch)
+	reread, ok := LoopPolicyForProfile(ProfileDefault)
 	if !ok {
-		t.Fatal("LoopPolicyForProfile swarm_research reread returned false")
+		t.Fatal("LoopPolicyForProfile default reread returned false")
 	}
 	if reread.MaxSteps == 99 {
 		t.Fatalf("mutating policy changed policy catalog: %+v", reread)
 	}
 }
 
-func TestLoopPolicyForEveryProfileIsConservativeAndBounded(t *testing.T) {
-	for _, profile := range []Profile{ProfileDefault, ProfileMemory, ProfileSwarmResearch, ProfileSandboxCompute, ProfileDocument, ProfileAdminReview} {
+func TestLoopPolicyForEveryToolsetIsConservativeAndBounded(t *testing.T) {
+	for _, profile := range []Profile{ProfileDefault, ProfileCompute, ProfileDocument, ProfileAdmin, ProfileMemory, ProfileSwarmResearch, ProfileSandboxCompute, ProfileAdminReview} {
 		policy, ok := LoopPolicyForProfile(profile)
 		if !ok {
 			t.Fatalf("LoopPolicyForProfile(%q) returned false", profile)

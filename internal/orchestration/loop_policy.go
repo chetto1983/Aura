@@ -10,12 +10,16 @@ type LoopPolicy struct {
 	MaxElapsed              time.Duration
 }
 
-func LoopPolicyForProfile(profile Profile) (LoopPolicy, bool) {
-	card, ok := ProfileCardFor(profile)
+func LoopPolicyForToolset(toolset Profile) (LoopPolicy, bool) {
+	card, ok := ProfileCardFor(toolset)
 	if !ok {
 		return LoopPolicy{}, false
 	}
 	return cloneLoopPolicy(card.LoopPolicy), true
+}
+
+func LoopPolicyForProfile(profile Profile) (LoopPolicy, bool) {
+	return LoopPolicyForToolset(profile)
 }
 
 func cloneLoopPolicy(policy LoopPolicy) LoopPolicy {

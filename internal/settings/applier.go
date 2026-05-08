@@ -225,7 +225,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
 	cfg.OTelEnabled = settingBool(ctx, s, KeyOTelEnabled, cfg.OTelEnabled)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
-	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode)))
+	cfg.ToolProfileMode = config.NormalizeToolProfileMode(settingString(ctx, s, KeyToolProfileMode, cfg.ToolProfileMode))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
 	cfg.SkillPreflight = normalizeSkillPreflight(settingString(ctx, s, KeySkillPreflight, cfg.SkillPreflight))
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))

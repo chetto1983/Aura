@@ -114,7 +114,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 			key:       KeyToolProfileMode,
 			value:     "auto",
 			reason:    "repair invalid tool profile mode",
-			shouldSet: missingOrInvalidSet("auto", "default", "memory", "swarm_research", "sandbox_compute", "document", "admin_review"),
+			shouldSet: missingOrInvalidSet("auto", "default", "compute", "document", "admin", "memory", "swarm_research", "sandbox_compute", "admin_review"),
 		},
 		{
 			key:       KeyOrchestrationLogLevel,

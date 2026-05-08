@@ -140,7 +140,7 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.PromptVersion != "aura-agent-v2" {
 		t.Fatalf("PromptVersion = %q", cfg.PromptVersion)
 	}
-	if cfg.ToolProfileMode != "swarm_research" {
+	if cfg.ToolProfileMode != "default" {
 		t.Fatalf("ToolProfileMode = %q", cfg.ToolProfileMode)
 	}
 	if cfg.OrchestrationLogLevel != "debug" {

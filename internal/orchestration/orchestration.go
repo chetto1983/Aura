@@ -14,13 +14,24 @@ import (
 const (
 	VersionAuraAgentV1 = "aura-agent-v1"
 
-	ProfileModeAuto = "auto"
+	ToolsetModeAuto = "auto"
+	ProfileModeAuto = ToolsetModeAuto
 
-	ProfileDefault        Profile = "default"
+	ToolsetDefault  Toolset = "default"
+	ToolsetCompute  Toolset = "compute"
+	ToolsetDocument Toolset = "document"
+	ToolsetAdmin    Toolset = "admin"
+
+	ProfileDefault  Profile = Profile(ToolsetDefault)
+	ProfileCompute  Profile = Profile(ToolsetCompute)
+	ProfileDocument Profile = Profile(ToolsetDocument)
+	ProfileAdmin    Profile = Profile(ToolsetAdmin)
+
+	// Legacy profile names are normalized to the four toolsets above at every
+	// boundary so persisted AURA_TOOL_PROFILE_MODE values keep working.
 	ProfileMemory         Profile = "memory"
 	ProfileSwarmResearch  Profile = "swarm_research"
 	ProfileSandboxCompute Profile = "sandbox_compute"
-	ProfileDocument       Profile = "document"
 	ProfileAdminReview    Profile = "admin_review"
 
 	ModuleBase           = "base"
@@ -36,6 +47,8 @@ const (
 )
 
 type Profile string
+
+type Toolset string
 
 type AccessLevel string
 
@@ -111,7 +124,7 @@ func ComposePrompt(in PromptInput) PromptPlan {
 	content := conversation.RenderSystemPrompt(in.Now, in.Location)
 	modules := []string{ModuleBase, ModuleRuntime}
 
-	content += fmt.Sprintf("\n\n## Aura Orchestration\n- Prompt Version: %s\n- Tool Profile: %s\n", version, profile)
+	content += fmt.Sprintf("\n\n## Aura Orchestration\n- Prompt Version: %s\n- Toolset: %s\n", version, profile)
 	content += profilePrompt(profile)
 	modules = append(modules, ModuleSecurity)
 
@@ -242,7 +255,7 @@ func ProfileCardFor(profile Profile) (ProfileCard, bool) {
 var profileCardCatalog = []ProfileCard{
 	{
 		Profile:  ProfileDefault,
-		Purpose:  "Safe everyday route for simple answers, memory lookup, search, and routine task scheduling.",
+		Purpose:  "Default toolset for chat, memory, wiki, sources, search, scheduling, and bounded swarm research when available.",
 		Access:   AccessDefault,
 		Priority: 100,
 		AllowedTools: []string{
@@ -258,91 +271,17 @@ var profileCardCatalog = []ProfileCard{
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
 		},
-		DeniedTools: []string{"execute_code", "install_skill", "delete_skill", "request_dashboard_token"},
+		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "settings_update", "run_task_now"},
 		LoopPolicy: LoopPolicy{
 			MaxSteps:                8,
 			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate high-risk or mutation tool calls; keep default turns short and conservative.",
+			DuplicateToolPolicy:     "Reject duplicate tool calls with identical arguments; keep default turns short and evidence-backed.",
 			MaxElapsed:              30 * time.Second,
 		},
 	},
 	{
-		Profile:      ProfileMemory,
-		Purpose:      "Source/wiki/memory route with optional swarm evidence, direct durable memory writes, and review-gated proposals.",
-		Access:       AccessWrite,
-		Priority:     50,
-		PositiveCues: []string{"memory", "memoria", "wiki", "sources", "fonti", "cosa sai", "ricordi", "remember", "second brain", "source", "ricordati", "ricorda", "salva", "save", "record", "annota"},
-		NegativeCues: []string{"documento", "docx", "pdf", "xlsx", "grafico", "chart", "csv", "pipeline audit"},
-		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "list_wiki", "read_wiki", "search_wiki",
-			"list_sources", "read_source", "lint_wiki", "lint_sources",
-			"daily_briefing", "write_wiki",
-		},
-		ConditionalTools: []ConditionalToolSet{
-			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
-			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
-		},
-		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "schedule_task"},
-		LoopPolicy: LoopPolicy{
-			MaxSteps:                8,
-			TerminalTools:           []string{"write_wiki"},
-			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate memory writes unless the later call targets distinct durable content.",
-			MaxElapsed:              30 * time.Second,
-		},
-	},
-	{
-		Profile:  ProfileSwarmResearch,
-		Purpose:  "Broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
-		Access:   AccessReadOnly,
-		Priority: 40,
-		PositiveCues: []string{
-			"facciamo il punto", "pipeline", "tutta la pipeline", "tutta la memoria", "tutto il repo",
-			"cosa manca", "what is missing", "audit", "review all", "deep review", "mappa", "roadmap", "quality",
-			"qualita", "consolidation", "consolidamento", "analyze all memory", "analyse all memory",
-			"review all memory", "audit all memory", "map all memory", "analyze the wiki",
-			"analyse the wiki", "review the wiki", "across the knowledge base", "whole knowledge base",
-			"entire knowledge base", "cross-check", "synthesis", "sintet", "stato del sistema",
-			"come posso migliorarti", "dove ti blocchi", "conversazioni recenti", "recent conversations",
-			"conversation logs", "log delle conversazioni", "agent chat", "chat dell'agente",
-			"blocchi", "blocking issues", "stallo", "stalli", "in stallo", "stuck", "stale o incerto",
-			"classificane ciascuno", "classify each", "parti dallo swarm", "start with swarm",
-		},
-		NegativeCues: []string{
-			"dashboard", "settings", "impostazioni", "admin", "documento", "docx", "pdf", "xlsx",
-			"csv", "grafico", "chart", "write_wiki", "scrivi", "scrivere", "salva", "ricorda",
-			"remember", "save", "crea", "create", "genera", "generate", "installa", "install",
-			"delete", "cancella", "rimuovi", "schedule", "program", "ricordami", "invia", "send",
-			"memory capture", "post-turn", "auto_low_risk", "review-gated", "reviewable proposals",
-		},
-		AvailabilityFallback: ProfileMemory,
-		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "search_wiki", "read_wiki",
-			"list_wiki", "list_sources", "read_source",
-			"web_search", "web_fetch",
-			"daily_briefing",
-		},
-		ConditionalTools: []ConditionalToolSet{
-			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
-			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
-		},
-		DeniedTools: []string{
-			"write_wiki", "create_docx", "create_xlsx", "create_pdf",
-			"execute_code", "schedule_task", "cancel_task", "run_task_now",
-			"install_skill", "delete_skill", "settings_update",
-		},
-		LoopPolicy: LoopPolicy{
-			MaxSteps:                8,
-			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate run_aurabot_swarm calls; after one broad pass, use direct reads only for narrow verification.",
-			MaxElapsed:              30 * time.Second,
-		},
-	},
-	{
-		Profile:              ProfileSandboxCompute,
-		Purpose:              "Compute and artifact route for Python calculations, transformations, charts, simulations, and parser experiments.",
+		Profile:              ProfileCompute,
+		Purpose:              "Compute toolset for Python calculations, transformations, charts, simulations, parser experiments, and generated artifacts.",
 		Access:               AccessSandbox,
 		Priority:             20,
 		PositiveCues:         []string{"calculate", "calcola", "compute", "grafico", "chart", "plot", "csv", "dataframe", "dataset", "simulation", "simulazione", "python", "parser", "script", "debug script", "artifact", "artifacts", "trasforma", "transform", "analisi dati", "data analysis"},
@@ -350,13 +289,18 @@ var profileCardCatalog = []ProfileCard{
 		RequiredAvailability: []string{"sandbox"},
 		AvailabilityFallback: ProfileDefault,
 		AllowedTools: []string{
-			"list_skills", "read_skill",
+			"list_skills", "read_skill", "search_skill_catalog",
+			"search_memory", "search_wiki", "read_wiki",
+			"list_wiki", "list_sources", "read_source", "store_source",
+			"web_search", "web_fetch",
 			"execute_code", "list_tools", "read_tool",
-			"search_memory", "list_sources", "read_source", "store_source",
 		},
-		DeniedTools: []string{"write_wiki", "schedule_task", "install_skill", "delete_skill", "settings_update"},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+		},
+		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                3,
+			MaxSteps:                4,
 			TerminalTools:           []string{"execute_code"},
 			AllowNoToolFinalization: true,
 			DuplicateToolPolicy:     "Reject repeated execute_code calls that recompute the same artifact; allow one final no-tool response after execute_code.",
@@ -365,18 +309,23 @@ var profileCardCatalog = []ProfileCard{
 	},
 	{
 		Profile:      ProfileDocument,
-		Purpose:      "Skill-first route for DOCX/XLSX/PDF/report generation with memory/source evidence.",
+		Purpose:      "Document toolset for DOCX/XLSX/PDF/report generation with memory/source evidence.",
 		Access:       AccessWrite,
 		Priority:     30,
 		PositiveCues: []string{"documento word", "word modificabile", "docx", "pdf", "xlsx", "spreadsheet", "foglio", "presentami un documento", "crea un documento", "genera un documento", "report", "relazione", "documento", "documenti"},
 		NegativeCues: []string{"calcola", "calculate", "compute", "grafico", "chart", "plot", "csv"},
 		AllowedTools: []string{
 			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "list_sources",
+			"search_memory", "search_wiki", "read_wiki",
+			"list_wiki", "list_sources", "read_source",
+			"web_search", "web_fetch",
 			"create_docx", "create_xlsx", "create_pdf",
-			"read_wiki", "read_source",
 		},
-		DeniedTools: []string{"install_skill", "delete_skill", "settings_update"},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
+			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+		},
+		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
 			MaxSteps:                6,
 			TerminalTools:           []string{"create_docx", "create_xlsx", "create_pdf"},
@@ -386,21 +335,28 @@ var profileCardCatalog = []ProfileCard{
 		},
 	},
 	{
-		Profile:      ProfileAdminReview,
-		Purpose:      "Review-only route for proposals and admin queues without silent mutation.",
+		Profile:      ProfileAdmin,
+		Purpose:      "Admin toolset for explicit dashboard, settings, skill, token, task, and review-queue work; concrete tools still enforce auth/admin gates.",
 		Access:       AccessReviewOnly,
 		Priority:     10,
 		PositiveCues: []string{"review queue", "approval", "proposals", "admin", "dashboard", "settings", "impostazioni", "request_dashboard_token", "coda review", "coda approvazioni", "docker release", "plugin", "mcp"},
 		AllowedTools: []string{
-			"daily_briefing", "list_tasks",
-			"propose_wiki_change", "propose_skill_change",
 			"list_skills", "read_skill", "search_skill_catalog",
+			"search_memory", "search_wiki", "read_wiki",
+			"list_wiki", "list_sources", "read_source",
+			"web_search", "web_fetch",
+			"daily_briefing", "list_tasks", "schedule_task", "cancel_task", "run_task_now",
+			"propose_wiki_change", "propose_skill_change",
+			"request_dashboard_token", "install_skill", "delete_skill", "settings_update",
 		},
-		DeniedTools: []string{"write_wiki", "execute_code", "run_task_now", "install_skill", "delete_skill", "settings_update"},
+		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
+		},
+		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                4,
+			MaxSteps:                6,
 			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate admin proposal calls that mutate or request the same review action.",
+			DuplicateToolPolicy:     "Reject duplicate admin calls that request the same review or mutation action.",
 			MaxElapsed:              30 * time.Second,
 		},
 	},
@@ -438,16 +394,14 @@ func availabilityEnabled(name string, available Availability) bool {
 
 func normalizeProfile(value string) Profile {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case string(ProfileMemory):
-		return ProfileMemory
-	case string(ProfileSwarmResearch):
-		return ProfileSwarmResearch
-	case string(ProfileSandboxCompute):
-		return ProfileSandboxCompute
-	case string(ProfileDocument):
+	case string(ToolsetCompute), string(ProfileSandboxCompute):
+		return ProfileCompute
+	case string(ToolsetDocument):
 		return ProfileDocument
-	case string(ProfileAdminReview):
-		return ProfileAdminReview
+	case string(ToolsetAdmin), string(ProfileAdminReview):
+		return ProfileAdmin
+	case string(ToolsetDefault), string(ProfileMemory), string(ProfileSwarmResearch):
+		return ProfileDefault
 	default:
 		return ProfileDefault
 	}
@@ -509,43 +463,36 @@ func profileCardsByPriority() []ProfileCard {
 
 func profilePrompt(profile Profile) string {
 	switch profile {
-	case ProfileSwarmResearch:
-		return "\nUse the broad synthesis route for audits, planning, memory quality checks, and pipeline reviews. Prefer one swarm pass when helpful, then use direct wiki/source/memory reads for narrow verification instead of repeating broad delegation. Do not create files in this profile."
-	case ProfileSandboxCompute:
+	case ProfileCompute:
 		return "\nUse Python sandbox for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Load applicable skill guidance before executing sandbox code. Keep generated files under /tmp/aura_out."
 	case ProfileDocument:
 		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
-	case ProfileMemory:
-		return "\nUse local memory/source/wiki tools for evidence-backed answers. For broad pipeline, audit, quality, or \"what is missing\" requests, call run_aurabot_swarm first when it is exposed, then use direct memory/write tools only for the final compact action. For facts, preferences, decisions, and ordinary remember/save requests in the current turn, answer normally and let automatic post-turn memory capture create the reviewable memory update. Use write_wiki only when an immediate wiki edit is clearly needed; after a successful write_wiki batch, stop calling tools and summarize."
-	case ProfileAdminReview:
-		return "\nUse review/proposal tools only. Do not silently mutate skills, MCP plugins, settings, files, or wiki pages. Never call write_wiki in this profile; for remember/save requests, answer normally and rely on automatic post-turn memory capture, or use propose_wiki_change when a review item is explicitly needed."
+	case ProfileAdmin:
+		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates. Do not silently mutate durable state when a proposal/review path is more appropriate."
 	default:
-		return "\nUse the smallest relevant tool surface. Prefer direct tools for simple work."
+		return "\nUse the default broad-safe toolset. Prefer direct memory, wiki, source, search, and web tools for simple work; use one swarm pass for broad audits when it is exposed."
 	}
 }
 
 func memoryPrompt(profile Profile) string {
-	if profile == ProfileMemory || profile == ProfileDocument {
+	if profile == ProfileDefault || profile == ProfileDocument {
 		return "\n\n## Memory Route\nFor broad or source-backed answers, gather evidence with search_memory or read-only source/wiki tools before synthesizing. Keep citations compact when the user asks for proof."
 	}
 	return ""
 }
 
 func swarmProfilePrompt(profile Profile) string {
-	if profile == ProfileSwarmResearch {
-		return "\n\n## Swarm Profile\nUse run_aurabot_swarm for one broad pass when the request spans the repo, logs, wiki, or whole pipeline. After the swarm returns, continue with direct read tools only when a narrow fact needs verification."
-	}
 	if profile == ProfileDocument {
 		return "\n\n## Document Evidence Profile\nFor document summaries, gather compact evidence with search_memory and list_sources, then create the requested file with the typed file tool. Keep source/wiki reads narrow; do not keep expanding the evidence loop once you have enough to draft."
 	}
-	if profile == ProfileMemory {
-		return "\n\n## Memory Swarm Route\nWhen the request spans the whole pipeline, repo, wiki, memory quality, stale references, or asks what is missing, prefer one run_aurabot_swarm call before direct reads. Treat the swarm result as the broad evidence pass; do not duplicate its worker reads unless a narrow fact must be verified before a write."
+	if profile == ProfileDefault {
+		return "\n\n## Default Swarm Route\nWhen the request spans the whole pipeline, repo, logs, wiki, memory quality, stale references, or asks what is missing, use one run_aurabot_swarm call when it is exposed. Treat the swarm result as a broad evidence pass; use direct reads afterward only for narrow verification."
 	}
 	return ""
 }
 
 func sandboxPrompt(profile Profile) string {
-	if profile == ProfileSandboxCompute {
+	if profile == ProfileCompute {
 		return "\n\n## Python Sandbox Route\nFirst inspect the applicable sandbox/coding skill with list_skills and read_skill. Then use execute_code for calculations, transformations, charts, generated artifacts, parser experiments, and repeatable debug scripts. Write deliverable files under /tmp/aura_out so Aura persists and can deliver them."
 	}
 	return "\n\n## Python Sandbox Route\nUse execute_code only when the request genuinely needs computation, data processing, custom generated files, plots, simulations, or parser/debug scripts."
@@ -559,17 +506,12 @@ func filePrompt(profile Profile) string {
 }
 
 func skillPreflightPrompt(profile Profile) string {
-	if profile == ProfileDocument || profile == ProfileSandboxCompute {
+	if profile == ProfileDocument || profile == ProfileCompute {
 		return "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it, when you are unsure about a domain-specific workflow, or when a previous tool error suggests one. Do not read skills just to satisfy a ritual; if the next tool is obvious, use it and keep working."
 	}
 	return "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it or when it would materially improve the work. Do not read skills on every turn."
 }
 
 func profileSupportsSkillTools(profile Profile) bool {
-	switch profile {
-	case ProfileSwarmResearch, ProfileSandboxCompute, ProfileDocument, ProfileAdminReview:
-		return true
-	default:
-		return false
-	}
+	return profile == ProfileDefault || profile == ProfileCompute || profile == ProfileDocument || profile == ProfileAdmin
 }

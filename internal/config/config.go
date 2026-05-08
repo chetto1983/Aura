@@ -249,7 +249,7 @@ func Load() (*Config, error) {
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
-	cfg.ToolProfileMode = strings.ToLower(strings.TrimSpace(getEnv("AURA_TOOL_PROFILE_MODE", "auto")))
+	cfg.ToolProfileMode = NormalizeToolProfileMode(getEnv("AURA_TOOL_PROFILE_MODE", "auto"))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
 	cfg.SkillPreflight = normalizeSkillPreflight(getEnv("AURA_SKILL_PREFLIGHT", DefaultSkillPreflight))
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
@@ -286,6 +286,23 @@ func Load() (*Config, error) {
 	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "dry_run")
 
 	return cfg, nil
+}
+
+func NormalizeToolProfileMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "compute", "sandbox_compute":
+		return "compute"
+	case "document":
+		return "document"
+	case "admin", "admin_review":
+		return "admin"
+	case "auto":
+		return "auto"
+	case "default", "memory", "swarm_research":
+		return "default"
+	default:
+		return "auto"
+	}
 }
 
 // Location returns Aura's effective wall-clock location for scheduling and

@@ -127,7 +127,7 @@ func inferCapabilityForToolProfile(tool string, profile Profile) (Capability, bo
 		return capabilities[0], true
 	}
 
-	if profile == ProfileDocument || profile == ProfileSandboxCompute {
+	if profile == ProfileDocument || profile == ProfileCompute {
 		if tool != "list_sources" && containsCapability(profileMatches, CapabilitySourceExtraction) {
 			return CapabilitySourceExtraction, true
 		}
@@ -136,7 +136,7 @@ func inferCapabilityForToolProfile(tool string, profile Profile) (Capability, bo
 	// Admin review propose_* tools are both memory mutations and security-sensitive.
 	// Treat the review-gated write as the primary preflight; security remains a
 	// secondary review capability that callers can request explicitly.
-	if profile == ProfileAdminReview {
+	if normalizeProfile(string(profile)) == ProfileAdmin {
 		if containsCapability(profileMatches, CapabilityMemoryWriteReviewed) {
 			return CapabilityMemoryWriteReviewed, true
 		}
@@ -150,8 +150,9 @@ func capabilitySupportsProfile(capability Capability, profile Profile) bool {
 	if !ok {
 		return false
 	}
-	for _, candidate := range def.Profiles {
-		if candidate == profile {
+	profile = normalizeProfile(string(profile))
+	for _, candidate := range def.Toolsets {
+		if normalizeProfile(string(candidate)) == profile {
 			return true
 		}
 	}

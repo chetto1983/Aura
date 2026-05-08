@@ -32,7 +32,7 @@ func TestAllPlannedCapabilitiesArePresent(t *testing.T) {
 	}
 }
 
-func TestCapabilityDefinitionsDeclareProfilesToolsAndSkillHints(t *testing.T) {
+func TestCapabilityDefinitionsDeclareToolsetsToolsAndSkillHints(t *testing.T) {
 	for _, capability := range AllCapabilities() {
 		def, ok := CapabilityDefinitionFor(capability)
 		if !ok {
@@ -41,8 +41,8 @@ func TestCapabilityDefinitionsDeclareProfilesToolsAndSkillHints(t *testing.T) {
 		if def.Capability != capability {
 			t.Fatalf("definition key %q has Capability %q", capability, def.Capability)
 		}
-		if len(def.Profiles) == 0 {
-			t.Fatalf("%q has no profiles", capability)
+		if len(def.Toolsets) == 0 {
+			t.Fatalf("%q has no toolsets", capability)
 		}
 		if len(def.Tools) == 0 && !def.FutureOnly {
 			t.Fatalf("%q has no tools and is not marked future-only", capability)
@@ -54,8 +54,8 @@ func TestCapabilityDefinitionsDeclareProfilesToolsAndSkillHints(t *testing.T) {
 }
 
 func TestDocumentGenerationCapabilityMapsToDocumentProfileAndTools(t *testing.T) {
-	if got := CapabilityProfileNames(CapabilityDocumentGeneration); !slices.Contains(got, string(ProfileDocument)) {
-		t.Fatalf("document_generation profiles = %+v, want document", got)
+	if got := CapabilityToolsetNames(CapabilityDocumentGeneration); !slices.Contains(got, string(ProfileDocument)) {
+		t.Fatalf("document_generation Toolsets = %+v, want document", got)
 	}
 	for _, tool := range []string{"create_docx", "create_xlsx", "create_pdf"} {
 		if got := CapabilityToolNames(CapabilityDocumentGeneration); !slices.Contains(got, tool) {
@@ -68,9 +68,9 @@ func TestDocumentGenerationCapabilityMapsToDocumentProfileAndTools(t *testing.T)
 	}
 }
 
-func TestSandboxComputeCapabilityMapsToSandboxProfileAndExecuteCode(t *testing.T) {
-	if got := CapabilityProfileNames(CapabilitySandboxCompute); !slices.Contains(got, string(ProfileSandboxCompute)) {
-		t.Fatalf("sandbox_compute profiles = %+v, want sandbox_compute", got)
+func TestSandboxComputeCapabilityMapsToComputeToolsetAndExecuteCode(t *testing.T) {
+	if got := CapabilityToolsetNames(CapabilitySandboxCompute); !slices.Contains(got, string(ProfileCompute)) {
+		t.Fatalf("sandbox_compute toolsets = %+v, want compute", got)
 	}
 	if got := CapabilityToolNames(CapabilitySandboxCompute); !slices.Contains(got, "execute_code") {
 		t.Fatalf("sandbox_compute tools missing execute_code: %+v", got)
@@ -81,9 +81,9 @@ func TestSandboxComputeCapabilityMapsToSandboxProfileAndExecuteCode(t *testing.T
 	}
 }
 
-func TestSwarmResearchCapabilityMapsToSwarmProfileAndTools(t *testing.T) {
-	if got := CapabilityProfileNames(CapabilitySwarmResearch); !slices.Contains(got, string(ProfileSwarmResearch)) {
-		t.Fatalf("swarm_research profiles = %+v, want swarm_research", got)
+func TestSwarmResearchCapabilityMapsToDefaultToolsetAndTools(t *testing.T) {
+	if got := CapabilityToolsetNames(CapabilitySwarmResearch); !slices.Contains(got, string(ProfileDefault)) {
+		t.Fatalf("swarm_research toolsets = %+v, want default", got)
 	}
 	for _, tool := range []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"} {
 		if got := CapabilityToolNames(CapabilitySwarmResearch); !slices.Contains(got, tool) {
@@ -135,20 +135,18 @@ func TestCapabilitiesForToolReturnsAllOverlappingCapabilitiesInPlannedOrder(t *t
 	}
 }
 
-func TestFutureOnlyCapabilitiesAreExcludedFromNormalV31Profiles(t *testing.T) {
+func TestFutureOnlyCapabilitiesAreExcludedFromNormalV31Toolsets(t *testing.T) {
 	futureOnly := []Capability{
 		CapabilityBrowserE2E,
 		CapabilityDockerRuntime,
 		CapabilityReleaseGit,
 		CapabilityMCPPlugin,
 	}
-	normalProfiles := []Profile{
+	normalToolsets := []Profile{
 		ProfileDefault,
-		ProfileMemory,
-		ProfileSwarmResearch,
-		ProfileSandboxCompute,
+		ProfileCompute,
 		ProfileDocument,
-		ProfileAdminReview,
+		ProfileAdmin,
 	}
 	for _, capability := range futureOnly {
 		def, ok := CapabilityDefinitionFor(capability)
@@ -162,7 +160,7 @@ func TestFutureOnlyCapabilitiesAreExcludedFromNormalV31Profiles(t *testing.T) {
 			t.Fatalf("%q exposes v3.1 tools: %+v", capability, def.Tools)
 		}
 	}
-	for _, profile := range normalProfiles {
+	for _, profile := range normalToolsets {
 		got := CapabilitiesForProfile(profile)
 		for _, capability := range futureOnly {
 			if slices.Contains(got, capability) {
@@ -183,7 +181,7 @@ func TestCapabilityResultsAreCopies(t *testing.T) {
 	if !ok {
 		t.Fatal("missing memory_read definition")
 	}
-	def.Profiles[0] = ProfileAdminReview
+	def.Toolsets[0] = ProfileAdmin
 	def.Tools[0] = "mutated_tool"
 	def.SkillHints[0] = "mutated_hint"
 
@@ -191,8 +189,8 @@ func TestCapabilityResultsAreCopies(t *testing.T) {
 	if !ok {
 		t.Fatal("missing memory_read definition after mutation")
 	}
-	if rereadDef.Profiles[0] != ProfileDefault {
-		t.Fatalf("mutating CapabilityDefinitionFor Profiles changed taxonomy: %+v", rereadDef.Profiles)
+	if rereadDef.Toolsets[0] != ProfileDefault {
+		t.Fatalf("mutating CapabilityDefinitionFor Toolsets changed taxonomy: %+v", rereadDef.Toolsets)
 	}
 	if rereadDef.Tools[0] != "search_memory" {
 		t.Fatalf("mutating CapabilityDefinitionFor Tools changed taxonomy: %+v", rereadDef.Tools)
@@ -227,7 +225,7 @@ func TestCapabilityDefinitionsDoNotContainStaleWorkerAliasesOrYamlRefs(t *testin
 			t.Fatalf("missing definition for %q", capability)
 		}
 		values := []string{string(def.Capability)}
-		for _, profile := range def.Profiles {
+		for _, profile := range def.Toolsets {
 			values = append(values, string(profile))
 		}
 		values = append(values, def.Tools...)

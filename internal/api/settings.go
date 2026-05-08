@@ -163,7 +163,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
-	{Key: settings.KeyToolProfileMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "memory", "swarm_research", "sandbox_compute", "document", "admin_review"}, Label: "Tool profile mode", Hint: "auto selects a focused profile per turn"},
+	{Key: settings.KeyToolProfileMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto selects a broad safe toolset per turn"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
 	{Key: settings.KeySkillPreflight, Value: config.DefaultSkillPreflight, Group: "agent", Kind: "enum", Options: []string{"off", "advisory"}, Label: "Skill guidance", Hint: "Optional skill hints; never blocks tool work"},
 	{Key: settings.KeySkillRoutingMode, Value: config.DefaultSkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode", Hint: "manifest uses deterministic skill metadata; manifest_llm_review is reserved for ambiguous routing experiments"},
