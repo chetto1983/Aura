@@ -116,7 +116,7 @@ go test ./internal/config -count=1
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Stage only the config, compose, and env template files.
 
@@ -134,7 +134,7 @@ git commit -m "slice 07: add runtime workspace config"
 - Modify: `docs/container.md`
 - Modify: `docs/implementation-tracker.md`
 
-- [ ] **Step 1: Write failing bootstrap tests**
+- [x] **Step 1: Write failing bootstrap tests**
 
 Create tests for:
 
@@ -159,7 +159,7 @@ runtime-workspace/skills/
 runtime-workspace/inbox/
 ```
 
-- [ ] **Step 2: Implement `EnsureLayout`**
+- [x] **Step 2: Implement `EnsureLayout`**
 
 Function shape:
 
@@ -188,7 +188,7 @@ Rules:
 - `AGENT.md` seed can copy root `AGENT.md` when present, else use a minimal runtime schema;
 - do not touch database files except creating parent directories.
 
-- [ ] **Step 3: Wire bootstrap before DB open**
+- [x] **Step 3: Wire bootstrap before DB open**
 
 In `cmd/aura/main.go`, call `runtimebootstrap.EnsureLayout(...)` after config load and before SQLite open/setup wizard.
 
@@ -198,7 +198,7 @@ Expected behavior:
 - Docker bind mounts get their missing host directories/files created by startup;
 - setup wizard can write `data/.env` because parent directories exist.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -208,7 +208,7 @@ go test ./internal/runtimebootstrap ./cmd/aura -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add internal/runtimebootstrap cmd/aura/main.go docs/container.md docs/implementation-tracker.md

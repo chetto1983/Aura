@@ -28,15 +28,22 @@ from Aura as `http://qdrant:6333`. The Pyodide sidecar is internal-only.
 
 ## First Run
 
-Create the host data folders, then copy the environment template into the
-mounted data folder. Released installs pull the published GHCR image; you may
-leave `TELEGRAM_TOKEN` blank to use the first-run setup wizard:
+Start the stack directly. Aura creates missing runtime, data, wiki, skills,
+MCP, and log paths before opening SQLite, so a fresh checkout no longer needs
+manual `data/`, `wiki/`, or `skills/` directory setup. Released installs pull
+the published GHCR image; you may leave `TELEGRAM_TOKEN` blank to use the
+first-run setup wizard:
 
 ```powershell
-New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
-Copy-Item .env.example data/.env
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+If you prefer to pre-seed `.env` instead of using the wizard:
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+Copy-Item .env.example data/.env
 ```
 
 Pin a specific release by setting `AURA_IMAGE` to a tag such as
@@ -180,6 +187,11 @@ Visible host folders hold user data:
 
 - `data/`: `.env`, SQLite DB, logs, generated local service secrets, MCP
   config, prompt overlays.
+- `runtime-workspace/`: local Aura runtime workspace for agent-facing files
+  such as `AGENT.md`, `HEARTBEAT.md`, `mcp.json`, `wiki/`, `skills/`, and
+  `inbox/`. In Docker the equivalent path is `/workspace` through
+  `AURA_RUNTIME_WORKSPACE_PATH`, `AURA_WORKSPACE_ROOT`, and
+  `PROMPT_OVERLAY_PATH`.
 - `wiki/`: compiled wiki and source evidence.
 - `skills/`: installed skills.
 - `garage/`: Garage S3 metadata and object data once the Garage service is enabled.
@@ -219,7 +231,11 @@ to run while the Compose `aura` service is up.
 
 - `compose.yaml` sets `AURA_HEADLESS=true`; desktop builds still keep the tray.
 - `compose.yaml` sets `AURA_ENV_PATH=/data/.env`; the setup wizard writes the
-  Telegram token there rather than to an ephemeral container filesystem.
+  Telegram token there rather than to an ephemeral container filesystem. Aura
+  creates the parent directory before the wizard starts.
+- `compose.yaml` sets Aura's runtime workspace to `/workspace`; bounded file
+  tools and prompt overlays use that narrow workspace instead of the full
+  implementation tree.
 - `compose.yaml` sets `AURA_SQLITE_JOURNAL_MODE=DELETE` for Docker Desktop
   safety. Desktop/local runs still default to WAL unless explicitly overridden.
 - `compose.yaml` sets `WEB_SEARCH_PROVIDER=searxng`, so Aura registers the

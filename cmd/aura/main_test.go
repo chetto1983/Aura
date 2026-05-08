@@ -27,6 +27,46 @@ func TestMainRunsMigrationsBeforeStoreConstruction(t *testing.T) {
 	}
 }
 
+func TestMainBootstrapsRuntimeLayoutBeforeDatabaseOpen(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	loadIdx := strings.Index(source, "cfg, err := config.Load()")
+	bootstrapIdx := strings.Index(source, "runtimebootstrap.EnsureLayout(runtimebootstrap.LayoutConfig{")
+	openIdx := strings.Index(source, "auradb.Open(openedDBPath)")
+
+	if loadIdx < 0 || bootstrapIdx < 0 || openIdx < 0 {
+		t.Fatalf("startup markers missing: load=%d bootstrap=%d open=%d", loadIdx, bootstrapIdx, openIdx)
+	}
+	if !(loadIdx < bootstrapIdx && bootstrapIdx < openIdx) {
+		t.Fatalf("runtime layout must bootstrap after config load and before DB open: load=%d bootstrap=%d open=%d", loadIdx, bootstrapIdx, openIdx)
+	}
+}
+
+func TestMainPassesRuntimeLayoutConfig(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`RuntimeWorkspacePath: cfg.RuntimeWorkspacePath`,
+		`EnvPath:              cfg.EnvPath`,
+		`DBPath:               cfg.DBPath`,
+		`LogDir:               cfg.LogDir`,
+		`WikiPath:             cfg.WikiPath`,
+		`SkillsPath:           cfg.SkillsPath`,
+		`MCPServersPath:       cfg.MCPServersPath`,
+		`PromptOverlayPath:    cfg.PromptOverlayPath`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("main.go missing %q", want)
+		}
+	}
+}
+
 func TestMainStartsAuraBeforeTrayBlocks(t *testing.T) {
 	data, err := os.ReadFile("main.go")
 	if err != nil {

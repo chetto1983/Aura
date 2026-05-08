@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
+	"github.com/aura/aura/internal/runtimebootstrap"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
 	"github.com/aura/aura/internal/telegram"
@@ -202,6 +203,19 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			cleanup()
 		}
 	}()
+
+	if err := runtimebootstrap.EnsureLayout(runtimebootstrap.LayoutConfig{
+		RuntimeWorkspacePath: cfg.RuntimeWorkspacePath,
+		EnvPath:              cfg.EnvPath,
+		DBPath:               cfg.DBPath,
+		LogDir:               cfg.LogDir,
+		WikiPath:             cfg.WikiPath,
+		SkillsPath:           cfg.SkillsPath,
+		MCPServersPath:       cfg.MCPServersPath,
+		PromptOverlayPath:    cfg.PromptOverlayPath,
+	}); err != nil {
+		return nil, activeLogger, fmt.Errorf("bootstrap runtime workspace: %w", err)
+	}
 
 	openedDBPath := cfg.DBPath
 	pool, err := auradb.Open(openedDBPath)
