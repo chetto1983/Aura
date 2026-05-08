@@ -234,7 +234,7 @@ func rolePrompt(role, goal string) string {
 	case "researcher":
 		return "Goal: " + goal + "\n\nFocus: gather current external context only when it directly helps the goal. Use at most two targeted searches before deciding whether one fetch is worth it. Return source URLs, dates when relevant, and a compact evidence summary. Do not perform actions beyond read-only search/fetch."
 	case "skillsmith":
-		return "Goal: " + goal + "\n\nFocus: inspect available skills and skill catalog entries that could help execute the goal. Return matching skill names, why they matter, and gaps. Do not install, delete, or edit skills."
+		return "Goal: " + goal + "\n\nFocus: inspect available skill files that could help execute the goal. Return matching skill names, why they matter, and gaps. Do not install, delete, or edit skills."
 	case "synthesizer":
 		return "Goal: " + goal + "\n\nFocus: prepare a concise integration brief from available wiki/source context and likely worker findings. Identify the answer shape, unresolved questions, and final-response outline. Do not write or modify anything."
 	default:

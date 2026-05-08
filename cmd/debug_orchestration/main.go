@@ -108,9 +108,10 @@ func main() {
 
 func buildReport(in reportInput) report {
 	available := orchestration.Availability{
-		Swarm:     in.Swarm,
-		Sandbox:   in.Sandbox,
-		Proposals: in.Proposals,
+		Swarm:          in.Swarm,
+		Sandbox:        in.Sandbox,
+		Proposals:      in.Proposals,
+		WorkspaceFiles: true,
 	}
 	decision := orchestration.SelectProfileDecision(in.Prompt, in.Mode, available)
 	tools, err := orchestration.ToolsForProfile(decision.Profile, available)

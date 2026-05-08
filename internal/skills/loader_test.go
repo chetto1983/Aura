@@ -207,8 +207,8 @@ func TestPromptBlock(t *testing.T) {
 	if strings.Contains(block, "Use alpha carefully.") {
 		t.Fatalf("PromptBlock() unexpectedly leaked body content:\n%s", block)
 	}
-	if !strings.Contains(block, "read_skill") {
-		t.Fatalf("PromptBlock() missing read_skill instruction:\n%s", block)
+	if !strings.Contains(block, "read_file") || !strings.Contains(block, "search_files") {
+		t.Fatalf("PromptBlock() missing file-tool skill inspection instruction:\n%s", block)
 	}
 }
 

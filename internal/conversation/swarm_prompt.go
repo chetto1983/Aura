@@ -130,7 +130,8 @@ var scaleTerms = []string{
 }
 
 var mutationRouteTerms = []string{
-	"write_wiki",
+	"write_file",
+	"apply_patch",
 	"scrivi",
 	"scrivere",
 	"salva",

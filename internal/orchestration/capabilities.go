@@ -50,7 +50,7 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 		Capability: CapabilityMemoryRead,
 		Toolsets:   []Profile{ProfileDefault, ProfileDocument, ProfileAdmin},
 		Tools: []string{
-			"search_memory", "search_wiki", "read_wiki", "list_wiki",
+			"search_memory", "list_files", "read_file", "search_files",
 			"list_sources", "read_source", "daily_briefing",
 		},
 		SkillHints: []string{"aura-memory-audit", "memory read evidence"},
@@ -58,8 +58,8 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 	CapabilityMemoryWriteReviewed: {
 		Capability: CapabilityMemoryWriteReviewed,
 		Toolsets:   []Profile{ProfileDefault, ProfileAdmin},
-		Tools:      []string{"write_wiki", "propose_wiki_change", "propose_skill_change"},
-		SkillHints: []string{"aura-memory-audit", "durable memory write", "review-gated memory write"},
+		Tools:      []string{"write_file", "apply_patch"},
+		SkillHints: []string{"aura-memory-audit", "durable memory write", "workspace markdown edit"},
 	},
 	CapabilitySourceExtraction: {
 		Capability: CapabilitySourceExtraction,
@@ -100,7 +100,7 @@ var capabilityDefinitions = map[Capability]CapabilityDefinition{
 	CapabilitySecurityReview: {
 		Capability: CapabilitySecurityReview,
 		Toolsets:   []Profile{ProfileDefault, ProfileAdmin},
-		Tools:      []string{"list_skills", "read_skill", "search_skill_catalog", "propose_wiki_change", "propose_skill_change"},
+		Tools:      []string{"list_files", "read_file", "search_files", "search_memory"},
 		SkillHints: []string{"codex-security:security-scan", "security review", "MCP security"},
 	},
 	CapabilityReleaseGit: {

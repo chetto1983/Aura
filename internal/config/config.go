@@ -22,8 +22,8 @@ const DefaultAgentLoopMaxSteps = 8
 const DefaultTerminalToolPolicy = "profile"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
-const DefaultWorkspaceTools = "disabled"
-const DefaultWorkspaceRoot = "/app"
+const DefaultWorkspaceTools = "enabled"
+const DefaultWorkspaceRoot = "."
 const DefaultSummarizerMode = "auto_low_risk"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
@@ -100,8 +100,8 @@ type Config struct {
 	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
-	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"disabled"`
-	WorkspaceRoot              string  `envconfig:"AURA_WORKSPACE_ROOT" default:"/app"`
+	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
+	WorkspaceRoot              string  `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,

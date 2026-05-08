@@ -64,7 +64,7 @@ func TestSpawnAuraBotTool(t *testing.T) {
 		"name":  "read context",
 		"role":  "librarian",
 		"task":  "read the wiki index",
-		"tools": []any{"list_wiki", "read_wiki"},
+		"tools": []any{"list_files", "read_file"},
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -83,7 +83,7 @@ func TestSpawnAuraBotTool(t *testing.T) {
 	if last.UserID != "user-123" {
 		t.Fatalf("runner user id = %q", last.UserID)
 	}
-	if len(last.ToolAllowlist) != 2 || last.ToolAllowlist[0] != "list_wiki" || last.ToolAllowlist[1] != "read_wiki" {
+	if len(last.ToolAllowlist) != 2 || last.ToolAllowlist[0] != "list_files" || last.ToolAllowlist[1] != "read_file" {
 		t.Fatalf("allowlist = %+v", last.ToolAllowlist)
 	}
 	task, err := store.GetTask(context.Background(), resp.TaskID)
@@ -131,7 +131,7 @@ func TestRunAuraBotSwarmTool(t *testing.T) {
 			t.Fatalf("task user id = %q", task.UserID)
 		}
 		for _, toolName := range task.ToolAllowlist {
-			if toolName == "write_wiki" || toolName == "append_log" || toolName == "schedule_task" {
+			if toolName == "write_file" || toolName == "append_log" || toolName == "schedule_task" {
 				t.Fatalf("unsafe tool in allowlist: %+v", task.ToolAllowlist)
 			}
 		}
@@ -193,7 +193,7 @@ func TestSpawnAuraBotRejectsDisallowedTool(t *testing.T) {
 	_, err := tool.Execute(context.Background(), map[string]any{
 		"role":  "librarian",
 		"task":  "try a write",
-		"tools": []any{"write_wiki"},
+		"tools": []any{"write_file"},
 	})
 	if err == nil {
 		t.Fatal("expected disallowed tool error")

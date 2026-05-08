@@ -286,14 +286,14 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 }
 
 func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
-	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory growth is useful, use propose_wiki_change so the user can review it. If reusable procedural knowledge is useful, use propose_skill_change so the user can review it. Return a short report with what you checked, any proposal created, and unresolved issues."
+	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory or reusable procedural knowledge is useful, report the exact file path and patch you recommend instead of applying it. Return a short report with what you checked, any recommended edit, and unresolved issues."
 	if lang := agentJobLanguageInstruction(payload.Language); lang != "" {
 		prompt += " " + lang
 	} else {
 		prompt += " Output language: infer the language from the saved goal and context anchors; if unclear, mirror the language most recently used by the user in that saved context."
 	}
 	if len(payload.Skills) > 0 {
-		prompt += " This job is skill-backed: inspect attached skills with read_skill when available before applying their procedures."
+		prompt += " This job is skill-backed: inspect attached SKILL.md files with workspace file tools before applying their procedures."
 	}
 	if len(payload.WakeIfChanged) > 0 {
 		prompt += " Respect wake_if_changed as a no-op guard: check those signals first and finish quickly with no proposal if there is no material change."
@@ -324,7 +324,7 @@ func (b *Bot) agentJobPrompt(ctx context.Context, task *scheduler.Task, payload 
 		fmt.Fprintf(&sb, "\n\nEnabled toolsets: %s", strings.Join(payload.EnabledToolsets, ", "))
 	}
 	if len(payload.Skills) > 0 {
-		fmt.Fprintf(&sb, "\n\nAttached skills: %s\nUse read_skill on these names before relying on their procedures. Do not install, delete, or edit skills directly.", strings.Join(payload.Skills, ", "))
+		fmt.Fprintf(&sb, "\n\nAttached skills: %s\nFind and read the matching SKILL.md files before relying on their procedures. Do not install, delete, or edit skills directly.", strings.Join(payload.Skills, ", "))
 	}
 	if len(payload.ContextFrom) > 0 {
 		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets, preferably via search_memory or narrow read tools before broad web/tool use.", strings.Join(payload.ContextFrom, ", "))

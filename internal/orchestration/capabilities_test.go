@@ -110,9 +110,9 @@ func TestCapabilitiesForToolReturnsAllOverlappingCapabilitiesInPlannedOrder(t *t
 		}
 	}
 
-	for _, tool := range []string{"propose_wiki_change", "propose_skill_change"} {
+	for _, tool := range []string{"write_file", "apply_patch"} {
 		got := CapabilitiesForTool(tool)
-		want := []Capability{CapabilityMemoryWriteReviewed, CapabilitySecurityReview}
+		want := []Capability{CapabilityMemoryWriteReviewed}
 		if !slices.Equal(got, want) {
 			t.Fatalf("CapabilitiesForTool(%q) = %+v, want %+v", tool, got, want)
 		}
@@ -123,15 +123,15 @@ func TestCapabilitiesForToolReturnsAllOverlappingCapabilitiesInPlannedOrder(t *t
 		}
 	}
 
-	got := CapabilitiesForTool("write_wiki")
-	want := []Capability{CapabilityMemoryWriteReviewed}
+	got := CapabilitiesForTool("read_file")
+	want := []Capability{CapabilityMemoryRead, CapabilitySecurityReview}
 	if !slices.Equal(got, want) {
-		t.Fatalf("CapabilitiesForTool(write_wiki) = %+v, want %+v", got, want)
+		t.Fatalf("CapabilitiesForTool(read_file) = %+v, want %+v", got, want)
 	}
 
-	primary, ok := CapabilityForTool("write_wiki")
-	if !ok || primary != CapabilityMemoryWriteReviewed {
-		t.Fatalf("CapabilityForTool(write_wiki) = %q, %v; want %q, true", primary, ok, CapabilityMemoryWriteReviewed)
+	primary, ok := CapabilityForTool("read_file")
+	if !ok || primary != CapabilityMemoryRead {
+		t.Fatalf("CapabilityForTool(read_file) = %q, %v; want %q, true", primary, ok, CapabilityMemoryRead)
 	}
 }
 

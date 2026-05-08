@@ -30,7 +30,7 @@ func TestBeforeToolCallRejectsHiddenTools(t *testing.T) {
 	hooks := DefaultHooks{}
 	err := hooks.BeforeToolCall(TraceEvent{
 		ToolName:     "execute_code",
-		ToolsExposed: []string{"search_memory", "read_wiki"},
+		ToolsExposed: []string{"search_memory", "read_file"},
 	})
 	if err == nil {
 		t.Fatal("BeforeToolCall returned nil, want hidden tool rejection")

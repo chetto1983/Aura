@@ -112,7 +112,7 @@ func TestArchiveStore_AppendWithToolCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	toolCallsJSON := `[{"id":"tc1","type":"function","function":{"name":"search_wiki","arguments":"{\"query\":\"test\"}"}}]`
+	toolCallsJSON := `[{"id":"tc1","type":"function","function":{"name":"search_files","arguments":"{\"pattern\":\"test\"}"}}]`
 	turn := conversation.Turn{
 		ChatID: 5, UserID: 3, TurnIndex: 0,
 		Role:      "assistant",

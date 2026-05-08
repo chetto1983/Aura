@@ -29,7 +29,7 @@ func TestNormalizeAgentJobPayload_TextGoal(t *testing.T) {
 func TestNormalizeAgentJobPayload_JSON(t *testing.T) {
 	got, err := NormalizeAgentJobPayload(`{
 		"goal":"Check markets",
-		"tool_allowlist":["web_search","web_search","propose_wiki_change"],
+		"tool_allowlist":["web_search","web_search","read_file"],
 		"language":"it-IT",
 		"notify":false
 	}`)
@@ -39,7 +39,7 @@ func TestNormalizeAgentJobPayload_JSON(t *testing.T) {
 	if got.Goal != "Check markets" {
 		t.Errorf("Goal = %q", got.Goal)
 	}
-	if len(got.ToolAllowlist) != 2 || got.ToolAllowlist[0] != "web_search" || got.ToolAllowlist[1] != "propose_wiki_change" {
+	if len(got.ToolAllowlist) != 2 || got.ToolAllowlist[0] != "web_search" || got.ToolAllowlist[1] != "read_file" {
 		t.Errorf("ToolAllowlist = %#v", got.ToolAllowlist)
 	}
 	if got.Language != "it" {
@@ -54,7 +54,7 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	got, err := NormalizeAgentJobPayload(`{
 		"goal":"Check markets",
 		"enabled_toolsets":["memory_read","web_research","memory_read"],
-		"tool_allowlist":["search_memory","web_fetch","write_wiki","search_memory"],
+		"tool_allowlist":["search_memory","web_fetch","write_file","search_memory"],
 		"skills":[" aura-implementation ","aura-implementation"],
 		"context_from":[" [[markets]] ","[[markets]]","source:src_123"],
 		"wake_if_changed":["wiki:markets","wiki:markets"]
@@ -69,7 +69,7 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	if !reflect.DeepEqual(got.EnabledToolsets, wantToolsets) {
 		t.Fatalf("EnabledToolsets = %+v, want %+v", got.EnabledToolsets, wantToolsets)
 	}
-	wantTools := []string{"search_memory", "web_fetch", "list_skills", "read_skill", "search_skill_catalog"}
+	wantTools := []string{"search_memory", "web_fetch", "list_files", "read_file", "search_files"}
 	if !reflect.DeepEqual(got.ToolAllowlist, wantTools) {
 		t.Fatalf("ToolAllowlist = %+v, want %+v", got.ToolAllowlist, wantTools)
 	}
@@ -84,8 +84,8 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	}
 }
 
-func TestAgentJobAllowedToolsIncludesSkillsReadWithoutPanic(t *testing.T) {
-	for _, want := range []string{"list_skills", "read_skill", "search_skill_catalog"} {
+func TestAgentJobAllowedToolsIncludesSkillsFileReadWithoutPanic(t *testing.T) {
+	for _, want := range []string{"list_files", "read_file", "search_files"} {
 		if !containsString(AgentJobAllowedTools, want) {
 			t.Fatalf("AgentJobAllowedTools missing %q: %+v", want, AgentJobAllowedTools)
 		}

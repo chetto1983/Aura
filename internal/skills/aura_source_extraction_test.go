@@ -18,8 +18,8 @@ func TestProjectAuraSourceExtractionSkillGuidesSandboxCode(t *testing.T) {
 	}
 
 	block := PromptBlock([]Skill{skill})
-	if !strings.Contains(block, "**aura-source-extraction**") || !strings.Contains(block, "read_skill") {
-		t.Fatalf("prompt block should advertise skill and tell agent to read it:\n%s", block)
+	if !strings.Contains(block, "**aura-source-extraction**") || !strings.Contains(block, "read_file") {
+		t.Fatalf("prompt block should advertise skill and tell agent to inspect it through files:\n%s", block)
 	}
 	if strings.Contains(block, "allowNetwork=false") {
 		t.Fatalf("prompt block leaked skill body instead of using progressive disclosure:\n%s", block)
@@ -53,10 +53,8 @@ func TestProjectRuntimeSkillsIncludeSandboxAndAuthoringGuidance(t *testing.T) {
 			"sandbox_artifact",
 		},
 		"aura-skill-authoring": {
-			"propose_skill_change",
-			"Use when",
-			"human review",
 			"SKILL.md",
+			"Use when",
 		},
 	}
 

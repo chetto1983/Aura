@@ -48,8 +48,7 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	fake := &schedulerFakeLLM{}
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	reg.Register(schedulerFakeTool{name: "web_search"})
-	reg.Register(schedulerFakeTool{name: "write_wiki"})
-	reg.Register(schedulerFakeTool{name: "propose_wiki_change"})
+	reg.Register(schedulerFakeTool{name: "read_file"})
 	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -57,7 +56,7 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	notify := false
 	payload, err := scheduler.AgentJobPayload{
 		Goal:          "Check Aura gaps",
-		ToolAllowlist: []string{"web_search", "write_wiki", "propose_wiki_change"},
+		ToolAllowlist: []string{"web_search", "write_file", "read_file"},
 		Notify:        &notify,
 	}.JSON()
 	if err != nil {
@@ -83,7 +82,7 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	for _, def := range fake.reqs[0].Tools {
 		names = append(names, def.Name)
 	}
-	for _, forbidden := range []string{"write_wiki"} {
+	for _, forbidden := range []string{"write_file"} {
 		for _, name := range names {
 			if name == forbidden {
 				t.Fatalf("forbidden tool %q leaked into agent job allowlist: %#v", forbidden, names)
@@ -97,11 +96,9 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	for _, name := range []string{
 		"search_memory",
-		"list_wiki",
-		"read_wiki",
-		"list_skills",
-		"read_skill",
-		"search_skill_catalog",
+		"list_files",
+		"read_file",
+		"search_files",
 		"web_search",
 	} {
 		reg.Register(schedulerFakeTool{name: name})
@@ -159,7 +156,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 	for _, def := range req.Tools {
 		names = append(names, def.Name)
 	}
-	for _, want := range []string{"search_memory", "read_skill"} {
+	for _, want := range []string{"search_memory", "read_file", "search_files"} {
 		if !containsTestString(names, want) {
 			t.Fatalf("tool %q missing from allowlist: %+v", want, names)
 		}
@@ -173,8 +170,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	fake := &schedulerFakeLLM{}
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	reg.Register(schedulerFakeTool{name: "web_search"})
-	reg.Register(schedulerFakeTool{name: "write_wiki"})
-	reg.Register(schedulerFakeTool{name: "propose_wiki_change"})
+	reg.Register(schedulerFakeTool{name: "read_file"})
 	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
@@ -183,7 +179,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	notify := false
 	payload, err := scheduler.AgentJobPayload{
 		Goal:          "Check Aura gaps",
-		ToolAllowlist: []string{"web_search", "write_wiki", "propose_wiki_change"},
+		ToolAllowlist: []string{"web_search", "write_file", "read_file"},
 		Notify:        &notify,
 	}.JSON()
 	if err != nil {
@@ -229,7 +225,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 		names = append(names, def.Name)
 	}
 	for _, name := range names {
-		if name == "write_wiki" {
+		if name == "write_file" {
 			t.Fatalf("forbidden tool leaked into run_task_now allowlist: %#v", names)
 		}
 	}

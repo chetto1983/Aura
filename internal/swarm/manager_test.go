@@ -74,8 +74,8 @@ func TestManagerRunExecutesAssignmentsAndPersistsResults(t *testing.T) {
 		Goal:      "parallel read",
 		CreatedBy: "user",
 		Assignments: []Assignment{
-			{Role: "librarian", Subject: "a", Prompt: "a", ToolAllowlist: []string{"read_wiki"}},
-			{Role: "critic", Subject: "b", Prompt: "b", ToolAllowlist: []string{"lint_wiki"}},
+			{Role: "librarian", Subject: "a", Prompt: "a", ToolAllowlist: []string{"read_file"}},
+			{Role: "critic", Subject: "b", Prompt: "b", ToolAllowlist: []string{"search_files"}},
 			{Role: "researcher", Subject: "c", Prompt: "c"},
 		},
 	})

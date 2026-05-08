@@ -437,7 +437,7 @@ func TestLoadWorkspaceTools(t *testing.T) {
 	}
 }
 
-func TestLoadInvalidWorkspaceToolsDegradesToDisabled(t *testing.T) {
+func TestLoadInvalidWorkspaceToolsDegradesToDefault(t *testing.T) {
 	t.Setenv("AURA_WORKSPACE_TOOLS", "shell")
 	t.Setenv("AURA_WORKSPACE_ROOT", "   ")
 

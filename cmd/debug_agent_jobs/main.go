@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
+	"github.com/aura/aura/internal/workspace"
 )
 
 const monitorSlug = "phase-19-monitor"
@@ -119,8 +120,15 @@ func run(ctx context.Context, opts options) (report, func(), error) {
 		return report{}, cleanup, fmt.Errorf("scheduler store: %w", err)
 	}
 
+	workspaceRoot, err := workspace.New(tempDir)
+	if err != nil {
+		_ = store.Close()
+		return report{}, cleanup, fmt.Errorf("workspace root: %w", err)
+	}
 	reg := tools.NewRegistry(logger)
-	reg.Register(tools.NewReadWikiTool(wikiStore))
+	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
+		reg.Register(tool)
+	}
 
 	model := ""
 	var client llm.Client = newScriptedLLM()
@@ -310,7 +318,7 @@ func mutateWiki(ctx context.Context, store *wiki.Store) error {
 }
 
 func debugAgentJobSystemPrompt() string {
-	return "You are Aura running a scheduled agent_job harness. Call read_wiki for the monitored page before answering when that tool is available. Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state. Return one concise sentence with what changed and whether a proposal is needed."
+	return "You are Aura running a scheduled agent_job harness. Call read_file for the monitored page before answering when that tool is available. Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state. Return one concise sentence with what changed and whether a file edit is needed."
 }
 
 func debugAgentJobPrompt(payload scheduler.AgentJobPayload) string {
@@ -352,14 +360,14 @@ func newScriptedLLM() *scriptedLLM {
 
 func (f *scriptedLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
 	f.calls++
-	if !hasToolResult(req.Messages) && hasTool(req.Tools, "read_wiki") {
+	if !hasToolResult(req.Messages) && hasTool(req.Tools, "read_file") {
 		return llm.Response{
 			Content:      "Reading monitored page.",
 			HasToolCalls: true,
 			ToolCalls: []llm.ToolCall{{
 				ID:        fmt.Sprintf("read-monitor-%d", f.calls),
-				Name:      "read_wiki",
-				Arguments: map[string]any{"slug": monitorSlug},
+				Name:      "read_file",
+				Arguments: map[string]any{"path": filepath.ToSlash(filepath.Join("wiki", monitorSlug+".md"))},
 			}},
 			Usage: llm.TokenUsage{PromptTokens: 40, CompletionTokens: 8, TotalTokens: 48},
 		}, nil

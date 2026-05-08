@@ -23,7 +23,7 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	if plan.Version != VersionAuraAgentV1 {
 		t.Fatalf("Version = %q", plan.Version)
 	}
-	for _, want := range []string{ModuleBase, ModuleRuntime, ModuleOverlay, ModuleSkills, ModuleSwarm, ModuleSandbox, ModuleFileGeneration, ModuleSecurity, ModuleWikiProposals} {
+	for _, want := range []string{ModuleBase, ModuleRuntime, ModuleOverlay, ModuleSkills, ModuleSwarm, ModuleSandbox, ModuleFileGeneration, ModuleSecurity} {
 		if !slices.Contains(plan.Modules, want) {
 			t.Fatalf("modules missing %q: %+v", want, plan.Modules)
 		}
@@ -68,11 +68,11 @@ func TestSelectProfileAutoRoutesToFourToolsets(t *testing.T) {
 }
 
 func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
-	def, err := ToolsForProfile(ProfileDefault, Availability{Swarm: true, Proposals: true})
+	def, err := ToolsForProfile(ProfileDefault, Availability{Swarm: true, WorkspaceFiles: true})
 	if err != nil {
 		t.Fatalf("ToolsForProfile default: %v", err)
 	}
-	for _, required := range []string{"list_skills", "read_skill", "search_memory", "search_wiki", "read_wiki", "list_sources", "read_source", "web_search", "web_fetch", "write_wiki", "run_aurabot_swarm", "propose_wiki_change"} {
+	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "search_memory", "list_sources", "read_source", "web_search", "web_fetch", "run_aurabot_swarm"} {
 		if !slices.Contains(def, required) {
 			t.Fatalf("default toolset missing %q: %+v", required, def)
 		}
@@ -83,7 +83,7 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 		}
 	}
 
-	compute, err := ToolsForProfile(ProfileCompute, Availability{Sandbox: true, Proposals: true})
+	compute, err := ToolsForProfile(ProfileCompute, Availability{Sandbox: true, WorkspaceFiles: true})
 	if err != nil {
 		t.Fatalf("ToolsForProfile compute: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 		}
 	}
 
-	doc, err := ToolsForProfile(ProfileDocument, Availability{Swarm: true, Proposals: true})
+	doc, err := ToolsForProfile(ProfileDocument, Availability{Swarm: true, WorkspaceFiles: true})
 	if err != nil {
 		t.Fatalf("ToolsForProfile document: %v", err)
 	}

@@ -11,7 +11,7 @@ func TestResolveProfilesComposesAndDedupes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProfiles: %v", err)
 	}
-	want := []string{"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source", "web_search", "web_fetch"}
+	want := []string{"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "web_search", "web_fetch"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %+v, want %+v", got, want)
 	}
@@ -51,6 +51,8 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 	for _, forbidden := range []string{
 		"write_wiki",
 		"append_log",
+		"propose_wiki_change",
+		"propose_skill_change",
 		"schedule_task",
 		"run_task_now",
 		"spawn_aurabot",
@@ -64,7 +66,7 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 			t.Fatalf("scheduler_safe includes forbidden tool %q: %+v", forbidden, safe)
 		}
 	}
-	for _, required := range []string{"search_memory", "web_search", "propose_wiki_change", "propose_skill_change"} {
+	for _, required := range []string{"search_memory", "list_files", "read_file", "search_files", "web_search"} {
 		if !slices.Contains(safe, required) {
 			t.Fatalf("scheduler_safe missing %q: %+v", required, safe)
 		}
@@ -86,8 +88,8 @@ func TestSandboxCodeProfileIsExplicit(t *testing.T) {
 }
 
 func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
-	got := FilterAllowed([]string{" web_search ", "write_wiki", "web_search", "propose_wiki_change"}, SchedulerSafeTools())
-	want := []string{"web_search", "propose_wiki_change"}
+	got := FilterAllowed([]string{" web_search ", "write_wiki", "web_search", "read_file"}, SchedulerSafeTools())
+	want := []string{"web_search", "read_file"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("filtered = %+v, want %+v", got, want)
 	}
@@ -95,11 +97,11 @@ func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
 
 func TestRoleToolsMatchReadOnlyPresets(t *testing.T) {
 	tests := map[string][]string{
-		"librarian":   {"list_wiki", "read_wiki", "search_memory", "search_wiki", "lint_wiki", "list_sources", "read_source", "lint_sources"},
-		"critic":      {"lint_wiki", "list_wiki", "read_wiki", "search_memory", "lint_sources", "list_sources"},
+		"librarian":   {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "lint_sources"},
+		"critic":      {"search_memory", "list_files", "read_file", "search_files", "lint_sources", "list_sources"},
 		"researcher":  {"web_search", "web_fetch"},
-		"skillsmith":  {"list_skills", "read_skill", "search_skill_catalog"},
-		"synthesizer": {"list_wiki", "read_wiki", "search_memory", "search_wiki", "list_sources", "read_source"},
+		"skillsmith":  {"list_files", "read_file", "search_files"},
+		"synthesizer": {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source"},
 	}
 	for role, want := range tests {
 		got, ok := RoleTools(role)

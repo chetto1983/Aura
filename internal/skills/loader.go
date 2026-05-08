@@ -241,10 +241,9 @@ func parseSkill(data []byte) (Skill, error) {
 // applies.
 //
 // Instead we emit a tiny manifest (`- name — description`) plus a
-// directive telling the LLM to call `read_skill(name)` when a
-// description matches before acting on its instructions. The body
-// only enters the conversation context on turns that actually need
-// it, and stays cached for the remainder of the tool loop.
+// directive telling the LLM to inspect the matching SKILL.md with
+// bounded workspace file tools. The body only enters the conversation
+// context on turns that actually need it.
 func PromptBlock(loaded []Skill) string {
 	if len(loaded) == 0 {
 		return ""
@@ -253,7 +252,7 @@ func PromptBlock(loaded []Skill) string {
 	var sb strings.Builder
 	sb.WriteString("## Available Skills\n\n")
 	sb.WriteString("Aura has the local skills listed below. Each entry's description states when it applies. ")
-	sb.WriteString("Before following a skill's guidance, call the `read_skill` tool with the skill name to load its full instructions, then act on them. ")
+	sb.WriteString("Before following a skill's detailed guidance, inspect its SKILL.md with `search_files` and `read_file`, then act on it. ")
 	sb.WriteString("Do not read skills just to satisfy a ritual; skip skills whose description does not match the user's request.\n\n")
 	for _, skill := range loaded {
 		if skill.Name == "" {

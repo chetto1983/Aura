@@ -155,11 +155,6 @@ func ComposePrompt(in PromptInput) PromptPlan {
 		content += filePrompt(profile)
 		modules = append(modules, ModuleFileGeneration)
 	}
-	if in.ProposalAvailable {
-		content += "\n\n" + conversation.WikiProposalPrompt()
-		modules = append(modules, ModuleWikiProposals)
-	}
-
 	sum := sha256.Sum256([]byte(content))
 	return PromptPlan{
 		Content: content,
@@ -256,22 +251,19 @@ func ProfileCardFor(profile Profile) (ProfileCard, bool) {
 var profileCardCatalog = []ProfileCard{
 	{
 		Profile:  ProfileDefault,
-		Purpose:  "Default toolset for chat, memory, wiki, sources, search, scheduling, and bounded swarm research when available.",
+		Purpose:  "Default toolset for chat, memory, workspace files, sources, search, scheduling, and bounded swarm research when available.",
 		Access:   AccessDefault,
 		Priority: 100,
 		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "search_wiki", "read_wiki",
-			"list_wiki", "list_sources", "read_source",
+			"search_memory",
+			"list_sources", "read_source", "store_source",
 			"web_search", "web_fetch",
 			"schedule_task", "list_tasks", "cancel_task",
 			"daily_briefing",
-			"write_wiki",
 		},
 		ConditionalTools: []ConditionalToolSet{
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, Prepend: true},
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
-			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
-			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "settings_update", "run_task_now"},
 		LoopPolicy: LoopPolicy{
@@ -291,15 +283,13 @@ var profileCardCatalog = []ProfileCard{
 		RequiredAvailability: []string{"sandbox"},
 		AvailabilityFallback: ProfileDefault,
 		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "search_wiki", "read_wiki",
-			"list_wiki", "list_sources", "read_source", "store_source",
+			"search_memory",
+			"list_sources", "read_source", "store_source",
 			"web_search", "web_fetch",
 			"execute_code", "list_tools", "read_tool",
 		},
 		ConditionalTools: []ConditionalToolSet{
-			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
-			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, Prepend: true},
 		},
 		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
@@ -318,16 +308,14 @@ var profileCardCatalog = []ProfileCard{
 		PositiveCues: []string{"documento word", "word modificabile", "docx", "pdf", "xlsx", "spreadsheet", "foglio", "presentami un documento", "crea un documento", "genera un documento", "report", "relazione", "documento", "documenti"},
 		NegativeCues: []string{"calcola", "calculate", "compute", "grafico", "chart", "plot", "csv"},
 		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "search_wiki", "read_wiki",
-			"list_wiki", "list_sources", "read_source",
+			"search_memory",
+			"list_sources", "read_source",
 			"web_search", "web_fetch",
 			"create_docx", "create_xlsx", "create_pdf",
 		},
 		ConditionalTools: []ConditionalToolSet{
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, Prepend: true},
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
-			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
-			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
@@ -345,17 +333,15 @@ var profileCardCatalog = []ProfileCard{
 		Priority:     10,
 		PositiveCues: []string{"review queue", "approval", "proposals", "admin", "dashboard", "settings", "impostazioni", "request_dashboard_token", "coda review", "coda approvazioni", "docker release", "plugin", "mcp"},
 		AllowedTools: []string{
-			"list_skills", "read_skill", "search_skill_catalog",
-			"search_memory", "search_wiki", "read_wiki",
-			"list_wiki", "list_sources", "read_source",
+			"search_memory",
+			"list_sources", "read_source",
 			"web_search", "web_fetch",
 			"daily_briefing", "list_tasks", "schedule_task", "cancel_task", "run_task_now",
-			"propose_wiki_change", "propose_skill_change",
 			"request_dashboard_token", "install_skill", "delete_skill", "settings_update",
 		},
 		ConditionalTools: []ConditionalToolSet{
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, Prepend: true},
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
-			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 		LoopPolicy: LoopPolicy{
@@ -471,19 +457,19 @@ func profileCardsByPriority() []ProfileCard {
 func profilePrompt(profile Profile) string {
 	switch profile {
 	case ProfileCompute:
-		return "\nUse Python sandbox for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Load applicable skill guidance before executing sandbox code. Keep generated files under /tmp/aura_out."
+		return "\nUse Python sandbox for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Inspect applicable skill files only when they materially improve the work. Keep generated files under /tmp/aura_out."
 	case ProfileDocument:
-		return "\nUse skills and memory/source evidence first, optionally swarm for broad synthesis, then typed file tools for ordinary static documents."
+		return "\nUse memory/source evidence first, optionally inspect relevant skill files, then typed file tools for ordinary static documents."
 	case ProfileAdmin:
 		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates. Do not silently mutate durable state when a proposal/review path is more appropriate."
 	default:
-		return "\nUse the default broad-safe toolset. Prefer direct memory, wiki, source, search, and web tools for simple work; use one swarm pass for broad audits when it is exposed."
+		return "\nUse the default broad-safe toolset. Prefer memory, workspace file, source, search, and web tools for simple work; use one swarm pass for broad audits when it is exposed."
 	}
 }
 
 func memoryPrompt(profile Profile) string {
 	if profile == ProfileDefault || profile == ProfileDocument {
-		return "\n\n## Memory Route\nFor broad or source-backed answers, gather evidence with search_memory or read-only source/wiki tools before synthesizing. Keep citations compact when the user asks for proof."
+		return "\n\n## Memory Route\nFor broad or source-backed answers, gather evidence with search_memory, source tools, or workspace file reads before synthesizing. Keep citations compact when the user asks for proof."
 	}
 	return ""
 }
@@ -500,7 +486,7 @@ func swarmProfilePrompt(profile Profile) string {
 
 func sandboxPrompt(profile Profile) string {
 	if profile == ProfileCompute {
-		return "\n\n## Python Sandbox Route\nFirst inspect the applicable sandbox/coding skill with list_skills and read_skill. Then use execute_code for calculations, transformations, charts, generated artifacts, parser experiments, and repeatable debug scripts. Write deliverable files under /tmp/aura_out so Aura persists and can deliver them."
+		return "\n\n## Python Sandbox Route\nUse execute_code for calculations, transformations, charts, generated artifacts, parser experiments, and repeatable debug scripts. If a sandbox/coding skill is relevant, inspect its SKILL.md with workspace file tools first. Write deliverable files under /tmp/aura_out so Aura persists and can deliver them."
 	}
 	return "\n\n## Python Sandbox Route\nUse execute_code only when the request genuinely needs computation, data processing, custom generated files, plots, simulations, or parser/debug scripts."
 }
@@ -509,7 +495,7 @@ func filePrompt(profile Profile) string {
 	if profile != ProfileDocument {
 		return ""
 	}
-	return "\n\n## File Generation Route\nBefore using typed document/file tools, inspect relevant installed skills with list_skills and read_skill. Use create_docx/create_xlsx/create_pdf for ordinary static user-facing files; use execute_code only for computed artifacts."
+	return "\n\n## File Generation Route\nBefore using typed document/file tools, inspect relevant installed skill files only when they materially improve the result. Use create_docx/create_xlsx/create_pdf for ordinary static user-facing files; use execute_code only for computed artifacts."
 }
 
 func skillPreflightPrompt(profile Profile) string {

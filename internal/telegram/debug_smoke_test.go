@@ -374,11 +374,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 
 func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.T) {
 	reg := tools.NewRegistry(nil)
-	list := &countingTelegramTool{name: "list_skills", result: "systematic-debugging"}
-	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
 	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
-	reg.Register(list)
-	reg.Register(read)
 	reg.Register(exec)
 	fake := &scriptedTelegramLLM{responses: []llm.Response{
 		{
@@ -420,14 +416,11 @@ func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.
 	if exec.calls != 1 {
 		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
 	}
-	if list.calls != 0 || read.calls != 0 {
-		t.Fatalf("preflight calls = list %d read %d, want 0/0", list.calls, read.calls)
-	}
 	if len(fake.requests) != 1 {
 		t.Fatalf("LLM requests = %d, want 1 without preflight retry", len(fake.requests))
 	}
-	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "list_skills" {
-		t.Fatalf("first exposed tool = %+v, want list_skills first", fake.requests[0].Tools)
+	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "execute_code" {
+		t.Fatalf("first exposed tool = %+v, want execute_code first", fake.requests[0].Tools)
 	}
 }
 

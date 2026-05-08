@@ -211,9 +211,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	skillRoots := skillSearchRoots(cfg)
 	skillLoader := auraskills.NewLoader(skillRoots[0], skillRoots[1:]...)
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
-	toolRegistry.Register(tools.NewSearchSkillCatalogTool(skillsCatalog))
-	toolRegistry.Register(tools.NewListSkillsTool(skillLoader))
-	toolRegistry.Register(tools.NewReadSkillTool(skillLoader))
 	switch strings.ToLower(strings.TrimSpace(cfg.WebSearchProvider)) {
 	case "searxng":
 		toolRegistry.Register(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL))
@@ -230,11 +227,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	default:
 		logger.Warn("unknown WEB_SEARCH_PROVIDER; web tools disabled", "provider", cfg.WebSearchProvider)
 	}
-	toolRegistry.Register(tools.NewWriteWikiTool(wikiStore, searchEngine))
-	toolRegistry.Register(tools.NewReadWikiTool(wikiStore))
-	if searchEngine != nil {
-		toolRegistry.Register(tools.NewSearchWikiTool(searchEngine))
-	}
 	// Source tools (slice 5). store_source/read_source/list_sources/lint_sources
 	// are always registered. ocr_source only when OCR is configured — otherwise
 	// the LLM gets a clearer "OCR disabled" error from the tool itself, which
@@ -247,15 +239,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
 	}
 	toolRegistry.Register(tools.NewIngestSourceTool(ingestPipeline))
-	// Wiki maintenance (slice 7). list_wiki/lint_wiki give the LLM
-	// introspection over the page catalog; rebuild_index/append_log are
-	// the explicit knobs that bypass the auto-maintained side files.
-	toolRegistry.Register(tools.NewListWikiTool(wikiStore))
-	toolRegistry.Register(tools.NewLintWikiTool(wikiStore))
-	toolRegistry.Register(tools.NewCleanWikiMemoryTool(wikiStore))
-	toolRegistry.Register(tools.NewRebuildIndexTool(wikiStore))
-	toolRegistry.Register(tools.NewAppendLogTool(wikiStore))
-
 	// Scheduler (slice 8). Persistent SQLite-backed task queue with one
 	// goroutine ticking every DefaultTickInterval. Two task kinds ship:
 	// reminder (delivered to the LLM-call's user via Telegram) and
@@ -269,12 +252,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
-	if tool := tools.NewProposeWikiChangeTool(summariesStore); tool != nil {
-		toolRegistry.Register(tool)
-	}
-	if tool := tools.NewProposeSkillChangeTool(summariesStore); tool != nil {
-		toolRegistry.Register(tool)
-	}
 
 	swarmStore, err := swarm.NewStoreWithDB(pool)
 	if err != nil {
