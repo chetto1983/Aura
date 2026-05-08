@@ -54,6 +54,7 @@ func main() {
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
+	customPrompt := strings.TrimSpace(*prompt) != ""
 	if strings.TrimSpace(*prompt) == "" {
 		if *artifactSmoke {
 			*prompt = defaultArtifactSmokePrompt()
@@ -256,7 +257,7 @@ func main() {
 		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
 	}
 	if !*noValidate {
-		if err := validateTelegramSandboxSmoke(result, *artifactSmoke); err != nil {
+		if err := validateTelegramSandboxSmoke(result, *artifactSmoke, customPrompt); err != nil {
 			fail("%v", err)
 		}
 	}
@@ -266,6 +267,8 @@ func main() {
 	}
 	if *noValidate {
 		fmt.Println("PASS: synthetic Telegram turn completed; legacy execute_code assertion skipped")
+	} else if customPrompt {
+		fmt.Println("PASS: synthetic Telegram turn used execute_code and satisfied explicit expectations")
 	} else {
 		fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
 	}
@@ -432,7 +435,7 @@ func defaultArtifactSmokePrompt() string {
 	}, " ")
 }
 
-func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifactSmoke bool) error {
+func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifactSmoke bool, customPrompt bool) error {
 	if !result.CalledExecuteCode {
 		return errors.New("expected execute_code call")
 	}
@@ -452,6 +455,9 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 		if len(result.ArtifactSourceIDs) < 2 {
 			return errors.New("expected sandbox artifact source persistence")
 		}
+		return nil
+	}
+	if customPrompt {
 		return nil
 	}
 	if !result.Contains5050 {

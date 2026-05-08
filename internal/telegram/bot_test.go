@@ -20,15 +20,18 @@ import (
 
 func TestToolActivityMessageDoesNotExposeArgs(t *testing.T) {
 	got := toolActivityMessage("write_wiki")
-	if got != "Running: write_wiki" {
-		t.Fatalf("toolActivityMessage() = %q, want %q", got, "Running: write_wiki")
+	if got != "Sto lavorando alla richiesta..." {
+		t.Fatalf("toolActivityMessage() = %q, want generic activity text", got)
+	}
+	if strings.Contains(got, "write_wiki") {
+		t.Fatalf("toolActivityMessage leaked tool name: %q", got)
 	}
 }
 
 func TestToolActivityMessageFallback(t *testing.T) {
 	got := toolActivityMessage(" ")
-	if got != "Running tool" {
-		t.Fatalf("toolActivityMessage() = %q, want %q", got, "Running tool")
+	if got != "Sto lavorando alla richiesta..." {
+		t.Fatalf("toolActivityMessage() = %q, want generic activity text", got)
 	}
 }
 

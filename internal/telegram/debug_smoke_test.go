@@ -252,8 +252,11 @@ func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteWiki(t *testing.T) {
 	if strings.Contains(got, `"ok":false`) || strings.Contains(got, `"retryable":false`) {
 		t.Fatalf("user-facing result leaked raw tool JSON: %q", got)
 	}
-	if !strings.Contains(got, "write_wiki") || !strings.Contains(got, "cattura automatica") {
-		t.Fatalf("user-facing result = %q, want write_wiki/capture explanation", got)
+	if strings.Contains(got, "write_wiki") {
+		t.Fatalf("user-facing result leaked tool name: %q", got)
+	}
+	if !strings.Contains(got, "cattura automatica") {
+		t.Fatalf("user-facing result = %q, want capture explanation", got)
 	}
 }
 
@@ -538,6 +541,63 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 	}
 }
 
+func TestTerminalSwarmResultMasksTechnicalMetrics(t *testing.T) {
+	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline sana.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
+
+	for _, leaked := range []string{"llm_calls", "tool_calls", "tokens", "wall_ms", "Swarm metrics"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalSwarmResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "Pipeline sana.") || !strings.Contains(got, "3/3") {
+		t.Fatalf("formatTerminalSwarmResult = %q, want summary and compact check count", got)
+	}
+}
+
+func TestTerminalExecuteCodeResultMasksArtifactMetadata(t *testing.T) {
+	raw := "exit_code: 0\nelapsed_ms: 42\n\nwrote files\n\nartifacts:\n- aura_sales_summary.csv (22 bytes, text/csv, delivered=true, persisted=true, source_id=src_0123456789abcdef)\n- aura_sales_plot.png (2048 bytes, image/png, delivered=true, persisted=true, source_id=src_fedcba9876543210)"
+
+	got := formatTerminalExecuteCodeResult(raw)
+
+	for _, leaked := range []string{"source_id", "delivered=true", "persisted=true", "text/csv", "image/png"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
+	}
+	for _, want := range []string{"wrote files", "aura_sales_summary.csv", "aura_sales_plot.png"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTerminalExecuteCodeResult = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestTerminalFileResultMasksSourceIDAndRawJSON(t *testing.T) {
+	raw := `{"source_id":"src_secret","filename":"report.docx","size_bytes":1234,"delivered":true}`
+
+	got := formatTerminalFileResult("create_docx", raw)
+
+	for _, leaked := range []string{"src_secret", "source_id", "delivered"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalFileResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "inviato") {
+		t.Fatalf("formatTerminalFileResult = %q, want filename and delivery summary", got)
+	}
+}
+
+func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
+	raw := `{"source_id":"src_secret","metrics":{"tokens_total":123},"exit_code":0}`
+
+	got := terminalToolFallbackResponse("execute_code", raw)
+
+	for _, leaked := range []string{"src_secret", "source_id", "tokens_total", "exit_code"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("terminalToolFallbackResponse leaked %q in %q", leaked, got)
+		}
+	}
+}
+
 type capturingOrchestrationHooks struct {
 	beforeErr error
 	after     []orchestration.TraceEvent
@@ -605,12 +665,17 @@ func (f *scriptedTelegramLLM) Stream(_ context.Context, req llm.Request) (<-chan
 	return ch, nil
 }
 
-func TestFormatTerminalSwarmResultUsesSynthesisAndMetrics(t *testing.T) {
+func TestFormatTerminalSwarmResultUsesSynthesisAndCompactSummary(t *testing.T) {
 	got := formatTerminalSwarmResult(`{"ok":true,"status":"completed","summary":"Pipeline is healthy.","metrics":{"total_tasks":3,"completed_tasks":3,"failed_tasks":0,"llm_calls":4,"tool_calls":7,"tokens_total":123,"wall_ms":456}}`)
 
-	for _, want := range []string{"Pipeline is healthy.", "tasks=3/3 completed", "tokens=123", "wall_ms=456"} {
+	for _, want := range []string{"Pipeline is healthy.", "3/3 controlli riusciti"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTerminalSwarmResult() = %q, missing %q", got, want)
+		}
+	}
+	for _, leaked := range []string{"llm_calls", "tool_calls", "tokens=123", "wall_ms=456"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalSwarmResult() leaked %q in %q", leaked, got)
 		}
 	}
 }
@@ -619,19 +684,26 @@ func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
 	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
 
 	got := formatTerminalExecuteCodeResult(raw)
-	if !strings.Contains(got, "5050") || !strings.Contains(got, "Artifacts:") || !strings.Contains(got, "aura_sum.csv") {
+	if !strings.Contains(got, "5050") || !strings.Contains(got, "File generati:") || !strings.Contains(got, "aura_sum.csv") {
 		t.Fatalf("formatTerminalExecuteCodeResult() = %q", got)
 	}
-	if strings.Contains(got, "exit_code") || strings.Contains(got, "elapsed_ms") {
-		t.Fatalf("formatTerminalExecuteCodeResult leaked raw execution header: %q", got)
+	for _, leaked := range []string{"exit_code", "elapsed_ms", "source_id", "delivered=true", "persisted=true"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
 	}
 }
 
 func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 	got := formatTerminalFileResult("create_docx", `{"source_id":"src_123","filename":"report.docx","size_bytes":42,"delivered":true}`)
-	for _, want := range []string{"DOCX", "report.docx", "src_123", "delivered"} {
+	for _, want := range []string{"DOCX", "report.docx", "inviato"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTerminalFileResult() = %q, missing %q", got, want)
+		}
+	}
+	for _, leaked := range []string{"src_123", "source_id", "delivered"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("formatTerminalFileResult() leaked %q in %q", leaked, got)
 		}
 	}
 }

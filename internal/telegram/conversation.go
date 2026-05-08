@@ -658,9 +658,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 	}
 
-	fallback := "Tool loop stopped after reaching the maximum iteration limit."
+	fallback := "Mi sono fermato prima di completare una risposta finale affidabile."
 	if lastToolResult != "" {
-		fallback += "\n\nLast tool result:\n" + lastToolResult
+		fallback += "\n\nHo completato alcuni passaggi interni, ma mi sono fermato prima di generare una risposta finale pulita."
 	}
 	convCtx.AddAssistantMessage(fallback)
 	return fallback, stats
@@ -741,8 +741,9 @@ func (b *Bot) runTerminalSwarm(ctx context.Context, c tele.Context, convCtx *con
 //
 // Concurrency safety: Registry.Execute is RWMutex-guarded for lookup, and
 // individual tools run outside the lock. Wiki/source writes serialize on
-// SQLite at the storage layer. Activity pings are emitted up-front so the
-// user sees all running tools immediately rather than drip-fed.
+// SQLite at the storage layer. Tool activity stays in logs/orchestration
+// telemetry; Telegram receives only the final user-facing synthesis so normal
+// users are not exposed to tool names, JSON payloads, or raw execution traces.
 //
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
@@ -758,12 +759,6 @@ type toolExecutionSummary struct {
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, profile orchestration.Profile, readSkills []string) toolExecutionSummary {
 	if len(calls) == 0 {
 		return toolExecutionSummary{}
-	}
-
-	for _, tc := range calls {
-		if c != nil {
-			_ = c.Send(toolActivityMessage(tc.Name))
-		}
 	}
 
 	type outcome struct {
@@ -1033,9 +1028,21 @@ func looksLikeToolCallMarkup(text string) bool {
 		strings.Contains(lower, `"tool_calls"`)
 }
 
+func looksLikeInternalToolResult(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "source_id") ||
+		strings.Contains(lower, "tokens_prompt") ||
+		strings.Contains(lower, "tokens_completion") ||
+		strings.Contains(lower, "tokens_total") ||
+		strings.Contains(lower, "llm_calls") ||
+		strings.Contains(lower, "tool_calls") ||
+		strings.Contains(lower, "elapsed_ms") ||
+		strings.Contains(lower, "exit_code")
+}
+
 func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 	raw := strings.TrimSpace(rawToolResult)
-	if raw != "" && !looksLikeToolCallMarkup(raw) {
+	if raw != "" && !looksLikeToolCallMarkup(raw) && !looksLikeInternalToolResult(raw) {
 		return raw
 	}
 	toolName := strings.TrimSpace(terminalTool)
@@ -1305,7 +1312,7 @@ func formatTerminalSwarmResult(raw string) string {
 		LastError string `json:"last_error"`
 	}
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
-		return "Swarm research completed.\n\n" + raw
+		return "Ho completato la verifica parallela, ma non sono riuscito a trasformare il risultato interno in un riassunto pulito."
 	}
 	var sb strings.Builder
 	if strings.TrimSpace(resp.Summary) != "" {
@@ -1316,16 +1323,16 @@ func formatTerminalSwarmResult(raw string) string {
 	} else {
 		sb.WriteString("Swarm research completed.")
 	}
-	fmt.Fprintf(&sb, "\n\nSwarm metrics: status=%s, tasks=%d/%d completed, failed=%d, llm_calls=%d, tool_calls=%d, tokens=%d, wall_ms=%d.",
-		resp.Status,
-		resp.Metrics.CompletedTasks,
-		resp.Metrics.TotalTasks,
-		resp.Metrics.FailedTasks,
-		resp.Metrics.LLMCalls,
-		resp.Metrics.ToolCalls,
-		resp.Metrics.TokensTotal,
-		resp.Metrics.WallMS,
-	)
+	if resp.Metrics.TotalTasks > 0 {
+		fmt.Fprintf(&sb, "\n\nHo completato la verifica parallela: %d/%d controlli riusciti",
+			resp.Metrics.CompletedTasks,
+			resp.Metrics.TotalTasks,
+		)
+		if resp.Metrics.FailedTasks > 0 {
+			fmt.Fprintf(&sb, ", %d da rivedere", resp.Metrics.FailedTasks)
+		}
+		sb.WriteString(".")
+	}
 	return sb.String()
 }
 
@@ -1349,7 +1356,11 @@ func formatTerminalExecuteCodeResult(raw string) string {
 	if artifacts == "" {
 		return body
 	}
-	return body + "\n\nArtifacts:\n" + artifacts
+	names := artifactNamesFromSandboxResult(artifacts)
+	if len(names) == 0 {
+		return body + "\n\nHo generato gli allegati richiesti."
+	}
+	return body + "\n\nFile generati: " + strings.Join(names, ", ") + "."
 }
 
 func isFileGenerationTool(name string) bool {
@@ -1374,7 +1385,7 @@ func formatTerminalFileResult(toolName, raw string) string {
 		Duplicate bool   `json:"duplicate"`
 	}
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
-		return "File created.\n\n" + raw
+		return "File creato e salvato."
 	}
 	kind := strings.TrimPrefix(toolName, "create_")
 	if kind == "" {
@@ -1382,21 +1393,18 @@ func formatTerminalFileResult(toolName, raw string) string {
 	}
 	var sb strings.Builder
 	if strings.TrimSpace(resp.Filename) != "" {
-		fmt.Fprintf(&sb, "Created %s file `%s`", strings.ToUpper(kind), resp.Filename)
+		fmt.Fprintf(&sb, "Ho creato il file %s `%s`", strings.ToUpper(kind), resp.Filename)
 	} else {
-		fmt.Fprintf(&sb, "Created %s file", strings.ToUpper(kind))
+		fmt.Fprintf(&sb, "Ho creato il file %s", strings.ToUpper(kind))
 	}
 	if resp.SizeBytes > 0 {
 		fmt.Fprintf(&sb, " (%d bytes)", resp.SizeBytes)
 	}
-	if resp.SourceID != "" {
-		fmt.Fprintf(&sb, ", persisted as `%s`", resp.SourceID)
-	}
 	if resp.Delivered {
-		sb.WriteString(", delivered to Telegram")
+		sb.WriteString(" e l'ho inviato qui")
 	}
 	if resp.Duplicate {
-		sb.WriteString(" (duplicate)")
+		sb.WriteString(" (era gia' presente)")
 	}
 	sb.WriteString(".")
 	return sb.String()
@@ -1475,9 +1483,9 @@ func userFacingFatalToolResult(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if strings.Contains(trimmed, "not exposed in the active tool profile") {
 		if strings.Contains(trimmed, "write_wiki") {
-			return "Non posso usare write_wiki nel profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
+			return "Non posso scrivere direttamente nella memoria con il profilo attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
 		}
-		return "Uno strumento richiesto non e' disponibile nel profilo attivo. Ho fermato l'azione invece di usare un permesso non esposto."
+		return "Una capacita' interna richiesta non e' disponibile nel profilo attivo. Ho fermato l'azione invece di usare un permesso non esposto."
 	}
 	return raw
 }
@@ -1492,8 +1500,22 @@ func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) floa
 }
 
 func toolActivityMessage(name string) string {
-	if strings.TrimSpace(name) == "" {
-		return "Running tool"
+	return "Sto lavorando alla richiesta..."
+}
+
+func artifactNamesFromSandboxResult(artifacts string) []string {
+	var names []string
+	for _, line := range strings.Split(artifacts, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+		if line == "" {
+			continue
+		}
+		if idx := strings.Index(line, " ("); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line != "" {
+			names = append(names, line)
+		}
 	}
-	return fmt.Sprintf("Running: %s", name)
+	return names
 }

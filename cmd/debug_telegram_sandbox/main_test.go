@@ -135,7 +135,7 @@ func TestTelegramSandboxSmokeReportPassesArtifactSmoke(t *testing.T) {
 		},
 	}
 
-	if err := validateTelegramSandboxSmoke(result, true); err != nil {
+	if err := validateTelegramSandboxSmoke(result, true, false); err != nil {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v", err)
 	}
 }
@@ -164,7 +164,7 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutRichArtifacts(t *t
 		}},
 	}
 
-	err := validateTelegramSandboxSmoke(result, true)
+	err := validateTelegramSandboxSmoke(result, true, false)
 	if err == nil || !strings.Contains(err.Error(), "rich artifact") {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want rich artifact failure", err)
 	}
@@ -178,7 +178,7 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutDocument(t *testin
 		ArtifactSourceIDs:        []string{"src_0123456789abcdef", "src_fedcba9876543210"},
 	}
 
-	err := validateTelegramSandboxSmoke(result, true)
+	err := validateTelegramSandboxSmoke(result, true, false)
 	if err == nil || !strings.Contains(err.Error(), "document") {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want document failure", err)
 	}
@@ -200,9 +200,20 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutSource(t *testing.
 		}},
 	}
 
-	err := validateTelegramSandboxSmoke(result, true)
+	err := validateTelegramSandboxSmoke(result, true, false)
 	if err == nil || !strings.Contains(err.Error(), "source persistence") {
 		t.Fatalf("validateTelegramSandboxSmoke() error = %v, want source persistence failure", err)
+	}
+}
+
+func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacy5050(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{
+		CalledExecuteCode: true,
+		FinalText:         "42",
+	}
+
+	if err := validateTelegramSandboxSmoke(result, false, true); err != nil {
+		t.Fatalf("validateTelegramSandboxSmoke() custom prompt error = %v", err)
 	}
 }
 
