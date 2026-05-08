@@ -288,7 +288,7 @@ git commit -m "slice 07: narrow Aura runtime workspace"
 - Modify: `internal/api/wiki.go`
 - Modify: `internal/search/search.go` or the reindex path that calls graph document builders
 
-- [ ] **Step 1: Write graph builder tests**
+- [x] **Step 1: Write graph builder tests**
 
 Test inputs:
 
@@ -319,7 +319,7 @@ Expected graph:
 }
 ```
 
-- [ ] **Step 2: Implement graph materializer**
+- [x] **Step 2: Implement graph materializer**
 
 Function shape:
 
@@ -349,15 +349,15 @@ wiki/graph/context.md
 - [[davide]] degree=13
 ```
 
-- [ ] **Step 3: Update after wiki writes and migrations**
+- [x] **Step 3: Update after wiki writes and migrations**
 
 Where `Store.WritePage`, `MigrateYAMLToMD`, reindex/debug cleanup, or explicit index rebuild currently updates `index.md`, also refresh `wiki/graph/*`.
 
-- [ ] **Step 4: Switch dashboard graph to materialized graph**
+- [x] **Step 4: Switch dashboard graph to materialized graph**
 
 `GET /api/wiki/graph` should prefer `wiki/graph/graph.json`; if missing or invalid, rebuild from pages and write it.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 ```powershell
 go test ./internal/wiki ./internal/api ./internal/search -count=1
@@ -365,7 +365,7 @@ go test ./internal/wiki ./internal/api ./internal/search -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add internal/wiki internal/api/wiki.go internal/search docs/implementation-tracker.md

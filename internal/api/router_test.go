@@ -359,6 +359,29 @@ func TestWikiGraph_SkipsSelfLoops(t *testing.T) {
 	}
 }
 
+func TestWikiGraph_PrefersMaterializedCache(t *testing.T) {
+	e := newTestEnv(t)
+	cached := wiki.Graph{
+		Nodes: []wiki.GraphNode{{ID: "cached", Title: "Cached Graph"}},
+		Edges: []wiki.GraphEdge{},
+	}
+	if err := wiki.WriteGraphFiles(e.wiki.Dir(), cached); err != nil {
+		t.Fatalf("WriteGraphFiles: %v", err)
+	}
+
+	rr := e.do("GET", "/wiki/graph")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d", rr.Code)
+	}
+	var got Graph
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Nodes) != 1 || got.Nodes[0].ID != "cached" {
+		t.Fatalf("graph = %+v, want cached graph", got)
+	}
+}
+
 func TestSourceList_FilterAndDTO(t *testing.T) {
 	e := newTestEnv(t)
 	a := e.seedSource([]byte("pdf-a-content"), source.KindPDF, "a.pdf")

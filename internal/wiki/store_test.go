@@ -81,6 +81,79 @@ func TestWritePage(t *testing.T) {
 	}
 }
 
+func TestWritePageRefreshesMaterializedGraph(t *testing.T) {
+	store, dir := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	for _, page := range []*Page{
+		{
+			Title:         "Alpha",
+			Body:          "See [[beta]].",
+			Category:      "notes",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		{
+			Title:         "Beta",
+			Body:          "Back to [[alpha]].",
+			Category:      "notes",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+	} {
+		if err := store.WritePage(ctx, page); err != nil {
+			t.Fatalf("WritePage(%q): %v", page.Title, err)
+		}
+	}
+
+	graph, err := ReadGraphFile(dir)
+	if err != nil {
+		t.Fatalf("ReadGraphFile: %v", err)
+	}
+	if len(graph.Nodes) != 2 || len(graph.Edges) != 2 {
+		t.Fatalf("graph = %+v", graph)
+	}
+	contextPath := filepath.Join(dir, "graph", "context.md")
+	context, err := os.ReadFile(contextPath)
+	if err != nil {
+		t.Fatalf("read graph context: %v", err)
+	}
+	if !strings.Contains(string(context), "- Pages: 2") {
+		t.Fatalf("context.md = %s", context)
+	}
+}
+
+func TestDeletePageRefreshesMaterializedGraph(t *testing.T) {
+	store, dir := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	for _, page := range []*Page{
+		{Title: "Alpha", Body: "See [[beta]].", Category: "notes", SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1", CreatedAt: now, UpdatedAt: now},
+		{Title: "Beta", Body: "Back to [[alpha]].", Category: "notes", SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1", CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.WritePage(ctx, page); err != nil {
+			t.Fatalf("WritePage(%q): %v", page.Title, err)
+		}
+	}
+	if err := store.DeletePage(ctx, "beta"); err != nil {
+		t.Fatalf("DeletePage: %v", err)
+	}
+
+	graph, err := ReadGraphFile(dir)
+	if err != nil {
+		t.Fatalf("ReadGraphFile: %v", err)
+	}
+	if len(graph.Nodes) != 1 || len(graph.Edges) != 0 || len(graph.BrokenRefs) != 1 {
+		t.Fatalf("graph after delete = %+v", graph)
+	}
+}
+
 func TestWritePageAtomic(t *testing.T) {
 	store, dir := newTestStore(t)
 

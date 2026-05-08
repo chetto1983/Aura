@@ -74,49 +74,19 @@ func handleWikiPage(deps Deps) http.HandlerFunc {
 
 func handleWikiGraph(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		slugs, err := deps.Wiki.ListPages()
+		graph, err := wiki.ReadGraphFile(deps.Wiki.Dir())
 		if err != nil {
-			deps.Logger.Warn("api: list wiki pages for graph", "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to list pages")
-			return
-		}
-		known := make(map[string]bool, len(slugs))
-		for _, s := range slugs {
-			known[s] = true
-		}
-		nodes := make([]GraphNode, 0, len(slugs))
-		edges := make([]GraphEdge, 0)
-		for _, slug := range slugs {
-			page, err := deps.Wiki.ReadPage(slug)
+			graph, err = wiki.BuildGraphFromReader(deps.Wiki)
 			if err != nil {
-				deps.Logger.Warn("api: read page for graph", "slug", slug, "error", err)
-				continue
+				deps.Logger.Warn("api: build wiki graph", "error", err)
+				writeError(w, deps.Logger, http.StatusInternalServerError, "failed to build graph")
+				return
 			}
-			nodes = append(nodes, GraphNode{ID: slug, Title: page.Title, Category: page.Category})
-			seen := make(map[string]bool)
-			for _, target := range wiki.ExtractWikiLinks(page.Body) {
-				if target == slug || !known[target] || seen[target] {
-					continue
-				}
-				seen[target] = true
-				edges = append(edges, GraphEdge{Source: slug, Target: target, Type: "wikilink"})
-			}
-			for _, target := range page.Related {
-				if target == slug || !known[target] || seen[target] {
-					continue
-				}
-				seen[target] = true
-				edges = append(edges, GraphEdge{Source: slug, Target: target, Type: "related"})
+			if writeErr := wiki.WriteGraphFiles(deps.Wiki.Dir(), graph); writeErr != nil {
+				deps.Logger.Warn("api: write wiki graph cache", "error", writeErr)
 			}
 		}
-		sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
-		sort.Slice(edges, func(i, j int) bool {
-			if edges[i].Source != edges[j].Source {
-				return edges[i].Source < edges[j].Source
-			}
-			return edges[i].Target < edges[j].Target
-		})
-		writeJSON(w, deps.Logger, http.StatusOK, Graph{Nodes: nodes, Edges: edges})
+		writeJSON(w, deps.Logger, http.StatusOK, graph)
 	}
 }
 

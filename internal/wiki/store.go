@@ -409,6 +409,11 @@ func (s *Store) RebuildIndex(ctx context.Context) {
 	s.updateIndex(ctx)
 }
 
+// RebuildGraph refreshes the materialized graph files from the current pages.
+func (s *Store) RebuildGraph(ctx context.Context) {
+	s.updateGraph(ctx)
+}
+
 // AppendLog appends a single chronological entry (timestamp, action,
 // slug) to log.md and commits it to git. Use slug="" for actions that
 // don't pertain to a specific page (e.g. "lint", "query").
@@ -463,11 +468,31 @@ func (s *Store) updateIndex(ctx context.Context) {
 	if err := s.gitCommit(ctx, "index.md", "update"); err != nil {
 		s.logger.Warn("git commit failed for index.md", "error", err)
 	}
+
+	s.updateGraph(ctx)
 }
 
 type indexEntry struct {
 	Slug  string
 	Title string
+}
+
+func (s *Store) updateGraph(ctx context.Context) {
+	graph, err := BuildGraphFromReader(s)
+	if err != nil {
+		s.logger.Warn("failed to build wiki graph", "error", err)
+		return
+	}
+	if err := WriteGraphFiles(s.dir, graph); err != nil {
+		s.logger.Warn("failed to write wiki graph files", "error", err)
+		return
+	}
+	if err := s.gitCommit(ctx, "graph/graph.json", "update"); err != nil {
+		s.logger.Warn("git commit failed for graph.json", "error", err)
+	}
+	if err := s.gitCommit(ctx, "graph/context.md", "update"); err != nil {
+		s.logger.Warn("git commit failed for graph context", "error", err)
+	}
 }
 
 // appendLog appends an entry to the log.md audit trail.

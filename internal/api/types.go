@@ -8,7 +8,11 @@
 // to RFC3339 UTC at the boundary; missing/optional fields use omitempty.
 package api
 
-import "time"
+import (
+	"time"
+
+	"github.com/aura/aura/internal/wiki"
+)
 
 // HealthRollup is the response body of GET /health. It aggregates per-
 // subsystem state in one round-trip so the dashboard can render the home
@@ -108,26 +112,15 @@ type WikiPage struct {
 }
 
 // GraphNode is one vertex in GET /wiki/graph.
-type GraphNode struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Category string `json:"category,omitempty"`
-}
+type GraphNode = wiki.GraphNode
 
 // GraphEdge is one directed link in GET /wiki/graph. Type is one of
 // "wikilink" (a [[slug]] inside the body) or "related" (frontmatter
 // related: [...]).
-type GraphEdge struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Type   string `json:"type"`
-}
+type GraphEdge = wiki.GraphEdge
 
 // Graph is the response of GET /wiki/graph.
-type Graph struct {
-	Nodes []GraphNode `json:"nodes"`
-	Edges []GraphEdge `json:"edges"`
-}
+type Graph = wiki.Graph
 
 // SourceSummary is one row of GET /sources. It omits high-volume fields
 // (mime_type, sha256, size_bytes, ocr_model, error) that the table view
