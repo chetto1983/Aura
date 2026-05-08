@@ -62,7 +62,7 @@ func (b *Bot) compactMemoryStatusSummary() string {
 	if b == nil || b.compactMemoryHealth == nil {
 		return ""
 	}
-	health := b.compactMemoryHealth.Snapshot()
+	health := b.CompactMemoryHealth()
 	if !health.Enabled && health.Collection == "" && health.LastError == "" {
 		return "Compact memory mirror: disabled\n"
 	}

@@ -154,7 +154,7 @@ var settingsCatalog = []SettingItem{
 
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
-	{Key: settings.KeyToolsetMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto selects a broad safe toolset per turn"},
+	{Key: settings.KeyToolsetMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto uses the default toolset; choose compute, document, or admin explicitly when needed"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
 	{Key: settings.KeySkillRoutingMode, Value: config.DefaultSkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode", Hint: "manifest uses deterministic skill metadata; manifest_llm_review is reserved for ambiguous routing experiments"},
 	{Key: settings.KeyAgentLoopMaxSteps, Value: strconv.Itoa(config.DefaultAgentLoopMaxSteps), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps", Hint: "Hard cap for the main model/tool loop"},

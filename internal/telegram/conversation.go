@@ -44,7 +44,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// personality, Aura runtime notes, durable user facts, and tool guidance by
 	// file; the next user turn picks up the change with no recompile or
 	// restart. AGENTS.md stays development-only and is not injected into Aura's prompt.
-	if b.skills != nil && turnNeedsSkillManifest(userText) {
+	if b.skills != nil {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
 			b.logger.Warn("failed to load local skills", "error", err)
@@ -52,13 +52,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 			skillsBlock = block
 		}
 	}
-	wikiDir := ""
-	if b.wiki != nil {
-		wikiDir = b.wiki.Dir()
-	}
-	retrievalCapsule := composeTurnRetrievalCapsule(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID)
+	retrievalCapsule := turnRetrievalCapsule{}
 	available := orchestration.Availability{
-		Swarm:          b.swarmToolsAvailable() && turnAllowsSwarm(userText),
+		Swarm:          b.swarmToolsAvailable(),
 		Sandbox:        b.sandboxToolsAvailable(),
 		Proposals:      b.proposalToolsAvailable(),
 		WorkspaceFiles: b.workspaceToolsAvailable(),
@@ -285,38 +281,6 @@ func (b *Bot) sandboxToolsAvailable() bool {
 
 func (b *Bot) workspaceToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("read_file") != nil && b.tools.Get("write_file") != nil
-}
-
-func turnNeedsSkillManifest(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return false
-	}
-	for _, needle := range []string{
-		"skill", "skills", "procedura", "procedure", "istruzioni", "superpowers",
-		"come lavori", "agent.md", "skil",
-	} {
-		if strings.Contains(text, needle) {
-			return true
-		}
-	}
-	return false
-}
-
-func turnAllowsSwarm(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return false
-	}
-	for _, needle := range []string{
-		"swarm", "aurabot", "subagenti", "sub agent", "sub-agent", "agenti paralleli",
-		"parallel agents", "agent paralleli",
-	} {
-		if strings.Contains(text, needle) {
-			return true
-		}
-	}
-	return false
 }
 
 func runtimeToolsetForTurn(toolset orchestration.Toolset, retrievalCapsule turnRetrievalCapsule) orchestration.RuntimeToolset {

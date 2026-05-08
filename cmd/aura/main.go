@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/runtimebootstrap"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
@@ -338,6 +339,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}
 
 	healthServer.SetBotUsername(bot.Username())
+	healthServer.RegisterProvider("compact_memory", &compactMemoryHealthProvider{reader: bot})
 
 	// Slice 10a: mount the read-only JSON API on the health server. Strip
 	// the /api prefix so api.NewRouter sees /health, /wiki/..., /sources/...
@@ -447,6 +449,37 @@ func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
 		Status: "ok",
 		Detail: "web search provider configured",
 	}
+}
+
+type compactMemoryHealthReader interface {
+	CompactMemoryHealth() memoryindex.VectorHealth
+}
+
+type compactMemoryHealthProvider struct {
+	reader compactMemoryHealthReader
+}
+
+func (p *compactMemoryHealthProvider) HealthStatus() health.ComponentHealth {
+	if p == nil || p.reader == nil {
+		return health.ComponentHealth{Status: "ok", Detail: "compact memory mirror unavailable"}
+	}
+	state := p.reader.CompactMemoryHealth()
+	if !state.Enabled {
+		return health.ComponentHealth{Status: "ok", Detail: "compact memory mirror disabled"}
+	}
+	status := "ok"
+	if state.Running {
+		status = "ok"
+	}
+	detail := fmt.Sprintf("collection=%s docs=%d vector=%d", state.Collection, state.LastDocsIndexed, state.VectorSize)
+	if state.Running {
+		detail += " running=true"
+	}
+	if state.LastError != "" {
+		status = "degraded"
+		detail += " last_error=" + state.LastError
+	}
+	return health.ComponentHealth{Status: status, Detail: detail}
 }
 
 // dashboardHost translates the HTTP_PORT bind string into a browseable URL

@@ -45,7 +45,7 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	}
 }
 
-func TestSelectToolsetAutoRoutesToFourToolsets(t *testing.T) {
+func TestSelectToolsetAutoDoesNotRouteFromUserText(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -54,12 +54,9 @@ func TestSelectToolsetAutoRoutesToFourToolsets(t *testing.T) {
 		{name: "broad pipeline audit stays default", text: "audit the whole Aura pipeline and tell me what is missing", want: ToolsetDefault},
 		{name: "italian conversation log debug stays default", text: "guarda i log delle conversazioni e dimmi dove ti blocchi", want: ToolsetDefault},
 		{name: "memory remember stays default", text: "remember this note in memory for the Aura project", want: ToolsetDefault},
-		{name: "sandbox english csv chart", text: "compute a CSV table and chart for the E2E timings", want: ToolsetCompute},
-		{name: "sandbox italian csv chart", text: "calcola un CSV con grafico revenue e salva gli artifact", want: ToolsetCompute},
-		{name: "document english report", text: "create a report from the documents you have", want: ToolsetDocument},
-		{name: "document italian report", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ToolsetDocument},
-		{name: "admin english dashboard settings", text: "review the dashboard settings and admin approval queue", want: ToolsetAdmin},
-		{name: "admin italian settings", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ToolsetAdmin},
+		{name: "sandbox words stay default", text: "compute a CSV table and chart for the E2E timings", want: ToolsetDefault},
+		{name: "document words stay default", text: "crea un documento Word modificabile dal riepilogo della memoria", want: ToolsetDefault},
+		{name: "admin words stay default", text: "apri le impostazioni dashboard e controlla la coda review admin", want: ToolsetDefault},
 		{name: "default english greeting", text: "hello, how are you?", want: ToolsetDefault},
 	}
 
@@ -73,22 +70,43 @@ func TestSelectToolsetAutoRoutesToFourToolsets(t *testing.T) {
 	}
 }
 
+func TestSelectToolsetHonorsExplicitModes(t *testing.T) {
+	tests := []struct {
+		mode string
+		want Toolset
+	}{
+		{mode: "default", want: ToolsetDefault},
+		{mode: "compute", want: ToolsetCompute},
+		{mode: "document", want: ToolsetDocument},
+		{mode: "admin", want: ToolsetAdmin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			got := SelectToolset("ignored user text", tt.mode, Availability{Swarm: true, Sandbox: true, Proposals: true})
+			if got != tt.want {
+				t.Fatalf("SelectToolset(mode=%q) = %q, want %q", tt.mode, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 	def, err := ToolsForToolset(ToolsetDefault, Availability{Swarm: true, WorkspaceFiles: true})
 	if err != nil {
 		t.Fatalf("ToolsForToolset default: %v", err)
 	}
-	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "search_memory", "list_sources", "read_source", "web_search", "web_fetch", "run_aurabot_swarm"} {
+	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "search_memory", "list_sources", "read_source", "web_search", "web_fetch"} {
 		if !slices.Contains(def, required) {
 			t.Fatalf("default toolset missing %q: %+v", required, def)
 		}
 	}
-	for _, forbidden := range []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token"} {
+	for _, forbidden := range []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "run_aurabot_swarm"} {
 		if slices.Contains(def, forbidden) {
 			t.Fatalf("default toolset exposes specialized/admin tool %q: %+v", forbidden, def)
 		}
 	}
-	compute, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: true, WorkspaceFiles: true})
+	compute, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: true, WorkspaceFiles: true, Swarm: true})
 	if err != nil {
 		t.Fatalf("ToolsForToolset compute: %v", err)
 	}
@@ -96,6 +114,9 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 		if !slices.Contains(compute, required) {
 			t.Fatalf("compute toolset missing %q: %+v", required, compute)
 		}
+	}
+	if !slices.Contains(compute, "run_aurabot_swarm") {
+		t.Fatalf("compute toolset should expose swarm when available: %+v", compute)
 	}
 
 	doc, err := ToolsForToolset(ToolsetDocument, Availability{Swarm: true, WorkspaceFiles: true})

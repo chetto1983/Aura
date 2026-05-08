@@ -12,8 +12,8 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	if !slices.Contains(def.TerminalTools, "run_aurabot_swarm") {
-		t.Fatalf("default TerminalTools missing run_aurabot_swarm: %+v", def.TerminalTools)
+	if len(def.TerminalTools) != 0 {
+		t.Fatalf("default TerminalTools = %+v, want none in the hot path", def.TerminalTools)
 	}
 
 	compute, ok := LoopPolicyForToolset(ToolsetCompute)
@@ -43,15 +43,15 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 }
 
 func TestLoopPolicyForToolsetReturnsCopySafePolicy(t *testing.T) {
-	policy, ok := LoopPolicyForToolset(ToolsetDefault)
+	policy, ok := LoopPolicyForToolset(ToolsetDocument)
 	if !ok {
-		t.Fatal("LoopPolicyForToolset default returned false")
+		t.Fatal("LoopPolicyForToolset document returned false")
 	}
 	policy.TerminalTools[0] = "mutated"
 
-	reread, ok := LoopPolicyForToolset(ToolsetDefault)
+	reread, ok := LoopPolicyForToolset(ToolsetDocument)
 	if !ok {
-		t.Fatal("LoopPolicyForToolset default reread returned false")
+		t.Fatal("LoopPolicyForToolset document reread returned false")
 	}
 	if slices.Contains(reread.TerminalTools, "mutated") {
 		t.Fatalf("mutating policy changed policy catalog: %+v", reread)

@@ -113,10 +113,6 @@ var (
 		"daily_briefing", "list_tasks", "schedule_task", "cancel_task", "run_task_now",
 		"request_dashboard_token", "install_skill", "delete_skill", "settings_update",
 	}
-
-	computeTerms  = []string{"calculate", "calcola", "compute", "grafico", "chart", "plot", "csv", "dataframe", "dataset", "simulation", "simulazione", "python", "parser", "script", "analisi dati", "data analysis"}
-	documentTerms = []string{"documento word", "word modificabile", "docx", "pdf", "xlsx", "spreadsheet", "foglio", "crea un documento", "genera un documento", "report", "relazione", "documento", "documenti"}
-	adminTerms    = []string{"review queue", "approval", "proposals", "admin", "dashboard", "settings", "impostazioni", "request_dashboard_token", "coda review", "coda approvazioni", "plugin", "mcp"}
 )
 
 func ComposePrompt(in PromptInput) PromptPlan {
@@ -171,7 +167,7 @@ func SelectToolset(userText, mode string, available Availability) Toolset {
 	return SelectToolsetDecision(userText, mode, available).Toolset
 }
 
-func SelectToolsetDecision(userText, mode string, available Availability) ToolsetDecision {
+func SelectToolsetDecision(_ string, mode string, available Availability) ToolsetDecision {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
 		mode = ToolsetModeAuto
@@ -187,17 +183,7 @@ func SelectToolsetDecision(userText, mode string, available Availability) Toolse
 		return ToolsetDecision{Toolset: toolset, Reason: fmt.Sprintf("explicit toolset %q", toolset)}
 	}
 
-	text := normalizedText(userText)
-	switch {
-	case containsAny(text, adminTerms):
-		return ToolsetDecision{Toolset: ToolsetAdmin, Reason: "matched admin tool terms"}
-	case containsAny(text, documentTerms) && !containsAny(text, computeTerms):
-		return ToolsetDecision{Toolset: ToolsetDocument, Reason: "matched document tool terms"}
-	case containsAny(text, computeTerms) && available.Sandbox:
-		return ToolsetDecision{Toolset: ToolsetCompute, Reason: "matched compute tool terms"}
-	default:
-		return ToolsetDecision{Toolset: ToolsetDefault, Reason: "default toolset"}
-	}
+	return ToolsetDecision{Toolset: ToolsetDefault, Reason: "auto mode uses default toolset"}
 }
 
 func ToolsForToolset(toolset Toolset, available Availability) ([]string, error) {
@@ -228,9 +214,6 @@ func (s staticToolset) Tools(ctx ToolsetContext) ([]string, error) {
 	}
 
 	var tools []string
-	if available.WorkspaceFiles && toolset != ToolsetDocument {
-		tools = append(tools, workspaceTools...)
-	}
 	switch toolset {
 	case ToolsetDefault:
 		tools = append(tools, defaultTools...)
@@ -243,7 +226,10 @@ func (s staticToolset) Tools(ctx ToolsetContext) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unknown toolset %q", toolset)
 	}
-	if available.Swarm {
+	if available.WorkspaceFiles && toolset != ToolsetDocument {
+		tools = append(tools, workspaceTools...)
+	}
+	if available.Swarm && toolset != ToolsetDefault {
 		tools = append(tools, swarmTools...)
 	}
 	return uniqueTools(tools), nil
@@ -291,19 +277,6 @@ func normalizeToolset(value string) Toolset {
 	}
 }
 
-func normalizedText(text string) string {
-	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(text))), " ")
-}
-
-func containsAny(text string, terms []string) bool {
-	for _, term := range terms {
-		if strings.Contains(text, term) {
-			return true
-		}
-	}
-	return false
-}
-
 func uniqueTools(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := make(map[string]bool, len(in))
@@ -326,7 +299,7 @@ func toolsetPrompt(toolset Toolset) string {
 	case ToolsetAdmin:
 		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates."
 	default:
-		return "\nUse the default toolset. Prefer memory, workspace file, source, search, and web tools; keep ordinary turns short and evidence-backed."
+		return "\nUse the default toolset. Answer directly when the conversation already has enough context. Call tools only for missing facts, durable actions, file/source inspection, scheduling, or explicit user requests; keep ordinary turns short."
 	}
 }
 
@@ -335,7 +308,7 @@ func memoryPrompt(toolset Toolset) string {
 		return "\n\n## Memory\nFor document generation, use the Retrieval Capsule directly when it is present, then create_docx/create_xlsx/create_pdf. If no capsule is present and search_memory is exposed, use at most one search_memory call for compact evidence. Do not browse workspace files, web pages, or raw source bodies unless those tools are explicitly exposed in the current turn."
 	}
 	if toolset == ToolsetDefault {
-		return "\n\n## Memory\nFor broad or source-backed answers, gather evidence with search_memory, source tools, or workspace file reads before synthesizing. Keep citations compact when the user asks for proof."
+		return "\n\n## Memory\nUse search_memory for Aura wiki, source, archive, proposal, and graph facts when the user needs project memory or evidence. Prefer one focused memory query before trying raw file, source, or web tools."
 	}
 	return ""
 }

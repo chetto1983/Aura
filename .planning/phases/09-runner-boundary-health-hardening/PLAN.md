@@ -197,6 +197,13 @@
     - max loop steps: 2;
     - max LLM calls: 2;
     - max tool calls: 2.
+    - 2026-05-08 local smoke passed after removing default swarm exposure:
+      - `elapsed_ms=10588`
+      - `llm_calls=2`
+      - `tool_calls_count=2`
+      - `loop_steps=2`
+      - `tools_called=daily_briefing,search_memory`
+      - `swarm_used=false`
   - Memory prompt:
     - uses `search_memory` when the prompt asks for memory/wiki/source/archive context;
     - max elapsed: 30000 ms.
@@ -242,6 +249,7 @@ Task 1 baseline:
 - `internal/telegram/conversation_terminal.go` still owns Telegram delivery, but the no-tool terminal LLM request/fallback/usage/cost path now goes through `agentruntime.FinalizeTerminalTool`.
 - `internal/telegram/debug_smoke.go` and `internal/telegram/status.go` read conversation state through `agentruntime.SessionStore` instead of raw Telegram maps.
 - `internal/telegram/setup.go` starts compact-memory vector mirror sync in the background; health state is now recorded by `memoryindex.VectorHealthTracker` and exposed through `api.HealthRollup.CompactMemory` plus Telegram `/status`.
+- 2026-05-08 no-regex routing cut: removed user-text keyword routing from the hot path. `AURA_TOOLSET_MODE=auto` now resolves to the default toolset instead of trying to infer compute/document/admin from substrings. Telegram no longer gates skill manifests, swarm exposure, or speculative retrieval capsules with `strings.Contains` lists. Skills remain available as the cached progressive-disclosure manifest; compact memory remains available through `search_memory`; specialized toolsets are explicit runtime settings rather than hidden text classifiers.
 
 ## Verification Log
 
@@ -257,6 +265,8 @@ Task 1 baseline:
 - `go test ./internal/agentruntime -run TestFinalizeTerminalTool -count=1` failed before no-tool terminal LLM finalization existed in `agentruntime`, then passed after adding `FinalizeTerminalTool`.
 - `go test ./internal/telegram -run TestCompactMemoryStatusSummaryReportsMirrorState -count=1` failed before `/status` compact-memory summary existed, then passed after wiring the health reader into `Bot`.
 - `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/memoryindex ./internal/api ./cmd/debug_telegram_sandbox -count=1; go test ./...; go build ./...` passed after the review fixes.
+- `go test ./internal/orchestration ./internal/telegram ./cmd/debug_telegram_sandbox -count=1` passed after deleting the keyword-based toolset/skill/swarm/retrieval routing and updating tests to assert explicit toolset selection.
+- `go run ./cmd/debug_telegram_sandbox -no-validate -prompt "fammi il punto sintetico sullo stato di Aura e non creare file" -expect-toolset default -expect-loop-steps-max 2 -expect-llm-calls-max 2 -expect-tool-calls-max 2 -max-elapsed-ms 30000 -expect-workspace-root /workspace` passed with `elapsed_ms=10588`, `llm_calls=2`, `tool_calls_count=2`, `loop_steps=2`, `tools_called=daily_briefing,search_memory`, `swarm_used=false`.
 
 ## Commit Plan
 

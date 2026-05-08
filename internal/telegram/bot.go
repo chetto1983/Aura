@@ -82,6 +82,13 @@ func (b *Bot) Username() string {
 // to wrap with http.StripPrefix and mount under /api/ on the health server.
 func (b *Bot) APIHandler() http.Handler { return b.api }
 
+func (b *Bot) CompactMemoryHealth() memoryindex.VectorHealth {
+	if b == nil || b.compactMemoryHealth == nil {
+		return memoryindex.VectorHealth{}
+	}
+	return b.compactMemoryHealth.Snapshot()
+}
+
 func (b *Bot) sessionStore() *agentruntime.SessionStore {
 	if b == nil {
 		return nil

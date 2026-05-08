@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/memoryindex"
 )
 
 func TestMainRunsMigrationsBeforeStoreConstruction(t *testing.T) {
@@ -155,6 +157,35 @@ func TestHandleCLIArgsIgnoresUnknownArgs(t *testing.T) {
 	if out.Len() != 0 {
 		t.Fatalf("unknown arg wrote output %q", out.String())
 	}
+}
+
+func TestCompactMemoryHealthProviderReportsMirrorState(t *testing.T) {
+	provider := compactMemoryHealthProvider{
+		reader: fakeCompactMemoryHealthReader{state: memoryindex.VectorHealth{
+			Enabled:         true,
+			Collection:      "aura_memory_v1_compact",
+			LastDocsIndexed: 487,
+			VectorSize:      1024,
+		}},
+	}
+
+	got := provider.HealthStatus()
+	if got.Status != "ok" {
+		t.Fatalf("status = %q, want ok", got.Status)
+	}
+	for _, want := range []string{"aura_memory_v1_compact", "docs=487", "vector=1024"} {
+		if !strings.Contains(got.Detail, want) {
+			t.Fatalf("detail = %q, missing %q", got.Detail, want)
+		}
+	}
+}
+
+type fakeCompactMemoryHealthReader struct {
+	state memoryindex.VectorHealth
+}
+
+func (f fakeCompactMemoryHealthReader) CompactMemoryHealth() memoryindex.VectorHealth {
+	return f.state
 }
 
 func TestMainKeepsOpenedDBPathAfterSettingsOverlay(t *testing.T) {
