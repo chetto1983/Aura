@@ -23,18 +23,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 	turnStart := time.Now()
 
-	// Track active conversation
-	b.active.Store(userID, true)
-	defer b.active.Delete(userID)
-
-	// Get or create conversation context
-	ctxVal, loaded := b.ctxMap.LoadOrStore(userID, conversation.NewContext(conversation.Config{
+	session, loaded := b.sessionStore().Begin(userID, conversation.Config{
 		MaxTokens:   b.cfg.MaxContextTokens,
 		MaxMessages: b.cfg.MaxHistoryMessages,
 		Summarizer:  b.llm,
 		Logger:      b.logger,
-	}))
-	convCtx := ctxVal.(*conversation.Context)
+	})
+	defer session.Finish()
+	convCtx := session.Conversation()
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
 	userText := c.Text()
 
@@ -156,7 +152,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// their message. consumeStream edits this instead of creating a new one.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolsetDecision)
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolsetDecision, strings.TrimSpace(retrievalCapsule.Text) != "")
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
@@ -337,38 +333,40 @@ func runtimeToolsetForTurn(toolset orchestration.Toolset, retrievalCapsule turnR
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
 type turnStats struct {
-	llmCalls            int
-	toolCalls           int
-	loopSteps           int
-	promptVersion       string
-	promptModules       []string
-	promptHash          string
-	toolset             string
-	toolsetSelectReason string
-	toolsExposed        []string
-	toolsCalled         []string
-	readSkills          []string
-	hiddenToolRejected  bool
-	skillsRead          bool
-	swarmUsed           bool
-	sandboxUsed         bool
-	terminalTool        string
-	duplicateToolCall   bool
-	tokensPrompt        int
-	tokensCompletion    int
-	tokensTotal         int
-	costUSD             float64
+	llmCalls                int
+	toolCalls               int
+	loopSteps               int
+	promptVersion           string
+	promptModules           []string
+	promptHash              string
+	toolset                 string
+	toolsetSelectReason     string
+	toolsExposed            []string
+	toolsCalled             []string
+	readSkills              []string
+	retrievalCapsulePresent bool
+	hiddenToolRejected      bool
+	skillsRead              bool
+	swarmUsed               bool
+	sandboxUsed             bool
+	terminalTool            string
+	duplicateToolCall       bool
+	tokensPrompt            int
+	tokensCompletion        int
+	tokensTotal             int
+	costUSD                 float64
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, toolsetDecision orchestration.ToolsetDecision) (string, turnStats) {
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, toolsetDecision orchestration.ToolsetDecision, retrievalCapsulePresent bool) (string, turnStats) {
 	loopPolicy, _ := orchestration.LoopPolicyForToolset(toolsetDecision.Toolset)
 	maxIterations := b.maxToolLoopIterations(toolsetDecision.Toolset)
 	baseStats := turnStats{
-		promptVersion:       promptPlan.Version,
-		promptModules:       append([]string(nil), promptPlan.Modules...),
-		promptHash:          promptPlan.Hash,
-		toolset:             string(toolsetDecision.Toolset),
-		toolsetSelectReason: toolsetDecision.Reason,
+		promptVersion:           promptPlan.Version,
+		promptModules:           append([]string(nil), promptPlan.Modules...),
+		promptHash:              promptPlan.Hash,
+		toolset:                 string(toolsetDecision.Toolset),
+		toolsetSelectReason:     toolsetDecision.Reason,
+		retrievalCapsulePresent: retrievalCapsulePresent,
 	}
 	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
@@ -386,10 +384,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				TerminalTool:   execution.terminalTool,
 			}
 		}),
-		State:           convCtx,
-		PromptPlan:      promptPlan,
-		ToolsetDecision: toolsetDecision,
-		Tools:           toolDefs,
+		State:                   convCtx,
+		PromptPlan:              promptPlan,
+		ToolsetDecision:         toolsetDecision,
+		Tools:                   toolDefs,
+		RetrievalCapsulePresent: retrievalCapsulePresent,
 		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
 			MaxElapsed:              loopPolicy.MaxElapsed,

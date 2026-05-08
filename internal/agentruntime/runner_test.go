@@ -25,9 +25,10 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 			Hash:    "hash",
 			Modules: []string{"base"},
 		},
-		ToolsetDecision: orchestration.ToolsetDecision{Toolset: orchestration.ToolsetDefault, Reason: "test"},
-		Tools:           []llm.ToolDefinition{{Name: "search_memory"}},
-		Options:         agentloop.Options{MaxIterations: 1},
+		ToolsetDecision:         orchestration.ToolsetDecision{Toolset: orchestration.ToolsetDefault, Reason: "test"},
+		Tools:                   []llm.ToolDefinition{{Name: "search_memory"}},
+		RetrievalCapsulePresent: true,
+		Options:                 agentloop.Options{MaxIterations: 1},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -37,6 +38,18 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 	}
 	if result.Text != "ok" {
 		t.Fatalf("Text = %q, want ok", result.Text)
+	}
+	if result.PromptVersion != "test" || result.PromptHash != "hash" {
+		t.Fatalf("result prompt metadata = %q/%q, want test/hash", result.PromptVersion, result.PromptHash)
+	}
+	if len(result.ToolsExposed) != 1 || result.ToolsExposed[0] != "search_memory" {
+		t.Fatalf("result tools exposed = %+v, want search_memory", result.ToolsExposed)
+	}
+	if result.Toolset != orchestration.ToolsetDefault || result.ToolsetSelectReason != "test" {
+		t.Fatalf("result toolset = %q/%q, want default/test", result.Toolset, result.ToolsetSelectReason)
+	}
+	if !result.RetrievalCapsulePresent {
+		t.Fatal("RetrievalCapsulePresent = false, want true")
 	}
 	if len(events) < 3 {
 		t.Fatalf("events = %+v, want tools/stats/final", events)

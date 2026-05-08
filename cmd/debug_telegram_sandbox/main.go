@@ -45,6 +45,8 @@ func main() {
 	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected by orchestration policy")
 	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by orchestration policy")
 	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if orchestration loop_steps exceeds this budget")
+	expectLLMCallsMax := flag.Int("expect-llm-calls-max", 0, "fail if llm_calls exceeds this budget")
+	expectToolCallsMax := flag.Int("expect-tool-calls-max", 0, "fail if tool_calls exceeds this budget")
 	expectTraceField := flag.String("expect-trace-field", "", "comma-separated DebugTextSmokeResult field names expected to be present/non-zero")
 	expectNoStaleSkillRef := flag.Bool("expect-no-stale-skill-ref", false, "expect debug result skill/reference fields to contain no stale worker aliases or legacy .yaml/.yml refs")
 	expectTokenMetrics := flag.Bool("expect-token-metrics", false, "expect non-zero token usage metrics")
@@ -178,6 +180,8 @@ func main() {
 		fmt.Printf("read_skills=%s\n", strings.Join(result.ReadSkills, ","))
 	}
 	fmt.Printf("loop_steps=%d\n", result.LoopSteps)
+	fmt.Printf("llm_calls=%d\n", result.LLMCalls)
+	fmt.Printf("tool_calls_count=%d\n", result.ToolCallsCount)
 	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
 	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
 	fmt.Printf("terminal_tool=%s\n", result.TerminalTool)
@@ -215,6 +219,8 @@ func main() {
 		HiddenToolRejected: *expectHiddenToolRejected,
 		TerminalTool:       *expectTerminalTool,
 		MaxLoopSteps:       *expectLoopStepsMax,
+		MaxLLMCalls:        *expectLLMCallsMax,
+		MaxToolCalls:       *expectToolCallsMax,
 		TraceFields:        splitCSV(*expectTraceField),
 		NoStaleSkillRef:    *expectNoStaleSkillRef,
 		TokenMetrics:       *expectTokenMetrics,
@@ -254,6 +260,12 @@ func main() {
 	}
 	if expectations.MaxLoopSteps > 0 {
 		fmt.Printf("expected_loop_steps_max=%d\n", expectations.MaxLoopSteps)
+	}
+	if expectations.MaxLLMCalls > 0 {
+		fmt.Printf("expected_llm_calls_max=%d\n", expectations.MaxLLMCalls)
+	}
+	if expectations.MaxToolCalls > 0 {
+		fmt.Printf("expected_tool_calls_max=%d\n", expectations.MaxToolCalls)
 	}
 	if len(expectations.TraceFields) > 0 {
 		fmt.Printf("expected_trace_fields_present=%s\n", strings.Join(expectations.TraceFields, ","))
@@ -644,6 +656,8 @@ type debugExpectations struct {
 	HiddenToolRejected bool
 	TerminalTool       string
 	MaxLoopSteps       int
+	MaxLLMCalls        int
+	MaxToolCalls       int
 	TraceFields        []string
 	NoStaleSkillRef    bool
 	TokenMetrics       bool
@@ -688,6 +702,12 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.MaxLoopSteps > 0 && result.LoopSteps > expectations.MaxLoopSteps {
 		return fmt.Errorf("loop_steps %d exceeds budget %d", result.LoopSteps, expectations.MaxLoopSteps)
+	}
+	if expectations.MaxLLMCalls > 0 && result.LLMCalls > expectations.MaxLLMCalls {
+		return fmt.Errorf("llm_calls %d exceeds budget %d", result.LLMCalls, expectations.MaxLLMCalls)
+	}
+	if expectations.MaxToolCalls > 0 && result.ToolCallsCount > expectations.MaxToolCalls {
+		return fmt.Errorf("tool_calls %d exceeds budget %d", result.ToolCallsCount, expectations.MaxToolCalls)
 	}
 	for _, field := range expectations.TraceFields {
 		if err := expectResultFieldPresent(result, field); err != nil {

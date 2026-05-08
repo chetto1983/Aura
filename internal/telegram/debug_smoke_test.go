@@ -216,8 +216,8 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 func TestPruneOrchestrationSnapshotsHonorsTraceRetentionDays(t *testing.T) {
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	b := &Bot{cfg: &config.Config{TraceRetentionDays: 7}}
-	b.orchMap.Store("old", orchestrationSnapshot{StoredAt: now.Add(-8 * 24 * time.Hour)})
-	b.orchMap.Store("fresh", orchestrationSnapshot{StoredAt: now.Add(-6 * 24 * time.Hour)})
+	b.sessionStore().StoreSnapshot("old", orchestrationSnapshot{StoredAt: now.Add(-8 * 24 * time.Hour)})
+	b.sessionStore().StoreSnapshot("fresh", orchestrationSnapshot{StoredAt: now.Add(-6 * 24 * time.Hour)})
 
 	b.pruneOrchestrationSnapshots(now)
 
@@ -413,7 +413,7 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, orchestration.PromptPlan{
 		Version: "test",
 		Hash:    "hash",
-	}, orchestration.ToolsetDecision{Toolset: orchestration.ToolsetCompute, Reason: "test"})
+	}, orchestration.ToolsetDecision{Toolset: orchestration.ToolsetCompute, Reason: "test"}, false)
 
 	if response != "5050" {
 		t.Fatalf("response = %q, want 5050", response)

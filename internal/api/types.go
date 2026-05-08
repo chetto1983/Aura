@@ -11,6 +11,7 @@ package api
 import (
 	"time"
 
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -26,7 +27,8 @@ type HealthRollup struct {
 	Sandbox   SandboxHealth   `json:"sandbox"`
 	// Slice 11j: embedding cache hit/miss counters. Zero when no
 	// cache is wired (no EMBEDDING_API_KEY or no DB_PATH).
-	EmbedCache EmbedCacheHealth `json:"embed_cache"`
+	EmbedCache    EmbedCacheHealth         `json:"embed_cache"`
+	CompactMemory memoryindex.VectorHealth `json:"compact_memory"`
 }
 
 // SandboxHealth reports whether local code execution is active. The desired

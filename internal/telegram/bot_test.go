@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/tools"
 	tele "gopkg.in/telebot.v4"
@@ -184,10 +185,10 @@ func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
 	if err := b.onMessage(ctx); err != nil {
 		t.Fatalf("onMessage() error = %v, want nil", err)
 	}
-	if _, ok := b.active.Load("999"); ok {
+	if b.sessionStore().IsActive("999") {
 		t.Fatal("unauthorized text should not mark the user active")
 	}
-	if _, ok := b.ctxMap.Load("999"); ok {
+	if _, ok := b.sessionStore().Load("999"); ok {
 		t.Fatal("unauthorized text should not create conversation context")
 	}
 }
@@ -218,16 +219,30 @@ func TestOnMessageAllowlistedTextStartsConversation(t *testing.T) {
 		t.Fatalf("onMessage() error = %v, want nil", err)
 	}
 	waitUntil(t, time.Second, func() bool {
-		_, ok := b.ctxMap.Load("123")
+		_, ok := b.sessionStore().Load("123")
 		return ok
 	})
 	waitUntil(t, time.Second, func() bool {
 		return countTelegramMethods(calls, "sendMessage") > 0
 	})
 	waitUntil(t, time.Second, func() bool {
-		_, ok := b.active.Load("123")
-		return !ok
+		return !b.sessionStore().IsActive("123")
 	})
+}
+
+func TestCompactMemoryStatusSummaryReportsMirrorState(t *testing.T) {
+	tracker := memoryindex.NewVectorHealthTracker(true, "aura_memory_v1_compact")
+	tracker.Started()
+	tracker.Succeeded(memoryindex.VectorReport{Collection: "aura_memory_v1_compact", DocsIndexed: 7, VectorSize: 1024})
+	b := &Bot{compactMemoryHealth: tracker}
+
+	got := b.compactMemoryStatusSummary()
+
+	for _, want := range []string{"Compact memory mirror", "aura_memory_v1_compact", "docs: 7", "vector: 1024"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("compactMemoryStatusSummary() = %q, missing %q", got, want)
+		}
+	}
 }
 
 func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {

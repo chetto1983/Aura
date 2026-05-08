@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 
@@ -11,32 +12,34 @@ import (
 )
 
 func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
-	req := llm.Request{
-		Messages: terminalToolFinalizationMessages(convCtx.Messages(), stats.terminalTool),
-		Model:    b.cfg.LLMModel,
-		Tools:    nil,
-	}
 	stats.llmCalls++
 	stats.loopSteps++
-	resp, err := b.llm.Send(ctx, req)
-	if err != nil {
-		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", err)
-		response := terminalToolFallbackResponse(stats.terminalTool, rawToolResult)
-		convCtx.AddAssistantMessage(response)
-		return response, false
+	finalized := agentruntime.FinalizeTerminalTool(ctx, agentruntime.TerminalFinalizationInput{
+		Messages:      convCtx.Messages(),
+		TerminalTool:  stats.terminalTool,
+		RawToolResult: rawToolResult,
+		Model:         b.cfg.LLMModel,
+		Send: func(ctx context.Context, req llm.Request) (llm.Response, error) {
+			return b.llm.Send(ctx, req)
+		},
+		RecordUsage: func(usage llm.TokenUsage) {
+			if b.budget != nil {
+				b.budget.RecordUsage(usage)
+			}
+		},
+		EstimateCost: func(usage llm.TokenUsage) float64 {
+			return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+		},
+	})
+	if finalized.Err != nil {
+		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", finalized.Err)
 	}
-	convCtx.TrackTokens(resp.Usage)
-	stats.tokensPrompt += resp.Usage.PromptTokens
-	stats.tokensCompletion += resp.Usage.CompletionTokens
-	stats.tokensTotal += resp.Usage.TotalTokens
-	stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-	if b.budget != nil {
-		b.budget.RecordUsage(resp.Usage)
-	}
-	response := strings.TrimSpace(resp.Content)
-	if response == "" || resp.HasToolCalls || looksLikeToolCallMarkup(response) {
-		response = terminalToolFallbackResponse(stats.terminalTool, rawToolResult)
-	}
+	convCtx.TrackTokens(finalized.Usage)
+	stats.tokensPrompt += finalized.TokensPrompt
+	stats.tokensCompletion += finalized.TokensCompletion
+	stats.tokensTotal += finalized.TokensTotal
+	stats.costUSD += finalized.CostUSD
+	response := strings.TrimSpace(finalized.Text)
 	convCtx.AddAssistantMessage(response)
 	if c != nil {
 		parts := renderForTelegramEntities(response)

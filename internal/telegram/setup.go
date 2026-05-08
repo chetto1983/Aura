@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
@@ -259,8 +260,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
 	var compactVector memoryindex.VectorIndex
+	compactVectorHealth := memoryindex.NewVectorHealthTracker(false, "")
 	if cfg.SearchBackend == "qdrant" && embedFn != nil {
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
+		compactVectorHealth.SetEnabled(true, collection)
 		qindex, err := search.NewCompactMemoryQdrantIndexWithBatch(search.QdrantConfig{
 			BaseURL:    cfg.QdrantURL,
 			Collection: collection,
@@ -378,26 +381,28 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	authStore.SetTokenTTL(time.Duration(cfg.DashboardTokenTTLHours) * time.Hour)
 
 	b := &Bot{
-		bot:         tb,
-		cfg:         cfg,
-		loc:         loc,
-		logger:      logger,
-		llm:         client,
-		wiki:        wikiStore,
-		search:      searchEngine,
-		tools:       toolRegistry,
-		sources:     sourceStore,
-		ocr:         ocrClient,
-		skills:      skillLoader,
-		schedDB:     schedStore,
-		agentRunner: auraRunner,
-		swarmStore:  swarmStore,
-		swarmMgr:    swarmManager,
-		authDB:      authStore,
-		mcpClients:  mcpClients,
-		sandboxMgr:  sandboxMgr,
-		toolReg:     toolReg,
-		orchHooks:   orchestration.DefaultHooks{},
+		bot:                 tb,
+		cfg:                 cfg,
+		loc:                 loc,
+		logger:              logger,
+		llm:                 client,
+		wiki:                wikiStore,
+		search:              searchEngine,
+		tools:               toolRegistry,
+		sources:             sourceStore,
+		ocr:                 ocrClient,
+		skills:              skillLoader,
+		schedDB:             schedStore,
+		agentRunner:         auraRunner,
+		swarmStore:          swarmStore,
+		swarmMgr:            swarmManager,
+		authDB:              authStore,
+		mcpClients:          mcpClients,
+		sandboxMgr:          sandboxMgr,
+		toolReg:             toolReg,
+		compactMemoryHealth: compactVectorHealth,
+		sessions:            agentruntime.NewSessionStore(),
+		orchHooks:           orchestration.DefaultHooks{},
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:           cfg.SoftBudget,
 			HardBudget:           cfg.HardBudget,
@@ -459,11 +464,14 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 				vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 				defer cancel()
 				logger.Info("compact memory vector mirror sync started")
+				compactVectorHealth.Started()
 				report, err := memoryStore.SyncVector(vectorCtx)
 				if err != nil {
+					compactVectorHealth.Failed(err)
 					logger.Warn("compact memory vector mirror sync failed", "error", err)
 					return
 				}
+				compactVectorHealth.Succeeded(report)
 				logger.Info("compact memory vector mirror synced", "vector_collection", report.Collection, "vector_docs", report.DocsIndexed, "vector_size", report.VectorSize)
 			}()
 		}
@@ -585,8 +593,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		SkillProposals:  skillProposalApplierAdapter{inner: skillProposalApplier},
 		SkillsAdmin:     cfg.SkillsAdmin,
 		// Slice 11j: surface cache hit/miss counters in /api/health.
-		EmbedCache: embedCache,
-		Sandbox:    sandboxHealth,
+		EmbedCache:    embedCache,
+		CompactMemory: compactVectorHealth,
+		Sandbox:       sandboxHealth,
 		// Pending-approval pipeline. Bot owns the side-effects (DB
 		// transition + Telegram delivery), so the api package just sees
 		// the interface.

@@ -30,25 +30,34 @@ type Event struct {
 }
 
 type Invocation struct {
-	Client          agentloop.ChatClient
-	Executor        agentloop.ToolExecutor
-	State           agentloop.State
-	PromptPlan      orchestration.PromptPlan
-	ToolsetDecision orchestration.ToolsetDecision
-	Tools           []llm.ToolDefinition
-	Options         agentloop.Options
-	OnEvent         func(Event)
+	Client                  agentloop.ChatClient
+	Executor                agentloop.ToolExecutor
+	State                   agentloop.State
+	PromptPlan              orchestration.PromptPlan
+	ToolsetDecision         orchestration.ToolsetDecision
+	Tools                   []llm.ToolDefinition
+	RetrievalCapsulePresent bool
+	Options                 agentloop.Options
+	OnEvent                 func(Event)
 }
 
 type Result struct {
-	Text      string
-	Delivered bool
-	Stats     agentloop.Stats
+	Text                    string
+	Delivered               bool
+	Stats                   agentloop.Stats
+	PromptVersion           string
+	PromptHash              string
+	PromptModules           []string
+	Toolset                 orchestration.Toolset
+	ToolsetSelectReason     string
+	ToolsExposed            []string
+	RetrievalCapsulePresent bool
 }
 
 func Run(ctx context.Context, in Invocation) (Result, error) {
 	opts := in.Options
 	opts.Tools = in.Tools
+	toolsExposed := toolDefinitionNames(in.Tools)
 	previousOnStats := opts.OnStats
 	opts.OnStats = func(stats agentloop.Stats) {
 		if previousOnStats != nil {
@@ -59,7 +68,7 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 
 	emit(in, Event{
 		Type:                EventToolsExposed,
-		ToolsExposed:        toolDefinitionNames(in.Tools),
+		ToolsExposed:        toolsExposed,
 		PromptVersion:       in.PromptPlan.Version,
 		PromptHash:          in.PromptPlan.Hash,
 		PromptModules:       append([]string(nil), in.PromptPlan.Modules...),
@@ -68,7 +77,18 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 	})
 
 	result, err := agentloop.Run(ctx, in.Client, in.Executor, in.State, opts)
-	out := Result{Text: result.Text, Delivered: result.Delivered, Stats: result.Stats}
+	out := Result{
+		Text:                    result.Text,
+		Delivered:               result.Delivered,
+		Stats:                   result.Stats,
+		PromptVersion:           in.PromptPlan.Version,
+		PromptHash:              in.PromptPlan.Hash,
+		PromptModules:           append([]string(nil), in.PromptPlan.Modules...),
+		Toolset:                 in.ToolsetDecision.Toolset,
+		ToolsetSelectReason:     in.ToolsetDecision.Reason,
+		ToolsExposed:            append([]string(nil), toolsExposed...),
+		RetrievalCapsulePresent: in.RetrievalCapsulePresent,
+	}
 	emit(in, Event{Type: EventFinal, Text: out.Text, Delivered: out.Delivered, Stats: out.Stats})
 	return out, err
 }

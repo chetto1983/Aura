@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
@@ -192,6 +193,37 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 	}
 	if got.Sandbox.Detail != "Pyodide runtime adapter not configured; execute_code disabled" {
 		t.Fatalf("sandbox.detail = %q", got.Sandbox.Detail)
+	}
+}
+
+func TestHealthRollup_IncludesCompactMemoryHealth(t *testing.T) {
+	e := newTestEnv(t)
+	tracker := memoryindex.NewVectorHealthTracker(true, "aura_memory_v1_compact")
+	tracker.Started()
+	tracker.Succeeded(memoryindex.VectorReport{Collection: "aura_memory_v1_compact", DocsIndexed: 7, VectorSize: 1024})
+	e.router = NewRouter(Deps{
+		Wiki:          e.wiki,
+		Sources:       e.sources,
+		Scheduler:     e.sched,
+		CompactMemory: tracker,
+	})
+
+	rr := e.do("GET", "/health")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got HealthRollup
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.CompactMemory.Enabled {
+		t.Fatal("compact_memory.enabled = false, want true")
+	}
+	if got.CompactMemory.Collection != "aura_memory_v1_compact" {
+		t.Fatalf("compact_memory.collection = %q", got.CompactMemory.Collection)
+	}
+	if got.CompactMemory.LastDocsIndexed != 7 || got.CompactMemory.VectorSize != 1024 {
+		t.Fatalf("compact_memory = %+v, want docs/vector size", got.CompactMemory)
 	}
 }
 

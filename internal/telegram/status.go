@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/budget"
-	"github.com/aura/aura/internal/conversation"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -43,9 +42,7 @@ func (b *Bot) onStatus(c tele.Context) error {
 	}
 
 	// Per-conversation context info
-	ctxVal, ok := b.ctxMap.Load(userID)
-	if ok {
-		convCtx := ctxVal.(*conversation.Context)
+	if convCtx, ok := b.sessionStore().Load(userID); ok {
 		fmt.Fprintf(&sb, "\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens())
 		fmt.Fprintf(&sb, "Conversation tokens used: %d\n", convCtx.TotalTokensUsed())
 		if b.budget != nil {
@@ -53,8 +50,39 @@ func (b *Bot) onStatus(c tele.Context) error {
 			fmt.Fprintf(&sb, "Next call est. cost: $%.4f\n", predictedCost)
 		}
 	}
+	if compact := b.compactMemoryStatusSummary(); compact != "" {
+		sb.WriteString("\n")
+		sb.WriteString(compact)
+	}
 
 	return c.Send(sb.String())
+}
+
+func (b *Bot) compactMemoryStatusSummary() string {
+	if b == nil || b.compactMemoryHealth == nil {
+		return ""
+	}
+	health := b.compactMemoryHealth.Snapshot()
+	if !health.Enabled && health.Collection == "" && health.LastError == "" {
+		return "Compact memory mirror: disabled\n"
+	}
+	state := "idle"
+	if health.Running {
+		state = "syncing"
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Compact memory mirror: %s", state)
+	if health.Collection != "" {
+		fmt.Fprintf(&sb, " (%s)", health.Collection)
+	}
+	if health.LastDocsIndexed > 0 || health.VectorSize > 0 {
+		fmt.Fprintf(&sb, "\ndocs: %d, vector: %d", health.LastDocsIndexed, health.VectorSize)
+	}
+	if health.LastError != "" {
+		fmt.Fprintf(&sb, "\nlast error: %s", health.LastError)
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // notifySoftBudget sends a one-time warning to the user when soft budget

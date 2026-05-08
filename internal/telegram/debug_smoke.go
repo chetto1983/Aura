@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 
 	tele "gopkg.in/telebot.v4"
@@ -40,6 +39,8 @@ type DebugTextSmokeResult struct {
 	SkillsRead                bool
 	ReadSkills                []string
 	LoopSteps                 int
+	LLMCalls                  int
+	ToolCallsCount            int
 	SwarmUsed                 bool
 	SandboxUsed               bool
 	TerminalTool              string
@@ -113,12 +114,11 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	}
 	elapsedMS := time.Since(start).Milliseconds()
 
-	ctxVal, ok := b.ctxMap.Load(userIDString)
+	convCtx, ok := b.sessionStore().Load(userIDString)
 	if !ok {
 		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, errors.New("telegram debug smoke: conversation context missing after turn")
 	}
-	convCtx, ok := ctxVal.(*conversation.Context)
-	if !ok || convCtx == nil {
+	if convCtx == nil {
 		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, errors.New("telegram debug smoke: invalid conversation context after turn")
 	}
 	result := debugTextSmokeResultFromMessages(userIDString, prompt, convCtx.Messages())
@@ -136,10 +136,13 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
 		result.ReadSkills = append([]string(nil), snap.ReadSkills...)
 		result.LoopSteps = snap.LoopSteps
+		result.LLMCalls = snap.LLMCalls
+		result.ToolCallsCount = snap.ToolCalls
 		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed
 		result.SandboxUsed = result.SandboxUsed || snap.SandboxUsed
 		result.TerminalTool = snap.TerminalTool
 		result.DuplicateToolCallRejected = snap.DuplicateToolCall
+		result.RetrievalCapsulePresent = result.RetrievalCapsulePresent || snap.RetrievalCapsulePresent
 		if snap.TokensPrompt > 0 || snap.TokensCompletion > 0 || snap.TokensTotal > 0 {
 			result.TokensPrompt = snap.TokensPrompt
 			result.TokensCompletion = snap.TokensCompletion

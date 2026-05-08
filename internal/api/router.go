@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -31,6 +32,10 @@ import (
 type BackupService interface {
 	ListObjects(ctx context.Context) ([]backup.Object, error)
 	ExportArtifactSet(ctx context.Context, now time.Time) (backup.ArtifactSetResult, error)
+}
+
+type CompactMemoryHealthReader interface {
+	Snapshot() memoryindex.VectorHealth
 }
 
 // Deps is the set of stores the router handlers operate on.
@@ -82,8 +87,9 @@ type Deps struct {
 	// Slice 11j: embedding cache for /health stats. Optional — nil
 	// when EMBEDDING_API_KEY or DB_PATH is unset, in which case the
 	// EmbeddingCache health block stays zero.
-	EmbedCache search.EmbedCacheStatsReader
-	Sandbox    SandboxHealth
+	EmbedCache    search.EmbedCacheStatsReader
+	CompactMemory CompactMemoryHealthReader
+	Sandbox       SandboxHealth
 
 	SkillsAdmin bool
 

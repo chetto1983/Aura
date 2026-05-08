@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
@@ -34,38 +36,39 @@ import (
 
 // Bot wraps the telebot instance with allowlist access control and LLM integration.
 type Bot struct {
-	bot         *tele.Bot
-	cfg         *config.Config
-	loc         *time.Location
-	logger      *slog.Logger
-	llm         llm.Client
-	wiki        wiki.Repository
-	search      search.Searcher
-	tools       *tools.Registry
-	budget      budget.Runtime
-	sources     source.Repository
-	ocr         *ocr.Client
-	skills      *auraskills.Loader
-	docs        *docHandler
-	sched       *scheduler.Scheduler
-	schedDB     scheduler.AgentJobRepository
-	agentRunner *agent.Runner
-	swarmStore  swarm.Reader
-	swarmMgr    swarm.RunRunner
-	authDB      auth.Repository                  // dashboard bearer-token and allowlist repository
-	mcpClients  []mcp.ConnectedClient            // active MCP server connections (slice 11a)
-	archiveDB   conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
-	archiver    conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
-	issues      scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
-	api         http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
-	sandboxMgr  sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
-	toolReg     tools.ToolStore                  // persistent LLM-written Python tools
+	bot                 *tele.Bot
+	cfg                 *config.Config
+	loc                 *time.Location
+	logger              *slog.Logger
+	llm                 llm.Client
+	wiki                wiki.Repository
+	search              search.Searcher
+	tools               *tools.Registry
+	budget              budget.Runtime
+	sources             source.Repository
+	ocr                 *ocr.Client
+	skills              *auraskills.Loader
+	docs                *docHandler
+	sched               *scheduler.Scheduler
+	schedDB             scheduler.AgentJobRepository
+	agentRunner         *agent.Runner
+	swarmStore          swarm.Reader
+	swarmMgr            swarm.RunRunner
+	authDB              auth.Repository                  // dashboard bearer-token and allowlist repository
+	mcpClients          []mcp.ConnectedClient            // active MCP server connections (slice 11a)
+	archiveDB           conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
+	archiver            conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
+	issues              scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
+	api                 http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
+	sandboxMgr          sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
+	toolReg             tools.ToolStore                  // persistent LLM-written Python tools
+	compactMemoryHealth interface {
+		Snapshot() memoryindex.VectorHealth
+	}
 	debugDocsMu sync.Mutex
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64
-	active      sync.Map // maps userID string -> bool (active conversation tracking)
-	ctxMap      sync.Map // maps userID string -> *conversation.Context
-	orchMap     sync.Map // maps userID string -> orchestrationSnapshot
+	sessions    *agentruntime.SessionStore
 	orchHooks   orchestration.Hooks
 	started     atomic.Bool
 }
@@ -78,6 +81,16 @@ func (b *Bot) Username() string {
 // APIHandler returns the read-only JSON dashboard API. Caller is expected
 // to wrap with http.StripPrefix and mount under /api/ on the health server.
 func (b *Bot) APIHandler() http.Handler { return b.api }
+
+func (b *Bot) sessionStore() *agentruntime.SessionStore {
+	if b == nil {
+		return nil
+	}
+	if b.sessions == nil {
+		b.sessions = agentruntime.NewSessionStore()
+	}
+	return b.sessions
+}
 
 // SendToUser delivers a Telegram message to userID's direct chat. Used
 // by the request_dashboard_token tool to ship the bearer token out of

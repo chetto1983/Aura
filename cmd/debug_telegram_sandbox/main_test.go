@@ -354,6 +354,8 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		SandboxUsed:             true,
 		HiddenToolRejected:      true,
 		LoopSteps:               3,
+		LLMCalls:                2,
+		ToolCallsCount:          3,
 		TerminalTool:            "execute_code",
 		ReadSkills:              []string{"test-driven-development"},
 		ToolsExposed:            []string{"read_file", "run_aurabot_swarm", "execute_code"},
@@ -372,6 +374,8 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		HiddenToolRejected: true,
 		TerminalTool:       "execute_code",
 		MaxLoopSteps:       3,
+		MaxLLMCalls:        2,
+		MaxToolCalls:       3,
 		TraceFields:        []string{"PromptHash", "Toolset", "ReadSkills"},
 		NoStaleSkillRef:    true,
 		WorkspaceRoot:      "/workspace",
@@ -381,6 +385,24 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 	})
 	if err != nil {
 		t.Fatalf("validateDebugExpectations() error = %v", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsLLMCallOverBudget(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{LLMCalls: 3}
+
+	err := validateDebugExpectations(result, debugExpectations{MaxLLMCalls: 2})
+	if err == nil || !strings.Contains(err.Error(), "llm_calls 3 exceeds budget 2") {
+		t.Fatalf("validateDebugExpectations() error = %v, want llm call budget failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsToolCallOverBudget(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolCallsCount: 5}
+
+	err := validateDebugExpectations(result, debugExpectations{MaxToolCalls: 4})
+	if err == nil || !strings.Contains(err.Error(), "tool_calls 5 exceeds budget 4") {
+		t.Fatalf("validateDebugExpectations() error = %v, want tool call budget failure", err)
 	}
 }
 

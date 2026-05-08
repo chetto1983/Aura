@@ -21,7 +21,7 @@
 
 ## Task 1: Baseline And Cut Lines
 
-- [ ] Capture current runtime boundaries before editing.
+- [x] Capture current runtime boundaries before editing.
   - Read:
     - `internal/agentruntime/runner.go`
     - `internal/agentruntime/runner_test.go`
@@ -33,7 +33,7 @@
     - `internal/telegram/setup.go`
     - `cmd/debug_telegram_sandbox/main.go`
   - Confirm `git status --short` is clean or contains only intentional user changes.
-- [ ] Record the live god-class responsibilities in this plan under `Implementation Notes` before changing code:
+- [x] Record the live god-class responsibilities in this plan under `Implementation Notes` before changing code:
   - session active-state tracking;
   - conversation context load/store;
   - user/assistant message append;
@@ -42,15 +42,15 @@
   - terminal tool no-tool finalization;
   - archive append and context enforcement;
   - user-facing delivery.
-- [ ] Define the cut:
+- [x] Define the cut:
   - Telegram keeps Telegram I/O, chat IDs, message placeholders, and delivery.
   - `agentruntime` owns generic invocation events, finalization decisions, session lifecycle hooks, and per-turn result metadata.
-- [ ] Verification:
+- [x] Verification:
   - `go test ./internal/agentruntime ./internal/telegram -count=1`
 
 ## Task 2: Runner-Owned Session Boundary
 
-- [ ] Add a small session abstraction in `internal/agentruntime`.
+- [x] Add a small session abstraction in `internal/agentruntime`.
   - Create `internal/agentruntime/session.go`.
   - Add a minimal interface for turn-scoped state:
     - `Begin(ctx, userID, config)`;
@@ -59,10 +59,10 @@
     - `Abort(err)`.
   - Back it with the existing `conversation.Context` type and current in-memory maps.
   - Keep the abstraction boring: no database writes, no summarizer, no routing policy.
-- [ ] Move active-session bookkeeping out of `internal/telegram/conversation.go`.
+- [x] Move active-session bookkeeping out of `internal/telegram/conversation.go`.
   - Replace direct `b.active.Store/Delete` and raw `b.ctxMap.LoadOrStore/Store` usage with the new `agentruntime` session boundary.
   - Leave Telegram-specific chat/user resolution in Telegram.
-- [ ] Add tests.
+- [x] Add tests.
   - `internal/agentruntime/session_test.go` covers:
     - first turn creates context;
     - next turn reuses context;
@@ -70,13 +70,13 @@
     - active marker is cleared on error/abort;
     - existing context message order is preserved.
   - Update Telegram tests only where they currently assert raw map behavior.
-- [ ] Delete any now-unused Telegram helper code for active/context map lifecycle.
-- [ ] Verification:
+- [x] Delete any now-unused Telegram helper code for active/context map lifecycle.
+- [x] Verification:
   - `go test ./internal/agentruntime ./internal/telegram -count=1`
 
 ## Task 3: Runtime Turn Result And Event Contract
 
-- [ ] Extend `internal/agentruntime/runner.go` without turning it into another god class.
+- [x] Extend `internal/agentruntime/runner.go` without turning it into another god class.
   - Add `TurnResult` with:
     - final text;
     - delivered flag;
@@ -89,22 +89,22 @@
     - retrieval capsule present flag.
   - Keep existing `EventToolsExposed`, `EventStats`, and `EventFinal`.
   - Add only events that the runtime actually emits and Telegram/debug smokes consume.
-- [ ] Move debug snapshot population to consume runner events instead of Telegram-local side effects.
+- [x] Move debug snapshot population to consume runner events instead of Telegram-local side effects.
   - Touch:
     - `internal/telegram/conversation.go`
     - `internal/telegram/conversation_snapshot.go`
     - `internal/telegram/debug_smoke.go`
   - The debug smoke should read result metadata from the runtime event/result path, not reconstruct state from scattered Telegram fields.
-- [ ] Add tests.
+- [x] Add tests.
   - `internal/agentruntime/runner_test.go` verifies event order and `TurnResult` population.
   - `internal/telegram/debug_smoke_test.go` verifies loop/tool/LLM counters still appear.
-- [ ] Delete stale duplicated stats wiring after the runtime result is canonical.
-- [ ] Verification:
+- [x] Delete stale duplicated stats wiring after the runtime result is canonical.
+- [x] Verification:
   - `go test ./internal/agentruntime ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`
 
 ## Task 4: Terminal Tool Finalization Behind Runtime Boundary
 
-- [ ] Extract generic terminal finalization out of Telegram.
+- [x] Extract generic terminal finalization out of Telegram.
   - Create `internal/agentruntime/terminal.go`.
   - Move generic decisions from `internal/telegram/conversation_terminal.go`:
     - terminal tool can finish without another LLM pass;
@@ -112,11 +112,11 @@
     - raw tool JSON must not leak to the user;
     - delivered artifacts mark the result as delivered.
   - Keep Telegram-only send/edit behavior in Telegram as callbacks.
-- [ ] Keep route-specific document behavior intact.
+- [x] Keep route-specific document behavior intact.
   - `create_docx`, `create_xlsx`, and `create_pdf` remain terminal document tools.
   - `execute_code` and other terminal tools still support compact finalization.
   - Hidden-tool errors remain capability-boundary messages, not raw registry errors.
-- [ ] Add tests.
+- [x] Add tests.
   - `internal/agentruntime/terminal_test.go` covers:
     - document artifact finalization;
     - malformed tool result fallback;
@@ -124,13 +124,13 @@
     - delivered artifact state;
     - optional no-tool LLM finalization when needed.
   - Update `internal/telegram` tests to assert Telegram delivery callbacks, not finalization logic.
-- [ ] Delete leftover duplicated finalization branches in `internal/telegram/conversation_terminal.go` once covered by runtime tests.
-- [ ] Verification:
+- [x] Delete leftover duplicated finalization branches in `internal/telegram/conversation_terminal.go` once covered by runtime tests.
+- [x] Verification:
   - `go test ./internal/agentruntime ./internal/agentloop ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`
 
 ## Task 5: Compact Memory Mirror Health
 
-- [ ] Add explicit compact-memory vector sync state.
+- [x] Add explicit compact-memory vector sync state.
   - Create `internal/memoryindex/vector_health.go`.
   - Add a thread-safe tracker with:
     - enabled;
@@ -141,12 +141,12 @@
     - last finished time;
     - last indexed document count;
     - last error.
-- [ ] Wire tracker updates into `internal/telegram/setup.go`.
+- [x] Wire tracker updates into `internal/telegram/setup.go`.
   - Mark sync started before `memoryStore.SyncVector`.
   - Mark success with `VectorReport`.
   - Mark failure with error text.
   - Do not block startup on Qdrant mirror sync.
-- [ ] Expose health in API.
+- [x] Expose health in API.
   - Update `internal/api/types.go`:
     - add `CompactMemory CompactMemoryHealth`.
   - Update `internal/api/router.go` dependencies:
@@ -154,19 +154,19 @@
   - Update `internal/api/health.go`:
     - include compact memory mirror state in `/api/health`.
   - If `/status` is a separate Telegram or HTTP path, include a compact text summary there too.
-- [ ] Add tests.
+- [x] Add tests.
   - `internal/memoryindex/vector_health_test.go`
   - `internal/api/router_test.go` for health payload.
-- [ ] Verification:
+- [x] Verification:
   - `go test ./internal/memoryindex ./internal/api ./internal/telegram -count=1`
 
 ## Task 6: Docker-First Debug Smoke Defaults
 
-- [ ] Make `cmd/debug_telegram_sandbox` prefer runtime paths and container-owned behavior.
+- [x] Make `cmd/debug_telegram_sandbox` prefer runtime paths and container-owned behavior.
   - Default workspace root should match Docker runtime intent when running from the repo.
   - Legacy local `./wiki` and `./skills` paths should be mapped to `runtime-workspace` or container paths only for compatibility.
   - The smoke must never mutate live `data/aura.db` from the host while Compose `aura` is running.
-- [ ] Add explicit performance/tool gates.
+- [x] Add explicit performance/tool gates.
   - `-expect-llm-calls-max`
   - `-expect-tool-calls-max`
   - `-expect-loop-steps-max` already exists; keep it canonical.
@@ -175,11 +175,11 @@
   - Project/status prompt: expects default toolset, low loop count, no document tool.
   - Memory prompt: expects retrieval path only when memory is requested.
   - Document prompt: expects `document` toolset and terminal document tool.
-- [ ] Add tests in `cmd/debug_telegram_sandbox`.
+- [x] Add tests in `cmd/debug_telegram_sandbox`.
   - Flag parsing.
   - Expectation failures return non-zero.
   - Docker-first path normalization does not point at deleted `D:\Aura\wiki` or repo `skills`.
-- [ ] Verification:
+- [x] Verification:
   - `go test ./cmd/debug_telegram_sandbox -count=1`
 
 ## Task 7: Broad Runtime Smokes
@@ -234,18 +234,36 @@
 
 ## Implementation Notes
 
-Fill this section while executing Task 1. Keep it factual and tied to files/lines. Do not turn it into a design diary.
+Task 1 baseline:
+
+- `internal/telegram/conversation.go` owned active-session marking, context creation/reuse, user/system/search message mutation, prompt/retrieval/toolset preparation, tool-loop invocation, archive append, async context enforcement, and final telemetry.
+- `internal/telegram/conversation.go` still owns prompt/retrieval/toolset preparation after this slice; that remains intentionally outside the first session-boundary cut.
+- `internal/telegram/conversation_snapshot.go` now aliases `agentruntime.Snapshot` and stores snapshots through `agentruntime.SessionStore`; Telegram no longer owns `orchMap`.
+- `internal/telegram/conversation_terminal.go` still owns Telegram delivery, but the no-tool terminal LLM request/fallback/usage/cost path now goes through `agentruntime.FinalizeTerminalTool`.
+- `internal/telegram/debug_smoke.go` and `internal/telegram/status.go` read conversation state through `agentruntime.SessionStore` instead of raw Telegram maps.
+- `internal/telegram/setup.go` starts compact-memory vector mirror sync in the background; health state is now recorded by `memoryindex.VectorHealthTracker` and exposed through `api.HealthRollup.CompactMemory` plus Telegram `/status`.
 
 ## Verification Log
 
-Fill this section while executing Tasks 1-8. Each entry should include the exact command, result, and any relevant latency/tool-call counters.
+- `go test ./internal/agentruntime -run TestSession -count=1` failed before `SessionStore` existed, then passed after `internal/agentruntime/session.go`.
+- `go test ./internal/agentruntime ./internal/telegram -count=1` passed after moving Telegram active/context lifecycle behind `agentruntime.SessionStore`.
+- `go test ./cmd/debug_telegram_sandbox -run "TestValidateDebugExpectations(RejectsLLMCallOverBudget|RejectsToolCallOverBudget|AcceptsMatchedOrchestrationSignals)" -count=1` failed before `LLMCalls`, `ToolCallsCount`, `MaxLLMCalls`, and `MaxToolCalls` existed, then passed after adding the debug smoke gates.
+- `go test ./internal/agentruntime -run TestTerminal -count=1` failed before terminal finalization helpers existed in `agentruntime`, then passed after moving generic terminal formatting/safety logic.
+- `go test ./internal/memoryindex ./internal/api -run "TestVectorHealthTrackerTransitions|TestHealthRollup_IncludesCompactMemoryHealth" -count=1` failed before vector health/API wiring existed, then passed after adding `VectorHealthTracker` and `/health` compact-memory state.
+- `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/memoryindex ./internal/api ./cmd/debug_telegram_sandbox -count=1` passed.
+- `go test ./...` passed.
+- `go build ./...` passed.
+- `go test ./internal/agentruntime -run TestSessionStoreStoresAndPrunesSnapshots -count=1` failed before runtime-owned snapshots existed, then passed after moving snapshot storage into `agentruntime.SessionStore`.
+- `go test ./internal/agentruntime -run TestFinalizeTerminalTool -count=1` failed before no-tool terminal LLM finalization existed in `agentruntime`, then passed after adding `FinalizeTerminalTool`.
+- `go test ./internal/telegram -run TestCompactMemoryStatusSummaryReportsMirrorState -count=1` failed before `/status` compact-memory summary existed, then passed after wiring the health reader into `Bot`.
+- `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/memoryindex ./internal/api ./cmd/debug_telegram_sandbox -count=1; go test ./...; go build ./...` passed after the review fixes.
 
 ## Commit Plan
 
-- [ ] Commit 1: `agentruntime: own session boundary`
-- [ ] Commit 2: `agentruntime: finalize terminal tools`
-- [ ] Commit 3: `health: expose compact memory mirror`
-- [ ] Commit 4: `debug smoke: enforce broad runtime budgets`
+- [x] Commit 1: `agentruntime: own session boundary`
+- [x] Commit 2: `agentruntime: finalize terminal tools`
+- [x] Commit 3: `health: expose compact memory mirror`
+- [x] Commit 4: `debug smoke: enforce broad runtime budgets`
 - [ ] Commit 5: `docs: close runner boundary phase`
 
 Keep commits small enough to review. If a task reveals obsolete code that no longer has callers, delete it in the same commit that removes the caller.

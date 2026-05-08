@@ -96,6 +96,9 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			rollup.EmbedCache.Hits = hits
 			rollup.EmbedCache.Misses = misses
 		}
+		if deps.CompactMemory != nil {
+			rollup.CompactMemory = deps.CompactMemory.Snapshot()
+		}
 
 		writeJSON(w, deps.Logger, http.StatusOK, rollup)
 	}
