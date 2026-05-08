@@ -117,6 +117,26 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 	}
 }
 
+func TestWorkspaceToolsAreConditional(t *testing.T) {
+	without, err := ToolsForProfile(ProfileDefault, Availability{})
+	if err != nil {
+		t.Fatalf("ToolsForProfile default: %v", err)
+	}
+	if slices.Contains(without, "read_file") {
+		t.Fatalf("workspace tools exposed while unavailable: %+v", without)
+	}
+
+	with, err := ToolsForProfile(ProfileDefault, Availability{WorkspaceFiles: true})
+	if err != nil {
+		t.Fatalf("ToolsForProfile default workspace: %v", err)
+	}
+	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"} {
+		if !slices.Contains(with, required) {
+			t.Fatalf("workspace-enabled toolset missing %q: %+v", required, with)
+		}
+	}
+}
+
 func TestLegacyProfileModesNormalizeToToolsets(t *testing.T) {
 	tests := []struct {
 		mode string
@@ -206,6 +226,7 @@ func TestToolsForProfileOnlyExposesCardDeclaredTools(t *testing.T) {
 		{Swarm: true},
 		{Sandbox: true},
 		{Proposals: true},
+		{WorkspaceFiles: true},
 		{Swarm: true, Sandbox: true, Proposals: true},
 	}
 

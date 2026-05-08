@@ -22,6 +22,8 @@ const DefaultAgentLoopMaxSteps = 8
 const DefaultTerminalToolPolicy = "profile"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
+const DefaultWorkspaceTools = "disabled"
+const DefaultWorkspaceRoot = "/app"
 const DefaultSummarizerMode = "auto_low_risk"
 const DefaultSummarizerTurnInterval = 2
 const DefaultSummarizerCooldownSeconds = 0
@@ -98,6 +100,8 @@ type Config struct {
 	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
+	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"disabled"`
+	WorkspaceRoot              string  `envconfig:"AURA_WORKSPACE_ROOT" default:"/app"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -257,6 +261,11 @@ func Load() (*Config, error) {
 	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
 	cfg.DelegationMode = NormalizeDelegationMode(getEnv("AURA_DELEGATION_MODE", DefaultDelegationMode))
 	cfg.TraceRetentionDays = normalizeIntRange(getEnvInt("AURA_TRACE_RETENTION_DAYS", DefaultTraceRetentionDays), 1, 365, DefaultTraceRetentionDays)
+	cfg.WorkspaceTools = NormalizeWorkspaceTools(getEnv("AURA_WORKSPACE_TOOLS", DefaultWorkspaceTools))
+	cfg.WorkspaceRoot = strings.TrimSpace(getEnv("AURA_WORKSPACE_ROOT", DefaultWorkspaceRoot))
+	if cfg.WorkspaceRoot == "" {
+		cfg.WorkspaceRoot = DefaultWorkspaceRoot
+	}
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
@@ -353,6 +362,17 @@ func NormalizeDelegationMode(value string) string {
 		return normalized
 	default:
 		return DefaultDelegationMode
+	}
+}
+
+func NormalizeWorkspaceTools(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "enabled", "enable", "true", "1", "on", "yes":
+		return "enabled"
+	case "disabled", "disable", "false", "0", "off", "no", "":
+		return DefaultWorkspaceTools
+	default:
+		return DefaultWorkspaceTools
 	}
 }
 

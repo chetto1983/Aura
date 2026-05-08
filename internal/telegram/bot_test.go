@@ -261,6 +261,24 @@ func TestProposalToolsAvailableRequiresRegisteredTool(t *testing.T) {
 	}
 }
 
+func TestWorkspaceToolsAvailableRequiresReadAndWriteTools(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	b := &Bot{tools: reg}
+	if b.workspaceToolsAvailable() {
+		t.Fatal("workspace tools should be unavailable without read/write tools")
+	}
+
+	reg.Register(fakeTelegramTool{name: "read_file"})
+	if b.workspaceToolsAvailable() {
+		t.Fatal("workspace tools should be unavailable without write_file")
+	}
+
+	reg.Register(fakeTelegramTool{name: "write_file"})
+	if !b.workspaceToolsAvailable() {
+		t.Fatal("workspace tools should be available with read_file and write_file")
+	}
+}
+
 func TestStopWithoutStartReturns(t *testing.T) {
 	done := make(chan struct{})
 	go func() {

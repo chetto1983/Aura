@@ -171,6 +171,8 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyTerminalToolPolicy, Value: config.DefaultTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"profile", "off"}, Label: "Terminal tool policy", Hint: "profile lets routes stop after declared aggregate tools"},
 	{Key: settings.KeyDelegationMode, Value: config.DefaultDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode", Hint: "fast keeps delegation small; bounded allows wider swarm execution; async is for future durable tasks"},
 	{Key: settings.KeyTraceRetentionDays, Value: strconv.Itoa(config.DefaultTraceRetentionDays), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(365), Label: "Trace retention days", Hint: "How long orchestration trace records are kept before cleanup"},
+	{Key: settings.KeyWorkspaceTools, Value: config.DefaultWorkspaceTools, Group: "agent", Kind: "enum", Options: []string{"disabled", "enabled"}, Label: "Workspace file tools", Hint: "Disabled by default. When enabled, Aura exposes bounded list/read/search/write/patch tools inside the configured workspace root."},
+	{Key: settings.KeyWorkspaceRoot, Value: config.DefaultWorkspaceRoot, Group: "agent", Kind: "text", Label: "Workspace root", Hint: "Container default is /app; local development can use D:\\Aura. Restart Aura after changing."},
 	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
 	{Key: settings.KeySkillsCatalogURL, Group: "other", Kind: "url", Label: "Skills catalog URL"},
 	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
@@ -364,6 +366,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.DelegationMode
 	case settings.KeyTraceRetentionDays:
 		return strconv.Itoa(cfg.TraceRetentionDays)
+	case settings.KeyWorkspaceTools:
+		return cfg.WorkspaceTools
+	case settings.KeyWorkspaceRoot:
+		return cfg.WorkspaceRoot
 	case settings.KeyMistralAPIKey:
 		return cfg.MistralAPIKey
 	case settings.KeyMistralOCRModel:

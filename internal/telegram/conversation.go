@@ -57,9 +57,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 	}
 	available := orchestration.Availability{
-		Swarm:     b.swarmToolsAvailable(),
-		Sandbox:   b.sandboxToolsAvailable(),
-		Proposals: b.proposalToolsAvailable(),
+		Swarm:          b.swarmToolsAvailable(),
+		Sandbox:        b.sandboxToolsAvailable(),
+		Proposals:      b.proposalToolsAvailable(),
+		WorkspaceFiles: b.workspaceToolsAvailable(),
 	}
 	hooks := orchestration.EnsureHooks(b.orchHooks)
 	hooks.BeforeProfileSelect(orchestration.TraceEvent{ToolProfile: b.cfg.ToolProfileMode})
@@ -309,6 +310,10 @@ func (b *Bot) proposalToolsAvailable() bool {
 
 func (b *Bot) sandboxToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("execute_code") != nil
+}
+
+func (b *Bot) workspaceToolsAvailable() bool {
+	return b.tools != nil && b.tools.Get("read_file") != nil && b.tools.Get("write_file") != nil
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop

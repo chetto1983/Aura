@@ -31,6 +31,7 @@ import (
 	"github.com/aura/aura/internal/swarmtools"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
+	"github.com/aura/aura/internal/workspace"
 
 	"github.com/philippgille/chromem-go"
 	tele "gopkg.in/telebot.v4"
@@ -189,6 +190,19 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	toolRegistry := tools.NewRegistry(logger)
+	if config.NormalizeWorkspaceTools(cfg.WorkspaceTools) == "enabled" {
+		workspaceRoot, err := workspace.New(cfg.WorkspaceRoot)
+		if err != nil {
+			logger.Warn("workspace file tools unavailable", "root", cfg.WorkspaceRoot, "error", err)
+		} else {
+			for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
+				toolRegistry.Register(tool)
+			}
+			logger.Info("workspace file tools enabled", "root", workspaceRoot.Path())
+		}
+	} else {
+		logger.Info("workspace file tools disabled (set AURA_WORKSPACE_TOOLS=enabled to enable)")
+	}
 	// Loader scans both the operator-curated SKILLS_PATH and the skills.sh
 	// CLI install roots. The catalog CLI has used both `.claude/skills` and
 	// `.agents/skills` layouts across versions/agents, so keep both visible.

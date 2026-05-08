@@ -123,6 +123,8 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 		TerminalToolPolicy:    "profile",
 		DelegationMode:        "fast",
 		TraceRetentionDays:    30,
+		WorkspaceTools:        "disabled",
+		WorkspaceRoot:         "/app",
 	}
 
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
@@ -134,6 +136,8 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	_ = s.Set(ctx, KeyTerminalToolPolicy, "OFF")
 	_ = s.Set(ctx, KeyDelegationMode, "BOUNDED")
 	_ = s.Set(ctx, KeyTraceRetentionDays, "60")
+	_ = s.Set(ctx, KeyWorkspaceTools, "ON")
+	_ = s.Set(ctx, KeyWorkspaceRoot, "D:/Aura")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -164,8 +168,15 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.TraceRetentionDays != 60 {
 		t.Fatalf("TraceRetentionDays = %d", cfg.TraceRetentionDays)
 	}
+	if cfg.WorkspaceTools != "enabled" {
+		t.Fatalf("WorkspaceTools = %q", cfg.WorkspaceTools)
+	}
+	if cfg.WorkspaceRoot != "D:/Aura" {
+		t.Fatalf("WorkspaceRoot = %q", cfg.WorkspaceRoot)
+	}
 	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolProfileMode) || !IsOverridable(KeyOrchestrationLogLevel) || !IsOverridable(KeySkillPreflight) ||
-		!IsOverridable(KeySkillRoutingMode) || !IsOverridable(KeyAgentLoopMaxSteps) || !IsOverridable(KeyTerminalToolPolicy) || !IsOverridable(KeyDelegationMode) || !IsOverridable(KeyTraceRetentionDays) {
+		!IsOverridable(KeySkillRoutingMode) || !IsOverridable(KeyAgentLoopMaxSteps) || !IsOverridable(KeyTerminalToolPolicy) || !IsOverridable(KeyDelegationMode) || !IsOverridable(KeyTraceRetentionDays) ||
+		!IsOverridable(KeyWorkspaceTools) || !IsOverridable(KeyWorkspaceRoot) {
 		t.Fatal("orchestration settings must be dashboard-overridable")
 	}
 }
@@ -179,6 +190,7 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 		TerminalToolPolicy: "off",
 		DelegationMode:     "bounded",
 		TraceRetentionDays: 90,
+		WorkspaceTools:     "enabled",
 	}
 
 	_ = s.Set(ctx, KeySkillRoutingMode, "router")
@@ -186,6 +198,7 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 	_ = s.Set(ctx, KeyTerminalToolPolicy, "always")
 	_ = s.Set(ctx, KeyDelegationMode, "recursive")
 	_ = s.Set(ctx, KeyTraceRetentionDays, "999")
+	_ = s.Set(ctx, KeyWorkspaceTools, "shell")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -193,7 +206,8 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 		cfg.AgentLoopMaxSteps != config.DefaultAgentLoopMaxSteps ||
 		cfg.TerminalToolPolicy != config.DefaultTerminalToolPolicy ||
 		cfg.DelegationMode != config.DefaultDelegationMode ||
-		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays {
+		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays ||
+		cfg.WorkspaceTools != config.DefaultWorkspaceTools {
 		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
 	}
 }
@@ -445,6 +459,7 @@ func TestIsOverridable(t *testing.T) {
 		KeySkillsPath, KeySkillsInstallProjectDir, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
 		KeySandboxEnabled, KeySandboxTimeoutSec,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
+		KeyWorkspaceTools, KeyWorkspaceRoot,
 	} {
 		if !IsOverridable(key) {
 			t.Errorf("%s should be overridable", key)

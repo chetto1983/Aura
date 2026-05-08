@@ -53,6 +53,8 @@ services:
       AURA_TERMINAL_TOOL_POLICY: "profile"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"
+      AURA_WORKSPACE_TOOLS: "${AURA_WORKSPACE_TOOLS:-disabled}"
+      AURA_WORKSPACE_ROOT: "/app"
       SUMMARIZER_MODE: "auto_low_risk"
       SUMMARIZER_TURN_INTERVAL: "2"
       SUMMARIZER_COOLDOWN_SECONDS: "0"
@@ -60,6 +62,7 @@ services:
       - "127.0.0.1:${AURA_HOST_PORT:-18080}:8080"
     volumes:
       - ./data:/data
+      - .:/app
       - ./wiki:/wiki
       - ./skills:/skills
     depends_on:

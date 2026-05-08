@@ -604,7 +604,9 @@ git commit -m "fix: make skill approval apply or say reviewed"
 - Modify: `.env.example`
 - Modify: `compose.yaml`
 
-- [ ] Step 1: Add workspace root config.
+- [x] Step 1: Add workspace root config.
+
+Status: completed 2026-05-08. Implementation target was `internal/telegram/setup.go` rather than `bot.go`, because that is where Aura builds the runtime tool registry. Workspace file tools stay disabled by default and are exposed only through bounded tool implementations; no broad shell was added. The boundary also denies `data/secrets/` and `docker/secrets/` in addition to the required `.env`, live DB/WAL/SHM, `.git/`, and `wiki/raw/` paths.
 
 Add config:
 
@@ -615,7 +617,7 @@ AURA_WORKSPACE_ROOT=/app
 
 For local development, root can be `D:\Aura`. In Docker, root is `/app`.
 
-- [ ] Step 2: Implement path containment.
+- [x] Step 2: Implement path containment.
 
 `internal/workspace.Root` must provide:
 
@@ -636,7 +638,7 @@ Hard deny:
 - `wiki/raw/`
 - executable/binary extensions unless read-only and small
 
-- [ ] Step 3: Add tools.
+- [x] Step 3: Add tools.
 
 Expose:
 
@@ -648,11 +650,11 @@ Expose:
 
 Do not expose broad shell yet.
 
-- [ ] Step 4: Register only when enabled.
+- [x] Step 4: Register only when enabled.
 
 Default remains disabled until manual config enables it.
 
-- [ ] Step 5: Verify.
+- [x] Step 5: Verify.
 
 Run:
 
@@ -661,6 +663,12 @@ go test ./internal/workspace ./internal/tools ./internal/telegram ./internal/orc
 ```
 
 Expected: pass.
+
+Result: pass, including config/settings/API coverage:
+
+```powershell
+go test ./internal/workspace ./internal/tools ./internal/config ./internal/settings ./internal/api ./internal/orchestration ./internal/telegram
+```
 
 - [ ] Step 6: Commit.
 

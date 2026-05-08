@@ -157,6 +157,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_TERMINAL_TOOL_POLICY")
 	os.Unsetenv("AURA_DELEGATION_MODE")
 	os.Unsetenv("AURA_TRACE_RETENTION_DAYS")
+	os.Unsetenv("AURA_WORKSPACE_TOOLS")
+	os.Unsetenv("AURA_WORKSPACE_ROOT")
 	os.Unsetenv("SUMMARIZER_MODE")
 	os.Unsetenv("SUMMARIZER_TURN_INTERVAL")
 	os.Unsetenv("SUMMARIZER_COOLDOWN_SECONDS")
@@ -311,6 +313,12 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.TraceRetentionDays != DefaultTraceRetentionDays {
 		t.Errorf("TraceRetentionDays = %d, want %d", cfg.TraceRetentionDays, DefaultTraceRetentionDays)
 	}
+	if cfg.WorkspaceTools != DefaultWorkspaceTools {
+		t.Errorf("WorkspaceTools = %q, want %q", cfg.WorkspaceTools, DefaultWorkspaceTools)
+	}
+	if cfg.WorkspaceRoot != DefaultWorkspaceRoot {
+		t.Errorf("WorkspaceRoot = %q, want %q", cfg.WorkspaceRoot, DefaultWorkspaceRoot)
+	}
 	if cfg.SummarizerMode != DefaultSummarizerMode {
 		t.Errorf("SummarizerMode = %q, want %q", cfg.SummarizerMode, DefaultSummarizerMode)
 	}
@@ -410,6 +418,38 @@ func TestLoadSkillPreflight(t *testing.T) {
 				t.Fatalf("SkillPreflight = %q, want %q", cfg.SkillPreflight, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadWorkspaceTools(t *testing.T) {
+	t.Setenv("AURA_WORKSPACE_TOOLS", " ON ")
+	t.Setenv("AURA_WORKSPACE_ROOT", "D:/Aura")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorkspaceTools != "enabled" {
+		t.Fatalf("WorkspaceTools = %q, want enabled", cfg.WorkspaceTools)
+	}
+	if cfg.WorkspaceRoot != "D:/Aura" {
+		t.Fatalf("WorkspaceRoot = %q", cfg.WorkspaceRoot)
+	}
+}
+
+func TestLoadInvalidWorkspaceToolsDegradesToDisabled(t *testing.T) {
+	t.Setenv("AURA_WORKSPACE_TOOLS", "shell")
+	t.Setenv("AURA_WORKSPACE_ROOT", "   ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorkspaceTools != DefaultWorkspaceTools {
+		t.Fatalf("WorkspaceTools = %q, want %q", cfg.WorkspaceTools, DefaultWorkspaceTools)
+	}
+	if cfg.WorkspaceRoot != DefaultWorkspaceRoot {
+		t.Fatalf("WorkspaceRoot = %q, want %q", cfg.WorkspaceRoot, DefaultWorkspaceRoot)
 	}
 }
 

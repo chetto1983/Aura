@@ -78,6 +78,8 @@ const (
 	KeyTerminalToolPolicy         = "AURA_TERMINAL_TOOL_POLICY"
 	KeyDelegationMode             = "AURA_DELEGATION_MODE"
 	KeyTraceRetentionDays         = "AURA_TRACE_RETENTION_DAYS"
+	KeyWorkspaceTools             = "AURA_WORKSPACE_TOOLS"
+	KeyWorkspaceRoot              = "AURA_WORKSPACE_ROOT"
 	KeyMistralAPIKey              = "MISTRAL_API_KEY"
 	KeyMistralOCRModel            = "MISTRAL_OCR_MODEL"
 	KeyMistralOCRBaseURL          = "MISTRAL_OCR_BASE_URL"
@@ -128,6 +130,7 @@ func OverridableKeys() []string {
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
 		KeyOTelEnabled, KeyPromptVersion, KeyToolProfileMode, KeyOrchestrationLogLevel, KeySkillPreflight,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
+		KeyWorkspaceTools, KeyWorkspaceRoot,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
 		KeyMistralOCRTableFormat, KeyMistralOCRIncludeImages,
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
@@ -233,6 +236,8 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.TerminalToolPolicy = config.NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
 	cfg.DelegationMode = config.NormalizeDelegationMode(settingString(ctx, s, KeyDelegationMode, cfg.DelegationMode))
 	cfg.TraceRetentionDays = settingIntRange(ctx, s, KeyTraceRetentionDays, cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
+	cfg.WorkspaceTools = config.NormalizeWorkspaceTools(settingString(ctx, s, KeyWorkspaceTools, cfg.WorkspaceTools))
+	cfg.WorkspaceRoot = settingString(ctx, s, KeyWorkspaceRoot, cfg.WorkspaceRoot)
 
 	cfg.MistralAPIKey = settingString(ctx, s, KeyMistralAPIKey, cfg.MistralAPIKey)
 	cfg.MistralOCRModel = settingString(ctx, s, KeyMistralOCRModel, cfg.MistralOCRModel)

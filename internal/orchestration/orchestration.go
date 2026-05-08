@@ -61,9 +61,10 @@ const (
 )
 
 type Availability struct {
-	Swarm     bool
-	Sandbox   bool
-	Proposals bool
+	Swarm          bool
+	Sandbox        bool
+	Proposals      bool
+	WorkspaceFiles bool
 }
 
 type ProfileDecision struct {
@@ -270,6 +271,7 @@ var profileCardCatalog = []ProfileCard{
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "settings_update", "run_task_now"},
 		LoopPolicy: LoopPolicy{
@@ -297,6 +299,7 @@ var profileCardCatalog = []ProfileCard{
 		},
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
@@ -324,6 +327,7 @@ var profileCardCatalog = []ProfileCard{
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"install_skill", "delete_skill", "settings_update", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
@@ -351,6 +355,7 @@ var profileCardCatalog = []ProfileCard{
 		},
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
+			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf"},
 		LoopPolicy: LoopPolicy{
@@ -387,6 +392,8 @@ func availabilityEnabled(name string, available Availability) bool {
 		return available.Sandbox
 	case "proposals":
 		return available.Proposals
+	case "workspace_files":
+		return available.WorkspaceFiles
 	default:
 		return false
 	}

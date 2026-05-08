@@ -159,6 +159,12 @@ func validationRules(cfg *config.Config) []defaultRule {
 			shouldSet: missingOrOutOfRangeInt(1, 365),
 		},
 		{
+			key:       KeyWorkspaceTools,
+			value:     config.DefaultWorkspaceTools,
+			reason:    "repair invalid workspace tools mode",
+			shouldSet: missingOrInvalidSet("enabled", "disabled", "true", "false", "1", "0", "on", "off", "yes", "no"),
+		},
+		{
 			key:       KeySearchBackend,
 			value:     searchBackendDefault,
 			reason:    "repair invalid search backend",
