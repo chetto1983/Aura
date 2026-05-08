@@ -56,3 +56,18 @@ func TestDefaultSystemPromptRequiresStaleReferenceVerification(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultSystemPromptGuidesWorkspaceAudits(t *testing.T) {
+	got := DefaultSystemPrompt()
+	for _, want := range []string{
+		"Use list_files for directory inventory",
+		"never directories",
+		"For project or file audits",
+		"Read at most 3-5 highest-signal files",
+		"Stop expanding once you have enough evidence",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system prompt missing workspace audit guidance %q", want)
+		}
+	}
+}

@@ -269,6 +269,21 @@ func TestListFilesHidesSensitivePaths(t *testing.T) {
 	}
 }
 
+func TestReadFileDirectoryErrorMentionsListFiles(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	if err := os.MkdirAll(filepath.Join(root.Path(), "wiki"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewReadFileTool(root).Execute(context.Background(), map[string]any{"path": "wiki"})
+	if err == nil {
+		t.Fatal("expected directory read error")
+	}
+	result := FormatToolError(err)
+	if !strings.Contains(result, "Use list_files on this directory") {
+		t.Fatalf("formatted error = %s", result)
+	}
+}
+
 func TestNewWorkspaceFileToolsReturnsExpectedTools(t *testing.T) {
 	got := NewWorkspaceFileTools(newWorkspaceToolRoot(t))
 	names := make([]string, 0, len(got))

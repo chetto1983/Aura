@@ -39,7 +39,7 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 - Prefer small, focused changes that follow the existing Go package layout.
 - For non-trivial implementation work, use the active skills explicitly before editing: `using-superpowers`, `aura-implementation`, and `executing-plans` when a phase plan exists. Use `subagent-driven-development` for independent implementation/review tasks.
 - Run the Aura Ralph status check before edits when `loops/aura-implementation/scripts/status.ps1` exists.
-- Keep the active phase plan updated before and after each implementation slice; for the current agent cleanup phase this is `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`.
+- Keep the active phase plan updated before and after each implementation slice. For the current filesystem-first agent cleanup phase this is `.planning/phases/06-fs-first-wiki-skills-agent/PLAN.md`; if the user names a different active phase, use that named plan instead.
 - Commit one small atomic slice at a time, staging explicit paths only.
 - Use `Body` for wiki page content; the project has migrated from YAML page files to markdown with frontmatter.
 - Keep wiki links in `[[slug]]` form.

@@ -12,11 +12,11 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	if def.MaxSteps != 8 {
-		t.Fatalf("default MaxSteps = %d, want 8-step budget", def.MaxSteps)
+	if def.MaxSteps != 4 {
+		t.Fatalf("default MaxSteps = %d, want 4-step budget", def.MaxSteps)
 	}
-	if len(def.TerminalTools) != 0 {
-		t.Fatalf("default TerminalTools = %+v, want none", def.TerminalTools)
+	if !slices.Contains(def.TerminalTools, "run_aurabot_swarm") {
+		t.Fatalf("default TerminalTools missing run_aurabot_swarm: %+v", def.TerminalTools)
 	}
 
 	compute, ok := LoopPolicyForToolset(ProfileCompute)

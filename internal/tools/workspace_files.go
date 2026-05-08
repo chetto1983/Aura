@@ -41,7 +41,7 @@ func NewListFilesTool(root *workspace.Root) *ListFilesTool {
 func (t *ListFilesTool) Name() string { return "list_files" }
 
 func (t *ListFilesTool) Description() string {
-	return "List files and directories inside Aura's configured workspace root. Path must be relative. Sensitive paths such as .env, .git, live DB files, and wiki/raw are hidden."
+	return "List files and directories inside Aura's configured workspace root. Use this for directories. Entries with type=dir are not readable; pass them back to list_files. Path must be relative. Sensitive paths such as .env, .git, live DB files, and wiki/raw are hidden."
 }
 
 func (t *ListFilesTool) Parameters() map[string]any {
@@ -82,7 +82,7 @@ func NewReadFileTool(root *workspace.Root) *ReadFileTool {
 func (t *ReadFileTool) Name() string { return "read_file" }
 
 func (t *ReadFileTool) Description() string {
-	return "Read one small file from Aura's configured workspace root. Path must be relative. Sensitive paths are denied; small binary files return base64."
+	return "Read one small file from Aura's configured workspace root. Only pass exact file paths from search_files.path or list_files entries with type=file; never pass directories. Path must be relative. Sensitive paths are denied; small binary files return base64."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -139,7 +139,7 @@ func NewSearchFilesTool(root *workspace.Root) *SearchFilesTool {
 func (t *SearchFilesTool) Name() string { return "search_files" }
 
 func (t *SearchFilesTool) Description() string {
-	return "Search text files inside Aura's configured workspace root by case-insensitive substring. Sensitive paths and binary files are skipped."
+	return "Search text files inside Aura's configured workspace root by case-insensitive substring. For audits, use this before reading files and then read only the few matching files needed to answer. Sensitive paths and binary files are skipped."
 }
 
 func (t *SearchFilesTool) Parameters() map[string]any {

@@ -75,6 +75,15 @@ func TestFormatToolError_HintForTooManyTags(t *testing.T) {
 	}
 }
 
+func TestFormatToolError_HintForDirectory(t *testing.T) {
+	result := FormatToolError(errors.New("read_file: workspace: wiki is a directory"))
+	var te ToolError
+	json.Unmarshal([]byte(result), &te)
+	if !strings.Contains(te.Hint, "Use list_files on this directory") || !strings.Contains(te.Hint, "type=file") {
+		t.Fatalf("hint = %q", te.Hint)
+	}
+}
+
 func TestFormatToolError_GenericHint(t *testing.T) {
 	result := FormatToolError(errors.New("something unexpected happened"))
 	var te ToolError

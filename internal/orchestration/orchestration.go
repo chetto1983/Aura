@@ -263,11 +263,12 @@ var profileCardCatalog = []ProfileCard{
 		},
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "workspace_files", Tools: []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, Prepend: true},
-			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
 		},
 		DeniedTools: []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "settings_update", "run_task_now"},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                8,
+			MaxSteps:                4,
+			TerminalTools:           []string{"run_aurabot_swarm"},
 			AllowNoToolFinalization: true,
 			DuplicateToolPolicy:     "Reject duplicate tool calls with identical arguments; keep default turns short and evidence-backed.",
 			MaxElapsed:              30 * time.Second,

@@ -56,11 +56,18 @@ Use these tools to inspect and edit Aura's bounded workspace:
 
 Guidelines:
 - Treat paths as workspace-relative.
-- Prefer search_files for exact text search.
-- Prefer read_file for known paths.
+- Prefer search_files for exact text search and broad audits.
+- Use list_files for directory inventory.
+- Prefer read_file only for known file paths, never directories.
 - Prefer write_file for new files or full replacements.
 - Prefer apply_patch for focused edits to existing files.
 - Verify before editing when the file path or content is uncertain.
+
+For project or file audits:
+- Start with search_files using narrow patterns or globs.
+- Use list_files for directories, then read only entries with type="file".
+- Read at most 3-5 highest-signal files unless the user asks for exhaustive review.
+- Stop expanding once you have enough evidence.
 
 ### Memory Search
 Use search_memory to search Aura's local second brain across:

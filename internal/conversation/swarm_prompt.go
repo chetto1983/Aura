@@ -14,7 +14,7 @@ When run_aurabot_swarm is available, use it as the fast read-only path for broad
 For mutation requests, gather evidence first when needed, then use the explicit write/admin tool only if the user clearly asked for that mutation.`
 
 const swarmTurnHint = `## Suggested Tool Route
-This turn looks like a broad read-only second-brain task. If you need tools, prefer one run_aurabot_swarm call before direct per-page reads. Keep the swarm goal read-only and do not mutate wiki, sources, skills, settings, tasks, or files unless the user explicitly asks for that mutation.`
+This turn looks like a broad read-only second-brain task. If you need tools, call run_aurabot_swarm first with mode="wait". Do not call list_files, read_file, or search_files before that first swarm pass. Keep the swarm goal read-only and do not mutate wiki, sources, skills, settings, tasks, or files unless the user explicitly asks for that mutation.`
 
 // SwarmRoutingPrompt returns the stable routing instructions shown only when
 // AuraBot swarm tools are actually registered for this bot instance.
@@ -47,8 +47,12 @@ func LooksLikeSwarmReadGoal(userText string) bool {
 	domains := countContains(text, swarmDomainTerms)
 	broad := containsAny(text, broadReadTerms)
 	scale := containsAny(text, scaleTerms)
+	projectAudit := containsAny(text, projectAuditTerms) && containsAny(text, projectAuditIntentTerms)
 
 	if domains >= 2 && (broad || scale) {
+		return true
+	}
+	if projectAudit && (broad || scale || domains >= 1) {
 		return true
 	}
 	return domains >= 1 && broad && scale
@@ -89,6 +93,10 @@ var swarmDomainTerms = []string{
 	"note",
 	"skill",
 	"skills",
+	"file",
+	"files",
+	"strumenti",
+	"tools",
 }
 
 var broadReadTerms = []string{
@@ -110,6 +118,12 @@ var broadReadTerms = []string{
 	"plan",
 	"roadmap",
 	"health",
+	"guardrail",
+	"guardrails",
+	"miglior",
+	"improve",
+	"strumenti",
+	"tools",
 }
 
 var scaleTerms = []string{
@@ -127,6 +141,30 @@ var scaleTerms = []string{
 	"paralle",
 	"insieme",
 	"across",
+}
+
+var projectAuditTerms = []string{
+	"progetto",
+	"project",
+	"repo",
+	"repository",
+	"codice",
+	"codebase",
+	"file",
+	"files",
+}
+
+var projectAuditIntentTerms = []string{
+	"strumenti",
+	"tools",
+	"guardrail",
+	"guardrails",
+	"miglior",
+	"improve",
+	"confond",
+	"lento",
+	"slow",
+	"audit",
 }
 
 var mutationRouteTerms = []string{

@@ -188,6 +188,11 @@ Progress:
 - Agent job prompts ask for recommended file patches instead of review-queue proposal tool calls.
 - Swarm role presets now inspect memory/wiki/skills through workspace file reads.
 - `cmd/debug_agent_jobs` now registers workspace file tools and reads the monitored wiki page with `read_file`.
+- Live latency follow-up from Telegram chat on 2026-05-08:
+  - Observed slow turn: 112s wall time, 8 LLM calls, 46 file tool calls, 174k tokens.
+  - Root cause: default profile exposed filesystem tools first, default loop allowed 8 steps, `run_aurabot_swarm` was not terminal, and `read_file` directory errors gave generic retry hints.
+  - Applied fix: default loop cap reduced to 4 steps, `run_aurabot_swarm` is terminal for default broad audits, per-turn swarm hint is injected for project/tool/guardrail self-audit prompts, workspace prompt/tool descriptions now direct audits through `search_files`/`list_files` and 3-5 file reads, skill manifest now says to read the exact matching `SKILL.md` only, and directory errors now hint to use `list_files`.
+  - Container/DB follow-up: `/app/AGENTS.md` exists in the live container, is readable and writable by the `aura` user through `AURA_WORKSPACE_ROOT=/app`; there is no singular `/app/AGENT.md`. The Telegram debug harness now prefers `data/.env` when `AURA_ENV_PATH` is unset, so it copies `data/aura.db` and uses DB-selected `LLM_MODEL=deepseek/deepseek-v4-flash` instead of stale `.env` values.
 
 - Update debug commands to smoke-test workspace file workflows.
 - Convert scheduled agent job toolsets away from wiki/proposal wrappers.

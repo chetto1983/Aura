@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/llm"
 )
@@ -108,6 +109,64 @@ func TestRunMaxIterationProducesFallback(t *testing.T) {
 	}
 	if !strings.Contains(result.Text, "Mi sono fermato") {
 		t.Fatalf("fallback = %q", result.Text)
+	}
+}
+
+func TestRunMaxElapsedProducesFallbackBeforeNextLLM(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
+		{Response: llm.Response{Content: "too late"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "partial result")
+		time.Sleep(5 * time.Millisecond)
+		return ExecutionSummary{LastResult: "partial result"}
+	}), state, Options{MaxIterations: 3, MaxElapsed: time.Millisecond})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !result.Stats.MaxElapsedHit {
+		t.Fatal("MaxElapsedHit = false")
+	}
+	if client.requests != 1 {
+		t.Fatalf("LLM requests = %d, want 1", client.requests)
+	}
+	if !strings.Contains(result.Text, "Mi sono fermato") {
+		t.Fatalf("fallback = %q", result.Text)
+	}
+}
+
+func TestRunTerminalSwarmCanStopWithHandler(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "run_aurabot_swarm"}}}},
+		{Response: llm.Response{Content: "too late"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "swarm synthesis")
+		return ExecutionSummary{LastResult: "swarm synthesis", TerminalTool: "run_aurabot_swarm"}
+	}), state, Options{
+		MaxIterations:           3,
+		TerminalToolPolicy:      true,
+		AllowNoToolFinalization: true,
+		TerminalHandler: func(context.Context, string, string, *Stats) (string, bool, bool) {
+			return "final from swarm", false, true
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "final from swarm" {
+		t.Fatalf("Text = %q, want terminal response", result.Text)
+	}
+	if client.requests != 1 {
+		t.Fatalf("LLM requests = %d, want 1", client.requests)
+	}
+	if result.Stats.TerminalTool != "run_aurabot_swarm" {
+		t.Fatalf("TerminalTool = %q", result.Stats.TerminalTool)
 	}
 }
 

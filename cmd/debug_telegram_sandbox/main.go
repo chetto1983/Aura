@@ -62,7 +62,7 @@ func main() {
 		}
 	}
 
-	envPath := envDefault("AURA_ENV_PATH", ".env")
+	envPath := defaultDebugEnvPath()
 	if err := loadDotEnv(envPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fail("load .env: %v", err)
 	}
@@ -258,7 +258,7 @@ func main() {
 	if *noValidate {
 		fmt.Println("PASS: synthetic Telegram turn completed; legacy execute_code assertion skipped")
 	} else if customPrompt {
-		fmt.Println("PASS: synthetic Telegram turn used execute_code and satisfied explicit expectations")
+		fmt.Println("PASS: synthetic Telegram turn satisfied explicit expectations")
 	} else {
 		fmt.Println("PASS: synthetic Telegram turn used execute_code and surfaced 5050")
 	}
@@ -274,6 +274,16 @@ func resolveDebugDBPath(envPath, dbPath string) string {
 		return filepath.Clean(dbPath)
 	}
 	return filepath.Clean(filepath.Join(envDir, dbPath))
+}
+
+func defaultDebugEnvPath() string {
+	if value := strings.TrimSpace(os.Getenv("AURA_ENV_PATH")); value != "" {
+		return value
+	}
+	if _, err := os.Stat(filepath.Join("data", ".env")); err == nil {
+		return filepath.Join("data", ".env")
+	}
+	return ".env"
 }
 
 func prepareDebugDBCopy(sourcePath string) (string, func(), error) {
@@ -426,10 +436,10 @@ func defaultArtifactSmokePrompt() string {
 }
 
 func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifactSmoke bool, customPrompt bool) error {
-	if !result.CalledExecuteCode {
-		return errors.New("expected execute_code call")
-	}
 	if artifactSmoke {
+		if !result.CalledExecuteCode {
+			return errors.New("expected execute_code call")
+		}
 		if !result.ContainsArtifactMetadata {
 			return errors.New("expected execute_code artifact metadata")
 		}
@@ -449,6 +459,9 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 	}
 	if customPrompt {
 		return nil
+	}
+	if !result.CalledExecuteCode {
+		return errors.New("expected execute_code call")
 	}
 	if !result.Contains5050 {
 		return errors.New("expected final/tool output containing 5050")

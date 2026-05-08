@@ -82,6 +82,9 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 			t.Fatalf("default toolset exposes specialized/admin tool %q: %+v", forbidden, def)
 		}
 	}
+	if def[0] != "run_aurabot_swarm" {
+		t.Fatalf("default toolset should expose swarm first for broad audits, got first %q in %+v", def[0], def)
+	}
 
 	compute, err := ToolsForProfile(ProfileCompute, Availability{Sandbox: true, WorkspaceFiles: true})
 	if err != nil {

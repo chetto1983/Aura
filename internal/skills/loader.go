@@ -252,8 +252,8 @@ func PromptBlock(loaded []Skill) string {
 	var sb strings.Builder
 	sb.WriteString("## Available Skills\n\n")
 	sb.WriteString("Aura has the local skills listed below. Each entry's description states when it applies. ")
-	sb.WriteString("Before following a skill's detailed guidance, inspect its SKILL.md with `search_files` and `read_file`, then act on it. ")
-	sb.WriteString("Do not read skills just to satisfy a ritual; skip skills whose description does not match the user's request.\n\n")
+	sb.WriteString("Before following a skill's detailed guidance, use `search_files` to locate the matching SKILL.md, then `read_file` that exact file only. ")
+	sb.WriteString("Do not read skill directories or multiple skills unless multiple descriptions clearly apply. Do not read skills just to satisfy a ritual; skip skills whose description does not match the user's request.\n\n")
 	for _, skill := range loaded {
 		if skill.Name == "" {
 			continue

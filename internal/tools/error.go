@@ -46,6 +46,8 @@ func FormatFatalToolError(err error) string {
 func hintForError(msg string) string {
 	lower := strings.ToLower(msg)
 	switch {
+	case strings.Contains(lower, "is a directory"):
+		return "Use list_files on this directory, then read only specific entries with type=file"
 	case strings.Contains(lower, "too many tags"):
 		return "Retry with at most 10 short tags"
 	case strings.Contains(lower, "too many sources"):

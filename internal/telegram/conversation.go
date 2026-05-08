@@ -85,7 +85,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		Version:           b.cfg.PromptVersion,
 		Now:               time.Now(),
 		Location:          b.loc,
-		Overlay:           overlay,
+		Overlay:           appendPromptOverlay(overlay, conversation.SwarmTurnHint(userText)),
 		SkillsBlock:       skillsBlock,
 		SwarmAvailable:    available.Swarm,
 		SandboxAvailable:  available.Sandbox,
@@ -316,6 +316,19 @@ func (b *Bot) workspaceToolsAvailable() bool {
 	return b.tools != nil && b.tools.Get("read_file") != nil && b.tools.Get("write_file") != nil
 }
 
+func appendPromptOverlay(base, extra string) string {
+	base = strings.TrimSpace(base)
+	extra = strings.TrimSpace(extra)
+	switch {
+	case base == "":
+		return extra
+	case extra == "":
+		return base
+	default:
+		return base + "\n\n" + extra
+	}
+}
+
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
@@ -386,6 +399,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		convCtx,
 		agentloop.Options{
 			MaxIterations:           maxIterations,
+			MaxElapsed:              loopPolicy.MaxElapsed,
 			Tools:                   toolDefs,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: loopPolicy.AllowNoToolFinalization,

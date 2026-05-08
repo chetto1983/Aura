@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aura/aura/internal/llm"
 )
@@ -49,6 +50,7 @@ type TerminalHandler func(ctx context.Context, terminalTool, lastToolResult stri
 
 type Options struct {
 	MaxIterations           int
+	MaxElapsed              time.Duration
 	Tools                   []llm.ToolDefinition
 	TerminalToolPolicy      bool
 	AllowNoToolFinalization bool
@@ -85,12 +87,14 @@ type Stats struct {
 	TokensTotal            int
 	CostUSD                float64
 	MaxIterationsHit       bool
+	MaxElapsedHit          bool
 }
 
 func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (Result, error) {
 	if opts.MaxIterations < 1 {
 		opts.MaxIterations = 1
 	}
+	start := time.Now()
 	var lastToolResult string
 	var stats Stats
 	emitStats := func() {
@@ -101,6 +105,13 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	emitStats()
 
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
+		if opts.MaxElapsed > 0 && time.Since(start) >= opts.MaxElapsed {
+			stats.MaxElapsedHit = true
+			fallback := fallbackMessage(lastToolResult, opts)
+			state.AddAssistantMessage(fallback)
+			emitStats()
+			return Result{Text: fallback, Stats: stats}, nil
+		}
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
 				return Result{Text: message, Stats: stats}, nil
@@ -180,7 +191,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			state.AddAssistantMessage(execution.FatalResult)
 			return Result{Text: execution.FatalResult, Stats: stats}, nil
 		}
-		if opts.TerminalToolPolicy && execution.TerminalTool != "" && execution.TerminalTool != "run_aurabot_swarm" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
+		if opts.TerminalToolPolicy && execution.TerminalTool != "" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
 			response, delivered, handled := opts.TerminalHandler(ctx, execution.TerminalTool, lastToolResult, &stats)
 			emitStats()
 			if handled {

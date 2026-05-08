@@ -210,6 +210,11 @@ func TestPromptBlock(t *testing.T) {
 	if !strings.Contains(block, "read_file") || !strings.Contains(block, "search_files") {
 		t.Fatalf("PromptBlock() missing file-tool skill inspection instruction:\n%s", block)
 	}
+	for _, want := range []string{"that exact file only", "Do not read skill directories", "multiple descriptions clearly apply"} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("PromptBlock() missing precise skill inspection guidance %q:\n%s", want, block)
+		}
+	}
 }
 
 func TestPromptBlockTruncatesLongDescription(t *testing.T) {

@@ -21,6 +21,13 @@ func TestSwarmTurnHintForBroadSecondBrainRead(t *testing.T) {
 	}
 }
 
+func TestSwarmTurnHintForProjectToolAudit(t *testing.T) {
+	got := SwarmTurnHint("Aura, leggi i file del progetto e dimmi quali strumenti hai adesso per migliorarti senza vecchi guardrail inutili.")
+	if !strings.Contains(got, "run_aurabot_swarm") {
+		t.Fatalf("SwarmTurnHint(project audit) = %q, want swarm hint", got)
+	}
+}
+
 func TestSwarmTurnHintSkipsSimpleLookup(t *testing.T) {
 	if got := SwarmTurnHint("Leggi la pagina wiki project-aura"); got != "" {
 		t.Fatalf("SwarmTurnHint(simple lookup) = %q, want empty", got)

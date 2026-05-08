@@ -48,6 +48,35 @@ func TestResolveDebugDBPathLeavesAbsolutePathUnchanged(t *testing.T) {
 	}
 }
 
+func TestDefaultDebugEnvPathPrefersContainerDataEnv(t *testing.T) {
+	t.Setenv("AURA_ENV_PATH", "")
+	dir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("data", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("data", ".env"), []byte("DB_PATH=./aura.db\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultDebugEnvPath(); got != filepath.Join("data", ".env") {
+		t.Fatalf("defaultDebugEnvPath() = %q, want data/.env", got)
+	}
+}
+
+func TestDefaultDebugEnvPathHonorsExplicitEnv(t *testing.T) {
+	t.Setenv("AURA_ENV_PATH", "custom.env")
+	if got := defaultDebugEnvPath(); got != "custom.env" {
+		t.Fatalf("defaultDebugEnvPath() = %q, want explicit env", got)
+	}
+}
+
 func TestPrepareDebugDBCopyCopiesDatabaseAndSidecars(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "aura.db")
@@ -280,10 +309,10 @@ func TestTelegramSandboxSmokeReportRejectsArtifactSmokeWithoutSource(t *testing.
 	}
 }
 
-func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacy5050(t *testing.T) {
+func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacyExecuteCodeOr5050(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
-		CalledExecuteCode: true,
-		FinalText:         "42",
+		ToolCalls: []string{"run_aurabot_swarm"},
+		FinalText: "Swarm research completed.",
 	}
 
 	if err := validateTelegramSandboxSmoke(result, false, true); err != nil {
