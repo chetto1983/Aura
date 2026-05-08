@@ -5,45 +5,41 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/search"
-	"github.com/aura/aura/internal/source"
 )
 
 const (
 	searchMemoryDefaultLimit   = 6
 	searchMemoryMaxLimit       = 12
-	searchMemoryScanLimit      = 120
-	searchMemoryReadLimit      = 6000
 	searchMemorySnippetLimit   = 260
 	searchMemoryDefaultTimeout = 5 * time.Second
 )
 
-var sourcePageHeadingRE = regexp.MustCompile(`(?m)^## Page ([0-9]+)\s*$`)
+type compactMemorySearcher interface {
+	Search(ctx context.Context, query string, filter memoryindex.Filter) ([]memoryindex.Document, error)
+}
 
 type SearchMemoryTool struct {
 	wiki    search.Searcher
-	sources source.Repository
-	archive conversation.TurnReader
+	compact compactMemorySearcher
 	timeout time.Duration
 }
 
-func NewSearchMemoryTool(wiki search.Searcher, sources source.Repository, archive conversation.TurnReader) *SearchMemoryTool {
-	return NewSearchMemoryToolWithTimeout(wiki, sources, archive, searchMemoryDefaultTimeout)
+func NewSearchMemoryTool(wiki search.Searcher, compact compactMemorySearcher) *SearchMemoryTool {
+	return NewSearchMemoryToolWithTimeout(wiki, compact, searchMemoryDefaultTimeout)
 }
 
-func NewSearchMemoryToolWithTimeout(wiki search.Searcher, sources source.Repository, archive conversation.TurnReader, timeout time.Duration) *SearchMemoryTool {
-	if wiki == nil && sources == nil && archive == nil {
+func NewSearchMemoryToolWithTimeout(wiki search.Searcher, compact compactMemorySearcher, timeout time.Duration) *SearchMemoryTool {
+	if wiki == nil && compact == nil {
 		return nil
 	}
-	return &SearchMemoryTool{wiki: wiki, sources: sources, archive: archive, timeout: timeout}
+	return &SearchMemoryTool{wiki: wiki, compact: compact, timeout: timeout}
 }
 
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
@@ -63,7 +59,7 @@ func (t *SearchMemoryTool) Parameters() map[string]any {
 			"scope": map[string]any{
 				"type":        "string",
 				"description": "Optional memory scope. Defaults to all.",
-				"enum":        []string{"all", "wiki", "sources", "archive"},
+				"enum":        []string{"all", "wiki", "sources", "archive", "proposals"},
 			},
 			"limit": map[string]any{
 				"type":        "integer",
@@ -105,14 +101,19 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		warnings = append(warnings, wikiWarnings...)
 	}
 	if scopes["sources"] {
-		sourceResults, sourceWarnings := t.searchSources(searchCtx, query)
-		results = append(results, sourceResults...)
-		warnings = append(warnings, sourceWarnings...)
+		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindSource}, chatID, limit)
+		results = append(results, compactResults...)
+		warnings = append(warnings, compactWarnings...)
 	}
 	if scopes["archive"] {
-		archiveResults, archiveWarnings := t.searchArchive(searchCtx, query, chatID)
-		results = append(results, archiveResults...)
-		warnings = append(warnings, archiveWarnings...)
+		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindArchive}, chatID, limit)
+		results = append(results, compactResults...)
+		warnings = append(warnings, compactWarnings...)
+	}
+	if scopes["proposals"] {
+		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindProposal}, chatID, limit)
+		results = append(results, compactResults...)
+		warnings = append(warnings, compactWarnings...)
 	}
 
 	calibrateMemoryScores(results)
@@ -203,103 +204,49 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 	return out, nil
 }
 
-func (t *SearchMemoryTool) searchSources(ctx context.Context, query string) ([]memoryResult, []string) {
-	if t.sources == nil {
-		return nil, []string{"source inbox unavailable"}
+func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kinds []string, chatID int64, limit int) ([]memoryResult, []string) {
+	if t.compact == nil {
+		return nil, []string{"compact memory index unavailable"}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, memoryContextWarning("source search", err)
-	}
-	sources, err := t.sources.List(source.ListFilter{})
-	if err != nil {
-		return nil, []string{"source list failed: " + err.Error()}
-	}
-	if len(sources) > searchMemoryScanLimit {
-		sources = sources[:searchMemoryScanLimit]
-	}
-	out := make([]memoryResult, 0, len(sources))
-	var warnings []string
-	for _, src := range sources {
-		if err := ctx.Err(); err != nil {
-			warnings = append(warnings, memoryContextWarning("source search", err)...)
-			break
-		}
-		body, err := readSourceMarkdown(t.sources, src, searchMemoryReadLimit)
-		if err != nil {
-			continue
-		}
-		haystack := src.ID + " " + src.Filename + " " + string(src.Kind) + " " + body
-		score := lexicalScore(query, haystack)
-		if score <= 0 {
-			continue
-		}
-		snippet, offset := snippetAround(body, query, searchMemorySnippetLimit)
-		page := pageAtOffset(body, offset)
-		out = append(out, memoryResult{
-			Kind:       "source",
-			Identifier: src.ID,
-			Title:      src.Filename,
-			Snippet:    snippet,
-			Page:       page,
-			Score:      score,
-			Handle:     sourceMemoryHandle(src.ID, page),
-		})
-	}
-	return out, warnings
-}
-
-func (t *SearchMemoryTool) searchArchive(ctx context.Context, query string, chatID int64) ([]memoryResult, []string) {
-	if t.archive == nil {
-		return nil, []string{"conversation archive unavailable"}
-	}
-	var (
-		turns []conversation.Turn
-		err   error
-	)
-	if chatID > 0 {
-		turns, err = t.archive.ListByChat(ctx, chatID, searchMemoryScanLimit)
-	} else {
-		turns, err = t.archive.ListAll(ctx, searchMemoryScanLimit)
-	}
+	docs, err := t.compact.Search(ctx, query, memoryindex.Filter{
+		Kinds:  kinds,
+		ChatID: chatID,
+		Limit:  limit,
+	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, []string{"conversation archive search timed out"}
+			return nil, []string{"compact memory search timed out"}
 		}
-		return nil, []string{"conversation archive search failed: " + err.Error()}
+		return nil, []string{"compact memory search failed: " + err.Error()}
 	}
-	out := make([]memoryResult, 0, len(turns))
-	for _, turn := range turns {
-		if strings.TrimSpace(turn.Content) == "" {
-			continue
-		}
-		haystack := fmt.Sprintf("chat %d user %d turn %d %s %s", turn.ChatID, turn.UserID, turn.TurnIndex, turn.Role, turn.Content)
-		score := lexicalScore(query, haystack)
-		if score <= 0 {
-			continue
-		}
-		snippet, _ := snippetAround(turn.Content, query, searchMemorySnippetLimit)
-		title := fmt.Sprintf("chat=%d turn=%d", turn.ChatID, turn.TurnIndex)
+	out := make([]memoryResult, 0, len(docs))
+	for _, doc := range docs {
+		snippet, _ := snippetAround(doc.Body, query, searchMemorySnippetLimit)
+		identifier := compactIdentifier(doc)
 		out = append(out, memoryResult{
-			Kind:       "archive",
-			Identifier: fmt.Sprintf("conversation:%d", turn.ID),
-			Title:      title,
-			Role:       turn.Role,
+			Kind:       doc.Kind,
+			Identifier: identifier,
+			Title:      doc.Title,
 			Snippet:    snippet,
-			Score:      score,
-			Handle:     fmt.Sprintf("conversation:%d", turn.ID),
+			Page:       doc.Page,
+			Score:      doc.Score,
+			Handle:     doc.Handle,
 		})
 	}
 	return out, nil
 }
 
-func memoryContextWarning(prefix string, err error) []string {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return []string{prefix + " timed out"}
+func compactIdentifier(doc memoryindex.Document) string {
+	if doc.Handle != "" {
+		switch doc.Kind {
+		case memoryindex.KindArchive, memoryindex.KindProposal:
+			return doc.Handle
+		}
 	}
-	if errors.Is(err, context.Canceled) {
-		return []string{prefix + " canceled"}
+	if doc.Kind == memoryindex.KindSource && doc.SourceID != "" {
+		return doc.SourceID
 	}
-	return []string{prefix + " failed: " + err.Error()}
+	return doc.ID
 }
 
 func formatMemoryResults(query string, results []memoryResult, warnings []string) string {
@@ -384,37 +331,19 @@ func memoryScopes(raw string) (map[string]bool, error) {
 		out["wiki"] = true
 		out["sources"] = true
 		out["archive"] = true
+		out["proposals"] = true
 	case "wiki":
 		out["wiki"] = true
 	case "source", "sources":
 		out["sources"] = true
 	case "archive", "conversations", "conversation":
 		out["archive"] = true
+	case "proposal", "proposals":
+		out["proposals"] = true
 	default:
 		return nil, fmt.Errorf("search_memory: unsupported scope %q", raw)
 	}
 	return out, nil
-}
-
-func lexicalScore(query, text string) float64 {
-	terms := queryTerms(query)
-	if len(terms) == 0 {
-		return 0
-	}
-	lower := strings.ToLower(text)
-	score := 0.0
-	phrase := strings.ToLower(strings.TrimSpace(query))
-	if phrase != "" && strings.Contains(lower, phrase) {
-		score += float64(len(terms)) * 3
-	}
-	for _, term := range terms {
-		count := strings.Count(lower, term)
-		if count > 8 {
-			count = 8
-		}
-		score += float64(count)
-	}
-	return score
 }
 
 func calibrateMemoryScores(results []memoryResult) {
@@ -434,9 +363,20 @@ func calibratedMemoryScore(kind string, raw float64) float64 {
 		}
 		return 0.95
 	case "source":
+		if raw <= 1 {
+			return raw
+		}
 		return 0.45 + cappedRatio(raw, 12)*0.40
 	case "archive":
+		if raw <= 1 {
+			return raw
+		}
 		return 0.35 + cappedRatio(raw, 12)*0.35
+	case "proposal":
+		if raw <= 1 {
+			return raw
+		}
+		return 0.40 + cappedRatio(raw, 12)*0.35
 	default:
 		return cappedRatio(raw, 12) * 0.70
 	}
@@ -450,17 +390,6 @@ func cappedRatio(value, cap float64) float64 {
 		return 1
 	}
 	return value / cap
-}
-
-func sourceMemoryHandle(id string, page int) string {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return ""
-	}
-	if page > 0 {
-		return fmt.Sprintf("source:%s#page=%d", id, page)
-	}
-	return "source:" + id
 }
 
 func queryTerms(query string) []string {
@@ -528,25 +457,6 @@ func findQueryOffset(text, query string) int {
 		}
 	}
 	return -1
-}
-
-func pageAtOffset(text string, offset int) int {
-	if offset < 0 {
-		return 0
-	}
-	matches := sourcePageHeadingRE.FindAllStringSubmatchIndex(text, -1)
-	page := 0
-	for _, match := range matches {
-		if match[0] > offset {
-			break
-		}
-		if len(match) >= 4 {
-			if n, err := strconv.Atoi(text[match[2]:match[3]]); err == nil {
-				page = n
-			}
-		}
-	}
-	return page
 }
 
 func int64Arg(args map[string]any, key string) int64 {

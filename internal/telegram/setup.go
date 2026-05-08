@@ -19,6 +19,7 @@ import (
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
@@ -253,6 +254,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
+	memoryStore, err := memoryindex.NewStore(schedStore.DB())
+	if err != nil {
+		logger.Warn("compact memory index unavailable", "error", err)
+	}
 
 	swarmStore, err := swarm.NewStoreWithDB(pool)
 	if err != nil {
@@ -409,10 +414,28 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			logger.Warn("conversation archive unavailable", "error", err)
 		} else {
 			b.archiveDB = archiveStore
-			b.archiver = conversation.NewBufferedAppender(archiveStore, 100)
+			var archiveAppender conversation.TurnAppender = archiveStore
+			if memoryStore != nil {
+				archiveAppender = memoryindex.NewIndexingTurnAppender(archiveStore, memoryStore)
+			}
+			b.archiver = conversation.NewBufferedAppender(archiveAppender, 100)
 		}
 	}
-	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, sourceStore, b.archiveDB, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {
+	if memoryStore != nil {
+		rebuildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		report, err := memoryindex.Rebuild(rebuildCtx, memoryStore, memoryindex.RebuildInput{
+			Sources:   sourceStore,
+			Archive:   b.archiveDB,
+			Proposals: summariesStore,
+		})
+		cancel()
+		if err != nil {
+			logger.Warn("compact memory index rebuild failed", "error", err)
+		} else {
+			logger.Info("compact memory index rebuilt", "sources", report.SourcesIndexed, "archive", report.ArchiveIndexed, "proposals", report.ProposalsIndexed)
+		}
+	}
+	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, memoryStore, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {
 		toolRegistry.Register(tool)
 	}
 

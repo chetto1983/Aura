@@ -32,6 +32,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/source"
@@ -142,6 +143,19 @@ func main() {
 		fmt.Printf("FAIL: seed briefing: %v\n", err)
 		os.Exit(1)
 	}
+	memoryIndex, err := memoryindex.NewStore(schedStore.DB())
+	if err != nil {
+		fmt.Printf("FAIL: memoryindex.NewStore: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := memoryindex.Rebuild(ctx, memoryIndex, memoryindex.RebuildInput{
+		Sources:   srcStore,
+		Archive:   archiveStore,
+		Proposals: summariesStore,
+	}); err != nil {
+		fmt.Printf("FAIL: memoryindex.Rebuild: %v\n", err)
+		os.Exit(1)
+	}
 
 	reg := tools.NewRegistry(logger)
 	reg.Register(tools.NewStoreSourceTool(srcStore))
@@ -149,7 +163,7 @@ func main() {
 	reg.Register(tools.NewListSourcesTool(srcStore))
 	reg.Register(tools.NewLintSourcesTool(srcStore))
 	reg.Register(tools.NewIngestSourceTool(pipeline))
-	if tool := tools.NewSearchMemoryTool(engine, srcStore, archiveStore); tool != nil {
+	if tool := tools.NewSearchMemoryTool(engine, memoryIndex); tool != nil {
 		reg.Register(tool)
 	}
 	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {

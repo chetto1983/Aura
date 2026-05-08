@@ -28,6 +28,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/source"
@@ -268,12 +269,19 @@ func run(ctx context.Context, limit int) (report, string, error) {
 	if err := seedMemory(ctx, srcStore, archive); err != nil {
 		return report{}, wikiDir, err
 	}
+	memoryIndex, err := memoryindex.NewStore(sched.DB())
+	if err != nil {
+		return report{}, wikiDir, fmt.Errorf("memory index: %w", err)
+	}
+	if _, err := memoryindex.Rebuild(ctx, memoryIndex, memoryindex.RebuildInput{Sources: srcStore, Archive: archive}); err != nil {
+		return report{}, wikiDir, fmt.Errorf("memory index rebuild: %w", err)
+	}
 	workspaceRoot, err := seedWorkspace(filepath.Join(wikiDir, "workspace"))
 	if err != nil {
 		return report{}, wikiDir, err
 	}
 
-	searchTool := tools.NewSearchMemoryTool(nil, srcStore, archive)
+	searchTool := tools.NewSearchMemoryTool(nil, memoryIndex)
 	if searchTool == nil {
 		return report{}, wikiDir, fmt.Errorf("memory tools unavailable")
 	}
@@ -353,13 +361,20 @@ func runLive(ctx context.Context, limit int, liveTimeout, liveLatencyBudget time
 	if err := seedMemory(ctx, srcStore, archive); err != nil {
 		return liveReport{}, wikiDir, err
 	}
+	memoryIndex, err := memoryindex.NewStore(sched.DB())
+	if err != nil {
+		return liveReport{}, wikiDir, fmt.Errorf("memory index: %w", err)
+	}
+	if _, err := memoryindex.Rebuild(ctx, memoryIndex, memoryindex.RebuildInput{Sources: srcStore, Archive: archive}); err != nil {
+		return liveReport{}, wikiDir, fmt.Errorf("memory index rebuild: %w", err)
+	}
 	workspaceRoot, err := seedWorkspace(filepath.Join(wikiDir, "workspace"))
 	if err != nil {
 		return liveReport{}, wikiDir, err
 	}
 
 	reg := tools.NewRegistry(logger)
-	if tool := tools.NewSearchMemoryTool(nil, srcStore, archive); tool != nil {
+	if tool := tools.NewSearchMemoryTool(nil, memoryIndex); tool != nil {
 		reg.Register(tool)
 	}
 	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {

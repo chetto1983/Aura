@@ -105,7 +105,7 @@ func TestRegistryUsesToolDefinitionProvider(t *testing.T) {
 
 func TestKnownToolDefinitionsIncludeSpecificExamples(t *testing.T) {
 	reg := NewRegistry(nil)
-	reg.Register(NewSearchMemoryTool(fakeMemorySearchForExamples{}, nil, nil))
+	reg.Register(NewSearchMemoryTool(fakeMemorySearchForExamples{}, nil))
 	reg.Register(NewCreateDOCXTool(nil, nil))
 
 	defs := reg.DefinitionsFor([]string{"search_memory", "create_docx"})

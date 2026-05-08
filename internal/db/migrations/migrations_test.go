@@ -171,6 +171,8 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"wiki_issues",
 		"embedding_cache",
 		"wiki_documents",
+		"compact_memory_documents",
+		"compact_memory_fts",
 		"swarm_runs",
 		"swarm_tasks",
 	}
@@ -203,6 +205,22 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"tokens_prompt",
 		"tokens_completion",
 		"tokens_total",
+	})
+	assertColumns(t, db, "compact_memory_documents", []string{
+		"id",
+		"kind",
+		"title",
+		"body",
+		"handle",
+		"source_id",
+		"page",
+		"chat_id",
+		"conversation_id",
+		"proposal_id",
+		"status",
+		"entities_json",
+		"tags_json",
+		"updated_at",
 	})
 }
 
@@ -371,8 +389,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 3 || first[0] != 1 || first[1] != 2 || first[2] != 3 {
-		t.Fatalf("applied versions = %v, want [1 2 3]", first)
+	if len(first) != 4 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4]", first)
 	}
 }
 
@@ -455,6 +473,7 @@ FROM sqlite_master
 WHERE type = 'table'
   AND name NOT LIKE 'sqlite_%'
   AND name NOT LIKE 'wiki_documents_%'
+  AND name NOT LIKE 'compact_memory_fts_%'
 ORDER BY name
 `)
 	if err != nil {
@@ -631,7 +650,20 @@ WHERE type = 'table'
 	if exists == 0 {
 		return nil
 	}
-	return []string{"fts|wiki_documents|present"}
+	var compactExists int
+	if err := db.QueryRow(`
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type = 'table'
+  AND name = 'compact_memory_fts'
+`).Scan(&compactExists); err != nil {
+		t.Fatalf("query compact_memory_fts table: %v", err)
+	}
+	out := []string{"fts|wiki_documents|present"}
+	if compactExists > 0 {
+		out = append(out, "fts|compact_memory_fts|present")
+	}
+	return out
 }
 
 func assertFTSContentBehavior(t *testing.T, db *sql.DB) {
@@ -654,6 +686,39 @@ func assertFTSContentBehavior(t *testing.T, db *sql.DB) {
 		t.Fatalf("delete wiki_documents probe: %v", err)
 	}
 	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_documents WHERE wiki_documents MATCH 'convergence'`, 0)
+	if _, err := db.Exec(
+		`INSERT INTO compact_memory_documents (id, kind, title, body, handle, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		probeID,
+		"source",
+		"Compact Probe",
+		"compact memory convergence verifies FTS content behavior",
+		"source:probe",
+		"2026-05-08T00:00:00Z",
+	); err != nil {
+		t.Fatalf("insert compact_memory_documents probe: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO compact_memory_fts (id, kind, title, body, handle, source_id, status, entities, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		probeID,
+		"source",
+		"Compact Probe",
+		"compact memory convergence verifies FTS content behavior",
+		"source:probe",
+		"",
+		"",
+		"",
+		"",
+	); err != nil {
+		t.Fatalf("insert compact_memory_fts probe: %v", err)
+	}
+	assertScalar(t, db, `SELECT COUNT(*) FROM compact_memory_fts WHERE compact_memory_fts MATCH 'compact'`, 1)
+	if _, err := db.Exec(`DELETE FROM compact_memory_fts WHERE id = ?`, probeID); err != nil {
+		t.Fatalf("delete compact_memory_fts probe: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM compact_memory_documents WHERE id = ?`, probeID); err != nil {
+		t.Fatalf("delete compact_memory_documents probe: %v", err)
+	}
+	assertScalar(t, db, `SELECT COUNT(*) FROM compact_memory_fts WHERE compact_memory_fts MATCH 'compact'`, 0)
 }
 
 func assertColumns(t *testing.T, db *sql.DB, table string, names []string) {

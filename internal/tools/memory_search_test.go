@@ -12,16 +12,17 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
 )
 
 func TestSearchMemoryTool_MetadataAndValidation(t *testing.T) {
-	if NewSearchMemoryTool(nil, nil, nil) != nil {
+	if NewSearchMemoryTool(nil, nil) != nil {
 		t.Fatal("expected nil tool when every store is unavailable")
 	}
-	tool := NewSearchMemoryTool(nil, newTestSourceStore(t), nil)
+	tool := NewSearchMemoryTool(nil, newTestMemoryIndex(t))
 	if tool.Name() != "search_memory" || tool.Description() == "" {
 		t.Fatal("search_memory metadata is incomplete")
 	}
@@ -63,7 +64,11 @@ func TestSearchMemoryTool_SearchesSourcesAndArchive(t *testing.T) {
 		t.Fatalf("Append: %v", err)
 	}
 
-	tool := NewSearchMemoryTool(nil, sourceStore, archive)
+	index := newTestMemoryIndex(t)
+	if _, err := memoryindex.Rebuild(ctx, index, memoryindex.RebuildInput{Sources: sourceStore, Archive: archive}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	tool := NewSearchMemoryTool(nil, index)
 	out, err := tool.Execute(ctx, map[string]any{"query": "contract deadline", "limit": float64(5)})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -114,7 +119,11 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 		t.Fatalf("write ocr.md: %v", err)
 	}
 
-	tool := NewSearchMemoryTool(nil, sourceStore, nil)
+	index := newTestMemoryIndex(t)
+	if _, err := memoryindex.Rebuild(ctx, index, memoryindex.RebuildInput{Sources: sourceStore}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	tool := NewSearchMemoryTool(nil, index)
 	out, err := tool.Execute(ctx, map[string]any{"query": "cancellation clause", "scope": "sources"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -162,7 +171,7 @@ func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
 		t.Fatalf("IndexWikiPages: %v", err)
 	}
 
-	tool := NewSearchMemoryTool(engine, nil, nil)
+	tool := NewSearchMemoryTool(engine, nil)
 	out, err := tool.Execute(ctx, map[string]any{"query": "backlinks beta", "scope": "wiki"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -197,7 +206,7 @@ func TestSearchMemoryToolAcceptsWikiSearchInterface(t *testing.T) {
 			Content: "Search memory should depend on the wiki search interface.",
 			Score:   0.8,
 		}},
-	}, nil, nil)
+	}, nil)
 	if tool == nil {
 		t.Fatal("expected search_memory tool")
 	}
@@ -221,6 +230,10 @@ func TestSearchMemoryToolCalibratesMixedScoresBeforeMerging(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Put source: %v", err)
 	}
+	index := newTestMemoryIndex(t)
+	if _, err := memoryindex.Rebuild(ctx, index, memoryindex.RebuildInput{Sources: sourceStore}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
 	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
 		indexed: true,
 		results: []search.Result{{
@@ -230,7 +243,7 @@ func TestSearchMemoryToolCalibratesMixedScoresBeforeMerging(t *testing.T) {
 			Content: "Memory boundary canonical page.",
 			Score:   0.75,
 		}},
-	}, sourceStore, nil)
+	}, index)
 
 	out, err := tool.Execute(ctx, map[string]any{"query": "memory boundary", "limit": float64(3)})
 	if err != nil {
@@ -260,7 +273,7 @@ func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
 		Content: "search_memory calls should receive a bounded context.",
 		Score:   0.9,
 	}}}
-	tool := NewSearchMemoryToolWithTimeout(wiki, nil, nil, 50*time.Millisecond)
+	tool := NewSearchMemoryToolWithTimeout(wiki, nil, 50*time.Millisecond)
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "bounded memory", "scope": "wiki"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -277,7 +290,7 @@ func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
 }
 
 func TestSearchMemoryToolWithTimeoutReturnsWarningOnWikiTimeout(t *testing.T) {
-	tool := NewSearchMemoryToolWithTimeout(blockingMemoryWikiSearch{}, nil, nil, 10*time.Millisecond)
+	tool := NewSearchMemoryToolWithTimeout(blockingMemoryWikiSearch{}, nil, 10*time.Millisecond)
 	start := time.Now()
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "slow qdrant", "scope": "wiki"})
 	if err != nil {
@@ -312,38 +325,45 @@ func (blockingMemoryWikiSearch) Search(ctx context.Context, _ string, _ int) ([]
 	return nil, ctx.Err()
 }
 
-type fakeMemoryArchiveReader struct {
-	turns []conversation.Turn
+type fakeCompactMemorySearch struct {
+	docs []memoryindex.Document
 }
 
-func (f fakeMemoryArchiveReader) ListByChat(_ context.Context, chatID int64, limit int) ([]conversation.Turn, error) {
-	var out []conversation.Turn
-	for _, turn := range f.turns {
-		if turn.ChatID == chatID {
-			out = append(out, turn)
+func (f fakeCompactMemorySearch) Search(_ context.Context, _ string, filter memoryindex.Filter) ([]memoryindex.Document, error) {
+	var out []memoryindex.Document
+	for _, doc := range f.docs {
+		if len(filter.Kinds) > 0 {
+			match := false
+			for _, kind := range filter.Kinds {
+				if doc.Kind == kind {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
 		}
+		if filter.ChatID > 0 && doc.Kind == memoryindex.KindArchive && doc.ChatID != filter.ChatID {
+			continue
+		}
+		out = append(out, doc)
 	}
-	if len(out) > limit {
-		out = out[:limit]
+	if filter.Limit > 0 && len(out) > filter.Limit {
+		out = out[:filter.Limit]
 	}
 	return out, nil
 }
 
-func (f fakeMemoryArchiveReader) ListAll(_ context.Context, limit int) ([]conversation.Turn, error) {
-	if len(f.turns) > limit {
-		return f.turns[:limit], nil
-	}
-	return f.turns, nil
-}
-
-func TestSearchMemoryToolAcceptsArchiveReaderInterface(t *testing.T) {
-	tool := NewSearchMemoryTool(nil, nil, fakeMemoryArchiveReader{turns: []conversation.Turn{{
-		ID:        12,
-		ChatID:    42,
-		UserID:    7,
-		TurnIndex: 3,
-		Role:      "user",
-		Content:   "Archive boundary should not require concrete SQLite storage.",
+func TestSearchMemoryToolAcceptsCompactSearchInterface(t *testing.T) {
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{{
+		ID:     "archive:12",
+		Kind:   memoryindex.KindArchive,
+		Title:  "chat=42 turn=3",
+		Body:   "Archive boundary should not require concrete SQLite storage.",
+		Handle: "conversation:12",
+		ChatID: 42,
+		Score:  1,
 	}}})
 	if tool == nil {
 		t.Fatal("expected search_memory tool")
@@ -382,7 +402,11 @@ func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 		}
 	}
 
-	tool := NewSearchMemoryTool(nil, sourceStore, archive)
+	index := newTestMemoryIndex(t)
+	if _, err := memoryindex.Rebuild(ctx, index, memoryindex.RebuildInput{Sources: sourceStore, Archive: archive}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	tool := NewSearchMemoryTool(nil, index)
 	out, err := tool.Execute(ctx, map[string]any{"query": "private trip", "scope": "archive", "chat_id": float64(10)})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -405,6 +429,16 @@ func writeMemoryTestPage(t *testing.T, dir string, page *wiki.Page) {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+}
+
+func newTestMemoryIndex(t *testing.T) *memoryindex.Store {
+	t.Helper()
+	sched := newTestSchedStore(t)
+	store, err := memoryindex.NewStore(sched.DB())
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return store
 }
 
 func memoryKeywordEmbedding(_ context.Context, text string) ([]float32, error) {

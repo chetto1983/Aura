@@ -1,0 +1,414 @@
+package memoryindex
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+	"unicode"
+)
+
+const (
+	KindSource   = "source"
+	KindArchive  = "archive"
+	KindProposal = "proposal"
+)
+
+const defaultSearchLimit = 8
+
+type Document struct {
+	ID             string
+	Kind           string
+	Title          string
+	Body           string
+	Handle         string
+	SourceID       string
+	Page           int
+	ChatID         int64
+	ConversationID int64
+	ProposalID     int64
+	Status         string
+	Entities       []string
+	Tags           []string
+	UpdatedAt      time.Time
+	Score          float64
+}
+
+type Filter struct {
+	Kinds  []string
+	ChatID int64
+	Limit  int
+}
+
+type Store struct {
+	db  *sql.DB
+	now func() time.Time
+}
+
+func NewStore(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, fmt.Errorf("memoryindex: db required")
+	}
+	return &Store{
+		db:  db,
+		now: func() time.Time { return time.Now().UTC() },
+	}, nil
+}
+
+func (s *Store) Upsert(ctx context.Context, doc Document) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("memoryindex: store unavailable")
+	}
+	doc.ID = strings.TrimSpace(doc.ID)
+	doc.Kind = strings.TrimSpace(doc.Kind)
+	doc.Body = strings.TrimSpace(doc.Body)
+	if doc.ID == "" {
+		return fmt.Errorf("memoryindex: document id required")
+	}
+	if doc.Kind == "" {
+		return fmt.Errorf("memoryindex: document kind required")
+	}
+	if doc.Body == "" {
+		return fmt.Errorf("memoryindex: document body required")
+	}
+	if doc.Handle == "" {
+		doc.Handle = doc.ID
+	}
+	if doc.UpdatedAt.IsZero() {
+		doc.UpdatedAt = s.now()
+	}
+	entitiesJSON := stringListJSON(doc.Entities)
+	tagsJSON := stringListJSON(doc.Tags)
+	updatedAt := doc.UpdatedAt.UTC().Format(time.RFC3339Nano)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("memoryindex: begin upsert: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_fts WHERE id = ?`, doc.ID); err != nil {
+		return fmt.Errorf("memoryindex: delete old fts row: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT OR REPLACE INTO compact_memory_documents
+  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`,
+		doc.ID,
+		doc.Kind,
+		doc.Title,
+		doc.Body,
+		doc.Handle,
+		doc.SourceID,
+		doc.Page,
+		doc.ChatID,
+		doc.ConversationID,
+		doc.ProposalID,
+		doc.Status,
+		entitiesJSON,
+		tagsJSON,
+		updatedAt,
+	); err != nil {
+		return fmt.Errorf("memoryindex: upsert document: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO compact_memory_fts
+  (id, kind, title, body, handle, source_id, status, entities, tags)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`,
+		doc.ID,
+		doc.Kind,
+		doc.Title,
+		doc.Body,
+		doc.Handle,
+		doc.SourceID,
+		doc.Status,
+		strings.Join(doc.Entities, " "),
+		strings.Join(doc.Tags, " "),
+	); err != nil {
+		return fmt.Errorf("memoryindex: upsert fts row: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("memoryindex: commit upsert: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("memoryindex: store unavailable")
+	}
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return fmt.Errorf("memoryindex: kind required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("memoryindex: begin replace: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_fts WHERE kind = ?`, kind); err != nil {
+		return fmt.Errorf("memoryindex: delete old fts kind: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_documents WHERE kind = ?`, kind); err != nil {
+		return fmt.Errorf("memoryindex: delete old documents kind: %w", err)
+	}
+	for _, doc := range docs {
+		doc.Kind = kind
+		doc.ID = strings.TrimSpace(doc.ID)
+		doc.Body = strings.TrimSpace(doc.Body)
+		if doc.ID == "" || doc.Body == "" {
+			continue
+		}
+		if doc.Handle == "" {
+			doc.Handle = doc.ID
+		}
+		if doc.UpdatedAt.IsZero() {
+			doc.UpdatedAt = s.now()
+		}
+		entitiesJSON := stringListJSON(doc.Entities)
+		tagsJSON := stringListJSON(doc.Tags)
+		updatedAt := doc.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO compact_memory_documents
+  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`,
+			doc.ID, doc.Kind, doc.Title, doc.Body, doc.Handle, doc.SourceID, doc.Page,
+			doc.ChatID, doc.ConversationID, doc.ProposalID, doc.Status, entitiesJSON, tagsJSON, updatedAt,
+		); err != nil {
+			return fmt.Errorf("memoryindex: insert document %s: %w", doc.ID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO compact_memory_fts
+  (id, kind, title, body, handle, source_id, status, entities, tags)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`,
+			doc.ID, doc.Kind, doc.Title, doc.Body, doc.Handle, doc.SourceID, doc.Status,
+			strings.Join(doc.Entities, " "), strings.Join(doc.Tags, " "),
+		); err != nil {
+			return fmt.Errorf("memoryindex: insert fts %s: %w", doc.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("memoryindex: commit replace: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) Search(ctx context.Context, query string, filter Filter) ([]Document, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("memoryindex: store unavailable")
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	candidates, err := s.exactSearch(ctx, query, filter, limit)
+	if err != nil {
+		return nil, err
+	}
+	ftsResults, err := s.ftsSearch(ctx, query, filter, limit)
+	if err != nil {
+		return nil, err
+	}
+	candidates = append(candidates, ftsResults...)
+	return mergeDocuments(candidates, limit), nil
+}
+
+func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, limit int) ([]Document, error) {
+	values := exactCandidates(query)
+	if len(values) == 0 {
+		return nil, nil
+	}
+	clauses := make([]string, 0, len(values)*3)
+	args := make([]any, 0, len(values)*3+len(filter.Kinds)+2)
+	for _, value := range values {
+		clauses = append(clauses, `lower(d.id) = ?`, `lower(d.handle) = ?`, `lower(d.title) = ?`)
+		args = append(args, value, value, value)
+	}
+	where, filterArgs := filterWhere(filter)
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at
+FROM compact_memory_documents d
+WHERE (`+strings.Join(clauses, " OR ")+`)`+where+`
+ORDER BY length(d.id), d.id
+LIMIT ?
+`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: exact search: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 1)
+}
+
+func (s *Store) ftsSearch(ctx context.Context, query string, filter Filter, limit int) ([]Document, error) {
+	safeQuery := escapeFTS5Query(query)
+	if safeQuery == "" {
+		return nil, nil
+	}
+	where, args := filterWhere(filter)
+	args = append([]any{safeQuery}, args...)
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, f.rank
+FROM compact_memory_fts f
+JOIN compact_memory_documents d ON d.id = f.id
+WHERE compact_memory_fts MATCH ?`+where+`
+ORDER BY f.rank
+LIMIT ?
+`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: fts search: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 0)
+}
+
+func filterWhere(filter Filter) (string, []any) {
+	var clauses []string
+	var args []any
+	kinds := uniqueNonEmpty(filter.Kinds)
+	if len(kinds) > 0 {
+		placeholders := make([]string, len(kinds))
+		for i, kind := range kinds {
+			placeholders[i] = "?"
+			args = append(args, kind)
+		}
+		clauses = append(clauses, "d.kind IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if filter.ChatID > 0 {
+		clauses = append(clauses, "(d.kind <> ? OR d.chat_id = ?)")
+		args = append(args, KindArchive, filter.ChatID)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " AND " + strings.Join(clauses, " AND "), args
+}
+
+func scanDocuments(rows *sql.Rows, fixedScore float64) ([]Document, error) {
+	var out []Document
+	for rows.Next() {
+		var doc Document
+		var entitiesJSON, tagsJSON, updatedAt string
+		if fixedScore > 0 {
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt); err != nil {
+				return nil, err
+			}
+			doc.Score = fixedScore
+		} else {
+			var rank float64
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &rank); err != nil {
+				return nil, err
+			}
+			doc.Score = 0.35 + cappedRatio(-rank, 12)*0.50
+		}
+		doc.Entities = parseStringList(entitiesJSON)
+		doc.Tags = parseStringList(tagsJSON)
+		if ts, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
+			doc.UpdatedAt = ts
+		}
+		out = append(out, doc)
+	}
+	return out, rows.Err()
+}
+
+func mergeDocuments(docs []Document, limit int) []Document {
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	byID := map[string]Document{}
+	for _, doc := range docs {
+		if doc.ID == "" {
+			continue
+		}
+		if existing, ok := byID[doc.ID]; ok && existing.Score >= doc.Score {
+			continue
+		}
+		byID[doc.ID] = doc
+	}
+	out := make([]Document, 0, len(byID))
+	for _, doc := range byID {
+		out = append(out, doc)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Score == out[j].Score {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Score > out[j].Score
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func exactCandidates(query string) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return nil
+	}
+	values := []string{query}
+	fields := strings.Fields(query)
+	if len(fields) > 1 {
+		values = append(values, strings.Join(fields, "-"))
+	}
+	return uniqueNonEmpty(values)
+}
+
+func escapeFTS5Query(query string) string {
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+	})
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Join(uniqueNonEmpty(fields), " OR ")
+}
+
+func stringListJSON(values []string) string {
+	b, err := json.Marshal(uniqueNonEmpty(values))
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func parseStringList(raw string) []string {
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil
+	}
+	return uniqueNonEmpty(values)
+}
+
+func uniqueNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func cappedRatio(value, cap float64) float64 {
+	if value <= 0 || cap <= 0 {
+		return 0
+	}
+	if value > cap {
+		return 1
+	}
+	return value / cap
+}

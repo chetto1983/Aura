@@ -19,6 +19,7 @@ var registered = []Migration{
 	{Version: 1, Name: "create_current_schema", Up: createCurrentSchema},
 	{Version: 2, Name: "backfill_current_columns", Up: backfillCurrentColumns},
 	{Version: 3, Name: "add_api_token_expiry", Up: addAPITokenExpiry},
+	{Version: 4, Name: "add_compact_memory_index", Up: addCompactMemoryIndex},
 }
 
 type columnDef struct {
@@ -141,6 +142,34 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
 
 CREATE VIRTUAL TABLE IF NOT EXISTS wiki_documents
 USING fts5(id, content, metadata, title);
+
+CREATE TABLE IF NOT EXISTS compact_memory_documents (
+  id              TEXT PRIMARY KEY,
+  kind            TEXT NOT NULL,
+  title           TEXT NOT NULL DEFAULT '',
+  body            TEXT NOT NULL,
+  handle          TEXT NOT NULL DEFAULT '',
+  source_id       TEXT NOT NULL DEFAULT '',
+  page            INTEGER NOT NULL DEFAULT 0,
+  chat_id         INTEGER NOT NULL DEFAULT 0,
+  conversation_id INTEGER NOT NULL DEFAULT 0,
+  proposal_id     INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT '',
+  entities_json   TEXT NOT NULL DEFAULT '[]',
+  tags_json       TEXT NOT NULL DEFAULT '[]',
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_kind
+  ON compact_memory_documents(kind, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_chat
+  ON compact_memory_documents(kind, chat_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_source
+  ON compact_memory_documents(source_id);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_proposal
+  ON compact_memory_documents(proposal_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS compact_memory_fts
+USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities, tags);
 
 CREATE TABLE IF NOT EXISTS swarm_runs (
   id           TEXT PRIMARY KEY,
@@ -391,6 +420,41 @@ func addAPITokenExpiry(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE api_tokens SET expires_at = ? WHERE token_hash = ?`, update.expiresAt, update.hash); err != nil {
 			return fmt.Errorf("migrations: update api token expiry: %w", err)
 		}
+	}
+	return nil
+}
+
+func addCompactMemoryIndex(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS compact_memory_documents (
+  id              TEXT PRIMARY KEY,
+  kind            TEXT NOT NULL,
+  title           TEXT NOT NULL DEFAULT '',
+  body            TEXT NOT NULL,
+  handle          TEXT NOT NULL DEFAULT '',
+  source_id       TEXT NOT NULL DEFAULT '',
+  page            INTEGER NOT NULL DEFAULT 0,
+  chat_id         INTEGER NOT NULL DEFAULT 0,
+  conversation_id INTEGER NOT NULL DEFAULT 0,
+  proposal_id     INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT '',
+  entities_json   TEXT NOT NULL DEFAULT '[]',
+  tags_json       TEXT NOT NULL DEFAULT '[]',
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_kind
+  ON compact_memory_documents(kind, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_chat
+  ON compact_memory_documents(kind, chat_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_source
+  ON compact_memory_documents(source_id);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_proposal
+  ON compact_memory_documents(proposal_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS compact_memory_fts
+USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities, tags);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add compact memory index: %w", err)
 	}
 	return nil
 }

@@ -26,6 +26,7 @@ Progress:
 - 2026-05-08 ADK-style runner slice: added `internal/agentruntime` as the Aura-native event runner wrapper around the model/tool loop, added dynamic `RuntimeToolset.Tools(ctx)` plus `FilterToolset`, and moved duplicate/repeated retrieval plus document-route next-step shaping into orchestration callbacks (`BeforeToolCallbackForToolset`, `AfterToolCallbackForToolset`). Telegram now adapts runner events instead of owning tool exposure stats and duplicate policy directly.
 - 2026-05-08 document hot-path cut: document turns now carry retrieval-capsule metadata (`HasEvidence`, `SuppressSearchMemory`) so `search_memory` is physically removed from the exposed toolset when the capsule already has evidence or the request can be fulfilled from the prompt. Broad empty-memory document turns still keep `search_memory` available as a one-call fallback. The live document smoke now passes in one loop step with only `create_docx`, no hidden `read_file`, and `elapsed_ms=12976`.
 - 2026-05-08 compact-memory Qdrant PoC: added a throwaway script that indexes synthetic `source/archive/proposal/wiki` facts plus graph entity nodes into a temporary Qdrant collection, fuses Qdrant vector hits with local lexical hits, expands graph neighbors, and prints a compact Retrieval Capsule. This validates the intended shape before touching production schema.
+- 2026-05-08 Task 5 production indexing slice: added the `internal/memoryindex` compact source/archive/proposal index with SQLite + FTS tables (`compact_memory_documents`, `compact_memory_fts`), startup rebuild, and archive append mirroring. `search_memory` no longer depends on `source.Repository` or `conversation.TurnReader` and the old hot-path raw source/archive scans (`searchSources`, `searchArchive`, scan/read limits, lexical scan scorer) were physically deleted. Source OCR pages keep stable `source:<id>#page=N` handles; archive/proposal facts return compact handles from the index.
 
 ## Thesis
 
@@ -209,7 +210,7 @@ Acceptance:
 
 ### Task 5: Compact Source And Archive Recall
 
-- Status: partial. `search_memory` now calibrates mixed wiki/source/archive scores, lowers source read windows, returns compact snippets, and exposes stable follow-up handles. A Qdrant PoC validates the target compact fact + graph-node retrieval shape. Durable indexing of compact source/archive/proposal facts is still open.
+- Status: done for the production SQLite/FTS path. Compact source/archive/proposal facts now live in `compact_memory_documents` mirrored to `compact_memory_fts`; startup rebuild happens outside the turn, archive appends are mirrored through an indexing appender, and `search_memory` queries the compact index instead of scanning raw sources or conversation rows. Qdrant mirroring remains the next acceleration step; the PoC already validates the target vector/graph shape.
 
 - Index compact source summaries, anchors, accepted proposals, preferences, and decisions.
 - Keep raw source bodies and raw archive turns behind explicit handles.
@@ -217,8 +218,8 @@ Acceptance:
 
 Acceptance:
 
-- Source/archive recall returns compact facts first.
-- Deep lexical scans are fallback or explicit.
+- Source/archive/proposal recall returns compact facts from the index.
+- Deep lexical scans are not in the default `search_memory` path; raw bodies remain behind explicit source/archive/proposal handles.
 - Evidence includes stable handles for exact follow-up reads.
 
 ### Task 6: Make Document Generation Boring
@@ -239,7 +240,7 @@ Acceptance:
 
 ### Task 7: Delete The Leftovers
 
-- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. `Memory Pack` live source symbols are gone, and intentionally retained explicit tools/settings are documented in `NOT-DELETED.md`. Malformed streamed JSON coverage now handles recoverable missing closers/trailing spillover. Durable compact-memory indexing remains open.
+- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. `Memory Pack` live source symbols are gone, intentionally retained explicit tools/settings are documented in `NOT-DELETED.md`, malformed streamed JSON coverage handles recoverable missing closers/trailing spillover, and hot-path source/archive scans are now deleted. Remaining cleanup is Qdrant mirroring for compact memory plus any production-reachable debug residue found by the final audit.
 
 - Audit with `rg` for old profiles, preflight, wrappers, old wiki tools, and production-reachable debug paths.
 - Delete what is dead.
