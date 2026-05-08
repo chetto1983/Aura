@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/telegram"
 )
@@ -338,6 +339,8 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		ReadSkills:         []string{"test-driven-development"},
 		ActiveCapabilities: []string{"sandbox_compute"},
 		ToolsExposed:       []string{"read_file", "run_aurabot_swarm", "execute_code"},
+		WorkspaceRoot:      "/workspace",
+		MemoryPackPresent:  true,
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
@@ -353,6 +356,9 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		MaxLoopSteps:       3,
 		TraceFields:        []string{"PromptHash", "ToolProfile", "ReadSkills", "ActiveCapabilities"},
 		NoStaleSkillRef:    true,
+		WorkspaceRoot:      "/workspace",
+		ForbidFragments:    []string{"internal/", ".git/"},
+		MemoryPack:         true,
 		MaxElapsedMS:       1000,
 	})
 	if err != nil {
@@ -475,6 +481,40 @@ func TestValidateDebugExpectationsRejectsLoopStepOverBudget(t *testing.T) {
 	}
 }
 
+func TestValidateDebugExpectationsRejectsWorkspaceRootMismatch(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{WorkspaceRoot: "/app"}
+
+	err := validateDebugExpectations(result, debugExpectations{WorkspaceRoot: "/workspace"})
+	if err == nil || !strings.Contains(err.Error(), `expected workspace root "/workspace"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want workspace root failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenPathFragment(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{FinalText: "I can see internal/telegram/conversation.go"}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbidFragments: []string{"internal/"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden path fragment "internal/"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden path failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenToolMessageFragment(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{MessageText: "list_files result:\n- internal/telegram/conversation.go"}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbidFragments: []string{"internal/"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden path fragment "internal/"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden message failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingMemoryPack(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{MemoryPack: true})
+	if err == nil || !strings.Contains(err.Error(), "expected compact memory pack") {
+		t.Fatalf("validateDebugExpectations() error = %v, want memory pack failure", err)
+	}
+}
+
 func TestValidateDebugExpectationsRejectsMissingTraceField(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{ToolProfile: "compute"}
 
@@ -510,6 +550,93 @@ func TestValidateDebugExpectationsRejectsConflictingToolExpectations(t *testing.
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot combine") {
 		t.Fatalf("validateDebugExpectations() error = %v, want conflict failure", err)
+	}
+}
+
+func TestResolveDebugHostPathMapsContainerRuntimeMounts(t *testing.T) {
+	cases := map[string]string{
+		"/workspace/wiki":           "wiki",
+		"/workspace/wiki/alpha.md":  filepath.Join("wiki", "alpha.md"),
+		"/workspace/skills/.agents": filepath.Join("skills", ".agents"),
+		"/workspace":                "runtime-workspace",
+		"/data/aura.db":             filepath.Join("data", "aura.db"),
+		"D:/Aura/wiki":              "D:/Aura/wiki",
+	}
+	for input, want := range cases {
+		if got := resolveDebugHostPath(input); got != want {
+			t.Fatalf("resolveDebugHostPath(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestApplyDebugWorkspaceRootMapsLogicalContainerRootToHostRoot(t *testing.T) {
+	cfg := &config.Config{
+		WorkspaceRoot:        ".",
+		RuntimeWorkspacePath: "./runtime-workspace",
+		PromptOverlayPath:    ".",
+	}
+
+	logical := applyDebugWorkspaceRoot(cfg, "/workspace")
+
+	if logical != "/workspace" {
+		t.Fatalf("logical root = %q, want /workspace", logical)
+	}
+	if cfg.RuntimeWorkspacePath != "/workspace" {
+		t.Fatalf("RuntimeWorkspacePath = %q, want /workspace", cfg.RuntimeWorkspacePath)
+	}
+	if cfg.WorkspaceRoot != "runtime-workspace" {
+		t.Fatalf("WorkspaceRoot = %q, want runtime-workspace", cfg.WorkspaceRoot)
+	}
+	if cfg.PromptOverlayPath != "runtime-workspace" {
+		t.Fatalf("PromptOverlayPath = %q, want runtime-workspace", cfg.PromptOverlayPath)
+	}
+}
+
+func TestPrepareDebugRuntimeWorkspaceMaterializesMountedWikiAndSkills(t *testing.T) {
+	sourceRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceRoot, "AGENT.md"), []byte("agent"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wiki := filepath.Join(t.TempDir(), "wiki")
+	if err := os.MkdirAll(wiki, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wiki, "index.md"), []byte("# Index"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skills := filepath.Join(t.TempDir(), "skills")
+	if err := os.MkdirAll(skills, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skills, "README.md"), []byte("skills"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, cleanup, err := prepareDebugRuntimeWorkspace(sourceRoot, wiki, skills)
+	if err != nil {
+		t.Fatalf("prepareDebugRuntimeWorkspace() error = %v", err)
+	}
+	defer cleanup()
+
+	assertFileContent(t, filepath.Join(got, "AGENT.md"), "agent")
+	assertFileContent(t, filepath.Join(got, "wiki", "index.md"), "# Index")
+	assertFileContent(t, filepath.Join(got, "skills", "README.md"), "skills")
+	if _, err := os.Stat(filepath.Join(got, "inbox")); err != nil {
+		t.Fatalf("inbox missing: %v", err)
+	}
+}
+
+func TestRepeatableCSVFlagAcceptsRepeatedAndCommaSeparatedValues(t *testing.T) {
+	var f repeatableCSVFlag
+	if err := f.Set("internal/,.git/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Set("web/,internal/"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := strings.Join(f.Values, ","), "internal/,.git/,web/"; got != want {
+		t.Fatalf("Values = %q, want %q", got, want)
 	}
 }
 

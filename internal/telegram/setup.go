@@ -99,6 +99,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	} else if migrated > 0 {
 		logger.Info("wiki migration completed", "pages_migrated", migrated)
 	}
+	wikiStore.RebuildGraph(context.Background())
 
 	// Set up search engine
 	var searchEngine search.Repository

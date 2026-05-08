@@ -449,9 +449,11 @@ git commit -m "slice 07: inject compact memory pack"
 **Files:**
 - Modify: `cmd/debug_telegram_sandbox/main.go` if it needs expectation flags for workspace listing or memory pack evidence
 - Create or modify: targeted tests under `cmd/debug_telegram_sandbox`
+- Modify: `internal/telegram/debug_smoke.go` and tests if debug trace fields are needed
+- Modify: `internal/telegram/setup.go` if startup needs to refresh existing graph caches
 - Modify: `docs/implementation-tracker.md`
 
-- [ ] **Step 1: Add debug expectations**
+- [x] **Step 1: Add debug expectations**
 
 Add flags if missing:
 
@@ -462,7 +464,7 @@ Add flags if missing:
 -expect-memory-pack
 ```
 
-- [ ] **Step 2: Run live benchmark prompts**
+- [x] **Step 2: Run live benchmark prompts**
 
 Run three prompts against the live Docker runtime:
 
@@ -480,7 +482,13 @@ Targets:
 - token count lower than the previous 174k-token bad turn;
 - tool calls start from search/swarm or compact workspace reads.
 
-- [ ] **Step 3: Run full verification**
+Observed 2026-05-08:
+
+- workspace listing smoke: PASS, `/workspace`, Memory Pack present, no `internal/`, `.git/`, `cmd/`, `web/`, or `data/aura.db`, 3 loop steps, 26,200 tokens, 7.9s.
+- wiki/graph improvement smoke: PASS, one `run_aurabot_swarm`, 2 loop steps, 15,141 tokens, 36.8s. This missed the 30s ideal because the swarm pass waited on its 25s worker timeout, but still avoided broad file loops and stayed far below the 174k-token bad turn.
+- skill discovery smoke: PASS, runtime `skills/` reads only, 3 loop steps, 28,890 tokens, 14.8s.
+
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -492,10 +500,17 @@ docker compose up -d --build aura
 
 Expected: PASS, `/status` ok.
 
-- [ ] **Step 4: Commit closure**
+Observed 2026-05-08:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`: PASS.
+- `docker compose config --quiet`: PASS.
+- `docker compose up -d --build aura`: PASS.
+- live `/status`: ok; logs report `workspace file tools enabled root=/workspace`.
+
+- [x] **Step 4: Commit closure**
 
 ```powershell
-git add cmd/debug_telegram_sandbox docs/implementation-tracker.md .planning/phases/07-runtime-workspace-bootstrap-graph-cache/PLAN.md
+git add cmd/debug_telegram_sandbox internal/telegram/debug_smoke.go internal/telegram/debug_smoke_test.go internal/telegram/setup.go docs/implementation-tracker.md .planning/phases/07-runtime-workspace-bootstrap-graph-cache/PLAN.md
 git commit -m "slice 07: verify narrow workspace runtime"
 ```
 

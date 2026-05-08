@@ -49,6 +49,10 @@ func main() {
 	expectNoStaleSkillRef := flag.Bool("expect-no-stale-skill-ref", false, "expect debug result skill/reference fields to contain no stale worker aliases or legacy .yaml/.yml refs")
 	expectTokenMetrics := flag.Bool("expect-token-metrics", false, "expect non-zero token usage metrics")
 	expectSandbox := flag.Bool("expect-sandbox", false, "expect the synthetic Telegram turn to use the Python sandbox")
+	expectWorkspaceRoot := flag.String("expect-workspace-root", "", "expected configured workspace root, e.g. /workspace")
+	var forbidPathFragments repeatableCSVFlag
+	flag.Var(&forbidPathFragments, "forbid-path-fragment", "path fragment that must not appear in debug-visible output; may be repeated or comma-separated")
+	expectMemoryPack := flag.Bool("expect-memory-pack", false, "expect the synthetic Telegram turn system context to include the compact Memory Pack")
 	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
@@ -97,14 +101,28 @@ func main() {
 	}
 	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = resolveRuntimeDBPath(cfg.DBPath, sourceDBPath, *writeLiveDB)
+	logicalWorkspaceRoot := applyDebugWorkspaceRoot(cfg, *expectWorkspaceRoot)
 	if !*writeLiveDB {
-		wikiPath, cleanup, err := prepareDebugWikiCopy(cfg.WikiPath)
+		wikiPath, cleanup, err := prepareDebugWikiCopy(resolveDebugHostPath(cfg.WikiPath))
 		if err != nil {
 			fail("prepare temporary debug wiki: %v", err)
 		}
 		defer cleanup()
 		cfg.WikiPath = wikiPath
 		cfg.SummarizerMode = "off"
+		if logicalWorkspaceRoot != "" {
+			workspacePath, cleanup, err := prepareDebugRuntimeWorkspace(cfg.WorkspaceRoot, cfg.WikiPath, resolveDebugHostPath(cfg.SkillsPath))
+			if err != nil {
+				fail("prepare temporary debug workspace: %v", err)
+			}
+			defer cleanup()
+			cfg.WorkspaceRoot = workspacePath
+			cfg.PromptOverlayPath = workspacePath
+			cfg.WikiPath = filepath.Join(workspacePath, "wiki")
+			cfg.SkillsPath = filepath.Join(workspacePath, "skills")
+			cfg.SkillsInstallProjectDir = cfg.SkillsPath
+			cfg.MCPServersPath = filepath.Join(workspacePath, "mcp.json")
+		}
 	}
 
 	userID := strings.TrimSpace(*userIDFlag)
@@ -134,6 +152,7 @@ func main() {
 	fmt.Printf("db_source_path=%s\n", sourceDBPath)
 	fmt.Printf("db_write_live=%v\n", *writeLiveDB)
 	fmt.Printf("wiki_path=%s\n", cfg.WikiPath)
+	fmt.Printf("workspace_root=%s\n", cfg.WorkspaceRoot)
 	fmt.Printf("model=%s base_url=%s\n", cfg.LLMModel, cfg.LLMBaseURL)
 	fmt.Printf("runtime_dir=%s sandbox_enabled=%v\n", cfg.SandboxRuntimeDir, cfg.SandboxEnabled)
 	fmt.Printf("prompt=%q\n\n", redactForReport(*prompt))
@@ -142,6 +161,9 @@ func main() {
 	if err != nil {
 		fail("run debug text smoke: %v", err)
 	}
+	if logicalWorkspaceRoot != "" {
+		result.WorkspaceRoot = logicalWorkspaceRoot
+	}
 	fmt.Printf("tool_calls=%s\n", strings.Join(result.ToolCalls, ","))
 	fmt.Printf("prompt_version=%s\n", result.PromptVersion)
 	fmt.Printf("prompt_hash=%s\n", result.PromptHash)
@@ -149,6 +171,8 @@ func main() {
 	fmt.Printf("tool_profile=%s\n", result.ToolProfile)
 	fmt.Printf("profile_select_reason=%s\n", result.ProfileSelectReason)
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
+	fmt.Printf("workspace_root=%s\n", result.WorkspaceRoot)
+	fmt.Printf("memory_pack_present=%v\n", result.MemoryPackPresent)
 	fmt.Printf("active_capabilities=%s\n", strings.Join(result.ActiveCapabilities, ","))
 	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
 	fmt.Printf("skill_preflight_failed=%v\n", result.SkillPreflightFailed)
@@ -198,6 +222,9 @@ func main() {
 		NoStaleSkillRef:    *expectNoStaleSkillRef,
 		TokenMetrics:       *expectTokenMetrics,
 		SandboxUsed:        *expectSandbox,
+		WorkspaceRoot:      *expectWorkspaceRoot,
+		ForbidFragments:    forbidPathFragments.Values,
+		MemoryPack:         *expectMemoryPack,
 		MaxElapsedMS:       *maxElapsedMS,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
@@ -242,6 +269,15 @@ func main() {
 	}
 	if expectations.SandboxUsed {
 		fmt.Printf("expected_sandbox=true\n")
+	}
+	if strings.TrimSpace(expectations.WorkspaceRoot) != "" {
+		fmt.Printf("expected_workspace_root=%s\n", strings.TrimSpace(expectations.WorkspaceRoot))
+	}
+	if len(expectations.ForbidFragments) > 0 {
+		fmt.Printf("forbidden_path_fragments_absent=%s\n", strings.Join(expectations.ForbidFragments, ","))
+	}
+	if expectations.MemoryPack {
+		fmt.Printf("expected_memory_pack=true\n")
 	}
 	if expectations.MaxElapsedMS > 0 {
 		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
@@ -323,6 +359,68 @@ func resolveRuntimeDBPath(openedDBPath, sourceDBPath string, writeLive bool) str
 	return filepath.Clean(strings.TrimSpace(openedDBPath))
 }
 
+func resolveDebugHostPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return path
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	for _, mapping := range []struct {
+		container string
+		host      string
+	}{
+		{container: "/workspace/wiki", host: "wiki"},
+		{container: "/wiki", host: "wiki"},
+		{container: "/workspace/skills", host: "skills"},
+		{container: "/skills", host: "skills"},
+		{container: "/workspace", host: "runtime-workspace"},
+		{container: "/data", host: "data"},
+	} {
+		if clean == mapping.container {
+			return mapping.host
+		}
+		prefix := mapping.container + "/"
+		if strings.HasPrefix(clean, prefix) {
+			return filepath.Join(mapping.host, strings.TrimPrefix(clean, prefix))
+		}
+	}
+	return path
+}
+
+func applyDebugWorkspaceRoot(cfg *config.Config, expectedRoot string) string {
+	if cfg == nil {
+		return ""
+	}
+	logicalRoot := strings.TrimSpace(expectedRoot)
+	if logicalRoot == "" && isDebugContainerPath(cfg.WorkspaceRoot) {
+		logicalRoot = filepath.ToSlash(filepath.Clean(cfg.WorkspaceRoot))
+	}
+	if logicalRoot == "" {
+		return ""
+	}
+	hostRoot := resolveDebugHostPath(logicalRoot)
+	if strings.TrimSpace(hostRoot) == "" {
+		return logicalRoot
+	}
+	cfg.RuntimeWorkspacePath = logicalRoot
+	cfg.WorkspaceRoot = hostRoot
+	if shouldUseDebugWorkspaceOverlay(cfg.PromptOverlayPath, logicalRoot) {
+		cfg.PromptOverlayPath = hostRoot
+	}
+	return logicalRoot
+}
+
+func isDebugContainerPath(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	return clean == "/workspace" || strings.HasPrefix(clean, "/workspace/")
+}
+
+func shouldUseDebugWorkspaceOverlay(path, logicalRoot string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	logical := filepath.ToSlash(filepath.Clean(strings.TrimSpace(logicalRoot)))
+	return clean == "." || clean == logical || strings.HasPrefix(clean, logical+"/")
+}
+
 func prepareDebugWikiCopy(sourcePath string) (string, func(), error) {
 	sourcePath = strings.TrimSpace(sourcePath)
 	if sourcePath == "" {
@@ -353,7 +451,66 @@ func prepareDebugWikiCopy(sourcePath string) (string, func(), error) {
 	return tmpDir, cleanup, nil
 }
 
+func prepareDebugRuntimeWorkspace(sourceRoot, sourceWiki, sourceSkills string) (string, func(), error) {
+	tmpDir, err := os.MkdirTemp("", "aura-debug-workspace-*")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(tmpDir)
+	}
+	if strings.TrimSpace(sourceRoot) != "" {
+		if info, err := os.Stat(sourceRoot); err == nil && info.IsDir() {
+			if err := copyDebugDir(sourceRoot, tmpDir); err != nil {
+				cleanup()
+				return "", func() {}, err
+			}
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(tmpDir, "wiki")); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	if err := copyDebugDir(sourceWiki, filepath.Join(tmpDir, "wiki")); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	if strings.TrimSpace(sourceSkills) != "" {
+		if info, err := os.Stat(sourceSkills); err == nil && info.IsDir() {
+			if err := os.RemoveAll(filepath.Join(tmpDir, "skills")); err != nil {
+				cleanup()
+				return "", func() {}, err
+			}
+			if err := copyDebugDir(sourceSkills, filepath.Join(tmpDir, "skills")); err != nil {
+				cleanup()
+				return "", func() {}, err
+			}
+		}
+	}
+	for path, content := range map[string]string{
+		filepath.Join(tmpDir, "AGENT.md"):     "# Aura Runtime Agent\n",
+		filepath.Join(tmpDir, "HEARTBEAT.md"): "# Heartbeat\n\nDisabled in debug smoke.\n",
+		filepath.Join(tmpDir, "mcp.json"):     "{}\n",
+	} {
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "inbox"), 0o755); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return tmpDir, cleanup, nil
+}
+
 func copyDebugDir(sourcePath, destPath string) error {
+	if err := os.MkdirAll(destPath, 0o755); err != nil {
+		return err
+	}
 	return filepath.WalkDir(sourcePath, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -483,6 +640,9 @@ type debugExpectations struct {
 	NoStaleSkillRef    bool
 	TokenMetrics       bool
 	SandboxUsed        bool
+	WorkspaceRoot      string
+	ForbidFragments    []string
+	MemoryPack         bool
 	MaxElapsedMS       int64
 }
 
@@ -537,10 +697,51 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if expectations.SandboxUsed && !result.SandboxUsed {
 		return errors.New("expected sandbox usage")
 	}
+	if root := strings.TrimSpace(expectations.WorkspaceRoot); root != "" && strings.TrimSpace(result.WorkspaceRoot) != root {
+		return fmt.Errorf("expected workspace root %q, got %q", root, result.WorkspaceRoot)
+	}
+	if expectations.MemoryPack && !result.MemoryPackPresent {
+		return errors.New("expected compact memory pack in system context")
+	}
+	if len(expectations.ForbidFragments) > 0 {
+		text := debugVisibleText(result)
+		for _, fragment := range expectations.ForbidFragments {
+			fragment = strings.TrimSpace(fragment)
+			if fragment == "" {
+				continue
+			}
+			if strings.Contains(text, fragment) {
+				return fmt.Errorf("forbidden path fragment %q found in debug-visible output", fragment)
+			}
+		}
+	}
 	if expectations.MaxElapsedMS > 0 && result.ElapsedMS > expectations.MaxElapsedMS {
 		return fmt.Errorf("elapsed_ms %d exceeds budget %d", result.ElapsedMS, expectations.MaxElapsedMS)
 	}
 	return nil
+}
+
+func debugVisibleText(result telegram.DebugTextSmokeResult) string {
+	values := []string{
+		result.Prompt,
+		result.FinalText,
+		result.MessageText,
+		result.WorkspaceRoot,
+		result.ToolProfile,
+		result.ProfileSelectReason,
+		result.TerminalTool,
+	}
+	values = append(values, result.ToolCalls...)
+	values = append(values, result.ToolsExposed...)
+	values = append(values, result.PromptModules...)
+	values = append(values, result.ActiveCapabilities...)
+	values = append(values, result.ReadSkills...)
+	values = append(values, result.ArtifactFilenames...)
+	values = append(values, result.ArtifactSourceIDs...)
+	for _, send := range result.DocumentSends {
+		values = append(values, send.Filename, send.Caption)
+	}
+	return strings.Join(values, "\n")
 }
 
 func expectedSkillReadSatisfied(result telegram.DebugTextSmokeResult, expected string) bool {
@@ -848,6 +1049,26 @@ func (f *optionalCSVFlag) Set(value string) error {
 }
 
 func (f *optionalCSVFlag) IsBoolFlag() bool { return true }
+
+type repeatableCSVFlag struct {
+	Values []string
+}
+
+func (f *repeatableCSVFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(f.Values, ",")
+}
+
+func (f *repeatableCSVFlag) Set(value string) error {
+	for _, item := range splitCSV(value) {
+		if !hasAll(f.Values, item) {
+			f.Values = append(f.Values, item)
+		}
+	}
+	return nil
+}
 
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "FAIL: "+format+"\n", args...)

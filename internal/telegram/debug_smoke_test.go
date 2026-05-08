@@ -84,6 +84,32 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 	}
 }
 
+func TestDebugTextSmokeResultFromMessagesDetectsMemoryPack(t *testing.T) {
+	result := debugTextSmokeResultFromMessages("1148481707", "memory", []llm.Message{
+		{
+			Role:    "system",
+			Content: "Base prompt\n\n## Memory Pack\n\n### Relevant Pages\n- [[aura-operating-memory]]",
+		},
+	})
+
+	if !result.MemoryPackPresent {
+		t.Fatal("MemoryPackPresent = false, want true")
+	}
+}
+
+func TestDebugTextSmokeResultIgnoresBasePromptMemoryPackMention(t *testing.T) {
+	result := debugTextSmokeResultFromMessages("1148481707", "memory", []llm.Message{
+		{
+			Role:    "system",
+			Content: "The system prompt may include a compact ## Memory Pack with relevant pages.",
+		},
+	})
+
+	if result.MemoryPackPresent {
+		t.Fatal("MemoryPackPresent = true for base prompt mention, want false")
+	}
+}
+
 func TestDebugDocumentSendsAfterReturnsOnlyNewSends(t *testing.T) {
 	b := &Bot{}
 	b.recordDebugDocumentSend("old.txt", []byte("old"), "old")

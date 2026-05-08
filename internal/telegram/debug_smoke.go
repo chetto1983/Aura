@@ -20,6 +20,7 @@ import (
 type DebugTextSmokeResult struct {
 	UserID                    string
 	Prompt                    string
+	WorkspaceRoot             string
 	ToolCalls                 []string
 	CalledExecuteCode         bool
 	Contains5050              bool
@@ -28,6 +29,7 @@ type DebugTextSmokeResult struct {
 	ArtifactSourceIDs         []string
 	DocumentSends             []DebugDocumentSend
 	FinalText                 string
+	MessageText               string
 	PromptVersion             string
 	PromptHash                string
 	PromptModules             []string
@@ -44,6 +46,7 @@ type DebugTextSmokeResult struct {
 	SandboxUsed               bool
 	TerminalTool              string
 	DuplicateToolCallRejected bool
+	MemoryPackPresent         bool
 	TokenUsageReported        bool
 	TokensPrompt              int
 	TokensCompletion          int
@@ -121,6 +124,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, errors.New("telegram debug smoke: invalid conversation context after turn")
 	}
 	result := debugTextSmokeResultFromMessages(userIDString, prompt, convCtx.Messages())
+	result.WorkspaceRoot = b.cfg.WorkspaceRoot
 	result.DocumentSends = b.debugDocumentSendsAfter(docSeq)
 	if snap, ok := b.loadOrchestrationSnapshot(userIDString); ok {
 		result.PromptVersion = snap.PromptVersion
@@ -186,6 +190,12 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		if msg.Role == "assistant" && strings.TrimSpace(msg.Content) != "" {
 			result.FinalText = strings.TrimSpace(msg.Content)
 		}
+		if strings.TrimSpace(msg.Content) != "" {
+			result.MessageText += "\n" + msg.Content
+		}
+		if msg.Role == "system" && hasInjectedMemoryPack(msg.Content) {
+			result.MemoryPackPresent = true
+		}
 		if strings.Contains(msg.Content, "5050") {
 			result.Contains5050 = true
 		}
@@ -196,6 +206,11 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		result.ArtifactSourceIDs = append(result.ArtifactSourceIDs, artifactSourceIDsFromToolContent(msg.Content)...)
 	}
 	return result
+}
+
+func hasInjectedMemoryPack(content string) bool {
+	return strings.HasPrefix(content, "## Memory Pack\n\n###") ||
+		strings.Contains(content, "\n\n## Memory Pack\n\n###")
 }
 
 func (r *DebugTextSmokeResult) applyOrchestrationToolCalls(called []string) {
