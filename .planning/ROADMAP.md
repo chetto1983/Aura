@@ -39,37 +39,40 @@ Key outcomes:
 - Live scorecard on DB-selected `deepseek/deepseek-v4-flash` passes 20/20 with `search_memory` on every scenario, 4/4 expected proposals, 0 unexpected proposals, and 0 slow scenarios over 30s.
 - Settings exposes memory/search/orchestration controls, including `SEARCH_BACKEND` as a combo box and the `agent` settings group.
 
-## Next Milestone
+## Active Milestone
 
-### v3.1 Agent Orchestration And System Prompt Versioning
+### v3.1 Agent Runtime Stabilization
 
 Status: active
 
-Plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
+Primary blocker evidence: `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`
 
-Goal: make Aura's main Telegram agent use versioned prompt composition, focused tool profiles, and first-class swarm/sandbox routing before the MCP marketplace expands the tool surface.
+Goal: finish stabilizing the simplified Codex/Picobot-style runtime before expanding the tool surface with MCP plugins.
 
 Success criteria:
 
-- Prompt composition logs version, modules, hash, and active tool profile.
-- Telegram exposes only the active profile's tools to the LLM.
-- Skills, swarm, and sandbox are first-class route guidance, not incidental tools.
-- Swarm research follows the Hermes-style bounded delegation plan: narrow parent tools, capped workers, stale alias rejection, terminal finalization, and worker token/cost aggregation.
-- Codex-style skill orchestration is planned as the final v3.1 hardening slice: capability taxonomy, required skill preflight, profile loop policies, and route evals before v4.0 expands MCP/plugin tools.
-- Docker sandbox route uses the `pyodide` sidecar and does not require Node or Pyodide inside the Aura image.
-- Debug Telegram smoke reports exposed tools, called tools, tokens, estimated context, and cost.
-- Document, sandbox-compute, memory, and swarm-research prompts each choose the expected profile in tests.
+- Aura uses a compact generic agent loop instead of Telegram-owned god-class orchestration.
+- The live tool surface is small and file-first: `default`, `compute`, `document`, and `admin`.
+- Bounded workspace file tools are the default filesystem interface, rooted at `/workspace` in Docker.
+- Legacy wiki/skill/proposal wrapper tools stay deleted from the LLM surface.
+- Skills remain available as file-backed procedures, not ritual preflight blockers.
+- Swarm, sandbox, and document tools terminate cleanly instead of spending extra LLM passes.
+- Debug smokes report tools, token/cost metrics, loop steps, latency, and runtime root.
+- Common live routes stay under the accepted 30s budget.
 
 Current closure evidence:
 
-- Deterministic route evals pass for pipeline audit, memory answer, document summary, CSV/chart compute, dashboard settings, Docker release, MCP plugin proposal, and ordinary answers.
-- Live swarm smoke passes with terminal swarm, one bounded worker, no post-swarm parent tool calls, token/cost metrics, no stale skill refs, and elapsed time under 30s.
-- Live sandbox smoke passes with `list_skills -> read_skill(aura-python-sandbox) -> execute_code`, artifact persistence, token/cost metrics, no stale skill refs, and elapsed time under 30s.
-- Settings Playwright E2E passes and preserves orchestration enum/numeric values.
+- Phase 05 simplification is implemented and merged to `master`.
+- Phase 06 filesystem-first wiki/skills cleanup is implemented.
+- Phase 07 runtime workspace, graph cache, Memory Pack, and live benchmark work is implemented.
+- Docker runtime cleanup is implemented: `/app` no longer exposes the developer repo; `/workspace` is the runtime root.
+- Live swarm/wiki/graph and skill discovery smokes pass under the 30s target after latency repair.
 
 Open blocker:
 
-- Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files after reading `docx`, but the configured live model keeps expanding evidence before `create_docx`, causing >30s latency and occasional malformed tool JSON. v3.1 remains active until the document route is bounded with compact evidence or an equivalent deterministic helper.
+- Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files, but the configured live model still expands evidence too much before `create_docx`, causing >30s latency and occasional malformed tool JSON. v3.1 remains active until the document route gets compact bounded evidence or an equivalent deterministic helper.
+
+## Next Milestone
 
 ### v4.0 MCP Marketplace And Autonomous Plugin Manager
 

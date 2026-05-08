@@ -1,5 +1,7 @@
 # Aura v3.1 Agent Orchestration And System Prompt Versioning Implementation Plan
 
+> **Cleanup note, 2026-05-08:** This plan is now a historical v3.1 record. The simplification pivot removed required skill preflight, collapsed live profiles into four toolsets, moved the loop to `internal/agentloop`, and replaced legacy wiki/skill wrappers with bounded workspace file tools. Do not execute unchecked items here blindly. For current work, use `.planning/STATE.md` and this phase's `VALIDATION.md`; the only active v3.1 closure blocker is the slow/unstable live document route.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Aura's Telegram agent reliably choose the right route for each turn: direct memory tools, read-only swarm, Python sandbox, typed file tools, or review-gated admin tools.

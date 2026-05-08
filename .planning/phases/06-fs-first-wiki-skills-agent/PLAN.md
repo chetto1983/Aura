@@ -66,7 +66,7 @@ The LLM no longer sees separate semantic write/proposal tools for wiki and skill
 
 ### 0. Baseline and Plan
 
-Status: IN_PROGRESS
+Status: DONE
 
 - Run Ralph status.
 - Write this phase plan.
@@ -118,7 +118,7 @@ Progress:
 
 ### 4. Delete Legacy Tool Implementations
 
-Status: IN_PROGRESS
+Status: DONE
 
 - Remove obsolete LLM wrapper code once no runtime path references it:
   - `internal/tools/wiki.go`
@@ -129,12 +129,11 @@ Status: IN_PROGRESS
 - Preserve underlying domain services that are still used by dashboard, ingestion, indexing, scheduler, and search.
 - Remove or rewrite tests that only validate deleted wrappers.
 
-Current blockers before physical deletion:
+Resolved blockers:
 
-- `cmd/debug_tools` still smokes old wiki wrapper tools.
-- `cmd/debug_memory_quality` still uses `propose_wiki_change` as an evaluation signal.
-- `cmd/debug_ingest` still registers wiki maintenance wrappers for legacy smoke coverage.
-- `cmd/debug_files` and `cmd/debug_sandbox` still have skill-read smoke paths that should become direct file-tool or loader checks.
+- `cmd/debug_tools` no longer depends on old wiki wrapper tools.
+- `cmd/debug_memory_quality` no longer requires `propose_wiki_change` as the active evaluation path.
+- `cmd/debug_ingest`, `cmd/debug_files`, and `cmd/debug_sandbox` were converted to workspace file tools or direct loader/domain checks where appropriate.
 
 Current slice started 2026-05-08:
 
@@ -155,7 +154,7 @@ Current slice started 2026-05-08:
 
 ### 5. Wiki/Skill File Invariants
 
-Status: IN_PROGRESS
+Status: DONE
 
 - Add post-write or follow-up validation for markdown wiki and skill paths.
 - For wiki writes:
@@ -175,11 +174,11 @@ Progress:
 - `SKILL.md` writes now parse with `skills.ParseSkill` and require the frontmatter name to match the parent directory.
 - Invalid `apply_patch` results are rejected before write, preserving the original file.
 - Ordinary markdown outside wiki/skill paths remains writable without domain validation.
-- Still pending for a later slice: automatic wiki index/search refresh and skill manifest/cache refresh after accepted writes.
+Deferred follow-up, not a Phase 06 blocker: automatic wiki index/search/graph refresh and skill manifest/cache refresh after accepted workspace writes.
 
 ### 6. Debug, Scheduler, and Swarm Cleanup
 
-Status: IN_PROGRESS
+Status: DONE
 
 Progress:
 
@@ -205,7 +204,7 @@ Progress:
 
 ### 7. Verification and Commit
 
-Status: IN_PROGRESS
+Status: DONE
 
 Verification:
 
@@ -246,3 +245,5 @@ It turns the Picobot comparison into implementation work:
 - materialize wiki graph files for fast dashboard/search/prompt use;
 - inject compact memory packs instead of repeated broad reads;
 - benchmark live Docker latency and token usage.
+
+Phase 07 is now complete. The remaining active stability work is the v3.1 document-route blocker recorded in `.planning/STATE.md` and `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`.

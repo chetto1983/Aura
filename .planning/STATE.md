@@ -2,97 +2,86 @@
 
 Date: 2026-05-08
 
-Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (active)
+Active milestone: v3.1 Agent Runtime Stabilization (active)
 
 Last closed milestone: v1.3 Memory Consolidation And Quality
 
-Current branch: `codex/simplify-agent-god-classes`
+Current branch: `master`
 
 ## Current Truth
 
-v1.3 is closed. v3.1 implementation has started on the orchestration bridge. The Docker runtime passes memory closure, embedding/search validation, dashboard settings smoke, full Go/frontend verification, Docker rebuild, and the strict live memory quality gate.
+`master` is deployed to GitHub at `4b66a98` (`docker: narrow Aura runtime context`). The simplification branch has been fast-forward merged.
 
-Closure evidence:
+Aura's current runtime direction is no longer the old profile/preflight guardrail stack. The shipped shape is:
 
-- Memory closure audit: 18 wiki pages, 45 expected index docs, 45 actual index docs, `issues=0`.
-- Hermetic memory quality: 20/20 with source/archive evidence and review-gated proposals.
-- Qdrant comparison: Qdrant reachable at `127.0.0.1:6333`, recommendation `ok`, overlap 1.0 against local search.
-- Live memory quality on DB-selected `deepseek/deepseek-v4-flash`: 20/20, `search_memory` 20/20, proposal calls 4/4 where expected, unexpected proposals 0, slow scenarios 0/20, max scenario 20.349 s under the 30 s budget.
-- Dashboard settings now renders the `agent` orchestration group and keeps `SEARCH_BACKEND` as an enum combo.
-- Release checks passed: `verify-go.ps1`, `go test ./... -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `docker compose config --quiet`, Docker rebuild, `/status`, and settings Playwright E2E.
+- compact agent loop in `internal/agentloop`;
+- four runtime toolsets (`default`, `compute`, `document`, `admin`);
+- bounded workspace file tools rooted at `/workspace` in Docker;
+- legacy wiki/skill/proposal wrapper tools removed from the LLM surface/code;
+- skills preserved as file-backed procedures under the runtime workspace;
+- materialized wiki graph files plus compact Memory Pack injection;
+- Docker image/context narrowed so `/app` no longer exposes the developer repository.
 
-The live quality harness now applies dashboard settings from `aura.db` before selecting the LLM, so future closure runs test the configured app model instead of stale env-only values.
+Recent verification evidence:
 
-v3.1 implementation evidence:
+- Full Go verification passed during Phase 06/07 closure.
+- Docker Compose rebuild passed.
+- `/status` returned ok after the Docker runtime cleanup.
+- Live workspace probe confirmed `/app` contains only `/app/runtime`; runtime files live under `/workspace`.
+- Live wiki/graph swarm prompt passed under 30s after finalization latency repair.
+- Live skill discovery and workspace listing smokes passed against the narrow runtime workspace.
 
-- `internal/orchestration` now exposes profile decisions with reasons, profile capability contracts, lifecycle hook primitives, hidden-tool policy, and trace redaction.
-- Telegram debug smoke now records profile selection reason and hidden-tool rejection.
-- `cmd/debug_telegram_sandbox` supports strict expectation flags for profile, no-tools, skill-read, swarm, and sandbox validation.
-- `cmd/debug_orchestration` provides a non-live prompt routing harness.
-- Docker sandbox execution now uses the `pyodide` sidecar via `SANDBOX_RUNTIME_MODE=container` and `SANDBOX_RUNTIME_URL=http://pyodide:8787`; the Aura image no longer installs Node or embeds `/app/runtime/pyodide`.
-- `execute_code` uses import-driven Pyodide package loading, so trivial Python calls avoid the old full office/data package load. Live Compose tool smoke returned `5050` with `elapsed_ms=4`; artifact smoke persisted CSV and PNG outputs.
-- SQLite remains canonical state. MongoDB was evaluated and deferred until repository metrics justify an optional adapter for high-volume archives/traces/audit logs.
-- Focused gate passed: `go test ./internal/conversation ./internal/telegram ./internal/tools ./internal/toolsets ./internal/settings ./internal/api ./internal/orchestration ./cmd/debug_telegram_sandbox ./cmd/debug_files ./cmd/debug_orchestration -count=1`.
-- Route probes passed for pipeline review (`swarm_research`) and computed CSV/chart (`sandbox_compute`).
-- Codex-style skill orchestration phases 5-7 are implemented:
-  - debug route reports include profile, capabilities, exposed tools, skill reads, hidden-tool rejection, loop steps, terminal tool, token/cost, and trace fields;
-  - dashboard settings expose orchestration controls as combo boxes/bounded numeric inputs;
-  - deterministic route evals cover common prompts and assert hidden tools/stale refs;
-  - skill-preflight misses are retryable so the model can read the suggested skill and retry in the same turn;
-  - `aura-python-sandbox` satisfies sandbox preflight;
-  - terminal `execute_code` and typed file tools return directly from tool output instead of spending another LLM call.
-- Auto-low-risk memory capture now blocks obvious address/fuel-card/personal facts from automatic wiki writes and routes them to review.
+## Active Blocker
 
-Open v3.1 orchestration blocker:
+v3.1 remains open for one real product blocker: the live document route is functional but not fast or reliable enough.
 
-- Live swarm route originally selected the right `swarm_research` profile but continued extra parent tool reads after `run_aurabot_swarm`, hit max-loop behavior, and did not report token/cost metrics. The Hermes-style hardening slice now passes its focused live smoke with runtime-launched terminal swarm, one default worker, worker failures `0`, token/cost metrics present, and elapsed time under 30 seconds.
-- Live sandbox route now passes under 30s with `list_skills -> read_skill(aura-python-sandbox) -> execute_code`, artifact persistence, terminal tool finalization, token/cost metrics, and no stale skill refs.
-- Live document route remains the active closure blocker. It can read `docx`, create, persist, and deliver DOCX files, but the broad "riepilogo documenti e note" prompt still expands evidence too much on the configured live model, exceeding 30s and sometimes producing malformed `create_docx` JSON. v3.1 stays active until this route gets compact bounded evidence or a deterministic document-summary helper.
-- Canonical sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md`
-- Current closure sub-plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`
+Measured failure in `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`:
 
-2026-05-08 simplification pivot:
+- broad prompt: "crea un breve documento Word con il riepilogo dei documenti e delle note disponibili in Aura";
+- creates and delivers a DOCX, but expands evidence too much before `create_docx`;
+- observed `loop_steps=5`, `elapsed_ms=62894`, `tokens_total=66119`;
+- additional runs sometimes produced malformed `create_docx` JSON after context bloat.
 
-- The live conversation logs showed the v3.1 guardrail stack was hurting autonomy: repeated memory searches for simple recall, max-loop fallback answers, skill preflight deadlocks, terminal swarm routing, and skill-approval confusion.
-- User direction: stop adding guardrails; first delete the superfluous orchestration layers, refactor the god classes, then add bounded Codex/Picobot-style workspace file tools (`read_file`, `write_file`, `search_files`/`rg`, `apply_patch`, later limited commands).
-- New canonical cleanup plan: `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`.
-- Context handoff files for this pivot:
-  - `.planning/phases/05-agent-simplification-god-class-refactor/CONTEXT.md`
-  - `.planning/phases/05-agent-simplification-god-class-refactor/EVIDENCE.md`
-- Cleanup implementation is now complete on `codex/simplify-agent-god-classes`: required skill preflight was removed, live profiles collapsed into four toolsets, unavailable tools became recoverable, terminal swarm routing was removed, `internal/agentloop` owns the generic loop, `internal/telegram/conversation.go` was reduced below 500 lines, skill proposal approval semantics were fixed, and disabled-by-default bounded workspace file tools were added.
-- Latest verification: `go test ./internal/workspace ./internal/tools ./internal/config ./internal/settings ./internal/api ./internal/orchestration ./internal/telegram`, `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`, `go run ./cmd/debug_tools`, and `go run ./cmd/debug_orchestration -prompt "guarda i log e cerca nei file del progetto senza skill rituali"`.
+Next implementation slice should add a runtime-owned compact evidence packet for document generation, then rerun the strict document live smoke.
 
-## Next Milestone Handoff
+## Cleaned-Up Plan Map
 
-v3.1 is the bridge milestone for "Agent Orchestration And System Prompt Versioning" before v4.0 expands MCP/plugin tools.
+- Phase 05 (`05-agent-simplification-god-class-refactor`): complete and merged. Treat as historical implementation record.
+- Phase 06 (`06-fs-first-wiki-skills-agent`): complete. Remaining items are follow-ups, not blockers.
+- Phase 07 (`07-runtime-workspace-bootstrap-graph-cache`): complete. Runtime workspace, graph cache, Memory Pack, and live benchmarks are done.
+- Phase 04 (`04-agent-orchestration-system-prompt-versioning`): historical v3.1 orchestration plan. It contains pre-simplification tasks that are now superseded; use only `VALIDATION.md` for the active document-route blocker.
+- v4.0 MCP marketplace: planned, blocked until the document route passes the v3.1 closure gate.
 
-Canonical plan: `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`
+## Next Slice
 
-The implementation direction is Claude Code style orchestration without a separate intent model: versioned prompt modules, runtime tool profiles, skill preflight, swarm-first broad synthesis, sandbox-first compute/artifact work, and per-turn tool/token/cost telemetry.
+Recommended slice: `document-route-fast-evidence-capsule`.
 
-v4.0 is planned as "MCP Marketplace And Autonomous Plugin Manager" after v3.1.
+Goal:
 
-Canonical plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
+- provide one compact `document_summary_evidence` style helper or equivalent runtime packet;
+- force document generation to follow `compact evidence -> create_docx`;
+- harden JSON/tool argument reliability for typed file generation;
+- prove the live document prompt stays under 30s and within the loop budget.
 
-The user decisions for v4.0 are MCP marketplace, container MCP runtime, official MCP Registry plus local cache, review-gated security, and agent auto rollback for approved staged proposals. The implementation must keep plugin enablement review-gated and expose only enabled approved MCP tools to the agent.
+Suggested acceptance:
 
-## Recent Decisions
+- `go test ./internal/tools ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`;
+- `docker compose config --quiet`;
+- `docker compose up -d --build aura`;
+- `/status` ok;
+- live document smoke with DB-selected model:
+  - expected toolset/profile: document;
+  - `create_docx` called;
+  - no repeated broad memory/source loops;
+  - elapsed <= 30000 ms;
+  - loop steps <= 4;
+  - token/cost metrics present.
 
-- Docker is the release runtime.
-- Keep source/wiki cleanup automated through `clean_wiki_memory` and closure audits, not hand-edited wiki repair.
-- Keep `SCHEMA.md`, `index.md`, and `log.md` out of user-facing wiki graph/search memory.
-- Use dedicated `EMBEDDING_*` settings for wiki search; never fall back from embeddings to `LLM_API_KEY`.
-- Treat dashboard settings stored in `aura.db` as authoritative for live debug scorecards when validating the running app.
-- Proceed to v3.1 orchestration before implementing the v4.0 MCP/plugin marketplace.
+## Deferred Follow-Ups
 
-## Resume Notes
+- Automatic wiki index/search/graph refresh after accepted workspace writes to wiki files.
+- Skill manifest/cache refresh after accepted workspace writes to `SKILL.md`.
+- Small review-gated Git toolset for Aura (`git_status`, `git_diff`, `git_log`, explicit-path `git_stage`, review-gated `git_commit`).
+- Optional planning archive workflow after a real `.planning/MILESTONES.md` exists.
+- v4.0 MCP marketplace after v3.1 document route closure.
 
-- For the current cleanup branch, start from `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`; Task 9 records the final verification and tracker update.
-- For the next speed/intelligence slice from the Picobot comparison, start from `.planning/phases/07-runtime-workspace-bootstrap-graph-cache/PLAN.md`.
-- Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
-- For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
-- For the next Codex-style route hardening slice, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`. It records the online research, best skills to use, capability taxonomy, required skill preflight, loop policies, dashboard settings, and E2E closure phases.
-- Before closing v3.1, finish the document-route blocker recorded in `.planning/phases/04-agent-orchestration-system-prompt-versioning/VALIDATION.md`, then rerun the full release gate.
-- Keep v4.0 MCP/plugin work blocked behind v3.1 tool-profile/prompt-versioning clarity.
-- For v4.0 sidecars, copy the Pyodide pattern: keep runtime bloat out of the Aura image, use internal service URLs, health checks, pinned images where possible, and rollback-friendly managed config.
-- If adding new intake formats later, update source policy, Telegram validation, API acceptance, dashboard copy, extraction tests, and E2E together.

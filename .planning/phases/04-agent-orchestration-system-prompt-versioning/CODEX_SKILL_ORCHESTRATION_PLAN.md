@@ -1,5 +1,7 @@
 # Codex-Style Skill Orchestration Implementation Plan
 
+> **Cleanup note, 2026-05-08:** This sub-plan is partially superseded by Phase 05/06 simplification. Required skill preflight is no longer the target runtime behavior; skills remain important as file-backed procedures. Keep this file as historical research and validation context only. The active closure work is the document-route latency/JSON reliability blocker in `VALIDATION.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Aura orchestrate tools the way a strong coding agent does: small active tool surface, explicit skill preflight, bounded delegation, sandbox-first computation, durable traces, and release-grade evals.

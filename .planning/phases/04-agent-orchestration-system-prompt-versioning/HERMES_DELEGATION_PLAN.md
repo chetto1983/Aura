@@ -1,5 +1,7 @@
 # Hermes-Style Delegation Hardening Implementation Plan
 
+> **Cleanup note, 2026-05-08:** This sub-plan is historical evidence. The swarm latency and terminal-finalization work has been implemented and validated in later commits. Do not use the unchecked boxes as live backlog; use `.planning/STATE.md` for the current next slice.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Aura's swarm route behave like a bounded delegation tool: fast, read-only, traceable, and unable to keep looping through unrelated parent tools after the swarm returns.
