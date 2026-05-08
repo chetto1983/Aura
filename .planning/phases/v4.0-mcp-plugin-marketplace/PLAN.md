@@ -129,16 +129,20 @@ The milestone is complete when Aura can discover MCP servers, install them as ma
 ### Dashboard
 
 - Replace the simple MCP panel with:
-  - Marketplace.
-  - Installed plugins.
+  - Connectors.
+  - Installed.
   - Health.
   - Review queue.
+  - Raw MCP diagnostics.
+- Keep the existing `/mcp` route initially and render tabs in `web/src/components/MCPPanel.tsx`; do not add sidebar sprawl for v4.0a.
 - Add Mail Connectors provider cards for:
   - generic mail (`mail-mcp`);
   - Google Workspace;
   - Gmail fallback;
   - Outlook/Microsoft fallback.
 - Add an Enterprise Database card/profile for read-only database MCP.
+- Keep existing raw server/tool/schema/manual invoke UI as the Raw MCP tab, not the primary configuration UX.
+- Do not put per-account mail/database secrets in the generic runtime `SettingsPanel`. Provider credentials belong to connector-specific flows with secret references and redacted API responses.
 - Show runtime type, risk badges, required secrets, install status, smoke result, last error, tool list, logs, enable/disable, and rollback controls.
 - Keep manual invoke for enabled tools.
 - Add Italian and English locale coverage for all new UI text.
@@ -177,11 +181,21 @@ Add HTTP APIs under `/api/mcp`:
 
 Add mail/provider APIs only after the provider adapter exists:
 
-- `GET /api/mail/providers`
-- `POST /api/mail/providers/{id}/probe`
-- `POST /api/mail/providers/{id}/enable`
-- `POST /api/mail/providers/{id}/disable`
-- `GET /api/mail/audit`
+- `GET /api/mcp/providers`
+- `GET /api/mcp/providers/{id}`
+- `POST /api/mcp/providers/{id}/configure`
+- `POST /api/mcp/providers/{id}/probe`
+- `POST /api/mcp/providers/{id}/enable`
+- `POST /api/mcp/providers/{id}/disable`
+- `GET /api/mcp/providers/{id}/audit`
+
+Frontend DTOs should be explicit and separate from raw MCP server summaries:
+
+- `ConnectorProviderSummary`
+- `ConnectorCapability`
+- `ConnectorRiskBadge`
+- `ConnectorProbeResponse`
+- `ConnectorAuditEvent`
 
 Add settings:
 
@@ -213,7 +227,7 @@ Add settings:
 - Fake database MCP server probe, list/read success, and blocked write/drop call.
 - Failed MCP server rolls back without breaking existing tools.
 - Managed Compose/config generation validates with `docker compose config --quiet`.
-- Dashboard E2E covers marketplace search, proposal review, install smoke, enable, disable, and logs.
+- Dashboard E2E covers connector cards, setup status, risk badges, probe, enable, disable, logs, and the preserved Raw MCP diagnostics tab.
 - Locale check confirms no missing strings.
 
 ### Release Gate

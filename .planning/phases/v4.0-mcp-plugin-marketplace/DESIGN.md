@@ -150,6 +150,56 @@ Add a Mail Connectors view inside the MCP marketplace milestone:
 
 The database provider lives under an Enterprise profile, not inside personal mail.
 
+### Frontend Configuration Shape
+
+The current dashboard route `/mcp` is implemented by `web/src/components/MCPPanel.tsx`. Today it lists MCP servers connected at boot and lets the operator manually invoke every advertised tool by editing a JSON textarea. That is useful as a diagnostic surface, but it is the wrong primary UX for mail and database setup.
+
+v4.0a should split MCP UI into two concepts:
+
+- **Connectors**: guided configuration for approved provider profiles.
+- **Raw MCP**: diagnostic view for already-connected MCP servers and manual tool invocation.
+
+The first implementation can keep the same `/mcp` route and render tabs inside the existing lazy-loaded `MCPPanel` instead of adding a new top-level sidebar item. This avoids bloating navigation and preserves existing dashboard muscle memory.
+
+Recommended tabs:
+
+- `Connectors`: provider cards, setup status, risk badges, required secrets, probe/enable controls.
+- `Installed`: enabled/disabled managed providers and exposed Aura capabilities.
+- `Health`: probe status, last error, last successful tool call, latency.
+- `Raw MCP`: current server/tool/schema/manual invoke view, renamed from the existing panel body.
+
+Provider cards should be compact operational cards, not marketing cards. Each card shows:
+
+- provider name and runtime type;
+- status: not configured, configured, probe failed, ready, enabled;
+- capabilities: mail read, mail draft, calendar, database read, database write blocked;
+- risk badges;
+- setup fields or setup instructions;
+- probe button;
+- enable button only after probe success;
+- logs/audit link.
+
+Mail/database secrets should not be added to the generic `SettingsPanel` as dozens of global keys. The existing settings page is good for runtime-wide values such as `MCP_SERVERS_PATH`, `LLM_BASE_URL`, Qdrant, Garage, and OCR. Provider credentials are account-scoped and should be managed through connector-specific API endpoints with secret references and redaction.
+
+The frontend type boundary should add explicit DTOs in `web/src/types/api.ts` rather than reusing raw `MCPServerSummary`:
+
+- `ConnectorProviderSummary`
+- `ConnectorCapability`
+- `ConnectorRiskBadge`
+- `ConnectorProbeResponse`
+- `ConnectorAuditEvent`
+
+The API client in `web/src/api.ts` should add connector methods under `/mcp/providers` or `/connectors`, while the existing `mcpServers()` and `invokeMCPTool()` stay for Raw MCP diagnostics.
+
+The UI must support Italian and English strings in `web/src/i18n/locales/it.json` and `web/src/i18n/locales/en.json`. Labels should avoid tool jargon where possible:
+
+- "Connettori" instead of only "MCP".
+- "Test connessione" for probe.
+- "Abilita per Aura" for reviewed enablement.
+- "Scrittura bloccata" for blocked write/send/delete capabilities.
+
+No first slice should render every provider tool in the Connectors tab. The operator configures provider capability profiles; raw tool lists stay in Raw MCP.
+
 ## Italian Workflows
 
 Mail value comes from workflows, not from provider plumbing. Add skills or prompt procedures that consume the canonical mail contract:

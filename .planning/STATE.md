@@ -85,6 +85,8 @@ First slice:
 - canonical Aura mail contract instead of raw provider tool sprawl;
 - initial candidates: `tecnologicachile/mail-mcp`, `aaronsb/google-workspace-mcp`, `navbuildz/gmail-mcp-server`, `littlebearapps/outlook-assistant`;
 - enterprise database MCP as read-only business profile using `executeautomation/mcp-database-server`;
+- frontend configuration starts in the existing `/mcp` route with tabs for Connectors, Installed, Health, Review Queue, and Raw MCP diagnostics;
+- provider/account credentials must use connector-specific flows with secret references, not dozens of global runtime settings;
 - mail send/delete/bulk mutation and database writes deferred to later reviewed slices.
 
 Suggested acceptance:
