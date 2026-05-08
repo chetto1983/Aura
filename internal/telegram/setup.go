@@ -356,7 +356,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		var err error
 		switch {
 		case srv.Command != "":
-			client, err = mcp.NewStdioClient(name, srv.Command, srv.Args)
+			client, err = mcp.NewStdioClient(name, srv.Command, srv.Args, srv.Env)
 		case srv.URL != "":
 			client, err = mcp.NewHTTPClient(name, srv.URL, srv.Headers)
 		}

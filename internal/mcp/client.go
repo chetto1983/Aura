@@ -69,8 +69,8 @@ type ConnectedClient interface {
 
 // NewStdioClient creates a client that spawns a child process and
 // communicates via its stdin/stdout pipes.
-func NewStdioClient(name, command string, args []string) (*Client, error) {
-	t, err := newStdioTransport(command, args)
+func NewStdioClient(name, command string, args []string, env map[string]string) (*Client, error) {
+	t, err := newStdioTransport(command, args, env)
 	if err != nil {
 		return nil, fmt.Errorf("mcp %s: %w", name, err)
 	}
@@ -251,8 +251,18 @@ type stdioTransport struct {
 	mu      sync.Mutex
 }
 
-func newStdioTransport(command string, args []string) (*stdioTransport, error) {
+func newStdioTransport(command string, args []string, env map[string]string) (*stdioTransport, error) {
 	cmd := exec.Command(command, args...)
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range env {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)

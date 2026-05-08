@@ -210,7 +210,7 @@ func TestLoadServersValid(t *testing.T) {
 	path := filepath.Join(dir, "mcp.json")
 	body := `{
 		"mcpServers": {
-			"local": {"command": "node", "args": ["server.js"]},
+			"local": {"command": "node", "args": ["server.js"], "env": {"MAIL_IMAP_DEFAULT_HOST": "imap.example.com"}},
 			"remote": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer x"}}
 		}
 	}`
@@ -227,6 +227,9 @@ func TestLoadServersValid(t *testing.T) {
 	local, ok := servers["local"]
 	if !ok || local.Command != "node" || len(local.Args) != 1 || local.Args[0] != "server.js" {
 		t.Fatalf("unexpected local entry: %+v", local)
+	}
+	if local.Env["MAIL_IMAP_DEFAULT_HOST"] != "imap.example.com" {
+		t.Fatalf("stdio env was not loaded: %+v", local.Env)
 	}
 	remote, ok := servers["remote"]
 	if !ok || remote.URL != "https://example.com/mcp" || remote.Headers["Authorization"] != "Bearer x" {

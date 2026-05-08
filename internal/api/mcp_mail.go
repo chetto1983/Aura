@@ -28,13 +28,13 @@ func handleMCPProviderProbe(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusNotFound, "mcp provider not found")
 			return
 		}
-		client := findMCPClient(providerID, deps.MCP)
+		client := findMCPClientForProvider(provider, deps.MCP)
 		if client == nil {
 			writeJSON(w, deps.Logger, http.StatusFailedDependency, ConnectorProbeResponse{
 				OK:                  false,
 				ProviderID:          providerID,
 				MissingCapabilities: capabilityIDs(provider.Capabilities),
-				Error:               "mcp server is not connected with the provider id as server name",
+				Error:               "mcp server is not connected for this provider",
 			})
 			return
 		}
@@ -170,7 +170,7 @@ func resolveMailProvider(deps Deps, providerID string) (ConnectorProviderSummary
 	if !ok || provider.Kind != "mail" {
 		return ConnectorProviderSummary{}, nil, mailProviderAdapter{}, false
 	}
-	client := findMCPClient(providerID, deps.MCP)
+	client := findMCPClientForProvider(provider, deps.MCP)
 	if client == nil {
 		return ConnectorProviderSummary{}, nil, mailProviderAdapter{}, false
 	}
@@ -179,6 +179,19 @@ func resolveMailProvider(deps Deps, providerID string) (ConnectorProviderSummary
 		return ConnectorProviderSummary{}, nil, mailProviderAdapter{}, false
 	}
 	return provider, client, adapter, true
+}
+
+func findMCPClientForProvider(provider ConnectorProviderSummary, clients []mcp.ConnectedClient) mcp.ConnectedClient {
+	names := provider.MCPServerNames
+	if len(names) == 0 {
+		names = []string{provider.ID}
+	}
+	for _, name := range names {
+		if client := findMCPClient(name, clients); client != nil {
+			return client
+		}
+	}
+	return nil
 }
 
 func selectMailProviderAdapter(providerID string, advertised map[string]bool) (mailProviderAdapter, []string) {

@@ -15,6 +15,7 @@ import (
 type ServerConfig struct {
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
@@ -23,7 +24,7 @@ type ServerConfig struct {
 //
 //	{
 //	  "mcpServers": {
-//	    "name": { "command": "...", "args": [...] },
+//	    "name": { "command": "...", "args": [...], "env": {"KEY": "value"} },
 //	    "remote": { "url": "https://...", "headers": {"Authorization": "..."} }
 //	  }
 //	}

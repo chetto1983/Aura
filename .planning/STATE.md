@@ -91,6 +91,13 @@ First slice:
 
 Latest implementation slice:
 
+- Real MCP mail wiring now uses existing `mcp.json` stdio config with `env`, not a parallel Aura plugin runtime.
+- Provider manifests include accepted MCP server aliases; `mail-mcp` can bind to a configured server named `mail` or `mail-mcp`.
+- `mcp.example.json` includes a read-only `mail` template for `tecnologicachile/mail-mcp` IMAP config.
+- Verification passed: `go test ./internal/mcp ./internal/api ./internal/telegram -run "TestLoadServersValid|TestMCPProviderProbeMailMCPFindsConfiguredMailAlias|TestMCPProviderMail" -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `go test ./...`, `go build ./...`, and `go vet ./...`.
+
+Previous implementation slice:
+
 - `POST /mcp/providers/{id}/actions/probe` now probes connected MCP provider profiles.
 - `mail-mcp` has read-only canonical `mail.search` and `mail.read` adapter endpoints over approved IMAP/EWS tools.
 - Dashboard provider cards can run Probe and display ready/missing/blocked advertised capabilities.

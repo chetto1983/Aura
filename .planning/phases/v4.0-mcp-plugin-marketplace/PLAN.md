@@ -14,6 +14,25 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-08 Real MCP Mail Server Wiring
+
+Status: implemented.
+
+- Extended `mcp.json` stdio server config with `env` so real MCP servers can receive account credentials without new Aura-specific plumbing.
+- Passed stdio env through the existing MCP client startup path.
+- Added provider-to-server aliases, so `mail-mcp` can probe a real server named `mail` or `mail-mcp`.
+- Added `mcp.example.json` mail-mcp read-only template using IMAP env only.
+- Kept SMTP/IMAP write flags out of the example and out of Aura enablement.
+
+Verification:
+
+- `go test ./internal/mcp ./internal/api ./internal/telegram -run "TestLoadServersValid|TestMCPProviderProbeMailMCPFindsConfiguredMailAlias|TestMCPProviderMail" -count=1`
+- `npm --prefix web run i18n:check`
+- `npm --prefix web run build`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+
 ### 2026-05-08 Mail Provider Probe And Read Adapter
 
 Status: implemented.

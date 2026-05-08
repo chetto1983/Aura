@@ -59,6 +59,10 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 		Status:        "not_configured",
 		RuntimeType:   "container",
 		RepositoryURL: "https://github.com/tecnologicachile/mail-mcp",
+		MCPServerNames: []string{
+			"mail-mcp",
+			"mail",
+		},
 		Capabilities: []ConnectorCapability{
 			{ID: "mail.accounts", Label: "Account", Description: "Elenca account e stato provider."},
 			{ID: "mail.search", Label: "Cerca mail", Description: "Cerca messaggi con filtri e paginazione."},
@@ -106,6 +110,11 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 		Status:        "not_configured",
 		RuntimeType:   "stdio",
 		RepositoryURL: "https://github.com/aaronsb/google-workspace-mcp",
+		MCPServerNames: []string{
+			"google-workspace",
+			"workspace",
+			"gmail",
+		},
 		Capabilities: []ConnectorCapability{
 			{ID: "mail.accounts", Label: "Account"},
 			{ID: "mail.search", Label: "Cerca Gmail"},
@@ -131,6 +140,10 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 		Status:        "not_configured",
 		RuntimeType:   "container",
 		RepositoryURL: "https://github.com/navbuildz/gmail-mcp-server",
+		MCPServerNames: []string{
+			"gmail-dedicated",
+			"gmail",
+		},
 		Capabilities: []ConnectorCapability{
 			{ID: "mail.accounts", Label: "Account Gmail"},
 			{ID: "mail.search", Label: "Cerca Gmail"},
@@ -156,6 +169,11 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 		Status:        "not_configured",
 		RuntimeType:   "stdio",
 		RepositoryURL: "https://github.com/littlebearapps/outlook-assistant",
+		MCPServerNames: []string{
+			"outlook-assistant",
+			"outlook",
+			"mail",
+		},
 		Capabilities: []ConnectorCapability{
 			{ID: "mail.accounts", Label: "Account Microsoft"},
 			{ID: "mail.search", Label: "Cerca Outlook"},
@@ -181,6 +199,11 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 		Status:        "not_configured",
 		RuntimeType:   "container",
 		RepositoryURL: "https://github.com/executeautomation/mcp-database-server",
+		MCPServerNames: []string{
+			"executeautomation-database",
+			"database",
+			"db",
+		},
 		Capabilities: []ConnectorCapability{
 			{ID: "database.list_tables", Label: "Tabelle", Description: "Elenca tabelle disponibili."},
 			{ID: "database.describe_table", Label: "Schema", Description: "Legge schema tabella."},

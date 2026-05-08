@@ -1,5 +1,14 @@
 {
   "mcpServers": {
+    "mail": {
+      "command": "D:/path/to/mail-mcp/target/release/mail-mcp.exe",
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.example.com",
+        "MAIL_IMAP_DEFAULT_USER": "user@example.com",
+        "MAIL_IMAP_DEFAULT_PASS": "app-password-or-oauth-token",
+        "MAIL_IMAP_DEFAULT_SECURE": "true"
+      }
+    },
     "fetch_example": {
       "command": "uvx",
       "args": ["mcp-server-fetch"]

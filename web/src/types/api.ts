@@ -180,6 +180,7 @@ export interface ConnectorProviderSummary {
   runtime_type: 'container' | 'stdio' | 'remote_http';
   repository_url?: string;
   homepage_url?: string;
+  mcp_server_names?: string[];
   capabilities: ConnectorCapability[];
   risk_badges: ConnectorRiskBadge[];
   required_secrets?: string[];

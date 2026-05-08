@@ -225,6 +225,7 @@ type ConnectorProviderSummary struct {
 	RuntimeType     string                `json:"runtime_type"` // "container" | "stdio" | "remote_http"
 	RepositoryURL   string                `json:"repository_url,omitempty"`
 	HomepageURL     string                `json:"homepage_url,omitempty"`
+	MCPServerNames  []string              `json:"mcp_server_names,omitempty"`
 	Capabilities    []ConnectorCapability `json:"capabilities"`
 	RiskBadges      []ConnectorRiskBadge  `json:"risk_badges"`
 	RequiredSecrets []string              `json:"required_secrets,omitempty"`

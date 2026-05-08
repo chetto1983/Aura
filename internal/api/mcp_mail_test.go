@@ -37,6 +37,26 @@ func TestMCPProviderProbeMailMCPFindsSearchReadAndFlagsBlockedTools(t *testing.T
 	}
 }
 
+func TestMCPProviderProbeMailMCPFindsConfiguredMailAlias(t *testing.T) {
+	srv, state := newFakeMCPServer(t, []mcp.Tool{
+		{Name: "imap_search_messages"},
+		{Name: "imap_get_message"},
+	})
+	router := newInvokeRouter(t, "mail", state, srv)
+
+	rr := postRaw(t, router, "/mcp/providers/mail-mcp/actions/probe", `{}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got ConnectorProbeResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.ServerName != "mail" {
+		t.Fatalf("probe did not use mail alias: %+v", got)
+	}
+}
+
 func TestMCPProviderMailSearchMapsCanonicalRequestToIMAPTool(t *testing.T) {
 	srv, state := newFakeMCPServer(t, []mcp.Tool{
 		{Name: "imap_search_messages"},
