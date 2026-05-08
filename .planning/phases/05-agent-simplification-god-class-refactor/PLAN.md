@@ -76,6 +76,7 @@ Create or reshape these boundaries:
 - 2026-05-08: Commit `e1e4536` made hidden/unavailable tool calls recoverable instead of fatal.
 - 2026-05-08: Removed remaining dead terminal-swarm helpers and tests from `internal/telegram/conversation.go` and `internal/telegram/debug_smoke_test.go`; verified with `go test ./internal/telegram`.
 - 2026-05-08: Replaced swarm-specific duplicate capping with generic duplicate tool-call capping keyed by tool name plus canonical JSON arguments; removed terminal-swarm telemetry from Telegram/debug sandbox. Verified with `go test ./internal/telegram`, `go test ./cmd/debug_telegram_sandbox`, and `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
+- 2026-05-08: Moved generic duplicate tool-call dedupe out of `internal/telegram/conversation.go` into `internal/agentloop/dedupe.go` with focused canonical-argument tests. Verified with `go test ./internal/agentloop`, `go test ./internal/telegram`, and `go test ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
 
 ## Task 0: Baseline And Branch
 
@@ -320,7 +321,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, messages
 
 Keep Telegram progress messages outside `agentloop`.
 
-- [ ] Step 3: Add generic duplicate tool-call dedupe.
+- [x] Step 3: Add generic duplicate tool-call dedupe.
 
 Create `internal/agentloop/dedupe.go`:
 

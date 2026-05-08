@@ -648,24 +648,6 @@ func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 	}
 }
 
-func TestCapDuplicateToolCallsSkipsIdenticalCalls(t *testing.T) {
-	calls := []llm.ToolCall{
-		{ID: "1", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
-		{ID: "2", Name: "search_wiki", Arguments: map[string]any{"query": "memory"}},
-		{ID: "3", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
-		{ID: "4", Name: "read_wiki", Arguments: map[string]any{"slug": "agent-loop"}},
-	}
-
-	got, duplicates := capDuplicateToolCalls(calls)
-
-	if len(got) != 3 || got[0].ID != "1" || got[1].ID != "2" || got[2].ID != "4" {
-		t.Fatalf("kept calls = %+v", got)
-	}
-	if len(duplicates) != 1 || duplicates[0].ID != "3" {
-		t.Fatalf("duplicates = %+v", duplicates)
-	}
-}
-
 func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 	messages := []llm.Message{
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "wiki-1", Name: "write_wiki"}}},

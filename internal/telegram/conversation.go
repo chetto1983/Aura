@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -579,7 +580,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 		b.storeOrchestrationSnapshot(userID, stats)
 		var hiddenRejected bool
-		callsToExecute, duplicateToolCalls := capDuplicateToolCalls(resp.ToolCalls)
+		callsToExecute, duplicateToolCalls := agentloop.DedupeToolCalls(resp.ToolCalls)
 		stats.duplicateToolCall = stats.duplicateToolCall || len(duplicateToolCalls) > 0
 		execution := b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed, profileDecision.Profile, stats.readSkills)
 		lastToolResult, hiddenRejected = execution.lastResult, execution.hiddenRejected
@@ -1056,30 +1057,6 @@ func stringSliceContains(values []string, candidate string) bool {
 		}
 	}
 	return false
-}
-
-func capDuplicateToolCalls(calls []llm.ToolCall) ([]llm.ToolCall, []llm.ToolCall) {
-	out := make([]llm.ToolCall, 0, len(calls))
-	var duplicates []llm.ToolCall
-	seen := make(map[string]struct{}, len(calls))
-	for _, call := range calls {
-		key := duplicateToolCallKey(call)
-		if _, ok := seen[key]; ok {
-			duplicates = append(duplicates, call)
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, call)
-	}
-	return out, duplicates
-}
-
-func duplicateToolCallKey(call llm.ToolCall) string {
-	args, err := json.Marshal(call.Arguments)
-	if err != nil {
-		args = []byte(fmt.Sprint(call.Arguments))
-	}
-	return strings.TrimSpace(call.Name) + "\x00" + string(args)
 }
 
 func formatTerminalExecuteCodeResult(raw string) string {
