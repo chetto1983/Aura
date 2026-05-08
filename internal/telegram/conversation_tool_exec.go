@@ -115,10 +115,13 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				return
 			}
 			toolCtx := tools.WithUserID(ctx, userID)
-			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
+			args := toolArgumentsForToolset(tc.Name, tc.Arguments, toolset)
+			result, err := b.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {
 				result = tools.FormatToolError(err)
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
+			} else if toolset == orchestration.ToolsetDocument && tc.Name == "search_memory" {
+				result = result + documentRouteNextStepHint()
 			}
 			errorClass := ""
 			if err != nil {
@@ -174,4 +177,37 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		}
 	}
 	return summary
+}
+
+func documentRouteNextStepHint() string {
+	return "\n\nNext step for this document turn: use this evidence now and call exactly one of create_docx, create_xlsx, or create_pdf. Do not call search_memory again. Do not call read_file, search_files, web_search, or source-reading tools unless the user explicitly asks for deeper inspection."
+}
+
+func toolArgumentsForToolset(name string, args map[string]any, toolset orchestration.Toolset) map[string]any {
+	if toolset != orchestration.ToolsetDocument || name != "search_memory" {
+		return args
+	}
+	out := make(map[string]any, len(args)+1)
+	for k, v := range args {
+		out[k] = v
+	}
+	if value, ok := out["limit"]; !ok || numericToolArg(value) > 3 {
+		out["limit"] = float64(3)
+	}
+	return out
+}
+
+func numericToolArg(value any) float64 {
+	switch v := value.(type) {
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	default:
+		return 0
+	}
 }

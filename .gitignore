@@ -55,6 +55,7 @@ aura.db-*
 
 # Local benchmark/history artifacts
 /reports/memory-quality/
+/reports/health/
 .agents/skills/*
 
 # Local isolated development worktrees

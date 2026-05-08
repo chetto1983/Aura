@@ -34,6 +34,9 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	if !strings.Contains(plan.Content, "Prompt Version: aura-agent-v1") || !strings.Contains(plan.Content, "Toolset: document") {
 		t.Fatalf("prompt missing version/toolset marker:\n%s", plan.Content)
 	}
+	if !strings.Contains(plan.Content, "Tool call examples are attached to each tool definition") {
+		t.Fatalf("document prompt missing tool example placement guidance:\n%s", plan.Content)
+	}
 	if !strings.Contains(plan.Content, "Read a skill when the user names it") || !strings.Contains(plan.Content, "Do not read skills just to satisfy a ritual") {
 		t.Fatalf("prompt missing advisory skill-use guidance:\n%s", plan.Content)
 	}
@@ -96,9 +99,14 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForToolset document: %v", err)
 	}
-	for _, required := range []string{"create_docx", "create_xlsx", "create_pdf", "search_memory", "read_source", "run_aurabot_swarm"} {
+	for _, required := range []string{"create_docx", "create_xlsx", "create_pdf", "search_memory", "run_aurabot_swarm"} {
 		if !slices.Contains(doc, required) {
 			t.Fatalf("document toolset missing %q: %+v", required, doc)
+		}
+	}
+	for _, forbidden := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "list_sources", "read_source", "web_search", "web_fetch"} {
+		if slices.Contains(doc, forbidden) {
+			t.Fatalf("document toolset exposes broad exploration tool %q: %+v", forbidden, doc)
 		}
 	}
 

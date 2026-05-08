@@ -21,7 +21,7 @@ const (
 	searchMemoryDefaultLimit   = 6
 	searchMemoryMaxLimit       = 12
 	searchMemoryScanLimit      = 120
-	searchMemoryReadLimit      = 16000
+	searchMemoryReadLimit      = 6000
 	searchMemorySnippetLimit   = 260
 	searchMemoryDefaultTimeout = 5 * time.Second
 )
@@ -115,6 +115,7 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		warnings = append(warnings, archiveWarnings...)
 	}
 
+	calibrateMemoryScores(results)
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
 			return results[i].Identifier < results[j].Identifier
@@ -145,6 +146,7 @@ type memoryResult struct {
 	Snippet    string
 	Page       int
 	Score      float64
+	Handle     string
 }
 
 type memoryEvidenceEnvelope struct {
@@ -160,6 +162,7 @@ type memoryEvidenceItem struct {
 	Role    string  `json:"role,omitempty"`
 	Page    int     `json:"page,omitempty"`
 	Score   float64 `json:"score"`
+	Handle  string  `json:"handle,omitempty"`
 	Snippet string  `json:"snippet,omitempty"`
 }
 
@@ -194,6 +197,7 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 			Title:      r.Title,
 			Snippet:    snippet,
 			Score:      float64(r.Score),
+			Handle:     identifier,
 		})
 	}
 	return out, nil
@@ -230,13 +234,15 @@ func (t *SearchMemoryTool) searchSources(ctx context.Context, query string) ([]m
 			continue
 		}
 		snippet, offset := snippetAround(body, query, searchMemorySnippetLimit)
+		page := pageAtOffset(body, offset)
 		out = append(out, memoryResult{
 			Kind:       "source",
 			Identifier: src.ID,
 			Title:      src.Filename,
 			Snippet:    snippet,
-			Page:       pageAtOffset(body, offset),
+			Page:       page,
 			Score:      score,
+			Handle:     sourceMemoryHandle(src.ID, page),
 		})
 	}
 	return out, warnings
@@ -280,6 +286,7 @@ func (t *SearchMemoryTool) searchArchive(ctx context.Context, query string, chat
 			Role:       turn.Role,
 			Snippet:    snippet,
 			Score:      score,
+			Handle:     fmt.Sprintf("conversation:%d", turn.ID),
 		})
 	}
 	return out, nil
@@ -322,6 +329,9 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 		if r.Page > 0 {
 			fmt.Fprintf(&sb, " - page=%d", r.Page)
 		}
+		if r.Handle != "" && r.Handle != r.Identifier {
+			fmt.Fprintf(&sb, " - handle=%s", r.Handle)
+		}
 		fmt.Fprintf(&sb, " - score=%.2f", r.Score)
 		if r.Snippet != "" {
 			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
@@ -351,6 +361,7 @@ func appendMemoryEvidenceEnvelope(sb *strings.Builder, query string, results []m
 			Role:    r.Role,
 			Page:    r.Page,
 			Score:   r.Score,
+			Handle:  r.Handle,
 			Snippet: compactMemoryLine(r.Snippet),
 		})
 	}
@@ -404,6 +415,52 @@ func lexicalScore(query, text string) float64 {
 		score += float64(count)
 	}
 	return score
+}
+
+func calibrateMemoryScores(results []memoryResult) {
+	for i := range results {
+		results[i].Score = calibratedMemoryScore(results[i].Kind, results[i].Score)
+	}
+}
+
+func calibratedMemoryScore(kind string, raw float64) float64 {
+	if raw <= 0 {
+		return 0
+	}
+	switch strings.TrimSpace(kind) {
+	case "wiki", "wiki_page", "graph_node", "graph_index":
+		if raw <= 1 {
+			return 0.55 + raw*0.40
+		}
+		return 0.95
+	case "source":
+		return 0.45 + cappedRatio(raw, 12)*0.40
+	case "archive":
+		return 0.35 + cappedRatio(raw, 12)*0.35
+	default:
+		return cappedRatio(raw, 12) * 0.70
+	}
+}
+
+func cappedRatio(value, cap float64) float64 {
+	if value <= 0 || cap <= 0 {
+		return 0
+	}
+	if value > cap {
+		return 1
+	}
+	return value / cap
+}
+
+func sourceMemoryHandle(id string, page int) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	if page > 0 {
+		return fmt.Sprintf("source:%s#page=%d", id, page)
+	}
+	return "source:" + id
 }
 
 func queryTerms(query string) []string {

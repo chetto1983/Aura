@@ -8,7 +8,7 @@ Progress:
 
 - 2026-05-08: Task 1 complete. The live `agentloop` fallback string/function is gone; budget exhaustion returns last useful tool output.
 - 2026-05-08: Task 2 partial. Skill manifest, swarm exposure, summarizer, and nightly auto-improve are no longer default-turn ceremony.
-- 2026-05-08: Task 3 partial. Generic turns skip speculative search/Memory Pack injection; memory/wiki/document routes still get a bounded pack when needed.
+- 2026-05-08: Task 3 complete for the hot path. The old `Memory Pack` code was physically replaced with `Retrieval Capsule`; graph/log file reads are no longer injected into system context.
 - 2026-05-08: Task 2 deletion pass complete for profile/preflight. The live `ProfileCard`/capability taxonomy, skill-preflight runtime policy, swarm-routing prompt helper, debug orchestration command, `AURA_SKILL_PREFLIGHT`, `AURA_TOOL_PROFILE_MODE`, and legacy profile aliases were physically removed. Remaining Docker Compose `profiles` are Docker service metadata, not Aura runtime routing.
 - 2026-05-08: Task 4 complete for the local wiki path. `search_memory` now merges exact slug/title/wiki-link hits, SQLite FTS, and vector results; Qdrant search merges local hybrid results instead of hiding lexical hits behind any non-empty vector response.
 - 2026-05-08: Task 7 partial. Anti-residue grep over `internal`, `cmd`, `web/src`, `.env.example`, `compose.yaml`, and `internal/api/dist` returned no legacy profile/preflight symbols after the dashboard rebuild.
@@ -17,6 +17,12 @@ Progress:
 - 2026-05-08 runtime skills storage fix: `skills/` was still a repo path and Compose bind-mounted it into `/workspace/skills`, so container-installed skills appeared as Git changes. Skills now live in the Docker `aura-skills` volume mounted at `/workspace/skills`; `/skills/` is ignored and removed from tracked source.
 - 2026-05-08 runtime wiki storage fix: `wiki/` was still a repo path and Compose bind-mounted it into `/workspace/wiki`, so Aura memory lived in the development tree. Existing wiki content was migrated into the Docker `aura-wiki` volume, Compose now mounts that volume at `/workspace/wiki`, local defaults point at `./runtime-workspace/wiki`, and `/wiki/` is ignored/removed from tracked source.
 - 2026-05-08 residue cleanup: removed obsolete project-skill fixture tests that still required repo-local `skills/` content after the runtime skills volume migration. Skill loader behavior remains covered by temp-directory tests.
+- 2026-05-08 Task 5/6 slice: `search_memory` now calibrates wiki/source/archive scores before merging, returns source/archive follow-up handles, and keeps source scan snippets bounded. The document toolset now exposes only `search_memory` plus typed file tools by default; workspace/source/web exploration is not in the normal document route. Toolset-specific `MaxSteps` caps were removed so the DB/dashboard `AgentLoopMaxSteps` value stays authoritative.
+- 2026-05-08 health capture helper: added `scripts/capture-aura-health.ps1` to snapshot Docker status/logs, `/status`, optional dashboard conversation archive, optional Telegram bot health, and optional debug Telegram smoke into ignored `reports/health/<timestamp>/` directories. This gives future validation a repeatable evidence bundle without raw live DB copies.
+- 2026-05-08 Hermes-style tool examples: every LLM-facing tool definition now carries concrete tool-call examples in its description. Known Aura tools get hand-written examples; dynamic/MCP tools get schema-derived fallback examples. This fixed the live document route that was producing malformed `create_docx` arguments and repeated retrieval loops.
+- 2026-05-08 LangChain-style tool definitions: tool examples were lifted out of registry-side string patching into Aura's canonical `ToolDefinition` contract. Tools can now provide `Definition()` with name, description, JSON schema, and structured examples; old tools are adapted through a fallback so no exposed tool loses a call shape.
+- 2026-05-08 document-loop repair: document-route `search_memory` results now include an explicit next-step hint to create exactly one typed artifact, and the OpenAI-compatible streamed tool-call parser repairs recoverable missing JSON closers. Live smoke recovered from the previous malformed `create_docx` failure and finished in 20.5s.
+- 2026-05-08 ADK-Go orchestration review: compared Aura against `google/adk-go`'s `Agent`/`Runner`/`Session.Event`/`Toolset`/callback split. The useful pattern for Aura is not importing ADK wholesale; it is moving route policy, tool filtering, tool-result shaping, persistence, and post-tool steering out of Telegram into a small event runner with before/after model/tool hooks.
 
 ## Thesis
 
@@ -37,8 +43,8 @@ Everything else must prove that it helps the current turn. If it does not, it mo
 - Recent Docker logs still show broad prompts spending `llm_calls=4`, `tool_calls=9`, `elapsed_ms=54205`, repeatedly calling `read_file/search_files/list_files`.
 - The broad document prompt can create a DOCX, but only after too much evidence expansion (`loop_steps=5`, `elapsed_ms=62894`, `tokens_total=66119`).
 - `internal/agentloop/loop.go` still has the hardcoded fallback that says `"Mi sono fermato"`.
-- `composeTurnMemoryPack` still performs speculative search and injects graph context plus recent wiki log on every turn.
-- `search_memory` mixes vector wiki scores with lexical source/archive scores as if they were comparable.
+- the old `Memory Pack` path used to inject graph context plus recent wiki log.
+- `search_memory` used to mix vector wiki scores with lexical source/archive scores as if they were comparable.
 - Qdrant currently wins when it returns any result, even if local lexical search has better evidence.
 
 ## Brutal Rule
@@ -169,7 +175,7 @@ Acceptance:
 
 ### Task 3: Replace Memory Pack With Retrieval Capsule
 
-- Status: partial. Generic turns now inject no pack. Memory/wiki/document turns still use `ComposeMemoryPack`; the later task is to rename/reshape it into a calibrated evidence capsule.
+- Status: done for the hot path. `ComposeMemoryPack` was deleted, `ComposeRetrievalCapsule` is the only live injection path, and debug smoke now reports `retrieval_capsule_present`.
 
 - Stop injecting graph context and recent wiki log on every turn.
 - Add a simple route: `minimal`, `retrieve`, `produce`.
@@ -179,9 +185,9 @@ Acceptance:
 
 Acceptance:
 
-- Generic prompts have no Memory Pack.
+- Generic prompts have no Retrieval Capsule.
 - Memory/document prompts receive one capsule under the byte cap.
-- Debug smoke reports route, capsule bytes, LLM calls, tool calls, and elapsed time.
+- Debug smoke reports capsule presence, LLM calls, tool calls, and elapsed time.
 
 ### Task 4: Fix Embedding Retrieval
 
@@ -200,6 +206,8 @@ Acceptance:
 
 ### Task 5: Compact Source And Archive Recall
 
+- Status: partial. `search_memory` now calibrates mixed wiki/source/archive scores, lowers source read windows, returns compact snippets, and exposes stable follow-up handles. Durable indexing of compact source/archive/proposal facts is still open.
+
 - Index compact source summaries, anchors, accepted proposals, preferences, and decisions.
 - Keep raw source bodies and raw archive turns behind explicit handles.
 - Update `search_memory` so wiki/source/archive evidence is calibrated before merging.
@@ -212,6 +220,9 @@ Acceptance:
 
 ### Task 6: Make Document Generation Boring
 
+- Status: done for the backend/live smoke slice. The document toolset no longer exposes workspace file tools, source browsing tools, or web tools by default. It keeps `search_memory` plus typed document creators, while the loop respects the DB/dashboard step budget instead of a hidden 4-step policy cap. Tool-call examples are now attached to all tool definitions, and the live document smoke creates/sends DOCX under 30s.
+- Follow-up refinement done: examples now live inside structured tool definitions, not ad hoc prompt text. `search_memory` and typed document creators own explicit definitions; legacy/dynamic tools still receive schema-derived definitions through the adapter path.
+
 - Document route must do: retrieval capsule -> `create_docx` or equivalent typed tool.
 - Remove repeated broad evidence expansion from document prompts.
 - Add malformed-JSON regression tests for evidence-heavy document prompts.
@@ -219,11 +230,11 @@ Acceptance:
 Acceptance:
 
 - Broad document prompt calls retrieval once, then typed document tool.
-- Live smoke stays under 30s and `loop_steps <= 4`.
+- Live smoke stays under 30s while respecting the configured `AgentLoopMaxSteps` budget.
 
 ### Task 7: Delete The Leftovers
 
-- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. Continue with wrappers/debug paths only if they are still production-reachable after Task 5/6.
+- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. `Memory Pack` live source symbols are gone, and intentionally retained explicit tools/settings are documented in `NOT-DELETED.md`. Malformed streamed JSON coverage now handles recoverable missing closers/trailing spillover. Durable compact-memory indexing remains open.
 
 - Audit with `rg` for old profiles, preflight, wrappers, old wiki tools, and production-reachable debug paths.
 - Delete what is dead.
@@ -233,6 +244,35 @@ Acceptance:
 
 - Every deletion candidate is gone or justified.
 - Phase 08 closes with fewer hot-path decisions than it started with.
+
+### Task 8: ADK-Style Event Runner
+
+- Status: planned from `google/adk-go` review.
+
+Build the smallest Aura-native version of ADK's orchestration shape:
+
+- `Runner` owns session load/append, invocation ID, route/toolset decision, and event emission.
+- `Agent` owns model/tool loop and yields events, not Telegram side effects.
+- `Event` records author, branch, tool calls/results, final response, state delta, artifact delta, and terminal status.
+- `Toolset` is dynamic (`Tools(ctx)` + predicate/filter), so hidden tools are not sent to the model and unknown-tool recovery is a last-resort safety net.
+- `BeforeModel`/`AfterModel` callbacks handle request shaping, usage, parser repair, and observability.
+- `BeforeTool`/`AfterTool` callbacks handle duplicate suppression, document-route next-step hints, confirmation gates, and compact result shaping.
+- Sub-agent/swarm calls become normal agent tools with bounded child sessions instead of terminal special cases.
+
+Non-goals:
+
+- Do not import ADK as a framework dependency.
+- Do not reintroduce profile/preflight taxonomy.
+- Do not add telemetry back into the hot path.
+- Do not expose broad workspace/source/web tools to document routes.
+
+Acceptance:
+
+- Telegram no longer owns orchestration policy; it adapts runner events to chat messages.
+- Document smoke performs `search_memory -> create_docx` with no hidden `read_file` attempt.
+- Duplicate/repeated retrieval is rejected by `BeforeTool`, not ad hoc Telegram code.
+- `go test ./internal/agentloop ./internal/telegram ./internal/orchestration ./internal/tools -count=1`.
+- Live debug sandbox stays under 30s for the document route.
 
 ## Verification
 

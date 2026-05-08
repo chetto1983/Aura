@@ -89,6 +89,9 @@ func TestSearchMemoryTool_SearchesSourcesAndArchive(t *testing.T) {
 	if !hasEvidenceItem(envelope.Items, "source", src.ID, "renewal-note.txt", 0) {
 		t.Fatalf("missing structured source evidence: %#v", envelope.Items)
 	}
+	if !hasEvidenceHandle(envelope.Items, "source:"+src.ID) {
+		t.Fatalf("missing source follow-up handle: %#v", envelope.Items)
+	}
 	if !hasEvidenceKind(envelope.Items, "archive") {
 		t.Fatalf("missing structured archive evidence: %#v", envelope.Items)
 	}
@@ -118,6 +121,9 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 	}
 	if !strings.Contains(out, "page=2") || !strings.Contains(out, "agreement.pdf") {
 		t.Fatalf("expected OCR page evidence:\n%s", out)
+	}
+	if !strings.Contains(out, "handle=source:"+src.ID+"#page=2") {
+		t.Fatalf("expected page-stable source handle:\n%s", out)
 	}
 	envelope := parseMemoryEvidenceEnvelope(t, out)
 	if !hasEvidenceItem(envelope.Items, "source", src.ID, "agreement.pdf", 2) {
@@ -201,6 +207,48 @@ func TestSearchMemoryToolAcceptsWikiSearchInterface(t *testing.T) {
 	}
 	if !strings.Contains(out, "[wiki] [[memory-boundary]]") {
 		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestSearchMemoryToolCalibratesMixedScoresBeforeMerging(t *testing.T) {
+	ctx := context.Background()
+	sourceStore := newTestSourceStore(t)
+	if _, _, err := sourceStore.Put(ctx, source.PutInput{
+		Kind:     source.KindText,
+		Filename: "very-repetitive-source.txt",
+		MimeType: "text/plain",
+		Bytes:    []byte(strings.Repeat("memory boundary ", 40)),
+	}); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{{
+			Kind:    "wiki_page",
+			Slug:    "memory-boundary",
+			Title:   "Memory Boundary",
+			Content: "Memory boundary canonical page.",
+			Score:   0.75,
+		}},
+	}, sourceStore, nil)
+
+	out, err := tool.Execute(ctx, map[string]any{"query": "memory boundary", "limit": float64(3)})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	wikiIdx := strings.Index(out, "[wiki] [[memory-boundary]]")
+	sourceIdx := strings.Index(out, "[source]")
+	if wikiIdx < 0 || sourceIdx < 0 {
+		t.Fatalf("expected wiki and source results:\n%s", out)
+	}
+	if wikiIdx > sourceIdx {
+		t.Fatalf("wiki vector score was buried by raw source lexical score:\n%s", out)
+	}
+	envelope := parseMemoryEvidenceEnvelope(t, out)
+	for _, item := range envelope.Items {
+		if item.Score < 0 || item.Score > 1 {
+			t.Fatalf("uncalibrated score for %#v", item)
+		}
 	}
 }
 
@@ -388,10 +436,12 @@ type testMemoryEvidenceEnvelope struct {
 }
 
 type testMemoryEvidenceItem struct {
-	Kind  string `json:"kind"`
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Page  int    `json:"page"`
+	Kind   string  `json:"kind"`
+	ID     string  `json:"id"`
+	Title  string  `json:"title"`
+	Page   int     `json:"page"`
+	Score  float64 `json:"score"`
+	Handle string  `json:"handle"`
 }
 
 func parseMemoryEvidenceEnvelope(t *testing.T, out string) testMemoryEvidenceEnvelope {
@@ -420,6 +470,15 @@ func hasEvidenceKind(items []testMemoryEvidenceItem, kind string) bool {
 func hasEvidenceItem(items []testMemoryEvidenceItem, kind, id, title string, page int) bool {
 	for _, item := range items {
 		if item.Kind == kind && item.ID == id && item.Title == title && item.Page == page {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEvidenceHandle(items []testMemoryEvidenceItem, handle string) bool {
+	for _, item := range items {
+		if item.Handle == handle {
 			return true
 		}
 	}

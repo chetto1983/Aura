@@ -3,8 +3,6 @@ package telegram
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,26 +11,16 @@ import (
 	"github.com/aura/aura/internal/search"
 )
 
-func composeTurnMemoryPack(ctx context.Context, repo search.Searcher, wikiDir, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
+func composeTurnRetrievalCapsule(ctx context.Context, repo search.Searcher, _ string, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
 	route := retrievalRouteForTurn(userText)
 	if route == "minimal" {
 		return ""
 	}
 	searchContext := runSpeculativeSearch(ctx, repo, userText, timeoutMS, logger, userID)
-	var graphContext, recentLog string
-	if strings.TrimSpace(wikiDir) != "" {
-		if route == "graph" || route == "produce" {
-			graphContext = readWorkspaceText(filepath.Join(wikiDir, "graph", "context.md"), 2048)
-		}
-		if route == "log" {
-			recentLog = recentWikiLog(filepath.Join(wikiDir, "log.md"), 2048, 8)
-		}
-	}
-	return conversation.ComposeMemoryPack(conversation.MemoryPackInput{
+	return conversation.ComposeRetrievalCapsule(conversation.RetrievalCapsuleInput{
 		UserText:      userText,
 		SearchContext: searchContext,
-		GraphContext:  graphContext,
-		RecentLog:     recentLog,
+		Route:         route,
 	})
 }
 
@@ -49,21 +37,13 @@ func retrievalRouteForTurn(userText string) string {
 			return "produce"
 		}
 	}
-	for _, needle := range []string{"grafo", "graph", "wiki graph", "mappa", "collegamenti"} {
-		if strings.Contains(text, needle) {
-			return "graph"
-		}
-	}
-	for _, needle := range []string{"log", "ultime modifiche", "cosa e cambiato", "cosa è cambiato"} {
-		if strings.Contains(text, needle) {
-			return "log"
-		}
-	}
 	for _, needle := range []string{
 		"memoria", "memory", "ricordi", "ricord", "wiki", "source", "fonti", "fonte",
 		"archivio", "conversaz", "decisioni", "preferenze", "note", "documenti",
 		"cosa resta", "cosa sai", "cosa conosci", "come funziona aura",
-		"picobot", "perche aura", "perché aura",
+		"picobot", "perche aura", "perche' aura",
+		"grafo", "graph", "wiki graph", "mappa", "collegamenti",
+		"log", "ultime modifiche", "cosa e cambiato",
 	} {
 		if strings.Contains(text, needle) {
 			return "retrieve"
@@ -100,39 +80,4 @@ func speculativeSearchTimeout(timeoutMS int) time.Duration {
 		timeoutMS = config.DefaultSpeculativeSearchTimeoutMS
 	}
 	return time.Duration(timeoutMS) * time.Millisecond
-}
-
-func readWorkspaceText(path string, maxBytes int) string {
-	if strings.TrimSpace(path) == "" || maxBytes <= 0 {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	text := string(data)
-	if len(text) > maxBytes {
-		text = text[:maxBytes]
-	}
-	return strings.TrimSpace(text)
-}
-
-func recentWikiLog(path string, maxBytes, maxLines int) string {
-	text := readWorkspaceText(path, maxBytes)
-	if text == "" {
-		return ""
-	}
-	lines := strings.Split(text, "\n")
-	kept := make([]string, 0, maxLines)
-	for i := len(lines) - 1; i >= 0 && len(kept) < maxLines; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
-		kept[i], kept[j] = kept[j], kept[i]
-	}
-	return strings.Join(kept, "\n")
 }

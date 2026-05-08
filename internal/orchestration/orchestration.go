@@ -83,8 +83,6 @@ var (
 	}
 	documentTools = []string{
 		"search_memory",
-		"list_sources", "read_source",
-		"web_search", "web_fetch",
 		"create_docx", "create_xlsx", "create_pdf",
 	}
 	adminTools = []string{
@@ -188,7 +186,7 @@ func ToolsForToolset(toolset Toolset, available Availability) ([]string, error) 
 	}
 
 	var tools []string
-	if available.WorkspaceFiles {
+	if available.WorkspaceFiles && toolset != ToolsetDocument {
 		tools = append(tools, workspaceTools...)
 	}
 	switch toolset {
@@ -255,7 +253,7 @@ func toolsetPrompt(toolset Toolset) string {
 	case ToolsetCompute:
 		return "\nUse execute_code for real computation, transformations, charts, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out."
 	case ToolsetDocument:
-		return "\nUse memory/source evidence first, then typed file tools for ordinary static documents."
+		return "\nUse compact memory evidence first, then one typed file tool for ordinary static documents."
 	case ToolsetAdmin:
 		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates."
 	default:
@@ -264,7 +262,10 @@ func toolsetPrompt(toolset Toolset) string {
 }
 
 func memoryPrompt(toolset Toolset) string {
-	if toolset == ToolsetDefault || toolset == ToolsetDocument {
+	if toolset == ToolsetDocument {
+		return "\n\n## Memory\nFor document generation, use the retrieval capsule or one search_memory call for compact evidence, then create_docx/create_xlsx/create_pdf. Do not browse workspace files, web pages, or raw source bodies unless the user explicitly asks for that deeper inspection."
+	}
+	if toolset == ToolsetDefault {
 		return "\n\n## Memory\nFor broad or source-backed answers, gather evidence with search_memory, source tools, or workspace file reads before synthesizing. Keep citations compact when the user asks for proof."
 	}
 	return ""
@@ -281,7 +282,7 @@ func filePrompt(toolset Toolset) string {
 	if toolset != ToolsetDocument {
 		return ""
 	}
-	return "\n\n## File Generation\nUse create_docx/create_xlsx/create_pdf for ordinary static user-facing files; use execute_code only for computed artifacts."
+	return "\n\n## File Generation\nUse create_docx/create_xlsx/create_pdf for ordinary static user-facing files; use execute_code only for computed artifacts. Tool call examples are attached to each tool definition."
 }
 
 func skillUsePrompt() string {

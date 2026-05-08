@@ -44,7 +44,7 @@ type DebugTextSmokeResult struct {
 	SandboxUsed               bool
 	TerminalTool              string
 	DuplicateToolCallRejected bool
-	MemoryPackPresent         bool
+	RetrievalCapsulePresent   bool
 	TokenUsageReported        bool
 	TokensPrompt              int
 	TokensCompletion          int
@@ -189,8 +189,8 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		if strings.TrimSpace(msg.Content) != "" {
 			result.MessageText += "\n" + msg.Content
 		}
-		if msg.Role == "system" && hasInjectedMemoryPack(msg.Content) {
-			result.MemoryPackPresent = true
+		if msg.Role == "system" && hasInjectedRetrievalCapsule(msg.Content) {
+			result.RetrievalCapsulePresent = true
 		}
 		if strings.Contains(msg.Content, "5050") {
 			result.Contains5050 = true
@@ -204,9 +204,9 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 	return result
 }
 
-func hasInjectedMemoryPack(content string) bool {
-	return strings.HasPrefix(content, "## Memory Pack\n\n###") ||
-		strings.Contains(content, "\n\n## Memory Pack\n\n###")
+func hasInjectedRetrievalCapsule(content string) bool {
+	return strings.HasPrefix(content, "## Retrieval Capsule\n\n###") ||
+		strings.Contains(content, "\n\n## Retrieval Capsule\n\n###")
 }
 
 func (r *DebugTextSmokeResult) applyOrchestrationToolCalls(called []string) {

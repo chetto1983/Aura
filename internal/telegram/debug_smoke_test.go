@@ -84,29 +84,29 @@ func TestDebugTextSmokeResultFromMessagesDetectsArtifactMetadata(t *testing.T) {
 	}
 }
 
-func TestDebugTextSmokeResultFromMessagesDetectsMemoryPack(t *testing.T) {
+func TestDebugTextSmokeResultFromMessagesDetectsRetrievalCapsule(t *testing.T) {
 	result := debugTextSmokeResultFromMessages("1148481707", "memory", []llm.Message{
 		{
 			Role:    "system",
-			Content: "Base prompt\n\n## Memory Pack\n\n### Relevant Pages\n- [[aura-operating-memory]]",
+			Content: "Base prompt\n\n## Retrieval Capsule\n\n### Relevant Pages\n- [[aura-operating-memory]]",
 		},
 	})
 
-	if !result.MemoryPackPresent {
-		t.Fatal("MemoryPackPresent = false, want true")
+	if !result.RetrievalCapsulePresent {
+		t.Fatal("RetrievalCapsulePresent = false, want true")
 	}
 }
 
-func TestDebugTextSmokeResultIgnoresBasePromptMemoryPackMention(t *testing.T) {
+func TestDebugTextSmokeResultIgnoresBasePromptRetrievalCapsuleMention(t *testing.T) {
 	result := debugTextSmokeResultFromMessages("1148481707", "memory", []llm.Message{
 		{
 			Role:    "system",
-			Content: "The system prompt may include a compact ## Memory Pack with relevant pages.",
+			Content: "The system prompt may include a compact ## Retrieval Capsule with relevant pages.",
 		},
 	})
 
-	if result.MemoryPackPresent {
-		t.Fatal("MemoryPackPresent = true for base prompt mention, want false")
+	if result.RetrievalCapsulePresent {
+		t.Fatal("RetrievalCapsulePresent = true for base prompt mention, want false")
 	}
 }
 
@@ -430,14 +430,14 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	}
 }
 
-func TestMaxToolLoopIterationsHonorsRuntimeCapAndToolsetPolicy(t *testing.T) {
-	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 4}}
+func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *testing.T) {
+	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 8}}
 
-	if got := b.maxToolLoopIterations(orchestration.ToolsetDocument); got != 4 {
-		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 4", got)
+	if got := b.maxToolLoopIterations(orchestration.ToolsetDocument); got != 8 {
+		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 8", got)
 	}
-	if got := b.maxToolLoopIterations(orchestration.ToolsetDefault); got != 4 {
-		t.Fatalf("default maxToolLoopIterations = %d, want runtime cap 4", got)
+	if got := b.maxToolLoopIterations(orchestration.ToolsetDefault); got != 8 {
+		t.Fatalf("default maxToolLoopIterations = %d, want runtime cap 8", got)
 	}
 }
 
@@ -571,10 +571,36 @@ func (h *capturingOrchestrationHooks) AfterToolCall(event orchestration.TraceEve
 	h.after = append(h.after, event)
 }
 
+func TestDocumentToolsetCapsSearchMemoryLimit(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	search := &countingTelegramTool{name: "search_memory", result: "memory"}
+	reg.Register(search)
+	b := &Bot{cfg: &config.Config{}, tools: reg}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}},
+		[]string{"search_memory"},
+		orchestration.ToolsetDocument,
+		nil,
+	)
+
+	if !strings.Contains(summary.lastResult, "memory") {
+		t.Fatalf("lastResult = %q", summary.lastResult)
+	}
+	if !strings.Contains(summary.lastResult, "call exactly one of create_docx") {
+		t.Fatalf("lastResult missing document next-step hint: %q", summary.lastResult)
+	}
+	if got := search.lastArgs["limit"]; got != float64(3) {
+		t.Fatalf("search_memory limit = %#v, want 3", got)
+	}
+}
+
 type countingTelegramTool struct {
-	name   string
-	result string
-	calls  int
+	name     string
+	result   string
+	calls    int
+	lastArgs map[string]any
 }
 
 func (t *countingTelegramTool) Name() string { return t.name }
@@ -583,8 +609,9 @@ func (t *countingTelegramTool) Description() string { return "counting fake tool
 
 func (t *countingTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
 
-func (t *countingTelegramTool) Execute(context.Context, map[string]any) (string, error) {
+func (t *countingTelegramTool) Execute(_ context.Context, args map[string]any) (string, error) {
 	t.calls++
+	t.lastArgs = args
 	return t.result, nil
 }
 

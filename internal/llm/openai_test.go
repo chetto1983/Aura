@@ -300,6 +300,110 @@ func TestOpenAIClientStreamWithToolCalls(t *testing.T) {
 	}
 }
 
+func TestOpenAIClientStreamRecoversToolCallArgumentsWithTrailingComma(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		chunks := []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_doc","type":"function","function":{"name":"create_docx","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"filename\":\"report.docx\",\"blocks\":[]}"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":","}}]}}]}`,
+			`[DONE]`,
+		}
+		for _, c := range chunks {
+			w.Write([]byte("data: " + c + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4"})
+	ch, err := client.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "make doc"}},
+		Tools:    []ToolDefinition{{Name: "create_docx", Description: "create doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+
+	var toolCalls []ToolCall
+	for tok := range ch {
+		if tok.Err != nil {
+			t.Fatalf("token error: %v", tok.Err)
+		}
+		if tok.Done {
+			toolCalls = tok.ToolCalls
+			break
+		}
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("toolCalls len = %d, want 1", len(toolCalls))
+	}
+	if got := toolCalls[0].Arguments["filename"]; got != "report.docx" {
+		t.Fatalf("filename arg = %v, want report.docx", got)
+	}
+}
+
+func TestOpenAIClientStreamRecoversFirstToolCallArgumentObject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		chunks := []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_doc","type":"function","function":{"name":"create_docx","arguments":""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"filename\":\"report.docx\",\"blocks\":[]}"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" this trailing prose should be ignored"}}]}}]}`,
+			`[DONE]`,
+		}
+		for _, c := range chunks {
+			w.Write([]byte("data: " + c + "\n\n"))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4"})
+	ch, err := client.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "make doc"}},
+		Tools:    []ToolDefinition{{Name: "create_docx", Description: "create doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+
+	var toolCalls []ToolCall
+	for tok := range ch {
+		if tok.Err != nil {
+			t.Fatalf("token error: %v", tok.Err)
+		}
+		if tok.Done {
+			toolCalls = tok.ToolCalls
+			break
+		}
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("toolCalls len = %d, want 1", len(toolCalls))
+	}
+	if got := toolCalls[0].Arguments["filename"]; got != "report.docx" {
+		t.Fatalf("filename arg = %v, want report.docx", got)
+	}
+}
+
+func TestParseToolCallArgumentsRepairsMissingArrayCloser(t *testing.T) {
+	args, err := parseToolCallArguments("create_docx", `{"filename":"report.docx","blocks":[{"kind":"paragraph","text":"ok"}}`)
+	if err != nil {
+		t.Fatalf("parseToolCallArguments() error = %v", err)
+	}
+	if got := args["filename"]; got != "report.docx" {
+		t.Fatalf("filename = %v, want report.docx", got)
+	}
+	blocks, ok := args["blocks"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("blocks = %#v, want one block", args["blocks"])
+	}
+}
+
 func TestOpenAIClientStreamKeepsUsageAfterFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

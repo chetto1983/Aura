@@ -54,6 +54,7 @@ type Options struct {
 	TerminalToolPolicy      bool
 	AllowNoToolFinalization bool
 	DuplicateToolResult     func(llm.ToolCall) string
+	MaxCallsPerTool         map[string]int
 	BeforeLLM               func() (message string, stop bool)
 	RecordUsage             func(llm.TokenUsage)
 	EstimateCost            func(llm.TokenUsage) float64
@@ -94,6 +95,8 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	start := time.Now()
 	var lastToolResult string
 	var stats Stats
+	seenToolCalls := map[string]bool{}
+	toolCallExecutions := map[string]int{}
 	emitStats := func() {
 		if opts.OnStats != nil {
 			opts.OnStats(stats)
@@ -169,14 +172,32 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		emitStats()
 
 		callsToExecute, duplicateToolCalls := DedupeToolCalls(resp.Response.ToolCalls)
+		var freshCalls []llm.ToolCall
+		for _, call := range callsToExecute {
+			key := duplicateToolCallKey(call)
+			if seenToolCalls[key] {
+				duplicateToolCalls = append(duplicateToolCalls, call)
+				continue
+			}
+			if maxCalls := opts.MaxCallsPerTool[call.Name]; maxCalls > 0 && toolCallExecutions[call.Name] >= maxCalls {
+				duplicateToolCalls = append(duplicateToolCalls, call)
+				continue
+			}
+			seenToolCalls[key] = true
+			toolCallExecutions[call.Name]++
+			freshCalls = append(freshCalls, call)
+		}
 		stats.DuplicateToolCall = stats.DuplicateToolCall || len(duplicateToolCalls) > 0
-		execution := executor.ExecuteToolCalls(ctx, callsToExecute)
-		lastToolResult = execution.LastResult
-		stats.HiddenToolRejected = stats.HiddenToolRejected || execution.HiddenRejected
-		stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
-		stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
-		if execution.TerminalTool != "" {
-			stats.TerminalTool = execution.TerminalTool
+		var execution ExecutionSummary
+		if len(freshCalls) > 0 {
+			execution = executor.ExecuteToolCalls(ctx, freshCalls)
+			lastToolResult = execution.LastResult
+			stats.HiddenToolRejected = stats.HiddenToolRejected || execution.HiddenRejected
+			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
+			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
+			if execution.TerminalTool != "" {
+				stats.TerminalTool = execution.TerminalTool
+			}
 		}
 		for _, duplicate := range duplicateToolCalls {
 			state.AddToolResultMessage(duplicate.ID, duplicateToolResult(duplicate, opts))

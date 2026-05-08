@@ -52,7 +52,7 @@ func main() {
 	expectWorkspaceRoot := flag.String("expect-workspace-root", "", "expected configured workspace root, e.g. /workspace")
 	var forbidPathFragments repeatableCSVFlag
 	flag.Var(&forbidPathFragments, "forbid-path-fragment", "path fragment that must not appear in debug-visible output; may be repeated or comma-separated")
-	expectMemoryPack := flag.Bool("expect-memory-pack", false, "expect the synthetic Telegram turn system context to include the compact Memory Pack")
+	expectRetrievalCapsule := flag.Bool("expect-retrieval-capsule", false, "expect the synthetic Telegram turn system context to include the compact Retrieval Capsule")
 	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
@@ -171,7 +171,7 @@ func main() {
 	fmt.Printf("toolset_select_reason=%s\n", result.ToolsetSelectReason)
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
 	fmt.Printf("workspace_root=%s\n", result.WorkspaceRoot)
-	fmt.Printf("memory_pack_present=%v\n", result.MemoryPackPresent)
+	fmt.Printf("retrieval_capsule_present=%v\n", result.RetrievalCapsulePresent)
 	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
 	if len(result.ReadSkills) > 0 {
@@ -221,7 +221,7 @@ func main() {
 		SandboxUsed:        *expectSandbox,
 		WorkspaceRoot:      *expectWorkspaceRoot,
 		ForbidFragments:    forbidPathFragments.Values,
-		MemoryPack:         *expectMemoryPack,
+		RetrievalCapsule:   *expectRetrievalCapsule,
 		MaxElapsedMS:       *maxElapsedMS,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
@@ -273,8 +273,8 @@ func main() {
 	if len(expectations.ForbidFragments) > 0 {
 		fmt.Printf("forbidden_path_fragments_absent=%s\n", strings.Join(expectations.ForbidFragments, ","))
 	}
-	if expectations.MemoryPack {
-		fmt.Printf("expected_memory_pack=true\n")
+	if expectations.RetrievalCapsule {
+		fmt.Printf("expected_retrieval_capsule=true\n")
 	}
 	if expectations.MaxElapsedMS > 0 {
 		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
@@ -639,7 +639,7 @@ type debugExpectations struct {
 	SandboxUsed        bool
 	WorkspaceRoot      string
 	ForbidFragments    []string
-	MemoryPack         bool
+	RetrievalCapsule   bool
 	MaxElapsedMS       int64
 }
 
@@ -697,8 +697,8 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if root := strings.TrimSpace(expectations.WorkspaceRoot); root != "" && strings.TrimSpace(result.WorkspaceRoot) != root {
 		return fmt.Errorf("expected workspace root %q, got %q", root, result.WorkspaceRoot)
 	}
-	if expectations.MemoryPack && !result.MemoryPackPresent {
-		return errors.New("expected compact memory pack in system context")
+	if expectations.RetrievalCapsule && !result.RetrievalCapsulePresent {
+		return errors.New("expected compact retrieval capsule in system context")
 	}
 	if len(expectations.ForbidFragments) > 0 {
 		text := debugVisibleText(result)
@@ -922,7 +922,7 @@ func loadDotEnv(path string) error {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
+		if key != "" && os.Getenv(key) == "" {
 			os.Setenv(key, value)
 		}
 	}

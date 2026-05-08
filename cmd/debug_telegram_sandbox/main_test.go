@@ -78,6 +78,25 @@ func TestDefaultDebugEnvPathHonorsExplicitEnv(t *testing.T) {
 	}
 }
 
+func TestLoadDotEnvDoesNotOverrideExplicitEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("WIKI_PATH=./wiki\nDB_PATH=./aura.db\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WIKI_PATH", filepath.Join("runtime-workspace", "wiki"))
+	t.Setenv("DB_PATH", "")
+
+	if err := loadDotEnv(path); err != nil {
+		t.Fatalf("loadDotEnv() error = %v", err)
+	}
+	if got := os.Getenv("WIKI_PATH"); got != filepath.Join("runtime-workspace", "wiki") {
+		t.Fatalf("WIKI_PATH = %q, want explicit env to win", got)
+	}
+	if got := os.Getenv("DB_PATH"); got != "./aura.db" {
+		t.Fatalf("DB_PATH = %q, want .env fallback", got)
+	}
+}
+
 func TestPrepareDebugDBCopyCopiesDatabaseAndSidecars(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "aura.db")
@@ -323,23 +342,23 @@ func TestTelegramSandboxSmokeCustomPromptDoesNotRequireLegacyExecuteCodeOr5050(t
 
 func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.T) {
 	result := telegram.DebugTextSmokeResult{
-		ToolCalls:          []string{"read_file", "run_aurabot_swarm", "execute_code"},
-		Toolset:            "compute",
-		FinalText:          "Swarm research completed.",
-		PromptHash:         "abc123",
-		SkillsRead:         true,
-		SwarmUsed:          true,
-		TokenUsageReported: true,
-		TokensTotal:        10,
-		ElapsedMS:          100,
-		SandboxUsed:        true,
-		HiddenToolRejected: true,
-		LoopSteps:          3,
-		TerminalTool:       "execute_code",
-		ReadSkills:         []string{"test-driven-development"},
-		ToolsExposed:       []string{"read_file", "run_aurabot_swarm", "execute_code"},
-		WorkspaceRoot:      "/workspace",
-		MemoryPackPresent:  true,
+		ToolCalls:               []string{"read_file", "run_aurabot_swarm", "execute_code"},
+		Toolset:                 "compute",
+		FinalText:               "Swarm research completed.",
+		PromptHash:              "abc123",
+		SkillsRead:              true,
+		SwarmUsed:               true,
+		TokenUsageReported:      true,
+		TokensTotal:             10,
+		ElapsedMS:               100,
+		SandboxUsed:             true,
+		HiddenToolRejected:      true,
+		LoopSteps:               3,
+		TerminalTool:            "execute_code",
+		ReadSkills:              []string{"test-driven-development"},
+		ToolsExposed:            []string{"read_file", "run_aurabot_swarm", "execute_code"},
+		WorkspaceRoot:           "/workspace",
+		RetrievalCapsulePresent: true,
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
@@ -357,7 +376,7 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		NoStaleSkillRef:    true,
 		WorkspaceRoot:      "/workspace",
 		ForbidFragments:    []string{"internal/", ".git/"},
-		MemoryPack:         true,
+		RetrievalCapsule:   true,
 		MaxElapsedMS:       1000,
 	})
 	if err != nil {
@@ -494,10 +513,10 @@ func TestValidateDebugExpectationsRejectsForbiddenToolMessageFragment(t *testing
 	}
 }
 
-func TestValidateDebugExpectationsRejectsMissingMemoryPack(t *testing.T) {
-	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{MemoryPack: true})
-	if err == nil || !strings.Contains(err.Error(), "expected compact memory pack") {
-		t.Fatalf("validateDebugExpectations() error = %v, want memory pack failure", err)
+func TestValidateDebugExpectationsRejectsMissingRetrievalCapsule(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{RetrievalCapsule: true})
+	if err == nil || !strings.Contains(err.Error(), "expected compact retrieval capsule") {
+		t.Fatalf("validateDebugExpectations() error = %v, want retrieval capsule failure", err)
 	}
 }
 

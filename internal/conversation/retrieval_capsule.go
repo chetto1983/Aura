@@ -7,30 +7,31 @@ import (
 	"strings"
 )
 
-const DefaultMemoryPackMaxBytes = 10 * 1024
+const DefaultRetrievalCapsuleMaxBytes = 10 * 1024
 
-type MemoryPackInput struct {
+type RetrievalCapsuleInput struct {
 	UserText      string
 	SearchContext string
-	GraphContext  string
-	RecentLog     string
+	Route         string
 	MaxBytes      int
 }
 
-func ComposeMemoryPack(input MemoryPackInput) string {
+func ComposeRetrievalCapsule(input RetrievalCapsuleInput) string {
 	maxBytes := input.MaxBytes
 	if maxBytes <= 0 {
-		maxBytes = DefaultMemoryPackMaxBytes
+		maxBytes = DefaultRetrievalCapsuleMaxBytes
 	}
 
 	searchContext := strings.TrimSpace(input.SearchContext)
-	graphContext := strings.TrimSpace(input.GraphContext)
-	recentLog := strings.TrimSpace(input.RecentLog)
-	if searchContext == "" && graphContext == "" && recentLog == "" {
+	if searchContext == "" {
 		return ""
 	}
 
 	var sections []string
+	route := strings.TrimSpace(input.Route)
+	if route != "" {
+		sections = append(sections, "### Route\n"+truncateBytes(route, 80))
+	}
 	if userText := strings.TrimSpace(input.UserText); userText != "" {
 		sections = append(sections, "### User Request\n"+truncateBytes(userText, 500))
 	}
@@ -43,17 +44,11 @@ func ComposeMemoryPack(input MemoryPackInput) string {
 		sections = append(sections, strings.TrimRight(sb.String(), "\n"))
 	}
 	if searchContext != "" {
-		sections = append(sections, "### Search Context\n"+truncateBytes(searchContext, maxBytes/3))
-	}
-	if graphContext != "" {
-		sections = append(sections, "### Graph Context\n"+stripHeading(truncateBytes(graphContext, maxBytes/3), "Wiki Graph Context"))
-	}
-	if recentLog != "" {
-		sections = append(sections, "### Recent Wiki Log\n"+truncateBytes(recentLog, maxBytes/4))
+		sections = append(sections, "### Evidence\n"+truncateBytes(searchContext, maxBytes/2))
 	}
 
-	pack := "## Memory Pack\n\n" + strings.Join(sections, "\n\n")
-	return truncateBytes(pack, maxBytes)
+	capsule := "## Retrieval Capsule\n\n" + strings.Join(sections, "\n\n")
+	return truncateBytes(capsule, maxBytes)
 }
 
 var wikiLinkRE = regexp.MustCompile(`\[\[([a-z0-9][a-z0-9-]{0,199})\]\]`)
@@ -78,15 +73,6 @@ func relevantPageList(searchContext string) []string {
 		return pages[:8]
 	}
 	return pages
-}
-
-func stripHeading(text, heading string) string {
-	text = strings.TrimSpace(text)
-	prefix := "# " + heading
-	if strings.HasPrefix(text, prefix) {
-		return strings.TrimSpace(strings.TrimPrefix(text, prefix))
-	}
-	return text
 }
 
 func truncateBytes(text string, maxBytes int) string {

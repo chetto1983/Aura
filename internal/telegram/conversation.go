@@ -111,15 +111,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// EnforceLimit (below) trims it out of convCtx.
 	convCtx.AddUserMessage(userText)
 
-	// Phase 08 Runtime Diet: retrieval context is now routed, not automatic.
-	// Generic chat/status/code turns clear this slot so stale Memory Pack
-	// content does not leak into the next answer. Retrieval/document turns may
-	// still get a compact capsule below.
+	// Phase 08 Runtime Diet: retrieval context is routed, not automatic.
+	// Generic chat/status/code turns clear this slot so stale capsule content
+	// does not leak into the next answer.
 	wikiDir := ""
 	if b.wiki != nil {
 		wikiDir = b.wiki.Dir()
 	}
-	convCtx.SetSearchContext(composeTurnMemoryPack(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID))
+	convCtx.SetSearchContext(composeTurnRetrievalCapsule(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID))
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
 	// completes so context trimming doesn't add to perceived wait time.
@@ -389,8 +388,12 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: loopPolicy.AllowNoToolFinalization,
 			DuplicateToolResult: func(call llm.ToolCall) string {
+				if toolsetDecision.Toolset == orchestration.ToolsetDocument && call.Name == "search_memory" {
+					return tools.FormatToolError(fmt.Errorf("document route already has compact retrieval for this turn; use the previous evidence and call create_docx/create_xlsx/create_pdf now"))
+				}
 				return tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name))
 			},
+			MaxCallsPerTool: maxCallsPerToolForToolset(toolsetDecision.Toolset),
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -508,13 +511,17 @@ func (b *Bot) maxToolLoopIterations(toolset orchestration.Toolset) int {
 	if b != nil && b.cfg != nil && b.cfg.AgentLoopMaxSteps > 0 && b.cfg.AgentLoopMaxSteps < maxIterations {
 		maxIterations = b.cfg.AgentLoopMaxSteps
 	}
-	if loopPolicy, ok := orchestration.LoopPolicyForToolset(toolset); ok && loopPolicy.MaxSteps > 0 && loopPolicy.MaxSteps < maxIterations {
-		maxIterations = loopPolicy.MaxSteps
-	}
 	if maxIterations < 1 {
 		return 1
 	}
 	return maxIterations
+}
+
+func maxCallsPerToolForToolset(toolset orchestration.Toolset) map[string]int {
+	if toolset == orchestration.ToolsetDocument {
+		return map[string]int{"search_memory": 1}
+	}
+	return nil
 }
 
 func (b *Bot) terminalToolPolicyEnabled() bool {

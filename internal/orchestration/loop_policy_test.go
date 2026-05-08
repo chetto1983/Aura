@@ -12,9 +12,6 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	if def.MaxSteps != 4 {
-		t.Fatalf("default MaxSteps = %d, want 4-step budget", def.MaxSteps)
-	}
 	if !slices.Contains(def.TerminalTools, "run_aurabot_swarm") {
 		t.Fatalf("default TerminalTools missing run_aurabot_swarm: %+v", def.TerminalTools)
 	}
@@ -32,6 +29,17 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	if !strings.Contains(compute.DuplicateToolPolicy, "execute_code") {
 		t.Fatalf("compute DuplicateToolPolicy = %q, want execute_code duplicate guidance", compute.DuplicateToolPolicy)
 	}
+
+	doc, ok := LoopPolicyForToolset(ToolsetDocument)
+	if !ok {
+		t.Fatal("LoopPolicyForToolset document returned false")
+	}
+	if doc.MaxElapsed > 30*time.Second {
+		t.Fatalf("document MaxElapsed = %s, want <=30s", doc.MaxElapsed)
+	}
+	if !strings.Contains(doc.DuplicateToolPolicy, "compact retrieval") {
+		t.Fatalf("document DuplicateToolPolicy = %q, want compact retrieval guidance", doc.DuplicateToolPolicy)
+	}
 }
 
 func TestLoopPolicyForToolsetReturnsCopySafePolicy(t *testing.T) {
@@ -39,13 +47,13 @@ func TestLoopPolicyForToolsetReturnsCopySafePolicy(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	policy.MaxSteps = 99
+	policy.TerminalTools[0] = "mutated"
 
 	reread, ok := LoopPolicyForToolset(ToolsetDefault)
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default reread returned false")
 	}
-	if reread.MaxSteps == 99 {
+	if slices.Contains(reread.TerminalTools, "mutated") {
 		t.Fatalf("mutating policy changed policy catalog: %+v", reread)
 	}
 }
@@ -55,9 +63,6 @@ func TestLoopPolicyForEveryToolsetIsConservativeAndBounded(t *testing.T) {
 		policy, ok := LoopPolicyForToolset(toolset)
 		if !ok {
 			t.Fatalf("LoopPolicyForToolset(%q) returned false", toolset)
-		}
-		if policy.MaxSteps <= 0 || policy.MaxSteps > 8 {
-			t.Fatalf("%q MaxSteps = %d, want 1..8", toolset, policy.MaxSteps)
 		}
 		if policy.MaxElapsed <= 0 || policy.MaxElapsed > time.Minute {
 			t.Fatalf("%q MaxElapsed = %s, want positive duration <= 1m", toolset, policy.MaxElapsed)

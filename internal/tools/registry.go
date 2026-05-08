@@ -55,11 +55,7 @@ func (r *Registry) Definitions() []llm.ToolDefinition {
 
 	defs := make([]llm.ToolDefinition, 0, len(r.tools))
 	for _, t := range r.tools {
-		defs = append(defs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  t.Parameters(),
-		})
+		defs = append(defs, definitionForTool(t).LLMDefinition())
 	}
 	return defs
 }
@@ -80,11 +76,7 @@ func (r *Registry) DefinitionsFor(allowlist []string) []llm.ToolDefinition {
 		if !ok {
 			continue
 		}
-		defs = append(defs, llm.ToolDefinition{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  t.Parameters(),
-		})
+		defs = append(defs, definitionForTool(t).LLMDefinition())
 	}
 	return defs
 }

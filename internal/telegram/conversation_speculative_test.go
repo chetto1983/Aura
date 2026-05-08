@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -60,7 +58,7 @@ func TestHotPathManifestsAndSwarmAreExplicitOnly(t *testing.T) {
 	}
 }
 
-func TestComposeTurnMemoryPackSkipsGenericTurns(t *testing.T) {
+func TestComposeTurnRetrievalCapsuleSkipsGenericTurns(t *testing.T) {
 	repo := &recordingSearch{indexed: true, results: []search.Result{{
 		Kind:    "wiki_page",
 		Slug:    "aura-operating-memory",
@@ -69,16 +67,16 @@ func TestComposeTurnMemoryPackSkipsGenericTurns(t *testing.T) {
 		Score:   0.9,
 	}}}
 
-	got := composeTurnMemoryPack(context.Background(), repo, "", "ciao come stai?", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
+	got := composeTurnRetrievalCapsule(context.Background(), repo, "", "ciao come stai?", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
 	if got != "" {
-		t.Fatalf("generic turn memory pack = %q, want empty", got)
+		t.Fatalf("generic turn retrieval capsule = %q, want empty", got)
 	}
 	if !repo.deadline.IsZero() {
 		t.Fatal("generic turn should not run speculative search")
 	}
 }
 
-func TestComposeTurnMemoryPackSearchesMemoryTurnsWithoutGraphOrLog(t *testing.T) {
+func TestComposeTurnRetrievalCapsuleSearchesMemoryTurnsWithoutGraphOrLog(t *testing.T) {
 	repo := &recordingSearch{indexed: true, results: []search.Result{{
 		Kind:    "wiki_page",
 		Slug:    "aura-operating-memory",
@@ -86,34 +84,25 @@ func TestComposeTurnMemoryPackSearchesMemoryTurnsWithoutGraphOrLog(t *testing.T)
 		Content: "Aura should use compact context.",
 		Score:   0.9,
 	}}}
-	wikiDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(wikiDir, "graph"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wikiDir, "graph", "context.md"), []byte("# Wiki Graph Context\n\n- Pages: 22\n- Edges: 53\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wikiDir, "log.md"), []byte("# Wiki Log\n\n| old | row |\n| 2026-05-08T10:00:00Z | update | [[aura-operating-memory]] |\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	got := composeTurnMemoryPack(context.Background(), repo, wikiDir, "cosa ricordi di Aura?", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
+	got := composeTurnRetrievalCapsule(context.Background(), repo, t.TempDir(), "cosa ricordi di Aura?", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
 	for _, want := range []string{
-		"## Memory Pack",
+		"## Retrieval Capsule",
+		"### Route",
+		"retrieve",
 		"[[aura-operating-memory]]",
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("memory pack missing %q:\n%s", want, got)
+			t.Fatalf("retrieval capsule missing %q:\n%s", want, got)
 		}
 	}
 	for _, notWant := range []string{"### Graph Context", "### Recent Wiki Log", "update"} {
 		if strings.Contains(got, notWant) {
-			t.Fatalf("memory pack includes hot-path context %q:\n%s", notWant, got)
+			t.Fatalf("retrieval capsule includes hot-path context %q:\n%s", notWant, got)
 		}
 	}
 }
 
-func TestComposeTurnMemoryPackLoadsGraphOnlyForGraphTurns(t *testing.T) {
+func TestComposeTurnRetrievalCapsuleDoesNotLoadGraphForGraphTurns(t *testing.T) {
 	repo := &recordingSearch{indexed: true, results: []search.Result{{
 		Kind:    "wiki_page",
 		Slug:    "aura-operating-memory",
@@ -121,18 +110,30 @@ func TestComposeTurnMemoryPackLoadsGraphOnlyForGraphTurns(t *testing.T) {
 		Content: "Aura should use compact context.",
 		Score:   0.9,
 	}}}
-	wikiDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(wikiDir, "graph"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wikiDir, "graph", "context.md"), []byte("# Wiki Graph Context\n\n- Pages: 22\n- Edges: 53\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	got := composeTurnMemoryPack(context.Background(), repo, wikiDir, "mostrami il grafo della wiki", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
-	for _, want := range []string{"## Memory Pack", "### Graph Context", "- Pages: 22"} {
+	got := composeTurnRetrievalCapsule(context.Background(), repo, t.TempDir(), "mostrami il grafo della wiki", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
+	for _, want := range []string{"## Retrieval Capsule", "retrieve", "[[aura-operating-memory]]"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("graph memory pack missing %q:\n%s", want, got)
+			t.Fatalf("graph retrieval capsule missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "### Graph Context") || strings.Contains(got, "- Pages: 22") {
+		t.Fatalf("graph turn loaded graph context instead of search evidence:\n%s", got)
+	}
+}
+
+func TestComposeTurnRetrievalCapsuleMarksDocumentTurnsAsProduce(t *testing.T) {
+	repo := &recordingSearch{indexed: true, results: []search.Result{{
+		Kind:    "wiki_page",
+		Slug:    "aura-documents",
+		Title:   "Aura Documents",
+		Content: "Document generation should be boring.",
+		Score:   0.9,
+	}}}
+
+	got := composeTurnRetrievalCapsule(context.Background(), repo, "", "crea un documento word sui documenti e note", 25, slog.New(slog.NewTextHandler(io.Discard, nil)), "u1")
+	for _, want := range []string{"## Retrieval Capsule", "produce", "[[aura-documents]]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("produce retrieval capsule missing %q:\n%s", want, got)
 		}
 	}
 }

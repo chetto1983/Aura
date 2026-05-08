@@ -298,11 +298,9 @@ func parseToolCalls(calls []toolCallJSON) ([]ToolCall, error) {
 	}
 	result := make([]ToolCall, 0, len(calls))
 	for _, call := range calls {
-		args := map[string]any{}
-		if strings.TrimSpace(call.Function.Arguments) != "" {
-			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-				return nil, fmt.Errorf("parsing tool call %s arguments: %w", call.Function.Name, err)
-			}
+		args, err := parseToolCallArguments(call.Function.Name, call.Function.Arguments)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, ToolCall{
 			ID:        call.ID,
@@ -311,6 +309,95 @@ func parseToolCalls(calls []toolCallJSON) ([]ToolCall, error) {
 		})
 	}
 	return result, nil
+}
+
+func parseToolCallArguments(name, raw string) (map[string]any, error) {
+	args := map[string]any{}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return args, nil
+	}
+	if err := decodeToolCallArguments(raw, &args); err == nil {
+		return args, nil
+	}
+
+	repaired := repairJSONClosers(raw)
+	if repaired != raw {
+		args = map[string]any{}
+		if err := decodeToolCallArguments(repaired, &args); err == nil {
+			return args, nil
+		}
+	}
+
+	return nil, fmt.Errorf("parsing tool call %s arguments: %w", name, json.Unmarshal([]byte(raw), &args))
+}
+
+func decodeToolCallArguments(raw string, out *map[string]any) error {
+	if err := json.Unmarshal([]byte(raw), out); err == nil {
+		return nil
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	return dec.Decode(out)
+}
+
+func repairJSONClosers(raw string) string {
+	var b strings.Builder
+	stack := make([]rune, 0, 8)
+	inString := false
+	escaped := false
+
+	for _, r := range raw {
+		if inString {
+			b.WriteRune(r)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			b.WriteRune(r)
+			inString = true
+		case '{':
+			b.WriteRune(r)
+			stack = append(stack, '}')
+		case '[':
+			b.WriteRune(r)
+			stack = append(stack, ']')
+		case '}', ']':
+			stack = closeJSONStackForRune(&b, stack, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if inString {
+		b.WriteRune('"')
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		b.WriteRune(stack[i])
+	}
+	return b.String()
+}
+
+func closeJSONStackForRune(b *strings.Builder, stack []rune, closer rune) []rune {
+	for len(stack) > 0 && stack[len(stack)-1] != closer {
+		b.WriteRune(stack[len(stack)-1])
+		stack = stack[:len(stack)-1]
+	}
+	if len(stack) > 0 && stack[len(stack)-1] == closer {
+		b.WriteRune(closer)
+		return stack[:len(stack)-1]
+	}
+	b.WriteRune(closer)
+	return stack
 }
 
 // readSSEStream reads Server-Sent Events from the response body.
@@ -345,12 +432,10 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		calls := make([]ToolCall, 0, len(toolBuf))
 		for _, idx := range indices {
 			a := toolBuf[idx]
-			args := map[string]any{}
-			if s := strings.TrimSpace(a.argsBuf.String()); s != "" {
-				if err := json.Unmarshal([]byte(s), &args); err != nil {
-					ch <- Token{Err: fmt.Errorf("parsing tool call %s arguments: %w", a.name, err), Done: true}
-					return
-				}
+			args, err := parseToolCallArguments(a.name, a.argsBuf.String())
+			if err != nil {
+				ch <- Token{Err: err, Done: true}
+				return
 			}
 			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
 		}
