@@ -103,7 +103,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 		}
 	}
 
-	return []defaultRule{
+	rules := []defaultRule{
 		{
 			key:       KeySummarizerMode,
 			value:     config.DefaultSummarizerMode,
@@ -189,6 +189,17 @@ func validationRules(cfg *config.Config) []defaultRule {
 			shouldSet: missingOrInvalidSet("off", "dry_run", "auto"),
 		},
 	}
+
+	if cfg != nil && cfg.Headless && strings.TrimSpace(cfg.PromptOverlayPath) == "/app" {
+		rules = append(rules, defaultRule{
+			key:       KeyPromptOverlayPath,
+			value:     "/app",
+			reason:    "move runtime prompt overlay from data volume to workspace AGENT.md",
+			shouldSet: valueIs("/data"),
+		})
+	}
+
+	return rules
 }
 
 func migrationRules(cfg *config.Config) []defaultRule {

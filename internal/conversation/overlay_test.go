@@ -34,9 +34,10 @@ func TestLoadPromptOverlayBlankPathReturnsEmpty(t *testing.T) {
 func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "SOUL.md"), "I am Aura.")
+	mustWrite(t, filepath.Join(dir, "AGENT.md"), "I maintain my own runtime notes.")
 	mustWrite(t, filepath.Join(dir, "USER.md"), "Operator is Davide.")
-	// Unknown file — should be ignored.
 	mustWrite(t, filepath.Join(dir, "RANDOM.md"), "ignore me")
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "dev-only instructions")
 
 	got := LoadPromptOverlay(dir)
 	if !strings.Contains(got, "## SOUL") {
@@ -44,6 +45,12 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	}
 	if !strings.Contains(got, "I am Aura.") {
 		t.Error("missing SOUL body")
+	}
+	if !strings.Contains(got, "## AGENT") {
+		t.Error("missing AGENT section")
+	}
+	if !strings.Contains(got, "I maintain my own runtime notes.") {
+		t.Error("missing AGENT body")
 	}
 	if !strings.Contains(got, "## USER") {
 		t.Error("missing USER section")
@@ -54,6 +61,9 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	if strings.Contains(got, "ignore me") {
 		t.Error("RANDOM.md should not appear in overlay")
 	}
+	if strings.Contains(got, "dev-only instructions") {
+		t.Error("AGENTS.md should not appear in runtime overlay")
+	}
 	// Order should follow overlayFiles: SOUL before USER.
 	if strings.Index(got, "## SOUL") > strings.Index(got, "## USER") {
 		t.Error("SOUL section should appear before USER section")
@@ -63,14 +73,14 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 func TestLoadPromptOverlaySkipsBlankFiles(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "SOUL.md"), "   \n\n   ")
-	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "real content")
+	mustWrite(t, filepath.Join(dir, "AGENT.md"), "real content")
 
 	got := LoadPromptOverlay(dir)
 	if strings.Contains(got, "## SOUL") {
 		t.Error("blank SOUL.md should be skipped, but section appeared")
 	}
-	if !strings.Contains(got, "## AGENTS") {
-		t.Error("expected AGENTS section")
+	if !strings.Contains(got, "## AGENT") {
+		t.Error("expected AGENT section")
 	}
 }
 

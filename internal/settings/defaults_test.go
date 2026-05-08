@@ -92,6 +92,7 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	assertSetting(t, s, KeyDBPath, "/data/aura.db")
 	assertSetting(t, s, KeyWikiPath, "/wiki")
 	assertSetting(t, s, KeySkillsPath, "/skills")
+	assertSetting(t, s, KeyPromptOverlayPath, "/app")
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySearXNGBaseURL, "http://searxng:8080")
 	assertSetting(t, s, KeySearchBackend, "qdrant")
@@ -164,6 +165,20 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 	assertSetting(t, s, KeyTraceRetentionDays, "30")
 }
 
+func TestApplyBestDefaultsMovesPromptOverlayFromDataToWorkspaceAfterMigration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	mustSet(t, s, BestDefaultsVersionKey, BestDefaultsVersion)
+	mustSet(t, s, KeyPromptOverlayPath, "/data")
+
+	changes, err := ApplyBestDefaults(ctx, s, containerDefaultsConfig())
+	if err != nil {
+		t.Fatalf("ApplyBestDefaults: %v", err)
+	}
+	assertChanged(t, changes, KeyPromptOverlayPath)
+	assertSetting(t, s, KeyPromptOverlayPath, "/app")
+}
+
 func containerDefaultsConfig() *config.Config {
 	return &config.Config{
 		Headless:                true,
@@ -175,7 +190,7 @@ func containerDefaultsConfig() *config.Config {
 		SkillsPath:              "/skills",
 		SkillsInstallProjectDir: "/skills",
 		MCPServersPath:          "/data/mcp.json",
-		PromptOverlayPath:       "/data",
+		PromptOverlayPath:       "/app",
 		SearXNGBaseURL:          "http://searxng:8080",
 		QdrantURL:               "http://qdrant:6333",
 		GarageS3Endpoint:        "http://garage:3900",

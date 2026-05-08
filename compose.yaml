@@ -30,7 +30,7 @@ services:
       SKILLS_PATH: "/skills"
       SKILLS_INSTALL_PROJECT_DIR: "/skills"
       MCP_SERVERS_PATH: "/data/mcp.json"
-      PROMPT_OVERLAY_PATH: "/data"
+      PROMPT_OVERLAY_PATH: "/app"
       SANDBOX_ENABLED: "true"
       SANDBOX_RUNTIME_MODE: "container"
       SANDBOX_RUNTIME_URL: "http://pyodide:8787"

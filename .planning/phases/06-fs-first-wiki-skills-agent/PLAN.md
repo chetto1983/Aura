@@ -192,7 +192,8 @@ Progress:
   - Observed slow turn: 112s wall time, 8 LLM calls, 46 file tool calls, 174k tokens.
   - Root cause: default profile exposed filesystem tools first, default loop allowed 8 steps, `run_aurabot_swarm` was not terminal, and `read_file` directory errors gave generic retry hints.
   - Applied fix: default loop cap reduced to 4 steps, `run_aurabot_swarm` is terminal for default broad audits, per-turn swarm hint is injected for project/tool/guardrail self-audit prompts, workspace prompt/tool descriptions now direct audits through `search_files`/`list_files` and 3-5 file reads, skill manifest now says to read the exact matching `SKILL.md` only, and directory errors now hint to use `list_files`.
-  - Container/DB follow-up: `/app/AGENTS.md` exists in the live container, is readable and writable by the `aura` user through `AURA_WORKSPACE_ROOT=/app`; there is no singular `/app/AGENT.md`. The Telegram debug harness now prefers `data/.env` when `AURA_ENV_PATH` is unset, so it copies `data/aura.db` and uses DB-selected `LLM_MODEL=deepseek/deepseek-v4-flash` instead of stale `.env` values.
+  - Container/DB follow-up: `/app/AGENTS.md` exists in the live container, is readable and writable by the `aura` user through `AURA_WORKSPACE_ROOT=/app`; the Telegram debug harness now prefers `data/.env` when `AURA_ENV_PATH` is unset, so it copies `data/aura.db` and uses DB-selected `LLM_MODEL=deepseek/deepseek-v4-flash` instead of stale `.env` values.
+  - Runtime identity correction: added `/app/AGENT.md` as Aura's own runtime/operator note, switched prompt overlay from dev-only `AGENTS.md` to runtime `AGENT.md`, moved Docker `PROMPT_OVERLAY_PATH` to `/app`, and added settings reconciliation from stale `/data` overlay rows to `/app`.
 
 - Update debug commands to smoke-test workspace file workflows.
 - Convert scheduled agent job toolsets away from wiki/proposal wrappers.

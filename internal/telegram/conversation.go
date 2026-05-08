@@ -43,11 +43,11 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// accurate without restarting the bot.
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	var skillsBlock string
-	// Slice 11q: read SOUL.md / AGENTS.md / USER.md / TOOLS.md from the
+	// Slice 11q/06: read SOUL.md / AGENT.md / USER.md / TOOLS.md from the
 	// configured overlay dir. Picobot pattern: lets the operator tune
-	// personality, durable user facts, and tool guidance by editing a
-	// file — the next user turn picks up the change with no recompile or
-	// restart. Files are optional; missing ones are skipped silently.
+	// personality, Aura runtime notes, durable user facts, and tool guidance by
+	// file; the next user turn picks up the change with no recompile or
+	// restart. AGENTS.md stays development-only and is not injected into Aura's prompt.
 	if b.skills != nil {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
