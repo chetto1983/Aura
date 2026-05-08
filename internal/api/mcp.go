@@ -39,12 +39,6 @@ func handleMCPServers(deps Deps) http.HandlerFunc {
 func handleMCPProviders(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out := append([]ConnectorProviderSummary(nil), mcpProviderManifests...)
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].Kind == out[j].Kind {
-				return out[i].Name < out[j].Name
-			}
-			return out[i].Kind < out[j].Kind
-		})
 		writeJSON(w, deps.Logger, http.StatusOK, out)
 	}
 }
