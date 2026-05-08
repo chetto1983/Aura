@@ -241,7 +241,7 @@ func capabilityIDs(caps []ConnectorCapability) []string {
 
 func canonicalMailSearchArgs(in map[string]any) map[string]any {
 	out := make(map[string]any)
-	copyStringArg(out, in, "account")
+	copyMailAccountArg(out, in)
 	copyStringArg(out, in, "mailbox")
 	copyStringArg(out, in, "query")
 	if limit, ok := in["limit"]; ok {
@@ -252,10 +252,24 @@ func canonicalMailSearchArgs(in map[string]any) map[string]any {
 
 func canonicalMailReadArgs(in map[string]any) map[string]any {
 	out := make(map[string]any)
-	copyStringArg(out, in, "account")
+	copyMailAccountArg(out, in)
 	copyStringArg(out, in, "message_id")
 	copyStringArg(out, in, "thread_id")
 	return out
+}
+
+func copyMailAccountArg(out, in map[string]any) {
+	if value, ok := in["account_id"]; ok {
+		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+			out["account_id"] = text
+			return
+		}
+	}
+	if value, ok := in["account"]; ok {
+		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+			out["account_id"] = text
+		}
+	}
 }
 
 func copyStringArg(out, in map[string]any, key string) {
@@ -272,6 +286,14 @@ func normalizeMailSearch(output string) ([]MailMessage, string) {
 	}
 	if json.Unmarshal([]byte(output), &wrapper) == nil && len(wrapper.Messages) > 0 {
 		return redactMessages(wrapper.Messages), ""
+	}
+	var dataWrapper struct {
+		Data struct {
+			Messages []MailMessage `json:"messages"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(output), &dataWrapper) == nil && len(dataWrapper.Data.Messages) > 0 {
+		return redactMessages(dataWrapper.Data.Messages), ""
 	}
 	var messages []MailMessage
 	if json.Unmarshal([]byte(output), &messages) == nil && len(messages) > 0 {
@@ -290,6 +312,12 @@ func normalizeMailRead(output string) (MailMessage, string) {
 	}
 	if json.Unmarshal([]byte(output), &wrapper) == nil && wrapper.Message.ID != "" {
 		return redactMessage(wrapper.Message), ""
+	}
+	var dataWrapper struct {
+		Data MailMessage `json:"data"`
+	}
+	if json.Unmarshal([]byte(output), &dataWrapper) == nil && dataWrapper.Data.ID != "" {
+		return redactMessage(dataWrapper.Data), ""
 	}
 	return MailMessage{}, redactConnectorText(output)
 }

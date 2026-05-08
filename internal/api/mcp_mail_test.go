@@ -84,7 +84,7 @@ func TestMCPProviderMailSearchMapsCanonicalRequestToIMAPTool(t *testing.T) {
 	state.mu.Lock()
 	args := state.lastArgs
 	state.mu.Unlock()
-	for _, want := range []string{`"name":"imap_search_messages"`, `"account":"work"`, `"mailbox":"INBOX"`, `"query":"fattura"`, `"limit":5`} {
+	for _, want := range []string{`"name":"imap_search_messages"`, `"account_id":"work"`, `"mailbox":"INBOX"`, `"query":"fattura"`, `"limit":5`} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("upstream args missing %s in %s", want, args)
 		}
@@ -118,10 +118,31 @@ func TestMCPProviderMailReadMapsCanonicalRequestAndRedactsSecrets(t *testing.T) 
 	state.mu.Lock()
 	args := state.lastArgs
 	state.mu.Unlock()
-	for _, want := range []string{`"name":"imap_get_message"`, `"account":"work"`, `"message_id":"m1"`} {
+	for _, want := range []string{`"name":"imap_get_message"`, `"account_id":"work"`, `"message_id":"m1"`} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("upstream args missing %s in %s", want, args)
 		}
+	}
+}
+
+func TestMCPProviderMailNormalizesMailMCPDataEnvelope(t *testing.T) {
+	srv, state := newFakeMCPServer(t, []mcp.Tool{
+		{Name: "imap_search_messages"},
+		{Name: "imap_get_message"},
+	})
+	state.resultText = `{"summary":"ok","data":{"messages":[{"id":"imap:default:INBOX:1:2","subject":"Preventivo"}]},"meta":{"duration_ms":12}}`
+	router := newInvokeRouter(t, "mail", state, srv)
+
+	rr := postRaw(t, router, "/mcp/providers/mail-mcp/mail/search", `{"account_id":"default","query":"preventivo"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got MailSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Messages) != 1 || got.Messages[0].ID != "imap:default:INBOX:1:2" {
+		t.Fatalf("messages not normalized from envelope: %+v", got)
 	}
 }
 
