@@ -177,6 +177,115 @@ func IsSkillNotFound(err error) bool {
 	return errors.Is(err, errSkillNotFoundSentinel)
 }
 
+type LocalProposal struct {
+	Action  string
+	Name    string
+	Content string
+}
+
+type FSProposalApplier struct {
+	root string
+}
+
+func NewFSProposalApplier(root string) (*FSProposalApplier, error) {
+	primary := strings.TrimSpace(root)
+	if primary == "" {
+		primary = "./skills"
+	}
+	abs, err := filepath.Abs(primary)
+	if err != nil {
+		return nil, fmt.Errorf("resolve skills root: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return nil, fmt.Errorf("create skills root: %w", err)
+	}
+	return &FSProposalApplier{root: abs}, nil
+}
+
+func (a *FSProposalApplier) ApplySkillProposal(_ context.Context, proposal LocalProposal) error {
+	if a == nil || strings.TrimSpace(a.root) == "" {
+		return errors.New("skill proposal applier not configured")
+	}
+	name := strings.TrimSpace(proposal.Name)
+	if !skillNameRE.MatchString(name) {
+		return fmt.Errorf("invalid skill name %q", name)
+	}
+	target, err := a.skillDir(name)
+	if err != nil {
+		return err
+	}
+	switch strings.TrimSpace(proposal.Action) {
+	case "skill_create", "skill_update", "create", "update":
+		content := strings.ReplaceAll(proposal.Content, "\r\n", "\n")
+		if strings.TrimSpace(content) == "" {
+			return errors.New("skill proposal content is required")
+		}
+		parsed, err := ParseSkill([]byte(content))
+		if err != nil {
+			return err
+		}
+		if parsed.Name != name {
+			return fmt.Errorf("SKILL.md name %q does not match proposal name %q", parsed.Name, name)
+		}
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return err
+		}
+		return writeAtomic(filepath.Join(target, "SKILL.md"), []byte(content))
+	case "skill_delete", "delete":
+		return removeSkillDir(target)
+	default:
+		return fmt.Errorf("unsupported skill proposal action %q", proposal.Action)
+	}
+}
+
+func (a *FSProposalApplier) skillDir(name string) (string, error) {
+	target := filepath.Join(a.root, name)
+	rel, err := filepath.Rel(a.root, target)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("invalid skill path")
+	}
+	return target, nil
+}
+
+func writeAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".SKILL.md-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+func removeSkillDir(target string) error {
+	info, err := os.Lstat(target)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return errSkillNotFoundSentinel
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("skill is a symlink — refusing to follow")
+	}
+	if !info.IsDir() {
+		return errors.New("skill path is not a directory")
+	}
+	return os.RemoveAll(target)
+}
+
 // npxBinary returns the platform-specific npx executable name.
 func npxBinary() string {
 	if runtime.GOOS == "windows" {

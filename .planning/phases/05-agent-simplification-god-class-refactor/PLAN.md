@@ -74,6 +74,7 @@ Create or reshape these boundaries:
 - 2026-05-08: Task 2 collapsed the live profile taxonomy into four toolsets (`default`, `compute`, `document`, `admin`) while normalizing legacy persisted values (`memory`, `swarm_research`, `sandbox_compute`, `admin_review`). Settings, dashboard labels, debug harnesses, capability policy, loop policy, and orchestration tests now use toolset semantics; `run_aurabot_swarm` is a normal default/document/admin tool instead of a terminal profile cage.
 - 2026-05-08: Task 6 split the Telegram conversation god file into focused archive, context, snapshot, formatting, terminal-finalization, tool-execution, and tool-helper files. `conversation.go` is down from 1008 to 479 lines, below the plan target. Task 3 remains partially complete (generic dedupe extracted), while Task 4 and Task 5 were already completed by earlier simplification commits.
 - 2026-05-08: Task 3 extracted the model/tool iteration into `internal/agentloop.Run` with small chat/state/executor interfaces and focused loop tests. Telegram now wraps the loop with adapters for streaming delivery, budget checks, orchestration snapshots, terminal finalization, and the existing concrete tool executor.
+- 2026-05-08 in progress: Task 7 fixes skill proposal approval semantics. Wiki approvals still apply wiki mutations; skill approvals apply local `SKILL.md` only when `SkillsAdmin` and the local proposal applier are wired, otherwise they transition to `reviewed` with copy that does not imply installation.
 - 2026-05-08: Merged `codex/v31-closure-gate` into `master` via fast-forward at `62d0d9a`, then created `codex/simplify-agent-god-classes`.
 - 2026-05-08: Focused baseline passed: `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config`.
 - 2026-05-08: Commit `b0fb0cc` removed required skill preflight. `AURA_SKILL_PREFLIGHT` now defaults to `off`, settings expose only `off|advisory`, and tool execution no longer blocks on `read_skill`.
@@ -548,7 +549,7 @@ git commit -m "refactor: split Telegram conversation god file"
 - Modify: `web/src/components/SummariesPanel.tsx`
 - Modify: `web/src/types/api.ts`
 
-- [ ] Step 1: Choose final product semantics.
+- [x] Step 1: Choose final product semantics.
 
 Recommended semantics:
 
@@ -556,7 +557,7 @@ Recommended semantics:
 - Skill proposal approval installs/updates/deletes the local skill only when the authenticated dashboard user is admin and skill admin is enabled.
 - If admin install is unavailable, the status must be `reviewed`, not `approved`.
 
-- [ ] Step 2: Implement local skill proposal installer.
+- [x] Step 2: Implement local skill proposal installer.
 
 Add an interface that can apply already-validated `SkillProposal` content to the primary skills root.
 
@@ -567,11 +568,11 @@ Rules:
 - atomic write for create/update;
 - no catalog `npx` dependency for local proposals.
 
-- [ ] Step 3: Update API response copy.
+- [x] Step 3: Update API response copy.
 
 Dashboard must never imply a skill is available unless `list_skills` would see it.
 
-- [ ] Step 4: Verify.
+- [x] Step 4: Verify.
 
 Run:
 
@@ -582,7 +583,7 @@ npm --prefix web run build
 
 Expected: pass.
 
-- [ ] Step 5: Commit.
+- [x] Step 5: Commit.
 
 Run:
 

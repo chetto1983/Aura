@@ -94,6 +94,7 @@ type ProposalDecider interface {
 // ProposalReviewRepository is the dashboard review queue surface.
 type ProposalReviewRepository interface {
 	ProposalLister
+	ProposalGetter
 	ProposalDecider
 }
 
@@ -232,7 +233,7 @@ func (s *SummariesStore) Get(ctx context.Context, id int64) (ProposedUpdate, err
 }
 
 // SetStatus flips the status of a proposal. Returns ErrProposalNotFound if
-// no row exists, ErrProposalConflict if already approved or rejected.
+// no row exists, ErrProposalConflict if already decided.
 func (s *SummariesStore) SetStatus(ctx context.Context, id int64, newStatus string) (ProposedUpdate, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE proposed_updates SET status = ? WHERE id = ? AND status = 'pending'`, newStatus, id)

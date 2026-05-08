@@ -554,6 +554,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		logger.Warn("skills deleter unavailable", "error", err)
 	}
+	skillProposalApplier, err := auraskills.NewFSProposalApplier(skillRoots[0])
+	if err != nil {
+		logger.Warn("skill proposal applier unavailable", "error", err)
+	}
 
 	b.api = api.NewRouter(api.Deps{
 		Wiki:        wikiStore,
@@ -578,6 +582,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		SkillsCatalog:   skillsCatalog,
 		SkillsInstaller: skillsInstaller,
 		SkillsDeleter:   skillsDeleterAdapter{inner: skillsDeleter},
+		SkillProposals:  skillProposalApplierAdapter{inner: skillProposalApplier},
 		SkillsAdmin:     cfg.SkillsAdmin,
 		// Slice 11j: surface cache hit/miss counters in /api/health.
 		EmbedCache: embedCache,

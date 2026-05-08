@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"context"
+
 	"github.com/aura/aura/internal/api"
 	auraskills "github.com/aura/aura/internal/skills"
 )
@@ -24,4 +26,19 @@ func (a skillsDeleterAdapter) Delete(name string) error {
 		return err
 	}
 	return nil
+}
+
+type skillProposalApplierAdapter struct {
+	inner *auraskills.FSProposalApplier
+}
+
+func (a skillProposalApplierAdapter) ApplySkillProposal(ctx context.Context, proposal api.SkillProposalApplyRequest) error {
+	if a.inner == nil {
+		return api.ErrSkillNotFound
+	}
+	return a.inner.ApplySkillProposal(ctx, auraskills.LocalProposal{
+		Action:  proposal.Action,
+		Name:    proposal.Name,
+		Content: proposal.Content,
+	})
 }

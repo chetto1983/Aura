@@ -1,8 +1,10 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,5 +119,66 @@ func TestSanitizedEnv_KeepsPathAndProfileOnly(t *testing.T) {
 		if have[leak] {
 			t.Errorf("leaked %q", leak)
 		}
+	}
+}
+
+func TestFSProposalApplier_CreateOrUpdateWritesSkillMD(t *testing.T) {
+	dir := t.TempDir()
+	applier, err := NewFSProposalApplier(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: morning-brief\ndescription: Morning brief\n---\n\n# Body\n"
+
+	if err := applier.ApplySkillProposal(context.Background(), LocalProposal{
+		Action:  "skill_create",
+		Name:    "morning-brief",
+		Content: content,
+	}); err != nil {
+		t.Fatalf("ApplySkillProposal: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "morning-brief", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != content {
+		t.Fatalf("SKILL.md = %q", got)
+	}
+}
+
+func TestFSProposalApplier_RejectsNameMismatch(t *testing.T) {
+	applier, err := NewFSProposalApplier(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = applier.ApplySkillProposal(context.Background(), LocalProposal{
+		Action:  "skill_create",
+		Name:    "morning-brief",
+		Content: "---\nname: other\ndescription: Other\n---\n\n# Body\n",
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected mismatch error, got %v", err)
+	}
+}
+
+func TestFSProposalApplier_DeleteRemovesSkill(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "old-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old-skill", "SKILL.md"), []byte("---\nname: old-skill\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applier, err := NewFSProposalApplier(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := applier.ApplySkillProposal(context.Background(), LocalProposal{Action: "skill_delete", Name: "old-skill"}); err != nil {
+		t.Fatalf("ApplySkillProposal delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "old-skill")); !os.IsNotExist(err) {
+		t.Fatalf("expected deleted skill, stat err = %v", err)
 	}
 }

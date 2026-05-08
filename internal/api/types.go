@@ -358,9 +358,9 @@ type SkillProposal struct {
 	Reason       string   `json:"reason,omitempty"`
 }
 
-// SkillLifecycle documents the current Phase-19 review contract for skill
-// proposals. Approving a generic summary reviews the draft only; it does not
-// write SKILL.md files or run smoke prompts.
+// SkillLifecycle documents the review contract for skill proposals. Reviewed
+// proposals are not necessarily installed; callers should confirm availability
+// through the skills list before claiming a skill exists.
 type SkillLifecycle struct {
 	Mode          string `json:"mode"`
 	ReviewStatus  string `json:"review_status"`

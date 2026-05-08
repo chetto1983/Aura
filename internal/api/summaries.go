@@ -14,6 +14,16 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 )
 
+type SkillProposalApplyRequest struct {
+	Action  string
+	Name    string
+	Content string
+}
+
+type SkillProposalApplier interface {
+	ApplySkillProposal(ctx context.Context, proposal SkillProposalApplyRequest) error
+}
+
 func handleSummariesList(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if deps.Summaries == nil {
@@ -55,7 +65,7 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		proposal, err := deps.Summaries.SetStatus(r.Context(), id, "approved")
+		proposal, err := approveSummaryProposal(r.Context(), deps, id)
 		if err != nil {
 			if errors.Is(err, summarizer.ErrProposalNotFound) {
 				writeError(w, deps.Logger, http.StatusNotFound, "proposal not found")
@@ -68,8 +78,6 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to approve proposal")
 			return
 		}
-
-		applyApprovedSummary(r.Context(), deps, proposal)
 
 		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(proposal))
 	}
@@ -131,16 +139,19 @@ func handleSummariesBatchDecision(w http.ResponseWriter, r *http.Request, deps D
 		Failed:  []SummaryBatchFailure{},
 	}
 	for _, id := range req.IDs {
-		proposal, err := deps.Summaries.SetStatus(r.Context(), id, status)
+		var proposal summarizer.ProposedUpdate
+		var err error
+		if status == "approved" {
+			proposal, err = approveSummaryProposal(r.Context(), deps, id)
+		} else {
+			proposal, err = deps.Summaries.SetStatus(r.Context(), id, status)
+		}
 		if err != nil {
 			resp.Failed = append(resp.Failed, SummaryBatchFailure{
 				ID:    id,
 				Error: summaryDecisionError(err),
 			})
 			continue
-		}
-		if status == "approved" {
-			applyApprovedSummary(r.Context(), deps, proposal)
 		}
 		resp.Updated = append(resp.Updated, proposalToDTO(proposal))
 	}
@@ -174,6 +185,48 @@ func parseSummaryBatchRequest(r *http.Request) (SummaryBatchRequest, error) {
 	}
 	req.IDs = ids
 	return req, nil
+}
+
+func approveSummaryProposal(ctx context.Context, deps Deps, id int64) (summarizer.ProposedUpdate, error) {
+	proposal, err := deps.Summaries.Get(ctx, id)
+	if err != nil {
+		return summarizer.ProposedUpdate{}, err
+	}
+	if proposal.Status != "pending" {
+		return summarizer.ProposedUpdate{}, summarizer.ErrProposalConflict
+	}
+
+	nextStatus := "approved"
+	if summarizer.IsSkillAction(proposal.Action) {
+		nextStatus = "reviewed"
+		if deps.SkillsAdmin && deps.SkillProposals != nil && proposal.Provenance.Skill != nil {
+			if err := deps.SkillProposals.ApplySkillProposal(ctx, skillProposalApplyRequest(*proposal.Provenance.Skill)); err != nil {
+				return summarizer.ProposedUpdate{}, fmt.Errorf("apply skill proposal: %w", err)
+			}
+			nextStatus = "approved"
+		}
+	}
+
+	updated, err := deps.Summaries.SetStatus(ctx, id, nextStatus)
+	if err != nil {
+		return summarizer.ProposedUpdate{}, err
+	}
+	if nextStatus == "approved" {
+		applyApprovedSummary(ctx, deps, updated)
+	}
+	return updated, nil
+}
+
+func skillProposalApplyRequest(p summarizer.SkillProposal) SkillProposalApplyRequest {
+	action := strings.TrimSpace(p.Action)
+	if action != "" && !strings.HasPrefix(action, "skill_") {
+		action = "skill_" + action
+	}
+	return SkillProposalApplyRequest{
+		Action:  action,
+		Name:    strings.TrimSpace(p.Name),
+		Content: p.Content,
+	}
 }
 
 func applyApprovedSummary(ctx context.Context, deps Deps, proposal summarizer.ProposedUpdate) {
@@ -303,18 +356,25 @@ func skillLifecycleToDTO(p summarizer.ProposedUpdate) *SkillLifecycle {
 	if name != "" {
 		nextStep = fmt.Sprintf("Use the explicit admin skill workflow for %q to install/update/delete the reviewed skill, then run the smoke prompt and record the result.", name)
 	}
+	mode := "review_only"
 	reviewStatus := "pending_review"
+	installStatus := "not_installed_by_summary_approval"
+	smokeStatus := "operator_required"
 	switch p.Status {
 	case "approved":
+		mode = "admin_apply_requested"
 		reviewStatus = "reviewed"
+		installStatus = "approval_applied_check_list_skills"
 	case "rejected":
 		reviewStatus = "rejected"
+	case "reviewed":
+		reviewStatus = "reviewed"
 	}
 	return &SkillLifecycle{
-		Mode:          "review_only",
+		Mode:          mode,
 		ReviewStatus:  reviewStatus,
-		InstallStatus: "not_installed_by_summary_approval",
-		SmokeStatus:   "operator_required",
+		InstallStatus: installStatus,
+		SmokeStatus:   smokeStatus,
 		NextStep:      strings.TrimSpace(action + ": " + nextStep),
 	}
 }

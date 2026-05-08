@@ -77,6 +77,7 @@ type Deps struct {
 	SkillsCatalog   *skills.CatalogClient
 	SkillsInstaller SkillInstaller
 	SkillsDeleter   SkillDeleter
+	SkillProposals  SkillProposalApplier
 
 	// Slice 11j: embedding cache for /health stats. Optional — nil
 	// when EMBEDDING_API_KEY or DB_PATH is unset, in which case the

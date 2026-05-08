@@ -78,6 +78,15 @@ func (f *fakeSummaryReviewRepository) List(_ context.Context, status string, lim
 	return out, nil
 }
 
+func (f *fakeSummaryReviewRepository) Get(_ context.Context, id int64) (summarizer.ProposedUpdate, error) {
+	for _, row := range f.rows {
+		if row.ID == id {
+			return row, nil
+		}
+	}
+	return summarizer.ProposedUpdate{}, summarizer.ErrProposalNotFound
+}
+
 func (f *fakeSummaryReviewRepository) SetStatus(_ context.Context, id int64, newStatus string) (summarizer.ProposedUpdate, error) {
 	for i, row := range f.rows {
 		if row.ID == id {
@@ -243,7 +252,20 @@ func TestHandleSummariesApprove_HappyPath(t *testing.T) {
 	}
 }
 
-func TestHandleSummariesApprove_SkillProposalDoesNotMutateWiki(t *testing.T) {
+type fakeSkillProposalApplier struct {
+	applied []SkillProposalApplyRequest
+	err     error
+}
+
+func (f *fakeSkillProposalApplier) ApplySkillProposal(_ context.Context, proposal SkillProposalApplyRequest) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.applied = append(f.applied, proposal)
+	return nil
+}
+
+func TestHandleSummariesApprove_SkillProposalWithoutAdminMarksReviewedOnly(t *testing.T) {
 	db, store := newSummariesDB(t)
 	id := seedSkillProposal(t, db, "skill_create", "pending")
 	ws := &fakeWikiStoreForSummaries{}
@@ -258,14 +280,47 @@ func TestHandleSummariesApprove_SkillProposalDoesNotMutateWiki(t *testing.T) {
 	}
 	var body ProposedUpdate
 	json.NewDecoder(w.Body).Decode(&body)
-	if body.Status != "approved" || body.Action != "skill_create" {
+	if body.Status != "reviewed" || body.Action != "skill_create" {
 		t.Fatalf("response = %+v", body)
 	}
 	if body.SkillLifecycle == nil || body.SkillLifecycle.ReviewStatus != "reviewed" {
-		t.Fatalf("approved skill proposal should say reviewed only: %#v", body.SkillLifecycle)
+		t.Fatalf("reviewed skill proposal should say reviewed: %#v", body.SkillLifecycle)
+	}
+	if body.SkillLifecycle.InstallStatus != "not_installed_by_summary_approval" {
+		t.Fatalf("install status = %#v", body.SkillLifecycle)
 	}
 	if len(ws.written) != 0 {
 		t.Fatalf("skill proposal approval must not write wiki pages, wrote %d", len(ws.written))
+	}
+}
+
+func TestHandleSummariesApprove_SkillProposalWithAdminAppliesLocalSkill(t *testing.T) {
+	db, store := newSummariesDB(t)
+	id := seedSkillProposal(t, db, "skill_create", "pending")
+	applier := &fakeSkillProposalApplier{}
+
+	router := NewRouter(Deps{Summaries: store, SkillsAdmin: true, SkillProposals: applier})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/summaries/%d/approve", id), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body ProposedUpdate
+	json.NewDecoder(w.Body).Decode(&body)
+	if body.Status != "approved" {
+		t.Fatalf("status = %q, want approved", body.Status)
+	}
+	if len(applier.applied) != 1 {
+		t.Fatalf("applied = %+v", applier.applied)
+	}
+	got := applier.applied[0]
+	if got.Action != "skill_create" || got.Name != "morning-brief" || !strings.Contains(got.Content, "daily_briefing") {
+		t.Fatalf("applied proposal = %+v", got)
+	}
+	if body.SkillLifecycle == nil || body.SkillLifecycle.Mode != "admin_apply_requested" || body.SkillLifecycle.InstallStatus != "approval_applied_check_list_skills" {
+		t.Fatalf("skill lifecycle = %#v", body.SkillLifecycle)
 	}
 }
 
