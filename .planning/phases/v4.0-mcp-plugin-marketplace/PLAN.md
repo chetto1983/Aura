@@ -12,6 +12,28 @@ First approved slice: **v4.0a Mail-First Provider-Agnostic MCP**. Aura starts wi
 
 Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
+## Implementation Progress
+
+### 2026-05-08 Connector Configuration Surface
+
+Status: implemented.
+
+- Added `GET /mcp/providers` with read-only provider manifests for mail/database candidates.
+- Added connector provider DTOs separate from raw MCP server summaries.
+- Added API tests proving mail and database profiles exist, and that database read/write allowlists are separated.
+- Reworked `/mcp` dashboard into tabs: Connectors, Installed, Health, Review Queue, Raw MCP.
+- Kept raw MCP manual tool invocation as diagnostics, not primary configuration.
+- Added frontend DTO/API bindings and English/Italian locale strings.
+- Built embedded dashboard assets under `internal/api/dist`.
+
+Verification:
+
+- `go test ./internal/api -count=1`
+- `npm --prefix web run i18n:check`
+- `npm --prefix web run build`
+- `go test ./...`
+- `go build ./...`
+
 ## User Decisions
 
 - Plugin model: MCP marketplace.

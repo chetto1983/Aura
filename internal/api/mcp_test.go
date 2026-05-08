@@ -113,3 +113,60 @@ func TestMCPServers_HandlesNilClient(t *testing.T) {
 		t.Fatalf("nil client should be skipped, got %+v", got)
 	}
 }
+
+func TestMCPProviders_ReturnsMailAndDatabaseProfiles(t *testing.T) {
+	router := NewRouter(Deps{})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/mcp/providers", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+
+	var got []ConnectorProviderSummary
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected provider manifests")
+	}
+
+	var mailFound, databaseFound bool
+	for _, p := range got {
+		switch p.ID {
+		case "mail-mcp":
+			mailFound = true
+			if p.Kind != "mail" {
+				t.Errorf("mail-mcp kind = %q, want mail", p.Kind)
+			}
+			if len(p.Capabilities) == 0 {
+				t.Errorf("mail-mcp capabilities empty")
+			}
+		case "executeautomation-database":
+			databaseFound = true
+			if p.Kind != "database" {
+				t.Errorf("database kind = %q, want database", p.Kind)
+			}
+			if !containsString(p.ApprovedTools, "read_query") {
+				t.Errorf("database approved tools missing read_query: %+v", p.ApprovedTools)
+			}
+			if !containsString(p.BlockedTools, "drop_table") {
+				t.Errorf("database blocked tools missing drop_table: %+v", p.BlockedTools)
+			}
+		}
+	}
+	if !mailFound {
+		t.Fatalf("mail-mcp provider missing from %+v", got)
+	}
+	if !databaseFound {
+		t.Fatalf("executeautomation database provider missing from %+v", got)
+	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, v := range values {
+		if v == needle {
+			return true
+		}
+	}
+	return false
+}

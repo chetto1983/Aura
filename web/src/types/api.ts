@@ -156,6 +156,38 @@ export interface MCPServerSummary {
   tools: MCPToolInfo[];
 }
 
+export interface ConnectorCapability {
+  id: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  review_required: boolean;
+}
+
+export interface ConnectorRiskBadge {
+  id: string;
+  label: string;
+  level: 'low' | 'medium' | 'high';
+}
+
+export interface ConnectorProviderSummary {
+  id: string;
+  name: string;
+  kind: 'mail' | 'database';
+  profile: 'personal' | 'business';
+  description: string;
+  status: 'not_configured' | 'configured' | 'ready' | 'enabled' | 'failed';
+  runtime_type: 'container' | 'stdio' | 'remote_http';
+  repository_url?: string;
+  homepage_url?: string;
+  capabilities: ConnectorCapability[];
+  risk_badges: ConnectorRiskBadge[];
+  required_secrets?: string[];
+  approved_tools?: string[];
+  blocked_tools?: string[];
+  setup_hints?: string[];
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 export interface SkillCatalogItem {

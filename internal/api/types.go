@@ -211,6 +211,45 @@ type MCPServerSummary struct {
 	Tools     []MCPToolInfo `json:"tools"`
 }
 
+// ConnectorProviderSummary is the dashboard-facing configuration card for
+// approved MCP provider profiles. It is separate from raw MCP server summaries:
+// the operator configures capabilities and risk posture here, while
+// /mcp/servers remains a low-level diagnostic view.
+type ConnectorProviderSummary struct {
+	ID              string                `json:"id"`
+	Name            string                `json:"name"`
+	Kind            string                `json:"kind"`    // "mail" | "database"
+	Profile         string                `json:"profile"` // "personal" | "business"
+	Description     string                `json:"description"`
+	Status          string                `json:"status"`       // "not_configured" | "configured" | "ready" | "enabled" | "failed"
+	RuntimeType     string                `json:"runtime_type"` // "container" | "stdio" | "remote_http"
+	RepositoryURL   string                `json:"repository_url,omitempty"`
+	HomepageURL     string                `json:"homepage_url,omitempty"`
+	Capabilities    []ConnectorCapability `json:"capabilities"`
+	RiskBadges      []ConnectorRiskBadge  `json:"risk_badges"`
+	RequiredSecrets []string              `json:"required_secrets,omitempty"`
+	ApprovedTools   []string              `json:"approved_tools,omitempty"`
+	BlockedTools    []string              `json:"blocked_tools,omitempty"`
+	SetupHints      []string              `json:"setup_hints,omitempty"`
+}
+
+// ConnectorCapability is one Aura-level capability exposed by a provider
+// profile. Provider tool names stay behind adapters and allowlists.
+type ConnectorCapability struct {
+	ID             string `json:"id"`
+	Label          string `json:"label"`
+	Description    string `json:"description,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	ReviewRequired bool   `json:"review_required"`
+}
+
+// ConnectorRiskBadge lets the dashboard show risk without parsing prose.
+type ConnectorRiskBadge struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Level string `json:"level"` // "low" | "medium" | "high"
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 // SkillCatalogItem is one row from GET /skills/catalog (proxies skills.sh).

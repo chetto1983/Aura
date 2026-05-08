@@ -89,6 +89,14 @@ First slice:
 - provider/account credentials must use connector-specific flows with secret references, not dozens of global runtime settings;
 - mail send/delete/bulk mutation and database writes deferred to later reviewed slices.
 
+Latest implementation slice:
+
+- `GET /mcp/providers` returns read-only mail/database provider manifests.
+- `/mcp` dashboard now renders Connectors, Installed, Health, Review Queue, and Raw MCP tabs.
+- Raw MCP manual invoke remains diagnostic-only in the UI.
+- Embedded dashboard assets were rebuilt.
+- Verification passed: `go test ./internal/api -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `go test ./...`, and `go build ./...`.
+
 Suggested acceptance:
 
 - registry sync has a local cache and clear health;

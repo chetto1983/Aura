@@ -183,6 +183,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /skills", handleSkillsList(deps))
 	mux.HandleFunc("GET /skills/{name}", handleSkillGet(deps))
 	mux.HandleFunc("GET /mcp/servers", handleMCPServers(deps))
+	mux.HandleFunc("GET /mcp/providers", handleMCPProviders(deps))
 
 	// Slice 11c: skills.sh catalog passthrough + admin-gated install/delete.
 	mux.HandleFunc("GET /skills/catalog", handleSkillsCatalog(deps))
