@@ -393,6 +393,7 @@ func TestLoadSkillPreflight(t *testing.T) {
 	}{
 		{name: "normalizes", env: " Advisory ", want: "advisory"},
 		{name: "allows off", env: "OFF", want: "off"},
+		{name: "legacy required degrades default", env: "required", want: DefaultSkillPreflight},
 		{name: "invalid degrades default", env: "unsafe", want: DefaultSkillPreflight},
 		{name: "blank degrades default", env: "   ", want: DefaultSkillPreflight},
 	}

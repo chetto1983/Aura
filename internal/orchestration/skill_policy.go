@@ -2,11 +2,13 @@ package orchestration
 
 import "strings"
 
-// SkillPreflightMode controls how strongly Aura requires skill reads before
-// capability-specific tools. The default is required.
+// SkillPreflightMode controls optional skill guidance before capability tools.
+// Skill reads are advisory only; tool execution is never blocked by this policy.
 type SkillPreflightMode string
 
 const (
+	// SkillPreflightRequired is a legacy setting value. It normalizes to
+	// advisory behavior so old DB/env values do not reintroduce hard gates.
 	SkillPreflightRequired SkillPreflightMode = "required"
 	SkillPreflightAdvisory SkillPreflightMode = "advisory"
 	SkillPreflightOff      SkillPreflightMode = "off"
@@ -30,8 +32,7 @@ type SkillPreflightState struct {
 	ReadSkillNames []string
 }
 
-// SkillPreflightDecision is a pure policy result; live-loop enforcement can
-// decide later whether a missing required result becomes a tool error.
+// SkillPreflightDecision is a pure advisory policy result.
 type SkillPreflightDecision struct {
 	Applies      bool
 	Required     bool
@@ -45,19 +46,8 @@ type SkillPreflightDecision struct {
 	Reason       string
 }
 
-var hardSkillPreflightCapabilities = map[Capability]bool{
-	CapabilitySourceExtraction:   true,
-	CapabilityDocumentGeneration: true,
-	CapabilitySandboxCompute:     true,
-	CapabilityBrowserE2E:         true,
-	CapabilityDockerRuntime:      true,
-	CapabilitySecurityReview:     true,
-	CapabilityReleaseGit:         true,
-	CapabilityMCPPlugin:          true,
-}
-
-// SkillRequirementForCapability returns the skill preflight requirement for a
-// capability. Off mode disables requirements entirely.
+// SkillRequirementForCapability returns optional skill guidance for a
+// capability. Off mode disables guidance entirely.
 func SkillRequirementForCapability(capability Capability, mode SkillPreflightMode) (SkillRequirement, bool) {
 	mode = normalizeSkillPreflightMode(mode)
 	if mode == SkillPreflightOff {
@@ -69,18 +59,13 @@ func SkillRequirementForCapability(capability Capability, mode SkillPreflightMod
 		return SkillRequirement{}, false
 	}
 
-	required := hardSkillPreflightCapabilities[capability]
-	if mode == SkillPreflightAdvisory {
-		required = false
-	}
-
 	hints := append([]string(nil), def.SkillHints...)
 	return SkillRequirement{
 		Capability:        capability,
-		Required:          required,
+		Required:          false,
 		AllowedSkillNames: skillNamesFromHints(hints),
 		SkillHints:        hints,
-		Reason:            skillRequirementReason(capability, required),
+		Reason:            skillRequirementReason(capability),
 		FreshnessScope:    SkillFreshnessTurn,
 	}, true
 }
@@ -184,12 +169,14 @@ func containsCapability(capabilities []Capability, capability Capability) bool {
 
 func normalizeSkillPreflightMode(mode SkillPreflightMode) SkillPreflightMode {
 	switch SkillPreflightMode(strings.ToLower(strings.TrimSpace(string(mode)))) {
+	case SkillPreflightRequired:
+		return SkillPreflightAdvisory
 	case SkillPreflightAdvisory:
 		return SkillPreflightAdvisory
 	case SkillPreflightOff:
 		return SkillPreflightOff
 	default:
-		return SkillPreflightRequired
+		return SkillPreflightOff
 	}
 }
 
@@ -227,9 +214,6 @@ func normalizeSkillMatchValue(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func skillRequirementReason(capability Capability, required bool) string {
-	if required {
-		return "read an applicable skill before using " + string(capability) + " tools"
-	}
+func skillRequirementReason(capability Capability) string {
 	return "read an applicable skill when useful before using " + string(capability) + " tools"
 }

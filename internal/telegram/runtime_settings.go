@@ -126,7 +126,7 @@ func stringSetting(ctx context.Context, store settings.Reader, key, envKey, fall
 
 func skillPreflightSetting(ctx context.Context, store settings.Reader, fallback string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(stringSetting(ctx, store, settings.KeySkillPreflight, "AURA_SKILL_PREFLIGHT", fallback))); normalized {
-	case "required", "advisory", "off":
+	case "advisory", "off":
 		return normalized
 	default:
 		return config.DefaultSkillPreflight

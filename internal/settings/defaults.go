@@ -126,7 +126,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 			key:       KeySkillPreflight,
 			value:     config.DefaultSkillPreflight,
 			reason:    "repair invalid skill preflight policy",
-			shouldSet: missingOrInvalidSet("required", "advisory", "off"),
+			shouldSet: missingOrInvalidSet("advisory", "off"),
 		},
 		{
 			key:       KeySkillRoutingMode,

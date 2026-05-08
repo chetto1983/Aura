@@ -264,7 +264,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 
 func normalizeSkillPreflight(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "required", "advisory", "off":
+	case "advisory", "off":
 		return normalized
 	default:
 		return config.DefaultSkillPreflight

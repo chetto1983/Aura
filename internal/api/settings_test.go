@@ -338,7 +338,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 			continue
 		}
 		foundSkillPreflight = true
-		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"advisory", "required", "off"}) {
+		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, []string{"off", "advisory"}) {
 			t.Fatalf("AURA_SKILL_PREFLIGHT control = group:%q kind:%q options:%v", it.Group, it.Kind, it.Options)
 		}
 	}
@@ -351,7 +351,7 @@ func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{
 		Settings:      store,
-		RuntimeConfig: &config.Config{SkillPreflight: "advisory"},
+		RuntimeConfig: &config.Config{SkillPreflight: "off"},
 	})
 
 	rr := httptest.NewRecorder()
@@ -366,7 +366,7 @@ func TestSettingsList_ShowsActiveSkillPreflight(t *testing.T) {
 		if it.Key != settings.KeySkillPreflight {
 			continue
 		}
-		if it.Value != "advisory" || it.ActiveValue != "advisory" || it.Source != "default" || it.RestartRequired {
+		if it.Value != "off" || it.ActiveValue != "off" || it.Source != "default" || it.RestartRequired {
 			t.Fatalf("skill preflight row = value:%q active:%q source:%q restart:%v", it.Value, it.ActiveValue, it.Source, it.RestartRequired)
 		}
 		return
@@ -379,7 +379,7 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 	router := NewRouter(Deps{
 		Settings: store,
 		RuntimeConfig: &config.Config{
-			SkillPreflight:     "required",
+			SkillPreflight:     "off",
 			SkillRoutingMode:   "manifest_llm_review",
 			AgentLoopMaxSteps:  9,
 			TerminalToolPolicy: "off",
@@ -397,7 +397,7 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	wantEnums := map[string][]string{
-		settings.KeySkillPreflight:     []string{"advisory", "required", "off"},
+		settings.KeySkillPreflight:     []string{"off", "advisory"},
 		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
 		settings.KeyTerminalToolPolicy: []string{"profile", "off"},
 		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},

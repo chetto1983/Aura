@@ -260,7 +260,7 @@ func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteWiki(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallsRequiresApplicableSkillBeforeProtectedTool(t *testing.T) {
+func TestExecuteToolCallsDoesNotRequireApplicableSkillBeforeProtectedTool(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
 	reg.Register(doc)
@@ -270,43 +270,24 @@ func TestExecuteToolCallsRequiresApplicableSkillBeforeProtectedTool(t *testing.T
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	blocked := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
 		[]string{"create_pdf"},
 		orchestration.ProfileDocument,
 		nil,
 	)
-	if !blocked.skillPreflightRejected {
-		t.Fatal("skillPreflightRejected = false, want true")
-	}
-	if doc.calls != 0 {
-		t.Fatalf("protected tool executed %d times before skill read, want 0", doc.calls)
-	}
-	if !strings.Contains(blocked.lastResult, "requires reading an applicable skill") {
-		t.Fatalf("blocked result = %q", blocked.lastResult)
-	}
-	if blocked.fatalResult != "" {
-		t.Fatalf("fatalResult = %q, want retryable preflight error to stay in loop", blocked.fatalResult)
-	}
-
-	allowed := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "pdf-2", Name: "create_pdf"}},
-		[]string{"create_pdf"},
-		orchestration.ProfileDocument,
-		[]string{"document-pdf"},
-	)
-	if allowed.skillPreflightRejected {
-		t.Fatal("skillPreflightRejected = true after applicable skill read")
+	if summary.skillPreflightRejected {
+		t.Fatal("skillPreflightRejected = true, want advisory-only skill guidance")
 	}
 	if doc.calls != 1 {
 		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
 	}
-	if allowed.lastResult != "pdf created" {
-		t.Fatalf("allowed lastResult = %q", allowed.lastResult)
+	if summary.lastResult != "pdf created" {
+		t.Fatalf("lastResult = %q", summary.lastResult)
 	}
 }
 
-func TestExecuteToolCallsDoesNotLetSameBatchSkillReadSatisfyProtectedTool(t *testing.T) {
+func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
@@ -328,8 +309,8 @@ func TestExecuteToolCallsDoesNotLetSameBatchSkillReadSatisfyProtectedTool(t *tes
 		nil,
 	)
 
-	if !summary.skillPreflightRejected {
-		t.Fatal("skillPreflightRejected = false, want same-batch protected call rejected")
+	if summary.skillPreflightRejected {
+		t.Fatal("skillPreflightRejected = true, want advisory-only skill guidance")
 	}
 	if len(summary.readSkillNames) != 1 || summary.readSkillNames[0] != "document-pdf" {
 		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.readSkillNames)
@@ -337,8 +318,8 @@ func TestExecuteToolCallsDoesNotLetSameBatchSkillReadSatisfyProtectedTool(t *tes
 	if read.calls != 1 {
 		t.Fatalf("read_skill calls = %d, want 1", read.calls)
 	}
-	if doc.calls != 0 {
-		t.Fatalf("create_pdf calls = %d, want 0", doc.calls)
+	if doc.calls != 1 {
+		t.Fatalf("create_pdf calls = %d, want 1", doc.calls)
 	}
 }
 
@@ -395,7 +376,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	}
 }
 
-func TestRunToolCallingLoopRetriesAfterSandboxSkillPreflightError(t *testing.T) {
+func TestRunToolCallingLoopExecutesSandboxWithoutSkillPreflightRetry(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	list := &countingTelegramTool{name: "list_skills", result: "systematic-debugging"}
 	read := &countingTelegramTool{name: "read_skill", result: "skill body"}
@@ -406,15 +387,6 @@ func TestRunToolCallingLoopRetriesAfterSandboxSkillPreflightError(t *testing.T) 
 	fake := &scriptedTelegramLLM{responses: []llm.Response{
 		{
 			ToolCalls: []llm.ToolCall{{ID: "exec-early", Name: "execute_code"}},
-		},
-		{
-			ToolCalls: []llm.ToolCall{
-				{ID: "list-1", Name: "list_skills"},
-				{ID: "skill-1", Name: "read_skill", Arguments: map[string]any{"name": "systematic-debugging"}},
-			},
-		},
-		{
-			ToolCalls: []llm.ToolCall{{ID: "exec-final", Name: "execute_code"}},
 		},
 		{Content: "5050"},
 	}}
@@ -440,23 +412,23 @@ func TestRunToolCallingLoopRetriesAfterSandboxSkillPreflightError(t *testing.T) 
 	if response != "5050" {
 		t.Fatalf("response = %q, want 5050", response)
 	}
-	if !stats.skillPreflightFail {
-		t.Fatal("skillPreflightFail = false, want true for first rejected execute_code")
+	if stats.skillPreflightFail {
+		t.Fatal("skillPreflightFail = true, want no skill preflight block")
 	}
 	if stats.terminalTool != "execute_code" {
 		t.Fatalf("terminalTool = %q, want execute_code", stats.terminalTool)
 	}
-	if !stringSliceContains(stats.readSkills, "systematic-debugging") {
-		t.Fatalf("readSkills = %+v, want systematic-debugging", stats.readSkills)
+	if len(stats.readSkills) != 0 {
+		t.Fatalf("readSkills = %+v, want none", stats.readSkills)
 	}
 	if exec.calls != 1 {
-		t.Fatalf("execute_code calls = %d, want only the post-preflight call to execute", exec.calls)
+		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
 	}
-	if list.calls != 1 || read.calls != 1 {
-		t.Fatalf("preflight calls = list %d read %d, want 1/1", list.calls, read.calls)
+	if list.calls != 0 || read.calls != 0 {
+		t.Fatalf("preflight calls = list %d read %d, want 0/0", list.calls, read.calls)
 	}
-	if len(fake.requests) != 3 {
-		t.Fatalf("LLM requests = %d, want 3 without no-tool terminal finalization", len(fake.requests))
+	if len(fake.requests) != 1 {
+		t.Fatalf("LLM requests = %d, want 1 without preflight retry", len(fake.requests))
 	}
 	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "list_skills" {
 		t.Fatalf("first exposed tool = %+v, want list_skills first", fake.requests[0].Tools)

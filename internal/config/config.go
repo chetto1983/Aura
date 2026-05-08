@@ -16,7 +16,7 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxRuntimeDir = "./runtime/pyodide"
 const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
-const DefaultSkillPreflight = "advisory"
+const DefaultSkillPreflight = "off"
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 8
 const DefaultTerminalToolPolicy = "profile"
@@ -92,7 +92,7 @@ type Config struct {
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	ToolProfileMode            string  `envconfig:"AURA_TOOL_PROFILE_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
-	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"advisory"`
+	SkillPreflight             string  `envconfig:"AURA_SKILL_PREFLIGHT" default:"off"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
 	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
 	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"profile"`
@@ -305,7 +305,7 @@ func (c *Config) Location() (*time.Location, error) {
 
 func normalizeSkillPreflight(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "required", "advisory", "off":
+	case "advisory", "off":
 		return normalized
 	default:
 		return DefaultSkillPreflight

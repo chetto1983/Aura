@@ -117,7 +117,7 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 		PromptVersion:         "aura-agent-v1",
 		ToolProfileMode:       "auto",
 		OrchestrationLogLevel: "summary",
-		SkillPreflight:        "required",
+		SkillPreflight:        config.DefaultSkillPreflight,
 		SkillRoutingMode:      "manifest",
 		AgentLoopMaxSteps:     6,
 		TerminalToolPolicy:    "profile",

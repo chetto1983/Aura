@@ -47,7 +47,7 @@ services:
       SEARCH_BACKEND: "qdrant"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_TOOL_PROFILE_MODE: "auto"
-      AURA_SKILL_PREFLIGHT: "advisory"
+      AURA_SKILL_PREFLIGHT: "off"
       AURA_SKILL_ROUTING_MODE: "manifest"
       AURA_AGENT_LOOP_MAX_STEPS: "8"
       AURA_TERMINAL_TOOL_POLICY: "profile"

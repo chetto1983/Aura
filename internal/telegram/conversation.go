@@ -836,28 +836,6 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				hooks.AfterToolCall(event)
 				return
 			}
-			if decision := b.skillPreflightDecision(profile, tc, readSkills); decision.Required && !decision.Satisfied {
-				msg := formatSkillPreflightFatal(tc.Name, decision)
-				event.DurationMS = time.Since(start).Milliseconds()
-				event.ErrorClass = "skill_preflight"
-				event.Metadata = map[string]string{
-					"capability": string(decision.Capability),
-					"reason":     decision.Reason,
-				}
-				results[i] = outcome{
-					id:                     tc.ID,
-					tool:                   tc.Name,
-					content:                tools.FormatToolError(errors.New(msg)),
-					elapsed:                time.Since(start),
-					errorClass:             "skill_preflight",
-					skillPreflightRejected: true,
-				}
-				summaryMu.Lock()
-				summary.skillPreflightRejected = true
-				summaryMu.Unlock()
-				hooks.AfterToolCall(event)
-				return
-			}
 			toolCtx := tools.WithUserID(ctx, userID)
 			result, err := b.tools.Execute(toolCtx, tc.Name, tc.Arguments)
 			if err != nil {
@@ -1182,41 +1160,6 @@ func toolAllowed(name string, allowlist []string) bool {
 		}
 	}
 	return false
-}
-
-func (b *Bot) skillPreflightDecision(profile orchestration.Profile, call llm.ToolCall, readSkills []string) orchestration.SkillPreflightDecision {
-	if isSkillPreflightTool(call.Name) {
-		return orchestration.SkillPreflightDecision{Satisfied: true, Reason: "skill inspection tools are allowed before preflight"}
-	}
-	mode := orchestration.SkillPreflightRequired
-	if b != nil && b.cfg != nil {
-		mode = orchestration.SkillPreflightMode(b.cfg.SkillPreflight)
-	}
-	return orchestration.NeedsSkillPreflight(profile, "", call.Name, orchestration.SkillPreflightState{
-		ReadSkillNames: readSkills,
-	}, mode)
-}
-
-func isSkillPreflightTool(name string) bool {
-	switch name {
-	case "list_skills", "read_skill", "search_skill_catalog":
-		return true
-	default:
-		return false
-	}
-}
-
-func formatSkillPreflightFatal(toolName string, decision orchestration.SkillPreflightDecision) string {
-	var hints []string
-	for _, hint := range decision.Requirement.SkillHints {
-		if strings.TrimSpace(hint) != "" {
-			hints = append(hints, hint)
-		}
-	}
-	if len(hints) == 0 {
-		hints = append(hints, "an applicable skill")
-	}
-	return fmt.Sprintf("tool %q requires reading an applicable skill first for capability %q; call list_skills and read_skill before retrying. Suggested skills: %s", toolName, decision.Capability, strings.Join(hints, ", "))
 }
 
 func skillNameFromArgs(args map[string]any) string {
