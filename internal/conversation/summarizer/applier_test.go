@@ -2,413 +2,103 @@ package summarizer_test
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
-	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/wiki"
 )
 
-// --- fake wiki store ---
+func TestAutoApplierActionNewWritesPage(t *testing.T) {
+	ws := &fakeWikiStore{}
+	a := summarizer.NewAutoApplier(ws)
 
-type fakeWikiStore struct {
-	written  []*wiki.Page
-	readPage *wiki.Page // returned by ReadPage if non-nil
-	logLines []string
+	err := a.Apply(context.Background(), summarizer.Decision{
+		Candidate: summarizer.Candidate{
+			Fact:          "Marco likes concise agents",
+			Category:      "preference",
+			RelatedSlugs:  []string{"aura-agent"},
+			SourceTurnIDs: []int64{1, 2},
+		},
+		Action: summarizer.ActionNew,
+	})
+	if err != nil {
+		t.Fatalf("Apply(new): %v", err)
+	}
+	if len(ws.writes) != 1 {
+		t.Fatalf("writes = %d, want 1", len(ws.writes))
+	}
+	page := ws.writes[0]
+	if page.SchemaVersion != wiki.CurrentSchemaVersion || page.PromptVersion != "proposal_v1" {
+		t.Fatalf("page versions = schema %d prompt %q", page.SchemaVersion, page.PromptVersion)
+	}
+	if page.Body == "" || page.Category != "preference" {
+		t.Fatalf("page = %+v", page)
+	}
 }
 
-func (f *fakeWikiStore) WritePage(_ context.Context, p *wiki.Page) error {
-	f.written = append(f.written, p)
+func TestAutoApplierActionPatchAppendsToBody(t *testing.T) {
+	ws := &fakeWikiStore{
+		pages: map[string]*wiki.Page{
+			"marco-info": {Title: "Marco Info", Body: "Original", Sources: []string{"turn:1"}},
+		},
+	}
+	a := summarizer.NewAutoApplier(ws)
+
+	err := a.Apply(context.Background(), summarizer.Decision{
+		Candidate: summarizer.Candidate{
+			Fact:          "Marco prefers fast loops",
+			RelatedSlugs:  []string{"runtime-diet"},
+			SourceTurnIDs: []int64{1, 3},
+		},
+		Action:     summarizer.ActionPatch,
+		TargetSlug: "marco-info",
+	})
+	if err != nil {
+		t.Fatalf("Apply(patch): %v", err)
+	}
+	page := ws.pages["marco-info"]
+	if page.Body == "Original" {
+		t.Fatalf("body was not patched")
+	}
+	if len(page.Sources) != 2 || page.Sources[1] != "turn:3" {
+		t.Fatalf("sources = %#v, want turn:3 appended once", page.Sources)
+	}
+}
+
+func TestAutoApplierActionSkipWritesLogOnly(t *testing.T) {
+	ws := &fakeWikiStore{}
+	a := summarizer.NewAutoApplier(ws)
+
+	if err := a.Apply(context.Background(), summarizer.Decision{Action: summarizer.ActionSkip, TargetSlug: "existing-page"}); err != nil {
+		t.Fatalf("Apply(skip): %v", err)
+	}
+	if len(ws.writes) != 0 {
+		t.Fatalf("writes = %d, want none", len(ws.writes))
+	}
+	if got := ws.logs[0]; got.action != "proposal skip" || got.slug != "existing-page" {
+		t.Fatalf("log = %+v", got)
+	}
+}
+
+type fakeWikiStore struct {
+	pages  map[string]*wiki.Page
+	writes []*wiki.Page
+	logs   []struct{ action, slug string }
+}
+
+func (f *fakeWikiStore) WritePage(_ context.Context, page *wiki.Page) error {
+	if f.pages == nil {
+		f.pages = map[string]*wiki.Page{}
+	}
+	f.writes = append(f.writes, page)
+	f.pages[wiki.Slug(page.Title)] = page
 	return nil
 }
 
 func (f *fakeWikiStore) ReadPage(slug string) (*wiki.Page, error) {
-	if f.readPage != nil {
-		return f.readPage, nil
-	}
-	return nil, fmt.Errorf("page not found: %s", slug)
+	return f.pages[slug], nil
 }
 
 func (f *fakeWikiStore) AppendLog(_ context.Context, action, slug string) {
-	f.logLines = append(f.logLines, action+":"+slug)
-}
-
-// --- helper ---
-
-func newReviewDB(t *testing.T) *sql.DB {
-	t.Helper()
-	db := scheduler.NewTestDB(t)
-	return db
-}
-
-func makeDecision(action summarizer.Action, slug string) summarizer.Decision {
-	return summarizer.Decision{
-		Candidate: summarizer.Candidate{
-			Fact:          "Marco lives in Bologna",
-			Score:         0.9,
-			Category:      "person",
-			RelatedSlugs:  []string{"bologna", "marco"},
-			SourceTurnIDs: []int64{1, 2},
-		},
-		Action:     action,
-		TargetSlug: slug,
-		Similarity: 0.3,
-	}
-}
-
-// === AutoApplier tests ===
-
-func TestAutoApplier_ActionNew_WritesPage(t *testing.T) {
-	ws := &fakeWikiStore{}
-	a := summarizer.NewAutoApplier(ws)
-
-	err := a.Apply(context.Background(), makeDecision(summarizer.ActionNew, ""))
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if len(ws.written) != 1 {
-		t.Fatalf("want 1 page written, got %d", len(ws.written))
-	}
-	p := ws.written[0]
-	if p.Body == "" {
-		t.Fatal("want non-empty body")
-	}
-	// evidence encoded as sources
-	if len(p.Sources) == 0 {
-		t.Fatal("want sources (evidence) set")
-	}
-	if len(p.Related) != 2 || p.Related[0] != "bologna" || p.Related[1] != "marco" {
-		t.Fatalf("related = %#v, want [bologna marco]", p.Related)
-	}
-}
-
-func TestAutoApplier_ActionPatch_AppendsToBody(t *testing.T) {
-	existingPage := &wiki.Page{
-		Title:    "Marco Info",
-		Category: "person",
-		Body:     "Marco is a person.",
-	}
-	ws := &fakeWikiStore{readPage: existingPage}
-	a := summarizer.NewAutoApplier(ws)
-
-	err := a.Apply(context.Background(), makeDecision(summarizer.ActionPatch, "marco-info"))
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if len(ws.written) != 1 {
-		t.Fatalf("want page written on patch, got %d", len(ws.written))
-	}
-	body := ws.written[0].Body
-	if !strings.Contains(body, "[auto-sum") {
-		t.Fatalf("want [auto-sum] block in body, got: %q", body)
-	}
-	if len(ws.written[0].Related) != 2 || ws.written[0].Related[0] != "bologna" || ws.written[0].Related[1] != "marco" {
-		t.Fatalf("related = %#v, want [bologna marco]", ws.written[0].Related)
-	}
-}
-
-func TestAutoApplier_ActionSkip_WritesLogOnly(t *testing.T) {
-	ws := &fakeWikiStore{}
-	a := summarizer.NewAutoApplier(ws)
-
-	err := a.Apply(context.Background(), makeDecision(summarizer.ActionSkip, "existing-page"))
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if len(ws.written) != 0 {
-		t.Fatalf("want 0 pages written for skip, got %d", len(ws.written))
-	}
-	if len(ws.logLines) != 1 {
-		t.Fatalf("want 1 log line for skip, got %d", len(ws.logLines))
-	}
-	if !strings.Contains(ws.logLines[0], "auto-sum") {
-		t.Fatalf("want [auto-sum] in log action, got %q", ws.logLines[0])
-	}
-}
-
-// === AutoLowRiskApplier tests ===
-
-func TestAutoLowRiskApplier_HighConfidenceSafeFactWritesWiki(t *testing.T) {
-	db := newReviewDB(t)
-	ws := &fakeWikiStore{}
-	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
-	if err != nil {
-		t.Fatalf("NewAutoLowRiskApplier: %v", err)
-	}
-
-	decision := makeDecision(summarizer.ActionNew, "")
-	decision.Candidate.Fact = "Davide prefers automatic memory capture for safe project preferences"
-	decision.Candidate.Category = "preference"
-	decision.Candidate.Score = 0.95
-	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-		t.Fatalf("ApplyForChat: %v", err)
-	}
-
-	if len(ws.written) != 1 {
-		t.Fatalf("wiki writes = %d, want 1", len(ws.written))
-	}
-	var proposals int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates").Scan(&proposals)
-	if proposals != 0 {
-		t.Fatalf("review proposals = %d, want 0", proposals)
-	}
-}
-
-func TestAutoLowRiskApplier_LowConfidenceFallsBackToReview(t *testing.T) {
-	db := newReviewDB(t)
-	ws := &fakeWikiStore{}
-	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
-	if err != nil {
-		t.Fatalf("NewAutoLowRiskApplier: %v", err)
-	}
-
-	decision := makeDecision(summarizer.ActionNew, "")
-	decision.Candidate.Score = 0.84
-	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-		t.Fatalf("ApplyForChat: %v", err)
-	}
-
-	if len(ws.written) != 0 {
-		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
-	}
-	var proposals int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
-	if proposals != 1 {
-		t.Fatalf("review proposals = %d, want 1", proposals)
-	}
-}
-
-func TestAutoLowRiskApplier_SensitiveFactFallsBackToReview(t *testing.T) {
-	db := newReviewDB(t)
-	ws := &fakeWikiStore{}
-	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
-	if err != nil {
-		t.Fatalf("NewAutoLowRiskApplier: %v", err)
-	}
-
-	decision := makeDecision(summarizer.ActionNew, "")
-	decision.Candidate.Fact = "Davide's API key token is sk-test-123"
-	decision.Candidate.Category = "credential"
-	decision.Candidate.Score = 1.0
-	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-		t.Fatalf("ApplyForChat: %v", err)
-	}
-
-	if len(ws.written) != 0 {
-		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
-	}
-	var proposals int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
-	if proposals != 1 {
-		t.Fatalf("review proposals = %d, want 1", proposals)
-	}
-}
-
-func TestAutoLowRiskApplier_AddressAndFuelCardFactsFallBackToReview(t *testing.T) {
-	db := newReviewDB(t)
-	ws := &fakeWikiStore{}
-	a, err := summarizer.NewAutoLowRiskApplier(ws, db)
-	if err != nil {
-		t.Fatalf("NewAutoLowRiskApplier: %v", err)
-	}
-
-	for _, fact := range []string{
-		"Davide Marchetto resides at Via Mazzini 2, 12023 Caraglio (CN), Italy.",
-		"Davide is associated with Sacchi Giuseppe SpA through a UTA fuel card.",
-	} {
-		decision := makeDecision(summarizer.ActionNew, "")
-		decision.Candidate.Fact = fact
-		decision.Candidate.Category = "personal"
-		decision.Candidate.Score = 1.0
-		if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-			t.Fatalf("ApplyForChat(%q): %v", fact, err)
-		}
-	}
-
-	if len(ws.written) != 0 {
-		t.Fatalf("wiki writes = %d, want 0", len(ws.written))
-	}
-	var proposals int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE chat_id = 4242").Scan(&proposals)
-	if proposals != 2 {
-		t.Fatalf("review proposals = %d, want 2", proposals)
-	}
-}
-
-func TestNewAutoLowRiskApplierRejectsMissingDependencies(t *testing.T) {
-	if _, err := summarizer.NewAutoLowRiskApplier(nil, newReviewDB(t)); err == nil {
-		t.Fatal("NewAutoLowRiskApplier(nil, db) error = nil, want error")
-	}
-	if _, err := summarizer.NewAutoLowRiskApplier(&fakeWikiStore{}, nil); err == nil {
-		t.Fatal("NewAutoLowRiskApplier(wiki, nil) error = nil, want error")
-	}
-}
-
-// === ReviewApplier tests ===
-
-func TestReviewApplier_ActionNew_InsertsProposal(t *testing.T) {
-	db := newReviewDB(t)
-	a, err := summarizer.NewReviewApplier(db)
-	if err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-
-	if err := a.ApplyForChat(context.Background(), 4242, makeDecision(summarizer.ActionNew, "")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-
-	rows, err := db.QueryContext(context.Background(), "SELECT chat_id, status, category, related_slugs, provenance_json FROM proposed_updates WHERE action='new'")
-	if err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	defer rows.Close()
-	var count int
-	for rows.Next() {
-		var chatID int64
-		var status string
-		var category string
-		var related string
-		var provenance string
-		rows.Scan(&chatID, &status, &category, &related, &provenance)
-		if chatID != 4242 {
-			t.Fatalf("want chat_id=4242, got %d", chatID)
-		}
-		if status != "pending" {
-			t.Fatalf("want status=pending, got %q", status)
-		}
-		if category != "person" {
-			t.Fatalf("want category=person, got %q", category)
-		}
-		if related != `["bologna","marco"]` {
-			t.Fatalf("want related slugs JSON, got %q", related)
-		}
-		if !strings.Contains(provenance, "conversation_summarizer") || !strings.Contains(provenance, "conversation:1") {
-			t.Fatalf("want provenance with summarizer origin and turn evidence, got %q", provenance)
-		}
-		count++
-	}
-	if count != 1 {
-		t.Fatalf("want 1 row, got %d", count)
-	}
-}
-
-func TestReviewApplier_SkipsDuplicatePendingProposal(t *testing.T) {
-	db := newReviewDB(t)
-	a, err := summarizer.NewReviewApplier(db)
-	if err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-	decision := makeDecision(summarizer.ActionNew, "")
-
-	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-		t.Fatalf("first Apply: %v", err)
-	}
-	if err := a.ApplyForChat(context.Background(), 4242, decision); err != nil {
-		t.Fatalf("second Apply: %v", err)
-	}
-
-	var count int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE fact = ?", decision.Candidate.Fact).Scan(&count)
-	if count != 1 {
-		t.Fatalf("duplicate pending proposal count = %d, want 1", count)
-	}
-}
-
-func TestNewReviewApplierRejectsNilDB(t *testing.T) {
-	if _, err := summarizer.NewReviewApplier(nil); err == nil {
-		t.Fatal("NewReviewApplier(nil) error = nil, want error")
-	}
-}
-
-func TestNewReviewApplierDoesNotCreateSchema(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	if _, err := summarizer.NewReviewApplier(db); err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-
-	if tableExists(t, db, "proposed_updates") {
-		t.Fatal("NewReviewApplier created proposed_updates; migrations should own schema")
-	}
-}
-
-func tableExists(t *testing.T, db *sql.DB, name string) bool {
-	t.Helper()
-	var got string
-	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
-	if err == nil {
-		return true
-	}
-	if err == sql.ErrNoRows {
-		return false
-	}
-	t.Fatalf("query sqlite_master: %v", err)
-	return false
-}
-
-func TestReviewApplier_ActionPatch_InsertsProposal(t *testing.T) {
-	db := newReviewDB(t)
-	a, err := summarizer.NewReviewApplier(db)
-	if err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionPatch, "target-slug")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-
-	var count int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates WHERE action='patch' AND target_slug='target-slug'").Scan(&count)
-	if count != 1 {
-		t.Fatalf("want 1 row, got %d", count)
-	}
-}
-
-func TestReviewApplier_ActionSkip_NoInsert(t *testing.T) {
-	db := newReviewDB(t)
-	a, err := summarizer.NewReviewApplier(db)
-	if err != nil {
-		t.Fatalf("NewReviewApplier: %v", err)
-	}
-
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionSkip, "existing")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-
-	var count int
-	db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM proposed_updates").Scan(&count)
-	if count != 0 {
-		t.Fatalf("want 0 rows for skip, got %d", count)
-	}
-}
-
-// === OffApplier tests ===
-
-func TestOffApplier_ActionNew_NoSideEffects(t *testing.T) {
-	a := summarizer.NewOffApplier()
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionNew, "")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	// No assertions needed — just must not panic or error
-}
-
-func TestOffApplier_ActionPatch_NoSideEffects(t *testing.T) {
-	a := summarizer.NewOffApplier()
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionPatch, "slug")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-}
-
-func TestOffApplier_ActionSkip_NoSideEffects(t *testing.T) {
-	a := summarizer.NewOffApplier()
-	if err := a.Apply(context.Background(), makeDecision(summarizer.ActionSkip, "slug")); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
+	f.logs = append(f.logs, struct{ action, slug string }{action: action, slug: slug})
 }

@@ -388,22 +388,6 @@ func TestAgentJobNotificationLocalizesPrefix(t *testing.T) {
 	}
 }
 
-func TestNormalizeAutoImproveMode(t *testing.T) {
-	tests := map[string]string{
-		"":           "off",
-		"dry_run":    "dry_run",
-		"off":        "off",
-		"auto":       "auto_apply",
-		"auto_apply": "auto_apply",
-		"weird":      "unknown",
-	}
-	for input, want := range tests {
-		if got := normalizeAutoImproveMode(input); got != want {
-			t.Fatalf("normalizeAutoImproveMode(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
 func containsTestString(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {

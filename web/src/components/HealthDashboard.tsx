@@ -1,11 +1,10 @@
 import { useCallback } from 'react';
-import { Code2, TrendingUp } from 'lucide-react';
+import { Code2 } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorCard } from '@/components/common/ErrorCard';
-import type { CompoundingRate } from '@/types/api';
 
 const POLL_MS = 5000;
 
@@ -59,9 +58,6 @@ export function HealthDashboard() {
 
         <SandboxCard sandbox={data.sandbox} />
         <EmbedCacheCard cache={data.embed_cache} />
-        {data.compounding_rate && (
-          <CompoundingRateCard rate={data.compounding_rate} />
-        )}
       </div>
 
       <ProcessFooter process={data.process} />
@@ -106,27 +102,6 @@ function EmbedCacheCard({ cache }: { cache: { hits: number; misses: number } }) 
       <div className="text-xs text-muted-foreground">
         {t('health.hits')} <span className="opacity-50">/</span> {formatNumber(cache.misses)} {t('health.misses')}
       </div>
-    </Card>
-  );
-}
-
-function CompoundingRateCard({ rate }: { rate: CompoundingRate }) {
-  const { t } = useLocale();
-  const pct = rate.rate_pct;
-  const formatted = pct < 1 && pct > 0
-    ? `${pct.toFixed(1)}%`
-    : `${Math.round(pct)}%`;
-  const subtitle = t('health.autoAddedThisWeek', { added: String(rate.auto_added_7d), total: String(rate.total_pages) });
-  return (
-    <Card title={t('health.compoundingRate')} subtitle={subtitle}>
-      <div
-        className="flex items-center gap-2"
-        title={t('health.autoSummarizerTooltip')}
-      >
-        <TrendingUp size={20} className="text-primary/70 shrink-0" />
-        <div className="text-3xl font-bold tabular-nums">{formatted}</div>
-      </div>
-      <div className="text-xs text-muted-foreground">{t('health.autoSummarizerGrowth')}</div>
     </Card>
   );
 }

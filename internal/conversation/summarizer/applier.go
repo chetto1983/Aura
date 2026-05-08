@@ -2,11 +2,7 @@ package summarizer
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -44,7 +40,7 @@ func (a *AutoApplier) Apply(ctx context.Context, d Decision) error {
 	case ActionPatch:
 		return a.applyPatch(ctx, d)
 	case ActionSkip:
-		a.wiki.AppendLog(ctx, "auto-sum skip", d.TargetSlug)
+		a.wiki.AppendLog(ctx, "proposal skip", d.TargetSlug)
 		return nil
 	default:
 		return fmt.Errorf("auto applier: unknown action %q", d.Action)
@@ -63,7 +59,7 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	page := &wiki.Page{
 		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "summarizer_v1",
+		PromptVersion: "proposal_v1",
 		Title:         title,
 		Category:      d.Candidate.Category,
 		Related:       uniqueNonEmpty(d.Candidate.RelatedSlugs),
@@ -71,12 +67,12 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 		Sources:       sources,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-		Body:          fmt.Sprintf("%s\n\n*Auto-extracted by Aura summarizer.*", d.Candidate.Fact),
+		Body:          fmt.Sprintf("%s\n\n*Approved from Aura's review queue.*", d.Candidate.Fact),
 	}
 	if err := a.wiki.WritePage(ctx, page); err != nil {
 		return fmt.Errorf("auto applier new: %w", err)
 	}
-	a.wiki.AppendLog(ctx, "auto-sum new", wiki.Slug(title))
+	a.wiki.AppendLog(ctx, "proposal new", wiki.Slug(title))
 	return nil
 }
 
@@ -86,7 +82,7 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 		return fmt.Errorf("auto applier patch read: %w", err)
 	}
 	date := time.Now().UTC().Format("2006-01-02")
-	block := fmt.Sprintf("\n\n> [auto-sum %s] %s\n", date, d.Candidate.Fact)
+	block := fmt.Sprintf("\n\n> [proposal %s] %s\n", date, d.Candidate.Fact)
 	page.Body = strings.TrimRight(page.Body, "\n") + block
 	// Append new source turn IDs.
 	for _, id := range d.Candidate.SourceTurnIDs {
@@ -104,7 +100,7 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 	if err := a.wiki.WritePage(ctx, page); err != nil {
 		return fmt.Errorf("auto applier patch write: %w", err)
 	}
-	a.wiki.AppendLog(ctx, "auto-sum patch", d.TargetSlug)
+	a.wiki.AppendLog(ctx, "proposal patch", d.TargetSlug)
 	return nil
 }
 
@@ -116,149 +112,6 @@ func containsStr(ss []string, s string) bool {
 	}
 	return false
 }
-
-// ---- AutoLowRiskApplier ----
-
-const defaultAutoLowRiskMinScore = 0.85
-
-// AutoLowRiskApplier writes low-risk high-confidence memory directly to the
-// wiki and sends everything else through the review queue.
-type AutoLowRiskApplier struct {
-	auto     *AutoApplier
-	review   *ReviewApplier
-	minScore float64
-}
-
-// NewAutoLowRiskApplier returns a conservative hybrid applier backed by the
-// wiki writer and review queue database.
-func NewAutoLowRiskApplier(w WikiWriter, db *sql.DB) (*AutoLowRiskApplier, error) {
-	if w == nil {
-		return nil, errors.New("auto low risk applier: wiki writer required")
-	}
-	review, err := NewReviewApplier(db)
-	if err != nil {
-		return nil, err
-	}
-	return &AutoLowRiskApplier{
-		auto:     NewAutoApplier(w),
-		review:   review,
-		minScore: defaultAutoLowRiskMinScore,
-	}, nil
-}
-
-func (a *AutoLowRiskApplier) Apply(ctx context.Context, d Decision) error {
-	return a.ApplyForChat(ctx, 0, d)
-}
-
-func (a *AutoLowRiskApplier) ApplyForChat(ctx context.Context, chatID int64, d Decision) error {
-	if a == nil {
-		return errors.New("auto low risk applier: nil receiver")
-	}
-	if d.Action == ActionSkip {
-		return a.auto.Apply(ctx, d)
-	}
-	if autoLowRiskDecision(d, a.minScore) {
-		return a.auto.Apply(ctx, d)
-	}
-	return a.review.ApplyForChat(ctx, chatID, d)
-}
-
-var sensitiveFactPattern = regexp.MustCompile(`(?i)\b(api[_ -]?key|bearer|credential|password|passphrase|secret|token|private[_ -]?key|ssh[_ -]?key|seed phrase|recovery phrase|otp|2fa|social security|ssn|codice fiscale|iban|credit card|carta di credito|fuel card|carta carburante|email|e-mail|phone|telefono|address|indirizzo|resides at|lives at|abita|residenza|via\s+[[:alnum:]]|viale\s+[[:alnum:]]|piazza\s+[[:alnum:]]|corso\s+[[:alnum:]]|strada\s+[[:alnum:]]|diagnos|medical|health|salute|legal|lawyer|avvocato|salary|stipendio|bank|banca)\b`)
-
-func autoLowRiskDecision(d Decision, minScore float64) bool {
-	if !IsWikiAction(d.Action.String()) || d.Action == ActionSkip {
-		return false
-	}
-	fact := strings.TrimSpace(d.Candidate.Fact)
-	if fact == "" || len(fact) > 500 || d.Candidate.Score < minScore {
-		return false
-	}
-	if autoLowRiskSensitiveCategory(d.Candidate.Category) {
-		return false
-	}
-	if sensitiveFactPattern.MatchString(fact) {
-		return false
-	}
-	return true
-}
-
-func autoLowRiskSensitiveCategory(category string) bool {
-	switch strings.ToLower(strings.TrimSpace(category)) {
-	case "secret", "credential", "credentials", "token", "api_key", "password",
-		"health", "medical", "finance", "financial", "legal", "contact", "personal_contact", "personal", "pii":
-		return true
-	default:
-		return false
-	}
-}
-
-// ---- ReviewApplier ----
-
-// ReviewApplier inserts proposals into proposed_updates; no wiki mutation.
-type ReviewApplier struct {
-	db *sql.DB
-}
-
-// NewReviewApplier returns a ReviewApplier backed by a migrated DB.
-func NewReviewApplier(db *sql.DB) (*ReviewApplier, error) {
-	if db == nil {
-		return nil, errors.New("review applier: db required")
-	}
-	return &ReviewApplier{db: db}, nil
-}
-
-func (r *ReviewApplier) Apply(ctx context.Context, d Decision) error {
-	return r.ApplyForChat(ctx, 0, d)
-}
-
-func (r *ReviewApplier) ApplyForChat(ctx context.Context, chatID int64, d Decision) error {
-	if d.Action == ActionSkip {
-		return nil
-	}
-	if exists, err := r.pendingDuplicateExists(ctx, d); err != nil {
-		return err
-	} else if exists {
-		return nil
-	}
-	ids, _ := json.Marshal(d.Candidate.SourceTurnIDs)
-	related, _ := json.Marshal(d.Candidate.RelatedSlugs)
-	provenance, _ := json.Marshal(Provenance{
-		OriginTool:   "conversation_summarizer",
-		OriginReason: "automatic post-turn memory capture",
-		Evidence:     turnEvidenceRefs(d.Candidate.SourceTurnIDs),
-	})
-	const q = `INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
-	_, err := r.db.ExecContext(ctx, q,
-		chatID, d.Candidate.Fact, string(d.Action), d.TargetSlug, d.Similarity, string(ids), d.Candidate.Category, string(related), string(provenance))
-	if err != nil {
-		return fmt.Errorf("review applier insert: %w", err)
-	}
-	return nil
-}
-
-func (r *ReviewApplier) pendingDuplicateExists(ctx context.Context, d Decision) (bool, error) {
-	var count int
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM proposed_updates
-		 WHERE status = 'pending' AND action = ? AND target_slug = ? AND lower(trim(fact)) = lower(trim(?))`,
-		string(d.Action), strings.TrimSpace(d.TargetSlug), strings.TrimSpace(d.Candidate.Fact),
-	).Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("review applier duplicate check: %w", err)
-	}
-	return count > 0, nil
-}
-
-// ---- OffApplier ----
-
-// OffApplier is a no-op; it neither writes wiki nor logs.
-type OffApplier struct{}
-
-// NewOffApplier returns an OffApplier.
-func NewOffApplier() *OffApplier { return &OffApplier{} }
-
-func (o *OffApplier) Apply(_ context.Context, _ Decision) error { return nil }
 
 func uniqueNonEmpty(values []string) []string {
 	if len(values) == 0 {

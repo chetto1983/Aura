@@ -2,13 +2,6 @@
 // — runtime parsing failures are visible because polling exercises every
 // endpoint. If drift becomes painful, swap in tygo Go→TS codegen.
 
-// Slice 12m — compounding-rate metric.
-export interface CompoundingRate {
-  auto_added_7d: number;
-  total_pages: number;
-  rate_pct: number;
-}
-
 export interface HealthRollup {
   process: {
     version: string;
@@ -29,8 +22,6 @@ export interface HealthRollup {
   // Slice 11j — embedding cache hit/miss counters since process start.
   // Both zero when no cache is wired.
   embed_cache: { hits: number; misses: number };
-  // Slice 12m — optional: zero-value struct always present in 12i+ builds.
-  compounding_rate?: CompoundingRate;
 }
 
 export interface WikiPageSummary {
@@ -124,7 +115,7 @@ export interface SourceMarkdown {
 
 export interface UpsertTaskRequest {
   name: string;
-  kind: Exclude<Task['kind'], 'auto_improve'>;
+  kind: Task['kind'];
   payload?: string;
   recipient_id?: string;
   language?: 'en' | 'it';
@@ -263,7 +254,7 @@ export interface WikiIssue {
   resolved_at?: string;
 }
 
-// Slice 12k — summarizer proposed updates review queue.
+// Proposed updates review queue.
 
 export interface ProposedUpdate {
   id: number;
@@ -309,7 +300,7 @@ export interface SummaryBatchResponse {
 
 export interface Task {
   name: string;
-  kind: 'reminder' | 'wiki_maintenance' | 'agent_job' | 'auto_improve';
+  kind: 'reminder' | 'wiki_maintenance' | 'agent_job';
   payload?: string;
   recipient_id?: string;
   schedule_kind: 'at' | 'daily' | 'every';
@@ -413,7 +404,7 @@ export interface SettingItem {
   max?: number;
   label?: string;
   hint?: string;
-  group?: 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'summarizer' | 'aurabot' | 'agent' | 'other';
+  group?: 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'aurabot' | 'agent' | 'other';
 }
 
 export interface SettingsUpdateResponse {

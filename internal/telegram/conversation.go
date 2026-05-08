@@ -122,7 +122,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	convCtx.SetSearchContext(composeTurnMemoryPack(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID))
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
-	// completes so summarizer latency doesn't add to perceived wait time.
+	// completes so context trimming doesn't add to perceived wait time.
 	// Loop messages added by runToolCallingLoop occupy [preLoopIdx, end).
 	preLoopIdx := convCtx.MessageCount()
 
@@ -196,28 +196,10 @@ func (b *Bot) handleConversation(c tele.Context) {
 			TokensIn:     convCtx.TotalTokensUsed(),
 		})
 
-		// Phase 5A: post-turn memory capture. When the summarizer is active,
-		// archiveAppenderForTurn writes synchronously through archiveDB so this
-		// extraction sees the just-finished user/assistant turn.
-		if b.summRunner != nil {
-			triggered, extraction, err := b.summRunner.MaybeExtract(ctx, chatID)
-			if err != nil {
-				b.logger.Warn("summarizer extraction failed", "chat_id", chatID, "error", err)
-			} else if triggered && extraction != nil {
-				stats.memoryCaptureTriggered = true
-				stats.memoryCaptureDecisions = len(extraction.Decisions)
-				stats.memoryCaptureApplied = extraction.Applied
-				b.logger.Info("post-turn memory capture complete",
-					"chat_id", chatID,
-					"decisions", len(extraction.Decisions),
-					"applied", extraction.Applied,
-				)
-			}
-		}
 	}
 
 	// Slice 16d: context enforcement runs after the user has seen the
-	// response so summarizer latency doesn't add to perceived wait time.
+	// response so context trimming doesn't add to perceived wait time.
 	go func() {
 		if err := convCtx.EnforceLimit(context.Background()); err != nil {
 			b.logger.Error("context enforcement failed", "user_id", userID, "error", err)
@@ -253,9 +235,6 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
 		"cost_usd", fmt.Sprintf("%.6f", stats.costUSD),
-		"memory_capture_triggered", stats.memoryCaptureTriggered,
-		"memory_capture_decisions", stats.memoryCaptureDecisions,
-		"memory_capture_applied", stats.memoryCaptureApplied,
 	)
 	hooks.AfterTurn(orchestration.TraceEvent{
 		PromptVersion:          stats.promptVersion,
@@ -346,30 +325,27 @@ func turnAllowsSwarm(userText string) bool {
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
 type turnStats struct {
-	llmCalls               int
-	toolCalls              int
-	loopSteps              int
-	promptVersion          string
-	promptModules          []string
-	promptHash             string
-	toolset                string
-	toolsetSelectReason    string
-	toolsExposed           []string
-	toolsCalled            []string
-	readSkills             []string
-	hiddenToolRejected     bool
-	skillsRead             bool
-	swarmUsed              bool
-	sandboxUsed            bool
-	terminalTool           string
-	duplicateToolCall      bool
-	tokensPrompt           int
-	tokensCompletion       int
-	tokensTotal            int
-	costUSD                float64
-	memoryCaptureTriggered bool
-	memoryCaptureDecisions int
-	memoryCaptureApplied   int
+	llmCalls            int
+	toolCalls           int
+	loopSteps           int
+	promptVersion       string
+	promptModules       []string
+	promptHash          string
+	toolset             string
+	toolsetSelectReason string
+	toolsExposed        []string
+	toolsCalled         []string
+	readSkills          []string
+	hiddenToolRejected  bool
+	skillsRead          bool
+	swarmUsed           bool
+	sandboxUsed         bool
+	terminalTool        string
+	duplicateToolCall   bool
+	tokensPrompt        int
+	tokensCompletion    int
+	tokensTotal         int
+	costUSD             float64
 }
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, toolsetDecision orchestration.ToolsetDecision) (string, turnStats) {
@@ -416,9 +392,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				return tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name))
 			},
 			BeforeLLM: func() (string, bool) {
-				// Context bounding happens once at the start of handleConversation.
-				// Re-enforcing on every tool iteration triggered a summarizer LLM
-				// call mid-response, which both burned latency and degraded fidelity.
+				// Context bounding happens after the response. Re-enforcing on every
+				// tool iteration can trigger a compression LLM call mid-response,
+				// which both burns latency and degrades fidelity.
 				// MaxToolIterations already caps growth within a single user turn.
 				if b.budget != nil && b.budget.IsHardBudgetExceeded() {
 					b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)

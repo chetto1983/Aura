@@ -68,7 +68,6 @@ const (
 	KeyEmbeddingAPIKey            = "EMBEDDING_API_KEY"
 	KeyEmbeddingBaseURL           = "EMBEDDING_BASE_URL"
 	KeyEmbeddingModel             = "EMBEDDING_MODEL"
-	KeyOTelEnabled                = "OTEL_ENABLED"
 	KeyPromptVersion              = "AURA_PROMPT_VERSION"
 	KeyToolsetMode                = "AURA_TOOLSET_MODE"
 	KeyOrchestrationLogLevel      = "AURA_ORCHESTRATION_LOG_LEVEL"
@@ -90,18 +89,11 @@ const (
 	KeyOCRMaxPages                = "OCR_MAX_PAGES"
 	KeyOCRMaxFileMB               = "OCR_MAX_FILE_MB"
 	KeyConvArchiveEnabled         = "CONV_ARCHIVE_ENABLED"
-	KeySummarizerEnabled          = "SUMMARIZER_ENABLED"
-	KeySummarizerMode             = "SUMMARIZER_MODE"
-	KeySummarizerTurnInterval     = "SUMMARIZER_TURN_INTERVAL"
-	KeySummarizerMinSalience      = "SUMMARIZER_MIN_SALIENCE"
-	KeySummarizerLookbackTurns    = "SUMMARIZER_LOOKBACK_TURNS"
-	KeySummarizerCooldownSeconds  = "SUMMARIZER_COOLDOWN_SECONDS"
 	KeySandboxEnabled             = "SANDBOX_ENABLED"
 	KeySandboxRuntimeMode         = "SANDBOX_RUNTIME_MODE"
 	KeySandboxRuntimeURL          = "SANDBOX_RUNTIME_URL"
 	KeySandboxRuntimeDir          = "SANDBOX_RUNTIME_DIR"
 	KeySandboxTimeoutSec          = "SANDBOX_TIMEOUT_SEC"
-	KeySandboxAutoImproveMode     = "SANDBOX_AUTO_IMPROVE_MODE"
 )
 
 // OverridableKeys returns every key the applier touches. Callers (e.g. the
@@ -127,7 +119,7 @@ func OverridableKeys() []string {
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
-		KeyOTelEnabled, KeyPromptVersion, KeyToolsetMode, KeyOrchestrationLogLevel,
+		KeyPromptVersion, KeyToolsetMode, KeyOrchestrationLogLevel,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyWorkspaceTools, KeyWorkspaceRoot,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
@@ -135,9 +127,7 @@ func OverridableKeys() []string {
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
 		KeyOCREnabled, KeyOCRMaxPages, KeyOCRMaxFileMB,
 		KeyConvArchiveEnabled,
-		KeySummarizerEnabled, KeySummarizerMode, KeySummarizerTurnInterval,
-		KeySummarizerMinSalience, KeySummarizerLookbackTurns, KeySummarizerCooldownSeconds,
-		KeySandboxEnabled, KeySandboxRuntimeMode, KeySandboxRuntimeURL, KeySandboxRuntimeDir, KeySandboxTimeoutSec, KeySandboxAutoImproveMode,
+		KeySandboxEnabled, KeySandboxRuntimeMode, KeySandboxRuntimeURL, KeySandboxRuntimeDir, KeySandboxTimeoutSec,
 	}
 }
 
@@ -225,7 +215,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingAPIKey = settingString(ctx, s, KeyEmbeddingAPIKey, cfg.EmbeddingAPIKey)
 	cfg.EmbeddingBaseURL = settingString(ctx, s, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
-	cfg.OTelEnabled = settingBool(ctx, s, KeyOTelEnabled, cfg.OTelEnabled)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.ToolsetMode = config.NormalizeToolsetMode(settingString(ctx, s, KeyToolsetMode, cfg.ToolsetMode))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyOrchestrationLogLevel, cfg.OrchestrationLogLevel)))
@@ -250,19 +239,11 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 
 	cfg.ConvArchiveEnabled = settingBool(ctx, s, KeyConvArchiveEnabled, cfg.ConvArchiveEnabled)
 
-	cfg.SummarizerEnabled = settingBool(ctx, s, KeySummarizerEnabled, cfg.SummarizerEnabled)
-	cfg.SummarizerMode = config.NormalizeSummarizerMode(settingString(ctx, s, KeySummarizerMode, cfg.SummarizerMode))
-	cfg.SummarizerTurnInterval = settingInt(ctx, s, KeySummarizerTurnInterval, cfg.SummarizerTurnInterval)
-	cfg.SummarizerMinSalience = settingFloat(ctx, s, KeySummarizerMinSalience, cfg.SummarizerMinSalience)
-	cfg.SummarizerLookbackTurns = settingInt(ctx, s, KeySummarizerLookbackTurns, cfg.SummarizerLookbackTurns)
-	cfg.SummarizerCooldownSeconds = settingInt(ctx, s, KeySummarizerCooldownSeconds, cfg.SummarizerCooldownSeconds)
-
 	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
 	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySandboxRuntimeMode, cfg.SandboxRuntimeMode)))
 	cfg.SandboxRuntimeURL = settingString(ctx, s, KeySandboxRuntimeURL, cfg.SandboxRuntimeURL)
 	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
-	cfg.SandboxAutoImproveMode = settingString(ctx, s, KeySandboxAutoImproveMode, cfg.SandboxAutoImproveMode)
 }
 
 func settingString(ctx context.Context, s Reader, key, fallback string) string {

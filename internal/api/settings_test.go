@@ -187,7 +187,6 @@ func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
 			SandboxEnabled:          false,
 			SandboxRuntimeDir:       "/app/runtime/pyodide",
 			SandboxTimeoutSec:       120,
-			SandboxAutoImproveMode:  "dry_run",
 		},
 	})
 
@@ -398,74 +397,6 @@ func findSettingItem(t *testing.T, items []SettingItem, key string) SettingItem 
 	}
 	t.Fatalf("%s not in settings response", key)
 	return SettingItem{}
-}
-
-func TestSettingsList_ShowsPostTurnMemoryCaptureDefaults(t *testing.T) {
-	store := mustSettingsStore(t)
-	router := NewRouter(Deps{
-		Settings: store,
-		RuntimeConfig: &config.Config{
-			SummarizerEnabled:         true,
-			SummarizerMode:            config.DefaultSummarizerMode,
-			SummarizerTurnInterval:    config.DefaultSummarizerTurnInterval,
-			SummarizerCooldownSeconds: config.DefaultSummarizerCooldownSeconds,
-		},
-	})
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	if rr.Code != 200 {
-		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
-	}
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-
-	want := map[string]string{
-		settings.KeySummarizerMode:            config.DefaultSummarizerMode,
-		settings.KeySummarizerTurnInterval:    "2",
-		settings.KeySummarizerCooldownSeconds: "0",
-	}
-	for key, value := range want {
-		found := false
-		for _, it := range resp.Items {
-			if it.Key != key {
-				continue
-			}
-			found = true
-			if it.Value != value || it.ActiveValue != value || it.Group != "summarizer" {
-				t.Fatalf("%s row = value:%q active:%q group:%q, want %q", key, it.Value, it.ActiveValue, it.Group, value)
-			}
-		}
-		if !found {
-			t.Fatalf("%s not in settings response", key)
-		}
-	}
-}
-
-func TestSettingsList_SummarizerModeIncludesAutoLowRisk(t *testing.T) {
-	store := mustSettingsStore(t)
-	router := NewRouter(Deps{
-		Settings:      store,
-		RuntimeConfig: &config.Config{SummarizerMode: config.DefaultSummarizerMode},
-	})
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	if rr.Code != 200 {
-		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
-	}
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	for _, it := range resp.Items {
-		if it.Key != settings.KeySummarizerMode {
-			continue
-		}
-		if it.Kind != "enum" || !slices.Contains(it.Options, "auto_low_risk") {
-			t.Fatalf("SUMMARIZER_MODE control = kind:%q options:%v, want auto_low_risk enum option", it.Kind, it.Options)
-		}
-		return
-	}
-	t.Fatal("SUMMARIZER_MODE not in settings response")
 }
 
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {

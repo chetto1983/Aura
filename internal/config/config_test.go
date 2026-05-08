@@ -159,9 +159,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_WORKSPACE_TOOLS")
 	os.Unsetenv("AURA_WORKSPACE_ROOT")
 	os.Unsetenv("AURA_RUNTIME_WORKSPACE_PATH")
-	os.Unsetenv("SUMMARIZER_MODE")
-	os.Unsetenv("SUMMARIZER_TURN_INTERVAL")
-	os.Unsetenv("SUMMARIZER_COOLDOWN_SECONDS")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_RUNTIME_MODE")
 	os.Unsetenv("SANDBOX_RUNTIME_URL")
@@ -319,15 +316,6 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.RuntimeWorkspacePath != DefaultRuntimeWorkspacePath {
 		t.Errorf("RuntimeWorkspacePath = %q, want %q", cfg.RuntimeWorkspacePath, DefaultRuntimeWorkspacePath)
 	}
-	if cfg.SummarizerMode != DefaultSummarizerMode {
-		t.Errorf("SummarizerMode = %q, want %q", cfg.SummarizerMode, DefaultSummarizerMode)
-	}
-	if cfg.SummarizerTurnInterval != DefaultSummarizerTurnInterval {
-		t.Errorf("SummarizerTurnInterval = %d, want %d", cfg.SummarizerTurnInterval, DefaultSummarizerTurnInterval)
-	}
-	if cfg.SummarizerCooldownSeconds != DefaultSummarizerCooldownSeconds {
-		t.Errorf("SummarizerCooldownSeconds = %d, want %d", cfg.SummarizerCooldownSeconds, DefaultSummarizerCooldownSeconds)
-	}
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
 	}
@@ -442,38 +430,6 @@ func TestLoadInvalidWorkspaceToolsDegradesToDefault(t *testing.T) {
 	}
 	if cfg.WorkspaceRoot != DefaultWorkspaceRoot {
 		t.Fatalf("WorkspaceRoot = %q, want %q", cfg.WorkspaceRoot, DefaultWorkspaceRoot)
-	}
-}
-
-func TestLoadSummarizerModeCanDisableAutomaticCapture(t *testing.T) {
-	os.Setenv("SUMMARIZER_MODE", "off")
-	os.Setenv("SUMMARIZER_TURN_INTERVAL", "5")
-	os.Setenv("SUMMARIZER_COOLDOWN_SECONDS", "60")
-	defer os.Unsetenv("SUMMARIZER_MODE")
-	defer os.Unsetenv("SUMMARIZER_TURN_INTERVAL")
-	defer os.Unsetenv("SUMMARIZER_COOLDOWN_SECONDS")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SummarizerMode != "off" {
-		t.Fatalf("SummarizerMode = %q, want off", cfg.SummarizerMode)
-	}
-	if cfg.SummarizerTurnInterval != 5 {
-		t.Fatalf("SummarizerTurnInterval = %d, want 5", cfg.SummarizerTurnInterval)
-	}
-	if cfg.SummarizerCooldownSeconds != 60 {
-		t.Fatalf("SummarizerCooldownSeconds = %d, want 60", cfg.SummarizerCooldownSeconds)
-	}
-}
-
-func TestNormalizeSummarizerModeAcceptsAutoLowRisk(t *testing.T) {
-	if got := NormalizeSummarizerMode(" AUTO_LOW_RISK "); got != "auto_low_risk" {
-		t.Fatalf("NormalizeSummarizerMode(auto_low_risk) = %q", got)
-	}
-	if got := NormalizeSummarizerMode("nonsense"); got != DefaultSummarizerMode {
-		t.Fatalf("NormalizeSummarizerMode(nonsense) = %q, want default %q", got, DefaultSummarizerMode)
 	}
 }
 

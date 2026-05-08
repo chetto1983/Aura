@@ -11,21 +11,12 @@ import (
 func TestApplyBestDefaultsMigratesLegacyRowsOnce(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	mustSet(t, s, KeySummarizerMode, "auto")
-	mustSet(t, s, KeySummarizerTurnInterval, "5")
-	mustSet(t, s, KeySummarizerCooldownSeconds, "59")
 
 	changes, err := ApplyBestDefaults(ctx, s, &config.Config{})
 	if err != nil {
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
-	assertChanged(t, changes, KeySummarizerMode)
-	assertChanged(t, changes, KeySummarizerTurnInterval)
-	assertChanged(t, changes, KeySummarizerCooldownSeconds)
 	assertChanged(t, changes, BestDefaultsVersionKey)
-	assertSetting(t, s, KeySummarizerMode, config.DefaultSummarizerMode)
-	assertSetting(t, s, KeySummarizerTurnInterval, "2")
-	assertSetting(t, s, KeySummarizerCooldownSeconds, "0")
 
 	changes, err = ApplyBestDefaults(ctx, s, &config.Config{})
 	if err != nil {
@@ -34,16 +25,6 @@ func TestApplyBestDefaultsMigratesLegacyRowsOnce(t *testing.T) {
 	if len(changes) != 0 {
 		t.Fatalf("second ApplyBestDefaults changes = %+v, want none", changes)
 	}
-
-	mustSet(t, s, KeySummarizerMode, "auto")
-	changes, err = ApplyBestDefaults(ctx, s, &config.Config{})
-	if err != nil {
-		t.Fatalf("ApplyBestDefaults after explicit user override: %v", err)
-	}
-	if len(changes) != 0 {
-		t.Fatalf("explicit post-migration override changes = %+v, want none", changes)
-	}
-	assertSetting(t, s, KeySummarizerMode, "auto")
 }
 
 func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {

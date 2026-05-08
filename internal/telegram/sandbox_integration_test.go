@@ -24,15 +24,3 @@ func TestSandboxIntegration_ToolDiscovery(t *testing.T) {
 	// 5. Sandbox executes, returns summary
 	// 6. LLM answers user
 }
-
-func TestSandboxIntegration_AutoImprove(t *testing.T) {
-	t.Skip("integration test — requires full Aura stack")
-
-	// Expected flow (runs via scheduler):
-	// 1. Nightly auto_improve task fires
-	// 2. Scans conversation archives
-	// 3. LLM identifies gap: users frequently ask for date calculations
-	// 4. LLM writes date_utils.py tool
-	// 5. Tool saved to registry with companion wiki page
-	// 6. Owner notified via Telegram
-}

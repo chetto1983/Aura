@@ -283,11 +283,10 @@ Tutti opzionali; modificabili a runtime senza recompile.
 
 ---
 
-## 4.14 Health & Observability (`internal/health`, `internal/tracing`, `internal/logging`)
+## 4.14 Health & Observability (`internal/health`, `internal/logging`)
 
 * `GET /api/health`: process block (version, git_revision, started_at, uptime_seconds), embed cache stats, scheduler status.
 * Logging strutturato via `zap`. Nessun secret nei log.
-* OpenTelemetry opt-in (`OTEL_ENABLED`).
 * Per-turn structured log "conversation complete" (slice 11r).
 
 ---
@@ -307,38 +306,31 @@ Tutti opzionali; modificabili a runtime senza recompile.
 * **Raw** — `wiki/raw/<source_id>/` (PDF originale + OCR durabile).
 * **Wiki** — `wiki/<slug>.md` (markdown maintained dal modello).
 * **Schema** — `wiki/SCHEMA.md` + frontmatter validation.
-* **Conversation (in-memory)** — cap a 50 messaggi, summary durabile via wiki.
+* **Conversation (in-memory)** - cap a 50 messaggi.
 * **Conversation archive (SQLite, slice 12a–12c)** — ogni turno persistito su `conversations` table; tool_calls JSON + per-turn telemetry sul ruolo assistant.
 * **Embedding cache** — SQLite, riusa embed tra restart.
 
 ## 5.2 Deterministic Mode (MANDATORY per wiki writes)
 
 * `temperature = 0`.
-* `prompt_version`, `schema_version` su ogni pagina (regex: `v{n}` | `ingest_v{n}` | `summarizer_v{n}`).
+* `prompt_version`, `schema_version` su ogni pagina (regex: `v{n}` | `ingest_v{n}` | `proposal_v{n}`; `summarizer_v{n}` resta legacy read-only).
 * Atomic write + Git commit per ogni cambio.
 
-## 5.3 Compounding Memory (Phase 12)
+## 5.3 Compounding Memory (Phase 12, Runtime Diet)
 
-La memoria si compone automaticamente: ogni conversazione contribuisce conoscenza durevole, la wiki si manutiene da sola, la dashboard espone le superfici nuove.
+La memoria durevole passa dal loop esplicito dell'agente: pochi tool bounded su file/wiki/search/graph, con archivio conversazioni per audit e manutenzione wiki notturna. Il vecchio post-turn summarizer automatico e il compounding-rate da `[auto-sum]` sono stati rimossi dal path runtime.
 
 ### Pipeline
 
 1. **Archive** (slice 12a–12c). `BufferedAppender` (chan 100, drain goroutine, drop-on-full warn) archivia ogni messaggio nel `conversations` table dietro `CONV_ARCHIVE_ENABLED=true`. `turn_index` allocato monotonicamente da `MAX(turn_index) WHERE chat_id = ?` per resistere ai trim di `EnforceLimit`. API: `GET /api/conversations[?chat_id]&limit=`, `GET /api/conversations/{id}`. Dashboard route: `/conversations` con drawer per turno + tool_calls expanded.
-2. **Summarize** (slice 12d–12f, 12k.1). Dopo ogni `SUMMARIZER_INTERVAL=5` turni un `Runner` chiama lo `LLMScorer` (temperature=0) sui `SUMMARIZER_LOOKBACK=10` turni più recenti, filtra per `SUMMARIZER_MIN_SALIENCE`, dedup contro la wiki via similarity (>0.85 skip, ≥0.5 patch, <0.5 new). Apply paths via `SUMMARIZER_MODE`: `auto` scrive direttamente la wiki con `prompt_version=summarizer_v1`; `review` insert in `proposed_updates` per approvazione dashboard (`/summaries`); `off` no-op (early-return prima del LLM call per evitare cost leak). Cooldown per-chat in-process map.
+2. **Manual proposals**. `proposed_updates` resta come coda di revisione per proposte generate da job espliciti, ingest/debug e workflow amministrativi; non viene popolata automaticamente dopo ogni chat.
 3. **Maintain** (slice 12g–12h, 12l.1). `MaintenanceJob` notturno chiama `wiki.Lint`, computa Levenshtein vs slug esistenti; un solo candidato ≤2 → auto-fix via `RepairLink`; ambigui → enqueue in `wiki_issues` (severity policy: `broken_link_unfixable=high, orphan=med, missing_category=low`). High-severity → `notifyOwner` via `Bot.SendToOwner`. API: `GET /api/maintenance/issues[?status,severity]`, `POST /api/maintenance/issues/{id}/resolve`. Dashboard route: `/maintenance` raggruppato per severity.
-4. **Compounding rate** (slice 12i, 12m). `/api/health` espone `compounding_rate { auto_added_7d, total_pages, rate_pct }` calcolato da `[auto-sum]` lines in `wiki/log.md` ultimi 7d / `wiki.Store.ListPages`. Dashboard: 5° card `HealthDashboard` con `TrendingUp` icon.
-5. **Nav** (slice 12n). Sidebar items + chord shortcuts: `g v` /conversations, `g u` /summaries, `g x` /maintenance.
+4. **Nav** (slice 12n). Sidebar items + chord shortcuts: `g v` /conversations, `g u` /summaries, `g x` /maintenance.
 
 ### Configurazione
 
 ```env
 CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
-SUMMARIZER_ENABLED=true                # post-turn extraction
-SUMMARIZER_MODE=off                    # off | review | auto
-SUMMARIZER_INTERVAL=5                  # extract every N turns
-SUMMARIZER_LOOKBACK=10                 # turns passed to scorer
-SUMMARIZER_MIN_SALIENCE=0.5            # filter threshold
-SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per chat
 ```
 
 ### Migrazioni / dati legacy
@@ -354,7 +346,7 @@ SUMMARIZER_COOLDOWN_SECONDS=60         # min seconds between extractions per cha
   * `pending_users` and `allowed_users` (Telegram approval/allowlist)
   * dashboard settings overrides
   * `scheduled_tasks` and agent jobs
-  * `conversations` archive and summarizer evidence
+  * `conversations` archive and proposal evidence
   * `proposed_updates`, `wiki_issues`, swarm/task state, budget usage, and embedding cache
 * **File system**: `wiki/`, source raw/extraction artifacts, skills, prompt overlays.
 * **Qdrant**: optional Docker sidecar for rebuildable vector search, with local chromem/SQLite fallback.

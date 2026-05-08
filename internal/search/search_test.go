@@ -299,6 +299,45 @@ func TestSearchMergesExactFTSAndVectorResults(t *testing.T) {
 	}
 }
 
+func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aura.db")
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	searcher, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	if err := searcher.indexDocument(context.Background(), "log-summary", "wiki log recurring tasks and UTA source notes", map[string]string{
+		"title": "Log Summary",
+		"slug":  "log-summary",
+		"kind":  "wiki_page",
+	}); err != nil {
+		t.Fatalf("indexDocument: %v", err)
+	}
+
+	for _, query := range []string{
+		"wiki/log.md, source:uta",
+		"l'agente guarda wiki/log.md",
+		"tasks/source, UTA",
+	} {
+		t.Run(query, func(t *testing.T) {
+			results, err := searcher.search(context.Background(), query, 3)
+			if err != nil {
+				t.Fatalf("search(%q): %v", query, err)
+			}
+			if len(results) == 0 || results[0].Slug != "log-summary" {
+				t.Fatalf("results = %#v, want log-summary", results)
+			}
+		})
+	}
+}
+
 func TestSearchFallsBackToSQLiteWhenVectorQueryFails(t *testing.T) {
 	wikiDir := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "aura.db")

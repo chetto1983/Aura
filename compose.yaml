@@ -55,11 +55,6 @@ services:
       AURA_TRACE_RETENTION_DAYS: "30"
       AURA_WORKSPACE_TOOLS: "${AURA_WORKSPACE_TOOLS:-enabled}"
       AURA_WORKSPACE_ROOT: "/workspace"
-      SUMMARIZER_ENABLED: "false"
-      SUMMARIZER_MODE: "off"
-      SUMMARIZER_TURN_INTERVAL: "2"
-      SUMMARIZER_COOLDOWN_SECONDS: "0"
-      SANDBOX_AUTO_IMPROVE_MODE: "off"
     ports:
       - "127.0.0.1:${AURA_HOST_PORT:-18080}:8080"
     volumes:

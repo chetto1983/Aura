@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unicode"
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
@@ -297,26 +298,25 @@ func uniqueLowerStrings(values []string) []string {
 	return out
 }
 
-// escapeFTS5Query strips FTS5 special characters and operators from a query string.
-// FTS5 treats ?, *, ", (, ), {, } as special syntax which causes errors if unescaped.
+// escapeFTS5Query converts free-form user text into simple FTS5 tokens.
+// FTS5 query syntax is operator-rich, so punctuation such as /, comma, and
+// apostrophes must not be passed through as query syntax.
 func escapeFTS5Query(query string) string {
-	replacer := strings.NewReplacer(
-		"?", " ",
-		"*", " ",
-		"\"", " ",
-		"(", " ",
-		")", " ",
-		"{", " ",
-		"}", " ",
-		":", " ",
-		"[", " ",
-		"]", " ",
-		"-", " ",
-	)
-	escaped := replacer.Replace(query)
-	fields := strings.Fields(escaped)
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+	})
 	if len(fields) == 0 {
 		return ""
 	}
-	return strings.Join(fields, " OR ")
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		field = strings.ToLower(strings.TrimSpace(field))
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		out = append(out, field)
+	}
+	return strings.Join(out, " OR ")
 }

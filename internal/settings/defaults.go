@@ -14,7 +14,7 @@ const (
 	// not dashboard-editable: it only records which one-time defaults migration
 	// has already run for this database.
 	BestDefaultsVersionKey = "AURA_BEST_DEFAULTS_VERSION"
-	BestDefaultsVersion    = "2026-05-07-container-defaults-v1"
+	BestDefaultsVersion    = "2026-05-08-runtime-diet-v2"
 )
 
 // BestDefaultChange reports one automatic settings repair performed at
@@ -105,12 +105,6 @@ func validationRules(cfg *config.Config) []defaultRule {
 
 	rules := []defaultRule{
 		{
-			key:       KeySummarizerMode,
-			value:     config.DefaultSummarizerMode,
-			reason:    "repair invalid memory capture mode",
-			shouldSet: missingOrInvalidSet("off", "review", "auto_low_risk", "auto"),
-		},
-		{
 			key:       KeyToolsetMode,
 			value:     "auto",
 			reason:    "repair invalid toolset mode",
@@ -176,12 +170,6 @@ func validationRules(cfg *config.Config) []defaultRule {
 			reason:    "repair invalid sandbox runtime mode",
 			shouldSet: missingOrInvalidSet("auto", "container", "local"),
 		},
-		{
-			key:       KeySandboxAutoImproveMode,
-			value:     "off",
-			reason:    "repair invalid sandbox auto-improve mode",
-			shouldSet: missingOrInvalidSet("off", "dry_run", "auto"),
-		},
 	}
 
 	if cfg != nil && cfg.Headless {
@@ -239,26 +227,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 }
 
 func migrationRules(cfg *config.Config) []defaultRule {
-	rules := []defaultRule{
-		{
-			key:       KeySummarizerMode,
-			value:     config.DefaultSummarizerMode,
-			reason:    "move old direct-write memory capture to low-risk automatic default",
-			shouldSet: valueIs("auto"),
-		},
-		{
-			key:       KeySummarizerTurnInterval,
-			value:     strconv.Itoa(config.DefaultSummarizerTurnInterval),
-			reason:    "capture after a normal user/assistant turn by default",
-			shouldSet: valueIs("5"),
-		},
-		{
-			key:       KeySummarizerCooldownSeconds,
-			value:     strconv.Itoa(config.DefaultSummarizerCooldownSeconds),
-			reason:    "remove legacy capture cooldown",
-			shouldSet: valueIs("59", "60"),
-		},
-	}
+	rules := []defaultRule{}
 
 	if cfg == nil || !cfg.Headless {
 		return rules

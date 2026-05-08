@@ -29,7 +29,6 @@ import (
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
 	"github.com/aura/aura/internal/telegram"
-	"github.com/aura/aura/internal/tracing"
 	"github.com/aura/aura/internal/tray"
 )
 
@@ -305,12 +304,6 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	logger, cleanup = logging.Setup(cfg.LogLevel, cfg.LogDir)
 	activeLogger = logger
 
-	// Initialize OpenTelemetry tracing (disabled unless OTEL_ENABLED is set)
-	shutdown, err := tracing.SetupIfEnabled("aura", auraVersion, cfg.OTelEnabled, logger)
-	if err != nil {
-		logger.Warn("tracing setup failed, continuing without traces", "error", err)
-	}
-
 	// Start health/observability HTTP server
 	healthServer := health.NewServer(health.ServerConfig{
 		Addr:    cfg.HTTPPort,
@@ -375,11 +368,6 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			bot.Stop()
 			if err := healthServer.Shutdown(context.Background()); err != nil {
 				logger.Warn("health server shutdown failed", "error", err)
-			}
-			if shutdown != nil {
-				if err := shutdown(context.Background()); err != nil {
-					logger.Warn("tracing shutdown failed", "error", err)
-				}
 			}
 			pool.Close()
 			if cleanup != nil {

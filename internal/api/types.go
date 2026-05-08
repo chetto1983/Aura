@@ -27,8 +27,6 @@ type HealthRollup struct {
 	// Slice 11j: embedding cache hit/miss counters. Zero when no
 	// cache is wired (no EMBEDDING_API_KEY or no DB_PATH).
 	EmbedCache EmbedCacheHealth `json:"embed_cache"`
-	// Slice 12i: organic wiki growth driven by the auto-summarizer.
-	CompoundingRate CompoundingRate `json:"compounding_rate"`
 }
 
 // SandboxHealth reports whether local code execution is active. The desired
@@ -48,15 +46,6 @@ type SandboxHealth struct {
 type EmbedCacheHealth struct {
 	Hits   uint64 `json:"hits"`
 	Misses uint64 `json:"misses"`
-}
-
-// CompoundingRate measures organic wiki growth driven by the auto-summarizer.
-// AutoAdded7d is the number of auto-sum log entries in the last 7 days.
-// RatePct = AutoAdded7d / TotalPages * 100 (0 when TotalPages == 0).
-type CompoundingRate struct {
-	AutoAdded7d int     `json:"auto_added_7d"`
-	TotalPages  int     `json:"total_pages"`
-	RatePct     float64 `json:"rate_pct"`
 }
 
 // ProcessHealth surfaces process-level metadata that the dashboard footer

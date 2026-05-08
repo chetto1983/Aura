@@ -12,6 +12,8 @@ Progress:
 - 2026-05-08: Task 2 deletion pass complete for profile/preflight. The live `ProfileCard`/capability taxonomy, skill-preflight runtime policy, swarm-routing prompt helper, debug orchestration command, `AURA_SKILL_PREFLIGHT`, `AURA_TOOL_PROFILE_MODE`, and legacy profile aliases were physically removed. Remaining Docker Compose `profiles` are Docker service metadata, not Aura runtime routing.
 - 2026-05-08: Task 4 complete for the local wiki path. `search_memory` now merges exact slug/title/wiki-link hits, SQLite FTS, and vector results; Qdrant search merges local hybrid results instead of hiding lexical hits behind any non-empty vector response.
 - 2026-05-08: Task 7 partial. Anti-residue grep over `internal`, `cmd`, `web/src`, `.env.example`, `compose.yaml`, and `internal/api/dist` returned no legacy profile/preflight symbols after the dashboard rebuild.
+- 2026-05-08 log-driven repair: live logs showed DB-persisted settings still overriding Runtime Diet env defaults (`OTEL_ENABLED=true`, `SUMMARIZER_ENABLED=true`, `SUMMARIZER_MODE=auto`, `SANDBOX_AUTO_IMPROVE_MODE=auto`). Bumped the best-defaults migration so existing DBs are corrected once at startup, which removes stdout trace spam, post-turn memory capture, and nightly auto-improve from the default runtime. The same log pass exposed SQLite FTS syntax errors on punctuation-heavy prompts, fixed by tokenizing FTS queries to alphanumeric/underscore terms.
+- 2026-05-08 deletion pass: physically removed the OpenTelemetry runtime package/wiring, post-turn summarizer runner/scorer/deduper, nightly auto-improve dispatcher/config, summarizer settings/env/Compose surface, debug summarizer command, compounding-rate health metric/card/tests, and stale dashboard groups. Wiki proposal approval remains as the manual review queue and now writes `proposal_v1` pages/logs; `summarizer_v{n}` is legacy read-only compatibility.
 
 ## Thesis
 
@@ -62,8 +64,7 @@ These stay because they map directly to user value:
 These may still exist, but not as default-turn ceremony:
 
 - swarm;
-- summarizer;
-- proposals;
+- manual proposals;
 - memory patch validation;
 - graph/log injection;
 - profile/preflight policy;
@@ -83,7 +84,7 @@ Every item in this list must be deleted, disabled by default, or documented in `
 - legacy profile/preflight runtime enforcement;
 - wrappers that duplicate bounded file tools;
 - document routes that explore repeatedly before calling typed output tools;
-- hot-path summarizer/proposal/self-improvement work;
+- hot-path proposal/self-improvement work;
 - debug commands wired into production behavior;
 - compatibility branches that only preserve old internal architecture.
 

@@ -24,9 +24,6 @@ func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
 	if b == nil {
 		return nil
 	}
-	if b.summRunner != nil && b.archiveDB != nil {
-		return b.archiveDB
-	}
 	return b.archiver
 }
 

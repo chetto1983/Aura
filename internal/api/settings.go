@@ -140,13 +140,6 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Label: "Max in-flight messages", Hint: "Hard cap; oldest evicted first"},
 	{Key: settings.KeyMaxToolIterations, Group: "budget", Kind: "int", Label: "Max tool iterations / turn"},
 
-	{Key: settings.KeySummarizerEnabled, Group: "summarizer", Kind: "bool", Label: "Automatic memory capture enabled"},
-	{Key: settings.KeySummarizerMode, Value: config.DefaultSummarizerMode, Group: "summarizer", Kind: "enum", Options: []string{"off", "review", "auto_low_risk", "auto"}, Label: "Memory capture mode", Hint: "auto_low_risk writes only high-confidence non-sensitive memory; review queues approval; auto writes directly"},
-	{Key: settings.KeySummarizerTurnInterval, Value: strconv.Itoa(config.DefaultSummarizerTurnInterval), Group: "summarizer", Kind: "int", Label: "Run every N archived turns", Hint: "Default 2 captures after a normal user/assistant turn"},
-	{Key: settings.KeySummarizerMinSalience, Group: "summarizer", Kind: "float", Label: "Min salience"},
-	{Key: settings.KeySummarizerLookbackTurns, Group: "summarizer", Kind: "int", Label: "Lookback turns"},
-	{Key: settings.KeySummarizerCooldownSeconds, Value: strconv.Itoa(config.DefaultSummarizerCooldownSeconds), Group: "summarizer", Kind: "int", Label: "Cooldown (s)"},
-
 	{Key: settings.KeyAuraBotEnabled, Value: "false", Group: "aurabot", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and swarm tools. Restart Aura after changing."},
 	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Applies to new runs when AuraBot is already enabled."},
 	{Key: settings.KeyAuraBotMaxDepth, Value: "1", Group: "aurabot", Kind: "int", Label: "Max delegation depth", Hint: "Current safe default is 1: manager plus direct workers. Applies to new runs."},
@@ -158,10 +151,8 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeySandboxRuntimeURL, Group: "sandbox", Kind: "url", Label: "Sandbox runtime URL", Hint: "Compose default is http://pyodide:8787"},
 	{Key: settings.KeySandboxRuntimeDir, Group: "sandbox", Kind: "text", Label: "Sandbox runtime directory", Hint: "Container default is /app/runtime/pyodide"},
 	{Key: settings.KeySandboxTimeoutSec, Group: "sandbox", Kind: "int", Label: "Sandbox timeout (seconds)"},
-	{Key: settings.KeySandboxAutoImproveMode, Group: "sandbox", Kind: "enum", Options: []string{"off", "dry_run", "auto"}, Label: "Sandbox auto-improve mode"},
 
 	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
-	{Key: settings.KeyOTelEnabled, Group: "other", Kind: "bool", Label: "OpenTelemetry tracing enabled"},
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
 	{Key: settings.KeyToolsetMode, Group: "agent", Kind: "enum", Options: []string{"auto", "default", "compute", "document", "admin"}, Label: "Toolset mode", Hint: "auto selects a broad safe toolset per turn"},
 	{Key: settings.KeyOrchestrationLogLevel, Group: "agent", Kind: "enum", Options: []string{"summary", "debug"}, Label: "Orchestration log level"},
@@ -345,8 +336,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.EmbeddingBaseURL
 	case settings.KeyEmbeddingModel:
 		return cfg.EmbeddingModel
-	case settings.KeyOTelEnabled:
-		return strconv.FormatBool(cfg.OTelEnabled)
 	case settings.KeyPromptVersion:
 		return cfg.PromptVersion
 	case settings.KeyToolsetMode:
@@ -389,18 +378,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.Itoa(cfg.OCRMaxFileMB)
 	case settings.KeyConvArchiveEnabled:
 		return strconv.FormatBool(cfg.ConvArchiveEnabled)
-	case settings.KeySummarizerEnabled:
-		return strconv.FormatBool(cfg.SummarizerEnabled)
-	case settings.KeySummarizerMode:
-		return cfg.SummarizerMode
-	case settings.KeySummarizerTurnInterval:
-		return strconv.Itoa(cfg.SummarizerTurnInterval)
-	case settings.KeySummarizerMinSalience:
-		return strconv.FormatFloat(cfg.SummarizerMinSalience, 'f', -1, 64)
-	case settings.KeySummarizerLookbackTurns:
-		return strconv.Itoa(cfg.SummarizerLookbackTurns)
-	case settings.KeySummarizerCooldownSeconds:
-		return strconv.Itoa(cfg.SummarizerCooldownSeconds)
 	case settings.KeySandboxEnabled:
 		return strconv.FormatBool(cfg.SandboxEnabled)
 	case settings.KeySandboxRuntimeMode:
@@ -411,8 +388,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.SandboxRuntimeDir
 	case settings.KeySandboxTimeoutSec:
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
-	case settings.KeySandboxAutoImproveMode:
-		return cfg.SandboxAutoImproveMode
 	default:
 		return fallback
 	}

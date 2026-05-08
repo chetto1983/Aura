@@ -31,7 +31,6 @@ const (
 	KindReminder        TaskKind = "reminder"
 	KindWikiMaintenance TaskKind = "wiki_maintenance"
 	KindAgentJob        TaskKind = "agent_job"
-	KindAutoImprove     TaskKind = "auto_improve"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.

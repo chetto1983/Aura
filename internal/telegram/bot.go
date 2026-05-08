@@ -16,7 +16,6 @@ import (
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/ocr"
@@ -57,7 +56,6 @@ type Bot struct {
 	mcpClients  []mcp.ConnectedClient            // active MCP server connections (slice 11a)
 	archiveDB   conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
 	archiver    conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
-	summRunner  *summarizer.Runner               // nil when SUMMARIZER_ENABLED=false
 	issues      scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
 	api         http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
 	sandboxMgr  sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable

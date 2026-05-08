@@ -109,7 +109,6 @@ func main() {
 		}
 		defer cleanup()
 		cfg.WikiPath = wikiPath
-		cfg.SummarizerMode = "off"
 		if logicalWorkspaceRoot != "" {
 			workspacePath, cleanup, err := prepareDebugRuntimeWorkspace(cfg.WorkspaceRoot, cfg.WikiPath, resolveDebugHostPath(cfg.SkillsPath))
 			if err != nil {

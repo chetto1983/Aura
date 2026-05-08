@@ -24,9 +24,6 @@ const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
-const DefaultSummarizerMode = "off"
-const DefaultSummarizerTurnInterval = 2
-const DefaultSummarizerCooldownSeconds = 0
 const (
 	DefaultEnvPath = ".env"
 
@@ -90,7 +87,6 @@ type Config struct {
 	Headless                   bool    `envconfig:"AURA_HEADLESS" default:"false"`
 	EnvPath                    string  `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
-	OTelEnabled                bool    `envconfig:"OTEL_ENABLED" default:"false"`
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	ToolsetMode                string  `envconfig:"AURA_TOOLSET_MODE" default:"auto"`
 	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
@@ -120,23 +116,13 @@ type Config struct {
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 
-	// Auto-summarization is opt-in. Runtime Diet keeps memory capture out of
-	// the hot path unless the operator explicitly enables it.
-	SummarizerEnabled         bool    `envconfig:"SUMMARIZER_ENABLED" default:"false"`
-	SummarizerMode            string  `envconfig:"SUMMARIZER_MODE" default:"off"`
-	SummarizerTurnInterval    int     `envconfig:"SUMMARIZER_TURN_INTERVAL" default:"2"`
-	SummarizerMinSalience     float64 `envconfig:"SUMMARIZER_MIN_SALIENCE" default:"0.5"`
-	SummarizerLookbackTurns   int     `envconfig:"SUMMARIZER_LOOKBACK_TURNS" default:"10"`
-	SummarizerCooldownSeconds int     `envconfig:"SUMMARIZER_COOLDOWN_SECONDS" default:"0"`
-
 	// Sandbox code execution. Product execution uses a bundled Pyodide
 	// runtime or the container sidecar; no host Python fallback is supported.
-	SandboxEnabled         bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
-	SandboxRuntimeMode     string `envconfig:"SANDBOX_RUNTIME_MODE" default:"auto"`
-	SandboxRuntimeURL      string `envconfig:"SANDBOX_RUNTIME_URL"`
-	SandboxRuntimeDir      string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
-	SandboxTimeoutSec      int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
-	SandboxAutoImproveMode string `envconfig:"SANDBOX_AUTO_IMPROVE_MODE" default:"off"`
+	SandboxEnabled     bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxRuntimeMode string `envconfig:"SANDBOX_RUNTIME_MODE" default:"auto"`
+	SandboxRuntimeURL  string `envconfig:"SANDBOX_RUNTIME_URL"`
+	SandboxRuntimeDir  string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
+	SandboxTimeoutSec  int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -252,7 +238,6 @@ func Load() (*Config, error) {
 	cfg.Headless = getEnvBool("AURA_HEADLESS", false)
 	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
-	cfg.OTelEnabled = getEnvBool("OTEL_ENABLED", false)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
 	cfg.ToolsetMode = NormalizeToolsetMode(getEnv("AURA_TOOLSET_MODE", "auto"))
 	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
@@ -284,19 +269,11 @@ func Load() (*Config, error) {
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 
-	cfg.SummarizerEnabled = getEnvBool("SUMMARIZER_ENABLED", false)
-	cfg.SummarizerMode = NormalizeSummarizerMode(getEnv("SUMMARIZER_MODE", DefaultSummarizerMode))
-	cfg.SummarizerTurnInterval = getEnvInt("SUMMARIZER_TURN_INTERVAL", DefaultSummarizerTurnInterval)
-	cfg.SummarizerMinSalience = getEnvFloat("SUMMARIZER_MIN_SALIENCE", 0.5)
-	cfg.SummarizerLookbackTurns = getEnvInt("SUMMARIZER_LOOKBACK_TURNS", 10)
-	cfg.SummarizerCooldownSeconds = getEnvInt("SUMMARIZER_COOLDOWN_SECONDS", DefaultSummarizerCooldownSeconds)
-
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
 	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(getEnv("SANDBOX_RUNTIME_MODE", DefaultSandboxRuntimeMode)))
 	cfg.SandboxRuntimeURL = strings.TrimSpace(getEnv("SANDBOX_RUNTIME_URL", ""))
 	cfg.SandboxRuntimeDir = getEnv("SANDBOX_RUNTIME_DIR", DefaultSandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", DefaultSandboxTimeoutSec)
-	cfg.SandboxAutoImproveMode = getEnv("SANDBOX_AUTO_IMPROVE_MODE", "off")
 
 	return cfg, nil
 }
@@ -376,15 +353,6 @@ func normalizeIntRange(value, min, max, fallback int) int {
 		return fallback
 	}
 	return value
-}
-
-func NormalizeSummarizerMode(value string) string {
-	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "off", "review", "auto_low_risk", "auto":
-		return normalized
-	default:
-		return DefaultSummarizerMode
-	}
 }
 
 func EnvPathFromEnvironment() string {

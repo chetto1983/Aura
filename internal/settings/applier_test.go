@@ -21,7 +21,6 @@ func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 		CostOutputPerMTokens: 0.80,
 		OCREnabled:           true,
 		SkillsAdmin:          false,
-		SummarizerMode:       "off",
 	}
 
 	ApplyToConfig(context.Background(), s, cfg)
@@ -32,7 +31,7 @@ func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 		cfg.LLMModel != "gpt-x" || cfg.LLMMaxRetries != 5 ||
 		cfg.MaxContextTokens != 8000 || cfg.SoftBudget != 10.0 || cfg.HardBudget != 20.0 ||
 		cfg.CostInputPerMTokens != 0.20 || cfg.CostOutputPerMTokens != 0.80 ||
-		!cfg.OCREnabled || cfg.SkillsAdmin || cfg.SummarizerMode != "off" {
+		!cfg.OCREnabled || cfg.SkillsAdmin {
 		t.Errorf("empty store mutated cfg: %+v", *cfg)
 	}
 }
@@ -53,7 +52,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 		CostOutputPerMTokens: 0.80,
 		OCREnabled:           true,
 		SkillsAdmin:          false,
-		SummarizerMode:       "off",
 	}
 
 	// DB writes should win.
@@ -68,7 +66,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	_ = s.Set(ctx, KeyCostOutputPerMTokens, "0.42")
 	_ = s.Set(ctx, KeyOCREnabled, "false")
 	_ = s.Set(ctx, KeySkillsAdmin, "true")
-	_ = s.Set(ctx, KeySummarizerMode, "review")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -104,9 +101,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	}
 	if !cfg.SkillsAdmin {
 		t.Errorf("SkillsAdmin = false, want true")
-	}
-	if cfg.SummarizerMode != "review" {
-		t.Errorf("SummarizerMode = %q", cfg.SummarizerMode)
 	}
 }
 
@@ -274,7 +268,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 		SandboxEnabled:          true,
 		SandboxRuntimeDir:       "./runtime/pyodide",
 		SandboxTimeoutSec:       120,
-		SandboxAutoImproveMode:  "dry_run",
 	}
 
 	_ = s.Set(ctx, KeyTelegramToken, "override-token")
@@ -293,7 +286,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	_ = s.Set(ctx, KeySandboxEnabled, "false")
 	_ = s.Set(ctx, KeySandboxRuntimeDir, "/app/runtime/pyodide")
 	_ = s.Set(ctx, KeySandboxTimeoutSec, "45")
-	_ = s.Set(ctx, KeySandboxAutoImproveMode, "off")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -344,9 +336,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	}
 	if cfg.SandboxTimeoutSec != 45 {
 		t.Errorf("SandboxTimeoutSec = %d", cfg.SandboxTimeoutSec)
-	}
-	if cfg.SandboxAutoImproveMode != "off" {
-		t.Errorf("SandboxAutoImproveMode = %q", cfg.SandboxAutoImproveMode)
 	}
 }
 

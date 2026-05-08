@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -100,21 +99,6 @@ func TestArchiveConversationTurnsLogsAppendFailures(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("log %q does not contain %q", got, want)
 		}
-	}
-}
-
-func TestArchiveAppenderForTurnUsesSynchronousStoreWhenMemoryCaptureActive(t *testing.T) {
-	buffered := &closeFailingArchiver{}
-	store := &recordingArchiveRepository{}
-	bot := &Bot{
-		archiver:   buffered,
-		archiveDB:  store,
-		summRunner: &summarizer.Runner{},
-	}
-
-	got := bot.archiveAppenderForTurn()
-	if got != store {
-		t.Fatalf("archiveAppenderForTurn() = %T, want synchronous archive store", got)
 	}
 }
 

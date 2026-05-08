@@ -423,45 +423,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tool)
 	}
 
-	// Slice 12e/12f: summarizer runner with real deduper + mode-based applier.
-	if cfg.SummarizerEnabled && b.archiveDB != nil && client != nil {
-		sc := summarizer.NewScorer(client, cfg.LLMModel, cfg.SummarizerMinSalience)
-		// Use real wiki search engine if available, fall back to noop.
-		var ws summarizer.WikiSearcher = noopWikiSearcher{}
-		if searchEngine != nil {
-			ws = searchEngine
-		}
-		dd := summarizer.NewDeduper(ws, 0.85, 0.5)
-		var applier summarizer.Applier
-		switch cfg.SummarizerMode {
-		case "auto":
-			applier = summarizer.NewAutoApplier(wikiStore)
-		case "auto_low_risk":
-			hybrid, err := summarizer.NewAutoLowRiskApplier(wikiStore, schedStore.DB())
-			if err != nil {
-				logger.Warn("auto low risk applier unavailable", "error", err)
-			} else {
-				applier = hybrid
-			}
-		case "review":
-			ra, err := summarizer.NewReviewApplier(schedStore.DB())
-			if err != nil {
-				logger.Warn("review applier unavailable", "error", err)
-			} else {
-				applier = ra
-			}
-		default:
-			applier = summarizer.NewOffApplier()
-		}
-		b.summRunner = summarizer.NewRunner(summarizer.RunnerConfig{
-			Enabled:       true,
-			TurnInterval:  cfg.SummarizerTurnInterval,
-			LookbackTurns: cfg.SummarizerLookbackTurns,
-			CooldownSecs:  cfg.SummarizerCooldownSeconds,
-			Applier:       applier,
-		}, b.archiveDB, sc, dd)
-	}
-
 	// Scheduler dispatcher closes over b so reminder/wiki_maintenance
 	// tasks can invoke the bot's send + the wiki store. Built after b
 	// is initialized.
@@ -495,30 +456,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
 
-	// Bootstrap autonomous improvement only when explicitly enabled. It can
-	// call the LLM and inspect archive state, so Runtime Diet keeps it out of
-	// the default runtime path.
-	if normalizeAutoImproveMode(cfg.SandboxAutoImproveMode) == "off" {
-		if cancelled, err := schedStore.Cancel(context.Background(), "nightly-auto-improve"); err != nil {
-			logger.Warn("failed to disable auto-improve task", "err", err)
-		} else if cancelled {
-			logger.Info("auto-improve task disabled by runtime diet default")
-		}
-	} else {
-		autoImproveAt, err := scheduler.NextDailyRun("04:00", loc, time.Now())
-		if err != nil {
-			return nil, fmt.Errorf("computing auto-improve run: %w", err)
-		}
-		if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
-			Name:          "nightly-auto-improve",
-			Kind:          scheduler.KindAutoImprove,
-			ScheduleKind:  scheduler.ScheduleDaily,
-			ScheduleDaily: "04:00",
-			NextRunAt:     autoImproveAt,
-			Status:        scheduler.StatusActive,
-		}); err != nil {
-			logger.Warn("failed to bootstrap auto-improve task", "err", err)
-		}
+	if cancelled, err := schedStore.Cancel(context.Background(), "nightly-auto-improve"); err != nil {
+		logger.Warn("failed to remove legacy auto-improve task", "err", err)
+	} else if cancelled {
+		logger.Info("legacy auto-improve task removed")
 	}
 
 	b.docs = newDocHandler(docHandlerConfig{
@@ -838,12 +779,4 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 		"runtime_dir", cfg.SandboxRuntimeDir,
 		"detail", health.Detail)
 	return manager, health
-}
-
-// noopWikiSearcher satisfies summarizer.WikiSearcher with an always-empty result.
-// Used when the search engine is not yet wired (slice 12e); 12f replaces it.
-type noopWikiSearcher struct{}
-
-func (noopWikiSearcher) Search(_ context.Context, _ string, _ int) ([]search.Result, error) {
-	return nil, nil
 }
