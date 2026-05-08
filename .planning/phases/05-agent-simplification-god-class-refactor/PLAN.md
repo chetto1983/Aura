@@ -72,7 +72,7 @@ Create or reshape these boundaries:
 - 2026-05-08 process correction: active execution must explicitly use `using-superpowers`, `aura-implementation`, and `executing-plans`; use `subagent-driven-development` when dispatching independent implementation/review tasks. `D:\Aura\AGENTS.md` is the project agent contract, while this plan is the slice execution contract. Each slice must start with the Aura Ralph status check, update this plan before/after work, verify, update the tracker when behavior changes, and commit atomically by explicit paths.
 - 2026-05-08: Persisted the mandatory skill-driven work protocol into `AGENTS.md` so future sessions remember it before reading phase-specific plans.
 - 2026-05-08: Task 2 collapsed the live profile taxonomy into four toolsets (`default`, `compute`, `document`, `admin`) while normalizing legacy persisted values (`memory`, `swarm_research`, `sandbox_compute`, `admin_review`). Settings, dashboard labels, debug harnesses, capability policy, loop policy, and orchestration tests now use toolset semantics; `run_aurabot_swarm` is a normal default/document/admin tool instead of a terminal profile cage.
-- 2026-05-08: Task 6 slice moved archive persistence helpers to `conversation_archive.go`, speculative search helpers to `conversation_context.go`, orchestration snapshot retention to `conversation_snapshot.go`, and remaining terminal formatting helpers to `conversation_format.go`. `conversation.go` is down from 1008 to 807 lines. Task 3 remains partially complete (generic dedupe extracted), while Task 4 and Task 5 were already completed by earlier simplification commits.
+- 2026-05-08: Task 6 split the Telegram conversation god file into focused archive, context, snapshot, formatting, terminal-finalization, tool-execution, and tool-helper files. `conversation.go` is down from 1008 to 479 lines, below the plan target. Task 3 remains partially complete (generic dedupe extracted), while Task 4 and Task 5 were already completed by earlier simplification commits.
 - 2026-05-08: Merged `codex/v31-closure-gate` into `master` via fast-forward at `62d0d9a`, then created `codex/simplify-agent-god-classes`.
 - 2026-05-08: Focused baseline passed: `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config`.
 - 2026-05-08: Commit `b0fb0cc` removed required skill preflight. `AURA_SKILL_PREFLIGHT` now defaults to `off`, settings expose only `off|advisory`, and tool execution no longer blocks on `read_skill`.
@@ -506,7 +506,7 @@ Move:
 
 Target: `conversation_context.go`.
 
-- [ ] Step 5: Keep `conversation.go` below 500 lines.
+- [x] Step 5: Keep `conversation.go` below 500 lines.
 
 `conversation.go` should contain:
 
