@@ -16,20 +16,22 @@ const (
 )
 
 type DelegationPolicy struct {
-	MaxWorkers         int
-	Timeout            time.Duration
-	ChildMaxIterations int
-	MaxResultChars     int
-	Finalization       string
+	MaxWorkers          int
+	Timeout             time.Duration
+	FinalizationTimeout time.Duration
+	ChildMaxIterations  int
+	MaxResultChars      int
+	Finalization        string
 }
 
 func DefaultDelegationPolicy() DelegationPolicy {
 	return DelegationPolicy{
-		MaxWorkers:         1,
-		Timeout:            25 * time.Second,
-		ChildMaxIterations: 3,
-		MaxResultChars:     12000,
-		Finalization:       DelegationFinalizationAggregate,
+		MaxWorkers:          1,
+		Timeout:             25 * time.Second,
+		FinalizationTimeout: 4 * time.Second,
+		ChildMaxIterations:  3,
+		MaxResultChars:      12000,
+		Finalization:        DelegationFinalizationAggregate,
 	}
 }
 
@@ -40,6 +42,9 @@ func LoadDelegationPolicyFromEnv() DelegationPolicy {
 	}
 	if n, ok := envInt("SWARM_RESEARCH_TIMEOUT_MS"); ok {
 		policy.Timeout = time.Duration(n) * time.Millisecond
+	}
+	if n, ok := envInt("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS"); ok {
+		policy.FinalizationTimeout = time.Duration(n) * time.Millisecond
 	}
 	if n, ok := envInt("SWARM_RESEARCH_CHILD_MAX_ITERATIONS"); ok {
 		policy.ChildMaxIterations = n
@@ -62,6 +67,9 @@ func (p DelegationPolicy) Clamp() DelegationPolicy {
 	}
 	if p.Timeout <= 0 || p.Timeout > 30*time.Second {
 		p.Timeout = 25 * time.Second
+	}
+	if p.FinalizationTimeout <= 0 || p.FinalizationTimeout > 10*time.Second {
+		p.FinalizationTimeout = 4 * time.Second
 	}
 	if p.ChildMaxIterations < 1 || p.ChildMaxIterations > 3 {
 		p.ChildMaxIterations = 3

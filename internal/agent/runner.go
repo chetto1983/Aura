@@ -46,15 +46,16 @@ type Config struct {
 
 // Task is one isolated background-agent assignment.
 type Task struct {
-	SystemPrompt       string
-	Prompt             string
-	Messages           []llm.Message
-	ToolAllowlist      []string
-	UserID             string
-	Temperature        *float64
-	MaxToolCalls       int
-	MaxToolResultChars int
-	CompleteOnDeadline bool
+	SystemPrompt        string
+	Prompt              string
+	Messages            []llm.Message
+	ToolAllowlist       []string
+	UserID              string
+	Temperature         *float64
+	MaxToolCalls        int
+	MaxToolResultChars  int
+	FinalizationTimeout time.Duration
+	CompleteOnDeadline  bool
 }
 
 // Result captures the final response and enough telemetry for SwarmManager to
@@ -156,12 +157,18 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 		if finalizing {
 			turnTools = nil
 		}
-		resp, err := r.llm.Send(ctx, llm.Request{
+		sendCtx := ctx
+		sendCancel := func() {}
+		if finalizing && task.CompleteOnDeadline && task.FinalizationTimeout > 0 {
+			sendCtx, sendCancel = context.WithTimeout(ctx, task.FinalizationTimeout)
+		}
+		resp, err := r.llm.Send(sendCtx, llm.Request{
 			Messages:    messages,
 			Model:       r.model,
 			Temperature: task.Temperature,
 			Tools:       turnTools,
 		})
+		sendCancel()
 		result.LLMCalls++
 		addUsage(&result.Tokens, resp.Usage)
 		if err != nil {

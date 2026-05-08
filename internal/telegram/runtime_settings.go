@@ -138,6 +138,7 @@ func applyDelegationModeRuntime(mode string) {
 	case "bounded":
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "3")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "30000")
+		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "7000")
 		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
 		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "16000")
 	case "async":
@@ -145,11 +146,13 @@ func applyDelegationModeRuntime(mode string) {
 		// while exposing the operator intent in config/telemetry.
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "3")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "30000")
+		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "7000")
 		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
 		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "16000")
 	default:
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "1")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "25000")
+		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "4000")
 		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
 		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "12000")
 	}

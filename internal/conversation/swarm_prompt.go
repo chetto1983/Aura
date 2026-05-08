@@ -90,6 +90,8 @@ var swarmDomainTerms = []string{
 	"memory",
 	"second brain",
 	"knowledge",
+	"graph",
+	"grafo",
 	"note",
 	"skill",
 	"skills",

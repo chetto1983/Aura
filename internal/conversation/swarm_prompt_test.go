@@ -21,6 +21,13 @@ func TestSwarmTurnHintForBroadSecondBrainRead(t *testing.T) {
 	}
 }
 
+func TestSwarmTurnHintForWikiGraphImprovement(t *testing.T) {
+	got := SwarmTurnHint("come posso migliorare Aura usando la wiki e il grafo?")
+	if !strings.Contains(got, "run_aurabot_swarm") {
+		t.Fatalf("SwarmTurnHint(wiki graph improvement) = %q, want swarm hint", got)
+	}
+}
+
 func TestSwarmTurnHintForProjectToolAudit(t *testing.T) {
 	got := SwarmTurnHint("Aura, leggi i file del progetto e dimmi quali strumenti hai adesso per migliorarti senza vecchi guardrail inutili.")
 	if !strings.Contains(got, "run_aurabot_swarm") {

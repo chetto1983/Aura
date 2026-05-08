@@ -469,6 +469,9 @@ func applyDelegationPolicyToAssignments(assignments []swarm.Assignment, policy D
 		if assignments[i].MaxToolResultChars <= 0 || assignments[i].MaxToolResultChars > policy.MaxResultChars {
 			assignments[i].MaxToolResultChars = policy.MaxResultChars
 		}
+		if assignments[i].FinalizationTimeout <= 0 || assignments[i].FinalizationTimeout > policy.FinalizationTimeout {
+			assignments[i].FinalizationTimeout = policy.FinalizationTimeout
+		}
 	}
 }
 

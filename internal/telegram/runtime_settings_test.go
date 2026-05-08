@@ -55,6 +55,7 @@ func (f *fakeBudgetConfigurator) ApplyConfig(cfg budget.Config) {
 func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "")
+	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "")
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
 	store := fakeSettingsReader{
@@ -113,25 +114,32 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 		cfg.TraceRetentionDays != 45 {
 		t.Fatalf("cfg orchestration settings = %+v", cfg)
 	}
-	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" || os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS") != "16000" {
-		t.Fatalf("bounded delegation env = workers:%q chars:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS"))
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" ||
+		os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS") != "7000" ||
+		os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS") != "16000" {
+		t.Fatalf("bounded delegation env = workers:%q final:%q chars:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS"), os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS"))
 	}
 }
 
 func TestApplyDelegationModeRuntimeFastAndBounded(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "")
+	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "")
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
 
 	applyDelegationModeRuntime("fast")
-	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "1" || os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "25000" {
-		t.Fatalf("fast delegation env = workers:%q timeout:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"))
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "1" ||
+		os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "25000" ||
+		os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS") != "4000" {
+		t.Fatalf("fast delegation env = workers:%q timeout:%q final:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"), os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS"))
 	}
 
 	applyDelegationModeRuntime("bounded")
-	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" || os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "30000" {
-		t.Fatalf("bounded delegation env = workers:%q timeout:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"))
+	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" ||
+		os.Getenv("SWARM_RESEARCH_TIMEOUT_MS") != "30000" ||
+		os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS") != "7000" {
+		t.Fatalf("bounded delegation env = workers:%q timeout:%q final:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_TIMEOUT_MS"), os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS"))
 	}
 }
 

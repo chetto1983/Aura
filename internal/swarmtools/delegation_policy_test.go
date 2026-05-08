@@ -17,6 +17,9 @@ func TestDefaultDelegationPolicy(t *testing.T) {
 	if got.Timeout != 25*time.Second {
 		t.Fatalf("Timeout = %s, want 25s", got.Timeout)
 	}
+	if got.FinalizationTimeout != 4*time.Second {
+		t.Fatalf("FinalizationTimeout = %s, want 4s", got.FinalizationTimeout)
+	}
 	if got.ChildMaxIterations != 3 {
 		t.Fatalf("ChildMaxIterations = %d, want 3", got.ChildMaxIterations)
 	}
@@ -30,11 +33,12 @@ func TestDefaultDelegationPolicy(t *testing.T) {
 
 func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 	got := (DelegationPolicy{
-		MaxWorkers:         20,
-		Timeout:            90 * time.Second,
-		ChildMaxIterations: 99,
-		MaxResultChars:     99999,
-		Finalization:       "tool_loop",
+		MaxWorkers:          20,
+		Timeout:             90 * time.Second,
+		FinalizationTimeout: 60 * time.Second,
+		ChildMaxIterations:  99,
+		MaxResultChars:      99999,
+		Finalization:        "tool_loop",
 	}).Clamp()
 	want := DefaultDelegationPolicy()
 	want.MaxWorkers = 3
@@ -43,18 +47,20 @@ func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 	}
 
 	got = (DelegationPolicy{
-		MaxWorkers:         0,
-		Timeout:            0,
-		ChildMaxIterations: 0,
-		MaxResultChars:     1999,
-		Finalization:       "",
+		MaxWorkers:          0,
+		Timeout:             0,
+		FinalizationTimeout: 0,
+		ChildMaxIterations:  0,
+		MaxResultChars:      1999,
+		Finalization:        "",
 	}).Clamp()
 	if got != (DelegationPolicy{
-		MaxWorkers:         1,
-		Timeout:            25 * time.Second,
-		ChildMaxIterations: 3,
-		MaxResultChars:     12000,
-		Finalization:       "aggregate",
+		MaxWorkers:          1,
+		Timeout:             25 * time.Second,
+		FinalizationTimeout: 4 * time.Second,
+		ChildMaxIterations:  3,
+		MaxResultChars:      12000,
+		Finalization:        "aggregate",
 	}) {
 		t.Fatalf("Clamp() lower bounds = %+v", got)
 	}
@@ -62,13 +68,14 @@ func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 
 func TestDelegationPolicyClampKeepsAllowedValues(t *testing.T) {
 	got := (DelegationPolicy{
-		MaxWorkers:         2,
-		Timeout:            30 * time.Second,
-		ChildMaxIterations: 1,
-		MaxResultChars:     2000,
-		Finalization:       "no_tool_llm",
+		MaxWorkers:          2,
+		Timeout:             30 * time.Second,
+		FinalizationTimeout: 7 * time.Second,
+		ChildMaxIterations:  1,
+		MaxResultChars:      2000,
+		Finalization:        "no_tool_llm",
 	}).Clamp()
-	if got.MaxWorkers != 2 || got.Timeout != 30*time.Second || got.ChildMaxIterations != 1 || got.MaxResultChars != 2000 || got.Finalization != "no_tool_llm" {
+	if got.MaxWorkers != 2 || got.Timeout != 30*time.Second || got.FinalizationTimeout != 7*time.Second || got.ChildMaxIterations != 1 || got.MaxResultChars != 2000 || got.Finalization != "no_tool_llm" {
 		t.Fatalf("Clamp() changed allowed values: %+v", got)
 	}
 }
@@ -76,6 +83,7 @@ func TestDelegationPolicyClampKeepsAllowedValues(t *testing.T) {
 func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "9")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "45000")
+	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "30000")
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "7")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "25000")
 	t.Setenv("SWARM_RESEARCH_FINALIZATION", "tool_loop")
@@ -91,17 +99,19 @@ func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
 func TestLoadDelegationPolicyFromEnvAcceptsValidOverrides(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "2")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "30000")
+	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "7000")
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "1")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "2000")
 	t.Setenv("SWARM_RESEARCH_FINALIZATION", " NO_TOOL_LLM ")
 
 	got := LoadDelegationPolicyFromEnv()
 	want := DelegationPolicy{
-		MaxWorkers:         2,
-		Timeout:            30 * time.Second,
-		ChildMaxIterations: 1,
-		MaxResultChars:     2000,
-		Finalization:       "no_tool_llm",
+		MaxWorkers:          2,
+		Timeout:             30 * time.Second,
+		FinalizationTimeout: 7 * time.Second,
+		ChildMaxIterations:  1,
+		MaxResultChars:      2000,
+		Finalization:        "no_tool_llm",
 	}
 	if got != want {
 		t.Fatalf("LoadDelegationPolicyFromEnv() = %+v, want %+v", got, want)
@@ -200,6 +210,9 @@ func TestRunAuraBotSwarmAppliesDelegationPolicyToAssignments(t *testing.T) {
 		}
 		if assignment.MaxToolResultChars > 2000 {
 			t.Fatalf("%s MaxToolResultChars = %d, want <= 2000", assignment.Role, assignment.MaxToolResultChars)
+		}
+		if assignment.FinalizationTimeout != 4*time.Second {
+			t.Fatalf("%s FinalizationTimeout = %s, want 4s", assignment.Role, assignment.FinalizationTimeout)
 		}
 	}
 }

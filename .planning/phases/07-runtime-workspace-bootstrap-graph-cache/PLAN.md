@@ -485,7 +485,8 @@ Targets:
 Observed 2026-05-08:
 
 - workspace listing smoke: PASS, `/workspace`, Memory Pack present, no `internal/`, `.git/`, `cmd/`, `web/`, or `data/aura.db`, 3 loop steps, 26,200 tokens, 7.9s.
-- wiki/graph improvement smoke: PASS, one `run_aurabot_swarm`, 2 loop steps, 15,141 tokens, 36.8s. This missed the 30s ideal because the swarm pass waited on its 25s worker timeout, but still avoided broad file loops and stayed far below the 174k-token bad turn.
+- wiki/graph improvement smoke before latency repair: PASS functionally, one `run_aurabot_swarm`, 2 loop steps, 15,141 tokens, 36.8s, but missed the 30s target because the worker finalization waited on its 25s timeout.
+- wiki/graph improvement smoke after latency repair: PASS, one `run_aurabot_swarm`, 2 loop steps, 15,759 tokens, 26.8s. The swarm tool itself returned in 7.6s because worker finalization is capped separately.
 - skill discovery smoke: PASS, runtime `skills/` reads only, 3 loop steps, 28,890 tokens, 14.8s.
 
 - [x] **Step 3: Run full verification**

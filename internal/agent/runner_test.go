@@ -17,30 +17,53 @@ type fakeLLM struct {
 	requests []llm.Request
 	resps    []llm.Response
 	errs     []error
+	delays   []time.Duration
 	err      error
 }
 
 var _ LimitController = (*Runner)(nil)
 
-func (f *fakeLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
+func (f *fakeLLM) Send(ctx context.Context, req llm.Request) (llm.Response, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.requests = append(f.requests, req)
+	var delay time.Duration
+	if len(f.delays) > 0 {
+		delay = f.delays[0]
+		f.delays = f.delays[1:]
+	}
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
 		if err != nil {
+			f.mu.Unlock()
 			return llm.Response{}, err
 		}
 	}
 	if f.err != nil {
+		f.mu.Unlock()
 		return llm.Response{}, f.err
 	}
 	if len(f.resps) == 0 {
+		f.mu.Unlock()
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return llm.Response{}, ctx.Err()
+			}
+		}
 		return llm.Response{Content: "done"}, nil
 	}
 	resp := f.resps[0]
 	f.resps = f.resps[1:]
+	f.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return llm.Response{}, ctx.Err()
+		}
+	}
 	return resp, nil
 }
 
@@ -320,6 +343,46 @@ func TestRunnerCompletesWithPartialOnDeadlineAfterTools(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(res.Content, "interrupted") || !strings.Contains(res.Content, "evidence") {
+		t.Fatalf("partial content = %q", res.Content)
+	}
+	if res.LLMCalls != 2 || res.ToolCalls != 1 {
+		t.Fatalf("stats = llm:%d tools:%d", res.LLMCalls, res.ToolCalls)
+	}
+}
+
+func TestRunnerFinalizationTimeoutReturnsPartialBeforeOuterDeadline(t *testing.T) {
+	client := &fakeLLM{
+		resps: []llm.Response{
+			{
+				HasToolCalls: true,
+				ToolCalls:    []llm.ToolCall{{ID: "call_1", Name: "lookup"}},
+			},
+			{Content: "slow final"},
+		},
+		delays: []time.Duration{0, 50 * time.Millisecond},
+	}
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "lookup", result: "compact evidence"})
+
+	runner, err := NewRunner(Config{LLM: client, Tools: reg, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	start := time.Now()
+	res, err := runner.Run(context.Background(), Task{
+		Prompt:              "research",
+		ToolAllowlist:       []string{"lookup"},
+		MaxToolCalls:        1,
+		FinalizationTimeout: 5 * time.Millisecond,
+		CompleteOnDeadline:  true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("Run elapsed = %s, want finalization timeout before outer deadline", elapsed)
+	}
+	if !strings.Contains(res.Content, "interrupted") || !strings.Contains(res.Content, "compact evidence") {
 		t.Fatalf("partial content = %q", res.Content)
 	}
 	if res.LLMCalls != 2 || res.ToolCalls != 1 {
