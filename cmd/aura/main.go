@@ -45,16 +45,27 @@ func main() {
 	if handleCLIArgs(os.Args[1:], os.Stdout) {
 		return
 	}
-	// Initialize structured logger with zap backend and secret sanitization
-	logger, cleanupLog := logging.Setup("info", "./logs")
-	maybeDelayRestartChild(logger)
-
 	initialEnvPath := config.EnvPathFromEnvironment()
-	if err := loadDotEnv(initialEnvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Warn("could not load .env", "error", err)
-	}
+	envErr := loadDotEnv(initialEnvPath)
 
 	cfg, err := config.Load()
+	logLevel, logDir := "info", os.Getenv("LOG_DIR")
+	if logDir == "" {
+		logDir = "./logs"
+	}
+	if cfg != nil {
+		logLevel = cfg.LogLevel
+		logDir = cfg.LogDir
+	}
+
+	// Initialize structured logger with zap backend and secret sanitization.
+	// Load dotenv/config first so container defaults such as LOG_DIR=/data/logs
+	// are honored before the first log file is opened.
+	logger, cleanupLog := logging.Setup(logLevel, logDir)
+	maybeDelayRestartChild(logger)
+	if envErr != nil && !errors.Is(envErr, os.ErrNotExist) {
+		logger.Warn("could not load .env", "error", envErr)
+	}
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		cleanupLog()

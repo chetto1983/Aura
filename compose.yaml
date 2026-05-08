@@ -64,7 +64,6 @@ services:
     volumes:
       - ./runtime-workspace:/workspace
       - ./data:/data
-      - .:/app
       - ./wiki:/workspace/wiki
       - ./skills:/workspace/skills
     depends_on:

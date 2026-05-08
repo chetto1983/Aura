@@ -1,28 +1,18 @@
-.git
-.github
-.agents
-.claude
-.planning
-.tmp
-.worktrees
-.env
-*.db
-*.db-*
-*.out
-*.html
-*.exe
-*.log
-$cover
-aura
-logs/
-reports/
-runtime/_downloads/
-runtime/pyodide/
-runtime/pyodide/runner/node-*/
-wiki/raw/
-web/node_modules/
-web/test-results/
-web/playwright-report/
-dist/
-test-results/
-tmp/
+# Default-deny the Docker build context. The production image only needs the
+# Aura binary build inputs; runtime data is mounted into /workspace and /data.
+**
+
+# Go module metadata.
+!go.mod
+!go.sum
+
+# Production command and embedded application packages.
+!cmd/
+!cmd/aura/
+!cmd/aura/**
+!internal/
+!internal/**
+
+# Keep safe examples available to Docker builds without shipping local secrets.
+!.env.example
+
