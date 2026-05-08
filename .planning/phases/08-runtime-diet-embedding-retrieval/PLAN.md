@@ -1,6 +1,6 @@
 # Phase 08: Runtime Diet
 
-Status: in progress
+Status: complete
 Owner: Codex
 Date: 2026-05-08
 
@@ -45,14 +45,16 @@ The core should be:
 
 Everything else must prove that it helps the current turn. If it does not, it moves out of the turn or gets deleted.
 
-## Evidence
+## Original Evidence
 
-- Recent Docker logs still show broad prompts spending `llm_calls=4`, `tool_calls=9`, `elapsed_ms=54205`, repeatedly calling `read_file/search_files/list_files`.
-- The broad document prompt can create a DOCX, but only after too much evidence expansion (`loop_steps=5`, `elapsed_ms=62894`, `tokens_total=66119`).
-- `internal/agentloop/loop.go` still has the hardcoded fallback that says `"Mi sono fermato"`.
-- the old `Memory Pack` path used to inject graph context plus recent wiki log.
-- `search_memory` used to mix vector wiki scores with lexical source/archive scores as if they were comparable.
-- Qdrant currently wins when it returns any result, even if local lexical search has better evidence.
+These were the problems that opened Phase 08. They are retained as historical context, not current runtime state:
+
+- Recent Docker logs showed broad prompts spending `llm_calls=4`, `tool_calls=9`, `elapsed_ms=54205`, repeatedly calling `read_file/search_files/list_files`.
+- The broad document prompt could create a DOCX, but only after too much evidence expansion (`loop_steps=5`, `elapsed_ms=62894`, `tokens_total=66119`).
+- `internal/agentloop/loop.go` had the hardcoded fallback that said `"Mi sono fermato"`.
+- The old `Memory Pack` path injected graph context plus recent wiki log.
+- `search_memory` mixed vector wiki scores with lexical source/archive scores as if they were comparable.
+- Qdrant won when it returned any result, even if local lexical search had better evidence.
 
 ## Brutal Rule
 
@@ -244,7 +246,7 @@ Acceptance:
 
 ### Task 7: Delete The Leftovers
 
-- Status: partial. Profile/preflight leftovers are gone from live source and embedded dashboard assets. `Memory Pack` live source symbols are gone, intentionally retained explicit tools/settings are documented in `NOT-DELETED.md`, malformed streamed JSON coverage handles recoverable missing closers/trailing spillover, and hot-path source/archive scans are now deleted. Remaining cleanup is Qdrant mirroring for compact memory plus any production-reachable debug residue found by the final audit.
+- Status: done. Profile/preflight leftovers are gone from live source and embedded dashboard assets. `Memory Pack` live source symbols are gone, intentionally retained explicit tools/settings are documented in `NOT-DELETED.md`, malformed streamed JSON coverage handles recoverable missing closers/trailing spillover, and hot-path source/archive scans are deleted. The final anti-residue grep found only historical planning/tracker references, not live runtime code.
 
 - Audit with `rg` for old profiles, preflight, wrappers, old wiki tools, and production-reachable debug paths.
 - Delete what is dead.
@@ -257,7 +259,7 @@ Acceptance:
 
 ### Task 8: ADK-Style Event Runner
 
-- Status: partial. The first extraction is in place: `internal/agentruntime` emits tools/stats/final events, `RuntimeToolset.Tools(ctx)` replaces direct static allowlist use in Telegram, and duplicate/document steering lives in orchestration callbacks. Remaining work is to move session append/load and terminal-tool finalization fully behind the runner boundary.
+- Status: deferred follow-up. The first extraction is in place: `internal/agentruntime` emits tools/stats/final events, `RuntimeToolset.Tools(ctx)` replaces direct static allowlist use in Telegram, and duplicate/document steering lives in orchestration callbacks. Moving session append/load and terminal-tool finalization fully behind the runner boundary belongs in the next runner-boundary phase, not in the Runtime Diet closure gate.
 
 Build the smallest Aura-native version of ADK's orchestration shape:
 

@@ -37,8 +37,30 @@ Observed:
 - `docker compose config --quiet` passed.
 - the fallback string/function search returned no matches in `internal/`.
 
-Not cut yet:
+Closure update:
 
-- `search_memory` remains, but ranking still needs Phase 08 Task 4/5.
-- `internal/orchestration` profiles still exist, but swarm and skill manifest are no longer automatic in the live Telegram turn.
-- `internal/conversation/swarm_prompt.go` remains for explicit swarm use and tests, but `handleConversation` no longer injects `SwarmTurnHint`.
+- Phase 08 later completed Task 4/5: `search_memory` now uses calibrated hybrid retrieval and compact source/archive/proposal facts instead of raw scans.
+- The old profile/preflight taxonomy was physically deleted from live code. The remaining concept is the simpler runtime `Toolset`.
+- The old swarm-routing prompt helper was deleted. Swarm remains only as explicit tools when exposed by the selected toolset.
+
+## 2026-05-08 Closure Evidence
+
+Phase 08 closed after Docker E2E.
+
+Verification:
+
+```powershell
+go test ./internal/search ./internal/memoryindex ./internal/telegram -count=1
+go test ./...
+go build ./...
+docker compose up -d --build aura
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-compact-memory-qdrant.ps1 -QdrantUrl http://localhost:6333
+go run ./cmd/debug_telegram_sandbox -timeout 120s -prompt "Crea un breve documento docx che riassume perche Picobot e veloce e Aura deve restare semplice." -expect-toolset document -expect-retrieval-capsule -expect-tools create_docx -expect-terminal-tool create_docx -expect-loop-steps-max 1 -max-elapsed-ms 30000
+```
+
+Observed:
+
+- Docker Aura returned `/status` ok.
+- Container logs showed compact Qdrant mirror sync: `vector_collection=aura_memory_v1_compact`, `vector_docs=487`, `vector_size=1024`.
+- Qdrant compact-memory PoC returned compact facts plus graph-expanded nodes.
+- Telegram document E2E passed with `loop_steps=1`, `llm_calls=1`, `tool_calls=1`, `tools_called=create_docx`, and `elapsed_ms=15400`.

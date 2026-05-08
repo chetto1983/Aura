@@ -70,11 +70,11 @@ Carry-forward blocker:
 
 - Broad live document-summary generation is functional but not closure-clean yet. It can create and deliver DOCX files, but the configured live model still expands evidence too much before `create_docx`, causing >30s latency and occasional malformed tool JSON. Phase 08 treats this as one symptom of the broader runtime diet and retrieval problem.
 
-## Active Milestone
-
 ### v3.2 Runtime Diet
 
-Status: active
+Status: closed
+
+Closed on 2026-05-08 with the Runtime Diet hot path in place and verified in Docker.
 
 Plan: `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`
 
@@ -90,6 +90,21 @@ Success criteria:
 - Source/archive memory uses compact indexed facts, not raw OCR dumps or entire chat archives.
 - Document generation consumes one compact evidence capsule before typed file tools.
 - Common live routes stay under 30s without repeated broad file/source/archive loops.
+
+Closure evidence:
+
+- The old stopped-before-final-answer fallback is removed.
+- Always-on Memory Pack injection is replaced by routing-aware Retrieval Capsule injection.
+- Profile/preflight taxonomy and legacy routing aliases are deleted from live code.
+- `search_memory` uses compact source/archive/proposal facts in SQLite FTS plus optional Qdrant mirror.
+- Qdrant compact memory uses `aura_memory_v1_compact`, separate from wiki vectors.
+- Compact mirror sync runs as background maintenance with adaptive batch embeddings.
+- Archive append and cleanup mirror compact memory and Qdrant points.
+- Document route E2E passed with one LLM call, one tool call, one loop step, and `create_docx` as terminal tool.
+
+## Active Milestone
+
+No active milestone is selected. v4.0 is planned and Runtime Diet no longer blocks it.
 
 ## Next Milestone
 
