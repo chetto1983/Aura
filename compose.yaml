@@ -61,7 +61,7 @@ services:
       - ./runtime-workspace:/workspace
       - ./data:/data
       - ./wiki:/workspace/wiki
-      - ./skills:/workspace/skills
+      - aura-skills:/workspace/skills
     depends_on:
       aura-secrets:
         condition: service_completed_successfully
@@ -159,6 +159,7 @@ services:
 
 volumes:
   searxng-cache:
+  aura-skills:
   qdrant-storage:
   go-mod-cache:
   go-build-cache:

@@ -10,6 +10,7 @@
 /garage/
 /qdrant/
 /runtime-workspace/
+/skills/
 
 # MCP runtime config (template tracked as mcp.example.json)
 /mcp.json
