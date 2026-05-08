@@ -241,8 +241,11 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	if dangerous.calls != 0 {
 		t.Fatalf("hidden tool executed %d times, want 0", dangerous.calls)
 	}
-	if !strings.Contains(summary.lastResult, "not exposed in the active tool profile") {
-		t.Fatalf("lastResult = %q, want hidden fatal", summary.lastResult)
+	if !strings.Contains(summary.lastResult, "not available in this runtime") {
+		t.Fatalf("lastResult = %q, want hidden tool error", summary.lastResult)
+	}
+	if summary.fatalResult != "" {
+		t.Fatalf("fatalResult = %q, want hidden tool to stay recoverable", summary.fatalResult)
 	}
 }
 

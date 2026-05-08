@@ -777,11 +777,10 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				results[i] = outcome{
 					id:             tc.ID,
 					tool:           tc.Name,
-					content:        tools.FormatFatalToolError(fmt.Errorf("tool %q is not exposed in the active tool profile", tc.Name)),
+					content:        tools.FormatToolError(fmt.Errorf("tool %q is not available in this runtime; choose another exposed tool or answer from current context", tc.Name)),
 					elapsed:        time.Since(start),
 					errorClass:     "hidden_tool",
 					hiddenRejected: true,
-					fatal:          true,
 				}
 				summaryMu.Lock()
 				summary.hiddenRejected = true
