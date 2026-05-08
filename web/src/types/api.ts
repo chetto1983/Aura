@@ -188,6 +188,17 @@ export interface ConnectorProviderSummary {
   setup_hints?: string[];
 }
 
+export interface ConnectorProbeResponse {
+  ok: boolean;
+  provider_id: string;
+  server_name?: string;
+  capabilities_ready?: string[];
+  missing_capabilities?: string[];
+  approved_tools_advertised?: string[];
+  blocked_tools_advertised?: string[];
+  error?: string;
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 export interface SkillCatalogItem {

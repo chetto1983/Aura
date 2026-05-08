@@ -14,6 +14,28 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-08 Mail Provider Probe And Read Adapter
+
+Status: implemented.
+
+- Added `POST /mcp/providers/{id}/actions/probe` for connected provider profiles.
+- Added read-only canonical mail adapter endpoints for `mail.search` and `mail.read`.
+- Mapped `mail-mcp` IMAP/EWS search/read tools behind Aura allowlists.
+- Added response redaction for token/password/secret-like mail bodies.
+- Kept blocked provider tools visible in probe output without enabling them.
+- Wired the dashboard Probe button to the backend and renders ready/missing capabilities.
+- Rebuilt embedded dashboard assets under `internal/api/dist`.
+
+Verification:
+
+- `go test ./internal/api -run "TestMCPProviderMail|TestMCPProviders" -count=1`
+- `go test ./internal/api -count=1`
+- `npm --prefix web run i18n:check`
+- `npm --prefix web run build`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+
 ### 2026-05-08 Connector Configuration Surface
 
 Status: implemented.

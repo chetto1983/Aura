@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ErrorCard } from '@/components/common/ErrorCard';
 import type {
+  ConnectorProbeResponse,
   ConnectorProviderSummary,
   ConnectorRiskBadge,
   MCPInvokeResponse,
@@ -169,6 +170,28 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
   const { t } = useLocale();
   const Icon = provider.kind === 'database' ? Database : Mail;
   const enabledCount = provider.capabilities.filter((c) => c.enabled).length;
+  const [probe, setProbe] = useState<ConnectorProbeResponse | null>(null);
+  const [probing, setProbing] = useState(false);
+
+  const runProbe = async () => {
+    setProbing(true);
+    try {
+      const result = await api.probeMCPProvider(provider.id);
+      setProbe(result);
+      if (result.ok) {
+        toast.success(t('mcp.providers.probeOk', { provider: provider.name }));
+      } else {
+        toast.error(result.error || t('mcp.providers.probeFailed'));
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('mcp.providers.probeFailed');
+      setProbe({ ok: false, provider_id: provider.id, error: message });
+      toast.error(message);
+    } finally {
+      setProbing(false);
+    }
+  };
+
   return (
     <article className="rounded-lg border bg-card p-4">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -249,6 +272,37 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
         </div>
       )}
 
+      {probe && (
+        <div
+          className={`mt-3 rounded-md border px-3 py-2 text-xs ${
+            probe.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200'
+              : 'border-destructive/30 bg-destructive/5 text-destructive'
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2 font-medium">
+            {probe.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+            <span>{probe.ok ? t('mcp.providers.probeReady') : t('mcp.providers.probeNotReady')}</span>
+          </div>
+          {probe.capabilities_ready && probe.capabilities_ready.length > 0 && (
+            <p className="mt-1 text-[11px]">
+              {t('mcp.providers.readyCapabilities')}: {probe.capabilities_ready.join(', ')}
+            </p>
+          )}
+          {probe.missing_capabilities && probe.missing_capabilities.length > 0 && (
+            <p className="mt-1 text-[11px]">
+              {t('mcp.providers.missingCapabilities')}: {probe.missing_capabilities.join(', ')}
+            </p>
+          )}
+          {probe.blocked_tools_advertised && probe.blocked_tools_advertised.length > 0 && (
+            <p className="mt-1 text-[11px]">
+              {t('mcp.providers.blockedAdvertised')}: {probe.blocked_tools_advertised.join(', ')}
+            </p>
+          )}
+          {probe.error && <p className="mt-1 text-[11px]">{probe.error}</p>}
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap justify-between gap-2 border-t pt-3">
         <span className="text-xs text-muted-foreground">
           {t('mcp.providers.enabledCount', { enabled: enabledCount, total: provider.capabilities.length })}
@@ -256,11 +310,12 @@ function ConnectorCard({ provider }: { provider: ConnectorProviderSummary }) {
         <div className="flex gap-2">
           <button
             type="button"
-            disabled
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-md border px-3 py-2 text-xs text-muted-foreground opacity-60"
-            title={t('mcp.providers.probeNext')}
+            onClick={() => void runProbe()}
+            disabled={probing}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-md border px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+            title={t('mcp.providers.probeHint')}
           >
-            <Activity size={13} />
+            {probing ? <Loader2 size={13} className="animate-spin" /> : <Activity size={13} />}
             {t('mcp.providers.probe')}
           </button>
           <button

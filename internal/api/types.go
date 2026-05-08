@@ -250,6 +250,46 @@ type ConnectorRiskBadge struct {
 	Level string `json:"level"` // "low" | "medium" | "high"
 }
 
+// ConnectorProbeResponse reports whether a provider profile can satisfy Aura's
+// approved capability contract against a currently connected MCP server.
+type ConnectorProbeResponse struct {
+	OK                      bool     `json:"ok"`
+	ProviderID              string   `json:"provider_id"`
+	ServerName              string   `json:"server_name,omitempty"`
+	CapabilitiesReady       []string `json:"capabilities_ready,omitempty"`
+	MissingCapabilities     []string `json:"missing_capabilities,omitempty"`
+	ApprovedToolsAdvertised []string `json:"approved_tools_advertised,omitempty"`
+	BlockedToolsAdvertised  []string `json:"blocked_tools_advertised,omitempty"`
+	Error                   string   `json:"error,omitempty"`
+}
+
+// MailMessage is Aura's provider-agnostic mail record. Provider-specific
+// payloads stay behind adapters.
+type MailMessage struct {
+	ID       string   `json:"id"`
+	ThreadID string   `json:"thread_id,omitempty"`
+	Subject  string   `json:"subject,omitempty"`
+	From     string   `json:"from,omitempty"`
+	To       []string `json:"to,omitempty"`
+	Date     string   `json:"date,omitempty"`
+	Snippet  string   `json:"snippet,omitempty"`
+	Body     string   `json:"body,omitempty"`
+}
+
+type MailSearchResponse struct {
+	ProviderID   string        `json:"provider_id"`
+	ProviderTool string        `json:"provider_tool"`
+	Messages     []MailMessage `json:"messages"`
+	Raw          string        `json:"raw,omitempty"`
+}
+
+type MailReadResponse struct {
+	ProviderID   string      `json:"provider_id"`
+	ProviderTool string      `json:"provider_tool"`
+	Message      MailMessage `json:"message"`
+	Raw          string      `json:"raw,omitempty"`
+}
+
 // Slice 11c — skills.sh catalog + admin-gated install/delete.
 
 // SkillCatalogItem is one row from GET /skills/catalog (proxies skills.sh).

@@ -91,6 +91,14 @@ First slice:
 
 Latest implementation slice:
 
+- `POST /mcp/providers/{id}/actions/probe` now probes connected MCP provider profiles.
+- `mail-mcp` has read-only canonical `mail.search` and `mail.read` adapter endpoints over approved IMAP/EWS tools.
+- Dashboard provider cards can run Probe and display ready/missing/blocked advertised capabilities.
+- Mail send/delete/bulk mutation remains blocked and not agent-visible.
+- Verification passed: `go test ./internal/api -run "TestMCPProviderMail|TestMCPProviders" -count=1`, `go test ./internal/api -count=1`, `npm --prefix web run i18n:check`, `npm --prefix web run build`, `go test ./...`, `go build ./...`, and `go vet ./...`.
+
+Previous implementation slice:
+
 - `GET /mcp/providers` returns read-only mail/database provider manifests.
 - `/mcp` dashboard now renders Connectors, Installed, Health, Review Queue, and Raw MCP tabs.
 - Raw MCP manual invoke remains diagnostic-only in the UI.

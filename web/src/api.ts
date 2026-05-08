@@ -16,6 +16,7 @@ import type {
   SkillDetail,
   MCPServerSummary,
   ConnectorProviderSummary,
+  ConnectorProbeResponse,
   SkillCatalogItem,
   SkillInstallRequest,
   SkillInstallResponse,
@@ -222,6 +223,8 @@ export const api = {
     get<SkillDetail>(`/skills/${encodeURIComponent(name)}`),
   mcpServers: () => get<MCPServerSummary[]>(`/mcp/servers`),
   mcpProviders: () => get<ConnectorProviderSummary[]>(`/mcp/providers`),
+  probeMCPProvider: (id: string) =>
+    post<ConnectorProbeResponse>(`/mcp/providers/${encodeURIComponent(id)}/actions/probe`),
 
   // ---- skills.sh catalog + admin install/delete (slice 11c) ----
   skillsCatalog: (q?: string, limit?: number) =>
