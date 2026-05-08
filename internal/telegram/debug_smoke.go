@@ -18,44 +18,39 @@ import (
 // It is intentionally compact so debug commands can assert milestone behavior
 // without exposing raw tool arguments or secrets.
 type DebugTextSmokeResult struct {
-	UserID                   string
-	Prompt                   string
-	ToolCalls                []string
-	CalledExecuteCode        bool
-	Contains5050             bool
-	ContainsArtifactMetadata bool
-	ArtifactFilenames        []string
-	ArtifactSourceIDs        []string
-	DocumentSends            []DebugDocumentSend
-	FinalText                string
-	PromptVersion            string
-	PromptHash               string
-	PromptModules            []string
-	ToolProfile              string
-	ProfileSelectReason      string
-	ToolsExposed             []string
-	ActiveCapabilities       []string
-	HiddenToolRejected       bool
-	SkillPreflightFailed     bool
-	SkillsRead               bool
-	ReadSkills               []string
-	LoopSteps                int
-	SwarmUsed                bool
-	SandboxUsed              bool
-	TerminalTool             string
-	TerminalSwarm            bool
-	SwarmFinalization        string
-	PostSwarmToolCalls       int
-	DuplicateSwarmRejected   bool
-	WorkerCount              int
-	WorkerFailures           int
-	TokenUsageReported       bool
-	TokensPrompt             int
-	TokensCompletion         int
-	TokensTotal              int
-	EstimatedContextTokens   int
-	CostUSD                  float64
-	ElapsedMS                int64
+	UserID                    string
+	Prompt                    string
+	ToolCalls                 []string
+	CalledExecuteCode         bool
+	Contains5050              bool
+	ContainsArtifactMetadata  bool
+	ArtifactFilenames         []string
+	ArtifactSourceIDs         []string
+	DocumentSends             []DebugDocumentSend
+	FinalText                 string
+	PromptVersion             string
+	PromptHash                string
+	PromptModules             []string
+	ToolProfile               string
+	ProfileSelectReason       string
+	ToolsExposed              []string
+	ActiveCapabilities        []string
+	HiddenToolRejected        bool
+	SkillPreflightFailed      bool
+	SkillsRead                bool
+	ReadSkills                []string
+	LoopSteps                 int
+	SwarmUsed                 bool
+	SandboxUsed               bool
+	TerminalTool              string
+	DuplicateToolCallRejected bool
+	TokenUsageReported        bool
+	TokensPrompt              int
+	TokensCompletion          int
+	TokensTotal               int
+	EstimatedContextTokens    int
+	CostUSD                   float64
+	ElapsedMS                 int64
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -144,12 +139,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.SwarmUsed = result.SwarmUsed || snap.SwarmUsed
 		result.SandboxUsed = result.SandboxUsed || snap.SandboxUsed
 		result.TerminalTool = snap.TerminalTool
-		result.TerminalSwarm = snap.TerminalSwarm
-		result.SwarmFinalization = snap.SwarmFinalization
-		result.PostSwarmToolCalls = snap.PostSwarmToolCalls
-		result.DuplicateSwarmRejected = snap.DuplicateSwarm
-		result.WorkerCount = snap.WorkerCount
-		result.WorkerFailures = snap.WorkerFailures
+		result.DuplicateToolCallRejected = snap.DuplicateToolCall
 		if snap.TokensPrompt > 0 || snap.TokensCompletion > 0 || snap.TokensTotal > 0 {
 			result.TokensPrompt = snap.TokensPrompt
 			result.TokensCompletion = snap.TokensCompletion

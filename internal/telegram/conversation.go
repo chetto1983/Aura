@@ -257,12 +257,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
 		"terminal_tool", stats.terminalTool,
-		"terminal_swarm", stats.terminalSwarm,
-		"swarm_finalization", stats.swarmFinalization,
-		"post_swarm_tool_calls", stats.postSwarmToolCalls,
-		"duplicate_swarm_rejected", stats.duplicateSwarm,
-		"worker_count", stats.workerCount,
-		"worker_failures", stats.workerFailures,
+		"duplicate_tool_rejected", stats.duplicateToolCall,
 		"tokens_prompt", stats.tokensPrompt,
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
@@ -382,12 +377,7 @@ type turnStats struct {
 	swarmUsed              bool
 	sandboxUsed            bool
 	terminalTool           string
-	terminalSwarm          bool
-	swarmFinalization      string
-	postSwarmToolCalls     int
-	duplicateSwarm         bool
-	workerCount            int
-	workerFailures         int
+	duplicateToolCall      bool
 	tokensPrompt           int
 	tokensCompletion       int
 	tokensTotal            int
@@ -415,12 +405,7 @@ type orchestrationSnapshot struct {
 	SwarmUsed           bool
 	SandboxUsed         bool
 	TerminalTool        string
-	TerminalSwarm       bool
-	SwarmFinalization   string
-	PostSwarmToolCalls  int
-	DuplicateSwarm      bool
-	WorkerCount         int
-	WorkerFailures      int
+	DuplicateToolCall   bool
 	TokensPrompt        int
 	TokensCompletion    int
 	TokensTotal         int
@@ -594,8 +579,8 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		}
 		b.storeOrchestrationSnapshot(userID, stats)
 		var hiddenRejected bool
-		callsToExecute, duplicateSwarmCalls := capDuplicateSwarmCalls(profileDecision.Profile, resp.ToolCalls)
-		stats.duplicateSwarm = stats.duplicateSwarm || len(duplicateSwarmCalls) > 0
+		callsToExecute, duplicateToolCalls := capDuplicateToolCalls(resp.ToolCalls)
+		stats.duplicateToolCall = stats.duplicateToolCall || len(duplicateToolCalls) > 0
 		execution := b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed, profileDecision.Profile, stats.readSkills)
 		lastToolResult, hiddenRejected = execution.lastResult, execution.hiddenRejected
 		stats.skillPreflightFail = stats.skillPreflightFail || execution.skillPreflightRejected
@@ -604,8 +589,8 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		if execution.terminalTool != "" {
 			stats.terminalTool = execution.terminalTool
 		}
-		for _, duplicate := range duplicateSwarmCalls {
-			convCtx.AddToolResultMessage(duplicate.ID, tools.FormatFatalToolError(fmt.Errorf("run_aurabot_swarm already completed for this turn; use the existing aggregate result")))
+		for _, duplicate := range duplicateToolCalls {
+			convCtx.AddToolResultMessage(duplicate.ID, tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", duplicate.Name)))
 		}
 		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
 		b.storeOrchestrationSnapshot(userID, stats)
@@ -952,12 +937,7 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		SwarmUsed:           stats.swarmUsed,
 		SandboxUsed:         stats.sandboxUsed,
 		TerminalTool:        stats.terminalTool,
-		TerminalSwarm:       stats.terminalSwarm,
-		SwarmFinalization:   stats.swarmFinalization,
-		PostSwarmToolCalls:  stats.postSwarmToolCalls,
-		DuplicateSwarm:      stats.duplicateSwarm,
-		WorkerCount:         stats.workerCount,
-		WorkerFailures:      stats.workerFailures,
+		DuplicateToolCall:   stats.duplicateToolCall,
 		TokensPrompt:        stats.tokensPrompt,
 		TokensCompletion:    stats.tokensCompletion,
 		TokensTotal:         stats.tokensTotal,
@@ -1031,15 +1011,6 @@ func orderToolDefinitionsForAllowlist(defs []llm.ToolDefinition, allowlist []str
 	return out
 }
 
-func latestUserMessage(messages []llm.Message) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" && strings.TrimSpace(messages[i].Content) != "" {
-			return strings.TrimSpace(messages[i].Content)
-		}
-	}
-	return "Complete the requested broad read-only Aura pipeline review."
-}
-
 func toolAllowed(name string, allowlist []string) bool {
 	for _, allowed := range allowlist {
 		if allowed == name {
@@ -1087,35 +1058,28 @@ func stringSliceContains(values []string, candidate string) bool {
 	return false
 }
 
-func toolCallsContain(calls []llm.ToolCall, name string) bool {
-	for _, call := range calls {
-		if call.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func capDuplicateSwarmCalls(profile orchestration.Profile, calls []llm.ToolCall) ([]llm.ToolCall, []llm.ToolCall) {
-	if profile != orchestration.ProfileSwarmResearch {
-		return calls, nil
-	}
+func capDuplicateToolCalls(calls []llm.ToolCall) ([]llm.ToolCall, []llm.ToolCall) {
 	out := make([]llm.ToolCall, 0, len(calls))
 	var duplicates []llm.ToolCall
-	seenSwarm := false
+	seen := make(map[string]struct{}, len(calls))
 	for _, call := range calls {
-		if call.Name != "run_aurabot_swarm" {
-			out = append(out, call)
-			continue
-		}
-		if seenSwarm {
+		key := duplicateToolCallKey(call)
+		if _, ok := seen[key]; ok {
 			duplicates = append(duplicates, call)
 			continue
 		}
-		seenSwarm = true
+		seen[key] = struct{}{}
 		out = append(out, call)
 	}
 	return out, duplicates
+}
+
+func duplicateToolCallKey(call llm.ToolCall) string {
+	args, err := json.Marshal(call.Arguments)
+	if err != nil {
+		args = []byte(fmt.Sprint(call.Arguments))
+	}
+	return strings.TrimSpace(call.Name) + "\x00" + string(args)
 }
 
 func formatTerminalExecuteCodeResult(raw string) string {

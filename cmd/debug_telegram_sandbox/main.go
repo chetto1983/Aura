@@ -42,7 +42,6 @@ func main() {
 	var expectSkillRead optionalCSVFlag
 	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to call read_skill; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
-	expectTerminalSwarm := flag.Bool("expect-terminal-swarm", false, "expect swarm_research to finalize immediately after run_aurabot_swarm")
 	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected by orchestration policy")
 	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by orchestration policy")
 	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if orchestration loop_steps exceeds this budget")
@@ -161,12 +160,7 @@ func main() {
 	fmt.Printf("swarm_used=%v\n", result.SwarmUsed)
 	fmt.Printf("sandbox_used=%v\n", result.SandboxUsed)
 	fmt.Printf("terminal_tool=%s\n", result.TerminalTool)
-	fmt.Printf("terminal_swarm=%v\n", result.TerminalSwarm)
-	fmt.Printf("swarm_finalization=%s\n", result.SwarmFinalization)
-	fmt.Printf("post_swarm_tool_calls=%d\n", result.PostSwarmToolCalls)
-	fmt.Printf("duplicate_swarm_rejected=%v\n", result.DuplicateSwarmRejected)
-	fmt.Printf("worker_count=%d\n", result.WorkerCount)
-	fmt.Printf("worker_failures=%d\n", result.WorkerFailures)
+	fmt.Printf("duplicate_tool_call_rejected=%v\n", result.DuplicateToolCallRejected)
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
@@ -197,7 +191,6 @@ func main() {
 		SkillRead:          expectSkillRead.Any,
 		SkillReadNames:     expectSkillRead.Values,
 		SwarmUsed:          *expectSwarm,
-		TerminalSwarm:      *expectTerminalSwarm,
 		HiddenToolRejected: *expectHiddenToolRejected,
 		TerminalTool:       *expectTerminalTool,
 		MaxLoopSteps:       *expectLoopStepsMax,
@@ -228,9 +221,6 @@ func main() {
 	}
 	if expectations.SwarmUsed {
 		fmt.Printf("expected_swarm=true\n")
-	}
-	if expectations.TerminalSwarm {
-		fmt.Printf("expected_terminal_swarm=true\n")
 	}
 	if expectations.HiddenToolRejected {
 		fmt.Printf("expected_hidden_tool_rejected=true\n")
@@ -473,7 +463,6 @@ type debugExpectations struct {
 	SkillRead          bool
 	SkillReadNames     []string
 	SwarmUsed          bool
-	TerminalSwarm      bool
 	HiddenToolRejected bool
 	TerminalTool       string
 	MaxLoopSteps       int
@@ -509,29 +498,6 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.SwarmUsed && !result.SwarmUsed {
 		return errors.New("expected swarm usage")
-	}
-	if expectations.TerminalSwarm {
-		if !result.TerminalSwarm {
-			return errors.New("expected terminal swarm finalization")
-		}
-		if strings.TrimSpace(result.FinalText) == "" {
-			return errors.New("expected terminal swarm final text")
-		}
-		if result.SwarmFinalization != "aggregate" && result.SwarmFinalization != "no_tool_llm" {
-			return fmt.Errorf("expected known swarm finalization, got %q", result.SwarmFinalization)
-		}
-		if result.PostSwarmToolCalls != 0 {
-			return fmt.Errorf("expected zero post-swarm tool calls, got %d", result.PostSwarmToolCalls)
-		}
-		if result.WorkerCount < 1 {
-			return fmt.Errorf("expected worker_count >= 1, got %d", result.WorkerCount)
-		}
-		if result.WorkerCount > 3 {
-			return fmt.Errorf("expected worker_count <= 3, got %d", result.WorkerCount)
-		}
-		if result.WorkerFailures != 0 {
-			return fmt.Errorf("expected worker_failures=0, got %d", result.WorkerFailures)
-		}
 	}
 	if expectations.HiddenToolRejected && !result.HiddenToolRejected {
 		return errors.New("expected hidden tool rejection")

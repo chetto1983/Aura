@@ -299,10 +299,6 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		PromptHash:         "abc123",
 		SkillsRead:         true,
 		SwarmUsed:          true,
-		TerminalSwarm:      true,
-		SwarmFinalization:  "aggregate",
-		WorkerCount:        2,
-		WorkerFailures:     0,
 		TokenUsageReported: true,
 		TokensTotal:        10,
 		ElapsedMS:          100,
@@ -321,7 +317,6 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		SkillRead:          true,
 		SkillReadNames:     []string{"test-driven-development", "sandbox_compute"},
 		SwarmUsed:          true,
-		TerminalSwarm:      true,
 		TokenMetrics:       true,
 		SandboxUsed:        true,
 		HiddenToolRejected: true,
@@ -362,7 +357,6 @@ func TestValidateDebugExpectationsRejectsMissingUsageSignals(t *testing.T) {
 	}{
 		{name: "skill", want: debugExpectations{SkillRead: true}, msg: "expected read_skill"},
 		{name: "swarm", want: debugExpectations{SwarmUsed: true}, msg: "expected swarm usage"},
-		{name: "terminal swarm", want: debugExpectations{TerminalSwarm: true}, msg: "expected terminal swarm"},
 		{name: "token metrics", want: debugExpectations{TokenMetrics: true}, msg: "expected token usage metrics"},
 		{name: "sandbox", want: debugExpectations{SandboxUsed: true}, msg: "expected sandbox usage"},
 	}
@@ -477,60 +471,6 @@ func TestValidateDebugExpectationsRejectsStaleSkillReferences(t *testing.T) {
 	err := validateDebugExpectations(result, debugExpectations{NoStaleSkillRef: true})
 	if err == nil || !strings.Contains(err.Error(), "stale skill/reference") {
 		t.Fatalf("validateDebugExpectations() error = %v, want stale reference failure", err)
-	}
-}
-
-func TestValidateDebugExpectationsRejectsTerminalSwarmWorkerFailures(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{
-		TerminalSwarm:     true,
-		SwarmFinalization: "aggregate",
-		FinalText:         "Swarm research completed.",
-		WorkerCount:       2,
-		WorkerFailures:    1,
-	}
-
-	err := validateDebugExpectations(result, debugExpectations{TerminalSwarm: true})
-	if err == nil || !strings.Contains(err.Error(), "worker_failures=0") {
-		t.Fatalf("validateDebugExpectations() error = %v, want worker failure", err)
-	}
-}
-
-func TestValidateDebugExpectationsRejectsTerminalSwarmWithoutWorkers(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{
-		TerminalSwarm:     true,
-		SwarmFinalization: "aggregate",
-		FinalText:         "Swarm research completed.",
-	}
-
-	err := validateDebugExpectations(result, debugExpectations{TerminalSwarm: true})
-	if err == nil || !strings.Contains(err.Error(), "worker_count >= 1") {
-		t.Fatalf("validateDebugExpectations() error = %v, want worker count failure", err)
-	}
-}
-
-func TestValidateDebugExpectationsRejectsTerminalSwarmWithoutFinalText(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{
-		TerminalSwarm:     true,
-		SwarmFinalization: "aggregate",
-		WorkerCount:       1,
-	}
-
-	err := validateDebugExpectations(result, debugExpectations{TerminalSwarm: true})
-	if err == nil || !strings.Contains(err.Error(), "final text") {
-		t.Fatalf("validateDebugExpectations() error = %v, want final text failure", err)
-	}
-}
-
-func TestValidateDebugExpectationsRejectsTerminalSwarmWithoutKnownFinalization(t *testing.T) {
-	result := telegram.DebugTextSmokeResult{
-		TerminalSwarm: true,
-		FinalText:     "Swarm research completed.",
-		WorkerCount:   1,
-	}
-
-	err := validateDebugExpectations(result, debugExpectations{TerminalSwarm: true})
-	if err == nil || !strings.Contains(err.Error(), "known swarm finalization") {
-		t.Fatalf("validateDebugExpectations() error = %v, want finalization failure", err)
 	}
 }
 

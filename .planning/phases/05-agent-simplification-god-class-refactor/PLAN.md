@@ -75,6 +75,7 @@ Create or reshape these boundaries:
 - 2026-05-08: Commit `05ad47d` defanged `swarm_research`: it no longer requires swarm availability, no longer hides direct wiki/source/memory reads, and no longer declares `run_aurabot_swarm` as terminal.
 - 2026-05-08: Commit `e1e4536` made hidden/unavailable tool calls recoverable instead of fatal.
 - 2026-05-08: Removed remaining dead terminal-swarm helpers and tests from `internal/telegram/conversation.go` and `internal/telegram/debug_smoke_test.go`; verified with `go test ./internal/telegram`.
+- 2026-05-08: Replaced swarm-specific duplicate capping with generic duplicate tool-call capping keyed by tool name plus canonical JSON arguments; removed terminal-swarm telemetry from Telegram/debug sandbox. Verified with `go test ./internal/telegram`, `go test ./cmd/debug_telegram_sandbox`, and `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
 
 ## Task 0: Baseline And Branch
 

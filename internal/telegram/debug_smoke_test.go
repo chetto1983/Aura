@@ -159,11 +159,7 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 		hiddenToolRejected:  true,
 		skillPreflightFail:  true,
 		terminalTool:        "run_aurabot_swarm",
-		terminalSwarm:       true,
-		swarmFinalization:   "aggregate",
-		duplicateSwarm:      true,
-		workerCount:         2,
-		workerFailures:      0,
+		duplicateToolCall:   true,
 		tokensPrompt:        10,
 		tokensCompletion:    5,
 		tokensTotal:         15,
@@ -191,14 +187,11 @@ func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
 	if len(snap.ReadSkills) != 1 || snap.ReadSkills[0] != "subagent-driven-development" {
 		t.Fatalf("ReadSkills = %+v", snap.ReadSkills)
 	}
-	if !snap.TerminalSwarm || snap.SwarmFinalization != "aggregate" {
-		t.Fatalf("terminal swarm snapshot = %v %q", snap.TerminalSwarm, snap.SwarmFinalization)
-	}
 	if snap.TokensTotal != 15 {
 		t.Fatalf("TokensTotal = %d, want 15", snap.TokensTotal)
 	}
-	if !snap.DuplicateSwarm || snap.WorkerCount != 2 || snap.WorkerFailures != 0 {
-		t.Fatalf("swarm metrics snapshot = duplicate %v workers %d failures %d", snap.DuplicateSwarm, snap.WorkerCount, snap.WorkerFailures)
+	if !snap.DuplicateToolCall {
+		t.Fatal("DuplicateToolCall = false, want true")
 	}
 }
 
@@ -655,16 +648,17 @@ func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 	}
 }
 
-func TestCapDuplicateSwarmCallsKeepsOnlyFirstRun(t *testing.T) {
+func TestCapDuplicateToolCallsSkipsIdenticalCalls(t *testing.T) {
 	calls := []llm.ToolCall{
-		{ID: "1", Name: "run_aurabot_swarm"},
-		{ID: "2", Name: "read_swarm_result"},
-		{ID: "3", Name: "run_aurabot_swarm"},
+		{ID: "1", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
+		{ID: "2", Name: "search_wiki", Arguments: map[string]any{"query": "memory"}},
+		{ID: "3", Name: "search_wiki", Arguments: map[string]any{"query": "agent loop"}},
+		{ID: "4", Name: "read_wiki", Arguments: map[string]any{"slug": "agent-loop"}},
 	}
 
-	got, duplicates := capDuplicateSwarmCalls("swarm_research", calls)
+	got, duplicates := capDuplicateToolCalls(calls)
 
-	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "2" {
+	if len(got) != 3 || got[0].ID != "1" || got[1].ID != "2" || got[2].ID != "4" {
 		t.Fatalf("kept calls = %+v", got)
 	}
 	if len(duplicates) != 1 || duplicates[0].ID != "3" {
