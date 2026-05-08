@@ -670,7 +670,7 @@ Result: pass, including config/settings/API coverage:
 go test ./internal/workspace ./internal/tools ./internal/config ./internal/settings ./internal/api ./internal/orchestration ./internal/telegram
 ```
 
-- [ ] Step 6: Commit.
+- [x] Step 6: Commit.
 
 Run:
 
@@ -679,13 +679,17 @@ git add internal/workspace internal/tools/workspace_files.go internal/tools/work
 git commit -m "feat: add bounded workspace file tools"
 ```
 
+Result: commit `43115ab` (`feat: add bounded workspace file tools`).
+
 ## Task 9: Final Verification And Tracker Update
 
 **Files:**
 - Modify: `docs/implementation-tracker.md`
 - Modify: `.planning/STATE.md`
 
-- [ ] Step 1: Run Go verification.
+- [x] Step 1: Run Go verification.
+
+Status: completed 2026-05-08.
 
 Run:
 
@@ -695,7 +699,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\sc
 
 Expected: fmt, test, build, vet pass.
 
-- [ ] Step 2: Run frontend verification if dashboard changed.
+Result: pass.
+
+- [x] Step 2: Run frontend verification if dashboard changed.
 
 Run:
 
@@ -705,7 +711,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\sc
 
 Expected: i18n/build pass.
 
-- [ ] Step 3: Run focused live/debug smoke.
+Result: not run; no React/dashboard source changed in Task 8/9. Settings catalog changes were Go API metadata only and were covered by `go test ./internal/api`.
+
+- [x] Step 3: Run focused live/debug smoke.
 
 Run:
 
@@ -716,7 +724,9 @@ go run ./cmd/debug_tools
 
 Expected: no required skill preflight, no swarm terminal cage, normal tools available.
 
-- [ ] Step 4: Update tracker.
+Result: `go run ./cmd/debug_tools` passed. `go run ./cmd/debug_orchestration` requires `-prompt`, so the no-arg command failed with `FAIL: -prompt is required`; rerun with `-prompt "guarda i log e cerca nei file del progetto senza skill rituali"` passed and showed `tool_profile=default`, no required skill-preflight block, and exposed normal default tools.
+
+- [x] Step 4: Update tracker.
 
 Record:
 
@@ -728,7 +738,9 @@ Record:
 - added workspace file tools if completed;
 - verification commands and results.
 
-- [ ] Step 5: Commit docs.
+Result: updated `docs/implementation-tracker.md` and `.planning/STATE.md`.
+
+- [x] Step 5: Commit docs.
 
 Run:
 
@@ -736,6 +748,8 @@ Run:
 git add docs/implementation-tracker.md .planning/STATE.md .planning/phases/05-agent-simplification-god-class-refactor/PLAN.md
 git commit -m "docs: record agent simplification plan and results"
 ```
+
+Result: docs commit records the final verification, tracker update, and phase state.
 
 ## Execution Notes
 

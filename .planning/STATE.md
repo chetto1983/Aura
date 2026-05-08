@@ -1,12 +1,12 @@
 # State
 
-Date: 2026-05-07
+Date: 2026-05-08
 
 Active milestone: v3.1 Agent Orchestration And System Prompt Versioning (active)
 
 Last closed milestone: v1.3 Memory Consolidation And Quality
 
-Current branch: `codex/v31-closure-gate`
+Current branch: `codex/simplify-agent-god-classes`
 
 ## Current Truth
 
@@ -53,13 +53,14 @@ Open v3.1 orchestration blocker:
 
 2026-05-08 simplification pivot:
 
-- The live conversation logs showed the v3.1 guardrail stack is now hurting autonomy: repeated memory searches for simple recall, max-loop fallback answers, skill preflight deadlocks, terminal swarm routing, and skill-approval confusion.
+- The live conversation logs showed the v3.1 guardrail stack was hurting autonomy: repeated memory searches for simple recall, max-loop fallback answers, skill preflight deadlocks, terminal swarm routing, and skill-approval confusion.
 - User direction: stop adding guardrails; first delete the superfluous orchestration layers, refactor the god classes, then add bounded Codex/Picobot-style workspace file tools (`read_file`, `write_file`, `search_files`/`rg`, `apply_patch`, later limited commands).
 - New canonical cleanup plan: `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`.
 - Context handoff files for this pivot:
   - `.planning/phases/05-agent-simplification-god-class-refactor/CONTEXT.md`
   - `.planning/phases/05-agent-simplification-god-class-refactor/EVIDENCE.md`
-- No runtime code edits have started for this pivot yet; only planning/context files should be present before execution starts.
+- Cleanup implementation is now complete on `codex/simplify-agent-god-classes`: required skill preflight was removed, live profiles collapsed into four toolsets, unavailable tools became recoverable, terminal swarm routing was removed, `internal/agentloop` owns the generic loop, `internal/telegram/conversation.go` was reduced below 500 lines, skill proposal approval semantics were fixed, and disabled-by-default bounded workspace file tools were added.
+- Latest verification: `go test ./internal/workspace ./internal/tools ./internal/config ./internal/settings ./internal/api ./internal/orchestration ./internal/telegram`, `powershell -NoProfile -ExecutionPolicy Bypass -File loops\aura-implementation\scripts\verify-go.ps1`, `go run ./cmd/debug_tools`, and `go run ./cmd/debug_orchestration -prompt "guarda i log e cerca nei file del progetto senza skill rituali"`.
 
 ## Next Milestone Handoff
 
@@ -86,6 +87,7 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 
 ## Resume Notes
 
+- For the current cleanup branch, start from `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`; Task 9 records the final verification and tracker update.
 - Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
 - For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
 - For the next Codex-style route hardening slice, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`. It records the online research, best skills to use, capability taxonomy, required skill preflight, loop policies, dashboard settings, and E2E closure phases.
