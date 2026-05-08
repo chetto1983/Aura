@@ -234,3 +234,15 @@ Defer until references are mapped cleanly:
 - Physical deletion of wrapper files.
 - Scheduler/swarm compatibility migration.
 - Wiki post-write indexing hooks.
+
+## Follow-Up Plan
+
+Phase 07 has been opened as `.planning/phases/07-runtime-workspace-bootstrap-graph-cache/PLAN.md`.
+
+It turns the Picobot comparison into implementation work:
+
+- narrow Aura's runtime workspace so file tools no longer see the whole repo;
+- bootstrap initial runtime folders/files automatically;
+- materialize wiki graph files for fast dashboard/search/prompt use;
+- inject compact memory packs instead of repeated broad reads;
+- benchmark live Docker latency and token usage.

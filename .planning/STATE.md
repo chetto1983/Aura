@@ -88,6 +88,7 @@ The user decisions for v4.0 are MCP marketplace, container MCP runtime, official
 ## Resume Notes
 
 - For the current cleanup branch, start from `.planning/phases/05-agent-simplification-god-class-refactor/PLAN.md`; Task 9 records the final verification and tracker update.
+- For the next speed/intelligence slice from the Picobot comparison, start from `.planning/phases/07-runtime-workspace-bootstrap-graph-cache/PLAN.md`.
 - Start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/PLAN.md`.
 - For the current swarm loop/latency blocker, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/HERMES_DELEGATION_PLAN.md` before touching code.
 - For the next Codex-style route hardening slice, start from `.planning/phases/04-agent-orchestration-system-prompt-versioning/CODEX_SKILL_ORCHESTRATION_PLAN.md`. It records the online research, best skills to use, capability taxonomy, required skill preflight, loop policies, dashboard settings, and E2E closure phases.
