@@ -26,10 +26,10 @@ services:
       LOG_DIR: "/data/logs"
       HOME: "/data"
       NPM_CONFIG_CACHE: "/data/.npm"
-      WIKI_PATH: "/wiki"
-      SKILLS_PATH: "/skills"
-      SKILLS_INSTALL_PROJECT_DIR: "/skills"
-      MCP_SERVERS_PATH: "/data/mcp.json"
+      WIKI_PATH: "/workspace/wiki"
+      SKILLS_PATH: "/workspace/skills"
+      SKILLS_INSTALL_PROJECT_DIR: "/workspace/skills"
+      MCP_SERVERS_PATH: "/workspace/mcp.json"
       AURA_RUNTIME_WORKSPACE_PATH: "/workspace"
       PROMPT_OVERLAY_PATH: "/workspace"
       SANDBOX_ENABLED: "true"
@@ -62,10 +62,11 @@ services:
     ports:
       - "127.0.0.1:${AURA_HOST_PORT:-18080}:8080"
     volumes:
+      - ./runtime-workspace:/workspace
       - ./data:/data
       - .:/app
-      - ./wiki:/wiki
-      - ./skills:/skills
+      - ./wiki:/workspace/wiki
+      - ./skills:/workspace/skills
     depends_on:
       aura-secrets:
         condition: service_completed_successfully

@@ -206,8 +206,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// Loader scans both the operator-curated SKILLS_PATH and the skills.sh
 	// CLI install roots. The catalog CLI has used both `.claude/skills` and
 	// `.agents/skills` layouts across versions/agents, so keep both visible.
-	// In containers the install cwd is /skills, so catalog installs persist
-	// under the mounted /skills tree.
+	// In containers the install cwd is /workspace/skills, so catalog installs
+	// persist under the mounted narrow runtime workspace.
 	skillRoots := skillSearchRoots(cfg)
 	skillLoader := auraskills.NewLoader(skillRoots[0], skillRoots[1:]...)
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
@@ -533,8 +533,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// package, so even when the gate is off we still wire the deps so
 	// flipping SKILLS_ADMIN=true requires only a restart, not a rebuild.
 	// Empty projectDir → installer falls back to os.Getwd() (the bot's
-	// cwd at startup). Containers set SKILLS_INSTALL_PROJECT_DIR=/skills so
-	// installs persist under the mounted /skills agent-specific skill trees.
+	// cwd at startup). Containers set
+	// SKILLS_INSTALL_PROJECT_DIR=/workspace/skills so installs persist under
+	// the mounted narrow runtime workspace skill trees.
 	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, cfg.SkillsInstallProjectDir)
 	if err != nil {
 		logger.Warn("skills installer unavailable", "error", err)

@@ -60,6 +60,7 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		KeySkillsInstallProjectDir: "./skills",
 		KeyMCPServersPath:          "./mcp.json",
 		KeyPromptOverlayPath:       ".",
+		KeyWorkspaceRoot:           "/app",
 		KeyWebSearchProvider:       "ollama",
 		KeySearXNGBaseURL:          "http://127.0.0.1:8088",
 		KeySearchBackend:           "chromem",
@@ -81,6 +82,7 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	for _, key := range []string{
 		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath, KeyLogDir,
 		KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir, KeyMCPServersPath, KeyPromptOverlayPath,
+		KeyWorkspaceRoot,
 		KeyWebSearchProvider, KeySearXNGBaseURL, KeySearchBackend, KeyQdrantURL,
 		KeyGarageS3Endpoint, KeyGarageS3AccessKey, KeyGarageS3SecretKey,
 		KeySandboxRuntimeMode, KeySandboxRuntimeURL,
@@ -90,9 +92,12 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	assertSetting(t, s, KeyHTTPPort, "0.0.0.0:8080")
 	assertSetting(t, s, KeyEnvPath, "/data/.env")
 	assertSetting(t, s, KeyDBPath, "/data/aura.db")
-	assertSetting(t, s, KeyWikiPath, "/wiki")
-	assertSetting(t, s, KeySkillsPath, "/skills")
-	assertSetting(t, s, KeyPromptOverlayPath, "/app")
+	assertSetting(t, s, KeyWikiPath, "/workspace/wiki")
+	assertSetting(t, s, KeySkillsPath, "/workspace/skills")
+	assertSetting(t, s, KeySkillsInstallProjectDir, "/workspace/skills")
+	assertSetting(t, s, KeyMCPServersPath, "/workspace/mcp.json")
+	assertSetting(t, s, KeyPromptOverlayPath, "/workspace")
+	assertSetting(t, s, KeyWorkspaceRoot, "/workspace")
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySearXNGBaseURL, "http://searxng:8080")
 	assertSetting(t, s, KeySearchBackend, "qdrant")
@@ -176,7 +181,7 @@ func TestApplyBestDefaultsMovesPromptOverlayFromDataToWorkspaceAfterMigration(t 
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
 	assertChanged(t, changes, KeyPromptOverlayPath)
-	assertSetting(t, s, KeyPromptOverlayPath, "/app")
+	assertSetting(t, s, KeyPromptOverlayPath, "/workspace")
 }
 
 func containerDefaultsConfig() *config.Config {
@@ -186,11 +191,13 @@ func containerDefaultsConfig() *config.Config {
 		EnvPath:                 "/data/.env",
 		DBPath:                  "/data/aura.db",
 		LogDir:                  "/data/logs",
-		WikiPath:                "/wiki",
-		SkillsPath:              "/skills",
-		SkillsInstallProjectDir: "/skills",
-		MCPServersPath:          "/data/mcp.json",
-		PromptOverlayPath:       "/app",
+		WikiPath:                "/workspace/wiki",
+		SkillsPath:              "/workspace/skills",
+		SkillsInstallProjectDir: "/workspace/skills",
+		MCPServersPath:          "/workspace/mcp.json",
+		PromptOverlayPath:       "/workspace",
+		WorkspaceRoot:           "/workspace",
+		RuntimeWorkspacePath:    "/workspace",
 		SearXNGBaseURL:          "http://searxng:8080",
 		QdrantURL:               "http://qdrant:6333",
 		GarageS3Endpoint:        "http://garage:3900",

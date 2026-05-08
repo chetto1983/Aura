@@ -216,3 +216,29 @@ func TestComposeSetsContainerSQLiteJournalMode(t *testing.T) {
 		t.Fatalf("compose.yaml must set AURA_SQLITE_JOURNAL_MODE=DELETE so Docker bind-mounted SQLite avoids WAL shared-memory sidecars")
 	}
 }
+
+func TestComposeMountsNarrowRuntimeWorkspace(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`AURA_RUNTIME_WORKSPACE_PATH: "/workspace"`,
+		`AURA_WORKSPACE_ROOT: "/workspace"`,
+		`PROMPT_OVERLAY_PATH: "/workspace"`,
+		`WIKI_PATH: "/workspace/wiki"`,
+		`SKILLS_PATH: "/workspace/skills"`,
+		`MCP_SERVERS_PATH: "/workspace/mcp.json"`,
+		`- ./runtime-workspace:/workspace`,
+		`- ./wiki:/workspace/wiki`,
+		`- ./skills:/workspace/skills`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("compose.yaml missing %q", want)
+		}
+	}
+	if strings.Contains(source, `AURA_WORKSPACE_ROOT: "/app"`) {
+		t.Fatalf("compose.yaml must not expose /app as Aura's bounded workspace root")
+	}
+}

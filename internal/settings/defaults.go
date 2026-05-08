@@ -190,13 +190,55 @@ func validationRules(cfg *config.Config) []defaultRule {
 		},
 	}
 
-	if cfg != nil && cfg.Headless && strings.TrimSpace(cfg.PromptOverlayPath) == "/app" {
-		rules = append(rules, defaultRule{
-			key:       KeyPromptOverlayPath,
-			value:     "/app",
-			reason:    "move runtime prompt overlay from data volume to workspace AGENT.md",
-			shouldSet: valueIs("/data"),
-		})
+	if cfg != nil && cfg.Headless {
+		if strings.TrimSpace(cfg.PromptOverlayPath) == "/app" {
+			rules = append(rules, defaultRule{
+				key:       KeyPromptOverlayPath,
+				value:     "/app",
+				reason:    "move runtime prompt overlay from data volume to workspace AGENT.md",
+				shouldSet: valueIs("/data"),
+			})
+		}
+		if strings.TrimSpace(cfg.RuntimeWorkspacePath) == "/workspace" {
+			rules = append(rules,
+				defaultRule{
+					key:       KeyWikiPath,
+					value:     cfg.WikiPath,
+					reason:    "move wiki path into the narrow runtime workspace",
+					shouldSet: valueIs("/wiki", "./wiki"),
+				},
+				defaultRule{
+					key:       KeySkillsPath,
+					value:     cfg.SkillsPath,
+					reason:    "move skills path into the narrow runtime workspace",
+					shouldSet: valueIs("/skills", "./skills"),
+				},
+				defaultRule{
+					key:       KeySkillsInstallProjectDir,
+					value:     cfg.SkillsInstallProjectDir,
+					reason:    "install catalog skills into the narrow runtime workspace",
+					shouldSet: valueIs("/skills", "./skills"),
+				},
+				defaultRule{
+					key:       KeyMCPServersPath,
+					value:     cfg.MCPServersPath,
+					reason:    "move MCP config into the narrow runtime workspace",
+					shouldSet: valueIs("/data/mcp.json", "./mcp.json"),
+				},
+				defaultRule{
+					key:       KeyPromptOverlayPath,
+					value:     cfg.PromptOverlayPath,
+					reason:    "move prompt overlay into the narrow runtime workspace",
+					shouldSet: valueIs("/app", "/data", "."),
+				},
+				defaultRule{
+					key:       KeyWorkspaceRoot,
+					value:     cfg.WorkspaceRoot,
+					reason:    "move bounded file tools into the narrow runtime workspace",
+					shouldSet: valueIs("/app", ".", "./"),
+				},
+			)
+		}
 	}
 
 	return rules

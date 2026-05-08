@@ -222,7 +222,7 @@ git commit -m "slice 07: bootstrap runtime workspace layout"
 - Modify: `Dockerfile` if directory ownership needs adjustment
 - Test: Docker smoke commands
 
-- [ ] **Step 1: Change Compose mounts**
+- [x] **Step 1: Change Compose mounts**
 
 Target shape:
 
@@ -240,7 +240,7 @@ volumes:
 
 Keep source code at `/app` only if needed for bind-mounted development. Do not expose `/app` through `AURA_WORKSPACE_ROOT`.
 
-- [ ] **Step 2: Verify container sees the narrow root**
+- [x] **Step 2: Verify container sees the narrow root**
 
 Run:
 
@@ -258,7 +258,7 @@ Expected:
 
 The listing must include runtime files and must not list `internal/`, `cmd/`, `web/`, `.git/`, `data/aura.db`, or build artifacts.
 
-- [ ] **Step 3: Verify bounded file tools root**
+- [x] **Step 3: Verify bounded file tools root**
 
 Run existing debug or Telegram sandbox smoke with a prompt equivalent to:
 
@@ -272,7 +272,7 @@ Expected:
 - no repo source tree appears;
 - model does not try to read `AGENTS.md`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add compose.yaml Dockerfile docs/implementation-tracker.md
