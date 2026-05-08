@@ -79,26 +79,18 @@ func TestToolProfileAllowlistsKeepRiskBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForProfile swarm: %v", err)
 	}
-	for _, forbidden := range []string{"create_docx", "execute_code", "save_tool", "schedule_task"} {
+	for _, forbidden := range []string{"create_docx", "execute_code", "save_tool", "schedule_task", "write_wiki"} {
 		if slices.Contains(sw, forbidden) {
 			t.Fatalf("swarm profile includes forbidden %q: %+v", forbidden, sw)
 		}
 	}
-	for _, required := range []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"} {
+	for _, required := range []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks", "search_memory", "search_wiki", "list_sources", "read_source"} {
 		if !slices.Contains(sw, required) {
 			t.Fatalf("swarm profile missing %q: %+v", required, sw)
 		}
 	}
 	if !slices.Equal(sw[:3], []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}) {
 		t.Fatalf("swarm profile should prepend terminal swarm tools, got %+v", sw)
-	}
-	if slices.Contains(sw, "write_wiki") {
-		t.Fatalf("swarm profile exposes write_wiki: %+v", sw)
-	}
-	for _, directRead := range []string{"search_memory", "search_wiki", "list_sources", "read_source"} {
-		if slices.Contains(sw, directRead) {
-			t.Fatalf("swarm profile exposes parent direct-read tool %q: %+v", directRead, sw)
-		}
 	}
 
 	sb, err := ToolsForProfile(ProfileSandboxCompute, Availability{Sandbox: true})
@@ -171,8 +163,8 @@ func TestComposePromptOnlyMentionsSkillPreflightWhenSkillToolsExposed(t *testing
 	}
 
 	sw := ComposePrompt(withProfile(base, ProfileSwarmResearch))
-	if strings.Contains(sw.Content, "## Available Skills") || strings.Contains(sw.Content, "Skill Use") {
-		t.Fatalf("swarm prompt mentions skill tools that are hidden:\n%s", sw.Content)
+	if !strings.Contains(sw.Content, "## Available Skills") || !strings.Contains(sw.Content, "Skill Use") {
+		t.Fatalf("swarm prompt missing exposed skill guidance:\n%s", sw.Content)
 	}
 
 	sb := ComposePrompt(withProfile(base, ProfileSandboxCompute))
@@ -237,11 +229,11 @@ func TestSelectProfileDecisionReportsReasonAndAvailabilityFallback(t *testing.T)
 	}
 
 	fallback := SelectProfileDecision("facciamo il punto di tutta la pipeline", ProfileModeAuto, Availability{Swarm: false})
-	if fallback.Profile != ProfileMemory {
-		t.Fatalf("fallback Profile = %q, want memory when swarm unavailable", fallback.Profile)
+	if fallback.Profile != ProfileSwarmResearch {
+		t.Fatalf("fallback Profile = %q, want swarm_research to stay usable without swarm", fallback.Profile)
 	}
-	if !strings.Contains(fallback.Reason, "unavailable") {
-		t.Fatalf("fallback Reason = %q, want unavailable explanation", fallback.Reason)
+	if !strings.Contains(fallback.Reason, "matched") {
+		t.Fatalf("fallback Reason = %q, want matched explanation", fallback.Reason)
 	}
 }
 
@@ -311,10 +303,9 @@ func TestProfileCardForReturnsCopySafeCards(t *testing.T) {
 	}
 	card.PositiveCues[0] = "mutated"
 	card.NegativeCues[0] = "mutated"
-	card.RequiredAvailability[0] = "mutated"
 	card.ConditionalTools[0].Tools[0] = "mutated"
 	card.DeniedTools[0] = "mutated"
-	card.LoopPolicy.TerminalTools[0] = "mutated"
+	card.LoopPolicy.MaxSteps = 99
 
 	reread, ok := ProfileCardFor(ProfileSwarmResearch)
 	if !ok {
@@ -326,17 +317,14 @@ func TestProfileCardForReturnsCopySafeCards(t *testing.T) {
 	if reread.NegativeCues[0] == "mutated" {
 		t.Fatalf("mutating NegativeCues changed profile card catalog: %+v", reread.NegativeCues)
 	}
-	if reread.RequiredAvailability[0] == "mutated" {
-		t.Fatalf("mutating RequiredAvailability changed profile card catalog: %+v", reread.RequiredAvailability)
-	}
 	if reread.ConditionalTools[0].Tools[0] == "mutated" {
 		t.Fatalf("mutating ConditionalTools changed profile card catalog: %+v", reread.ConditionalTools)
 	}
 	if reread.DeniedTools[0] == "mutated" {
 		t.Fatalf("mutating DeniedTools changed profile card catalog: %+v", reread.DeniedTools)
 	}
-	if reread.LoopPolicy.TerminalTools[0] == "mutated" {
-		t.Fatalf("mutating loop terminal tools changed profile card catalog: %+v", reread.LoopPolicy.TerminalTools)
+	if reread.LoopPolicy.MaxSteps == 99 {
+		t.Fatalf("mutating loop policy changed profile card catalog: %+v", reread.LoopPolicy)
 	}
 
 	cards := ProfileCards()

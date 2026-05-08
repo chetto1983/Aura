@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-func TestLoopPolicyForProfileDeclaresTerminalSwarmAndSandboxFinalization(t *testing.T) {
+func TestLoopPolicyForProfileDefangsSwarmAndKeepsSandboxFinalization(t *testing.T) {
 	swarm, ok := LoopPolicyForProfile(ProfileSwarmResearch)
 	if !ok {
 		t.Fatal("LoopPolicyForProfile swarm_research returned false")
 	}
-	if swarm.MaxSteps < 1 || swarm.MaxSteps > 2 {
-		t.Fatalf("swarm MaxSteps = %d, want low 1-2 budget", swarm.MaxSteps)
+	if swarm.MaxSteps != 8 {
+		t.Fatalf("swarm MaxSteps = %d, want normal 8-step budget", swarm.MaxSteps)
 	}
-	if !slices.Contains(swarm.TerminalTools, "run_aurabot_swarm") {
-		t.Fatalf("swarm TerminalTools missing run_aurabot_swarm: %+v", swarm.TerminalTools)
+	if slices.Contains(swarm.TerminalTools, "run_aurabot_swarm") {
+		t.Fatalf("swarm TerminalTools contains run_aurabot_swarm: %+v", swarm.TerminalTools)
 	}
 	if !strings.Contains(swarm.DuplicateToolPolicy, "Reject duplicate run_aurabot_swarm") {
 		t.Fatalf("swarm DuplicateToolPolicy = %q, want duplicate swarm rejection", swarm.DuplicateToolPolicy)
@@ -45,14 +45,14 @@ func TestLoopPolicyForProfileReturnsCopySafePolicy(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForProfile swarm_research returned false")
 	}
-	policy.TerminalTools[0] = "mutated"
+	policy.MaxSteps = 99
 
 	reread, ok := LoopPolicyForProfile(ProfileSwarmResearch)
 	if !ok {
 		t.Fatal("LoopPolicyForProfile swarm_research reread returned false")
 	}
-	if reread.TerminalTools[0] == "mutated" {
-		t.Fatalf("mutating TerminalTools changed policy catalog: %+v", reread.TerminalTools)
+	if reread.MaxSteps == 99 {
+		t.Fatalf("mutating policy changed policy catalog: %+v", reread)
 	}
 }
 

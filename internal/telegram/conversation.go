@@ -519,9 +519,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		ToolsExposed:        stats.toolsExposed,
 	})
 	b.storeOrchestrationSnapshot(userID, stats)
-	if b.terminalToolPolicyEnabled() && profileDecision.Profile == orchestration.ProfileSwarmResearch && toolAllowed("run_aurabot_swarm", stats.toolsExposed) {
-		return b.runTerminalSwarm(ctx, c, convCtx, userID, placeholder, stats)
-	}
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		// Context bounding happens once at the start of handleConversation.
 		// Re-enforcing on every tool iteration triggered a summarizer LLM
@@ -616,24 +613,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		if execution.fatalResult != "" {
 			response := userFacingFatalToolResult(execution.fatalResult)
 			convCtx.AddAssistantMessage(response)
-			return response, stats
-		}
-		if b.terminalToolPolicyEnabled() && profileDecision.Profile == orchestration.ProfileSwarmResearch && toolCallsContain(resp.ToolCalls, "run_aurabot_swarm") {
-			stats.terminalSwarm = true
-			stats.swarmFinalization = swarmResearchFinalization()
-			stats.postSwarmToolCalls = 0
-			stats.applySwarmMetrics(lastToolResult, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-			if stats.swarmFinalization == "no_tool_llm" {
-				response, delivered := b.finalizeSwarmWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
-				b.storeOrchestrationSnapshot(userID, stats)
-				if delivered {
-					return "", stats
-				}
-				return response, stats
-			}
-			response := formatTerminalSwarmResult(lastToolResult)
-			convCtx.AddAssistantMessage(response)
-			b.storeOrchestrationSnapshot(userID, stats)
 			return response, stats
 		}
 		if b.terminalToolPolicyEnabled() && execution.terminalTool != "" && execution.terminalTool != "run_aurabot_swarm" && loopPolicy.AllowNoToolFinalization {

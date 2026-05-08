@@ -441,8 +441,8 @@ func TestMaxToolLoopIterationsHonorsRuntimeCapAndProfilePolicy(t *testing.T) {
 	if got := b.maxToolLoopIterations(orchestration.ProfileDocument); got != 4 {
 		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
-	if got := b.maxToolLoopIterations(orchestration.ProfileSwarmResearch); got != 2 {
-		t.Fatalf("swarm maxToolLoopIterations = %d, want profile cap 2", got)
+	if got := b.maxToolLoopIterations(orchestration.ProfileSwarmResearch); got != 4 {
+		t.Fatalf("swarm maxToolLoopIterations = %d, want runtime cap 4", got)
 	}
 }
 

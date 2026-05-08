@@ -255,9 +255,10 @@ var profileCardCatalog = []ProfileCard{
 			"write_wiki",
 		},
 		ConditionalTools: []ConditionalToolSet{
+			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}},
 			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
 		},
-		DeniedTools: []string{"execute_code", "run_aurabot_swarm", "install_skill", "delete_skill", "request_dashboard_token"},
+		DeniedTools: []string{"execute_code", "install_skill", "delete_skill", "request_dashboard_token"},
 		LoopPolicy: LoopPolicy{
 			MaxSteps:                8,
 			AllowNoToolFinalization: true,
@@ -293,7 +294,7 @@ var profileCardCatalog = []ProfileCard{
 	},
 	{
 		Profile:  ProfileSwarmResearch,
-		Purpose:  "Read-only broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
+		Purpose:  "Broad synthesis route for audits, planning, pipeline reviews, and quality checks.",
 		Access:   AccessReadOnly,
 		Priority: 40,
 		PositiveCues: []string{
@@ -315,11 +316,17 @@ var profileCardCatalog = []ProfileCard{
 			"delete", "cancella", "rimuovi", "schedule", "program", "ricordami", "invia", "send",
 			"memory capture", "post-turn", "auto_low_risk", "review-gated", "reviewable proposals",
 		},
-		RequiredAvailability: []string{"swarm"},
 		AvailabilityFallback: ProfileMemory,
-		AllowedTools:         []string{},
+		AllowedTools: []string{
+			"list_skills", "read_skill", "search_skill_catalog",
+			"search_memory", "search_wiki", "read_wiki",
+			"list_wiki", "list_sources", "read_source",
+			"web_search", "web_fetch",
+			"daily_briefing",
+		},
 		ConditionalTools: []ConditionalToolSet{
 			{Availability: "swarm", Tools: []string{"run_aurabot_swarm", "read_swarm_result", "list_swarm_tasks"}, Prepend: true},
+			{Availability: "proposals", Tools: []string{"propose_wiki_change", "propose_skill_change"}},
 		},
 		DeniedTools: []string{
 			"write_wiki", "create_docx", "create_xlsx", "create_pdf",
@@ -327,10 +334,9 @@ var profileCardCatalog = []ProfileCard{
 			"install_skill", "delete_skill", "settings_update",
 		},
 		LoopPolicy: LoopPolicy{
-			MaxSteps:                2,
-			TerminalTools:           []string{"run_aurabot_swarm"},
+			MaxSteps:                8,
 			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate run_aurabot_swarm calls after the first completed swarm delegation; answer from the aggregate result.",
+			DuplicateToolPolicy:     "Reject duplicate run_aurabot_swarm calls; after one broad pass, use direct reads only for narrow verification.",
 			MaxElapsed:              30 * time.Second,
 		},
 	},
@@ -504,7 +510,7 @@ func profileCardsByPriority() []ProfileCard {
 func profilePrompt(profile Profile) string {
 	switch profile {
 	case ProfileSwarmResearch:
-		return "\nUse the swarm-first read-only route for broad synthesis, audits, planning, memory quality checks, and pipeline reviews. Direct wiki/source/memory tools are intentionally hidden in this profile so the parent agent does not duplicate worker reads. Do not write or create files in this profile."
+		return "\nUse the broad synthesis route for audits, planning, memory quality checks, and pipeline reviews. Prefer one swarm pass when helpful, then use direct wiki/source/memory reads for narrow verification instead of repeating broad delegation. Do not create files in this profile."
 	case ProfileSandboxCompute:
 		return "\nUse Python sandbox for computation, data transforms, charts, simulations, parser experiments, and generated artifacts. Load applicable skill guidance before executing sandbox code. Keep generated files under /tmp/aura_out."
 	case ProfileDocument:
@@ -527,7 +533,7 @@ func memoryPrompt(profile Profile) string {
 
 func swarmProfilePrompt(profile Profile) string {
 	if profile == ProfileSwarmResearch {
-		return "\n\n## Swarm Profile\nCall run_aurabot_swarm as the first and primary tool for this profile. Keep the goal compact and read-only. After the swarm returns, answer from its synthesis; call read_swarm_result only when a returned task is incomplete or the synthesis explicitly says a worker detail is needed."
+		return "\n\n## Swarm Profile\nUse run_aurabot_swarm for one broad pass when the request spans the repo, logs, wiki, or whole pipeline. After the swarm returns, continue with direct read tools only when a narrow fact needs verification."
 	}
 	if profile == ProfileDocument {
 		return "\n\n## Document Evidence Profile\nFor document summaries, gather compact evidence with search_memory and list_sources, then create the requested file with the typed file tool. Keep source/wiki reads narrow; do not keep expanding the evidence loop once you have enough to draft."
@@ -561,7 +567,7 @@ func skillPreflightPrompt(profile Profile) string {
 
 func profileSupportsSkillTools(profile Profile) bool {
 	switch profile {
-	case ProfileSandboxCompute, ProfileDocument, ProfileAdminReview:
+	case ProfileSwarmResearch, ProfileSandboxCompute, ProfileDocument, ProfileAdminReview:
 		return true
 	default:
 		return false
