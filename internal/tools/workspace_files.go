@@ -222,10 +222,18 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) (strin
 	if !ok {
 		return "", fmt.Errorf("content must be a string")
 	}
+	validated, err := validateWorkspaceWrite(rel, []byte(content))
+	if err != nil {
+		return "", fmt.Errorf("write_file: validation failed: %w", err)
+	}
 	if err := t.root.WriteAtomic(rel, []byte(content)); err != nil {
 		return "", fmt.Errorf("write_file: %w", err)
 	}
-	return jsonString(map[string]any{"path": rel, "bytes": len(content), "status": "written"})
+	out := map[string]any{"path": rel, "bytes": len(content), "status": "written"}
+	if validated != "" {
+		out["validated"] = validated
+	}
+	return jsonString(out)
 }
 
 type ApplyPatchTool struct {
@@ -300,10 +308,18 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, args map[string]any) (stri
 		replacements = strings.Count(current, oldText)
 		updated = strings.ReplaceAll(current, oldText, newText)
 	}
+	validated, err := validateWorkspaceWrite(rel, []byte(updated))
+	if err != nil {
+		return "", fmt.Errorf("apply_patch: validation failed: %w", err)
+	}
 	if err := t.root.WriteAtomic(rel, []byte(updated)); err != nil {
 		return "", fmt.Errorf("apply_patch: %w", err)
 	}
-	return jsonString(map[string]any{"path": rel, "status": "patched", "replacements": replacements})
+	out := map[string]any{"path": rel, "status": "patched", "replacements": replacements}
+	if validated != "" {
+		out["validated"] = validated
+	}
+	return jsonString(out)
 }
 
 func jsonString(v any) (string, error) {

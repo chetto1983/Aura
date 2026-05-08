@@ -96,6 +96,162 @@ func TestWorkspaceFileToolsDenySensitivePaths(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFileToolsValidateWikiWrites(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	write := NewWriteFileTool(root)
+
+	_, err := write.Execute(context.Background(), map[string]any{
+		"path":    "wiki/broken.md",
+		"content": "# Missing frontmatter\n",
+	})
+	if err == nil || !strings.Contains(err.Error(), "wiki validation") {
+		t.Fatalf("write_file invalid wiki error = %v, want wiki validation", err)
+	}
+	if _, readErr := root.Read("wiki/broken.md", 1024); readErr == nil {
+		t.Fatal("invalid wiki page was written")
+	}
+
+	out, err := write.Execute(context.Background(), map[string]any{
+		"path": "wiki/valid-page.md",
+		"content": strings.Join([]string{
+			"---",
+			"title: Valid Page",
+			"tags: [aura]",
+			"category: test",
+			"schema_version: 2",
+			"prompt_version: ingest_v1",
+			"created_at: 2026-05-08T10:00:00Z",
+			"updated_at: 2026-05-08T10:00:00Z",
+			"---",
+			"Valid body with [[links]].",
+			"",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatalf("write_file valid wiki: %v", err)
+	}
+	if !strings.Contains(out, `"validated": "wiki"`) {
+		t.Fatalf("write_file output = %s, want wiki validation marker", out)
+	}
+
+	_, err = write.Execute(context.Background(), map[string]any{
+		"path": "wiki/wrong-slug.md",
+		"content": strings.Join([]string{
+			"---",
+			"title: Right Slug",
+			"category: test",
+			"schema_version: 2",
+			"prompt_version: ingest_v1",
+			"created_at: 2026-05-08T10:00:00Z",
+			"updated_at: 2026-05-08T10:00:00Z",
+			"---",
+			"Valid body.",
+			"",
+		}, "\n"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match title slug") {
+		t.Fatalf("write_file wiki slug mismatch error = %v", err)
+	}
+}
+
+func TestWorkspaceFileToolsRejectInvalidWikiPatchWithoutChangingFile(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	original := strings.Join([]string{
+		"---",
+		"title: Patch Page",
+		"category: test",
+		"schema_version: 2",
+		"prompt_version: ingest_v1",
+		"created_at: 2026-05-08T10:00:00Z",
+		"updated_at: 2026-05-08T10:00:00Z",
+		"---",
+		"Patch body.",
+		"",
+	}, "\n")
+	if err := root.WriteAtomic("wiki/patch-page.md", []byte(original)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewApplyPatchTool(root).Execute(context.Background(), map[string]any{
+		"path": "wiki/patch-page.md",
+		"old":  "Patch body.",
+		"new":  "",
+	})
+	if err == nil || !strings.Contains(err.Error(), "wiki validation") {
+		t.Fatalf("apply_patch invalid wiki error = %v, want wiki validation", err)
+	}
+	got, err := root.Read("wiki/patch-page.md", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("invalid patch changed file:\n%s", got)
+	}
+}
+
+func TestWorkspaceFileToolsValidateSkillWrites(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	write := NewWriteFileTool(root)
+
+	_, err := write.Execute(context.Background(), map[string]any{
+		"path":    ".agents/skills/broken/SKILL.md",
+		"content": "no frontmatter\n",
+	})
+	if err == nil || !strings.Contains(err.Error(), "skill validation") {
+		t.Fatalf("write_file invalid skill error = %v, want skill validation", err)
+	}
+	if _, readErr := root.Read(".agents/skills/broken/SKILL.md", 1024); readErr == nil {
+		t.Fatal("invalid skill was written")
+	}
+
+	_, err = write.Execute(context.Background(), map[string]any{
+		"path": ".agents/skills/wrong-name/SKILL.md",
+		"content": strings.Join([]string{
+			"---",
+			"name: other-name",
+			"description: Test skill",
+			"---",
+			"Use it carefully.",
+			"",
+		}, "\n"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match directory") {
+		t.Fatalf("write_file skill name mismatch error = %v", err)
+	}
+
+	out, err := write.Execute(context.Background(), map[string]any{
+		"path": ".agents/skills/good-skill/SKILL.md",
+		"content": strings.Join([]string{
+			"---",
+			"name: good-skill",
+			"description: Test skill",
+			"---",
+			"Use it carefully.",
+			"",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatalf("write_file valid skill: %v", err)
+	}
+	if !strings.Contains(out, `"validated": "skill"`) {
+		t.Fatalf("write_file output = %s, want skill validation marker", out)
+	}
+}
+
+func TestWorkspaceFileToolsDoNotValidateOrdinaryMarkdown(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	out, err := NewWriteFileTool(root).Execute(context.Background(), map[string]any{
+		"path":    "docs/note.md",
+		"content": "# Plain markdown without frontmatter\n",
+	})
+	if err != nil {
+		t.Fatalf("write_file ordinary markdown: %v", err)
+	}
+	if strings.Contains(out, "validated") {
+		t.Fatalf("write_file output = %s, did not expect validation marker", out)
+	}
+}
+
 func TestListFilesHidesSensitivePaths(t *testing.T) {
 	root := newWorkspaceToolRoot(t)
 	if err := os.WriteFile(filepath.Join(root.Path(), ".env"), []byte("secret"), 0o600); err != nil {

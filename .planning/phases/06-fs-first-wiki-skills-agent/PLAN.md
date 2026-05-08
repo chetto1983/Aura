@@ -51,6 +51,17 @@ The LLM sees a small, strong tool surface:
 
 The LLM no longer sees separate semantic write/proposal tools for wiki and skills. Wiki and skill changes are ordinary markdown edits under bounded workspace paths.
 
+## Captured Follow-Up Decisions
+
+- 2026-05-08 Git tools: useful for Aura, but only as a small typed toolset, not raw `git` execution. Start with read-only/status tools and review-gated staging/commit:
+  - `git_status`
+  - `git_diff`
+  - `git_log` / `git_show`
+  - `git_stage` with explicit paths only
+  - `git_commit` only after admin/review approval and clean diff summary
+  - maybe `git_branch` with safe prefix rules
+  - Defer `push`, `merge`, `reset`, `checkout --`, `rebase`, and `clean` until explicit admin-gated design exists.
+
 ## Work Items
 
 ### 0. Baseline and Plan
@@ -144,7 +155,7 @@ Current slice started 2026-05-08:
 
 ### 5. Wiki/Skill File Invariants
 
-Status: PENDING
+Status: IN_PROGRESS
 
 - Add post-write or follow-up validation for markdown wiki and skill paths.
 - For wiki writes:
@@ -155,6 +166,16 @@ Status: PENDING
 - For skill writes:
   - validate `SKILL.md` shape
   - refresh manifest/catalog cache where needed
+
+Progress:
+
+- Added path-aware validation in the workspace file tool layer before `write_file` / `apply_patch` commits content to disk.
+- Wiki page writes under `wiki/*.md` now parse with `wiki.ParseMD`, pass `wiki.Validate`, and require filename slug to match the page title slug.
+- Operational wiki files `wiki/SCHEMA.md`, `wiki/index.md`, and `wiki/log.md` are excluded from page schema validation.
+- `SKILL.md` writes now parse with `skills.ParseSkill` and require the frontmatter name to match the parent directory.
+- Invalid `apply_patch` results are rejected before write, preserving the original file.
+- Ordinary markdown outside wiki/skill paths remains writable without domain validation.
+- Still pending for a later slice: automatic wiki index/search refresh and skill manifest/cache refresh after accepted writes.
 
 ### 6. Debug, Scheduler, and Swarm Cleanup
 
