@@ -346,8 +346,7 @@ type turnStats struct {
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, profileDecision orchestration.ProfileDecision) (string, turnStats) {
 	loopPolicy, _ := orchestration.LoopPolicyForProfile(profileDecision.Profile)
 	maxIterations := b.maxToolLoopIterations(profileDecision.Profile)
-
-	stats := turnStats{
+	baseStats := turnStats{
 		promptVersion:       promptPlan.Version,
 		promptModules:       append([]string(nil), promptPlan.Modules...),
 		promptHash:          promptPlan.Hash,
@@ -355,142 +354,147 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		profileSelectReason: profileDecision.Reason,
 		activeCapabilities:  capabilityNames(orchestration.CapabilitiesForProfile(profileDecision.Profile)),
 	}
-	var lastToolResult string
 	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
-	stats.toolsExposed = toolDefinitionNames(toolDefs)
+	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
 		PromptVersion:       promptPlan.Version,
 		PromptHash:          promptPlan.Hash,
 		PromptModules:       promptPlan.Modules,
 		ToolProfile:         string(profileDecision.Profile),
 		ProfileSelectReason: profileDecision.Reason,
-		ToolsExposed:        stats.toolsExposed,
+		ToolsExposed:        baseStats.toolsExposed,
 	})
-	b.storeOrchestrationSnapshot(userID, stats)
-	for iteration := 0; iteration < maxIterations; iteration++ {
-		// Context bounding happens once at the start of handleConversation.
-		// Re-enforcing on every tool iteration triggered a summarizer LLM
-		// call mid-response, which both burned latency and degraded fidelity.
-		// MaxToolIterations already caps growth within a single user turn.
-
-		if b.budget != nil && b.budget.IsHardBudgetExceeded() {
-			b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
-			return "Budget limit reached. LLM calls are temporarily halted.", stats
-		}
-
-		req := llm.Request{
-			Messages: convCtx.Messages(),
-			Model:    b.cfg.LLMModel,
-			Tools:    toolDefs,
-		}
-
-		stats.llmCalls++
-		stats.loopSteps++
-		ch, err := b.llm.Stream(ctx, req)
-		if err != nil {
-			b.logger.Error("LLM stream failed", "user_id", userID, "error", err)
-			return "Sorry, I couldn't process your message. Please try again.", stats
-		}
-
-		resp, delivered, err := b.consumeStream(c, ch, userID, placeholder)
-		if err != nil {
-			b.logger.Error("LLM stream read failed", "user_id", userID, "error", err)
-			return "Sorry, I couldn't process your message. Please try again.", stats
-		}
-
-		convCtx.TrackTokens(resp.Usage)
-		stats.tokensPrompt += resp.Usage.PromptTokens
-		stats.tokensCompletion += resp.Usage.CompletionTokens
-		stats.tokensTotal += resp.Usage.TotalTokens
-		stats.costUSD += estimateUsageCost(resp.Usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-		if b.budget != nil {
-			b.budget.RecordUsage(resp.Usage)
-		}
-
-		if !resp.HasToolCalls {
-			response := strings.TrimSpace(resp.Content)
-			if response == "" {
-				if lastToolResult != "" {
-					response = lastToolResult
-				} else {
-					response = "I completed the request but do not have anything else to add."
+	var currentStats turnStats
+	result, err := agentloop.Run(ctx,
+		telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
+		agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, profileDecision.Profile, currentStats.readSkills)
+			return agentloop.ExecutionSummary{
+				LastResult:             execution.lastResult,
+				FatalResult:            userFacingFatalToolResult(execution.fatalResult),
+				HiddenRejected:         execution.hiddenRejected,
+				SkillPreflightRejected: execution.skillPreflightRejected,
+				ReadSkillNames:         execution.readSkillNames,
+				TerminalTool:           execution.terminalTool,
+			}
+		}),
+		convCtx,
+		agentloop.Options{
+			MaxIterations:           maxIterations,
+			Tools:                   toolDefs,
+			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
+			AllowNoToolFinalization: loopPolicy.AllowNoToolFinalization,
+			DuplicateToolResult: func(call llm.ToolCall) string {
+				return tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name))
+			},
+			BeforeLLM: func() (string, bool) {
+				// Context bounding happens once at the start of handleConversation.
+				// Re-enforcing on every tool iteration triggered a summarizer LLM
+				// call mid-response, which both burned latency and degraded fidelity.
+				// MaxToolIterations already caps growth within a single user turn.
+				if b.budget != nil && b.budget.IsHardBudgetExceeded() {
+					b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
+					return "Budget limit reached. LLM calls are temporarily halted.", true
 				}
-			}
-			convCtx.AddAssistantMessage(response)
-			b.notifySoftBudget(c, userID)
-			// If consumeStream already progressively edited a Telegram
-			// message with the full content, suppress the caller's
-			// c.Send to avoid double-delivery. Empty response signals
-			// "already delivered" to handleConversation.
-			if delivered {
-				return "", stats
-			}
-			return response, stats
-		}
-
-		convCtx.AddAssistantToolCallMessage(resp.Content, resp.ToolCalls)
-		stats.toolCalls += len(resp.ToolCalls)
-		for _, call := range resp.ToolCalls {
-			stats.toolsCalled = append(stats.toolsCalled, call.Name)
-			switch call.Name {
-			case "read_skill":
-				stats.skillsRead = true
-			case "run_aurabot_swarm":
-				stats.swarmUsed = true
-			case "execute_code":
-				stats.sandboxUsed = true
-			}
-		}
-		b.storeOrchestrationSnapshot(userID, stats)
-		var hiddenRejected bool
-		callsToExecute, duplicateToolCalls := agentloop.DedupeToolCalls(resp.ToolCalls)
-		stats.duplicateToolCall = stats.duplicateToolCall || len(duplicateToolCalls) > 0
-		execution := b.executeToolCalls(ctx, c, convCtx, userID, callsToExecute, stats.toolsExposed, profileDecision.Profile, stats.readSkills)
-		lastToolResult, hiddenRejected = execution.lastResult, execution.hiddenRejected
-		stats.skillPreflightFail = stats.skillPreflightFail || execution.skillPreflightRejected
-		stats.readSkills = appendUniqueStrings(stats.readSkills, execution.readSkillNames...)
-		stats.skillsRead = stats.skillsRead || len(stats.readSkills) > 0
-		if execution.terminalTool != "" {
-			stats.terminalTool = execution.terminalTool
-		}
-		for _, duplicate := range duplicateToolCalls {
-			convCtx.AddToolResultMessage(duplicate.ID, tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", duplicate.Name)))
-		}
-		stats.hiddenToolRejected = stats.hiddenToolRejected || hiddenRejected
-		b.storeOrchestrationSnapshot(userID, stats)
-		if execution.fatalResult != "" {
-			response := userFacingFatalToolResult(execution.fatalResult)
-			convCtx.AddAssistantMessage(response)
-			return response, stats
-		}
-		if b.terminalToolPolicyEnabled() && execution.terminalTool != "" && execution.terminalTool != "run_aurabot_swarm" && loopPolicy.AllowNoToolFinalization {
-			if execution.terminalTool == "execute_code" {
-				response := formatTerminalExecuteCodeResult(lastToolResult)
-				convCtx.AddAssistantMessage(response)
-				b.storeOrchestrationSnapshot(userID, stats)
-				return response, stats
-			}
-			if isFileGenerationTool(execution.terminalTool) {
-				response := formatTerminalFileResult(execution.terminalTool, lastToolResult)
-				convCtx.AddAssistantMessage(response)
-				b.storeOrchestrationSnapshot(userID, stats)
-				return response, stats
-			}
-			response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &stats)
-			b.storeOrchestrationSnapshot(userID, stats)
-			if delivered {
-				return "", stats
-			}
-			return response, stats
-		}
+				return "", false
+			},
+			RecordUsage: func(usage llm.TokenUsage) {
+				if b.budget != nil {
+					b.budget.RecordUsage(usage)
+				}
+			},
+			EstimateCost: func(usage llm.TokenUsage) float64 {
+				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+			},
+			OnStats: func(stats agentloop.Stats) {
+				currentStats = mergeAgentLoopStats(baseStats, stats)
+				b.storeOrchestrationSnapshot(userID, currentStats)
+			},
+			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
+				if terminalTool == "execute_code" {
+					response := formatTerminalExecuteCodeResult(lastToolResult)
+					convCtx.AddAssistantMessage(response)
+					return response, false, true
+				}
+				if isFileGenerationTool(terminalTool) {
+					response := formatTerminalFileResult(terminalTool, lastToolResult)
+					convCtx.AddAssistantMessage(response)
+					return response, false, true
+				}
+				telegramStats := mergeAgentLoopStats(baseStats, *stats)
+				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
+				*stats = applyTelegramTerminalStats(*stats, telegramStats)
+				if delivered {
+					return "", true, true
+				}
+				return response, false, true
+			},
+		})
+	if err != nil {
+		b.logger.Error("agent loop failed", "user_id", userID, "error", err)
 	}
-
-	fallback := "Mi sono fermato prima di completare una risposta finale affidabile."
-	if lastToolResult != "" {
-		fallback += "\n\nHo completato alcuni passaggi interni, ma mi sono fermato prima di generare una risposta finale pulita."
+	stats := mergeAgentLoopStats(baseStats, result.Stats)
+	currentStats = stats
+	if result.Stats.LLMCalls > 0 && result.Stats.TerminalTool == "" {
+		b.notifySoftBudget(c, userID)
 	}
-	convCtx.AddAssistantMessage(fallback)
-	return fallback, stats
+	return result.Text, currentStats
+}
+
+type telegramLoopClient struct {
+	bot         *Bot
+	teleCtx     tele.Context
+	userID      string
+	placeholder *tele.Message
+}
+
+func (c telegramLoopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+	req := llm.Request{
+		Messages: messages,
+		Model:    c.bot.cfg.LLMModel,
+		Tools:    tools,
+	}
+	ch, err := c.bot.llm.Stream(ctx, req)
+	if err != nil {
+		c.bot.logger.Error("LLM stream failed", "user_id", c.userID, "error", err)
+		return agentloop.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+	}
+	resp, delivered, err := c.bot.consumeStream(c.teleCtx, ch, c.userID, c.placeholder)
+	if err != nil {
+		c.bot.logger.Error("LLM stream read failed", "user_id", c.userID, "error", err)
+		return agentloop.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+	}
+	return agentloop.ChatResponse{Response: resp, Delivered: delivered}, nil
+}
+
+func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
+	base.llmCalls = stats.LLMCalls
+	base.toolCalls = stats.ToolCalls
+	base.loopSteps = stats.LoopSteps
+	base.toolsCalled = append([]string(nil), stats.ToolsCalled...)
+	base.readSkills = append([]string(nil), stats.ReadSkills...)
+	base.hiddenToolRejected = stats.HiddenToolRejected
+	base.skillPreflightFail = stats.SkillPreflightRejected
+	base.skillsRead = stats.SkillsRead
+	base.swarmUsed = stats.SwarmUsed
+	base.sandboxUsed = stats.SandboxUsed
+	base.terminalTool = stats.TerminalTool
+	base.duplicateToolCall = stats.DuplicateToolCall
+	base.tokensPrompt = stats.TokensPrompt
+	base.tokensCompletion = stats.TokensCompletion
+	base.tokensTotal = stats.TokensTotal
+	base.costUSD = stats.CostUSD
+	return base
+}
+
+func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) agentloop.Stats {
+	stats.LLMCalls = telegramStats.llmCalls
+	stats.LoopSteps = telegramStats.loopSteps
+	stats.TokensPrompt = telegramStats.tokensPrompt
+	stats.TokensCompletion = telegramStats.tokensCompletion
+	stats.TokensTotal = telegramStats.tokensTotal
+	stats.CostUSD = telegramStats.costUSD
+	return stats
 }
 
 func (b *Bot) maxToolLoopIterations(profile orchestration.Profile) int {
