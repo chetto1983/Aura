@@ -40,6 +40,33 @@ func Open(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenReadOnly opens a SQLite database for repair/recovery reads. It disables
+// foreign key checks and marks the connection query-only so recovery tooling can
+// inspect damaged local databases without mutating them.
+func OpenReadOnly(path string) (*sql.DB, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("db path is required")
+	}
+
+	values := url.Values{}
+	values.Add("_pragma", "busy_timeout=5000")
+	values.Add("_pragma", "foreign_keys=OFF")
+	values.Add("_pragma", "query_only=ON")
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	db, err := sql.Open("sqlite", path+separator+values.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite database read-only: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ping sqlite database read-only: %w", err)
+	}
+	return db, nil
+}
+
 // CheckIntegrity runs SQLite's integrity check on the shared database pool.
 func CheckIntegrity(ctx context.Context, db *sql.DB) (string, error) {
 	if db == nil {

@@ -431,3 +431,45 @@ func TestRepairLinkContinuesAfterWriteFailure(t *testing.T) {
 		t.Fatalf("log.md missing auto-fix entry: %s", logText)
 	}
 }
+
+func TestRepairLinkUpdatesRelatedFrontmatter(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	now := "2026-04-28T10:00:00Z"
+	for _, page := range []*Page{
+		{
+			Title:         "Fixed Link",
+			Body:          "Canonical page.",
+			Category:      "debug",
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		{
+			Title:         "Needs Related Repair",
+			Body:          "No body wiki link here.",
+			Category:      "debug",
+			Related:       []string{"broken-link"},
+			SchemaVersion: CurrentSchemaVersion,
+			PromptVersion: "v1",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+	} {
+		if err := store.WritePage(ctx, page); err != nil {
+			t.Fatalf("WritePage(%q): %v", page.Title, err)
+		}
+	}
+
+	if err := store.RepairLink(ctx, "broken-link", "fixed-link"); err != nil {
+		t.Fatalf("RepairLink: %v", err)
+	}
+	repaired, err := store.ReadPage("needs-related-repair")
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	if len(repaired.Related) != 1 || repaired.Related[0] != "fixed-link" {
+		t.Fatalf("Related = %#v, want fixed-link", repaired.Related)
+	}
+}

@@ -123,7 +123,7 @@ func (s *Store) CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*Me
 	hubCategory := make(map[string]string)
 	for target, categoryCounts := range missingByTargetCategory {
 		category, count := dominantCategory(categoryCounts)
-		if count >= 2 {
+		if count >= 2 || len(missingByTarget[target]) >= 2 {
 			hubCategory[target] = category
 		}
 	}

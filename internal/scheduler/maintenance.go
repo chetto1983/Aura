@@ -163,19 +163,25 @@ func classifyNonLink(msg string) string {
 	}
 }
 
-// parseBrokenLink extracts the slug from a LintIssue message like
-// "broken link: [[slug]]". Returns ("", false) for other message types.
+// parseBrokenLink extracts the slug from LintIssue messages like
+// "broken link: [[slug]]" and "broken related ref: slug".
+// Returns ("", false) for other message types.
 func parseBrokenLink(msg string) (string, bool) {
 	const prefix = "broken link: [["
-	if !strings.HasPrefix(msg, prefix) {
-		return "", false
+	if strings.HasPrefix(msg, prefix) {
+		rest := strings.TrimPrefix(msg, prefix)
+		slug := strings.TrimSuffix(rest, "]]")
+		if slug == rest {
+			return "", false
+		}
+		return slug, true
 	}
-	rest := strings.TrimPrefix(msg, prefix)
-	slug := strings.TrimSuffix(rest, "]]")
-	if slug == rest {
-		return "", false
+	const relatedPrefix = "broken related ref: "
+	if strings.HasPrefix(msg, relatedPrefix) {
+		slug := strings.TrimSpace(strings.TrimPrefix(msg, relatedPrefix))
+		return slug, slug != ""
 	}
-	return slug, true
+	return "", false
 }
 
 // levenshteinCandidates returns all slugs whose Levenshtein distance to

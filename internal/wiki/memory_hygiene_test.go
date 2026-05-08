@@ -60,6 +60,30 @@ func TestCleanMemoryDryRunPlansSharedBrokenHubWithoutWriting(t *testing.T) {
 	}
 }
 
+func TestCleanMemoryPlansSharedBrokenHubAcrossCategories(t *testing.T) {
+	store, _ := newTestStore(t)
+	putMemoryHygienePage(t, store, &Page{
+		Title:    "Installed Skills",
+		Body:     "Skill inventory.",
+		Category: "engineering",
+		Related:  []string{"aura-source-extraction"},
+	})
+	putMemoryHygienePage(t, store, &Page{
+		Title:    "Source Note",
+		Body:     "Extracted source summary.",
+		Category: "sources",
+		Related:  []string{"aura-source-extraction"},
+	})
+
+	report, err := store.CleanMemory(context.Background(), MemoryHygieneOptions{})
+	if err != nil {
+		t.Fatalf("CleanMemory dry-run: %v", err)
+	}
+	if !slices.Contains(report.PlannedHubs, "aura-source-extraction") {
+		t.Fatalf("PlannedHubs = %v, want aura-source-extraction", report.PlannedHubs)
+	}
+}
+
 func TestCleanMemoryApplyCreatesHubsRepairsAliasesAndLeavesNoBrokenLinks(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()

@@ -385,12 +385,11 @@ func (s *Store) AllowedUserCount(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// AllowedUserIDs returns the set of currently-allowlisted Telegram user
-// IDs persisted by BootstrapUser/Approve. Used by the bot to fan out
-// pending-request notifications. The slice is empty when no env-allowlist
-// exists yet AND no user has been bootstrapped.
+// AllowedUserIDs returns the set of real currently-allowlisted Telegram user
+// IDs persisted by BootstrapUser/Approve. E2E bootstrap rows are intentionally
+// excluded so scheduled jobs do not try to notify synthetic dashboard users.
 func (s *Store) AllowedUserIDs(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT user_id FROM allowed_users ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT user_id FROM allowed_users WHERE source <> ? ORDER BY created_at`, SourceE2EBootstrap)
 	if err != nil {
 		return nil, fmt.Errorf("auth allowed user list: %w", err)
 	}

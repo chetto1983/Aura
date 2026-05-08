@@ -89,6 +89,13 @@ func TestParseBrokenLink_NoClosingBrackets(t *testing.T) {
 	}
 }
 
+func TestParseBrokenLink_RelatedRef(t *testing.T) {
+	got, ok := parseBrokenLink("broken related ref: aura-source-extraction")
+	if !ok || got != "aura-source-extraction" {
+		t.Fatalf("parseBrokenLink related = %q %v", got, ok)
+	}
+}
+
 // TestParseBrokenLink_NotBrokenLink covers the prefix-mismatch path.
 func TestParseBrokenLink_NotBrokenLink(t *testing.T) {
 	_, ok := parseBrokenLink("missing category")

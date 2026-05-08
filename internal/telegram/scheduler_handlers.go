@@ -468,19 +468,33 @@ If no gaps found, respond with [].`, convSummary.String(), toolsSummary.String()
 		return nil
 	}
 
-	mode := strings.ToLower(strings.TrimSpace(b.cfg.SandboxAutoImproveMode))
-	if mode == "" {
-		mode = "dry_run"
-	}
-
+	mode := normalizeAutoImproveMode(b.cfg.SandboxAutoImproveMode)
 	switch mode {
+	case "off":
+		logger.Info("auto_improve: disabled")
+		return nil
 	case "dry_run":
 		return b.proposeAutoImproveTools(ctx, proposals, logger)
 	case "auto_apply":
 		return b.applyAutoImproveTools(ctx, proposals, logger)
 	default:
-		logger.Warn("auto_improve: unknown mode, defaulting to dry_run", "mode", mode)
+		logger.Warn("auto_improve: unknown mode, defaulting to dry_run", "mode", b.cfg.SandboxAutoImproveMode)
 		return b.proposeAutoImproveTools(ctx, proposals, logger)
+	}
+}
+
+func normalizeAutoImproveMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "":
+		return "dry_run"
+	case "off":
+		return "off"
+	case "dry_run":
+		return "dry_run"
+	case "auto", "auto_apply":
+		return "auto_apply"
+	default:
+		return "unknown"
 	}
 }
 

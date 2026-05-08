@@ -671,9 +671,9 @@ func memoryDecayIssue(slug, updatedAt string, now time.Time) (LintIssue, bool) {
 	}, true
 }
 
-// RepairLink replaces all occurrences of [[brokenSlug]] with [[fixedSlug]]
-// in the body of every page that references brokenSlug. Pages without the
-// broken link are not modified. Commits each repaired page to git.
+// RepairLink replaces all occurrences of [[brokenSlug]] in page bodies and
+// brokenSlug entries in related frontmatter with fixedSlug. Pages without the
+// broken reference are not modified. Commits each repaired page to git.
 //
 // Per-page failures are accumulated rather than aborting the scan. That
 // keeps a single malformed page from preventing later pages from being
@@ -692,10 +692,20 @@ func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) er
 			failures = append(failures, fmt.Errorf("read %s: %w", slug, err))
 			continue
 		}
-		if !strings.Contains(page.Body, old) {
+		changed := false
+		if strings.Contains(page.Body, old) {
+			page.Body = strings.ReplaceAll(page.Body, old, replacement)
+			changed = true
+		}
+		for i, rel := range page.Related {
+			if rel == brokenSlug {
+				page.Related[i] = fixedSlug
+				changed = true
+			}
+		}
+		if !changed {
 			continue
 		}
-		page.Body = strings.ReplaceAll(page.Body, old, replacement)
 		page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := s.WritePage(ctx, page); err != nil {
 			failures = append(failures, fmt.Errorf("write %s: %w", slug, err))

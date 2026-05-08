@@ -85,6 +85,9 @@ func TestCollectOwnerIDs_UnionsEnvAndDB(t *testing.T) {
 	if claimed, err := store.BootstrapUser(ctx, "bootstrap-id"); err != nil || !claimed {
 		t.Fatalf("bootstrap claimed=%v err=%v", claimed, err)
 	}
+	if claimed, err := store.BootstrapE2EUser(ctx, "e2e-id"); err != nil || claimed {
+		t.Fatalf("e2e claimed=%v err=%v, want ignored because real owner exists", claimed, err)
+	}
 	if _, err := store.RequestAccess(ctx, "approved-id", "guest"); err != nil {
 		t.Fatal(err)
 	}
