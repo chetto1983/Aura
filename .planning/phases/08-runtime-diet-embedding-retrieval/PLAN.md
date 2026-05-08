@@ -25,6 +25,7 @@ Progress:
 - 2026-05-08 ADK-Go orchestration review: compared Aura against `google/adk-go`'s `Agent`/`Runner`/`Session.Event`/`Toolset`/callback split. The useful pattern for Aura is not importing ADK wholesale; it is moving route policy, tool filtering, tool-result shaping, persistence, and post-tool steering out of Telegram into a small event runner with before/after model/tool hooks.
 - 2026-05-08 ADK-style runner slice: added `internal/agentruntime` as the Aura-native event runner wrapper around the model/tool loop, added dynamic `RuntimeToolset.Tools(ctx)` plus `FilterToolset`, and moved duplicate/repeated retrieval plus document-route next-step shaping into orchestration callbacks (`BeforeToolCallbackForToolset`, `AfterToolCallbackForToolset`). Telegram now adapts runner events instead of owning tool exposure stats and duplicate policy directly.
 - 2026-05-08 document hot-path cut: document turns now carry retrieval-capsule metadata (`HasEvidence`, `SuppressSearchMemory`) so `search_memory` is physically removed from the exposed toolset when the capsule already has evidence or the request can be fulfilled from the prompt. Broad empty-memory document turns still keep `search_memory` available as a one-call fallback. The live document smoke now passes in one loop step with only `create_docx`, no hidden `read_file`, and `elapsed_ms=12976`.
+- 2026-05-08 compact-memory Qdrant PoC: added a throwaway script that indexes synthetic `source/archive/proposal/wiki` facts plus graph entity nodes into a temporary Qdrant collection, fuses Qdrant vector hits with local lexical hits, expands graph neighbors, and prints a compact Retrieval Capsule. This validates the intended shape before touching production schema.
 
 ## Thesis
 
@@ -208,7 +209,7 @@ Acceptance:
 
 ### Task 5: Compact Source And Archive Recall
 
-- Status: partial. `search_memory` now calibrates mixed wiki/source/archive scores, lowers source read windows, returns compact snippets, and exposes stable follow-up handles. Durable indexing of compact source/archive/proposal facts is still open.
+- Status: partial. `search_memory` now calibrates mixed wiki/source/archive scores, lowers source read windows, returns compact snippets, and exposes stable follow-up handles. A Qdrant PoC validates the target compact fact + graph-node retrieval shape. Durable indexing of compact source/archive/proposal facts is still open.
 
 - Index compact source summaries, anchors, accepted proposals, preferences, and decisions.
 - Keep raw source bodies and raw archive turns behind explicit handles.
