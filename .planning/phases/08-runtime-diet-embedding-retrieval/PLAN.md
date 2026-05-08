@@ -27,6 +27,7 @@ Progress:
 - 2026-05-08 document hot-path cut: document turns now carry retrieval-capsule metadata (`HasEvidence`, `SuppressSearchMemory`) so `search_memory` is physically removed from the exposed toolset when the capsule already has evidence or the request can be fulfilled from the prompt. Broad empty-memory document turns still keep `search_memory` available as a one-call fallback. The live document smoke now passes in one loop step with only `create_docx`, no hidden `read_file`, and `elapsed_ms=12976`.
 - 2026-05-08 compact-memory Qdrant PoC: added a throwaway script that indexes synthetic `source/archive/proposal/wiki` facts plus graph entity nodes into a temporary Qdrant collection, fuses Qdrant vector hits with local lexical hits, expands graph neighbors, and prints a compact Retrieval Capsule. This validates the intended shape before touching production schema.
 - 2026-05-08 Task 5 production indexing slice: added the `internal/memoryindex` compact source/archive/proposal index with SQLite + FTS tables (`compact_memory_documents`, `compact_memory_fts`), startup rebuild, and archive append mirroring. `search_memory` no longer depends on `source.Repository` or `conversation.TurnReader` and the old hot-path raw source/archive scans (`searchSources`, `searchArchive`, scan/read limits, lexical scan scorer) were physically deleted. Source OCR pages keep stable `source:<id>#page=N` handles; archive/proposal facts return compact handles from the index.
+- 2026-05-08 Task 5 Qdrant mirror slice complete: compact memory now has an optional production Qdrant mirror using a separate collection (`<QDRANT_COLLECTION>_compact`). Startup rebuild recreates that compact collection from SQLite compact docs; new archive turns upsert into both SQLite and Qdrant after persistence, and upsert recreates the compact collection if an empty rebuild removed it. Archive cleanup APIs purge compact archive rows and Qdrant points. Telegram injects the real chat `chat_id` into `search_memory` calls, overriding model-supplied archive scope, and `scope=all` now performs one compact exact/FTS/vector query for source/archive/proposal facts instead of three vector round-trips.
 
 ## Thesis
 
@@ -210,7 +211,7 @@ Acceptance:
 
 ### Task 5: Compact Source And Archive Recall
 
-- Status: done for the production SQLite/FTS path. Compact source/archive/proposal facts now live in `compact_memory_documents` mirrored to `compact_memory_fts`; startup rebuild happens outside the turn, archive appends are mirrored through an indexing appender, and `search_memory` queries the compact index instead of scanning raw sources or conversation rows. Qdrant mirroring remains the next acceleration step; the PoC already validates the target vector/graph shape.
+- Status: done for the production SQLite/FTS/vector path. Compact source/archive/proposal facts live in `compact_memory_documents`, are mirrored to `compact_memory_fts`, and optionally mirror into Qdrant collection `<QDRANT_COLLECTION>_compact`. Startup rebuild happens outside the turn, archive appends are mirrored through an indexing archive repository, archive delete/retention purges compact rows plus Qdrant points, and `search_memory` queries exact/FTS/vector compact retrieval instead of scanning raw sources or conversation rows. The graph remains powerful via source/proposal/archive facts and later neighbor expansion, but raw scans are out of the default turn.
 
 - Index compact source summaries, anchors, accepted proposals, preferences, and decisions.
 - Keep raw source bodies and raw archive turns behind explicit handles.
@@ -218,9 +219,10 @@ Acceptance:
 
 Acceptance:
 
-- Source/archive/proposal recall returns compact facts from the index.
+- Source/archive/proposal recall returns compact facts from exact/FTS/vector index channels.
 - Deep lexical scans are not in the default `search_memory` path; raw bodies remain behind explicit source/archive/proposal handles.
 - Evidence includes stable handles for exact follow-up reads.
+- Qdrant compact mirror survives empty rebuilds, keeps a separate collection from wiki vectors, and is purged when archive retention deletes rows.
 
 ### Task 6: Make Document Generation Boring
 

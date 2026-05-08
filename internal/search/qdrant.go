@@ -313,6 +313,13 @@ func (c *qdrantClient) recreateCollection(ctx context.Context, vectorSize int) e
 	if err := c.deleteCollection(ctx); err != nil {
 		return err
 	}
+	return c.createCollection(ctx, vectorSize)
+}
+
+func (c *qdrantClient) createCollection(ctx context.Context, vectorSize int) error {
+	if vectorSize <= 0 {
+		return fmt.Errorf("vector size must be positive")
+	}
 	body := map[string]any{
 		"vectors": map[string]any{
 			"size":     vectorSize,
@@ -355,6 +362,31 @@ func (c *qdrantClient) upsertPoints(ctx context.Context, points []qdrantPoint) e
 		}
 	}
 	return nil
+}
+
+func (c *qdrantClient) deletePoints(ctx context.Context, ids []string) error {
+	for start := 0; start < len(ids); start += c.batchSize {
+		end := start + c.batchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		body := map[string]any{"points": ids[start:end]}
+		if err := c.doJSON(ctx, http.MethodPost, c.collectionPath()+"/points/delete?wait=true", body, http.StatusOK); err != nil {
+			if isQdrantNotFound(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func isQdrantNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "404") || strings.Contains(msg, "not found")
 }
 
 func (c *qdrantClient) doJSON(ctx context.Context, method, endpoint string, body any, accepted ...int) error {

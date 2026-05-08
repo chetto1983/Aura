@@ -604,6 +604,21 @@ func TestDocumentToolsetCapsSearchMemoryLimit(t *testing.T) {
 	}
 }
 
+func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
+	args := toolArgumentsForToolset(
+		"search_memory",
+		map[string]any{"query": "private notes", "chat_id": float64(999), "limit": float64(9)},
+		orchestration.ToolsetDefault,
+		42,
+	)
+	if got := args["chat_id"]; got != float64(42) {
+		t.Fatalf("chat_id = %#v, want 42", got)
+	}
+	if got := args["limit"]; got != float64(9) {
+		t.Fatalf("limit = %#v, want unchanged 9", got)
+	}
+}
+
 type countingTelegramTool struct {
 	name     string
 	result   string

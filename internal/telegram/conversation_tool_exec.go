@@ -116,7 +116,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				return
 			}
 			toolCtx := tools.WithUserID(ctx, userID)
-			args := toolArgumentsForToolset(tc.Name, tc.Arguments, toolset)
+			args := toolArgumentsForToolset(tc.Name, tc.Arguments, toolset, chatIDFromTeleContext(c))
 			result, err := b.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {
 				result = tools.FormatToolError(err)
@@ -181,18 +181,31 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	return summary
 }
 
-func toolArgumentsForToolset(name string, args map[string]any, toolset orchestration.Toolset) map[string]any {
-	if toolset != orchestration.ToolsetDocument || name != "search_memory" {
+func toolArgumentsForToolset(name string, args map[string]any, toolset orchestration.Toolset, chatID int64) map[string]any {
+	if name != "search_memory" {
 		return args
 	}
 	out := make(map[string]any, len(args)+1)
 	for k, v := range args {
 		out[k] = v
 	}
-	if value, ok := out["limit"]; !ok || numericToolArg(value) > 3 {
-		out["limit"] = float64(3)
+	if chatID > 0 {
+		out["chat_id"] = float64(chatID)
+	}
+	if toolset == orchestration.ToolsetDocument {
+		value, ok := out["limit"]
+		if !ok || numericToolArg(value) > 3 {
+			out["limit"] = float64(3)
+		}
 	}
 	return out
+}
+
+func chatIDFromTeleContext(c tele.Context) int64 {
+	if c == nil || c.Chat() == nil {
+		return 0
+	}
+	return c.Chat().ID
 }
 
 func numericToolArg(value any) float64 {

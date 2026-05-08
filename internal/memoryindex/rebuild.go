@@ -35,6 +35,7 @@ type RebuildReport struct {
 	SourcesIndexed   int
 	ArchiveIndexed   int
 	ProposalsIndexed int
+	Vector           VectorReport
 }
 
 func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport, error) {
@@ -84,6 +85,11 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		}
 		report.ProposalsIndexed = len(docs)
 	}
+	vectorReport, err := store.SyncVector(ctx)
+	if err != nil {
+		return report, fmt.Errorf("memoryindex: sync vector mirror: %w", err)
+	}
+	report.Vector = vectorReport
 	return report, nil
 }
 
@@ -249,6 +255,44 @@ func NewIndexingTurnAppender(next conversation.TurnAppender, index *Store) *Inde
 	return &IndexingTurnAppender{next: next, index: index}
 }
 
+type IndexingArchiveRepository struct {
+	conversation.ArchiveRepository
+	index *Store
+}
+
+func NewIndexingArchiveRepository(next conversation.ArchiveRepository, index *Store) conversation.ArchiveRepository {
+	if next == nil || index == nil {
+		return next
+	}
+	return &IndexingArchiveRepository{ArchiveRepository: next, index: index}
+}
+
+func (r *IndexingArchiveRepository) Append(ctx context.Context, turn conversation.Turn) error {
+	appender := IndexingTurnAppender{next: r.ArchiveRepository, index: r.index}
+	return appender.Append(ctx, turn)
+}
+
+func (r *IndexingArchiveRepository) DeleteByChat(ctx context.Context, chatID int64) (int64, error) {
+	if purgeErr := r.index.PurgeArchiveByChat(ctx, chatID); purgeErr != nil {
+		return 0, purgeErr
+	}
+	return r.ArchiveRepository.DeleteByChat(ctx, chatID)
+}
+
+func (r *IndexingArchiveRepository) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	if purgeErr := r.index.PurgeArchiveOlderThan(ctx, cutoff); purgeErr != nil {
+		return 0, purgeErr
+	}
+	return r.ArchiveRepository.DeleteOlderThan(ctx, cutoff)
+}
+
+func (r *IndexingArchiveRepository) DeleteAll(ctx context.Context) (int64, error) {
+	if purgeErr := r.index.PurgeArchiveAll(ctx); purgeErr != nil {
+		return 0, purgeErr
+	}
+	return r.ArchiveRepository.DeleteAll(ctx)
+}
+
 func (a *IndexingTurnAppender) Append(ctx context.Context, turn conversation.Turn) error {
 	if a == nil || a.next == nil {
 		return fmt.Errorf("memoryindex: archive appender unavailable")
@@ -257,11 +301,31 @@ func (a *IndexingTurnAppender) Append(ctx context.Context, turn conversation.Tur
 		return err
 	}
 	if a.index != nil {
+		if turn.ID == 0 {
+			turn = a.persistedTurn(ctx, turn)
+		}
 		if doc, ok := ArchiveDocument(turn); ok {
 			_ = a.index.Upsert(ctx, doc)
 		}
 	}
 	return nil
+}
+
+func (a *IndexingTurnAppender) persistedTurn(ctx context.Context, turn conversation.Turn) conversation.Turn {
+	reader, ok := a.next.(conversation.ChatTurnReader)
+	if !ok || turn.ChatID == 0 {
+		return turn
+	}
+	turns, err := reader.ListByChat(ctx, turn.ChatID, 8)
+	if err != nil {
+		return turn
+	}
+	for _, candidate := range turns {
+		if candidate.TurnIndex == turn.TurnIndex && candidate.Role == turn.Role {
+			return candidate
+		}
+	}
+	return turn
 }
 
 func compactForIndex(value string, limit int) string {

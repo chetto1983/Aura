@@ -377,6 +377,21 @@ func TestSearchMemoryToolAcceptsCompactSearchInterface(t *testing.T) {
 	}
 }
 
+func TestSearchMemoryToolUsesOneCompactSearchForAllScope(t *testing.T) {
+	compact := &countingCompactMemorySearch{}
+	tool := NewSearchMemoryTool(nil, compact)
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "hybrid memory", "scope": "all"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if compact.calls != 1 {
+		t.Fatalf("compact calls = %d, want 1; output=%q", compact.calls, out)
+	}
+	if !sameStringSetForTools(compact.kinds, []string{memoryindex.KindSource, memoryindex.KindArchive, memoryindex.KindProposal}) {
+		t.Fatalf("compact kinds = %#v", compact.kinds)
+	}
+}
+
 func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	ctx := context.Background()
 	sourceStore := newTestSourceStore(t)
@@ -417,6 +432,34 @@ func TestSearchMemoryTool_ArchiveScopeAndChatFilter(t *testing.T) {
 	if !strings.Contains(out, "chat=10") || strings.Contains(out, "chat=20") {
 		t.Fatalf("chat filter not respected:\n%s", out)
 	}
+}
+
+type countingCompactMemorySearch struct {
+	calls int
+	kinds []string
+}
+
+func (f *countingCompactMemorySearch) Search(_ context.Context, _ string, filter memoryindex.Filter) ([]memoryindex.Document, error) {
+	f.calls++
+	f.kinds = append([]string(nil), filter.Kinds...)
+	return nil, nil
+}
+
+func sameStringSetForTools(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, value := range got {
+		seen[value]++
+	}
+	for _, value := range want {
+		if seen[value] == 0 {
+			return false
+		}
+		seen[value]--
+	}
+	return true
 }
 
 func writeMemoryTestPage(t *testing.T, dir string, page *wiki.Page) {

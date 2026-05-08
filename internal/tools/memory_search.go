@@ -100,18 +100,18 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		results = append(results, wikiResults...)
 		warnings = append(warnings, wikiWarnings...)
 	}
+	var compactKinds []string
 	if scopes["sources"] {
-		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindSource}, chatID, limit)
-		results = append(results, compactResults...)
-		warnings = append(warnings, compactWarnings...)
+		compactKinds = append(compactKinds, memoryindex.KindSource)
 	}
 	if scopes["archive"] {
-		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindArchive}, chatID, limit)
-		results = append(results, compactResults...)
-		warnings = append(warnings, compactWarnings...)
+		compactKinds = append(compactKinds, memoryindex.KindArchive)
 	}
 	if scopes["proposals"] {
-		compactResults, compactWarnings := t.searchCompact(searchCtx, query, []string{memoryindex.KindProposal}, chatID, limit)
+		compactKinds = append(compactKinds, memoryindex.KindProposal)
+	}
+	if len(compactKinds) > 0 {
+		compactResults, compactWarnings := t.searchCompact(searchCtx, query, compactKinds, chatID, limit)
 		results = append(results, compactResults...)
 		warnings = append(warnings, compactWarnings...)
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -43,18 +44,42 @@ type Filter struct {
 	Limit  int
 }
 
+type VectorReport struct {
+	Collection  string
+	DocsIndexed int
+	VectorSize  int
+}
+
+type VectorIndex interface {
+	Upsert(ctx context.Context, docs []Document) error
+	Recreate(ctx context.Context, docs []Document) (VectorReport, error)
+	Search(ctx context.Context, query string, filter Filter) ([]Document, error)
+	Delete(ctx context.Context, docIDs []string) error
+}
+
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db     *sql.DB
+	vector VectorIndex
+	logger *slog.Logger
+	now    func() time.Time
 }
 
 func NewStore(db *sql.DB) (*Store, error) {
+	return NewStoreWithVector(db, nil, nil)
+}
+
+func NewStoreWithVector(db *sql.DB, vector VectorIndex, logger *slog.Logger) (*Store, error) {
 	if db == nil {
 		return nil, fmt.Errorf("memoryindex: db required")
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Store{
-		db:  db,
-		now: func() time.Time { return time.Now().UTC() },
+		db:     db,
+		vector: vector,
+		logger: logger,
+		now:    func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 
@@ -134,6 +159,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("memoryindex: commit upsert: %w", err)
+	}
+	if s.vector != nil {
+		if err := s.vector.Upsert(ctx, []Document{doc}); err != nil && s.logger != nil {
+			s.logger.Warn("memoryindex: vector upsert failed", "id", doc.ID, "error", err)
+		}
 	}
 	return nil
 }
@@ -217,7 +247,111 @@ func (s *Store) Search(ctx context.Context, query string, filter Filter) ([]Docu
 		return nil, err
 	}
 	candidates = append(candidates, ftsResults...)
+	if s.vector != nil {
+		vectorResults, err := s.vector.Search(ctx, query, filter)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("memoryindex: vector search failed; using local compact index", "error", err)
+			}
+		} else {
+			candidates = append(candidates, vectorResults...)
+		}
+	}
 	return mergeDocuments(candidates, limit), nil
+}
+
+func (s *Store) PurgeArchiveByChat(ctx context.Context, chatID int64) error {
+	if chatID <= 0 {
+		return nil
+	}
+	return s.deleteWhere(ctx, `kind = ? AND chat_id = ?`, KindArchive, chatID)
+}
+
+func (s *Store) PurgeArchiveOlderThan(ctx context.Context, cutoff time.Time) error {
+	if cutoff.IsZero() {
+		return nil
+	}
+	return s.deleteWhere(ctx, `kind = ? AND updated_at < ?`, KindArchive, cutoff.UTC().Format(time.RFC3339Nano))
+}
+
+func (s *Store) PurgeArchiveAll(ctx context.Context) error {
+	return s.deleteWhere(ctx, `kind = ?`, KindArchive)
+}
+
+func (s *Store) deleteWhere(ctx context.Context, where string, args ...any) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("memoryindex: store unavailable")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM compact_memory_documents WHERE `+where, args...)
+	if err != nil {
+		return fmt.Errorf("memoryindex: list delete ids: %w", err)
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("memoryindex: scan delete id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("memoryindex: iterate delete ids: %w", err)
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return nil
+	}
+	if s.vector != nil {
+		if err := s.vector.Delete(ctx, ids); err != nil {
+			return fmt.Errorf("memoryindex: vector delete: %w", err)
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("memoryindex: begin delete: %w", err)
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_fts WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("memoryindex: delete fts %s: %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_documents WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("memoryindex: delete document %s: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("memoryindex: commit delete: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SyncVector(ctx context.Context) (VectorReport, error) {
+	if s == nil || s.db == nil {
+		return VectorReport{}, fmt.Errorf("memoryindex: store unavailable")
+	}
+	if s.vector == nil {
+		return VectorReport{}, nil
+	}
+	docs, err := s.allDocuments(ctx)
+	if err != nil {
+		return VectorReport{}, err
+	}
+	return s.vector.Recreate(ctx, docs)
+}
+
+func (s *Store) allDocuments(ctx context.Context) ([]Document, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at
+FROM compact_memory_documents d
+ORDER BY d.kind, d.updated_at DESC, d.id
+`)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: list all documents: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 1)
 }
 
 func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, limit int) ([]Document, error) {

@@ -104,9 +104,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 
 	// Set up search engine
 	var searchEngine search.Repository
+	var embedFn search.EmbeddingFunction
 	var embedCache *search.EmbedCache
 	if cfg.EmbeddingAPIKey != "" {
-		embedFn := createEmbeddingFunc(cfg)
+		embedFn = createEmbeddingFunc(cfg)
 		// Slice 11h: wrap the upstream embedding fn with a SHA-keyed
 		// SQLite cache so unchanged wiki pages don't re-embed on every
 		// restart. Same cache also serves query embeddings, so repeat
@@ -254,7 +255,22 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	toolRegistry.Register(tools.NewListTasksTool(schedStore))
 	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
-	memoryStore, err := memoryindex.NewStore(schedStore.DB())
+	var compactVector memoryindex.VectorIndex
+	if cfg.SearchBackend == "qdrant" && embedFn != nil {
+		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
+		qindex, err := search.NewCompactMemoryQdrantIndex(search.QdrantConfig{
+			BaseURL:    cfg.QdrantURL,
+			Collection: collection,
+			APIKey:     cfg.QdrantAPIKey,
+		}, embedFn, logger)
+		if err != nil {
+			logger.Warn("compact qdrant memory mirror unavailable; using SQLite compact memory only", "error", err)
+		} else {
+			compactVector = qindex
+			logger.Info("compact qdrant memory mirror enabled", "url", cfg.QdrantURL, "collection", collection)
+		}
+	}
+	memoryStore, err := memoryindex.NewStoreWithVector(schedStore.DB(), compactVector, logger)
 	if err != nil {
 		logger.Warn("compact memory index unavailable", "error", err)
 	}
@@ -406,19 +422,19 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the
-	// *ArchiveStore directly for API reads, and wrap with a BufferedAppender
+	// archive repository for API reads, and wrap it with a BufferedAppender
 	// for non-blocking writes from the hot conversation path.
 	if cfg.ConvArchiveEnabled {
 		archiveStore, err := conversation.NewArchiveStore(schedStore.DB())
 		if err != nil {
 			logger.Warn("conversation archive unavailable", "error", err)
 		} else {
-			b.archiveDB = archiveStore
-			var archiveAppender conversation.TurnAppender = archiveStore
 			if memoryStore != nil {
-				archiveAppender = memoryindex.NewIndexingTurnAppender(archiveStore, memoryStore)
+				b.archiveDB = memoryindex.NewIndexingArchiveRepository(archiveStore, memoryStore)
+			} else {
+				b.archiveDB = archiveStore
 			}
-			b.archiver = conversation.NewBufferedAppender(archiveAppender, 100)
+			b.archiver = conversation.NewBufferedAppender(b.archiveDB, 100)
 		}
 	}
 	if memoryStore != nil {
@@ -432,7 +448,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		if err != nil {
 			logger.Warn("compact memory index rebuild failed", "error", err)
 		} else {
-			logger.Info("compact memory index rebuilt", "sources", report.SourcesIndexed, "archive", report.ArchiveIndexed, "proposals", report.ProposalsIndexed)
+			logger.Info("compact memory index rebuilt", "sources", report.SourcesIndexed, "archive", report.ArchiveIndexed, "proposals", report.ProposalsIndexed, "vector_collection", report.Vector.Collection, "vector_docs", report.Vector.DocsIndexed)
 		}
 	}
 	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, memoryStore, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {
