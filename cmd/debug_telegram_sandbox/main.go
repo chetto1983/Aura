@@ -381,7 +381,18 @@ func resolveDebugHostPath(path string) string {
 			return filepath.Join(mapping.host, strings.TrimPrefix(clean, prefix))
 		}
 	}
+	if (clean == "wiki" || clean == "./wiki") && pathExists(filepath.Join("runtime-workspace", "wiki")) && !pathExists(path) {
+		return filepath.Join("runtime-workspace", "wiki")
+	}
+	if (clean == "skills" || clean == "./skills") && pathExists(filepath.Join("runtime-workspace", "skills")) && !pathExists(path) {
+		return filepath.Join("runtime-workspace", "skills")
+	}
 	return path
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func applyDebugWorkspaceRoot(cfg *config.Config, expectedRoot string) string {

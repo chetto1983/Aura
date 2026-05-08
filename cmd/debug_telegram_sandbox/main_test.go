@@ -573,6 +573,31 @@ func TestResolveDebugHostPathMapsContainerRuntimeMounts(t *testing.T) {
 	}
 }
 
+func TestResolveDebugHostPathMigratesLegacyWikiAndSkillsPaths(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join("runtime-workspace", "wiki"), 0o755); err != nil {
+		t.Fatalf("MkdirAll wiki: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join("runtime-workspace", "skills"), 0o755); err != nil {
+		t.Fatalf("MkdirAll skills: %v", err)
+	}
+
+	if got := resolveDebugHostPath("./wiki"); got != filepath.Join("runtime-workspace", "wiki") {
+		t.Fatalf("legacy wiki path = %q", got)
+	}
+	if got := resolveDebugHostPath("./skills"); got != filepath.Join("runtime-workspace", "skills") {
+		t.Fatalf("legacy skills path = %q", got)
+	}
+}
+
 func TestApplyDebugWorkspaceRootMapsLogicalContainerRootToHostRoot(t *testing.T) {
 	cfg := &config.Config{
 		WorkspaceRoot:        ".",
