@@ -614,8 +614,8 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	if got := args["chat_id"]; got != float64(42) {
 		t.Fatalf("chat_id = %#v, want 42", got)
 	}
-	if got := args["limit"]; got != float64(9) {
-		t.Fatalf("limit = %#v, want unchanged 9", got)
+	if got := args["limit"]; got != float64(3) {
+		t.Fatalf("limit = %#v, want capped 3", got)
 	}
 }
 

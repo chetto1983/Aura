@@ -171,10 +171,11 @@
   - `-expect-tool-calls-max`
   - `-expect-loop-steps-max` already exists; keep it canonical.
   - Keep `-max-elapsed-ms`.
-- [ ] Add broad prompt fixtures.
+- [x] Add broad prompt fixtures.
   - Project/status prompt: expects default toolset, low loop count, no document tool.
   - Memory prompt: expects retrieval path only when memory is requested.
   - Document prompt: expects `document` toolset and terminal document tool.
+  - Admin briefing prompt: expects explicit `admin` toolset and `daily_briefing`.
 - [x] Add tests in `cmd/debug_telegram_sandbox`.
   - Flag parsing.
   - Expectation failures return non-zero.
@@ -184,52 +185,79 @@
 
 ## Task 7: Broad Runtime Smokes
 
-- [ ] Rebuild and run the container.
+- [x] Rebuild and run the container.
   - `docker compose config --quiet`
   - `docker compose up -d --build aura`
-- [ ] Verify health.
+- [x] Verify health.
   - `/status` returns `ok`.
   - `/api/health` includes compact memory mirror state.
   - Logs show compact mirror sync started and either synced or degraded clearly.
-- [ ] Run broad debug smokes.
+- [x] Run broad debug smokes.
   - Broad status prompt:
     - max elapsed: 30000 ms;
     - max loop steps: 2;
     - max LLM calls: 2;
     - max tool calls: 2.
-    - 2026-05-08 local smoke passed after removing default swarm exposure:
-      - `elapsed_ms=10588`
+    - 2026-05-08 local smoke passed after the default tool diet:
+      - `elapsed_ms=10401`
       - `llm_calls=2`
-      - `tool_calls_count=2`
+      - `tool_calls_count=1`
       - `loop_steps=2`
-      - `tools_called=daily_briefing,search_memory`
+      - `tools_called=search_memory`
+      - `terminal_tool=search_memory`
       - `swarm_used=false`
   - Memory prompt:
     - uses `search_memory` when the prompt asks for memory/wiki/source/archive context;
     - max elapsed: 30000 ms.
+    - 2026-05-08 local smoke passed:
+      - `elapsed_ms=10195`
+      - `llm_calls=2`
+      - `tool_calls_count=1`
+      - `loop_steps=2`
+      - `tools_called=search_memory`
+      - `terminal_tool=search_memory`
+      - `swarm_used=false`
   - Document prompt:
     - toolset `document`;
     - terminal tool `create_docx` or requested typed file tool;
-    - max loop steps: 1 when retrieval capsule is sufficient;
+    - max loop steps: 1 when the prompt already contains enough document content;
     - max elapsed: 30000 ms.
-- [ ] Save the exact smoke commands and outputs into this plan under `Verification Log`.
+    - 2026-05-08 local smoke passed with explicit `AURA_TOOLSET_MODE=document`:
+      - `elapsed_ms=3826`
+      - `llm_calls=1`
+      - `tool_calls_count=1`
+      - `loop_steps=1`
+      - `tools_called=create_docx`
+      - `terminal_tool=create_docx`
+  - Admin daily briefing prompt:
+    - toolset `admin`;
+    - uses `daily_briefing` only in explicit admin mode;
+    - max elapsed: 30000 ms.
+    - 2026-05-08 local smoke passed:
+      - `elapsed_ms=6095`
+      - `llm_calls=2`
+      - `tool_calls_count=1`
+      - `loop_steps=2`
+      - `tools_called=daily_briefing`
+      - `swarm_used=false`
+- [x] Save the exact smoke commands and outputs into this plan under `Verification Log`.
 
 ## Task 8: Documentation And Closure
 
-- [ ] Update `.planning/STATE.md`.
+- [x] Update `.planning/STATE.md`.
   - Active milestone becomes `v3.3 Runner Boundary & Health Hardening` while work is active.
   - Closure evidence includes tests, Docker rebuild, health payload, and broad smokes once complete.
-- [ ] Update `.planning/ROADMAP.md`.
+- [x] Update `.planning/ROADMAP.md`.
   - Add v3.3 as active milestone before v4.0.
   - Keep v4.0 MCP Marketplace as next after v3.3.
-- [ ] Update `docs/implementation-tracker.md`.
+- [x] Update `docs/implementation-tracker.md`.
   - Add a short entry for each implemented slice.
-- [ ] When complete, mark this plan closed.
+- [x] When complete, mark this plan closed.
   - Include test commands.
   - Include Docker status.
   - Include smoke outputs.
   - Include deleted-code summary.
-- [ ] Final verification before merge:
+- [x] Final verification before merge:
   - `go fmt ./...`
   - `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/memoryindex ./internal/api ./cmd/debug_telegram_sandbox -count=1`
   - `go test ./...`
@@ -250,6 +278,7 @@ Task 1 baseline:
 - `internal/telegram/debug_smoke.go` and `internal/telegram/status.go` read conversation state through `agentruntime.SessionStore` instead of raw Telegram maps.
 - `internal/telegram/setup.go` starts compact-memory vector mirror sync in the background; health state is now recorded by `memoryindex.VectorHealthTracker` and exposed through `api.HealthRollup.CompactMemory` plus Telegram `/status`.
 - 2026-05-08 no-regex routing cut: removed user-text keyword routing from the hot path. `AURA_TOOLSET_MODE=auto` now resolves to the default toolset instead of trying to infer compute/document/admin from substrings. Telegram no longer gates skill manifests, swarm exposure, or speculative retrieval capsules with `strings.Contains` lists. Skills remain available as the cached progressive-disclosure manifest; compact memory remains available through `search_memory`; specialized toolsets are explicit runtime settings rather than hidden text classifiers.
+- 2026-05-08 default tool diet: removed `daily_briefing`, `list_tasks`, and `cancel_task` from the default toolset instead of leaving them disabled behind prompt rules. Default now exposes only `search_memory` and `schedule_task`; `search_memory` is terminal in the default loop and capped to three results before no-tool finalization. `daily_briefing`, task listing/canceling, source tools, workspace tools, web tools, admin tools, and swarm remain explicit specialized surfaces.
 
 ## Verification Log
 
@@ -266,7 +295,21 @@ Task 1 baseline:
 - `go test ./internal/telegram -run TestCompactMemoryStatusSummaryReportsMirrorState -count=1` failed before `/status` compact-memory summary existed, then passed after wiring the health reader into `Bot`.
 - `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/memoryindex ./internal/api ./cmd/debug_telegram_sandbox -count=1; go test ./...; go build ./...` passed after the review fixes.
 - `go test ./internal/orchestration ./internal/telegram ./cmd/debug_telegram_sandbox -count=1` passed after deleting the keyword-based toolset/skill/swarm/retrieval routing and updating tests to assert explicit toolset selection.
-- `go run ./cmd/debug_telegram_sandbox -no-validate -prompt "fammi il punto sintetico sullo stato di Aura e non creare file" -expect-toolset default -expect-loop-steps-max 2 -expect-llm-calls-max 2 -expect-tool-calls-max 2 -max-elapsed-ms 30000 -expect-workspace-root /workspace` passed with `elapsed_ms=10588`, `llm_calls=2`, `tool_calls_count=2`, `loop_steps=2`, `tools_called=daily_briefing,search_memory`, `swarm_used=false`.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-runner-boundary-smokes.ps1` passed after default tool diet. Status prompt: `elapsed_ms=10401`, `llm_calls=2`, `tool_calls_count=1`, `loop_steps=2`, `tools_called=search_memory`, `terminal_tool=search_memory`, `swarm_used=false`.
+- `docker compose config --quiet` passed.
+- `docker compose up -d --build aura` rebuilt `aura:local` and `aura-pyodide:local`; `docker compose ps` showed `aura-aura-1` healthy on `127.0.0.1:18080->8080`.
+- `http://localhost:18080/status` and in-container `http://127.0.0.1:8080/status` returned `{"status":"ok"}` with `compact_memory` detail `collection=aura_memory_v1_compact docs=487 vector=1024`. `/api/health` is auth-protected and returned 401 without a bearer token.
+- Container logs showed `compact memory vector mirror sync started` then `compact memory vector mirror synced` with `vector_collection=aura_memory_v1_compact`, `vector_docs=487`, `vector_size=1024`.
+- Memory prompt in the same smoke script passed with `elapsed_ms=10195`, `llm_calls=2`, `tool_calls_count=1`, `loop_steps=2`, `tools_called=search_memory`, `terminal_tool=search_memory`, `swarm_used=false`.
+- Explicit document prompt in the same smoke script passed with `elapsed_ms=3826`, `llm_calls=1`, `tool_calls_count=1`, `loop_steps=1`, `tools_called=create_docx`, `terminal_tool=create_docx`.
+- Explicit admin daily briefing prompt in the same smoke script passed with `elapsed_ms=6095`, `llm_calls=2`, `tool_calls_count=1`, `loop_steps=2`, `tools_called=daily_briefing`, `swarm_used=false`.
+- `go test ./internal/conversation ./...` passed after updating prompt tests for the default-tool diet.
+- `go build ./...` passed.
+- `docker compose config --quiet` passed.
+- `docker compose up -d --build aura` rebuilt `aura:local` and restarted Aura.
+- `docker compose ps` showed `aura-aura-1` healthy on `127.0.0.1:18080->8080`.
+- `http://localhost:18080/status` returned `status=ok` with `compact_memory` detail `collection=aura_memory_v1_compact docs=487 vector=1024`.
+- Container logs showed `compact memory vector mirror sync started` then `compact memory vector mirror synced` with `vector_docs=487`, `vector_size=1024`.
 
 ## Commit Plan
 

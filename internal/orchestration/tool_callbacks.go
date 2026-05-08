@@ -10,6 +10,13 @@ import (
 
 func BeforeToolCallbackForToolset(toolset Toolset) agentloop.BeforeToolCallback {
 	switch normalizeToolset(string(toolset)) {
+	case ToolsetDefault:
+		return agentloop.DuplicateOrMaxCallsPolicy(map[string]int{"search_memory": 1}, func(call llm.ToolCall, state agentloop.ToolCallState) string {
+			if call.Name == "search_memory" {
+				return tools.FormatToolError(fmt.Errorf("default route already has compact memory evidence for this turn; answer now from the previous evidence without calling tools again"))
+			}
+			return tools.FormatToolError(fmt.Errorf("duplicate tool call %q skipped; use the previous result already returned in this turn", call.Name))
+		})
 	case ToolsetDocument:
 		return agentloop.DuplicateOrMaxCallsPolicy(map[string]int{"search_memory": 1}, func(call llm.ToolCall, state agentloop.ToolCallState) string {
 			if call.Name == "search_memory" {
@@ -26,6 +33,13 @@ func BeforeToolCallbackForToolset(toolset Toolset) agentloop.BeforeToolCallback 
 
 func AfterToolCallbackForToolset(toolset Toolset) agentloop.AfterToolCallback {
 	switch normalizeToolset(string(toolset)) {
+	case ToolsetDefault:
+		return func(call llm.ToolCall, result string, err error) string {
+			if err != nil || call.Name != "search_memory" {
+				return result
+			}
+			return result + "\n\nNext step for this default turn: answer now from this compact evidence. Do not call search_memory again. Do not call workspace, source, web, document, or admin tools unless they are explicitly exposed and required."
+		}
 	case ToolsetDocument:
 		return func(call llm.ToolCall, result string, err error) string {
 			if err != nil || call.Name != "search_memory" {

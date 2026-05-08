@@ -12,8 +12,8 @@ func TestLoopPolicyForToolsetsKeepsTerminalToolsOnlyWhereUseful(t *testing.T) {
 	if !ok {
 		t.Fatal("LoopPolicyForToolset default returned false")
 	}
-	if len(def.TerminalTools) != 0 {
-		t.Fatalf("default TerminalTools = %+v, want none in the hot path", def.TerminalTools)
+	if !slices.Contains(def.TerminalTools, "search_memory") {
+		t.Fatalf("default TerminalTools = %+v, want search_memory terminal in the hot path", def.TerminalTools)
 	}
 
 	compute, ok := LoopPolicyForToolset(ToolsetCompute)

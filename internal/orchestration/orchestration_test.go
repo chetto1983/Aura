@@ -96,12 +96,12 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToolsForToolset default: %v", err)
 	}
-	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch", "search_memory", "list_sources", "read_source", "web_search", "web_fetch"} {
+	for _, required := range []string{"search_memory", "schedule_task"} {
 		if !slices.Contains(def, required) {
 			t.Fatalf("default toolset missing %q: %+v", required, def)
 		}
 	}
-	for _, forbidden := range []string{"execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "run_aurabot_swarm"} {
+	for _, forbidden := range []string{"daily_briefing", "list_tasks", "cancel_task", "list_files", "read_file", "search_files", "write_file", "apply_patch", "list_sources", "read_source", "web_search", "web_fetch", "execute_code", "create_docx", "create_xlsx", "create_pdf", "install_skill", "delete_skill", "request_dashboard_token", "run_aurabot_swarm"} {
 		if slices.Contains(def, forbidden) {
 			t.Fatalf("default toolset exposes specialized/admin tool %q: %+v", forbidden, def)
 		}
@@ -168,11 +168,11 @@ func TestRuntimeToolsetUsesInvocationContext(t *testing.T) {
 }
 
 func TestFilterToolsetAppliesPredicate(t *testing.T) {
-	filtered := FilterToolset(NewRuntimeToolset(ToolsetDefault), func(_ ToolsetContext, name string) bool {
+	filtered := FilterToolset(NewRuntimeToolset(ToolsetAdmin), func(_ ToolsetContext, name string) bool {
 		return name == "search_memory" || name == "web_search"
 	})
 	got, err := filtered.Tools(ToolsetContext{
-		Toolset:      ToolsetDefault,
+		Toolset:      ToolsetAdmin,
 		Availability: Availability{WorkspaceFiles: true, Swarm: true},
 	})
 	if err != nil {
@@ -183,23 +183,31 @@ func TestFilterToolsetAppliesPredicate(t *testing.T) {
 	}
 }
 
-func TestWorkspaceToolsAreConditional(t *testing.T) {
-	without, err := ToolsForToolset(ToolsetDefault, Availability{})
+func TestWorkspaceToolsAreConditionalOutsideDefault(t *testing.T) {
+	without, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: true})
 	if err != nil {
-		t.Fatalf("ToolsForToolset default: %v", err)
+		t.Fatalf("ToolsForToolset compute: %v", err)
 	}
 	if slices.Contains(without, "read_file") {
 		t.Fatalf("workspace tools exposed while unavailable: %+v", without)
 	}
 
-	with, err := ToolsForToolset(ToolsetDefault, Availability{WorkspaceFiles: true})
+	with, err := ToolsForToolset(ToolsetCompute, Availability{Sandbox: true, WorkspaceFiles: true})
 	if err != nil {
-		t.Fatalf("ToolsForToolset default workspace: %v", err)
+		t.Fatalf("ToolsForToolset compute workspace: %v", err)
 	}
 	for _, required := range []string{"list_files", "read_file", "search_files", "write_file", "apply_patch"} {
 		if !slices.Contains(with, required) {
 			t.Fatalf("workspace-enabled toolset missing %q: %+v", required, with)
 		}
+	}
+
+	def, err := ToolsForToolset(ToolsetDefault, Availability{WorkspaceFiles: true})
+	if err != nil {
+		t.Fatalf("ToolsForToolset default workspace: %v", err)
+	}
+	if slices.Contains(def, "read_file") {
+		t.Fatalf("default toolset exposed workspace tools: %+v", def)
 	}
 }
 

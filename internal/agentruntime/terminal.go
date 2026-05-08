@@ -75,9 +75,13 @@ func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool strin
 	if toolName == "" {
 		toolName = "the terminal tool"
 	}
+	content := fmt.Sprintf("The terminal tool %q completed. Do not call tools. Do not emit JSON, XML, DSML, or tool-call markup. Summarize the completed work for the user in their language using only the tool results already present above.", toolName)
+	if toolName == "search_memory" {
+		content = `search_memory returned compact evidence. Do not call tools. Do not repeat the raw evidence envelope, result headers, scores, source metadata, or "Memory evidence for" text. Answer the user's original request directly in their language, using the evidence only as background. Keep it concise.`
+	}
 	out = append(out, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("The terminal tool %q completed. Do not call tools. Do not emit JSON, XML, DSML, or tool-call markup. Summarize the completed work for the user in their language using only the tool results already present above.", toolName),
+		Content: content,
 	})
 	return out
 }

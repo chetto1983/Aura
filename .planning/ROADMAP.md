@@ -94,7 +94,7 @@ Success criteria:
 Closure evidence:
 
 - The old stopped-before-final-answer fallback is removed.
-- Always-on Memory Pack injection is replaced by routing-aware Retrieval Capsule injection.
+- Always-on Memory Pack injection was replaced during v3.2 by routing-aware Retrieval Capsule injection, then the remaining user-text keyword router was removed in v3.3.
 - Profile/preflight taxonomy and legacy routing aliases are deleted from live code.
 - `search_memory` uses compact source/archive/proposal facts in SQLite FTS plus optional Qdrant mirror.
 - Qdrant compact memory uses `aura_memory_v1_compact`, separate from wiki vectors.
@@ -102,11 +102,11 @@ Closure evidence:
 - Archive append and cleanup mirror compact memory and Qdrant points.
 - Document route E2E passed with one LLM call, one tool call, one loop step, and `create_docx` as terminal tool.
 
-## Active Milestone
-
 ### v3.3 Runner Boundary & Health Hardening
 
-Status: active
+Status: closed
+
+Closed on 2026-05-08 with the runner boundary, compact-memory health, and broad hot-path smoke gates in place.
 
 Plan: `.planning/phases/09-runner-boundary-health-hardening/PLAN.md`
 
@@ -116,16 +116,27 @@ Success criteria:
 
 - Telegram no longer owns generic active-session lifecycle or terminal-tool finalization decisions.
 - Runtime events/results are the canonical source for debug smoke counters.
-- `/api/health` or `/status` reports compact memory mirror state and last sync result.
+- `/status` reports compact memory mirror state and last sync result; API health includes the same rollup behind auth.
 - Broad project/status prompts stay under 30s without repeated file/source loops.
-- Document smoke remains one loop step when the Retrieval Capsule is sufficient.
+- Default toolset is tiny: `search_memory` plus `schedule_task`; `search_memory` is terminal and capped to three results.
+- `daily_briefing` remains useful, but only in explicit admin/ops mode and covered by a dedicated smoke.
+- Document smoke remains one loop step when explicit document mode has enough prompt content.
 - Docker-first debug smokes avoid deleted repo-local wiki/skills paths.
 
-## Next Milestone
+Closure evidence:
+
+- `go test ./internal/agentruntime ./internal/orchestration ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`
+- `scripts/test-runner-boundary-smokes.ps1`
+- status prompt: `tool_calls_count=1`, `tools_called=search_memory`, `terminal_tool=search_memory`
+- memory prompt: `tool_calls_count=1`, `tools_called=search_memory`, `terminal_tool=search_memory`
+- document prompt: `tool_calls_count=1`, `tools_called=create_docx`, `terminal_tool=create_docx`
+- admin briefing prompt: `tool_calls_count=1`, `tools_called=daily_briefing`
+
+## Active Milestone
 
 ### v4.0 MCP Marketplace And Autonomous Plugin Manager
 
-Status: planned
+Status: active
 
 Plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
 

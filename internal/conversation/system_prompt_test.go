@@ -32,18 +32,19 @@ func TestRenderSystemPromptIncludesRuntimeContext(t *testing.T) {
 	}
 }
 
-func TestDefaultSystemPromptClarifiesFileGenerationToolChoice(t *testing.T) {
+func TestDefaultSystemPromptDoesNotAdvertiseSpecializedTools(t *testing.T) {
 	got := DefaultSystemPrompt()
-	for _, want := range []string{
+	for _, forbidden := range []string{
 		"create_xlsx",
 		"create_docx",
 		"create_pdf",
-		"Prefer these over execute_code",
 		"Use execute_code for:",
 		"/tmp/aura_out",
+		"Use list_files for directory inventory",
+		"For project or file audits",
 	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("system prompt missing file-generation guidance %q", want)
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("system prompt advertises specialized tool guidance %q", forbidden)
 		}
 	}
 }
@@ -57,17 +58,15 @@ func TestDefaultSystemPromptRequiresStaleReferenceVerification(t *testing.T) {
 	}
 }
 
-func TestDefaultSystemPromptGuidesWorkspaceAudits(t *testing.T) {
+func TestDefaultSystemPromptKeepsDefaultToolGuidanceSmall(t *testing.T) {
 	got := DefaultSystemPrompt()
 	for _, want := range []string{
-		"Use list_files for directory inventory",
-		"never directories",
-		"For project or file audits",
-		"Read at most 3-5 highest-signal files",
-		"Stop expanding once you have enough evidence",
+		"Use search_memory",
+		"Use schedule_task only for explicit reminder or task-creation requests",
+		"workspace file tools only when they are explicitly exposed",
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("system prompt missing workspace audit guidance %q", want)
+			t.Fatalf("system prompt missing default hot-path guidance %q", want)
 		}
 	}
 }

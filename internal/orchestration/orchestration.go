@@ -91,10 +91,7 @@ var (
 
 	defaultTools = []string{
 		"search_memory",
-		"list_sources", "read_source", "store_source",
-		"web_search", "web_fetch",
-		"schedule_task", "list_tasks", "cancel_task",
-		"daily_briefing",
+		"schedule_task",
 	}
 	computeTools = []string{
 		"search_memory",
@@ -226,7 +223,7 @@ func (s staticToolset) Tools(ctx ToolsetContext) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unknown toolset %q", toolset)
 	}
-	if available.WorkspaceFiles && toolset != ToolsetDocument {
+	if available.WorkspaceFiles && toolset != ToolsetDefault && toolset != ToolsetDocument {
 		tools = append(tools, workspaceTools...)
 	}
 	if available.Swarm && toolset != ToolsetDefault {
@@ -293,11 +290,11 @@ func uniqueTools(in []string) []string {
 func toolsetPrompt(toolset Toolset) string {
 	switch toolset {
 	case ToolsetCompute:
-		return "\nUse execute_code for real computation, transformations, charts, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out."
+		return "\nUse execute_code for real computation, transformations, charts, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out. When workspace file tools are exposed, use search_files for exact text search, read_file for known files, write_file for new files or full replacements, and apply_patch for focused edits. Use web_search/web_fetch only for changing or external facts."
 	case ToolsetDocument:
 		return "\nUse only the tools exposed for this turn. In document mode, the active tools are search_memory when exposed plus create_docx/create_xlsx/create_pdf. Use compact memory evidence first, then one typed file tool for ordinary static documents."
 	case ToolsetAdmin:
-		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates."
+		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, daily briefing, or review-queue work. Prefer daily_briefing only when the user asks what needs attention today, what changed today, or for a morning/daily briefing. Concrete tools still enforce auth/admin gates."
 	default:
 		return "\nUse the default toolset. Answer directly when the conversation already has enough context. Call tools only for missing facts, durable actions, file/source inspection, scheduling, or explicit user requests; keep ordinary turns short."
 	}

@@ -2,9 +2,9 @@
 
 Date: 2026-05-08
 
-Active milestone: v3.3 Runner Boundary & Health Hardening
+Active milestone: v4.0 MCP Marketplace And Autonomous Plugin Manager
 
-Last closed milestone: v3.2 Runtime Diet
+Last closed milestone: v3.3 Runner Boundary & Health Hardening
 
 Current branch: `master`
 
@@ -20,7 +20,10 @@ Aura's runtime is now the Runtime Diet shape:
 - bounded workspace file tools rooted at `/workspace` in Docker;
 - legacy wiki/skill/proposal wrapper tools removed from the LLM surface/code;
 - skills preserved as file-backed procedures under the runtime workspace;
-- compact Retrieval Capsule injection only when the turn needs memory or production context;
+- no user-text keyword router in the hot path: `AURA_TOOLSET_MODE=auto` uses the default toolset, while `compute`, `document`, and `admin` are explicit modes;
+- the default toolset is deliberately tiny: `search_memory` plus `schedule_task`; `daily_briefing`, task list/cancel, source, web, workspace, admin, and swarm tools are explicit specialized surfaces;
+- default `search_memory` is terminal, capped to three results, and finalized through a no-tool answer;
+- compact memory stays available through `search_memory` instead of speculative keyword-triggered capsule injection;
 - compact source/archive/proposal facts indexed in SQLite FTS and mirrored to Qdrant in `aura_memory_v1_compact`;
 - adaptive batch embeddings for cold compact-memory mirror rebuilds;
 - Docker image/context narrowed so `/app` no longer exposes the developer repository.
@@ -33,7 +36,7 @@ What changed:
 
 - The user-facing `"Mi sono fermato"` fallback is gone; budget exhaustion finalizes from the last useful tool result.
 - Profile/preflight taxonomy and old capability routing were deleted from live code.
-- The old always-on Memory Pack path was replaced by the routing-aware `## Retrieval Capsule`.
+- The old always-on Memory Pack path was replaced during v3.2 by routing-aware `## Retrieval Capsule` injection; v3.3 then removed the remaining user-text keyword router from the live hot path.
 - `search_memory` now uses wiki search plus compact source/archive/proposal retrieval instead of raw source/archive scans.
 - Qdrant compact memory uses a separate collection from wiki vectors and merges with exact/FTS retrieval.
 - Archive append and cleanup mirror into compact memory and Qdrant.
@@ -63,23 +66,50 @@ Fresh verification:
 
 ## Active Slice
 
-Active phase before v4.0: **Runner Boundary & Health Hardening**.
+Active phase: **v4.0 MCP Marketplace And Autonomous Plugin Manager**.
 
-Plan: `.planning/phases/09-runner-boundary-health-hardening/PLAN.md`
+Plan: `.planning/phases/v4.0-mcp-plugin-marketplace/PLAN.md`
 
 Goal:
 
-- finish moving Telegram session persistence and terminal finalization behind the `agentruntime` event boundary;
-- expose compact-memory/Qdrant mirror health in `/status` or `/api/health`;
-- make debug smokes Docker-first by default, so they use runtime workspace paths without host overrides;
-- validate broad non-document prompts, not only document generation.
+- make Aura's plugin system MCP-first, Docker-first, review-gated, and agent-auditable;
+- sync the official MCP Registry without blocking startup;
+- install MCP plugins as managed sidecars or remote HTTP connections;
+- keep marketplace actions dashboard-reviewed and smoke-tested before tool exposure.
 
 Suggested acceptance:
 
-- `go test ./internal/agentruntime ./internal/agentloop ./internal/orchestration ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`;
-- Docker `/status` reports compact memory mirror state or last sync result;
-- broad project/status prompts stay under 30s without repeated file/source loops;
-- document smoke remains one loop step when the capsule is sufficient.
+- registry sync has a local cache and clear health;
+- fake MCP install/enable/invoke/rollback works in Docker;
+- approved MCP tools are exposed as stable `mcp_<server>_<tool>` names;
+- dashboard shows Marketplace, Installed plugins, Health, and Review Queue.
+
+## Phase 09 Closure Evidence
+
+Runner Boundary & Health Hardening is closure-clean.
+
+What changed:
+
+- Telegram active session/context lifecycle moved behind `agentruntime.SessionStore`.
+- Runtime snapshots and debug smoke counters now come from `agentruntime` events/results.
+- Generic terminal finalization moved into `internal/agentruntime`, with Telegram keeping delivery only.
+- Compact-memory Qdrant mirror health is tracked and exposed through `/status` plus API health rollup.
+- User-text keyword routing, speculative retrieval capsule routing, and default swarm exposure were removed from the hot path.
+- The default toolset was cut to `search_memory` and `schedule_task`; `daily_briefing` is now explicit admin/ops and covered by its own smoke.
+
+Fresh verification:
+
+- `go test ./internal/agentruntime ./internal/orchestration ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`
+- `go test ./internal/conversation ./...`
+- `go build ./...`
+- `docker compose config --quiet`
+- `docker compose up -d --build aura`
+- live `/status`: `status=ok`, `compact_memory` detail `collection=aura_memory_v1_compact docs=487 vector=1024`
+- `scripts/test-runner-boundary-smokes.ps1`
+- status smoke: `tool_calls_count=1`, `tools_called=search_memory`, `terminal_tool=search_memory`, `elapsed_ms=10401`
+- memory smoke: `tool_calls_count=1`, `tools_called=search_memory`, `terminal_tool=search_memory`, `elapsed_ms=10195`
+- document smoke: `tool_calls_count=1`, `tools_called=create_docx`, `terminal_tool=create_docx`, `elapsed_ms=3826`
+- admin briefing smoke: `tool_calls_count=1`, `tools_called=daily_briefing`, `elapsed_ms=6095`
 
 ## Deferred Follow-Ups
 

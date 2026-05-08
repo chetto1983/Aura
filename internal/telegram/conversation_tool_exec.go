@@ -192,7 +192,7 @@ func toolArgumentsForToolset(name string, args map[string]any, toolset orchestra
 	if chatID > 0 {
 		out["chat_id"] = float64(chatID)
 	}
-	if toolset == orchestration.ToolsetDocument {
+	if toolset == orchestration.ToolsetDefault || toolset == orchestration.ToolsetDocument {
 		value, ok := out["limit"]
 		if !ok || numericToolArg(value) > 3 {
 			out["limit"] = float64(3)
