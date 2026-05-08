@@ -188,19 +188,20 @@ Visible host folders hold user data:
 - `data/`: `.env`, SQLite DB, logs, generated local service secrets, MCP
   config, prompt overlays.
 - `runtime-workspace/`: local Aura runtime workspace for agent-facing files
-  such as `AGENT.md`, `HEARTBEAT.md`, `mcp.json`, `wiki/`, `skills/`, and
-  `inbox/`. In Docker the equivalent path is `/workspace` through
-  `AURA_RUNTIME_WORKSPACE_PATH`, `AURA_WORKSPACE_ROOT`, and
-  `PROMPT_OVERLAY_PATH`.
-- `wiki/`: compiled wiki and source evidence.
-- `skills/`: installed skills.
+  such as `AGENT.md`, `HEARTBEAT.md`, `mcp.json`, and `inbox/`. Local
+  desktop runs also keep wiki and skills under this folder. In Docker the
+  equivalent path is `/workspace` through `AURA_RUNTIME_WORKSPACE_PATH`,
+  `AURA_WORKSPACE_ROOT`, and `PROMPT_OVERLAY_PATH`.
+- Docker volume `aura-wiki`: compiled wiki and source evidence mounted at
+  `/workspace/wiki`.
+- Docker volume `aura-skills`: installed skills mounted at `/workspace/skills`.
 - `garage/`: Garage S3 metadata and object data once the Garage service is enabled.
 - `qdrant-storage`: Docker-managed named volume for Qdrant's derived vector
   index. Qdrant warns that Docker Desktop FUSE bind mounts can corrupt vector
   storage, so Aura keeps this one derived index in a named volume and rebuilds
-  it from `wiki/` when needed.
+  it from Aura memory when needed.
 
-Back up these folders before moving hosts or upgrading major versions.
+Back up these folders and Docker volumes before moving hosts or upgrading major versions.
 
 ### SQLite Safety
 

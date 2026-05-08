@@ -20,7 +20,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 
 Aura is a Go-based Telegram assistant with LLM integrations, local wiki storage, search, budget tracking, health endpoints, logging, and optional tracing.[page:1] The codebase is mainly Go with a TypeScript-based web dashboard.[page:1]
 
-Before working on a new feature, please check existing issues and the project documentation (`README.md`, `INSTALL.md`, `AGENTS.md`, `wiki/`, `docs/`).[page:1] If you plan a larger change, consider opening an issue first to discuss the design.
+Before working on a new feature, please check existing issues and the project documentation (`README.md`, `INSTALL.md`, `AGENTS.md`, `docs/`).[page:1] If you plan a larger change, consider opening an issue first to discuss the design.
 
 ## Development Setup
 
@@ -75,7 +75,7 @@ These commands should run without errors before you submit a pull request.[page:
 - Keep functions small and focused, prefer clear code over clever tricks.
 - For TypeScript and frontend code, follow the patterns already used in the `web` folder.[page:1]
 - Add or update tests when you change behavior or add new features.
-- Keep documentation in sync (e.g., `README.md`, `INSTALL.md`, `AGENTS.md`, `docs/`, `wiki/`).[page:1]
+- Keep documentation in sync (e.g., `README.md`, `INSTALL.md`, `AGENTS.md`, `docs/`).[page:1]
 
 ## Commit Messages
 

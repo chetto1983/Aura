@@ -98,7 +98,7 @@ type Client interface {
 ### Storage
 
 * File system + Git (`go-git/go-git/v5`).
-* Path: `WIKI_PATH` (default `./wiki`).
+* Path: `WIKI_PATH` (default `./runtime-workspace/wiki` locally, `/workspace/wiki` in Docker).
 
 ### Format
 

@@ -36,8 +36,8 @@ The default stack starts local services:
 Primary user data stays in visible folders beside the Compose file:
 
 - `data/`: `.env`, SQLite database, logs, MCP config, prompt overlays.
-- `wiki/`: compiled memory pages and source evidence.
-- `skills/`: installed agent skills.
+- Docker volume `aura-wiki`: compiled memory pages and source evidence.
+- Docker volume `aura-skills`: installed agent skills.
 - `garage/`: Garage object storage data.
 - Docker volume `qdrant-storage`: derived vector index, rebuildable from Aura memory.
 

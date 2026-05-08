@@ -10,6 +10,7 @@
 /garage/
 /qdrant/
 /runtime-workspace/
+/wiki/
 /skills/
 
 # MCP runtime config (template tracked as mcp.example.json)
@@ -31,12 +32,11 @@ Thumbs.db
 /cmd/aura/resource*.syso
 /internal/tray/icon_app.ico
 
-# Wiki data (tracked via git inside wiki dir)*.exe*
+# Local runtime/user data
 *.db
 aura.db-*
 .claude/*
 *.pdf
-wiki/*
 .claude/settings.json
 
 # Playwright (E2E artifacts and locally-resolved browsers)

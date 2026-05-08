@@ -42,6 +42,7 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 - Keep the active phase plan updated before and after each implementation slice. For the current filesystem-first agent cleanup phase this is `.planning/phases/06-fs-first-wiki-skills-agent/PLAN.md`; if the user names a different active phase, use that named plan instead.
 - Commit one small atomic slice at a time, staging explicit paths only.
 - Runtime skills are Aura data, not source code. Do not commit `skills/`; Docker stores them in the `aura-skills` volume at `/workspace/skills`.
+- Runtime wiki is Aura memory, not source code. Do not commit `wiki/`; Docker stores it in the `aura-wiki` volume at `/workspace/wiki`.
 - Use `Body` for wiki page content; the project has migrated from YAML page files to markdown with frontmatter.
 - Keep wiki links in `[[slug]]` form.
 - Use `LLM_API_KEY` only for the chat model. Web search is controlled by `WEB_SEARCH_PROVIDER` (`searxng`, `ollama`, or `disabled`) with provider-specific settings; do not assume the chat key unlocks search. Use dedicated Mistral embedding settings (`EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`) for wiki search; do not fall back from embeddings to `LLM_API_KEY`.

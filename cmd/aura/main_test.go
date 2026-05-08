@@ -231,11 +231,23 @@ func TestComposeMountsNarrowRuntimeWorkspace(t *testing.T) {
 		`SKILLS_PATH: "/workspace/skills"`,
 		`MCP_SERVERS_PATH: "/workspace/mcp.json"`,
 		`- ./runtime-workspace:/workspace`,
-		`- ./wiki:/workspace/wiki`,
-		`- ./skills:/workspace/skills`,
+		`- aura-wiki:/workspace/wiki`,
+		`- aura-skills:/workspace/skills`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("compose.yaml missing %q", want)
+		}
+	}
+	for _, forbidden := range []struct {
+		host      string
+		container string
+	}{
+		{host: "wiki", container: "/workspace/wiki"},
+		{host: "skills", container: "/workspace/skills"},
+	} {
+		bind := "- ./" + forbidden.host + ":" + forbidden.container
+		if strings.Contains(source, bind) {
+			t.Fatalf("compose.yaml must not bind-mount runtime data path %q", bind)
 		}
 	}
 	if strings.Contains(source, `AURA_WORKSPACE_ROOT: "/app"`) {

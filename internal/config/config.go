@@ -66,7 +66,7 @@ type Config struct {
 	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
 	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
-	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./wiki"`
+	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
 	SkillsPath                 string  `envconfig:"SKILLS_PATH" default:"./skills"`
 	SkillsInstallProjectDir    string  `envconfig:"SKILLS_INSTALL_PROJECT_DIR"`
@@ -216,7 +216,7 @@ func Load() (*Config, error) {
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 
-	cfg.WikiPath = getEnv("WIKI_PATH", "./wiki")
+	cfg.WikiPath = getEnv("WIKI_PATH", "./runtime-workspace/wiki")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
 	cfg.SkillsInstallProjectDir = getEnv("SKILLS_INSTALL_PROJECT_DIR", "")

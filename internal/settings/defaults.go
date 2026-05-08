@@ -187,7 +187,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 					key:       KeyWikiPath,
 					value:     cfg.WikiPath,
 					reason:    "move wiki path into the narrow runtime workspace",
-					shouldSet: valueIs("/wiki", "./wiki"),
+					shouldSet: valueIs("/wiki", "./wiki", "./runtime-workspace/wiki"),
 				},
 				defaultRule{
 					key:       KeySkillsPath,

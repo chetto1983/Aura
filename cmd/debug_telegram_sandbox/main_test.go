@@ -541,12 +541,11 @@ func TestValidateDebugExpectationsRejectsConflictingToolExpectations(t *testing.
 
 func TestResolveDebugHostPathMapsContainerRuntimeMounts(t *testing.T) {
 	cases := map[string]string{
-		"/workspace/wiki":           "wiki",
-		"/workspace/wiki/alpha.md":  filepath.Join("wiki", "alpha.md"),
-		"/workspace/skills/.agents": filepath.Join("skills", ".agents"),
+		"/workspace/wiki":           filepath.Join("runtime-workspace", "wiki"),
+		"/workspace/wiki/alpha.md":  filepath.Join("runtime-workspace", "wiki", "alpha.md"),
+		"/workspace/skills/.agents": filepath.Join("runtime-workspace", "skills", ".agents"),
 		"/workspace":                "runtime-workspace",
 		"/data/aura.db":             filepath.Join("data", "aura.db"),
-		"D:/Aura/wiki":              "D:/Aura/wiki",
 	}
 	for input, want := range cases {
 		if got := resolveDebugHostPath(input); got != want {

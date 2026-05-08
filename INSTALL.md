@@ -17,7 +17,7 @@ path is manual-only for legacy testing.
   and generated artifacts.
 - Local Garage backup/artifact storage.
 - Optional Qdrant vector search with local fallback.
-- Your own `data/aura.db`, `wiki/`, `skills/`, and `garage/` folders.
+- Your own `data/aura.db`, Garage data, and Docker volumes for wiki, skills, Qdrant, and caches.
 
 ## Prerequisites
 
@@ -81,8 +81,8 @@ Unknown users go into the dashboard approval queue.
 | --- | --- |
 | `data/.env` | Bootstrap config such as Telegram token and paths |
 | `data/aura.db` | SQLite state: settings, auth, tasks, conversations, budget, embedding cache |
-| `wiki/` | Compiled memory pages and source evidence |
-| `skills/` | Installed skills |
+| Docker volume `aura-wiki` | Compiled memory pages and source evidence |
+| Docker volume `aura-skills` | Installed skills |
 | `garage/` | Garage S3 metadata/object data |
 | Docker volume `qdrant-storage` | Docker-managed derived vector index |
 
@@ -104,7 +104,7 @@ $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:v1.2.3"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-Your `data/`, `wiki/`, `skills/`, `garage/`, and Qdrant derived volume are not
+Your `data/`, `garage/`, `aura-wiki`, `aura-skills`, and Qdrant derived volume are not
 deleted by normal updates.
 
 ## Useful Operations

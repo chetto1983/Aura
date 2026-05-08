@@ -366,10 +366,10 @@ func resolveDebugHostPath(path string) string {
 		container string
 		host      string
 	}{
-		{container: "/workspace/wiki", host: "wiki"},
-		{container: "/wiki", host: "wiki"},
-		{container: "/workspace/skills", host: "skills"},
-		{container: "/skills", host: "skills"},
+		{container: "/workspace/wiki", host: filepath.Join("runtime-workspace", "wiki")},
+		{container: "/wiki", host: filepath.Join("runtime-workspace", "wiki")},
+		{container: "/workspace/skills", host: filepath.Join("runtime-workspace", "skills")},
+		{container: "/skills", host: filepath.Join("runtime-workspace", "skills")},
 		{container: "/workspace", host: "runtime-workspace"},
 		{container: "/data", host: "data"},
 	} {
