@@ -158,6 +158,43 @@ func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	}
 }
 
+func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "documents"}},
+		}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-2", Name: "search_memory", Arguments: map[string]any{"query": "sources"}},
+		}}},
+		{Response: llm.Response{Content: "ok"}},
+	}}
+	executions := 0
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		executions += len(calls)
+		state.AddToolResultMessage(calls[0].ID, "memory result")
+		return ExecutionSummary{LastResult: "memory result"}
+	}), state, Options{
+		MaxIterations: 4,
+		BeforeTool: DuplicateOrMaxCallsPolicy(map[string]int{"search_memory": 1}, func(call llm.ToolCall, state ToolCallState) string {
+			return "use compact retrieval and call create_docx now"
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "ok" {
+		t.Fatalf("Text = %q", result.Text)
+	}
+	if executions != 1 {
+		t.Fatalf("executions = %d, want 1", executions)
+	}
+	if got := state.toolResult("call-2"); got != "use compact retrieval and call create_docx now" {
+		t.Fatalf("repeat result = %q", got)
+	}
+}
+
 func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{

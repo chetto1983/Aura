@@ -45,6 +45,27 @@ type ToolsetDecision struct {
 	Reason  string
 }
 
+type ToolsetContext struct {
+	Toolset      Toolset
+	Availability Availability
+}
+
+type RuntimeToolset interface {
+	Name() string
+	Tools(ToolsetContext) ([]string, error)
+}
+
+type ToolPredicate func(ToolsetContext, string) bool
+
+type staticToolset struct {
+	toolset Toolset
+}
+
+type filteredToolset struct {
+	base      RuntimeToolset
+	predicate ToolPredicate
+}
+
 type PromptInput struct {
 	Version           string
 	Now               time.Time
@@ -180,6 +201,27 @@ func SelectToolsetDecision(userText, mode string, available Availability) Toolse
 }
 
 func ToolsForToolset(toolset Toolset, available Availability) ([]string, error) {
+	return NewRuntimeToolset(toolset).Tools(ToolsetContext{Toolset: toolset, Availability: available})
+}
+
+func NewRuntimeToolset(toolset Toolset) RuntimeToolset {
+	return staticToolset{toolset: normalizeToolset(string(toolset))}
+}
+
+func FilterToolset(base RuntimeToolset, predicate ToolPredicate) RuntimeToolset {
+	return filteredToolset{base: base, predicate: predicate}
+}
+
+func (s staticToolset) Name() string {
+	return string(s.toolset)
+}
+
+func (s staticToolset) Tools(ctx ToolsetContext) ([]string, error) {
+	toolset := normalizeToolset(string(s.toolset))
+	if ctx.Toolset != "" {
+		toolset = normalizeToolset(string(ctx.Toolset))
+	}
+	available := ctx.Availability
 	toolset = normalizeToolset(string(toolset))
 	if toolset == ToolsetCompute && !available.Sandbox {
 		return nil, fmt.Errorf("toolset %q unavailable: missing sandbox", toolset)
@@ -205,6 +247,33 @@ func ToolsForToolset(toolset Toolset, available Availability) ([]string, error) 
 		tools = append(tools, swarmTools...)
 	}
 	return uniqueTools(tools), nil
+}
+
+func (f filteredToolset) Name() string {
+	if f.base == nil {
+		return ""
+	}
+	return f.base.Name()
+}
+
+func (f filteredToolset) Tools(ctx ToolsetContext) ([]string, error) {
+	if f.base == nil {
+		return nil, fmt.Errorf("toolset is nil")
+	}
+	tools, err := f.base.Tools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if f.predicate == nil {
+		return tools, nil
+	}
+	out := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		if f.predicate(ctx, tool) {
+			out = append(out, tool)
+		}
+	}
+	return out, nil
 }
 
 func normalizeToolset(value string) Toolset {
@@ -253,7 +322,7 @@ func toolsetPrompt(toolset Toolset) string {
 	case ToolsetCompute:
 		return "\nUse execute_code for real computation, transformations, charts, parser experiments, and generated artifacts. Keep generated files under /tmp/aura_out."
 	case ToolsetDocument:
-		return "\nUse compact memory evidence first, then one typed file tool for ordinary static documents."
+		return "\nUse only the tools exposed for this turn. In document mode, the active tools are search_memory when exposed plus create_docx/create_xlsx/create_pdf. Use compact memory evidence first, then one typed file tool for ordinary static documents."
 	case ToolsetAdmin:
 		return "\nUse admin tools only for explicit dashboard, settings, token, skill, MCP, task, or review-queue work. Concrete tools still enforce auth/admin gates."
 	default:
@@ -263,7 +332,7 @@ func toolsetPrompt(toolset Toolset) string {
 
 func memoryPrompt(toolset Toolset) string {
 	if toolset == ToolsetDocument {
-		return "\n\n## Memory\nFor document generation, use the retrieval capsule or one search_memory call for compact evidence, then create_docx/create_xlsx/create_pdf. Do not browse workspace files, web pages, or raw source bodies unless the user explicitly asks for that deeper inspection."
+		return "\n\n## Memory\nFor document generation, use the Retrieval Capsule directly when it is present, then create_docx/create_xlsx/create_pdf. If no capsule is present and search_memory is exposed, use at most one search_memory call for compact evidence. Do not browse workspace files, web pages, or raw source bodies unless those tools are explicitly exposed in the current turn."
 	}
 	if toolset == ToolsetDefault {
 		return "\n\n## Memory\nFor broad or source-backed answers, gather evidence with search_memory, source tools, or workspace file reads before synthesizing. Keep citations compact when the user asks for proof."

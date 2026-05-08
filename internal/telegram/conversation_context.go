@@ -11,17 +11,32 @@ import (
 	"github.com/aura/aura/internal/search"
 )
 
-func composeTurnRetrievalCapsule(ctx context.Context, repo search.Searcher, _ string, userText string, timeoutMS int, logger *slog.Logger, userID string) string {
+type turnRetrievalCapsule struct {
+	Text                 string
+	HasEvidence          bool
+	SuppressSearchMemory bool
+}
+
+func composeTurnRetrievalCapsule(ctx context.Context, repo search.Searcher, _ string, userText string, timeoutMS int, logger *slog.Logger, userID string) turnRetrievalCapsule {
 	route := retrievalRouteForTurn(userText)
 	if route == "minimal" {
-		return ""
+		return turnRetrievalCapsule{}
 	}
 	searchContext := runSpeculativeSearch(ctx, repo, userText, timeoutMS, logger, userID)
-	return conversation.ComposeRetrievalCapsule(conversation.RetrievalCapsuleInput{
+	hasEvidence := strings.TrimSpace(searchContext) != ""
+	if strings.TrimSpace(searchContext) == "" && route == "produce" {
+		searchContext = "No compact wiki evidence was found for this document request. Use the user request directly unless broader Aura memory search is still exposed."
+	}
+	text := conversation.ComposeRetrievalCapsule(conversation.RetrievalCapsuleInput{
 		UserText:      userText,
 		SearchContext: searchContext,
 		Route:         route,
 	})
+	return turnRetrievalCapsule{
+		Text:                 text,
+		HasEvidence:          hasEvidence,
+		SuppressSearchMemory: route == "produce" && (hasEvidence || documentTurnCanUsePromptOnly(userText)),
+	}
 }
 
 func retrievalRouteForTurn(userText string) string {
@@ -50,6 +65,23 @@ func retrievalRouteForTurn(userText string) string {
 		}
 	}
 	return "minimal"
+}
+
+func documentTurnCanUsePromptOnly(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"documenti e note", "documenti disponibili", "note disponibili",
+		"in aura", "memoria", "memory", "wiki", "source", "fonti", "fonte",
+		"archivio", "conversaz", "riassumi i documenti", "riepilogo dei documenti",
+	} {
+		if strings.Contains(text, needle) {
+			return false
+		}
+	}
+	return true
 }
 
 func runSpeculativeSearch(ctx context.Context, repo search.Searcher, userText string, timeoutMS int, logger *slog.Logger, userID string) string {

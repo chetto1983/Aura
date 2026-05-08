@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/orchestration"
@@ -36,7 +37,7 @@ type toolExecutionSummary struct {
 	terminalTool   string
 }
 
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, toolset orchestration.Toolset, readSkills []string) toolExecutionSummary {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, toolset orchestration.Toolset, readSkills []string, afterTool agentloop.AfterToolCallback) toolExecutionSummary {
 	if len(calls) == 0 {
 		return toolExecutionSummary{}
 	}
@@ -120,8 +121,9 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			if err != nil {
 				result = tools.FormatToolError(err)
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
-			} else if toolset == orchestration.ToolsetDocument && tc.Name == "search_memory" {
-				result = result + documentRouteNextStepHint()
+			}
+			if afterTool != nil {
+				result = afterTool(tc, result, err)
 			}
 			errorClass := ""
 			if err != nil {
@@ -177,10 +179,6 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		}
 	}
 	return summary
-}
-
-func documentRouteNextStepHint() string {
-	return "\n\nNext step for this document turn: use this evidence now and call exactly one of create_docx, create_xlsx, or create_pdf. Do not call search_memory again. Do not call read_file, search_files, web_search, or source-reading tools unless the user explicitly asks for deeper inspection."
 }
 
 func toolArgumentsForToolset(name string, args map[string]any, toolset orchestration.Toolset) map[string]any {

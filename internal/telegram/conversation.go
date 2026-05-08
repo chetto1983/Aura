@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agentloop"
+	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/orchestration"
 	auraskills "github.com/aura/aura/internal/skills"
-	"github.com/aura/aura/internal/tools"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -56,6 +56,11 @@ func (b *Bot) handleConversation(c tele.Context) {
 			skillsBlock = block
 		}
 	}
+	wikiDir := ""
+	if b.wiki != nil {
+		wikiDir = b.wiki.Dir()
+	}
+	retrievalCapsule := composeTurnRetrievalCapsule(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID)
 	available := orchestration.Availability{
 		Swarm:          b.swarmToolsAvailable() && turnAllowsSwarm(userText),
 		Sandbox:        b.sandboxToolsAvailable(),
@@ -70,12 +75,14 @@ func (b *Bot) handleConversation(c tele.Context) {
 		ToolsetSelectReason: toolsetDecision.Reason,
 	})
 	toolset := toolsetDecision.Toolset
-	toolAllowlist, err := orchestration.ToolsForToolset(toolset, available)
+	runtimeToolset := runtimeToolsetForTurn(toolset, retrievalCapsule)
+	toolAllowlist, err := runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
 	if err != nil {
 		b.logger.Warn("orchestration toolset failed; falling back to default", "toolset", toolset, "error", err)
 		toolset = orchestration.ToolsetDefault
 		toolsetDecision = orchestration.ToolsetDecision{Toolset: toolset, Reason: "toolset allowlist failed; fell back to default"}
-		toolAllowlist, _ = orchestration.ToolsForToolset(toolset, available)
+		runtimeToolset = runtimeToolsetForTurn(toolset, retrievalCapsule)
+		toolAllowlist, _ = runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
 	}
 	hooks.BeforePromptCompose(orchestration.TraceEvent{
 		Toolset:             string(toolsetDecision.Toolset),
@@ -114,11 +121,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// Phase 08 Runtime Diet: retrieval context is routed, not automatic.
 	// Generic chat/status/code turns clear this slot so stale capsule content
 	// does not leak into the next answer.
-	wikiDir := ""
-	if b.wiki != nil {
-		wikiDir = b.wiki.Dir()
-	}
-	convCtx.SetSearchContext(composeTurnRetrievalCapsule(context.Background(), b.search, wikiDir, userText, b.cfg.SpeculativeSearchTimeoutMS, b.logger, userID))
+	convCtx.SetSearchContext(retrievalCapsule.Text)
 
 	// Snapshot count for archiver loop; EnforceLimit now runs after the turn
 	// completes so context trimming doesn't add to perceived wait time.
@@ -320,6 +323,16 @@ func turnAllowsSwarm(userText string) bool {
 	return false
 }
 
+func runtimeToolsetForTurn(toolset orchestration.Toolset, retrievalCapsule turnRetrievalCapsule) orchestration.RuntimeToolset {
+	runtimeToolset := orchestration.NewRuntimeToolset(toolset)
+	if toolset != orchestration.ToolsetDocument || !retrievalCapsule.SuppressSearchMemory || strings.TrimSpace(retrievalCapsule.Text) == "" {
+		return runtimeToolset
+	}
+	return orchestration.FilterToolset(runtimeToolset, func(_ orchestration.ToolsetContext, name string) bool {
+		return name != "search_memory"
+	})
+}
+
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
@@ -359,19 +372,12 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	}
 	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
-	orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
-		PromptVersion:       promptPlan.Version,
-		PromptHash:          promptPlan.Hash,
-		PromptModules:       promptPlan.Modules,
-		Toolset:             string(toolsetDecision.Toolset),
-		ToolsetSelectReason: toolsetDecision.Reason,
-		ToolsExposed:        baseStats.toolsExposed,
-	})
 	var currentStats turnStats
-	result, err := agentloop.Run(ctx,
-		telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
-		agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, toolsetDecision.Toolset, currentStats.readSkills)
+	afterTool := orchestration.AfterToolCallbackForToolset(toolsetDecision.Toolset)
+	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
+		Client: telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
+		Executor: agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, toolsetDecision.Toolset, currentStats.readSkills, afterTool)
 			return agentloop.ExecutionSummary{
 				LastResult:     execution.lastResult,
 				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
@@ -380,20 +386,16 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				TerminalTool:   execution.terminalTool,
 			}
 		}),
-		convCtx,
-		agentloop.Options{
+		State:           convCtx,
+		PromptPlan:      promptPlan,
+		ToolsetDecision: toolsetDecision,
+		Tools:           toolDefs,
+		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
 			MaxElapsed:              loopPolicy.MaxElapsed,
-			Tools:                   toolDefs,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: loopPolicy.AllowNoToolFinalization,
-			DuplicateToolResult: func(call llm.ToolCall) string {
-				if toolsetDecision.Toolset == orchestration.ToolsetDocument && call.Name == "search_memory" {
-					return tools.FormatToolError(fmt.Errorf("document route already has compact retrieval for this turn; use the previous evidence and call create_docx/create_xlsx/create_pdf now"))
-				}
-				return tools.FormatToolError(fmt.Errorf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name))
-			},
-			MaxCallsPerTool: maxCallsPerToolForToolset(toolsetDecision.Toolset),
+			BeforeTool:              orchestration.BeforeToolCallbackForToolset(toolsetDecision.Toolset),
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -412,10 +414,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			},
 			EstimateCost: func(usage llm.TokenUsage) float64 {
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
-			},
-			OnStats: func(stats agentloop.Stats) {
-				currentStats = mergeAgentLoopStats(baseStats, stats)
-				b.storeOrchestrationSnapshot(userID, currentStats)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
 				if terminalTool == "execute_code" {
@@ -436,7 +434,24 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				}
 				return response, false, true
 			},
-		})
+		},
+		OnEvent: func(event agentruntime.Event) {
+			switch event.Type {
+			case agentruntime.EventToolsExposed:
+				orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
+					PromptVersion:       event.PromptVersion,
+					PromptHash:          event.PromptHash,
+					PromptModules:       event.PromptModules,
+					Toolset:             string(event.Toolset),
+					ToolsetSelectReason: event.ToolsetSelectReason,
+					ToolsExposed:        event.ToolsExposed,
+				})
+			case agentruntime.EventStats:
+				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
+				b.storeOrchestrationSnapshot(userID, currentStats)
+			}
+		},
+	})
 	if err != nil {
 		b.logger.Error("agent loop failed", "user_id", userID, "error", err)
 	}
@@ -515,13 +530,6 @@ func (b *Bot) maxToolLoopIterations(toolset orchestration.Toolset) int {
 		return 1
 	}
 	return maxIterations
-}
-
-func maxCallsPerToolForToolset(toolset orchestration.Toolset) map[string]int {
-	if toolset == orchestration.ToolsetDocument {
-		return map[string]int{"search_memory": 1}
-	}
-	return nil
 }
 
 func (b *Bot) terminalToolPolicyEnabled() bool {

@@ -244,6 +244,7 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 		[]string{"search_memory"},
 		orchestration.ToolsetDefault,
 		nil,
+		nil,
 	)
 
 	if !summary.hiddenRejected {
@@ -289,6 +290,7 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 		[]string{"create_pdf"},
 		orchestration.ToolsetDocument,
 		nil,
+		nil,
 	)
 	if doc.calls != 1 {
 		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
@@ -318,6 +320,7 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 		[]string{"read_file", "create_pdf"},
 		orchestration.ToolsetDocument,
 		nil,
+		nil,
 	)
 
 	if len(summary.readSkillNames) != 1 || summary.readSkillNames[0] != "document-pdf" {
@@ -346,6 +349,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 		[]string{"execute_code"},
 		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
+		nil,
 	)
 
 	if summary.terminalTool != "execute_code" {
@@ -373,6 +377,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 		[]string{"execute_code"},
 		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
+		nil,
 	)
 
 	if summary.terminalTool != "" {
@@ -458,6 +463,7 @@ func TestExecuteToolCallsHonorsCustomHookVeto(t *testing.T) {
 		[]string{"search_memory"},
 		orchestration.ToolsetDefault,
 		nil,
+		nil,
 	)
 
 	if summary.fatalResult == "" || !strings.Contains(summary.fatalResult, "blocked by custom hook") {
@@ -486,6 +492,7 @@ func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
 		[]llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}},
 		[]string{"run_aurabot_swarm"},
 		orchestration.ToolsetDefault,
+		nil,
 		nil,
 	)
 
@@ -583,6 +590,7 @@ func TestDocumentToolsetCapsSearchMemoryLimit(t *testing.T) {
 		[]string{"search_memory"},
 		orchestration.ToolsetDocument,
 		nil,
+		orchestration.AfterToolCallbackForToolset(orchestration.ToolsetDocument),
 	)
 
 	if !strings.Contains(summary.lastResult, "memory") {

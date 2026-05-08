@@ -37,6 +37,9 @@ func TestComposePromptReportsVersionModulesAndHash(t *testing.T) {
 	if !strings.Contains(plan.Content, "Tool call examples are attached to each tool definition") {
 		t.Fatalf("document prompt missing tool example placement guidance:\n%s", plan.Content)
 	}
+	if !strings.Contains(plan.Content, "Use only the tools exposed for this turn") {
+		t.Fatalf("document prompt missing active-toolset boundary:\n%s", plan.Content)
+	}
 	if !strings.Contains(plan.Content, "Read a skill when the user names it") || !strings.Contains(plan.Content, "Do not read skills just to satisfy a ritual") {
 		t.Fatalf("prompt missing advisory skill-use guidance:\n%s", plan.Content)
 	}
@@ -121,6 +124,41 @@ func TestToolsetsExposeBroadSafeDefaultsAndSpecializedAdditions(t *testing.T) {
 	}
 	if slices.Contains(admin, "execute_code") {
 		t.Fatalf("admin toolset should not expose execute_code: %+v", admin)
+	}
+}
+
+func TestRuntimeToolsetUsesInvocationContext(t *testing.T) {
+	ts := NewRuntimeToolset(ToolsetDocument)
+	got, err := ts.Tools(ToolsetContext{
+		Toolset:      ToolsetDocument,
+		Availability: Availability{WorkspaceFiles: true, Swarm: true},
+	})
+	if err != nil {
+		t.Fatalf("Tools() error = %v", err)
+	}
+	for _, required := range []string{"search_memory", "create_docx"} {
+		if !slices.Contains(got, required) {
+			t.Fatalf("runtime document toolset missing %q: %+v", required, got)
+		}
+	}
+	if slices.Contains(got, "read_file") {
+		t.Fatalf("runtime document toolset exposed workspace tool: %+v", got)
+	}
+}
+
+func TestFilterToolsetAppliesPredicate(t *testing.T) {
+	filtered := FilterToolset(NewRuntimeToolset(ToolsetDefault), func(_ ToolsetContext, name string) bool {
+		return name == "search_memory" || name == "web_search"
+	})
+	got, err := filtered.Tools(ToolsetContext{
+		Toolset:      ToolsetDefault,
+		Availability: Availability{WorkspaceFiles: true, Swarm: true},
+	})
+	if err != nil {
+		t.Fatalf("Tools() error = %v", err)
+	}
+	if len(got) != 2 || got[0] != "search_memory" || got[1] != "web_search" {
+		t.Fatalf("filtered tools = %+v, want [search_memory web_search]", got)
 	}
 }
 

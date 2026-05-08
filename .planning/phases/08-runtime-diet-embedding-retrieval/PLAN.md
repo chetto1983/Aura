@@ -23,6 +23,8 @@ Progress:
 - 2026-05-08 LangChain-style tool definitions: tool examples were lifted out of registry-side string patching into Aura's canonical `ToolDefinition` contract. Tools can now provide `Definition()` with name, description, JSON schema, and structured examples; old tools are adapted through a fallback so no exposed tool loses a call shape.
 - 2026-05-08 document-loop repair: document-route `search_memory` results now include an explicit next-step hint to create exactly one typed artifact, and the OpenAI-compatible streamed tool-call parser repairs recoverable missing JSON closers. Live smoke recovered from the previous malformed `create_docx` failure and finished in 20.5s.
 - 2026-05-08 ADK-Go orchestration review: compared Aura against `google/adk-go`'s `Agent`/`Runner`/`Session.Event`/`Toolset`/callback split. The useful pattern for Aura is not importing ADK wholesale; it is moving route policy, tool filtering, tool-result shaping, persistence, and post-tool steering out of Telegram into a small event runner with before/after model/tool hooks.
+- 2026-05-08 ADK-style runner slice: added `internal/agentruntime` as the Aura-native event runner wrapper around the model/tool loop, added dynamic `RuntimeToolset.Tools(ctx)` plus `FilterToolset`, and moved duplicate/repeated retrieval plus document-route next-step shaping into orchestration callbacks (`BeforeToolCallbackForToolset`, `AfterToolCallbackForToolset`). Telegram now adapts runner events instead of owning tool exposure stats and duplicate policy directly.
+- 2026-05-08 document hot-path cut: document turns now carry retrieval-capsule metadata (`HasEvidence`, `SuppressSearchMemory`) so `search_memory` is physically removed from the exposed toolset when the capsule already has evidence or the request can be fulfilled from the prompt. Broad empty-memory document turns still keep `search_memory` available as a one-call fallback. The live document smoke now passes in one loop step with only `create_docx`, no hidden `read_file`, and `elapsed_ms=12976`.
 
 ## Thesis
 
@@ -220,8 +222,9 @@ Acceptance:
 
 ### Task 6: Make Document Generation Boring
 
-- Status: done for the backend/live smoke slice. The document toolset no longer exposes workspace file tools, source browsing tools, or web tools by default. It keeps `search_memory` plus typed document creators, while the loop respects the DB/dashboard step budget instead of a hidden 4-step policy cap. Tool-call examples are now attached to all tool definitions, and the live document smoke creates/sends DOCX under 30s.
+- Status: done for the backend/live smoke slice. The document toolset no longer exposes workspace file tools, source browsing tools, or web tools by default. It keeps `search_memory` only when the invocation still needs a broad memory fallback, otherwise the runtime-filtered toolset exposes typed document creators only. The loop respects the DB/dashboard step budget instead of a hidden 4-step policy cap. Tool-call examples are now attached to all tool definitions, and the live document smoke creates/sends DOCX under 15s in one loop step.
 - Follow-up refinement done: examples now live inside structured tool definitions, not ad hoc prompt text. `search_memory` and typed document creators own explicit definitions; legacy/dynamic tools still receive schema-derived definitions through the adapter path.
+- Follow-up refinement done: document prompt guidance now tells the model to use only the currently exposed tools, which removed the hidden `read_file` retry seen in prior smokes.
 
 - Document route must do: retrieval capsule -> `create_docx` or equivalent typed tool.
 - Remove repeated broad evidence expansion from document prompts.
@@ -230,7 +233,8 @@ Acceptance:
 Acceptance:
 
 - Broad document prompt calls retrieval once, then typed document tool.
-- Live smoke stays under 30s while respecting the configured `AgentLoopMaxSteps` budget.
+- Live smoke stays under 15s while respecting the configured `AgentLoopMaxSteps` budget.
+- Live smoke completes with `loop_steps=1`, `llm_calls=1`, `tool_calls=1`, `hidden_tool_rejected=false` when the retrieval capsule is sufficient.
 
 ### Task 7: Delete The Leftovers
 
@@ -247,7 +251,7 @@ Acceptance:
 
 ### Task 8: ADK-Style Event Runner
 
-- Status: planned from `google/adk-go` review.
+- Status: partial. The first extraction is in place: `internal/agentruntime` emits tools/stats/final events, `RuntimeToolset.Tools(ctx)` replaces direct static allowlist use in Telegram, and duplicate/document steering lives in orchestration callbacks. Remaining work is to move session append/load and terminal-tool finalization fully behind the runner boundary.
 
 Build the smallest Aura-native version of ADK's orchestration shape:
 
@@ -269,7 +273,7 @@ Non-goals:
 Acceptance:
 
 - Telegram no longer owns orchestration policy; it adapts runner events to chat messages.
-- Document smoke performs `search_memory -> create_docx` with no hidden `read_file` attempt.
+- Document smoke performs `retrieval capsule -> create_docx` when the capsule is sufficient, or `search_memory -> create_docx` only as a fallback when broad memory is still needed.
 - Duplicate/repeated retrieval is rejected by `BeforeTool`, not ad hoc Telegram code.
 - `go test ./internal/agentloop ./internal/telegram ./internal/orchestration ./internal/tools -count=1`.
 - Live debug sandbox stays under 30s for the document route.

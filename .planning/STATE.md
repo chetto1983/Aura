@@ -50,11 +50,11 @@ Phase 08 Task 3/5/6 slice replaced the old Memory Pack code with `## Retrieval C
 
 Added `scripts/capture-aura-health.ps1` so validation can save Docker status/logs, container health, dashboard conversations, Telegram bot health, and optional debug Telegram smokes into ignored `reports/health/<timestamp>/` bundles without copying the live SQLite DB.
 
-Hermes-style tool-call examples are now attached through Aura's LangChain-style `ToolDefinition` contract rather than registry-side prompt patching. Tools can own `Definition()` with name, description, schema, and structured examples; legacy/dynamic tools get an adapter fallback so every exposed tool still has a concrete call shape. The live document smoke now passes under 30s and creates/sends a DOCX; residual signals are a hidden `read_file` attempt and duplicate `search_memory` request, both rejected by policy.
+Hermes-style tool-call examples are now attached through Aura's LangChain-style `ToolDefinition` contract rather than registry-side prompt patching. Tools can own `Definition()` with name, description, schema, and structured examples; legacy/dynamic tools get an adapter fallback so every exposed tool still has a concrete call shape. The live document smoke now passes under 15s and creates/sends a DOCX in one loop step with only `create_docx`; `hidden_tool_rejected=false`.
 
-Latest architecture direction after reviewing `google/adk-go`: keep Aura-native code, but adopt ADK's clean split of `Runner`, `Agent`, `Session/Event`, dynamic `Toolset`, and before/after model/tool callbacks. The immediate target is to move route/tool policy and document next-step steering out of Telegram into a small event runner so hidden-tool recovery becomes rare rather than routine.
+Latest architecture direction after reviewing `google/adk-go`: keep Aura-native code, but adopt ADK's clean split of `Runner`, `Agent`, `Session/Event`, dynamic `Toolset`, and before/after model/tool callbacks. The first slice is now in place: `internal/agentruntime` emits tools/stats/final events, Telegram uses `RuntimeToolset.Tools(ctx)` plus invocation-aware filters, and duplicate/document-route steering moved into orchestration callbacks.
 
-Next implementation should keep following `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: add the ADK-style event runner slice, then the durable compact-memory index for source/archive/proposal facts.
+Next implementation should keep following `.planning/phases/08-runtime-diet-embedding-retrieval/PLAN.md`: build the durable compact-memory index for source/archive/proposal facts, then finish the runner boundary by moving session persistence and terminal finalization behind event handling.
 
 ## Cleaned-Up Plan Map
 
@@ -67,20 +67,20 @@ Next implementation should keep following `.planning/phases/08-runtime-diet-embe
 
 ## Next Slice
 
-Recommended slice: Phase 08 ADK-style event runner extraction.
+Recommended slice: Phase 08 compact-memory index.
 
 Goal:
 
-- extract runner/session/event/callback orchestration out of Telegram;
-- make document-route policy a before/after tool callback;
-- make dynamic toolset filtering the normal path so hidden tool attempts disappear;
+- index compact source/archive/proposal facts instead of relying on raw scans;
+- feed source/archive/proposal evidence into the Retrieval Capsule path;
+- keep raw source bodies and archive turns behind explicit handles;
 - preserve the simple Runtime Diet hot path.
 
 Suggested acceptance:
 
-- `go test ./internal/agentloop ./internal/telegram ./internal/orchestration ./internal/tools -count=1`;
-- document debug smoke calls `search_memory -> create_docx` with no hidden `read_file`;
-- broad document prompt stays under the Phase 08 loop/time budget in the debug sandbox.
+- `go test ./internal/search ./internal/tools ./internal/telegram -count=1`;
+- source/archive recall returns compact facts before raw body scans;
+- broad document prompt keeps the one-step typed artifact path when the capsule is sufficient.
 
 ## Deferred Follow-Ups
 

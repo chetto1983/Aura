@@ -47,6 +47,20 @@ type ExecutionSummary struct {
 
 type TerminalHandler func(ctx context.Context, terminalTool, lastToolResult string, stats *Stats) (text string, delivered bool, handled bool)
 
+type ToolCallState struct {
+	InBatchDuplicate bool
+	PriorIdentical   bool
+	CallsForTool     int
+}
+
+type ToolCallDecision struct {
+	Skip   bool
+	Result string
+}
+
+type BeforeToolCallback func(llm.ToolCall, ToolCallState) ToolCallDecision
+type AfterToolCallback func(llm.ToolCall, string, error) string
+
 type Options struct {
 	MaxIterations           int
 	MaxElapsed              time.Duration
@@ -55,6 +69,7 @@ type Options struct {
 	AllowNoToolFinalization bool
 	DuplicateToolResult     func(llm.ToolCall) string
 	MaxCallsPerTool         map[string]int
+	BeforeTool              BeforeToolCallback
 	BeforeLLM               func() (message string, stop bool)
 	RecordUsage             func(llm.TokenUsage)
 	EstimateCost            func(llm.TokenUsage) float64
@@ -172,14 +187,31 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		emitStats()
 
 		callsToExecute, duplicateToolCalls := DedupeToolCalls(resp.Response.ToolCalls)
+		inBatchDuplicate := map[string]bool{}
+		for _, call := range duplicateToolCalls {
+			inBatchDuplicate[duplicateToolCallKey(call)] = true
+		}
 		var freshCalls []llm.ToolCall
+		skippedToolResults := map[string]string{}
 		for _, call := range callsToExecute {
 			key := duplicateToolCallKey(call)
-			if seenToolCalls[key] {
+			stateForCall := ToolCallState{
+				InBatchDuplicate: inBatchDuplicate[key],
+				PriorIdentical:   seenToolCalls[key],
+				CallsForTool:     toolCallExecutions[call.Name],
+			}
+			if opts.BeforeTool != nil {
+				if decision := opts.BeforeTool(call, stateForCall); decision.Skip {
+					if decision.Result != "" {
+						skippedToolResults[call.ID] = decision.Result
+					}
+					duplicateToolCalls = append(duplicateToolCalls, call)
+					continue
+				}
+			} else if seenToolCalls[key] {
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				continue
-			}
-			if maxCalls := opts.MaxCallsPerTool[call.Name]; maxCalls > 0 && toolCallExecutions[call.Name] >= maxCalls {
+			} else if maxCalls := opts.MaxCallsPerTool[call.Name]; maxCalls > 0 && toolCallExecutions[call.Name] >= maxCalls {
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				continue
 			}
@@ -200,6 +232,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 		for _, duplicate := range duplicateToolCalls {
+			if result := skippedToolResults[duplicate.ID]; result != "" {
+				state.AddToolResultMessage(duplicate.ID, result)
+				continue
+			}
 			state.AddToolResultMessage(duplicate.ID, duplicateToolResult(duplicate, opts))
 		}
 		emitStats()
@@ -229,6 +265,26 @@ func duplicateToolResult(call llm.ToolCall, opts Options) string {
 		return opts.DuplicateToolResult(call)
 	}
 	return fmt.Sprintf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name)
+}
+
+func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.ToolCall, ToolCallState) string) BeforeToolCallback {
+	return func(call llm.ToolCall, state ToolCallState) ToolCallDecision {
+		limitReached := false
+		if maxCalls := maxCallsPerTool[call.Name]; maxCalls > 0 && state.CallsForTool >= maxCalls {
+			limitReached = true
+		}
+		if !state.PriorIdentical && !limitReached {
+			return ToolCallDecision{}
+		}
+		out := ""
+		if result != nil {
+			out = result(call, state)
+		}
+		if out == "" {
+			out = fmt.Sprintf("duplicate tool call %q skipped; use the previous result already returned in this turn", call.Name)
+		}
+		return ToolCallDecision{Skip: true, Result: out}
+	}
 }
 
 func finalAnswerOnBudget(lastToolResult string) string {
