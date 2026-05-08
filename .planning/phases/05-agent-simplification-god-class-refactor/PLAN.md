@@ -77,6 +77,7 @@ Create or reshape these boundaries:
 - 2026-05-08: Removed remaining dead terminal-swarm helpers and tests from `internal/telegram/conversation.go` and `internal/telegram/debug_smoke_test.go`; verified with `go test ./internal/telegram`.
 - 2026-05-08: Replaced swarm-specific duplicate capping with generic duplicate tool-call capping keyed by tool name plus canonical JSON arguments; removed terminal-swarm telemetry from Telegram/debug sandbox. Verified with `go test ./internal/telegram`, `go test ./cmd/debug_telegram_sandbox`, and `go test ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
 - 2026-05-08: Moved generic duplicate tool-call dedupe out of `internal/telegram/conversation.go` into `internal/agentloop/dedupe.go` with focused canonical-argument tests. Verified with `go test ./internal/agentloop`, `go test ./internal/telegram`, and `go test ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
+- 2026-05-08: Split terminal-tool finalization and formatting helpers out of `internal/telegram/conversation.go` into `internal/telegram/conversation_format.go`; `conversation.go` is down to 1077 lines. Verified with `go test ./internal/telegram` and `go test ./internal/agentloop ./internal/orchestration ./internal/telegram ./internal/api ./internal/settings ./internal/config ./cmd/debug_telegram_sandbox`.
 
 ## Task 0: Baseline And Branch
 
