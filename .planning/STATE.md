@@ -2,7 +2,7 @@
 
 Date: 2026-05-08
 
-Active milestone: none selected
+Active milestone: v3.3 Runner Boundary & Health Hardening
 
 Last closed milestone: v3.2 Runtime Diet
 
@@ -10,7 +10,7 @@ Current branch: `master`
 
 ## Current Truth
 
-`master` is deployed to GitHub at `9b2c49a` (`debug smoke: map legacy runtime paths`).
+`master` is deployed to GitHub at `072888e` (`docs: close runtime diet planning`).
 
 Aura's runtime is now the Runtime Diet shape:
 
@@ -61,9 +61,11 @@ Fresh verification:
 - Phase 04 (`04-agent-orchestration-system-prompt-versioning`): historical v3.1 orchestration plan. Use only as context for old blocker evidence.
 - v4.0 MCP marketplace: planned and unblocked by Runtime Diet closure.
 
-## Recommended Next Slice
+## Active Slice
 
-Recommended next phase before or alongside v4.0: **Runner Boundary & Health Hardening**.
+Active phase before v4.0: **Runner Boundary & Health Hardening**.
+
+Plan: `.planning/phases/09-runner-boundary-health-hardening/PLAN.md`
 
 Goal:
 

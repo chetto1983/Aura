@@ -104,7 +104,22 @@ Closure evidence:
 
 ## Active Milestone
 
-No active milestone is selected. v4.0 is planned and Runtime Diet no longer blocks it.
+### v3.3 Runner Boundary & Health Hardening
+
+Status: active
+
+Plan: `.planning/phases/09-runner-boundary-health-hardening/PLAN.md`
+
+Goal: finish the ADK-style runner boundary without adding ceremony: Telegram becomes a thin adapter, `internal/agentruntime` owns session/result/finalization events, compact-memory Qdrant mirror health is visible, and broad debug smokes enforce latency/tool-call budgets.
+
+Success criteria:
+
+- Telegram no longer owns generic active-session lifecycle or terminal-tool finalization decisions.
+- Runtime events/results are the canonical source for debug smoke counters.
+- `/api/health` or `/status` reports compact memory mirror state and last sync result.
+- Broad project/status prompts stay under 30s without repeated file/source loops.
+- Document smoke remains one loop step when the Retrieval Capsule is sufficient.
+- Docker-first debug smokes avoid deleted repo-local wiki/skills paths.
 
 ## Next Milestone
 
