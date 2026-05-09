@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -23,7 +24,7 @@ type mailProviderAdapter struct {
 func handleMCPProviderProbe(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		providerID := r.PathValue("id")
-		provider, ok := findMCPProvider(providerID)
+		provider, ok := findMCPProviderIn(connectorProviderSummaries(deps), providerID)
 		if !ok {
 			writeError(w, deps.Logger, http.StatusNotFound, "mcp provider not found")
 			return
@@ -39,7 +40,8 @@ func handleMCPProviderProbe(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		resp := probeMCPProvider(provider, client)
+		status, _ := currentMailSetupStatus(deps)
+		resp := probeMCPProvider(provider, client, status.AccountID)
 		writeJSON(w, deps.Logger, http.StatusOK, resp)
 	}
 }
@@ -63,6 +65,7 @@ func handleMCPProviderMailSearch(deps Deps) http.HandlerFunc {
 			return
 		}
 		callArgs := canonicalMailSearchArgs(args)
+		applyDefaultMailAccount(deps, callArgs)
 		ctx, cancel := context.WithTimeout(r.Context(), mcpMailTimeout)
 		defer cancel()
 		output, err := client.CallTool(ctx, adapter.searchTool, callArgs)
@@ -103,6 +106,7 @@ func handleMCPProviderMailRead(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "message_id is required")
 			return
 		}
+		applyDefaultMailAccount(deps, callArgs)
 		ctx, cancel := context.WithTimeout(r.Context(), mcpMailTimeout)
 		defer cancel()
 		output, err := client.CallTool(ctx, adapter.readTool, callArgs)
@@ -121,7 +125,11 @@ func handleMCPProviderMailRead(deps Deps) http.HandlerFunc {
 }
 
 func findMCPProvider(id string) (ConnectorProviderSummary, bool) {
-	for _, p := range mcpProviderManifests {
+	return findMCPProviderIn(mcpProviderManifests, id)
+}
+
+func findMCPProviderIn(providers []ConnectorProviderSummary, id string) (ConnectorProviderSummary, bool) {
+	for _, p := range providers {
 		if p.ID == id {
 			return p, true
 		}
@@ -129,7 +137,7 @@ func findMCPProvider(id string) (ConnectorProviderSummary, bool) {
 	return ConnectorProviderSummary{}, false
 }
 
-func probeMCPProvider(provider ConnectorProviderSummary, client mcp.Server) ConnectorProbeResponse {
+func probeMCPProvider(provider ConnectorProviderSummary, client mcp.ConnectedClient, accountID string) ConnectorProbeResponse {
 	advertised := advertisedToolSet(client)
 	approved := intersectAdvertised(provider.ApprovedTools, advertised)
 	blocked := intersectAdvertised(provider.BlockedTools, advertised)
@@ -149,6 +157,15 @@ func probeMCPProvider(provider ConnectorProviderSummary, client mcp.Server) Conn
 			resp.CapabilitiesReady = []string{"mail.search", "mail.read"}
 			if adapter.searchTool != "" && adapter.readTool != "" {
 				resp.ApprovedToolsAdvertised = uniqueStrings(append(resp.ApprovedToolsAdvertised, adapter.searchTool, adapter.readTool))
+			}
+			if advertised["imap_verify_account"] {
+				ctx, cancel := context.WithTimeout(context.Background(), mcpMailTimeout)
+				err := verifyMailAccount(ctx, client, accountID)
+				cancel()
+				if err != nil {
+					resp.OK = false
+					resp.Error = err.Error()
+				}
 			}
 			return resp
 		}
@@ -205,6 +222,41 @@ func selectMailProviderAdapter(providerID string, advertised map[string]bool) (m
 		}
 	}
 	return mailProviderAdapter{}, []string{"mail.search", "mail.read"}
+}
+
+func verifyMailAccount(ctx context.Context, client mcp.ToolCaller, accountID string) error {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		accountID = "default"
+	}
+	output, err := client.CallTool(ctx, "imap_verify_account", map[string]any{"account_id": accountID})
+	if err != nil {
+		return fmt.Errorf("mail account verification failed: %w", err)
+	}
+	var wrapper struct {
+		Data struct {
+			OK     bool `json:"ok"`
+			Issues []struct {
+				Message string `json:"message"`
+				Code    string `json:"code"`
+			} `json:"issues"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(output), &wrapper) != nil {
+		return nil
+	}
+	if wrapper.Data.OK {
+		return nil
+	}
+	for _, issue := range wrapper.Data.Issues {
+		if strings.TrimSpace(issue.Message) != "" {
+			return fmt.Errorf("mail account verification failed: %s", redactConnectorText(issue.Message))
+		}
+		if strings.TrimSpace(issue.Code) != "" {
+			return fmt.Errorf("mail account verification failed: %s", issue.Code)
+		}
+	}
+	return errors.New("mail account verification failed")
 }
 
 func advertisedToolSet(client mcp.Server) map[string]bool {
@@ -266,6 +318,22 @@ func copyMailAccountArg(out, in map[string]any) {
 		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
 			out["account_id"] = text
 		}
+	}
+}
+
+func applyDefaultMailAccount(deps Deps, args map[string]any) {
+	if args == nil {
+		return
+	}
+	if value := strings.TrimSpace(fmt.Sprint(args["account_id"])); value != "" && value != "<nil>" {
+		return
+	}
+	status, err := currentMailSetupStatus(deps)
+	if err != nil {
+		return
+	}
+	if status.AccountID != "" {
+		args["account_id"] = status.AccountID
 	}
 }
 

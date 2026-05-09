@@ -177,6 +177,9 @@ func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[st
 		env["MAIL_SMTP_"+segment+"_USER"] = email
 		env["MAIL_SMTP_"+segment+"_PASS"] = pass
 	}
+	if req.EnableIMAPMutations {
+		env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"] = "true"
+	}
 	return mcp.ServerConfig{Command: command, Env: env}, nil
 }
 
@@ -290,6 +293,7 @@ func applyConfiguredMailEnv(status *MailSetupStatus, env map[string]string) {
 				status.SMTPPort = atoiDefault(env["MAIL_SMTP_"+segment+"_PORT"], 587)
 				status.SMTPSecure = env["MAIL_SMTP_"+segment+"_SECURE"] != "plain"
 			}
+			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"])
 			return
 		}
 	}
@@ -372,6 +376,15 @@ func boolWithDefault(value *bool, fallback bool) bool {
 func envBool(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "true", "tls", "starttls", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func envFlagBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on", "enabled":
 		return true
 	default:
 		return false

@@ -4,14 +4,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/mcp"
 )
 
 // mcpFakeServer spawns an in-memory MCP HTTP server that advertises one
 // tool per call so the api/mcp endpoint has something to serialize.
 func mcpFakeServer(t *testing.T, toolName, toolDesc string) *mcp.Client {
+	return mcpFakeServerNamed(t, "srv1", toolName, toolDesc)
+}
+
+func mcpFakeServerNamed(t *testing.T, name, toolName, toolDesc string) *mcp.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var probe struct {
@@ -38,7 +45,7 @@ func mcpFakeServer(t *testing.T, toolName, toolDesc string) *mcp.Client {
 	}))
 	t.Cleanup(srv.Close)
 
-	client, err := mcp.NewHTTPClient("srv1", srv.URL, nil)
+	client, err := mcp.NewHTTPClient(name, srv.URL, nil)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
@@ -160,6 +167,114 @@ func TestMCPProviders_ReturnsMailAndDatabaseProfiles(t *testing.T) {
 	if !databaseFound {
 		t.Fatalf("database provider missing from %+v", got)
 	}
+}
+
+func TestMCPProviders_ReflectsUserEnabledMailTools(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, "mcp.json")
+	cfg := `{"mcpServers":{"mail":{"command":"/usr/local/bin/mail-mcp","env":{"MAIL_IMAP_DAVIDE_USER":"me@example.com","MAIL_IMAP_DAVIDE_PASS":"secret","MAIL_SMTP_DAVIDE_USER":"me@example.com","AURA_MAIL_DAVIDE_ENABLE_IMAP_MUTATIONS":"true"}}}}`
+	if err := os.WriteFile(mcpPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(Deps{
+		RuntimeConfig: &config.Config{MCPServersPath: mcpPath, RuntimeWorkspacePath: "/workspace"},
+		MCP:           []mcp.ConnectedClient{mcpFakeServerNamed(t, "mail", "imap_search_messages", "Search mail")},
+	})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/mcp/providers", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got []ConnectorProviderSummary
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	mail, ok := findProviderForTest(got, "mail-mcp")
+	if !ok {
+		t.Fatalf("mail provider missing: %+v", got)
+	}
+	if mail.Status != "enabled" {
+		t.Fatalf("mail status = %q, want enabled", mail.Status)
+	}
+	if !capabilityEnabled(mail.Capabilities, "mail.search") {
+		t.Fatalf("mail search capability should be enabled: %+v", mail.Capabilities)
+	}
+	if !capabilityEnabled(mail.Capabilities, "mail.draft_reply") {
+		t.Fatalf("mail draft capability should be enabled when SMTP is enabled: %+v", mail.Capabilities)
+	}
+	if !containsString(mail.ApprovedTools, "smtp_send_message") {
+		t.Fatalf("SMTP tool not enabled: %+v", mail.ApprovedTools)
+	}
+	if !containsString(mail.ApprovedTools, "imap_delete_message") {
+		t.Fatalf("IMAP mutation tool not enabled: %+v", mail.ApprovedTools)
+	}
+	if containsString(mail.BlockedTools, "smtp_send_message") || containsString(mail.BlockedTools, "imap_delete_message") {
+		t.Fatalf("enabled tools still listed as blocked: %+v", mail.BlockedTools)
+	}
+}
+
+func TestMCPProviders_DoesNotLeakDynamicMailState(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, "mcp.json")
+	cfg := `{"mcpServers":{"mail":{"command":"/usr/local/bin/mail-mcp","env":{"MAIL_IMAP_DAVIDE_USER":"me@example.com","MAIL_IMAP_DAVIDE_PASS":"secret","MAIL_SMTP_DAVIDE_USER":"me@example.com","AURA_MAIL_DAVIDE_ENABLE_IMAP_MUTATIONS":"true"}}}}`
+	if err := os.WriteFile(mcpPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	enabled := connectorProviderSummaries(Deps{
+		RuntimeConfig: &config.Config{MCPServersPath: mcpPath, RuntimeWorkspacePath: "/workspace"},
+		MCP:           []mcp.ConnectedClient{mcpFakeServerNamed(t, "mail", "imap_search_messages", "Search mail")},
+	})
+	if mail, ok := findProviderForTest(enabled, "mail-mcp"); !ok || !capabilityEnabled(mail.Capabilities, "mail.search") {
+		t.Fatalf("setup provider should be enabled: %+v", enabled)
+	}
+
+	defaults := connectorProviderSummaries(Deps{})
+	mail, ok := findProviderForTest(defaults, "mail-mcp")
+	if !ok {
+		t.Fatalf("mail provider missing: %+v", defaults)
+	}
+	if mail.Status != "not_configured" {
+		t.Fatalf("mail status leaked = %q, want not_configured", mail.Status)
+	}
+	if capabilityEnabled(mail.Capabilities, "mail.search") {
+		t.Fatalf("mail search capability leaked enabled state: %+v", mail.Capabilities)
+	}
+}
+
+func TestApplyDefaultMailAccountUsesConfiguredAccount(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, "mcp.json")
+	cfg := `{"mcpServers":{"mail":{"command":"/usr/local/bin/mail-mcp","env":{"MAIL_IMAP_DAVIDE_USER":"me@example.com","MAIL_IMAP_DAVIDE_PASS":"secret"}}}}`
+	if err := os.WriteFile(mcpPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	args := map[string]any{"mailbox": "INBOX"}
+	applyDefaultMailAccount(Deps{RuntimeConfig: &config.Config{MCPServersPath: mcpPath}}, args)
+
+	if args["account_id"] != "davide" {
+		t.Fatalf("account_id = %v, want davide", args["account_id"])
+	}
+}
+
+func findProviderForTest(values []ConnectorProviderSummary, id string) (ConnectorProviderSummary, bool) {
+	for _, v := range values {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return ConnectorProviderSummary{}, false
+}
+
+func capabilityEnabled(values []ConnectorCapability, id string) bool {
+	for _, v := range values {
+		if v.ID == id {
+			return v.Enabled
+		}
+	}
+	return false
 }
 
 func containsString(values []string, needle string) bool {

@@ -28,7 +28,8 @@ func TestMCPMailSetupSaveWritesMailMCPConfig(t *testing.T) {
 		"provider":"gmail",
 		"email":"me@gmail.com",
 		"app_password":"app-secret",
-		"enable_smtp":true
+		"enable_smtp":true,
+		"enable_imap_mutations":true
 	}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
@@ -57,6 +58,7 @@ func TestMCPMailSetupSaveWritesMailMCPConfig(t *testing.T) {
 		"MAIL_IMAP_DEFAULT_USER=me@gmail.com",
 		"MAIL_IMAP_DEFAULT_PASS=app-secret",
 		"MAIL_SMTP_DEFAULT_HOST=smtp.gmail.com",
+		"AURA_MAIL_DEFAULT_ENABLE_IMAP_MUTATIONS=true",
 	} {
 		key, value, _ := strings.Cut(want, "=")
 		if mail.Env[key] != value {
@@ -104,6 +106,9 @@ func TestMCPMailSetupStatusReportsConnectedAlias(t *testing.T) {
 	}
 	if got.ConfiguredEmail != "team@example.com" || got.AccountID != "work" {
 		t.Fatalf("unexpected account info: %+v", got)
+	}
+	if got.EnableIMAPMutations {
+		t.Fatalf("IMAP mutations enabled without explicit flag: %+v", got)
 	}
 }
 

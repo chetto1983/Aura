@@ -267,43 +267,45 @@ type ConnectorProbeResponse struct {
 // MailSetupStatus is the dashboard-facing state for the guided mail connector
 // wizard. Secrets are deliberately omitted; ConfiguredEmail is informational.
 type MailSetupStatus struct {
-	Configured       bool   `json:"configured"`
-	Connected        bool   `json:"connected"`
-	NeedsRestart     bool   `json:"needs_restart"`
-	RestartRequired  bool   `json:"restart_required"`
-	CanRestart       bool   `json:"can_restart"`
-	BinaryPresent    bool   `json:"binary_present"`
-	Command          string `json:"command,omitempty"`
-	Provider         string `json:"provider,omitempty"`
-	AccountID        string `json:"account_id,omitempty"`
-	Email            string `json:"email,omitempty"`
-	ConfiguredEmail  string `json:"configured_email,omitempty"`
-	IMAPHost         string `json:"imap_host,omitempty"`
-	IMAPPort         int    `json:"imap_port,omitempty"`
-	IMAPSecure       bool   `json:"imap_secure,omitempty"`
-	SMTPHost         string `json:"smtp_host,omitempty"`
-	SMTPPort         int    `json:"smtp_port,omitempty"`
-	SMTPSecure       bool   `json:"smtp_secure,omitempty"`
-	EnableSMTP       bool   `json:"enable_smtp,omitempty"`
-	SecretConfigured bool   `json:"secret_configured,omitempty"`
-	Error            string `json:"error,omitempty"`
+	Configured          bool   `json:"configured"`
+	Connected           bool   `json:"connected"`
+	NeedsRestart        bool   `json:"needs_restart"`
+	RestartRequired     bool   `json:"restart_required"`
+	CanRestart          bool   `json:"can_restart"`
+	BinaryPresent       bool   `json:"binary_present"`
+	Command             string `json:"command,omitempty"`
+	Provider            string `json:"provider,omitempty"`
+	AccountID           string `json:"account_id,omitempty"`
+	Email               string `json:"email,omitempty"`
+	ConfiguredEmail     string `json:"configured_email,omitempty"`
+	IMAPHost            string `json:"imap_host,omitempty"`
+	IMAPPort            int    `json:"imap_port,omitempty"`
+	IMAPSecure          bool   `json:"imap_secure,omitempty"`
+	SMTPHost            string `json:"smtp_host,omitempty"`
+	SMTPPort            int    `json:"smtp_port,omitempty"`
+	SMTPSecure          bool   `json:"smtp_secure,omitempty"`
+	EnableSMTP          bool   `json:"enable_smtp,omitempty"`
+	EnableIMAPMutations bool   `json:"enable_imap_mutations,omitempty"`
+	SecretConfigured    bool   `json:"secret_configured,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
 
 // MailSetupRequest is the guided configuration payload for mail-mcp. The
 // provider presets fill IMAP/SMTP hosts for common providers; custom IMAP can
 // still override them without exposing raw mcp.json to end users.
 type MailSetupRequest struct {
-	Provider    string `json:"provider"` // gmail | outlook | imap
-	AccountID   string `json:"account_id,omitempty"`
-	Email       string `json:"email"`
-	AppPassword string `json:"app_password"`
-	IMAPHost    string `json:"imap_host,omitempty"`
-	IMAPPort    int    `json:"imap_port,omitempty"`
-	IMAPSecure  *bool  `json:"imap_secure,omitempty"`
-	EnableSMTP  bool   `json:"enable_smtp,omitempty"`
-	SMTPHost    string `json:"smtp_host,omitempty"`
-	SMTPPort    int    `json:"smtp_port,omitempty"`
-	SMTPSecure  *bool  `json:"smtp_secure,omitempty"`
+	Provider            string `json:"provider"` // gmail | outlook | imap
+	AccountID           string `json:"account_id,omitempty"`
+	Email               string `json:"email"`
+	AppPassword         string `json:"app_password"`
+	IMAPHost            string `json:"imap_host,omitempty"`
+	IMAPPort            int    `json:"imap_port,omitempty"`
+	IMAPSecure          *bool  `json:"imap_secure,omitempty"`
+	EnableSMTP          bool   `json:"enable_smtp,omitempty"`
+	SMTPHost            string `json:"smtp_host,omitempty"`
+	SMTPPort            int    `json:"smtp_port,omitempty"`
+	SMTPSecure          *bool  `json:"smtp_secure,omitempty"`
+	EnableIMAPMutations bool   `json:"enable_imap_mutations,omitempty"`
 }
 
 type MailSetupResponse struct {

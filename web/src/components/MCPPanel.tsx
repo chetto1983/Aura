@@ -296,6 +296,7 @@ type MailSetupForm = {
   smtp_secure: boolean;
   app_password: string;
   enable_smtp: boolean;
+  enable_imap_mutations: boolean;
 };
 
 const MAIL_PROVIDER_DEFAULTS: Record<MailSetupProvider, Pick<MailSetupForm, 'imap_host' | 'imap_port' | 'imap_secure' | 'smtp_host' | 'smtp_port' | 'smtp_secure'>> = {
@@ -561,6 +562,23 @@ function MailSetupWizard() {
             )}
           </div>
 
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+            <label className="flex items-center gap-2 text-xs font-medium text-amber-900 dark:text-amber-100">
+              <input
+                type="checkbox"
+                aria-label={t('mcp.mail.imapMutationToggle')}
+                title={t('mcp.mail.imapMutationToggle')}
+                checked={form.enable_imap_mutations}
+                onChange={(e) => update('enable_imap_mutations', e.target.checked)}
+                className="size-4"
+              />
+              {t('mcp.mail.imapMutationToggle')}
+            </label>
+            <p className="mt-1 text-[11px] text-amber-800/80 dark:text-amber-100/80">
+              {t('mcp.mail.imapMutationHint')}
+            </p>
+          </div>
+
           <Field label={t('mcp.mail.secretLabel')} htmlFor="mail-app-password">
             <input
               id="mail-app-password"
@@ -685,6 +703,7 @@ function mailStatusToForm(status: MailSetupStatus | null): MailSetupForm {
     smtp_secure: status?.smtp_secure ?? defaults.smtp_secure,
     app_password: '',
     enable_smtp: status?.enable_smtp ?? false,
+    enable_imap_mutations: status?.enable_imap_mutations ?? false,
   };
 }
 
@@ -696,6 +715,7 @@ function mailFormToRequest(form: MailSetupForm): MailSetupRequest {
     imap_port: Number(form.imap_port),
     imap_secure: form.imap_secure,
     enable_smtp: form.enable_smtp,
+    enable_imap_mutations: form.enable_imap_mutations,
   };
   if (form.account_id.trim() !== '') {
     request.account_id = form.account_id.trim();

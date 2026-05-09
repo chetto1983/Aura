@@ -221,6 +221,7 @@ export interface MailSetupStatus {
   smtp_port?: number;
   smtp_secure?: boolean;
   enable_smtp?: boolean;
+  enable_imap_mutations?: boolean;
   secret_configured?: boolean;
   updated_at?: string;
   error?: string;
@@ -238,6 +239,7 @@ export interface MailSetupRequest {
   smtp_secure?: boolean;
   app_password?: string;
   enable_smtp?: boolean;
+  enable_imap_mutations?: boolean;
 }
 
 export interface MailSetupResponse {

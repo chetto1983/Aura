@@ -365,10 +365,15 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			continue
 		}
 		mcpClients = append(mcpClients, client)
+		registeredTools := 0
 		for _, t := range client.Tools() {
+			if !mcpToolEnabledForAura(name, srv.Env, t.Name) {
+				continue
+			}
 			toolRegistry.Register(tools.NewMCPTool(client, name, t))
+			registeredTools++
 		}
-		logger.Info("MCP server registered", "server", name, "tools", len(client.Tools()))
+		logger.Info("MCP server registered", "server", name, "tools", len(client.Tools()), "aura_tools", registeredTools)
 	}
 
 	// Slice 10d: dashboard auth. Open the api_tokens table on the same
@@ -844,4 +849,62 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 		"runtime_dir", cfg.SandboxRuntimeDir,
 		"detail", health.Detail)
 	return manager, health
+}
+
+func mcpToolEnabledForAura(serverName string, env map[string]string, toolName string) bool {
+	if serverName != "mail" && serverName != "mail-mcp" {
+		return true
+	}
+	if mailToolIn(toolName, mailAuraIMAPMutationTools) {
+		return mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS")
+	}
+	if mailToolIn(toolName, mailAuraSendTools) {
+		return mailSMTPConfigured(env)
+	}
+	return true
+}
+
+func mailToolIn(toolName string, tools []string) bool {
+	for _, tool := range tools {
+		if tool == toolName {
+			return true
+		}
+	}
+	return false
+}
+
+func mailSMTPConfigured(env map[string]string) bool {
+	for key, value := range env {
+		if strings.HasPrefix(key, "MAIL_SMTP_") && strings.HasSuffix(key, "_USER") && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func mailEnvFlagEnabled(env map[string]string, suffix string) bool {
+	for key, value := range env {
+		if strings.HasPrefix(key, "AURA_MAIL_") && strings.HasSuffix(key, "_"+suffix) {
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "1", "true", "yes", "on", "enabled":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var mailAuraSendTools = []string{
+	"smtp_send_message",
+	"smtp_reply_message",
+	"smtp_forward_message",
+	"graph_send_message",
+	"ews_send_message",
+}
+
+var mailAuraIMAPMutationTools = []string{
+	"imap_delete_message",
+	"imap_bulk_delete",
+	"imap_bulk_move",
+	"imap_bulk_update_flags",
 }
