@@ -75,7 +75,11 @@
       "PowerShell(Get-Content \"D:\\\\Aura\\\\internal\\\\config\\\\config.go\" | Select-Object -Index \\(24..28\\) | ForEach-Object { \"[$\\($_\\)]\" })",
       "PowerShell(Get-Content \"D:\\\\Aura\\\\internal\\\\config\\\\config_test.go\" | Select-Object -Index \\(677..689\\) | ForEach-Object { \"[$\\($_\\)]\" })",
       "PowerShell(Get-Content \"D:\\\\Aura\\\\internal\\\\tools\\\\registry_search_vector.go\" | Select-Object -Index \\(201..205\\) | ForEach-Object { \"[$\\($_\\)]\" })",
-      "Bash(Test-Path D:\\\\Aura\\\\scripts *)"
+      "Bash(Test-Path D:\\\\Aura\\\\scripts *)",
+      "Bash(docker compose config *)",
+      "Bash(docker compose up *)",
+      "Bash(docker compose ps *)",
+      "Bash(docker compose logs *)"
     ]
   }
 }

@@ -209,6 +209,44 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	return result, nil
 }
 
+// BuildVectorIndex creates and populates a vector search index from the
+// currently registered tools. When cfg.Backend is "fts" or the registry
+// is nil, it is a no-op. Readiness and build errors are non-fatal: vector
+// search degrades gracefully to FTS when the index is unavailable.
+func (r *Registry) BuildVectorIndex(cfg ToolVectorConfig) {
+	if r == nil || cfg.Backend == "fts" {
+		return
+	}
+	idx := NewToolVectorIndex(cfg, r.logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := idx.Ready(ctx); err != nil {
+		r.logger.Warn("tool vector index not ready, falling back to fts", "error", err)
+		return
+	}
+
+	r.mu.RLock()
+	docs := make([]toolVectorDoc, 0, len(r.tools))
+	for _, t := range r.tools {
+		def := definitionForTool(t)
+		tags := toolCategories(t)
+		docs = append(docs, toolVectorDoc{
+			name: def.Name,
+			text: searchableToolText(def, tags),
+		})
+	}
+	r.mu.RUnlock()
+
+	if err := idx.Build(ctx, docs); err != nil {
+		r.logger.Warn("tool vector index build failed, falling back to fts", "error", err)
+		return
+	}
+
+	r.SetVectorIndex(idx)
+	r.logger.Info("tool vector index ready", "backend", cfg.Backend, "docs", len(docs))
+}
+
 func (r *Registry) SetVectorIndex(idx *toolVectorIndex) {
 	if r == nil {
 		return

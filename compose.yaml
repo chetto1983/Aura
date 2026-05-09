@@ -45,6 +45,7 @@ services:
       QDRANT_COLLECTION: "aura_memory_v1"
       QDRANT_API_KEY: ""
       SEARCH_BACKEND: "qdrant"
+      TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-fts}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
       AURA_AGENT_LOOP_MAX_STEPS: "8"

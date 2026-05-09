@@ -441,6 +441,21 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tool)
 	}
 
+	// Tool vector search index. Builds embeddings for all registered
+	// tools when TOOL_SEARCH_BACKEND is vector or hybrid. Falls back
+	// to pure FTS gracefully when Qdrant or the embedding service are
+	// unreachable.
+	toolRegistry.BuildVectorIndex(tools.ToolVectorConfig{
+		Backend:      cfg.ToolSearchBackend,
+		TopK:         cfg.ToolSearchTopK,
+		QdrantURL:    cfg.QdrantURL,
+		QdrantAPIKey: cfg.QdrantAPIKey,
+		Collection:   "aura_tool_search",
+		EmbedBaseURL: cfg.EmbeddingBaseURL,
+		EmbedAPIKey:  cfg.EmbeddingAPIKey,
+		EmbedModel:   cfg.EmbeddingModel,
+	})
+
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the
 	// archive repository for API reads, and wrap it with a BufferedAppender
