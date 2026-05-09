@@ -228,7 +228,7 @@ export interface MailSetupStatus {
 
 export interface MailSetupRequest {
   provider: MailSetupProvider;
-  account_id: string;
+  account_id?: string;
   email: string;
   imap_host?: string;
   imap_port?: number;

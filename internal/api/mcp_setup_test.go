@@ -26,7 +26,6 @@ func TestMCPMailSetupSaveWritesMailMCPConfig(t *testing.T) {
 
 	rr := postRaw(t, router, "/mcp/setup/mail", `{
 		"provider":"gmail",
-		"account_id":"default",
 		"email":"me@gmail.com",
 		"app_password":"app-secret",
 		"enable_smtp":true
@@ -105,6 +104,44 @@ func TestMCPMailSetupStatusReportsConnectedAlias(t *testing.T) {
 	}
 	if got.ConfiguredEmail != "team@example.com" || got.AccountID != "work" {
 		t.Fatalf("unexpected account info: %+v", got)
+	}
+}
+
+func TestMCPMailSetupSaveKeepsExistingAccountWhenAliasOmitted(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, "mcp.json")
+	initial := `{"mcpServers":{"mail":{"command":"/usr/local/bin/mail-mcp","env":{"MAIL_IMAP_DAVIDE_HOST":"imap.gmail.com","MAIL_IMAP_DAVIDE_PORT":"993","MAIL_IMAP_DAVIDE_SECURE":"true","MAIL_IMAP_DAVIDE_USER":"old@gmail.com","MAIL_IMAP_DAVIDE_PASS":"secret"}}}}`
+	if err := os.WriteFile(mcpPath, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(Deps{RuntimeConfig: &config.Config{
+		MCPServersPath:       mcpPath,
+		RuntimeWorkspacePath: "/workspace",
+	}})
+
+	rr := postRaw(t, router, "/mcp/setup/mail", `{
+		"provider":"gmail",
+		"email":"new@gmail.com",
+		"imap_host":"imap.gmail.com",
+		"imap_port":993,
+		"imap_secure":true
+	}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	servers, err := mcp.LoadServers(mcpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mail := servers["mail"]
+	if mail.Env["MAIL_IMAP_DAVIDE_USER"] != "new@gmail.com" {
+		t.Fatalf("MAIL_IMAP_DAVIDE_USER = %q", mail.Env["MAIL_IMAP_DAVIDE_USER"])
+	}
+	if mail.Env["MAIL_IMAP_DAVIDE_PASS"] != "secret" {
+		t.Fatalf("MAIL_IMAP_DAVIDE_PASS was not preserved")
+	}
+	if _, ok := mail.Env["MAIL_IMAP_DEFAULT_USER"]; ok {
+		t.Fatalf("unexpected DEFAULT account env: %+v", mail.Env)
 	}
 }
 

@@ -127,6 +127,9 @@ func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[st
 	}
 	accountID := normalizeMailAccountID(req.AccountID)
 	if accountID == "" {
+		accountID = existingMailAccountID(existingEnv)
+	}
+	if accountID == "" {
 		accountID = "default"
 	}
 	if !validMailAccountID(accountID) {
@@ -304,6 +307,16 @@ func normalizeMailAccountID(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.Trim(value, "_")
 	return strings.ToLower(value)
+}
+
+func existingMailAccountID(env map[string]string) string {
+	for key := range env {
+		if strings.HasPrefix(key, "MAIL_IMAP_") && strings.HasSuffix(key, "_USER") {
+			segment := strings.TrimSuffix(strings.TrimPrefix(key, "MAIL_IMAP_"), "_USER")
+			return normalizeMailAccountID(segment)
+		}
+	}
+	return ""
 }
 
 func validMailAccountID(value string) bool {

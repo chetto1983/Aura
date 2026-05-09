@@ -375,7 +375,7 @@ function MailSetupWizard() {
 
   const save = async () => {
     const request = mailFormToRequest(form);
-    if (!request.account_id || !request.email) {
+    if (!request.email) {
       toast.error(t('mcp.mail.validationRequired'));
       return;
     }
@@ -385,6 +385,10 @@ function MailSetupWizard() {
     }
     if (request.enable_smtp && (!request.smtp_host || !request.smtp_port)) {
       toast.error(t('mcp.mail.validationSmtp'));
+      return;
+    }
+    if (!status?.secret_configured && !request.app_password) {
+      toast.error(t('mcp.mail.validationSecret'));
       return;
     }
     setSaving(true);
@@ -444,7 +448,7 @@ function MailSetupWizard() {
             </div>
           )}
 
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-[280px_minmax(280px,1fr)]">
             <Field label={t('mcp.mail.providerLabel')} htmlFor="mail-provider">
               <select
                 id="mail-provider"
@@ -466,28 +470,10 @@ function MailSetupWizard() {
                 aria-label={t('mcp.mail.emailLabel')}
                 title={t('mcp.mail.emailLabel')}
                 value={form.email}
-                onChange={(e) => {
-                  update('email', e.target.value);
-                  if (!form.account_id || form.account_id === form.email) {
-                    update('account_id', e.target.value);
-                  }
-                }}
+                onChange={(e) => update('email', e.target.value)}
                 autoComplete="email"
                 className={MCP_FIELD_CLASS}
                 placeholder={t('mcp.mail.emailPlaceholder')}
-              />
-            </Field>
-            <Field label={t('mcp.mail.accountLabel')} htmlFor="mail-account">
-              <input
-                id="mail-account"
-                type="text"
-                aria-label={t('mcp.mail.accountLabel')}
-                title={t('mcp.mail.accountLabel')}
-                value={form.account_id}
-                onChange={(e) => update('account_id', e.target.value)}
-                autoComplete="off"
-                className={`${MCP_FIELD_CLASS} font-mono`}
-                placeholder={t('mcp.mail.accountPlaceholder')}
               />
             </Field>
           </div>
@@ -689,7 +675,7 @@ function mailStatusToForm(status: MailSetupStatus | null): MailSetupForm {
   const defaults = MAIL_PROVIDER_DEFAULTS[provider];
   return {
     provider,
-    account_id: status?.account_id ?? status?.email ?? '',
+    account_id: status?.account_id ?? '',
     email: status?.email ?? '',
     imap_host: status?.imap_host ?? defaults.imap_host,
     imap_port: String(status?.imap_port ?? defaults.imap_port),
@@ -705,13 +691,15 @@ function mailStatusToForm(status: MailSetupStatus | null): MailSetupForm {
 function mailFormToRequest(form: MailSetupForm): MailSetupRequest {
   const request: MailSetupRequest = {
     provider: form.provider,
-    account_id: form.account_id.trim(),
     email: form.email.trim(),
     imap_host: form.imap_host.trim(),
     imap_port: Number(form.imap_port),
     imap_secure: form.imap_secure,
     enable_smtp: form.enable_smtp,
   };
+  if (form.account_id.trim() !== '') {
+    request.account_id = form.account_id.trim();
+  }
   if (form.enable_smtp) {
     request.smtp_host = form.smtp_host.trim();
     request.smtp_port = Number(form.smtp_port);
