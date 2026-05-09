@@ -10,7 +10,6 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/tools"
 )
 
@@ -170,13 +169,13 @@ func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 	}
 }
 
-func TestOrchestrationSnapshotPreservesRouteAndHiddenToolSignals(t *testing.T) {
+func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 	b := &Bot{cfg: &config.Config{TraceRetentionDays: config.DefaultTraceRetentionDays}}
 	b.storeOrchestrationSnapshot("1148481707", turnStats{
 		promptVersion:       "aura-agent-v1",
 		promptHash:          "abc123",
-		toolset:             "default",
-		toolsetSelectReason: "no specialized toolset cues matched",
+		toolset:             "registered",
+		toolsetSelectReason: "all registered tools exposed",
 		toolsExposed:        []string{"run_aurabot_swarm"},
 		toolsCalled:         []string{"execute_code"},
 		readSkills:          []string{"subagent-driven-development"},
@@ -242,8 +241,6 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "hidden-1", Name: "execute_code"}},
 		[]string{"search_memory"},
-		orchestration.ToolsetDefault,
-		nil,
 		nil,
 	)
 
@@ -270,7 +267,7 @@ func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteFile(t *testing.T) {
 	if strings.Contains(got, "write_file") {
 		t.Fatalf("user-facing result leaked tool name: %q", got)
 	}
-	if !strings.Contains(got, "cattura automatica") {
+	if !strings.Contains(got, "non e' stato esposto") {
 		t.Fatalf("user-facing result = %q, want capture explanation", got)
 	}
 }
@@ -288,8 +285,6 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
 		[]string{"create_pdf"},
-		orchestration.ToolsetDocument,
-		nil,
 		nil,
 	)
 	if doc.calls != 1 {
@@ -318,8 +313,6 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 			{ID: "pdf-1", Name: "create_pdf"},
 		},
 		[]string{"read_file", "create_pdf"},
-		orchestration.ToolsetDocument,
-		nil,
 		nil,
 	)
 
@@ -347,9 +340,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
-		nil,
 	)
 
 	if summary.terminalTool != "execute_code" {
@@ -375,9 +366,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
-		orchestration.ToolsetCompute,
 		[]string{"systematic-debugging"},
-		nil,
 	)
 
 	if summary.terminalTool != "" {
@@ -405,15 +394,12 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 	convCtx.AddUserMessage("Use execute_code to compute sum(range(1, 101)).")
-	allowlist, err := orchestration.ToolsForToolset(orchestration.ToolsetCompute, orchestration.Availability{Sandbox: true})
-	if err != nil {
-		t.Fatalf("ToolsForToolset: %v", err)
-	}
+	allowlist := []string{"execute_code"}
 
-	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, orchestration.PromptPlan{
+	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, agentPromptPlan{
 		Version: "test",
 		Hash:    "hash",
-	}, orchestration.ToolsetDecision{Toolset: orchestration.ToolsetCompute, Reason: "test"}, false)
+	}, false)
 
 	if response != "5050" {
 		t.Fatalf("response = %q, want 5050", response)
@@ -438,79 +424,8 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *testing.T) {
 	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 8}}
 
-	if got := b.maxToolLoopIterations(orchestration.ToolsetDocument); got != 8 {
-		t.Fatalf("document maxToolLoopIterations = %d, want runtime cap 8", got)
-	}
-	if got := b.maxToolLoopIterations(orchestration.ToolsetDefault); got != 8 {
-		t.Fatalf("default maxToolLoopIterations = %d, want runtime cap 8", got)
-	}
-}
-
-func TestExecuteToolCallsHonorsCustomHookVeto(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	safe := &countingTelegramTool{name: "search_memory", result: "should not run"}
-	reg.Register(safe)
-	hookErr := errors.New("blocked by custom hook")
-	b := &Bot{
-		cfg:       &config.Config{},
-		tools:     reg,
-		orchHooks: &capturingOrchestrationHooks{beforeErr: hookErr},
-	}
-	convCtx := conversation.NewContext(conversation.Config{})
-
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "hook-1", Name: "search_memory"}},
-		[]string{"search_memory"},
-		orchestration.ToolsetDefault,
-		nil,
-		nil,
-	)
-
-	if summary.fatalResult == "" || !strings.Contains(summary.fatalResult, "blocked by custom hook") {
-		t.Fatalf("fatalResult = %q, want custom hook error", summary.fatalResult)
-	}
-	if safe.calls != 0 {
-		t.Fatalf("tool executed %d times despite hook veto, want 0", safe.calls)
-	}
-}
-
-func TestExecuteToolCallsReportsAvailableToolUsageToHooks(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	reg.Register(&countingTelegramTool{name: "run_aurabot_swarm", result: `{"metrics":{"tokens_prompt":1000,"tokens_completion":500,"tokens_total":1500}}`})
-	hooks := &capturingOrchestrationHooks{}
-	b := &Bot{
-		cfg: &config.Config{
-			CostInputPerMTokens:  1,
-			CostOutputPerMTokens: 2,
-		},
-		tools:     reg,
-		orchHooks: hooks,
-	}
-	convCtx := conversation.NewContext(conversation.Config{})
-
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "swarm-1", Name: "run_aurabot_swarm"}},
-		[]string{"run_aurabot_swarm"},
-		orchestration.ToolsetDefault,
-		nil,
-		nil,
-	)
-
-	if summary.lastResult == "" {
-		t.Fatal("lastResult is empty")
-	}
-	if len(hooks.after) != 1 {
-		t.Fatalf("after hook calls = %d, want 1", len(hooks.after))
-	}
-	event := hooks.after[0]
-	if event.ResultSizeBytes == 0 || event.DurationMS < 0 {
-		t.Fatalf("event size/duration = %d/%d", event.ResultSizeBytes, event.DurationMS)
-	}
-	if event.TokensPrompt != 1000 || event.TokensCompletion != 500 || event.TokensTotal != 1500 {
-		t.Fatalf("event tokens = %d/%d/%d", event.TokensPrompt, event.TokensCompletion, event.TokensTotal)
-	}
-	if event.CostUSD <= 0 {
-		t.Fatalf("event CostUSD = %f, want positive", event.CostUSD)
+	if got := b.maxToolLoopIterations(); got != 8 {
+		t.Fatalf("maxToolLoopIterations = %d, want runtime cap 8", got)
 	}
 }
 
@@ -558,27 +473,7 @@ func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
 	}
 }
 
-type capturingOrchestrationHooks struct {
-	beforeErr error
-	after     []orchestration.TraceEvent
-}
-
-func (h *capturingOrchestrationHooks) BeforeToolsetSelect(orchestration.TraceEvent) {}
-func (h *capturingOrchestrationHooks) AfterToolsetSelect(orchestration.TraceEvent)  {}
-func (h *capturingOrchestrationHooks) BeforePromptCompose(orchestration.TraceEvent) {}
-func (h *capturingOrchestrationHooks) AfterPromptCompose(orchestration.TraceEvent)  {}
-func (h *capturingOrchestrationHooks) BeforeExposeTools(orchestration.TraceEvent)   {}
-func (h *capturingOrchestrationHooks) AfterTurn(orchestration.TraceEvent)           {}
-
-func (h *capturingOrchestrationHooks) BeforeToolCall(orchestration.TraceEvent) error {
-	return h.beforeErr
-}
-
-func (h *capturingOrchestrationHooks) AfterToolCall(event orchestration.TraceEvent) {
-	h.after = append(h.after, event)
-}
-
-func TestDocumentToolsetCapsSearchMemoryLimit(t *testing.T) {
+func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	search := &countingTelegramTool{name: "search_memory", result: "memory"}
 	reg.Register(search)
@@ -588,38 +483,26 @@ func TestDocumentToolsetCapsSearchMemoryLimit(t *testing.T) {
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}},
 		[]string{"search_memory"},
-		orchestration.ToolsetDocument,
 		nil,
-		orchestration.AfterToolCallbackForToolset(orchestration.ToolsetDocument),
 	)
 
 	if !strings.Contains(summary.lastResult, "memory") {
 		t.Fatalf("lastResult = %q", summary.lastResult)
 	}
-	if !strings.Contains(summary.lastResult, "call exactly one of create_docx") {
-		t.Fatalf("lastResult missing document next-step hint: %q", summary.lastResult)
-	}
-	if got := search.lastArgs["limit"]; got != float64(3) {
-		t.Fatalf("search_memory limit = %#v, want 3", got)
-	}
-}
-
-func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
-	args := toolArgumentsForToolset(
+	args := toolArgumentsForTool(
 		"search_memory",
 		map[string]any{"query": "private notes", "chat_id": float64(999), "limit": float64(9)},
-		orchestration.ToolsetDefault,
 		42,
 	)
 	if got := args["chat_id"]; got != float64(42) {
 		t.Fatalf("chat_id = %#v, want 42", got)
 	}
-	if got := args["limit"]; got != float64(3) {
-		t.Fatalf("limit = %#v, want capped 3", got)
+	if got := args["limit"]; got != float64(9) {
+		t.Fatalf("limit = %#v, want model-provided limit preserved", got)
 	}
 }
 
-func TestAppendAutonomousToolsExposesRegisteredCapabilities(t *testing.T) {
+func TestModelToolNamesExposesRegisteredCapabilities(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
 	reg.Register(&categorizedCountingTelegramTool{
@@ -636,15 +519,12 @@ func TestAppendAutonomousToolsExposesRegisteredCapabilities(t *testing.T) {
 	})
 
 	b := &Bot{tools: reg}
-	got := b.appendAutonomousTools([]string{"search_memory"})
+	got := b.modelToolNames()
 
-	for _, want := range []string{"search_memory", "web_search", "mcp_mail_imap_search_messages"} {
+	for _, want := range []string{"search_memory", "web_search", "mcp_mail_imap_search_messages", "mcp_mail_smtp_send_message"} {
 		if !stringSliceContains(got, want) {
 			t.Fatalf("allowlist missing %q: %+v", want, got)
 		}
-	}
-	if stringSliceContains(got, "mcp_mail_smtp_send_message") {
-		t.Fatalf("non-autonomous MCP mutation tool exposed: %+v", got)
 	}
 }
 

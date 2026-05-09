@@ -21,7 +21,6 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -69,7 +68,6 @@ type Bot struct {
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64
 	sessions    *agentruntime.SessionStore
-	orchHooks   orchestration.Hooks
 	started     atomic.Bool
 }
 

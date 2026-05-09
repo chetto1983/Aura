@@ -24,7 +24,6 @@ import (
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
-	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/telegram"
@@ -37,14 +36,14 @@ func main() {
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
-	expectToolset := flag.String("expect-toolset", "", "expected orchestration toolset; used only for reporting/validation when set")
+	expectToolset := flag.String("expect-toolset", "", "expected runtime tool surface; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	var expectSkillRead optionalCSVFlag
 	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to inspect a skill via file tools; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
-	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected by orchestration policy")
-	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by orchestration policy")
-	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if orchestration loop_steps exceeds this budget")
+	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected because it was not exposed")
+	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by the runtime")
+	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if runtime loop_steps exceeds this budget")
 	expectLLMCallsMax := flag.Int("expect-llm-calls-max", 0, "fail if llm_calls exceeds this budget")
 	expectToolCallsMax := flag.Int("expect-tool-calls-max", 0, "fail if tool_calls exceeds this budget")
 	expectTraceField := flag.String("expect-trace-field", "", "comma-separated DebugTextSmokeResult field names expected to be present/non-zero")
@@ -976,7 +975,7 @@ func singleLine(s string, max int) string {
 }
 
 func redactForReport(s string) string {
-	out := orchestration.RedactTraceValue(s)
+	out := redactCommonSecretShapes(s)
 	for _, marker := range []string{
 		"LLM_API_KEY=",
 		"EMBEDDING_API_KEY=",
@@ -988,6 +987,46 @@ func redactForReport(s string) string {
 		out = redactAfterMarker(out, marker)
 	}
 	return out
+}
+
+func redactCommonSecretShapes(s string) string {
+	out := s
+	for _, marker := range []string{
+		"sk-",
+		"api-",
+		"ghp_",
+		"github_pat_",
+		"xoxb-",
+		"xoxp-",
+	} {
+		out = redactTokenPrefix(out, marker)
+	}
+	return out
+}
+
+func redactTokenPrefix(s, marker string) string {
+	var b strings.Builder
+	offset := 0
+	for {
+		idx := strings.Index(s[offset:], marker)
+		if idx < 0 {
+			b.WriteString(s[offset:])
+			return b.String()
+		}
+		idx += offset
+		end := idx + len(marker)
+		for end < len(s) {
+			ch := s[end]
+			if !(ch == '-' || ch == '_' || ch == '.' || ch == ':' || ch == '/' || ch >= '0' && ch <= '9' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z') {
+				break
+			}
+			end++
+		}
+		b.WriteString(s[offset:idx])
+		b.WriteString(marker)
+		b.WriteString("[REDACTED]")
+		offset = end
+	}
 }
 
 func redactAfterMarker(s, marker string) string {

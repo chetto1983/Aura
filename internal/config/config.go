@@ -18,7 +18,7 @@ const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 8
-const DefaultTerminalToolPolicy = "toolset"
+const DefaultTerminalToolPolicy = "on"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
@@ -88,11 +88,9 @@ type Config struct {
 	EnvPath                    string  `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
-	ToolsetMode                string  `envconfig:"AURA_TOOLSET_MODE" default:"auto"`
-	OrchestrationLogLevel      string  `envconfig:"AURA_ORCHESTRATION_LOG_LEVEL" default:"summary"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
 	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
-	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"toolset"`
+	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
 	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
@@ -239,8 +237,6 @@ func Load() (*Config, error) {
 	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
-	cfg.ToolsetMode = NormalizeToolsetMode(getEnv("AURA_TOOLSET_MODE", "auto"))
-	cfg.OrchestrationLogLevel = strings.ToLower(strings.TrimSpace(getEnv("AURA_ORCHESTRATION_LOG_LEVEL", "summary")))
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
 	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 50, DefaultAgentLoopMaxSteps)
 	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
@@ -278,23 +274,6 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func NormalizeToolsetMode(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "compute":
-		return "compute"
-	case "document":
-		return "document"
-	case "admin":
-		return "admin"
-	case "auto":
-		return "auto"
-	case "default":
-		return "default"
-	default:
-		return "auto"
-	}
-}
-
 // Location returns Aura's effective wall-clock location for scheduling and
 // prompts. Blank AURA_TIMEZONE keeps the process local timezone for desktop
 // runs; set an IANA name like Europe/Rome for containers or services that
@@ -321,8 +300,12 @@ func NormalizeSkillRoutingMode(value string) string {
 
 func NormalizeTerminalToolPolicy(value string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "toolset", "off":
-		return normalized
+	case "on", "enabled", "true", "1", "yes":
+		return "on"
+	case "toolset":
+		return "on"
+	case "off", "disabled", "false", "0", "no":
+		return "off"
 	default:
 		return DefaultTerminalToolPolicy
 	}

@@ -14,8 +14,6 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/memoryindex"
-	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/tools"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -245,55 +243,6 @@ func TestCompactMemoryStatusSummaryReportsMirrorState(t *testing.T) {
 	}
 }
 
-func TestSwarmToolsAvailableRequiresManagerAndRegisteredTeamTool(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	b := &Bot{tools: reg}
-	if b.swarmToolsAvailable() {
-		t.Fatal("swarm tools should be unavailable without manager")
-	}
-
-	b.swarmMgr = &swarm.Manager{}
-	if b.swarmToolsAvailable() {
-		t.Fatal("swarm tools should be unavailable without run_aurabot_swarm")
-	}
-
-	reg.Register(fakeTelegramTool{name: "run_aurabot_swarm"})
-	if !b.swarmToolsAvailable() {
-		t.Fatal("swarm tools should be available with manager and registered team tool")
-	}
-}
-
-func TestProposalToolsAreRetiredFromPromptAvailability(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	b := &Bot{tools: reg}
-	if b.proposalToolsAvailable() {
-		t.Fatal("proposal tools should be unavailable")
-	}
-
-	reg.Register(fakeTelegramTool{name: "propose_wiki_change"})
-	if b.proposalToolsAvailable() {
-		t.Fatal("proposal tools should remain unavailable even if a legacy tool is registered")
-	}
-}
-
-func TestWorkspaceToolsAvailableRequiresReadAndWriteTools(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	b := &Bot{tools: reg}
-	if b.workspaceToolsAvailable() {
-		t.Fatal("workspace tools should be unavailable without read/write tools")
-	}
-
-	reg.Register(fakeTelegramTool{name: "read_file"})
-	if b.workspaceToolsAvailable() {
-		t.Fatal("workspace tools should be unavailable without write_file")
-	}
-
-	reg.Register(fakeTelegramTool{name: "write_file"})
-	if !b.workspaceToolsAvailable() {
-		t.Fatal("workspace tools should be available with read_file and write_file")
-	}
-}
-
 func TestStopWithoutStartReturns(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
@@ -307,18 +256,6 @@ func TestStopWithoutStartReturns(t *testing.T) {
 		t.Fatal("Stop blocked on a bot that was never started")
 	}
 }
-
-type fakeTelegramTool struct {
-	name string
-}
-
-func (t fakeTelegramTool) Name() string { return t.name }
-
-func (fakeTelegramTool) Description() string { return "fake tool" }
-
-func (fakeTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-
-func (fakeTelegramTool) Execute(context.Context, map[string]any) (string, error) { return "{}", nil }
 
 func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 	t.Helper()

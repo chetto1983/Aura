@@ -318,22 +318,14 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 		t.Fatal("MEMORY_SEARCH_TIMEOUT_MS not in settings response")
 	}
 
-	foundToolsetMode := false
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyToolsetMode {
-			continue
+		if it.Key == "AURA_TOOLSET_MODE" || it.Key == "AURA_ORCHESTRATION_LOG_LEVEL" {
+			t.Fatalf("removed orchestration setting leaked into settings response: %s", it.Key)
 		}
-		foundToolsetMode = true
-		if it.Kind != "enum" || !slices.Equal(it.Options, []string{"auto", "default", "compute", "document", "admin"}) {
-			t.Fatalf("AURA_TOOLSET_MODE control = kind:%q options:%v, want toolset options", it.Kind, it.Options)
-		}
-	}
-	if !foundToolsetMode {
-		t.Fatal("AURA_TOOLSET_MODE not in settings response")
 	}
 }
 
-func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testing.T) {
+func TestSettingsList_ShowsAgentRuntimeSettingsMetadataAndActiveValues(t *testing.T) {
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{
 		Settings: store,
@@ -356,7 +348,7 @@ func TestSettingsList_ShowsOrchestrationSettingsMetadataAndActiveValues(t *testi
 
 	wantEnums := map[string][]string{
 		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
-		settings.KeyTerminalToolPolicy: []string{"toolset", "off"},
+		settings.KeyTerminalToolPolicy: []string{"on", "off"},
 		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},
 	}
 	wantActive := map[string]string{

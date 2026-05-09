@@ -5,7 +5,6 @@ import (
 
 	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/orchestration"
 )
 
 type EventType string
@@ -21,7 +20,7 @@ type Event struct {
 	PromptVersion       string
 	PromptHash          string
 	PromptModules       []string
-	Toolset             orchestration.Toolset
+	Toolset             string
 	ToolsetSelectReason string
 	ToolsExposed        []string
 	Stats               agentloop.Stats
@@ -33,8 +32,11 @@ type Invocation struct {
 	Client                  agentloop.ChatClient
 	Executor                agentloop.ToolExecutor
 	State                   agentloop.State
-	PromptPlan              orchestration.PromptPlan
-	ToolsetDecision         orchestration.ToolsetDecision
+	PromptVersion           string
+	PromptHash              string
+	PromptModules           []string
+	Toolset                 string
+	ToolsetSelectReason     string
 	Tools                   []llm.ToolDefinition
 	RetrievalCapsulePresent bool
 	Options                 agentloop.Options
@@ -48,7 +50,7 @@ type Result struct {
 	PromptVersion           string
 	PromptHash              string
 	PromptModules           []string
-	Toolset                 orchestration.Toolset
+	Toolset                 string
 	ToolsetSelectReason     string
 	ToolsExposed            []string
 	RetrievalCapsulePresent bool
@@ -69,11 +71,11 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 	emit(in, Event{
 		Type:                EventToolsExposed,
 		ToolsExposed:        toolsExposed,
-		PromptVersion:       in.PromptPlan.Version,
-		PromptHash:          in.PromptPlan.Hash,
-		PromptModules:       append([]string(nil), in.PromptPlan.Modules...),
-		Toolset:             in.ToolsetDecision.Toolset,
-		ToolsetSelectReason: in.ToolsetDecision.Reason,
+		PromptVersion:       in.PromptVersion,
+		PromptHash:          in.PromptHash,
+		PromptModules:       append([]string(nil), in.PromptModules...),
+		Toolset:             in.Toolset,
+		ToolsetSelectReason: in.ToolsetSelectReason,
 	})
 
 	result, err := agentloop.Run(ctx, in.Client, in.Executor, in.State, opts)
@@ -81,11 +83,11 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 		Text:                    result.Text,
 		Delivered:               result.Delivered,
 		Stats:                   result.Stats,
-		PromptVersion:           in.PromptPlan.Version,
-		PromptHash:              in.PromptPlan.Hash,
-		PromptModules:           append([]string(nil), in.PromptPlan.Modules...),
-		Toolset:                 in.ToolsetDecision.Toolset,
-		ToolsetSelectReason:     in.ToolsetDecision.Reason,
+		PromptVersion:           in.PromptVersion,
+		PromptHash:              in.PromptHash,
+		PromptModules:           append([]string(nil), in.PromptModules...),
+		Toolset:                 in.Toolset,
+		ToolsetSelectReason:     in.ToolsetSelectReason,
 		ToolsExposed:            append([]string(nil), toolsExposed...),
 		RetrievalCapsulePresent: in.RetrievalCapsulePresent,
 	}

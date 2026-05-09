@@ -105,18 +105,6 @@ func validationRules(cfg *config.Config) []defaultRule {
 
 	rules := []defaultRule{
 		{
-			key:       KeyToolsetMode,
-			value:     "auto",
-			reason:    "repair invalid toolset mode",
-			shouldSet: missingOrInvalidSet("auto", "default", "compute", "document", "admin"),
-		},
-		{
-			key:       KeyOrchestrationLogLevel,
-			value:     "summary",
-			reason:    "repair invalid orchestration log level",
-			shouldSet: missingOrInvalidSet("summary", "debug"),
-		},
-		{
 			key:       KeySkillRoutingMode,
 			value:     config.DefaultSkillRoutingMode,
 			reason:    "repair invalid skill routing mode",
@@ -132,7 +120,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 			key:       KeyTerminalToolPolicy,
 			value:     config.DefaultTerminalToolPolicy,
 			reason:    "repair invalid terminal tool policy",
-			shouldSet: missingOrInvalidSet("toolset", "off"),
+			shouldSet: missingOrInvalidSet("on", "off", "toolset", "enabled", "disabled", "true", "false", "1", "0", "yes", "no"),
 		},
 		{
 			key:       KeyDelegationMode,

@@ -22,7 +22,6 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/orchestration"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -203,7 +202,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			logger.Warn("workspace file tools unavailable", "root", cfg.WorkspaceRoot, "error", err)
 		} else {
 			for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
-				toolRegistry.Register(tool)
+				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 			}
 			logger.Info("workspace file tools enabled", "root", workspaceRoot.Path())
 		}
@@ -412,7 +411,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolReg:             toolReg,
 		compactMemoryHealth: compactVectorHealth,
 		sessions:            agentruntime.NewSessionStore(),
-		orchHooks:           orchestration.DefaultHooks{},
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:           cfg.SoftBudget,
 			HardBudget:           cfg.HardBudget,

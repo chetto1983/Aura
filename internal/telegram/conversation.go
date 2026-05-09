@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -13,9 +15,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/orchestration"
 	auraskills "github.com/aura/aura/internal/skills"
-	auratools "github.com/aura/aura/internal/tools"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -35,9 +35,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 	_ = loaded // kept for clarity; system prompt now refreshes every turn
 	userText := c.Text()
 
-	// Build the versioned prompt and focused tool toolset fresh on every
-	// turn so runtime time, overlays, skills, swarm, and sandbox state stay
-	// accurate without restarting the bot.
+	// Build the versioned prompt and model-visible tool surface fresh on every
+	// turn so runtime time, overlays, skills, and registered tools stay accurate
+	// without restarting the bot.
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	var skillsBlock string
 	// Slice 11q/06: read SOUL.md / AGENT.md / USER.md / TOOLS.md from the
@@ -54,52 +54,8 @@ func (b *Bot) handleConversation(c tele.Context) {
 		}
 	}
 	retrievalCapsule := turnRetrievalCapsule{}
-	available := orchestration.Availability{
-		Swarm:          b.swarmToolsAvailable(),
-		Sandbox:        b.sandboxToolsAvailable(),
-		Proposals:      b.proposalToolsAvailable(),
-		WorkspaceFiles: b.workspaceToolsAvailable(),
-	}
-	hooks := orchestration.EnsureHooks(b.orchHooks)
-	hooks.BeforeToolsetSelect(orchestration.TraceEvent{Toolset: b.cfg.ToolsetMode})
-	toolsetDecision := orchestration.SelectToolsetDecision(userText, b.cfg.ToolsetMode, available)
-	hooks.AfterToolsetSelect(orchestration.TraceEvent{
-		Toolset:             string(toolsetDecision.Toolset),
-		ToolsetSelectReason: toolsetDecision.Reason,
-	})
-	toolset := toolsetDecision.Toolset
-	runtimeToolset := runtimeToolsetForTurn(toolset, retrievalCapsule)
-	toolAllowlist, err := runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
-	if err != nil {
-		b.logger.Warn("orchestration toolset failed; falling back to default", "toolset", toolset, "error", err)
-		toolset = orchestration.ToolsetDefault
-		toolsetDecision = orchestration.ToolsetDecision{Toolset: toolset, Reason: "toolset allowlist failed; fell back to default"}
-		runtimeToolset = runtimeToolsetForTurn(toolset, retrievalCapsule)
-		toolAllowlist, _ = runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
-	}
-	toolAllowlist = b.appendAutonomousTools(toolAllowlist)
-	hooks.BeforePromptCompose(orchestration.TraceEvent{
-		Toolset:             string(toolsetDecision.Toolset),
-		ToolsetSelectReason: toolsetDecision.Reason,
-	})
-	promptPlan := orchestration.ComposePrompt(orchestration.PromptInput{
-		Version:           b.cfg.PromptVersion,
-		Now:               time.Now(),
-		Location:          b.loc,
-		Overlay:           overlay,
-		SkillsBlock:       skillsBlock,
-		SwarmAvailable:    available.Swarm,
-		SandboxAvailable:  available.Sandbox,
-		ProposalAvailable: available.Proposals,
-		Toolset:           toolset,
-	})
-	hooks.AfterPromptCompose(orchestration.TraceEvent{
-		PromptVersion:       promptPlan.Version,
-		PromptHash:          promptPlan.Hash,
-		PromptModules:       promptPlan.Modules,
-		Toolset:             string(toolsetDecision.Toolset),
-		ToolsetSelectReason: toolsetDecision.Reason,
-	})
+	toolAllowlist := b.modelToolNames()
+	promptPlan := composeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
 	b.logger.Info("conversation started",
@@ -150,7 +106,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// their message. consumeStream edits this instead of creating a new one.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, toolsetDecision, strings.TrimSpace(retrievalCapsule.Text) != "")
+	response, stats := b.runToolCallingLoop(context.Background(), c, convCtx, userID, placeholder, toolAllowlist, promptPlan, strings.TrimSpace(retrievalCapsule.Text) != "")
 	if response != "" {
 		// Non-streamed delivery: delete the placeholder, send the real response.
 		if placeholder != nil {
@@ -232,27 +188,6 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"tokens_total", stats.tokensTotal,
 		"cost_usd", fmt.Sprintf("%.6f", stats.costUSD),
 	)
-	hooks.AfterTurn(orchestration.TraceEvent{
-		PromptVersion:          stats.promptVersion,
-		PromptHash:             stats.promptHash,
-		PromptModules:          stats.promptModules,
-		Toolset:                stats.toolset,
-		ToolsetSelectReason:    stats.toolsetSelectReason,
-		ToolsExposed:           stats.toolsExposed,
-		ToolsCalled:            stats.toolsCalled,
-		HiddenToolRejected:     stats.hiddenToolRejected,
-		SkillReads:             len(stats.readSkills),
-		SwarmUsed:              stats.swarmUsed,
-		SandboxUsed:            stats.sandboxUsed,
-		TokensPrompt:           stats.tokensPrompt,
-		TokensCompletion:       stats.tokensCompletion,
-		TokensTotal:            stats.tokensTotal,
-		EstimatedContextTokens: convCtx.EstimatedTokens(),
-		CostUSD:                stats.costUSD,
-		LatencyMS:              time.Since(turnStart).Milliseconds(),
-		LLMCalls:               stats.llmCalls,
-		ToolCalls:              stats.toolCalls,
-	})
 }
 
 func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder *tele.Message, err error) {
@@ -267,32 +202,6 @@ func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder
 		args = append(args, "message_id", placeholder.ID)
 	}
 	logger.Debug("telegram cleanup: placeholder delete failed", args...)
-}
-
-func (b *Bot) swarmToolsAvailable() bool {
-	return b.swarmMgr != nil && b.tools != nil && b.tools.Get("run_aurabot_swarm") != nil
-}
-
-func (b *Bot) proposalToolsAvailable() bool {
-	return false
-}
-
-func (b *Bot) sandboxToolsAvailable() bool {
-	return b.tools != nil && b.tools.Get("execute_code") != nil
-}
-
-func (b *Bot) workspaceToolsAvailable() bool {
-	return b.tools != nil && b.tools.Get("read_file") != nil && b.tools.Get("write_file") != nil
-}
-
-func runtimeToolsetForTurn(toolset orchestration.Toolset, retrievalCapsule turnRetrievalCapsule) orchestration.RuntimeToolset {
-	runtimeToolset := orchestration.NewRuntimeToolset(toolset)
-	if toolset != orchestration.ToolsetDocument || !retrievalCapsule.SuppressSearchMemory || strings.TrimSpace(retrievalCapsule.Text) == "" {
-		return runtimeToolset
-	}
-	return orchestration.FilterToolset(runtimeToolset, func(_ orchestration.ToolsetContext, name string) bool {
-		return name != "search_memory"
-	})
 }
 
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
@@ -323,25 +232,56 @@ type turnStats struct {
 	costUSD                 float64
 }
 
-func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan orchestration.PromptPlan, toolsetDecision orchestration.ToolsetDecision, retrievalCapsulePresent bool) (string, turnStats) {
-	loopPolicy, _ := orchestration.LoopPolicyForToolset(toolsetDecision.Toolset)
-	maxIterations := b.maxToolLoopIterations(toolsetDecision.Toolset)
+type agentPromptPlan struct {
+	Content string
+	Version string
+	Hash    string
+	Modules []string
+}
+
+func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsBlock string, now time.Time) agentPromptPlan {
+	version := "aura-agent-v1"
+	if cfg != nil && strings.TrimSpace(cfg.PromptVersion) != "" {
+		version = strings.TrimSpace(cfg.PromptVersion)
+	}
+	modules := []string{"base", "runtime", "registered-tools"}
+	content := conversation.RenderSystemPrompt(now, loc)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: all registered tools\n\nChoose tools autonomously when they help. Tools are already bounded by their implementations and workspace roots. Prefer direct answers when no tool is needed.", version)
+	if strings.TrimSpace(overlay) != "" {
+		content += "\n\n" + strings.TrimSpace(overlay)
+		modules = append(modules, "overlay")
+	}
+	if strings.TrimSpace(skillsBlock) != "" {
+		content += "\n\n" + strings.TrimSpace(skillsBlock)
+		content += "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it or when it materially improves the work."
+		modules = append(modules, "skills")
+	}
+	sum := sha256.Sum256([]byte(content))
+	return agentPromptPlan{
+		Content: content,
+		Version: version,
+		Hash:    hex.EncodeToString(sum[:8]),
+		Modules: modules,
+	}
+}
+
+func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan agentPromptPlan, retrievalCapsulePresent bool) (string, turnStats) {
+	maxIterations := b.maxToolLoopIterations()
 	baseStats := turnStats{
 		promptVersion:           promptPlan.Version,
 		promptModules:           append([]string(nil), promptPlan.Modules...),
 		promptHash:              promptPlan.Hash,
-		toolset:                 string(toolsetDecision.Toolset),
-		toolsetSelectReason:     toolsetDecision.Reason,
+		toolset:                 "registered",
+		toolsetSelectReason:     "all registered tools exposed",
 		retrievalCapsulePresent: retrievalCapsulePresent,
 	}
 	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	var currentStats turnStats
-	afterTool := orchestration.AfterToolCallbackForToolset(toolsetDecision.Toolset)
 	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
 		Client: telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
 		Executor: agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, toolsetDecision.Toolset, currentStats.readSkills, afterTool)
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, currentStats.readSkills)
 			return agentloop.ExecutionSummary{
 				LastResult:     execution.lastResult,
 				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
@@ -351,16 +291,17 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			}
 		}),
 		State:                   convCtx,
-		PromptPlan:              promptPlan,
-		ToolsetDecision:         toolsetDecision,
+		PromptVersion:           promptPlan.Version,
+		PromptHash:              promptPlan.Hash,
+		PromptModules:           promptPlan.Modules,
+		Toolset:                 "registered",
+		ToolsetSelectReason:     "all registered tools exposed",
 		Tools:                   toolDefs,
 		RetrievalCapsulePresent: retrievalCapsulePresent,
 		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
-			MaxElapsed:              loopPolicy.MaxElapsed,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
-			AllowNoToolFinalization: loopPolicy.AllowNoToolFinalization,
-			BeforeTool:              orchestration.BeforeToolCallbackForToolset(toolsetDecision.Toolset),
+			AllowNoToolFinalization: true,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -402,15 +343,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		},
 		OnEvent: func(event agentruntime.Event) {
 			switch event.Type {
-			case agentruntime.EventToolsExposed:
-				orchestration.EnsureHooks(b.orchHooks).BeforeExposeTools(orchestration.TraceEvent{
-					PromptVersion:       event.PromptVersion,
-					PromptHash:          event.PromptHash,
-					PromptModules:       event.PromptModules,
-					Toolset:             string(event.Toolset),
-					ToolsetSelectReason: event.ToolsetSelectReason,
-					ToolsExposed:        event.ToolsExposed,
-				})
 			case agentruntime.EventStats:
 				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
 				b.storeOrchestrationSnapshot(userID, currentStats)
@@ -483,17 +415,14 @@ func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) 
 	return stats
 }
 
-func (b *Bot) appendAutonomousTools(allowlist []string) []string {
+func (b *Bot) modelToolNames() []string {
 	if b == nil || b.tools == nil {
-		return allowlist
+		return nil
 	}
-	for _, name := range b.tools.NamesByCategory(auratools.CategoryAutonomous) {
-		allowlist = appendUniqueStrings(allowlist, name)
-	}
-	return allowlist
+	return b.tools.Names()
 }
 
-func (b *Bot) maxToolLoopIterations(toolset orchestration.Toolset) int {
+func (b *Bot) maxToolLoopIterations() int {
 	maxIterations := 10
 	if b != nil && b.cfg != nil && b.cfg.MaxToolIterations > 0 {
 		maxIterations = b.cfg.MaxToolIterations

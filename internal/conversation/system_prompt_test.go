@@ -63,7 +63,7 @@ func TestDefaultSystemPromptKeepsDefaultToolGuidanceSmall(t *testing.T) {
 	for _, want := range []string{
 		"Use search_memory",
 		"Use schedule_task only for explicit reminder or task-creation requests",
-		"workspace file tools only when they are explicitly exposed",
+		"use workspace file tools when they are available",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system prompt missing default hot-path guidance %q", want)

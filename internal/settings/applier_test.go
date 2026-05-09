@@ -104,25 +104,21 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	}
 }
 
-func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
+func TestApplyToConfigAppliesAgentRuntimeSettings(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	cfg := &config.Config{
-		PromptVersion:         "aura-agent-v1",
-		ToolsetMode:           "auto",
-		OrchestrationLogLevel: "summary",
-		SkillRoutingMode:      "manifest",
-		AgentLoopMaxSteps:     6,
-		TerminalToolPolicy:    "toolset",
-		DelegationMode:        "fast",
-		TraceRetentionDays:    30,
-		WorkspaceTools:        "disabled",
-		WorkspaceRoot:         "/app",
+		PromptVersion:      "aura-agent-v1",
+		SkillRoutingMode:   "manifest",
+		AgentLoopMaxSteps:  6,
+		TerminalToolPolicy: "on",
+		DelegationMode:     "fast",
+		TraceRetentionDays: 30,
+		WorkspaceTools:     "disabled",
+		WorkspaceRoot:      "/app",
 	}
 
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
-	_ = s.Set(ctx, KeyToolsetMode, "DOCUMENT")
-	_ = s.Set(ctx, KeyOrchestrationLogLevel, "DEBUG")
 	_ = s.Set(ctx, KeySkillRoutingMode, " MANIFEST_LLM_REVIEW ")
 	_ = s.Set(ctx, KeyAgentLoopMaxSteps, "9")
 	_ = s.Set(ctx, KeyTerminalToolPolicy, "OFF")
@@ -135,12 +131,6 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 
 	if cfg.PromptVersion != "aura-agent-v2" {
 		t.Fatalf("PromptVersion = %q", cfg.PromptVersion)
-	}
-	if cfg.ToolsetMode != "document" {
-		t.Fatalf("ToolsetMode = %q", cfg.ToolsetMode)
-	}
-	if cfg.OrchestrationLogLevel != "debug" {
-		t.Fatalf("OrchestrationLogLevel = %q", cfg.OrchestrationLogLevel)
 	}
 	if cfg.SkillRoutingMode != "manifest_llm_review" {
 		t.Fatalf("SkillRoutingMode = %q", cfg.SkillRoutingMode)
@@ -163,14 +153,14 @@ func TestApplyToConfigAppliesOrchestrationSettings(t *testing.T) {
 	if cfg.WorkspaceRoot != "D:/Aura" {
 		t.Fatalf("WorkspaceRoot = %q", cfg.WorkspaceRoot)
 	}
-	if !IsOverridable(KeyPromptVersion) || !IsOverridable(KeyToolsetMode) || !IsOverridable(KeyOrchestrationLogLevel) ||
+	if !IsOverridable(KeyPromptVersion) ||
 		!IsOverridable(KeySkillRoutingMode) || !IsOverridable(KeyAgentLoopMaxSteps) || !IsOverridable(KeyTerminalToolPolicy) || !IsOverridable(KeyDelegationMode) || !IsOverridable(KeyTraceRetentionDays) ||
 		!IsOverridable(KeyWorkspaceTools) || !IsOverridable(KeyWorkspaceRoot) {
-		t.Fatal("orchestration settings must be dashboard-overridable")
+		t.Fatal("agent runtime settings must be dashboard-overridable")
 	}
 }
 
-func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
+func TestApplyToConfigInvalidAgentRuntimeSettingsDegradeToDefaults(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	cfg := &config.Config{
@@ -197,7 +187,7 @@ func TestApplyToConfigInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T
 		cfg.DelegationMode != config.DefaultDelegationMode ||
 		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays ||
 		cfg.WorkspaceTools != config.DefaultWorkspaceTools {
-		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
+		t.Fatalf("invalid agent runtime settings did not degrade to defaults: %+v", cfg)
 	}
 }
 

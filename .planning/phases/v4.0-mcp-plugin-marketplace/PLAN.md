@@ -14,6 +14,30 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 Hard Orchestrator Deletion
+
+Status: implemented.
+
+- Deleted the live `internal/orchestration` package instead of disabling it.
+- Removed Telegram toolset selection, prompt-compose hooks, before/after tool callbacks, runtime toolset filtering, and document-route tool suppression.
+- Simplified the hot path to a Picobot/Hermes-style surface: Aura sends the model the registered tool definitions and lets the model choose.
+- Workspace file tools, MCP tools, web tools, source tools, scheduler tools, sandbox tools, and document tools now come from the registry directly; no phrase router decides what the model may see.
+- Removed `AURA_TOOLSET_MODE` and `AURA_ORCHESTRATION_LOG_LEVEL` from config, dashboard settings, Compose, and `.env.example`.
+- Changed terminal tool policy from legacy `toolset/off` wording to simple `on/off`.
+- Kept only runtime loop limits and tool implementation boundaries: tool execution still rejects a tool name that was not included in the actual model-visible definitions for that turn.
+
+Verification:
+
+- `go test ./internal/telegram ./internal/agentruntime ./internal/config ./internal/settings ./internal/api ./cmd/debug_telegram_sandbox -count=1`
+- `npm --prefix web run i18n:check`
+- `npm --prefix web run build`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `docker compose config --quiet`
+- `docker compose up -d --build aura`
+- live `/status` returned ok
+
 ### 2026-05-09 Model-Led Tool Surface
 
 Status: implemented.

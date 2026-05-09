@@ -129,9 +129,9 @@ func userFacingFatalToolResult(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if strings.Contains(trimmed, "not exposed in the active toolset") {
 		if strings.Contains(trimmed, "write_file") || strings.Contains(trimmed, "apply_patch") {
-			return "Non posso modificare direttamente i file con il toolset attivo. La memoria del turno resta gestita dalla cattura automatica post-turn e, se non e' low-risk, dalla coda review."
+			return "Non posso modificare direttamente i file perche' il tool non e' stato esposto in questo turno."
 		}
-		return "Una capacita' interna richiesta non e' disponibile nel toolset attivo. Ho fermato l'azione invece di usare un permesso non esposto."
+		return "Una capacita' interna richiesta non e' disponibile tra gli strumenti esposti in questo turno."
 	}
 	return raw
 }

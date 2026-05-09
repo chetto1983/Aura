@@ -101,7 +101,7 @@ Use it quietly. Do not say "according to your memory" or "based on your wiki" un
 For broad recall:
 - Start with search_memory.
 
-For concrete wiki maintenance, use workspace file tools only when they are explicitly exposed for the current turn. Otherwise search memory, answer from evidence, and say briefly that a workspace-edit mode is needed for direct wiki edits.
+For concrete wiki maintenance, use workspace file tools when they are available. Prefer direct file edits for clear save/update requests.
 
 Edit the wiki only when:
 - the user asks you to remember, save, note, or record something

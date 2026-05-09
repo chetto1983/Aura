@@ -333,7 +333,7 @@ func TestLoadSuccess(t *testing.T) {
 	}
 }
 
-func TestLoadOrchestrationSettings(t *testing.T) {
+func TestLoadAgentRuntimeSettings(t *testing.T) {
 	t.Setenv("AURA_SKILL_ROUTING_MODE", " MANIFEST_LLM_REVIEW ")
 	t.Setenv("AURA_AGENT_LOOP_MAX_STEPS", "12")
 	t.Setenv("AURA_TERMINAL_TOOL_POLICY", "OFF")
@@ -361,7 +361,7 @@ func TestLoadOrchestrationSettings(t *testing.T) {
 	}
 }
 
-func TestLoadInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
+func TestLoadInvalidAgentRuntimeSettingsDegradeToDefaults(t *testing.T) {
 	t.Setenv("AURA_SKILL_ROUTING_MODE", "llm")
 	t.Setenv("AURA_AGENT_LOOP_MAX_STEPS", "0")
 	t.Setenv("AURA_TERMINAL_TOOL_POLICY", "always")
@@ -377,7 +377,7 @@ func TestLoadInvalidOrchestrationSettingsDegradeToDefaults(t *testing.T) {
 		cfg.TerminalToolPolicy != DefaultTerminalToolPolicy ||
 		cfg.DelegationMode != DefaultDelegationMode ||
 		cfg.TraceRetentionDays != DefaultTraceRetentionDays {
-		t.Fatalf("invalid orchestration settings did not degrade to defaults: %+v", cfg)
+		t.Fatalf("invalid agent runtime settings did not degrade to defaults: %+v", cfg)
 	}
 }
 

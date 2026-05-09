@@ -6,7 +6,6 @@ import (
 
 	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/orchestration"
 )
 
 func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
@@ -19,13 +18,12 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 		Executor: agentloop.ToolExecutorFunc(func(context.Context, []llm.ToolCall) agentloop.ExecutionSummary {
 			return agentloop.ExecutionSummary{}
 		}),
-		State: state,
-		PromptPlan: orchestration.PromptPlan{
-			Version: "test",
-			Hash:    "hash",
-			Modules: []string{"base"},
-		},
-		ToolsetDecision:         orchestration.ToolsetDecision{Toolset: orchestration.ToolsetDefault, Reason: "test"},
+		State:                   state,
+		PromptVersion:           "test",
+		PromptHash:              "hash",
+		PromptModules:           []string{"base"},
+		Toolset:                 "registered",
+		ToolsetSelectReason:     "test",
 		Tools:                   []llm.ToolDefinition{{Name: "search_memory"}},
 		RetrievalCapsulePresent: true,
 		Options:                 agentloop.Options{MaxIterations: 1},
@@ -45,8 +43,8 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 	if len(result.ToolsExposed) != 1 || result.ToolsExposed[0] != "search_memory" {
 		t.Fatalf("result tools exposed = %+v, want search_memory", result.ToolsExposed)
 	}
-	if result.Toolset != orchestration.ToolsetDefault || result.ToolsetSelectReason != "test" {
-		t.Fatalf("result toolset = %q/%q, want default/test", result.Toolset, result.ToolsetSelectReason)
+	if result.Toolset != "registered" || result.ToolsetSelectReason != "test" {
+		t.Fatalf("result toolset = %q/%q, want registered/test", result.Toolset, result.ToolsetSelectReason)
 	}
 	if !result.RetrievalCapsulePresent {
 		t.Fatal("RetrievalCapsulePresent = false, want true")
