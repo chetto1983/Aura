@@ -180,7 +180,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				}
 			case "run_aurabot_swarm":
 				stats.SwarmUsed = true
-			case "execute_code":
+			case "execute_code", "execute_shell":
 				stats.SandboxUsed = true
 			}
 		}

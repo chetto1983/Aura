@@ -69,7 +69,8 @@
       "Bash(python *)",
       "Bash(pip install *)",
       "Bash(pip show *)",
-      "Skill(gsd-plan-phase)"
+      "Skill(gsd-plan-phase)",
+      "Bash(docker exec aura-aura-1 *)"
     ]
   }
 }

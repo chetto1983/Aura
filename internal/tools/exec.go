@@ -207,10 +207,7 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 		return "", fmt.Errorf("shell command failed (exit=%d): %s", result.ExitCode, detail)
 	}
 
-	out := fmt.Sprintf("exit_code: %d\nelapsed_ms: %d", result.ExitCode, result.ElapsedMs)
-	if strings.TrimSpace(result.Stdout) != "" {
-		out += fmt.Sprintf("\n\n%s", result.Stdout)
-	}
+	out := fmt.Sprintf("exit_code: %d\nelapsed_ms: %d\n\n%s", result.ExitCode, result.ElapsedMs, result.Stdout)
 	if strings.TrimSpace(result.Stderr) != "" {
 		out += fmt.Sprintf("\n--- stderr ---\n%s", result.Stderr)
 	}

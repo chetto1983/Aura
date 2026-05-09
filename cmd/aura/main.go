@@ -40,6 +40,12 @@ var (
 )
 
 const restartDelayEnv = "AURA_RESTART_DELAY_MS"
+const restartCooldown = 30 * time.Second
+
+var (
+	lastRestart time.Time
+	restartMu   sync.Mutex
+)
 
 func main() {
 	if handleCLIArgs(os.Args[1:], os.Stdout) {
@@ -318,6 +324,16 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	var stopCurrent func()
 	restart := func(context.Context) error {
+		restartMu.Lock()
+		if elapsed := time.Since(lastRestart); elapsed < restartCooldown {
+			restartMu.Unlock()
+			logger.Warn("restart refused: cooldown active",
+				"elapsed_ms", elapsed.Milliseconds(),
+				"cooldown_ms", restartCooldown.Milliseconds())
+			return fmt.Errorf("restart on cooldown: %v remaining", (restartCooldown - elapsed).Truncate(time.Second))
+		}
+		lastRestart = time.Now()
+		restartMu.Unlock()
 		if err := spawnRestartProcess(); err != nil {
 			return err
 		}

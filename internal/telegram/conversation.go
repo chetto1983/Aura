@@ -175,7 +175,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// subsystem without sprinkling timers everywhere.
 	b.logger.Info("conversation complete",
 		"user_id", userID,
-		"tokens_used", convCtx.TotalTokensUsed(),
+		"tokens_lifetime", convCtx.TotalTokensUsed(),
 		"elapsed_ms", time.Since(turnStart).Milliseconds(),
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,

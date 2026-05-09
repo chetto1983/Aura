@@ -131,6 +131,8 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 	body := raw
 	if idx := strings.Index(body, "\n\n"); idx >= 0 {
 		body = strings.TrimSpace(body[idx+2:])
+	} else if strings.HasPrefix(body, "exit_code:") {
+		return "Sandbox execution completed."
 	}
 	artifacts := ""
 	if idx := strings.Index(body, "\n\nartifacts:"); idx >= 0 {
