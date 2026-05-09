@@ -22,7 +22,7 @@ ARG MAIL_MCP_VERSION=0.4.5
 ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c92388249bf
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git tzdata wget xz-utils \
+    && apt-get install -y --no-install-recommends ca-certificates git python3 python3-pip python3-venv tzdata wget xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
@@ -60,7 +60,7 @@ ENV AURA_HEADLESS=true \
     MCP_SERVERS_PATH=/data/mcp.json \
     PROMPT_OVERLAY_PATH=/data \
     SANDBOX_ENABLED=true \
-    SANDBOX_RUNTIME_MODE=auto
+    SANDBOX_RUNTIME_MODE=process
 
 EXPOSE 8080
 

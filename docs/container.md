@@ -11,9 +11,8 @@ signals.
 - `garage`: local S3-compatible object storage for manual backup exports.
 - `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
   profile.
-- `pyodide`: warm Pyodide sandbox sidecar for `execute_code`, DOCX, XLSX,
-  charts, and generated sandbox artifacts. Aura reaches it as
-  `http://pyodide:8787`; it is not published on the host by default.
+- code execution runs Python directly inside the `aura` container for
+  `execute_code`, DOCX, XLSX, charts, and generated artifacts.
 - `qdrant`: local vector database sidecar for rebuildable wiki/memory
   embeddings.
 - `test`: optional developer test container with Go 1.26.2, Node 22, and the
@@ -24,7 +23,7 @@ The dashboard is bound to `127.0.0.1:18080` on the host by default. SearXNG is b
 `http://searxng:8080`. Garage's S3 API is bound to `127.0.0.1:3900` on the
 host and is reachable from Aura as `http://garage:3900`.
 Qdrant's REST API is bound to `127.0.0.1:6333` on the host and is reachable
-from Aura as `http://qdrant:6333`. The Pyodide sidecar is internal-only.
+from Aura as `http://qdrant:6333`.
 
 ## First Run
 
@@ -146,12 +145,13 @@ skill tests create a temporary network namespace; a plain `docker run
 golang:... go test ./...` container cannot do that reliably.
 The command excludes incidental Go packages under `web/node_modules`.
 
-The production sandbox path is the `pyodide` service. Smoke it from inside the
-Compose network:
+The production code-execution path is `SANDBOX_RUNTIME_MODE=process` in the
+Aura container. Smoke Python directly in that container:
 
 ```powershell
-docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
-docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -artifact-smoke -runtime-url http://pyodide:8787 -timeout 5m
+docker compose exec aura python3 - <<'PY'
+print(sum(range(101)))
+PY
 ```
 
 Live XLSX/DOCX extraction tests remain opt-in because they exercise large
@@ -263,11 +263,8 @@ to run while the Compose `aura` service is up.
   as the default; `SEARCH_BACKEND=qdrant` queries the Qdrant sidecar first and
   falls back locally.
 - The app container enables `SANDBOX_ENABLED=true` and uses
-  `SANDBOX_RUNTIME_MODE=container` with `SANDBOX_RUNTIME_URL=http://pyodide:8787`.
-  The Aura image no longer installs Node.js or carries `/app/runtime/pyodide`.
-  The sidecar is based on `pyodide/pyodide-env` and overlays Aura's HTTP runner
-  shim. It loads Pyodide packages from actual Python imports so trivial
-  `execute_code` calls do not pay the full pandas/scipy/matplotlib startup cost.
+  `SANDBOX_RUNTIME_MODE=process`. `execute_code` runs through `python3` inside
+  the Aura container with the same mounted workspace/data access as Aura.
 - SQLite remains Aura's canonical state store. MongoDB was evaluated for future
   high-volume archives/traces/audit logs, but it is not part of the default
   stack and should not replace `aura.db` until repository metrics justify it.

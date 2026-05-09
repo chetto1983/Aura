@@ -28,7 +28,7 @@ The default stack starts local services:
 
 - `aura`: the Telegram bot, memory engine, tools, and embedded dashboard.
 - `searxng`: local web search for the stable `web_search` tool.
-- `pyodide`: warm Python sandbox sidecar for `execute_code`, DOCX, XLSX, charts, and generated artifacts.
+- code execution runs Python directly inside the Aura container for `execute_code`, extraction, charts, and generated artifacts.
 - `qdrant`: optional vector-search sidecar; Aura keeps local search as fallback.
 - `garage`: S3-compatible artifact and backup storage.
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
@@ -125,7 +125,9 @@ go build ./...
 go run ./cmd/aura
 go run ./cmd/debug_llm
 go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
-docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
+docker compose exec aura python3 - <<'PY'
+print(sum(range(101)))
+PY
 ```
 
 ## Release

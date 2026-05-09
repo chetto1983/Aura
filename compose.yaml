@@ -33,8 +33,7 @@ services:
       AURA_RUNTIME_WORKSPACE_PATH: "/workspace"
       PROMPT_OVERLAY_PATH: "/workspace"
       SANDBOX_ENABLED: "true"
-      SANDBOX_RUNTIME_MODE: "container"
-      SANDBOX_RUNTIME_URL: "http://pyodide:8787"
+      SANDBOX_RUNTIME_MODE: "process"
       WEB_SEARCH_PROVIDER: "searxng"
       SEARXNG_BASE_URL: "http://searxng:8080"
       GARAGE_S3_ENDPOINT: "http://garage:3900"
@@ -70,19 +69,6 @@ services:
         condition: service_started
       qdrant:
         condition: service_started
-      pyodide:
-        condition: service_healthy
-
-  pyodide:
-    build:
-      context: ./runtime/pyodide
-      dockerfile: ../../docker/pyodide/Dockerfile
-    image: aura-pyodide:local
-    restart: unless-stopped
-    environment:
-      NODE_OPTIONS: "--max-old-space-size=4096"
-    expose:
-      - "8787"
 
   searxng:
     image: docker.io/searxng/searxng:latest

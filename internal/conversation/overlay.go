@@ -10,9 +10,10 @@ import (
 // overlayFiles is the trusted operator prompt overlay set. Each file is read
 // fresh every turn so edits take effect with no recompile or restart.
 //
-// AGENT.md is Aura's runtime note. AGENTS.md is deliberately excluded because
-// it contains repository development instructions for coding agents.
-var overlayFiles = []string{"SOUL.md", "AGENT.md", "USER.md", "TOOLS.md"}
+// AGENT.md is Aura's runtime workspace note, readable through file tools when
+// needed. It is deliberately not injected into the system prompt. AGENTS.md is
+// also excluded because it contains repository development instructions.
+var overlayFiles = []string{"SOUL.md", "USER.md", "TOOLS.md"}
 
 // LoadPromptOverlay reads any of overlayFiles present under dir and
 // returns a concatenated block ready to append to the system prompt.

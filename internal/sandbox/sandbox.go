@@ -46,6 +46,7 @@ type RuntimeKind string
 
 const (
 	RuntimeKindPyodide     RuntimeKind = "pyodide"
+	RuntimeKindProcess     RuntimeKind = "process"
 	RuntimeKindUnavailable RuntimeKind = "unavailable"
 )
 

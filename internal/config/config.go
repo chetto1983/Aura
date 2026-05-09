@@ -114,8 +114,9 @@ type Config struct {
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 
-	// Sandbox code execution. Product execution uses a bundled Pyodide
-	// runtime or the container sidecar; no host Python fallback is supported.
+	// Sandbox code execution. Docker production uses process mode, which runs
+	// Python directly inside the Aura container. Pyodide modes remain as legacy
+	// local/sidecar adapters until their extraction paths are fully retired.
 	SandboxEnabled     bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
 	SandboxRuntimeMode string `envconfig:"SANDBOX_RUNTIME_MODE" default:"auto"`
 	SandboxRuntimeURL  string `envconfig:"SANDBOX_RUNTIME_URL"`

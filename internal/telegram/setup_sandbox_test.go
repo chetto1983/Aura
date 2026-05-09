@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -206,6 +207,35 @@ func TestSetupSandboxRuntime_ContainerModeUnavailableDisablesExecuteCode(t *test
 	}
 	if health.RuntimeKind != string(sandbox.RuntimeKindUnavailable) {
 		t.Fatalf("RuntimeKind = %q, want unavailable", health.RuntimeKind)
+	}
+}
+
+func TestSetupSandboxRuntime_ProcessModeEnablesExecuteCode(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+	workDir := t.TempDir()
+	mgr, health := setupSandboxRuntime(&config.Config{
+		SandboxEnabled:     true,
+		SandboxRuntimeMode: "process",
+		SandboxTimeoutSec:  21,
+		WorkspaceRoot:      workDir,
+	}, slog.Default())
+
+	if mgr == nil {
+		t.Fatal("manager = nil, want configured manager")
+	}
+	if tools.NewExecuteCodeTool(mgr) == nil {
+		t.Fatal("execute_code not registered with process runtime")
+	}
+	if !health.Available {
+		t.Fatalf("health.Available = false, detail=%q", health.Detail)
+	}
+	if health.RuntimeKind != string(sandbox.RuntimeKindProcess) {
+		t.Fatalf("RuntimeKind = %q, want process", health.RuntimeKind)
+	}
+	if health.Runtime != workDir {
+		t.Fatalf("Runtime = %q, want %q", health.Runtime, workDir)
 	}
 }
 

@@ -55,12 +55,12 @@ func isNilExecutor(manager sandbox.Executor) bool {
 func (t *ExecuteCodeTool) Name() string { return "execute_code" }
 
 func (t *ExecuteCodeTool) Description() string {
-	return "Execute Python code in an isolated WASM sandbox. " +
+	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access as Aura. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
-		"The sandbox is ephemeral; no state persists between executions. " +
+		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
 		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under /tmp/aura_out; Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. " +
-		"Packages are limited to Aura's bundled runtime profile. Set allow_network=true only when HTTP access is explicitly needed. " +
+		"Set allow_network=true only when HTTP access is explicitly needed; process runtimes may already share the container network. " +
 		"Timeout is configurable up to the server limit (default 120s)."
 }
 

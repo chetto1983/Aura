@@ -186,8 +186,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
 	}
 
-	// Sandbox code execution. The tool is registered only after the bundled
-	// Pyodide runtime and runner both pass availability checks.
+	// Sandbox code execution. The tool is registered only after the configured
+	// runtime passes availability checks.
 	sandboxMgr, sandboxHealth := setupSandboxRuntime(cfg, logger)
 
 	// Tool registry (persistent LLM-written Python tools)
@@ -756,6 +756,50 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	timeout := time.Duration(cfg.SandboxTimeoutSec) * time.Second
 	runtimeMode := strings.ToLower(strings.TrimSpace(cfg.SandboxRuntimeMode))
 	runtimeURL := strings.TrimSpace(cfg.SandboxRuntimeURL)
+	if runtimeMode == "process" || runtimeMode == "aura" {
+		runner, err := sandbox.NewProcessRunner(sandbox.ProcessRunnerConfig{
+			WorkDir: cfg.WorkspaceRoot,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Detail = err.Error()
+			logger.Warn("sandbox process runner configuration invalid, execute_code disabled",
+				"runtime_kind", sandbox.RuntimeKindProcess,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", health.Detail)
+			return nil, health
+		}
+		availability := runner.CheckAvailability()
+		health.Runtime = cfg.WorkspaceRoot
+		health.Available = availability.Available
+		health.RuntimeKind = string(availability.Kind)
+		health.Detail = availability.Detail
+		if !availability.Available {
+			logger.Warn("sandbox process runtime unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", availability.Detail)
+			return nil, health
+		}
+		manager, err := sandbox.NewManager(sandbox.Config{
+			Runtime: runner,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Available = false
+			health.Detail = err.Error()
+			logger.Warn("sandbox process manager unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", health.Detail)
+			return nil, health
+		}
+		logger.Info("sandbox process runtime available, execute_code enabled",
+			"runtime_kind", health.RuntimeKind,
+			"workdir", cfg.WorkspaceRoot,
+			"detail", health.Detail)
+		return manager, health
+	}
 	if runtimeMode == "container" || (runtimeMode == "auto" && runtimeURL != "") {
 		runner, err := sandbox.NewPyodideContainerRunner(sandbox.PyodideContainerRunnerConfig{
 			BaseURL: runtimeURL,

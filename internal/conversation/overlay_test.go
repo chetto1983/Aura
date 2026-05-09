@@ -34,8 +34,9 @@ func TestLoadPromptOverlayBlankPathReturnsEmpty(t *testing.T) {
 func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "SOUL.md"), "I am Aura.")
-	mustWrite(t, filepath.Join(dir, "AGENT.md"), "I maintain my own runtime notes.")
+	mustWrite(t, filepath.Join(dir, "AGENT.md"), "runtime notes are file-readable only")
 	mustWrite(t, filepath.Join(dir, "USER.md"), "Operator is Davide.")
+	mustWrite(t, filepath.Join(dir, "TOOLS.md"), "Use tools carefully.")
 	mustWrite(t, filepath.Join(dir, "RANDOM.md"), "ignore me")
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "dev-only instructions")
 
@@ -46,20 +47,23 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	if !strings.Contains(got, "I am Aura.") {
 		t.Error("missing SOUL body")
 	}
-	if !strings.Contains(got, "## AGENT") {
-		t.Error("missing AGENT section")
-	}
-	if !strings.Contains(got, "I maintain my own runtime notes.") {
-		t.Error("missing AGENT body")
-	}
 	if !strings.Contains(got, "## USER") {
 		t.Error("missing USER section")
 	}
 	if !strings.Contains(got, "Operator is Davide.") {
 		t.Error("missing USER body")
 	}
+	if !strings.Contains(got, "## TOOLS") {
+		t.Error("missing TOOLS section")
+	}
+	if !strings.Contains(got, "Use tools carefully.") {
+		t.Error("missing TOOLS body")
+	}
 	if strings.Contains(got, "ignore me") {
 		t.Error("RANDOM.md should not appear in overlay")
+	}
+	if strings.Contains(got, "runtime notes are file-readable only") {
+		t.Error("AGENT.md should not be injected into the system prompt")
 	}
 	if strings.Contains(got, "dev-only instructions") {
 		t.Error("AGENTS.md should not appear in runtime overlay")
@@ -73,14 +77,14 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 func TestLoadPromptOverlaySkipsBlankFiles(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "SOUL.md"), "   \n\n   ")
-	mustWrite(t, filepath.Join(dir, "AGENT.md"), "real content")
+	mustWrite(t, filepath.Join(dir, "USER.md"), "real content")
 
 	got := LoadPromptOverlay(dir)
 	if strings.Contains(got, "## SOUL") {
 		t.Error("blank SOUL.md should be skipped, but section appeared")
 	}
-	if !strings.Contains(got, "## AGENT") {
-		t.Error("expected AGENT section")
+	if !strings.Contains(got, "## USER") {
+		t.Error("expected USER section")
 	}
 }
 
