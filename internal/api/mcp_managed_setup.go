@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -74,6 +75,7 @@ func readMCPConfigFile(path string) (mcp.File, error) {
 		}
 		return mcp.File{}, err
 	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return mcp.File{MCPServers: map[string]mcp.ServerConfig{}}, nil
 	}

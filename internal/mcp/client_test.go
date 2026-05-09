@@ -284,3 +284,20 @@ func TestLoadServersRejectsUnknownField(t *testing.T) {
 		t.Fatal("expected error for unknown top-level field")
 	}
 }
+
+func TestLoadServersHandlesBOM(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.json")
+	// Write file with UTF-8 BOM prefix
+	body := append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"mcpServers":{"test":{"command":"node"}}}`)...)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	servers, err := LoadServers(path)
+	if err != nil {
+		t.Fatalf("LoadServers should handle BOM: %v", err)
+	}
+	if len(servers) != 1 || servers["test"].Command != "node" {
+		t.Fatalf("unexpected result with BOM: %+v", servers)
+	}
+}

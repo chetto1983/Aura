@@ -68,3 +68,4 @@ aura.db-*
 dist/*
 skills/.claude/*
 test-results/*
+*.exe

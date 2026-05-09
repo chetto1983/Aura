@@ -326,7 +326,7 @@ func (c *qdrantClient) createCollection(ctx context.Context, vectorSize int) err
 			"distance": "Cosine",
 		},
 	}
-	return c.doJSON(ctx, http.MethodPut, c.collectionPath(), body, http.StatusOK)
+	return c.doJSON(ctx, http.MethodPut, c.collectionPath(), body, http.StatusOK, http.StatusConflict)
 }
 
 func (c *qdrantClient) deleteCollection(ctx context.Context) error {
