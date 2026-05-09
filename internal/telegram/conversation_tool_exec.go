@@ -143,7 +143,7 @@ func toolArgumentsForTool(name string, args map[string]any, chatID int64) map[st
 }
 
 func isTerminalTool(name string) bool {
-	return name == "execute_code" || isFileGenerationTool(name)
+	return name == "execute_code" || name == "execute_shell" || isFileGenerationTool(name)
 }
 
 func chatIDFromTeleContext(c tele.Context) int64 {

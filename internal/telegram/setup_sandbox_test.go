@@ -139,6 +139,9 @@ func TestSetupSandboxRuntime_HealthyBundleEnablesExecuteCode(t *testing.T) {
 	if tools.NewExecuteCodeTool(mgr) == nil {
 		t.Fatal("execute_code not registered with healthy runtime")
 	}
+	if tools.NewExecuteShellTool(mgr) != nil {
+		t.Fatal("execute_shell registered with pyodide runtime")
+	}
 	if !health.Available {
 		t.Fatalf("health.Available = false, detail=%q", health.Detail)
 	}
@@ -227,6 +230,9 @@ func TestSetupSandboxRuntime_ProcessModeEnablesExecuteCode(t *testing.T) {
 	}
 	if tools.NewExecuteCodeTool(mgr) == nil {
 		t.Fatal("execute_code not registered with process runtime")
+	}
+	if tools.NewExecuteShellTool(mgr) == nil {
+		t.Fatal("execute_shell not registered with process runtime")
 	}
 	if !health.Available {
 		t.Fatalf("health.Available = false, detail=%q", health.Detail)

@@ -428,6 +428,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if tool := tools.NewExecuteCodeToolWithStore(sandboxMgr, b, sourceStore); tool != nil {
 		toolRegistry.Register(tool)
 	}
+	if tool := tools.NewExecuteShellTool(sandboxMgr); tool != nil {
+		toolRegistry.Register(tool)
+	}
 	if tool := tools.NewListToolsTool(toolReg); tool != nil {
 		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 	}

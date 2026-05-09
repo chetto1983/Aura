@@ -56,6 +56,7 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 		"spawn_aurabot",
 		"run_aurabot_swarm",
 		"execute_code",
+		"execute_shell",
 		"list_tools",
 		"read_tool",
 		"save_tool",
@@ -76,7 +77,7 @@ func TestSandboxCodeToolsetIsExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveToolsets: %v", err)
 	}
-	want := []string{"execute_code", "list_tools", "read_tool"}
+	want := []string{"execute_code", "execute_shell", "list_tools", "read_tool"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sandbox_code tools = %+v, want %+v", got, want)
 	}

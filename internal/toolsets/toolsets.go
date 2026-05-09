@@ -42,6 +42,7 @@ var toolsets = map[string][]string{
 	},
 	ToolsetSandboxCode: {
 		"execute_code",
+		"execute_shell",
 		"list_tools",
 		"read_tool",
 	},

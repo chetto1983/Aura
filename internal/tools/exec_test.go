@@ -60,6 +60,43 @@ func TestExecuteCodeToolAcceptsExecutorInterface(t *testing.T) {
 	}
 }
 
+type fakeCommandExecutor struct {
+	result  *sandbox.Result
+	command string
+}
+
+func (f *fakeCommandExecutor) ExecuteCommand(_ context.Context, command string, _ bool) (*sandbox.Result, error) {
+	f.command = command
+	return f.result, nil
+}
+
+func TestExecuteShellToolAcceptsCommandExecutorInterface(t *testing.T) {
+	executor := &fakeCommandExecutor{result: &sandbox.Result{OK: true, Stdout: "shell ok\n", ExitCode: 0, ElapsedMs: 2}}
+	tool := tools.NewExecuteShellTool(executor)
+	if tool == nil {
+		t.Fatal("expected execute_shell tool")
+	}
+	out, err := tool.Execute(context.Background(), map[string]any{"command": "echo shell ok"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if executor.command != "echo shell ok" || !strings.Contains(out, "shell ok") {
+		t.Fatalf("command=%q out=%q", executor.command, out)
+	}
+}
+
+func TestExecuteShellToolNotRegisteredForPyodideManager(t *testing.T) {
+	manager, err := sandbox.NewManager(sandbox.Config{
+		Runtime: fakeExecRuntime{result: &sandbox.Result{OK: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tool := tools.NewExecuteShellTool(manager); tool != nil {
+		t.Fatal("expected execute_shell to stay disabled for non-process runtimes")
+	}
+}
+
 func TestExecuteCodeTool_DeliversArtifacts(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{

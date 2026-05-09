@@ -322,7 +322,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
-				if terminalTool == "execute_code" {
+				if terminalTool == "execute_code" || terminalTool == "execute_shell" {
 					response := formatTerminalExecuteCodeResult(lastToolResult)
 					convCtx.AddAssistantMessage(response)
 					return response, false, true

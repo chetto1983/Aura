@@ -12,7 +12,11 @@ signals.
 - `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
   profile.
 - code execution runs Python directly inside the `aura` container for
-  `execute_code`, DOCX, XLSX, charts, and generated artifacts.
+  `execute_code`, DOCX, XLSX, charts, and generated artifacts. The same
+  process runtime also exposes `execute_shell` for container-scoped shell
+  commands, tests, builds, `pip`, `git`, `rg`, `jq`, `sqlite3`, and runtime
+  diagnostics. Python packages installed with `pip install ...` go to
+  `/data/.local` for the non-root Aura user.
 - `qdrant`: local vector database sidecar for rebuildable wiki/memory
   embeddings.
 - `test`: optional developer test container with Go 1.26.2, Node 22, and the
@@ -152,6 +156,12 @@ Aura container. Smoke Python directly in that container:
 docker compose exec aura python3 - <<'PY'
 print(sum(range(101)))
 PY
+```
+
+Smoke the autonomous CLI surface:
+
+```powershell
+docker compose exec aura sh -c "python3 -m pip --version && rg --version && jq --version && sqlite3 --version"
 ```
 
 Live XLSX/DOCX extraction tests remain opt-in because they exercise large

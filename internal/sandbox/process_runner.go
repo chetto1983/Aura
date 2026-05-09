@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,10 @@ func (r *ProcessRunner) ValidateCode(_ string) error {
 
 func (r *ProcessRunner) Execute(ctx context.Context, code string, _ bool) (*Result, error) {
 	return r.execute(ctx, code, r.workDir)
+}
+
+func (r *ProcessRunner) ExecuteCommand(ctx context.Context, command string, _ bool) (*Result, error) {
+	return r.executeCommand(ctx, command, r.workDir)
 }
 
 func (r *ProcessRunner) ExtractXLSX(ctx context.Context, body []byte) (source.ExtractResult, error) {
@@ -233,6 +238,81 @@ func (r *ProcessRunner) execute(ctx context.Context, code, workDir string) (*Res
 		ElapsedMs: int(elapsed.Milliseconds()),
 		Artifacts: artifacts,
 	}, nil
+}
+
+func (r *ProcessRunner) executeCommand(ctx context.Context, command, workDir string) (*Result, error) {
+	if r == nil {
+		return nil, errors.New("sandbox: process runner not configured")
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil, errors.New("sandbox: command must not be empty")
+	}
+	timeout := r.timeout
+	if timeout == 0 {
+		timeout = defaultProcessRunnerTimeout
+	}
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	processOutputMu.Lock()
+	defer processOutputMu.Unlock()
+
+	outputDir := processOutputDir()
+	_ = os.RemoveAll(outputDir)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("sandbox: prepare output dir: %w", err)
+	}
+
+	shell, args := processShellCommand(command)
+	cmd := exec.CommandContext(runCtx, shell, args...)
+	cmd.Dir = workDir
+	cmd.Env = append(r.env(), "AURA_OUT_DIR="+outputDir, "PYTHONUNBUFFERED=1")
+
+	var stdout, stderr limitedBuffer
+	stdout.limit = r.maxProcessOutputBytes
+	stderr.limit = r.maxProcessOutputBytes
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	start := time.Now()
+	err := cmd.Run()
+	elapsed := time.Since(start)
+	if runCtx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("sandbox: shell command timed out after %v", timeout)
+	}
+
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+	artifacts, artifactErr := collectProcessArtifacts(outputDir)
+	if artifactErr != nil {
+		return nil, artifactErr
+	}
+	return &Result{
+		OK:        err == nil,
+		Stdout:    clipPyodideOutput(stdout.String(), r.maxResultOutputBytes),
+		Stderr:    clipPyodideOutput(stderr.String(), r.maxResultOutputBytes),
+		ExitCode:  exitCode,
+		ElapsedMs: int(elapsed.Milliseconds()),
+		Artifacts: artifacts,
+	}, nil
+}
+
+func processShellCommand(command string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd", []string{"/C", command}
+	}
+	return "/bin/sh", []string{"-c", command}
 }
 
 func (r *ProcessRunner) env() []string {
