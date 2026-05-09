@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -13,6 +11,13 @@ import (
 )
 
 const databaseMCPServerName = "database"
+
+var databaseMCPServer = managedMCPServer{
+	Name:           databaseMCPServerName,
+	RuntimeCommand: "/usr/local/bin/ea-database-server",
+	WorkspaceBin:   "ea-database-server",
+	WindowsExt:     ".cmd",
+}
 
 func handleMCPDatabaseSetupStatus(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -32,26 +37,21 @@ func handleMCPDatabaseSetupSave(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		path := currentMCPConfigPath(deps)
-		if path == "" {
+		existing, _, err := databaseMCPServer.ExistingConfig(deps)
+		if errors.Is(err, errMCPConfigPathUnavailable) {
 			writeError(w, deps.Logger, http.StatusServiceUnavailable, "MCP config path unavailable")
 			return
 		}
-		file, err := readMCPConfigFile(path)
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "read MCP config: "+err.Error())
 			return
 		}
-		var existingArgs []string
-		if existing, ok := file.MCPServers[databaseMCPServerName]; ok {
-			existingArgs = existing.Args
-		}
-		cfg, err := buildDatabaseMCPConfig(req, defaultDatabaseMCPCommand(deps), existingArgs)
+		cfg, err := buildDatabaseMCPConfig(req, defaultDatabaseMCPCommand(deps), existing.Args)
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := upsertMCPServerConfig(path, databaseMCPServerName, cfg); err != nil {
+		if err := databaseMCPServer.UpsertConfig(deps, cfg); err != nil {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "save MCP config: "+err.Error())
 			return
 		}
@@ -64,20 +64,15 @@ func handleMCPDatabaseSetupSave(deps Deps) http.HandlerFunc {
 }
 
 func currentDatabaseSetupStatus(deps Deps) (DatabaseSetupStatus, error) {
-	path := currentMCPConfigPath(deps)
 	status := DatabaseSetupStatus{
 		CanRestart: deps.Restart != nil,
 		Command:    defaultDatabaseMCPCommand(deps),
 	}
 	status.BinaryPresent = fileExists(status.Command)
-	if path == "" {
-		return status, errors.New("MCP config path unavailable")
-	}
-	file, err := readMCPConfigFile(path)
+	cfg, ok, err := databaseMCPServer.ExistingConfig(deps)
 	if err != nil {
 		return status, err
 	}
-	cfg, ok := file.MCPServers[databaseMCPServerName]
 	if !ok {
 		return status, nil
 	}
@@ -97,20 +92,7 @@ func currentDatabaseSetupStatus(deps Deps) (DatabaseSetupStatus, error) {
 }
 
 func defaultDatabaseMCPCommand(deps Deps) string {
-	if deps.RuntimeConfig != nil {
-		root := strings.TrimSpace(deps.RuntimeConfig.RuntimeWorkspacePath)
-		if root != "" {
-			if filepath.ToSlash(root) == "/workspace" {
-				return "/usr/local/bin/ea-database-server"
-			}
-			name := "ea-database-server"
-			if runtime.GOOS == "windows" {
-				name += ".cmd"
-			}
-			return filepath.Join(root, "bin", name)
-		}
-	}
-	return "/usr/local/bin/ea-database-server"
+	return databaseMCPServer.DefaultCommand(deps)
 }
 
 func buildDatabaseMCPConfig(req DatabaseSetupRequest, command string, existingArgs []string) (mcp.ServerConfig, error) {

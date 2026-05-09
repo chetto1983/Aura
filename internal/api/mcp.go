@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"sort"
+
+	"github.com/aura/aura/internal/mcppolicy"
 )
 
 func handleMCPServers(deps Deps) http.HandlerFunc {
@@ -80,14 +82,14 @@ func applyMailToolPolicy(provider *ConnectorProviderSummary, status MailSetupSta
 	provider.Status = connectorStatus(status.Configured, status.Connected, status.Error)
 	enableMailBaseCapabilities(provider, status.Connected)
 	if status.EnableSMTP {
-		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mailSMTPTools...)
-		provider.BlockedTools = removeStrings(provider.BlockedTools, mailSMTPTools...)
+		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcppolicy.MailSendTools...)
+		provider.BlockedTools = removeStrings(provider.BlockedTools, mcppolicy.MailSendTools...)
 		provider.RiskBadges = replaceRiskBadge(provider.RiskBadges, "writes_blocked", ConnectorRiskBadge{ID: "send_enabled", Label: "invio abilitato", Level: "high"})
 		enableCapability(provider, "mail.draft_reply", status.Connected)
 	}
 	if status.EnableIMAPMutations {
-		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mailIMAPMutationTools...)
-		provider.BlockedTools = removeStrings(provider.BlockedTools, mailIMAPMutationTools...)
+		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcppolicy.MailIMAPMutationTools...)
+		provider.BlockedTools = removeStrings(provider.BlockedTools, mcppolicy.MailIMAPMutationTools...)
 		provider.RiskBadges = replaceRiskBadge(provider.RiskBadges, "writes_blocked", ConnectorRiskBadge{ID: "mutations_enabled", Label: "modifica mail abilitata", Level: "high"})
 	}
 	provider.SetupHints = mailSetupHints(status)
@@ -197,21 +199,6 @@ func replaceRiskBadge(values []ConnectorRiskBadge, id string, replacement Connec
 	return out
 }
 
-var mailSMTPTools = []string{
-	"smtp_send_message",
-	"smtp_reply_message",
-	"smtp_forward_message",
-	"graph_send_message",
-	"ews_send_message",
-}
-
-var mailIMAPMutationTools = []string{
-	"imap_delete_message",
-	"imap_bulk_delete",
-	"imap_bulk_move",
-	"imap_bulk_update_flags",
-}
-
 var mcpProviderManifests = []ConnectorProviderSummary{
 	{
 		ID:            "mail-mcp",
@@ -288,8 +275,8 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 			{ID: "schema_mutation_blocked", Label: "schema bloccato", Level: "low"},
 		},
 		RequiredSecrets: []string{"database host/path and optional credentials"},
-		ApprovedTools:   []string{"list_tables", "describe_table", "read_query", "export_query"},
-		BlockedTools:    []string{"write_query", "create_table", "alter_table", "drop_table"},
+		ApprovedTools:   append([]string(nil), mcppolicy.DatabaseReadTools...),
+		BlockedTools:    append([]string(nil), mcppolicy.DatabaseBlockedTools...),
 		SetupHints:      []string{"Configura dalla dashboard. Aura usa solo query read-only nella card connettore."},
 	},
 }

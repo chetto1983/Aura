@@ -20,6 +20,7 @@ import (
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/mcppolicy"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/sandbox"
@@ -351,7 +352,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 	mcpClients := make([]mcp.ConnectedClient, 0, len(mcpServers))
 	for name, srv := range mcpServers {
-		srv.Env = normalizeMailMCPRuntimeEnv(name, srv.Env)
+		srv.Env = mcppolicy.NormalizeRuntimeEnv(name, srv.Env)
 		var client *mcp.Client
 		var err error
 		switch {
@@ -367,11 +368,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		mcpClients = append(mcpClients, client)
 		registeredTools := 0
 		for _, t := range client.Tools() {
-			if !mcpToolEnabledForAura(name, srv.Env, t.Name) {
+			if !mcppolicy.ToolEnabledForAura(name, srv.Env, t.Name) {
 				continue
 			}
 			tool := tools.NewMCPTool(client, name, t)
-			if mcpToolAutonomousForAura(name, t.Name) {
+			if mcppolicy.ToolAutonomousForAura(name, t.Name) {
 				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 			} else {
 				toolRegistry.Register(tool)
@@ -853,111 +854,4 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 		"runtime_dir", cfg.SandboxRuntimeDir,
 		"detail", health.Detail)
 	return manager, health
-}
-
-func mcpToolEnabledForAura(serverName string, env map[string]string, toolName string) bool {
-	if serverName != "mail" && serverName != "mail-mcp" {
-		return true
-	}
-	if mailToolIn(toolName, mailAuraIMAPMutationTools) {
-		return mailIMAPMutationsEnabled(env)
-	}
-	if mailToolIn(toolName, mailAuraSendTools) {
-		return mailSMTPConfigured(env)
-	}
-	return true
-}
-
-func normalizeMailMCPRuntimeEnv(serverName string, env map[string]string) map[string]string {
-	if serverName != "mail" && serverName != "mail-mcp" {
-		return env
-	}
-	if !mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS") || envFlagEnabled(env["MAIL_IMAP_WRITE_ENABLED"]) {
-		return env
-	}
-	out := make(map[string]string, len(env)+1)
-	for key, value := range env {
-		out[key] = value
-	}
-	out["MAIL_IMAP_WRITE_ENABLED"] = "true"
-	return out
-}
-
-func mailIMAPMutationsEnabled(env map[string]string) bool {
-	return mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS") || envFlagEnabled(env["MAIL_IMAP_WRITE_ENABLED"])
-}
-
-func mcpToolAutonomousForAura(serverName, toolName string) bool {
-	if serverName != "mail" && serverName != "mail-mcp" {
-		return false
-	}
-	return mailToolIn(toolName, mailAuraReadTools)
-}
-
-func mailToolIn(toolName string, tools []string) bool {
-	for _, tool := range tools {
-		if tool == toolName {
-			return true
-		}
-	}
-	return false
-}
-
-func mailSMTPConfigured(env map[string]string) bool {
-	for key, value := range env {
-		if strings.HasPrefix(key, "MAIL_SMTP_") && strings.HasSuffix(key, "_USER") && strings.TrimSpace(value) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func mailEnvFlagEnabled(env map[string]string, suffix string) bool {
-	for key, value := range env {
-		if strings.HasPrefix(key, "AURA_MAIL_") && strings.HasSuffix(key, "_"+suffix) {
-			if envFlagEnabled(value) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func envFlagEnabled(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on", "enabled":
-		return true
-	default:
-		return false
-	}
-}
-
-var mailAuraReadTools = []string{
-	"ews_get_message",
-	"ews_search_messages",
-	"get_setup_guide",
-	"imap_get_message",
-	"imap_get_message_raw",
-	"imap_list_accounts",
-	"imap_list_mailboxes",
-	"imap_mailbox_status",
-	"imap_search_messages",
-	"imap_verify_account",
-	"list_all_accounts",
-	"smtp_verify_account",
-}
-
-var mailAuraSendTools = []string{
-	"smtp_send_message",
-	"smtp_reply_message",
-	"smtp_forward_message",
-	"graph_send_message",
-	"ews_send_message",
-}
-
-var mailAuraIMAPMutationTools = []string{
-	"imap_delete_message",
-	"imap_bulk_delete",
-	"imap_bulk_move",
-	"imap_bulk_update_flags",
 }

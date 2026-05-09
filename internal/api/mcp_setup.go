@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
-	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/mcppolicy"
 )
 
 const mailMCPServerName = "mail"
-const mailIMAPWriteEnabledEnv = "MAIL_IMAP_WRITE_ENABLED"
+
+var mailMCPServer = managedMCPServer{
+	Name:           mailMCPServerName,
+	RuntimeCommand: "/usr/local/bin/mail-mcp",
+	WorkspaceBin:   "mail-mcp",
+	WindowsExt:     ".exe",
+}
 
 func handleMCPMailSetupStatus(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -35,26 +38,21 @@ func handleMCPMailSetupSave(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
-		path := currentMCPConfigPath(deps)
-		if path == "" {
+		existing, _, err := mailMCPServer.ExistingConfig(deps)
+		if errors.Is(err, errMCPConfigPathUnavailable) {
 			writeError(w, deps.Logger, http.StatusServiceUnavailable, "MCP config path unavailable")
 			return
 		}
-		file, err := readMCPConfigFile(path)
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "read MCP config: "+err.Error())
 			return
 		}
-		var existingEnv map[string]string
-		if existing, ok := file.MCPServers[mailMCPServerName]; ok {
-			existingEnv = existing.Env
-		}
-		cfg, err := buildMailMCPConfig(req, defaultMailMCPCommand(deps), existingEnv)
+		cfg, err := buildMailMCPConfig(req, defaultMailMCPCommand(deps), existing.Env)
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := upsertMCPServerConfig(path, mailMCPServerName, cfg); err != nil {
+		if err := mailMCPServer.UpsertConfig(deps, cfg); err != nil {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "save MCP config: "+err.Error())
 			return
 		}
@@ -67,20 +65,15 @@ func handleMCPMailSetupSave(deps Deps) http.HandlerFunc {
 }
 
 func currentMailSetupStatus(deps Deps) (MailSetupStatus, error) {
-	path := currentMCPConfigPath(deps)
 	status := MailSetupStatus{
 		CanRestart: deps.Restart != nil,
 		Command:    defaultMailMCPCommand(deps),
 	}
 	status.BinaryPresent = fileExists(status.Command)
-	if path == "" {
-		return status, errors.New("MCP config path unavailable")
-	}
-	file, err := readMCPConfigFile(path)
+	cfg, ok, err := mailMCPServer.ExistingConfig(deps)
 	if err != nil {
 		return status, err
 	}
-	cfg, ok := file.MCPServers[mailMCPServerName]
 	if !ok {
 		return status, nil
 	}
@@ -97,28 +90,8 @@ func currentMailSetupStatus(deps Deps) (MailSetupStatus, error) {
 	return status, nil
 }
 
-func currentMCPConfigPath(deps Deps) string {
-	if deps.RuntimeConfig != nil && strings.TrimSpace(deps.RuntimeConfig.MCPServersPath) != "" {
-		return deps.RuntimeConfig.MCPServersPath
-	}
-	return ""
-}
-
 func defaultMailMCPCommand(deps Deps) string {
-	if deps.RuntimeConfig != nil {
-		root := strings.TrimSpace(deps.RuntimeConfig.RuntimeWorkspacePath)
-		if root != "" {
-			if filepath.ToSlash(root) == "/workspace" {
-				return "/usr/local/bin/mail-mcp"
-			}
-			name := "mail-mcp"
-			if runtime.GOOS == "windows" {
-				name += ".exe"
-			}
-			return filepath.Join(root, "bin", name)
-		}
-	}
-	return "/usr/local/bin/mail-mcp"
+	return mailMCPServer.DefaultCommand(deps)
 }
 
 func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[string]string) (mcp.ServerConfig, error) {
@@ -180,7 +153,7 @@ func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[st
 	}
 	if req.EnableIMAPMutations {
 		env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"] = "true"
-		env[mailIMAPWriteEnabledEnv] = "true"
+		env[mcppolicy.MailIMAPWriteEnabledEnv] = "true"
 	}
 	return mcp.ServerConfig{Command: command, Env: env}, nil
 }
@@ -207,75 +180,6 @@ func mailProviderPreset(provider string) (mailPreset, error) {
 	}
 }
 
-func readMCPConfigFile(path string) (mcp.File, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return mcp.File{MCPServers: map[string]mcp.ServerConfig{}}, nil
-		}
-		return mcp.File{}, err
-	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return mcp.File{MCPServers: map[string]mcp.ServerConfig{}}, nil
-	}
-	var file mcp.File
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&file); err != nil {
-		return mcp.File{}, err
-	}
-	if file.MCPServers == nil {
-		file.MCPServers = map[string]mcp.ServerConfig{}
-	}
-	return file, nil
-}
-
-func upsertMCPServerConfig(path, name string, cfg mcp.ServerConfig) error {
-	file, err := readMCPConfigFile(path)
-	if err != nil {
-		return err
-	}
-	file.MCPServers[name] = cfg
-	return writeMCPConfigFile(path, file)
-}
-
-func writeMCPConfigFile(path string, file mcp.File) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	names := make([]string, 0, len(file.MCPServers))
-	for name := range file.MCPServers {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	ordered := struct {
-		MCPServers map[string]mcp.ServerConfig `json:"mcpServers"`
-	}{MCPServers: make(map[string]mcp.ServerConfig, len(names))}
-	for _, name := range names {
-		ordered.MCPServers[name] = file.MCPServers[name]
-	}
-	data, err := json.MarshalIndent(ordered, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	tmp, err := os.CreateTemp(dir, ".mcp-*.json")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
-}
-
 func applyConfiguredMailEnv(status *MailSetupStatus, env map[string]string) {
 	for key, value := range env {
 		if strings.HasPrefix(key, "MAIL_IMAP_") && strings.HasSuffix(key, "_USER") {
@@ -295,18 +199,10 @@ func applyConfiguredMailEnv(status *MailSetupStatus, env map[string]string) {
 				status.SMTPPort = atoiDefault(env["MAIL_SMTP_"+segment+"_PORT"], 587)
 				status.SMTPSecure = env["MAIL_SMTP_"+segment+"_SECURE"] != "plain"
 			}
-			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"]) || envFlagBool(env[mailIMAPWriteEnabledEnv])
+			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"]) || envFlagBool(env[mcppolicy.MailIMAPWriteEnabledEnv])
 			return
 		}
 	}
-}
-
-func fileExists(path string) bool {
-	if strings.TrimSpace(path) == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
 }
 
 func normalizeMailAccountID(value string) string {

@@ -14,6 +14,29 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 Database MCP Read-Only Policy And Setup Refactor
+
+Status: implemented.
+
+- Reproduced the database MCP gap with the real ExecuteAutomation server: it advertises 10 tools, including write/schema/insight tools.
+- Extracted the reusable managed MCP setup boundary used by mail and database into `managedMCPServer`, covering default command resolution, config lookup, existing-server preservation, and atomic `mcp.json` upsert.
+- Moved MCP exposure decisions out of Telegram into `internal/mcppolicy`, shared by runtime registration and dashboard provider manifests.
+- Kept mail behavior intact, including the `MAIL_IMAP_WRITE_ENABLED` normalization from the prior slice.
+- Added explicit database policy: Aura exposes only `list_tables`, `describe_table`, `read_query`, and `export_query`; `write_query`, `create_table`, `alter_table`, `drop_table`, `append_insight`, and `list_insights` stay hidden until a reviewed future write-capable slice exists.
+- Rebuilt the container with a live SQLite test database mounted through `/workspace/tmp/mcp-e2e.db`.
+
+Verification:
+
+- `go test ./cmd/debug_telegram_sandbox ./internal/mcppolicy ./internal/api ./internal/telegram -count=1`
+- `go test ./internal/mcp ./internal/config -count=1`
+- `go test ./...`
+- `go build ./...` (passed; Go printed a Windows stat-cache permission warning)
+- `go vet ./...`
+- `docker compose up -d --build aura`
+- live `/status` returned ok
+- container logs show `MCP server registered` for `server=database` with `tools=10` and `aura_tools=4`
+- LLM debug E2E passed with `mcp_database_list_tables`, `mcp_database_describe_table`, and `mcp_database_read_query`, returning rows `Ada/Roma` and `Bruno/Milano`
+
 ### 2026-05-09 Mail MCP Write Flag Repair
 
 Status: implemented.
