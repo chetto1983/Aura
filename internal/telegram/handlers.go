@@ -10,6 +10,10 @@ func (b *Bot) registerHandlers() {
 	b.bot.Handle("/start", b.onStart)
 	b.bot.Handle("/login", b.onLogin)
 	b.bot.Handle("/token", b.onLogin)
+	b.bot.Handle("/help", b.onHelp)
+	b.bot.Handle("/clear", b.onClear)
+	b.bot.Handle("/reset", b.onClear)
+	b.bot.Handle("/tools", b.onTools)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
 	if b.docs != nil {

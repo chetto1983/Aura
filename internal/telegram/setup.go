@@ -659,6 +659,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	b.registerHandlers()
+	b.installBotCommands()
 	return b, nil
 }
 

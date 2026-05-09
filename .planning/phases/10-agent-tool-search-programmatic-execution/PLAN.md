@@ -128,6 +128,17 @@ Modify:
 
 ### Task 1: Telegram Command Menu And Conversation Reset
 
+Status: DONE 2026-05-09
+
+Implementation notes:
+
+- Added `SessionStore.Clear(userID)` to delete only the sender's in-memory conversation context, active marker, and runtime snapshot.
+- Added `/clear` and `/reset` for allowlisted users.
+- Added `/help` with the current compact command list.
+- Added `/tools` to report the actually model-visible tools for the current runtime. It does not pretend `tool_search` exists before the next slice registers it.
+- Added Telegram `setMyCommands` setup during bot construction; failures are logged and non-fatal.
+- Preserved archived history, wiki/source memory, and database rows.
+
 **Files:**
 - Modify: `internal/agentruntime/session.go`
 - Modify: `internal/agentruntime/session_test.go`
@@ -136,7 +147,7 @@ Modify:
 - Modify: `internal/telegram/handlers.go`
 - Modify: `internal/telegram/setup.go` only if bot command setup belongs at construction time
 
-- [ ] **Step 1: Add a failing session clear test**
+- [x] **Step 1: Add a failing session clear test**
 
 Add a test proving `Clear` deletes conversation context, active marker, and runtime snapshot:
 
@@ -175,7 +186,7 @@ go test ./internal/agentruntime -run TestSessionStoreClearDeletesConversationAct
 
 Expected: fail because `Clear` does not exist.
 
-- [ ] **Step 2: Implement `SessionStore.Clear`**
+- [x] **Step 2: Implement `SessionStore.Clear`**
 
 Implementation shape:
 
@@ -196,7 +207,7 @@ func (s *SessionStore) Clear(userID string) {
 
 Run the focused test again. Expected: pass.
 
-- [ ] **Step 3: Add Telegram command handlers**
+- [x] **Step 3: Add Telegram command handlers**
 
 Create command handlers with these semantics:
 
@@ -225,7 +236,7 @@ go test ./internal/telegram -run "TestClear|TestHelp|TestTools" -count=1
 
 Expected before implementation: fail with missing handlers/tests.
 
-- [ ] **Step 4: Register handlers and Telegram command menu**
+- [x] **Step 4: Register handlers and Telegram command menu**
 
 Update `registerHandlers()`:
 
@@ -251,7 +262,7 @@ commands := []tele.Command{
 
 If `SetCommands` cannot be tested against a fake bot cleanly, isolate command construction in a pure function and test that.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -929,4 +940,3 @@ This order gives the user immediate control first, then fixes context bloat, the
 - Whether `tool_search` should return raw provider tools or only canonical Aura capabilities for mail/database. Prefer canonical capabilities for user-facing domains; allow raw tools only for admin/debug profiles.
 - Whether to persist the tool-search index in SQLite only or mirror vectors into Qdrant. Prefer SQLite FTS for MVP and hybrid vector later.
 - Whether archive storage should keep full raw tool results or compacted/redacted results. Current plan keeps archive behavior unchanged and compacts active context only.
-

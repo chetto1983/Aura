@@ -74,6 +74,19 @@ func (s *SessionStore) Load(userID string) (*conversation.Context, bool) {
 	return ctx, ok && ctx != nil
 }
 
+func (s *SessionStore) Clear(userID string) {
+	if s == nil {
+		return
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return
+	}
+	s.context.Delete(userID)
+	s.active.Delete(userID)
+	s.snapshots.Delete(userID)
+}
+
 func (s *SessionStore) IsActive(userID string) bool {
 	if s == nil {
 		return false
