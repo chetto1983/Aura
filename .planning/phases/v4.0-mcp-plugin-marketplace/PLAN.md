@@ -14,6 +14,12 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 Companion Runtime Plan: Tool Search And Programmatic Execution
+
+Status: planned in `.planning/phases/10-agent-tool-search-programmatic-execution/PLAN.md`.
+
+The MCP marketplace remains the active product milestone, but the next runtime slice needs a separate plan because it changes the agent hot path: small default tool exposure, semantic `tool_search`, programmatic `execute_code` orchestration, context hygiene for tool results, and Telegram `/clear` plus command menu support. v4.0 integration rule: MCP/provider tools become searchable only after Aura's existing review-gated registration enables them; `tool_search` is discovery, not permission escalation.
+
 ### 2026-05-09 Database MCP Read-Only Policy And Setup Refactor
 
 Status: implemented.
