@@ -150,6 +150,17 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	}
 
+	compactedToolResults := convCtx.CompactCompletedToolResults(conversation.ToolResultCompactionPolicy{
+		MaxChars:       1200,
+		KeepRecentFull: 2,
+	})
+	if compactedToolResults > 0 {
+		b.logger.Info("conversation tool results compacted",
+			"user_id", userID,
+			"count", compactedToolResults,
+		)
+	}
+
 	// Slice 16d: context enforcement runs after the user has seen the
 	// response so context trimming doesn't add to perceived wait time.
 	go func() {

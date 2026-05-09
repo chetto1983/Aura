@@ -282,6 +282,17 @@ git commit -m "slice runtime: add telegram reset commands"
 
 ### Task 2: Protocol-Safe Tool Result Context Hygiene
 
+Status: DONE 2026-05-09
+
+Implementation notes:
+
+- Added deterministic `Context.CompactCompletedToolResults` with no LLM call and no storage layer.
+- Compaction preserves `tool` role and `ToolCallID`, so assistant/tool-call protocol remains intact.
+- Compaction only touches tool results that have a later assistant message, leaving in-flight tool results alone.
+- The newest two compactable tool results stay full in Telegram turns; older large or secret-like results become bounded previews.
+- Preview redacts secret-like lines containing API keys, tokens, passwords, authorization headers, or bearer text.
+- Telegram runs compaction after archive writes and before async context limit enforcement.
+
 **Files:**
 - Create: `internal/conversation/tool_compaction.go`
 - Create: `internal/conversation/tool_compaction_test.go`
@@ -290,7 +301,7 @@ git commit -m "slice runtime: add telegram reset commands"
 - Modify: `internal/telegram/conversation_tool_exec.go` only if tool-name metadata needs to be passed explicitly
 - Modify: `internal/telegram/archive_test.go` if archive expectations need payload compaction boundaries
 
-- [ ] **Step 1: Add failing tests for completed tool compaction**
+- [x] **Step 1: Add failing tests for completed tool compaction**
 
 Test cases:
 
@@ -335,7 +346,7 @@ go test ./internal/conversation -run TestCompactCompletedToolResults -count=1
 
 Expected: fail because compaction does not exist.
 
-- [ ] **Step 2: Implement deterministic compaction**
+- [x] **Step 2: Implement deterministic compaction**
 
 Implementation contract:
 
@@ -367,7 +378,7 @@ preview:
 - never call the LLM for this compaction;
 - redact `api_key`, `token`, `password`, `authorization`, and bearer-like lines in preview.
 
-- [ ] **Step 3: Call compaction after archive, before async limit enforcement**
+- [x] **Step 3: Call compaction after archive, before async limit enforcement**
 
 In `handleConversation`, after `archiveConversationTurns(...)` and before `convCtx.EnforceLimit(...)`, compact the completed tool results:
 
@@ -383,7 +394,7 @@ if compacted > 0 {
 
 Archive should still receive full current-turn loop messages unless a privacy test proves it must be compacted earlier. If archive bloat is a problem later, add a separate archive-specific redaction layer.
 
-- [ ] **Step 4: Add telemetry and smoke assertions**
+- [x] **Step 4: Add telemetry and smoke assertions**
 
 Extend `turnStats` or logs only if needed:
 
@@ -392,7 +403,7 @@ Extend `turnStats` or logs only if needed:
 
 Keep this optional unless tests need it.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
