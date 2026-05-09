@@ -15,6 +15,7 @@ import (
 )
 
 const mailMCPServerName = "mail"
+const mailIMAPWriteEnabledEnv = "MAIL_IMAP_WRITE_ENABLED"
 
 func handleMCPMailSetupStatus(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +180,7 @@ func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[st
 	}
 	if req.EnableIMAPMutations {
 		env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"] = "true"
+		env[mailIMAPWriteEnabledEnv] = "true"
 	}
 	return mcp.ServerConfig{Command: command, Env: env}, nil
 }
@@ -293,7 +295,7 @@ func applyConfiguredMailEnv(status *MailSetupStatus, env map[string]string) {
 				status.SMTPPort = atoiDefault(env["MAIL_SMTP_"+segment+"_PORT"], 587)
 				status.SMTPSecure = env["MAIL_SMTP_"+segment+"_SECURE"] != "plain"
 			}
-			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"])
+			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"]) || envFlagBool(env[mailIMAPWriteEnabledEnv])
 			return
 		}
 	}

@@ -351,6 +351,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 	mcpClients := make([]mcp.ConnectedClient, 0, len(mcpServers))
 	for name, srv := range mcpServers {
+		srv.Env = normalizeMailMCPRuntimeEnv(name, srv.Env)
 		var client *mcp.Client
 		var err error
 		switch {
@@ -859,12 +860,31 @@ func mcpToolEnabledForAura(serverName string, env map[string]string, toolName st
 		return true
 	}
 	if mailToolIn(toolName, mailAuraIMAPMutationTools) {
-		return mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS")
+		return mailIMAPMutationsEnabled(env)
 	}
 	if mailToolIn(toolName, mailAuraSendTools) {
 		return mailSMTPConfigured(env)
 	}
 	return true
+}
+
+func normalizeMailMCPRuntimeEnv(serverName string, env map[string]string) map[string]string {
+	if serverName != "mail" && serverName != "mail-mcp" {
+		return env
+	}
+	if !mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS") || envFlagEnabled(env["MAIL_IMAP_WRITE_ENABLED"]) {
+		return env
+	}
+	out := make(map[string]string, len(env)+1)
+	for key, value := range env {
+		out[key] = value
+	}
+	out["MAIL_IMAP_WRITE_ENABLED"] = "true"
+	return out
+}
+
+func mailIMAPMutationsEnabled(env map[string]string) bool {
+	return mailEnvFlagEnabled(env, "ENABLE_IMAP_MUTATIONS") || envFlagEnabled(env["MAIL_IMAP_WRITE_ENABLED"])
 }
 
 func mcpToolAutonomousForAura(serverName, toolName string) bool {
@@ -895,13 +915,21 @@ func mailSMTPConfigured(env map[string]string) bool {
 func mailEnvFlagEnabled(env map[string]string, suffix string) bool {
 	for key, value := range env {
 		if strings.HasPrefix(key, "AURA_MAIL_") && strings.HasSuffix(key, "_"+suffix) {
-			switch strings.ToLower(strings.TrimSpace(value)) {
-			case "1", "true", "yes", "on", "enabled":
+			if envFlagEnabled(value) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func envFlagEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 var mailAuraReadTools = []string{

@@ -59,6 +59,7 @@ func TestMCPMailSetupSaveWritesMailMCPConfig(t *testing.T) {
 		"MAIL_IMAP_DEFAULT_PASS=app-secret",
 		"MAIL_SMTP_DEFAULT_HOST=smtp.gmail.com",
 		"AURA_MAIL_DEFAULT_ENABLE_IMAP_MUTATIONS=true",
+		"MAIL_IMAP_WRITE_ENABLED=true",
 	} {
 		key, value, _ := strings.Cut(want, "=")
 		if mail.Env[key] != value {

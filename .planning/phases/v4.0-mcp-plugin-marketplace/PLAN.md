@@ -14,6 +14,26 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 Mail MCP Write Flag Repair
+
+Status: implemented.
+
+- Read conversation logs after Aura told the user that mail delete/write operations were disabled server-side.
+- Confirmed the root cause: Aura exposed the reviewed IMAP mutation tools when `AURA_MAIL_*_ENABLE_IMAP_MUTATIONS=true`, but the real `mail-mcp` process also requires `MAIL_IMAP_WRITE_ENABLED=true`.
+- Updated the mail setup API so new end-user configurations persist both the Aura review flag and the server-required `MAIL_IMAP_WRITE_ENABLED=true` flag.
+- Added startup normalization for legacy runtime configs: when a mail server has Aura IMAP mutations enabled, Aura injects `MAIL_IMAP_WRITE_ENABLED=true` before launching the MCP server.
+- Made tool exposure honor either the Aura review flag or the native `MAIL_IMAP_WRITE_ENABLED` flag, so manual configs stay coherent.
+- Patched the live ignored `runtime-workspace/mcp.json` and rewrote it as UTF-8 without BOM after Docker exposed that PowerShell's default write path made Linux JSON parsing fail.
+
+Verification:
+
+- `go test ./internal/api ./internal/telegram -run "TestMCPMailSetup|TestMCPToolEnabledForAuraMailPolicy" -count=1`
+- `go test ./internal/api ./internal/telegram -count=1`
+- `go test ./internal/mcp ./internal/config -count=1`
+- `docker compose up -d --build aura`
+- live `/status` returned ok
+- container logs show `MCP server registered` for `server=mail` with `tools=30` and `aura_tools=30`
+
 ### 2026-05-09 Hard Orchestrator Deletion
 
 Status: implemented.
