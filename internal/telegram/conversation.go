@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/agentloop"
@@ -257,7 +258,7 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 	}
 	modules := []string{"base", "runtime", "registered-tools"}
 	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: all registered tools\n\nChoose tools autonomously when they help. Tools are already bounded by their implementations and workspace roots. Prefer direct answers when no tool is needed.", version)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: core tools plus tool_search discoveries\n\nChoose tools autonomously when they help. When a needed capability is not visible, call tool_search with a natural-language capability description, then use only tools returned in that search. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")
@@ -278,21 +279,40 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan agentPromptPlan, retrievalCapsulePresent bool) (string, turnStats) {
 	maxIterations := b.maxToolLoopIterations()
+	var toolMu sync.Mutex
+	activeToolNames := append([]string(nil), toolAllowlist...)
+	currentToolNames := func() []string {
+		toolMu.Lock()
+		defer toolMu.Unlock()
+		return append([]string(nil), activeToolNames...)
+	}
+	currentToolDefs := func() []llm.ToolDefinition {
+		names := currentToolNames()
+		return orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(names), names)
+	}
+	addActiveTools := func(names []string) {
+		toolMu.Lock()
+		defer toolMu.Unlock()
+		activeToolNames = appendUniqueStrings(activeToolNames, names...)
+	}
 	baseStats := turnStats{
 		promptVersion:           promptPlan.Version,
 		promptModules:           append([]string(nil), promptPlan.Modules...),
 		promptHash:              promptPlan.Hash,
 		toolset:                 "registered",
-		toolsetSelectReason:     "all registered tools exposed",
+		toolsetSelectReason:     "core tools plus tool_search discoveries",
 		retrievalCapsulePresent: retrievalCapsulePresent,
 	}
-	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
+	toolDefs := currentToolDefs()
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	var currentStats turnStats
 	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
 		Client: telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
 		Executor: agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, currentStats.readSkills)
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.readSkills)
+			if len(execution.discoveredTools) > 0 {
+				addActiveTools(execution.discoveredTools)
+			}
 			return agentloop.ExecutionSummary{
 				LastResult:     execution.lastResult,
 				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
@@ -306,8 +326,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		PromptHash:              promptPlan.Hash,
 		PromptModules:           promptPlan.Modules,
 		Toolset:                 "registered",
-		ToolsetSelectReason:     "all registered tools exposed",
+		ToolsetSelectReason:     "core tools plus tool_search discoveries",
 		Tools:                   toolDefs,
+		ToolsProvider:           currentToolDefs,
 		RetrievalCapsulePresent: retrievalCapsulePresent,
 		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
@@ -356,6 +377,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			switch event.Type {
 			case agentruntime.EventStats:
 				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
+				currentStats.toolsExposed = currentToolNames()
 				b.storeOrchestrationSnapshot(userID, currentStats)
 			}
 		},
@@ -364,6 +386,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		b.logger.Error("agent loop failed", "user_id", userID, "error", err)
 	}
 	stats := mergeAgentLoopStats(baseStats, result.Stats)
+	stats.toolsExposed = currentToolNames()
 	currentStats = stats
 	if result.Stats.LLMCalls > 0 && result.Stats.TerminalTool == "" {
 		b.notifySoftBudget(c, userID)
@@ -430,7 +453,14 @@ func (b *Bot) modelToolNames() []string {
 	if b == nil || b.tools == nil {
 		return nil
 	}
-	return b.tools.Names()
+	core := []string{"search_memory", "schedule_task", "tool_search", "execute_code", "execute_shell"}
+	names := make([]string, 0, len(core))
+	for _, name := range core {
+		if b.tools.Get(name) != nil {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func (b *Bot) maxToolLoopIterations() int {

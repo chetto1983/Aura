@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -132,6 +133,80 @@ func TestRegistryDefinitionsForFiltersAndKeepsAllowlistOrder(t *testing.T) {
 	}
 }
 
+func TestRegistrySearchFindsToolsByCapability(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(definitionFakeTool{})
+	reg.Register(WithCategory(namedDescribedTool{
+		name:        "execute_shell",
+		description: "Execute shell commands in the Aura container with git rg jq sqlite diagnostics.",
+	}, CategoryAutonomous))
+	reg.Register(namedDescribedTool{
+		name:        "mcp_mail_imap_search_messages",
+		description: "Search and read email messages from configured mailboxes.",
+	})
+
+	got := reg.Search("container shell command", 5)
+	if len(got) == 0 {
+		t.Fatal("Search returned no tools")
+	}
+	if got[0].Name != "execute_shell" {
+		t.Fatalf("top result = %q, want execute_shell (all=%+v)", got[0].Name, got)
+	}
+	if len(got[0].Tags) != 1 || got[0].Tags[0] != CategoryAutonomous {
+		t.Fatalf("tags = %+v, want autonomous", got[0].Tags)
+	}
+}
+
+func TestRegistrySearchClampsLimitAndExcludesTools(t *testing.T) {
+	reg := NewRegistry(nil)
+	for _, name := range []string{"tool_search", "mail_one", "mail_two", "mail_three", "mail_four", "mail_five", "mail_six"} {
+		reg.Register(namedDescribedTool{name: name, description: "mail email message search read"})
+	}
+
+	got := reg.Search("mail email", 99, "tool_search")
+	if len(got) != 5 {
+		t.Fatalf("Search length = %d, want clamped 5", len(got))
+	}
+	for _, result := range got {
+		if result.Name == "tool_search" {
+			t.Fatalf("excluded tool_search returned: %+v", got)
+		}
+	}
+}
+
+func TestToolSearchToolReturnsJSONResults(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(namedDescribedTool{
+		name:        "mcp_mail_imap_search_messages",
+		description: "Search and read email messages from configured mailboxes.",
+	})
+	reg.Register(NewToolSearchTool(reg))
+
+	out, err := reg.Execute(context.Background(), "tool_search", map[string]any{
+		"query": "read email messages",
+		"limit": float64(5),
+	})
+	if err != nil {
+		t.Fatalf("tool_search Execute error = %v", err)
+	}
+	var decoded struct {
+		Tools []ToolSearchResult `json:"tools"`
+	}
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("tool_search returned invalid JSON %q: %v", out, err)
+	}
+	if len(decoded.Tools) != 1 || decoded.Tools[0].Name != "mcp_mail_imap_search_messages" {
+		t.Fatalf("tool_search tools = %+v", decoded.Tools)
+	}
+}
+
+func TestToolSearchToolRequiresQuery(t *testing.T) {
+	tool := NewToolSearchTool(NewRegistry(nil))
+	if _, err := tool.Execute(context.Background(), map[string]any{"query": " "}); err == nil {
+		t.Fatal("Execute error = nil, want query validation error")
+	}
+}
+
 func TestRegistryUsesToolDefinitionProvider(t *testing.T) {
 	reg := NewRegistry(nil)
 	reg.Register(definitionFakeTool{})
@@ -182,6 +257,25 @@ func (t namedFakeTool) Parameters() map[string]any {
 	return map[string]any{"type": "object"}
 }
 func (t namedFakeTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	return t.name, nil
+}
+
+type namedDescribedTool struct {
+	name        string
+	description string
+}
+
+func (t namedDescribedTool) Name() string { return t.name }
+func (t namedDescribedTool) Description() string {
+	if t.description == "" {
+		return "Fake tool"
+	}
+	return t.description
+}
+func (t namedDescribedTool) Parameters() map[string]any {
+	return map[string]any{"type": "object"}
+}
+func (t namedDescribedTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	return t.name, nil
 }
 

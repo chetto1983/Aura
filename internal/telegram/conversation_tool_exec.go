@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -27,11 +28,12 @@ import (
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
 type toolExecutionSummary struct {
-	lastResult     string
-	fatalResult    string
-	hiddenRejected bool
-	readSkillNames []string
-	terminalTool   string
+	lastResult      string
+	fatalResult     string
+	hiddenRejected  bool
+	readSkillNames  []string
+	terminalTool    string
+	discoveredTools []string
 }
 
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) toolExecutionSummary {
@@ -124,8 +126,29 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		if summary.terminalTool == "" && r.terminalTool != "" {
 			summary.terminalTool = r.terminalTool
 		}
+		if r.tool == "tool_search" {
+			summary.discoveredTools = appendUniqueStrings(summary.discoveredTools, toolNamesFromToolSearchResult(r.content)...)
+		}
 	}
 	return summary
+}
+
+func toolNamesFromToolSearchResult(content string) []string {
+	var payload struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(payload.Tools))
+	for _, tool := range payload.Tools {
+		if tool.Name != "" {
+			names = append(names, tool.Name)
+		}
+	}
+	return names
 }
 
 func toolArgumentsForTool(name string, args map[string]any, chatID int64) map[string]any {

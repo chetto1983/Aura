@@ -502,30 +502,86 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
-func TestModelToolNamesExposesRegisteredCapabilities(t *testing.T) {
+func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
-	reg.Register(&categorizedCountingTelegramTool{
-		countingTelegramTool: countingTelegramTool{name: "web_search", result: "web"},
-		category:             tools.CategoryAutonomous,
-	})
+	reg.Register(&countingTelegramTool{name: "schedule_task", result: "scheduled"})
+	reg.Register(tools.NewToolSearchTool(reg))
+	reg.Register(&countingTelegramTool{name: "execute_code", result: "code"})
 	reg.Register(&categorizedCountingTelegramTool{
 		countingTelegramTool: countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail"},
 		category:             tools.CategoryAutonomous,
-	})
-	reg.Register(&categorizedCountingTelegramTool{
-		countingTelegramTool: countingTelegramTool{name: "mcp_mail_smtp_send_message", result: "send"},
-		category:             tools.CategoryMCP,
 	})
 
 	b := &Bot{tools: reg}
 	got := b.modelToolNames()
 
-	for _, want := range []string{"search_memory", "web_search", "mcp_mail_imap_search_messages", "mcp_mail_smtp_send_message"} {
+	for _, want := range []string{"search_memory", "schedule_task", "tool_search", "execute_code"} {
 		if !stringSliceContains(got, want) {
 			t.Fatalf("allowlist missing %q: %+v", want, got)
 		}
 	}
+	if stringSliceContains(got, "mcp_mail_imap_search_messages") {
+		t.Fatalf("raw MCP tool exposed before tool_search discovery: %+v", got)
+	}
+}
+
+func TestRunToolCallingLoopAddsToolSearchDiscoveries(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	searchTool := tools.NewToolSearchTool(reg)
+	reg.Register(searchTool)
+	mailTool := &countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail result"}
+	reg.Register(mailTool)
+	fake := &scriptedTelegramLLM{responses: []llm.Response{
+		{
+			ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "tool_search", Arguments: map[string]any{
+				"query": "mail search messages",
+				"limit": float64(3),
+			}}},
+		},
+		{
+			ToolCalls: []llm.ToolCall{{ID: "mail-1", Name: "mcp_mail_imap_search_messages", Arguments: map[string]any{}}},
+		},
+		{Content: "mail done"},
+	}}
+	b := &Bot{
+		cfg:   &config.Config{},
+		llm:   fake,
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+	convCtx.AddUserMessage("cerca email")
+
+	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil,
+		[]string{"tool_search"}, agentPromptPlan{Version: "test", Hash: "hash"}, false)
+
+	if response != "mail done" {
+		t.Fatalf("response = %q, want mail done", response)
+	}
+	if mailTool.calls != 1 {
+		t.Fatalf("mail tool calls = %d, want 1", mailTool.calls)
+	}
+	if len(fake.requests) != 3 {
+		t.Fatalf("LLM requests = %d, want 3", len(fake.requests))
+	}
+	if hasLLMTool(fake.requests[0].Tools, "mcp_mail_imap_search_messages") {
+		t.Fatalf("mail tool exposed before search: %+v", fake.requests[0].Tools)
+	}
+	if !hasLLMTool(fake.requests[1].Tools, "mcp_mail_imap_search_messages") {
+		t.Fatalf("mail tool not exposed after search: %+v", fake.requests[1].Tools)
+	}
+	if !stringSliceContains(stats.toolsExposed, "mcp_mail_imap_search_messages") {
+		t.Fatalf("stats toolsExposed = %+v, missing discovered mail tool", stats.toolsExposed)
+	}
+}
+
+func hasLLMTool(defs []llm.ToolDefinition, name string) bool {
+	for _, def := range defs {
+		if def.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 type categorizedCountingTelegramTool struct {

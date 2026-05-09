@@ -65,6 +65,7 @@ type Options struct {
 	MaxIterations           int
 	MaxElapsed              time.Duration
 	Tools                   []llm.ToolDefinition
+	ToolsProvider           func() []llm.ToolDefinition
 	TerminalToolPolicy      bool
 	AllowNoToolFinalization bool
 	DuplicateToolResult     func(llm.ToolCall) string
@@ -133,9 +134,14 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 
+		tools := opts.Tools
+		if opts.ToolsProvider != nil {
+			tools = opts.ToolsProvider()
+		}
+
 		stats.LLMCalls++
 		stats.LoopSteps++
-		resp, err := client.Chat(ctx, state.Messages(), opts.Tools)
+		resp, err := client.Chat(ctx, state.Messages(), tools)
 		if err != nil {
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}

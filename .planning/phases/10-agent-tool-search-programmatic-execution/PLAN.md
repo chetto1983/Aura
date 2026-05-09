@@ -101,11 +101,8 @@ Context rule:
 
 Create:
 
-- `internal/toolsearch/catalog.go` - converts registered tools into searchable tool documents.
-- `internal/toolsearch/search.go` - search interface plus SQLite FTS implementation for MVP.
-- `internal/toolsearch/search_test.go` - ranking, schema rendering, and no-secret tests.
-- `internal/tools/tool_search.go` - LLM tool wrapper over the search service.
-- `internal/tools/tool_search_test.go` - tool input/output and top-N cap tests.
+- `internal/tools/registry_search.go` - searchable tool docs and lexical ranking directly on `Registry`.
+- `internal/tools/tool_search.go` - LLM tool wrapper over `Registry.Search`.
 - `internal/conversation/tool_compaction.go` - deterministic completed tool result compaction.
 - `internal/conversation/tool_compaction_test.go` - protocol-safe compaction tests.
 - `internal/telegram/commands.go` - `/help`, `/clear`, `/reset`, `/tools`, and command menu setup.
@@ -115,7 +112,7 @@ Create:
 Modify:
 
 - `internal/tools/definition.go` - extend canonical metadata only if needed; prefer deriving from existing name/description/schema/examples first.
-- `internal/tools/registry.go` - expose snapshot docs for tool search without making every tool model-visible.
+- `internal/tools/registry.go` - keep registry ownership of tool metadata; do not create an external search layer.
 - `internal/telegram/setup.go` - build and register `tool_search`; keep `execute_code` and `execute_shell` registration as-is.
 - `internal/telegram/conversation.go` - change `modelToolNames()` to the small hot surface and update prompt module copy.
 - `internal/telegram/conversation_tool_exec.go` - keep execution allowed only for tools exposed in the current turn; add selected-tool expansion only through `tool_search` result state if implemented in this slice.
@@ -423,14 +420,23 @@ git commit -m "slice runtime: compact completed tool results"
 
 ### Task 3: Runtime Tool Catalog And Search MVP
 
-**Files:**
-- Create: `internal/toolsearch/catalog.go`
-- Create: `internal/toolsearch/search.go`
-- Create: `internal/toolsearch/search_test.go`
-- Modify: `internal/tools/registry.go`
-- Modify: `internal/tools/definition.go` only if metadata fields are needed
+Status: DONE 2026-05-09
 
-- [ ] **Step 1: Add failing catalog tests**
+Implementation notes:
+
+- Rewrote the slice to stay inside `internal/tools`; no `internal/toolsearch` package was created.
+- Added `Registry.Search(query, limit, excluded...)` in `internal/tools/registry_search.go`.
+- Search derives text from the existing canonical tool definition: name, description, categories, schema, and examples.
+- Ranking is deterministic lexical scoring, capped to 5, with name tie-breaks.
+- Added `tool_search` as a normal tool wrapper around the existing registry.
+
+**Files:**
+- Create: `internal/tools/registry_search.go`
+- Create: `internal/tools/tool_search.go`
+- Modify: `internal/tools/registry_test.go`
+- Modify: `internal/tools/args.go`
+
+- [x] **Step 1: Add failing catalog tests**
 
 Test required behavior:
 
@@ -452,41 +458,15 @@ type Document struct {
 }
 ```
 
-Run:
+Run: `go test ./internal/tools -run "TestRegistrySearch|TestToolSearch" -count=1`
 
-```powershell
-go test ./internal/toolsearch -run TestCatalog -count=1
-```
+- [x] **Step 2: Implement catalog builder from `tools.Registry`**
 
-Expected: fail because package does not exist.
+Implemented directly as `Registry.Search`; no separate catalog service or package.
 
-- [ ] **Step 2: Implement catalog builder from `tools.Registry`**
+- [x] **Step 3: Implement SQLite FTS lexical search as the MVP**
 
-Add:
-
-```go
-func BuildCatalog(registry *tools.Registry) []Document
-```
-
-Registry support can be a snapshot method:
-
-```go
-func (r *Registry) ToolDefinitions() []tools.ToolDefinition
-```
-
-Do not expose raw `tools.Tool` instances outside the registry unless necessary.
-
-- [ ] **Step 3: Implement SQLite FTS lexical search as the MVP**
-
-Use in-memory or file-backed SQLite FTS for first pass. This makes the slice deterministic and does not require live embedding credentials.
-
-Interface:
-
-```go
-type Searcher interface {
-	Search(ctx context.Context, query string, limit int) ([]Result, error)
-}
-```
+Decision: do not add SQLite FTS yet. The MVP is deterministic in-process lexical search inside the registry to avoid a new layer.
 
 Result:
 
@@ -508,7 +488,7 @@ Tests:
 - query `email message read` returns mail/MCP read tools when registered;
 - limit clamps to 5 by default.
 
-- [ ] **Step 4: Defer embeddings behind a clean interface**
+- [x] **Step 4: Defer embeddings behind a clean interface**
 
 Add config comments/tests for future vector search, but do not require live embeddings in this MVP:
 
@@ -518,12 +498,12 @@ Add config comments/tests for future vector search, but do not require live embe
 
 Only update `.env.example` when the config is actually wired.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
 ```powershell
-go test ./internal/toolsearch ./internal/tools -count=1
+go test ./internal/tools ./internal/agentloop ./internal/agentruntime ./internal/telegram -count=1
 go test ./...
 go build ./...
 go vet ./...
@@ -532,21 +512,34 @@ go vet ./...
 Commit:
 
 ```powershell
-git add internal/toolsearch/catalog.go internal/toolsearch/search.go internal/toolsearch/search_test.go internal/tools/registry.go internal/tools/definition.go docs/implementation-tracker.md
+git add internal/tools/registry_search.go internal/tools/tool_search.go internal/tools/registry_test.go internal/tools/args.go docs/implementation-tracker.md
 git commit -m "slice runtime: add searchable tool catalog"
 ```
 
 ### Task 4: `tool_search` LLM Tool And Small Hot Surface
 
+Status: DONE 2026-05-09
+
+Implementation notes:
+
+- Registered `tool_search` after all runtime tools are registered, so it can see enabled MCP/native tools while excluding itself from search results.
+- Changed Telegram's initial model-visible surface to registered core tools only: `search_memory`, `schedule_task`, `tool_search`, `execute_code`, and `execute_shell`.
+- Added dynamic tool definitions to the existing agent loop via `ToolsProvider`, so tools returned by `tool_search` can become visible on the next LLM pass in the same turn.
+- `executeToolCalls` parses `tool_search` JSON results and adds returned tool names to the active turn allowlist.
+- Updated the runtime prompt to tell the model to use `tool_search` for hidden capabilities and prefer code/shell orchestration for multi-step work.
+
 **Files:**
 - Create: `internal/tools/tool_search.go`
-- Create: `internal/tools/tool_search_test.go`
+- Modify: `internal/tools/registry_test.go`
 - Modify: `internal/telegram/setup.go`
 - Modify: `internal/telegram/conversation.go`
+- Modify: `internal/telegram/conversation_tool_exec.go`
+- Modify: `internal/agentloop/loop.go`
+- Modify: `internal/agentruntime/runner.go`
 - Modify: `internal/telegram/debug_smoke_test.go`
 - Modify: `internal/conversation/system_prompt.go` or `composeAgentPrompt` in `internal/telegram/conversation.go`
 
-- [ ] **Step 1: Add failing `tool_search` tool tests**
+- [x] **Step 1: Add failing `tool_search` tool tests**
 
 Expected inputs:
 
@@ -579,7 +572,7 @@ Test caps:
 - no raw secrets;
 - result names are deterministic for equal scores.
 
-- [ ] **Step 2: Implement `tools.NewToolSearchTool(searcher)`**
+- [x] **Step 2: Implement `tools.NewToolSearchTool(searcher)`**
 
 Tool definition should be explicit:
 
@@ -593,7 +586,7 @@ Description should tell the model to search for capabilities, not exact tool nam
 Find Aura tools by natural-language capability. Use this before asking for any tool that is not currently visible. Returns compact tool docs; it does not execute tools.
 ```
 
-- [ ] **Step 3: Register `tool_search`**
+- [x] **Step 3: Register `tool_search`**
 
 In setup:
 
@@ -601,7 +594,7 @@ In setup:
 - exclude `tool_search` from its own results;
 - include all registered tools, including MCP tools, but keep review-gated policy intact by indexing only tools that are actually registered/enabled.
 
-- [ ] **Step 4: Change `modelToolNames()` to the small surface**
+- [x] **Step 4: Change `modelToolNames()` to the small surface**
 
 Replace `return b.tools.Names()` with a deterministic core list:
 
@@ -619,7 +612,7 @@ Tests should assert:
 - raw MCP tools do not appear by default;
 - `tool_search` can still find registered MCP tools.
 
-- [ ] **Step 5: Update system prompt**
+- [x] **Step 5: Update system prompt**
 
 Add concise rules:
 
@@ -631,7 +624,7 @@ Use direct answers when no tool is needed.
 
 Avoid long few-shot blocks in the base prompt. Put detailed examples in `tool_search` and `execute_code` tool descriptions.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -753,9 +746,9 @@ git commit -m "slice runtime: add programmatic tool orchestration"
 ### Task 6: Embedding/Hybrid Tool Search Backend
 
 **Files:**
-- Modify: `internal/toolsearch/search.go`
-- Create: `internal/toolsearch/vector.go`
-- Create: `internal/toolsearch/vector_test.go`
+- Modify: `internal/tools/registry_search.go`
+- Create: `internal/tools/registry_search_vector.go`
+- Create: `internal/tools/registry_search_vector_test.go`
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 - Modify: `.env.example`
@@ -819,7 +812,7 @@ Prefer adding this to existing `/status` and API health rollups only after the s
 Run:
 
 ```powershell
-go test ./internal/toolsearch ./internal/config ./internal/api ./internal/telegram -count=1
+go test ./internal/tools ./internal/config ./internal/api ./internal/telegram -count=1
 go test ./...
 go build ./...
 go vet ./...
@@ -829,7 +822,7 @@ docker compose config --quiet
 Commit:
 
 ```powershell
-git add internal/toolsearch/search.go internal/toolsearch/vector.go internal/toolsearch/vector_test.go internal/config/config.go internal/config/config_test.go .env.example docs/implementation-tracker.md
+git add internal/tools/registry_search.go internal/tools/registry_search_vector.go internal/tools/registry_search_vector_test.go internal/config/config.go internal/config/config_test.go .env.example docs/implementation-tracker.md
 git commit -m "slice runtime: add hybrid tool search backend"
 ```
 
@@ -896,7 +889,7 @@ In the v4.0 plan, record:
 Run:
 
 ```powershell
-go test ./cmd/debug_telegram_sandbox ./internal/telegram ./internal/toolsearch ./internal/tools -count=1
+go test ./cmd/debug_telegram_sandbox ./internal/telegram ./internal/tools -count=1
 go test ./...
 go build ./...
 go vet ./...

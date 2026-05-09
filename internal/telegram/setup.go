@@ -657,6 +657,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
 		toolRegistry.Register(pdfTool)
 	}
+	if tool := tools.NewToolSearchTool(toolRegistry); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	b.registerHandlers()
 	b.installBotCommands()

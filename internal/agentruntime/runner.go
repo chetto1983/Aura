@@ -38,6 +38,7 @@ type Invocation struct {
 	Toolset                 string
 	ToolsetSelectReason     string
 	Tools                   []llm.ToolDefinition
+	ToolsProvider           func() []llm.ToolDefinition
 	RetrievalCapsulePresent bool
 	Options                 agentloop.Options
 	OnEvent                 func(Event)
@@ -59,7 +60,12 @@ type Result struct {
 func Run(ctx context.Context, in Invocation) (Result, error) {
 	opts := in.Options
 	opts.Tools = in.Tools
-	toolsExposed := toolDefinitionNames(in.Tools)
+	opts.ToolsProvider = in.ToolsProvider
+	tools := in.Tools
+	if in.ToolsProvider != nil {
+		tools = in.ToolsProvider()
+	}
+	toolsExposed := toolDefinitionNames(tools)
 	previousOnStats := opts.OnStats
 	opts.OnStats = func(stats agentloop.Stats) {
 		if previousOnStats != nil {
