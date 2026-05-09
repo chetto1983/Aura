@@ -79,7 +79,9 @@
       "Bash(docker compose config *)",
       "Bash(docker compose up *)",
       "Bash(docker compose ps *)",
-      "Bash(docker compose logs *)"
+      "Bash(docker compose logs *)",
+      "Bash(Select-Object FullName, Length, LastWriteTime)",
+      "Bash(Format-Table -AutoSize)"
     ]
   }
 }

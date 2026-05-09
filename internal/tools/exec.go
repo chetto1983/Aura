@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/source"
@@ -99,7 +100,7 @@ func (t *ExecuteCodeTool) Description() string {
 		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under /tmp/aura_out; Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. The internal tool-call manifest is control data and is not persisted as a user artifact. " +
 		"Set allow_network=true only when HTTP access is explicitly needed; process runtimes may already share the container network. " +
-		"Timeout is configurable up to the server limit (default 120s)."
+		"Use timeout to override the per-call limit (1-300s, default server 120s)."
 }
 
 func (t *ExecuteCodeTool) Parameters() map[string]any {
@@ -113,6 +114,12 @@ func (t *ExecuteCodeTool) Parameters() map[string]any {
 			"allow_network": map[string]any{
 				"type":        "boolean",
 				"description": "Allow network access from the sandbox. Default false.",
+			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Per-call timeout in seconds (1-300). Defaults to the server timeout (120s). Lower for quick checks, higher for long computations.",
+				"minimum":     1,
+				"maximum":     300,
 			},
 			"tools_allowed": map[string]any{
 				"type":        "array",
@@ -136,6 +143,13 @@ func (t *ExecuteCodeTool) Execute(ctx context.Context, args map[string]any) (str
 	code, ok := args["code"].(string)
 	if !ok || code == "" {
 		return "", fmt.Errorf("code is required and must be a string")
+	}
+
+	timeoutSec := intArg(args, "timeout", 0, 0, 300)
+	if timeoutSec > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+		defer cancel()
 	}
 
 	allowNetwork := false
@@ -310,7 +324,8 @@ func (t *ExecuteShellTool) Description() string {
 	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura. " +
 		"Use this for repository inspection, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, and runtime smoke checks when file tools or execute_code are not enough. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
-		"Set allow_network=true only when the command intentionally needs network access."
+		"Set allow_network=true only when the command intentionally needs network access. " +
+		"Use timeout to override the per-call limit (1-300s, default server 120s)."
 }
 
 func (t *ExecuteShellTool) Parameters() map[string]any {
@@ -325,6 +340,12 @@ func (t *ExecuteShellTool) Parameters() map[string]any {
 				"type":        "boolean",
 				"description": "Allow network access from the command. Default false.",
 			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Per-call timeout in seconds (1-300). Defaults to the server timeout (120s).",
+				"minimum":     1,
+				"maximum":     300,
+			},
 		},
 		"required": []string{"command"},
 	}
@@ -334,6 +355,13 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 	command, ok := args["command"].(string)
 	if !ok || strings.TrimSpace(command) == "" {
 		return "", fmt.Errorf("command is required and must be a string")
+	}
+
+	timeoutSec := intArg(args, "timeout", 0, 0, 300)
+	if timeoutSec > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+		defer cancel()
 	}
 
 	allowNetwork := false
