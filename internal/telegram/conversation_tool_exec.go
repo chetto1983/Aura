@@ -76,7 +76,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				summaryMu.Unlock()
 				return
 			}
-			toolCtx := tools.WithUserID(ctx, userID)
+			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), toolsExposed)
 			args := toolArgumentsForTool(tc.Name, tc.Arguments, chatIDFromTeleContext(c))
 			result, err := b.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {

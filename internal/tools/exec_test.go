@@ -251,6 +251,140 @@ func TestExecuteCodeTool_PersistedScriptArtifactIsReadableSource(t *testing.T) {
 	}
 }
 
+func TestExecuteCodeTool_ExecutesInternalToolManifestWhenAllowed(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{
+		OK:        true,
+		Stdout:    "script done\n",
+		ExitCode:  0,
+		ElapsedMs: 3,
+		Artifacts: []sandbox.Artifact{{
+			Name:      "aura_tool_calls.json",
+			MimeType:  "application/json",
+			Bytes:     []byte(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`),
+			SizeBytes: int64(len(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`)),
+		}},
+	}}
+	registry := tools.NewRegistry(nil)
+	registry.Register(fakeInternalTool{})
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, nil, nil, registry)
+	if tool == nil {
+		t.Fatal("tool = nil")
+	}
+
+	ctx := tools.WithAllowedToolNames(context.Background(), []string{"execute_code", "fake_internal"})
+	out, err := tool.Execute(ctx, map[string]any{
+		"code":          "emit manifest",
+		"tools_allowed": []any{"fake_internal"},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !containsAll(out, "script done", "internal_tool_results:", `"tool": "fake_internal"`, `"ok": true`, "internal ok: x") {
+		t.Fatalf("output = %q", out)
+	}
+	if strings.Contains(out, "artifacts:") || strings.Contains(out, "aura_tool_calls.json") {
+		t.Fatalf("manifest leaked as user artifact:\n%s", out)
+	}
+}
+
+func TestExecuteCodeTool_RejectsInternalToolNotAvailableInActiveTurn(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{
+		OK:        true,
+		ExitCode:  0,
+		ElapsedMs: 3,
+		Artifacts: []sandbox.Artifact{{
+			Name:  "aura_tool_calls.json",
+			Bytes: []byte(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`),
+		}},
+	}}
+	registry := tools.NewRegistry(nil)
+	registry.Register(fakeInternalTool{})
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, nil, nil, registry)
+
+	ctx := tools.WithAllowedToolNames(context.Background(), []string{"execute_code"})
+	_, err := tool.Execute(ctx, map[string]any{
+		"code":          "emit manifest",
+		"tools_allowed": []any{"fake_internal"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not available in the active turn") {
+		t.Fatalf("error = %v, want active-turn rejection", err)
+	}
+}
+
+func TestExecuteCodeTool_RejectsInternalToolNotInToolsAllowed(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{
+		OK:        true,
+		ExitCode:  0,
+		ElapsedMs: 3,
+		Artifacts: []sandbox.Artifact{{
+			Name:  "aura_tool_calls.json",
+			Bytes: []byte(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`),
+		}},
+	}}
+	registry := tools.NewRegistry(nil)
+	registry.Register(fakeInternalTool{})
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, nil, nil, registry)
+
+	ctx := tools.WithAllowedToolNames(context.Background(), []string{"execute_code", "fake_internal", "other_tool"})
+	_, err := tool.Execute(ctx, map[string]any{
+		"code":          "emit manifest",
+		"tools_allowed": []any{"other_tool"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "was not listed in tools_allowed") {
+		t.Fatalf("error = %v, want tools_allowed rejection", err)
+	}
+}
+
+func TestExecuteCodeTool_ManifestArtifactIsNotPersistedOrDelivered(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{
+		OK:        true,
+		Stdout:    "script done\n",
+		ExitCode:  0,
+		ElapsedMs: 4,
+		Artifacts: []sandbox.Artifact{{
+			Name:      "aura_tool_calls.json",
+			MimeType:  "application/json",
+			Bytes:     []byte(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`),
+			SizeBytes: int64(len(`{"calls":[{"tool":"fake_internal","args":{"value":"x"}}]}`)),
+		}, {
+			Name:      "plot.png",
+			MimeType:  "image/png",
+			Bytes:     []byte("png-bytes"),
+			SizeBytes: 9,
+		}},
+	}}
+	store, err := source.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &execArtifactSender{}
+	registry := tools.NewRegistry(nil)
+	registry.Register(fakeInternalTool{})
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, sender, store, registry)
+
+	ctx := tools.WithAllowedToolNames(tools.WithUserID(context.Background(), "12345"), []string{"execute_code", "fake_internal"})
+	out, err := tool.Execute(ctx, map[string]any{
+		"code":          "emit manifest and plot",
+		"tools_allowed": []any{"fake_internal"},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(sender.sent) != 1 || sender.sent[0].filename != "plot.png" {
+		t.Fatalf("sent = %+v, want only plot.png", sender.sent)
+	}
+	if strings.Contains(out, "aura_tool_calls.json") || !strings.Contains(out, "plot.png") {
+		t.Fatalf("output = %q", out)
+	}
+	rows, err := store.List(source.ListFilter{Kind: source.KindSandboxArtifact})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Filename != "plot.png" {
+		t.Fatalf("stored rows = %+v, want only plot.png", rows)
+	}
+}
+
 type fakeExecRuntime struct {
 	result *sandbox.Result
 	err    error
@@ -294,4 +428,17 @@ func containsAll(s string, parts ...string) bool {
 		}
 	}
 	return true
+}
+
+type fakeInternalTool struct{}
+
+func (fakeInternalTool) Name() string { return "fake_internal" }
+
+func (fakeInternalTool) Description() string { return "fake internal tool" }
+
+func (fakeInternalTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+
+func (fakeInternalTool) Execute(_ context.Context, args map[string]any) (string, error) {
+	value, _ := args["value"].(string)
+	return "internal ok: " + value, nil
 }

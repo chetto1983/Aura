@@ -644,17 +644,27 @@ git commit -m "slice runtime: expose semantic tool search"
 
 ### Task 5: Programmatic Tool Calling Through `execute_code`
 
+Status: DONE 2026-05-09
+
+Implementation notes:
+
+- Implemented the first SDK shape as the safe manifest MVP, without adding a new package/layer and without changing the sandbox runner.
+- `execute_code` now accepts `tools_allowed` and `max_calls`.
+- A script can write `/tmp/aura_out/aura_tool_calls.json` with `{"calls":[{"tool":"name","args":{...}}]}`.
+- Aura removes that manifest from normal artifacts, validates requested tools against both `tools_allowed` and the current active model-visible turn allowlist, and then executes calls server-side through `internal/tools.Registry`.
+- Internal orchestration blocks recursive/control tools: `execute_code`, `execute_shell`, and `tool_search`.
+- Telegram now threads the active turn tool surface into tool execution context, so guessed hidden tool names are rejected even inside `execute_code`.
+- Regular script artifacts still persist/deliver normally; the control manifest is not persisted or sent to Telegram.
+- No `internal/sandbox/tool_sdk.go` was added in this slice because the existing `/tmp/aura_out` artifact collection already provides the manifest boundary. A richer SDK wrapper can be a later ergonomics layer over this contract.
+
 **Files:**
 - Modify: `internal/tools/exec.go`
 - Modify: `internal/tools/exec_test.go`
-- Modify: `internal/sandbox/process_runner.go`
-- Modify: `internal/sandbox/process_runner_test.go`
-- Create: `internal/sandbox/tool_sdk.go` if the SDK is injected by the runner
-- Create: `internal/sandbox/tool_sdk_test.go`
+- Modify: `internal/tools/context.go`
 - Modify: `internal/telegram/conversation_tool_exec.go`
-- Modify: `scripts/test-agent-tool-search-smoke.ps1`
+- Modify: `internal/telegram/setup.go`
 
-- [ ] **Step 1: Decide the first SDK shape**
+- [x] **Step 1: Decide the first SDK shape**
 
 Prefer the simplest safe MVP:
 
@@ -665,9 +675,9 @@ Prefer the simplest safe MVP:
 - Aura reads the request file and executes only `tools_allowed`;
 - Aura returns stdout plus structured tool results.
 
-If that is too invasive for one slice, defer SDK execution and use generated shell/Python only for container-native OS work. Do not fake an SDK in prompt copy without executable support.
+Decision: use the manifest MVP now. It is executable, bounded, and keeps the implementation in existing modules.
 
-- [ ] **Step 2: Add failing tests for `tools_allowed` validation**
+- [x] **Step 2: Add failing tests for `tools_allowed` validation**
 
 Test behavior:
 
@@ -676,7 +686,7 @@ Test behavior:
 - max internal calls and timeout are enforced;
 - tool arguments are redacted in logs.
 
-- [ ] **Step 3: Implement bounded internal tool invocation**
+- [x] **Step 3: Implement bounded internal tool invocation**
 
 Contract:
 
@@ -690,15 +700,15 @@ Contract:
 }
 ```
 
-The runner must:
+The implementation:
 
-- create an invocation manifest under a temp dir;
-- provide an SDK file inside that temp dir;
-- require the script to emit final JSON through stdout or `/tmp/aura_out/result.json`;
+- reads the invocation manifest from `/tmp/aura_out/aura_tool_calls.json`;
+- filters the manifest out of normal artifacts;
+- allows the script to emit final structured JSON through stdout while Aura appends internal tool results;
 - execute internal tool calls server-side, not by exposing HTTP secrets to the script;
 - enforce `tools_allowed`, `max_calls`, and timeout.
 
-- [ ] **Step 4: Add prompt/tool description guidance**
+- [x] **Step 4: Add prompt/tool description guidance**
 
 Update `execute_code` description:
 
@@ -724,7 +734,9 @@ Expected:
 - tool calls <= 2 model-visible calls;
 - logs show internal tool calls separately if SDK is used.
 
-- [ ] **Step 6: Verify and commit**
+Deferred to Task 7 regression smokes so this slice stays focused on the runtime contract and unit/integration checks.
+
+- [x] **Step 6: Verify and commit**
 
 Run:
 

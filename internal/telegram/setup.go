@@ -425,7 +425,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Sandbox tools
-	if tool := tools.NewExecuteCodeToolWithStore(sandboxMgr, b, sourceStore); tool != nil {
+	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(sandboxMgr, b, sourceStore, toolRegistry); tool != nil {
 		toolRegistry.Register(tool)
 	}
 	if tool := tools.NewExecuteShellTool(sandboxMgr); tool != nil {
