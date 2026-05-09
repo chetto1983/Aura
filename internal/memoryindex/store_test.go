@@ -117,6 +117,42 @@ func TestStoreReplaceKindDeletesStaleRows(t *testing.T) {
 	}
 }
 
+func TestStoreRebuildFTSRestoresRowsFromCanonicalDocuments(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	if err := store.Upsert(ctx, Document{
+		ID:        "source:needle",
+		Kind:      KindSource,
+		Title:     "needle",
+		Body:      "needle compact memory evidence",
+		Handle:    "source:needle",
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `DROP TABLE compact_memory_fts`); err != nil {
+		t.Fatalf("drop fts: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, compactMemoryFTSCreateSQL); err != nil {
+		t.Fatalf("create empty fts: %v", err)
+	}
+	if hits, err := store.Search(ctx, "compact", Filter{Limit: 5}); err != nil {
+		t.Fatalf("Search empty fts: %v", err)
+	} else if len(hits) != 0 {
+		t.Fatalf("hits before rebuild = %#v, want none", hits)
+	}
+	if err := store.RebuildFTS(ctx); err != nil {
+		t.Fatalf("RebuildFTS: %v", err)
+	}
+	hits, err := store.Search(ctx, "compact", Filter{Limit: 5})
+	if err != nil {
+		t.Fatalf("Search rebuilt fts: %v", err)
+	}
+	if len(hits) != 1 || hits[0].ID != "source:needle" {
+		t.Fatalf("hits after rebuild = %#v", hits)
+	}
+}
+
 func TestStoreMergesVectorResultsAndFallsBackWhenVectorFails(t *testing.T) {
 	ctx := context.Background()
 	vector := &fakeVectorIndex{searchDocs: []Document{{

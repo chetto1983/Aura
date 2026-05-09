@@ -243,10 +243,8 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	if err := migrations.Run(context.Background(), pool); err != nil {
 		return nil, activeLogger, fmt.Errorf("migrate database %s: %w", openedDBPath, err)
 	}
-	if status, err := auradb.CheckIntegrity(context.Background(), pool); err != nil {
-		return nil, activeLogger, fmt.Errorf("check database integrity %s: %w", openedDBPath, err)
-	} else if status != "ok" {
-		return nil, activeLogger, fmt.Errorf("database integrity check failed for %s: %s", openedDBPath, status)
+	if err := ensureDatabaseIntegrity(context.Background(), pool, activeLogger); err != nil {
+		return nil, activeLogger, fmt.Errorf("database integrity check failed for %s: %w", openedDBPath, err)
 	}
 	if journalMode, err := auradb.JournalMode(context.Background(), pool); err != nil {
 		return nil, activeLogger, fmt.Errorf("check database journal mode %s: %w", openedDBPath, err)
@@ -397,6 +395,47 @@ func reconcileBestDefaults(ctx context.Context, store settings.Repository, cfg *
 	}
 	sort.Strings(keys)
 	logger.Info("settings best-defaults reconciled", "count", len(keys), "keys", strings.Join(keys, ","))
+}
+
+func ensureDatabaseIntegrity(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
+	status, err := auradb.CheckIntegrity(ctx, db)
+	if err == nil && status == "ok" {
+		return nil
+	}
+	detail := status
+	if err != nil {
+		detail = err.Error()
+	}
+	if !strings.Contains(detail, "compact_memory_fts") {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("%s", status)
+	}
+	store, storeErr := memoryindex.NewStore(db)
+	if storeErr != nil {
+		if err != nil {
+			return errors.Join(err, storeErr)
+		}
+		return errors.Join(fmt.Errorf("%s", status), storeErr)
+	}
+	if repairErr := store.RebuildFTS(ctx); repairErr != nil {
+		if err != nil {
+			return errors.Join(err, repairErr)
+		}
+		return errors.Join(fmt.Errorf("%s", status), repairErr)
+	}
+	if logger != nil {
+		logger.Warn("repaired derived compact memory FTS after sqlite integrity error", "detail", detail)
+	}
+	status, err = auradb.CheckIntegrity(ctx, db)
+	if err != nil {
+		return err
+	}
+	if status != "ok" {
+		return fmt.Errorf("%s", status)
+	}
+	return nil
 }
 
 // configHealthProvider reports the health of the config subsystem.

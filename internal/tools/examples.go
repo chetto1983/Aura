@@ -95,9 +95,6 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 	case "list_swarm_tasks":
 		return []ToolCallExample{{Arguments: map[string]any{"run_id": "swarm_123"}}}
 	default:
-		if strings.HasPrefix(name, "mcp_") {
-			return []ToolCallExample{{Arguments: exampleArgsFromSchema(nil)}}
-		}
 		return []ToolCallExample{{Arguments: exampleArgsFromSchema(params)}}
 	}
 }

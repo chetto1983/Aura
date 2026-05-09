@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/orchestration"
 	auraskills "github.com/aura/aura/internal/skills"
+	auratools "github.com/aura/aura/internal/tools"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -76,6 +77,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		runtimeToolset = runtimeToolsetForTurn(toolset, retrievalCapsule)
 		toolAllowlist, _ = runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
 	}
+	toolAllowlist = b.appendRegisteredMCPTools(toolAllowlist)
 	hooks.BeforePromptCompose(orchestration.TraceEvent{
 		Toolset:             string(toolsetDecision.Toolset),
 		ToolsetSelectReason: toolsetDecision.Reason,
@@ -479,6 +481,16 @@ func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) 
 	stats.TokensTotal = telegramStats.tokensTotal
 	stats.CostUSD = telegramStats.costUSD
 	return stats
+}
+
+func (b *Bot) appendRegisteredMCPTools(allowlist []string) []string {
+	if b == nil || b.tools == nil {
+		return allowlist
+	}
+	for _, name := range b.tools.NamesByCategory(auratools.CategoryMCP) {
+		allowlist = appendUniqueStrings(allowlist, name)
+	}
+	return allowlist
 }
 
 func (b *Bot) maxToolLoopIterations(toolset orchestration.Toolset) int {

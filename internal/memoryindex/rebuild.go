@@ -44,6 +44,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		return RebuildReport{}, fmt.Errorf("memoryindex: store required")
 	}
 	var report RebuildReport
+	replaced := false
 	if in.Sources != nil {
 		docs, err := sourceDocuments(in.Sources)
 		if err != nil {
@@ -52,6 +53,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		if err := store.ReplaceKind(ctx, KindSource, docs); err != nil {
 			return report, err
 		}
+		replaced = true
 		report.SourcesIndexed = len(docs)
 	}
 	if in.Archive != nil {
@@ -68,6 +70,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		if err := store.ReplaceKind(ctx, KindArchive, docs); err != nil {
 			return report, err
 		}
+		replaced = true
 		report.ArchiveIndexed = len(docs)
 	}
 	if in.Proposals != nil {
@@ -84,7 +87,13 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		if err := store.ReplaceKind(ctx, KindProposal, docs); err != nil {
 			return report, err
 		}
+		replaced = true
 		report.ProposalsIndexed = len(docs)
+	}
+	if replaced {
+		if err := store.RebuildFTS(ctx); err != nil {
+			return report, err
+		}
 	}
 	if !in.SkipVector {
 		vectorReport, err := store.SyncVector(ctx)

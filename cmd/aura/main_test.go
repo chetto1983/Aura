@@ -17,7 +17,7 @@ func TestMainRunsMigrationsBeforeStoreConstruction(t *testing.T) {
 	source := string(data)
 	openIdx := strings.Index(source, "auradb.Open(openedDBPath)")
 	migrateIdx := strings.Index(source, "migrations.Run(context.Background(), pool)")
-	integrityIdx := strings.Index(source, "auradb.CheckIntegrity(context.Background(), pool)")
+	integrityIdx := strings.Index(source, "ensureDatabaseIntegrity(context.Background(), pool, activeLogger)")
 	settingsIdx := strings.Index(source, "settings.NewStoreWithDB(pool)")
 	telegramIdx := strings.Index(source, "telegram.New(cfg, settingsStore, pool, logger")
 

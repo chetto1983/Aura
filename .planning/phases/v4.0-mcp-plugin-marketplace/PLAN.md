@@ -14,6 +14,28 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 MCP Tool Exposure Repair
+
+Status: implemented.
+
+- Read the conversation logs after the user reported that Aura did not know MCP was available.
+- Confirmed the real root cause: the mail MCP server was registered at startup, but the Telegram turn allowlist still exposed only the tiny default toolset.
+- Repaired exposure registry-first: MCP tools now declare the `mcp` category, and Telegram appends enabled registered MCP tools by category before sending tool definitions to the model.
+- Avoided regex/user-text routing. No phrase matching for "mail", "MCP", or status prompts was added.
+- Preserved the end-user enablement boundary: only tools registered by the configured MCP setup can be exposed.
+- Docker verification exposed a separate derived-index health issue: `compact_memory_fts` could leave `/status` degraded even though compact memory had just rebuilt.
+- Added compact-memory FTS repair from canonical `compact_memory_documents`, and startup repair/recheck only for that derived FTS table.
+
+Verification:
+
+- `go test ./internal/tools ./internal/telegram -count=1`
+- `go test ./internal/orchestration -count=1`
+- `go test ./internal/memoryindex ./cmd/aura -count=1`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `docker compose up -d --build aura`
+
 ### 2026-05-08 Real MCP Mail Server Wiring
 
 Status: implemented.

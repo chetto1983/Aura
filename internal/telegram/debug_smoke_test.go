@@ -619,6 +619,35 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
+func TestAppendRegisteredMCPToolsExposesConfiguredConnectors(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
+	reg.Register(&categorizedCountingTelegramTool{
+		countingTelegramTool: countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail"},
+		category:             tools.CategoryMCP,
+	})
+	reg.Register(&categorizedCountingTelegramTool{
+		countingTelegramTool: countingTelegramTool{name: "mcp_mail_smtp_send_message", result: "send"},
+		category:             tools.CategoryMCP,
+	})
+
+	b := &Bot{tools: reg}
+	got := b.appendRegisteredMCPTools([]string{"search_memory"})
+
+	for _, want := range []string{"search_memory", "mcp_mail_imap_search_messages", "mcp_mail_smtp_send_message"} {
+		if !stringSliceContains(got, want) {
+			t.Fatalf("allowlist missing %q: %+v", want, got)
+		}
+	}
+}
+
+type categorizedCountingTelegramTool struct {
+	countingTelegramTool
+	category string
+}
+
+func (t *categorizedCountingTelegramTool) Category() string { return t.category }
+
 type countingTelegramTool struct {
 	name     string
 	result   string

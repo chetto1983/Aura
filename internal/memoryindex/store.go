@@ -20,6 +20,11 @@ const (
 
 const defaultSearchLimit = 8
 
+const compactMemoryFTSCreateSQL = `
+CREATE VIRTUAL TABLE compact_memory_fts
+USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities, tags);
+`
+
 type Document struct {
 	ID             string
 	Kind           string
@@ -226,6 +231,36 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("memoryindex: commit replace: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RebuildFTS(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("memoryindex: store unavailable")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("memoryindex: begin fts rebuild: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS compact_memory_fts`); err != nil {
+		return fmt.Errorf("memoryindex: drop compact fts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, compactMemoryFTSCreateSQL); err != nil {
+		return fmt.Errorf("memoryindex: create compact fts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO compact_memory_fts
+  (id, kind, title, body, handle, source_id, status, entities, tags)
+SELECT id, kind, title, body, handle, source_id, status, entities_json, tags_json
+FROM compact_memory_documents
+ORDER BY kind, updated_at DESC, id
+`); err != nil {
+		return fmt.Errorf("memoryindex: repopulate compact fts: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("memoryindex: commit fts rebuild: %w", err)
 	}
 	return nil
 }

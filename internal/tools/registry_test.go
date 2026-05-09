@@ -60,6 +60,43 @@ func TestRegistryExecuteMissingTool(t *testing.T) {
 	}
 }
 
+func TestRegistryNamesSorted(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(namedFakeTool{name: "zeta"})
+	reg.Register(namedFakeTool{name: "alpha"})
+	reg.Register(namedFakeTool{name: "mcp_mail_imap_search_messages"})
+
+	got := reg.Names()
+	want := []string{"alpha", "mcp_mail_imap_search_messages", "zeta"}
+	if len(got) != len(want) {
+		t.Fatalf("Names() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Names() = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestRegistryNamesByCategorySorted(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(categorizedFakeTool{namedFakeTool: namedFakeTool{name: "zeta"}, category: CategoryMCP})
+	reg.Register(namedFakeTool{name: "plain"})
+	reg.Register(categorizedFakeTool{namedFakeTool: namedFakeTool{name: "alpha"}, category: CategoryMCP})
+	reg.Register(categorizedFakeTool{namedFakeTool: namedFakeTool{name: "other"}, category: "other"})
+
+	got := reg.NamesByCategory(CategoryMCP)
+	want := []string{"alpha", "zeta"}
+	if len(got) != len(want) {
+		t.Fatalf("NamesByCategory() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("NamesByCategory() = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestRegistryDefinitionsForFiltersAndKeepsAllowlistOrder(t *testing.T) {
 	reg := NewRegistry(nil)
 	reg.Register(namedFakeTool{name: "alpha"})
@@ -132,6 +169,13 @@ func (t namedFakeTool) Parameters() map[string]any {
 func (t namedFakeTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	return t.name, nil
 }
+
+type categorizedFakeTool struct {
+	namedFakeTool
+	category string
+}
+
+func (t categorizedFakeTool) Category() string { return t.category }
 
 type definitionFakeTool struct{}
 

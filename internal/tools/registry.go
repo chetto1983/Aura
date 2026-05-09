@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,14 @@ type Tool interface {
 	Description() string
 	Parameters() map[string]any
 	Execute(ctx context.Context, args map[string]any) (string, error)
+}
+
+const CategoryMCP = "mcp"
+
+// CategorizedTool lets runtime orchestration select tools by capability class
+// without coupling availability to user-text heuristics.
+type CategorizedTool interface {
+	Category() string
 }
 
 // Registry stores tools and dispatches tool calls by name.
@@ -46,6 +55,42 @@ func (r *Registry) Get(name string) Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.tools[name]
+}
+
+// Names returns all registered tool names in deterministic order.
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// NamesByCategory returns registered tool names for a declared capability
+// category in deterministic order.
+func (r *Registry) NamesByCategory(category string) []string {
+	category = strings.TrimSpace(category)
+	if category == "" {
+		return nil
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	names := make([]string, 0)
+	for name, tool := range r.tools {
+		categorized, ok := tool.(CategorizedTool)
+		if !ok || categorized.Category() != category {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Definitions returns the registered tools in the LLM-facing format.

@@ -27,6 +27,10 @@ func (t *MCPTool) Name() string {
 	return fmt.Sprintf("mcp_%s_%s", t.serverName, t.tool.Name)
 }
 
+func (t *MCPTool) Category() string {
+	return CategoryMCP
+}
+
 func (t *MCPTool) Description() string {
 	desc := t.tool.Description
 	if desc == "" {
