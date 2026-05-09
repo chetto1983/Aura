@@ -3,6 +3,7 @@ package runtimebootstrap
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,10 +37,11 @@ func TestEnsureLayoutDoesNotOverwriteExistingFiles(t *testing.T) {
 	cfg := testLayoutConfig(root)
 
 	keep := map[string]string{
-		filepath.Join(cfg.RuntimeWorkspacePath, "AGENT.md"):         "custom agent\n",
-		filepath.Join(cfg.RuntimeWorkspacePath, "wiki", "index.md"): "custom index\n",
-		filepath.Join(cfg.RuntimeWorkspacePath, "wiki", "log.md"):   "custom log\n",
-		filepath.Join(cfg.RuntimeWorkspacePath, "mcp.json"):         "{\"keep\":true}\n",
+		filepath.Join(cfg.RuntimeWorkspacePath, "AGENT.md"):              "custom agent\n",
+		filepath.Join(cfg.SkillsPath, "aura-runtime-safety", "SKILL.md"): "custom skill\n",
+		filepath.Join(cfg.RuntimeWorkspacePath, "wiki", "index.md"):      "custom index\n",
+		filepath.Join(cfg.RuntimeWorkspacePath, "wiki", "log.md"):        "custom log\n",
+		filepath.Join(cfg.RuntimeWorkspacePath, "mcp.json"):              "{\"keep\":true}\n",
 		cfg.MCPServersPath: "{\"configured\":true}\n",
 	}
 	for path, content := range keep {
@@ -94,7 +96,7 @@ func TestEnsureLayoutCreatesParentDirsForEnvDBLogsSkillsAndMCP(t *testing.T) {
 	assertFileContent(t, cfg.MCPServersPath, "{}\n")
 }
 
-func TestEnsureLayoutCopiesRootAgentWhenPresent(t *testing.T) {
+func TestEnsureLayoutUsesEmbeddedPublicAgentWhenRootAgentExists(t *testing.T) {
 	root := t.TempDir()
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -117,7 +119,33 @@ func TestEnsureLayoutCopiesRootAgentWhenPresent(t *testing.T) {
 		t.Fatalf("EnsureLayout: %v", err)
 	}
 
-	assertFileContent(t, filepath.Join(cfg.RuntimeWorkspacePath, "AGENT.md"), "root runtime agent\n")
+	agentPath := filepath.Join(cfg.RuntimeWorkspacePath, "AGENT.md")
+	got, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", agentPath, err)
+	}
+	if string(got) == "root runtime agent\n" {
+		t.Fatalf("runtime AGENT.md copied root AGENT.md")
+	}
+	assertContains(t, string(got), "Aura Runtime Schema")
+	assertContains(t, string(got), "Regole Strette")
+}
+
+func TestEnsureLayoutCreatesEmbeddedPublicSkills(t *testing.T) {
+	root := t.TempDir()
+	cfg := testLayoutConfig(root)
+
+	if err := EnsureLayout(cfg); err != nil {
+		t.Fatalf("EnsureLayout: %v", err)
+	}
+
+	skillPath := filepath.Join(cfg.SkillsPath, "aura-runtime-safety", "SKILL.md")
+	got, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", skillPath, err)
+	}
+	assertContains(t, string(got), "name: aura-runtime-safety")
+	assertContains(t, string(got), "runtime workspace")
 }
 
 func testLayoutConfig(root string) LayoutConfig {
@@ -168,5 +196,12 @@ func assertFileContent(t *testing.T, path, want string) {
 	}
 	if string(got) != want {
 		t.Fatalf("%s = %q, want %q", path, string(got), want)
+	}
+}
+
+func assertContains(t *testing.T, got, want string) {
+	t.Helper()
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected content to contain %q, got %q", want, got)
 	}
 }

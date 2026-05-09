@@ -1,12 +1,17 @@
 package runtimebootstrap
 
 import (
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+//go:embed defaults/AGENT.md defaults/skills/*/SKILL.md
+var defaultRuntimeFS embed.FS
 
 type LayoutConfig struct {
 	RuntimeWorkspacePath string
@@ -49,6 +54,13 @@ func EnsureLayout(cfg LayoutConfig) error {
 	}
 
 	if err := createAgent(runtimeWorkspacePath); err != nil {
+		return err
+	}
+	defaultSkillsPath := strings.TrimSpace(cfg.SkillsPath)
+	if defaultSkillsPath == "" {
+		defaultSkillsPath = filepath.Join(runtimeWorkspacePath, "skills")
+	}
+	if err := createDefaultSkills(defaultSkillsPath); err != nil {
 		return err
 	}
 	files := map[string]string{
@@ -97,13 +109,51 @@ func createAgent(runtimeWorkspacePath string) error {
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	content := []byte(minimalAgentTemplate)
-	if rootAgent, err := os.ReadFile("AGENT.md"); err == nil && len(rootAgent) > 0 {
-		content = rootAgent
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read root AGENT.md: %w", err)
+	content, err := defaultFile("defaults/AGENT.md", []byte(minimalAgentTemplate))
+	if err != nil {
+		return err
 	}
 	return createFileIfMissing(path, content, 0o644)
+}
+
+func createDefaultSkills(skillsPath string) error {
+	skillsPath = strings.TrimSpace(skillsPath)
+	if skillsPath == "" {
+		return nil
+	}
+	entries, err := defaultRuntimeFS.ReadDir("defaults/skills")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read embedded default skills: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		content, err := defaultRuntimeFS.ReadFile(filepath.ToSlash(filepath.Join("defaults", "skills", name, "SKILL.md")))
+		if err != nil {
+			return fmt.Errorf("read embedded default skill %s: %w", name, err)
+		}
+		target := filepath.Join(skillsPath, name, "SKILL.md")
+		if err := createFileIfMissing(target, content, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func defaultFile(path string, fallback []byte) ([]byte, error) {
+	content, err := defaultRuntimeFS.ReadFile(filepath.ToSlash(path))
+	if err == nil {
+		return content, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return fallback, nil
+	}
+	return nil, fmt.Errorf("read embedded default %s: %w", path, err)
 }
 
 func createFileIfMissing(path string, content []byte, perm os.FileMode) error {
