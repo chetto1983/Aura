@@ -58,9 +58,10 @@ func (t categorizedTool) Categories() []string {
 
 // Registry stores tools and dispatches tool calls by name.
 type Registry struct {
-	mu     sync.RWMutex
-	tools  map[string]Tool
-	logger *slog.Logger
+	mu          sync.RWMutex
+	tools       map[string]Tool
+	vectorIndex *toolVectorIndex
+	logger      *slog.Logger
 }
 
 // NewRegistry constructs an empty tool registry.
@@ -206,6 +207,27 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 		r.logger.Info("tool completed", "tool", name, "elapsed", elapsed, "bytes", len(result))
 	}
 	return result, nil
+}
+
+func (r *Registry) SetVectorIndex(idx *toolVectorIndex) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.vectorIndex = idx
+}
+
+func (r *Registry) ToolVectorHealth() ToolVectorHealth {
+	if r == nil {
+		return ToolVectorHealth{Backend: "fts", Fallback: true}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.vectorIndex == nil {
+		return ToolVectorHealth{Backend: "fts", Fallback: true}
+	}
+	return r.vectorIndex.Health()
 }
 
 func argKeys(args map[string]any) []string {

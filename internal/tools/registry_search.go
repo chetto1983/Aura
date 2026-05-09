@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -36,7 +37,7 @@ func (r *Registry) Search(query string, limit int, excluded ...string) []ToolSea
 	}
 
 	r.mu.RLock()
-	results := make([]ToolSearchResult, 0, len(r.tools))
+	lexResults := make([]ToolSearchResult, 0, len(r.tools))
 	for name, tool := range r.tools {
 		if exclude[name] {
 			continue
@@ -48,7 +49,7 @@ func (r *Registry) Search(query string, limit int, excluded ...string) []ToolSea
 		if score <= 0 {
 			continue
 		}
-		results = append(results, ToolSearchResult{
+		lexResults = append(lexResults, ToolSearchResult{
 			Name:        def.Name,
 			Description: def.Description,
 			Tags:        tags,
@@ -57,7 +58,37 @@ func (r *Registry) Search(query string, limit int, excluded ...string) []ToolSea
 			Score:       score,
 		})
 	}
+	vectorIdx := r.vectorIndex
 	r.mu.RUnlock()
+
+	lexByName := make(map[string]ToolSearchResult, len(lexResults))
+	for _, res := range lexResults {
+		lexByName[res.Name] = res
+	}
+
+	merged := make(map[string]ToolSearchResult)
+	for name, lr := range lexByName {
+		merged[name] = lr
+	}
+
+	if vectorIdx != nil {
+		ctx := context.Background()
+		if vecResults, vecErr := vectorIdx.Search(ctx, query, limit, excluded...); vecErr == nil {
+			for _, vr := range vecResults {
+				if lr, ok := lexByName[vr.Name]; ok {
+					lr.Score = lr.Score + vr.Score
+					merged[vr.Name] = lr
+				} else {
+					merged[vr.Name] = vr
+				}
+			}
+		}
+	}
+
+	results := make([]ToolSearchResult, 0, len(merged))
+	for _, res := range merged {
+		results = append(results, res)
+	}
 
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Score != results[j].Score {

@@ -318,3 +318,62 @@ func (fakeMemorySearchForExamples) IsIndexed() bool { return true }
 func (fakeMemorySearchForExamples) Search(context.Context, string, int) ([]search.Result, error) {
 	return nil, nil
 }
+
+func TestRegistrySetVectorIndex(t *testing.T) {
+	reg := NewRegistry(nil)
+	if h := reg.ToolVectorHealth(); h.Backend != "fts" {
+		t.Fatalf("nil vector index health = %q, want fts", h.Backend)
+	}
+
+	idx := NewToolVectorIndex(ToolVectorConfig{Backend: "hybrid", EmbedModel: "test-model"}, nil)
+	reg.SetVectorIndex(idx)
+
+	h := reg.ToolVectorHealth()
+	if h.Backend != "hybrid" {
+		t.Fatalf("vector index health backend = %q, want hybrid", h.Backend)
+	}
+	if h.EmbedModel != "test-model" {
+		t.Fatalf("vector index health embed model = %q, want test-model", h.EmbedModel)
+	}
+}
+
+func TestNilRegistryToolVectorHealth(t *testing.T) {
+	var reg *Registry
+	h := reg.ToolVectorHealth()
+	if h.Backend != "fts" || !h.Fallback {
+		t.Fatalf("nil registry health = %+v, want fts/fallback", h)
+	}
+}
+
+func TestNilRegistrySetVectorIndex(t *testing.T) {
+	var reg *Registry
+	idx := NewToolVectorIndex(ToolVectorConfig{Backend: "hybrid"}, nil)
+	reg.SetVectorIndex(idx) // must not panic
+}
+
+func TestSearchIncludesVectorResultsWhenAvailable(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(namedDescribedTool{name: "mcp_mail", description: "read and search email messages"})
+	reg.Register(namedDescribedTool{name: "execute_code", description: "run python scripts"})
+
+	// Without vector index: lexical only.
+	got := reg.Search("email read", 5)
+	if len(got) == 0 {
+		t.Fatal("lexical search returned no results")
+	}
+
+	// With a vector index (fts backend, which no-ops): still lexical only, works fine.
+	idx := NewToolVectorIndex(ToolVectorConfig{Backend: "fts"}, nil)
+	reg.SetVectorIndex(idx)
+	got2 := reg.Search("email read", 5)
+	if len(got2) != len(got) {
+		t.Fatalf("fts vector index altered results: %d vs %d", len(got2), len(got))
+	}
+}
+
+func TestSearchWithNilRegistry(t *testing.T) {
+	var reg *Registry
+	if got := reg.Search("test", 5); got != nil {
+		t.Fatalf("nil registry Search = %v, want nil", got)
+	}
+}

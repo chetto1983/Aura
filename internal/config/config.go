@@ -24,6 +24,8 @@ const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
+const DefaultToolSearchBackend = "fts"
+const DefaultToolSearchTopK = 5
 const (
 	DefaultEnvPath = ".env"
 
@@ -66,6 +68,8 @@ type Config struct {
 	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
 	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
+	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"fts"`
+	ToolSearchTopK             int     `envconfig:"TOOL_SEARCH_TOP_K" default:"5"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
 	SkillsPath                 string  `envconfig:"SKILLS_PATH" default:"./skills"`
@@ -214,6 +218,8 @@ func Load() (*Config, error) {
 	cfg.SpeculativeSearchTimeoutMS = getEnvInt("SPECULATIVE_SEARCH_TIMEOUT_MS", DefaultSpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
+	cfg.ToolSearchBackend = NormalizeToolSearchBackend(getEnv("TOOL_SEARCH_BACKEND", DefaultToolSearchBackend))
+	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 10, DefaultToolSearchTopK)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./runtime-workspace/wiki")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
@@ -318,6 +324,15 @@ func NormalizeDelegationMode(value string) string {
 		return normalized
 	default:
 		return DefaultDelegationMode
+	}
+}
+
+func NormalizeToolSearchBackend(value string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
+	case "fts", "vector", "hybrid":
+		return normalized
+	default:
+		return DefaultToolSearchBackend
 	}
 }
 
