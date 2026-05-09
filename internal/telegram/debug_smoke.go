@@ -53,6 +53,12 @@ type DebugTextSmokeResult struct {
 	EstimatedContextTokens    int
 	CostUSD                   float64
 	ElapsedMS                 int64
+	ToolSearchCalls           int
+	ExecuteCodeCalls          int
+	ExecuteShellCalls         int
+	ToolResultsCompacted      int
+	ToolResultContextChars    int
+	InternalOrchestrationCalls int
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -171,10 +177,16 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 	for _, msg := range messages {
 		for _, call := range msg.ToolCalls {
 			result.ToolCalls = append(result.ToolCalls, call.Name)
-			if call.Name == "execute_code" {
-				result.CalledExecuteCode = true
-			}
 			switch call.Name {
+			case "execute_code":
+				result.CalledExecuteCode = true
+				result.ExecuteCodeCalls++
+				result.SandboxUsed = true
+			case "execute_shell":
+				result.ExecuteShellCalls++
+				result.SandboxUsed = true
+			case "tool_search":
+				result.ToolSearchCalls++
 			case "read_file":
 				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
 					result.SkillsRead = true
@@ -182,8 +194,6 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 				}
 			case "run_aurabot_swarm":
 				result.SwarmUsed = true
-			case "execute_code":
-				result.SandboxUsed = true
 			}
 		}
 		if msg.Role == "assistant" && strings.TrimSpace(msg.Content) != "" {
@@ -197,6 +207,15 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 		}
 		if strings.Contains(msg.Content, "5050") {
 			result.Contains5050 = true
+		}
+		if msg.Role == "tool" {
+			result.ToolResultContextChars += len(msg.Content)
+		}
+		if strings.Contains(msg.Content, "[tool result compacted]") {
+			result.ToolResultsCompacted++
+		}
+		if strings.Contains(msg.Content, "internal tool calls:") {
+			result.InternalOrchestrationCalls++
 		}
 		for _, name := range artifactFilenamesFromToolContent(msg.Content) {
 			result.ContainsArtifactMetadata = true

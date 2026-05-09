@@ -16,9 +16,23 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ### 2026-05-09 Companion Runtime Plan: Tool Search And Programmatic Execution
 
-Status: planned in `.planning/phases/10-agent-tool-search-programmatic-execution/PLAN.md`.
+Status: implemented 2026-05-10.
 
-The MCP marketplace remains the active product milestone, but the next runtime slice needs a separate plan because it changes the agent hot path: small default tool exposure, semantic `tool_search`, programmatic `execute_code` orchestration, context hygiene for tool results, and Telegram `/clear` plus command menu support. v4.0 integration rule: MCP/provider tools become searchable only after Aura's existing review-gated registration enables them; `tool_search` is discovery, not permission escalation.
+The MCP marketplace remains the active product milestone. All seven tasks from the companion plan are complete:
+
+- Telegram command menu (`/clear`, `/reset`, `/help`, `/tools`) and session reset.
+- Protocol-safe tool result context hygiene (compaction preserves `tool` role and `ToolCallID`).
+- Runtime tool catalog search (`Registry.Search`) with lexical scoring.
+- `tool_search` LLM tool and small hot model-visible surface (5 core tools).
+- Programmatic `execute_code` orchestration via `/tmp/aura_out/aura_tool_calls.json` manifest.
+- Hybrid embedding/vector search backend (`TOOL_SEARCH_BACKEND=fts|vector|hybrid`).
+- Debug smoke counters and budget gates for regression verification.
+
+v4.0 integration rules:
+- MCP/provider tools are indexed by tool search only after review-gated registration.
+- Raw provider tools are not default-visible.
+- Canonical provider capabilities remain the preferred public contract.
+- `tool_search` is discovery, not enablement.
 
 ### 2026-05-09 Database MCP Read-Only Policy And Setup Refactor
 

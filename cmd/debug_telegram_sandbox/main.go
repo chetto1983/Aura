@@ -55,6 +55,10 @@ func main() {
 	flag.Var(&forbidPathFragments, "forbid-path-fragment", "path fragment that must not appear in debug-visible output; may be repeated or comma-separated")
 	expectRetrievalCapsule := flag.Bool("expect-retrieval-capsule", false, "expect the synthetic Telegram turn system context to include the compact Retrieval Capsule")
 	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
+	expectVisibleToolsMax := flag.Int("expect-visible-tools-max", 0, "fail if model_visible_tool_count exceeds this budget")
+	expectToolSearchCallsMax := flag.Int("expect-tool-search-calls-max", 0, "fail if tool_search_calls exceeds this budget")
+	expectExecuteCodeCallsMin := flag.Int("expect-execute-code-calls-min", 0, "fail if execute_code_calls is below this minimum")
+	expectToolResultContextCharsMax := flag.Int("expect-tool-result-context-chars-max", 0, "fail if tool_result_context_chars exceeds this budget")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
@@ -186,6 +190,13 @@ func main() {
 	fmt.Printf("terminal_tool=%s\n", result.TerminalTool)
 	fmt.Printf("duplicate_tool_call_rejected=%v\n", result.DuplicateToolCallRejected)
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
+	fmt.Printf("tool_search_calls=%d\n", result.ToolSearchCalls)
+	fmt.Printf("execute_code_calls=%d\n", result.ExecuteCodeCalls)
+	fmt.Printf("execute_shell_calls=%d\n", result.ExecuteShellCalls)
+	fmt.Printf("model_visible_tool_count=%d\n", len(result.ToolsExposed))
+	fmt.Printf("tool_result_context_chars=%d\n", result.ToolResultContextChars)
+	fmt.Printf("tool_results_compacted=%d\n", result.ToolResultsCompacted)
+	fmt.Printf("internal_orchestration_tool_calls=%d\n", result.InternalOrchestrationCalls)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
 	if len(result.ArtifactFilenames) > 0 {
@@ -225,9 +236,13 @@ func main() {
 		TokenMetrics:       *expectTokenMetrics,
 		SandboxUsed:        *expectSandbox,
 		WorkspaceRoot:      *expectWorkspaceRoot,
-		ForbidFragments:    forbidPathFragments.Values,
-		RetrievalCapsule:   *expectRetrievalCapsule,
-		MaxElapsedMS:       *maxElapsedMS,
+		ForbidFragments:          forbidPathFragments.Values,
+		RetrievalCapsule:         *expectRetrievalCapsule,
+		MaxElapsedMS:             *maxElapsedMS,
+		MaxVisibleTools:          *expectVisibleToolsMax,
+		MaxToolSearchCalls:       *expectToolSearchCallsMax,
+		MinExecuteCodeCalls:      *expectExecuteCodeCallsMin,
+		MaxToolResultContextChars: *expectToolResultContextCharsMax,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
@@ -289,6 +304,18 @@ func main() {
 	}
 	if expectations.MaxElapsedMS > 0 {
 		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
+	}
+	if expectations.MaxVisibleTools > 0 {
+		fmt.Printf("expected_visible_tools_max=%d\n", expectations.MaxVisibleTools)
+	}
+	if expectations.MaxToolSearchCalls > 0 {
+		fmt.Printf("expected_tool_search_calls_max=%d\n", expectations.MaxToolSearchCalls)
+	}
+	if expectations.MinExecuteCodeCalls > 0 {
+		fmt.Printf("expected_execute_code_calls_min=%d\n", expectations.MinExecuteCodeCalls)
+	}
+	if expectations.MaxToolResultContextChars > 0 {
+		fmt.Printf("expected_tool_result_context_chars_max=%d\n", expectations.MaxToolResultContextChars)
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke, customPrompt); err != nil {
@@ -663,8 +690,12 @@ type debugExpectations struct {
 	SandboxUsed        bool
 	WorkspaceRoot      string
 	ForbidFragments    []string
-	RetrievalCapsule   bool
-	MaxElapsedMS       int64
+	RetrievalCapsule         bool
+	MaxElapsedMS             int64
+	MaxVisibleTools          int
+	MaxToolSearchCalls       int
+	MinExecuteCodeCalls      int
+	MaxToolResultContextChars int
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -744,6 +775,18 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.MaxElapsedMS > 0 && result.ElapsedMS > expectations.MaxElapsedMS {
 		return fmt.Errorf("elapsed_ms %d exceeds budget %d", result.ElapsedMS, expectations.MaxElapsedMS)
+	}
+	if expectations.MaxVisibleTools > 0 && len(result.ToolsExposed) > expectations.MaxVisibleTools {
+		return fmt.Errorf("model_visible_tool_count %d exceeds budget %d", len(result.ToolsExposed), expectations.MaxVisibleTools)
+	}
+	if expectations.MaxToolSearchCalls > 0 && result.ToolSearchCalls > expectations.MaxToolSearchCalls {
+		return fmt.Errorf("tool_search_calls %d exceeds budget %d", result.ToolSearchCalls, expectations.MaxToolSearchCalls)
+	}
+	if expectations.MinExecuteCodeCalls > 0 && result.ExecuteCodeCalls < expectations.MinExecuteCodeCalls {
+		return fmt.Errorf("execute_code_calls %d below minimum %d", result.ExecuteCodeCalls, expectations.MinExecuteCodeCalls)
+	}
+	if expectations.MaxToolResultContextChars > 0 && result.ToolResultContextChars > expectations.MaxToolResultContextChars {
+		return fmt.Errorf("tool_result_context_chars %d exceeds budget %d", result.ToolResultContextChars, expectations.MaxToolResultContextChars)
 	}
 	return nil
 }
