@@ -220,12 +220,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
 	switch strings.ToLower(strings.TrimSpace(cfg.WebSearchProvider)) {
 	case "searxng":
-		toolRegistry.Register(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL))
-		toolRegistry.Register(tools.NewDirectWebFetchTool())
+		toolRegistry.Register(tools.WithCategory(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL), tools.CategoryAutonomous))
+		toolRegistry.Register(tools.WithCategory(tools.NewDirectWebFetchTool(), tools.CategoryAutonomous))
 	case "ollama":
 		if cfg.OllamaAPIKey != "" {
-			toolRegistry.Register(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
-			toolRegistry.Register(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL))
+			toolRegistry.Register(tools.WithCategory(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL), tools.CategoryAutonomous))
+			toolRegistry.Register(tools.WithCategory(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL), tools.CategoryAutonomous))
 		} else {
 			logger.Warn("WEB_SEARCH_PROVIDER=ollama but OLLAMA_API_KEY is blank; web tools disabled")
 		}
@@ -239,9 +239,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// the LLM gets a clearer "OCR disabled" error from the tool itself, which
 	// is better than tempting it to call a tool we can never satisfy.
 	toolRegistry.Register(tools.NewStoreSourceTool(sourceStore))
-	toolRegistry.Register(tools.NewReadSourceTool(sourceStore))
-	toolRegistry.Register(tools.NewListSourcesTool(sourceStore))
-	toolRegistry.Register(tools.NewLintSourcesTool(sourceStore))
+	toolRegistry.Register(tools.WithCategory(tools.NewReadSourceTool(sourceStore), tools.CategoryAutonomous))
+	toolRegistry.Register(tools.WithCategory(tools.NewListSourcesTool(sourceStore), tools.CategoryAutonomous))
+	toolRegistry.Register(tools.WithCategory(tools.NewLintSourcesTool(sourceStore), tools.CategoryAutonomous))
 	if ocrClient != nil {
 		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
 	}
@@ -370,7 +370,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			if !mcpToolEnabledForAura(name, srv.Env, t.Name) {
 				continue
 			}
-			toolRegistry.Register(tools.NewMCPTool(client, name, t))
+			tool := tools.NewMCPTool(client, name, t)
+			if mcpToolAutonomousForAura(name, t.Name) {
+				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
+			} else {
+				toolRegistry.Register(tool)
+			}
 			registeredTools++
 		}
 		logger.Info("MCP server registered", "server", name, "tools", len(client.Tools()), "aura_tools", registeredTools)
@@ -424,10 +429,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tool)
 	}
 	if tool := tools.NewListToolsTool(toolReg); tool != nil {
-		toolRegistry.Register(tool)
+		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 	}
 	if tool := tools.NewReadToolTool(toolReg); tool != nil {
-		toolRegistry.Register(tool)
+		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 	}
 	if tool := tools.NewSaveToolTool(toolReg); tool != nil {
 		toolRegistry.Register(tool)
@@ -864,6 +869,13 @@ func mcpToolEnabledForAura(serverName string, env map[string]string, toolName st
 	return true
 }
 
+func mcpToolAutonomousForAura(serverName, toolName string) bool {
+	if serverName != "mail" && serverName != "mail-mcp" {
+		return false
+	}
+	return mailToolIn(toolName, mailAuraReadTools)
+}
+
 func mailToolIn(toolName string, tools []string) bool {
 	for _, tool := range tools {
 		if tool == toolName {
@@ -892,6 +904,21 @@ func mailEnvFlagEnabled(env map[string]string, suffix string) bool {
 		}
 	}
 	return false
+}
+
+var mailAuraReadTools = []string{
+	"ews_get_message",
+	"ews_search_messages",
+	"get_setup_guide",
+	"imap_get_message",
+	"imap_get_message_raw",
+	"imap_list_accounts",
+	"imap_list_mailboxes",
+	"imap_mailbox_status",
+	"imap_search_messages",
+	"imap_verify_account",
+	"list_all_accounts",
+	"smtp_verify_account",
 }
 
 var mailAuraSendTools = []string{

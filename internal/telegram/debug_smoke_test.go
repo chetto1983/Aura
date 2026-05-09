@@ -619,12 +619,16 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
-func TestAppendRegisteredMCPToolsExposesConfiguredConnectors(t *testing.T) {
+func TestAppendAutonomousToolsExposesRegisteredCapabilities(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
 	reg.Register(&categorizedCountingTelegramTool{
+		countingTelegramTool: countingTelegramTool{name: "web_search", result: "web"},
+		category:             tools.CategoryAutonomous,
+	})
+	reg.Register(&categorizedCountingTelegramTool{
 		countingTelegramTool: countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail"},
-		category:             tools.CategoryMCP,
+		category:             tools.CategoryAutonomous,
 	})
 	reg.Register(&categorizedCountingTelegramTool{
 		countingTelegramTool: countingTelegramTool{name: "mcp_mail_smtp_send_message", result: "send"},
@@ -632,12 +636,15 @@ func TestAppendRegisteredMCPToolsExposesConfiguredConnectors(t *testing.T) {
 	})
 
 	b := &Bot{tools: reg}
-	got := b.appendRegisteredMCPTools([]string{"search_memory"})
+	got := b.appendAutonomousTools([]string{"search_memory"})
 
-	for _, want := range []string{"search_memory", "mcp_mail_imap_search_messages", "mcp_mail_smtp_send_message"} {
+	for _, want := range []string{"search_memory", "web_search", "mcp_mail_imap_search_messages"} {
 		if !stringSliceContains(got, want) {
 			t.Fatalf("allowlist missing %q: %+v", want, got)
 		}
+	}
+	if stringSliceContains(got, "mcp_mail_smtp_send_message") {
+		t.Fatalf("non-autonomous MCP mutation tool exposed: %+v", got)
 	}
 }
 

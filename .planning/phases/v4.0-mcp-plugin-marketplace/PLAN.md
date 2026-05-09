@@ -14,6 +14,28 @@ Design: `.planning/phases/v4.0-mcp-plugin-marketplace/DESIGN.md`
 
 ## Implementation Progress
 
+### 2026-05-09 Model-Led Tool Surface
+
+Status: implemented.
+
+- Shifted normal capability exposure away from text-intent orchestration and into registry metadata.
+- Added an `autonomous` tool category. Telegram exposes registered autonomous tools in addition to the tiny base surface.
+- Marked configured `web_search` and `web_fetch` autonomous, so Aura no longer claims web search is missing when the provider is configured.
+- Marked source read/list/lint and persistent tool-registry read/list autonomous.
+- Tightened MCP prompt bloat: mail MCP read/search/list/verify tools can be autonomous, while send/delete/move/bulk mutation tools stay registered but are not model-visible by default.
+- Removed `search_memory` as a default terminal tool, so the model can follow memory with another exposed tool when useful.
+- No regex, phrase router, or hardcoded user-text intent rules were added.
+
+Verification:
+
+- `go test ./internal/tools ./internal/telegram ./internal/orchestration -count=1`
+- `go test ./...`
+- `go build ./...`
+- `go vet ./...`
+- `docker compose up -d --build aura`
+- live `/status` returned ok
+- live `tools_exposed` included `web_search,web_fetch` and read-only mail MCP tools, while mail send/delete/move/bulk tools stayed out of the default prompt
+
 ### 2026-05-09 MCP Tool Exposure Repair
 
 Status: implemented.

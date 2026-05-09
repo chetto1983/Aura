@@ -30,7 +30,7 @@ func TestDefaultAfterToolAsksModelToAnswerAfterMemory(t *testing.T) {
 	}
 
 	result := after(llm.ToolCall{Name: "search_memory"}, "evidence", nil)
-	if !strings.Contains(result, "evidence") || !strings.Contains(result, "answer now") || !strings.Contains(result, "Do not call search_memory again") {
+	if !strings.Contains(result, "evidence") || !strings.Contains(result, "Answer now") || !strings.Contains(result, "do not call search_memory again") || !strings.Contains(result, "another currently exposed tool") {
 		t.Fatalf("default search_memory result missing finalization hint: %q", result)
 	}
 }

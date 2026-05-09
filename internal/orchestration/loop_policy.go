@@ -13,9 +13,8 @@ func LoopPolicyForToolset(toolset Toolset) (LoopPolicy, bool) {
 	switch normalizeToolset(string(toolset)) {
 	case ToolsetDefault:
 		return cloneLoopPolicy(LoopPolicy{
-			TerminalTools:           []string{"search_memory"},
 			AllowNoToolFinalization: true,
-			DuplicateToolPolicy:     "Reject duplicate tool calls with identical arguments; keep default turns short and evidence-backed.",
+			DuplicateToolPolicy:     "Reject duplicate tool calls with identical arguments; let the model choose among exposed tools.",
 			MaxElapsed:              30 * time.Second,
 		}), true
 	case ToolsetCompute:

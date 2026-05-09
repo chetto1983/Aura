@@ -97,6 +97,21 @@ func TestRegistryNamesByCategorySorted(t *testing.T) {
 	}
 }
 
+func TestWithCategoryPreservesExistingCategories(t *testing.T) {
+	reg := NewRegistry(nil)
+	reg.Register(WithCategory(categorizedFakeTool{
+		namedFakeTool: namedFakeTool{name: "mcp_mail_imap_search_messages"},
+		category:      CategoryMCP,
+	}, CategoryAutonomous))
+
+	if got := reg.NamesByCategory(CategoryMCP); len(got) != 1 || got[0] != "mcp_mail_imap_search_messages" {
+		t.Fatalf("MCP category names = %#v", got)
+	}
+	if got := reg.NamesByCategory(CategoryAutonomous); len(got) != 1 || got[0] != "mcp_mail_imap_search_messages" {
+		t.Fatalf("autonomous category names = %#v", got)
+	}
+}
+
 func TestRegistryDefinitionsForFiltersAndKeepsAllowlistOrder(t *testing.T) {
 	reg := NewRegistry(nil)
 	reg.Register(namedFakeTool{name: "alpha"})

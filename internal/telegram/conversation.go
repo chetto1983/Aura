@@ -77,7 +77,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 		runtimeToolset = runtimeToolsetForTurn(toolset, retrievalCapsule)
 		toolAllowlist, _ = runtimeToolset.Tools(orchestration.ToolsetContext{Toolset: toolset, Availability: available})
 	}
-	toolAllowlist = b.appendRegisteredMCPTools(toolAllowlist)
+	toolAllowlist = b.appendAutonomousTools(toolAllowlist)
 	hooks.BeforePromptCompose(orchestration.TraceEvent{
 		Toolset:             string(toolsetDecision.Toolset),
 		ToolsetSelectReason: toolsetDecision.Reason,
@@ -483,11 +483,11 @@ func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) 
 	return stats
 }
 
-func (b *Bot) appendRegisteredMCPTools(allowlist []string) []string {
+func (b *Bot) appendAutonomousTools(allowlist []string) []string {
 	if b == nil || b.tools == nil {
 		return allowlist
 	}
-	for _, name := range b.tools.NamesByCategory(auratools.CategoryMCP) {
+	for _, name := range b.tools.NamesByCategory(auratools.CategoryAutonomous) {
 		allowlist = appendUniqueStrings(allowlist, name)
 	}
 	return allowlist

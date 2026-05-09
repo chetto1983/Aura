@@ -21,11 +21,39 @@ type Tool interface {
 }
 
 const CategoryMCP = "mcp"
+const CategoryAutonomous = "autonomous"
 
 // CategorizedTool lets runtime orchestration select tools by capability class
 // without coupling availability to user-text heuristics.
 type CategorizedTool interface {
 	Category() string
+}
+
+type MultiCategorizedTool interface {
+	Categories() []string
+}
+
+type categorizedTool struct {
+	Tool
+	categories []string
+}
+
+func WithCategory(tool Tool, category string) Tool {
+	if tool == nil {
+		return nil
+	}
+	category = strings.TrimSpace(category)
+	if category == "" {
+		return tool
+	}
+	return categorizedTool{
+		Tool:       tool,
+		categories: registryUniqueStrings(append(toolCategories(tool), category)),
+	}
+}
+
+func (t categorizedTool) Categories() []string {
+	return append([]string(nil), t.categories...)
 }
 
 // Registry stores tools and dispatches tool calls by name.
@@ -83,14 +111,35 @@ func (r *Registry) NamesByCategory(category string) []string {
 
 	names := make([]string, 0)
 	for name, tool := range r.tools {
-		categorized, ok := tool.(CategorizedTool)
-		if !ok || categorized.Category() != category {
+		if !toolHasCategory(tool, category) {
 			continue
 		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
+}
+
+func toolHasCategory(tool Tool, category string) bool {
+	for _, value := range toolCategories(tool) {
+		if value == category {
+			return true
+		}
+	}
+	return false
+}
+
+func toolCategories(tool Tool) []string {
+	if tool == nil {
+		return nil
+	}
+	if categorized, ok := tool.(MultiCategorizedTool); ok {
+		return registryUniqueStrings(categorized.Categories())
+	}
+	if categorized, ok := tool.(CategorizedTool); ok {
+		return registryUniqueStrings([]string{categorized.Category()})
+	}
+	return nil
 }
 
 // Definitions returns the registered tools in the LLM-facing format.
@@ -166,4 +215,18 @@ func argKeys(args map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func registryUniqueStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, value := range in {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }

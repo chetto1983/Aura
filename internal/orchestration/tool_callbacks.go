@@ -38,7 +38,7 @@ func AfterToolCallbackForToolset(toolset Toolset) agentloop.AfterToolCallback {
 			if err != nil || call.Name != "search_memory" {
 				return result
 			}
-			return result + "\n\nNext step for this default turn: answer now from this compact evidence. Do not call search_memory again. Do not call workspace, source, web, document, or admin tools unless they are explicitly exposed and required."
+			return result + "\n\nNext step for this turn: do not call search_memory again. Answer now if this evidence is enough; otherwise choose only another currently exposed tool that is genuinely needed."
 		}
 	case ToolsetDocument:
 		return func(call llm.ToolCall, result string, err error) string {
