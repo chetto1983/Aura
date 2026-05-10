@@ -1,24 +1,41 @@
+---
+gsd_state_version: 1.0
+milestone: v4.0
+milestone_name: milestone
+status: planning
+stopped_at: Phase 1 context gathered
+last_updated: "2026-05-10T11:31:35.479Z"
+last_activity: 2026-05-10 -- v4.0 Production Hardening research normalized; 18 requirements mapped across 4 phases
+progress:
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+---
+
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-10)
+See: `.planning/REQsIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/research/`.
 
 **Core value:** Aura remembers what you tell it and answers questions from durable, searchable memory -- without losing context, corrupting state, or exposing internal machinery to the user.
-**Current focus:** Phase 1 - Fondamenta (Concurrency Safety)
+**Current focus:** Phase 1 - Fondamenta (Concurrency + Qdrant Readiness)
 
 ## Current Position
 
-Phase: 1 of 4 (Fondamenta -- Concurrency Safety)
+Phase: 1 of 4 (Fondamenta -- Concurrency + Qdrant Readiness)
 Plan: 0 (TBD)
 Status: Ready to plan
-Last activity: 2026-05-10 -- v4.0 Production Hardening roadmap created; 18 requirements mapped across 4 phases
+Last activity: 2026-05-10 -- v4.0 Production Hardening research normalized; 18 requirements mapped across 4 phases
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [----------] 0%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: N/A
 - Total execution time: 0 hours
@@ -30,23 +47,24 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - No plans executed yet.
 
-*Updated after each plan completion*
+*spdated after each plan completion*
 
 ## Accumulated Context
 
 ### Decisions
 
-Research completed for v4.0 Production Hardening (2026-05-10). Key decisions recorded in PROJECT.md:
+Research completed for v4.0 Production Hardening (2026-05-10). Key decisions recorded in `.planning/REQsIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/research/`:
 
-- **Phase 1**: UserGate with `TryAcquire` from day one -- notification paths must never deadlock re-entering the same user's gate
+- **Phase 1**: sserGate uses a per-user actor/inbox model with `TryAcquire` from day one -- notification paths must never deadlock re-entering the same user's gate
 - **Phase 1**: Separate tracking structure for inactivity eviction -- no `sync.Map.Range` for cleanup iteration
+- **Phase 1**: Qdrant startup readiness and warm-cache validation ship before Qdrant-dependent reindex/tool retrieval work; warm check uses `points_count > 0`
 - **Phase 2**: `expected_updated_at` on wiki write tool to prevent silent overwrite of manual dashboard edits
 - **Phase 2**: Error classification separates transient failures (HTTP 429/5xx, timeout) from content failures before temperature retry
 - **Phase 3**: Circuit breaker lock held for state check only (nanoseconds), released before network I/O
-- **Phase 3**: Per-user budget check inside UserGate mutex region for atomic accounting with conversation processing
-- **Phase 4**: `points_count > 0` check (not just collection exists) before skipping re-embed pass
+- **Phase 3**: Per-user budget check inside sserGate mutex region for atomic accounting with conversation processing
 - **Phase 4**: Build-tag verification across `linux`, `windows`, and `integration` before any legacy code removal
 
 ### Pending Todos
@@ -67,6 +85,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-10
-Stopped at: Roadmap creation complete for v4.0 Production Hardening -- 4 phases defined, 18 requirements mapped, all success criteria derived
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 1 context gathered
+Resume file: --resume-file
