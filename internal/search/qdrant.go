@@ -26,11 +26,20 @@ type QdrantConfig struct {
 	Client     *http.Client
 }
 
+// PagesIndexedUnknown is the sentinel value for QdrantRebuildReport.PagesIndexed
+// when the on-disk page count could not be determined (e.g. loadWikiDocuments
+// failed during a warm-cache hit). Consumers should treat this as "unavailable",
+// not as "zero pages on disk" (WR-05).
+const PagesIndexedUnknown = -1
+
 type QdrantRebuildReport struct {
 	Collection   string `json:"collection"`
 	DocsIndexed  int    `json:"docs_indexed"`
-	PagesIndexed int    `json:"pages_indexed"`
-	VectorSize   int    `json:"vector_size"`
+	// PagesIndexed is the number of wiki pages enumerated on disk during the
+	// rebuild. The value PagesIndexedUnknown (-1) means the disk enumeration
+	// failed during a warm-cache hit; callers should not interpret it as zero.
+	PagesIndexed int `json:"pages_indexed"`
+	VectorSize   int `json:"vector_size"`
 }
 
 type qdrantSearcher struct {
@@ -189,18 +198,28 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 		// Still load pages so PagesIndexed is meaningful in the report.
 		// W2: surface the loadWikiDocuments error at warn level instead of swallowing it.
 		_, pages, loadErr := loadWikiDocuments(wikiDir, logger)
+		// WR-05: distinguish "load failed → count unknown" from "load succeeded →
+		// 0 pages on disk". Use PagesIndexedUnknown (-1) as the sentinel so
+		// downstream consumers (e.g. /api/health, debug_qdrant) do not silently
+		// report 0 pages when the enumeration failed.
+		pagesIndexed := pages
 		if loadErr != nil {
 			logger.Warn("warm-cache hit: pages_on_disk count unavailable", "error", loadErr, "collection", collection)
+			pagesIndexed = PagesIndexedUnknown
 		}
 		// WR-01: saturate uint64 → int conversion. On 32-bit platforms the
 		// naked int(info.PointsCount) would wrap for values above MaxInt32.
 		// Aura is unlikely to ever index >2 billion points but the guard
 		// keeps the report sane on every architecture.
 		docsIndexed := saturateUint64ToInt(info.PointsCount)
-		logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
+		if loadErr != nil {
+			logger.Info("qdrant warm-cache hit (pages_on_disk unavailable)", "collection", collection, "points_count", info.PointsCount)
+		} else {
+			logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
+		}
 		return QdrantRebuildReport{
 			Collection:   collection,
-			PagesIndexed: pages,
+			PagesIndexed: pagesIndexed,
 			DocsIndexed:  docsIndexed, // W1: live points count, not 0
 			VectorSize:   0,
 		}, nil
