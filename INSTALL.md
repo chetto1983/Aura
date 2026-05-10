@@ -11,12 +11,12 @@ path is manual-only for legacy testing.
 ## What You Get
 
 - A private Telegram bot.
-- A local dashboard at `http://127.0.0.1:8080`.
+- A local dashboard at `http://127.0.0.1:18080`.
 - Local SearXNG web search.
 - Direct Python execution inside the Aura container for `execute_code`,
   DOCX/XLSX extraction, charts, and generated artifacts.
 - Local Garage backup/artifact storage.
-- Optional Qdrant vector search with local fallback.
+- Qdrant vector search with local fallback.
 - Your own `data/aura.db`, Garage data, and Docker volumes for wiki, skills, Qdrant, and caches.
 
 ## Prerequisites
@@ -44,17 +44,16 @@ $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-If port `8080` is busy:
+If port `18080` is busy, pick another:
 
 ```powershell
-$env:AURA_HOST_PORT = "18080"
+$env:AURA_HOST_PORT = "8080"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
 ## Step 3 - Finish Setup
 
-Open `http://127.0.0.1:8080`, or `http://127.0.0.1:18080` if you changed
-`AURA_HOST_PORT`.
+Open `http://127.0.0.1:18080` (or your custom `AURA_HOST_PORT`).
 
 The first-run wizard asks for:
 
@@ -139,9 +138,9 @@ PY
 
 Clear `TELEGRAM_TOKEN=` in `data/.env` and restart Aura.
 
-**Port 8080 is already allocated**
+**Port 18080 is already allocated**
 
-Set `$env:AURA_HOST_PORT = "18080"` and run Compose again.
+Set `$env:AURA_HOST_PORT = "8080"` (or any free port) and run Compose again.
 
 **Bot does not reply after `/start`**
 

@@ -188,8 +188,7 @@ git push origin v1.2.3
 
 GitHub Actions builds `ghcr.io/chetto1983/aura:v1.2.3`, also tags it as
 `latest`, and publishes linux/amd64 plus linux/arm64 variants. The legacy
-GoReleaser binary workflow is manual-only and should not run for normal
-releases.
+desktop binary release has been removed; releases are Docker-image only.
 
 ## Data
 

@@ -10,7 +10,7 @@
 
 Aura è un agente AI personale, local-first, accessibile via Telegram, che accumula conoscenza in una **wiki markdown maintained-by-the-LLM** e si estende con **tool agentici** (source ingestion, web, scheduler, skills, MCP). Una **dashboard web embedded** offre osservabilità e controllo (sources, wiki/graph, tasks, skills, MCP, pending users) protetta da bearer-token emessi via Telegram.
 
-Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant opzionale con fallback locale, Garage per backup/artifact, Pyodide sidecar per sandbox, pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
+Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant con fallback locale, Garage per backup/artifact, sandbox Python diretta (process mode), pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
 
 Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, fallback sempre disponibili**.
 
@@ -380,10 +380,9 @@ CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
 # 9. Deployment
 
 * **Docker Compose is the primary release runtime.**
-* `aura` image is server-only and does not carry Node.js or `/app/runtime/pyodide`.
-* `pyodide` runs as a sidecar based on `pyodide/pyodide-env` and exposes `http://pyodide:8787` inside Compose.
+* `aura` image is server-only, does not carry Node.js, and runs Python directly via `SANDBOX_RUNTIME_MODE=process`.
 * `searxng`, `garage`, and `qdrant` are local sidecars; Garage UI remains profile-gated.
-* Desktop/tray builds remain secondary/manual-only.
+* Desktop/tray builds have been removed; releases are Docker-image only.
 
 ---
 
