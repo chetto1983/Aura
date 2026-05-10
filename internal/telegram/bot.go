@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
+	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -69,6 +70,7 @@ type Bot struct {
 	debugDocSeq atomic.Uint64
 	sessions    *agentruntime.SessionStore
 	started     atomic.Bool
+	gate        *concurrency.UserGate
 }
 
 // Username returns the bot's Telegram username.
@@ -95,6 +97,13 @@ func (b *Bot) sessionStore() *agentruntime.SessionStore {
 		b.sessions = agentruntime.NewSessionStore()
 	}
 	return b.sessions
+}
+
+func (b *Bot) userGate() *concurrency.UserGate {
+	if b == nil {
+		return nil
+	}
+	return b.gate
 }
 
 // SendToUser delivers a Telegram message to userID's direct chat. Used
