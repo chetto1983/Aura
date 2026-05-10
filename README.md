@@ -35,9 +35,10 @@ The default stack starts:
 
 Primary user data stays in visible folders beside the Compose file:
 
-- `data/`: `.env`, SQLite database, logs, MCP config, prompt overlays.
-- `wiki/`: compiled memory pages and source evidence.
-- `skills/`: installed agent skills.
+- `data/`: `.env`, SQLite database, logs.
+- `runtime-workspace/`: MCP config, prompt overlays, runtime workspace files.
+- Docker volume `aura-wiki`: compiled memory pages and source evidence.
+- Docker volume `aura-skills`: installed agent skills.
 - `garage/`: Garage object storage data.
 
 Code execution runs Python directly inside the Aura container.
@@ -53,7 +54,7 @@ Prerequisites:
 ```powershell
 git clone https://github.com/chetto1983/Aura
 cd Aura
-New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
+New-Item -ItemType Directory -Force data,runtime-workspace,garage | Out-Null
 Copy-Item .env.example data/.env
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d

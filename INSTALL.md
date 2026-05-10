@@ -38,7 +38,7 @@ path is manual-only for legacy testing.
 ```powershell
 git clone https://github.com/chetto1983/Aura
 cd Aura
-New-Item -ItemType Directory -Force data,wiki,skills,garage | Out-Null
+New-Item -ItemType Directory -Force data,runtime-workspace,garage | Out-Null
 Copy-Item .env.example data/.env
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
