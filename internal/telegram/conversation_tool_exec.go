@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -22,15 +21,20 @@ import (
 // Concurrency safety: Registry.Execute is RWMutex-guarded for lookup, and
 // individual tools run outside the lock. Wiki/source writes serialize on
 // SQLite at the storage layer. Tool activity stays in logs; Telegram receives
-// only the final user-facing synthesis so normal
-// users are not exposed to tool names, JSON payloads, or raw execution traces.
+// only the final user-facing synthesis so normal users are not exposed to
+// tool names, JSON payloads, or raw execution traces.
+//
+// Tool routing is permissive: any tool present in the registry executes. The
+// runtime no longer rejects tools as "not available in this turn" — that
+// pattern produced 60-90% of observed loop iterations because the LLM would
+// re-attempt with slightly different arguments. The model decides what to
+// call; the registry decides whether the call is real.
 //
 // Returns the last result content (in original order), used by the caller
 // as a fallback when the model returns an empty final response.
 type toolExecutionSummary struct {
 	lastResult      string
 	fatalResult     string
-	hiddenRejected  bool
 	readSkillNames  []string
 	terminalTool    string
 	discoveredTools []string
@@ -42,41 +46,25 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	}
 
 	type outcome struct {
-		id             string
-		tool           string
-		content        string
-		elapsed        time.Duration
-		errorClass     string
-		hiddenRejected bool
-		fatal          bool
-		readSkillName  string
-		terminalTool   string
+		id            string
+		tool          string
+		content       string
+		elapsed       time.Duration
+		errorClass    string
+		fatal         bool
+		readSkillName string
+		terminalTool  string
 	}
 	results := make([]outcome, len(calls))
 
 	var wg sync.WaitGroup
-	var summaryMu sync.Mutex
 	summary := toolExecutionSummary{}
 	for i, tc := range calls {
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
 			start := time.Now()
-			if !toolAllowed(tc.Name, toolsExposed) {
-				results[i] = outcome{
-					id:             tc.ID,
-					tool:           tc.Name,
-					content:        tools.FormatToolError(fmt.Errorf("tool %q is not available in this runtime; choose another exposed tool or answer from current context", tc.Name)),
-					elapsed:        time.Since(start),
-					errorClass:     "hidden_tool",
-					hiddenRejected: true,
-				}
-				summaryMu.Lock()
-				summary.hiddenRejected = true
-				summaryMu.Unlock()
-				return
-			}
-			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), toolsExposed)
+			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), b.tools.Names())
 			args := toolArgumentsForTool(tc.Name, tc.Arguments, chatIDFromTeleContext(c))
 			result, err := b.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {
@@ -114,9 +102,6 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	for _, r := range results {
 		convCtx.AddToolResultMessage(r.id, r.content)
 		summary.lastResult = r.content
-		if r.hiddenRejected {
-			summary.hiddenRejected = true
-		}
 		if r.fatal && summary.fatalResult == "" {
 			summary.fatalResult = r.content
 		}

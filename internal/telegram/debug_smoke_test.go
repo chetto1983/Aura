@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -236,10 +235,14 @@ func TestPruneOrchestrationSnapshotsHonorsTraceRetentionDays(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) {
+func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *testing.T) {
+	// Registry is the single source of truth. The toolsExposed slice is kept
+	// for snapshot/logging only — execution never gates on it. A registered
+	// tool always runs, even when the model picked something outside the
+	// curated prompt-side allowlist (e.g. recovered from prior-turn memory).
 	reg := tools.NewRegistry(nil)
-	dangerous := &countingTelegramTool{name: "execute_code", result: "should not run"}
-	reg.Register(dangerous)
+	target := &countingTelegramTool{name: "execute_code", result: "ran"}
+	reg.Register(target)
 	b := &Bot{
 		cfg:   &config.Config{},
 		tools: reg,
@@ -247,36 +250,16 @@ func TestExecuteToolCallsRejectsHiddenToolBeforeRegistryExecution(t *testing.T) 
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "hidden-1", Name: "execute_code"}},
-		[]string{"search_memory"},
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
+		[]string{"search_memory"}, // narrower than registry
 		nil,
 	)
 
-	if !summary.hiddenRejected {
-		t.Fatal("hiddenRejected = false, want true")
+	if target.calls != 1 {
+		t.Fatalf("execute_code called %d times, want 1", target.calls)
 	}
-	if dangerous.calls != 0 {
-		t.Fatalf("hidden tool executed %d times, want 0", dangerous.calls)
-	}
-	if !strings.Contains(summary.lastResult, "not available in this runtime") {
-		t.Fatalf("lastResult = %q, want hidden tool error", summary.lastResult)
-	}
-	if summary.fatalResult != "" {
-		t.Fatalf("fatalResult = %q, want hidden tool to stay recoverable", summary.fatalResult)
-	}
-}
-
-func TestUserFacingFatalToolResultHidesRawJSONForHiddenWriteFile(t *testing.T) {
-	raw := tools.FormatFatalToolError(errors.New(`tool "write_file" is not exposed in the active toolset`))
-	got := userFacingFatalToolResult(raw)
-	if strings.Contains(got, `"ok":false`) || strings.Contains(got, `"retryable":false`) {
-		t.Fatalf("user-facing result leaked raw tool JSON: %q", got)
-	}
-	if strings.Contains(got, "write_file") {
-		t.Fatalf("user-facing result leaked tool name: %q", got)
-	}
-	if !strings.Contains(got, "non e' stato esposto") {
-		t.Fatalf("user-facing result = %q, want capture explanation", got)
+	if summary.lastResult != "ran" {
+		t.Fatalf("lastResult = %q, want %q", summary.lastResult, "ran")
 	}
 }
 
@@ -530,7 +513,11 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	}
 }
 
-func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
+func TestModelToolNamesExposesEntireRegistry(t *testing.T) {
+	// modelToolNames now mirrors the registry directly. No curated "core
+	// surface", no per-turn filtering, no discovery-gated MCP tools. This
+	// kills the family of "tool X is not available in this runtime" errors
+	// that came from the prompt hiding a tool the model later tried to call.
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
 	reg.Register(&countingTelegramTool{name: "schedule_task", result: "scheduled"})
@@ -545,16 +532,13 @@ func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	b := &Bot{tools: reg}
 	got := b.modelToolNames()
 
-	for _, want := range []string{"search_memory", "schedule_task", "tool_search", "execute_code"} {
+	for _, want := range []string{
+		"search_memory", "schedule_task", "tool_search", "execute_code",
+		"execute_shell", "mcp_mail_imap_search_messages",
+	} {
 		if !stringSliceContains(got, want) {
 			t.Fatalf("allowlist missing %q: %+v", want, got)
 		}
-	}
-	if stringSliceContains(got, "mcp_mail_imap_search_messages") {
-		t.Fatalf("raw MCP tool exposed before tool_search discovery: %+v", got)
-	}
-	if stringSliceContains(got, "execute_shell") {
-		t.Fatalf("execute_shell exposed before explicit tool_search discovery: %+v", got)
 	}
 }
 

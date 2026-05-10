@@ -326,8 +326,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			}
 			return agentloop.ExecutionSummary{
 				LastResult:     execution.lastResult,
-				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
-				HiddenRejected: execution.hiddenRejected,
+				FatalResult:    execution.fatalResult,
 				ReadSkillNames: execution.readSkillNames,
 				TerminalTool:   execution.terminalTool,
 			}
@@ -348,12 +347,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MaxRetryNudgesPerTurn:   1,
 			SpiralBreakerEnabled:    true,
 			TieredBudgetEnabled:     true,
-			BeforeTool: func(call llm.ToolCall, state agentloop.ToolCallState) agentloop.ToolCallDecision {
-				if !runtimeToolAllowedForUserIntent(call.Name, latestUserText(convCtx.Messages())) {
-					return agentloop.ToolCallDecision{Skip: true, Result: runtimeToolBlockedResult(call.Name)}
-				}
-				return duplicatePolicy(call, state)
-			},
+			BeforeTool: duplicatePolicy,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -490,18 +484,17 @@ func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) 
 	return stats
 }
 
+// modelToolNames returns every registered tool name. The runtime no longer
+// hides tools from the LLM behind a "core + discovery" facade — that pattern
+// generated repeated "tool not available in this runtime" errors when the
+// model called something it remembered from prior turns. With the registry
+// as the single source of truth, the prompt grows but tool-call rejections
+// disappear.
 func (b *Bot) modelToolNames() []string {
 	if b == nil || b.tools == nil {
 		return nil
 	}
-	core := []string{"search_memory", "schedule_task", "tool_search", "execute_code"}
-	names := make([]string, 0, len(core))
-	for _, name := range core {
-		if b.tools.Get(name) != nil {
-			names = append(names, name)
-		}
-	}
-	return names
+	return b.tools.Names()
 }
 
 func (b *Bot) maxToolLoopIterations() int {

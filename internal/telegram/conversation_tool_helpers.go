@@ -47,15 +47,6 @@ func orderToolDefinitionsForAllowlist(defs []llm.ToolDefinition, allowlist []str
 	return out
 }
 
-func toolAllowed(name string, allowlist []string) bool {
-	for _, allowed := range allowlist {
-		if allowed == name {
-			return true
-		}
-	}
-	return false
-}
-
 func skillNameFromReadFileArgs(args map[string]any) string {
 	value, ok := args["path"]
 	if !ok {
@@ -123,17 +114,6 @@ func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
 		outputPerM = cfg.CostOutputPerMTokens
 	}
 	return usage, estimateUsageCost(usage, inputPerM, outputPerM)
-}
-
-func userFacingFatalToolResult(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if strings.Contains(trimmed, "not exposed in the active toolset") {
-		if strings.Contains(trimmed, "write_file") || strings.Contains(trimmed, "apply_patch") {
-			return "Non posso modificare direttamente i file perche' il tool non e' stato esposto in questo turno."
-		}
-		return "Una capacita' interna richiesta non e' disponibile tra gli strumenti esposti in questo turno."
-	}
-	return raw
 }
 
 func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {

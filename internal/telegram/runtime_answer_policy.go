@@ -6,6 +6,9 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
+// userRequestedRawOutput detects when the user explicitly asked for raw
+// command output (vs a summarized answer). Used by the terminal-tool finalizer
+// to decide whether to render execute_shell output verbatim or to summarize it.
 func userRequestedRawOutput(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	if lower == "" {
@@ -40,48 +43,4 @@ func latestUserText(messages []llm.Message) string {
 		}
 	}
 	return ""
-}
-
-func runtimeToolAllowedForUserIntent(toolName, userText string) bool {
-	if toolName != "execute_code" && toolName != "execute_shell" {
-		return true
-	}
-	if userRequestedRawOutput(userText) {
-		return true
-	}
-	lower := strings.ToLower(strings.TrimSpace(userText))
-	for _, marker := range []string{
-		"diagnostica",
-		"diagnostic",
-		"debug",
-		"verifica",
-		"controlla",
-		"ispeziona",
-		"test",
-		"build",
-		"compila",
-		"installa",
-		"pip install",
-		"npm install",
-		"go test",
-		"go build",
-		"calcola",
-		"compute",
-		"crea",
-		"genera",
-		"scrivi",
-		"modifica",
-		"leggi il file",
-		"container",
-		"runtime",
-	} {
-		if strings.Contains(lower, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func runtimeToolBlockedResult(toolName string) string {
-	return "Richiesta conversazionale: non usare " + toolName + ". Rispondi in modo naturale con il contesto gia disponibile, senza ispezionare runtime, filesystem o container."
 }
