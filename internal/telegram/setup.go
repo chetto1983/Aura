@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/budget"
+	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -23,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/mcppolicy"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/qdrant"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -92,6 +95,32 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		client = createLLMClient(cfg, logger)
 	} else {
 		logger.Warn("no LLM provider configured, bot will echo messages without LLM")
+	}
+
+	// Shared Qdrant client (D-17). Created once early so WaitForReady, search,
+	// compact memory, and tool vector all use the same HTTP client pool.
+	// When QDRANT_URL is empty, qdrantCli remains nil and all consumers skip Qdrant.
+	var qdrantCli qdrant.Client
+	if strings.TrimSpace(cfg.QdrantURL) != "" {
+		qcli, err := qdrant.NewClient(qdrant.Config{
+			BaseURL: cfg.QdrantURL,
+			APIKey:  cfg.QdrantAPIKey,
+		})
+		if err != nil {
+			logger.Warn("failed to create qdrant client; qdrant-dependent features disabled", "error", err)
+		} else {
+			// Qdrant startup health gate (D-20, QDRANT-01).
+			// Block until Qdrant /readyz responds 2xx or 120s timeout expires.
+			// Returns a clear diagnostic on failure (endpoint + elapsed time).
+			healthCtx, healthCancel := context.WithTimeout(context.Background(), 120*time.Second)
+			waitErr := qdrant.WaitForReady(healthCtx, qcli, 120*time.Second)
+			healthCancel()
+			if waitErr != nil {
+				return nil, fmt.Errorf("qdrant health gate failed: %w", waitErr)
+			}
+			logger.Info("qdrant health gate passed", "url", cfg.QdrantURL)
+			qdrantCli = qcli
+		}
 	}
 
 	// Set up wiki store and writer
@@ -402,7 +431,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		sandboxMgr:          sandboxMgr,
 		toolReg:             toolReg,
 		compactMemoryHealth: compactVectorHealth,
-		sessions:            agentruntime.NewSessionStore(),
 		budget: budget.NewTracker(budget.Config{
 			SoftBudget:           cfg.SoftBudget,
 			HardBudget:           cfg.HardBudget,
@@ -410,6 +438,44 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			OutputCostPerMTokens: cfg.CostOutputPerMTokens,
 		}, logger),
 	}
+
+	// Create UserGate with real callbacks (D-16).
+	// OnEvict: persists conversation snapshot and clears session (D-10, T-01-22).
+	// OnOverflow: sends Telegram notice to user in a separate goroutine (D-03, T-01-20, Pitfall 4).
+	// The gate is created after b so callbacks can close over b safely.
+	userGate := concurrency.New(concurrency.Config{
+		InboxSize:         8,
+		EvictionThreshold: 30 * time.Minute,
+		SweepInterval:     60 * time.Second,
+		OnEvict: func(userID string) {
+			// Conversation snapshot is maintained by the actor goroutine as it runs;
+			// eviction signals cleanup. Log only userID (numeric Telegram ID), not content (T-01-22).
+			b.logger.Info("user evicted from gate; clearing session", "user_id", userID)
+			// Clear the session so memory is released and IsActive returns false (T-01-23).
+			b.sessionStore().Clear(userID)
+		},
+		OnOverflow: func(userID string) {
+			// Telegram notice in a separate goroutine per Pitfall 4 (T-01-20).
+			// The gate goroutine must never block on external I/O.
+			go func() {
+				chatID, err := strconv.ParseInt(userID, 10, 64)
+				if err != nil {
+					b.logger.Warn("overflow notice: invalid userID", "user_id", userID, "error", err)
+					return
+				}
+				msg := "I'm still processing your previous message. Your new message was dropped. Please try again in a moment."
+				if _, err := b.bot.Send(tele.ChatID(chatID), msg); err != nil {
+					b.logger.Warn("overflow notice delivery failed", "user_id", userID, "error", err)
+				}
+			}()
+		},
+	})
+	// Wire gate and gate-aware session store into the bot (D-16).
+	b.gate = userGate
+	b.sessions = agentruntime.NewSessionStore(userGate)
+
+	_ = qdrantCli // shared client used by search/compact consumers above; no direct Bot field needed
+
 	if tool := tools.NewRunTaskNowTool(b); tool != nil {
 		toolRegistry.Register(tool)
 	}

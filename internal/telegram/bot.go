@@ -207,6 +207,11 @@ func (b *Bot) Start() {
 
 // Stop gracefully stops update intake and waits for background workers.
 func (b *Bot) Stop() {
+	// Close the UserGate first (T-01-21): stops InactivityTracker and cancels all
+	// actor goroutines before the Telegram bot and scheduler shut down.
+	if gate := b.userGate(); gate != nil {
+		gate.Close()
+	}
 	if b.bot != nil && b.started.Load() {
 		b.bot.Stop()
 	}
