@@ -1,70 +1,51 @@
 package tools
 
 import (
-	"encoding/json"
 	"strings"
 )
 
-// ToolError is the structured format returned to the LLM when a tool call
-// fails. The LLM reads retryable + hint to decide whether to self-correct.
-type ToolError struct {
-	OK        bool   `json:"ok"`
-	Error     string `json:"error"`
-	Retryable bool   `json:"retryable"`
-	Hint      string `json:"hint,omitempty"`
-}
-
-// FormatToolError converts a Go error into a JSON tool-error result string.
-// Default classification: retryable=true with a generic hint. Callers that
-// know the error is fatal (permission denied, disk full) should use
-// FormatFatalToolError instead.
+// FormatToolError converts a Go error into the tool result string the LLM
+// reads back. Plain text — no JSON envelope, no "retryable" flag that invites
+// a retry loop. If the error message alone is not enough for the model to
+// recover, an inline hint is appended; otherwise the message stands.
+//
+// Design: tools report what happened, the LLM decides what to do. The runtime
+// neither suggests "retry" nor classifies fatality — both proved to inflate
+// loop iterations against tools that simply needed different arguments.
 func FormatToolError(err error) string {
+	if err == nil {
+		return ""
+	}
 	msg := err.Error()
-	te := ToolError{
-		OK:        false,
-		Error:     msg,
-		Retryable: true,
-		Hint:      hintForError(msg),
+	if hint := specificHint(msg); hint != "" {
+		return "Error: " + msg + "\n\n" + hint
 	}
-	b, _ := json.Marshal(te)
-	return string(b)
+	return "Error: " + msg
 }
 
-// FormatFatalToolError converts a non-retryable Go error.
+// FormatFatalToolError exists for callsite intent only. Same wire format as
+// FormatToolError; the loop no longer distinguishes the two. Kept so call
+// sites stay readable when the author knows the failure is non-recoverable.
 func FormatFatalToolError(err error) string {
-	te := ToolError{
-		OK:        false,
-		Error:     err.Error(),
-		Retryable: false,
+	if err == nil {
+		return ""
 	}
-	b, _ := json.Marshal(te)
-	return string(b)
+	return "Error: " + err.Error()
 }
 
-// hintForError returns a short hint based on the error message content.
-// If no pattern matches, returns a generic retry hint.
-func hintForError(msg string) string {
+// specificHint returns information the LLM cannot infer from the message
+// alone — typically "use tool X instead". Returns empty when the error text
+// already tells the model what to fix.
+func specificHint(msg string) string {
 	lower := strings.ToLower(msg)
 	switch {
 	case strings.Contains(lower, "is a directory"):
-		return "Use list_files on this directory, then read only specific entries with type=file"
-	case strings.Contains(lower, "too many tags"):
-		return "Retry with at most 10 short tags"
-	case strings.Contains(lower, "too many sources"):
-		return "Retry with at most 10 source URLs or references"
-	case strings.Contains(lower, "missing") || strings.Contains(lower, "required"):
-		return "Provide the required field mentioned in the error"
-	case strings.Contains(lower, "invalid") || strings.Contains(lower, "malformed"):
-		return "Fix the format of the argument mentioned in the error"
-	case strings.Contains(lower, "not found"):
-		return "Check whether the referenced resource exists before retrying"
-	case strings.Contains(lower, "too large") || strings.Contains(lower, "too many"):
-		return "Reduce the size or count mentioned in the error"
+		return "Hint: this path is a directory. Use list_files to enumerate it, then read individual files."
 	case strings.Contains(lower, "shell command failed") &&
-		(strings.Contains(lower, "syntax error") || strings.Contains(lower, "unexpected") ||
-			strings.Contains(lower, "sh:") || strings.Contains(lower, "redirection")):
-		return "Use execute_code with Python instead of execute_shell for this task"
-	default:
-		return "Correct your arguments and retry the tool call once"
+		(strings.Contains(lower, "syntax error") ||
+			strings.Contains(lower, "redirection") ||
+			strings.Contains(lower, "sh:")):
+		return "Hint: /bin/sh is dash, not bash. For non-trivial shell logic use execute_code with Python."
 	}
+	return ""
 }

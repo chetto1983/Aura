@@ -1,112 +1,76 @@
 package tools
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 )
 
-func TestFormatToolError_DefaultRetryable(t *testing.T) {
-	result := FormatToolError(errors.New("schema validation failed: missing rows"))
-	var te ToolError
-	if err := json.Unmarshal([]byte(result), &te); err != nil {
-		t.Fatalf("not valid JSON: %v (got %q)", err, result)
+func TestFormatToolErrorReturnsPlainText(t *testing.T) {
+	got := FormatToolError(errors.New("schema validation failed: missing rows"))
+	if strings.Contains(got, "{") || strings.Contains(got, `"ok"`) || strings.Contains(got, "retryable") {
+		t.Fatalf("expected plain text, got JSON-looking output: %q", got)
 	}
-	if te.OK {
-		t.Error("OK should be false")
+	if !strings.HasPrefix(got, "Error: ") {
+		t.Fatalf("expected Error: prefix, got %q", got)
 	}
-	if !te.Retryable {
-		t.Error("Retryable should be true by default")
-	}
-	if te.Error == "" {
-		t.Error("Error should not be empty")
-	}
-	if te.Hint == "" {
-		t.Error("Hint should not be empty")
+	if !strings.Contains(got, "schema validation failed") {
+		t.Fatalf("expected message body to be preserved, got %q", got)
 	}
 }
 
-func TestFormatToolError_HintForMissing(t *testing.T) {
-	result := FormatToolError(errors.New("missing required field 'rows'"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if te.Hint == "" {
-		t.Fatal("expected a hint")
-	}
-	if !strings.Contains(te.Hint, "required field") {
-		t.Errorf("hint should mention required field, got %q", te.Hint)
-	}
-}
-
-func TestFormatToolError_HintForInvalid(t *testing.T) {
-	result := FormatToolError(errors.New("invalid value for 'count'"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if !strings.Contains(te.Hint, "Fix the format") {
-		t.Errorf("unexpected hint: %q", te.Hint)
+func TestFormatToolErrorPreservesUnderlyingMessage(t *testing.T) {
+	for _, msg := range []string{
+		"missing required field 'rows'",
+		"invalid value for 'count'",
+		"source not found",
+		"too many rows",
+		"something unexpected happened",
+	} {
+		got := FormatToolError(errors.New(msg))
+		if !strings.Contains(got, msg) {
+			t.Errorf("missing body for %q in %q", msg, got)
+		}
 	}
 }
 
-func TestFormatToolError_HintForNotFound(t *testing.T) {
-	result := FormatToolError(errors.New("source not found"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if !strings.Contains(te.Hint, "exists") {
-		t.Errorf("unexpected hint: %q", te.Hint)
+func TestFormatToolErrorDirectoryHint(t *testing.T) {
+	got := FormatToolError(errors.New("read_file: workspace: wiki is a directory"))
+	if !strings.Contains(got, "list_files") {
+		t.Fatalf("expected list_files hint, got %q", got)
 	}
 }
 
-func TestFormatToolError_HintForTooLarge(t *testing.T) {
-	result := FormatToolError(errors.New("too many rows"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if !strings.Contains(te.Hint, "Reduce") {
-		t.Errorf("unexpected hint: %q", te.Hint)
+func TestFormatToolErrorShellRedirectionHint(t *testing.T) {
+	got := FormatToolError(errors.New("shell command failed (exit=2): /bin/sh: 26: Syntax error: redirection unexpected"))
+	if !strings.Contains(got, "execute_code") {
+		t.Fatalf("expected execute_code hint, got %q", got)
 	}
 }
 
-func TestFormatToolError_HintForTooManyTags(t *testing.T) {
-	result := FormatToolError(errors.New("write_file: validation failed: wiki validation failed: too many tags (max 10)"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if te.Hint != "Retry with at most 10 short tags" {
-		t.Fatalf("hint = %q", te.Hint)
+func TestFormatToolErrorOmitsHintWhenNoneApplies(t *testing.T) {
+	got := FormatToolError(errors.New("generic failure"))
+	// Plain message, no double newline indicating an appended hint block.
+	if strings.Contains(got, "\n\n") {
+		t.Fatalf("expected no hint block, got %q", got)
 	}
 }
 
-func TestFormatToolError_HintForDirectory(t *testing.T) {
-	result := FormatToolError(errors.New("read_file: workspace: wiki is a directory"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if !strings.Contains(te.Hint, "Use list_files on this directory") || !strings.Contains(te.Hint, "type=file") {
-		t.Fatalf("hint = %q", te.Hint)
+func TestFormatFatalToolErrorReturnsPlainText(t *testing.T) {
+	got := FormatFatalToolError(errors.New("permission denied"))
+	if strings.Contains(got, "{") || strings.Contains(got, "retryable") {
+		t.Fatalf("expected plain text, got %q", got)
+	}
+	if !strings.Contains(got, "permission denied") {
+		t.Fatalf("body lost, got %q", got)
 	}
 }
 
-func TestFormatToolError_GenericHint(t *testing.T) {
-	result := FormatToolError(errors.New("something unexpected happened"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if te.Hint == "" {
-		t.Fatal("expected a generic hint")
+func TestFormatToolErrorHandlesNil(t *testing.T) {
+	if got := FormatToolError(nil); got != "" {
+		t.Fatalf("nil error should produce empty string, got %q", got)
 	}
-}
-
-func TestFormatFatalToolError_NotRetryable(t *testing.T) {
-	result := FormatFatalToolError(errors.New("permission denied"))
-	var te ToolError
-	json.Unmarshal([]byte(result), &te)
-	if te.OK {
-		t.Error("OK should be false")
-	}
-	if te.Retryable {
-		t.Error("Retryable should be false for fatal errors")
-	}
-	if te.Error == "" {
-		t.Error("Error should not be empty")
-	}
-	if te.Hint != "" {
-		t.Error("Hint should be empty for fatal errors")
+	if got := FormatFatalToolError(nil); got != "" {
+		t.Fatalf("nil error should produce empty string, got %q", got)
 	}
 }

@@ -525,8 +525,8 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	if summary.terminalTool != "" {
 		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.terminalTool)
 	}
-	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.Contains(got, `"ok":false`) {
-		t.Fatalf("tool result = %q, want structured error for model recovery", got)
+	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.HasPrefix(got, "Error: ") {
+		t.Fatalf("tool result = %q, want plain Error: prefix for model recovery", got)
 	}
 }
 

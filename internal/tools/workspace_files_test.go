@@ -279,7 +279,7 @@ func TestReadFileDirectoryErrorMentionsListFiles(t *testing.T) {
 		t.Fatal("expected directory read error")
 	}
 	result := FormatToolError(err)
-	if !strings.Contains(result, "Use list_files on this directory") {
+	if !strings.Contains(result, "list_files") {
 		t.Fatalf("formatted error = %s", result)
 	}
 }
