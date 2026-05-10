@@ -38,6 +38,9 @@ type Snapshot struct {
 	TokensCompletion        int
 	TokensTotal             int
 	CostUSD                 float64
+	RetryNudgesSent         int
+	SpiralBreakerFired      bool
+	TieredBudgetTier        string
 }
 
 type Session struct {
@@ -72,6 +75,19 @@ func (s *SessionStore) Load(userID string) (*conversation.Context, bool) {
 	}
 	ctx, ok := value.(*conversation.Context)
 	return ctx, ok && ctx != nil
+}
+
+func (s *SessionStore) Clear(userID string) {
+	if s == nil {
+		return
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return
+	}
+	s.context.Delete(userID)
+	s.active.Delete(userID)
+	s.snapshots.Delete(userID)
 }
 
 func (s *SessionStore) IsActive(userID string) bool {

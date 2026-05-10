@@ -71,6 +71,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		return nil, fmt.Errorf("loading timezone %q: %w", cfg.Timezone, err)
 	}
+	if shouldBootstrapPromptOverlayDefaults(cfg) {
+		if err := conversation.EnsurePromptOverlayDefaults(cfg.PromptOverlayPath); err != nil {
+			logger.Warn("failed to bootstrap prompt overlay defaults", "path", cfg.PromptOverlayPath, "error", err)
+		}
+	}
 
 	pref := tele.Settings{
 		Token: cfg.TelegramToken,
@@ -186,8 +191,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
 	}
 
-	// Sandbox code execution. The tool is registered only after the bundled
-	// Pyodide runtime and runner both pass availability checks.
+	// Sandbox code execution. The tool is registered only after the configured
+	// runtime passes availability checks.
 	sandboxMgr, sandboxHealth := setupSandboxRuntime(cfg, logger)
 
 	// Tool registry (persistent LLM-written Python tools)
@@ -425,7 +430,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Sandbox tools
-	if tool := tools.NewExecuteCodeToolWithStore(sandboxMgr, b, sourceStore); tool != nil {
+	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(sandboxMgr, b, sourceStore, toolRegistry); tool != nil {
+		toolRegistry.Register(tool)
+	}
+	if tool := tools.NewExecuteShellTool(sandboxMgr); tool != nil {
 		toolRegistry.Register(tool)
 	}
 	if tool := tools.NewListToolsTool(toolReg); tool != nil {
@@ -437,6 +445,21 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if tool := tools.NewSaveToolTool(toolReg); tool != nil {
 		toolRegistry.Register(tool)
 	}
+
+	// Tool vector search index. Builds embeddings for all registered
+	// tools when TOOL_SEARCH_BACKEND is vector or hybrid. Falls back
+	// to pure FTS gracefully when Qdrant or the embedding service are
+	// unreachable.
+	toolRegistry.BuildVectorIndex(tools.ToolVectorConfig{
+		Backend:      cfg.ToolSearchBackend,
+		TopK:         cfg.ToolSearchTopK,
+		QdrantURL:    cfg.QdrantURL,
+		QdrantAPIKey: cfg.QdrantAPIKey,
+		Collection:   "aura_tool_search",
+		EmbedBaseURL: cfg.EmbeddingBaseURL,
+		EmbedAPIKey:  cfg.EmbeddingAPIKey,
+		EmbedModel:   cfg.EmbeddingModel,
+	})
 
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the
@@ -654,9 +677,27 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
 		toolRegistry.Register(pdfTool)
 	}
+	if tool := tools.NewToolSearchTool(toolRegistry); tool != nil {
+		toolRegistry.Register(tool)
+	}
 
 	b.registerHandlers()
+	b.installBotCommands()
 	return b, nil
+}
+
+func shouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	overlay := strings.TrimSpace(cfg.PromptOverlayPath)
+	if overlay == "" || overlay == "." {
+		return false
+	}
+	overlayClean := filepath.Clean(overlay)
+	workspaceClean := filepath.Clean(strings.TrimSpace(cfg.WorkspaceRoot))
+	runtimeClean := filepath.Clean(strings.TrimSpace(cfg.RuntimeWorkspacePath))
+	return overlayClean == workspaceClean || overlayClean == runtimeClean || overlayClean == filepath.Clean("/workspace")
 }
 
 func skillSearchRoots(cfg *config.Config) []string {
@@ -756,6 +797,50 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	timeout := time.Duration(cfg.SandboxTimeoutSec) * time.Second
 	runtimeMode := strings.ToLower(strings.TrimSpace(cfg.SandboxRuntimeMode))
 	runtimeURL := strings.TrimSpace(cfg.SandboxRuntimeURL)
+	if runtimeMode == "process" || runtimeMode == "aura" {
+		runner, err := sandbox.NewProcessRunner(sandbox.ProcessRunnerConfig{
+			WorkDir: cfg.WorkspaceRoot,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Detail = err.Error()
+			logger.Warn("sandbox process runner configuration invalid, execute_code disabled",
+				"runtime_kind", sandbox.RuntimeKindProcess,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", health.Detail)
+			return nil, health
+		}
+		availability := runner.CheckAvailability()
+		health.Runtime = cfg.WorkspaceRoot
+		health.Available = availability.Available
+		health.RuntimeKind = string(availability.Kind)
+		health.Detail = availability.Detail
+		if !availability.Available {
+			logger.Warn("sandbox process runtime unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", availability.Detail)
+			return nil, health
+		}
+		manager, err := sandbox.NewManager(sandbox.Config{
+			Runtime: runner,
+			Timeout: timeout,
+		})
+		if err != nil {
+			health.Available = false
+			health.Detail = err.Error()
+			logger.Warn("sandbox process manager unavailable, execute_code disabled",
+				"runtime_kind", health.RuntimeKind,
+				"workdir", cfg.WorkspaceRoot,
+				"detail", health.Detail)
+			return nil, health
+		}
+		logger.Info("sandbox process runtime available, execute_code enabled",
+			"runtime_kind", health.RuntimeKind,
+			"workdir", cfg.WorkspaceRoot,
+			"detail", health.Detail)
+		return manager, health
+	}
 	if runtimeMode == "container" || (runtimeMode == "auto" && runtimeURL != "") {
 		runner, err := sandbox.NewPyodideContainerRunner(sandbox.PyodideContainerRunnerConfig{
 			BaseURL: runtimeURL,

@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +188,9 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 		tokensPrompt:        10,
 		tokensCompletion:    5,
 		tokensTotal:         15,
+		retryNudgesSent:     1,
+		spiralBreakerFired:  true,
+		tieredBudgetTier:    "code_exec",
 	})
 
 	snap, ok := b.loadOrchestrationSnapshot("1148481707")
@@ -209,6 +214,9 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 	}
 	if !snap.DuplicateToolCall {
 		t.Fatal("DuplicateToolCall = false, want true")
+	}
+	if snap.RetryNudgesSent != 1 || !snap.SpiralBreakerFired || snap.TieredBudgetTier != "code_exec" {
+		t.Fatalf("guardrail snapshot fields = retry %d spiral %v tier %q", snap.RetryNudgesSent, snap.SpiralBreakerFired, snap.TieredBudgetTier)
 	}
 }
 
@@ -502,30 +510,110 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
-func TestModelToolNamesExposesRegisteredCapabilities(t *testing.T) {
+func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&errorTelegramTool{name: "execute_shell"})
+	b := &Bot{cfg: &config.Config{TerminalToolPolicy: "on"}, tools: reg, logger: slog.Default()}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "shell-1", Name: "execute_shell", Arguments: map[string]any{"command": "find /home/user"}}},
+		[]string{"execute_shell"},
+		nil,
+	)
+
+	if summary.terminalTool != "" {
+		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.terminalTool)
+	}
+	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.Contains(got, `"ok":false`) {
+		t.Fatalf("tool result = %q, want structured error for model recovery", got)
+	}
+}
+
+func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
-	reg.Register(&categorizedCountingTelegramTool{
-		countingTelegramTool: countingTelegramTool{name: "web_search", result: "web"},
-		category:             tools.CategoryAutonomous,
-	})
+	reg.Register(&countingTelegramTool{name: "schedule_task", result: "scheduled"})
+	reg.Register(tools.NewToolSearchTool(reg))
+	reg.Register(&countingTelegramTool{name: "execute_code", result: "code"})
+	reg.Register(&countingTelegramTool{name: "execute_shell", result: "shell"})
 	reg.Register(&categorizedCountingTelegramTool{
 		countingTelegramTool: countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail"},
 		category:             tools.CategoryAutonomous,
-	})
-	reg.Register(&categorizedCountingTelegramTool{
-		countingTelegramTool: countingTelegramTool{name: "mcp_mail_smtp_send_message", result: "send"},
-		category:             tools.CategoryMCP,
 	})
 
 	b := &Bot{tools: reg}
 	got := b.modelToolNames()
 
-	for _, want := range []string{"search_memory", "web_search", "mcp_mail_imap_search_messages", "mcp_mail_smtp_send_message"} {
+	for _, want := range []string{"search_memory", "schedule_task", "tool_search", "execute_code"} {
 		if !stringSliceContains(got, want) {
 			t.Fatalf("allowlist missing %q: %+v", want, got)
 		}
 	}
+	if stringSliceContains(got, "mcp_mail_imap_search_messages") {
+		t.Fatalf("raw MCP tool exposed before tool_search discovery: %+v", got)
+	}
+	if stringSliceContains(got, "execute_shell") {
+		t.Fatalf("execute_shell exposed before explicit tool_search discovery: %+v", got)
+	}
+}
+
+func TestRunToolCallingLoopAddsToolSearchDiscoveries(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	searchTool := tools.NewToolSearchTool(reg)
+	reg.Register(searchTool)
+	mailTool := &countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail result"}
+	reg.Register(mailTool)
+	fake := &scriptedTelegramLLM{responses: []llm.Response{
+		{
+			ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "tool_search", Arguments: map[string]any{
+				"query": "mail search messages",
+				"limit": float64(3),
+			}}},
+		},
+		{
+			ToolCalls: []llm.ToolCall{{ID: "mail-1", Name: "mcp_mail_imap_search_messages", Arguments: map[string]any{}}},
+		},
+		{Content: "mail done"},
+	}}
+	b := &Bot{
+		cfg:   &config.Config{},
+		llm:   fake,
+		tools: reg,
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+	convCtx.AddUserMessage("cerca email")
+
+	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil,
+		[]string{"tool_search"}, agentPromptPlan{Version: "test", Hash: "hash"}, false)
+
+	if response != "mail done" {
+		t.Fatalf("response = %q, want mail done", response)
+	}
+	if mailTool.calls != 1 {
+		t.Fatalf("mail tool calls = %d, want 1", mailTool.calls)
+	}
+	if len(fake.requests) != 3 {
+		t.Fatalf("LLM requests = %d, want 3", len(fake.requests))
+	}
+	if hasLLMTool(fake.requests[0].Tools, "mcp_mail_imap_search_messages") {
+		t.Fatalf("mail tool exposed before search: %+v", fake.requests[0].Tools)
+	}
+	if !hasLLMTool(fake.requests[1].Tools, "mcp_mail_imap_search_messages") {
+		t.Fatalf("mail tool not exposed after search: %+v", fake.requests[1].Tools)
+	}
+	if !stringSliceContains(stats.toolsExposed, "mcp_mail_imap_search_messages") {
+		t.Fatalf("stats toolsExposed = %+v, missing discovered mail tool", stats.toolsExposed)
+	}
+}
+
+func hasLLMTool(defs []llm.ToolDefinition, name string) bool {
+	for _, def := range defs {
+		if def.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 type categorizedCountingTelegramTool struct {
@@ -552,6 +640,20 @@ func (t *countingTelegramTool) Execute(_ context.Context, args map[string]any) (
 	t.calls++
 	t.lastArgs = args
 	return t.result, nil
+}
+
+type errorTelegramTool struct {
+	name string
+}
+
+func (t *errorTelegramTool) Name() string { return t.name }
+
+func (t *errorTelegramTool) Description() string { return "error fake tool" }
+
+func (t *errorTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+
+func (t *errorTelegramTool) Execute(context.Context, map[string]any) (string, error) {
+	return "", fmt.Errorf("shell command failed (exit=1): find: '/home/user': No such file or directory")
 }
 
 type scriptedTelegramLLM struct {

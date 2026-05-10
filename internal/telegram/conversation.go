@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/agentloop"
@@ -40,11 +41,11 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// without restarting the bot.
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	var skillsBlock string
-	// Slice 11q/06: read SOUL.md / AGENT.md / USER.md / TOOLS.md from the
+	// Slice 11q/06: read SOUL.md / USER.md / TOOLS.md from the
 	// configured overlay dir. Picobot pattern: lets the operator tune
-	// personality, Aura runtime notes, durable user facts, and tool guidance by
-	// file; the next user turn picks up the change with no recompile or
-	// restart. AGENTS.md stays development-only and is not injected into Aura's prompt.
+	// personality, durable user facts, and tool guidance by file; the next user
+	// turn picks up the change with no recompile or restart. AGENT.md and
+	// AGENTS.md stay file-readable only and are not injected into Aura's prompt.
 	if b.skills != nil {
 		loadedSkills, err := b.skills.LoadAll()
 		if err != nil {
@@ -150,6 +151,17 @@ func (b *Bot) handleConversation(c tele.Context) {
 
 	}
 
+	compactedToolResults := convCtx.CompactCompletedToolResults(conversation.ToolResultCompactionPolicy{
+		MaxChars:       1200,
+		KeepRecentFull: 2,
+	})
+	if compactedToolResults > 0 {
+		b.logger.Info("conversation tool results compacted",
+			"user_id", userID,
+			"count", compactedToolResults,
+		)
+	}
+
 	// Slice 16d: context enforcement runs after the user has seen the
 	// response so context trimming doesn't add to perceived wait time.
 	go func() {
@@ -164,7 +176,7 @@ func (b *Bot) handleConversation(c tele.Context) {
 	// subsystem without sprinkling timers everywhere.
 	b.logger.Info("conversation complete",
 		"user_id", userID,
-		"tokens_used", convCtx.TotalTokensUsed(),
+		"tokens_lifetime", convCtx.TotalTokensUsed(),
 		"elapsed_ms", time.Since(turnStart).Milliseconds(),
 		"llm_calls", stats.llmCalls,
 		"tool_calls", stats.toolCalls,
@@ -183,6 +195,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"sandbox_used", stats.sandboxUsed,
 		"terminal_tool", stats.terminalTool,
 		"duplicate_tool_rejected", stats.duplicateToolCall,
+		"retry_nudges_sent", stats.retryNudgesSent,
+		"spiral_breaker_fired", stats.spiralBreakerFired,
+		"tiered_budget_tier", stats.tieredBudgetTier,
 		"tokens_prompt", stats.tokensPrompt,
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
@@ -230,6 +245,9 @@ type turnStats struct {
 	tokensCompletion        int
 	tokensTotal             int
 	costUSD                 float64
+	retryNudgesSent         int
+	spiralBreakerFired      bool
+	tieredBudgetTier        string
 }
 
 type agentPromptPlan struct {
@@ -246,7 +264,7 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 	}
 	modules := []string{"base", "runtime", "registered-tools"}
 	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: all registered tools\n\nChoose tools autonomously when they help. Tools are already bounded by their implementations and workspace roots. Prefer direct answers when no tool is needed.", version)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: core tools plus tool_search discoveries\n\nChoose tools autonomously when they help. When a needed capability is not visible, call tool_search with a natural-language capability description, then use only tools returned in that search. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")
@@ -267,21 +285,45 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 
 func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, toolAllowlist []string, promptPlan agentPromptPlan, retrievalCapsulePresent bool) (string, turnStats) {
 	maxIterations := b.maxToolLoopIterations()
+	var toolMu sync.Mutex
+	activeToolNames := append([]string(nil), toolAllowlist...)
+	currentToolNames := func() []string {
+		toolMu.Lock()
+		defer toolMu.Unlock()
+		return append([]string(nil), activeToolNames...)
+	}
+	currentToolDefs := func() []llm.ToolDefinition {
+		names := currentToolNames()
+		return orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(names), names)
+	}
+	maxCallsPerTool := map[string]int{
+		"search_memory": 2,
+		"tool_search":   2,
+	}
+	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
+	addActiveTools := func(names []string) {
+		toolMu.Lock()
+		defer toolMu.Unlock()
+		activeToolNames = appendUniqueStrings(activeToolNames, names...)
+	}
 	baseStats := turnStats{
 		promptVersion:           promptPlan.Version,
 		promptModules:           append([]string(nil), promptPlan.Modules...),
 		promptHash:              promptPlan.Hash,
 		toolset:                 "registered",
-		toolsetSelectReason:     "all registered tools exposed",
+		toolsetSelectReason:     "core tools plus tool_search discoveries",
 		retrievalCapsulePresent: retrievalCapsulePresent,
 	}
-	toolDefs := orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(toolAllowlist), toolAllowlist)
+	toolDefs := currentToolDefs()
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	var currentStats turnStats
 	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
 		Client: telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
 		Executor: agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, baseStats.toolsExposed, currentStats.readSkills)
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.readSkills)
+			if len(execution.discoveredTools) > 0 {
+				addActiveTools(execution.discoveredTools)
+			}
 			return agentloop.ExecutionSummary{
 				LastResult:     execution.lastResult,
 				FatalResult:    userFacingFatalToolResult(execution.fatalResult),
@@ -295,13 +337,23 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		PromptHash:              promptPlan.Hash,
 		PromptModules:           promptPlan.Modules,
 		Toolset:                 "registered",
-		ToolsetSelectReason:     "all registered tools exposed",
+		ToolsetSelectReason:     "core tools plus tool_search discoveries",
 		Tools:                   toolDefs,
+		ToolsProvider:           currentToolDefs,
 		RetrievalCapsulePresent: retrievalCapsulePresent,
 		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
+			MaxRetryNudgesPerTurn:   1,
+			SpiralBreakerEnabled:    true,
+			TieredBudgetEnabled:     true,
+			BeforeTool: func(call llm.ToolCall, state agentloop.ToolCallState) agentloop.ToolCallDecision {
+				if !runtimeToolAllowedForUserIntent(call.Name, latestUserText(convCtx.Messages())) {
+					return agentloop.ToolCallDecision{Skip: true, Result: runtimeToolBlockedResult(call.Name)}
+				}
+				return duplicatePolicy(call, state)
+			},
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -322,8 +374,26 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
-				if terminalTool == "execute_code" {
+				telegramStats := mergeAgentLoopStats(baseStats, *stats)
+				userAskedRaw := userRequestedRawOutput(latestUserText(convCtx.Messages()))
+				if terminalTool == "execute_shell" && !userAskedRaw {
+					response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
+					*stats = applyTelegramTerminalStats(*stats, telegramStats)
+					if delivered {
+						return "", true, true
+					}
+					return response, false, true
+				}
+				if terminalTool == "execute_code" || terminalTool == "execute_shell" {
 					response := formatTerminalExecuteCodeResult(lastToolResult)
+					if !userAskedRaw && agentruntime.LooksLikeUnsafeFinalAnswer(response) {
+						response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
+						*stats = applyTelegramTerminalStats(*stats, telegramStats)
+						if delivered {
+							return "", true, true
+						}
+						return response, false, true
+					}
 					convCtx.AddAssistantMessage(response)
 					return response, false, true
 				}
@@ -332,7 +402,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 					convCtx.AddAssistantMessage(response)
 					return response, false, true
 				}
-				telegramStats := mergeAgentLoopStats(baseStats, *stats)
 				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
 				*stats = applyTelegramTerminalStats(*stats, telegramStats)
 				if delivered {
@@ -340,11 +409,13 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				}
 				return response, false, true
 			},
+			MaxCallsPerTool: maxCallsPerTool,
 		},
 		OnEvent: func(event agentruntime.Event) {
 			switch event.Type {
 			case agentruntime.EventStats:
 				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
+				currentStats.toolsExposed = currentToolNames()
 				b.storeOrchestrationSnapshot(userID, currentStats)
 			}
 		},
@@ -353,6 +424,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		b.logger.Error("agent loop failed", "user_id", userID, "error", err)
 	}
 	stats := mergeAgentLoopStats(baseStats, result.Stats)
+	stats.toolsExposed = currentToolNames()
 	currentStats = stats
 	if result.Stats.LLMCalls > 0 && result.Stats.TerminalTool == "" {
 		b.notifySoftBudget(c, userID)
@@ -402,6 +474,9 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	base.tokensCompletion = stats.TokensCompletion
 	base.tokensTotal = stats.TokensTotal
 	base.costUSD = stats.CostUSD
+	base.retryNudgesSent = stats.RetryNudgesSent
+	base.spiralBreakerFired = stats.SpiralBreakerFired
+	base.tieredBudgetTier = stats.TieredBudgetTier
 	return base
 }
 
@@ -419,7 +494,14 @@ func (b *Bot) modelToolNames() []string {
 	if b == nil || b.tools == nil {
 		return nil
 	}
-	return b.tools.Names()
+	core := []string{"search_memory", "schedule_task", "tool_search", "execute_code"}
+	names := make([]string, 0, len(core))
+	for _, name := range core {
+		if b.tools.Get(name) != nil {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func (b *Bot) maxToolLoopIterations() int {

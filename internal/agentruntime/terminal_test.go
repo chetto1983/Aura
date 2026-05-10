@@ -25,6 +25,36 @@ func TestFormatTerminalExecuteCodeResultMasksMetadata(t *testing.T) {
 	}
 }
 
+func TestFormatTerminalExecuteCodeResultDoesNotLeakBareStderr(t *testing.T) {
+	raw := "exit_code: 0\nelapsed_ms: 17\n\n--- stderr ---\nfind: '/home/user': No such file or directory"
+
+	got := FormatTerminalExecuteCodeResult(raw)
+
+	for _, leaked := range []string{"find:", "/home/user", "--- stderr ---", "exit_code"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "non ha prodotto un risultato utile") {
+		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
+	}
+}
+
+func TestFormatTerminalExecuteCodeResultDoesNotLeakToolErrorJSON(t *testing.T) {
+	raw := `{"ok":false,"error":"shell command failed (exit=1): find: '/home/user': No such file or directory","retryable":true}`
+
+	got := FormatTerminalExecuteCodeResult(raw)
+
+	for _, leaked := range []string{`"ok":false`, "find:", "/home/user", "retryable"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "non e riuscito") {
+		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
+	}
+}
+
 func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 	var gotRequest llm.Request
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
@@ -101,6 +131,37 @@ func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
 		if strings.Contains(got, leaked) {
 			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
 		}
+	}
+}
+
+func TestTerminalToolFallbackMasksShellDump(t *testing.T) {
+	raw := "Filesystem      Size  Used Avail Use% Mounted on\noverlay          100G   10G   90G  10% /\n/dev/sda /var/lib/docker"
+
+	got := TerminalToolFallbackResponse("execute_shell", raw)
+
+	for _, leaked := range []string{"Filesystem", "overlay", "/var/lib"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "output tecnico grezzo") {
+		t.Fatalf("TerminalToolFallbackResponse = %q, want natural shell fallback", got)
+	}
+}
+
+func TestLooksLikeUnsafeFinalAnswer(t *testing.T) {
+	for _, raw := range []string{
+		`Evidence envelope: {"items":[]}`,
+		"exit_code: 0\nelapsed_ms: 3",
+		`{"source_id":"src_1","tokens_total":123}`,
+		"workspace_root=/workspace",
+	} {
+		if !LooksLikeUnsafeFinalAnswer(raw) {
+			t.Fatalf("LooksLikeUnsafeFinalAnswer(%q) = false, want true", raw)
+		}
+	}
+	if LooksLikeUnsafeFinalAnswer("Ho trovato il documento e te lo riassumo.") {
+		t.Fatal("LooksLikeUnsafeFinalAnswer(natural text) = true, want false")
 	}
 }
 

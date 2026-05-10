@@ -38,6 +38,9 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		TokensCompletion:        stats.tokensCompletion,
 		TokensTotal:             stats.tokensTotal,
 		CostUSD:                 stats.costUSD,
+		RetryNudgesSent:         stats.retryNudgesSent,
+		SpiralBreakerFired:      stats.spiralBreakerFired,
+		TieredBudgetTier:        stats.tieredBudgetTier,
 	})
 	b.pruneOrchestrationSnapshots(now)
 }

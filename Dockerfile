@@ -22,7 +22,7 @@ ARG MAIL_MCP_VERSION=0.4.5
 ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c92388249bf
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git tzdata wget xz-utils \
+    && apt-get install -y --no-install-recommends ca-certificates curl file git jq procps python3 python3-pip python3-venv ripgrep sqlite3 tzdata unzip wget xz-utils zip \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
@@ -53,6 +53,10 @@ ENV AURA_HEADLESS=true \
     DB_PATH=/data/aura.db \
     LOG_DIR=/data/logs \
     HOME=/data \
+    PATH=/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PIP_CACHE_DIR=/data/.pip \
+    PIP_USER=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     NPM_CONFIG_CACHE=/data/.npm \
     WIKI_PATH=/wiki \
     SKILLS_PATH=/skills \
@@ -60,7 +64,7 @@ ENV AURA_HEADLESS=true \
     MCP_SERVERS_PATH=/data/mcp.json \
     PROMPT_OVERLAY_PATH=/data \
     SANDBOX_ENABLED=true \
-    SANDBOX_RUNTIME_MODE=auto
+    SANDBOX_RUNTIME_MODE=process
 
 EXPOSE 8080
 

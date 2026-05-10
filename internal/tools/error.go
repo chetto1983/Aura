@@ -60,6 +60,10 @@ func hintForError(msg string) string {
 		return "Check whether the referenced resource exists before retrying"
 	case strings.Contains(lower, "too large") || strings.Contains(lower, "too many"):
 		return "Reduce the size or count mentioned in the error"
+	case strings.Contains(lower, "shell command failed") &&
+		(strings.Contains(lower, "syntax error") || strings.Contains(lower, "unexpected") ||
+			strings.Contains(lower, "sh:") || strings.Contains(lower, "redirection")):
+		return "Use execute_code with Python instead of execute_shell for this task"
 	default:
 		return "Correct your arguments and retry the tool call once"
 	}

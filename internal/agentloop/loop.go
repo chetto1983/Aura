@@ -65,6 +65,7 @@ type Options struct {
 	MaxIterations           int
 	MaxElapsed              time.Duration
 	Tools                   []llm.ToolDefinition
+	ToolsProvider           func() []llm.ToolDefinition
 	TerminalToolPolicy      bool
 	AllowNoToolFinalization bool
 	DuplicateToolResult     func(llm.ToolCall) string
@@ -75,6 +76,9 @@ type Options struct {
 	EstimateCost            func(llm.TokenUsage) float64
 	OnStats                 func(Stats)
 	TerminalHandler         TerminalHandler
+	MaxRetryNudgesPerTurn   int
+	SpiralBreakerEnabled    bool
+	TieredBudgetEnabled     bool
 }
 
 type Result struct {
@@ -101,7 +105,16 @@ type Stats struct {
 	CostUSD            float64
 	MaxIterationsHit   bool
 	MaxElapsedHit      bool
+	RetryNudgesSent    int
+	SpiralBreakerFired bool
+	TieredBudgetTier   string
 }
+
+const (
+	tierSimpleQA = 3
+	tierSearch   = 4
+	tierCodeExec = 6
+)
 
 func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (Result, error) {
 	if opts.MaxIterations < 1 {
@@ -119,7 +132,22 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 	emitStats()
 
-	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
+	effectiveMax := opts.MaxIterations
+	if opts.TieredBudgetEnabled {
+		effectiveMax = tierSimpleQA
+	}
+	for iteration := 0; iteration < effectiveMax; iteration++ {
+		if opts.TieredBudgetEnabled {
+			tierMax := tieredMaxIterations(stats.ToolsCalled)
+			if tierMax > effectiveMax {
+				effectiveMax = tierMax
+				if effectiveMax > opts.MaxIterations {
+					effectiveMax = opts.MaxIterations
+				}
+			}
+			stats.TieredBudgetTier = tierName(effectiveMax)
+		}
+
 		if opts.MaxElapsed > 0 && time.Since(start) >= opts.MaxElapsed {
 			stats.MaxElapsedHit = true
 			answer := finalAnswerOnBudget(lastToolResult)
@@ -133,9 +161,14 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 
+		tools := opts.Tools
+		if opts.ToolsProvider != nil {
+			tools = opts.ToolsProvider()
+		}
+
 		stats.LLMCalls++
 		stats.LoopSteps++
-		resp, err := client.Chat(ctx, state.Messages(), opts.Tools)
+		resp, err := client.Chat(ctx, state.Messages(), tools)
 		if err != nil {
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}
@@ -154,11 +187,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		if !resp.Response.HasToolCalls {
 			response := strings.TrimSpace(resp.Response.Content)
 			if response == "" {
-				if lastToolResult != "" {
-					response = lastToolResult
-				} else {
-					response = "I completed the request but do not have anything else to add."
-				}
+				response = finalAnswerOnBudget(lastToolResult)
+			}
+			if looksLikeRawToolEvidence(response) {
+				response = finalAnswerOnBudget(lastToolResult)
 			}
 			state.AddAssistantMessage(response)
 			emitStats()
@@ -180,9 +212,12 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				}
 			case "run_aurabot_swarm":
 				stats.SwarmUsed = true
-			case "execute_code":
+			case "execute_code", "execute_shell":
 				stats.SandboxUsed = true
 			}
+		}
+		if opts.TieredBudgetEnabled {
+			stats.TieredBudgetTier = tierName(tieredMaxIterations(stats.ToolsCalled))
 		}
 		emitStats()
 
@@ -205,6 +240,8 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 					if decision.Result != "" {
 						skippedToolResults[call.ID] = decision.Result
 					}
+					seenToolCalls[key] = true
+					toolCallExecutions[call.Name]++
 					duplicateToolCalls = append(duplicateToolCalls, call)
 					continue
 				}
@@ -231,6 +268,21 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				stats.TerminalTool = execution.TerminalTool
 			}
 		}
+		if execution.HiddenRejected && opts.SpiralBreakerEnabled {
+			stats.HiddenToolRejected = true
+			stats.SpiralBreakerFired = true
+			if opts.AllowNoToolFinalization {
+				if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
+					state.AddAssistantMessage(answer)
+					emitStats()
+					return Result{Text: answer, Stats: stats}, nil
+				}
+			}
+			answer := "Ho incontrato un limite sugli strumenti disponibili, quindi rispondo con il contesto che ho gia invece di continuare a provarci."
+			state.AddAssistantMessage(answer)
+			emitStats()
+			return Result{Text: answer, Stats: stats}, nil
+		}
 		for _, duplicate := range duplicateToolCalls {
 			if result := skippedToolResults[duplicate.ID]; result != "" {
 				state.AddToolResultMessage(duplicate.ID, result)
@@ -239,6 +291,13 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			state.AddToolResultMessage(duplicate.ID, duplicateToolResult(duplicate, opts))
 		}
 		emitStats()
+
+		if opts.MaxRetryNudgesPerTurn > 0 && stats.RetryNudgesSent < opts.MaxRetryNudgesPerTurn {
+			if toolResultsContainError(state, freshCalls) {
+				stats.RetryNudgesSent++
+				emitStats()
+			}
+		}
 
 		if execution.FatalResult != "" {
 			state.AddAssistantMessage(execution.FatalResult)
@@ -254,10 +313,49 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 
 	stats.MaxIterationsHit = true
+	if opts.AllowNoToolFinalization {
+		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
+			state.AddAssistantMessage(answer)
+			emitStats()
+			return Result{Text: answer, Stats: stats}, nil
+		}
+	}
 	answer := finalAnswerOnBudget(lastToolResult)
 	state.AddAssistantMessage(answer)
 	emitStats()
 	return Result{Text: answer, Stats: stats}, nil
+}
+
+func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats) (string, bool) {
+	if client == nil || state == nil || stats == nil {
+		return "", false
+	}
+	messages := append([]llm.Message(nil), state.Messages()...)
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: "Hai raggiunto il limite di tool per questo turno. Non chiamare altri tool. Rispondi all'utente in modo naturale e utile usando solo i risultati gia presenti sopra. Non copiare output tecnici, JSON, Evidence envelope, score, ID interni, tool name, metriche o intestazioni come \"Memory evidence for\". Se le evidenze non bastano, dillo in una frase semplice.",
+	})
+	stats.LLMCalls++
+	stats.LoopSteps++
+	resp, err := client.Chat(ctx, messages, nil)
+	if err != nil {
+		return "", false
+	}
+	state.TrackTokens(resp.Response.Usage)
+	stats.TokensPrompt += resp.Response.Usage.PromptTokens
+	stats.TokensCompletion += resp.Response.Usage.CompletionTokens
+	stats.TokensTotal += resp.Response.Usage.TotalTokens
+	if opts.EstimateCost != nil {
+		stats.CostUSD += opts.EstimateCost(resp.Response.Usage)
+	}
+	if opts.RecordUsage != nil {
+		opts.RecordUsage(resp.Response.Usage)
+	}
+	text := strings.TrimSpace(resp.Response.Content)
+	if text == "" || resp.Response.HasToolCalls || looksLikeRawToolEvidence(text) {
+		return "", false
+	}
+	return text, true
 }
 
 func duplicateToolResult(call llm.ToolCall, opts Options) string {
@@ -287,11 +385,50 @@ func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.T
 	}
 }
 
+func skillNameFromReadFileArgs(args map[string]any) string {
+	value, ok := args["path"]
+	if !ok {
+		return ""
+	}
+	path := strings.TrimSpace(fmt.Sprint(value))
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
+		return ""
+	}
+	name := strings.TrimSpace(parts[len(parts)-2])
+	if name == "" || strings.EqualFold(name, "skills") {
+		return ""
+	}
+	return name
+}
+
 func finalAnswerOnBudget(lastToolResult string) string {
 	if result := strings.TrimSpace(lastToolResult); result != "" {
+		if looksLikeRawToolEvidence(result) {
+			return "Ho raccolto risultati tecnici, ma il turno si e fermato prima di sintetizzarli bene. Posso riprendere con un focus piu preciso."
+		}
 		return result
 	}
 	return "Ho raggiunto il limite del turno senza ottenere risultati utilizzabili."
+}
+
+func looksLikeRawToolEvidence(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "memory evidence for") ||
+		strings.Contains(lower, "evidence envelope:") ||
+		strings.Contains(lower, `"query":`) && strings.Contains(lower, `"items":`) && strings.Contains(lower, `"score":`) ||
+		strings.Contains(lower, "exit_code:") ||
+		strings.Contains(lower, "elapsed_ms") ||
+		strings.Contains(lower, "source_id") ||
+		strings.Contains(lower, "tokens_total") ||
+		strings.Contains(lower, `"ok":false`) ||
+		strings.Contains(lower, `"tool_calls"`) ||
+		strings.Contains(lower, "workspace_root") ||
+		strings.Contains(lower, "top_dirs_in_workspace") ||
+		strings.Contains(lower, "/var/lib/")
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {
@@ -316,22 +453,53 @@ func stringSliceContains(values []string, candidate string) bool {
 	return false
 }
 
-func skillNameFromReadFileArgs(args map[string]any) string {
-	value, ok := args["path"]
-	if !ok {
-		return ""
+func tieredMaxIterations(called []string) int {
+	max := tierSimpleQA
+	for _, name := range called {
+		switch name {
+		case "execute_code", "execute_shell":
+			max = tierCodeExec
+		case "tool_search":
+			if max < tierSearch {
+				max = tierSearch
+			}
+		}
 	}
-	path := strings.TrimSpace(fmt.Sprint(value))
-	if path == "" {
-		return ""
+	return max
+}
+
+func tierName(maxIterations int) string {
+	switch maxIterations {
+	case tierSearch:
+		return "orchestration"
+	case tierCodeExec:
+		return "code_exec"
+	default:
+		return "simple_qa"
 	}
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
-		return ""
+}
+
+func toolResultsContainError(state State, calls []llm.ToolCall) bool {
+	if len(calls) == 0 {
+		return false
 	}
-	name := strings.TrimSpace(parts[len(parts)-2])
-	if name == "" || strings.EqualFold(name, "skills") {
-		return ""
+	callIDs := make(map[string]bool, len(calls))
+	for _, call := range calls {
+		callIDs[call.ID] = true
 	}
-	return name
+	msgs := state.Messages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		msg := msgs[i]
+		if msg.Role != "tool" || !callIDs[msg.ToolCallID] {
+			continue
+		}
+		content := strings.ToLower(msg.Content)
+		if strings.Contains(content, "\"ok\":false") ||
+			strings.Contains(content, "error") ||
+			strings.Contains(content, "failed") ||
+			strings.Contains(content, "execution failed") {
+			return true
+		}
+	}
+	return false
 }

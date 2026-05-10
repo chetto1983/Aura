@@ -13,8 +13,8 @@ path is manual-only for legacy testing.
 - A private Telegram bot.
 - A local dashboard at `http://127.0.0.1:8080`.
 - Local SearXNG web search.
-- A Pyodide sandbox sidecar for `execute_code`, DOCX/XLSX extraction, charts,
-  and generated artifacts.
+- Direct Python execution inside the Aura container for `execute_code`,
+  DOCX/XLSX extraction, charts, and generated artifacts.
 - Local Garage backup/artifact storage.
 - Optional Qdrant vector search with local fallback.
 - Your own `data/aura.db`, Garage data, and Docker volumes for wiki, skills, Qdrant, and caches.
@@ -116,7 +116,7 @@ docker compose -f compose.yaml -f compose.image.yaml restart aura
 ```
 
 SearXNG is available on the host at `http://127.0.0.1:8088`.
-The Pyodide sandbox is internal-only at `http://pyodide:8787`.
+`execute_code` runs in the Aura container with `SANDBOX_RUNTIME_MODE=process`.
 Garage S3 is available on the host at `http://127.0.0.1:3900`.
 
 Run a manual backup export from a development checkout:
@@ -125,11 +125,12 @@ Run a manual backup export from a development checkout:
 go run ./cmd/debug_backup
 ```
 
-Run sandbox sidecar smokes:
+Run a quick container Python smoke:
 
 ```powershell
-docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -tool-smoke -runtime-url http://pyodide:8787 -timeout 3m
-docker compose --profile test run --rm --no-deps test go run ./cmd/debug_sandbox -artifact-smoke -runtime-url http://pyodide:8787 -timeout 5m
+docker compose exec aura python3 - <<'PY'
+print(sum(range(101)))
+PY
 ```
 
 ## Troubleshooting
@@ -159,8 +160,8 @@ Open `/settings` and adjust `SOFT_BUDGET`, `HARD_BUDGET`,
 
 **Sandbox unavailable**
 
-Check `docker compose ps pyodide`. Aura should log
-`sandbox container runtime available` when the sidecar is healthy.
+Check `docker compose exec aura python3 --version`. Aura should log
+`sandbox process runtime available` when the container runtime is healthy.
 
 ## Development
 

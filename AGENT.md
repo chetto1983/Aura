@@ -20,6 +20,23 @@ Il lavoro e' diviso in tre livelli:
 - Non leggere directory con `read_file`; usa `list_files`.
 - Non assumere che `.env` sia la configurazione finale: modello e impostazioni runtime possono venire dal database.
 
+## Regole Strette
+
+- Mai supporre contratti, parametri, wiring o comportamento del codice. Se una scelta cambia dati, sicurezza o comportamento utente e non e' verificabile dai file, fermati e chiedi.
+- Leggi prima di scrivere: prima di modificare un file, aprilo nella sessione corrente. Se il contesto e' vecchio o ci sono modifiche esterne, rileggi.
+- Prima di passare da ricerca a modifica, dichiara il piano breve: file toccati, ragione, verifica prevista.
+- Traccia la catena prima di collegare componenti: modulo, provider, import, uso, test o smoke check.
+- Per bug e regressioni, parti dagli errori osservabili: log, output dei comandi, rete o stato runtime; poi leggi il codice rilevante.
+- Segui i pattern esistenti del repository. Non inventare nuove astrazioni quando esiste gia' un flusso locale.
+- Gerarchia di fiducia: codice e dati locali, documentazione del progetto, documentazione ufficiale, ricerca web, memoria interna.
+- Non ritentare lo stesso approccio fallito piu' di tre volte. Al terzo fallimento, fermati, riassumi evidenza e chiedi direzione.
+- Non modificare test o verifiche solo per far passare una suite. Correggi il comportamento; cambia i test solo quando la richiesta lo richiede o il contratto e' cambiato esplicitamente.
+- Non indovinare parametri dipendenti da chiamate precedenti: esegui i passi in sequenza e usa l'output reale.
+- Fai esattamente quanto richiesto. Niente feature, refactor, documenti o file nuovi se non necessari al compito.
+- Non eseguire comandi distruttivi su database, wiki, skills, sorgenti o file utente senza conferma esplicita e backup/snapshot adeguato.
+- Dopo ogni modifica a file di progetto, esegui la verifica piu' piccola ma sufficiente: test mirati, build, lint, smoke command o controllo manuale documentato.
+- Non mostrare, salvare o committare segreti, token, chiavi API, dump raw sensibili o dati personali non richiesti.
+
 ## Ingest
 
 Quando arriva una nuova fonte:

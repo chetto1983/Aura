@@ -2,7 +2,7 @@
 
 Date: 2026-05-08
 
-Active milestone: v4.0 MCP Marketplace And Autonomous Plugin Manager
+Active milestone: Runtime Answer Discipline
 
 Last closed milestone: v3.3 Runner Boundary & Health Hardening
 
@@ -65,6 +65,42 @@ Fresh verification:
 - v4.0 MCP marketplace: planned and unblocked by Runtime Diet closure.
 
 ## Active Slice
+
+Active phase: **Runtime Answer Discipline**.
+
+Plan: `.planning/phases/11-runtime-answer-discipline/PLAN.md`
+
+Goal:
+
+- make Aura answer naturally on Telegram instead of exposing raw tool results;
+- keep shell/code tools internal unless the user explicitly asks for diagnostics, commands, files, tests, installs, or raw output;
+- recover from hidden-tool guesses through no-tool finalization rather than user-facing technical scolding;
+- keep `AGENT.md` and `AGENTS.md` out of the system prompt while bootstrapping `SOUL.md`/`TOOLS.md` as runtime overlays.
+
+First slice:
+
+- add failing debug smoke gates for forbidden final fragments and forbidden tool calls;
+- remove `execute_shell` from the default hot tool surface;
+- route shell/code terminal results through no-tool synthesis except explicit raw-output requests;
+- add a final-answer sanitizer that blocks `Evidence envelope`, `exit_code`, `elapsed_ms`, `source_id`, and similar internal markers.
+
+Suggested acceptance:
+
+- `Cosa sai di me?` uses memory but never prints raw evidence envelopes or hidden-tool errors;
+- `Puoi scansionare le cartelle di rete?` does not call shell and answers conversationally;
+- explicit raw commands can still use shell through `tool_search`;
+- Docker smoke script `scripts/test-runtime-answer-discipline-smokes.ps1` passes.
+
+Latest implementation slice:
+
+- Debug smoke gates now assert forbidden tools/final fragments and shell-call minimums.
+- `execute_shell` is no longer hot-visible; `execute_code`/`execute_shell` are intent-gated for explicit operational work.
+- Terminal shell output is synthesized unless raw output was explicitly requested.
+- Hidden-tool rejection and raw fallback paths finalize naturally instead of exposing tool errors or raw envelopes.
+- Empty runtime overlay workspaces bootstrap `SOUL.md` and `TOOLS.md`; `AGENT.md` remains file-readable only.
+- Verification passed: `go test ./internal/agentruntime ./internal/agentloop ./internal/tools ./internal/conversation ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`, `go test ./...`, `go build ./...`, `go vet ./...`, and local `scripts/test-runtime-answer-discipline-smokes.ps1 -SkipRawShell`.
+
+## Deferred v4.0 MCP Marketplace Slice
 
 Active phase: **v4.0 MCP Marketplace And Autonomous Plugin Manager**.
 

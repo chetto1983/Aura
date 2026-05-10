@@ -219,6 +219,103 @@ func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	}
 }
 
+func TestRunMaxIterationFinalizesMemoryEvidenceNaturally(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "Ho trovato tre riferimenti utili sullo scenario PMS; il piu rilevante e il PDF con la richiesta d'offerta e scadenza."}},
+	}}
+	raw := `Memory evidence for "scenario test gestione richieste offerta pms" (3 result(s)):
+- [source] src_1 - file.pdf - score=0.85
+Evidence envelope:
+{"query":"scenario test","items":[{"kind":"source","id":"src_1","score":0.85}]}`
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 1, AllowNoToolFinalization: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text == raw {
+		t.Fatal("returned raw search_memory evidence")
+	}
+	for _, leaked := range []string{"Memory evidence", "Evidence envelope", `"score"`} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("answer leaked %q in %q", leaked, result.Text)
+		}
+	}
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want tool turn plus no-tool finalization", client.requests)
+	}
+}
+
+func TestRunEmptyFinalDoesNotReturnRawShellResult(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "shell-1", Name: "execute_shell"}}}},
+		{Response: llm.Response{Content: ""}},
+	}}
+	raw := "exit_code: 0\nelapsed_ms: 12\n\nFilesystem overlay /var/lib/docker"
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, leaked := range []string{"exit_code", "elapsed_ms", "Filesystem", "/var/lib"} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("Text leaked %q in %q", leaked, result.Text)
+		}
+	}
+	if !strings.Contains(result.Text, "risultati tecnici") {
+		t.Fatalf("Text = %q, want natural technical fallback", result.Text)
+	}
+}
+
+func TestRunSanitizesRawModelFinalAnswer(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: `Evidence envelope: {"items":[{"score":0.9}]}`}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 2})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.Contains(result.Text, "Evidence envelope") {
+		t.Fatalf("Text leaked raw model answer: %q", result.Text)
+	}
+}
+
+func TestRunMaxIterationDoesNotFallbackToRawMemoryEvidence(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+	}}
+	raw := `Memory evidence for "scenario" (1 result(s)):
+Evidence envelope:
+{"query":"scenario","items":[{"score":0.85}]}`
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 1})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, leaked := range []string{"Memory evidence", "Evidence envelope", `"score"`} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("fallback leaked %q in %q", leaked, result.Text)
+		}
+	}
+}
+
 func TestRunMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
@@ -320,6 +417,118 @@ func TestRunRecoverableToolResultContinues(t *testing.T) {
 	}
 	if !result.Stats.HiddenToolRejected {
 		t.Fatal("HiddenToolRejected = false")
+	}
+}
+
+func TestRunRetryNudgeCountsRealToolErrorWithoutSyntheticToolMessage(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "execute_shell"}}}},
+		{Response: llm.Response{Content: "fixed"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"shell command failed","retryable":true,"hint":"Use execute_code with Python"}`)
+		return ExecutionSummary{LastResult: `{"ok":false,"error":"shell command failed"}`}
+	}), state, Options{MaxIterations: 3, MaxRetryNudgesPerTurn: 1})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "fixed" {
+		t.Fatalf("Text = %q, want fixed", result.Text)
+	}
+	if result.Stats.RetryNudgesSent != 1 {
+		t.Fatalf("RetryNudgesSent = %d, want 1", result.Stats.RetryNudgesSent)
+	}
+	if got := state.toolResult("retry-nudge"); got != "" {
+		t.Fatalf("synthetic retry-nudge tool message was appended: %q", got)
+	}
+}
+
+func TestRunSpiralBreakerStopsAfterHiddenToolRejection(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "read_file"}}}},
+		{Response: llm.Response{Content: "should not be requested"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"tool not available","retryable":true}`)
+		return ExecutionSummary{LastResult: `{"ok":false,"error":"tool not available"}`, HiddenRejected: true}
+	}), state, Options{MaxIterations: 4, SpiralBreakerEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if client.requests != 1 {
+		t.Fatalf("LLM requests = %d, want 1", client.requests)
+	}
+	if strings.Contains(result.Text, "tool_search") || strings.Contains(result.Text, "not available") {
+		t.Fatalf("Text = %q, want natural no-tool fallback", result.Text)
+	}
+	if !result.Stats.SpiralBreakerFired || !result.Stats.HiddenToolRejected {
+		t.Fatalf("stats = %+v, want spiral breaker and hidden rejection", result.Stats)
+	}
+}
+
+func TestRunHiddenToolRejectionFinalizesFromPriorEvidence(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "search_memory"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "hidden-1", Name: "read_file"}}}},
+		{Response: llm.Response{Content: "So una cosa utile, detta naturale."}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		switch calls[0].Name {
+		case "search_memory":
+			raw := `Memory evidence for "profilo" (1 result(s)): utile`
+			state.AddToolResultMessage(calls[0].ID, raw)
+			return ExecutionSummary{LastResult: raw}
+		default:
+			state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"tool not available","retryable":true}`)
+			return ExecutionSummary{LastResult: `{"ok":false,"error":"tool not available"}`, HiddenRejected: true}
+		}
+	}), state, Options{MaxIterations: 4, AllowNoToolFinalization: true, SpiralBreakerEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "So una cosa utile, detta naturale." {
+		t.Fatalf("Text = %q", result.Text)
+	}
+	if strings.Contains(result.Text, "tool_search") || strings.Contains(result.Text, "not available") {
+		t.Fatalf("technical hidden-tool answer leaked: %q", result.Text)
+	}
+	if client.requests != 3 {
+		t.Fatalf("LLM requests = %d, want tool turn, hidden turn, finalization", client.requests)
+	}
+	if !result.Stats.SpiralBreakerFired || !result.Stats.HiddenToolRejected {
+		t.Fatalf("stats = %+v, want spiral breaker and hidden rejection", result.Stats)
+	}
+}
+
+func TestRunTieredBudgetExpandsForToolSearchAndCode(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "tool_search"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "code-1", Name: "execute_code"}}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "ok")
+		return ExecutionSummary{LastResult: "ok"}
+	}), state, Options{MaxIterations: 10, TieredBudgetEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "done" {
+		t.Fatalf("Text = %q, want done", result.Text)
+	}
+	if result.Stats.TieredBudgetTier != "code_exec" {
+		t.Fatalf("TieredBudgetTier = %q, want code_exec", result.Stats.TieredBudgetTier)
+	}
+	if result.Stats.MaxIterationsHit {
+		t.Fatal("MaxIterationsHit = true, want false")
 	}
 }
 

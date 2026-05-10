@@ -258,6 +258,7 @@ func TestComposeMountsNarrowRuntimeWorkspace(t *testing.T) {
 		`AURA_RUNTIME_WORKSPACE_PATH: "/workspace"`,
 		`AURA_WORKSPACE_ROOT: "/workspace"`,
 		`PROMPT_OVERLAY_PATH: "/workspace"`,
+		`SANDBOX_RUNTIME_MODE: "process"`,
 		`WIKI_PATH: "/workspace/wiki"`,
 		`SKILLS_PATH: "/workspace/skills"`,
 		`MCP_SERVERS_PATH: "/workspace/mcp.json"`,
@@ -283,5 +284,8 @@ func TestComposeMountsNarrowRuntimeWorkspace(t *testing.T) {
 	}
 	if strings.Contains(source, `AURA_WORKSPACE_ROOT: "/app"`) {
 		t.Fatalf("compose.yaml must not expose /app as Aura's bounded workspace root")
+	}
+	if strings.Contains(source, `SANDBOX_RUNTIME_URL: "http://pyodide:8787"`) || strings.Contains(source, `pyodide:`) {
+		t.Fatalf("compose.yaml must not depend on the Pyodide sidecar")
 	}
 }

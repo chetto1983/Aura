@@ -361,6 +361,9 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		ToolsExposed:            []string{"read_file", "run_aurabot_swarm", "execute_code"},
 		WorkspaceRoot:           "/workspace",
 		RetrievalCapsulePresent: true,
+		RetryNudgesSent:         1,
+		SpiralBreakerFired:      true,
+		TieredBudgetTier:        "code_exec",
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
@@ -380,8 +383,16 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		NoStaleSkillRef:    true,
 		WorkspaceRoot:      "/workspace",
 		ForbidFragments:    []string{"internal/", ".git/"},
+		ForbiddenTools:     []string{"execute_shell"},
+		ForbidFinalFragments: []string{
+			"Evidence envelope",
+			"exit_code",
+		},
 		RetrievalCapsule:   true,
 		MaxElapsedMS:       1000,
+		MinRetryNudges:     1,
+		SpiralBreakerFired: true,
+		TieredBudgetTier:   "code_exec",
 	})
 	if err != nil {
 		t.Fatalf("validateDebugExpectations() error = %v", err)
@@ -421,6 +432,24 @@ func TestValidateDebugExpectationsRejectsUnexpectedTools(t *testing.T) {
 	err := validateDebugExpectations(result, debugExpectations{NoTools: true})
 	if err == nil || !strings.Contains(err.Error(), "expected no tool calls") {
 		t.Fatalf("validateDebugExpectations() error = %v, want no-tools failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenTool(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolCalls: []string{"search_memory", "execute_shell"}}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbiddenTools: []string{"execute_shell"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden tool "execute_shell" was called`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden tool failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenFinalFragment(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{FinalText: `Evidence envelope: {"items":[]}`}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbidFinalFragments: []string{"evidence envelope"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden final fragment "evidence envelope"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden final fragment failure", err)
 	}
 }
 
@@ -487,6 +516,40 @@ func TestValidateDebugExpectationsRejectsMissingHiddenToolRejection(t *testing.T
 	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{HiddenToolRejected: true})
 	if err == nil || !strings.Contains(err.Error(), "hidden tool rejection") {
 		t.Fatalf("validateDebugExpectations() error = %v, want hidden tool rejection failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingSpiralBreaker(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{SpiralBreakerFired: true})
+	if err == nil || !strings.Contains(err.Error(), "spiral breaker") {
+		t.Fatalf("validateDebugExpectations() error = %v, want spiral breaker failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsWrongTieredBudgetTier(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{TieredBudgetTier: "simple_qa"}
+
+	err := validateDebugExpectations(result, debugExpectations{TieredBudgetTier: "code_exec"})
+	if err == nil || !strings.Contains(err.Error(), `expected tiered_budget_tier "code_exec"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want tier failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsRetryNudgesBelowMinimum(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{RetryNudgesSent: 0}
+
+	err := validateDebugExpectations(result, debugExpectations{MinRetryNudges: 1})
+	if err == nil || !strings.Contains(err.Error(), "retry_nudges_sent 0 below minimum 1") {
+		t.Fatalf("validateDebugExpectations() error = %v, want retry nudge failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsExecuteShellBelowMinimum(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ExecuteShellCalls: 0}
+
+	err := validateDebugExpectations(result, debugExpectations{MinExecuteShellCalls: 1})
+	if err == nil || !strings.Contains(err.Error(), "execute_shell_calls 0 below minimum 1") {
+		t.Fatalf("validateDebugExpectations() error = %v, want execute shell minimum failure", err)
 	}
 }
 
@@ -589,9 +652,19 @@ func TestResolveDebugHostPathMapsContainerRuntimeMounts(t *testing.T) {
 		"/data/aura.db":             filepath.Join("data", "aura.db"),
 	}
 	for input, want := range cases {
+		if filepath.IsAbs(input) && pathExists(input) {
+			want = filepath.Clean(input)
+		}
 		if got := resolveDebugHostPath(input); got != want {
 			t.Fatalf("resolveDebugHostPath(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestResolveDebugHostPathKeepsMountedContainerPathWhenPresent(t *testing.T) {
+	root := t.TempDir()
+	if got := resolveDebugHostPath(root); got != filepath.Clean(root) {
+		t.Fatalf("resolveDebugHostPath(%q) = %q, want mounted path", root, got)
 	}
 }
 

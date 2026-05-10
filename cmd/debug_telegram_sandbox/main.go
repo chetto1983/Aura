@@ -36,6 +36,7 @@ func main() {
 	artifactSmoke := flag.Bool("artifact-smoke", false, "require execute_code to create and deliver a sandbox artifact document")
 	noValidate := flag.Bool("no-validate", false, "print Telegram-like logs and result without enforcing the legacy execute_code smoke assertion")
 	expectTools := flag.String("expect-tools", "", "comma-separated tool names expected in the synthetic Telegram turn; used only for reporting/validation when set")
+	forbidTools := flag.String("forbid-tools", "", "comma-separated tool names that must not be called in the synthetic Telegram turn")
 	expectToolset := flag.String("expect-toolset", "", "expected runtime tool surface; used only for reporting/validation when set")
 	expectNoTools := flag.Bool("expect-no-tools", false, "expect the synthetic Telegram turn to make no tool calls")
 	var expectSkillRead optionalCSVFlag
@@ -53,8 +54,18 @@ func main() {
 	expectWorkspaceRoot := flag.String("expect-workspace-root", "", "expected configured workspace root, e.g. /workspace")
 	var forbidPathFragments repeatableCSVFlag
 	flag.Var(&forbidPathFragments, "forbid-path-fragment", "path fragment that must not appear in debug-visible output; may be repeated or comma-separated")
+	var forbidFinalFragments repeatableCSVFlag
+	flag.Var(&forbidFinalFragments, "forbid-final-fragments", "fragment that must not appear in final_text; may be repeated or comma-separated")
 	expectRetrievalCapsule := flag.Bool("expect-retrieval-capsule", false, "expect the synthetic Telegram turn system context to include the compact Retrieval Capsule")
 	maxElapsedMS := flag.Int64("max-elapsed-ms", 0, "fail if the synthetic Telegram turn exceeds this elapsed_ms budget")
+	expectVisibleToolsMax := flag.Int("expect-visible-tools-max", 0, "fail if model_visible_tool_count exceeds this budget")
+	expectToolSearchCallsMax := flag.Int("expect-tool-search-calls-max", 0, "fail if tool_search_calls exceeds this budget")
+	expectExecuteCodeCallsMin := flag.Int("expect-execute-code-calls-min", 0, "fail if execute_code_calls is below this minimum")
+	expectExecuteShellCallsMin := flag.Int("expect-execute-shell-calls-min", 0, "fail if execute_shell_calls is below this minimum")
+	expectToolResultContextCharsMax := flag.Int("expect-tool-result-context-chars-max", 0, "fail if tool_result_context_chars exceeds this budget")
+	expectRetryNudgesMin := flag.Int("expect-retry-nudges-min", 0, "fail if retry_nudges_sent is below this minimum")
+	expectSpiralBreakerFired := flag.Bool("expect-spiral-breaker-fired", false, "expect the hidden-tool spiral breaker to fire")
+	expectTieredBudgetTier := flag.String("expect-tiered-budget-tier", "", "expected tiered budget tier, e.g. simple_qa, orchestration, code_exec")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
@@ -186,6 +197,16 @@ func main() {
 	fmt.Printf("terminal_tool=%s\n", result.TerminalTool)
 	fmt.Printf("duplicate_tool_call_rejected=%v\n", result.DuplicateToolCallRejected)
 	fmt.Printf("called_execute_code=%v\n", result.CalledExecuteCode)
+	fmt.Printf("tool_search_calls=%d\n", result.ToolSearchCalls)
+	fmt.Printf("execute_code_calls=%d\n", result.ExecuteCodeCalls)
+	fmt.Printf("execute_shell_calls=%d\n", result.ExecuteShellCalls)
+	fmt.Printf("model_visible_tool_count=%d\n", len(result.ToolsExposed))
+	fmt.Printf("tool_result_context_chars=%d\n", result.ToolResultContextChars)
+	fmt.Printf("tool_results_compacted=%d\n", result.ToolResultsCompacted)
+	fmt.Printf("internal_orchestration_tool_calls=%d\n", result.InternalOrchestrationCalls)
+	fmt.Printf("retry_nudges_sent=%d\n", result.RetryNudgesSent)
+	fmt.Printf("spiral_breaker_fired=%v\n", result.SpiralBreakerFired)
+	fmt.Printf("tiered_budget_tier=%s\n", result.TieredBudgetTier)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
 	if len(result.ArtifactFilenames) > 0 {
@@ -209,31 +230,44 @@ func main() {
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
 	fmt.Printf("elapsed_ms=%d\n", result.ElapsedMS)
 	expectations := debugExpectations{
-		Toolset:            *expectToolset,
-		Tools:              splitCSV(*expectTools),
-		NoTools:            *expectNoTools,
-		SkillRead:          expectSkillRead.Any,
-		SkillReadNames:     expectSkillRead.Values,
-		SwarmUsed:          *expectSwarm,
-		HiddenToolRejected: *expectHiddenToolRejected,
-		TerminalTool:       *expectTerminalTool,
-		MaxLoopSteps:       *expectLoopStepsMax,
-		MaxLLMCalls:        *expectLLMCallsMax,
-		MaxToolCalls:       *expectToolCallsMax,
-		TraceFields:        splitCSV(*expectTraceField),
-		NoStaleSkillRef:    *expectNoStaleSkillRef,
-		TokenMetrics:       *expectTokenMetrics,
-		SandboxUsed:        *expectSandbox,
-		WorkspaceRoot:      *expectWorkspaceRoot,
-		ForbidFragments:    forbidPathFragments.Values,
-		RetrievalCapsule:   *expectRetrievalCapsule,
-		MaxElapsedMS:       *maxElapsedMS,
+		Toolset:                   *expectToolset,
+		Tools:                     splitCSV(*expectTools),
+		ForbiddenTools:            splitCSV(*forbidTools),
+		NoTools:                   *expectNoTools,
+		SkillRead:                 expectSkillRead.Any,
+		SkillReadNames:            expectSkillRead.Values,
+		SwarmUsed:                 *expectSwarm,
+		HiddenToolRejected:        *expectHiddenToolRejected,
+		TerminalTool:              *expectTerminalTool,
+		MaxLoopSteps:              *expectLoopStepsMax,
+		MaxLLMCalls:               *expectLLMCallsMax,
+		MaxToolCalls:              *expectToolCallsMax,
+		TraceFields:               splitCSV(*expectTraceField),
+		NoStaleSkillRef:           *expectNoStaleSkillRef,
+		TokenMetrics:              *expectTokenMetrics,
+		SandboxUsed:               *expectSandbox,
+		WorkspaceRoot:             *expectWorkspaceRoot,
+		ForbidFragments:           forbidPathFragments.Values,
+		ForbidFinalFragments:      forbidFinalFragments.Values,
+		RetrievalCapsule:          *expectRetrievalCapsule,
+		MaxElapsedMS:              *maxElapsedMS,
+		MaxVisibleTools:           *expectVisibleToolsMax,
+		MaxToolSearchCalls:        *expectToolSearchCallsMax,
+		MinExecuteCodeCalls:       *expectExecuteCodeCallsMin,
+		MinExecuteShellCalls:      *expectExecuteShellCallsMin,
+		MaxToolResultContextChars: *expectToolResultContextCharsMax,
+		MinRetryNudges:            *expectRetryNudgesMin,
+		SpiralBreakerFired:        *expectSpiralBreakerFired,
+		TieredBudgetTier:          *expectTieredBudgetTier,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
 	}
 	if len(expectations.Tools) > 0 {
 		fmt.Printf("expected_tools_present=%s\n", strings.Join(expectations.Tools, ","))
+	}
+	if len(expectations.ForbiddenTools) > 0 {
+		fmt.Printf("forbidden_tools_absent=%s\n", strings.Join(expectations.ForbiddenTools, ","))
 	}
 	if strings.TrimSpace(expectations.Toolset) != "" {
 		fmt.Printf("expected_toolset_present=%s\n", strings.TrimSpace(expectations.Toolset))
@@ -284,11 +318,38 @@ func main() {
 	if len(expectations.ForbidFragments) > 0 {
 		fmt.Printf("forbidden_path_fragments_absent=%s\n", strings.Join(expectations.ForbidFragments, ","))
 	}
+	if len(expectations.ForbidFinalFragments) > 0 {
+		fmt.Printf("forbidden_final_fragments_absent=%s\n", strings.Join(expectations.ForbidFinalFragments, ","))
+	}
 	if expectations.RetrievalCapsule {
 		fmt.Printf("expected_retrieval_capsule=true\n")
 	}
 	if expectations.MaxElapsedMS > 0 {
 		fmt.Printf("expected_max_elapsed_ms=%d\n", expectations.MaxElapsedMS)
+	}
+	if expectations.MaxVisibleTools > 0 {
+		fmt.Printf("expected_visible_tools_max=%d\n", expectations.MaxVisibleTools)
+	}
+	if expectations.MaxToolSearchCalls > 0 {
+		fmt.Printf("expected_tool_search_calls_max=%d\n", expectations.MaxToolSearchCalls)
+	}
+	if expectations.MinExecuteCodeCalls > 0 {
+		fmt.Printf("expected_execute_code_calls_min=%d\n", expectations.MinExecuteCodeCalls)
+	}
+	if expectations.MinExecuteShellCalls > 0 {
+		fmt.Printf("expected_execute_shell_calls_min=%d\n", expectations.MinExecuteShellCalls)
+	}
+	if expectations.MaxToolResultContextChars > 0 {
+		fmt.Printf("expected_tool_result_context_chars_max=%d\n", expectations.MaxToolResultContextChars)
+	}
+	if expectations.MinRetryNudges > 0 {
+		fmt.Printf("expected_retry_nudges_min=%d\n", expectations.MinRetryNudges)
+	}
+	if expectations.SpiralBreakerFired {
+		fmt.Printf("expected_spiral_breaker_fired=true\n")
+	}
+	if strings.TrimSpace(expectations.TieredBudgetTier) != "" {
+		fmt.Printf("expected_tiered_budget_tier=%s\n", strings.TrimSpace(expectations.TieredBudgetTier))
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke, customPrompt); err != nil {
@@ -371,6 +432,9 @@ func resolveDebugHostPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return path
+	}
+	if filepath.IsAbs(path) && pathExists(path) {
+		return filepath.Clean(path)
 	}
 	clean := filepath.ToSlash(filepath.Clean(path))
 	for _, mapping := range []struct {
@@ -646,25 +710,35 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 }
 
 type debugExpectations struct {
-	Toolset            string
-	Tools              []string
-	NoTools            bool
-	SkillRead          bool
-	SkillReadNames     []string
-	SwarmUsed          bool
-	HiddenToolRejected bool
-	TerminalTool       string
-	MaxLoopSteps       int
-	MaxLLMCalls        int
-	MaxToolCalls       int
-	TraceFields        []string
-	NoStaleSkillRef    bool
-	TokenMetrics       bool
-	SandboxUsed        bool
-	WorkspaceRoot      string
-	ForbidFragments    []string
-	RetrievalCapsule   bool
-	MaxElapsedMS       int64
+	Toolset                   string
+	Tools                     []string
+	ForbiddenTools            []string
+	NoTools                   bool
+	SkillRead                 bool
+	SkillReadNames            []string
+	SwarmUsed                 bool
+	HiddenToolRejected        bool
+	TerminalTool              string
+	MaxLoopSteps              int
+	MaxLLMCalls               int
+	MaxToolCalls              int
+	TraceFields               []string
+	NoStaleSkillRef           bool
+	TokenMetrics              bool
+	SandboxUsed               bool
+	WorkspaceRoot             string
+	ForbidFragments           []string
+	ForbidFinalFragments      []string
+	RetrievalCapsule          bool
+	MaxElapsedMS              int64
+	MaxVisibleTools           int
+	MaxToolSearchCalls        int
+	MinExecuteCodeCalls       int
+	MinExecuteShellCalls      int
+	MaxToolResultContextChars int
+	MinRetryNudges            int
+	SpiralBreakerFired        bool
+	TieredBudgetTier          string
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -677,6 +751,15 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	if len(expectations.Tools) > 0 {
 		if missing := missingTools(result.ToolCalls, expectations.Tools); len(missing) > 0 {
 			return fmt.Errorf("missing expected tools: %s", strings.Join(missing, ","))
+		}
+	}
+	for _, forbidden := range expectations.ForbiddenTools {
+		forbidden = strings.TrimSpace(forbidden)
+		if forbidden == "" {
+			continue
+		}
+		if hasAll(result.ToolCalls, forbidden) {
+			return fmt.Errorf("forbidden tool %q was called", forbidden)
 		}
 	}
 	if expectations.NoTools && len(result.ToolCalls) > 0 {
@@ -742,8 +825,44 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 			}
 		}
 	}
+	if len(expectations.ForbidFinalFragments) > 0 {
+		finalText := strings.ToLower(result.FinalText)
+		for _, fragment := range expectations.ForbidFinalFragments {
+			fragment = strings.TrimSpace(fragment)
+			if fragment == "" {
+				continue
+			}
+			if strings.Contains(finalText, strings.ToLower(fragment)) {
+				return fmt.Errorf("forbidden final fragment %q found in final_text", fragment)
+			}
+		}
+	}
 	if expectations.MaxElapsedMS > 0 && result.ElapsedMS > expectations.MaxElapsedMS {
 		return fmt.Errorf("elapsed_ms %d exceeds budget %d", result.ElapsedMS, expectations.MaxElapsedMS)
+	}
+	if expectations.MaxVisibleTools > 0 && len(result.ToolsExposed) > expectations.MaxVisibleTools {
+		return fmt.Errorf("model_visible_tool_count %d exceeds budget %d", len(result.ToolsExposed), expectations.MaxVisibleTools)
+	}
+	if expectations.MaxToolSearchCalls > 0 && result.ToolSearchCalls > expectations.MaxToolSearchCalls {
+		return fmt.Errorf("tool_search_calls %d exceeds budget %d", result.ToolSearchCalls, expectations.MaxToolSearchCalls)
+	}
+	if expectations.MinExecuteCodeCalls > 0 && result.ExecuteCodeCalls < expectations.MinExecuteCodeCalls {
+		return fmt.Errorf("execute_code_calls %d below minimum %d", result.ExecuteCodeCalls, expectations.MinExecuteCodeCalls)
+	}
+	if expectations.MinExecuteShellCalls > 0 && result.ExecuteShellCalls < expectations.MinExecuteShellCalls {
+		return fmt.Errorf("execute_shell_calls %d below minimum %d", result.ExecuteShellCalls, expectations.MinExecuteShellCalls)
+	}
+	if expectations.MaxToolResultContextChars > 0 && result.ToolResultContextChars > expectations.MaxToolResultContextChars {
+		return fmt.Errorf("tool_result_context_chars %d exceeds budget %d", result.ToolResultContextChars, expectations.MaxToolResultContextChars)
+	}
+	if expectations.MinRetryNudges > 0 && result.RetryNudgesSent < expectations.MinRetryNudges {
+		return fmt.Errorf("retry_nudges_sent %d below minimum %d", result.RetryNudgesSent, expectations.MinRetryNudges)
+	}
+	if expectations.SpiralBreakerFired && !result.SpiralBreakerFired {
+		return errors.New("expected spiral breaker to fire")
+	}
+	if tier := strings.TrimSpace(expectations.TieredBudgetTier); tier != "" && result.TieredBudgetTier != tier {
+		return fmt.Errorf("expected tiered_budget_tier %q, got %q", tier, result.TieredBudgetTier)
 	}
 	return nil
 }

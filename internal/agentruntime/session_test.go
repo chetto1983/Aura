@@ -58,6 +58,31 @@ func TestSessionFinishAndAbortClearActiveMarker(t *testing.T) {
 	}
 }
 
+func TestSessionStoreClearDeletesConversationActiveAndSnapshot(t *testing.T) {
+	store := NewSessionStore()
+	session, loaded := store.Begin("123", conversation.Config{})
+	if loaded {
+		t.Fatal("loaded = true, want false")
+	}
+	session.Conversation().AddUserMessage("ciao")
+	store.StoreSnapshot("123", Snapshot{PromptVersion: "v-test"})
+	if !store.IsActive("123") {
+		t.Fatal("active = false, want true")
+	}
+
+	store.Clear("123")
+
+	if _, ok := store.Load("123"); ok {
+		t.Fatal("Load after Clear ok = true, want false")
+	}
+	if store.IsActive("123") {
+		t.Fatal("IsActive after Clear = true, want false")
+	}
+	if _, ok := store.Snapshot("123"); ok {
+		t.Fatal("Snapshot after Clear ok = true, want false")
+	}
+}
+
 func TestSessionStoreStoresAndPrunesSnapshots(t *testing.T) {
 	store := NewSessionStore()
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
