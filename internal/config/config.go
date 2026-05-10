@@ -24,6 +24,12 @@ const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
 const DefaultToolSearchBackend = "fts"
 const DefaultToolSearchTopK = 5
+
+// Per-user gate configuration defaults (Phase 1 / CONC-01).
+const DefaultInboxSize = 8
+const DefaultInboxQueueNoticeAfter = 30 * time.Second
+const DefaultInactivityThreshold = 30 * time.Minute
+const DefaultInactivitySweepInterval = 60 * time.Second
 const (
 	DefaultEnvPath = ".env"
 
@@ -119,6 +125,17 @@ type Config struct {
 	SandboxRuntimeURL  string `envconfig:"SANDBOX_RUNTIME_URL"`
 	SandboxRuntimeDir  string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
 	SandboxTimeoutSec  int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
+
+	// Per-user gate configuration (Phase 1 / CONC-01). All four are environment-tunable.
+	// W5: NO `default:"..."` tags here -- defaults come from Default* constants applied
+	// inside Load() via getEnvInt / getEnvDuration. This matches the existing convention
+	// for duration/int fields like SandboxTimeoutSec (envconfig tag without default; Default*
+	// constant + getEnvInt does the work in Load). Avoids double-defaulting between the
+	// envconfig struct decoder and the explicit getEnv* helpers.
+	InboxSize               int           `envconfig:"AURA_INBOX_SIZE"`
+	InboxQueueNoticeAfter   time.Duration `envconfig:"AURA_INBOX_QUEUE_NOTICE_AFTER"`
+	InactivityThreshold     time.Duration `envconfig:"AURA_INACTIVITY_THRESHOLD"`
+	InactivitySweepInterval time.Duration `envconfig:"AURA_INACTIVITY_SWEEP_INTERVAL"`
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -265,6 +282,15 @@ func Load() (*Config, error) {
 	cfg.SandboxRuntimeURL = strings.TrimSpace(getEnv("SANDBOX_RUNTIME_URL", ""))
 	cfg.SandboxRuntimeDir = getEnv("SANDBOX_RUNTIME_DIR", DefaultSandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", DefaultSandboxTimeoutSec)
+
+	// Per-user gate configuration (Phase 1 / CONC-01).
+	cfg.InboxSize = getEnvInt("AURA_INBOX_SIZE", DefaultInboxSize)
+	if cfg.InboxSize <= 0 {
+		cfg.InboxSize = DefaultInboxSize
+	}
+	cfg.InboxQueueNoticeAfter = getEnvDuration("AURA_INBOX_QUEUE_NOTICE_AFTER", DefaultInboxQueueNoticeAfter)
+	cfg.InactivityThreshold = getEnvDuration("AURA_INACTIVITY_THRESHOLD", DefaultInactivityThreshold)
+	cfg.InactivitySweepInterval = getEnvDuration("AURA_INACTIVITY_SWEEP_INTERVAL", DefaultInactivitySweepInterval)
 
 	return cfg, nil
 }

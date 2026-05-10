@@ -63,13 +63,31 @@ func New(cfg Config) *UserGate {
 // the inbox is full after the drop (which should not happen with cap >= 2).
 // Returns ctx.Err() if the context is cancelled while waiting.
 //
+// When QueueNoticeAfter > 0 and OnQueueNotice != nil, a per-entry timer goroutine
+// is spawned after successful enqueue. The timer fires OnQueueNotice(userID) if
+// the entry has not begun processing within QueueNoticeAfter (CONC-01 gap-closure).
+//
 // Callers MUST call Acquire from outside the per-user actor goroutine (i.e.,
 // from onMessage's goroutine) to avoid deadlock (Pitfall 1).
 func (g *UserGate) Acquire(ctx context.Context, userID string, entry Entry) error {
 	actor := g.getOrCreateActor(userID)
+
+	// Pre-create startedCh only if queue-notice is configured. This avoids
+	// allocating a channel for every entry when the feature is disabled.
+	var startedCh chan struct{}
+	if g.config.QueueNoticeAfter > 0 && g.config.OnQueueNotice != nil {
+		startedCh = make(chan struct{})
+		entry.startedCh = startedCh
+	}
+
 	for {
 		select {
 		case actor.inbox <- entry:
+			if startedCh != nil {
+				// Spawn timer goroutine in a separate goroutine per Pitfall 4.
+				// The gate's hot path must never block on external I/O or timers.
+				go g.runQueueNoticeTimer(userID, startedCh)
+			}
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -77,6 +95,24 @@ func (g *UserGate) Acquire(ctx context.Context, userID string, entry Entry) erro
 			// Inbox full: drop oldest entry and notify, then retry enqueue.
 			g.dropOldestAndNotify(actor, userID)
 		}
+	}
+}
+
+// runQueueNoticeTimer waits QueueNoticeAfter; if startedCh has not been closed
+// (i.e., the entry has not begun processing), it fires OnQueueNotice(userID).
+// Called in a separate goroutine by Acquire after successful enqueue (Pitfall 4).
+func (g *UserGate) runQueueNoticeTimer(userID string, startedCh <-chan struct{}) {
+	timer := time.NewTimer(g.config.QueueNoticeAfter)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		// Threshold elapsed -- fire notice. Caller-supplied callback should
+		// hand off to its own goroutine for external I/O (Pitfall 4).
+		if g.config.OnQueueNotice != nil {
+			g.config.OnQueueNotice(userID)
+		}
+	case <-startedCh:
+		// Entry began processing before the threshold -- no notice.
 	}
 }
 
@@ -191,6 +227,11 @@ func (g *UserGate) runActor(actor *userActor) {
 			if !ok {
 				return // inbox channel closed
 			}
+			// Signal Acquire's queue-notice timer (if any) that processing
+			// has begun, before invoking the user's Process function.
+			if entry.startedCh != nil {
+				close(entry.startedCh)
+			}
 			entry.Process(actor.ctx)
 			g.tracker.Touch(actor.userID) // reset inactivity clock per D-09
 		}
@@ -200,11 +241,17 @@ func (g *UserGate) runActor(actor *userActor) {
 // dropOldestAndNotify removes the oldest entry from the inbox and calls
 // OnOverflow in a separate goroutine (Pitfall 4: gate goroutine must never
 // block on external I/O such as a Telegram API call).
+// If the dropped entry has a startedCh (queue-notice timer), it is closed so
+// the timer goroutine exits without firing OnQueueNotice (the entry was dropped,
+// not processed; no notice should be sent for it).
 func (g *UserGate) dropOldestAndNotify(actor *userActor, userID string) {
 	// Non-blocking receive to drop the oldest entry.
 	select {
-	case <-actor.inbox:
-		// Successfully dropped oldest entry.
+	case dropped := <-actor.inbox:
+		// Cancel the dropped entry's queue-notice timer so it does not fire.
+		if dropped.startedCh != nil {
+			close(dropped.startedCh)
+		}
 	default:
 		// Inbox was empty (should not happen if we just detected it was full).
 	}
