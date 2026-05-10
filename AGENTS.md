@@ -6,7 +6,7 @@ Aura is a Go Telegram assistant with an embedded React dashboard. The main binar
 
 The product direction is a standalone second brain: Picobot-style agent tools merged with the LLM Wiki pattern from `docs/llm-wiki.md`. Aura maintains its own source inbox, wiki, search, graph, review queue, and audit log instead of relying on Obsidian.
 
-Current shipped surfaces (see `prd.md` v4.0 + `docs/implementation-tracker.md` for detail):
+Current shipped surfaces (see `prd.md` v4.0 plus `.planning/STATE.md` and `.planning/ROADMAP.md` for active work):
 
 - `internal/source` + `internal/ocr` + `internal/ingest` — Mistral OCR PDF pipeline with sha256 dedup and auto-ingest.
 - `internal/scheduler` — SQLite-backed reminders + nightly maintenance jobs.
@@ -17,7 +17,7 @@ Current shipped surfaces (see `prd.md` v4.0 + `docs/implementation-tracker.md` f
 - `internal/tray` — Windows tray icon with "Open Dashboard"; no-op on other platforms.
 - `internal/telegram/markdown.go` — LLM Markdown → Telegram HTML subset renderer (slice 11u).
 
-Active phase work now lives under `.planning/` (for example `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.planning/phases/*`). Historical phase plans/specs previously under `docs/plans/` and `docs/superpowers/`, plus stale early PRD/PDR/progress artifacts, were removed from the active docs tree; use git history for those artifacts and `docs/implementation-tracker.md` for shipped slice history.
+Active phase work now lives under `.planning/` (for example `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.planning/phases/*`). Historical phase plans/specs previously under `docs/plans/` and `docs/superpowers/`, plus stale early PRD/PDR/progress artifacts, were removed from the active docs tree; use git history for those artifacts.
 
 ## Commands
 
@@ -39,7 +39,7 @@ Do not commit `.env`, database files, binaries, or generated wiki raw data. `.en
 - Prefer small, focused changes that follow the existing Go package layout.
 - For non-trivial implementation work, use the active skills explicitly before editing: `using-superpowers`, `aura-implementation`, and `executing-plans` when a phase plan exists. Use `subagent-driven-development` for independent implementation/review tasks.
 - Run the Aura Ralph status check before edits when `loops/aura-implementation/scripts/status.ps1` exists.
-- Keep the active phase plan updated before and after each implementation slice. For the current filesystem-first agent cleanup phase this is `.planning/phases/06-fs-first-wiki-skills-agent/PLAN.md`; if the user names a different active phase, use that named plan instead.
+- Keep `.planning/STATE.md` updated before and after implementation slices. If a concrete active phase plan exists under `.planning/phases/*`, update that plan too; otherwise record slice handoff in `.planning/STATE.md`.
 - Commit one small atomic slice at a time, staging explicit paths only.
 - Runtime skills are Aura data, not source code. Do not commit `skills/`; Docker stores them in the `aura-skills` volume at `/workspace/skills`.
 - Runtime wiki is Aura memory, not source code. Do not commit `wiki/`; Docker stores it in the `aura-wiki` volume at `/workspace/wiki`.

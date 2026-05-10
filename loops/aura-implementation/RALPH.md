@@ -31,8 +31,8 @@ Aura is a Go Telegram assistant with an embedded React dashboard. It is evolving
 Before implementing, read:
 
 1. `AGENTS.md`
-2. `docs/implementation-tracker.md`
-3. `docs/aura-picobot-hermes-inventory-2026-05-03.md`
+2. `.planning/STATE.md`
+3. `.planning/ROADMAP.md`
 4. Any slice-specific plan/doc/code touched by the goal
 
 Use Picobot (`D:\tmp\picobot`) as reference for agent-loop, cron, MCP, tool-registry, memory, and skill patterns. Copy patterns only when they fit Aura's review-gated second-brain model.
@@ -48,7 +48,7 @@ Each iteration starts with fresh context and uses persisted files as handoff, no
    - Read only the files needed for this slice.
 
 2. Plan
-   - Write a compact implementation note in the tracker or slice doc when the change is not trivial.
+   - Write a compact implementation note in `.planning/STATE.md` or the slice doc when the change is not trivial.
    - Define acceptance checks before editing.
    - Split work into backend, frontend, tests, and docs only if the slice needs all of them.
 
@@ -67,7 +67,7 @@ Each iteration starts with fresh context and uses persisted files as handoff, no
 5. Review
    - Inspect `git diff`.
    - Confirm no `.env`, database files, logs, binaries, generated raw wiki data, or unrelated user edits are staged.
-   - Update `docs/implementation-tracker.md` with work completed, tests run, and next slice.
+   - Update `.planning/STATE.md` with work completed, tests run, and next slice.
 
 6. Commit
    - Stage explicit paths only.

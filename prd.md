@@ -275,8 +275,8 @@ Tutti opzionali; modificabili a runtime senza recompile.
 
 ## 4.13 Search (`internal/search`)
 
-* Primary: chromem-go (vector search) sulla wiki indicizzata.
-* Mirror: SQLite FTS per ricerca testuale locale.
+* Primary: Qdrant vector search sulla wiki indicizzata quando `QDRANT_URL` e configurato.
+* Mirror: SQLite FTS per ricerca testuale locale dove ancora previsto dai percorsi legacy.
 * **Embedding cache** SHA-keyed (slice 11h): `embedding_cache(content_sha, model)` in SQLite. Cold start invariato; warm restart skippa Mistral round-trip per pagine immutate.
 * **Concurrent indexing** (slice 11i): `coll.AddDocuments` parallelo (`indexConcurrency=4`).
 * Stats esposte su `/api/health` (`hits`/`misses`/`hit-rate`).

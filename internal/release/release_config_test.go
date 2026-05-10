@@ -9,7 +9,10 @@ import (
 
 func TestGoReleaserBuildsSmokesAndArchivesPyodideBundle(t *testing.T) {
 	root := repoRoot(t)
-	body := readFile(t, filepath.Join(root, ".goreleaser.yml"))
+	body, ok := readOptionalFile(t, filepath.Join(root, ".goreleaser.yml"))
+	if !ok {
+		t.Skip(".goreleaser.yml is not tracked in this Docker-first branch")
+	}
 
 	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64")
 	requireContains(t, body, "go run ./cmd/debug_sandbox --smoke")
@@ -19,7 +22,10 @@ func TestGoReleaserBuildsSmokesAndArchivesPyodideBundle(t *testing.T) {
 
 func TestReleaseWorkflowPreparesPyodideBundleBeforeGoReleaser(t *testing.T) {
 	root := repoRoot(t)
-	body := readFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
+	body, ok := readOptionalFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
+	if !ok {
+		t.Skip("legacy desktop release workflow is not tracked in this branch")
+	}
 
 	requireContains(t, body, "workflow_dispatch:")
 	requireNotContains(t, body, "tags:")
@@ -43,14 +49,8 @@ func TestDockerImageWorkflowPublishesGHCRImageOnTags(t *testing.T) {
 	requireContains(t, body, "REGISTRY: ghcr.io")
 	requireContains(t, body, "IMAGE_NAME: chetto1983/aura")
 	requireContains(t, body, "actions/checkout@v6")
-	requireContains(t, body, "actions/setup-node@v6")
-	requireContains(t, body, "node-version: '24'")
-	requireContains(t, body, "cache-dependency-path: web/package-lock.json")
-	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide")
-	requireOrder(t, body,
-		"name: Build Pyodide runtime bundle",
-		"name: Build and push Docker image",
-	)
+	requireContains(t, body, "docker/setup-qemu-action@v4")
+	requireContains(t, body, "docker/setup-buildx-action@v4")
 	requireContains(t, body, "docker/login-action@v4")
 	requireContains(t, body, "registry: ${{ env.REGISTRY }}")
 	requireContains(t, body, "password: ${{ secrets.GITHUB_TOKEN }}")
@@ -100,6 +100,18 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func readOptionalFile(t *testing.T, path string) (string, bool) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false
+		}
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data), true
 }
 
 func requireContains(t *testing.T, body, needle string) {

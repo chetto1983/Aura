@@ -2,26 +2,27 @@
 
 ## Overview
 
-The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram users, resilient against LLM provider failures, and cleanly migrated to Qdrant as the single source of truth for all embeddings. Four phases build on each other: concurrency foundations unlock safe multi-user operation, LLM/tool reliability makes wiki writes explicit and retries intelligent, the resilience layer protects against provider degradation with circuit breakers and token budgets, and cleanup removes all legacy chromem-go paths with build-tag-verified precision. Every hardening change uses composition (wrapping interfaces) -- zero modifications to the stable `agentruntime/agentloop` packages.
+The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram users, resilient against LLM provider failures, and cleanly migrated to Qdrant as the single source of truth for all embeddings. Four phases build on each other: foundation work establishes per-user serialization and Qdrant readiness, LLM/tool reliability makes wiki writes explicit and retries intelligent, the resilience layer protects against provider degradation with circuit breakers and token budgets, and cleanup removes all legacy chromem-go paths with build-tag-verified precision. Every hardening change uses composition (wrapping interfaces) -- zero modifications to the stable `agentruntime/agentloop` packages.
 
 ## Phases
 
-- [ ] **Phase 1: Fondamenta (Concurrency Safety)** -- Per-user message serialization via UserGate, TryAcquire for notification paths, inactivity-based context eviction
+- [ ] **Phase 1: Fondamenta (Concurrency + Qdrant Readiness)** -- Per-user message serialization via UserGate, TryAcquire for notification paths, inactivity-based context eviction, Qdrant startup health and warm-cache validation
 - [ ] **Phase 2: LLM Reliability & Tool Intelligence** -- Explicit wiki write tool, variable-temperature retry with error classification, async reindex worker, git commit tracking, Qdrant-based tool retrieval
 - [ ] **Phase 3: Resilience Layer** -- Circuit breaker per LLM provider with nanosecond lock scope, per-user token budget with atomic accounting inside UserGate
-- [ ] **Phase 4: Cleanup & Consolidation** -- Chromem-go removal with build-tag verification, Qdrant startup health gate with warm cache detection
+- [ ] **Phase 4: Cleanup & Consolidation** -- Chromem-go removal with build-tag verification after Qdrant-backed paths are stable
 
 ## Phase Details
 
-### Phase 1: Fondamenta (Concurrency Safety)
-**Goal**: Users cannot corrupt their conversation state through concurrent messages; system notifications never deadlock; inactive sessions release resources predictably.
+### Phase 1: Fondamenta (Concurrency + Qdrant Readiness)
+**Goal**: Users cannot corrupt their conversation state through concurrent messages; system notifications never deadlock; inactive sessions release resources predictably; Qdrant readiness is known before Qdrant-dependent features are built on top.
 **Depends on**: Nothing (first phase)
-**Requirements**: CONC-01, CONC-02, CONC-03
+**Requirements**: CONC-01, CONC-02, CONC-03, QDRANT-01
 **Success Criteria** (what must be TRUE):
   1. A user sending rapid consecutive Telegram messages has them processed sequentially (not in parallel) -- responses maintain causal order and state mutations are serialized
   2. System notifications (scheduler reminder, task dispatch) delivered to a user mid-conversation never deadlock the conversation handler -- the notification path uses `TryAcquire` and proceeds non-blocking when the gate is already held
-  3. Sessions idle beyond the configurable threshold release their resources (context cancelled, per-user mutex entry cleared, memory freed) -- eviction uses a separate tracking structure, not `sync.Map.Range`
+  3. Sessions idle beyond the configurable threshold release their resources (context cancelled, per-user actor stopped, memory freed) -- eviction uses a separate tracking structure, not `sync.Map.Range`
   4. A user whose message is queued behind a long-running turn receives a clear "still processing" response within the configurable timeout period rather than hanging indefinitely
+  5. Aura startup validates Qdrant `/health` with a configurable timeout, and the warm-cache check uses `points_count > 0` before skipping a full re-embed pass
 **Plans**: TBD
 
 ### Phase 2: LLM Reliability & Tool Intelligence
@@ -45,26 +46,24 @@ The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram 
   1. After N consecutive failures to an LLM provider in a configurable window, the circuit breaker opens -- all subsequent requests to that provider fail fast with a clear error without touching the network
   2. After the configurable reset timeout expires, the circuit breaker enters half-open state and allows a single probe request through; a successful probe closes the breaker, a failure re-opens it and resets the timeout
   3. Ten concurrent LLM requests from different users complete in approximately the single-request network latency (~1x), not 10x -- the circuit breaker state lock is held for nanoseconds (state check and counter update only) and is released before any network I/O
-  4. A user exceeding their per-user soft token budget is rejected inside the UserGate mutex region before any LLM call is made; the global hard cap operates as an absolute system maximum that cannot be exceeded regardless of individual user budgets
+  4. A user exceeding their per-user soft token budget is rejected inside the UserGate serialization region before any LLM call is made; the global hard cap operates as an absolute system maximum that cannot be exceeded regardless of individual user budgets
   5. Per-user budget accounting is atomic with conversation processing -- two rapid consecutive messages from the same user cannot both pass the budget check and cause overspend
 **Plans**: TBD
 
 ### Phase 4: Cleanup & Consolidation
-**Goal**: Qdrant is the single source of truth for all embeddings; no chromem-go vector storage references remain in any build configuration; Qdrant health is validated at startup with proper warm cache detection.
+**Goal**: Qdrant is the single source of truth for all embeddings; no chromem-go vector storage references remain in any build configuration.
 **Depends on**: Phase 3
-**Requirements**: CLEAN-01, CLEAN-02, CLEAN-03
+**Requirements**: CLEAN-01, CLEAN-02
 **Success Criteria** (what must be TRUE):
   1. `go build ./...` passes for `linux`, `windows`, and `integration` build tags with zero references to chromem-go vector storage, persistence, or embedding management paths
-  2. Aura startup blocks until Qdrant `/health` passes (with a configurable timeout defaulting to 120 seconds); if Qdrant is unreachable after the timeout, Aura exits with a clear diagnostic message indicating the Qdrant endpoint and elapsed wait time
-  3. If the Qdrant collection already contains vectors (`points_count > 0`), Aura skips the full re-embed pass and proceeds directly to serving traffic -- an empty collection (points_count == 0) triggers a full re-embed from the wiki manifest
-  4. All `search_memory` tool calls return results exclusively from Qdrant vector search -- no fallback vector store exists, and the removal of chromem-go does not create gaps in any search or retrieval path
+  2. All `search_memory` tool calls return results exclusively from Qdrant vector search -- no secondary vector store exists, and the removal of chromem-go does not create gaps in any search or retrieval path
 **Plans**: TBD
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fondamenta (Concurrency Safety) | 0/TBD | Not started | - |
+| 1. Fondamenta (Concurrency + Qdrant Readiness) | 0/TBD | Not started | - |
 | 2. LLM Reliability & Tool Intelligence | 0/TBD | Not started | - |
 | 3. Resilience Layer | 0/TBD | Not started | - |
 | 4. Cleanup & Consolidation | 0/TBD | Not started | - |

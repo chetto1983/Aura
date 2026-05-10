@@ -248,7 +248,7 @@ func skillBackedDocxScenario() scenario {
 		name: "skill_docx_aura_docs_summary",
 		prompt: "Crea e inviami un documento Word modificabile chiamato aura-documenti-riepilogo. " +
 			"Usa le skill installate quando pertinenti. Il documento deve riassumere i documenti Aura principali che hai nel contesto: " +
-			"README installazione Docker, docs/container.md stack e backup, docs/implementation-tracker.md stato shipped, e il piano v4.0 MCP Marketplace. " +
+			"README installazione Docker, docs/container.md stack e backup, .planning/STATE.md stato attivo, e .planning/ROADMAP.md piano v4.0. " +
 			"Includi titolo, breve panoramica, punti chiave, tabella dei documenti e prossimi passi.",
 		wantTool:  "create_docx",
 		wantTools: []string{"search_files", "read_file", "create_docx"},
