@@ -81,7 +81,10 @@
       "Bash(docker compose ps *)",
       "Bash(docker compose logs *)",
       "Bash(Select-Object FullName, Length, LastWriteTime)",
-      "Bash(Format-Table -AutoSize)"
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Select-Object -First 5)",
+      "Bash(gh run *)",
+      "Bash(npx skills *)"
     ]
   }
 }
