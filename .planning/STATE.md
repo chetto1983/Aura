@@ -4,14 +4,14 @@ milestone: v4.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-05-10T12:51:23.912Z"
-last_activity: 2026-05-10 -- Phase 01 execution started
+last_updated: "2026-05-10T13:02:14.946Z"
+last_activity: 2026-05-10 -- Phase 01 wave 2 complete (01-03 qdrant consumers migrated + 01-04 UserGate wired into telegram)
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 4
+  percent: 80
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/researc
 ## Current Position
 
 Phase: 01 (fondamenta-concurrency-safety) — EXECUTING
-Plan: 2 of 5 complete (Wave 1 done; entering Wave 2)
+Plan: 4 of 5 complete (Waves 1+2 done; entering Wave 3)
 Status: Executing Phase 01
-Last activity: 2026-05-10 -- Phase 01 wave 1 complete (01-01 qdrant pkg + 01-02 concurrency pkg)
+Last activity: 2026-05-10 -- Phase 01 wave 2 complete (01-03 qdrant consumers migrated + 01-04 UserGate wired into telegram)
 
-Progress: [####------] 40%
+Progress: [########--] 80%
 
 ## Performance Metrics
 
