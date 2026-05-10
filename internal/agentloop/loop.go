@@ -91,6 +91,9 @@ type Options struct {
 	EstimateCost            func(llm.TokenUsage) float64
 	OnStats                 func(Stats)
 	TerminalHandler         TerminalHandler
+	// MaxToolResultChars caps each tool message size before going to the
+	// LLM. Zero uses DefaultMaxToolResultChars (8 KB).
+	MaxToolResultChars int
 }
 
 type Result struct {
@@ -155,7 +158,8 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 
 		stats.LLMCalls++
 		stats.LoopSteps++
-		resp, err := client.Chat(ctx, state.Messages(), tools)
+		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars)
+		resp, err := client.Chat(ctx, messagesForModel, tools)
 		if err != nil {
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}
