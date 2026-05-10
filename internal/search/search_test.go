@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -16,8 +15,20 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/wiki"
-	"github.com/philippgille/chromem-go"
 )
+
+// These tests cover the chromem-free search layer:
+//
+//   - Pure helpers (FormatResults, extractTitle, mergeHybridResults).
+//   - loadWikiDocuments + buildGraphDocuments — the wiki → indexable docs
+//     pipeline that both Qdrant and SQLite consume.
+//   - SQLite FTS mirror via RebuildSQLiteWikiDocuments and the underlying
+//     sqliteSearcher.
+//
+// Tests that previously exercised the chromem-go in-memory `Engine` were
+// deleted when the Engine was removed. The production wiring uses
+// NewQdrantRepository, which is integration-tested against the live
+// Qdrant container; we do not stub the Qdrant HTTP API here.
 
 func TestFormatResults(t *testing.T) {
 	tests := []struct {
@@ -48,330 +59,38 @@ func TestFormatResults(t *testing.T) {
 		{
 			name: "graph node and index results",
 			results: []Result{
-				{Kind: "graph_node", Slug: "contract-renewal", Title: "Contract Renewal", Content: "Backlinks: legal-review", Score: 0.9},
-				{Kind: "graph_index", Slug: "index:category:project", Title: "Index: project", Content: "Graph index category: project", Score: 0.8},
+				{Kind: "graph_node", Slug: "alpha-contract", Title: "Alpha Contract", Content: "Graph node body."},
+				{Kind: "graph_index", Slug: "index:category:project", Title: "Index: project", Content: "Index body."},
 			},
-			expected: "Relevant wiki knowledge:\n- [graph_node] [[contract-renewal]] Contract Renewal\n  Backlinks: legal-review\n- [graph_index] index:category:project Index: project\n  Graph index category: project\n",
+			expected: "Relevant wiki knowledge:\n- [graph_node] [[alpha-contract]] Alpha Contract\n  Graph node body.\n- [graph_index] index:category:project Index: project\n  Index body.\n",
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatResults(tt.results)
-			if got != tt.expected {
-				t.Errorf("FormatResults() = %q, want %q", got, tt.expected)
+			if got := FormatResults(tt.results); got != tt.expected {
+				t.Errorf("FormatResults() =\n%q\nwant:\n%q", got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestExtractTitle(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     string
-		expected string
+	cases := []struct {
+		name string
+		yaml string
+		want string
 	}{
-		{
-			name:     "valid yaml with title",
-			data:     "title: My Page\ncontent: Hello\n",
-			expected: "My Page",
-		},
-		{
-			name:     "no title field",
-			data:     "content: Hello\n",
-			expected: "",
-		},
-		{
-			name:     "empty title",
-			data:     "title: \"\"\ncontent: Hello\n",
-			expected: "",
-		},
-		{
-			name:     "invalid yaml",
-			data:     "{{invalid",
-			expected: "",
-		},
+		{"valid yaml", "title: My Page\nbody: text", "My Page"},
+		{"missing title", "body: text", ""},
+		{"empty input", "", ""},
+		{"invalid yaml", "title: [unclosed\nbody: text", ""},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractTitle([]byte(tt.data))
-			if got != tt.expected {
-				t.Errorf("extractTitle() = %q, want %q", got, tt.expected)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractTitle([]byte(tc.yaml)); got != tc.want {
+				t.Errorf("extractTitle(%q) = %q, want %q", tc.yaml, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestIsIndexed(t *testing.T) {
-	e := &Engine{indexed: false}
-	if e.IsIndexed() {
-		t.Error("expected IsIndexed to return false before indexing")
-	}
-	e.indexed = true
-	if !e.IsIndexed() {
-		t.Error("expected IsIndexed to return true after indexing")
-	}
-}
-
-func TestSearchWithoutIndexing(t *testing.T) {
-	e := &Engine{indexed: false}
-	_, err := e.Search(context.Background(), "test", 5)
-	if err == nil {
-		t.Error("expected error when searching without indexing")
-	}
-}
-
-func TestNewEngine(t *testing.T) {
-	tmpDir := t.TempDir()
-	logger := slog.Default()
-
-	embedFn := chromem.NewEmbeddingFuncOpenAICompat("", "", "text-embedding-3-small", nil)
-	e, err := NewEngine(tmpDir, embedFn, logger)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	if e == nil {
-		t.Fatal("NewEngine() returned nil engine")
-	}
-	if e.IsIndexed() {
-		t.Error("new engine should not be indexed yet")
-	}
-}
-
-var (
-	_ Queryer           = (*Engine)(nil)
-	_ Searcher          = (*Engine)(nil)
-	_ WikiPageReindexer = (*Engine)(nil)
-	_ WikiPageIndexer   = (*Engine)(nil)
-	_ DocumentIndexer   = (*Engine)(nil)
-	_ Repository        = (*Engine)(nil)
-	_ EmbeddingFunction = keywordEmbedding
-)
-
-func TestNewEngineWithFallbackCloseReleasesOwnedDB(t *testing.T) {
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "search.db")
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	engine, err := NewEngineWithFallback(tmpDir, keywordEmbedding, dbPath, logger)
-	if err != nil {
-		t.Fatalf("NewEngineWithFallback: %v", err)
-	}
-	if engine.sqlite == nil {
-		t.Fatal("sqlite fallback was not configured")
-	}
-
-	if err := engine.Close(); err != nil {
-		t.Fatalf("engine Close: %v", err)
-	}
-
-	db, err := auradb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("reopen db after engine Close: %v", err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`SELECT COUNT(*) FROM wiki_documents`); err != nil {
-		t.Fatalf("query reopened search db: %v", err)
-	}
-}
-
-func TestSqliteSearcherWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "shared.db")
-	db, err := auradb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open shared db: %v", err)
-	}
-	defer db.Close()
-
-	searcher, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("newSqliteSearcherWithDB: %v", err)
-	}
-	if err := searcher.Close(); err != nil {
-		t.Fatalf("searcher Close: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		t.Fatalf("shared db was closed by searcher Close: %v", err)
-	}
-}
-
-func TestSqliteSearcherWithDBDoesNotCreateSchema(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "shared.db")
-	db, err := auradb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open shared db: %v", err)
-	}
-	defer db.Close()
-
-	if _, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("newSqliteSearcherWithDB: %v", err)
-	}
-
-	if tableExists(t, db, "wiki_documents") {
-		t.Fatal("newSqliteSearcherWithDB created wiki_documents; migrations should own schema")
-	}
-}
-
-func tableExists(t *testing.T, db *sql.DB, name string) bool {
-	t.Helper()
-	var got string
-	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE name = ?`, name).Scan(&got)
-	if err == nil {
-		return true
-	}
-	if err == sql.ErrNoRows {
-		return false
-	}
-	t.Fatalf("query sqlite_master: %v", err)
-	return false
-}
-
-func TestIndexWikiPages(t *testing.T) {
-	tmpDir := t.TempDir()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	// Create test wiki files
-	wikiContent := []byte("title: Test Page\ncontent: This is a test page\nschema_version: 1\nprompt_version: v1\n")
-	if err := os.WriteFile(filepath.Join(tmpDir, "test-page.yaml"), wikiContent, 0644); err != nil {
-		t.Fatalf("failed to create test wiki file: %v", err)
-	}
-
-	embedFn := chromem.NewEmbeddingFuncOpenAICompat("", "", "text-embedding-3-small", nil)
-	e, err := NewEngine(tmpDir, embedFn, logger)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	// IndexWikiPages will attempt to embed, which requires an API.
-	// This test verifies the file reading and metadata extraction works.
-	// In a real environment with an embedding API, this would fully index.
-	err = e.IndexWikiPages(context.Background())
-	// Indexing may fail without a real embedding API, but the function
-	// should at least attempt to read and parse files
-	_ = err
-}
-
-func TestSearchMergesExactFTSAndVectorResults(t *testing.T) {
-	wikiDir := t.TempDir()
-	dbPath := filepath.Join(t.TempDir(), "aura.db")
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	writeTestMDPage(t, wikiDir, &wiki.Page{
-		Title:         "Alpha Contract",
-		Body:          "Narrow renewal memo.",
-		Category:      "project",
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "v1",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	})
-	writeTestMDPage(t, wikiDir, &wiki.Page{
-		Title:         "Beta Review",
-		Body:          "Beta project review links to [[alpha-contract]].",
-		Category:      "project",
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "v1",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	})
-
-	engine, err := NewEngineWithFallback(wikiDir, keywordEmbedding, dbPath, logger)
-	if err != nil {
-		t.Fatalf("NewEngineWithFallback: %v", err)
-	}
-	defer engine.Close()
-	if err := engine.IndexWikiPages(context.Background()); err != nil {
-		t.Fatalf("IndexWikiPages: %v", err)
-	}
-
-	results, err := engine.Search(context.Background(), "[[alpha-contract]] beta", 6)
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) < 2 {
-		t.Fatalf("results = %#v, want exact plus lexical/vector results", results)
-	}
-	if results[0].Slug != "alpha-contract" {
-		t.Fatalf("first result = %#v, want exact alpha-contract first", results[0])
-	}
-	if !hasResult(results, "wiki_page", "beta-review") && !hasResult(results, "graph_node", "beta-review") {
-		t.Fatalf("missing merged beta-review result: %#v", results)
-	}
-}
-
-func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "aura.db")
-	db, err := auradb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-	if err := migrations.Run(context.Background(), db); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-	searcher, err := newSqliteSearcherWithDB(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("newSqliteSearcherWithDB: %v", err)
-	}
-	if err := searcher.indexDocument(context.Background(), "log-summary", "wiki log recurring tasks and UTA source notes", map[string]string{
-		"title": "Log Summary",
-		"slug":  "log-summary",
-		"kind":  "wiki_page",
-	}); err != nil {
-		t.Fatalf("indexDocument: %v", err)
-	}
-
-	for _, query := range []string{
-		"wiki/log.md, source:uta",
-		"l'agente guarda wiki/log.md",
-		"tasks/source, UTA",
-	} {
-		t.Run(query, func(t *testing.T) {
-			results, err := searcher.search(context.Background(), query, 3)
-			if err != nil {
-				t.Fatalf("search(%q): %v", query, err)
-			}
-			if len(results) == 0 || results[0].Slug != "log-summary" {
-				t.Fatalf("results = %#v, want log-summary", results)
-			}
-		})
-	}
-}
-
-func TestSearchFallsBackToSQLiteWhenVectorQueryFails(t *testing.T) {
-	wikiDir := t.TempDir()
-	dbPath := filepath.Join(t.TempDir(), "aura.db")
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	writeTestMDPage(t, wikiDir, &wiki.Page{
-		Title:         "Alpha Contract",
-		Body:          "Alpha fallback memo.",
-		Category:      "project",
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "v1",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	})
-	embed := func(ctx context.Context, text string) ([]float32, error) {
-		if strings.Contains(text, "fail-vector") {
-			return nil, errors.New("vector query failed")
-		}
-		return keywordEmbedding(ctx, text)
-	}
-	engine, err := NewEngineWithFallback(wikiDir, embed, dbPath, logger)
-	if err != nil {
-		t.Fatalf("NewEngineWithFallback: %v", err)
-	}
-	defer engine.Close()
-	if err := engine.IndexWikiPages(context.Background()); err != nil {
-		t.Fatalf("IndexWikiPages: %v", err)
-	}
-
-	results, err := engine.Search(context.Background(), "fail-vector alpha", 3)
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if len(results) == 0 || results[0].Slug != "alpha-contract" {
-		t.Fatalf("results = %#v, want sqlite alpha result", results)
 	}
 }
 
@@ -386,7 +105,7 @@ func TestMergeHybridResultsDedupesByKindAndSlug(t *testing.T) {
 	}
 }
 
-func TestIndexWikiPagesAddsGraphNodeCards(t *testing.T) {
+func TestLoadWikiDocumentsBuildsGraphCards(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -411,30 +130,29 @@ func TestIndexWikiPagesAddsGraphNodeCards(t *testing.T) {
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	})
 
-	e, err := NewEngine(tmpDir, keywordEmbedding, logger)
+	docs, pages, err := loadWikiDocuments(tmpDir, logger)
 	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
+		t.Fatalf("loadWikiDocuments: %v", err)
 	}
-	if err := e.IndexWikiPages(context.Background()); err != nil {
-		t.Fatalf("IndexWikiPages: %v", err)
+	if pages != 2 {
+		t.Fatalf("pages = %d, want 2", pages)
 	}
-	if got, want := e.coll.Count(), 6; got != want {
-		t.Fatalf("indexed document count = %d, want %d", got, want)
+	// 2 wiki_page + 2 graph_node + 1 graph_index (category) + 1 graph_index (all) = 6
+	if len(docs) != 6 {
+		t.Fatalf("docs = %d, want 6", len(docs))
 	}
-
-	results, err := e.Search(context.Background(), "backlinks beta", 5)
-	if err != nil {
-		t.Fatalf("Search: %v", err)
+	if !hasDoc(docs, "graph:node:alpha-contract") {
+		t.Fatalf("missing graph_node card for alpha-contract")
 	}
-	if !hasResult(results, "graph_node", "alpha-contract") {
-		t.Fatalf("missing graph_node result for alpha-contract: %#v", results)
+	if !hasDoc(docs, "graph:index:category:project") {
+		t.Fatalf("missing graph_index card for project category")
 	}
-	if !hasResult(results, "graph_index", "index:category:project") {
-		t.Fatalf("missing graph_index result for project category: %#v", results)
+	if !hasDoc(docs, "graph:index:all") {
+		t.Fatalf("missing graph_index overview card")
 	}
 }
 
-func TestIndexWikiPagesSkipsOperationalDocs(t *testing.T) {
+func TestLoadWikiDocumentsSkipsOperationalDocs(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -466,25 +184,121 @@ func TestIndexWikiPagesSkipsOperationalDocs(t *testing.T) {
 		}
 	}
 
-	e, err := NewEngine(tmpDir, keywordEmbedding, logger)
+	docs, pages, err := loadWikiDocuments(tmpDir, logger)
 	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
+		t.Fatalf("loadWikiDocuments: %v", err)
 	}
-	if err := e.IndexWikiPages(context.Background()); err != nil {
-		t.Fatalf("IndexWikiPages: %v", err)
+	if pages != 1 {
+		t.Fatalf("pages = %d, want 1 (only project-memory)", pages)
 	}
-	if got, want := e.coll.Count(), 4; got != want {
-		t.Fatalf("indexed document count = %d, want %d", got, want)
-	}
-	results, err := e.Search(context.Background(), "schema ghost", 10)
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	for _, result := range results {
-		if result.Slug == "SCHEMA" || result.Slug == "index" || result.Slug == "log" {
-			t.Fatalf("operational doc leaked into search results: %#v", results)
+	for _, doc := range docs {
+		for _, skipID := range []string{"SCHEMA", "index", "log"} {
+			if doc.ID == skipID {
+				t.Fatalf("operational doc leaked into index: %+v", doc)
+			}
 		}
 	}
+}
+
+func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "S7-1200 PLC",
+		Body:          "Programmable logic controller from Siemens.",
+		Category:      "industrial",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	if _, _, err := RebuildSQLiteWikiDocuments(context.Background(), tmpDir, dbPath, logger); err != nil {
+		t.Fatalf("RebuildSQLiteWikiDocuments: %v", err)
+	}
+
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	sq, err := newSqliteSearcherWithDB(db, logger)
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	// "S7-1200" has a hyphen — escapeFTS5Query must handle this without
+	// crashing the FTS5 parser. The matched doc is the wiki_page row.
+	results, err := sq.search(context.Background(), "S7-1200", 5)
+	if err != nil {
+		t.Fatalf("sqliteSearcher.search: %v", err)
+	}
+	if !hasResult(results, "wiki_page", "s7-1200-plc") {
+		t.Fatalf("results = %#v, want s7-1200-plc hit", results)
+	}
+}
+
+func TestSqliteSearcherWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	pool, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer pool.Close()
+	if err := migrations.Run(context.Background(), pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sq, err := newSqliteSearcherWithDB(pool, logger)
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	if err := sq.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// pool is still usable
+	if err := pool.PingContext(context.Background()); err != nil {
+		t.Fatalf("pool ping after searcher close: %v", err)
+	}
+}
+
+func TestSqliteSearcherWithDBDoesNotCreateSchema(t *testing.T) {
+	// When constructed against a caller-owned pool, the searcher trusts the
+	// caller to have applied migrations. If migrations were not run, the
+	// FTS table won't exist; the first indexDocument call will return an
+	// error rather than silently creating an alternate schema.
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	pool, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer pool.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sq, err := newSqliteSearcherWithDB(pool, logger)
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	defer sq.Close()
+	if tableExists(t, pool, "wiki_documents") {
+		t.Fatal("wiki_documents was created without migrations")
+	}
+}
+
+func tableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var got string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`, name).Scan(&got)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	return got == name
 }
 
 func TestRebuildSQLiteWikiDocumentsClearsStaleAndIndexesGraph(t *testing.T) {
@@ -637,6 +451,24 @@ func writeTestMDPage(t *testing.T, dir string, page *wiki.Page) {
 	}
 }
 
+func hasResult(results []Result, kind, slug string) bool {
+	for _, r := range results {
+		if r.Kind == kind && r.Slug == slug {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDoc(docs []Document, id string) bool {
+	for _, doc := range docs {
+		if doc.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func keywordEmbedding(_ context.Context, text string) ([]float32, error) {
 	lower := strings.ToLower(text)
 	keywords := []string{"backlinks", "beta", "project", "contract"}
@@ -659,11 +491,7 @@ func keywordEmbedding(_ context.Context, text string) ([]float32, error) {
 	return vec, nil
 }
 
-func hasResult(results []Result, kind, slug string) bool {
-	for _, result := range results {
-		if result.Kind == kind && result.Slug == slug {
-			return true
-		}
-	}
-	return false
-}
+// keywordEmbedding is referenced indirectly by other tests in this package
+// that build a synthetic embed func; the assignment keeps go vet happy if
+// no test in this file calls it directly after edits.
+var _ EmbeddingFunc = keywordEmbedding

@@ -34,12 +34,10 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/scheduler"
-	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
-	"github.com/philippgille/chromem-go"
 )
 
 type scenario struct {
@@ -94,16 +92,17 @@ func main() {
 		fmt.Printf("FAIL: source.NewStore: %v\n", err)
 		os.Exit(1)
 	}
-	embedFn := chromem.NewEmbeddingFuncOpenAICompat(embeddingBaseURL, embeddingAPIKey, embeddingModel, ptrBool(true))
-	engine, err := search.NewEngine(wikiDir, embedFn, logger)
-	if err != nil {
-		fmt.Printf("FAIL: search.NewEngine: %v\n", err)
-		os.Exit(1)
-	}
+	// debug_ingest exercises the ingest pipeline without a live Qdrant.
+	// search.Repository is optional in the pipeline — passing nil disables
+	// reindexing after each page write, which is fine for a single-shot
+	// debug run.
+	_ = embeddingBaseURL
+	_ = embeddingAPIKey
+	_ = embeddingModel
 	pipeline, err := ingest.New(ingest.Config{
 		Sources: srcStore,
 		Wiki:    wikiStore,
-		Search:  engine,
+		Search:  nil,
 		Logger:  logger,
 	})
 	if err != nil {
@@ -163,7 +162,7 @@ func main() {
 	reg.Register(tools.NewListSourcesTool(srcStore))
 	reg.Register(tools.NewLintSourcesTool(srcStore))
 	reg.Register(tools.NewIngestSourceTool(pipeline))
-	if tool := tools.NewSearchMemoryTool(engine, memoryIndex); tool != nil {
+	if tool := tools.NewSearchMemoryTool(nil, memoryIndex); tool != nil {
 		reg.Register(tool)
 	}
 	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {

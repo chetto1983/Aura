@@ -17,7 +17,6 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/qdrant"
 	"github.com/aura/aura/internal/search"
-	"github.com/philippgille/chromem-go"
 )
 
 type output struct {
@@ -147,9 +146,8 @@ func maybeWrapQueryEmbeddingWithCache(cfg queryCacheConfig, embedFn search.Embed
 	return embedFn, func() {}
 }
 
-func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
-	normalized := true
-	return chromem.NewEmbeddingFuncOpenAICompat(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, &normalized)
+func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
+	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, true, nil)
 }
 
 type querySmokeConfig struct {
@@ -160,7 +158,7 @@ type querySmokeConfig struct {
 	Compare bool
 	WikiDir string
 	Qdrant  search.QdrantConfig
-	EmbedFn chromem.EmbeddingFunc
+	EmbedFn search.EmbeddingFunc
 	Logger  *slog.Logger
 }
 
@@ -224,21 +222,11 @@ func runQuerySmoke(ctx context.Context, cfg querySmokeConfig) (queryReport, erro
 	report.Qdrant = measureQuery(ctx, qdrant, query, cfg.TopK, cfg.Runs, cfg.Warmup)
 
 	if cfg.Compare {
-		local, err := search.NewEngine(cfg.WikiDir, cfg.EmbedFn, cfg.Logger)
-		if err != nil {
-			probe := queryProbe{OK: false, Error: err.Error()}
-			report.Local = &probe
-		} else {
-			defer local.Close()
-			if err := local.IndexWikiPages(ctx); err != nil {
-				probe := queryProbe{OK: false, Error: err.Error()}
-				report.Local = &probe
-			} else {
-				probe := measureQuery(ctx, local, query, cfg.TopK, cfg.Runs, cfg.Warmup)
-				report.Local = &probe
-				report.Overlap = overlapRatio(report.Qdrant.Results, probe.Results)
-			}
-		}
+		// The local in-memory wiki engine (chromem-go) was removed when
+		// Qdrant became required infrastructure. -compare is now a no-op;
+		// keep the flag wired so callers' scripts don't break, but report
+		// the unavailability explicitly.
+		report.Local = &queryProbe{OK: false, Error: "local engine removed; Qdrant is the only wiki vector backend"}
 	}
 	report.Recommendation = queryRecommendation(report)
 	report.OK = report.Qdrant.OK && !report.Qdrant.Empty

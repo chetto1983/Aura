@@ -1,3 +1,8 @@
+// Package search is Aura's read-side wiki retrieval. Qdrant is the only vector
+// backend (the in-memory chromem-go path that used to live here was deleted
+// once Qdrant became required infrastructure). SQLite FTS5 remains as the
+// keyword-side companion: every wiki page is mirrored there at index time so
+// search() can hybridize cosine similarity with BM25-style lexical hits.
 package search
 
 import (
@@ -9,21 +14,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/aura/aura/internal/wiki"
-	"github.com/philippgille/chromem-go"
 	"gopkg.in/yaml.v3"
 )
 
-// indexConcurrency caps how many wiki pages are embedded in parallel
-// during IndexWikiPages. 4 is a sweet spot: cuts cold-start time ~4x
-// over serial without hitting Mistral's free-tier rate limits.
-// Each goroutine still hits the embed cache first (slice 11h), so
-// warm restarts make this constant moot.
+// indexConcurrency caps how many wiki pages are embedded in parallel during a
+// rebuild. 4 is a sweet spot that cuts cold-start time ~4x over serial without
+// hitting Mistral's free-tier rate limits. The embed cache short-circuits
+// repeated work so the constant only matters on a truly cold start.
 const indexConcurrency = 4
 
-// Result represents a search result with relevance score.
+// Result is one wiki hit returned by Search.
 type Result struct {
 	Kind    string
 	Slug    string
@@ -32,12 +34,24 @@ type Result struct {
 	Score   float32
 }
 
-// EmbeddingFunction is Aura's embedding provider boundary. Provider setup can
-// swap Mistral/OpenAI-compatible/local implementations without coupling search
-// callers to chromem-go directly.
-type EmbeddingFunction = chromem.EmbeddingFunc
+// EmbeddingFunc is Aura's embedding provider boundary. Same signature as
+// chromem-go's func type so wrappers (EmbedCache, fakes) port cleanly; the
+// dependency on chromem itself is gone.
+type EmbeddingFunc func(ctx context.Context, text string) ([]float32, error)
 
+// BatchEmbeddingFunction returns one vector per input text, in order.
 type BatchEmbeddingFunction func(ctx context.Context, texts []string) ([][]float32, error)
+
+// Document is the input shape for both Qdrant upserts and the SQLite mirror.
+type Document struct {
+	ID       string
+	Content  string
+	Metadata map[string]string
+}
+
+// EmbeddingFunction is the historical alias retained for one release while
+// callers migrate. New code should use EmbeddingFunc directly.
+type EmbeddingFunction = EmbeddingFunc
 
 // Queryer is the minimal semantic retrieval boundary.
 type Queryer interface {
@@ -69,160 +83,11 @@ type DocumentIndexer interface {
 	Index(ctx context.Context, id string, content string, metadata map[string]string) error
 }
 
-// Repository is the full search/index boundary implemented by Engine.
+// Repository is the full search/index boundary implemented by qdrantRepository.
 type Repository interface {
 	Searcher
 	WikiPageIndexer
 	DocumentIndexer
-}
-
-// Engine provides vector search over wiki pages, with chromem-go as primary
-// and SQLite FTS5 as fallback.
-type Engine struct {
-	coll    *chromem.Collection
-	embedFn chromem.EmbeddingFunc
-	sqlite  *sqliteSearcher // nil if not configured
-	wikiDir string
-	mu      sync.RWMutex
-	logger  *slog.Logger
-	indexed bool
-}
-
-// NewEngine creates a new search engine using chromem-go with an embedding function.
-func NewEngine(wikiDir string, embedFn chromem.EmbeddingFunc, logger *slog.Logger) (*Engine, error) {
-	db := chromem.NewDB()
-
-	coll, err := db.CreateCollection("wiki", nil, embedFn)
-	if err != nil {
-		return nil, fmt.Errorf("creating chromem collection: %w", err)
-	}
-
-	return &Engine{
-		embedFn: embedFn,
-		coll:    coll,
-		wikiDir: wikiDir,
-		logger:  logger,
-	}, nil
-}
-
-// NewEngineWithFallback creates a search engine with chromem-go (primary) and
-// SQLite FTS5 (fallback). If SQLite connection fails, falls back to chromem-only.
-func NewEngineWithFallback(wikiDir string, embedFn chromem.EmbeddingFunc, dbPath string, logger *slog.Logger) (*Engine, error) {
-	engine, err := NewEngine(wikiDir, embedFn, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	sq, err := newSqliteSearcher(dbPath, logger)
-	if err != nil {
-		logger.Warn("sqlite fallback unavailable, proceeding with chromem only", "error", err)
-		return engine, nil
-	}
-
-	engine.sqlite = sq
-	logger.Info("sqlite fallback search enabled")
-	return engine, nil
-}
-
-// NewEngineWithFallbackWithDB creates a search engine using a caller-owned
-// SQLite pool for the FTS5 fallback.
-func NewEngineWithFallbackWithDB(wikiDir string, embedFn chromem.EmbeddingFunc, db *sql.DB, logger *slog.Logger) (*Engine, error) {
-	engine, err := NewEngine(wikiDir, embedFn, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	sq, err := newSqliteSearcherWithDB(db, logger)
-	if err != nil {
-		logger.Warn("sqlite fallback unavailable, proceeding with chromem only", "error", err)
-		return engine, nil
-	}
-
-	engine.sqlite = sq
-	logger.Info("sqlite fallback search enabled")
-	return engine, nil
-}
-
-// Close releases resources owned by the engine. Engines built with
-// NewEngineWithFallbackWithDB keep the caller-owned SQLite pool open.
-func (e *Engine) Close() error {
-	if e == nil || e.sqlite == nil {
-		return nil
-	}
-	return e.sqlite.Close()
-}
-
-// Index adds or updates a document in the search index.
-func (e *Engine) Index(ctx context.Context, id string, content string, metadata map[string]string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if err := e.coll.AddDocument(ctx, chromem.Document{
-		ID:       id,
-		Content:  content,
-		Metadata: metadata,
-	}); err != nil {
-		return fmt.Errorf("indexing document %s: %w", id, err)
-	}
-
-	if e.sqlite != nil {
-		if err := e.sqlite.indexDocument(ctx, id, content, metadata); err != nil {
-			e.logger.Warn("failed to index in sqlite search fallback", "id", id, "error", err)
-		}
-	}
-
-	e.logger.Debug("document indexed", "id", id)
-	return nil
-}
-
-// IndexWikiPages reads all wiki .md files and indexes them.
-// Skips special files (index.md, log.md) and falls back to .yaml for legacy pages.
-func (e *Engine) IndexWikiPages(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	docs, pageCount, err := loadWikiDocuments(e.wikiDir, e.logger)
-	if err != nil {
-		return err
-	}
-
-	// Slice 11i: switch from a serial AddDocument loop to chromem-go's
-	// AddDocuments(concurrency=indexConcurrency) so the per-page Mistral
-	// round trips run in parallel goroutines. With 8 wiki pages × ~1 s
-	// per embed serial = ~8 s; concurrency=4 = ~2 s. Higher concurrency
-	// risks Mistral rate-limit pushback on free tiers.
-	count := 0
-	if err := e.resetCollectionLocked(); err != nil {
-		return err
-	}
-	if len(docs) > 0 {
-		if err := e.coll.AddDocuments(ctx, docs, indexConcurrency); err != nil {
-			// Atomic failure on the batch — fall back to serial so a
-			// single bad doc doesn't lose the rest of the index.
-			e.logger.Warn("batch index failed, falling back to serial", "error", err, "docs", len(docs))
-			for _, doc := range docs {
-				if addErr := e.coll.AddDocument(ctx, doc); addErr != nil {
-					e.logger.Warn("failed to index wiki page", "slug", doc.ID, "error", addErr)
-					continue
-				}
-				count++
-			}
-		} else {
-			count = len(docs)
-		}
-
-		// SQLite full-text mirror: keep this serial — local SQLite writes
-		// are cheap and concurrent inserts on the same FTS table fight.
-		if e.sqlite != nil {
-			if err := indexSQLiteDocuments(ctx, e.sqlite, docs); err != nil {
-				e.logger.Warn("failed to rebuild sqlite search mirror", "error", err)
-			}
-		}
-	}
-
-	e.indexed = true
-	e.logger.Info("wiki pages indexed", "count", count, "pages", pageCount, "concurrency", indexConcurrency)
-	return nil
 }
 
 // RebuildSQLiteWikiDocuments rebuilds the SQLite FTS mirror from the wiki
@@ -246,7 +111,23 @@ func RebuildSQLiteWikiDocuments(ctx context.Context, wikiDir, dbPath string, log
 	return len(docs), pageCount, nil
 }
 
-func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []chromem.Document) error {
+// RebuildSQLiteWikiDocumentsWithDB is the caller-owned-pool variant.
+func RebuildSQLiteWikiDocumentsWithDB(ctx context.Context, wikiDir string, db *sql.DB, logger *slog.Logger) (docsIndexed int, pagesIndexed int, err error) {
+	sqlite, err := newSqliteSearcherWithDB(db, logger)
+	if err != nil {
+		return 0, 0, err
+	}
+	docs, pageCount, err := loadWikiDocuments(wikiDir, logger)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := indexSQLiteDocuments(ctx, sqlite, docs); err != nil {
+		return 0, 0, err
+	}
+	return len(docs), pageCount, nil
+}
+
+func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []Document) error {
 	if sqlite == nil {
 		return nil
 	}
@@ -274,7 +155,7 @@ func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []ch
 	return fmt.Errorf("rebuilding wiki_documents: repair retry exhausted")
 }
 
-func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]chromem.Document, int, error) {
+func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -313,7 +194,7 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]chromem.Document,
 	}
 
 	pages := make(map[string]indexedWikiPage, len(slugFiles))
-	docs := make([]chromem.Document, 0, len(slugFiles)*3)
+	docs := make([]Document, 0, len(slugFiles)*3)
 	for slug, fi := range slugFiles {
 		filePath := filepath.Join(wikiDir, fi.name)
 		data, err := os.ReadFile(filePath)
@@ -328,7 +209,7 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]chromem.Document,
 		}
 		pages[slug] = page
 		title, content := page.Title, page.Title+"\n"+page.Body
-		docs = append(docs, chromem.Document{
+		docs = append(docs, Document{
 			ID:       slug,
 			Content:  content,
 			Metadata: map[string]string{"slug": slug, "title": title, "kind": "wiki_page"},
@@ -338,65 +219,10 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]chromem.Document,
 	return docs, len(pages), nil
 }
 
-func (e *Engine) resetCollectionLocked() error {
-	db := chromem.NewDB()
-	coll, err := db.CreateCollection("wiki", nil, e.embedFn)
-	if err != nil {
-		return fmt.Errorf("resetting chromem collection: %w", err)
-	}
-	e.coll = coll
-	return nil
-}
-
-// Search performs hybrid wiki retrieval. Exact slug/title and SQLite FTS
-// results always get a chance before vector similarity; vector errors only
-// fail the request when the local lexical index cannot answer either.
-func (e *Engine) Search(ctx context.Context, query string, topK int) ([]Result, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	if !e.indexed {
-		return nil, fmt.Errorf("no documents indexed, call IndexWikiPages first")
-	}
-
-	if topK <= 0 {
-		topK = 5
-	}
-
-	var exactResults []Result
-	var ftsResults []Result
-	var sqliteErr error
-	if e.sqlite != nil {
-		if exactResults, sqliteErr = e.sqlite.exactSearch(ctx, query, topK); sqliteErr != nil {
-			e.logger.Warn("sqlite exact search failed", "error", sqliteErr)
-		}
-		var ftsErr error
-		if ftsResults, ftsErr = e.sqlite.search(ctx, query, topK); ftsErr != nil {
-			e.logger.Warn("sqlite FTS search failed", "error", ftsErr)
-			if sqliteErr == nil {
-				sqliteErr = ftsErr
-			}
-		}
-	}
-
-	vectorResults, vectorErr := e.queryChromem(ctx, query, topK)
-	if vectorErr != nil {
-		e.logger.Warn("chromem search failed", "error", vectorErr)
-	}
-
-	results := mergeHybridResults(query, topK, exactResults, ftsResults, vectorResults)
-	if len(results) > 0 {
-		return results, nil
-	}
-	if vectorErr != nil {
-		if sqliteErr != nil {
-			return nil, fmt.Errorf("search failed: chromem: %v; sqlite: %v", vectorErr, sqliteErr)
-		}
-		return nil, fmt.Errorf("search failed: chromem: %w", vectorErr)
-	}
-	return nil, nil
-}
-
+// mergeHybridResults concatenates result groups in priority order (exact >
+// FTS > vector) and dedupes on (kind, slug). The Telegram-facing search call
+// downstream of this still applies recency decay; this layer only handles
+// the join.
 func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 	if topK <= 0 {
 		topK = 5
@@ -434,33 +260,8 @@ func resultKey(result Result) string {
 	return kind + "\x00" + strings.ToLower(slug)
 }
 
-// IsIndexed returns whether pages have been indexed.
-func (e *Engine) IsIndexed() bool {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.indexed
-}
-
-// ReindexWikiPage refreshes the semantic wiki index after one page changed.
-// Graph node cards include backlinks and category/index summaries, so a single
-// page change can affect neighboring nodes. We verify the changed page exists,
-// then rebuild the in-memory collection. The embedding cache keeps unchanged
-// documents cheap.
-func (e *Engine) ReindexWikiPage(ctx context.Context, slug string) error {
-	mdPath := filepath.Join(e.wikiDir, slug+".md")
-	yamlPath := filepath.Join(e.wikiDir, slug+".yaml")
-
-	if _, err := os.Stat(mdPath); err != nil {
-		if _, yamlErr := os.Stat(yamlPath); yamlErr != nil {
-			return fmt.Errorf("reading wiki page %s: file not found", slug)
-		}
-	}
-
-	return e.IndexWikiPages(ctx)
-}
-
-// FormatResults formats search results as context for injection into LLM prompts.
-// Includes first 200 chars of content as excerpt.
+// FormatResults formats search results as context for injection into LLM
+// prompts. Includes a 200-char excerpt per hit.
 func FormatResults(results []Result) string {
 	if len(results) == 0 {
 		return ""
@@ -484,9 +285,7 @@ func FormatResults(results []Result) string {
 	return sb.String()
 }
 
-// truncateExcerpt returns the first n characters of content, cleaned for display.
 func truncateExcerpt(content string, n int) string {
-	// Strip frontmatter if present
 	if strings.HasPrefix(content, "---") {
 		if end := findMDBodyEnd(content); end != -1 {
 			content = content[end:]
@@ -501,20 +300,16 @@ func truncateExcerpt(content string, n int) string {
 	return content
 }
 
-// findMDBodyEnd finds the position after the closing --- delimiter of frontmatter.
 func findMDBodyEnd(content string) int {
-	// Skip opening ---
 	if !strings.HasPrefix(content, "---") {
 		return -1
 	}
 	rest := content[3:]
-	// Skip newline after opening ---
 	if len(rest) > 0 && rest[0] == '\n' {
 		rest = rest[1:]
 	} else if len(rest) > 1 && rest[0] == '\r' && rest[1] == '\n' {
 		rest = rest[2:]
 	}
-	// Find closing ---
 	idx := strings.Index(rest, "\n---\n")
 	if idx == -1 {
 		idx = strings.Index(rest, "\n---\r\n")
@@ -522,11 +317,9 @@ func findMDBodyEnd(content string) int {
 	if idx == -1 {
 		return -1
 	}
-	// Position after closing ---\n
 	return len(content) - len(rest) + idx + 5
 }
 
-// extractTitle parses just the title field from YAML bytes.
 func extractTitle(data []byte) string {
 	var partial struct {
 		Title string `yaml:"title"`
@@ -537,7 +330,6 @@ func extractTitle(data []byte) string {
 	return partial.Title
 }
 
-// metadataToJSON serializes a metadata map to a JSON string.
 func metadataToJSON(metadata map[string]string) string {
 	b, err := json.Marshal(metadata)
 	if err != nil {
@@ -546,54 +338,12 @@ func metadataToJSON(metadata map[string]string) string {
 	return string(b)
 }
 
-// extractMetaField extracts a field value from a JSON metadata string.
 func extractMetaField(metaJSON, field string) string {
 	var m map[string]string
 	if err := json.Unmarshal([]byte(metaJSON), &m); err != nil {
 		return ""
 	}
 	return m[field]
-}
-
-func (e *Engine) queryChromem(ctx context.Context, query string, topK int) ([]Result, error) {
-	if e.coll.Count() == 0 {
-		return nil, nil
-	}
-
-	// Clamp topK to collection size
-	if topK > e.coll.Count() {
-		topK = e.coll.Count()
-	}
-
-	results, err := e.coll.Query(ctx, query, topK, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("querying chromem: %w", err)
-	}
-
-	searchResults := make([]Result, 0, len(results))
-	for _, r := range results {
-		title := ""
-		slug := r.ID
-		kind := "wiki_page"
-		if r.Metadata != nil {
-			title = r.Metadata["title"]
-			if metaSlug := strings.TrimSpace(r.Metadata["slug"]); metaSlug != "" {
-				slug = metaSlug
-			}
-			if metaKind := strings.TrimSpace(r.Metadata["kind"]); metaKind != "" {
-				kind = metaKind
-			}
-		}
-		searchResults = append(searchResults, Result{
-			Kind:    kind,
-			Slug:    slug,
-			Title:   title,
-			Content: r.Content,
-			Score:   r.Similarity,
-		})
-	}
-
-	return searchResults, nil
 }
 
 func resultKind(r Result) string {

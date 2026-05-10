@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/qdrant"
-	"github.com/philippgille/chromem-go"
 )
 
 // QdrantConfig describes Aura's external vector index.
@@ -171,7 +170,7 @@ func (r *qdrantRepository) ReindexWikiPage(ctx context.Context, slug string) err
 
 // RebuildQdrantWikiDocuments recreates the configured collection from Aura's
 // wiki pages and graph cards.
-func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chromem.EmbeddingFunc, cfg QdrantConfig, logger *slog.Logger) (QdrantRebuildReport, error) {
+func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn EmbeddingFunc, cfg QdrantConfig, logger *slog.Logger) (QdrantRebuildReport, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -188,7 +187,7 @@ func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chr
 // rebuildQdrantWikiDocumentsWithClient implements the rebuild logic using an
 // already-constructed qdrant.Client and collection name. This avoids needing to
 // reconstruct credentials from the client interface.
-func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, embedFn chromem.EmbeddingFunc, client qdrant.Client, collection string, logger *slog.Logger) (QdrantRebuildReport, error) {
+func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, embedFn EmbeddingFunc, client qdrant.Client, collection string, logger *slog.Logger) (QdrantRebuildReport, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}

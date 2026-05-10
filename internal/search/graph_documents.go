@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/wiki"
-	"github.com/philippgille/chromem-go"
 )
 
 const graphNodeBodyLimit = 700
@@ -51,7 +50,7 @@ func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error
 	}, nil
 }
 
-func buildGraphDocuments(pages map[string]indexedWikiPage) []chromem.Document {
+func buildGraphDocuments(pages map[string]indexedWikiPage) []Document {
 	if len(pages) == 0 {
 		return nil
 	}
@@ -79,12 +78,12 @@ func buildGraphDocuments(pages map[string]indexedWikiPage) []chromem.Document {
 	}
 	sort.Strings(slugs)
 
-	docs := make([]chromem.Document, 0, len(pages)+len(byCategory)+1)
+	docs := make([]Document, 0, len(pages)+len(byCategory)+1)
 	for _, slug := range slugs {
 		page := pages[slug]
 		inbound := mergeSlugs(backlinks[slug], nil)
 		content := graphNodeCard(page, inbound)
-		docs = append(docs, chromem.Document{
+		docs = append(docs, Document{
 			ID:      "graph:node:" + slug,
 			Content: content,
 			Metadata: map[string]string{
@@ -104,7 +103,7 @@ func buildGraphDocuments(pages map[string]indexedWikiPage) []chromem.Document {
 		pages := byCategory[category]
 		sort.Slice(pages, func(i, j int) bool { return pages[i].Slug < pages[j].Slug })
 		content := graphIndexCard(category, pages)
-		docs = append(docs, chromem.Document{
+		docs = append(docs, Document{
 			ID:      "graph:index:category:" + safeGraphID(category),
 			Content: content,
 			Metadata: map[string]string{
@@ -115,7 +114,7 @@ func buildGraphDocuments(pages map[string]indexedWikiPage) []chromem.Document {
 		})
 	}
 
-	docs = append(docs, chromem.Document{
+	docs = append(docs, Document{
 		ID:      "graph:index:all",
 		Content: graphIndexOverview(categories, byCategory),
 		Metadata: map[string]string{

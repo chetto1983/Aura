@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,38 +122,22 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 }
 
 func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
-	ctx := context.Background()
-	wikiDir := t.TempDir()
-	writeMemoryTestPage(t, wikiDir, &wiki.Page{
-		Title:         "Alpha Contract",
-		Body:          "Core contract notes.",
-		Category:      "project",
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "v1",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	})
-	writeMemoryTestPage(t, wikiDir, &wiki.Page{
-		Title:         "Beta Legal Review",
-		Body:          "Review links to [[alpha-contract]] before renewal.",
-		Category:      "project",
-		Related:       []string{"alpha-contract"},
-		SchemaVersion: wiki.CurrentSchemaVersion,
-		PromptVersion: "v1",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	})
-
-	engine, err := search.NewEngine(wikiDir, memoryKeywordEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
-	if err := engine.IndexWikiPages(ctx); err != nil {
-		t.Fatalf("IndexWikiPages: %v", err)
-	}
-
-	tool := NewSearchMemoryTool(engine, nil)
-	out, err := tool.Execute(ctx, map[string]any{"query": "backlinks beta", "scope": "wiki"})
+	// search_memory must surface graph_node results (the synthetic "card"
+	// documents produced by buildGraphDocuments) verbatim, including the
+	// [[slug]] citation form expected by the LLM. We feed the tool a
+	// pre-built graph_node Result so the test exercises the formatter
+	// without spinning up a live wiki engine.
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{{
+			Kind:    "graph_node",
+			Slug:    "alpha-contract",
+			Title:   "Alpha Contract",
+			Content: "Graph node [[alpha-contract]] backlinks: beta-legal-review",
+			Score:   0.9,
+		}},
+	}, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "backlinks beta", "scope": "wiki"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

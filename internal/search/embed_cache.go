@@ -16,7 +16,6 @@ import (
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
-	"github.com/philippgille/chromem-go"
 )
 
 const embedCacheBatchSize = 8
@@ -36,7 +35,7 @@ func EmbedCacheNamespace(baseURL, model string) string {
 	return baseURL + "|" + model
 }
 
-// EmbedCache wraps a chromem.EmbeddingFunc with a SQLite-backed
+// EmbedCache wraps a EmbeddingFunc with a SQLite-backed
 // content-addressed cache. The same fn serves both wiki indexing and
 // query embedding, so repeat queries hit the cache too.
 //
@@ -54,7 +53,7 @@ func EmbedCacheNamespace(baseURL, model string) string {
 type EmbedCache struct {
 	db         *sql.DB
 	model      string
-	inner      chromem.EmbeddingFunc
+	inner      EmbeddingFunc
 	batchInner BatchEmbeddingFunction
 	logger     *slog.Logger
 	owned      bool
@@ -71,7 +70,7 @@ type EmbedCacheStatsReader interface {
 // inner is nil, the cache short-circuits to an error on miss — useful
 // for tests where we want to verify cache hits without spinning up a
 // real embedding provider.
-func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+func OpenEmbedCache(dbPath, model string, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
 	if dbPath == "" {
 		return nil, errors.New("embed cache: dbPath required")
 	}
@@ -93,11 +92,11 @@ func OpenEmbedCache(dbPath, model string, inner chromem.EmbeddingFunc, logger *s
 }
 
 // NewEmbedCacheWithDB wraps a caller-owned migrated SQLite pool.
-func NewEmbedCacheWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+func NewEmbedCacheWithDB(db *sql.DB, model string, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
 	return NewEmbedCacheWithBatchWithDB(db, model, inner, nil, logger)
 }
 
-func NewEmbedCacheWithBatchWithDB(db *sql.DB, model string, inner chromem.EmbeddingFunc, batchInner BatchEmbeddingFunction, logger *slog.Logger) (*EmbedCache, error) {
+func NewEmbedCacheWithBatchWithDB(db *sql.DB, model string, inner EmbeddingFunc, batchInner BatchEmbeddingFunction, logger *slog.Logger) (*EmbedCache, error) {
 	if db == nil {
 		return nil, errors.New("embed cache: db required")
 	}
@@ -120,7 +119,7 @@ func (c *EmbedCache) Stats() (hits, misses uint64) {
 	return c.hits.Load(), c.misses.Load()
 }
 
-// Embed satisfies chromem.EmbeddingFunc. Cache hit short-circuits the
+// Embed satisfies EmbeddingFunc. Cache hit short-circuits the
 // upstream API call. Miss falls through to inner, then writes the
 // result. Write failures are logged but never propagated — a degraded
 // cache must not break embedding.
@@ -277,7 +276,7 @@ func (c *EmbedCache) store(ctx context.Context, text string, vec []float32) {
 
 // EmbedFunc returns the cache's Embed method as a chromem-compatible
 // closure. Convenience for wiring into NewEngineWithFallback.
-func (c *EmbedCache) EmbedFunc() chromem.EmbeddingFunc {
+func (c *EmbedCache) EmbedFunc() EmbeddingFunc {
 	return c.Embed
 }
 

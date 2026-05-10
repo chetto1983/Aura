@@ -38,7 +38,6 @@ import (
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
 
-	"github.com/philippgille/chromem-go"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -804,14 +803,11 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	})
 }
 
-// createEmbeddingFunc builds a chromem embedding function from the dedicated
-// embedding provider config. Aura keeps embeddings separate from LLM chat keys.
-func createEmbeddingFunc(cfg *config.Config) chromem.EmbeddingFunc {
-	baseURL := cfg.EmbeddingBaseURL
-	model := cfg.EmbeddingModel
-
-	normalized := true
-	return chromem.NewEmbeddingFuncOpenAICompat(baseURL, cfg.EmbeddingAPIKey, model, &normalized)
+// createEmbeddingFunc builds an OpenAI-compatible embedding function from the
+// dedicated embedding provider config. Aura keeps embeddings separate from
+// LLM chat keys. Vectors are L2-normalized so Qdrant cosine == dot product.
+func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
+	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, true, nil)
 }
 
 func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {

@@ -11,7 +11,6 @@ import (
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
-	"github.com/philippgille/chromem-go"
 )
 
 var _ EmbedCacheStatsReader = (*EmbedCache)(nil)
@@ -19,7 +18,7 @@ var _ EmbedCacheStatsReader = (*EmbedCache)(nil)
 // counterFn is a stub embedFn that returns a deterministic vector and
 // counts how many times it was actually invoked. The counter lets tests
 // verify cache hits skip the upstream call entirely.
-func counterFn(invocations *atomic.Uint64, vec []float32) chromem.EmbeddingFunc {
+func counterFn(invocations *atomic.Uint64, vec []float32) EmbeddingFunc {
 	return func(_ context.Context, _ string) ([]float32, error) {
 		invocations.Add(1)
 		out := make([]float32, len(vec))
@@ -28,7 +27,7 @@ func counterFn(invocations *atomic.Uint64, vec []float32) chromem.EmbeddingFunc 
 	}
 }
 
-func newCache(t *testing.T, model string, inner chromem.EmbeddingFunc) *EmbedCache {
+func newCache(t *testing.T, model string, inner EmbeddingFunc) *EmbedCache {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	c, err := OpenEmbedCache(dbPath, model, inner, slog.New(slog.NewTextHandler(io.Discard, nil)))

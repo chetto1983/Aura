@@ -14,7 +14,6 @@ require (
 	github.com/eekstunt/telegramify-markdown-go v0.2.0
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/philippgille/chromem-go v0.7.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xuri/excelize/v2 v2.10.1
 	go.uber.org/zap v1.28.0
