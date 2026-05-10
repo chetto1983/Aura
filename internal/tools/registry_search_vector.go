@@ -117,6 +117,25 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 		return nil
 	}
 
+	if idx.qclient == nil {
+		idx.lastError = fmt.Errorf("qdrant client not initialized")
+		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", idx.lastError)
+		return nil
+	}
+
+	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
+	// points, skip the rebuild and reuse the cached vectors.
+	info, infoErr := idx.qclient.CollectionInfo(ctx, idx.collection)
+	if infoErr != nil {
+		// Defensive fallback: a transient probe failure must not block startup.
+		idx.logger.Warn("tool vector index build: collection info probe failed; proceeding with full rebuild", "collection", idx.collection, "error", infoErr)
+	} else if info.PointsCount > 0 {
+		idx.docCount = len(docs)
+		idx.lastRebuild = time.Now()
+		idx.logger.Info("tool vector qdrant warm-cache hit, skipping rebuild", "collection", idx.collection, "points_count", info.PointsCount, "docs", idx.docCount)
+		return nil
+	}
+
 	texts := make([]string, len(docs))
 	for i, doc := range docs {
 		texts[i] = doc.text
@@ -134,11 +153,6 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 	}
 
 	vectorSize := len(vectors[0])
-	if idx.qclient == nil {
-		idx.lastError = fmt.Errorf("qdrant client not initialized")
-		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", idx.lastError)
-		return nil
-	}
 	if err := idx.qclient.DeleteCollection(ctx, idx.collection); err != nil {
 		idx.lastError = err
 		idx.logger.Warn("tool vector index build: qdrant collection delete failed", "error", err)
