@@ -61,11 +61,11 @@ http://127.0.0.1:18080
 To use a different host port without changing Aura's in-container port:
 
 ```powershell
-$env:AURA_HOST_PORT = "18080"
+$env:AURA_HOST_PORT = "18081"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-Then open `http://127.0.0.1:18080`.
+Then open `http://127.0.0.1:18081`.
 
 For local development, build from the working tree instead:
 
