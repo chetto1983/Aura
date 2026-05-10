@@ -181,13 +181,13 @@ func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 	}
 }
 
-func TestTerminalToolFinalizationMessagesForSearchMemoryAvoidRawEnvelope(t *testing.T) {
+func TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation(t *testing.T) {
 	got := TerminalToolFinalizationMessages(nil, "search_memory")
 	if len(got) != 1 {
 		t.Fatalf("messages len = %d, want 1", len(got))
 	}
 	last := got[0].Content
-	for _, want := range []string{"Do not call tools", "Do not repeat the raw evidence envelope", "Answer the user's original request"} {
+	for _, want := range []string{"Do not call tools", "Answer the user's original request", "[[slug]]"} {
 		if !strings.Contains(last, want) {
 			t.Fatalf("search_memory finalization instruction = %q, want %q", last, want)
 		}

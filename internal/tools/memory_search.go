@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -14,11 +14,44 @@ import (
 	"github.com/aura/aura/internal/search"
 )
 
+// search_memory contract
+//
+// The tool is the LLM's read-side window into Aura's persistent wiki, source
+// archive, conversation history, and proposed updates. It is the closest
+// equivalent of the "search engine over the wiki" sketched in the wiki design
+// notes (docs/llm-wiki.md, qmd reference): hybrid BM25 + cosine retrieval over
+// the items the agent has curated over time.
+//
+// Output is plain markdown. There is no JSON envelope, no calibrated score
+// curve, no "Evidence envelope:" appendix. Each hit is one line the model
+// can read directly, optionally followed by an indented snippet. This avoids
+// the prompt-rot pattern where the assistant echoes raw evidence JSON back
+// to the user — the symptom we used to scrub with a regex.
+//
+// Scoring multiplies two factors:
+//
+//   - relevance: raw similarity from the underlying backend (Qdrant cosine
+//     or SQLite FTS rank-normalized). Already in [0,1].
+//   - recency:   exp(-age_days / halfLifeDays). Wiki and source kinds use a
+//     long half-life because curated knowledge ages slowly; archive and
+//     proposal use a short half-life because they're operational.
+//
+// The two factors multiply rather than sum: a fresh-but-irrelevant note
+// must not outrank a very-relevant-but-old wiki page.
+
 const (
 	searchMemoryDefaultLimit   = 6
 	searchMemoryMaxLimit       = 12
 	searchMemorySnippetLimit   = 260
 	searchMemoryDefaultTimeout = 5 * time.Second
+
+	// Half-life in days for the exp(-age/halfLife) recency factor. Wiki and
+	// source knowledge is curated and assumed stable; archive and proposals
+	// are short-lived operational signals.
+	recencyHalfLifeWikiDays    = 180.0
+	recencyHalfLifeSourceDays  = 180.0
+	recencyHalfLifeArchiveDays = 30.0
+	recencyHalfLifeProposalDays = 30.0
 )
 
 type compactMemorySearcher interface {
@@ -29,6 +62,7 @@ type SearchMemoryTool struct {
 	wiki    search.Searcher
 	compact compactMemorySearcher
 	timeout time.Duration
+	now     func() time.Time
 }
 
 func NewSearchMemoryTool(wiki search.Searcher, compact compactMemorySearcher) *SearchMemoryTool {
@@ -39,13 +73,13 @@ func NewSearchMemoryToolWithTimeout(wiki search.Searcher, compact compactMemoryS
 	if wiki == nil && compact == nil {
 		return nil
 	}
-	return &SearchMemoryTool{wiki: wiki, compact: compact, timeout: timeout}
+	return &SearchMemoryTool{wiki: wiki, compact: compact, timeout: timeout, now: time.Now}
 }
 
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
 
 func (t *SearchMemoryTool) Description() string {
-	return "Search Aura memory across wiki pages, stored sources/OCR, and the conversation archive. Returns compact readable evidence plus a JSON evidence envelope with wiki slugs, source IDs, conversation turn IDs, snippets, and source page numbers when available."
+	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns a short markdown list, one line per hit, optionally with a snippet. Cite hits as [[slug]] for wiki and src_xxxx for sources when answering the user."
 }
 
 func (t *SearchMemoryTool) Parameters() map[string]any {
@@ -54,22 +88,22 @@ func (t *SearchMemoryTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"query": map[string]any{
 				"type":        "string",
-				"description": "Natural-language query or keywords to search in Aura memory.",
+				"description": "Natural-language query or keywords.",
 			},
 			"scope": map[string]any{
 				"type":        "string",
-				"description": "Optional memory scope. Defaults to all.",
+				"description": "Which subset to search. Defaults to all.",
 				"enum":        []string{"all", "wiki", "sources", "archive", "proposals"},
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum evidence items to return (default 6, max 12).",
+				"description": "Maximum results to return (default 6, max 12).",
 				"minimum":     1,
 				"maximum":     searchMemoryMaxLimit,
 			},
 			"chat_id": map[string]any{
 				"type":        "integer",
-				"description": "Optional chat ID to restrict conversation archive search.",
+				"description": "Restrict conversation-archive results to this chat.",
 			},
 		},
 		"required": []string{"query"},
@@ -116,7 +150,10 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		warnings = append(warnings, compactWarnings...)
 	}
 
-	calibrateMemoryScores(results)
+	now := t.now()
+	for i := range results {
+		results[i].Score = relevanceTimesRecency(results[i].Kind, results[i].Score, results[i].UpdatedAt, now)
+	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
 			return results[i].Identifier < results[j].Identifier
@@ -126,7 +163,7 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return formatMemoryResults(query, results, warnings), nil
+	return formatMemoryResults(query, results, warnings, now), nil
 }
 
 func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -147,24 +184,8 @@ type memoryResult struct {
 	Snippet    string
 	Page       int
 	Score      float64
+	UpdatedAt  time.Time
 	Handle     string
-}
-
-type memoryEvidenceEnvelope struct {
-	Query    string               `json:"query"`
-	Items    []memoryEvidenceItem `json:"items"`
-	Warnings []string             `json:"warnings,omitempty"`
-}
-
-type memoryEvidenceItem struct {
-	Kind    string  `json:"kind"`
-	ID      string  `json:"id"`
-	Title   string  `json:"title,omitempty"`
-	Role    string  `json:"role,omitempty"`
-	Page    int     `json:"page,omitempty"`
-	Score   float64 `json:"score"`
-	Handle  string  `json:"handle,omitempty"`
-	Snippet string  `json:"snippet,omitempty"`
 }
 
 func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit int) ([]memoryResult, []string) {
@@ -230,6 +251,7 @@ func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kind
 			Snippet:    snippet,
 			Page:       doc.Page,
 			Score:      doc.Score,
+			UpdatedAt:  doc.UpdatedAt,
 			Handle:     doc.Handle,
 		})
 	}
@@ -249,37 +271,110 @@ func compactIdentifier(doc memoryindex.Document) string {
 	return doc.ID
 }
 
-func formatMemoryResults(query string, results []memoryResult, warnings []string) string {
+// relevanceTimesRecency computes the final ranking score.
+//
+// The recency factor uses true half-life decay: 0.5^(age_days / halfLife).
+// With halfLife=30:
+//   - age 0 days   → recency 1.00
+//   - age 30 days  → recency 0.50
+//   - age 60 days  → recency 0.25
+//   - age 180 days → recency ≈ 0.016
+//
+// Multiplying by relevance rather than averaging means a fresh-but-noise
+// item cannot displace a relevant-but-aged one. The user can still find
+// old wiki pages via direct query; the ranker simply prefers a recent hit
+// when both are similarly relevant.
+func relevanceTimesRecency(kind string, relevance float64, updatedAt, now time.Time) float64 {
+	if relevance <= 0 {
+		return 0
+	}
+	rel := clampUnit(relevance)
+	if updatedAt.IsZero() {
+		return rel
+	}
+	halfLife := recencyHalfLifeForKind(kind)
+	if halfLife <= 0 {
+		return rel
+	}
+	ageDays := now.Sub(updatedAt).Hours() / 24.0
+	if ageDays < 0 {
+		ageDays = 0
+	}
+	recency := math.Pow(0.5, ageDays/halfLife)
+	return rel * recency
+}
+
+func recencyHalfLifeForKind(kind string) float64 {
+	switch strings.TrimSpace(kind) {
+	case "wiki", "wiki_page", "graph_node", "graph_index":
+		return recencyHalfLifeWikiDays
+	case "source":
+		return recencyHalfLifeSourceDays
+	case "archive":
+		return recencyHalfLifeArchiveDays
+	case "proposal":
+		return recencyHalfLifeProposalDays
+	default:
+		return recencyHalfLifeWikiDays
+	}
+}
+
+func clampUnit(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		// Some backends (FTS rank) return values >1. Compress to [0,1] with
+		// a soft cap so very-high BM25 scores still rank above mid-cosine
+		// hits.
+		return 1 - 1/(1+v)
+	}
+	return v
+}
+
+// formatMemoryResults renders the result list as plain markdown. No JSON
+// envelope, no "Evidence envelope:" appendix. Each line is short enough for
+// the model to scan, and a snippet (one line, trimmed) follows when present.
+//
+// Format (per hit):
+//
+//	- [kind] handle — title (age) score=0.92
+//	  snippet text from the page
+func formatMemoryResults(query string, results []memoryResult, warnings []string, now time.Time) string {
 	var sb strings.Builder
 	cleanedWarnings := cleanWarnings(warnings)
-	fmt.Fprintf(&sb, "Memory evidence for %q", query)
 	if len(results) == 0 {
-		sb.WriteString(": no matching evidence found.")
+		fmt.Fprintf(&sb, "No memory found for %q.", query)
 		if len(cleanedWarnings) > 0 {
 			sb.WriteString("\nWarnings:")
 			for _, warning := range cleanedWarnings {
 				fmt.Fprintf(&sb, "\n- %s", warning)
 			}
 		}
-		appendMemoryEvidenceEnvelope(&sb, query, results, cleanedWarnings)
 		return sb.String()
 	}
-	fmt.Fprintf(&sb, " (%d result(s)):", len(results))
+	fmt.Fprintf(&sb, "%d memory hit(s) for %q:", len(results), query)
 	for _, r := range results {
 		fmt.Fprintf(&sb, "\n- [%s] %s", r.Kind, r.Identifier)
 		if r.Title != "" {
-			fmt.Fprintf(&sb, " - %s", compactMemoryLine(r.Title))
+			fmt.Fprintf(&sb, " — %s", compactMemoryLine(r.Title))
 		}
 		if r.Role != "" {
-			fmt.Fprintf(&sb, " - role=%s", r.Role)
+			fmt.Fprintf(&sb, " role=%s", r.Role)
 		}
 		if r.Page > 0 {
-			fmt.Fprintf(&sb, " - page=%d", r.Page)
+			fmt.Fprintf(&sb, " page=%d", r.Page)
 		}
+		// Surface the handle when it is a richer follow-up token than the
+		// identifier alone (e.g. a source's page-targeted "source:src_xxx#page=2").
+		// This is what read_source / read_memory consume for precise re-reads.
 		if r.Handle != "" && r.Handle != r.Identifier {
-			fmt.Fprintf(&sb, " - handle=%s", r.Handle)
+			fmt.Fprintf(&sb, " handle=%s", r.Handle)
 		}
-		fmt.Fprintf(&sb, " - score=%.2f", r.Score)
+		if age := formatAge(now, r.UpdatedAt); age != "" {
+			fmt.Fprintf(&sb, " (%s)", age)
+		}
+		fmt.Fprintf(&sb, " score=%.2f", r.Score)
 		if r.Snippet != "" {
 			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
 		}
@@ -290,34 +385,29 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 			fmt.Fprintf(&sb, "\n- %s", warning)
 		}
 	}
-	appendMemoryEvidenceEnvelope(&sb, query, results, cleanedWarnings)
 	return truncateForToolContext(sb.String(), maxSourceToolChars)
 }
 
-func appendMemoryEvidenceEnvelope(sb *strings.Builder, query string, results []memoryResult, warnings []string) {
-	envelope := memoryEvidenceEnvelope{
-		Query:    query,
-		Items:    make([]memoryEvidenceItem, 0, len(results)),
-		Warnings: warnings,
+func formatAge(now, updated time.Time) string {
+	if updated.IsZero() {
+		return ""
 	}
-	for _, r := range results {
-		envelope.Items = append(envelope.Items, memoryEvidenceItem{
-			Kind:    r.Kind,
-			ID:      r.Identifier,
-			Title:   r.Title,
-			Role:    r.Role,
-			Page:    r.Page,
-			Score:   r.Score,
-			Handle:  r.Handle,
-			Snippet: compactMemoryLine(r.Snippet),
-		})
+	d := now.Sub(updated)
+	if d < 0 {
+		d = 0
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(d.Hours()/24/30))
+	default:
+		return fmt.Sprintf("%dy ago", int(d.Hours()/24/365))
 	}
-	sb.WriteString("\nEvidence envelope:\n")
-	sb.Write(payload)
 }
 
 func memoryScopes(raw string) (map[string]bool, error) {
@@ -344,52 +434,6 @@ func memoryScopes(raw string) (map[string]bool, error) {
 		return nil, fmt.Errorf("search_memory: unsupported scope %q", raw)
 	}
 	return out, nil
-}
-
-func calibrateMemoryScores(results []memoryResult) {
-	for i := range results {
-		results[i].Score = calibratedMemoryScore(results[i].Kind, results[i].Score)
-	}
-}
-
-func calibratedMemoryScore(kind string, raw float64) float64 {
-	if raw <= 0 {
-		return 0
-	}
-	switch strings.TrimSpace(kind) {
-	case "wiki", "wiki_page", "graph_node", "graph_index":
-		if raw <= 1 {
-			return 0.55 + raw*0.40
-		}
-		return 0.95
-	case "source":
-		if raw <= 1 {
-			return raw
-		}
-		return 0.45 + cappedRatio(raw, 12)*0.40
-	case "archive":
-		if raw <= 1 {
-			return raw
-		}
-		return 0.35 + cappedRatio(raw, 12)*0.35
-	case "proposal":
-		if raw <= 1 {
-			return raw
-		}
-		return 0.40 + cappedRatio(raw, 12)*0.35
-	default:
-		return cappedRatio(raw, 12) * 0.70
-	}
-}
-
-func cappedRatio(value, cap float64) float64 {
-	if value <= 0 || cap <= 0 {
-		return 0
-	}
-	if value > cap {
-		return 1
-	}
-	return value / cap
 }
 
 func queryTerms(query string) []string {
@@ -471,9 +515,6 @@ func int64Arg(args map[string]any, key string) int64 {
 		return x
 	case float64:
 		return int64(x)
-	case json.Number:
-		n, _ := x.Int64()
-		return n
 	default:
 		return 0
 	}

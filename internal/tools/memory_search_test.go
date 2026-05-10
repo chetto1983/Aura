@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -74,31 +73,19 @@ func TestSearchMemoryTool_SearchesSourcesAndArchive(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	for _, want := range []string{
-		"Memory evidence",
-		"Evidence envelope:",
-		"[source]",
-		src.ID,
+		"memory hit(s) for",
+		"[source] " + src.ID,
 		"renewal-note.txt",
-		"[archive]",
-		"conversation:",
+		"handle=source:" + src.ID,
+		"[archive] conversation:",
 		"contract deadline",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	envelope := parseMemoryEvidenceEnvelope(t, out)
-	if envelope.Query != "contract deadline" {
-		t.Fatalf("unexpected evidence query: %q", envelope.Query)
-	}
-	if !hasEvidenceItem(envelope.Items, "source", src.ID, "renewal-note.txt", 0) {
-		t.Fatalf("missing structured source evidence: %#v", envelope.Items)
-	}
-	if !hasEvidenceHandle(envelope.Items, "source:"+src.ID) {
-		t.Fatalf("missing source follow-up handle: %#v", envelope.Items)
-	}
-	if !hasEvidenceKind(envelope.Items, "archive") {
-		t.Fatalf("missing structured archive evidence: %#v", envelope.Items)
+	if strings.Contains(out, `"items"`) || strings.Contains(out, "Evidence envelope") {
+		t.Fatalf("output should not contain JSON envelope:\n%s", out)
 	}
 }
 
@@ -133,10 +120,6 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 	}
 	if !strings.Contains(out, "handle=source:"+src.ID+"#page=2") {
 		t.Fatalf("expected page-stable source handle:\n%s", out)
-	}
-	envelope := parseMemoryEvidenceEnvelope(t, out)
-	if !hasEvidenceItem(envelope.Items, "source", src.ID, "agreement.pdf", 2) {
-		t.Fatalf("expected structured page evidence:\n%#v", envelope.Items)
 	}
 }
 
@@ -178,10 +161,6 @@ func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
 	}
 	if !strings.Contains(out, "[graph_node] [[alpha-contract]]") {
 		t.Fatalf("expected graph_node evidence:\n%s", out)
-	}
-	envelope := parseMemoryEvidenceEnvelope(t, out)
-	if !hasEvidenceItem(envelope.Items, "graph_node", "[[alpha-contract]]", "Alpha Contract", 0) {
-		t.Fatalf("missing structured graph_node evidence: %#v", envelope.Items)
 	}
 }
 
@@ -257,12 +236,6 @@ func TestSearchMemoryToolCalibratesMixedScoresBeforeMerging(t *testing.T) {
 	if wikiIdx > sourceIdx {
 		t.Fatalf("wiki vector score was buried by raw source lexical score:\n%s", out)
 	}
-	envelope := parseMemoryEvidenceEnvelope(t, out)
-	for _, item := range envelope.Items {
-		if item.Score < 0 || item.Score > 1 {
-			t.Fatalf("uncalibrated score for %#v", item)
-		}
-	}
 }
 
 func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
@@ -299,8 +272,11 @@ func TestSearchMemoryToolWithTimeoutReturnsWarningOnWikiTimeout(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("Execute took %s, want bounded timeout", elapsed)
 	}
-	if !strings.Contains(out, "wiki search timed out") || !strings.Contains(out, "Evidence envelope:") {
-		t.Fatalf("expected timeout warning and evidence envelope:\n%s", out)
+	if !strings.Contains(out, "wiki search timed out") {
+		t.Fatalf("expected timeout warning:\n%s", out)
+	}
+	if !strings.Contains(out, "No memory found") {
+		t.Fatalf("expected no-results sentinel:\n%s", out)
 	}
 }
 
@@ -506,58 +482,70 @@ func memoryKeywordEmbedding(_ context.Context, text string) ([]float32, error) {
 	return vec, nil
 }
 
-type testMemoryEvidenceEnvelope struct {
-	Query    string                   `json:"query"`
-	Items    []testMemoryEvidenceItem `json:"items"`
-	Warnings []string                 `json:"warnings"`
+// Envelope helpers were removed when search_memory dropped the JSON
+// "Evidence envelope:" appendix. Tests now assert on the plain-text output.
+
+func TestRelevanceTimesRecencyAppliesHalfLife(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// fresh archive (age 0d) full weight
+	fresh := relevanceTimesRecency("archive", 0.9, now, now)
+	if fresh < 0.89 || fresh > 0.91 {
+		t.Fatalf("fresh archive score = %f, want ~0.9", fresh)
+	}
+	// archive aged one half-life (~30d) should halve
+	thirty := relevanceTimesRecency("archive", 0.9, now.AddDate(0, 0, -30), now)
+	if thirty < 0.40 || thirty > 0.50 {
+		t.Fatalf("30d archive score = %f, want ~0.45", thirty)
+	}
+	// wiki aged 30d should barely move (half-life 180)
+	wiki30 := relevanceTimesRecency("wiki", 0.9, now.AddDate(0, 0, -30), now)
+	if wiki30 < 0.75 || wiki30 > 0.85 {
+		t.Fatalf("30d wiki score = %f, want ~0.79", wiki30)
+	}
 }
 
-type testMemoryEvidenceItem struct {
-	Kind   string  `json:"kind"`
-	ID     string  `json:"id"`
-	Title  string  `json:"title"`
-	Page   int     `json:"page"`
-	Score  float64 `json:"score"`
-	Handle string  `json:"handle"`
+func TestRelevanceTimesRecencyZeroUpdatedAtKeepsRelevance(t *testing.T) {
+	got := relevanceTimesRecency("archive", 0.7, time.Time{}, time.Now())
+	if got != 0.7 {
+		t.Fatalf("zero updated_at should keep relevance, got %f", got)
+	}
 }
 
-func parseMemoryEvidenceEnvelope(t *testing.T, out string) testMemoryEvidenceEnvelope {
-	t.Helper()
-	const marker = "Evidence envelope:\n"
-	idx := strings.LastIndex(out, marker)
-	if idx < 0 {
-		t.Fatalf("missing evidence envelope:\n%s", out)
+func TestSearchMemoryToolRanksFreshHitsAboveStaleOnesAtEqualRelevance(t *testing.T) {
+	now := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{
+		{
+			ID:        "archive:old",
+			Kind:      memoryindex.KindArchive,
+			Title:     "old chat",
+			Body:      "stale note",
+			Handle:    "conversation:old",
+			ChatID:    1,
+			Score:     0.8,
+			UpdatedAt: now.AddDate(0, 0, -90), // 90 days old → recency ≈ 0.125
+		},
+		{
+			ID:        "archive:new",
+			Kind:      memoryindex.KindArchive,
+			Title:     "new chat",
+			Body:      "fresh note",
+			Handle:    "conversation:new",
+			ChatID:    1,
+			Score:     0.8,
+			UpdatedAt: now.AddDate(0, 0, -1), // 1 day old → recency ≈ 0.977
+		},
+	}})
+	tool.now = func() time.Time { return now }
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "note", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	var envelope testMemoryEvidenceEnvelope
-	if err := json.Unmarshal([]byte(out[idx+len(marker):]), &envelope); err != nil {
-		t.Fatalf("invalid evidence envelope JSON: %v\n%s", err, out)
+	freshIdx := strings.Index(out, "conversation:new")
+	staleIdx := strings.Index(out, "conversation:old")
+	if freshIdx < 0 || staleIdx < 0 {
+		t.Fatalf("missing hits in output:\n%s", out)
 	}
-	return envelope
-}
-
-func hasEvidenceKind(items []testMemoryEvidenceItem, kind string) bool {
-	for _, item := range items {
-		if item.Kind == kind {
-			return true
-		}
+	if freshIdx > staleIdx {
+		t.Fatalf("fresh hit ranked below stale at equal relevance:\n%s", out)
 	}
-	return false
-}
-
-func hasEvidenceItem(items []testMemoryEvidenceItem, kind, id, title string, page int) bool {
-	for _, item := range items {
-		if item.Kind == kind && item.ID == id && item.Title == title && item.Page == page {
-			return true
-		}
-	}
-	return false
-}
-
-func hasEvidenceHandle(items []testMemoryEvidenceItem, handle string) bool {
-	for _, item := range items {
-		if item.Handle == handle {
-			return true
-		}
-	}
-	return false
 }
