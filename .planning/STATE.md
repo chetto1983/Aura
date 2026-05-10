@@ -25,12 +25,12 @@ See: `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/researc
 
 ## Current Position
 
-Phase: 01 (fondamenta-concurrency-safety) — EXECUTED (pending verification)
-Plan: 5 of 5 complete (all 3 waves done)
-Status: Phase 01 plans complete; ready to verify
-Last activity: 2026-05-10 -- Phase 01 wave 3 complete (01-05 final integration); full go test ./... passes
+Phase: 01 (fondamenta-concurrency-safety) — VERIFIED with gaps (7/9 must-haves)
+Plan: 5 of 5 plans complete; gap-closure plan pending
+Status: Awaiting gap-closure plan (1 BLOCKER: warm-cache check; 1 WARNING: queued-turn notice + configurable inbox params)
+Last activity: 2026-05-10 -- Phase 01 verification: gaps_found (see 01-VERIFICATION.md)
 
-Progress: [##########] 100%
+Progress: [##########] 100% (gap closure required before phase ships)
 
 ## Performance Metrics
 
