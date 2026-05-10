@@ -381,6 +381,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				}
 				return response, false, true
 			},
+			MaxCallsPerTool: map[string]int{
+				"search_memory": 2,
+				"tool_search":   2,
+			},
 		},
 		OnEvent: func(event agentruntime.Event) {
 			switch event.Type {

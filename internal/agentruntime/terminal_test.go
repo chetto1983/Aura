@@ -25,6 +25,36 @@ func TestFormatTerminalExecuteCodeResultMasksMetadata(t *testing.T) {
 	}
 }
 
+func TestFormatTerminalExecuteCodeResultDoesNotLeakBareStderr(t *testing.T) {
+	raw := "exit_code: 0\nelapsed_ms: 17\n\n--- stderr ---\nfind: '/home/user': No such file or directory"
+
+	got := FormatTerminalExecuteCodeResult(raw)
+
+	for _, leaked := range []string{"find:", "/home/user", "--- stderr ---", "exit_code"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "non ha prodotto un risultato utile") {
+		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
+	}
+}
+
+func TestFormatTerminalExecuteCodeResultDoesNotLeakToolErrorJSON(t *testing.T) {
+	raw := `{"ok":false,"error":"shell command failed (exit=1): find: '/home/user': No such file or directory","retryable":true}`
+
+	got := FormatTerminalExecuteCodeResult(raw)
+
+	for _, leaked := range []string{`"ok":false`, "find:", "/home/user", "retryable"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "non e riuscito") {
+		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
+	}
+}
+
 func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 	var gotRequest llm.Request
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{

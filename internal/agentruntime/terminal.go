@@ -128,11 +128,17 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 	if raw == "" {
 		return "Sandbox execution completed, but no result was returned."
 	}
+	if looksLikeStructuredToolError(raw) {
+		return "Il comando non e riuscito e non ha prodotto un risultato utile da mostrare."
+	}
 	body := raw
 	if idx := strings.Index(body, "\n\n"); idx >= 0 {
 		body = strings.TrimSpace(body[idx+2:])
 	} else if strings.HasPrefix(body, "exit_code:") {
 		return "Sandbox execution completed."
+	}
+	if strings.HasPrefix(strings.TrimSpace(body), "--- stderr ---") {
+		return "Il comando non ha prodotto un risultato utile da mostrare."
 	}
 	artifacts := ""
 	if idx := strings.Index(body, "\n\nartifacts:"); idx >= 0 {
@@ -150,6 +156,11 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 		return body + "\n\nHo generato gli allegati richiesti."
 	}
 	return body + "\n\nFile generati: " + strings.Join(names, ", ") + "."
+}
+
+func looksLikeStructuredToolError(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	return strings.Contains(lower, `"ok":false`) && strings.Contains(lower, `"error":`)
 }
 
 func artifactNamesFromSandboxResult(artifacts string) []string {

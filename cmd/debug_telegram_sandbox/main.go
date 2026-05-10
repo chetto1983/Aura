@@ -417,6 +417,9 @@ func resolveDebugHostPath(path string) string {
 	if path == "" {
 		return path
 	}
+	if filepath.IsAbs(path) && pathExists(path) {
+		return filepath.Clean(path)
+	}
 	clean := filepath.ToSlash(filepath.Clean(path))
 	for _, mapping := range []struct {
 		container string

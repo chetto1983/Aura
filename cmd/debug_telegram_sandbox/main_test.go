@@ -620,9 +620,19 @@ func TestResolveDebugHostPathMapsContainerRuntimeMounts(t *testing.T) {
 		"/data/aura.db":             filepath.Join("data", "aura.db"),
 	}
 	for input, want := range cases {
+		if filepath.IsAbs(input) && pathExists(input) {
+			want = filepath.Clean(input)
+		}
 		if got := resolveDebugHostPath(input); got != want {
 			t.Fatalf("resolveDebugHostPath(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestResolveDebugHostPathKeepsMountedContainerPathWhenPresent(t *testing.T) {
+	root := t.TempDir()
+	if got := resolveDebugHostPath(root); got != filepath.Clean(root) {
+		t.Fatalf("resolveDebugHostPath(%q) = %q, want mounted path", root, got)
 	}
 }
 

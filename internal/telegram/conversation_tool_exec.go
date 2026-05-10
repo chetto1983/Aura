@@ -95,7 +95,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				}
 			}
 			terminalTool := ""
-			if b.terminalToolPolicyEnabled() && isTerminalTool(tc.Name) {
+			if err == nil && b.terminalToolPolicyEnabled() && isTerminalTool(tc.Name) {
 				terminalTool = tc.Name
 			}
 			results[i] = outcome{

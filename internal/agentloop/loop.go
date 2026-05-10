@@ -305,10 +305,49 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 
 	stats.MaxIterationsHit = true
+	if opts.AllowNoToolFinalization {
+		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
+			state.AddAssistantMessage(answer)
+			emitStats()
+			return Result{Text: answer, Stats: stats}, nil
+		}
+	}
 	answer := finalAnswerOnBudget(lastToolResult)
 	state.AddAssistantMessage(answer)
 	emitStats()
 	return Result{Text: answer, Stats: stats}, nil
+}
+
+func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats) (string, bool) {
+	if client == nil || state == nil || stats == nil {
+		return "", false
+	}
+	messages := append([]llm.Message(nil), state.Messages()...)
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: "Hai raggiunto il limite di tool per questo turno. Non chiamare altri tool. Rispondi all'utente in modo naturale e utile usando solo i risultati gia presenti sopra. Non copiare output tecnici, JSON, Evidence envelope, score, ID interni, tool name, metriche o intestazioni come \"Memory evidence for\". Se le evidenze non bastano, dillo in una frase semplice.",
+	})
+	stats.LLMCalls++
+	stats.LoopSteps++
+	resp, err := client.Chat(ctx, messages, nil)
+	if err != nil {
+		return "", false
+	}
+	state.TrackTokens(resp.Response.Usage)
+	stats.TokensPrompt += resp.Response.Usage.PromptTokens
+	stats.TokensCompletion += resp.Response.Usage.CompletionTokens
+	stats.TokensTotal += resp.Response.Usage.TotalTokens
+	if opts.EstimateCost != nil {
+		stats.CostUSD += opts.EstimateCost(resp.Response.Usage)
+	}
+	if opts.RecordUsage != nil {
+		opts.RecordUsage(resp.Response.Usage)
+	}
+	text := strings.TrimSpace(resp.Response.Content)
+	if text == "" || resp.Response.HasToolCalls || looksLikeRawToolEvidence(text) {
+		return "", false
+	}
+	return text, true
 }
 
 func duplicateToolResult(call llm.ToolCall, opts Options) string {
@@ -360,9 +399,19 @@ func skillNameFromReadFileArgs(args map[string]any) string {
 
 func finalAnswerOnBudget(lastToolResult string) string {
 	if result := strings.TrimSpace(lastToolResult); result != "" {
+		if looksLikeRawToolEvidence(result) {
+			return "Ho trovato evidenze in memoria, ma il turno si e fermato prima di sintetizzarle bene. Posso riprendere la ricerca con un focus piu preciso."
+		}
 		return result
 	}
 	return "Ho raggiunto il limite del turno senza ottenere risultati utilizzabili."
+}
+
+func looksLikeRawToolEvidence(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "memory evidence for") ||
+		strings.Contains(lower, "evidence envelope:") ||
+		strings.Contains(lower, `"query":`) && strings.Contains(lower, `"items":`) && strings.Contains(lower, `"score":`)
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {

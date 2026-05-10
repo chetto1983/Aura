@@ -219,6 +219,60 @@ func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	}
 }
 
+func TestRunMaxIterationFinalizesMemoryEvidenceNaturally(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "Ho trovato tre riferimenti utili sullo scenario PMS; il piu rilevante e il PDF con la richiesta d'offerta e scadenza."}},
+	}}
+	raw := `Memory evidence for "scenario test gestione richieste offerta pms" (3 result(s)):
+- [source] src_1 - file.pdf - score=0.85
+Evidence envelope:
+{"query":"scenario test","items":[{"kind":"source","id":"src_1","score":0.85}]}`
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 1, AllowNoToolFinalization: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text == raw {
+		t.Fatal("returned raw search_memory evidence")
+	}
+	for _, leaked := range []string{"Memory evidence", "Evidence envelope", `"score"`} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("answer leaked %q in %q", leaked, result.Text)
+		}
+	}
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want tool turn plus no-tool finalization", client.requests)
+	}
+}
+
+func TestRunMaxIterationDoesNotFallbackToRawMemoryEvidence(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+	}}
+	raw := `Memory evidence for "scenario" (1 result(s)):
+Evidence envelope:
+{"query":"scenario","items":[{"score":0.85}]}`
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 1})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, leaked := range []string{"Memory evidence", "Evidence envelope", `"score"`} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("fallback leaked %q in %q", leaked, result.Text)
+		}
+	}
+}
+
 func TestRunMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{

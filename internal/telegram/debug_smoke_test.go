@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -508,6 +510,26 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
+func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&errorTelegramTool{name: "execute_shell"})
+	b := &Bot{cfg: &config.Config{TerminalToolPolicy: "on"}, tools: reg, logger: slog.Default()}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "shell-1", Name: "execute_shell", Arguments: map[string]any{"command": "find /home/user"}}},
+		[]string{"execute_shell"},
+		nil,
+	)
+
+	if summary.terminalTool != "" {
+		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.terminalTool)
+	}
+	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.Contains(got, `"ok":false`) {
+		t.Fatalf("tool result = %q, want structured error for model recovery", got)
+	}
+}
+
 func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&countingTelegramTool{name: "search_memory", result: "memory"})
@@ -614,6 +636,20 @@ func (t *countingTelegramTool) Execute(_ context.Context, args map[string]any) (
 	t.calls++
 	t.lastArgs = args
 	return t.result, nil
+}
+
+type errorTelegramTool struct {
+	name string
+}
+
+func (t *errorTelegramTool) Name() string { return t.name }
+
+func (t *errorTelegramTool) Description() string { return "error fake tool" }
+
+func (t *errorTelegramTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+
+func (t *errorTelegramTool) Execute(context.Context, map[string]any) (string, error) {
+	return "", fmt.Errorf("shell command failed (exit=1): find: '/home/user': No such file or directory")
 }
 
 type scriptedTelegramLLM struct {
