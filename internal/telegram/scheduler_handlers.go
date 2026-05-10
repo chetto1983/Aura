@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
@@ -51,8 +52,33 @@ func (b *Bot) dispatchReminder(task *scheduler.Task) error {
 	} else {
 		body = "⏰ " + body
 	}
-	if _, err := b.bot.Send(tele.ChatID(chatID), body); err != nil {
-		return fmt.Errorf("send reminder: %w", err)
+
+	gate := b.userGate()
+	if gate == nil {
+		// No UserGate: deliver directly (backward compat, tests).
+		if _, err := b.bot.Send(tele.ChatID(chatID), body); err != nil {
+			return fmt.Errorf("send reminder: %w", err)
+		}
+		return nil
+	}
+
+	// Non-blocking enqueue via TryAcquire (CONC-02, D-06).
+	// On success the reminder is processed FIFO alongside user messages (D-07).
+	// On failure return nil -- scheduler retries on next tick (D-05).
+	bodyCopy := body
+	chatIDCopy := chatID
+	acquired := gate.TryAcquire(task.RecipientID, concurrency.Entry{
+		Process: func(_ context.Context) {
+			if _, err := b.bot.Send(tele.ChatID(chatIDCopy), bodyCopy); err != nil {
+				b.logger.Warn("reminder delivery failed",
+					"user_id", task.RecipientID, "error", err)
+			}
+		},
+	})
+	if !acquired {
+		b.logger.Info("reminder dropped (gate full), will retry on next tick",
+			"name", task.Name, "user_id", task.RecipientID)
+		return nil // drop; scheduler retries (D-05)
 	}
 	return nil
 }
@@ -201,8 +227,30 @@ func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, r
 func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error) {
 	payload, _ := scheduler.NormalizeAgentJobPayload(task.Payload)
 	msg := agentJobNotificationMessage(task, payload, content)
-	if err := b.sendGeneratedToUser(task.RecipientID, msg); err != nil {
-		return false, fmt.Errorf("agent_job %q notify: %w", task.Name, err)
+
+	gate := b.userGate()
+	if gate == nil {
+		// No UserGate: deliver directly (backward compat, tests).
+		if err := b.sendGeneratedToUser(task.RecipientID, msg); err != nil {
+			return false, fmt.Errorf("agent_job %q notify: %w", task.Name, err)
+		}
+		return true, nil
+	}
+
+	// Non-blocking enqueue via TryAcquire (CONC-02, D-06).
+	// On full inbox return false,nil -- agent job notification is optional (D-05).
+	recipientID := task.RecipientID
+	msgCopy := msg
+	acquired := gate.TryAcquire(recipientID, concurrency.Entry{
+		Process: func(_ context.Context) {
+			if err := b.sendGeneratedToUser(recipientID, msgCopy); err != nil {
+				b.logger.Warn("agent job notify delivery failed",
+					"user_id", recipientID, "error", err)
+			}
+		},
+	})
+	if !acquired {
+		return false, nil // dropped; no error -- notification is best-effort
 	}
 	return true, nil
 }

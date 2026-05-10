@@ -1,8 +1,10 @@
 package telegram
 
 import (
+	"context"
 	"strconv"
 
+	"github.com/aura/aura/internal/concurrency"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -32,8 +34,31 @@ func (b *Bot) onMessage(c tele.Context) error {
 		return nil
 	}
 
-	// Launch conversation in its own goroutine
-	go b.handleConversation(c)
+	// Route through UserGate for per-user serialization (CONC-01, D-15).
+	// Acquire is called from onMessage's goroutine (telebot handler), NOT from
+	// the actor goroutine, preventing re-entrant deadlock (Pitfall 1).
+	// The Process closure runs inside the per-user actor goroutine.
+	gate := b.userGate()
+	if gate == nil {
+		// Fallback: UserGate not configured (tests, edge case); use direct goroutine.
+		go b.handleConversation(c)
+		return nil
+	}
 
+	entry := concurrency.Entry{
+		Process: func(_ context.Context) {
+			b.handleConversation(c)
+		},
+	}
+
+	// Acquire blocks until the entry is enqueued in the per-user actor's inbox.
+	// On inbox overflow, drops oldest entry and calls OnOverflow (D-03).
+	// The actor goroutine processes entries one at a time (D-01 serialization).
+	if err := gate.Acquire(context.Background(), userID, entry); err != nil {
+		b.logger.Warn("failed to acquire user gate",
+			"user_id", userID,
+			"error", err,
+		)
+	}
 	return nil
 }
