@@ -269,18 +269,48 @@ func TestListFilesHidesSensitivePaths(t *testing.T) {
 	}
 }
 
-func TestReadFileDirectoryErrorMentionsListFiles(t *testing.T) {
+func TestReadFileOnDirectoryReturnsListingInsteadOfError(t *testing.T) {
+	// The legacy behaviour was to error with "is a directory" and prod the
+	// model via a hint to call list_files. The conversation logs showed the
+	// model would then waste a turn translating that error into list_files,
+	// often with the wrong path. read_file now resolves the case itself:
+	// when the path is a directory, it returns the directory's listing in
+	// the same response shape.
 	root := newWorkspaceToolRoot(t)
 	if err := os.MkdirAll(filepath.Join(root.Path(), "wiki"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := NewReadFileTool(root).Execute(context.Background(), map[string]any{"path": "wiki"})
-	if err == nil {
-		t.Fatal("expected directory read error")
+	if err := os.WriteFile(filepath.Join(root.Path(), "wiki", "note.md"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	result := FormatToolError(err)
-	if !strings.Contains(result, "list_files") {
-		t.Fatalf("formatted error = %s", result)
+	result, err := NewReadFileTool(root).Execute(context.Background(), map[string]any{"path": "wiki"})
+	if err != nil {
+		t.Fatalf("read_file on directory should not error: %v", err)
+	}
+	if !strings.Contains(result, `"type": "directory"`) {
+		t.Fatalf("expected directory type marker, got %s", result)
+	}
+	if !strings.Contains(result, "note.md") {
+		t.Fatalf("expected listing to include note.md, got %s", result)
+	}
+}
+
+func TestReadFileOversizeReturnsTruncated(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	big := strings.Repeat("x", 10_000)
+	if err := os.WriteFile(filepath.Join(root.Path(), "big.txt"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewReadFileTool(root).Execute(context.Background(),
+		map[string]any{"path": "big.txt", "max_bytes": 500})
+	if err != nil {
+		t.Fatalf("oversize read should not error: %v", err)
+	}
+	if !strings.Contains(result, `"truncated": true`) {
+		t.Fatalf("expected truncated: true, got %s", result)
+	}
+	if !strings.Contains(result, `"total_bytes": 10000`) {
+		t.Fatalf("expected total_bytes: 10000, got %s", result)
 	}
 }
 

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -82,7 +81,7 @@ func NewReadFileTool(root *workspace.Root) *ReadFileTool {
 func (t *ReadFileTool) Name() string { return "read_file" }
 
 func (t *ReadFileTool) Description() string {
-	return "Read one small file from Aura's configured workspace root. Only pass exact file paths from search_files.path or list_files entries with type=file; never pass directories. Path must be relative. Sensitive paths are denied; small binary files return base64."
+	return "Read a file from Aura's configured workspace root. Path must be relative. Sensitive paths are denied; small binary files return base64. If the path is a directory, returns a listing instead of an error so you can navigate. If the file is larger than max_bytes, returns the leading max_bytes with truncated=true."
 }
 
 func (t *ReadFileTool) Parameters() map[string]any {
@@ -91,11 +90,11 @@ func (t *ReadFileTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Relative file path to read.",
+				"description": "Relative path to a file or directory.",
 			},
 			"max_bytes": map[string]any{
 				"type":        "integer",
-				"description": "Maximum bytes to read. Default 65536, max 524288.",
+				"description": "Maximum bytes to return when reading a file. Default 65536, max 524288. Oversize files are truncated, not rejected.",
 			},
 		},
 		"required": []string{"path"},
@@ -110,22 +109,11 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) (string
 	if err != nil {
 		return "", err
 	}
-	data, err := t.root.Read(rel, intArg(args, "max_bytes", workspaceReadDefaultBytes, 1, workspaceReadMaxBytes))
+	result, err := t.root.ReadBest(rel, intArg(args, "max_bytes", workspaceReadDefaultBytes, 1, workspaceReadMaxBytes))
 	if err != nil {
 		return "", fmt.Errorf("read_file: %w", err)
 	}
-	out := map[string]any{
-		"path":  rel,
-		"bytes": len(data),
-	}
-	if utf8.Valid(data) {
-		out["encoding"] = "utf-8"
-		out["content"] = string(data)
-	} else {
-		out["encoding"] = "base64"
-		out["content"] = base64.StdEncoding.EncodeToString(data)
-	}
-	return jsonString(out)
+	return jsonString(result)
 }
 
 type SearchFilesTool struct {

@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -124,6 +126,89 @@ func (r *Root) Read(rel string, maxBytes int) ([]byte, error) {
 		return nil, fmt.Errorf("workspace: %s exceeded max_bytes %d", cleanRel, maxBytes)
 	}
 	return data, nil
+}
+
+// ReadResult is what tool-facing reads return. It encodes the three cases
+// — file fits, file truncated, target is a directory — so callers never
+// need to interpret a stat error.
+type ReadResult struct {
+	Path        string     `json:"path"`
+	Type        string     `json:"type"` // "file" | "directory"
+	Bytes       int        `json:"bytes,omitempty"`
+	TotalBytes  int64      `json:"total_bytes,omitempty"`
+	Truncated   bool       `json:"truncated,omitempty"`
+	Encoding    string     `json:"encoding,omitempty"`
+	Content     string     `json:"content,omitempty"`
+	Entries     []FileInfo `json:"entries,omitempty"`
+	EntriesHint string     `json:"hint,omitempty"`
+}
+
+// ReadBest is the permissive read used by the read_file tool. It never
+// errors on oversize (truncates) or on directories (lists). It only errors
+// on missing paths, permission boundaries, or sensitive paths.
+//
+// Sibling to Read: Read stays strict for callers that must reject either
+// case (hashing, atomic patch). ReadBest gives the LLM a single tool that
+// always returns something useful and lets it decide next steps.
+func (r *Root) ReadBest(rel string, maxBytes int) (ReadResult, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultReadLimit
+	}
+	cleanRel, err := cleanRelative(rel)
+	if err != nil {
+		return ReadResult{}, err
+	}
+	abs, err := r.Resolve(cleanRel)
+	if err != nil {
+		return ReadResult{}, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return ReadResult{}, fmt.Errorf("workspace: stat %s: %w", cleanRel, err)
+	}
+	if info.IsDir() {
+		entries, err := r.List(cleanRel, 200)
+		if err != nil {
+			return ReadResult{}, fmt.Errorf("workspace: list %s: %w", cleanRel, err)
+		}
+		return ReadResult{
+			Path:        cleanRel,
+			Type:        "directory",
+			Entries:     entries,
+			EntriesHint: "Use list_files for paging or different limits; pass an entry's path back to read_file to read it.",
+		}, nil
+	}
+	if isBinaryExtension(cleanRel) && info.Size() > smallBinaryReadLimit {
+		return ReadResult{}, fmt.Errorf("%w: binary file too large for read-only access", ErrDeniedPath)
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		return ReadResult{}, fmt.Errorf("workspace: open %s: %w", cleanRel, err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
+	if err != nil {
+		return ReadResult{}, fmt.Errorf("workspace: read %s: %w", cleanRel, err)
+	}
+	truncated := len(data) > maxBytes
+	if truncated {
+		data = data[:maxBytes]
+	}
+	result := ReadResult{
+		Path:       cleanRel,
+		Type:       "file",
+		Bytes:      len(data),
+		TotalBytes: info.Size(),
+		Truncated:  truncated,
+	}
+	if utf8.Valid(data) {
+		result.Encoding = "utf-8"
+		result.Content = string(data)
+	} else {
+		result.Encoding = "base64"
+		result.Content = base64.StdEncoding.EncodeToString(data)
+	}
+	return result, nil
 }
 
 func (r *Root) WriteAtomic(rel string, content []byte) error {
