@@ -172,6 +172,14 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 
 	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
 	// points, skip the rebuild and reuse the cached vectors.
+	//
+	// WR-03 / T-01-24 (accepted): CollectionInfo does not expose the existing
+	// collection's vector size or distance metric, so a warm-cache hit cannot
+	// detect schema drift from an EMBEDDING_MODEL swap (e.g. 1024 → 1536 dim).
+	// Subsequent Search calls will surface the dimension mismatch as a clear
+	// Qdrant error. Operator runbook: DELETE the collection (or set fresh
+	// QDRANT_COLLECTION) before changing embedding models. Phase 2 hardening
+	// candidate: extend CollectionInfo with vector_size and assert here.
 	info, infoErr := client.CollectionInfo(ctx, collection)
 	if infoErr != nil {
 		// Defensive fallback: a transient probe failure must not block startup.

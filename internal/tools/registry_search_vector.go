@@ -125,6 +125,11 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 
 	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
 	// points, skip the rebuild and reuse the cached vectors.
+	//
+	// WR-03 / T-01-24 (accepted): vector-size drift from EMBEDDING_MODEL swaps
+	// is not detected here because CollectionInfo does not expose the stored
+	// vector size. Search queries will fail loudly with a Qdrant dimension
+	// error if the operator changes models without rebuilding the collection.
 	info, infoErr := idx.qclient.CollectionInfo(ctx, idx.collection)
 	if infoErr != nil {
 		// Defensive fallback: a transient probe failure must not block startup.

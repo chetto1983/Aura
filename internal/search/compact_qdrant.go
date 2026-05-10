@@ -59,6 +59,11 @@ func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryin
 
 	// QDRANT-01 warm-cache short-circuit: reuse the existing collection if it
 	// already has points instead of re-embedding every document.
+	//
+	// WR-03 / T-01-24 (accepted): vector-size drift from EMBEDDING_MODEL swaps
+	// is not detected here because CollectionInfo does not expose the stored
+	// vector size. Search queries will fail loudly with a Qdrant dimension
+	// error if the operator changes models without rebuilding the collection.
 	info, infoErr := i.client.CollectionInfo(ctx, i.collection)
 	if infoErr != nil {
 		i.logger.Warn("compact qdrant warm-cache probe failed; proceeding with full rebuild", "collection", i.collection, "error", infoErr)
