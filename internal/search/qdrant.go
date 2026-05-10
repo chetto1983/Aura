@@ -1,13 +1,10 @@
 package search
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -15,10 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/qdrant"
 	"github.com/philippgille/chromem-go"
 )
-
-const defaultQdrantBatchSize = 64
 
 // QdrantConfig describes Aura's external vector index.
 type QdrantConfig struct {
@@ -36,36 +32,21 @@ type QdrantRebuildReport struct {
 	VectorSize   int    `json:"vector_size"`
 }
 
-type qdrantClient struct {
-	baseURL    string
-	collection string
-	apiKey     string
-	batchSize  int
-	http       *http.Client
-}
-
 type qdrantSearcher struct {
-	client  *qdrantClient
-	embedFn EmbeddingFunction
+	client     qdrant.Client
+	embedFn    EmbeddingFunction
+	collection string
 }
 
 type qdrantRepository struct {
-	primary *qdrantSearcher
-	client  *qdrantClient
-	embedFn EmbeddingFunction
-	wikiDir string
-	logger  *slog.Logger
-	indexed bool
-	mu      sync.RWMutex
-}
-
-// CheckQdrantReady probes the Qdrant REST service without mutating data.
-func CheckQdrantReady(ctx context.Context, cfg QdrantConfig) error {
-	client, err := newQdrantClient(cfg)
-	if err != nil {
-		return err
-	}
-	return client.ready(ctx)
+	primary          *qdrantSearcher
+	client           qdrant.Client
+	embedFn          EmbeddingFunction
+	collectionQdrant string
+	wikiDir          string
+	logger           *slog.Logger
+	indexed          bool
+	mu               sync.RWMutex
 }
 
 // NewQdrantSearcher creates a read-only Qdrant-backed semantic searcher.
@@ -75,11 +56,11 @@ func NewQdrantSearcher(cfg QdrantConfig, embedFn EmbeddingFunction) (*qdrantSear
 	if embedFn == nil {
 		return nil, fmt.Errorf("embedding function is required")
 	}
-	client, err := newQdrantClient(cfg)
+	client, collection, err := newQdrantClientFromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &qdrantSearcher{client: client, embedFn: embedFn}, nil
+	return &qdrantSearcher{client: client, embedFn: embedFn, collection: collection}, nil
 }
 
 // NewQdrantRepository creates the runtime wiki search repository backed by Qdrant.
@@ -92,11 +73,12 @@ func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, wikiDir st
 		return nil, err
 	}
 	return &qdrantRepository{
-		primary: primary,
-		client:  primary.client,
-		embedFn: embedFn,
-		wikiDir: wikiDir,
-		logger:  logger,
+		primary:          primary,
+		client:           primary.client,
+		embedFn:          embedFn,
+		collectionQdrant: primary.collection,
+		wikiDir:          wikiDir,
+		logger:           logger,
 	}, nil
 }
 
@@ -118,7 +100,7 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 	if len(vector) == 0 {
 		return fmt.Errorf("embedding %s returned empty vector", id)
 	}
-	if err := r.client.createCollection(ctx, len(vector)); err != nil {
+	if err := r.client.CreateCollection(ctx, r.collectionQdrant, len(vector)); err != nil {
 		return err
 	}
 	payload := map[string]string{
@@ -128,7 +110,7 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 	for key, value := range metadata {
 		payload[key] = value
 	}
-	if err := r.client.upsertPoints(ctx, []qdrantPoint{{
+	if err := r.client.Upsert(ctx, r.collectionQdrant, []qdrant.Point{{
 		ID:      qdrantPointID(id),
 		Vector:  vector,
 		Payload: payload,
@@ -142,13 +124,7 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 }
 
 func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
-	_, err := RebuildQdrantWikiDocuments(ctx, r.wikiDir, r.embedFn, QdrantConfig{
-		BaseURL:    r.client.baseURL,
-		Collection: r.client.collection,
-		APIKey:     r.client.apiKey,
-		BatchSize:  r.client.batchSize,
-		Client:     r.client.http,
-	}, r.logger)
+	_, err := rebuildQdrantWikiDocumentsWithClient(ctx, r.wikiDir, r.embedFn, r.client, r.collectionQdrant, r.logger)
 	if err != nil {
 		return err
 	}
@@ -172,11 +148,24 @@ func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chr
 	if embedFn == nil {
 		return QdrantRebuildReport{}, fmt.Errorf("embedding function is required")
 	}
-	client, err := newQdrantClient(cfg)
+	client, collection, err := newQdrantClientFromConfig(cfg)
 	if err != nil {
 		return QdrantRebuildReport{}, err
 	}
-	if err := client.ready(ctx); err != nil {
+	return rebuildQdrantWikiDocumentsWithClient(ctx, wikiDir, embedFn, client, collection, logger)
+}
+
+// rebuildQdrantWikiDocumentsWithClient implements the rebuild logic using an
+// already-constructed qdrant.Client and collection name. This avoids needing to
+// reconstruct credentials from the client interface.
+func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, embedFn chromem.EmbeddingFunc, client qdrant.Client, collection string, logger *slog.Logger) (QdrantRebuildReport, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if embedFn == nil {
+		return QdrantRebuildReport{}, fmt.Errorf("embedding function is required")
+	}
+	if err := client.Health(ctx); err != nil {
 		return QdrantRebuildReport{}, err
 	}
 	docs, pages, err := loadWikiDocuments(wikiDir, logger)
@@ -184,10 +173,10 @@ func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chr
 		return QdrantRebuildReport{}, err
 	}
 	if len(docs) == 0 {
-		return QdrantRebuildReport{Collection: client.collection, PagesIndexed: pages}, nil
+		return QdrantRebuildReport{Collection: collection, PagesIndexed: pages}, nil
 	}
 
-	points := make([]qdrantPoint, 0, len(docs))
+	points := make([]qdrant.Point, 0, len(docs))
 	vectorSize := 0
 	for _, doc := range docs {
 		vector, err := embedFn(ctx, doc.Content)
@@ -209,54 +198,57 @@ func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chr
 		for key, value := range doc.Metadata {
 			payload[key] = value
 		}
-		points = append(points, qdrantPoint{
+		points = append(points, qdrant.Point{
 			ID:      qdrantPointID(doc.ID),
 			Vector:  vector,
 			Payload: payload,
 		})
 	}
 
-	if err := client.recreateCollection(ctx, vectorSize); err != nil {
+	if err := client.DeleteCollection(ctx, collection); err != nil {
 		return QdrantRebuildReport{}, err
 	}
-	if err := client.upsertPoints(ctx, points); err != nil {
+	if err := client.CreateCollection(ctx, collection, vectorSize); err != nil {
+		return QdrantRebuildReport{}, err
+	}
+	if err := client.Upsert(ctx, collection, points); err != nil {
 		return QdrantRebuildReport{}, err
 	}
 	return QdrantRebuildReport{
-		Collection:   client.collection,
+		Collection:   collection,
 		DocsIndexed:  len(points),
 		PagesIndexed: pages,
 		VectorSize:   vectorSize,
 	}, nil
 }
 
-func newQdrantClient(cfg QdrantConfig) (*qdrantClient, error) {
+// newQdrantClientFromConfig creates a qdrant.Client from QdrantConfig and returns
+// the client, collection name, and any construction error.
+func newQdrantClientFromConfig(cfg QdrantConfig) (qdrant.Client, string, error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if base == "" {
-		return nil, fmt.Errorf("QDRANT_URL is required")
+		return nil, "", fmt.Errorf("QDRANT_URL is required")
 	}
 	if _, err := url.ParseRequestURI(base); err != nil {
-		return nil, fmt.Errorf("invalid QDRANT_URL: %w", err)
+		return nil, "", fmt.Errorf("invalid QDRANT_URL: %w", err)
 	}
 	collection := strings.TrimSpace(cfg.Collection)
 	if collection == "" {
-		return nil, fmt.Errorf("QDRANT_COLLECTION is required")
+		return nil, "", fmt.Errorf("QDRANT_COLLECTION is required")
 	}
-	httpClient := cfg.Client
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+	timeout := 30 * time.Second
+	if cfg.Client != nil && cfg.Client.Timeout > 0 {
+		timeout = cfg.Client.Timeout
 	}
-	batchSize := cfg.BatchSize
-	if batchSize <= 0 {
-		batchSize = defaultQdrantBatchSize
+	client, err := qdrant.NewClient(qdrant.Config{
+		BaseURL: base,
+		APIKey:  cfg.APIKey,
+		Timeout: timeout,
+	})
+	if err != nil {
+		return nil, "", err
 	}
-	return &qdrantClient{
-		baseURL:    base,
-		collection: collection,
-		apiKey:     cfg.APIKey,
-		batchSize:  batchSize,
-		http:       httpClient,
-	}, nil
+	return client, collection, nil
 }
 
 func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]Result, error) {
@@ -270,7 +262,7 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 	if len(vector) == 0 {
 		return nil, fmt.Errorf("embedding qdrant query returned empty vector")
 	}
-	points, err := s.client.queryPoints(ctx, vector, topK)
+	points, err := s.client.Search(ctx, s.collection, vector, topK, true)
 	if err != nil {
 		return nil, err
 	}
@@ -294,197 +286,6 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 		})
 	}
 	return results, nil
-}
-
-func (c *qdrantClient) queryPoints(ctx context.Context, vector []float32, topK int) ([]qdrantScoredPoint, error) {
-	body := map[string]any{
-		"query":        vector,
-		"limit":        topK,
-		"with_payload": true,
-	}
-	var out qdrantQueryResponse
-	if err := c.doJSONResponse(ctx, http.MethodPost, c.collectionPath()+"/points/query", body, &out, http.StatusOK); err != nil {
-		return nil, err
-	}
-	if out.Status != "" && out.Status != "ok" {
-		return nil, fmt.Errorf("qdrant query returned status %q", out.Status)
-	}
-	return out.Result.Points, nil
-}
-
-func (c *qdrantClient) ready(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/readyz", nil)
-	if err != nil {
-		return err
-	}
-	c.authorize(req)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("qdrant ready check: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("qdrant ready check returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
-func (c *qdrantClient) recreateCollection(ctx context.Context, vectorSize int) error {
-	if vectorSize <= 0 {
-		return fmt.Errorf("vector size must be positive")
-	}
-	if err := c.deleteCollection(ctx); err != nil {
-		return err
-	}
-	return c.createCollection(ctx, vectorSize)
-}
-
-func (c *qdrantClient) createCollection(ctx context.Context, vectorSize int) error {
-	if vectorSize <= 0 {
-		return fmt.Errorf("vector size must be positive")
-	}
-	body := map[string]any{
-		"vectors": map[string]any{
-			"size":     vectorSize,
-			"distance": "Cosine",
-		},
-	}
-	return c.doJSON(ctx, http.MethodPut, c.collectionPath(), body, http.StatusOK, http.StatusConflict)
-}
-
-func (c *qdrantClient) deleteCollection(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.collectionPath(), nil)
-	if err != nil {
-		return err
-	}
-	c.authorize(req)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("delete qdrant collection: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("delete qdrant collection returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
-func (c *qdrantClient) upsertPoints(ctx context.Context, points []qdrantPoint) error {
-	for start := 0; start < len(points); start += c.batchSize {
-		end := start + c.batchSize
-		if end > len(points) {
-			end = len(points)
-		}
-		body := map[string]any{"points": points[start:end]}
-		if err := c.doJSON(ctx, http.MethodPut, c.collectionPath()+"/points?wait=true", body, http.StatusOK); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *qdrantClient) deletePoints(ctx context.Context, ids []string) error {
-	for start := 0; start < len(ids); start += c.batchSize {
-		end := start + c.batchSize
-		if end > len(ids) {
-			end = len(ids)
-		}
-		body := map[string]any{"points": ids[start:end]}
-		if err := c.doJSON(ctx, http.MethodPost, c.collectionPath()+"/points/delete?wait=true", body, http.StatusOK); err != nil {
-			if isQdrantNotFound(err) {
-				return nil
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func isQdrantNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "404") || strings.Contains(msg, "not found")
-}
-
-func (c *qdrantClient) doJSON(ctx context.Context, method, endpoint string, body any, accepted ...int) error {
-	return c.doJSONResponse(ctx, method, endpoint, body, nil, accepted...)
-}
-
-func (c *qdrantClient) doJSONResponse(ctx context.Context, method, endpoint string, body any, out any, accepted ...int) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.authorize(req)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, endpoint, err)
-	}
-	defer resp.Body.Close()
-	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
-	if readErr != nil {
-		return fmt.Errorf("%s %s read response: %w", method, endpoint, readErr)
-	}
-	for _, code := range accepted {
-		if resp.StatusCode == code {
-			if out != nil && len(bodyBytes) > 0 {
-				if err := json.Unmarshal(bodyBytes, out); err != nil {
-					return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
-				}
-			}
-			return nil
-		}
-	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if out != nil && len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out); err != nil {
-				return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
-			}
-		}
-		return nil
-	}
-	return fmt.Errorf("%s %s returned %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(bodyBytes)))
-}
-
-func (c *qdrantClient) collectionPath() string {
-	return c.baseURL + "/collections/" + url.PathEscape(c.collection)
-}
-
-func (c *qdrantClient) authorize(req *http.Request) {
-	if c.apiKey != "" {
-		req.Header.Set("api-key", c.apiKey)
-	}
-}
-
-type qdrantPoint struct {
-	ID      string            `json:"id"`
-	Vector  []float32         `json:"vector"`
-	Payload map[string]string `json:"payload"`
-}
-
-type qdrantScoredPoint struct {
-	ID      any               `json:"id"`
-	Score   float32           `json:"score"`
-	Payload map[string]string `json:"payload"`
-}
-
-type qdrantQueryResponse struct {
-	Status string `json:"status"`
-	Result struct {
-		Points []qdrantScoredPoint `json:"points"`
-	} `json:"result"`
 }
 
 func qdrantPointID(docID string) string {

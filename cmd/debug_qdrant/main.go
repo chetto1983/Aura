@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/qdrant"
 	"github.com/aura/aura/internal/search"
 	"github.com/philippgille/chromem-go"
 )
@@ -100,7 +101,14 @@ func main() {
 	}
 
 	if !*rebuild {
-		if err := search.CheckQdrantReady(ctx, qcfg); err != nil {
+		qclient, err := qdrant.NewClient(qdrant.Config{
+			BaseURL: qcfg.BaseURL,
+			APIKey:  qcfg.APIKey,
+		})
+		if err != nil {
+			fail(*jsonOut, output{URL: *qdrantURL, Collection: *collection, Error: err.Error()})
+		}
+		if err := qdrant.WaitForReady(ctx, qclient, *timeout); err != nil {
 			fail(*jsonOut, output{URL: *qdrantURL, Collection: *collection, Error: err.Error()})
 		}
 		printOutput(*jsonOut, output{OK: true, URL: *qdrantURL, Collection: *collection})
