@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -183,11 +184,16 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 		if loadErr != nil {
 			logger.Warn("warm-cache hit: pages_on_disk count unavailable", "error", loadErr, "collection", collection)
 		}
+		// WR-01: saturate uint64 → int conversion. On 32-bit platforms the
+		// naked int(info.PointsCount) would wrap for values above MaxInt32.
+		// Aura is unlikely to ever index >2 billion points but the guard
+		// keeps the report sane on every architecture.
+		docsIndexed := saturateUint64ToInt(info.PointsCount)
 		logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
 		return QdrantRebuildReport{
 			Collection:   collection,
 			PagesIndexed: pages,
-			DocsIndexed:  int(info.PointsCount), // W1: live points count, not 0
+			DocsIndexed:  docsIndexed, // W1: live points count, not 0
 			VectorSize:   0,
 		}, nil
 	}
@@ -310,6 +316,16 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 		})
 	}
 	return results, nil
+}
+
+// saturateUint64ToInt converts a uint64 to int, clamping to math.MaxInt
+// when the value exceeds the platform's int range. Used to safely surface
+// Qdrant's PointsCount (uint64) into report fields typed as int (WR-01).
+func saturateUint64ToInt(v uint64) int {
+	if v > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(v)
 }
 
 func qdrantPointID(docID string) string {
