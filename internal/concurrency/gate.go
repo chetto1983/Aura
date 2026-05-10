@@ -86,7 +86,10 @@ func (g *UserGate) Acquire(ctx context.Context, userID string, entry Entry) erro
 			if startedCh != nil {
 				// Spawn timer goroutine in a separate goroutine per Pitfall 4.
 				// The gate's hot path must never block on external I/O or timers.
-				go g.runQueueNoticeTimer(userID, startedCh)
+				// Register timer goroutine with g.wg so Close() waits for it
+				// (CR-01: prevents leaked timers from firing after shutdown).
+				g.wg.Add(1)
+				go g.runQueueNoticeTimer(userID, startedCh, actor.ctx)
 			}
 			return nil
 		case <-ctx.Done():
@@ -99,9 +102,17 @@ func (g *UserGate) Acquire(ctx context.Context, userID string, entry Entry) erro
 }
 
 // runQueueNoticeTimer waits QueueNoticeAfter; if startedCh has not been closed
-// (i.e., the entry has not begun processing), it fires OnQueueNotice(userID).
+// (i.e., the entry has not begun processing) and the actor context is still
+// active, it fires OnQueueNotice(userID).
 // Called in a separate goroutine by Acquire after successful enqueue (Pitfall 4).
-func (g *UserGate) runQueueNoticeTimer(userID string, startedCh <-chan struct{}) {
+//
+// CR-01: The actorCtx arm prevents the timer from firing for an entry whose
+// actor was cancelled by Evict or Close. Without this, the timer would deliver
+// a misleading "still working on your previous message" notice for a user that
+// has been evicted (and possibly replaced with a fresh actor). The timer
+// goroutine is tracked by g.wg so Close() waits for it to exit cleanly.
+func (g *UserGate) runQueueNoticeTimer(userID string, startedCh <-chan struct{}, actorCtx context.Context) {
+	defer g.wg.Done()
 	timer := time.NewTimer(g.config.QueueNoticeAfter)
 	defer timer.Stop()
 	select {
@@ -113,6 +124,9 @@ func (g *UserGate) runQueueNoticeTimer(userID string, startedCh <-chan struct{})
 		}
 	case <-startedCh:
 		// Entry began processing before the threshold -- no notice.
+	case <-actorCtx.Done():
+		// Actor was evicted or the gate is shutting down -- do NOT fire,
+		// the entry will never be processed (CR-01).
 	}
 }
 
@@ -216,9 +230,32 @@ func (g *UserGate) spawnActorLocked(userID string) *userActor {
 // runActor is the per-user goroutine loop. It processes entries from the inbox
 // one at a time (serialization) and updates the inactivity tracker after each.
 // Exits when the actor context is cancelled (eviction or shutdown).
+//
+// CR-01: On exit, runActor drains any remaining entries from the inbox and
+// closes their startedCh. This is belt-and-suspenders for the queue-notice
+// timer goroutines: their primary cancellation path is the actorCtx.Done()
+// arm in runQueueNoticeTimer, but draining and closing startedCh ensures the
+// timers exit promptly (via the startedCh arm) even if the actor is
+// re-entered before timer goroutines observe the cancellation.
 func (g *UserGate) runActor(actor *userActor) {
 	defer g.wg.Done()
 	defer close(actor.done)
+	defer func() {
+		// Drain remaining entries from the inbox so their queue-notice
+		// timer goroutines can exit via the startedCh arm. Without this,
+		// queued entries' startedCh would never be closed and their
+		// timers would rely solely on actorCtx.Done() to exit.
+		for {
+			select {
+			case entry := <-actor.inbox:
+				if entry.startedCh != nil {
+					close(entry.startedCh)
+				}
+			default:
+				return
+			}
+		}
+	}()
 	for {
 		select {
 		case <-actor.ctx.Done():

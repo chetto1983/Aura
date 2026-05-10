@@ -765,6 +765,77 @@ func TestQueueNoticeDisabledWhenZero(t *testing.T) {
 	close(blocker)
 }
 
+// TestQueueNoticeDoesNotFireAfterEvict verifies CR-01: when an actor is
+// evicted while entries are still queued, the queue-notice timers for those
+// queued entries must NOT fire OnQueueNotice. Before CR-01 the timer
+// goroutines waited their full duration and then delivered a spurious
+// "still working on your previous message" notice for a user whose actor
+// had already been removed (and possibly re-created with a fresh actor).
+func TestQueueNoticeDoesNotFireAfterEvict(t *testing.T) {
+	t.Parallel()
+
+	var noticeMu sync.Mutex
+	var noticedUsers []string
+
+	const threshold = 50 * time.Millisecond
+	g := New(Config{
+		InboxSize:         4,
+		EvictionThreshold: time.Hour,
+		SweepInterval:     time.Hour,
+		QueueNoticeAfter:  threshold,
+		OnQueueNotice: func(userID string) {
+			noticeMu.Lock()
+			noticedUsers = append(noticedUsers, userID)
+			noticeMu.Unlock()
+		},
+	})
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "evict-drain-user"
+
+	// Occupy the actor with a blocking entry so subsequent entries queue up.
+	started := make(chan struct{})
+	blocker := make(chan struct{})
+	if err := g.Acquire(ctx, userID, blockingEntry(started, blocker)); err != nil {
+		t.Fatalf("Acquire blocking entry failed: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking entry never started")
+	}
+
+	// Enqueue 2 more entries; both queue with a queue-notice timer each.
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire queued entry 1 failed: %v", err)
+	}
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire queued entry 2 failed: %v", err)
+	}
+
+	// Evict the user BEFORE the threshold elapses. The blocking entry's
+	// context will be cancelled and runActor will exit (draining the inbox).
+	// The queued entries' timer goroutines must observe actorCtx.Done() (or
+	// startedCh closed by the drain) and exit without firing OnQueueNotice.
+	g.Evict(userID)
+
+	// Unblock so the blocking entry's Process returns cleanly.
+	close(blocker)
+
+	// Wait well past the threshold to give any leaked timer a chance to fire.
+	time.Sleep(10 * threshold)
+
+	noticeMu.Lock()
+	got := len(noticedUsers)
+	noticeMu.Unlock()
+
+	if got != 0 {
+		t.Errorf("OnQueueNotice fired %d times after Evict; queued entries' timers must be cancelled (CR-01)", got)
+	}
+}
+
 // TestQueueNoticeNilCallbackIsSafe verifies that a nil OnQueueNotice callback
 // with a positive QueueNoticeAfter does not cause a panic.
 func TestQueueNoticeNilCallbackIsSafe(t *testing.T) {
