@@ -42,7 +42,6 @@ aura.db-*
 
 # Local AI/tooling state
 .claude/
-.planning/
 .agents/
 .agent/
 .augment/
