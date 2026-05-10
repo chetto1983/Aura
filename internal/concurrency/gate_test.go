@@ -507,3 +507,295 @@ func TestEvictNonExistent(t *testing.T) {
 		t.Error("OnEvict called for a non-existent userID")
 	}
 }
+
+// newTestGateWithQueueNotice builds a gate configured for queue-notice testing.
+func newTestGateWithQueueNotice(t *testing.T, inboxSize int, queueNoticeAfter time.Duration, onQueueNotice func(string)) *UserGate {
+	t.Helper()
+	return New(Config{
+		InboxSize:         inboxSize,
+		EvictionThreshold: time.Hour, // long, no eviction during test
+		SweepInterval:     time.Hour,
+		QueueNoticeAfter:  queueNoticeAfter,
+		OnQueueNotice:     onQueueNotice,
+	})
+}
+
+// TestQueueNoticeFiresAfterThreshold verifies that OnQueueNotice fires once per
+// entry when processing has not begun within QueueNoticeAfter.
+func TestQueueNoticeFiresAfterThreshold(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var noticedUsers []string
+
+	const threshold = 50 * time.Millisecond // W6: short but 10x margin in wait
+	g := newTestGateWithQueueNotice(t, 2, threshold, func(userID string) {
+		mu.Lock()
+		noticedUsers = append(noticedUsers, userID)
+		mu.Unlock()
+	})
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "notice-user"
+
+	// Occupy the actor with a blocking entry so the second entry stays queued.
+	started := make(chan struct{})
+	blocker := make(chan struct{})
+	if err := g.Acquire(ctx, userID, blockingEntry(started, blocker)); err != nil {
+		t.Fatalf("Acquire blocking entry failed: %v", err)
+	}
+	// Wait for the actor to start processing before enqueuing the second entry.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking entry never started")
+	}
+
+	// Enqueue second entry -- it sits in the buffered channel, not yet processed.
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire second entry failed: %v", err)
+	}
+
+	// Wait well past the threshold (W6: 10x margin).
+	time.Sleep(500 * time.Millisecond)
+
+	mu.Lock()
+	got := len(noticedUsers)
+	mu.Unlock()
+
+	if got != 1 {
+		t.Errorf("expected OnQueueNotice called exactly once, got %d", got)
+	}
+
+	mu.Lock()
+	if got > 0 && noticedUsers[0] != userID {
+		t.Errorf("OnQueueNotice called with %q, want %q", noticedUsers[0], userID)
+	}
+	mu.Unlock()
+
+	// Unblock the actor so Close can finish cleanly.
+	close(blocker)
+}
+
+// TestQueueNoticeDoesNotFireOnEarlyDequeue verifies that OnQueueNotice is NOT
+// called when the entry begins processing before QueueNoticeAfter elapses.
+func TestQueueNoticeDoesNotFireOnEarlyDequeue(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var noticedUsers []string
+
+	const threshold = 500 * time.Millisecond
+	g := newTestGateWithQueueNotice(t, 2, threshold, func(userID string) {
+		mu.Lock()
+		noticedUsers = append(noticedUsers, userID)
+		mu.Unlock()
+	})
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "early-user"
+
+	// Enqueue a quick entry -- actor processes it well before 500ms.
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+
+	// Wait past threshold by comfortable margin (W6).
+	time.Sleep(800 * time.Millisecond)
+
+	mu.Lock()
+	got := len(noticedUsers)
+	mu.Unlock()
+
+	if got != 0 {
+		t.Errorf("OnQueueNotice should NOT fire when entry is processed early, got %d calls", got)
+	}
+}
+
+// TestQueueNoticeDoesNotFireOnOverflowDrop verifies that OnQueueNotice is NOT
+// called for an entry that is dropped by dropOldestAndNotify (overflow path).
+func TestQueueNoticeDoesNotFireOnOverflowDrop(t *testing.T) {
+	t.Parallel()
+
+	var noticeMu sync.Mutex
+	var noticeUsers []string
+
+	var overflowMu sync.Mutex
+	var overflowCount int32
+
+	const threshold = 200 * time.Millisecond
+	g := New(Config{
+		InboxSize:         1,
+		EvictionThreshold: time.Hour,
+		SweepInterval:     time.Hour,
+		QueueNoticeAfter:  threshold,
+		OnQueueNotice: func(userID string) {
+			noticeMu.Lock()
+			noticeUsers = append(noticeUsers, userID)
+			noticeMu.Unlock()
+		},
+		OnOverflow: func(userID string) {
+			atomic.AddInt32(&overflowCount, 1)
+			overflowMu.Lock()
+			_ = userID
+			overflowMu.Unlock()
+		},
+	})
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "overflow-drop-user"
+
+	// Occupy the actor with a blocking entry (actor goroutine busy).
+	started := make(chan struct{})
+	blocker := make(chan struct{})
+	if err := g.Acquire(ctx, userID, blockingEntry(started, blocker)); err != nil {
+		t.Fatalf("Acquire blocking entry failed: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking entry never started")
+	}
+
+	// Fill the single inbox buffer slot with a queued entry (gets a notice timer).
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire queued entry failed: %v", err)
+	}
+
+	// Acquire a third entry: inbox is full, so dropOldestAndNotify drops the queued entry.
+	// The dropped entry's startedCh must be closed so its timer goroutine exits without firing.
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire overflow entry failed: %v", err)
+	}
+
+	// Wait well past the threshold to give any erroneous timer a chance to fire.
+	time.Sleep(500 * time.Millisecond)
+
+	// Overflow must have been called (for the dropped queued entry).
+	if atomic.LoadInt32(&overflowCount) == 0 {
+		t.Error("expected OnOverflow to be called for the dropped entry")
+	}
+
+	// OnQueueNotice must NOT have been called for the dropped entry.
+	// (It may fire for the third entry if it stays queued long enough, but
+	// the blocker below ensures the third entry also starts quickly.)
+	// We only assert the dropped entry did not cause a notice by verifying
+	// the notice count is at most 1 (only the third enqueued entry could fire
+	// if it waits past threshold). In practice with blocker still held and
+	// threshold=200ms and our 500ms wait, the third entry may also fire.
+	// The key invariant: the DROPPED entry must not fire. We can't distinguish
+	// the two after the fact. So: close blocker quickly to start the third entry
+	// before the threshold.
+	// Re-design: close blocker now (before the 500ms wait above is done -- test
+	// already waited). Third entry should have been processed. NoQueueNotice for
+	// either. Recheck:
+	// - dropped entry: startedCh closed by dropOldestAndNotify → no notice. CORRECT.
+	// - third entry: enqueued while blocker still held, but now we already closed
+	//   blocker above? NO -- blocker not closed yet.
+	// The assert we want: dropped entry notice = 0. The third entry notice may
+	// fire. We can't trivially distinguish, so we assert total <= 1 (only the
+	// still-queued third entry could fire, not the dropped one).
+	noticeMu.Lock()
+	noticeCount := len(noticeUsers)
+	noticeMu.Unlock()
+
+	// Dropped entry MUST NOT fire (its startedCh closed by dropOldestAndNotify).
+	// The surviving third entry MAY fire (it's still queued past 200ms).
+	// So the only sound assertion is: noticeCount <= 1 (at most 1 firing, from the third entry).
+	if noticeCount > 1 {
+		t.Errorf("expected at most 1 queue notice (only for surviving entry), got %d", noticeCount)
+	}
+
+	close(blocker)
+}
+
+// TestQueueNoticeDisabledWhenZero verifies that no queue-notice fires when
+// QueueNoticeAfter == 0 (feature disabled).
+func TestQueueNoticeDisabledWhenZero(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var noticedUsers []string
+
+	g := newTestGateWithQueueNotice(t, 2, 0, func(userID string) {
+		mu.Lock()
+		noticedUsers = append(noticedUsers, userID)
+		mu.Unlock()
+	})
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "zero-threshold-user"
+
+	// Occupy the actor with a blocking entry.
+	started := make(chan struct{})
+	blocker := make(chan struct{})
+	if err := g.Acquire(ctx, userID, blockingEntry(started, blocker)); err != nil {
+		t.Fatalf("Acquire blocking entry failed: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking entry never started")
+	}
+
+	// Enqueue a second entry (queued, not yet processed).
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire second entry failed: %v", err)
+	}
+
+	// Wait well past any timer scale used by Test 1 (W6: 500ms).
+	time.Sleep(500 * time.Millisecond)
+
+	mu.Lock()
+	got := len(noticedUsers)
+	mu.Unlock()
+
+	if got != 0 {
+		t.Errorf("OnQueueNotice must NOT fire when QueueNoticeAfter==0, got %d calls", got)
+	}
+
+	close(blocker)
+}
+
+// TestQueueNoticeNilCallbackIsSafe verifies that a nil OnQueueNotice callback
+// with a positive QueueNoticeAfter does not cause a panic.
+func TestQueueNoticeNilCallbackIsSafe(t *testing.T) {
+	t.Parallel()
+
+	// QueueNoticeAfter > 0 but OnQueueNotice nil: no timer goroutine should be spawned.
+	g := newTestGateWithQueueNotice(t, 2, 50*time.Millisecond, nil)
+	defer g.Close()
+
+	ctx := context.Background()
+	const userID = "nil-callback-user"
+
+	started := make(chan struct{})
+	blocker := make(chan struct{})
+	if err := g.Acquire(ctx, userID, blockingEntry(started, blocker)); err != nil {
+		t.Fatalf("Acquire blocking entry failed: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking entry never started")
+	}
+
+	var counter int32
+	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
+		t.Fatalf("Acquire second entry failed: %v", err)
+	}
+
+	// Wait well past threshold (W6: 10x 50ms = 500ms). Must not panic.
+	time.Sleep(500 * time.Millisecond)
+
+	close(blocker)
+	// If we reach here without a panic, the test passes.
+}
