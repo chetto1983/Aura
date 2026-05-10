@@ -10,7 +10,7 @@ The 10 hardening areas fall naturally into four categories: concurrency correctn
 
 ---
 
-### 1. Per-User Message Serialization (Mutex/Queue per User)
+### 1. Per-User Message Serialization (UserGate Actor/Inbox)
 
 **Category:** Table Stakes
 **Complexity:** MEDIUM
@@ -20,22 +20,23 @@ The 10 hardening areas fall naturally into four categories: concurrency correctn
 
 | Behavior | Why Expected | Implementation |
 |----------|-------------|----------------|
-| One in-flight agent loop per user at a time | Users expect sequential responses; concurrent messages from same user cause agent state corruption | Per-user mutex or goroutine isolation |
-| Out-of-order send prevention | Telegram delivers multiple messages rapidly; concurrent `bot.Send()` to same `chatID` delivers out of order | Per-chat mutex wrapping all send calls |
-| Non-blocking across users | One user's long-running agent loop must not block another user | Per-user goroutine or per-user keyed mutex, NOT a global mutex |
+| One in-flight agent turn per user at a time | Users expect sequential responses; concurrent messages from same user cause agent state corruption | Per-user UserGate actor with bounded inbox |
+| Out-of-order send prevention | Telegram delivers multiple messages rapidly; concurrent sends to the same chat can arrive out of order | Same per-user actor serializes conversation and notification entries |
+| Non-blocking across users | One user's long-running agent loop must not block another user | One actor per active user, not a global mutex |
 
-#### Pattern: Chat-Isolated Goroutine Model (Recommended)
+#### Pattern: Chat-Isolated Actor Model (Canonical)
 
-The industry gold standard, used by `ufy-it/go-telegram-bot` and `NicoNex/echotron`, assigns one goroutine per chat/user. Messages from the same user are naturally serialized by sequential execution within that goroutine. Aura should adopt a per-user keyed mutex approach layered on its existing `agentruntime`:
+The Phase 1 checkpoint selects a per-user stateful goroutine (actor pattern). Messages from the same user are naturally serialized by sequential execution inside that user's actor. Aura should layer this at the Telegram boundary:
 
-```
+```text
 agentruntime receives message {chatID, userID, content}
-  -> acquires per-user mutex for userID
-  -> runs agent loop to completion (sequential for this user)
-  -> releases mutex
+  -> UserGate finds or spawns user actor
+  -> enqueue conversation entry in the user's bounded inbox
+  -> actor runs each entry to completion in FIFO order
+  -> actor is stopped by inactivity eviction
 ```
 
-The keyed mutex pattern avoids the overhead of long-lived per-user goroutines while guaranteeing that a user never has two concurrent agent loops. The per-user mutex also gates all `bot.Send()` calls to prevent Telegram-level out-of-order delivery.
+The bounded inbox defaults to 8 entries. When full, the actor drops the oldest queued entry and sends a Telegram notice. Notification paths use `TryAcquire` so a scheduler reminder or task dispatch never blocks forever behind the same user's active turn.
 
 #### Anti-Feature: Global Mutex
 
@@ -43,9 +44,9 @@ A single `sync.Mutex` wrapping all agent loop execution. This serializes _all_ u
 
 #### Dependencies
 
-- Requires the existing `agentruntime` entry point to accept a user-scoped lock
-- Interacts with feature #2 (context leak cleanup): eviction must acquire the same per-user mutex to avoid evicting an active session
-- Interacts with feature #7 (token budget): per-user budget counters need the same user-scoped locking scope
+- Requires the existing `agentruntime` entry point to be invoked from the per-user actor boundary
+- Interacts with feature #2 (context leak cleanup): eviction must stop the idle actor before clearing its session state
+- Interacts with feature #7 (token budget): per-user budget counters need the same user-scoped gate boundary
 
 ---
 
@@ -72,7 +73,7 @@ Research from Zylos and the Pichay paper establishes a graduated pressure approa
 |-------|-----------|--------|
 | **Observation** | <60% of inactivity TTL | Normal operation |
 | **Early Warning** | ~64% of TTL (e.g., 20 min of 30 min TTL) | Trigger memory sync to durable storage |
-| **Session Eviction** | 100% of TTL | Clear agent context, release per-user mutex, optionally save summary |
+| **Session Eviction** | 100% of TTL | Clear agent context, stop UserGate actor/inbox, optionally save summary |
 
 The gap between early warning and eviction prevents race conditions where a session is being synced to disk while simultaneously being evicted.
 
@@ -86,7 +87,7 @@ Using the last _any_ message (including bot responses, tool outputs) as the acti
 
 #### Dependencies
 
-- Requires feature #1 (per-user mutex): eviction must acquire the per-user lock
+- Requires feature #1 (UserGate actor/inbox): eviction must stop the idle actor before clearing state
 - Enhances feature #7 (per-user budget): eviction should release budget tracking resources
 - No dependency on wiki or search subsystems
 
@@ -164,7 +165,7 @@ The approach Aura should implement is **error-classified staged retry**:
 | Attempt 2 | 0.0 | Transient (429, 5xx, timeout) | Nothing (same prompt, just retry) |
 | Attempt 3 | 0.3 + error feedback | Structural (malformed output, schema fail) | Feed validation error back into prompt + slightly warmer sampling |
 | Attempt 4 | 0.5 + truncated context | Content filter, context overflow | Truncate oversized context, warmer sampling |
-| Attempt 5 | 0.7 | Repeated structural failure | Warmer sampling as last resort before fallback model |
+| Attempt 5 | 0.7 | Repeated structural failure | Warmer sampling as last resort before surfacing a structured failure |
 
 The critical insight: temperature variation is coupled with **actually changing the input** (feeding back validation errors, truncating context). The input change is what gives the model a genuine reason to produce different output; temperature variation amplifies diversity only when the input has changed.
 
@@ -254,34 +255,33 @@ Calling `RebuildQdrantWikiDocuments` (which scans the entire wiki directory) eve
 
 ---
 
-### 6. Circuit Breaker on Failover LLM Providers
+### 6. Circuit Breaker on LLM Provider Health
 
-**Category:** Table Stakes (cost protection) / Differentiator (intelligent failover)
+**Category:** Table Stakes (cost protection) / Differentiator (provider health protection)
 **Complexity:** MEDIUM
-**Existing foundation:** `internal/llm/openai.go` and `internal/llm/ollama.go` provide provider clients. A `FailoverClient` exists (sequential try-next-on-error). No circuit breaker exists.
+**Existing foundation:** The LLM package provides provider clients and retry wrappers. No circuit breaker exists.
 
 #### Table-Stakes Behaviors
 
 | Behavior | Why Expected | Implementation |
 |----------|-------------|----------------|
-| Per-provider circuit breaker | A failing provider must be quickly isolated so requests route to healthy alternatives | One circuit breaker per provider (OpenAI, Anthropic, Ollama, etc.) |
+| Per-provider circuit breaker | A failing provider must be quickly isolated so requests fail fast instead of burning latency/cost | One circuit breaker per configured provider |
 | Three-state model (Closed/Open/Half-Open) | Industry standard from Michael Nygard's Release It! | Circuit starts Closed; opens after N consecutive failures; transitions to Half-Open after timeout; closes after M consecutive successes |
 | Differentiated failure counting | Not all errors indicate provider failure | Count 5xx and 429 as failures; count `context.Canceled` as non-failure; count 4xx (except 429) as non-failure (bad request, not provider fault) |
-| Parallel racing on failover | Sequential failover (try A, wait, try B, wait) adds latency | Launch requests to all healthy providers in parallel; first success wins; cancel all others |
 
-#### Pattern: Sony gobreaker + Parallel Racing (cc-relay Model)
+#### Pattern: Sony gobreaker Provider Health Gate
 
-The `cc-relay` LLM API Gateway implements the canonical architecture:
+The provider-health gate keeps circuit breaker state outside the core agent loop:
 
 ```
-Request arrives at Failover Router
+Request arrives at provider client
   -> Check circuit state for primary provider
      -> Closed: Send to primary
-     -> Open: Skip primary
+     -> Open: Return provider-health error immediately
   -> If primary returns transient failure (5xx/429/timeout):
-     -> Launch parallel race to ALL healthy providers
-     -> First success wins, cancel all others via context
-     -> If ALL fail: return error, trip primary breaker if threshold hit
+      -> Record failure for that provider
+      -> Retry only according to the retry policy and budget
+      -> If threshold is hit: open circuit
 ```
 
 Configuration:
@@ -299,11 +299,11 @@ breaker := gobreaker.NewTwoStepCircuitBreaker[struct{}](gobreaker.Settings{
 })
 ```
 
-State transitions must be logged at WARN level (Closed->Open) and INFO level (HalfOpen->Closed) with Prometheus metrics for circuit state and failover counts.
+State transitions must be logged at WARN level (Closed->Open) and INFO level (HalfOpen->Closed) with metrics for circuit state and provider failure counts.
 
 #### Anti-Feature: Global Circuit Breaker
 
-A single circuit breaker for all providers. When it trips, all LLM calls fail -- even to providers that are perfectly healthy. Circuit breakers must be per-provider.
+A single circuit breaker for all providers. When it trips, all LLM calls fail even if another provider is later configured. Circuit breakers must be per provider.
 
 #### Anti-Feature: Treating All Errors as Failures
 
@@ -311,7 +311,7 @@ Counting every non-nil error as a trip-worthy failure. `context.Canceled` (user 
 
 #### Dependencies
 
-- Requires existing provider clients (`internal/llm/openai.go`, `internal/llm/ollama.go`)
+- Requires existing provider client wiring
 - Enhances feature #4 (variable temperature retry): if breaker opens, stop retrying immediately rather than exhausting retry budget
 - Interacts with feature #7 (per-user budget): breaker events should be visible in budget/usage reporting
 - No dependency on features #1, #2, #3, #5, #8, #9, #10
@@ -384,7 +384,7 @@ Only counting tokens after the LLM response returns. Under concurrent requests, 
 
 - Requires the existing `budget.Tracker` infrastructure (global budget already exists)
 - Must be integrated into the agentruntime LLM call pipeline (pre-flight check before every LLM call)
-- Interacts with feature #1 (per-user mutex): budget counters for a user should be updated under that user's lock
+- Interacts with feature #1 (UserGate actor/inbox): budget counters for a user should be updated inside that user's actor boundary
 - Interacts with feature #2 (context eviction): evicted sessions should release budget tracking state
 - Interacts with feature #4 (retry): retries consume budget; pre-flight check must account for retry multiplier
 - Interacts with feature #6 (circuit breaker): breaker events may indicate budget/abuse patterns
@@ -470,7 +470,7 @@ Wiki write (create/update/delete)
      -> Dashboard shows unversioned count with warning
 ```
 
-The `[unversioned]` flag is analogous to Git AI's `[⏳]` prefix pattern: a visible marker in the system that a change is in an intermediate state. Unlike Git AI's background polishing, Aura's flag means "this page exists on disk but has no git history -- disaster recovery hazard."
+The `[unversioned]` flag is analogous to Git AI's `[pending]` prefix pattern: a visible marker in the system that a change is in an intermediate state. Unlike Git AI's background polishing, Aura's flag means "this page exists on disk but has no git history -- disaster recovery hazard."
 
 #### Anti-Feature: Mega-Commits
 
@@ -506,10 +506,10 @@ Committing the entire repository after every agent loop iteration. Agent loops m
 
 #### Pattern: Strangler Fig with Feature Flag
 
-The safest migration follows the Strangler Fig pattern: deploy the new Qdrant-native search path alongside the existing chromem path, route via a feature flag, then remove the old path after validation:
+The safest migration is validation-first: add the Qdrant-native search path, validate it explicitly, then remove the old chromem vector path after validation:
 
 ```
-Phase 1: Add Qdrant-native search path, flag defaults to OFF (chromem path)
+Phase 1: Add Qdrant-native search path and validation probes
 Phase 2: Enable flag for internal testing (100% Qdrant)
 Phase 3: Verify search quality parity (same queries, compare results)
 Phase 4: Remove chromem-go code, imports, and dependency
@@ -519,7 +519,7 @@ Since this is a single-user/small-team bot (not a SaaS with gradual rollout), th
 
 #### Anti-Feature: Big-Bang Removal
 
-Deleting all chromem-go code in one commit and deploying. If the new Qdrant-native search path has a bug (wrong distance metric, dimension mismatch, collection name typo), all search breaks and there is no fallback. Use the feature flag to keep the old path hot-revertible for one deployment cycle.
+Deleting all chromem-go code before validating Qdrant-native search. If the new path has a bug (wrong distance metric, dimension mismatch, collection name typo), all vector search breaks. Validate Qdrant quality before removal rather than keeping a long-lived secondary path.
 
 #### Anti-Feature: Keeping Dead Code "Just in Case"
 
@@ -536,31 +536,32 @@ Leaving chromem-go imports and unused functions in the codebase after migration.
 
 ## Feature Dependencies
 
-```
+```text
 Feature #8 (Qdrant startup health)
-    └──required by──> Feature #5 (Async wiki reindex)
-    └──required by──> Feature #10 (Legacy code removal)
+    -> required by -> Feature #5 (Async wiki reindex)
+    -> required by -> Feature #10 (Legacy code removal)
+    -> required by -> TOOL-01 (Qdrant-backed tool retrieval)
 
 Feature #3 (Tool-based wiki creation)
-    └──triggers──> Feature #5 (Async wiki reindex)
-    └──triggers──> Feature #9 (Git commit tracking)
+    -> triggers -> Feature #5 (Async wiki reindex)
+    -> triggers -> Feature #9 (Git commit tracking)
 
-Feature #1 (Per-user mutex)
-    └──required by──> Feature #2 (Context leak cleanup — must acquire same lock)
-    └──required by──> Feature #7 (Per-user budget — counter under user lock)
+Feature #1 (UserGate actor/inbox)
+    -> required by -> Feature #2 (Context leak cleanup -- stop idle actor before clearing state)
+    -> required by -> Feature #7 (Per-user budget -- counter under user gate)
 
 Feature #6 (Circuit breaker)
-    └──enhances──> Feature #4 (Variable temperature retry — breaker stops retries early)
+    -> enhances -> Feature #4 (Variable temperature retry -- breaker stops retries early)
 
 Feature #7 (Per-user budget)
-    └──enhances──> Feature #4 (Variable temperature retry — budget-aware retry limits)
-    └──enhances──> Feature #6 (Circuit breaker — breaker events affect budget)
+    -> enhances -> Feature #4 (Variable temperature retry -- budget-aware retry limits)
+    -> enhances -> Feature #6 (Circuit breaker -- breaker events affect budget)
 ```
 
 ### Dependency Notes
 
-- **Feature #8 (Qdrant health) is the foundational dependency.** Both async reindex (#5) and legacy removal (#10) require a validated, healthy Qdrant instance. It must ship first.
-- **Feature #1 (per-user mutex) is the synchronization foundation.** Both context eviction (#2) and per-user budget (#7) need the same locking scope to operate safely.
+- **Feature #8 (Qdrant health) is a Phase 1 foundational dependency.** Both async reindex (#5), Qdrant-backed tool retrieval, and legacy removal (#10) require a validated, healthy Qdrant instance. It must ship before Phase 2 depends on Qdrant.
+- **Feature #1 (UserGate actor/inbox) is the synchronization foundation.** The Phase 1 checkpoint selects a per-user actor with a bounded inbox over a keyed gate. Context eviction (#2) and per-user budget (#7) must use that same gate boundary to operate safely.
 - **Feature #3 (wiki tool) is the producer.** It triggers both reindex jobs (#5) and git commits (#9). It can ship before the consumers are fully built (reindex can be synchronous initially, then made async).
 - **Features #4, #6, and #7 form a resilience triad.** They interact deeply (breaker stops retries, retries consume budget, budget gates breaker recovery). They benefit from being in the same phase.
 
@@ -570,10 +571,10 @@ Feature #7 (Per-user budget)
 
 Based on dependency analysis and risk, the 10 features should be grouped into phases:
 
-### Phase 1: Foundation (Ship First)
-1. **#8 Qdrant startup health validation** -- foundational dependency, no other feature can be reliable without it
-2. **#1 Per-user message serialization** -- fixes the most critical concurrency bug (race conditions)
-3. **#2 Context leak cleanup** -- depends on #1, prevents memory leaks in long-running deployments
+### Phase 1: Fondamenta (Concurrency + Qdrant Readiness)
+1. **#1 Per-user message serialization** -- fixes the most critical concurrency bug (race conditions) using the actor/inbox UserGate selected in the Phase 1 checkpoint
+2. **#2 Context leak cleanup** -- depends on #1, prevents memory leaks in long-running deployments, and stops idle per-user actors
+3. **#8 Qdrant startup health validation** -- foundational dependency for async reindex, Qdrant-backed tool retrieval, and eventual chromem-go removal
 
 ### Phase 2: Core Hardening
 4. **#3 Tool-based wiki page creation** -- correctness fix, replaces fragile heuristic
@@ -581,7 +582,7 @@ Based on dependency analysis and risk, the 10 features should be grouped into ph
 6. **#5 Async wiki reindex with backpressure** -- triggered by #3, requires #8
 
 ### Phase 3: Resilience Layer
-7. **#6 Circuit breaker on failover LLM providers** -- protects against provider degradation
+7. **#6 Circuit breaker on LLM provider health** -- protects against provider degradation
 8. **#4 Variable-temperature LLM retry** -- requires #6 for the breaker-to-retry integration
 9. **#7 Per-user token budget with global hard cap** -- interacts with both #4 and #6
 
@@ -598,16 +599,16 @@ Removing chromem-go while the LLM retry and circuit breaker patterns are still u
 
 | # | Feature | User Value | Implementation Cost | Risk of Regression | Priority |
 |---|---------|------------|---------------------|--------------------|-------|
-| 8 | Qdrant startup health + warm cache | HIGH — prevents silent search failures | LOW | LOW — additive, no existing path changes | P1 |
-| 1 | Per-user mutex | HIGH — prevents corrupt agent state | MEDIUM | MEDIUM — touches agentruntime entry point | P1 |
-| 2 | Context leak cleanup | HIGH — prevents memory bloat | MEDIUM | LOW — additive to conversation lifecycle | P1 |
-| 3 | Tool-based wiki creation | HIGH — correctness fix | HIGH | HIGH — replaces wiki write path entirely | P1 |
-| 9 | Git commit tracking | MEDIUM — audit trail | LOW | LOW — additive, post-write hook | P2 |
-| 5 | Async wiki reindex | MEDIUM — UX improvement | HIGH | MEDIUM — replaces synchronous reindex path | P2 |
-| 6 | Circuit breaker | MEDIUM — provider resilience | MEDIUM | LOW — wraps existing provider calls | P2 |
-| 4 | Variable temp retry | HIGH — reduces wasted retries | MEDIUM | MEDIUM — modifies retry behavior | P2 |
-| 7 | Per-user token budget | HIGH — cost governance | HIGH | MEDIUM — extends existing budget tracker | P2 |
-| 10 | Legacy code removal | LOW (internal hygiene) | MEDIUM | HIGH — removes search fallback path | P3 |
+| 8 | Qdrant startup health + warm cache | HIGH -- prevents silent search failures | LOW | LOW -- additive, no existing path changes | P1 |
+| 1 | UserGate actor/inbox | HIGH -- prevents corrupt agent state | MEDIUM | MEDIUM -- touches Telegram conversation entry point | P1 |
+| 2 | Context leak cleanup | HIGH -- prevents memory bloat | MEDIUM | LOW -- additive to conversation lifecycle | P1 |
+| 3 | Tool-based wiki creation | HIGH -- correctness fix | HIGH | HIGH -- replaces wiki write path entirely | P1 |
+| 9 | Git commit tracking | MEDIUM -- audit trail | LOW | LOW -- additive, post-write hook | P2 |
+| 5 | Async wiki reindex | MEDIUM -- UX improvement | HIGH | MEDIUM -- replaces synchronous reindex path | P2 |
+| 6 | Circuit breaker | MEDIUM -- provider resilience | MEDIUM | LOW -- wraps existing provider calls | P2 |
+| 4 | Variable temp retry | HIGH -- reduces wasted retries | MEDIUM | MEDIUM -- modifies retry behavior | P2 |
+| 7 | Per-user token budget | HIGH -- cost governance | HIGH | MEDIUM -- extends existing budget tracker | P2 |
+| 10 | Legacy code removal | LOW (internal hygiene) | MEDIUM | HIGH -- removes legacy vector path | P3 |
 
 **Priority key:**
 - P1: Must ship in v4.0 for correctness and basic reliability
@@ -623,10 +624,10 @@ When users describe a bot as "reliable," they expect these observable behaviors,
 | User Expectation | Observable Behavior | Hardening Feature |
 |------------------|--------------------|--------------------|
 | "It never loses what I told it" | Wiki pages persist and are searchable across restarts | #8 Qdrant health + persistence, #9 git tracking |
-| "It doesn't get confused if I send multiple messages" | Sequential, coherent responses even under rapid-fire messages | #1 Per-user mutex |
+| "It doesn't get confused if I send multiple messages" | Sequential, coherent responses even under rapid-fire messages | #1 UserGate actor/inbox |
 | "It remembers things from last week" | Long-lived wiki pages survive session boundaries and restarts | #2 Context eviction (clean, not destructive), #5 Qdrant reindex |
 | "It doesn't cost a fortune" | Predictable token usage, no runaway loops | #7 Per-user budget with global cap |
-| "It doesn't break when OpenAI is down" | Graceful fallback to alternative providers | #6 Circuit breaker |
+| "It doesn't hang when a provider is down" | Fast, clear provider-health failure instead of repeated slow calls | #6 Circuit breaker |
 | "It doesn't repeat itself when confused" | Retry with variation, not identical re-attempts | #4 Variable temperature retry |
 | "Its memory is searchable and durable" | Wiki pages embedded once, searchable immediately | #3 Tool-based wiki creation, #5 async reindex |
 | "It starts up cleanly after a restart" | No re-embedding of existing content, fast readiness | #8 Warm cache check |
@@ -644,12 +645,11 @@ When users describe a bot as "reliable," they expect these observable behaviors,
 - [Karpathy LLM Wiki Pattern](https://wiki.charleschen.ai/ai/processed/wiki/karpathy/llm-wiki/raw/web/karpathy-llm-wiki-pattern)
 - [LLM Wiki Compiler with Schema Layer](https://github.com/atomicmemory/llm-wiki-compiler)
 - [RLM-on-KG: Heuristics First, LLMs When Needed (Volpini & Raad)](https://arxiv.org/html/2604.17056v1)
-- [Tian Pan: Retries Aren't Free — The FinOps Math of LLM Retry Policies](https://tianpan.co/blog/2026-04-28-retries-arent-free-llm-finops-math)
+- [Tian Pan: Retries Aren't Free -- The FinOps Math of LLM Retry Policies](https://tianpan.co/blog/2026-04-28-retries-arent-free-llm-finops-math)
 - [Monte Carlo Temperature (Cecere et al., 2025)](https://arxiv.org/html/2502.18389v1)
 - [vllm-project/semantic-router Go async job queue with backpressure](https://github.com/vllm-project/semantic-router)
 - [Weaviate Go async indexing with dynamic semaphore](https://github.com/weaviate/weaviate)
 - [Implementing Circuit Breakers for LLM Services in Go (dasroot)](https://dasroot.net/posts/2026/02/implementing-circuit-breakers-for-llm-services-in-go/)
-- [cc-relay LLM API Gateway with circuit breaker + parallel racing](https://github.com/omarluq/cc-relay)
 - [sony/gobreaker v2 Go circuit breaker library](https://github.com/sony/gobreaker)
 - [mercari/go-circuitbreaker with Prometheus metrics](https://github.com/mercari/go-circuitbreaker)
 - [LLM Rate Limiting in Production: Token Budgets & Per-User Quotas](https://www.systemshardening.com/articles/kubernetes/llm-rate-limiting/)
@@ -657,7 +657,6 @@ When users describe a bot as "reliable," they expect these observable behaviors,
 - [Qdrant Administration: Storage and Startup Optimization](https://qdrant.tech/documentation/guides/administration)
 - [Qdrant PR #8053: Cold-data loading optimization (v1.17.0)](https://github.com/qdrant/qdrant/pull/8053)
 - [Qdrant Issue #2358: Fast loading of collections after restart](https://github.com/qdrant/qdrant/issues/2358)
-- [Qdrant Go Client](https://github.com/qdrant/go-client)
 - [Checkpoint Commit Patterns: Git Strategies for AI-Assisted Development](https://understandingdata.com/posts/checkpoint-commit-patterns/)
 - [Git AI daidi: Async Commit Polisher with unversioned flag pattern](https://github.com/daidi/git-ai)
 - [KeygraphHQ/shannon Crash-Safe Audit System with self-healing reconciliation](https://github.com/KeygraphHQ/shannon)

@@ -8,10 +8,10 @@
 
 ## Critical Pitfalls
 
-### Pitfall 1: Per-User Mutex Deadlock via Re-Entrant Acquire
+### Pitfall 1: UserGate Deadlock via Re-Entrant Acquire
 
 **What goes wrong:**
-A user sends a message, acquires the per-user mutex, the LLM loop calls a tool (e.g., `schedule_task`), and that tool later sends a Telegram notification back to the SAME user. If the notification path calls `userGate.Acquire` again for that userID, the goroutine deadlocks against itself -- the mutex is already held by the same goroutine and no other goroutine will ever release it.
+A user sends a message that is being processed by that user's actor, the LLM loop calls a tool (e.g., `schedule_task`), and that tool later sends a Telegram notification back to the SAME user. If the notification path performs a blocking enqueue/acquire into the same actor without `TryAcquire`, the notification path can wait behind itself or create an unbounded queue.
 
 **Why it happens:**
 The notification delivery path (`SendToUser`, `sendGeneratedToUser`, or dispatched scheduler tasks) has no awareness of whether the caller already holds a per-user gate. The bot's `dispatchTask` sends reminders and wiki maintenance results directly to users -- the same users who may be mid-conversation. Go mutexes (`sync.Mutex`) are non-recursive by design.
@@ -46,7 +46,7 @@ Scheduler notifications and `request_dashboard_token` delivery must call `TryAcq
 - `handleConversation` never reaches its `conversation complete` log line for a given userID
 
 **Phase to address:**
-Phase 1 (Non-Invasive Additions): Implement `TryAcquire` from the start. Do not ship `Acquire` (blocking) without `TryAcquire` as the sole entry point for notification paths.
+Phase 1 (Concurrency + Qdrant Readiness): Implement `TryAcquire` from the start. Do not ship `Acquire` (blocking) without `TryAcquire` as the sole entry point for notification paths.
 
 ---
 
@@ -69,7 +69,7 @@ Even better: use a single `map[string]*userSessionState` with `sync.Mutex` where
 - Only reproduces at scale with many active sessions
 
 **Phase to address:**
-Phase 4 (Cleanup): Build eviction on a separate tracking structure from day one. Do not iterate `sync.Map` for cleanup.
+Phase 1 (Concurrency + Qdrant Readiness): Build eviction on a separate tracking structure from day one. Do not iterate `sync.Map` for cleanup.
 
 ---
 
@@ -120,7 +120,7 @@ The half-open state requires limiting concurrent probes (max 1 or small N). Use 
 - Goroutine profile shows `[sync.Mutex.Lock]` with identical stack traces accumulating
 
 **Phase to address:**
-Phase 1 (Non-Invasive Additions): Review the lock scope in code review. A test that launches 10 concurrent `Send` calls with a slow mock provider (1-second delay) should complete all 10 in ~1.1 seconds, not ~10 seconds.
+Phase 3 (Resilience Layer): Review the lock scope in code review. A test that launches 10 concurrent `Send` calls with a slow mock provider (1-second delay) should complete all 10 in ~1.1 seconds, not ~10 seconds.
 
 ---
 
@@ -168,7 +168,7 @@ Then pass `w.ctx` (not `context.Background()`) to every embedding call in `proce
 - After 10 restarts, 10 goroutines blocked on the same embedding URL
 
 **Phase to address:**
-Phase 3 (Async + Qdrant Health): Worker lifecycle must be part of the first implementation pass. Include a test that verifies `runtime.NumGoroutine()` returns to baseline after `Stop()`.
+Phase 2 (Core Hardening): Worker lifecycle must be part of the first async reindex implementation pass. Include a test that verifies `runtime.NumGoroutine()` returns to baseline after `Stop()`.
 
 ---
 
@@ -214,7 +214,7 @@ Do NOT skip step 2. "Collection exists" !== "Collection is warm."
 - Dashboard /health shows `compact_memory.docs_indexed: 0` after startup
 
 **Phase to address:**
-Phase 3 (Async + Qdrant Health): The warm check must explicitly test for `points_count > 0`. A failing test: start with an empty collection, verify re-embed fires.
+Phase 1 (Concurrency + Qdrant Readiness): The warm check must explicitly test for `points_count > 0`. A failing test: start with an empty collection, verify re-embed fires.
 
 ---
 
@@ -285,7 +285,7 @@ For infrastructure errors, retry with the SAME temperature (or skip the LLM call
 - Per-turn LLM call count metric shows 3+ calls even for simple queries during provider degradation
 
 **Phase to address:**
-Phase 1 (Non-Invasive Additions): Implement error classification in the retry wrapper. A test with a mock that returns HTTP 429 should show 3 retries at the SAME temperature, not incrementing.
+Phase 2 (LLM Reliability & Tool Intelligence): Implement error classification in the retry wrapper. A test with a mock that returns HTTP 429 should show 3 retries at the SAME temperature, not incrementing.
 
 ---
 
@@ -298,9 +298,9 @@ The per-user budget tracks tokens per userID. After each LLM call, `RecordUsage`
 The budget check in `handleConversation` happens before `userGate.Acquire`. By the time the mutex is acquired and the LLM call completes, another goroutine could have also passed the budget check. The `RecordUsage` in `agentloop.Options` records usage after the call, but the gap between `CanAfford` and `RecordUsage` allows overspend if two messages are in-flight for the same user.
 
 **How to avoid:**
-Move the budget check inside the per-user mutex -- AFTER `userGate.Acquire`, BEFORE `runToolCallingLoop`. Then make `RecordUsage` use `atomic.AddInt64` on a per-user counter stored in a `sync.Map`. The check-read and atomic-add sequence is race-free because only one goroutine per userID can be in this section at a time (enforced by `UserGate`).
+Move the budget check inside the UserGate actor boundary -- after the entry is accepted and before `runToolCallingLoop`. Then make `RecordUsage` use `atomic.AddInt64` on a per-user counter stored in a `sync.Map`. The check-read and atomic-add sequence is race-free because only one goroutine per userID can be in this section at a time (enforced by `UserGate`).
 
-Alternatively: use `sync.Map` `LoadOrStore` to create a per-user `atomic.Int64` budget tracker, and have `RecordUsage` atomically add to it. The check `CanAfford` reads the atomic value. This works even without the per-user mutex because atomic operations are individually race-free -- though you still need the mutex for the "two concurrent messages both check then both record" scenario.
+Alternatively: use `sync.Map` `LoadOrStore` to create a per-user `atomic.Int64` budget tracker, and have `RecordUsage` atomically add to it. The check `CanAfford` reads the atomic value. This works even without the actor boundary because atomic operations are individually race-free -- though you still need the UserGate boundary for the "two concurrent messages both check then both record" scenario.
 
 **Warning signs:**
 - Per-user actual token usage exceeds configured budget by 10-20% (not a large overshoot)
@@ -308,7 +308,7 @@ Alternatively: use `sync.Map` `LoadOrStore` to create a per-user `atomic.Int64` 
 - Budget tracker shows `used: 100500` when limit is `100000` -- exactly one extra LLM call's worth
 
 **Phase to address:**
-Phase 4 (Cleanup): Move budget check inside the mutex-protected region. The budget tracker and UserGate must be co-designed so the gate is the budget enforcement point.
+Phase 3 (Resilience Layer): Move budget check inside the UserGate-protected region. The budget tracker and UserGate must be co-designed so the gate is the budget enforcement point.
 
 ---
 
@@ -391,7 +391,7 @@ Also: make the health gate timeout configurable via environment variable (`QDRAN
 - Qdrant logs show "loading collection" still in progress when Aura times out
 
 **Phase to address:**
-Phase 3 (Async + Qdrant Health): Use 120-second timeout minimum. Configurable. Document the relationship between collection size and startup time.
+Phase 1 (Concurrency + Qdrant Readiness): Use 120-second timeout minimum. Configurable. Document the relationship between collection size and startup time.
 
 ---
 
@@ -418,7 +418,7 @@ Common mistakes when connecting hardening components to existing infrastructure.
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
 | `UserGate` -> `session.Begin` | UserGate acquires BEFORE Begin, but Begin panics and release never happens | `defer release()` immediately after `Acquire`. The `defer` must be on the line right after the nil-check for acquire error. |
-| Circuit breaker -> `FailoverClient` | Breaker wraps the entire FailoverClient, so one provider's failures trip the breaker for ALL providers | Each provider gets its OWN breaker. FailoverClient manages provider selection; breaker manages per-provider health. Composite: `FailoverClient([breaker(openai), breaker(ollama)])` |
+| Circuit breaker -> provider client | Breaker wraps too broad a client boundary, so unrelated errors can trip provider health state | Each configured provider gets its OWN breaker keyed by provider name. |
 | Variable-temp retry -> agentloop | Retry wrapper calls `client.Chat` multiple times but agentloop's `RecordUsage` hook fires once per loop iteration, missing intermediate retries | Retry wrapper calls `RecordUsage` for each retry call. The `ChatClient` implementation must accept a usage callback. |
 | `write_wiki_page` tool -> `wiki.Store` | Tool directly imports `wiki` and calls `wikiStore.WritePage`, creating a hard dependency | Tool accepts `wiki.PageWriter` interface. The existing tool registry already uses this pattern (`wikiStore` is passed as interface). |
 | Reindex worker -> embedding cache | Reindex sends embedding request, embedding cache has the same text cached, but cache key uses full content hash -- different from the search query hash | Embedding cache `keyFunc` must be deterministic for reindex content. Current `EmbedCacheNamespace` keying on `contentSHA` works because same content -> same SHA. Verify cache hit rate monitors reindex path. |
@@ -450,7 +450,7 @@ Domain-specific security issues beyond general web security.
 | UserGate timeout exposes "user is busy" message with timing information | Attacker can probe which users are active based on response timing | Use constant-time busy response. Always reply with the same message regardless of whether user exists. |
 | Per-user token budget can be probed by sending messages to detect budget exhaustion | Attacker can infer budget limits by testing query sizes | Budget exhaustion response is identical to "processing" response. Never reveal remaining budget or threshold. |
 | `write_wiki_page` tool accepts arbitrary Markdown body | LLM could be prompt-injected to write malicious content to wiki pages | Wiki body is rendered as Markdown in dashboard. Sanitize HTML in rendered output (dashboard already handles this). The git history provides audit trail for any LLM-authored content. |
-| Circuit breaker state is in-memory only | If the process restarts, circuit breaker state is lost and failures start fresh | Acceptable for this scale. If a provider is down, the FailoverClient will retry and the breaker will re-trip within 5 failures. No need for persistent breaker state. |
+| Circuit breaker state is in-memory only | If the process restarts, circuit breaker state is lost and failures start fresh | Acceptable for this scale. If a provider is down, the breaker will re-trip within the configured failure threshold. No need for persistent breaker state. |
 
 ---
 
@@ -490,7 +490,7 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Per-user mutex deadlock (Pitfall 1) | LOW | Restart bot. The deadlocked goroutine is cleaned up by process exit. Implement `TryAcquire` before next deploy. |
+| UserGate actor boundary deadlock (Pitfall 1) | LOW | Restart bot. The deadlocked goroutine is cleaned up by process exit. Implement `TryAcquire` before next deploy. |
 | sync.Map iteration crash (Pitfall 2) | MEDIUM | Restart bot. Upgrade Go to 1.24+ which uses HashTrieMap backend. If on older Go, switch to auxiliary tracking map. |
 | Circuit breaker lock contention (Pitfall 3) | LOW | Deploy fix (lock scope reduction). No data corruption. Latency returns to normal on restart. |
 | Reindex worker goroutine leak (Pitfall 4) | LOW | Restart clears leaked goroutines. Fix lifecycle in next deploy. Monitor goroutine count to detect recurrence. |
@@ -510,15 +510,15 @@ How roadmap phases should address these pitfalls.
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
 | Pitfall 1: UserGate deadlock | Phase 1 -- implement `TryAcquire` from day one | Test: notification to same user mid-conversation does not deadlock |
-| Pitfall 2: sync.Map iteration crash | Phase 4 -- separate tracking structure for eviction | Test: no crash under `go test -race -count=100` with concurrent Begin + Range |
-| Pitfall 3: Circuit breaker lock contention | Phase 1 -- code review lock scope | Test: 10 concurrent Send calls complete in ~1.1s with 1s mock provider |
-| Pitfall 4: Reindex worker goroutine leak | Phase 3 -- worker lifecycle with context cancellation | Test: `runtime.NumGoroutine()` returns to baseline after Stop() |
-| Pitfall 5: Qdrant warm check false positive | Phase 3 -- explicit `points_count > 0` check | Test: empty collection triggers re-embed, populated collection skips |
+| Pitfall 2: sync.Map iteration crash | Phase 1 -- separate tracking structure for eviction | Test: no crash under `go test -race -count=100` with concurrent Begin + Range |
+| Pitfall 3: Circuit breaker lock contention | Phase 3 -- code review lock scope | Test: 10 concurrent Send calls complete in ~1.1s with 1s mock provider |
+| Pitfall 4: Reindex worker goroutine leak | Phase 2 -- worker lifecycle with context cancellation | Test: `runtime.NumGoroutine()` returns to baseline after Stop() |
+| Pitfall 5: Qdrant warm check false positive | Phase 1 -- explicit `points_count > 0` check | Test: empty collection triggers re-embed, populated collection skips |
 | Pitfall 6: Wiki write race with manual edits | Phase 2 -- `expected_updated_at` in WriteWikPage tool | Test: concurrent dashboard write + tool write detects change |
-| Pitfall 7: Temperature retry on infra errors | Phase 1 -- error classification in retry wrapper | Test: HTTP 429 does not increment temperature |
-| Pitfall 8: Per-user budget atomicity gap | Phase 4 -- budget check inside mutex | Test: two rapid messages cannot both pass budget check |
+| Pitfall 7: Temperature retry on infra errors | Phase 2 -- error classification in retry wrapper | Test: HTTP 429 does not increment temperature |
+| Pitfall 8: Per-user budget atomicity gap | Phase 3 -- budget check inside UserGate actor boundary | Test: two rapid messages cannot both pass budget check |
 | Pitfall 9: Missing build-tag callers | Phase 4 -- verification script before each removal | Process: every removal PR includes grep output for all build tags |
-| Pitfall 10: Qdrant startup timeout loop | Phase 3 -- 120s timeout, configurable | Test: simulated slow Qdrant load does not cause restart loop |
+| Pitfall 10: Qdrant startup timeout loop | Phase 1 -- 120s timeout, configurable | Test: simulated slow Qdrant load does not cause restart loop |
 
 ---
 
@@ -534,7 +534,7 @@ How roadmap phases should address these pitfalls.
 - [Structured output from LLMs in Go -- retry patterns](https://lawzava.com/blog/2024-04-29-structured-output-patterns/) -- MEDIUM confidence: practitioner guide with concrete Go patterns
 - [GitHub dead code removal verification checklist](https://github.com/github/gh-aw/blob/main/DEADCODE.md) -- MEDIUM confidence: GitHub's own internal process documentation
 - [Go deadcode analyzer tool documentation](https://go.dev/blog/deadcode) -- HIGH confidence: official Go blog
-- Codebase analysis of internal/telegram/conversation.go, internal/agentloop/loop.go, internal/agentruntime/session.go, internal/llm/ollama.go (FailoverClient), internal/llm/retry.go, internal/search/qdrant.go, internal/search/compact_qdrant.go, internal/wiki/store.go -- HIGH confidence: direct code inspection
+- Codebase analysis of internal/telegram/conversation.go, internal/agentloop/loop.go, internal/agentruntime/session.go, internal/llm/retry.go, internal/search/qdrant.go, internal/search/compact_qdrant.go, internal/wiki/store.go -- HIGH confidence: direct code inspection
 - [LLM tool calling JSON validation retry strategies](https://medium.com/@hariomshahu101/building-production-ready-llm-applications-bulletproof-llm-tool-calling-with-advanced-json-b95ce8889f4e) -- MEDIUM confidence: practitioner guide
 
 ---
