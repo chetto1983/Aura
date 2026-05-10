@@ -56,6 +56,19 @@ func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryin
 		}
 		return memoryindex.VectorReport{Collection: i.collection}, nil
 	}
+
+	// QDRANT-01 warm-cache short-circuit: reuse the existing collection if it
+	// already has points instead of re-embedding every document.
+	info, infoErr := i.client.CollectionInfo(ctx, i.collection)
+	if infoErr != nil {
+		i.logger.Warn("compact qdrant warm-cache probe failed; proceeding with full rebuild", "collection", i.collection, "error", infoErr)
+	} else if info.PointsCount > 0 {
+		i.logger.Info("compact qdrant warm-cache hit, skipping rebuild", "collection", i.collection, "points_count", info.PointsCount)
+		return memoryindex.VectorReport{
+			Collection: i.collection,
+		}, nil
+	}
+
 	points, vectorSize, err := i.pointsForDocuments(ctx, docs)
 	if err != nil {
 		return memoryindex.VectorReport{}, err

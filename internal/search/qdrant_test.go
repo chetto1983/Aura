@@ -57,6 +57,9 @@ func TestRebuildQdrantWikiDocumentsCreatesCollectionAndUpsertsDocs(t *testing.T)
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
 			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			// Simulate cold start (collection not yet present) so rebuild proceeds.
+			w.WriteHeader(http.StatusNotFound)
 		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
 			sawDelete = true
 			w.WriteHeader(http.StatusOK)
@@ -109,6 +112,291 @@ func TestRebuildQdrantWikiDocumentsCreatesCollectionAndUpsertsDocs(t *testing.T)
 		if point.Payload["doc_id"] == "" || point.Payload["kind"] == "" || point.Payload["content"] == "" {
 			t.Fatalf("missing payload fields: %+v", point.Payload)
 		}
+	}
+}
+
+func TestRebuildQdrantWikiDocumentsWarmCacheHit(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":42,"indexed_vectors_count":42}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	report, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if sawDelete {
+		t.Fatal("DeleteCollection was called on warm-cache hit")
+	}
+	if sawCreate {
+		t.Fatal("CreateCollection was called on warm-cache hit")
+	}
+	if sawUpsert {
+		t.Fatal("Upsert was called on warm-cache hit")
+	}
+	if embedCalls != 0 {
+		t.Fatalf("embed called %d times on warm-cache hit, want 0", embedCalls)
+	}
+	if report.Collection != "aura_memory_v1" {
+		t.Fatalf("report.Collection = %q, want aura_memory_v1", report.Collection)
+	}
+	if report.DocsIndexed != 42 {
+		t.Fatalf("report.DocsIndexed = %d, want 42 (live points count)", report.DocsIndexed)
+	}
+}
+
+func TestRebuildQdrantWikiDocumentsColdPath(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":0,"indexed_vectors_count":0}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	_, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on cold path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on cold path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on cold path")
+	}
+	if embedCalls == 0 {
+		t.Fatal("embed was not called on cold path")
+	}
+}
+
+func TestRebuildQdrantWikiDocumentsCollectionNotFound(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	_, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on not-found path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on not-found path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on not-found path")
+	}
+	if embedCalls == 0 {
+		t.Fatal("embed was not called on not-found path")
+	}
+}
+
+func TestRebuildQdrantWikiDocumentsCollectionInfoErrorFallsBack(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Contract",
+		Body:          "Core contract notes.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"status":{"error":"internal"}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	_, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments error: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on fallback path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on fallback path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on fallback path")
+	}
+	if embedCalls == 0 {
+		t.Fatal("embed was not called on fallback path")
 	}
 }
 

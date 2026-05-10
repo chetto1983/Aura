@@ -33,6 +33,9 @@ func TestCompactMemoryQdrantIndexRecreatesCollectionAndUpsertsPayloads(t *testin
 			t.Fatalf("missing api-key header")
 		}
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			// Simulate cold start (collection not yet present) so rebuild proceeds.
+			w.WriteHeader(http.StatusNotFound)
 		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
 			sawDelete = true
 			w.WriteHeader(http.StatusOK)
@@ -109,6 +112,9 @@ func TestCompactMemoryQdrantIndexUsesBatchEmbeddings(t *testing.T) {
 	batchCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			// Simulate cold start (collection not yet present) so rebuild proceeds.
+			w.WriteHeader(http.StatusNotFound)
 		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
@@ -147,6 +153,240 @@ func TestCompactMemoryQdrantIndexUsesBatchEmbeddings(t *testing.T) {
 	}
 	if batchCalls != 1 {
 		t.Fatalf("batchCalls = %d, want 1", batchCalls)
+	}
+}
+
+func TestCompactMemoryQdrantRecreateWarmCacheHit(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+	embedCalls := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":42,"indexed_vectors_count":42}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	index, err := NewCompactMemoryQdrantIndex(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+		APIKey:     "secret",
+	}, countingEmbed, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndex: %v", err)
+	}
+
+	report, err := index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:1",
+		Kind: memoryindex.KindArchive,
+		Body: "some body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if sawDelete {
+		t.Fatal("DeleteCollection was called on warm-cache hit")
+	}
+	if sawCreate {
+		t.Fatal("CreateCollection was called on warm-cache hit")
+	}
+	if sawUpsert {
+		t.Fatal("Upsert was called on warm-cache hit")
+	}
+	if embedCalls != 0 {
+		t.Fatalf("embed called %d times on warm-cache hit, want 0", embedCalls)
+	}
+	if report.DocsIndexed != 0 {
+		t.Fatalf("report.DocsIndexed = %d, want 0 on warm-cache hit", report.DocsIndexed)
+	}
+	if report.VectorSize != 0 {
+		t.Fatalf("report.VectorSize = %d, want 0 on warm-cache hit", report.VectorSize)
+	}
+	if report.Collection != "aura_memory_v1_compact" {
+		t.Fatalf("report.Collection = %q, want aura_memory_v1_compact", report.Collection)
+	}
+}
+
+func TestCompactMemoryQdrantRecreateColdPath(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":0,"indexed_vectors_count":0}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	index, err := NewCompactMemoryQdrantIndex(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+	}, keywordEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndex: %v", err)
+	}
+
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:1",
+		Kind: memoryindex.KindArchive,
+		Body: "some body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on cold path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on cold path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on cold path")
+	}
+}
+
+func TestCompactMemoryQdrantRecreateCollectionNotFound(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	index, err := NewCompactMemoryQdrantIndex(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+	}, keywordEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndex: %v", err)
+	}
+
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:1",
+		Kind: memoryindex.KindArchive,
+		Body: "some body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on not-found path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on not-found path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on not-found path")
+	}
+}
+
+func TestCompactMemoryQdrantRecreateCollectionInfoErrorFallsBack(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert, sawCollectionInfo bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"status":{"error":"internal"}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	index, err := NewCompactMemoryQdrantIndex(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+	}, keywordEmbedding, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndex: %v", err)
+	}
+
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:1",
+		Kind: memoryindex.KindArchive,
+		Body: "some body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if !sawCollectionInfo {
+		t.Fatal("CollectionInfo was not called")
+	}
+	if !sawDelete {
+		t.Fatal("DeleteCollection was not called on error-fallback path")
+	}
+	if !sawCreate {
+		t.Fatal("CreateCollection was not called on error-fallback path")
+	}
+	if !sawUpsert {
+		t.Fatal("Upsert was not called on error-fallback path")
 	}
 }
 
