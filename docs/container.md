@@ -198,7 +198,9 @@ Visible host folders hold user data:
 - `data/`: `.env`, SQLite DB, logs, generated local service secrets, MCP
   config, prompt overlays.
 - `runtime-workspace/`: local Aura runtime workspace for agent-facing files
-  such as `AGENT.md`, `HEARTBEAT.md`, `mcp.json`, and `inbox/`. Local
+  such as `SOUL.md`, `TOOLS.md`, `AGENT.md`, `HEARTBEAT.md`, `mcp.json`, and
+  `inbox/`. `SOUL.md` and `TOOLS.md` are prompt overlays; `AGENT.md` is
+  readable runtime guidance but is not injected into the system prompt. Local
   desktop runs also keep wiki and skills under this folder. In Docker the
   equivalent path is `/workspace` through `AURA_RUNTIME_WORKSPACE_PATH`,
   `AURA_WORKSPACE_ROOT`, and `PROMPT_OVERLAY_PATH`.

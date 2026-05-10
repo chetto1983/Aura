@@ -88,6 +88,46 @@ func TestLoadPromptOverlaySkipsBlankFiles(t *testing.T) {
 	}
 }
 
+func TestEnsurePromptOverlayDefaultsCreatesSoulAndToolsOnly(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := EnsurePromptOverlayDefaults(dir); err != nil {
+		t.Fatalf("EnsurePromptOverlayDefaults() error = %v", err)
+	}
+
+	for _, name := range []string{"SOUL.md", "TOOLS.md"} {
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("expected %s to be created: %v", name, err)
+		}
+		if strings.TrimSpace(string(body)) == "" {
+			t.Fatalf("%s is blank", name)
+		}
+	}
+	for _, name := range []string{"AGENT.md", "AGENTS.md"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s should not be created, err=%v", name, err)
+		}
+	}
+}
+
+func TestEnsurePromptOverlayDefaultsDoesNotOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "SOUL.md")
+	mustWrite(t, path, "custom soul")
+
+	if err := EnsurePromptOverlayDefaults(dir); err != nil {
+		t.Fatalf("EnsurePromptOverlayDefaults() error = %v", err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "custom soul" {
+		t.Fatalf("SOUL.md overwritten: %q", body)
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

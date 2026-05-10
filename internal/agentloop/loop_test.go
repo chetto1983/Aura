@@ -250,6 +250,49 @@ Evidence envelope:
 	}
 }
 
+func TestRunEmptyFinalDoesNotReturnRawShellResult(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "shell-1", Name: "execute_shell"}}}},
+		{Response: llm.Response{Content: ""}},
+	}}
+	raw := "exit_code: 0\nelapsed_ms: 12\n\nFilesystem overlay /var/lib/docker"
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, raw)
+		return ExecutionSummary{LastResult: raw}
+	}), state, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, leaked := range []string{"exit_code", "elapsed_ms", "Filesystem", "/var/lib"} {
+		if strings.Contains(result.Text, leaked) {
+			t.Fatalf("Text leaked %q in %q", leaked, result.Text)
+		}
+	}
+	if !strings.Contains(result.Text, "risultati tecnici") {
+		t.Fatalf("Text = %q, want natural technical fallback", result.Text)
+	}
+}
+
+func TestRunSanitizesRawModelFinalAnswer(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: `Evidence envelope: {"items":[{"score":0.9}]}`}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 2})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.Contains(result.Text, "Evidence envelope") {
+		t.Fatalf("Text leaked raw model answer: %q", result.Text)
+	}
+}
+
 func TestRunMaxIterationDoesNotFallbackToRawMemoryEvidence(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
@@ -419,8 +462,44 @@ func TestRunSpiralBreakerStopsAfterHiddenToolRejection(t *testing.T) {
 	if client.requests != 1 {
 		t.Fatalf("LLM requests = %d, want 1", client.requests)
 	}
-	if !strings.Contains(result.Text, "tool_search") {
-		t.Fatalf("Text = %q, want tool_search guidance", result.Text)
+	if strings.Contains(result.Text, "tool_search") || strings.Contains(result.Text, "not available") {
+		t.Fatalf("Text = %q, want natural no-tool fallback", result.Text)
+	}
+	if !result.Stats.SpiralBreakerFired || !result.Stats.HiddenToolRejected {
+		t.Fatalf("stats = %+v, want spiral breaker and hidden rejection", result.Stats)
+	}
+}
+
+func TestRunHiddenToolRejectionFinalizesFromPriorEvidence(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "search_memory"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "hidden-1", Name: "read_file"}}}},
+		{Response: llm.Response{Content: "So una cosa utile, detta naturale."}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		switch calls[0].Name {
+		case "search_memory":
+			raw := `Memory evidence for "profilo" (1 result(s)): utile`
+			state.AddToolResultMessage(calls[0].ID, raw)
+			return ExecutionSummary{LastResult: raw}
+		default:
+			state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"tool not available","retryable":true}`)
+			return ExecutionSummary{LastResult: `{"ok":false,"error":"tool not available"}`, HiddenRejected: true}
+		}
+	}), state, Options{MaxIterations: 4, AllowNoToolFinalization: true, SpiralBreakerEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "So una cosa utile, detta naturale." {
+		t.Fatalf("Text = %q", result.Text)
+	}
+	if strings.Contains(result.Text, "tool_search") || strings.Contains(result.Text, "not available") {
+		t.Fatalf("technical hidden-tool answer leaked: %q", result.Text)
+	}
+	if client.requests != 3 {
+		t.Fatalf("LLM requests = %d, want tool turn, hidden turn, finalization", client.requests)
 	}
 	if !result.Stats.SpiralBreakerFired || !result.Stats.HiddenToolRejected {
 		t.Fatalf("stats = %+v, want spiral breaker and hidden rejection", result.Stats)

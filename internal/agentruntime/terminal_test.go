@@ -134,6 +134,37 @@ func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalToolFallbackMasksShellDump(t *testing.T) {
+	raw := "Filesystem      Size  Used Avail Use% Mounted on\noverlay          100G   10G   90G  10% /\n/dev/sda /var/lib/docker"
+
+	got := TerminalToolFallbackResponse("execute_shell", raw)
+
+	for _, leaked := range []string{"Filesystem", "overlay", "/var/lib"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "output tecnico grezzo") {
+		t.Fatalf("TerminalToolFallbackResponse = %q, want natural shell fallback", got)
+	}
+}
+
+func TestLooksLikeUnsafeFinalAnswer(t *testing.T) {
+	for _, raw := range []string{
+		`Evidence envelope: {"items":[]}`,
+		"exit_code: 0\nelapsed_ms: 3",
+		`{"source_id":"src_1","tokens_total":123}`,
+		"workspace_root=/workspace",
+	} {
+		if !LooksLikeUnsafeFinalAnswer(raw) {
+			t.Fatalf("LooksLikeUnsafeFinalAnswer(%q) = false, want true", raw)
+		}
+	}
+	if LooksLikeUnsafeFinalAnswer("Ho trovato il documento e te lo riassumo.") {
+		t.Fatal("LooksLikeUnsafeFinalAnswer(natural text) = true, want false")
+	}
+}
+
 func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 	messages := []llm.Message{
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},

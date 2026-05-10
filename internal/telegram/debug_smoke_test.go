@@ -536,6 +536,7 @@ func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	reg.Register(&countingTelegramTool{name: "schedule_task", result: "scheduled"})
 	reg.Register(tools.NewToolSearchTool(reg))
 	reg.Register(&countingTelegramTool{name: "execute_code", result: "code"})
+	reg.Register(&countingTelegramTool{name: "execute_shell", result: "shell"})
 	reg.Register(&categorizedCountingTelegramTool{
 		countingTelegramTool: countingTelegramTool{name: "mcp_mail_imap_search_messages", result: "mail"},
 		category:             tools.CategoryAutonomous,
@@ -551,6 +552,9 @@ func TestModelToolNamesExposesCoreToolSearchSurface(t *testing.T) {
 	}
 	if stringSliceContains(got, "mcp_mail_imap_search_messages") {
 		t.Fatalf("raw MCP tool exposed before tool_search discovery: %+v", got)
+	}
+	if stringSliceContains(got, "execute_shell") {
+		t.Fatalf("execute_shell exposed before explicit tool_search discovery: %+v", got)
 	}
 }
 

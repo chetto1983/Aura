@@ -322,7 +322,8 @@ func (t *ExecuteShellTool) Name() string { return "execute_shell" }
 
 func (t *ExecuteShellTool) Description() string {
 	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura. " +
-		"Use this for repository inspection, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, and runtime smoke checks when file tools or execute_code are not enough. " +
+		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
+		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
 		"Set allow_network=true only when the command intentionally needs network access. " +
 		"Use timeout to override the per-call limit (1-300s, default server 120s)."

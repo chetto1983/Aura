@@ -245,6 +245,43 @@ func TestSetupSandboxRuntime_ProcessModeEnablesExecuteCode(t *testing.T) {
 	}
 }
 
+func TestShouldBootstrapPromptOverlayDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want bool
+	}{
+		{
+			name: "container workspace",
+			cfg:  &config.Config{PromptOverlayPath: "/workspace", WorkspaceRoot: "/workspace", RuntimeWorkspacePath: "/workspace"},
+			want: true,
+		},
+		{
+			name: "runtime workspace",
+			cfg:  &config.Config{PromptOverlayPath: "./runtime-workspace", WorkspaceRoot: ".", RuntimeWorkspacePath: "./runtime-workspace"},
+			want: true,
+		},
+		{
+			name: "repo root default skipped",
+			cfg:  &config.Config{PromptOverlayPath: ".", WorkspaceRoot: ".", RuntimeWorkspacePath: "./runtime-workspace"},
+			want: false,
+		},
+		{
+			name: "unrelated path skipped",
+			cfg:  &config.Config{PromptOverlayPath: "D:/Aura", WorkspaceRoot: "./runtime-workspace", RuntimeWorkspacePath: "./runtime-workspace"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldBootstrapPromptOverlayDefaults(tt.cfg); got != tt.want {
+				t.Fatalf("shouldBootstrapPromptOverlayDefaults() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func writeTelegramTestPyodideBundle(t *testing.T, dir string) {
 	t.Helper()
 	files := map[string]string{

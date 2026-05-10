@@ -12,9 +12,19 @@
 
 ## Status
 
-Status: PLANNED  
+Status: IMPLEMENTED 2026-05-10  
 Started: 2026-05-10  
 Reason: live logs show Aura still leaks raw tool output and hidden-tool errors after the first natural-memory guardrail slice.
+
+Implementation result:
+
+- Debug sandbox now has forbidden-tool, forbidden-final-fragment, and execute-shell minimum gates.
+- `execute_shell` is removed from the default hot model-visible surface and remains discoverable through `tool_search`.
+- `execute_code`/`execute_shell` are blocked as recoverable tool results for broad conversational requests and allowed for explicit diagnostics, commands, builds, installs, calculations, file work, or raw-output requests.
+- Shell terminal output is synthesized through no-tool finalization unless the user explicitly asks for raw output.
+- Hidden-tool rejection now uses no-tool finalization when possible and natural fallback text otherwise.
+- Raw final-answer fallbacks reject memory evidence envelopes, shell metadata, tool JSON, workspace dumps, and similar internal markers.
+- Empty runtime workspaces can bootstrap `SOUL.md` and `TOOLS.md`; `AGENT.md`/`AGENTS.md` stay out of the system prompt.
 
 ## Research Summary
 

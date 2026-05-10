@@ -33,8 +33,9 @@ Write-Host "Aura tool-search / programmatic execution smokes"
 
 Invoke-Smoke -Name "tool_search discovery" -ToolArgs @(
     "-no-validate",
-    "-prompt", "Use tool_search to discover what shell and Python execution tools are available, then report back what you found. Do not execute anything.",
+    "-prompt", "Use tool_search to discover what Python/code execution tool is available, then report back what you found. Do not execute anything and do not look for shell tools.",
     "-expect-tools", "tool_search",
+    "-forbid-tools", "execute_shell",
     "-expect-loop-steps-max", "3",
     "-expect-llm-calls-max", "3",
     "-expect-tool-calls-max", "3",

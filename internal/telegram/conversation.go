@@ -296,6 +296,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		names := currentToolNames()
 		return orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(names), names)
 	}
+	maxCallsPerTool := map[string]int{
+		"search_memory": 2,
+		"tool_search":   2,
+	}
+	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 	addActiveTools := func(names []string) {
 		toolMu.Lock()
 		defer toolMu.Unlock()
@@ -343,6 +348,12 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MaxRetryNudgesPerTurn:   1,
 			SpiralBreakerEnabled:    true,
 			TieredBudgetEnabled:     true,
+			BeforeTool: func(call llm.ToolCall, state agentloop.ToolCallState) agentloop.ToolCallDecision {
+				if !runtimeToolAllowedForUserIntent(call.Name, latestUserText(convCtx.Messages())) {
+					return agentloop.ToolCallDecision{Skip: true, Result: runtimeToolBlockedResult(call.Name)}
+				}
+				return duplicatePolicy(call, state)
+			},
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -363,8 +374,26 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
+				telegramStats := mergeAgentLoopStats(baseStats, *stats)
+				userAskedRaw := userRequestedRawOutput(latestUserText(convCtx.Messages()))
+				if terminalTool == "execute_shell" && !userAskedRaw {
+					response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
+					*stats = applyTelegramTerminalStats(*stats, telegramStats)
+					if delivered {
+						return "", true, true
+					}
+					return response, false, true
+				}
 				if terminalTool == "execute_code" || terminalTool == "execute_shell" {
 					response := formatTerminalExecuteCodeResult(lastToolResult)
+					if !userAskedRaw && agentruntime.LooksLikeUnsafeFinalAnswer(response) {
+						response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
+						*stats = applyTelegramTerminalStats(*stats, telegramStats)
+						if delivered {
+							return "", true, true
+						}
+						return response, false, true
+					}
 					convCtx.AddAssistantMessage(response)
 					return response, false, true
 				}
@@ -373,7 +402,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 					convCtx.AddAssistantMessage(response)
 					return response, false, true
 				}
-				telegramStats := mergeAgentLoopStats(baseStats, *stats)
 				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
 				*stats = applyTelegramTerminalStats(*stats, telegramStats)
 				if delivered {
@@ -381,10 +409,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				}
 				return response, false, true
 			},
-			MaxCallsPerTool: map[string]int{
-				"search_memory": 2,
-				"tool_search":   2,
-			},
+			MaxCallsPerTool: maxCallsPerTool,
 		},
 		OnEvent: func(event agentruntime.Event) {
 			switch event.Type {
@@ -469,7 +494,7 @@ func (b *Bot) modelToolNames() []string {
 	if b == nil || b.tools == nil {
 		return nil
 	}
-	core := []string{"search_memory", "schedule_task", "tool_search", "execute_code", "execute_shell"}
+	core := []string{"search_memory", "schedule_task", "tool_search", "execute_code"}
 	names := make([]string, 0, len(core))
 	for _, name := range core {
 		if b.tools.Get(name) != nil {

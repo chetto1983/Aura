@@ -383,6 +383,11 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		NoStaleSkillRef:    true,
 		WorkspaceRoot:      "/workspace",
 		ForbidFragments:    []string{"internal/", ".git/"},
+		ForbiddenTools:     []string{"execute_shell"},
+		ForbidFinalFragments: []string{
+			"Evidence envelope",
+			"exit_code",
+		},
 		RetrievalCapsule:   true,
 		MaxElapsedMS:       1000,
 		MinRetryNudges:     1,
@@ -427,6 +432,24 @@ func TestValidateDebugExpectationsRejectsUnexpectedTools(t *testing.T) {
 	err := validateDebugExpectations(result, debugExpectations{NoTools: true})
 	if err == nil || !strings.Contains(err.Error(), "expected no tool calls") {
 		t.Fatalf("validateDebugExpectations() error = %v, want no-tools failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenTool(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ToolCalls: []string{"search_memory", "execute_shell"}}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbiddenTools: []string{"execute_shell"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden tool "execute_shell" was called`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden tool failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsForbiddenFinalFragment(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{FinalText: `Evidence envelope: {"items":[]}`}
+
+	err := validateDebugExpectations(result, debugExpectations{ForbidFinalFragments: []string{"evidence envelope"}})
+	if err == nil || !strings.Contains(err.Error(), `forbidden final fragment "evidence envelope"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want forbidden final fragment failure", err)
 	}
 }
 
@@ -518,6 +541,15 @@ func TestValidateDebugExpectationsRejectsRetryNudgesBelowMinimum(t *testing.T) {
 	err := validateDebugExpectations(result, debugExpectations{MinRetryNudges: 1})
 	if err == nil || !strings.Contains(err.Error(), "retry_nudges_sent 0 below minimum 1") {
 		t.Fatalf("validateDebugExpectations() error = %v, want retry nudge failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsExecuteShellBelowMinimum(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{ExecuteShellCalls: 0}
+
+	err := validateDebugExpectations(result, debugExpectations{MinExecuteShellCalls: 1})
+	if err == nil || !strings.Contains(err.Error(), "execute_shell_calls 0 below minimum 1") {
+		t.Fatalf("validateDebugExpectations() error = %v, want execute shell minimum failure", err)
 	}
 }
 

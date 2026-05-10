@@ -98,14 +98,56 @@ func LooksLikeToolCallMarkup(text string) bool {
 
 func LooksLikeInternalToolResult(text string) bool {
 	lower := strings.ToLower(text)
-	return strings.Contains(lower, "source_id") ||
-		strings.Contains(lower, "tokens_prompt") ||
-		strings.Contains(lower, "tokens_completion") ||
-		strings.Contains(lower, "tokens_total") ||
-		strings.Contains(lower, "llm_calls") ||
-		strings.Contains(lower, "tool_calls") ||
-		strings.Contains(lower, "elapsed_ms") ||
-		strings.Contains(lower, "exit_code")
+	for _, marker := range []string{
+		"source_id",
+		"tokens_prompt",
+		"tokens_completion",
+		"tokens_total",
+		"llm_calls",
+		"tool_calls",
+		"elapsed_ms",
+		"exit_code",
+		"workspace_root",
+		"top_dirs_in_workspace",
+		"filesystem",
+		"mounted on",
+		"/var/lib/",
+		"overlay",
+		"tmpfs",
+		"--- stderr ---",
+		"stdout:",
+		"stderr:",
+		"cmd:",
+		"cwd:",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func LooksLikeUnsafeFinalAnswer(text string) bool {
+	lower := strings.ToLower(text)
+	for _, marker := range []string{
+		"memory evidence for",
+		"evidence envelope:",
+		"exit_code:",
+		"elapsed_ms",
+		"source_id",
+		"tokens_total",
+		`"ok":false`,
+		`"tool_calls"`,
+		"tool_calls",
+		"workspace_root",
+		"top_dirs_in_workspace",
+		"/var/lib/",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func TerminalToolFallbackResponse(terminalTool, rawToolResult string) string {
@@ -119,6 +161,9 @@ func TerminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 	}
 	if toolName == "write_file" || toolName == "apply_patch" {
 		return "Fatto: ho aggiornato i file richiesti e ho fermato il turno dopo il salvataggio."
+	}
+	if toolName == "execute_shell" {
+		return "Ho controllato l'ambiente e ho una risposta, ma evito di incollarti l'output tecnico grezzo."
 	}
 	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
 }

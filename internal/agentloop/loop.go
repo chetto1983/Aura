@@ -187,11 +187,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		if !resp.Response.HasToolCalls {
 			response := strings.TrimSpace(resp.Response.Content)
 			if response == "" {
-				if lastToolResult != "" {
-					response = lastToolResult
-				} else {
-					response = "I completed the request but do not have anything else to add."
-				}
+				response = finalAnswerOnBudget(lastToolResult)
+			}
+			if looksLikeRawToolEvidence(response) {
+				response = finalAnswerOnBudget(lastToolResult)
 			}
 			state.AddAssistantMessage(response)
 			emitStats()
@@ -241,6 +240,8 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 					if decision.Result != "" {
 						skippedToolResults[call.ID] = decision.Result
 					}
+					seenToolCalls[key] = true
+					toolCallExecutions[call.Name]++
 					duplicateToolCalls = append(duplicateToolCalls, call)
 					continue
 				}
@@ -268,10 +269,17 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 		if execution.HiddenRejected && opts.SpiralBreakerEnabled {
-			answer := "A tool you requested is not available in this turn. Use tool_search to discover which tools are currently accessible, then call only those tools."
-			state.AddAssistantMessage(answer)
 			stats.HiddenToolRejected = true
 			stats.SpiralBreakerFired = true
+			if opts.AllowNoToolFinalization {
+				if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
+					state.AddAssistantMessage(answer)
+					emitStats()
+					return Result{Text: answer, Stats: stats}, nil
+				}
+			}
+			answer := "Ho incontrato un limite sugli strumenti disponibili, quindi rispondo con il contesto che ho gia invece di continuare a provarci."
+			state.AddAssistantMessage(answer)
 			emitStats()
 			return Result{Text: answer, Stats: stats}, nil
 		}
@@ -400,7 +408,7 @@ func skillNameFromReadFileArgs(args map[string]any) string {
 func finalAnswerOnBudget(lastToolResult string) string {
 	if result := strings.TrimSpace(lastToolResult); result != "" {
 		if looksLikeRawToolEvidence(result) {
-			return "Ho trovato evidenze in memoria, ma il turno si e fermato prima di sintetizzarle bene. Posso riprendere la ricerca con un focus piu preciso."
+			return "Ho raccolto risultati tecnici, ma il turno si e fermato prima di sintetizzarli bene. Posso riprendere con un focus piu preciso."
 		}
 		return result
 	}
@@ -411,7 +419,16 @@ func looksLikeRawToolEvidence(text string) bool {
 	lower := strings.ToLower(text)
 	return strings.Contains(lower, "memory evidence for") ||
 		strings.Contains(lower, "evidence envelope:") ||
-		strings.Contains(lower, `"query":`) && strings.Contains(lower, `"items":`) && strings.Contains(lower, `"score":`)
+		strings.Contains(lower, `"query":`) && strings.Contains(lower, `"items":`) && strings.Contains(lower, `"score":`) ||
+		strings.Contains(lower, "exit_code:") ||
+		strings.Contains(lower, "elapsed_ms") ||
+		strings.Contains(lower, "source_id") ||
+		strings.Contains(lower, "tokens_total") ||
+		strings.Contains(lower, `"ok":false`) ||
+		strings.Contains(lower, `"tool_calls"`) ||
+		strings.Contains(lower, "workspace_root") ||
+		strings.Contains(lower, "top_dirs_in_workspace") ||
+		strings.Contains(lower, "/var/lib/")
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {

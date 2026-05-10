@@ -91,6 +91,15 @@ Suggested acceptance:
 - explicit raw commands can still use shell through `tool_search`;
 - Docker smoke script `scripts/test-runtime-answer-discipline-smokes.ps1` passes.
 
+Latest implementation slice:
+
+- Debug smoke gates now assert forbidden tools/final fragments and shell-call minimums.
+- `execute_shell` is no longer hot-visible; `execute_code`/`execute_shell` are intent-gated for explicit operational work.
+- Terminal shell output is synthesized unless raw output was explicitly requested.
+- Hidden-tool rejection and raw fallback paths finalize naturally instead of exposing tool errors or raw envelopes.
+- Empty runtime overlay workspaces bootstrap `SOUL.md` and `TOOLS.md`; `AGENT.md` remains file-readable only.
+- Verification passed: `go test ./internal/agentruntime ./internal/agentloop ./internal/tools ./internal/conversation ./internal/telegram ./cmd/debug_telegram_sandbox -count=1`, `go test ./...`, `go build ./...`, `go vet ./...`, and local `scripts/test-runtime-answer-discipline-smokes.ps1 -SkipRawShell`.
+
 ## Deferred v4.0 MCP Marketplace Slice
 
 Active phase: **v4.0 MCP Marketplace And Autonomous Plugin Manager**.

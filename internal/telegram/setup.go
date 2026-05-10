@@ -71,6 +71,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		return nil, fmt.Errorf("loading timezone %q: %w", cfg.Timezone, err)
 	}
+	if shouldBootstrapPromptOverlayDefaults(cfg) {
+		if err := conversation.EnsurePromptOverlayDefaults(cfg.PromptOverlayPath); err != nil {
+			logger.Warn("failed to bootstrap prompt overlay defaults", "path", cfg.PromptOverlayPath, "error", err)
+		}
+	}
 
 	pref := tele.Settings{
 		Token: cfg.TelegramToken,
@@ -679,6 +684,20 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	b.registerHandlers()
 	b.installBotCommands()
 	return b, nil
+}
+
+func shouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	overlay := strings.TrimSpace(cfg.PromptOverlayPath)
+	if overlay == "" || overlay == "." {
+		return false
+	}
+	overlayClean := filepath.Clean(overlay)
+	workspaceClean := filepath.Clean(strings.TrimSpace(cfg.WorkspaceRoot))
+	runtimeClean := filepath.Clean(strings.TrimSpace(cfg.RuntimeWorkspacePath))
+	return overlayClean == workspaceClean || overlayClean == runtimeClean || overlayClean == filepath.Clean("/workspace")
 }
 
 func skillSearchRoots(cfg *config.Config) []string {
