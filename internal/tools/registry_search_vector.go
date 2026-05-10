@@ -45,15 +45,27 @@ type toolVectorDoc struct {
 }
 
 type toolVectorIndex struct {
-	qclient     qdrant.Client
-	collection  string
-	cfg         ToolVectorConfig
-	http        *http.Client
+	qclient    qdrant.Client
+	collection string
+	cfg        ToolVectorConfig
+	http       *http.Client
+
+	// mu guards the in-memory Build/Search state below. It is held only
+	// for fast in-memory mutations / reads, never around HTTP I/O (WR-04).
 	mu          sync.RWMutex
 	docCount    int
 	lastRebuild time.Time
 	lastError   error
-	logger      *slog.Logger
+
+	// buildMu serializes concurrent Build calls so they do not race each
+	// other on the Qdrant collection (delete/create/upsert). Search does
+	// NOT take buildMu — it only takes mu.RLock for the in-memory state,
+	// which means a Search initiated mid-Build returns the previous
+	// build's docCount/lastError snapshot and proceeds without blocking
+	// on the Build's HTTP calls (WR-04).
+	buildMu sync.Mutex
+
+	logger *slog.Logger
 }
 
 func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *toolVectorIndex {
@@ -103,23 +115,40 @@ func (idx *toolVectorIndex) Ready(ctx context.Context) error {
 	return idx.qclient.Health(ctx)
 }
 
+// Build (re)builds the Qdrant-backed tool index. WR-04: idx.mu is NOT held
+// across the Qdrant/embedding HTTP calls. buildMu serializes concurrent
+// Build calls; idx.mu is taken only briefly to publish the resulting
+// in-memory state (docCount, lastRebuild, lastError). This means Search
+// callers continue to see the previous snapshot during a long rebuild
+// instead of blocking on the rebuild's HTTP round-trips.
 func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) error {
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil
 	}
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	// Serialize Builds so two callers do not race the delete/create/upsert
+	// sequence on the same Qdrant collection.
+	idx.buildMu.Lock()
+	defer idx.buildMu.Unlock()
 
-	idx.lastError = nil
-	if len(docs) == 0 {
-		idx.docCount = 0
+	// publish writes the build outcome to the shared in-memory state.
+	// Used in defer-style for early returns and at the end on success.
+	publish := func(docCount int, buildErr error) {
+		idx.mu.Lock()
+		idx.docCount = docCount
+		idx.lastError = buildErr
 		idx.lastRebuild = time.Now()
+		idx.mu.Unlock()
+	}
+
+	if len(docs) == 0 {
+		publish(0, nil)
 		return nil
 	}
 
 	if idx.qclient == nil {
-		idx.lastError = fmt.Errorf("qdrant client not initialized")
-		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", idx.lastError)
+		err := fmt.Errorf("qdrant client not initialized")
+		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", err)
+		publish(0, err)
 		return nil
 	}
 
@@ -135,9 +164,8 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 		// Defensive fallback: a transient probe failure must not block startup.
 		idx.logger.Warn("tool vector index build: collection info probe failed; proceeding with full rebuild", "collection", idx.collection, "error", infoErr)
 	} else if info.PointsCount > 0 {
-		idx.docCount = len(docs)
-		idx.lastRebuild = time.Now()
-		idx.logger.Info("tool vector qdrant warm-cache hit, skipping rebuild", "collection", idx.collection, "points_count", info.PointsCount, "docs", idx.docCount)
+		idx.logger.Info("tool vector qdrant warm-cache hit, skipping rebuild", "collection", idx.collection, "points_count", info.PointsCount, "docs", len(docs))
+		publish(len(docs), nil)
 		return nil
 	}
 
@@ -148,24 +176,24 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 
 	vectors, err := idx.embed(ctx, texts)
 	if err != nil {
-		idx.lastError = err
 		idx.logger.Warn("tool vector index build: embedding failed, falling back to fts", "error", err)
+		publish(0, err)
 		return nil
 	}
 	if len(vectors) != len(docs) {
-		idx.lastError = fmt.Errorf("expected %d vectors, got %d", len(docs), len(vectors))
+		publish(0, fmt.Errorf("expected %d vectors, got %d", len(docs), len(vectors)))
 		return nil
 	}
 
 	vectorSize := len(vectors[0])
 	if err := idx.qclient.DeleteCollection(ctx, idx.collection); err != nil {
-		idx.lastError = err
 		idx.logger.Warn("tool vector index build: qdrant collection delete failed", "error", err)
+		publish(0, err)
 		return nil
 	}
 	if err := idx.qclient.CreateCollection(ctx, idx.collection, vectorSize); err != nil {
-		idx.lastError = err
 		idx.logger.Warn("tool vector index build: qdrant collection create failed", "error", err)
+		publish(0, err)
 		return nil
 	}
 
@@ -182,14 +210,13 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 	}
 
 	if err := idx.qclient.Upsert(ctx, idx.collection, qpoints); err != nil {
-		idx.lastError = err
 		idx.logger.Warn("tool vector index build: qdrant upsert failed", "error", err)
+		publish(0, err)
 		return nil
 	}
 
-	idx.docCount = len(docs)
-	idx.lastRebuild = time.Now()
-	idx.logger.Info("tool vector index built", "docs", idx.docCount, "vector_size", vectorSize)
+	publish(len(docs), nil)
+	idx.logger.Info("tool vector index built", "docs", len(docs), "vector_size", vectorSize)
 	return nil
 }
 
