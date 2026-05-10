@@ -40,7 +40,7 @@ class MarkdownErrorBoundary extends Component<
 export function Markdown({ content, variant = 'default' }: Props) {
   const safe = content || '';
   const fallback = (
-    <span className="sacchi-md-fallback">{safe}</span>
+    <span className="aura-md-fallback">{safe}</span>
   );
   return (
     <div className={`md ${variant === 'user' ? 'md--user' : ''}`}>

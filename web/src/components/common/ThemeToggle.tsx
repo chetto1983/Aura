@@ -19,7 +19,7 @@ export function ThemeToggle({
   ];
 
   return (
-    <div className={`sacchi-theme-switcher${compact ? " sacchi-theme-switcher--compact" : ""}`} role="group" aria-label={t('common.themeSelector')}>
+    <div className={`aura-theme-switcher${compact ? " aura-theme-switcher--compact" : ""}`} role="group" aria-label={t('common.themeSelector')}>
       {options.map((option) => {
         const Icon = option.icon;
         const active = option.value === theme;
@@ -27,7 +27,7 @@ export function ThemeToggle({
           <button
             key={option.value}
             type="button"
-            className="sacchi-theme-switcher__option"
+            className="aura-theme-switcher__option"
             data-active={active ? "true" : undefined}
             aria-pressed={active}
             aria-label={t('common.themeOption', { name: option.short })}

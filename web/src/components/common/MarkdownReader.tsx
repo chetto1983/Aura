@@ -34,16 +34,16 @@ export function MarkdownReader({ markdown }: { markdown: string }) {
 
   if (!doc.body) {
     return (
-      <div className="sacchi-md-empty">
+      <div className="aura-md-empty">
         File Markdown senza contenuto leggibile.
       </div>
     );
   }
 
   return (
-    <article className="sacchi-md-reader">
+    <article className="aura-md-reader">
       {(doc.meta.type || doc.meta.updated) && (
-        <div className="sacchi-md-reader__meta" aria-label={t('common.pageMetadata')}>
+        <div className="aura-md-reader__meta" aria-label={t('common.pageMetadata')}>
           {doc.meta.type && <span>{doc.meta.type}</span>}
           {doc.meta.updated && <span>Aggiornata {doc.meta.updated}</span>}
         </div>

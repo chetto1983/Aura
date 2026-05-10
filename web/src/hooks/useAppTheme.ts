@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type AppTheme = "light" | "dark" | "contrast";
 
-const STORAGE_KEY = "sacchi-ui-theme";
+const STORAGE_KEY = "aura-ui-theme";
 const THEMES: AppTheme[] = ["light", "dark", "contrast"];
 
 function readInitialTheme(): AppTheme {

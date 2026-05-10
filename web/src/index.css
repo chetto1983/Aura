@@ -398,7 +398,7 @@ a:hover { text-decoration: underline; }
   fill: var(--primary);
 }
 
-.sacchi-theme-switcher {
+.aura-theme-switcher {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
@@ -411,14 +411,14 @@ a:hover { text-decoration: underline; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.sacchi-theme-switcher--compact {
+.aura-theme-switcher--compact {
   width: auto;
   min-height: 40px;
   grid-template-columns: repeat(3, 40px);
   margin-left: auto;
 }
 
-.sacchi-theme-switcher__option {
+.aura-theme-switcher__option {
   min-width: 0;
   min-height: 34px;
   display: inline-flex;
@@ -434,26 +434,26 @@ a:hover { text-decoration: underline; }
   transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-.sacchi-theme-switcher__option:hover {
+.aura-theme-switcher__option:hover {
   background: var(--surface-raised);
   color: var(--text-strong);
 }
 
-.sacchi-theme-switcher__option[data-active="true"],
-.sacchi-theme-switcher__option[aria-pressed="true"] {
+.aura-theme-switcher__option[data-active="true"],
+.aura-theme-switcher__option[aria-pressed="true"] {
   background: var(--surface);
   color: var(--text-strong);
   box-shadow: var(--shadow-sm);
 }
 
-.sacchi-skills-dialog {
+.aura-skills-dialog {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-xl);
 }
 
-.sacchi-tabs-list {
+.aura-tabs-list {
   height: auto !important;
   min-height: 42px;
   gap: 3px;
@@ -463,19 +463,19 @@ a:hover { text-decoration: underline; }
   color: var(--text-dim) !important;
 }
 
-.sacchi-tabs-trigger {
+.aura-tabs-trigger {
   min-height: 34px;
   border-radius: calc(var(--radius-sm) - 1px) !important;
   color: var(--text-dim) !important;
 }
 
-.sacchi-tabs-trigger:hover {
+.aura-tabs-trigger:hover {
   color: var(--text-strong) !important;
   background: var(--surface-raised) !important;
 }
 
-.sacchi-tabs-trigger[data-active],
-.sacchi-tabs-trigger[data-state="active"] {
+.aura-tabs-trigger[data-active],
+.aura-tabs-trigger[data-state="active"] {
   border-color: var(--border) !important;
   background: var(--surface) !important;
   color: var(--text-strong) !important;
@@ -488,7 +488,7 @@ a:hover { text-decoration: underline; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* ---------- Sidebar (desktop default) ---------- */
-.sacchi-sidebar {
+.aura-sidebar {
   width: 280px;
   min-width: 280px;
   background: var(--surface-raised);
@@ -501,11 +501,11 @@ a:hover { text-decoration: underline; }
   will-change: transform;
 }
 
-.sacchi-sidebar__close { display: none !important; }
-.sacchi-sidebar__close:hover { background: var(--surface-sunken); color: var(--text-strong); }
+.aura-sidebar__close { display: none !important; }
+.aura-sidebar__close:hover { background: var(--surface-sunken); color: var(--text-strong); }
 
 /* ---------- Top bar mobile: hamburger + logo condensato ---------- */
-.sacchi-topbar {
+.aura-topbar {
   display: none;
   align-items: center;
   gap: 10px;
@@ -515,7 +515,7 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 
-.sacchi-hamburger {
+.aura-hamburger {
   width: 44px;
   height: 44px;
   display: inline-flex;
@@ -526,18 +526,18 @@ a:hover { text-decoration: underline; }
   background: transparent;
   transition: background 120ms ease;
 }
-.sacchi-hamburger:hover,
-.sacchi-hamburger:focus-visible { background: var(--surface-sunken); }
-.sacchi-hamburger:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
+.aura-hamburger:hover,
+.aura-hamburger:focus-visible { background: var(--surface-sunken); }
+.aura-hamburger:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
 
-.sacchi-topbar__logo {
+.aura-topbar__logo {
   display: block;
   height: 22px;
   width: auto;
 }
 
 /* ---------- Backdrop (mobile only) ---------- */
-.sacchi-backdrop {
+.aura-backdrop {
   display: none;
   position: fixed;
   inset: 0;
@@ -545,15 +545,15 @@ a:hover { text-decoration: underline; }
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   z-index: 40;
-  animation: sacchi-fade-in 180ms ease-out;
+  animation: aura-fade-in 180ms ease-out;
 }
-@keyframes sacchi-fade-in {
+@keyframes aura-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
 /* ---------- Wiki Graph page ---------- */
-.sacchi-graph-page {
+.aura-graph-page {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -563,11 +563,11 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
 }
 
-.sacchi-graph-page canvas {
+.aura-graph-page canvas {
   background: var(--bg) !important;
 }
 
-.sacchi-graph-page__header {
+.aura-graph-page__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -575,22 +575,22 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border);
   background: var(--surface-raised);
 }
-.sacchi-graph-page__title-group {
+.aura-graph-page__title-group {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-.sacchi-graph-page__title {
+.aura-graph-page__title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: var(--text-strong);
 }
-.sacchi-graph-page__count {
+.aura-graph-page__count {
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-graph-page__close {
+.aura-graph-page__close {
   background: transparent;
   border: 1px solid var(--border);
   color: inherit;
@@ -599,7 +599,7 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
 }
 
-.sacchi-graph-page__controls {
+.aura-graph-page__controls {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -607,7 +607,7 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.sacchi-graph-page__search {
+.aura-graph-page__search {
   background: var(--surface-sunken);
   color: inherit;
   border: 1px solid var(--border);
@@ -615,17 +615,17 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
   min-width: 220px;
 }
-.sacchi-graph-page__type-filter {
+.aura-graph-page__type-filter {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
-.sacchi-graph-page__filter-label {
+.aura-graph-page__filter-label {
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-graph-page__type-btn {
+.aura-graph-page__type-btn {
   padding: 2px 8px;
   font-size: 12px;
   border-radius: 12px;
@@ -636,20 +636,20 @@ a:hover { text-decoration: underline; }
   opacity: 0.6;
   font-weight: 400;
 }
-.sacchi-graph-page__type-btn--active {
+.aura-graph-page__type-btn--active {
   background: var(--graph-type-color, var(--surface-sunken));
   color: #fff;
   opacity: 1;
   font-weight: 500;
 }
-.sacchi-graph-page__sample-control {
+.aura-graph-page__sample-control {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-graph-page__sample-select {
+.aura-graph-page__sample-select {
   background: var(--surface-sunken);
   color: inherit;
   border: 1px solid var(--border);
@@ -657,17 +657,17 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
 }
 
-.sacchi-graph-page__body {
+.aura-graph-page__body {
   flex: 1;
   display: flex;
   min-height: 0;
 }
-.sacchi-graph-page__canvas {
+.aura-graph-page__canvas {
   flex: 1;
   position: relative;
   overflow: hidden;
 }
-.sacchi-graph-page__error {
+.aura-graph-page__error {
   position: absolute;
   inset: 0;
   display: grid;
@@ -675,7 +675,7 @@ a:hover { text-decoration: underline; }
   color: var(--error);
 }
 
-.sacchi-graph__product-list {
+.aura-graph__product-list {
   position: absolute;
   bottom: 8px;
   left: 8px;
@@ -688,17 +688,17 @@ a:hover { text-decoration: underline; }
   max-height: 50%;
   overflow: auto;
 }
-.sacchi-graph__product-list-summary {
+.aura-graph__product-list-summary {
   cursor: pointer;
   color: var(--text-dim);
 }
-.sacchi-graph__product-list-items {
+.aura-graph__product-list-items {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 6px;
 }
-.sacchi-graph__product-list-item {
+.aura-graph__product-list-item {
   text-align: left;
   padding: 4px 8px;
   background: transparent;
@@ -710,7 +710,7 @@ a:hover { text-decoration: underline; }
   font-family: var(--font-mono);
 }
 
-.sacchi-graph-detail {
+.aura-graph-detail {
   width: 420px;
   background: var(--surface-raised);
   border-left: 1px solid var(--border);
@@ -720,18 +720,18 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 12px;
 }
-.sacchi-graph-detail__header {
+.aura-graph-detail__header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
 }
-.sacchi-graph-detail__title {
+.aura-graph-detail__title {
   margin: 0;
   font-size: 16px;
   color: var(--text-strong);
 }
-.sacchi-graph-detail__close {
+.aura-graph-detail__close {
   background: transparent;
   border: none;
   color: var(--text-dim);
@@ -740,27 +740,27 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   padding: 0;
 }
-.sacchi-graph-detail__type-row {
+.aura-graph-detail__type-row {
   font-size: 12px;
 }
-.sacchi-graph-detail__type-badge {
+.aura-graph-detail__type-badge {
   padding: 2px 8px;
   border-radius: 10px;
   background: var(--graph-type-color, var(--surface-sunken));
   color: #fff;
   font-weight: 500;
 }
-.sacchi-graph-detail__path {
+.aura-graph-detail__path {
   font-size: 11px;
   color: var(--text-dim);
   word-break: break-all;
   font-family: var(--font-mono);
 }
-.sacchi-graph-detail__description {
+.aura-graph-detail__description {
   font-size: 13px;
   color: var(--text);
 }
-.sacchi-graph-detail__cta {
+.aura-graph-detail__cta {
   padding: 8px 14px;
   background: var(--brand);
   color: #fff;
@@ -769,30 +769,30 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   font-weight: 500;
 }
-.sacchi-graph-detail__page {
+.aura-graph-detail__page {
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
   font-size: 13px;
   color: var(--text);
 }
-.sacchi-graph-detail__page-error {
+.aura-graph-detail__page-error {
   color: var(--error);
 }
-.sacchi-graph-detail__page-empty {
+.aura-graph-detail__page-empty {
   color: var(--text-dim);
   font-style: italic;
 }
 
 /* ---------- App shell ---------- */
-.sacchi-app-shell {
+.aura-app-shell {
   display: flex;
   width: 100vw;
   height: 100dvh;
   overflow: hidden;
   background: var(--bg);
 }
-.sacchi-app-shell__main {
+.aura-app-shell__main {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -801,17 +801,17 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- Markdown helpers ---------- */
-.sacchi-md-fallback {
+.aura-md-fallback {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.sacchi-md-empty {
+.aura-md-empty {
   color: var(--text-dim);
   font-style: italic;
 }
 
 /* ---------- Artifact loading shell ---------- */
-.sacchi-artifact-loading {
+.aura-artifact-loading {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -820,38 +820,13 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
 }
 
-/* ---------- EventStrip ---------- */
-.sacchi-event-strip {
-  border-top: 1px solid var(--border);
-  background: var(--surface-raised);
-  padding: 5px 14px;
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-.sacchi-event-strip__item {
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--brand-strong);
-}
-.sacchi-event-strip__item--error {
-  color: var(--error);
-  background: oklch(from var(--error) l c h / 0.1);
-}
-.sacchi-event-strip__item--tool {
-  color: var(--warning);
-}
-
 /* ---------- Copilot spike ---------- */
-.sacchi-spike {
+.aura-spike {
   padding: 24px;
   font-family: system-ui;
   max-width: 720px;
 }
-.sacchi-spike__log {
+.aura-spike__log {
   background: var(--surface-sunken);
   color: var(--text-strong);
   border: 1px solid var(--border);
@@ -863,20 +838,20 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- Generic artifact ---------- */
-.sacchi-artifact {
+.aura-artifact {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 14px;
   font-size: 12px;
 }
-.sacchi-artifact__head {
+.aura-artifact__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
-.sacchi-artifact__label {
+.aura-artifact__label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -886,13 +861,13 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   color: var(--brand-strong);
 }
-.sacchi-artifact__dot {
+.aura-artifact__dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--brand);
 }
-.sacchi-artifact__toggle {
+.aura-artifact__toggle {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-dim);
@@ -902,13 +877,13 @@ a:hover { text-decoration: underline; }
   padding: 2px 10px;
   cursor: pointer;
 }
-.sacchi-artifact__summary {
+.aura-artifact__summary {
   margin: 6px 0 0;
   color: var(--text);
   font-size: 13px;
   line-height: 1.5;
 }
-.sacchi-artifact__pre {
+.aura-artifact__pre {
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--surface);
@@ -925,7 +900,7 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- WikiPanel ---------- */
-.sacchi-wiki-panel {
+.aura-wiki-panel {
   position: fixed;
   top: 0;
   right: 0;
@@ -938,26 +913,26 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   padding: 16px;
 }
-.sacchi-wiki-panel__header {
+.aura-wiki-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.sacchi-wiki-panel__title {
+.aura-wiki-panel__title {
   margin: 0;
   font-family: var(--font-display);
   font-size: 18px;
   color: var(--text-strong);
 }
-.sacchi-wiki-panel__close {
+.aura-wiki-panel__close {
   color: var(--text-dim);
   cursor: pointer;
   font-size: 18px;
   background: transparent;
   border: none;
 }
-.sacchi-wiki-panel__search {
+.aura-wiki-panel__search {
   width: 100%;
   background: var(--surface-raised);
   border: 1px solid var(--border);
@@ -966,17 +941,17 @@ a:hover { text-decoration: underline; }
   color: var(--text-strong);
   margin-bottom: 12px;
 }
-.sacchi-wiki-panel__list {
+.aura-wiki-panel__list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.sacchi-wiki-panel__loading {
+.aura-wiki-panel__loading {
   color: var(--text-dim);
 }
-.sacchi-wiki-panel__item {
+.aura-wiki-panel__item {
   display: block;
   padding: 8px 10px;
   border-radius: 6px;
@@ -986,56 +961,56 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   text-decoration: none;
 }
-.sacchi-wiki-panel__item-title {
+.aura-wiki-panel__item-title {
   font-weight: 500;
   color: var(--text-strong);
 }
-.sacchi-wiki-panel__item-meta {
+.aura-wiki-panel__item-meta {
   font-size: 11px;
   color: var(--text-dim);
   margin-top: 2px;
 }
-.sacchi-wiki-panel__empty {
+.aura-wiki-panel__empty {
   color: var(--text-dim);
   text-align: center;
   margin-top: 20px;
 }
 
 /* ---------- ProductDetailPanel ---------- */
-.sacchi-product-detail {
+.aura-product-detail {
   margin-top: 16px;
 }
-.sacchi-product-detail__skel-block {
+.aura-product-detail__skel-block {
   margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.sacchi-product-detail__skel-block--tight {
+.aura-product-detail__skel-block--tight {
   gap: 6px;
 }
-.sacchi-product-detail__skel-cta {
+.aura-product-detail__skel-cta {
   margin-top: 16px;
 }
-.sacchi-product-detail__error {
+.aura-product-detail__error {
   margin-top: 16px;
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.sacchi-product-detail__error-title {
+.aura-product-detail__error-title {
   font-size: 13px;
   color: var(--warning);
   margin-bottom: 4px;
   font-weight: 600;
 }
-.sacchi-product-detail__error-body {
+.aura-product-detail__error-body {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 12px;
 }
-.sacchi-product-detail__retry {
+.aura-product-detail__retry {
   padding: 6px 12px;
   background: transparent;
   color: var(--text-strong);
@@ -1045,7 +1020,7 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   font-weight: 500;
 }
-.sacchi-product-detail__ask {
+.aura-product-detail__ask {
   margin-top: 12px;
   width: 100%;
   min-height: 44px;
@@ -1059,49 +1034,49 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   transition: background 120ms ease;
 }
-.sacchi-product-detail__ask:hover {
+.aura-product-detail__ask:hover {
   background: var(--brand-strong);
 }
 
 /* ---------- ProductArtifact ---------- */
-.sacchi-prod-artifact {
+.aura-prod-artifact {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
   box-shadow: var(--shadow-sm);
 }
-.sacchi-prod-artifact--empty {
+.aura-prod-artifact--empty {
   background: var(--surface-raised);
   padding: 14px 16px;
   box-shadow: none;
 }
-.sacchi-prod-artifact__empty-msg {
+.aura-prod-artifact__empty-msg {
   margin: 6px 0 0;
   color: var(--text-dim);
   font-size: 13px;
 }
-.sacchi-prod-artifact__inline-code {
+.aura-prod-artifact__inline-code {
   background: var(--surface-sunken);
   padding: 1px 5px;
   border-radius: 4px;
 }
-.sacchi-prod-artifact__head {
+.aura-prod-artifact__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
 }
-.sacchi-prod-artifact__query {
+.aura-prod-artifact__query {
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-prod-artifact__grid {
+.aura-prod-artifact__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
 }
-.sacchi-tool-label {
+.aura-tool-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1111,9 +1086,9 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   color: var(--brand);
 }
-.sacchi-tool-label--empty { color: var(--text-dim); }
-.sacchi-tool-label--running { color: var(--warning); }
-.sacchi-tool-label__dot {
+.aura-tool-label--empty { color: var(--text-dim); }
+.aura-tool-label--running { color: var(--warning); }
+.aura-tool-label__dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -1121,23 +1096,23 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- Sidebar (extras) ---------- */
-.sacchi-sidebar__header {
+.aura-sidebar__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
-.sacchi-sidebar__brand {
+.aura-sidebar__brand {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
 }
-.sacchi-sidebar__logo {
+.aura-sidebar__logo {
   display: block;
   height: 32px;
   width: auto;
 }
-.sacchi-sidebar__close {
+.aura-sidebar__close {
   width: 44px;
   height: 44px;
   border-radius: 8px;
@@ -1149,11 +1124,11 @@ a:hover { text-decoration: underline; }
   border: none;
   transition: background 120ms ease, color 120ms ease;
 }
-.sacchi-sidebar__close:hover {
+.aura-sidebar__close:hover {
   background: var(--surface-sunken);
   color: var(--text-strong);
 }
-.sacchi-sidebar__tagline {
+.aura-sidebar__tagline {
   margin: -8px 0 0;
   font-size: 11px;
   color: var(--text-dim);
@@ -1161,10 +1136,10 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   font-weight: 600;
 }
-.sacchi-sidebar__theme-wrap {
+.aura-sidebar__theme-wrap {
   margin-top: -8px;
 }
-.sacchi-sidebar__new {
+.aura-sidebar__new {
   padding: 10px 12px;
   background: var(--brand);
   color: #fff;
@@ -1180,14 +1155,14 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background 120ms ease;
 }
-.sacchi-sidebar__new:hover {
+.aura-sidebar__new:hover {
   background: var(--brand-strong);
 }
-.sacchi-sidebar__new-plus {
+.aura-sidebar__new-plus {
   font-size: 16px;
   line-height: 1;
 }
-.sacchi-sidebar__sessions {
+.aura-sidebar__sessions {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1195,7 +1170,7 @@ a:hover { text-decoration: underline; }
   overflow-y: auto;
   margin-top: -8px;
 }
-.sacchi-sidebar__session {
+.aura-sidebar__session {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1209,30 +1184,30 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background 120ms ease;
 }
-.sacchi-sidebar__session:hover {
+.aura-sidebar__session:hover {
   background: var(--surface-sunken);
 }
-.sacchi-sidebar__session--active {
+.aura-sidebar__session--active {
   background: var(--brand-tint);
   border: 1px solid var(--brand-soft);
   color: var(--brand-strong);
 }
-.sacchi-sidebar__session--active:hover {
+.aura-sidebar__session--active:hover {
   background: var(--brand-tint);
 }
-.sacchi-sidebar__session-title {
+.aura-sidebar__session-title {
   font-weight: 500;
   color: var(--text);
 }
-.sacchi-sidebar__session--active .sacchi-sidebar__session-title {
+.aura-sidebar__session--active .aura-sidebar__session-title {
   font-weight: 600;
   color: var(--text-strong);
 }
-.sacchi-sidebar__session-meta {
+.aura-sidebar__session-meta {
   font-size: 11px;
   color: var(--text-muted);
 }
-.sacchi-sidebar__clear {
+.aura-sidebar__clear {
   font-size: 12px;
   color: var(--text-dim);
   background: transparent;
@@ -1242,20 +1217,20 @@ a:hover { text-decoration: underline; }
   font-weight: 500;
   cursor: pointer;
 }
-.sacchi-sidebar__spacer {
+.aura-sidebar__spacer {
   flex: 1;
 }
-.sacchi-sidebar__fields {
+.aura-sidebar__fields {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.sacchi-sidebar__nav {
+.aura-sidebar__nav {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.sacchi-sidebar__badge {
+.aura-sidebar__badge {
   padding: 10px 12px;
   background: var(--brand-tint);
   border: 1px solid var(--brand-soft);
@@ -1266,13 +1241,13 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 8px;
 }
-.sacchi-sidebar__badge-dot {
+.aura-sidebar__badge-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--brand);
 }
-.sacchi-sidebar__nav-btn {
+.aura-sidebar__nav-btn {
   width: 100%;
   padding: 8px 12px;
   display: flex;
@@ -1288,12 +1263,12 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
-.sacchi-sidebar__nav-btn:hover {
+.aura-sidebar__nav-btn:hover {
   background: var(--brand-tint);
   border-color: var(--brand-soft);
   color: var(--brand-strong);
 }
-.sacchi-sidebar__section {
+.aura-sidebar__section {
   font-size: 10px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -1301,19 +1276,19 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   margin-bottom: 6px;
 }
-.sacchi-sidebar__field {
+.aura-sidebar__field {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.sacchi-sidebar__field-label {
+.aura-sidebar__field-label {
   font-size: 10px;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
 }
-.sacchi-sidebar__field-input {
+.aura-sidebar__field-input {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1324,7 +1299,7 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- ProductCard ---------- */
-.sacchi-pcard {
+.aura-pcard {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1333,11 +1308,11 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.sacchi-pcard--search:hover {
+.aura-pcard--search:hover {
   border-color: var(--brand);
   box-shadow: var(--shadow-md);
 }
-.sacchi-pcard__image {
+.aura-pcard__image {
   background-color: var(--surface-sunken);
   background-position: center;
   background-repeat: no-repeat;
@@ -1345,10 +1320,10 @@ a:hover { text-decoration: underline; }
   position: relative;
   border-bottom: 1px solid var(--border);
 }
-.sacchi-pcard__image--search { height: 110px; }
-.sacchi-pcard__image--detail { height: 180px; }
-.sacchi-pcard__image--zoomable { cursor: zoom-in; }
-.sacchi-pcard__index-badge {
+.aura-pcard__image--search { height: 110px; }
+.aura-pcard__image--detail { height: 180px; }
+.aura-pcard__image--zoomable { cursor: zoom-in; }
+.aura-pcard__index-badge {
   position: absolute;
   top: 8px;
   left: 8px;
@@ -1359,7 +1334,7 @@ a:hover { text-decoration: underline; }
   padding: 2px 6px;
   border-radius: 4px;
 }
-.sacchi-pcard__no-image {
+.aura-pcard__no-image {
   position: absolute;
   inset: 0;
   display: flex;
@@ -1368,67 +1343,67 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
   font-size: 11px;
 }
-.sacchi-pcard__body {
+.aura-pcard__body {
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex: 1;
 }
-.sacchi-pcard__head {
+.aura-pcard__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
-.sacchi-pcard__code {
+.aura-pcard__code {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-strong);
   font-weight: 600;
 }
-.sacchi-pcard__score {
+.aura-pcard__score {
   font-size: 10px;
   color: var(--text-muted);
 }
-.sacchi-pcard__title {
+.aura-pcard__title {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-strong);
   line-height: 1.35;
 }
-.sacchi-pcard__title--clamp {
+.aura-pcard__title--clamp {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.sacchi-pcard__brand {
+.aura-pcard__brand {
   margin: 0;
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-pcard__metrics {
+.aura-pcard__metrics {
   display: flex;
   gap: 10px;
   margin-top: 4px;
   font-size: 12px;
 }
-.sacchi-pcard__price {
+.aura-pcard__price {
   color: var(--brand-strong);
   font-weight: 600;
 }
-.sacchi-pcard__stock {
+.aura-pcard__stock {
   color: var(--text-dim);
 }
-.sacchi-pcard__chips {
+.aura-pcard__chips {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
   margin-top: 6px;
 }
-.sacchi-pcard__chip {
+.aura-pcard__chip {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--brand-soft);
@@ -1436,7 +1411,7 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
   font-weight: 500;
 }
-.sacchi-pcard__spec-label {
+.aura-pcard__spec-label {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-dim);
@@ -1445,40 +1420,40 @@ a:hover { text-decoration: underline; }
   margin-bottom: 4px;
   letter-spacing: 0.05em;
 }
-.sacchi-pcard__spec-table {
+.aura-pcard__spec-table {
   width: 100%;
   font-size: 13px;
   border-collapse: collapse;
 }
-.sacchi-pcard__spec-table tr {
+.aura-pcard__spec-table tr {
   border-bottom: 1px solid var(--border);
 }
-.sacchi-pcard__spec-key {
+.aura-pcard__spec-key {
   text-align: left;
   padding: 6px 8px 6px 0;
   font-weight: 500;
   color: var(--text-dim);
   width: 40%;
 }
-.sacchi-pcard__spec-val {
+.aura-pcard__spec-val {
   padding: 6px 0;
   color: var(--text-strong);
   font-family: var(--font-mono);
   font-size: 12px;
 }
-.sacchi-pcard__no-specs {
+.aura-pcard__no-specs {
   font-size: 12px;
   color: var(--text-dim);
   font-style: italic;
   margin-top: 12px;
 }
-.sacchi-pcard__pills {
+.aura-pcard__pills {
   display: flex;
   gap: 6px;
   margin-top: 8px;
   flex-wrap: wrap;
 }
-.sacchi-pcard__pill {
+.aura-pcard__pill {
   font-size: 11px;
   font-weight: 600;
   padding: 4px 9px;
@@ -1490,20 +1465,20 @@ a:hover { text-decoration: underline; }
   gap: 4px;
   cursor: pointer;
 }
-.sacchi-pcard__pill--brand {
+.aura-pcard__pill--brand {
   background: var(--brand);
   color: #fff;
 }
-.sacchi-pcard__pill--neutral {
+.aura-pcard__pill--neutral {
   background: var(--surface-raised);
   color: var(--text-strong);
 }
-.sacchi-pcard__pill--ghost {
+.aura-pcard__pill--ghost {
   background: transparent;
   color: var(--text-dim);
   border-color: var(--border);
 }
-.sacchi-pcard__details {
+.aura-pcard__details {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--border);
@@ -1513,21 +1488,21 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 6px;
 }
-.sacchi-pcard__details-section-label {
+.aura-pcard__details-section-label {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--text-dim);
   margin-bottom: 4px;
 }
-.sacchi-pcard__details-list {
+.aura-pcard__details-list {
   margin: 0;
   padding-left: 16px;
 }
-.sacchi-pcard__details-strong {
+.aura-pcard__details-strong {
   color: var(--text-strong);
 }
-.sacchi-pcard__pdf-excerpt {
+.aura-pcard__pdf-excerpt {
   margin: 0;
   font-size: 12px;
   color: var(--text-dim);
@@ -1535,7 +1510,7 @@ a:hover { text-decoration: underline; }
   max-height: 90px;
   overflow: auto;
 }
-.sacchi-pcard__lightbox-img {
+.aura-pcard__lightbox-img {
   display: block;
   max-width: 100%;
   max-height: 88vh;
@@ -1544,14 +1519,14 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- ChatPanel ---------- */
-.sacchi-chat {
+.aura-chat {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
 }
-.sacchi-chat__header {
+.aura-chat__header {
   padding: 14px 24px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1559,19 +1534,19 @@ a:hover { text-decoration: underline; }
   justify-content: space-between;
   background: var(--surface);
 }
-.sacchi-chat__brand-group {
+.aura-chat__brand-group {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.sacchi-chat__brand-eyebrow {
+.aura-chat__brand-eyebrow {
   font-size: 11px;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 600;
 }
-.sacchi-chat__brand-title {
+.aura-chat__brand-title {
   margin: 0;
   font-family: var(--font-display);
   font-size: 18px;
@@ -1579,20 +1554,20 @@ a:hover { text-decoration: underline; }
   color: var(--text-strong);
   letter-spacing: -0.01em;
 }
-.sacchi-chat__status {
+.aura-chat__status {
   font-size: 12px;
   color: var(--text-dim);
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.sacchi-chat__status-dot {
+.aura-chat__status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--brand);
 }
-.sacchi-chat__feed {
+.aura-chat__feed {
   flex: 1;
   overflow-y: auto;
   padding: 24px 24px 16px;
@@ -1600,7 +1575,7 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 12px;
 }
-.sacchi-chat__working {
+.aura-chat__working {
   align-self: flex-start;
   display: flex;
   align-items: center;
@@ -1609,18 +1584,18 @@ a:hover { text-decoration: underline; }
   color: var(--text-dim);
   font-size: 13px;
 }
-.sacchi-chat__form {
+.aura-chat__form {
   padding: 12px 24px 18px;
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
-.sacchi-chat__quick-row {
+.aura-chat__quick-row {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.sacchi-chat__quick-btn {
+.aura-chat__quick-btn {
   font-size: 12px;
   font-weight: 500;
   color: var(--brand-strong);
@@ -1630,11 +1605,11 @@ a:hover { text-decoration: underline; }
   padding: 5px 11px;
   cursor: pointer;
 }
-.sacchi-chat__quick-btn:disabled {
+.aura-chat__quick-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.sacchi-chat__composer {
+.aura-chat__composer {
   display: flex;
   align-items: flex-end;
   gap: 10px;
@@ -1644,11 +1619,11 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-lg);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.sacchi-chat__composer:focus-within {
+.aura-chat__composer:focus-within {
   border-color: var(--brand);
   box-shadow: 0 0 0 4px var(--brand-ring);
 }
-.sacchi-chat__textarea {
+.aura-chat__textarea {
   flex: 1;
   resize: none;
   background: transparent;
@@ -1661,7 +1636,7 @@ a:hover { text-decoration: underline; }
   border: none;
   outline: none;
 }
-.sacchi-chat__send {
+.aura-chat__send {
   font-weight: 600;
   font-size: 13px;
   padding: 8px 16px;
@@ -1673,20 +1648,20 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 6px;
 }
-.sacchi-chat__send--active {
+.aura-chat__send--active {
   background: var(--brand);
   color: #fff;
 }
-.sacchi-chat__send--idle {
+.aura-chat__send--idle {
   background: var(--surface-sunken);
   color: var(--text-muted);
   cursor: not-allowed;
 }
-.sacchi-chat__send-key {
+.aura-chat__send-key {
   font-size: 10px;
   opacity: 0.85;
 }
-.sacchi-chat__file-hidden {
+.aura-chat__file-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1697,7 +1672,7 @@ a:hover { text-decoration: underline; }
   white-space: nowrap;
   border: 0;
 }
-.sacchi-chat__attach {
+.aura-chat__attach {
   flex-shrink: 0;
   font-size: 18px;
   width: 36px;
@@ -1711,27 +1686,27 @@ a:hover { text-decoration: underline; }
   justify-content: center;
   transition: background 160ms ease, border-color 160ms ease;
 }
-.sacchi-chat__attach:hover:not(:disabled) {
+.aura-chat__attach:hover:not(:disabled) {
   background: var(--brand-tint);
   border-color: var(--brand-soft);
 }
-.sacchi-chat__attach:disabled {
+.aura-chat__attach:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.sacchi-chat__upload-error {
+.aura-chat__upload-error {
   margin-top: 6px;
   font-size: 12px;
   color: #b94f4f;
   text-align: center;
 }
-.sacchi-chat__hint {
+.aura-chat__hint {
   margin-top: 6px;
   font-size: 11px;
   color: var(--text-muted);
   text-align: center;
 }
-.sacchi-chat__kbd {
+.aura-chat__kbd {
   font-family: var(--font-mono);
   font-size: 10px;
   padding: 1px 5px;
@@ -1740,20 +1715,20 @@ a:hover { text-decoration: underline; }
   background: var(--surface-raised);
   color: var(--text-dim);
 }
-.sacchi-chat__bubble-row {
+.aura-chat__bubble-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.sacchi-chat__bubble-row--user {
+.aura-chat__bubble-row--user {
   align-self: flex-end;
   max-width: 78%;
 }
-.sacchi-chat__bubble-row--assistant {
+.aura-chat__bubble-row--assistant {
   align-self: flex-start;
   max-width: 90%;
 }
-.sacchi-chat__bubble-author {
+.aura-chat__bubble-author {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1762,26 +1737,26 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.sacchi-chat__bubble {
+.aura-chat__bubble {
   padding: 10px 14px;
 }
-.sacchi-chat__bubble--user {
+.aura-chat__bubble--user {
   background: var(--user-bubble);
   color: var(--user-text);
   border-radius: 14px 14px 4px 14px;
   box-shadow: var(--shadow-sm);
 }
-.sacchi-chat__bubble--assistant {
+.aura-chat__bubble--assistant {
   background: var(--assistant-bubble);
   color: var(--assistant-text);
   border: 1px solid var(--border);
   border-radius: 14px 14px 14px 4px;
 }
-.sacchi-chat__tool {
+.aura-chat__tool {
   align-self: stretch;
   max-width: 100%;
 }
-.sacchi-chat__tool-fallback {
+.aura-chat__tool-fallback {
   background: var(--tool-bubble);
   border: 1px solid var(--tool-border);
   border-radius: var(--radius);
@@ -1791,11 +1766,11 @@ a:hover { text-decoration: underline; }
   font-family: var(--font-mono);
   white-space: pre-wrap;
 }
-.sacchi-chat__thinking {
+.aura-chat__thinking {
   align-self: stretch;
   max-width: 92%;
 }
-.sacchi-chat__thinking-bubble {
+.aura-chat__thinking-bubble {
   display: block;
   width: 100%;
   text-align: left;
@@ -1810,11 +1785,11 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   opacity: 0.85;
 }
-.sacchi-chat__thinking-text {
+.aura-chat__thinking-text {
   display: block;
   margin-top: 4px;
 }
-.sacchi-chat__thinking-head {
+.aura-chat__thinking-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1824,12 +1799,12 @@ a:hover { text-decoration: underline; }
   font-size: 10px;
   margin-bottom: 4px;
 }
-.sacchi-chat__thinking-toggle {
+.aura-chat__thinking-toggle {
   margin-left: auto;
   font-weight: 400;
   font-size: 10px;
 }
-.sacchi-chat__empty {
+.aura-chat__empty {
   margin: auto;
   max-width: 560px;
   text-align: center;
@@ -1838,7 +1813,7 @@ a:hover { text-decoration: underline; }
   gap: 12px;
   align-items: center;
 }
-.sacchi-chat__empty-title {
+.aura-chat__empty-title {
   font-family: var(--font-display);
   font-size: 24px;
   font-weight: 700;
@@ -1846,20 +1821,20 @@ a:hover { text-decoration: underline; }
   color: var(--text-strong);
   letter-spacing: -0.01em;
 }
-.sacchi-chat__empty-blurb {
+.aura-chat__empty-blurb {
   margin: 0;
   color: var(--text-dim);
   font-size: 14px;
   max-width: 420px;
 }
-.sacchi-chat__empty-grid {
+.aura-chat__empty-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-top: 12px;
   width: 100%;
 }
-.sacchi-chat__empty-card {
+.aura-chat__empty-card {
   padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1870,19 +1845,19 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
-.sacchi-chat__empty-card:hover {
+.aura-chat__empty-card:hover {
   border-color: var(--brand);
   background: var(--brand-tint);
 }
-.sacchi-chat__empty-card-title {
+.aura-chat__empty-card-title {
   font-weight: 600;
   margin-bottom: 2px;
 }
-.sacchi-chat__empty-card-desc {
+.aura-chat__empty-card-desc {
   font-size: 12px;
   color: var(--text-dim);
 }
-.sacchi-chat__logo {
+.aura-chat__logo {
   width: 30px;
   height: 30px;
   font-size: 16.5px;
@@ -1896,12 +1871,12 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   letter-spacing: -0.04em;
 }
-.sacchi-chat__logo--lg {
+.aura-chat__logo--lg {
   width: 40px;
   height: 40px;
   font-size: 22px;
 }
-.sacchi-chat__badge {
+.aura-chat__badge {
   width: 16px;
   height: 16px;
   border-radius: 4px;
@@ -1916,7 +1891,7 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Mobile breakpoint: sidebar diventa drawer ---------- */
 @media (max-width: 768px) {
-  .sacchi-sidebar {
+  .aura-sidebar {
     position: fixed;
     top: 0;
     left: 0;
@@ -1929,17 +1904,17 @@ a:hover { text-decoration: underline; }
     box-shadow: none;
     border-right: 1px solid var(--border);
   }
-  .sacchi-sidebar--open {
+  .aura-sidebar--open {
     transform: translateX(0);
     box-shadow: var(--shadow-lg);
   }
-  .sacchi-sidebar__close { display: inline-flex !important; }
-  .sacchi-topbar { display: flex; }
-  .sacchi-backdrop { display: block; }
-  .sacchi-graph-page__body {
+  .aura-sidebar__close { display: inline-flex !important; }
+  .aura-topbar { display: flex; }
+  .aura-backdrop { display: block; }
+  .aura-graph-page__body {
     flex-direction: column;
   }
-  .sacchi-graph-detail {
+  .aura-graph-detail {
     width: 100% !important;
     max-height: 42dvh;
     border-left: 0 !important;
@@ -2012,17 +1987,17 @@ a:hover { text-decoration: underline; }
 .md a { color: var(--brand-strong); font-weight: 500; }
 .md strong { color: var(--text-strong); font-weight: 600; }
 
-.sacchi-md-reader {
+.aura-md-reader {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.sacchi-md-reader__meta {
+.aura-md-reader__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.sacchi-md-reader__meta span {
+.aura-md-reader__meta span {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
