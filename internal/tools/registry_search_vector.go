@@ -10,33 +10,33 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aura/aura/internal/qdrant"
 )
 
 const defaultVectorBatchSize = 32
 
 type ToolVectorConfig struct {
-	Backend        string
-	TopK           int
-	QdrantURL      string
-	QdrantAPIKey   string
-	Collection     string
-	EmbedBaseURL   string
-	EmbedAPIKey    string
-	EmbedModel     string
+	Backend      string
+	TopK         int
+	QdrantURL    string
+	QdrantAPIKey string
+	Collection   string
+	EmbedBaseURL string
+	EmbedAPIKey  string
+	EmbedModel   string
 }
 
 type ToolVectorHealth struct {
-	Backend      string  `json:"backend"`
-	DocCount     int     `json:"doc_count"`
-	LastRebuild  string  `json:"last_rebuild,omitempty"`
-	LastError    string  `json:"last_error,omitempty"`
-	EmbedModel   string  `json:"embed_model,omitempty"`
-	Fallback     bool    `json:"fallback"`
+	Backend     string `json:"backend"`
+	DocCount    int    `json:"doc_count"`
+	LastRebuild string `json:"last_rebuild,omitempty"`
+	LastError   string `json:"last_error,omitempty"`
+	EmbedModel  string `json:"embed_model,omitempty"`
+	Fallback    bool   `json:"fallback"`
 }
 
 type toolVectorDoc struct {
@@ -45,13 +45,15 @@ type toolVectorDoc struct {
 }
 
 type toolVectorIndex struct {
-	cfg        ToolVectorConfig
-	http       *http.Client
-	mu         sync.RWMutex
-	docCount   int
+	qclient     qdrant.Client
+	collection  string
+	cfg         ToolVectorConfig
+	http        *http.Client
+	mu          sync.RWMutex
+	docCount    int
 	lastRebuild time.Time
-	lastError  error
-	logger     *slog.Logger
+	lastError   error
+	logger      *slog.Logger
 }
 
 func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *toolVectorIndex {
@@ -64,11 +66,25 @@ func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *toolVectorIn
 	if cfg.Backend == "" {
 		cfg.Backend = "fts"
 	}
-	return &toolVectorIndex{
-		cfg:    cfg,
-		http:   &http.Client{Timeout: 30 * time.Second},
-		logger: logger,
+	idx := &toolVectorIndex{
+		cfg:        cfg,
+		collection: cfg.Collection,
+		http:       &http.Client{Timeout: 30 * time.Second},
+		logger:     logger,
 	}
+	// Create the shared Qdrant client if a URL is configured and backend is qdrant.
+	// For fts backend, qclient stays nil — all Qdrant methods guard on cfg.Backend == "fts".
+	if cfg.QdrantURL != "" && cfg.Backend != "fts" {
+		if qc, err := qdrant.NewClient(qdrant.Config{
+			BaseURL: cfg.QdrantURL,
+			APIKey:  cfg.QdrantAPIKey,
+		}); err == nil {
+			idx.qclient = qc
+		} else {
+			logger.Warn("tool vector index: failed to create qdrant client", "error", err)
+		}
+	}
+	return idx
 }
 
 func (idx *toolVectorIndex) Ready(ctx context.Context) error {
@@ -81,21 +97,10 @@ func (idx *toolVectorIndex) Ready(ctx context.Context) error {
 	if idx.cfg.EmbedBaseURL == "" || idx.cfg.EmbedAPIKey == "" {
 		return fmt.Errorf("embedding config required for vector tool search")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, idx.qdrantBase()+"/readyz", nil)
-	if err != nil {
-		return err
+	if idx.qclient == nil {
+		return fmt.Errorf("qdrant client not initialized")
 	}
-	idx.authorizeQdrant(req)
-	resp, err := idx.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("qdrant ready check: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("qdrant ready check returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
+	return idx.qclient.Health(ctx)
 }
 
 func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) error {
@@ -129,25 +134,35 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 	}
 
 	vectorSize := len(vectors[0])
-	if err := idx.recreateQdrantCollection(ctx, vectorSize); err != nil {
+	if idx.qclient == nil {
+		idx.lastError = fmt.Errorf("qdrant client not initialized")
+		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", idx.lastError)
+		return nil
+	}
+	if err := idx.qclient.DeleteCollection(ctx, idx.collection); err != nil {
 		idx.lastError = err
-		idx.logger.Warn("tool vector index build: qdrant collection recreate failed", "error", err)
+		idx.logger.Warn("tool vector index build: qdrant collection delete failed", "error", err)
+		return nil
+	}
+	if err := idx.qclient.CreateCollection(ctx, idx.collection, vectorSize); err != nil {
+		idx.lastError = err
+		idx.logger.Warn("tool vector index build: qdrant collection create failed", "error", err)
 		return nil
 	}
 
-	points := make([]map[string]any, len(docs))
+	qpoints := make([]qdrant.Point, len(docs))
 	for i, doc := range docs {
-		points[i] = map[string]any{
-			"id":     toolQdrantPointID(doc.name),
-			"vector": vectors[i],
-			"payload": map[string]string{
+		qpoints[i] = qdrant.Point{
+			ID:     toolQdrantPointID(doc.name),
+			Vector: vectors[i],
+			Payload: map[string]string{
 				"name": doc.name,
 				"text": doc.text,
 			},
 		}
 	}
 
-	if err := idx.upsertQdrantPoints(ctx, points); err != nil {
+	if err := idx.qclient.Upsert(ctx, idx.collection, qpoints); err != nil {
 		idx.lastError = err
 		idx.logger.Warn("tool vector index build: qdrant upsert failed", "error", err)
 		return nil
@@ -187,7 +202,10 @@ func (idx *toolVectorIndex) Search(ctx context.Context, query string, topK int, 
 		}
 	}
 
-	points, err := idx.queryQdrantPoints(ctx, vectors[0], topK*3)
+	if idx.qclient == nil {
+		return nil, fmt.Errorf("qdrant client not initialized")
+	}
+	points, err := idx.qclient.Search(ctx, idx.collection, vectors[0], topK*3, true)
 	if err != nil {
 		idx.logger.Warn("tool vector search: qdrant query failed", "error", err)
 		return nil, err
@@ -195,15 +213,14 @@ func (idx *toolVectorIndex) Search(ctx context.Context, query string, topK int, 
 
 	results := make([]ToolSearchResult, 0, len(points))
 	for _, pt := range points {
-		name := strings.TrimSpace(pt["name"])
+		name := strings.TrimSpace(pt.Payload["name"])
 		if name == "" || exclude[name] {
 			continue
 		}
-		score, _ := strconv.ParseFloat(strings.TrimSpace(pt["score"]), 64)
 		results = append(results, ToolSearchResult{
 			Name:        name,
-			Description: strings.TrimSpace(pt["text"]),
-			Score:       int(score * 100),
+			Description: strings.TrimSpace(pt.Payload["text"]),
+			Score:       int(pt.Score * 100),
 		})
 		if len(results) >= topK {
 			break
@@ -287,146 +304,6 @@ func (idx *toolVectorIndex) embed(ctx context.Context, texts []string) ([][]floa
 		}
 	}
 	return vectors, nil
-}
-
-func (idx *toolVectorIndex) qdrantBase() string {
-	return strings.TrimRight(strings.TrimSpace(idx.cfg.QdrantURL), "/")
-}
-
-func (idx *toolVectorIndex) collectionPath() string {
-	return idx.qdrantBase() + "/collections/" + url.PathEscape(idx.cfg.Collection)
-}
-
-func (idx *toolVectorIndex) authorizeQdrant(req *http.Request) {
-	if idx.cfg.QdrantAPIKey != "" {
-		req.Header.Set("api-key", idx.cfg.QdrantAPIKey)
-	}
-}
-
-func (idx *toolVectorIndex) recreateQdrantCollection(ctx context.Context, vectorSize int) error {
-	if err := idx.deleteQdrantCollection(ctx); err != nil {
-		return err
-	}
-	body := map[string]any{
-		"vectors": map[string]any{
-			"size":     vectorSize,
-			"distance": "Cosine",
-		},
-	}
-	return idx.doQdrantJSON(ctx, http.MethodPut, idx.collectionPath(), body, http.StatusOK, http.StatusConflict)
-}
-
-func (idx *toolVectorIndex) deleteQdrantCollection(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, idx.collectionPath(), nil)
-	if err != nil {
-		return err
-	}
-	idx.authorizeQdrant(req)
-	resp, err := idx.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("delete qdrant collection: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("delete qdrant collection returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
-func (idx *toolVectorIndex) upsertQdrantPoints(ctx context.Context, points []map[string]any) error {
-	for start := 0; start < len(points); start += defaultVectorBatchSize {
-		end := start + defaultVectorBatchSize
-		if end > len(points) {
-			end = len(points)
-		}
-		body := map[string]any{"points": points[start:end]}
-		if err := idx.doQdrantJSON(ctx, http.MethodPut, idx.collectionPath()+"/points?wait=true", body, http.StatusOK); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (idx *toolVectorIndex) queryQdrantPoints(ctx context.Context, vector []float32, topK int) ([]map[string]string, error) {
-	body := map[string]any{
-		"query":        vector,
-		"limit":        topK,
-		"with_payload": true,
-	}
-	var out struct {
-		Status string `json:"status"`
-		Result struct {
-			Points []struct {
-				Score   float32           `json:"score"`
-				Payload map[string]string `json:"payload"`
-			} `json:"points"`
-		} `json:"result"`
-	}
-	if err := idx.doQdrantJSONDecode(ctx, http.MethodPost, idx.collectionPath()+"/points/query", body, &out, http.StatusOK); err != nil {
-		return nil, err
-	}
-	if out.Status != "" && out.Status != "ok" {
-		return nil, fmt.Errorf("qdrant query returned status %q", out.Status)
-	}
-	results := make([]map[string]string, 0, len(out.Result.Points))
-	for _, pt := range out.Result.Points {
-		m := map[string]string{
-			"name":  strings.TrimSpace(pt.Payload["name"]),
-			"text":  strings.TrimSpace(pt.Payload["text"]),
-			"score": fmt.Sprintf("%.4f", pt.Score),
-		}
-		results = append(results, m)
-	}
-	return results, nil
-}
-
-func (idx *toolVectorIndex) doQdrantJSON(ctx context.Context, method, endpoint string, body any, accepted ...int) error {
-	return idx.doQdrantJSONDecode(ctx, method, endpoint, body, nil, accepted...)
-}
-
-func (idx *toolVectorIndex) doQdrantJSONDecode(ctx context.Context, method, endpoint string, body any, out any, accepted ...int) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	idx.authorizeQdrant(req)
-	resp, err := idx.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, endpoint, err)
-	}
-	defer resp.Body.Close()
-	respBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
-	if readErr != nil {
-		return fmt.Errorf("%s %s read response: %w", method, endpoint, readErr)
-	}
-	for _, code := range accepted {
-		if resp.StatusCode == code {
-			if out != nil && len(respBytes) > 0 {
-				if err := json.Unmarshal(respBytes, out); err != nil {
-					return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
-				}
-			}
-			return nil
-		}
-	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if out != nil && len(respBytes) > 0 {
-			if err := json.Unmarshal(respBytes, out); err != nil {
-				return fmt.Errorf("%s %s decode response: %w", method, endpoint, err)
-			}
-		}
-		return nil
-	}
-	return fmt.Errorf("%s %s returned %s: %s", method, endpoint, resp.Status, strings.TrimSpace(string(respBytes)))
 }
 
 func toolQdrantPointID(name string) string {

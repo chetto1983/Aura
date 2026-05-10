@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/qdrant"
 )
 
 type CompactMemoryQdrantIndex struct {
-	client       *qdrantClient
+	client       qdrant.Client
+	collection   string
 	embedFn      EmbeddingFunction
 	batchEmbedFn BatchEmbeddingFunction
 	logger       *slog.Logger
@@ -37,11 +39,11 @@ func NewCompactMemoryQdrantIndexWithBatch(cfg QdrantConfig, embedFn EmbeddingFun
 	if logger == nil {
 		logger = slog.Default()
 	}
-	client, err := newQdrantClient(cfg)
+	client, collection, err := newQdrantClientFromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &CompactMemoryQdrantIndex{client: client, embedFn: embedFn, batchEmbedFn: batchEmbedFn, logger: logger}, nil
+	return &CompactMemoryQdrantIndex{client: client, collection: collection, embedFn: embedFn, batchEmbedFn: batchEmbedFn, logger: logger}, nil
 }
 
 func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryindex.Document) (memoryindex.VectorReport, error) {
@@ -49,23 +51,26 @@ func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryin
 		return memoryindex.VectorReport{}, fmt.Errorf("compact qdrant index unavailable")
 	}
 	if len(docs) == 0 {
-		if err := i.client.deleteCollection(ctx); err != nil {
+		if err := i.client.DeleteCollection(ctx, i.collection); err != nil {
 			return memoryindex.VectorReport{}, err
 		}
-		return memoryindex.VectorReport{Collection: i.client.collection}, nil
+		return memoryindex.VectorReport{Collection: i.collection}, nil
 	}
 	points, vectorSize, err := i.pointsForDocuments(ctx, docs)
 	if err != nil {
 		return memoryindex.VectorReport{}, err
 	}
-	if err := i.client.recreateCollection(ctx, vectorSize); err != nil {
+	if err := i.client.DeleteCollection(ctx, i.collection); err != nil {
 		return memoryindex.VectorReport{}, err
 	}
-	if err := i.client.upsertPoints(ctx, points); err != nil {
+	if err := i.client.CreateCollection(ctx, i.collection, vectorSize); err != nil {
+		return memoryindex.VectorReport{}, err
+	}
+	if err := i.client.Upsert(ctx, i.collection, points); err != nil {
 		return memoryindex.VectorReport{}, err
 	}
 	return memoryindex.VectorReport{
-		Collection:  i.client.collection,
+		Collection:  i.collection,
 		DocsIndexed: len(points),
 		VectorSize:  vectorSize,
 	}, nil
@@ -79,14 +84,15 @@ func (i *CompactMemoryQdrantIndex) Upsert(ctx context.Context, docs []memoryinde
 	if err != nil {
 		return err
 	}
-	if err := i.client.upsertPoints(ctx, points); err != nil {
-		if !isQdrantNotFound(err) {
-			return err
+	if err := i.client.Upsert(ctx, i.collection, points); err != nil {
+		// If the collection does not exist yet, create it and retry.
+		if isNotFoundErr(err) {
+			if createErr := i.client.CreateCollection(ctx, i.collection, vectorSize); createErr != nil {
+				return createErr
+			}
+			return i.client.Upsert(ctx, i.collection, points)
 		}
-		if createErr := i.client.createCollection(ctx, vectorSize); createErr != nil {
-			return createErr
-		}
-		return i.client.upsertPoints(ctx, points)
+		return err
 	}
 	return nil
 }
@@ -106,7 +112,7 @@ func (i *CompactMemoryQdrantIndex) Delete(ctx context.Context, docIDs []string) 
 	if len(ids) == 0 {
 		return nil
 	}
-	return i.client.deletePoints(ctx, ids)
+	return i.client.Delete(ctx, i.collection, ids)
 }
 
 func (i *CompactMemoryQdrantIndex) Search(ctx context.Context, query string, filter memoryindex.Filter) ([]memoryindex.Document, error) {
@@ -124,7 +130,7 @@ func (i *CompactMemoryQdrantIndex) Search(ctx context.Context, query string, fil
 	if len(vector) == 0 {
 		return nil, fmt.Errorf("embedding compact qdrant query returned empty vector")
 	}
-	points, err := i.client.queryPoints(ctx, vector, limit*3)
+	points, err := i.client.Search(ctx, i.collection, vector, limit*3, true)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +159,7 @@ func (i *CompactMemoryQdrantIndex) Search(ctx context.Context, query string, fil
 	return out, nil
 }
 
-func (i *CompactMemoryQdrantIndex) pointsForDocuments(ctx context.Context, docs []memoryindex.Document) ([]qdrantPoint, int, error) {
+func (i *CompactMemoryQdrantIndex) pointsForDocuments(ctx context.Context, docs []memoryindex.Document) ([]qdrant.Point, int, error) {
 	type pendingDoc struct {
 		doc     memoryindex.Document
 		content string
@@ -180,7 +186,7 @@ func (i *CompactMemoryQdrantIndex) pointsForDocuments(ctx context.Context, docs 
 	if len(vectors) != len(pending) {
 		return nil, 0, fmt.Errorf("embedding compact memory returned %d vectors for %d documents", len(vectors), len(pending))
 	}
-	points := make([]qdrantPoint, 0, len(pending))
+	points := make([]qdrant.Point, 0, len(pending))
 	vectorSize := 0
 	for idx, item := range pending {
 		vector := vectors[idx]
@@ -192,7 +198,7 @@ func (i *CompactMemoryQdrantIndex) pointsForDocuments(ctx context.Context, docs 
 		} else if len(vector) != vectorSize {
 			return nil, 0, fmt.Errorf("embedding compact memory %s returned vector size %d, want %d", item.doc.ID, len(vector), vectorSize)
 		}
-		points = append(points, qdrantPoint{
+		points = append(points, qdrant.Point{
 			ID:      qdrantPointID("compact:" + item.doc.ID),
 			Vector:  vector,
 			Payload: compactPayload(item.doc, item.content),
@@ -288,4 +294,14 @@ func nonEmptyStrings(values []string) []string {
 		}
 	}
 	return out
+}
+
+// isNotFoundErr checks if an error indicates a missing resource (404).
+// Used to detect missing Qdrant collections during upsert.
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "404") || strings.Contains(msg, "not found")
 }
