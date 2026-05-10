@@ -618,13 +618,23 @@ func TestQueueNoticeDoesNotFireOnEarlyDequeue(t *testing.T) {
 
 // TestQueueNoticeDoesNotFireOnOverflowDrop verifies that OnQueueNotice is NOT
 // called for an entry that is dropped by dropOldestAndNotify (overflow path).
+//
+// WR-06: the previous version of this test used threshold=200ms with a 500ms
+// wait while the blocking entry was still held — both the dropped entry's
+// timer AND the surviving entry's timer would fire under that timing, making
+// the only sound post-hoc assertion "noticeCount <= 1", which passes even if
+// the dropped entry's timer fires erroneously. The fix here unblocks the
+// actor BEFORE the threshold elapses so the surviving entry begins processing
+// (its startedCh closes, suppressing its timer) and the only timer that
+// could possibly still fire is the dropped one. We then assert exactly zero
+// notices fired — a tight invariant that targets the specific behavior under
+// test (dropped-entry timer must be cancelled by dropOldestAndNotify).
 func TestQueueNoticeDoesNotFireOnOverflowDrop(t *testing.T) {
 	t.Parallel()
 
 	var noticeMu sync.Mutex
 	var noticeUsers []string
 
-	var overflowMu sync.Mutex
 	var overflowCount int32
 
 	const threshold = 200 * time.Millisecond
@@ -640,9 +650,6 @@ func TestQueueNoticeDoesNotFireOnOverflowDrop(t *testing.T) {
 		},
 		OnOverflow: func(userID string) {
 			atomic.AddInt32(&overflowCount, 1)
-			overflowMu.Lock()
-			_ = userID
-			overflowMu.Unlock()
 		},
 	})
 	defer g.Close()
@@ -668,51 +675,51 @@ func TestQueueNoticeDoesNotFireOnOverflowDrop(t *testing.T) {
 		t.Fatalf("Acquire queued entry failed: %v", err)
 	}
 
-	// Acquire a third entry: inbox is full, so dropOldestAndNotify drops the queued entry.
-	// The dropped entry's startedCh must be closed so its timer goroutine exits without firing.
+	// Acquire a third entry: inbox is full, so dropOldestAndNotify drops the queued
+	// entry. The dropped entry's startedCh must be closed by dropOldestAndNotify
+	// so its timer goroutine exits without firing.
 	if err := g.Acquire(ctx, userID, testEntry(&counter)); err != nil {
 		t.Fatalf("Acquire overflow entry failed: %v", err)
 	}
 
-	// Wait well past the threshold to give any erroneous timer a chance to fire.
-	time.Sleep(500 * time.Millisecond)
+	// Unblock the actor IMMEDIATELY so the surviving (third) entry starts
+	// processing well before its threshold elapses. Once it starts, its
+	// startedCh is closed and its timer goroutine exits via the startedCh
+	// arm — guaranteed not to fire OnQueueNotice. The only entry whose timer
+	// could still hypothetically fire is the dropped one (WR-06).
+	close(blocker)
+
+	// Wait for the third entry to process (counter increments to 1).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if atomic.LoadInt32(&counter) >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if atomic.LoadInt32(&counter) == 0 {
+		t.Fatal("surviving third entry never processed")
+	}
+
+	// Now wait past the threshold so any leaked dropped-entry timer would
+	// have fired by now (5x threshold margin per W6 timing convention).
+	time.Sleep(5 * threshold)
 
 	// Overflow must have been called (for the dropped queued entry).
 	if atomic.LoadInt32(&overflowCount) == 0 {
 		t.Error("expected OnOverflow to be called for the dropped entry")
 	}
 
-	// OnQueueNotice must NOT have been called for the dropped entry.
-	// (It may fire for the third entry if it stays queued long enough, but
-	// the blocker below ensures the third entry also starts quickly.)
-	// We only assert the dropped entry did not cause a notice by verifying
-	// the notice count is at most 1 (only the third enqueued entry could fire
-	// if it waits past threshold). In practice with blocker still held and
-	// threshold=200ms and our 500ms wait, the third entry may also fire.
-	// The key invariant: the DROPPED entry must not fire. We can't distinguish
-	// the two after the fact. So: close blocker quickly to start the third entry
-	// before the threshold.
-	// Re-design: close blocker now (before the 500ms wait above is done -- test
-	// already waited). Third entry should have been processed. NoQueueNotice for
-	// either. Recheck:
-	// - dropped entry: startedCh closed by dropOldestAndNotify → no notice. CORRECT.
-	// - third entry: enqueued while blocker still held, but now we already closed
-	//   blocker above? NO -- blocker not closed yet.
-	// The assert we want: dropped entry notice = 0. The third entry notice may
-	// fire. We can't trivially distinguish, so we assert total <= 1 (only the
-	// still-queued third entry could fire, not the dropped one).
+	// Tight invariant: exactly zero notices fired. The dropped entry's timer
+	// must have been cancelled by dropOldestAndNotify; the surviving entry's
+	// timer was cancelled when the actor began processing it.
 	noticeMu.Lock()
 	noticeCount := len(noticeUsers)
 	noticeMu.Unlock()
 
-	// Dropped entry MUST NOT fire (its startedCh closed by dropOldestAndNotify).
-	// The surviving third entry MAY fire (it's still queued past 200ms).
-	// So the only sound assertion is: noticeCount <= 1 (at most 1 firing, from the third entry).
-	if noticeCount > 1 {
-		t.Errorf("expected at most 1 queue notice (only for surviving entry), got %d", noticeCount)
+	if noticeCount != 0 {
+		t.Errorf("expected 0 queue notices (dropped entry's timer must be cancelled, surviving entry processed before threshold), got %d", noticeCount)
 	}
-
-	close(blocker)
 }
 
 // TestQueueNoticeDisabledWhenZero verifies that no queue-notice fires when
