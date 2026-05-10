@@ -168,6 +168,30 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 	if err := client.Health(ctx); err != nil {
 		return QdrantRebuildReport{}, err
 	}
+
+	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
+	// points, skip the rebuild and reuse the cached vectors.
+	info, infoErr := client.CollectionInfo(ctx, collection)
+	if infoErr != nil {
+		// Defensive fallback: a transient probe failure must not block startup.
+		// Continue with the full rebuild path -- correctness > performance.
+		logger.Warn("qdrant collection info probe failed; proceeding with full rebuild", "collection", collection, "error", infoErr)
+	} else if info.PointsCount > 0 {
+		// Still load pages so PagesIndexed is meaningful in the report.
+		// W2: surface the loadWikiDocuments error at warn level instead of swallowing it.
+		_, pages, loadErr := loadWikiDocuments(wikiDir, logger)
+		if loadErr != nil {
+			logger.Warn("warm-cache hit: pages_on_disk count unavailable", "error", loadErr, "collection", collection)
+		}
+		logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
+		return QdrantRebuildReport{
+			Collection:   collection,
+			PagesIndexed: pages,
+			DocsIndexed:  int(info.PointsCount), // W1: live points count, not 0
+			VectorSize:   0,
+		}, nil
+	}
+
 	docs, pages, err := loadWikiDocuments(wikiDir, logger)
 	if err != nil {
 		return QdrantRebuildReport{}, err
