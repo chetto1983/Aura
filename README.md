@@ -19,27 +19,28 @@ ingests files into a local source inbox, builds a Markdown wiki, searches memory
 with embeddings, and gives you a dashboard for sources, tasks, settings,
 backups, skills, and health.
 
-The supported install path is now Docker Compose. Release tags publish only the
+The supported install path is Docker Compose. Release tags publish only the
 container image at `ghcr.io/chetto1983/aura:<version>`.
 
 ## What Runs
 
-The default stack starts local services:
+The default stack starts:
 
 - `aura`: the Telegram bot, memory engine, tools, and embedded dashboard.
-- `searxng`: local web search for the stable `web_search` tool.
-- code execution runs Python directly inside the Aura container for `execute_code`, extraction, charts, and generated artifacts.
-- `qdrant`: optional vector-search sidecar; Aura keeps local search as fallback.
+- `aura-secrets`: sidecar that decrypts secrets for Aura at startup.
+- `searxng`: local web search for the `web_search` tool.
+- `qdrant`: vector-search sidecar; Aura keeps local search as fallback.
 - `garage`: S3-compatible artifact and backup storage.
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
 
 Primary user data stays in visible folders beside the Compose file:
 
 - `data/`: `.env`, SQLite database, logs, MCP config, prompt overlays.
-- Docker volume `aura-wiki`: compiled memory pages and source evidence.
-- Docker volume `aura-skills`: installed agent skills.
+- `wiki/`: compiled memory pages and source evidence.
+- `skills/`: installed agent skills.
 - `garage/`: Garage object storage data.
-- Docker volume `qdrant-storage`: derived vector index, rebuildable from Aura memory.
+
+Code execution runs Python directly inside the Aura container.
 
 ## Quick Start
 
@@ -48,8 +49,6 @@ Prerequisites:
 - Docker Desktop or Docker Engine with Docker Compose.
 - A Telegram bot token from [@BotFather](https://t.me/BotFather).
 - An OpenAI-compatible LLM endpoint, or a local Ollama-compatible endpoint.
-
-Start Aura:
 
 ```powershell
 git clone https://github.com/chetto1983/Aura
@@ -60,43 +59,16 @@ $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-Open the setup wizard:
-
-```text
-http://127.0.0.1:18080
-```
-
-To use a different host port:
-
-```powershell
-$env:AURA_HOST_PORT = "18080"
-docker compose -f compose.yaml -f compose.image.yaml up -d
-```
-
-Then open `http://127.0.0.1:18080`.
-
-## Setup Flow
-
-1. Paste your `TELEGRAM_TOKEN`.
-2. Pick an OpenAI-compatible LLM preset or choose **Custom**.
-3. Test the model connection.
-4. Optional: configure embeddings, OCR, search, sandbox runtime, and Garage backup keys.
-5. Click **Save and start Aura**.
-6. Open Telegram, start your bot, and approve your own user.
-
-Aura writes bootstrap config to `data/.env` and runtime settings to
-`data/aura.db`.
+Open the setup wizard at `http://127.0.0.1:18080`.
 
 ## Update
-
-Pull the newest image and recreate the Aura container:
 
 ```powershell
 docker compose -f compose.yaml -f compose.image.yaml pull aura
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
-Pin a release by setting `AURA_IMAGE`:
+Pin a release with `AURA_IMAGE`:
 
 ```powershell
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:v1.2.3"
@@ -111,28 +83,21 @@ Build the local working tree instead of pulling GHCR:
 docker compose up -d --build
 ```
 
-Run the canonical test container:
+Run the test suite:
 
 ```powershell
 docker compose --profile test run --rm test
 ```
 
-Useful local commands:
+Local Go commands:
 
 ```powershell
 go test ./...
 go build ./...
 go run ./cmd/aura
-go run ./cmd/debug_llm
-go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test" -json
-docker compose exec aura python3 - <<'PY'
-print(sum(range(101)))
-PY
 ```
 
 ## Release
-
-A normal release is a Docker image release.
 
 ```powershell
 git tag v1.2.3
@@ -145,12 +110,8 @@ The `Docker image` workflow publishes:
 - `ghcr.io/chetto1983/aura:latest`
 - a `sha-*` traceability tag
 
-The legacy desktop binary workflow is manual-only. Use it only for secondary
-desktop builds.
-
 ## Docs
 
 - [Install guide](INSTALL.md)
 - [Container stack](docs/container.md)
-- [Implementation tracker](docs/implementation-tracker.md)
 - [Product requirements](prd.md)

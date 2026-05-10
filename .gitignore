@@ -1,8 +1,11 @@
 # Binaries
 /aura
+/aura.exe
 /cmd/aura/aura
+/cmd/aura/aura.exe
+*.exe
 
-# Environment
+# Environment / runtime data
 .env
 .env.*
 !.env.example
@@ -12,77 +15,61 @@
 /runtime-workspace/
 /wiki/
 /skills/
-
-# MCP runtime config (template tracked as mcp.example.json)
 /mcp.json
-
-# skills.sh CLI lockfile (per-install metadata, not source)
 /skills-lock.json
 
-# IDE
-.idea/
-.vscode/
-*.swp
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Goversioninfo output
-/cmd/aura/resource*.syso
-/internal/tray/icon_app.ico
-
-# Local runtime/user data
+# Databases and logs
 *.db
 aura.db-*
-.claude/*
-*.pdf
-.claude/settings.json
+*.log
 
-# Playwright (E2E artifacts and locally-resolved browsers)
+# Build/test artifacts
+/cover.out
+/cover.html
+/$cover
+/dist/
+/test-results/
 /web/playwright-report/
 /web/test-results/
 /web/blob-report/
 /web/playwright/.cache/
 /web/.e2e-token
 
-# Coverage artifacts (Q&A session output, not source of truth)
-/cover.out
-/cover.html
-/$cover
-.codex-*
-*.log
-
-# Local benchmark/history artifacts
-/reports/memory-quality/
-/reports/health/
-.agents/skills/*
-
-# Local isolated development worktrees
-/.worktrees/
-
-# Local sandbox runtime bundle (release artifact, not source)
+# Local generated runtime bundles
 /runtime/pyodide/
 /runtime/_downloads/
 /runtime/pyodide/runner/node-*/
-dist/*
-skills/.claude/*
-test-results/*
-*.exe
-.augment/*
-.codebuddy/*
-.codex/*
-.cursor/*
-.gemini/*
-.github/*
-.hermes/*
-.opencode/*
-.qwen/*
-.trae/*
-.windsurf/*
-agents/*
-.agent/*
-get-shit-done/*
-gsd-file-manifest.json*
+
+# Local AI/tooling state
+.claude/
+.planning/
+.agents/
+.agent/
+.augment/
+.codebuddy/
+.codex/
+.cursor/
+.gemini/
+.hermes/
+.opencode/
+.qwen/
+.trae/
+.windsurf/
 .cline*
-.codex/*
+agents/
+get-shit-done/
+gsd-file-manifest.json*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Generated Windows resources
+/cmd/aura/resource*.syso
+/internal/tray/icon_app.ico
+
+# Local isolated worktrees
+/.worktrees/

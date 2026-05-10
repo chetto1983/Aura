@@ -1,19 +1,15 @@
-.PHONY: all build test run debug-llm fmt vet clean web web-build ui-dev
+.PHONY: all build test run fmt vet clean web web-build compose-up compose-test
 
 all: test build
 
 build:
-	go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest -icon internal/tray/icon.ico -o cmd/aura/resource_windows_amd64.syso cmd/aura/versioninfo.json
-	go build -o aura.exe ./cmd/aura
+	go build -o aura ./cmd/aura
 
 test:
 	go test ./...
 
 run:
 	go run ./cmd/aura
-
-debug-llm:
-	go run ./cmd/debug_llm
 
 fmt:
 	go fmt ./...
@@ -24,12 +20,14 @@ vet:
 clean:
 	go clean ./...
 
-# Slice 10b — frontend dashboard
 web:
 	cd web && npm run dev
 
 web-build:
-	go run ./cmd/build_icon && cd web && npm install && npm run build
+	cd web && npm install && npm run build
 
-ui-dev:
-	$(MAKE) -j2 web run
+compose-up:
+	docker compose up -d --build
+
+compose-test:
+	docker compose --profile test run --rm test
