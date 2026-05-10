@@ -1,0 +1,23 @@
+package qdrant
+
+// Point represents a vector point to be upserted into Qdrant.
+type Point struct {
+	ID      string            `json:"id"`
+	Vector  []float32         `json:"vector"`
+	Payload map[string]string `json:"payload"`
+}
+
+// ScoredPoint represents a point returned from a Qdrant search query.
+type ScoredPoint struct {
+	ID      any               `json:"id"`
+	Score   float32           `json:"score"`
+	Payload map[string]string `json:"payload"`
+}
+
+// CollectionInfo holds metadata about a Qdrant collection.
+// Sourced from GET /collections/{name} response field "result".
+type CollectionInfo struct {
+	Status              string `json:"status"`
+	PointsCount         uint64 `json:"points_count"`
+	IndexedVectorsCount uint64 `json:"indexed_vectors_count"`
+}
