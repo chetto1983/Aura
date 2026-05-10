@@ -442,11 +442,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// Create UserGate with real callbacks (D-16).
 	// OnEvict: persists conversation snapshot and clears session (D-10, T-01-22).
 	// OnOverflow: sends Telegram notice to user in a separate goroutine (D-03, T-01-20, Pitfall 4).
+	// OnQueueNotice: sends still-processing notice when entry waits > InboxQueueNoticeAfter (CONC-01 gap).
 	// The gate is created after b so callbacks can close over b safely.
 	userGate := concurrency.New(concurrency.Config{
-		InboxSize:         8,
-		EvictionThreshold: 30 * time.Minute,
-		SweepInterval:     60 * time.Second,
+		InboxSize:         cfg.InboxSize,
+		EvictionThreshold: cfg.InactivityThreshold,
+		SweepInterval:     cfg.InactivitySweepInterval,
+		QueueNoticeAfter:  cfg.InboxQueueNoticeAfter,
 		OnEvict: func(userID string) {
 			// Conversation snapshot is maintained by the actor goroutine as it runs;
 			// eviction signals cleanup. Log only userID (numeric Telegram ID), not content (T-01-22).
@@ -466,6 +468,21 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 				msg := "I'm still processing your previous message. Your new message was dropped. Please try again in a moment."
 				if _, err := b.bot.Send(tele.ChatID(chatID), msg); err != nil {
 					b.logger.Warn("overflow notice delivery failed", "user_id", userID, "error", err)
+				}
+			}()
+		},
+		OnQueueNotice: func(userID string) {
+			// Pitfall 4: hand off to a separate goroutine -- the gate's timer
+			// goroutine must never block on the Telegram API call (T-01-28).
+			go func() {
+				chatID, err := strconv.ParseInt(userID, 10, 64)
+				if err != nil {
+					b.logger.Warn("queue notice: invalid userID", "user_id", userID, "error", err)
+					return
+				}
+				msg := "Still working on your previous message -- I'll get to this one shortly."
+				if _, err := b.bot.Send(tele.ChatID(chatID), msg); err != nil {
+					b.logger.Warn("queue notice delivery failed", "user_id", userID, "error", err)
 				}
 			}()
 		},
