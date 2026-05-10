@@ -121,6 +121,15 @@ func (g *UserGate) Evict(userID string) {
 	}
 }
 
+// IsActive reports whether userID has an active actor goroutine in the gate.
+// Used by SessionStore.IsActive to delegate active-user queries (D-11, CONC-01).
+func (g *UserGate) IsActive(userID string) bool {
+	g.mu.Lock()
+	_, exists := g.actors[userID]
+	g.mu.Unlock()
+	return exists
+}
+
 // Close stops the InactivityTracker and cancels all active user actor goroutines.
 // It waits for all actor goroutines to exit before returning (Pitfall 2 prevention).
 // OnEvict is NOT called for each actor on Close -- shutdown is not eviction.

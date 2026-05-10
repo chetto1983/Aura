@@ -5,11 +5,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/conversation"
 )
 
 type SessionStore struct {
-	active    sync.Map
+	gate      *concurrency.UserGate
+	active    sync.Map // used only when gate == nil (fallback for tests/no-gate mode)
 	context   sync.Map
 	snapshots sync.Map
 }
@@ -50,8 +52,15 @@ type Session struct {
 	once   sync.Once
 }
 
-func NewSessionStore() *SessionStore {
-	return &SessionStore{}
+// NewSessionStore creates a SessionStore. An optional *concurrency.UserGate may
+// be passed; when set, IsActive delegates to gate.IsActive instead of
+// maintaining a separate active sync.Map (CONC-01, D-11).
+func NewSessionStore(gate ...*concurrency.UserGate) *SessionStore {
+	s := &SessionStore{}
+	if len(gate) > 0 && gate[0] != nil {
+		s.gate = gate[0]
+	}
+	return s
 }
 
 func (s *SessionStore) Begin(userID string, cfg conversation.Config) (*Session, bool) {
@@ -61,7 +70,11 @@ func (s *SessionStore) Begin(userID string, cfg conversation.Config) (*Session, 
 	userID = strings.TrimSpace(userID)
 	value, loaded := s.context.LoadOrStore(userID, conversation.NewContext(cfg))
 	ctx, _ := value.(*conversation.Context)
-	s.active.Store(userID, true)
+	// When no gate, maintain the active map for backward compat (tests).
+	// When gate is set, the actor's presence in gate.actors IS the active signal (CONC-01).
+	if s.gate == nil {
+		s.active.Store(userID, true)
+	}
 	return &Session{store: s, userID: userID, ctx: ctx}, loaded
 }
 
@@ -86,14 +99,21 @@ func (s *SessionStore) Clear(userID string) {
 		return
 	}
 	s.context.Delete(userID)
-	s.active.Delete(userID)
 	s.snapshots.Delete(userID)
+	if s.gate == nil {
+		s.active.Delete(userID)
+	}
 }
 
 func (s *SessionStore) IsActive(userID string) bool {
 	if s == nil {
 		return false
 	}
+	if s.gate != nil {
+		// Delegate to UserGate: actor alive == user is active (CONC-01, D-11).
+		return s.gate.IsActive(strings.TrimSpace(userID))
+	}
+	// Fallback when no gate: use active map (backward compat, tests).
 	_, ok := s.active.Load(strings.TrimSpace(userID))
 	return ok
 }
@@ -145,8 +165,11 @@ func (s *SessionStore) PruneSnapshots(now time.Time, retentionDays int) {
 	})
 }
 
+// clearActive removes the active marker for userID.
+// When gate is set, this is a no-op -- lifecycle is owned by the gate (CONC-01).
+// When gate is nil, it removes from the active sync.Map (backward compat, tests).
 func (s *SessionStore) clearActive(userID string) {
-	if s == nil {
+	if s == nil || s.gate != nil {
 		return
 	}
 	s.active.Delete(strings.TrimSpace(userID))
