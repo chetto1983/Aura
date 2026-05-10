@@ -110,8 +110,31 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 	if len(vector) == 0 {
 		return fmt.Errorf("embedding %s returned empty vector", id)
 	}
-	if err := r.client.CreateCollection(ctx, r.collectionQdrant, len(vector)); err != nil {
-		return err
+	// WR-07: skip CreateCollection if the collection has already been
+	// initialized in this process (either by a previous Index call or by
+	// IndexWikiPages). Qdrant's CreateCollection is idempotent at the HTTP
+	// level (200 if collection exists with same params), so the previous
+	// behavior was correct but added a network round-trip per single-doc
+	// upsert. The r.indexed flag persists for the process lifetime; on a
+	// fresh process we still hit the create path on the first Index call.
+	r.mu.RLock()
+	alreadyIndexed := r.indexed
+	r.mu.RUnlock()
+	if !alreadyIndexed {
+		if err := r.client.CreateCollection(ctx, r.collectionQdrant, len(vector)); err != nil {
+			// WR-07: surface a clearer hint when CreateCollection fails with
+			// a dimension mismatch (most likely cause: operator swapped
+			// EMBEDDING_MODEL without rebuilding the collection — see T-01-24).
+			lower := strings.ToLower(err.Error())
+			if strings.Contains(lower, "dim") || strings.Contains(lower, "vector size") {
+				r.logger.Warn("qdrant CreateCollection failed with dimension hint; embedding model may have changed since last rebuild",
+					"collection", r.collectionQdrant, "new_vector_size", len(vector), "error", err)
+			}
+			return err
+		}
+		r.mu.Lock()
+		r.indexed = true
+		r.mu.Unlock()
 	}
 	payload := map[string]string{
 		"doc_id":  id,
@@ -127,9 +150,6 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 	}}); err != nil {
 		return err
 	}
-	r.mu.Lock()
-	r.indexed = true
-	r.mu.Unlock()
 	return nil
 }
 
