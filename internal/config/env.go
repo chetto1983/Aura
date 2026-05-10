@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -65,16 +66,28 @@ func getEnvBool(key string, fallback bool) bool {
 }
 
 // getEnvDuration reads a Go duration string (e.g. "30s", "5m") from the named
-// env var and returns the parsed value. Returns fallback on missing or invalid input.
-// Mirrors the existing getEnvInt / getEnvBool / getEnvFloat helpers in env.go,
-// which all use bare os.Getenv(key) WITHOUT strings.TrimSpace. CLAUDE.md: FOLLOW EXISTING PATTERNS.
+// env var and returns the parsed value. Returns fallback on missing or invalid
+// input. Mirrors the existing getEnvInt / getEnvBool / getEnvFloat helpers in
+// env.go which all use bare os.Getenv (no TrimSpace) — trailing whitespace in
+// duration env vars yields a ParseDuration error and falls back, which is fine.
+//
+// WR-02: When the operator supplies a value that ParseDuration rejects or a
+// negative duration, log a warning so the misconfiguration is visible at
+// startup instead of silently falling through to the default.
 func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {
 		return fallback
 	}
 	d, err := time.ParseDuration(v)
-	if err != nil || d < 0 {
+	if err != nil {
+		slog.Default().Warn("config: invalid duration env var; using default",
+			"key", key, "value", v, "error", err, "default", fallback)
+		return fallback
+	}
+	if d < 0 {
+		slog.Default().Warn("config: negative duration env var rejected; using default",
+			"key", key, "value", v, "default", fallback)
 		return fallback
 	}
 	return d
