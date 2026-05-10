@@ -85,7 +85,6 @@ func ProbeProvider(ctx context.Context, baseURL, apiKey, probePath string) Probe
 
 // modelListResponse covers the OpenAI /v1/models shape ({"data": [{"id": "..."}]}).
 // Anthropic returns {"data": [{"id": ..., "display_name": ...}]} which fits.
-// Ollama's /v1/models also returns this shape (since v0.1.34).
 type modelListResponse struct {
 	Data []struct {
 		ID string `json:"id"`
@@ -107,26 +106,6 @@ func parseModelList(body []byte) ([]string, error) {
 		return nil, errors.New("no models")
 	}
 	return out, nil
-}
-
-// detectOllama hits the local Ollama HTTP API and reports whether it's
-// running. Used for auto-suggesting the Ollama preset on first run.
-func detectOllama(ctx context.Context, host string) bool {
-	if host == "" {
-		host = "http://localhost:11434"
-	}
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(host, "/")+"/api/tags", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
 }
 
 func snippet(body []byte) string {

@@ -104,8 +104,6 @@
     user-select: none;
   }
   details summary:hover { color: var(--fg); }
-  .ollama-hint { color: var(--success); font-size: 12px; margin-top: 4px; display: none; }
-  .ollama-hint.shown { display: block; }
   .logo {
     display: flex;
     align-items: center;
@@ -132,9 +130,6 @@
   <h1>{{index .T "heading"}}</h1>
   <p class="lede">
     {{index .T "lede"}}
-    {{- if .OllamaDetected }}
-    <br><span style="color: var(--success);">OK {{index .T "ollamaDetected"}}</span>
-    {{- end }}
   </p>
 
   <form id="setup-form" method="POST" action="/save">
@@ -221,15 +216,9 @@
     if (p.base_url) baseURL.value = p.base_url;
     if (p.model) model.value = p.model;
     presetDesc.textContent = p.description;
-    if (p.needs_key) {
-      apiKey.required = true;
-      apiKey.placeholder = t('apiKeyPlaceholder', 'sk-...');
-      apiKeyLabel.textContent = t('apiKey', 'API key');
-    } else {
-      apiKey.required = false;
-      apiKey.placeholder = t('ollamaPlaceholder', '(leave blank for Ollama)');
-      apiKeyLabel.textContent = t('apiKeyOptional', 'API key (optional for Ollama)');
-    }
+    apiKey.required = p.needs_key;
+    apiKey.placeholder = t('apiKeyPlaceholder', 'sk-...');
+    apiKeyLabel.textContent = t('apiKey', 'API key');
   }
 
   document.getElementById('llm_preset').addEventListener('change', e => applyPreset(e.target.value));

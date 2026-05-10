@@ -187,7 +187,7 @@ func TestQdrantSearcherSearchQueriesPointsAndMapsPayload(t *testing.T) {
 	}
 }
 
-func TestQdrantRepositoryFallsBackOnQueryError(t *testing.T) {
+func TestQdrantRepositoryReturnsQueryError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
@@ -196,30 +196,19 @@ func TestQdrantRepositoryFallsBackOnQueryError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	fallback := &fakeSearchRepository{
-		results: []Result{{Kind: "wiki_page", Slug: "fallback", Title: "Fallback", Content: "fallback content", Score: 0.42}},
-		indexed: true,
-	}
 	repo, err := NewQdrantRepository(QdrantConfig{
 		BaseURL:    server.URL,
 		Collection: "aura_memory_v1",
-	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, keywordEmbedding, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewQdrantRepository: %v", err)
 	}
-	results, err := repo.Search(context.Background(), "alpha", 5)
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
-	if fallback.searchCalls != 1 {
-		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
-	}
-	if len(results) != 1 || results[0].Slug != "fallback" {
-		t.Fatalf("results = %+v", results)
+	if _, err := repo.Search(context.Background(), "alpha", 5); err == nil {
+		t.Fatal("Search returned nil error")
 	}
 }
 
-func TestQdrantRepositoryFallsBackOnEmptyResults(t *testing.T) {
+func TestQdrantRepositoryReturnsEmptyResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
@@ -229,14 +218,10 @@ func TestQdrantRepositoryFallsBackOnEmptyResults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	fallback := &fakeSearchRepository{
-		results: []Result{{Kind: "wiki_page", Slug: "fallback", Title: "Fallback", Content: "fallback content", Score: 0.42}},
-		indexed: true,
-	}
 	repo, err := NewQdrantRepository(QdrantConfig{
 		BaseURL:    server.URL,
 		Collection: "aura_memory_v1",
-	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, keywordEmbedding, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewQdrantRepository: %v", err)
 	}
@@ -244,15 +229,12 @@ func TestQdrantRepositoryFallsBackOnEmptyResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if fallback.searchCalls != 1 {
-		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
-	}
-	if len(results) != 1 || results[0].Slug != "fallback" {
+	if len(results) != 0 {
 		t.Fatalf("results = %+v", results)
 	}
 }
 
-func TestQdrantRepositoryMergesPrimaryWithFallbackResults(t *testing.T) {
+func TestQdrantRepositoryReturnsPrimaryResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/query" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
@@ -277,14 +259,10 @@ func TestQdrantRepositoryMergesPrimaryWithFallbackResults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	fallback := &fakeSearchRepository{
-		results: []Result{{Kind: "wiki_page", Slug: "exact-local", Title: "Exact Local", Content: "local result", Score: 1}},
-		indexed: true,
-	}
 	repo, err := NewQdrantRepository(QdrantConfig{
 		BaseURL:    server.URL,
 		Collection: "aura_memory_v1",
-	}, keywordEmbedding, fallback, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, keywordEmbedding, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewQdrantRepository: %v", err)
 	}
@@ -292,39 +270,7 @@ func TestQdrantRepositoryMergesPrimaryWithFallbackResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if fallback.searchCalls != 1 {
-		t.Fatalf("fallback calls = %d, want 1", fallback.searchCalls)
+	if len(results) != 1 || results[0].Slug != "vector-only" {
+		t.Fatalf("results = %+v", results)
 	}
-	if len(results) != 2 || results[0].Slug != "exact-local" || results[1].Slug != "vector-only" {
-		t.Fatalf("merged results = %+v", results)
-	}
-}
-
-type fakeSearchRepository struct {
-	results     []Result
-	err         error
-	indexed     bool
-	searchCalls int
-}
-
-func (f *fakeSearchRepository) Search(context.Context, string, int) ([]Result, error) {
-	f.searchCalls++
-	return f.results, f.err
-}
-
-func (f *fakeSearchRepository) IsIndexed() bool { return f.indexed }
-
-func (f *fakeSearchRepository) Index(context.Context, string, string, map[string]string) error {
-	f.indexed = true
-	return nil
-}
-
-func (f *fakeSearchRepository) IndexWikiPages(context.Context) error {
-	f.indexed = true
-	return nil
-}
-
-func (f *fakeSearchRepository) ReindexWikiPage(context.Context, string) error {
-	f.indexed = true
-	return nil
 }

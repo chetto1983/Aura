@@ -29,7 +29,7 @@ The default stack starts:
 - `aura`: the Telegram bot, memory engine, tools, and embedded dashboard.
 - `aura-secrets`: sidecar that decrypts secrets for Aura at startup.
 - `searxng`: local web search for the `web_search` tool.
-- `qdrant`: vector-search sidecar; Aura keeps local search as fallback.
+- `qdrant`: vector-search sidecar for wiki memory.
 - `garage`: S3-compatible artifact and backup storage.
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
 
@@ -49,7 +49,7 @@ Prerequisites:
 
 - Docker Desktop or Docker Engine with Docker Compose.
 - A Telegram bot token from [@BotFather](https://t.me/BotFather).
-- An OpenAI-compatible LLM endpoint, or a local Ollama-compatible endpoint.
+- An OpenAI-compatible LLM endpoint.
 
 ```powershell
 git clone https://github.com/chetto1983/Aura

@@ -64,8 +64,8 @@ type TokenUsage struct {
 // Content alongside tool calls) and route to the tool execution path.
 //
 // Usage is populated only on the final token when the provider honors
-// stream_options.include_usage. Providers that don't (some Ollama
-// builds, older compats) leave it zero — callers must tolerate that.
+// stream_options.include_usage. Providers that omit usage leave it zero, so
+// callers must tolerate that.
 type Token struct {
 	Content   string
 	ToolCalls []ToolCall

@@ -16,14 +16,14 @@ path is manual-only for legacy testing.
 - Direct Python execution inside the Aura container for `execute_code`,
   DOCX/XLSX extraction, charts, and generated artifacts.
 - Local Garage backup/artifact storage.
-- Qdrant vector search with local fallback.
+- Qdrant vector search for wiki memory.
 - Your own `data/aura.db`, Garage data, and Docker volumes for wiki, skills, Qdrant, and caches.
 
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Docker Compose.
 - A Telegram bot token from [@BotFather](https://t.me/BotFather).
-- An OpenAI-compatible LLM endpoint, or a local Ollama-compatible endpoint.
+- An OpenAI-compatible LLM endpoint.
 
 ## Step 1 - Create Your Telegram Bot
 

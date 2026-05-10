@@ -45,15 +45,6 @@ var LLMPresets = []Preset{
 		Description: "OpenAI-compatible router for many hosted models.",
 	},
 	{
-		ID:          "ollama",
-		Label:       "Ollama (free, local)",
-		BaseURL:     "http://localhost:11434/v1",
-		Model:       "llama3.1:8b",
-		NeedsKey:    false,
-		ProbePath:   "/models",
-		Description: "Runs on your machine. No API key, no cost. Install from ollama.com.",
-	},
-	{
 		ID:          "groq",
 		Label:       "Groq",
 		BaseURL:     "https://api.groq.com/openai/v1",

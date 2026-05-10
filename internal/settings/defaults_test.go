@@ -42,9 +42,8 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		KeyMCPServersPath:          "./mcp.json",
 		KeyPromptOverlayPath:       ".",
 		KeyWorkspaceRoot:           "/app",
-		KeyWebSearchProvider:       "ollama",
+		KeyWebSearchProvider:       "disabled",
 		KeySearXNGBaseURL:          "http://127.0.0.1:8088",
-		KeySearchBackend:           "chromem",
 		KeyQdrantURL:               "http://127.0.0.1:6333",
 		KeyGarageS3Endpoint:        "http://localhost:3900",
 		KeyGarageS3AccessKey:       "aura-local-access",
@@ -64,7 +63,7 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath, KeyLogDir,
 		KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir, KeyMCPServersPath, KeyPromptOverlayPath,
 		KeyWorkspaceRoot,
-		KeyWebSearchProvider, KeySearXNGBaseURL, KeySearchBackend, KeyQdrantURL,
+		KeyWebSearchProvider, KeySearXNGBaseURL, KeyQdrantURL,
 		KeyGarageS3Endpoint, KeyGarageS3AccessKey, KeyGarageS3SecretKey,
 		KeySandboxRuntimeMode, KeySandboxRuntimeURL,
 	} {
@@ -81,7 +80,6 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	assertSetting(t, s, KeyWorkspaceRoot, "/workspace")
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySearXNGBaseURL, "http://searxng:8080")
-	assertSetting(t, s, KeySearchBackend, "qdrant")
 	assertSetting(t, s, KeyQdrantURL, "http://qdrant:6333")
 	assertSetting(t, s, KeyGarageS3Endpoint, "http://garage:3900")
 	assertSetting(t, s, KeyGarageS3AccessKey, "generated-access")
@@ -120,7 +118,6 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	mustSet(t, s, BestDefaultsVersionKey, BestDefaultsVersion)
-	mustSet(t, s, KeySearchBackend, "broken")
 	mustSet(t, s, KeyWebSearchProvider, "unknown")
 	mustSet(t, s, KeySandboxRuntimeMode, "bad")
 	mustSet(t, s, KeySkillRoutingMode, "llm")
@@ -134,12 +131,11 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
 	for _, key := range []string{
-		KeySearchBackend, KeyWebSearchProvider, KeySandboxRuntimeMode,
+		KeyWebSearchProvider, KeySandboxRuntimeMode,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 	} {
 		assertChanged(t, changes, key)
 	}
-	assertSetting(t, s, KeySearchBackend, "qdrant")
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySandboxRuntimeMode, "container")
 	assertSetting(t, s, KeySkillRoutingMode, config.DefaultSkillRoutingMode)

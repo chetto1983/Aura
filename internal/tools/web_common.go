@@ -1,76 +1,27 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
 
-// WebSearchTool calls Ollama's web_search API.
-type WebSearchTool struct {
-	client ollamaWebClient
-}
-
-// NewWebSearchTool creates an Ollama-backed web_search tool.
-func NewWebSearchTool(apiKey, baseURL string) *WebSearchTool {
-	return &WebSearchTool{client: newOllamaWebClient(apiKey, baseURL, 20*time.Second)}
-}
-
-func (t *WebSearchTool) Name() string { return "web_search" }
-
-func (t *WebSearchTool) Description() string {
-	return "Search the web for current information and return relevant results with titles, URLs, and snippets."
-}
-
-func (t *WebSearchTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{
-				"type":        "string",
-				"description": "The web search query.",
-			},
-			"max_results": map[string]any{
-				"type":        "integer",
-				"description": "Maximum number of results to return. Defaults to 5 and is capped at 10.",
-				"minimum":     1,
-				"maximum":     10,
-			},
-		},
-		"required": []string{"query"},
-	}
-}
+const maxWebToolChars = 8000
 
 type webSearchResponse struct {
 	Results []webSearchResult `json:"results"`
+}
+
+type webFetchResponse struct {
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Links   []string `json:"links"`
 }
 
 type webSearchResult struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Content string `json:"content"`
-}
-
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	query, err := requiredString(args, "query")
-	if err != nil {
-		return "", err
-	}
-	maxResults := intArg(args, "max_results", 5, 1, 10)
-
-	payload := map[string]any{
-		"query":       query,
-		"max_results": maxResults,
-	}
-
-	var out webSearchResponse
-	if err := t.client.post(ctx, "/web_search", payload, &out); err != nil {
-		return "", fmt.Errorf("web_search: %w", err)
-	}
-
-	return truncateForToolContext(formatSearchResults(query, out.Results), maxWebToolChars), nil
 }
 
 func formatSearchResults(query string, results []webSearchResult) string {
@@ -90,6 +41,37 @@ func formatSearchResults(query string, results []webSearchResult) string {
 		}
 	}
 	return sb.String()
+}
+
+func formatFetchResult(targetURL string, result webFetchResponse) string {
+	var sb strings.Builder
+	if result.Title != "" {
+		fmt.Fprintf(&sb, "# %s\n\n", strings.TrimSpace(result.Title))
+	} else {
+		fmt.Fprintf(&sb, "# %s\n\n", targetURL)
+	}
+	if result.Content != "" {
+		sb.WriteString(strings.TrimSpace(result.Content))
+		sb.WriteString("\n")
+	}
+	if len(result.Links) > 0 {
+		sb.WriteString("\nLinks:\n")
+		limit := len(result.Links)
+		if limit > 20 {
+			limit = 20
+		}
+		for _, link := range result.Links[:limit] {
+			fmt.Fprintf(&sb, "- %s\n", link)
+		}
+	}
+	return sb.String()
+}
+
+func truncateForToolContext(s string, maxChars int) string {
+	if maxChars <= 0 || len(s) <= maxChars {
+		return s
+	}
+	return strings.TrimSpace(s[:maxChars]) + "\n\n[truncated]"
 }
 
 func requiredString(args map[string]any, key string) (string, error) {

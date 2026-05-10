@@ -5,7 +5,7 @@
 // Threat model and scope (slice 14a):
 //   - Holds non-secret tunables (budgets, model choices, paths, feature
 //     flags) and operator-rotated secrets (LLM_API_KEY, EMBEDDING_API_KEY,
-//     MISTRAL_API_KEY, OLLAMA_API_KEY). The single hard exclusion is
+//     MISTRAL_API_KEY). The single hard exclusion is
 //     TELEGRAM_TOKEN — it's the bootstrap secret, must be present before
 //     the bot can answer /setup, and stays in .env.
 //   - Values are persisted in plain text. Treat the SQLite file like .env:

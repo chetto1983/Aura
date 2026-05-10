@@ -98,11 +98,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
 	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
 	{Key: settings.KeyLLMMaxRetries, Group: "provider", Kind: "int", Label: "LLM max retries"},
-	{Key: settings.KeyOllamaBaseURL, Group: "provider", Kind: "url", Label: "Ollama base URL (failover)", Hint: "Bare host, e.g. http://localhost:11434"},
-	{Key: settings.KeyOllamaModel, Group: "provider", Kind: "text", Label: "Ollama model"},
-	{Key: settings.KeyOllamaAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "Ollama API key (rarely needed)"},
-	{Key: settings.KeyOllamaWebBaseURL, Group: "provider", Kind: "url", Label: "Ollama web API base URL"},
-	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng", "ollama"}, Label: "Web search provider", Hint: "SearXNG is the recommended container provider; Ollama needs OLLAMA_API_KEY"},
+	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng"}, Label: "Web search provider", Hint: "SearXNG is the supported web search provider"},
 	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
 
 	{Key: settings.KeyGarageS3Endpoint, Group: "storage", Kind: "url", Label: "Garage S3 endpoint", Hint: "Compose uses http://garage:3900"},
@@ -113,7 +109,6 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
 	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
 	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
-	{Key: settings.KeySearchBackend, Value: "chromem", Group: "storage", Kind: "enum", Options: []string{"chromem", "qdrant"}, Label: "Search backend", Hint: "Keep chromem for local default; choose qdrant to query the Qdrant sidecar first with local fallback"},
 	{Key: settings.KeySpeculativeSearchTimeoutMS, Value: "1500", Group: "storage", Kind: "int", Label: "Speculative search timeout (ms)", Hint: "Caps pre-LLM memory injection so a slow sidecar cannot stall Telegram turns"},
 	{Key: settings.KeyMemorySearchTimeoutMS, Value: "5000", Group: "storage", Kind: "int", Label: "Memory search tool timeout (ms)", Hint: "Caps search_memory calls inside agent tool loops"},
 
@@ -278,14 +273,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.LLMModel
 	case settings.KeyLLMMaxRetries:
 		return strconv.Itoa(cfg.LLMMaxRetries)
-	case settings.KeyOllamaBaseURL:
-		return cfg.OllamaBaseURL
-	case settings.KeyOllamaModel:
-		return cfg.OllamaModel
-	case settings.KeyOllamaAPIKey:
-		return cfg.OllamaAPIKey
-	case settings.KeyOllamaWebBaseURL:
-		return cfg.OllamaWebBaseURL
 	case settings.KeyWebSearchProvider:
 		return cfg.WebSearchProvider
 	case settings.KeySearXNGBaseURL:
@@ -306,8 +293,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.QdrantCollection
 	case settings.KeyQdrantAPIKey:
 		return cfg.QdrantAPIKey
-	case settings.KeySearchBackend:
-		return cfg.SearchBackend
 	case settings.KeySpeculativeSearchTimeoutMS:
 		return strconv.Itoa(cfg.SpeculativeSearchTimeoutMS)
 	case settings.KeyMemorySearchTimeoutMS:

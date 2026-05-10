@@ -88,13 +88,9 @@ func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *config.Config)
 }
 
 func validationRules(cfg *config.Config) []defaultRule {
-	searchBackendDefault := config.DefaultSearchBackend
 	webSearchDefault := "disabled"
 	sandboxRuntimeModeDefault := config.DefaultSandboxRuntimeMode
 	if cfg != nil && cfg.Headless {
-		if strings.TrimSpace(cfg.QdrantURL) != "" {
-			searchBackendDefault = "qdrant"
-		}
 		if strings.TrimSpace(cfg.SearXNGBaseURL) != "" {
 			webSearchDefault = "searxng"
 		}
@@ -141,16 +137,10 @@ func validationRules(cfg *config.Config) []defaultRule {
 			shouldSet: missingOrInvalidSet("enabled", "disabled", "true", "false", "1", "0", "on", "off", "yes", "no"),
 		},
 		{
-			key:       KeySearchBackend,
-			value:     searchBackendDefault,
-			reason:    "repair invalid search backend",
-			shouldSet: missingOrInvalidSet("chromem", "qdrant"),
-		},
-		{
 			key:       KeyWebSearchProvider,
 			value:     webSearchDefault,
 			reason:    "repair invalid web search provider",
-			shouldSet: missingOrInvalidSet("disabled", "searxng", "ollama"),
+			shouldSet: missingOrInvalidSet("disabled", "searxng"),
 		},
 		{
 			key:       KeySandboxRuntimeMode,
@@ -236,13 +226,12 @@ func migrationRules(cfg *config.Config) []defaultRule {
 
 	if strings.TrimSpace(cfg.SearXNGBaseURL) != "" {
 		rules = append(rules,
-			containerRule(KeyWebSearchProvider, "searxng", "use bundled SearXNG web search in Docker", valueIs("disabled", "ollama")),
+			containerRule(KeyWebSearchProvider, "searxng", "use bundled SearXNG web search in Docker", valueIs("disabled")),
 			containerRule(KeySearXNGBaseURL, cfg.SearXNGBaseURL, "use container SearXNG service URL", isLocalURLLike),
 		)
 	}
 	if strings.TrimSpace(cfg.QdrantURL) != "" {
 		rules = append(rules,
-			containerRule(KeySearchBackend, "qdrant", "use bundled Qdrant search sidecar in Docker", valueIs("chromem")),
 			containerRule(KeyQdrantURL, cfg.QdrantURL, "use container Qdrant service URL", isLocalURLLike),
 		)
 	}

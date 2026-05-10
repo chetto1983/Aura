@@ -112,11 +112,11 @@ test.describe('settings page (14d)', () => {
     const optionTexts = await select.locator('option').allTextContents();
     expect(optionTexts).toEqual(expect.arrayContaining(['off', 'review', 'auto']));
 
-    const searchBackend = page.locator('select#SEARCH_BACKEND');
-    await expect(searchBackend).toBeVisible();
-    await expect(searchBackend).toHaveValue(/^(chromem|qdrant)$/);
-    const searchOptions = await searchBackend.locator('option').allTextContents();
-    expect(searchOptions).toEqual(['chromem', 'qdrant']);
+    const webSearchProvider = page.locator('select#WEB_SEARCH_PROVIDER');
+    await expect(webSearchProvider).toBeVisible();
+    await expect(webSearchProvider).toHaveValue(/^(disabled|searxng)$/);
+    const webSearchOptions = await webSearchProvider.locator('option').allTextContents();
+    expect(webSearchOptions).toEqual(['disabled', 'searxng']);
   });
 
   test('orchestration settings save and reload with enum and bounded numeric controls', async ({ authedPage: page, request }) => {

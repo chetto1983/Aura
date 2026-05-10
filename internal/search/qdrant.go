@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/philippgille/chromem-go"
@@ -19,8 +20,7 @@ import (
 
 const defaultQdrantBatchSize = 64
 
-// QdrantConfig describes Aura's optional external vector index. SQLite FTS
-// remains the local fallback; Qdrant is rebuilt from the wiki manifest.
+// QdrantConfig describes Aura's external vector index.
 type QdrantConfig struct {
 	BaseURL    string
 	Collection string
@@ -50,9 +50,13 @@ type qdrantSearcher struct {
 }
 
 type qdrantRepository struct {
-	primary  *qdrantSearcher
-	fallback Repository
-	logger   *slog.Logger
+	primary *qdrantSearcher
+	client  *qdrantClient
+	embedFn EmbeddingFunction
+	wikiDir string
+	logger  *slog.Logger
+	indexed bool
+	mu      sync.RWMutex
 }
 
 // CheckQdrantReady probes the Qdrant REST service without mutating data.
@@ -78,13 +82,8 @@ func NewQdrantSearcher(cfg QdrantConfig, embedFn EmbeddingFunction) (*qdrantSear
 	return &qdrantSearcher{client: client, embedFn: embedFn}, nil
 }
 
-// NewQdrantRepository wraps the existing local search repository with an
-// opt-in Qdrant query path. Writes and reindexing still go to the local
-// repository; Qdrant remains a rebuildable sidecar until promotion is complete.
-func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, fallback Repository, logger *slog.Logger) (Repository, error) {
-	if fallback == nil {
-		return nil, fmt.Errorf("fallback search repository is required")
-	}
+// NewQdrantRepository creates the runtime wiki search repository backed by Qdrant.
+func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, wikiDir string, logger *slog.Logger) (Repository, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -92,55 +91,80 @@ func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, fallback R
 	if err != nil {
 		return nil, err
 	}
-	return &qdrantRepository{primary: primary, fallback: fallback, logger: logger}, nil
+	return &qdrantRepository{
+		primary: primary,
+		client:  primary.client,
+		embedFn: embedFn,
+		wikiDir: wikiDir,
+		logger:  logger,
+	}, nil
 }
 
 func (r *qdrantRepository) Search(ctx context.Context, query string, topK int) ([]Result, error) {
-	primaryResults, primaryErr := r.primary.Search(ctx, query, topK)
-	fallbackResults, fallbackErr := r.fallback.Search(ctx, query, topK)
-	merged := mergeHybridResults(query, topK, fallbackResults, primaryResults)
-	if len(merged) > 0 {
-		if primaryErr != nil && r.logger != nil {
-			r.logger.Warn("qdrant search failed; returned local hybrid results", "error", primaryErr)
-		}
-		if fallbackErr != nil && r.logger != nil {
-			r.logger.Warn("local hybrid search failed; returned qdrant results", "error", fallbackErr)
-		}
-		return merged, nil
-	}
-	if r.logger != nil {
-		if primaryErr != nil {
-			r.logger.Warn("qdrant search failed", "error", primaryErr)
-		}
-		if fallbackErr != nil {
-			r.logger.Warn("local hybrid search failed", "error", fallbackErr)
-		}
-	}
-	if primaryErr != nil {
-		return nil, primaryErr
-	}
-	return nil, fallbackErr
+	return r.primary.Search(ctx, query, topK)
 }
 
 func (r *qdrantRepository) IsIndexed() bool {
-	return r.fallback.IsIndexed()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.indexed
 }
 
 func (r *qdrantRepository) Index(ctx context.Context, id string, content string, metadata map[string]string) error {
-	return r.fallback.Index(ctx, id, content, metadata)
+	vector, err := r.embedFn(ctx, content)
+	if err != nil {
+		return fmt.Errorf("embedding %s: %w", id, err)
+	}
+	if len(vector) == 0 {
+		return fmt.Errorf("embedding %s returned empty vector", id)
+	}
+	if err := r.client.createCollection(ctx, len(vector)); err != nil {
+		return err
+	}
+	payload := map[string]string{
+		"doc_id":  id,
+		"content": content,
+	}
+	for key, value := range metadata {
+		payload[key] = value
+	}
+	if err := r.client.upsertPoints(ctx, []qdrantPoint{{
+		ID:      qdrantPointID(id),
+		Vector:  vector,
+		Payload: payload,
+	}}); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.indexed = true
+	r.mu.Unlock()
+	return nil
 }
 
 func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
-	return r.fallback.IndexWikiPages(ctx)
+	_, err := RebuildQdrantWikiDocuments(ctx, r.wikiDir, r.embedFn, QdrantConfig{
+		BaseURL:    r.client.baseURL,
+		Collection: r.client.collection,
+		APIKey:     r.client.apiKey,
+		BatchSize:  r.client.batchSize,
+		Client:     r.client.http,
+	}, r.logger)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.indexed = true
+	r.mu.Unlock()
+	return nil
 }
 
 func (r *qdrantRepository) ReindexWikiPage(ctx context.Context, slug string) error {
-	return r.fallback.ReindexWikiPage(ctx, slug)
+	_ = slug
+	return r.IndexWikiPages(ctx)
 }
 
 // RebuildQdrantWikiDocuments recreates the configured collection from Aura's
-// wiki pages and graph cards. It intentionally does not replace the primary
-// runtime index yet; this command gives us a deterministic sidecar rebuild.
+// wiki pages and graph cards.
 func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn chromem.EmbeddingFunc, cfg QdrantConfig, logger *slog.Logger) (QdrantRebuildReport, error) {
 	if logger == nil {
 		logger = slog.Default()

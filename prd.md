@@ -10,9 +10,9 @@
 
 Aura è un agente AI personale, local-first, accessibile via Telegram, che accumula conoscenza in una **wiki markdown maintained-by-the-LLM** e si estende con **tool agentici** (source ingestion, web, scheduler, skills, MCP). Una **dashboard web embedded** offre osservabilità e controllo (sources, wiki/graph, tasks, skills, MCP, pending users) protetta da bearer-token emessi via Telegram.
 
-Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant con fallback locale, Garage per backup/artifact, sandbox Python diretta (process mode), pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
+Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant per wiki vector search, Garage per backup/artifact, sandbox Python diretta (process mode), pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
 
-Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, fallback sempre disponibili**.
+Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, degradazione esplicita**.
 
 ---
 
@@ -22,7 +22,7 @@ Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo
 2. **Semplicità > Astrazione prematura** — nessun DAG, 1 goroutine = 1 conversazione.
 3. **File system + SQLite > sistemi distribuiti** — wiki su disco + Git, stato runtime in SQLite locale.
 4. **Controllo esplicito > automazione opaca** — feature flag, allowlist, admin gates per operazioni privilegiate.
-5. **Fallback sempre disponibili** — Ollama offline, embedding cache, single-message progress.
+5. **degradazione esplicita** — embedding cache, single-message progress, and clear degraded-mode behavior.
 6. **Progressive disclosure** — skills/MCP/sources caricano in contesto solo quando il modello li richiede.
 
 ---
@@ -83,7 +83,7 @@ type Client interface {
 ### Implementations
 
 * **OpenAI-compatible HTTP client** (primary) — `LLM_BASE_URL` + `LLM_API_KEY`.
-* **Ollama client** (fallback / offline) — `OLLAMA_BASE_URL` + `OLLAMA_MODEL`.
+* **OpenAI-compatible client only** — `LLM_BASE_URL` + `LLM_MODEL`, with retries and explicit degraded-mode behavior when unavailable.
 
 `Stream()` supporta tool-calls via `stream_options.include_usage` e accumula i frammenti `function.arguments` per indice (slice 11s) — i consumer non vedono mai JSON parziale.
 
@@ -276,7 +276,7 @@ Tutti opzionali; modificabili a runtime senza recompile.
 ## 4.13 Search (`internal/search`)
 
 * Primary: chromem-go (vector search) sulla wiki indicizzata.
-* Mirror: SQLite FTS per fallback testuale.
+* Mirror: SQLite FTS per ricerca testuale locale.
 * **Embedding cache** SHA-keyed (slice 11h): `embedding_cache(content_sha, model)` in SQLite. Cold start invariato; warm restart skippa Mistral round-trip per pagine immutate.
 * **Concurrent indexing** (slice 11i): `coll.AddDocuments` parallelo (`indexConcurrency=4`).
 * Stats esposte su `/api/health` (`hits`/`misses`/`hit-rate`).
@@ -349,7 +349,7 @@ CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
   * `conversations` archive and proposal evidence
   * `proposed_updates`, `wiki_issues`, swarm/task state, budget usage, and embedding cache
 * **File system**: `wiki/`, source raw/extraction artifacts, skills, prompt overlays.
-* **Qdrant**: optional Docker sidecar for rebuildable vector search, with local chromem/SQLite fallback.
+* **Qdrant**: optional Docker sidecar for rebuildable wiki vector search.
 * **Garage**: optional S3-compatible artifact/backup layer, not primary state.
 * **MongoDB**: evaluated and deferred; not part of the default stack until measured repository pressure justifies an optional adapter.
 

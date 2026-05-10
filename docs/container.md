@@ -98,8 +98,8 @@ go run ./cmd/debug_qdrant -url http://127.0.0.1:6333 -rebuild -timeout 5m
 ```
 
 This command uses `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL`, and
-`EMBEDDING_MODEL`; Aura's local chromem/SQLite index remains the fallback
-runtime index when Qdrant is unavailable or returns no usable result.
+`EMBEDDING_MODEL`; Aura's runtime wiki vector search uses Qdrant when
+`QDRANT_URL` is configured.
 
 By default this writes a complete artifact set:
 
@@ -252,7 +252,7 @@ to run while the Compose `aura` service is up.
   safety. Desktop/local runs still default to WAL unless explicitly overridden.
 - `compose.yaml` sets `WEB_SEARCH_PROVIDER=searxng`, so Aura registers the
   stable `web_search` tool against the bundled SearXNG service instead of
-  requiring Ollama web credentials. The paired `web_fetch` tool uses Aura's
+  requiring external web credentials. The paired `web_fetch` tool uses Aura's
   bounded direct HTTP fetcher in this mode.
 - `compose.yaml` starts `aura-secrets` before SearXNG, Garage, and Aura. That
   one-shot container generates local service secrets under `data/secrets/` and
@@ -269,10 +269,8 @@ to run while the Compose `aura` service is up.
   `search.formats`, SearXNG returns `403` for API requests with `format=json`.
 - `compose.yaml` starts Qdrant from `qdrant/qdrant:latest` with storage in the
   Docker-managed `qdrant-storage` volume. Aura exposes `QDRANT_URL`,
-  `QDRANT_COLLECTION`, optional `QDRANT_API_KEY`, and `SEARCH_BACKEND` in the
-  dashboard settings. `SEARCH_BACKEND=chromem` keeps local chromem/SQLite search
-  as the default; `SEARCH_BACKEND=qdrant` queries the Qdrant sidecar first and
-  falls back locally.
+  `QDRANT_COLLECTION`, and optional `QDRANT_API_KEY` in the dashboard settings.
+  Wiki vector search uses the Qdrant sidecar when `QDRANT_URL` is configured.
 - The app container enables `SANDBOX_ENABLED=true` and uses
   `SANDBOX_RUNTIME_MODE=process`. `execute_code` runs through `python3` inside
   the Aura container with the same mounted workspace/data access as Aura.

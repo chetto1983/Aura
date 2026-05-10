@@ -86,9 +86,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		return nil, fmt.Errorf("creating telegram bot: %w", err)
 	}
 
-	// Set up LLM client with retry and failover
+	// Set up the configured chat client with retry.
 	var client llm.Client
-	if cfg.LLMAPIKey != "" || cfg.OllamaBaseURL != "" {
+	if cfg.LLMAPIKey != "" {
 		client = createLLMClient(cfg, logger)
 	} else {
 		logger.Warn("no LLM provider configured, bot will echo messages without LLM")
@@ -129,28 +129,20 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			batchEmbedFn = cache.BatchEmbed
 			embedCache = cache
 		}
-		var se *search.Engine
-		se, err = search.NewEngineWithFallbackWithDB(cfg.WikiPath, embedFn, pool, logger)
-		if err != nil {
-			logger.Warn("failed to create search engine, search disabled", "error", err)
+		if strings.TrimSpace(cfg.QdrantURL) == "" {
+			logger.Warn("QDRANT_URL is required for wiki vector search; search disabled")
 		} else {
-			// Index existing wiki pages on startup
-			if err := se.IndexWikiPages(context.Background()); err != nil {
-				logger.Warn("failed to index wiki pages on startup", "error", err)
-			}
-			searchEngine = se
-			if cfg.SearchBackend == "qdrant" {
-				qrepo, err := search.NewQdrantRepository(search.QdrantConfig{
-					BaseURL:    cfg.QdrantURL,
-					Collection: cfg.QdrantCollection,
-					APIKey:     cfg.QdrantAPIKey,
-				}, embedFn, searchEngine, logger)
-				if err != nil {
-					logger.Warn("qdrant search backend unavailable, using local search", "error", err)
-				} else {
-					searchEngine = qrepo
-					logger.Info("qdrant search backend enabled", "url", cfg.QdrantURL, "collection", cfg.QdrantCollection)
-				}
+			searchEngine, err = search.NewQdrantRepository(search.QdrantConfig{
+				BaseURL:    cfg.QdrantURL,
+				Collection: cfg.QdrantCollection,
+				APIKey:     cfg.QdrantAPIKey,
+			}, embedFn, cfg.WikiPath, logger)
+			if err != nil {
+				logger.Warn("failed to create qdrant search backend, search disabled", "error", err)
+			} else if err := searchEngine.IndexWikiPages(context.Background()); err != nil {
+				logger.Warn("failed to index wiki pages in qdrant on startup", "error", err)
+			} else {
+				logger.Info("qdrant search backend enabled", "url", cfg.QdrantURL, "collection", cfg.QdrantCollection)
 			}
 		}
 	}
@@ -227,13 +219,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	case "searxng":
 		toolRegistry.Register(tools.WithCategory(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL), tools.CategoryAutonomous))
 		toolRegistry.Register(tools.WithCategory(tools.NewDirectWebFetchTool(), tools.CategoryAutonomous))
-	case "ollama":
-		if cfg.OllamaAPIKey != "" {
-			toolRegistry.Register(tools.WithCategory(tools.NewWebSearchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL), tools.CategoryAutonomous))
-			toolRegistry.Register(tools.WithCategory(tools.NewWebFetchTool(cfg.OllamaAPIKey, cfg.OllamaWebBaseURL), tools.CategoryAutonomous))
-		} else {
-			logger.Warn("WEB_SEARCH_PROVIDER=ollama but OLLAMA_API_KEY is blank; web tools disabled")
-		}
 	case "", "disabled":
 		// Explicitly disabled.
 	default:
@@ -266,7 +251,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
 	var compactVector memoryindex.VectorIndex
 	compactVectorHealth := memoryindex.NewVectorHealthTracker(false, "")
-	if cfg.SearchBackend == "qdrant" && embedFn != nil {
+	if embedFn != nil && strings.TrimSpace(cfg.QdrantURL) != "" {
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
 		compactVectorHealth.SetEnabled(true, collection)
 		qindex, err := search.NewCompactMemoryQdrantIndexWithBatch(search.QdrantConfig{
@@ -447,9 +432,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Tool vector search index. Builds embeddings for all registered
-	// tools when TOOL_SEARCH_BACKEND is vector or hybrid. Falls back
-	// to pure FTS gracefully when Qdrant or the embedding service are
-	// unreachable.
+	// tools when TOOL_SEARCH_BACKEND is vector or hybrid.
 	toolRegistry.BuildVectorIndex(tools.ToolVectorConfig{
 		Backend:      cfg.ToolSearchBackend,
 		TopK:         cfg.ToolSearchTopK,
@@ -723,52 +706,19 @@ func skillSearchRoots(cfg *config.Config) []string {
 	}
 }
 
-// createLLMClient builds the LLM client chain with failover:
-// 1. OpenAI-compatible (primary) -> Ollama (offline fallback)
-// Each provider is wrapped with retry logic.
+// createLLMClient builds the configured OpenAI-compatible chat client.
 func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
-	var providers []llm.Client
-	var names []string
-
-	if cfg.LLMAPIKey != "" {
-		openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
-			APIKey:  cfg.LLMAPIKey,
-			BaseURL: cfg.LLMBaseURL,
-			Model:   cfg.LLMModel,
-		})
-		retryClient := llm.NewRetryClient(openaiClient, llm.RetryConfig{
-			MaxRetries: cfg.LLMMaxRetries,
-			BaseDelay:  time.Second,
-			MaxDelay:   30 * time.Second,
-		})
-		providers = append(providers, retryClient)
-		names = append(names, "openai")
-	}
-
-	if cfg.OllamaBaseURL != "" {
-		ollamaClient := llm.NewOllamaClient(llm.OllamaConfig{
-			BaseURL: cfg.OllamaBaseURL,
-			Model:   cfg.OllamaModel,
-		})
-		retryClient := llm.NewRetryClient(ollamaClient, llm.RetryConfig{
-			MaxRetries: 2,
-			BaseDelay:  time.Second,
-			MaxDelay:   10 * time.Second,
-		})
-		providers = append(providers, retryClient)
-		names = append(names, "ollama")
-	}
-
-	if len(providers) == 1 {
-		return providers[0]
-	}
-
-	failover, err := llm.NewFailoverClient(providers, names)
-	if err != nil {
-		logger.Error("failed to create failover client, using first provider", "error", err)
-		return providers[0]
-	}
-	return failover
+	_ = logger
+	openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
+		APIKey:  cfg.LLMAPIKey,
+		BaseURL: cfg.LLMBaseURL,
+		Model:   cfg.LLMModel,
+	})
+	return llm.NewRetryClient(openaiClient, llm.RetryConfig{
+		MaxRetries: cfg.LLMMaxRetries,
+		BaseDelay:  time.Second,
+		MaxDelay:   30 * time.Second,
+	})
 }
 
 // createEmbeddingFunc builds a chromem embedding function from the dedicated

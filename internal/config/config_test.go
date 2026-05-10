@@ -111,7 +111,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("COST_OUTPUT_PER_M_TOKENS")
 	os.Unsetenv("COST_PER_TOKEN")
 	os.Unsetenv("LOG_LEVEL")
-	os.Unsetenv("OLLAMA_WEB_BASE_URL")
 	os.Unsetenv("WEB_SEARCH_PROVIDER")
 	os.Unsetenv("SEARXNG_BASE_URL")
 	os.Unsetenv("GARAGE_S3_ENDPOINT")
@@ -122,7 +121,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("QDRANT_URL")
 	os.Unsetenv("QDRANT_COLLECTION")
 	os.Unsetenv("QDRANT_API_KEY")
-	os.Unsetenv("SEARCH_BACKEND")
 	os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
 	os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
 	os.Unsetenv("MAX_TOOL_ITERATIONS")
@@ -187,9 +185,6 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.CostOutputPerMTokens != DefaultCostOutputPerMTokens {
 		t.Errorf("CostOutputPerMTokens = %v, want %v", cfg.CostOutputPerMTokens, DefaultCostOutputPerMTokens)
 	}
-	if cfg.OllamaWebBaseURL != DefaultOllamaWebBaseURL {
-		t.Errorf("OllamaWebBaseURL = %q, want %q", cfg.OllamaWebBaseURL, DefaultOllamaWebBaseURL)
-	}
 	if cfg.WebSearchProvider != "disabled" {
 		t.Errorf("WebSearchProvider = %q, want disabled", cfg.WebSearchProvider)
 	}
@@ -207,9 +202,6 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.QdrantCollection != "aura_memory_v1" {
 		t.Errorf("QdrantCollection = %q, want aura_memory_v1", cfg.QdrantCollection)
-	}
-	if cfg.SearchBackend != "chromem" {
-		t.Errorf("SearchBackend = %q, want chromem", cfg.SearchBackend)
 	}
 	if cfg.SpeculativeSearchTimeoutMS != DefaultSpeculativeSearchTimeoutMS {
 		t.Errorf("SpeculativeSearchTimeoutMS = %d, want %d", cfg.SpeculativeSearchTimeoutMS, DefaultSpeculativeSearchTimeoutMS)
@@ -437,13 +429,11 @@ func TestLoadQdrantConfig(t *testing.T) {
 	os.Setenv("QDRANT_URL", "http://qdrant:6333")
 	os.Setenv("QDRANT_COLLECTION", "aura_memory_v2")
 	os.Setenv("QDRANT_API_KEY", "secret")
-	os.Setenv("SEARCH_BACKEND", " qdrant ")
 	os.Setenv("SPECULATIVE_SEARCH_TIMEOUT_MS", "750")
 	os.Setenv("MEMORY_SEARCH_TIMEOUT_MS", "2500")
 	defer os.Unsetenv("QDRANT_URL")
 	defer os.Unsetenv("QDRANT_COLLECTION")
 	defer os.Unsetenv("QDRANT_API_KEY")
-	defer os.Unsetenv("SEARCH_BACKEND")
 	defer os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
 	defer os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
 
@@ -459,9 +449,6 @@ func TestLoadQdrantConfig(t *testing.T) {
 	}
 	if cfg.QdrantAPIKey != "secret" {
 		t.Fatalf("QdrantAPIKey not loaded")
-	}
-	if cfg.SearchBackend != "qdrant" {
-		t.Fatalf("SearchBackend = %q, want qdrant", cfg.SearchBackend)
 	}
 	if cfg.SpeculativeSearchTimeoutMS != 750 {
 		t.Fatalf("SpeculativeSearchTimeoutMS = %d, want 750", cfg.SpeculativeSearchTimeoutMS)

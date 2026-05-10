@@ -41,9 +41,8 @@ type Config struct {
 
 // Client posts PDFs to Mistral Document AI OCR.
 //
-// The HTTP shape mirrors internal/tools/ollama_web.go (Bearer auth, JSON
-// post, status check, capped-snippet errors) so Aura has a single canonical
-// way to talk to OpenAI-compatible APIs.
+// The HTTP shape uses Bearer auth, JSON post, status checks, and
+// capped-snippet errors so OCR failures stay bounded in logs.
 type Client struct {
 	apiKey        string
 	baseURL       string

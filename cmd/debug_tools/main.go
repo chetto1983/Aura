@@ -48,7 +48,6 @@ func main() {
 	model := envDefault("LLM_MODEL", "gpt-4")
 	webSearchProvider := strings.ToLower(envDefault("WEB_SEARCH_PROVIDER", "disabled"))
 	searxngBaseURL := envDefault("SEARXNG_BASE_URL", config.DefaultSearXNGBaseURL)
-	ollamaWebBaseURL := envDefault("OLLAMA_WEB_BASE_URL", config.DefaultOllamaWebBaseURL)
 
 	workspaceDir, err := os.MkdirTemp("", "aura-debug-tools-*")
 	if err != nil {
@@ -83,16 +82,8 @@ func main() {
 		case "searxng":
 			reg.Register(tools.NewSearXNGSearchTool(searxngBaseURL))
 			reg.Register(tools.NewDirectWebFetchTool())
-		case "ollama":
-			ollamaWebKey := os.Getenv("OLLAMA_API_KEY")
-			if ollamaWebKey == "" {
-				fmt.Println("FAIL: OLLAMA_API_KEY is required when WEB_SEARCH_PROVIDER=ollama")
-				os.Exit(1)
-			}
-			reg.Register(tools.NewWebSearchTool(ollamaWebKey, ollamaWebBaseURL))
-			reg.Register(tools.NewWebFetchTool(ollamaWebKey, ollamaWebBaseURL))
 		default:
-			fmt.Println("FAIL: set WEB_SEARCH_PROVIDER=searxng or ollama when using -live-web")
+			fmt.Println("FAIL: set WEB_SEARCH_PROVIDER=searxng when using -live-web")
 			os.Exit(1)
 		}
 	}

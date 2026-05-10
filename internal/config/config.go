@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-const DefaultOllamaWebBaseURL = "https://ollama.com/api"
 const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultQdrantCollection = "aura_memory_v1"
-const DefaultSearchBackend = "chromem"
 const DefaultSpeculativeSearchTimeoutMS = 1500
 const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
@@ -50,10 +48,6 @@ type Config struct {
 	LLMBaseURL                 string  `envconfig:"LLM_BASE_URL"`
 	LLMModel                   string  `envconfig:"LLM_MODEL"`
 	LLMMaxRetries              int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
-	OllamaBaseURL              string  `envconfig:"OLLAMA_BASE_URL"`
-	OllamaModel                string  `envconfig:"OLLAMA_MODEL"`
-	OllamaAPIKey               string  `envconfig:"OLLAMA_API_KEY"`
-	OllamaWebBaseURL           string  `envconfig:"OLLAMA_WEB_BASE_URL"`
 	WebSearchProvider          string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
 	SearXNGBaseURL             string  `envconfig:"SEARXNG_BASE_URL"`
 	GarageS3Endpoint           string  `envconfig:"GARAGE_S3_ENDPOINT"`
@@ -64,7 +58,6 @@ type Config struct {
 	QdrantURL                  string  `envconfig:"QDRANT_URL"`
 	QdrantCollection           string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
 	QdrantAPIKey               string  `envconfig:"QDRANT_API_KEY"`
-	SearchBackend              string  `envconfig:"SEARCH_BACKEND" default:"chromem"`
 	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
 	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
@@ -200,10 +193,6 @@ func Load() (*Config, error) {
 	cfg.LLMModel = getEnv("LLM_MODEL", "gpt-4")
 	cfg.LLMMaxRetries = getEnvInt("LLM_MAX_RETRIES", 5)
 
-	cfg.OllamaBaseURL = getEnv("OLLAMA_BASE_URL", "")
-	cfg.OllamaModel = getEnv("OLLAMA_MODEL", "")
-	cfg.OllamaAPIKey = getSecretEnv("OLLAMA_API_KEY", "")
-	cfg.OllamaWebBaseURL = getEnv("OLLAMA_WEB_BASE_URL", DefaultOllamaWebBaseURL)
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(getEnv("WEB_SEARCH_PROVIDER", "disabled")))
 	cfg.SearXNGBaseURL = getEnv("SEARXNG_BASE_URL", DefaultSearXNGBaseURL)
 	cfg.GarageS3Endpoint = getEnv("GARAGE_S3_ENDPOINT", "")
@@ -214,7 +203,6 @@ func Load() (*Config, error) {
 	cfg.QdrantURL = getEnv("QDRANT_URL", "")
 	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
 	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
-	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(getEnv("SEARCH_BACKEND", DefaultSearchBackend)))
 	cfg.SpeculativeSearchTimeoutMS = getEnvInt("SPECULATIVE_SEARCH_TIMEOUT_MS", DefaultSpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)

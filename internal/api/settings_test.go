@@ -278,21 +278,8 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	if !foundSecret {
 		t.Fatal("QDRANT_API_KEY not in settings response")
 	}
-	foundBackend := false
 	foundTimeout := false
 	foundMemoryTimeout := false
-	for _, it := range resp.Items {
-		if it.Key != settings.KeySearchBackend {
-			continue
-		}
-		foundBackend = true
-		if it.Kind != "enum" || len(it.Options) != 2 || it.Options[0] != "chromem" || it.Options[1] != "qdrant" {
-			t.Fatalf("SEARCH_BACKEND control = kind:%q options:%v", it.Kind, it.Options)
-		}
-	}
-	if !foundBackend {
-		t.Fatal("SEARCH_BACKEND not in settings response")
-	}
 	for _, it := range resp.Items {
 		if it.Key != settings.KeySpeculativeSearchTimeoutMS {
 			continue

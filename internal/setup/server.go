@@ -69,19 +69,17 @@ func Run(cfg Config) (telegramToken string, err error) {
 			http.NotFound(w, r)
 			return
 		}
-		ollamaUp := detectOllama(r.Context(), "http://localhost:11434")
 		locale := detectLocale(r.Header.Get("Accept-Language"))
 		t := setupText(locale)
 		presets := localizedPresets(locale)
 		presetsJSON, _ := json.Marshal(presets)
 		textJSON, _ := json.Marshal(t)
 		data := map[string]any{
-			"Locale":         locale,
-			"T":              t,
-			"TextJSON":       template.JS(textJSON), //nolint:gosec // static translation table
-			"Presets":        presets,
-			"PresetsJSON":    template.JS(presetsJSON), //nolint:gosec // local-only loopback page; presets are static
-			"OllamaDetected": ollamaUp,
+			"Locale":      locale,
+			"T":           t,
+			"TextJSON":    template.JS(textJSON), //nolint:gosec // static translation table
+			"Presets":     presets,
+			"PresetsJSON": template.JS(presetsJSON), //nolint:gosec // local-only loopback page; presets are static
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
@@ -157,19 +155,6 @@ func Run(cfg Config) (telegramToken string, err error) {
 			{settings.KeyLLMAPIKey, strings.TrimSpace(req.LLMAPIKey)},
 			{settings.KeyEmbeddingAPIKey, strings.TrimSpace(req.EmbeddingAPIKey)},
 			{settings.KeyMistralAPIKey, strings.TrimSpace(req.MistralAPIKey)},
-		}
-		// Ollama preset implies OLLAMA_BASE_URL is the de-facto local
-		// endpoint; surface it as the failover provider so a paid
-		// provider outage falls back automatically.
-		if req.LLMPreset == "ollama" && req.LLMBaseURL != "" {
-			// Strip /v1 suffix for OLLAMA_BASE_URL — the failover client
-			// expects the bare host.
-			ollamaHost := strings.TrimSuffix(strings.TrimSpace(req.LLMBaseURL), "/v1")
-			ollamaHost = strings.TrimSuffix(ollamaHost, "/")
-			writes = append(writes,
-				struct{ key, val string }{settings.KeyOllamaBaseURL, ollamaHost},
-				struct{ key, val string }{settings.KeyOllamaModel, strings.TrimSpace(req.LLMModel)},
-			)
 		}
 		for _, w := range writes {
 			if w.val == "" {

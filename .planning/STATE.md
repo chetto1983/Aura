@@ -4,8 +4,8 @@ milestone: v4.0
 milestone_name: milestone
 status: planning
 stopped_at: Phase 1 context gathered
-last_updated: "2026-05-10T11:31:35.479Z"
-last_activity: 2026-05-10 -- v4.0 Production Hardening research normalized; 18 requirements mapped across 4 phases
+last_updated: "2026-05-10T12:10:00.000Z"
+last_activity: 2026-05-10 -- Ollama runtime/web provider removed; Aura now targets OpenAI-compatible chat plus SearXNG web search
 progress:
   total_phases: 4
   completed_phases: 0
@@ -28,7 +28,7 @@ See: `.planning/REQsIREMENTS.md`, `.planning/ROADMAP.md`, and `.planning/researc
 Phase: 1 of 4 (Fondamenta -- Concurrency + Qdrant Readiness)
 Plan: 0 (TBD)
 Status: Ready to plan
-Last activity: 2026-05-10 -- v4.0 Production Hardening research normalized; 18 requirements mapped across 4 phases
+Last activity: 2026-05-10 -- Ollama runtime/web provider removed; Aura now targets OpenAI-compatible chat plus SearXNG web search
 
 Progress: [----------] 0%
 
@@ -66,6 +66,10 @@ Research completed for v4.0 Production Hardening (2026-05-10). Key decisions rec
 - **Phase 3**: Circuit breaker lock held for state check only (nanoseconds), released before network I/O
 - **Phase 3**: Per-user budget check inside sserGate mutex region for atomic accounting with conversation processing
 - **Phase 4**: Build-tag verification across `linux`, `windows`, and `integration` before any legacy code removal
+
+### Completed Slices
+
+- 2026-05-10: Removed Ollama chat failover and Ollama web provider paths. LLM configuration is OpenAI-compatible only; web search supports `disabled` or `searxng`; wiki vector search now uses Qdrant when `QDRANT_URL` is configured. Verification: `go build ./...`, `go vet ./...`, `npm run build`, and `go test` for all packages except `internal/release` passed. Full `go test ./...` remains blocked by missing release packaging files (`.goreleaser.yml`, `.github/workflows/release.yml`) outside this slice.
 
 ### Pending Todos
 

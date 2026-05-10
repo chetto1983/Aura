@@ -40,10 +40,6 @@ const (
 	KeyLLMBaseURL                 = "LLM_BASE_URL"
 	KeyLLMModel                   = "LLM_MODEL"
 	KeyLLMMaxRetries              = "LLM_MAX_RETRIES"
-	KeyOllamaBaseURL              = "OLLAMA_BASE_URL"
-	KeyOllamaModel                = "OLLAMA_MODEL"
-	KeyOllamaAPIKey               = "OLLAMA_API_KEY"
-	KeyOllamaWebBaseURL           = "OLLAMA_WEB_BASE_URL"
 	KeyWebSearchProvider          = "WEB_SEARCH_PROVIDER"
 	KeySearXNGBaseURL             = "SEARXNG_BASE_URL"
 	KeyGarageS3Endpoint           = "GARAGE_S3_ENDPOINT"
@@ -54,7 +50,6 @@ const (
 	KeyQdrantURL                  = "QDRANT_URL"
 	KeyQdrantCollection           = "QDRANT_COLLECTION"
 	KeyQdrantAPIKey               = "QDRANT_API_KEY"
-	KeySearchBackend              = "SEARCH_BACKEND"
 	KeySpeculativeSearchTimeoutMS = "SPECULATIVE_SEARCH_TIMEOUT_MS"
 	KeyMemorySearchTimeoutMS      = "MEMORY_SEARCH_TIMEOUT_MS"
 	KeyMaxToolIterations          = "MAX_TOOL_ITERATIONS"
@@ -107,11 +102,10 @@ func OverridableKeys() []string {
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
 		KeySoftBudget, KeyHardBudget, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
-		KeyOllamaBaseURL, KeyOllamaModel, KeyOllamaAPIKey, KeyOllamaWebBaseURL,
 		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
-		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySearchBackend, KeySpeculativeSearchTimeoutMS, KeyMemorySearchTimeoutMS,
+		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySpeculativeSearchTimeoutMS, KeyMemorySearchTimeoutMS,
 		KeyMaxToolIterations,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
@@ -183,10 +177,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.LLMModel = settingString(ctx, s, KeyLLMModel, cfg.LLMModel)
 	cfg.LLMMaxRetries = settingInt(ctx, s, KeyLLMMaxRetries, cfg.LLMMaxRetries)
 
-	cfg.OllamaBaseURL = settingString(ctx, s, KeyOllamaBaseURL, cfg.OllamaBaseURL)
-	cfg.OllamaModel = settingString(ctx, s, KeyOllamaModel, cfg.OllamaModel)
-	cfg.OllamaAPIKey = settingString(ctx, s, KeyOllamaAPIKey, cfg.OllamaAPIKey)
-	cfg.OllamaWebBaseURL = settingString(ctx, s, KeyOllamaWebBaseURL, cfg.OllamaWebBaseURL)
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyWebSearchProvider, cfg.WebSearchProvider)))
 	cfg.SearXNGBaseURL = settingString(ctx, s, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
 	cfg.GarageS3Endpoint = settingString(ctx, s, KeyGarageS3Endpoint, cfg.GarageS3Endpoint)
@@ -197,7 +187,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.QdrantURL = settingString(ctx, s, KeyQdrantURL, cfg.QdrantURL)
 	cfg.QdrantCollection = settingString(ctx, s, KeyQdrantCollection, cfg.QdrantCollection)
 	cfg.QdrantAPIKey = settingString(ctx, s, KeyQdrantAPIKey, cfg.QdrantAPIKey)
-	cfg.SearchBackend = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySearchBackend, cfg.SearchBackend)))
 	cfg.SpeculativeSearchTimeoutMS = settingInt(ctx, s, KeySpeculativeSearchTimeoutMS, cfg.SpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = settingInt(ctx, s, KeyMemorySearchTimeoutMS, cfg.MemorySearchTimeoutMS)
 	cfg.MaxToolIterations = settingInt(ctx, s, KeyMaxToolIterations, cfg.MaxToolIterations)
