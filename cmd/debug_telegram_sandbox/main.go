@@ -42,7 +42,6 @@ func main() {
 	var expectSkillRead optionalCSVFlag
 	flag.Var(&expectSkillRead, "expect-skill-read", "expect the synthetic Telegram turn to inspect a skill via file tools; optional comma-separated skill names or capabilities via -expect-skill-read=docx")
 	expectSwarm := flag.Bool("expect-swarm", false, "expect the synthetic Telegram turn to use run_aurabot_swarm")
-	expectHiddenToolRejected := flag.Bool("expect-hidden-tool-rejected", false, "expect a hidden tool call to be rejected because it was not exposed")
 	expectTerminalTool := flag.String("expect-terminal-tool", "", "expected terminal tool name recorded by the runtime")
 	expectLoopStepsMax := flag.Int("expect-loop-steps-max", 0, "fail if runtime loop_steps exceeds this budget")
 	expectLLMCallsMax := flag.Int("expect-llm-calls-max", 0, "fail if llm_calls exceeds this budget")
@@ -63,9 +62,6 @@ func main() {
 	expectExecuteCodeCallsMin := flag.Int("expect-execute-code-calls-min", 0, "fail if execute_code_calls is below this minimum")
 	expectExecuteShellCallsMin := flag.Int("expect-execute-shell-calls-min", 0, "fail if execute_shell_calls is below this minimum")
 	expectToolResultContextCharsMax := flag.Int("expect-tool-result-context-chars-max", 0, "fail if tool_result_context_chars exceeds this budget")
-	expectRetryNudgesMin := flag.Int("expect-retry-nudges-min", 0, "fail if retry_nudges_sent is below this minimum")
-	expectSpiralBreakerFired := flag.Bool("expect-spiral-breaker-fired", false, "expect the hidden-tool spiral breaker to fire")
-	expectTieredBudgetTier := flag.String("expect-tiered-budget-tier", "", "expected tiered budget tier, e.g. simple_qa, orchestration, code_exec")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
@@ -184,7 +180,6 @@ func main() {
 	fmt.Printf("tools_exposed=%s\n", strings.Join(result.ToolsExposed, ","))
 	fmt.Printf("workspace_root=%s\n", result.WorkspaceRoot)
 	fmt.Printf("retrieval_capsule_present=%v\n", result.RetrievalCapsulePresent)
-	fmt.Printf("hidden_tool_rejected=%v\n", result.HiddenToolRejected)
 	fmt.Printf("skills_read=%v\n", result.SkillsRead)
 	if len(result.ReadSkills) > 0 {
 		fmt.Printf("read_skills=%s\n", strings.Join(result.ReadSkills, ","))
@@ -204,9 +199,6 @@ func main() {
 	fmt.Printf("tool_result_context_chars=%d\n", result.ToolResultContextChars)
 	fmt.Printf("tool_results_compacted=%d\n", result.ToolResultsCompacted)
 	fmt.Printf("internal_orchestration_tool_calls=%d\n", result.InternalOrchestrationCalls)
-	fmt.Printf("retry_nudges_sent=%d\n", result.RetryNudgesSent)
-	fmt.Printf("spiral_breaker_fired=%v\n", result.SpiralBreakerFired)
-	fmt.Printf("tiered_budget_tier=%s\n", result.TieredBudgetTier)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
 	if len(result.ArtifactFilenames) > 0 {
@@ -237,7 +229,6 @@ func main() {
 		SkillRead:                 expectSkillRead.Any,
 		SkillReadNames:            expectSkillRead.Values,
 		SwarmUsed:                 *expectSwarm,
-		HiddenToolRejected:        *expectHiddenToolRejected,
 		TerminalTool:              *expectTerminalTool,
 		MaxLoopSteps:              *expectLoopStepsMax,
 		MaxLLMCalls:               *expectLLMCallsMax,
@@ -256,9 +247,6 @@ func main() {
 		MinExecuteCodeCalls:       *expectExecuteCodeCallsMin,
 		MinExecuteShellCalls:      *expectExecuteShellCallsMin,
 		MaxToolResultContextChars: *expectToolResultContextCharsMax,
-		MinRetryNudges:            *expectRetryNudgesMin,
-		SpiralBreakerFired:        *expectSpiralBreakerFired,
-		TieredBudgetTier:          *expectTieredBudgetTier,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
@@ -284,9 +272,6 @@ func main() {
 	}
 	if expectations.SwarmUsed {
 		fmt.Printf("expected_swarm=true\n")
-	}
-	if expectations.HiddenToolRejected {
-		fmt.Printf("expected_hidden_tool_rejected=true\n")
 	}
 	if strings.TrimSpace(expectations.TerminalTool) != "" {
 		fmt.Printf("expected_terminal_tool=%s\n", strings.TrimSpace(expectations.TerminalTool))
@@ -341,15 +326,6 @@ func main() {
 	}
 	if expectations.MaxToolResultContextChars > 0 {
 		fmt.Printf("expected_tool_result_context_chars_max=%d\n", expectations.MaxToolResultContextChars)
-	}
-	if expectations.MinRetryNudges > 0 {
-		fmt.Printf("expected_retry_nudges_min=%d\n", expectations.MinRetryNudges)
-	}
-	if expectations.SpiralBreakerFired {
-		fmt.Printf("expected_spiral_breaker_fired=true\n")
-	}
-	if strings.TrimSpace(expectations.TieredBudgetTier) != "" {
-		fmt.Printf("expected_tiered_budget_tier=%s\n", strings.TrimSpace(expectations.TieredBudgetTier))
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke, customPrompt); err != nil {
@@ -717,7 +693,6 @@ type debugExpectations struct {
 	SkillRead                 bool
 	SkillReadNames            []string
 	SwarmUsed                 bool
-	HiddenToolRejected        bool
 	TerminalTool              string
 	MaxLoopSteps              int
 	MaxLLMCalls               int
@@ -736,9 +711,6 @@ type debugExpectations struct {
 	MinExecuteCodeCalls       int
 	MinExecuteShellCalls      int
 	MaxToolResultContextChars int
-	MinRetryNudges            int
-	SpiralBreakerFired        bool
-	TieredBudgetTier          string
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -775,9 +747,6 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.SwarmUsed && !result.SwarmUsed {
 		return errors.New("expected swarm usage")
-	}
-	if expectations.HiddenToolRejected && !result.HiddenToolRejected {
-		return errors.New("expected hidden tool rejection")
 	}
 	if terminalTool := strings.TrimSpace(expectations.TerminalTool); terminalTool != "" && result.TerminalTool != terminalTool {
 		return fmt.Errorf("expected terminal tool %q, got %q", terminalTool, result.TerminalTool)
@@ -854,15 +823,6 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.MaxToolResultContextChars > 0 && result.ToolResultContextChars > expectations.MaxToolResultContextChars {
 		return fmt.Errorf("tool_result_context_chars %d exceeds budget %d", result.ToolResultContextChars, expectations.MaxToolResultContextChars)
-	}
-	if expectations.MinRetryNudges > 0 && result.RetryNudgesSent < expectations.MinRetryNudges {
-		return fmt.Errorf("retry_nudges_sent %d below minimum %d", result.RetryNudgesSent, expectations.MinRetryNudges)
-	}
-	if expectations.SpiralBreakerFired && !result.SpiralBreakerFired {
-		return errors.New("expected spiral breaker to fire")
-	}
-	if tier := strings.TrimSpace(expectations.TieredBudgetTier); tier != "" && result.TieredBudgetTier != tier {
-		return fmt.Errorf("expected tiered_budget_tier %q, got %q", tier, result.TieredBudgetTier)
 	}
 	return nil
 }

@@ -30,7 +30,6 @@ type Snapshot struct {
 	LoopSteps               int
 	LLMCalls                int
 	ToolCalls               int
-	HiddenToolRejected      bool
 	SkillsRead              bool
 	SwarmUsed               bool
 	SandboxUsed             bool
@@ -40,9 +39,6 @@ type Snapshot struct {
 	TokensCompletion        int
 	TokensTotal             int
 	CostUSD                 float64
-	RetryNudgesSent         int
-	SpiralBreakerFired      bool
-	TieredBudgetTier        string
 }
 
 type Session struct {

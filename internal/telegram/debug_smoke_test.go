@@ -170,7 +170,7 @@ func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 	}
 }
 
-func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
+func TestRuntimeSnapshotPreservesToolSignals(t *testing.T) {
 	b := &Bot{cfg: &config.Config{TraceRetentionDays: config.DefaultTraceRetentionDays}}
 	b.storeOrchestrationSnapshot("1148481707", turnStats{
 		promptVersion:       "aura-agent-v1",
@@ -181,15 +181,11 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 		toolsCalled:         []string{"execute_code"},
 		readSkills:          []string{"subagent-driven-development"},
 		loopSteps:           2,
-		hiddenToolRejected:  true,
 		terminalTool:        "run_aurabot_swarm",
 		duplicateToolCall:   true,
 		tokensPrompt:        10,
 		tokensCompletion:    5,
 		tokensTotal:         15,
-		retryNudgesSent:     1,
-		spiralBreakerFired:  true,
-		tieredBudgetTier:    "code_exec",
 	})
 
 	snap, ok := b.loadOrchestrationSnapshot("1148481707")
@@ -198,9 +194,6 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 	}
 	if snap.ToolsetSelectReason == "" {
 		t.Fatal("ToolsetSelectReason is empty")
-	}
-	if !snap.HiddenToolRejected {
-		t.Fatal("HiddenToolRejected = false, want true")
 	}
 	if snap.LoopSteps != 2 || snap.TerminalTool != "run_aurabot_swarm" {
 		t.Fatalf("loop/terminal snapshot = steps %d terminal %q", snap.LoopSteps, snap.TerminalTool)
@@ -213,9 +206,6 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 	}
 	if !snap.DuplicateToolCall {
 		t.Fatal("DuplicateToolCall = false, want true")
-	}
-	if snap.RetryNudgesSent != 1 || !snap.SpiralBreakerFired || snap.TieredBudgetTier != "code_exec" {
-		t.Fatalf("guardrail snapshot fields = retry %d spiral %v tier %q", snap.RetryNudgesSent, snap.SpiralBreakerFired, snap.TieredBudgetTier)
 	}
 }
 

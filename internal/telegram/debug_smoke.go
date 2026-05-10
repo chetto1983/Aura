@@ -35,7 +35,6 @@ type DebugTextSmokeResult struct {
 	Toolset                    string
 	ToolsetSelectReason        string
 	ToolsExposed               []string
-	HiddenToolRejected         bool
 	SkillsRead                 bool
 	ReadSkills                 []string
 	LoopSteps                  int
@@ -59,9 +58,6 @@ type DebugTextSmokeResult struct {
 	ToolResultsCompacted       int
 	ToolResultContextChars     int
 	InternalOrchestrationCalls int
-	RetryNudgesSent            int
-	SpiralBreakerFired         bool
-	TieredBudgetTier           string
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -140,7 +136,6 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.Toolset = snap.Toolset
 		result.ToolsetSelectReason = snap.ToolsetSelectReason
 		result.ToolsExposed = snap.ToolsExposed
-		result.HiddenToolRejected = snap.HiddenToolRejected
 		result.applyOrchestrationToolCalls(snap.ToolsCalled)
 		result.SkillsRead = result.SkillsRead || snap.SkillsRead
 		result.ReadSkills = append([]string(nil), snap.ReadSkills...)
@@ -152,9 +147,6 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.TerminalTool = snap.TerminalTool
 		result.DuplicateToolCallRejected = snap.DuplicateToolCall
 		result.RetrievalCapsulePresent = result.RetrievalCapsulePresent || snap.RetrievalCapsulePresent
-		result.RetryNudgesSent = snap.RetryNudgesSent
-		result.SpiralBreakerFired = snap.SpiralBreakerFired
-		result.TieredBudgetTier = snap.TieredBudgetTier
 		if snap.TokensPrompt > 0 || snap.TokensCompletion > 0 || snap.TokensTotal > 0 {
 			result.TokensPrompt = snap.TokensPrompt
 			result.TokensCompletion = snap.TokensCompletion

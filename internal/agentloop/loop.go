@@ -1,3 +1,16 @@
+// Package agentloop runs one Telegram-style assistant turn: alternating LLM
+// calls and tool execution until the model produces a final answer or the
+// per-turn budget is exhausted.
+//
+// History note: this loop used to carry a small defensive sub-system —
+// tiered iteration budgets (3/4/6 based on detected workload), a
+// "SpiralBreaker" that bailed when the registry rejected a hidden tool,
+// per-turn retry-nudge counters, and a regex (`looksLikeRawToolEvidence`)
+// that scrubbed raw tool output from the user-visible answer. Each of those
+// existed because tools used to fail in confusing ways (JSON envelopes,
+// "is not available in this runtime"). Once the registry became the single
+// source of tool truth and errors became plain text, the defenses became
+// noise: they hid problems instead of fixing them. The loop is now small.
 package agentloop
 
 import (
@@ -37,10 +50,13 @@ func (f ToolExecutorFunc) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 	return f(ctx, calls)
 }
 
+// ExecutionSummary is the per-batch result returned by the tool executor.
+// Fields are best-effort observations; nothing here changes control flow
+// beyond FatalResult (which short-circuits the turn) and TerminalTool
+// (which lets a TerminalHandler take over the final answer).
 type ExecutionSummary struct {
 	LastResult     string
 	FatalResult    string
-	HiddenRejected bool
 	ReadSkillNames []string
 	TerminalTool   string
 }
@@ -59,7 +75,6 @@ type ToolCallDecision struct {
 }
 
 type BeforeToolCallback func(llm.ToolCall, ToolCallState) ToolCallDecision
-type AfterToolCallback func(llm.ToolCall, string, error) string
 
 type Options struct {
 	MaxIterations           int
@@ -76,9 +91,6 @@ type Options struct {
 	EstimateCost            func(llm.TokenUsage) float64
 	OnStats                 func(Stats)
 	TerminalHandler         TerminalHandler
-	MaxRetryNudgesPerTurn   int
-	SpiralBreakerEnabled    bool
-	TieredBudgetEnabled     bool
 }
 
 type Result struct {
@@ -88,33 +100,23 @@ type Result struct {
 }
 
 type Stats struct {
-	LLMCalls           int
-	ToolCalls          int
-	LoopSteps          int
-	ToolsCalled        []string
-	ReadSkills         []string
-	HiddenToolRejected bool
-	SkillsRead         bool
-	SwarmUsed          bool
-	SandboxUsed        bool
-	TerminalTool       string
-	DuplicateToolCall  bool
-	TokensPrompt       int
-	TokensCompletion   int
-	TokensTotal        int
-	CostUSD            float64
-	MaxIterationsHit   bool
-	MaxElapsedHit      bool
-	RetryNudgesSent    int
-	SpiralBreakerFired bool
-	TieredBudgetTier   string
+	LLMCalls          int
+	ToolCalls         int
+	LoopSteps         int
+	ToolsCalled       []string
+	ReadSkills        []string
+	SkillsRead        bool
+	SwarmUsed         bool
+	SandboxUsed       bool
+	TerminalTool      string
+	DuplicateToolCall bool
+	TokensPrompt      int
+	TokensCompletion  int
+	TokensTotal       int
+	CostUSD           float64
+	MaxIterationsHit  bool
+	MaxElapsedHit     bool
 }
-
-const (
-	tierSimpleQA = 3
-	tierSearch   = 4
-	tierCodeExec = 6
-)
 
 func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (Result, error) {
 	if opts.MaxIterations < 1 {
@@ -132,22 +134,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 	emitStats()
 
-	effectiveMax := opts.MaxIterations
-	if opts.TieredBudgetEnabled {
-		effectiveMax = tierSimpleQA
-	}
-	for iteration := 0; iteration < effectiveMax; iteration++ {
-		if opts.TieredBudgetEnabled {
-			tierMax := tieredMaxIterations(stats.ToolsCalled)
-			if tierMax > effectiveMax {
-				effectiveMax = tierMax
-				if effectiveMax > opts.MaxIterations {
-					effectiveMax = opts.MaxIterations
-				}
-			}
-			stats.TieredBudgetTier = tierName(effectiveMax)
-		}
-
+	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
 		if opts.MaxElapsed > 0 && time.Since(start) >= opts.MaxElapsed {
 			stats.MaxElapsedHit = true
 			answer := finalAnswerOnBudget(lastToolResult)
@@ -189,9 +176,6 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			if response == "" {
 				response = finalAnswerOnBudget(lastToolResult)
 			}
-			if looksLikeRawToolEvidence(response) {
-				response = finalAnswerOnBudget(lastToolResult)
-			}
 			state.AddAssistantMessage(response)
 			emitStats()
 			if resp.Delivered {
@@ -215,9 +199,6 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			case "execute_code", "execute_shell":
 				stats.SandboxUsed = true
 			}
-		}
-		if opts.TieredBudgetEnabled {
-			stats.TieredBudgetTier = tierName(tieredMaxIterations(stats.ToolsCalled))
 		}
 		emitStats()
 
@@ -261,27 +242,11 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		if len(freshCalls) > 0 {
 			execution = executor.ExecuteToolCalls(ctx, freshCalls)
 			lastToolResult = execution.LastResult
-			stats.HiddenToolRejected = stats.HiddenToolRejected || execution.HiddenRejected
 			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
 			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
 			if execution.TerminalTool != "" {
 				stats.TerminalTool = execution.TerminalTool
 			}
-		}
-		if execution.HiddenRejected && opts.SpiralBreakerEnabled {
-			stats.HiddenToolRejected = true
-			stats.SpiralBreakerFired = true
-			if opts.AllowNoToolFinalization {
-				if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
-					state.AddAssistantMessage(answer)
-					emitStats()
-					return Result{Text: answer, Stats: stats}, nil
-				}
-			}
-			answer := "Ho incontrato un limite sugli strumenti disponibili, quindi rispondo con il contesto che ho gia invece di continuare a provarci."
-			state.AddAssistantMessage(answer)
-			emitStats()
-			return Result{Text: answer, Stats: stats}, nil
 		}
 		for _, duplicate := range duplicateToolCalls {
 			if result := skippedToolResults[duplicate.ID]; result != "" {
@@ -291,13 +256,6 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			state.AddToolResultMessage(duplicate.ID, duplicateToolResult(duplicate, opts))
 		}
 		emitStats()
-
-		if opts.MaxRetryNudgesPerTurn > 0 && stats.RetryNudgesSent < opts.MaxRetryNudgesPerTurn {
-			if toolResultsContainError(state, freshCalls) {
-				stats.RetryNudgesSent++
-				emitStats()
-			}
-		}
 
 		if execution.FatalResult != "" {
 			state.AddAssistantMessage(execution.FatalResult)
@@ -326,6 +284,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	return Result{Text: answer, Stats: stats}, nil
 }
 
+// finalizeAnswerAfterBudget asks the model to produce a natural-language
+// answer from the context already collected, without any new tool calls.
+// Used when MaxIterations is reached so the user gets a summary instead of
+// the raw tail of a tool result.
 func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats) (string, bool) {
 	if client == nil || state == nil || stats == nil {
 		return "", false
@@ -333,7 +295,7 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	messages := append([]llm.Message(nil), state.Messages()...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: "Hai raggiunto il limite di tool per questo turno. Non chiamare altri tool. Rispondi all'utente in modo naturale e utile usando solo i risultati gia presenti sopra. Non copiare output tecnici, JSON, Evidence envelope, score, ID interni, tool name, metriche o intestazioni come \"Memory evidence for\". Se le evidenze non bastano, dillo in una frase semplice.",
+		Content: "You reached the per-turn tool budget. Do not call any more tools. Answer the user naturally using the evidence above. Do not paste raw JSON, tool names, scores, or internal IDs. If the evidence is insufficient, say so plainly in one sentence.",
 	})
 	stats.LLMCalls++
 	stats.LoopSteps++
@@ -352,7 +314,7 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 		opts.RecordUsage(resp.Response.Usage)
 	}
 	text := strings.TrimSpace(resp.Response.Content)
-	if text == "" || resp.Response.HasToolCalls || looksLikeRawToolEvidence(text) {
+	if text == "" || resp.Response.HasToolCalls {
 		return "", false
 	}
 	return text, true
@@ -405,30 +367,17 @@ func skillNameFromReadFileArgs(args map[string]any) string {
 	return name
 }
 
+// finalAnswerOnBudget produces a fallback answer when the model returned no
+// content of its own. If the last tool result is non-empty we surface it; the
+// previous regex-based "this looks like raw tool evidence" scrubber is gone —
+// it tried to detect leaks of JSON/score/exit_code formatting in the assistant
+// reply, but the right fix is for tools to return rendered text (Step 1) and
+// for the prompt to instruct the model not to echo raw output.
 func finalAnswerOnBudget(lastToolResult string) string {
 	if result := strings.TrimSpace(lastToolResult); result != "" {
-		if looksLikeRawToolEvidence(result) {
-			return "Ho raccolto risultati tecnici, ma il turno si e fermato prima di sintetizzarli bene. Posso riprendere con un focus piu preciso."
-		}
 		return result
 	}
-	return "Ho raggiunto il limite del turno senza ottenere risultati utilizzabili."
-}
-
-func looksLikeRawToolEvidence(text string) bool {
-	lower := strings.ToLower(text)
-	return strings.Contains(lower, "memory evidence for") ||
-		strings.Contains(lower, "evidence envelope:") ||
-		strings.Contains(lower, `"query":`) && strings.Contains(lower, `"items":`) && strings.Contains(lower, `"score":`) ||
-		strings.Contains(lower, "exit_code:") ||
-		strings.Contains(lower, "elapsed_ms") ||
-		strings.Contains(lower, "source_id") ||
-		strings.Contains(lower, "tokens_total") ||
-		strings.Contains(lower, `"ok":false`) ||
-		strings.Contains(lower, `"tool_calls"`) ||
-		strings.Contains(lower, "workspace_root") ||
-		strings.Contains(lower, "top_dirs_in_workspace") ||
-		strings.Contains(lower, "/var/lib/")
+	return "I reached the per-turn budget without a usable result."
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {
@@ -447,57 +396,6 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 func stringSliceContains(values []string, candidate string) bool {
 	for _, value := range values {
 		if value == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func tieredMaxIterations(called []string) int {
-	max := tierSimpleQA
-	for _, name := range called {
-		switch name {
-		case "execute_code", "execute_shell":
-			max = tierCodeExec
-		case "tool_search":
-			if max < tierSearch {
-				max = tierSearch
-			}
-		}
-	}
-	return max
-}
-
-func tierName(maxIterations int) string {
-	switch maxIterations {
-	case tierSearch:
-		return "orchestration"
-	case tierCodeExec:
-		return "code_exec"
-	default:
-		return "simple_qa"
-	}
-}
-
-func toolResultsContainError(state State, calls []llm.ToolCall) bool {
-	if len(calls) == 0 {
-		return false
-	}
-	callIDs := make(map[string]bool, len(calls))
-	for _, call := range calls {
-		callIDs[call.ID] = true
-	}
-	msgs := state.Messages()
-	for i := len(msgs) - 1; i >= 0; i-- {
-		msg := msgs[i]
-		if msg.Role != "tool" || !callIDs[msg.ToolCallID] {
-			continue
-		}
-		content := strings.ToLower(msg.Content)
-		if strings.Contains(content, "\"ok\":false") ||
-			strings.Contains(content, "error") ||
-			strings.Contains(content, "failed") ||
-			strings.Contains(content, "execution failed") {
 			return true
 		}
 	}

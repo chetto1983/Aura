@@ -28,7 +28,6 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		LoopSteps:               stats.loopSteps,
 		LLMCalls:                stats.llmCalls,
 		ToolCalls:               stats.toolCalls,
-		HiddenToolRejected:      stats.hiddenToolRejected,
 		SkillsRead:              stats.skillsRead,
 		SwarmUsed:               stats.swarmUsed,
 		SandboxUsed:             stats.sandboxUsed,
@@ -38,9 +37,6 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 		TokensCompletion:        stats.tokensCompletion,
 		TokensTotal:             stats.tokensTotal,
 		CostUSD:                 stats.costUSD,
-		RetryNudgesSent:         stats.retryNudgesSent,
-		SpiralBreakerFired:      stats.spiralBreakerFired,
-		TieredBudgetTier:        stats.tieredBudgetTier,
 	})
 	b.pruneOrchestrationSnapshots(now)
 }

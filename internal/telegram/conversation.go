@@ -189,15 +189,11 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"tools_exposed", strings.Join(stats.toolsExposed, ","),
 		"tools_called", strings.Join(stats.toolsCalled, ","),
 		"read_skills", strings.Join(stats.readSkills, ","),
-		"hidden_tool_rejected", stats.hiddenToolRejected,
 		"skills_read", stats.skillsRead,
 		"swarm_used", stats.swarmUsed,
 		"sandbox_used", stats.sandboxUsed,
 		"terminal_tool", stats.terminalTool,
 		"duplicate_tool_rejected", stats.duplicateToolCall,
-		"retry_nudges_sent", stats.retryNudgesSent,
-		"spiral_breaker_fired", stats.spiralBreakerFired,
-		"tiered_budget_tier", stats.tieredBudgetTier,
 		"tokens_prompt", stats.tokensPrompt,
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
@@ -235,7 +231,6 @@ type turnStats struct {
 	toolsCalled             []string
 	readSkills              []string
 	retrievalCapsulePresent bool
-	hiddenToolRejected      bool
 	skillsRead              bool
 	swarmUsed               bool
 	sandboxUsed             bool
@@ -245,9 +240,6 @@ type turnStats struct {
 	tokensCompletion        int
 	tokensTotal             int
 	costUSD                 float64
-	retryNudgesSent         int
-	spiralBreakerFired      bool
-	tieredBudgetTier        string
 }
 
 type agentPromptPlan struct {
@@ -344,10 +336,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
-			MaxRetryNudgesPerTurn:   1,
-			SpiralBreakerEnabled:    true,
-			TieredBudgetEnabled:     true,
-			BeforeTool: duplicatePolicy,
+			BeforeTool:              duplicatePolicy,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -458,7 +447,6 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	base.loopSteps = stats.LoopSteps
 	base.toolsCalled = append([]string(nil), stats.ToolsCalled...)
 	base.readSkills = append([]string(nil), stats.ReadSkills...)
-	base.hiddenToolRejected = stats.HiddenToolRejected
 	base.skillsRead = stats.SkillsRead
 	base.swarmUsed = stats.SwarmUsed
 	base.sandboxUsed = stats.SandboxUsed
@@ -468,9 +456,6 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	base.tokensCompletion = stats.TokensCompletion
 	base.tokensTotal = stats.TokensTotal
 	base.costUSD = stats.CostUSD
-	base.retryNudgesSent = stats.RetryNudgesSent
-	base.spiralBreakerFired = stats.SpiralBreakerFired
-	base.tieredBudgetTier = stats.TieredBudgetTier
 	return base
 }
 
