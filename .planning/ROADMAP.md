@@ -6,7 +6,7 @@ The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram 
 
 ## Phases
 
-- [ ] **Phase 1: Fondamenta (Concurrency + Qdrant Readiness)** -- Per-user message serialization via UserGate, TryAcquire for notification paths, inactivity-based context eviction, Qdrant startup health and warm-cache validation
+- [x] **Phase 1: Fondamenta (Concurrency + Qdrant Readiness)** -- Per-user message serialization via UserGate, TryAcquire for notification paths, inactivity-based context eviction, Qdrant startup health and warm-cache validation _(completed 2026-05-10)_
 - [ ] **Phase 2: LLM Reliability & Tool Intelligence** -- Explicit wiki write tool, variable-temperature retry with error classification, async reindex worker, git commit tracking, Qdrant-based tool retrieval
 - [ ] **Phase 3: Resilience Layer** -- Circuit breaker per LLM provider with nanosecond lock scope, per-user token budget with atomic accounting inside UserGate
 - [ ] **Phase 4: Cleanup & Consolidation** -- Chromem-go removal with build-tag verification after Qdrant-backed paths are stable
