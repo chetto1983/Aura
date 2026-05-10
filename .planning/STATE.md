@@ -2,7 +2,7 @@
 
 Date: 2026-05-08
 
-Active milestone: v4.0 MCP Marketplace And Autonomous Plugin Manager
+Active milestone: Runtime Answer Discipline
 
 Last closed milestone: v3.3 Runner Boundary & Health Hardening
 
@@ -65,6 +65,33 @@ Fresh verification:
 - v4.0 MCP marketplace: planned and unblocked by Runtime Diet closure.
 
 ## Active Slice
+
+Active phase: **Runtime Answer Discipline**.
+
+Plan: `.planning/phases/11-runtime-answer-discipline/PLAN.md`
+
+Goal:
+
+- make Aura answer naturally on Telegram instead of exposing raw tool results;
+- keep shell/code tools internal unless the user explicitly asks for diagnostics, commands, files, tests, installs, or raw output;
+- recover from hidden-tool guesses through no-tool finalization rather than user-facing technical scolding;
+- keep `AGENT.md` and `AGENTS.md` out of the system prompt while bootstrapping `SOUL.md`/`TOOLS.md` as runtime overlays.
+
+First slice:
+
+- add failing debug smoke gates for forbidden final fragments and forbidden tool calls;
+- remove `execute_shell` from the default hot tool surface;
+- route shell/code terminal results through no-tool synthesis except explicit raw-output requests;
+- add a final-answer sanitizer that blocks `Evidence envelope`, `exit_code`, `elapsed_ms`, `source_id`, and similar internal markers.
+
+Suggested acceptance:
+
+- `Cosa sai di me?` uses memory but never prints raw evidence envelopes or hidden-tool errors;
+- `Puoi scansionare le cartelle di rete?` does not call shell and answers conversationally;
+- explicit raw commands can still use shell through `tool_search`;
+- Docker smoke script `scripts/test-runtime-answer-discipline-smokes.ps1` passes.
+
+## Deferred v4.0 MCP Marketplace Slice
 
 Active phase: **v4.0 MCP Marketplace And Autonomous Plugin Manager**.
 
