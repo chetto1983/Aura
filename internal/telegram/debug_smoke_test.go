@@ -186,6 +186,9 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 		tokensPrompt:        10,
 		tokensCompletion:    5,
 		tokensTotal:         15,
+		retryNudgesSent:     1,
+		spiralBreakerFired:  true,
+		tieredBudgetTier:    "code_exec",
 	})
 
 	snap, ok := b.loadOrchestrationSnapshot("1148481707")
@@ -209,6 +212,9 @@ func TestRuntimeSnapshotPreservesToolAndHiddenToolSignals(t *testing.T) {
 	}
 	if !snap.DuplicateToolCall {
 		t.Fatal("DuplicateToolCall = false, want true")
+	}
+	if snap.RetryNudgesSent != 1 || !snap.SpiralBreakerFired || snap.TieredBudgetTier != "code_exec" {
+		t.Fatalf("guardrail snapshot fields = retry %d spiral %v tier %q", snap.RetryNudgesSent, snap.SpiralBreakerFired, snap.TieredBudgetTier)
 	}
 }
 

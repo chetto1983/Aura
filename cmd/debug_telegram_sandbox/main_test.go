@@ -361,6 +361,9 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		ToolsExposed:            []string{"read_file", "run_aurabot_swarm", "execute_code"},
 		WorkspaceRoot:           "/workspace",
 		RetrievalCapsulePresent: true,
+		RetryNudgesSent:         1,
+		SpiralBreakerFired:      true,
+		TieredBudgetTier:        "code_exec",
 	}
 
 	err := validateDebugExpectations(result, debugExpectations{
@@ -382,6 +385,9 @@ func TestValidateDebugExpectationsAcceptsMatchedOrchestrationSignals(t *testing.
 		ForbidFragments:    []string{"internal/", ".git/"},
 		RetrievalCapsule:   true,
 		MaxElapsedMS:       1000,
+		MinRetryNudges:     1,
+		SpiralBreakerFired: true,
+		TieredBudgetTier:   "code_exec",
 	})
 	if err != nil {
 		t.Fatalf("validateDebugExpectations() error = %v", err)
@@ -487,6 +493,31 @@ func TestValidateDebugExpectationsRejectsMissingHiddenToolRejection(t *testing.T
 	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{HiddenToolRejected: true})
 	if err == nil || !strings.Contains(err.Error(), "hidden tool rejection") {
 		t.Fatalf("validateDebugExpectations() error = %v, want hidden tool rejection failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsMissingSpiralBreaker(t *testing.T) {
+	err := validateDebugExpectations(telegram.DebugTextSmokeResult{}, debugExpectations{SpiralBreakerFired: true})
+	if err == nil || !strings.Contains(err.Error(), "spiral breaker") {
+		t.Fatalf("validateDebugExpectations() error = %v, want spiral breaker failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsWrongTieredBudgetTier(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{TieredBudgetTier: "simple_qa"}
+
+	err := validateDebugExpectations(result, debugExpectations{TieredBudgetTier: "code_exec"})
+	if err == nil || !strings.Contains(err.Error(), `expected tiered_budget_tier "code_exec"`) {
+		t.Fatalf("validateDebugExpectations() error = %v, want tier failure", err)
+	}
+}
+
+func TestValidateDebugExpectationsRejectsRetryNudgesBelowMinimum(t *testing.T) {
+	result := telegram.DebugTextSmokeResult{RetryNudgesSent: 0}
+
+	err := validateDebugExpectations(result, debugExpectations{MinRetryNudges: 1})
+	if err == nil || !strings.Contains(err.Error(), "retry_nudges_sent 0 below minimum 1") {
+		t.Fatalf("validateDebugExpectations() error = %v, want retry nudge failure", err)
 	}
 }
 

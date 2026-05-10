@@ -17,48 +17,51 @@ import (
 // It is intentionally compact so debug commands can assert milestone behavior
 // without exposing raw tool arguments or secrets.
 type DebugTextSmokeResult struct {
-	UserID                    string
-	Prompt                    string
-	WorkspaceRoot             string
-	ToolCalls                 []string
-	CalledExecuteCode         bool
-	Contains5050              bool
-	ContainsArtifactMetadata  bool
-	ArtifactFilenames         []string
-	ArtifactSourceIDs         []string
-	DocumentSends             []DebugDocumentSend
-	FinalText                 string
-	MessageText               string
-	PromptVersion             string
-	PromptHash                string
-	PromptModules             []string
-	Toolset                   string
-	ToolsetSelectReason       string
-	ToolsExposed              []string
-	HiddenToolRejected        bool
-	SkillsRead                bool
-	ReadSkills                []string
-	LoopSteps                 int
-	LLMCalls                  int
-	ToolCallsCount            int
-	SwarmUsed                 bool
-	SandboxUsed               bool
-	TerminalTool              string
-	DuplicateToolCallRejected bool
-	RetrievalCapsulePresent   bool
-	TokenUsageReported        bool
-	TokensPrompt              int
-	TokensCompletion          int
-	TokensTotal               int
-	EstimatedContextTokens    int
-	CostUSD                   float64
-	ElapsedMS                 int64
-	ToolSearchCalls           int
-	ExecuteCodeCalls          int
-	ExecuteShellCalls         int
-	ToolResultsCompacted      int
-	ToolResultContextChars    int
+	UserID                     string
+	Prompt                     string
+	WorkspaceRoot              string
+	ToolCalls                  []string
+	CalledExecuteCode          bool
+	Contains5050               bool
+	ContainsArtifactMetadata   bool
+	ArtifactFilenames          []string
+	ArtifactSourceIDs          []string
+	DocumentSends              []DebugDocumentSend
+	FinalText                  string
+	MessageText                string
+	PromptVersion              string
+	PromptHash                 string
+	PromptModules              []string
+	Toolset                    string
+	ToolsetSelectReason        string
+	ToolsExposed               []string
+	HiddenToolRejected         bool
+	SkillsRead                 bool
+	ReadSkills                 []string
+	LoopSteps                  int
+	LLMCalls                   int
+	ToolCallsCount             int
+	SwarmUsed                  bool
+	SandboxUsed                bool
+	TerminalTool               string
+	DuplicateToolCallRejected  bool
+	RetrievalCapsulePresent    bool
+	TokenUsageReported         bool
+	TokensPrompt               int
+	TokensCompletion           int
+	TokensTotal                int
+	EstimatedContextTokens     int
+	CostUSD                    float64
+	ElapsedMS                  int64
+	ToolSearchCalls            int
+	ExecuteCodeCalls           int
+	ExecuteShellCalls          int
+	ToolResultsCompacted       int
+	ToolResultContextChars     int
 	InternalOrchestrationCalls int
+	RetryNudgesSent            int
+	SpiralBreakerFired         bool
+	TieredBudgetTier           string
 }
 
 // DebugDocumentSend records metadata for documents successfully delivered by
@@ -149,6 +152,9 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		result.TerminalTool = snap.TerminalTool
 		result.DuplicateToolCallRejected = snap.DuplicateToolCall
 		result.RetrievalCapsulePresent = result.RetrievalCapsulePresent || snap.RetrievalCapsulePresent
+		result.RetryNudgesSent = snap.RetryNudgesSent
+		result.SpiralBreakerFired = snap.SpiralBreakerFired
+		result.TieredBudgetTier = snap.TieredBudgetTier
 		if snap.TokensPrompt > 0 || snap.TokensCompletion > 0 || snap.TokensTotal > 0 {
 			result.TokensPrompt = snap.TokensPrompt
 			result.TokensCompletion = snap.TokensCompletion

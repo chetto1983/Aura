@@ -59,6 +59,9 @@ func main() {
 	expectToolSearchCallsMax := flag.Int("expect-tool-search-calls-max", 0, "fail if tool_search_calls exceeds this budget")
 	expectExecuteCodeCallsMin := flag.Int("expect-execute-code-calls-min", 0, "fail if execute_code_calls is below this minimum")
 	expectToolResultContextCharsMax := flag.Int("expect-tool-result-context-chars-max", 0, "fail if tool_result_context_chars exceeds this budget")
+	expectRetryNudgesMin := flag.Int("expect-retry-nudges-min", 0, "fail if retry_nudges_sent is below this minimum")
+	expectSpiralBreakerFired := flag.Bool("expect-spiral-breaker-fired", false, "expect the hidden-tool spiral breaker to fire")
+	expectTieredBudgetTier := flag.String("expect-tiered-budget-tier", "", "expected tiered budget tier, e.g. simple_qa, orchestration, code_exec")
 	writeLiveDB := flag.Bool("write-live-db", false, "open the configured DB directly instead of a temporary copy; unsafe while Docker Aura is running")
 	timeout := flag.Duration("timeout", 2*time.Minute, "smoke timeout")
 	flag.Parse()
@@ -197,6 +200,9 @@ func main() {
 	fmt.Printf("tool_result_context_chars=%d\n", result.ToolResultContextChars)
 	fmt.Printf("tool_results_compacted=%d\n", result.ToolResultsCompacted)
 	fmt.Printf("internal_orchestration_tool_calls=%d\n", result.InternalOrchestrationCalls)
+	fmt.Printf("retry_nudges_sent=%d\n", result.RetryNudgesSent)
+	fmt.Printf("spiral_breaker_fired=%v\n", result.SpiralBreakerFired)
+	fmt.Printf("tiered_budget_tier=%s\n", result.TieredBudgetTier)
 	fmt.Printf("contains_5050=%v\n", result.Contains5050)
 	fmt.Printf("contains_artifact_metadata=%v\n", result.ContainsArtifactMetadata)
 	if len(result.ArtifactFilenames) > 0 {
@@ -220,29 +226,32 @@ func main() {
 	fmt.Printf("cost_usd=%.6f\n", result.CostUSD)
 	fmt.Printf("elapsed_ms=%d\n", result.ElapsedMS)
 	expectations := debugExpectations{
-		Toolset:            *expectToolset,
-		Tools:              splitCSV(*expectTools),
-		NoTools:            *expectNoTools,
-		SkillRead:          expectSkillRead.Any,
-		SkillReadNames:     expectSkillRead.Values,
-		SwarmUsed:          *expectSwarm,
-		HiddenToolRejected: *expectHiddenToolRejected,
-		TerminalTool:       *expectTerminalTool,
-		MaxLoopSteps:       *expectLoopStepsMax,
-		MaxLLMCalls:        *expectLLMCallsMax,
-		MaxToolCalls:       *expectToolCallsMax,
-		TraceFields:        splitCSV(*expectTraceField),
-		NoStaleSkillRef:    *expectNoStaleSkillRef,
-		TokenMetrics:       *expectTokenMetrics,
-		SandboxUsed:        *expectSandbox,
-		WorkspaceRoot:      *expectWorkspaceRoot,
-		ForbidFragments:          forbidPathFragments.Values,
-		RetrievalCapsule:         *expectRetrievalCapsule,
-		MaxElapsedMS:             *maxElapsedMS,
-		MaxVisibleTools:          *expectVisibleToolsMax,
-		MaxToolSearchCalls:       *expectToolSearchCallsMax,
-		MinExecuteCodeCalls:      *expectExecuteCodeCallsMin,
+		Toolset:                   *expectToolset,
+		Tools:                     splitCSV(*expectTools),
+		NoTools:                   *expectNoTools,
+		SkillRead:                 expectSkillRead.Any,
+		SkillReadNames:            expectSkillRead.Values,
+		SwarmUsed:                 *expectSwarm,
+		HiddenToolRejected:        *expectHiddenToolRejected,
+		TerminalTool:              *expectTerminalTool,
+		MaxLoopSteps:              *expectLoopStepsMax,
+		MaxLLMCalls:               *expectLLMCallsMax,
+		MaxToolCalls:              *expectToolCallsMax,
+		TraceFields:               splitCSV(*expectTraceField),
+		NoStaleSkillRef:           *expectNoStaleSkillRef,
+		TokenMetrics:              *expectTokenMetrics,
+		SandboxUsed:               *expectSandbox,
+		WorkspaceRoot:             *expectWorkspaceRoot,
+		ForbidFragments:           forbidPathFragments.Values,
+		RetrievalCapsule:          *expectRetrievalCapsule,
+		MaxElapsedMS:              *maxElapsedMS,
+		MaxVisibleTools:           *expectVisibleToolsMax,
+		MaxToolSearchCalls:        *expectToolSearchCallsMax,
+		MinExecuteCodeCalls:       *expectExecuteCodeCallsMin,
 		MaxToolResultContextChars: *expectToolResultContextCharsMax,
+		MinRetryNudges:            *expectRetryNudgesMin,
+		SpiralBreakerFired:        *expectSpiralBreakerFired,
+		TieredBudgetTier:          *expectTieredBudgetTier,
 	}
 	if err := validateDebugExpectations(result, expectations); err != nil {
 		fail("%v", err)
@@ -316,6 +325,15 @@ func main() {
 	}
 	if expectations.MaxToolResultContextChars > 0 {
 		fmt.Printf("expected_tool_result_context_chars_max=%d\n", expectations.MaxToolResultContextChars)
+	}
+	if expectations.MinRetryNudges > 0 {
+		fmt.Printf("expected_retry_nudges_min=%d\n", expectations.MinRetryNudges)
+	}
+	if expectations.SpiralBreakerFired {
+		fmt.Printf("expected_spiral_breaker_fired=true\n")
+	}
+	if strings.TrimSpace(expectations.TieredBudgetTier) != "" {
+		fmt.Printf("expected_tiered_budget_tier=%s\n", strings.TrimSpace(expectations.TieredBudgetTier))
 	}
 	if !*noValidate {
 		if err := validateTelegramSandboxSmoke(result, *artifactSmoke, customPrompt); err != nil {
@@ -673,29 +691,32 @@ func validateTelegramSandboxSmoke(result telegram.DebugTextSmokeResult, artifact
 }
 
 type debugExpectations struct {
-	Toolset            string
-	Tools              []string
-	NoTools            bool
-	SkillRead          bool
-	SkillReadNames     []string
-	SwarmUsed          bool
-	HiddenToolRejected bool
-	TerminalTool       string
-	MaxLoopSteps       int
-	MaxLLMCalls        int
-	MaxToolCalls       int
-	TraceFields        []string
-	NoStaleSkillRef    bool
-	TokenMetrics       bool
-	SandboxUsed        bool
-	WorkspaceRoot      string
-	ForbidFragments    []string
-	RetrievalCapsule         bool
-	MaxElapsedMS             int64
-	MaxVisibleTools          int
-	MaxToolSearchCalls       int
-	MinExecuteCodeCalls      int
+	Toolset                   string
+	Tools                     []string
+	NoTools                   bool
+	SkillRead                 bool
+	SkillReadNames            []string
+	SwarmUsed                 bool
+	HiddenToolRejected        bool
+	TerminalTool              string
+	MaxLoopSteps              int
+	MaxLLMCalls               int
+	MaxToolCalls              int
+	TraceFields               []string
+	NoStaleSkillRef           bool
+	TokenMetrics              bool
+	SandboxUsed               bool
+	WorkspaceRoot             string
+	ForbidFragments           []string
+	RetrievalCapsule          bool
+	MaxElapsedMS              int64
+	MaxVisibleTools           int
+	MaxToolSearchCalls        int
+	MinExecuteCodeCalls       int
 	MaxToolResultContextChars int
+	MinRetryNudges            int
+	SpiralBreakerFired        bool
+	TieredBudgetTier          string
 }
 
 func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectations debugExpectations) error {
@@ -787,6 +808,15 @@ func validateDebugExpectations(result telegram.DebugTextSmokeResult, expectation
 	}
 	if expectations.MaxToolResultContextChars > 0 && result.ToolResultContextChars > expectations.MaxToolResultContextChars {
 		return fmt.Errorf("tool_result_context_chars %d exceeds budget %d", result.ToolResultContextChars, expectations.MaxToolResultContextChars)
+	}
+	if expectations.MinRetryNudges > 0 && result.RetryNudgesSent < expectations.MinRetryNudges {
+		return fmt.Errorf("retry_nudges_sent %d below minimum %d", result.RetryNudgesSent, expectations.MinRetryNudges)
+	}
+	if expectations.SpiralBreakerFired && !result.SpiralBreakerFired {
+		return errors.New("expected spiral breaker to fire")
+	}
+	if tier := strings.TrimSpace(expectations.TieredBudgetTier); tier != "" && result.TieredBudgetTier != tier {
+		return fmt.Errorf("expected tiered_budget_tier %q, got %q", tier, result.TieredBudgetTier)
 	}
 	return nil
 }

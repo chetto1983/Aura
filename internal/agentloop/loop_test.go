@@ -323,6 +323,82 @@ func TestRunRecoverableToolResultContinues(t *testing.T) {
 	}
 }
 
+func TestRunRetryNudgeCountsRealToolErrorWithoutSyntheticToolMessage(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "execute_shell"}}}},
+		{Response: llm.Response{Content: "fixed"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"shell command failed","retryable":true,"hint":"Use execute_code with Python"}`)
+		return ExecutionSummary{LastResult: `{"ok":false,"error":"shell command failed"}`}
+	}), state, Options{MaxIterations: 3, MaxRetryNudgesPerTurn: 1})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "fixed" {
+		t.Fatalf("Text = %q, want fixed", result.Text)
+	}
+	if result.Stats.RetryNudgesSent != 1 {
+		t.Fatalf("RetryNudgesSent = %d, want 1", result.Stats.RetryNudgesSent)
+	}
+	if got := state.toolResult("retry-nudge"); got != "" {
+		t.Fatalf("synthetic retry-nudge tool message was appended: %q", got)
+	}
+}
+
+func TestRunSpiralBreakerStopsAfterHiddenToolRejection(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "read_file"}}}},
+		{Response: llm.Response{Content: "should not be requested"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, `{"ok":false,"error":"tool not available","retryable":true}`)
+		return ExecutionSummary{LastResult: `{"ok":false,"error":"tool not available"}`, HiddenRejected: true}
+	}), state, Options{MaxIterations: 4, SpiralBreakerEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if client.requests != 1 {
+		t.Fatalf("LLM requests = %d, want 1", client.requests)
+	}
+	if !strings.Contains(result.Text, "tool_search") {
+		t.Fatalf("Text = %q, want tool_search guidance", result.Text)
+	}
+	if !result.Stats.SpiralBreakerFired || !result.Stats.HiddenToolRejected {
+		t.Fatalf("stats = %+v, want spiral breaker and hidden rejection", result.Stats)
+	}
+}
+
+func TestRunTieredBudgetExpandsForToolSearchAndCode(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "search-1", Name: "tool_search"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "code-1", Name: "execute_code"}}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+
+	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "ok")
+		return ExecutionSummary{LastResult: "ok"}
+	}), state, Options{MaxIterations: 10, TieredBudgetEnabled: true})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "done" {
+		t.Fatalf("Text = %q, want done", result.Text)
+	}
+	if result.Stats.TieredBudgetTier != "code_exec" {
+		t.Fatalf("TieredBudgetTier = %q, want code_exec", result.Stats.TieredBudgetTier)
+	}
+	if result.Stats.MaxIterationsHit {
+		t.Fatal("MaxIterationsHit = true, want false")
+	}
+}
+
 type fakeLoopClient struct {
 	responses []ChatResponse
 	requests  int

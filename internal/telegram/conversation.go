@@ -195,6 +195,9 @@ func (b *Bot) handleConversation(c tele.Context) {
 		"sandbox_used", stats.sandboxUsed,
 		"terminal_tool", stats.terminalTool,
 		"duplicate_tool_rejected", stats.duplicateToolCall,
+		"retry_nudges_sent", stats.retryNudgesSent,
+		"spiral_breaker_fired", stats.spiralBreakerFired,
+		"tiered_budget_tier", stats.tieredBudgetTier,
 		"tokens_prompt", stats.tokensPrompt,
 		"tokens_completion", stats.tokensCompletion,
 		"tokens_total", stats.tokensTotal,
@@ -242,6 +245,9 @@ type turnStats struct {
 	tokensCompletion        int
 	tokensTotal             int
 	costUSD                 float64
+	retryNudgesSent         int
+	spiralBreakerFired      bool
+	tieredBudgetTier        string
 }
 
 type agentPromptPlan struct {
@@ -334,6 +340,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
+			MaxRetryNudgesPerTurn:   1,
+			SpiralBreakerEnabled:    true,
+			TieredBudgetEnabled:     true,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
@@ -436,6 +445,9 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	base.tokensCompletion = stats.TokensCompletion
 	base.tokensTotal = stats.TokensTotal
 	base.costUSD = stats.CostUSD
+	base.retryNudgesSent = stats.RetryNudgesSent
+	base.spiralBreakerFired = stats.SpiralBreakerFired
+	base.tieredBudgetTier = stats.TieredBudgetTier
 	return base
 }
 

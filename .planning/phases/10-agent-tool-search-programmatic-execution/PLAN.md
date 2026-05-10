@@ -838,6 +838,67 @@ git add internal/tools/registry_search.go internal/tools/registry_search_vector.
 git commit -m "slice runtime: add hybrid tool search backend"
 ```
 
+### Task 6a: Agent Loop Guardrails And Smoke Metrics
+
+Status: DONE 2026-05-10
+
+Implementation notes:
+
+- Added tiered loop budgets so simple answers stay short while `tool_search` and code execution can still complete bounded workflows.
+- Added a hidden-tool spiral breaker: when the model guesses a non-visible tool, Aura stops the loop with explicit `tool_search` guidance instead of spending more calls on the same dead path.
+- Counted retry guidance only from real tool error results. No synthetic `tool` messages are inserted, preserving assistant/tool-call protocol safety.
+- Improved shell syntax error hints to steer the model toward `execute_code` with Python when `/bin/sh` rejects complex command syntax.
+- Extended runtime snapshots, conversation logs, debug smoke output, and debug expectation flags with `retry_nudges_sent`, `spiral_breaker_fired`, and `tiered_budget_tier`.
+- Added agent-loop tests covering protocol-safe retry counting, hidden-tool spiral breaking, and tier expansion from `tool_search` to `execute_code`.
+
+**Files:**
+- Modify: `internal/agentloop/loop.go`
+- Modify: `internal/agentloop/loop_test.go`
+- Modify: `internal/agentruntime/session.go`
+- Modify: `internal/telegram/conversation.go`
+- Modify: `internal/telegram/conversation_snapshot.go`
+- Modify: `internal/telegram/debug_smoke.go`
+- Modify: `internal/telegram/debug_smoke_test.go`
+- Modify: `internal/tools/error.go`
+- Modify: `cmd/debug_telegram_sandbox/main.go`
+- Modify: `cmd/debug_telegram_sandbox/main_test.go`
+
+- [x] **Step 1: Add loop guardrail tests**
+
+Tests prove:
+
+- retry guidance does not append a synthetic unmatched `tool` message;
+- hidden-tool rejection can stop the loop immediately with `tool_search` guidance;
+- tiered budgets expand from simple QA to orchestration/code execution.
+
+- [x] **Step 2: Implement protocol-safe guardrails**
+
+Implementation:
+
+- preserve existing tool-result protocol;
+- use structured tool error hints already returned by tools;
+- expose only counters and final guidance as ordinary assistant text.
+
+- [x] **Step 3: Add smoke metrics**
+
+Debug smoke now prints and can assert:
+
+- `retry_nudges_sent`;
+- `spiral_breaker_fired`;
+- `tiered_budget_tier`.
+
+- [x] **Step 4: Verify and commit**
+
+Run:
+
+```powershell
+go test ./internal/agentloop ./internal/telegram ./cmd/debug_telegram_sandbox -count=1
+go test ./...
+go build ./...
+go vet ./...
+docker compose config --quiet
+```
+
 ### Task 7: Metrics, Regression Smokes, And v4.0 Integration
 
 **Files:**
