@@ -128,3 +128,38 @@ func TestMCPToolExecuteRejectsNilClient(t *testing.T) {
 		t.Fatal("expected error from nil client")
 	}
 }
+
+func TestMCPToolDescriptionMentionsAccountDiscoveryWhenRequired(t *testing.T) {
+	tool := NewMCPTool(nil, "mail", mcp.Tool{
+		Name:        "imap_search_messages",
+		Description: "Search messages",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"account_id": map[string]any{"type": "string"},
+				"query":      map[string]any{"type": "string"},
+			},
+			"required": []any{"account_id", "query"},
+		},
+	})
+	desc := tool.Description()
+	if !strings.Contains(desc, "mcp_mail_list_all_accounts") {
+		t.Fatalf("expected discovery hint in description, got %q", desc)
+	}
+}
+
+func TestMCPToolDescriptionSkipsHintWhenAccountIDNotRequired(t *testing.T) {
+	tool := NewMCPTool(nil, "database", mcp.Tool{
+		Name:        "query",
+		Description: "Run query",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"sql": map[string]any{"type": "string"}},
+			"required":   []any{"sql"},
+		},
+	})
+	desc := tool.Description()
+	if strings.Contains(desc, "list_all_accounts") {
+		t.Fatalf("unexpected discovery hint in description, got %q", desc)
+	}
+}

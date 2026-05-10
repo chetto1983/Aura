@@ -36,7 +36,31 @@ func (t *MCPTool) Description() string {
 	if desc == "" {
 		desc = fmt.Sprintf("MCP tool %s from server %s", t.tool.Name, t.serverName)
 	}
-	return fmt.Sprintf("[MCP: %s] %s", t.serverName, desc)
+	out := fmt.Sprintf("[MCP: %s] %s", t.serverName, desc)
+	// Inject a discovery hint for tools that take an account_id. Without
+	// this the model defaults to account_id="default" on the first try,
+	// fails, then waste a turn discovering the right value.
+	if t.requiresAccountID() {
+		out += fmt.Sprintf(" If account_id is required, call mcp_%s_list_all_accounts first to enumerate valid IDs — there is no implicit \"default\".", t.serverName)
+	}
+	return out
+}
+
+func (t *MCPTool) requiresAccountID() bool {
+	if t.tool.InputSchema == nil {
+		return false
+	}
+	props, _ := t.tool.InputSchema["properties"].(map[string]any)
+	if _, ok := props["account_id"]; !ok {
+		return false
+	}
+	required, _ := t.tool.InputSchema["required"].([]any)
+	for _, name := range required {
+		if s, _ := name.(string); s == "account_id" {
+			return true
+		}
+	}
+	return false
 }
 
 // Parameters returns the upstream JSON Schema unchanged when present;
