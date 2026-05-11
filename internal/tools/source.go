@@ -624,18 +624,21 @@ func (t *DeleteSourceTool) Execute(ctx context.Context, args map[string]any) (st
 	if err != nil {
 		return "", err
 	}
-	if err := t.store.Delete(ctx, id); err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("delete_source: source %s not found", id)
-		}
-		return "", fmt.Errorf("delete_source: remove files: %w", err)
-	}
+	// Purge the memoryindex first: it is idempotent on missing IDs and it is
+	// the LLM-visible state ("search_memory shouldn't return the deleted
+	// source"). If the file removal then fails, the index is consistent and
+	// we can retry. The previous order (files first, index second) left
+	// "ghost source" rows in the index when PurgeSource errored.
 	if t.purger != nil {
 		if err := t.purger.PurgeSource(ctx, id); err != nil {
-			// File is already gone; memoryindex mismatch is recoverable on next
-			// rebuild but worth surfacing so the operator can fix it.
-			return "", fmt.Errorf("delete_source: files removed but memoryindex purge failed: %w", err)
+			return "", fmt.Errorf("delete_source: purge memoryindex: %w", err)
 		}
+	}
+	if err := t.store.Delete(ctx, id); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("delete_source: memoryindex purged but source %s not found on disk", id)
+		}
+		return "", fmt.Errorf("delete_source: remove files (memoryindex already purged): %w", err)
 	}
 	return fmt.Sprintf("Deleted source %s (files + memoryindex). Wiki pages referencing this source are unchanged.", id), nil
 }

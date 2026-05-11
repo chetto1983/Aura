@@ -737,9 +737,11 @@ func TestDeleteSourceTool_PurgeErrorSurfacesAfterFileDelete(t *testing.T) {
 	if _, err := tool.Execute(ctx, map[string]any{"source_id": src.ID}); err == nil {
 		t.Fatal("expected purge error to surface")
 	}
-	if _, err := store.Get(src.ID); err == nil {
-		// File deletion must still have happened — we want this irreversible
-		// half completed so the operator can rebuild the index next.
-		t.Fatal("source files survived a partial delete; expected files-gone + warning")
+	// F-026: memoryindex purge is the LLM-visible half and runs FIRST. If
+	// purge fails, files must remain so a retry can recover; the previous
+	// order (files gone + ghost index row) violated read-after-delete from
+	// the LLM's perspective.
+	if _, err := store.Get(src.ID); err != nil {
+		t.Fatalf("source files must remain when memoryindex purge errors so retry can recover, got %v", err)
 	}
 }
