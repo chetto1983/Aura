@@ -23,6 +23,18 @@ const (
 
 // Runner executes a bounded LLM/tool loop without Telegram coupling. It is the
 // small reusable core future AuraBot workers can use inside SwarmManager.
+//
+// Streaming asymmetry (F-025): unlike the Telegram-facing conversation loop,
+// Runner uses llm.Client.Send and never Stream. Background agents return a
+// single Result struct rather than progressive output; there is no chat to
+// progressively edit. If a future caller needs streamed tokens (e.g. dashboard
+// live view of a swarm worker) it can plumb a streaming overload through Task.
+//
+// Tool-arg validation (F-017): per-call args (call.Arguments) are forwarded
+// to tools.Registry.Execute without schema validation. Each tool is
+// responsible for validating its own input — the contract is enforced at the
+// tool boundary, not here. The clone in cloneToolArgs protects shared state;
+// it does NOT sanitize.
 type Runner struct {
 	mu            sync.RWMutex
 	llm           llm.Client
@@ -279,7 +291,10 @@ func (r *Runner) toolDefinitions(allowlist []string) []llm.ToolDefinition {
 	defs := r.tools.Definitions()
 	out := make([]llm.ToolDefinition, 0, len(defs))
 	for _, def := range defs {
-		if slices.Contains(allowlist, def.Name) {
+		// allowlist is already lowercased by cleanToolList; compare in the
+		// same case so canonical lowercase tool names match unconditionally
+		// (F-018).
+		if slices.Contains(allowlist, strings.ToLower(def.Name)) {
 			out = append(out, def)
 		}
 	}
@@ -362,7 +377,7 @@ func cloneToolArgs(args map[string]any) map[string]any {
 }
 
 func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []string, call llm.ToolCall, toolTimeout time.Duration) string {
-	if len(allowlist) == 0 || !slices.Contains(allowlist, call.Name) {
+	if len(allowlist) == 0 || !slices.Contains(allowlist, strings.ToLower(call.Name)) {
 		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name))
 	}
 	if r.tools == nil {
@@ -387,11 +402,16 @@ func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []
 	return out
 }
 
+// cleanToolList trims, lowercases, and dedupes the LLM-or-config-supplied
+// tool allowlist. Lowercasing is defense-in-depth: tool names in the registry
+// are canonical snake_case, but if a future schema mismatch or operator typo
+// produces "Web_Fetch" the allowlist would otherwise silently miss
+// "web_fetch" emitted by the LLM (F-018).
 func cleanToolList(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
+		value = strings.ToLower(strings.TrimSpace(value))
 		if value == "" || seen[value] {
 			continue
 		}

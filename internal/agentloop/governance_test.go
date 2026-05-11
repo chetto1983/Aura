@@ -1,11 +1,47 @@
 package agentloop
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
 )
+
+// TestGovernanceInputPurity asserts the documented "all four functions are
+// pure" invariant in governance.go: mutating the input slice after the call
+// must not change the returned slice. Catches a regression where a future
+// change to llm.Message (pointer field, embedded map) silently breaks the
+// slice-of-values assumption (F-021).
+func TestGovernanceInputPurity(t *testing.T) {
+	build := func() []llm.Message {
+		return []llm.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "read_file"}}},
+			{Role: "tool", ToolCallID: "call-1", Content: strings.Repeat("x", 9000)},
+			{Role: "tool", ToolCallID: "ghost", Content: "leaked"},
+		}
+	}
+	cases := []struct {
+		name string
+		fn   func([]llm.Message) []llm.Message
+	}{
+		{"drop_orphan", func(in []llm.Message) []llm.Message { return dropOrphanToolResults(in) }},
+		{"backfill_missing", func(in []llm.Message) []llm.Message { return backfillMissingToolResults(in) }},
+		{"microcompact", func(in []llm.Message) []llm.Message { return microcompactToolResults(in, 1, 100) }},
+		{"truncate", func(in []llm.Message) []llm.Message { return truncateOversizedToolResults(in, 100) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := build()
+			snapshot := append([]llm.Message(nil), in...)
+			_ = tc.fn(in)
+			if !reflect.DeepEqual(in, snapshot) {
+				t.Fatalf("%s mutated its input", tc.name)
+			}
+		})
+	}
+}
 
 func TestDropOrphanToolResultsRemovesUnmatchedToolMessages(t *testing.T) {
 	in := []llm.Message{

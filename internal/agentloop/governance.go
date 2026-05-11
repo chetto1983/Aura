@@ -21,9 +21,19 @@
 //
 // All four functions are pure: they read messages, return a new slice if
 // they change anything, and never mutate the input.
+//
+// Performance note (F-020): applyGovernance runs on every iteration over the
+// whole message history (4 passes × N messages × MaxIterations turns). With
+// the default 8-iteration / 50-message budget this is well under a
+// millisecond. If a future caller cranks MaxIterations above the ceiling or
+// removes the cap on history, profile here first — cached re-runs on a
+// content-hash key are the natural next optimization.
 package agentloop
 
 import (
+	"slices"
+	"unicode/utf8"
+
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -147,7 +157,10 @@ func backfillMissingToolResults(messages []llm.Message) []llm.Message {
 			ToolCallID: p.id,
 			Content:    "[Tool result unavailable — call was interrupted or lost]",
 		}
-		out = append(out[:insertAt], append([]llm.Message{stub}, out[insertAt:]...)...)
+		// slices.Insert is the safe replacement for the
+		// append(out[:i], append([]T{x}, out[i:]...)...) idiom, which can
+		// corrupt later inserts when the backing array is reused (F-022).
+		out = slices.Insert(out, insertAt, stub)
 		offset++
 	}
 	return out
@@ -222,6 +235,13 @@ func truncateOversizedToolResults(messages []llm.Message, maxChars int) []llm.Me
 		cut := maxChars - len(truncationMarker)
 		if cut < 0 {
 			cut = 0
+		}
+		// Walk back to a UTF-8 rune boundary so the cut never lands inside a
+		// multi-byte sequence (F-029). The conversation archive and the LLM
+		// tokenizer both reject invalid UTF-8 with U+FFFD substitution that
+		// throws off subsequent diff/search.
+		for cut > 0 && cut < len(msg.Content) && !utf8.RuneStart(msg.Content[cut]) {
+			cut--
 		}
 		out[i] = llm.Message{
 			Role:       "tool",
