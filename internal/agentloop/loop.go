@@ -16,6 +16,7 @@ package agentloop
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -120,6 +121,11 @@ type Options struct {
 	// package defaults (10 / 500). Operators tune via env.
 	MicrocompactKeepRecent int
 	MicrocompactMinChars   int
+	// Logger is an optional structured logger. When nil the loop falls back
+	// to slog.Default() so a stuck conversation is debuggable without the
+	// caller having to wire OnStats. Only tool names and argument key sets
+	// are logged, never values — see the CLAUDE.md value-leakage policy.
+	Logger *slog.Logger
 }
 
 type Result struct {
@@ -170,6 +176,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	if opts.MaxElapsed <= 0 {
 		opts.MaxElapsed = DefaultMaxElapsed
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	start := time.Now()
 	var lastToolResult string
 	var stats Stats
@@ -182,6 +192,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		}
 	}
 	emitStats()
+	logger.Debug("agentloop: run start", "max_iterations", opts.MaxIterations, "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 
 	// iterCancel reclaims the per-iteration deadline. It is replaced on each
 	// iteration; the outer defer catches the final one so no context.Timeout
@@ -197,6 +208,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		remaining := opts.MaxElapsed - time.Since(start)
 		if remaining <= 0 {
 			stats.MaxElapsedHit = true
+			logger.Warn("agentloop: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 			answer := finalAnswerOnBudget(lastToolResult)
 			state.AddAssistantMessage(answer)
 			emitStats()
@@ -317,6 +329,15 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		stats.DuplicateToolCall = stats.DuplicateToolCall || len(duplicateToolCalls) > 0
 		var execution ExecutionSummary
 		if len(freshCalls) > 0 {
+			toolNames := make([]string, 0, len(freshCalls))
+			for _, call := range freshCalls {
+				toolNames = append(toolNames, call.Name)
+			}
+			logger.Debug("agentloop: dispatch_tools",
+				"iteration", iteration,
+				"tools", toolNames,
+				"duplicates", len(duplicateToolCalls),
+			)
 			execution = executor.ExecuteToolCalls(iterCtx, freshCalls)
 			lastToolResult = execution.LastResult
 			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
@@ -354,6 +375,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			return Result{Text: execution.FatalResult, Stats: stats}, nil
 		}
 		if opts.TerminalToolPolicy && execution.TerminalTool != "" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
+			logger.Debug("agentloop: terminal_handler", "iteration", iteration, "tool", execution.TerminalTool)
 			response, delivered, handled := opts.TerminalHandler(iterCtx, execution.TerminalTool, lastToolResult, &stats)
 			emitStats()
 			if handled {
@@ -363,6 +385,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 
 	stats.MaxIterationsHit = true
+	logger.Warn("agentloop: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
 	if opts.AllowNoToolFinalization {
 		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
 			state.AddAssistantMessage(answer)
