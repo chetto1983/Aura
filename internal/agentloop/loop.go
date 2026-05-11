@@ -260,10 +260,13 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		}
 		for _, duplicate := range duplicateToolCalls {
 			if result := skippedToolResults[duplicate.ID]; result != "" {
+				// BeforeTool-supplied skip messages are Aura-authored — no
+				// envelope. Wrap only the canned duplicate stub if the source
+				// tool is untrusted.
 				state.AddToolResultMessage(duplicate.ID, result)
 				continue
 			}
-			state.AddToolResultMessage(duplicate.ID, duplicateToolResult(duplicate, opts))
+			state.AddToolResultMessage(duplicate.ID, WrapUntrustedToolResult(duplicate.Name, duplicateToolResult(duplicate, opts)))
 		}
 		emitStats()
 

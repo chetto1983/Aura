@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/tools"
 )
@@ -289,7 +290,14 @@ func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist 
 		callCopy.Arguments = argsClone
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			results[i] = toolOutcome{id: call.ID, content: limitToolContent(r.executeOneTool(ctx, userID, allowlist, call, toolTimeout), maxChars)}
+			raw := r.executeOneTool(ctx, userID, allowlist, call, toolTimeout)
+			// Wrap output from untrusted-origin tools (web_fetch, web_search,
+			// MCP, etc.) before truncation so the LLM sees a clear
+			// data-not-instructions envelope (F-003). Trusted tools are
+			// returned unchanged so the model does not learn to ignore every
+			// tool result indiscriminately.
+			wrapped := agentloop.WrapUntrustedToolResult(call.Name, raw)
+			results[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, maxChars)}
 		}(i, callCopy)
 	}
 	go func() {

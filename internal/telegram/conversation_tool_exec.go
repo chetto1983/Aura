@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/tools"
@@ -99,7 +100,11 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	wg.Wait()
 
 	for _, r := range results {
-		convCtx.AddToolResultMessage(r.id, r.content)
+		// Envelope output from untrusted-origin tools (web_fetch, web_search,
+		// MCP, etc.) so the LLM sees a clear data-not-instructions boundary
+		// when the same content is re-read on the next turn (F-003).
+		wrapped := agentloop.WrapUntrustedToolResult(r.tool, r.content)
+		convCtx.AddToolResultMessage(r.id, wrapped)
 		summary.lastResult = r.content
 		if r.fatal && summary.fatalResult == "" {
 			summary.fatalResult = r.content
