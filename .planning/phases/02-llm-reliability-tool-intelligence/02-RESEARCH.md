@@ -19,7 +19,7 @@ The largest landmines are concurrency-shaped: the ETag check MUST live inside `f
 #### `write_wiki_page` Tool Surface (WIKI-01, WIKI-02)
 - **D-01:** Single `write_wiki_page` tool. Required parameters: `title` (string), `body` (string, full replace — no patch mode), `expected_updated_at` (RFC3339 string, ALWAYS required). Optional: `category`, `tags`, `related`, `sources`. Slug is derived from `title` via `wiki.Slug(title)` — the LLM never supplies slug directly. Frontmatter fields the LLM must NOT control: `slug`, `unversioned`, `schema_version`, `prompt_version`, `created_at`, `updated_at`.
 - **D-02:** Sentinel for create: `expected_updated_at=""` (empty string) means "create-or-fail-if-exists". For updates, the LLM MUST pass the exact `updated_at` it observed when reading the page. Tool semantics: page does not exist + expected="" → create; page exists + expected matches → update; otherwise → conflict.
-- **D-03:** Conflict response is structured JSON returned as the tool result so the LLM can recover deterministically: `{"error":"conflict","slug":"<derived>","expected_updated_at":"<llm-supplied>","actual_updated_at":"<on-disk>"}`. The LLM is expected to re-read the page (via existing `read_memory` / search tools) and retry with the fresh ETag.
+- **D-03:** Conflict response is structured JSON returned as the tool result so the LLM can recover deterministically: `{"error":"conflict","slug":"<derived>","expected_updated_at":"<llm-supplied>","actual_updated_at":"<on-disk>"}`. The LLM is expected to re-read the page (via existing `read_source` / search tools) and retry with the fresh ETag.
 - **D-04:** Tool DESCRIPTION must instruct: "Always read the page first to obtain `updated_at`; pass `expected_updated_at=''` only when creating a brand-new page; on conflict, re-read and retry."
 - **D-05:** `wiki.Store.WritePage` signature is extended with an optional `expectedUpdatedAt string` parameter (variadic or new method `WritePageWithExpected`). Existing `WritePage(ctx, page)` calls (from `internal/ingest/pipeline.go`, `internal/wiki/parser.go` Writer, `internal/wiki/store.go` RepairLink) are NOT migrated in this phase — they keep "trust caller" semantics.
 
@@ -49,7 +49,7 @@ The largest landmines are concurrency-shaped: the ETag check MUST live inside `f
 - **D-21:** Upgrade `github.com/go-git/go-git/v5` from v5.18.0 to v5.19.0 (compatible minor; security/dependency refresh).
 
 #### Tool Retrieval / Auto-Injection (TOOL-01, TOOL-02)
-- **D-22:** Hybrid injection model. Always-on core injected on every turn (7 tools: `write_wiki_page`, `search_memory`, `list_memory`, `read_memory`, `schedule_task`, `request_dashboard_token`, `read_skill`). Plus top-K=5 supplemental tools retrieved per turn via Qdrant semantic match against the latest user message. Total injected per turn ≤ 12 tool definitions.
+- **D-22:** Hybrid injection model. Always-on core injected on every turn (6 tools — revised 2026-05-11 per plan-checker iteration 3, see CONTEXT.md D-22 note: `write_wiki_page`, `search_memory`, `list_sources`, `read_source`, `schedule_task`, `request_dashboard_token`). Plus top-K=5 supplemental tools retrieved per turn via Qdrant semantic match against the latest user message. Total injected per turn ≤ 11 tool definitions.
 - **D-23:** Retrieval query is the LATEST USER MESSAGE only (single-step query per arXiv 2511.01854). NOT the full conversation. Empty / cold-start (system message only, no user turn yet) → core only.
 - **D-24:** Embedding strategy for tools: single-vector `name + " " + description` per tool. Examples are NOT embedded. Reuses `internal/tools/registry_search_vector.go` `toolVectorIndex` — exported as `ToolVectorIndex`.
 - **D-25:** Fallback when Qdrant is down or the index has zero docs: inject the FULL toolset and log degraded mode at WARN. Never fail the turn.
@@ -439,8 +439,8 @@ func (w *Worker) drain() {
 ```go
 // internal/telegram/setup.go (NEW — replaces the line 519-528 BuildVectorIndex block + adds the closure)
 var alwaysOnCore = []string{
-    "write_wiki_page", "search_memory", "list_memory", "read_memory",
-    "schedule_task", "request_dashboard_token", "read_skill",
+    "write_wiki_page", "search_memory", "list_sources", "read_source",
+    "schedule_task", "request_dashboard_token",
 }
 
 agentloopOpts.ToolsProvider = func() []llm.ToolDefinition {
@@ -737,32 +737,32 @@ See "Pattern 3" above — verified against `internal/conversation/archive.go:332
 
 If this table is empty, all claims were verified or cited — the table is non-empty here, so the planner should treat A2 (cold-start latest-user accessor) as the highest-priority assumption to verify before locking the per-turn injection task.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where exactly should `LatestUserMessageText()` live?**
    - What we know: the per-turn `ToolsProvider` closure (D-22, D-23) needs a function that returns the latest user message string. `agentloop.Run` (loop.go:155-157) invokes `opts.ToolsProvider()` with no arguments — the closure must capture state.
    - What's unclear: `internal/conversation/context.go` likely already has a `Messages()` accessor (verified — `State.Messages() []llm.Message` is the agentloop-side interface at loop.go:36-37); the right helper is probably a one-liner that walks backwards over `State.Messages()` and returns the first `Role: "user"` content. May already exist.
-   - Recommendation: planner adds a "verify or add `LatestUserMessageText()` on `*conversation.Context`" task before the ToolsProvider closure task. Same task can also walk the existing setup.go to find where the State is constructed and whether the closure can capture a function reference.
+   - RESOLVED: planner adds a "verify or add `LatestUserMessageText()` on `*conversation.Context`" task before the ToolsProvider closure task. Same task can also walk the existing setup.go to find where the State is constructed and whether the closure can capture a function reference.
 
 2. **How does the tool-vector index handle the embedding-text shape change between Phase 1 (full text) and Phase 2 (name+desc only)?**
    - What we know: existing `searchableToolText` (registry_search_vector.go:122-141) embeds `name + description + tags + examples JSON + parameters JSON`. Phase 2 D-24 narrows to `name + " " + description` only.
    - What's unclear: vector dimension is the same (embedding model unchanged), so warm-cache short-circuit (`points_count > 0` at line 166) WILL skip rebuild and serve stale embeddings unless the collection is invalidated.
-   - Recommendation: planner adds a task to either (a) bump the collection name to `aura_tool_search_v2` (clean cutover, recoverable from Phase 1 state) or (b) skip the warm-cache check on Phase 2 first boot (e.g., a `force_rebuild` config flag). Option (a) is safer because it's idempotent across restarts.
+   - RESOLVED: planner adds a task to either (a) bump the collection name to `aura_tool_search_v2` (clean cutover, recoverable from Phase 1 state) or (b) skip the warm-cache check on Phase 2 first boot (e.g., a `force_rebuild` config flag). Option (a) is safer because it's idempotent across restarts.
 
 3. **Does `NewWriter` (`internal/wiki/parser.go:29`) still need to stay around after Phase 2?**
    - What we know: the legacy `Writer.WriteFromLLMOutput` retry path (parser.go:40-126) is the closest thing to a "heuristic text-parsing" of LLM output for wiki writes. ROADMAP.md success criterion 1 says "no heuristic text-parsing remains in the codebase".
    - What's unclear: D-05 explicitly preserves "trust caller" semantics for `internal/ingest/pipeline.go:155` (`p.wiki.WritePage(ctx, page)`) — but the pipeline does NOT use `Writer.WriteFromLLMOutput`; it builds the Page directly. Grep confirms `WriteFromLLMOutput` is referenced only by tests in `internal/wiki/wiki_test.go`.
-   - Recommendation: planner verifies via Grep that `Writer.WriteFromLLMOutput` has no production callers (only tests). If true, mark `parser.go` Writer struct + WriteFromLLMOutput function as DELETED in Phase 2, satisfying success criterion 1 cleanly. If `Writer` has any production caller, the deletion is deferred and the success criterion is interpreted as "agent loop path no longer uses it".
+   - RESOLVED: planner verifies via Grep that `Writer.WriteFromLLMOutput` has no production callers (only tests). If true, mark `parser.go` Writer struct + WriteFromLLMOutput function as DELETED in Phase 2, satisfying success criterion 1 cleanly. If `Writer` has any production caller, the deletion is deferred and the success criterion is interpreted as "agent loop path no longer uses it".
 
 4. **What is the right `ReindexConfig` env var name?**
    - What we know: CONTEXT.md "Claude's Discretion" leaves env var naming up to Claude; the existing pattern is `RUNTIME_*`.
    - What's unclear: whether to follow `REINDEX_QUEUE_SIZE`, `RUNTIME_REINDEX_QUEUE_SIZE`, or some other shape.
-   - Recommendation: planner's call. The simplest is `REINDEX_QUEUE_SIZE int` defaulting to 100 (matches D-12). A future setting for `REINDEX_DROP_THRESHOLD` could surface in dashboard runtime settings.
+   - RESOLVED: planner's call. The simplest is `REINDEX_QUEUE_SIZE int` defaulting to 100 (matches D-12). A future setting for `REINDEX_DROP_THRESHOLD` could surface in dashboard runtime settings.
 
 5. **How should the `unversioned` flag round-trip through the conversion to/from JSON in the dashboard API?**
    - What we know: D-20 says `/api/wiki/{slug}` includes `unversioned` field passthrough; existing `pageFrontmatter` (api/wiki.go:116-137) already builds the `fm` map and adds optional fields with `if x != "" { ... }` guards.
    - What's unclear: whether to always include `unversioned` (true or false) or only when `true`. The omitempty YAML behavior on disk is "absent when false", so the API can mirror that. But the dashboard needs a stable shape — `unversioned: false` with default omitted is friendlier to TS strict typing.
-   - Recommendation: include `unversioned bool` always in the API response (even when false). YAML stays omitempty on disk. TS type in `web/src/types/api.ts` adds `unversioned?: boolean` (optional only because old clients may not send it during a deploy window).
+   - RESOLVED: include `unversioned bool` always in the API response (even when false). YAML stays omitempty on disk. TS type in `web/src/types/api.ts` adds `unversioned?: boolean` (optional only because old clients may not send it during a deploy window).
 
 ## Environment Availability
 

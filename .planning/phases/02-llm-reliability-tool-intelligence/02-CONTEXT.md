@@ -23,7 +23,7 @@ The LLM writes wiki pages through an explicit `write_wiki_page` tool with strict
   ```json
   {"error": "conflict", "slug": "<derived>", "expected_updated_at": "<llm-supplied>", "actual_updated_at": "<on-disk>"}
   ```
-  The LLM is expected to re-read the page (via existing `read_memory` / search tools) and retry with the fresh ETag.
+  The LLM is expected to re-read the page (via existing `read_source` / search tools) and retry with the fresh ETag.
 - **D-04:** Tool DESCRIPTION must instruct: "Always read the page first to obtain `updated_at`; pass `expected_updated_at=''` only when creating a brand-new page; on conflict, re-read and retry." Description doubles as the contract documentation for the LLM.
 - **D-05:** `wiki.Store.WritePage` signature is extended with an optional `expectedUpdatedAt string` parameter (variadic or new method `WritePageWithExpected`). The existing `WritePage(ctx, page)` calls (from `internal/ingest/pipeline.go`, `internal/tools/tool_registry.go` LLM-tool registration) are NOT migrated in this phase — they keep "trust caller" semantics. Only the new `write_wiki_page` LLM tool flows through the ETag-checked path.
 
@@ -53,7 +53,7 @@ The LLM writes wiki pages through an explicit `write_wiki_page` tool with strict
 - **D-21:** Upgrade `github.com/go-git/go-git/v5` from v5.18.0 to v5.19.0 (compatible minor; security/dependency refresh). One-line `go.mod` change verified by `go build ./...` and `go test ./internal/wiki/`.
 
 ### Tool Retrieval / Auto-Injection (TOOL-01, TOOL-02)
-- **D-22:** Hybrid injection model. Always-on core injected on every turn (7 tools: `write_wiki_page`, `search_memory`, `list_memory`, `read_memory`, `schedule_task`, `request_dashboard_token`, `read_skill`). Plus top-K=5 supplemental tools retrieved per turn via Qdrant semantic match against the latest user message. Total injected per turn ≤ 12 tool definitions.
+- **D-22:** Hybrid injection model. Always-on core injected on every turn (6 tools: `write_wiki_page`, `search_memory`, `list_sources`, `read_source`, `schedule_task`, `request_dashboard_token`). Plus top-K=5 supplemental tools retrieved per turn via Qdrant semantic match against the latest user message. Total injected per turn ≤ 11 tool definitions. [Revised 2026-05-11: original D-22 named 7 tools including `list_memory`/`read_memory`/`read_skill` — verified at planning time that none of these three names are registered in the codebase. Substitutes: `list_sources`/`read_source` (real source-read paths, second-brain analogs of the intended memory tools); `read_skill` dropped (skills load via prompt overlay, not a tool).]
 - **D-23:** Retrieval query is the LATEST USER MESSAGE only (single-step query per arXiv 2511.01854 Tool-to-Agent Retrieval). NOT the full conversation, NOT the last N turns. Empty / cold-start (system message only, no user turn yet) → core only.
 - **D-24:** Embedding strategy for tools: single-vector `name + " " + description` per tool. Examples are NOT embedded (research shows name+description sufficient and keeps the index small). Reuses `internal/tools/registry_search_vector.go` `toolVectorIndex` — exported as `ToolVectorIndex`, methods promoted to the package surface.
 - **D-25:** Fallback when Qdrant is down or the index has zero docs: inject the FULL toolset (current behavior preserved) and log degraded mode at WARN. Never fail the turn because tool retrieval failed — degrade to "always works, just slower / more prompt".

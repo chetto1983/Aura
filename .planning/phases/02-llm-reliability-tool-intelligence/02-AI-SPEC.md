@@ -33,7 +33,7 @@ Aura is a **self-hosted, single-user personal second-brain assistant** — one G
 
 **Output Consequence:** What happens downstream when each of Phase 2's outputs is acted on:
 - A successful `write_wiki_page` tool result → a Markdown file at `WIKI_PATH/<slug>.md` is updated atomically, a git commit is attempted, a reindex `Job` is enqueued (non-blocking), and the LLM tool-call result JSON `{"status":"ok","slug":...,"updated_at":...}` is fed back into the next agent-loop turn. The user sees a Telegram reply summarizing the change; the dashboard reflects the new page within seconds (after the async reindex completes).
-- A `conflict` tool result (D-03) → the LLM is expected to re-read the page via `search_memory`/`read_memory` and retry with the fresh `actual_updated_at`. The user does NOT see a raw error; the recovery happens inside the agent loop.
+- A `conflict` tool result (D-03) → the LLM is expected to re-read the page via `search_memory`/`read_source` and retry with the fresh `actual_updated_at`. The user does NOT see a raw error; the recovery happens inside the agent loop.
 - A retry classification decision → determines whether the user pays 1× or up to 4× tokens for a single user turn, whether the wall-clock cost grows by 0s or up to ~5×30s of jittered backoff, and whether wiki writes stay at deterministic `temperature=0` or end up at `0.7` (the latter only legitimately when the LLM produced structurally invalid frontmatter).
 - A tool injected on a turn → directly determines whether the LLM can satisfy the user's next request. Wrong tool selected = user repeats themselves; right tool selected = task completes silently.
 - A reindex job processed (or dropped) → determines whether `search_memory` returns the latest page content. Drop-newest is safe because the worker re-reads from disk, but a *systematically* dropping queue (worker stopped, channel never drained) means the vector index lags arbitrarily behind the filesystem source of truth.
@@ -239,8 +239,8 @@ llmClient := llm.NewRetryClient(rawLLMClient, llm.RetryConfig{
 //    Keep the existing 7-tool always-on core list co-located here so an
 //    auditor can grep one place to see what is injected on every turn (D-22).
 registry.Register(tools.NewWriteWikiPageTool(wikiStore, reindexWorker))
-// ... other always-on registrations: search_memory, list_memory, read_memory,
-// schedule_task, request_dashboard_token, read_skill ...
+// ... other always-on registrations (revised 2026-05-11 — see CONTEXT.md D-22):
+// search_memory, list_sources, read_source, schedule_task, request_dashboard_token ...
 
 // 5. Build the Qdrant-backed tool index (D-24..D-26) and install the
 //    per-turn ToolsProvider closure on the agent loop (D-22, D-23, D-28).
@@ -468,7 +468,7 @@ func (t *WriteWikiPageTool) Description() string {
         "Optimistic concurrency: ALWAYS read the page first to obtain its `updated_at` and",
         "pass that exact RFC3339 string as `expected_updated_at`.",
         "When creating a brand-new page, pass `expected_updated_at=\"\"` (empty string).",
-        "On a `conflict` response, re-read the page (search_memory or read_memory) and retry",
+        "On a `conflict` response, re-read the page (search_memory or read_source) and retry",
         "with the fresh `actual_updated_at` echoed back in the conflict payload.",
     }, " ")
 }
@@ -529,17 +529,16 @@ func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (s
 }
 ```
 
-The seven always-on tools per D-22 are listed once in `internal/telegram/setup.go` (or a small `internal/tools/core.go` constant) so an auditor can grep one place:
+The six always-on tools per D-22 (revised 2026-05-11: see CONTEXT.md note) are listed once in `internal/telegram/tools_provider.go` (per Plan 06 WARNING 4) so an auditor can grep one place:
 
 ```go
 var alwaysOnCore = []string{
     "write_wiki_page",
     "search_memory",
-    "list_memory",
-    "read_memory",
+    "list_sources",
+    "read_source",
     "schedule_task",
     "request_dashboard_token",
-    "read_skill",
 }
 ```
 
@@ -548,7 +547,7 @@ var alwaysOnCore = []string{
 | What | Where | How updated |
 |------|-------|-------------|
 | Wiki page content | Filesystem (`WIKI_PATH`/`<slug>.md`) — Markdown body + YAML frontmatter | Atomic temp+rename inside `fileMutex(slug)`; existing pattern unchanged. |
-| ETag (concurrency token) | `Page.UpdatedAt` (RFC3339 string in frontmatter) — already present | Reused as the strong validator. NO separate version column, NO content hash. The LLM observes it via the existing `read_memory` / search tools and echoes it back as `expected_updated_at` (D-01, `<specifics>`). |
+| ETag (concurrency token) | `Page.UpdatedAt` (RFC3339 string in frontmatter) — already present | Reused as the strong validator. NO separate version column, NO content hash. The LLM observes it via the existing `read_source` / search tools and echoes it back as `expected_updated_at` (D-01, `<specifics>`). |
 | `unversioned` flag | `Page.Unversioned bool`, new field with `omitempty` (D-19) | Set by `wiki.Store` ONLY on `gitCommit` failure; cleared on the next successful commit for the same slug (D-17, D-18). LLM never reads or writes this field. |
 | Reindex queue state | In-memory `chan reindex.Job` (cap 100) — never persisted | Drop-newest on full (D-12). Lost-on-restart is acceptable because the next wiki write to that slug re-enqueues, and a maintenance "reindex everything" job already exists in `internal/api/maintenance`. |
 | Tool vector index | Qdrant collection (separate from wiki memory) — Phase 1 shared client | Built once at boot (D-26), rebuilt on tool registration changes (rare). The `points_count > 0` warm-cache check from Phase 1 (QDRANT-01) avoids redundant rebuilds. |
@@ -739,7 +738,7 @@ Two scopes — keep them separate:
 
 **Conversation history (out of scope for Phase 2 — DO NOT touch).** The existing 50-message sliding window in `internal/conversation` already handles this. Summarisation/compaction is a Phase-3+ concern (mentioned in research SUMMARY.md but not requirement-tagged). If a future phase needs compaction, the natural insertion point is between conversation reading and request building inside `internal/agentloop/loop.go` — not inside the LLM wrapper.
 
-**RAG-style truncation.** The `search_memory` and `read_memory` tools already truncate result bodies; reranking is implicit in `Registry.Search`'s lex+vector blend (`internal/tools/registry_search.go`). Phase 2 changes nothing here.
+**RAG-style truncation.** The `search_memory` and `read_source` tools already truncate result bodies; reranking is implicit in `Registry.Search`'s lex+vector blend (`internal/tools/registry_search.go`). Phase 2 changes nothing here.
 
 ### Cost and Latency Budget
 
