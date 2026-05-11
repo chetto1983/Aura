@@ -26,6 +26,12 @@ type Page struct {
 	CreatedAt     string   `yaml:"created_at"`
 	UpdatedAt     string   `yaml:"updated_at"`
 
+	// Unversioned indicates the most recent on-disk write did not produce a
+	// git commit (commit failed or git is unavailable). The page IS saved on
+	// disk — only the audit history is degraded. Auto-clears on the next
+	// successful commit for the same slug. Phase 2 GIT-01.
+	Unversioned bool `yaml:"unversioned,omitempty" json:"unversioned,omitempty"`
+
 	// Body holds the markdown content below the frontmatter.
 	// Not serialized in YAML — written after the --- delimiter.
 	Body string `yaml:"-"`

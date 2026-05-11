@@ -245,6 +245,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		PromptVersion string   `yaml:"prompt_version"`
 		CreatedAt     string   `yaml:"created_at"`
 		UpdatedAt     string   `yaml:"updated_at"`
+		Unversioned   bool     `yaml:"unversioned,omitempty"` // PHASE 2 ADD (D-19)
 	}{
 		Title:         page.Title,
 		Tags:          page.Tags,
@@ -255,6 +256,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		PromptVersion: page.PromptVersion,
 		CreatedAt:     page.CreatedAt,
 		UpdatedAt:     page.UpdatedAt,
+		Unversioned:   page.Unversioned, // PHASE 2 ADD (D-19)
 	}
 
 	fmData, err := yaml.Marshal(&fm)
