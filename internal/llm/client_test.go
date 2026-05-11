@@ -162,27 +162,7 @@ func TestRetryClientContextCanceled(t *testing.T) {
 	}
 }
 
-func TestBackoffDelay(t *testing.T) {
-	retry := NewRetryClient(nil, RetryConfig{
-		MaxRetries: 5,
-		BaseDelay:  1 * time.Second,
-		MaxDelay:   30 * time.Second,
-	})
-
-	tests := []struct {
-		attempt int
-		want    time.Duration
-	}{
-		{0, 1 * time.Second},
-		{1, 2 * time.Second},
-		{2, 4 * time.Second},
-		{5, 30 * time.Second}, // capped at max
-	}
-
-	for _, tt := range tests {
-		got := retry.backoffDelay(tt.attempt)
-		if got != tt.want {
-			t.Errorf("backoffDelay(%d) = %v, want %v", tt.attempt, got, tt.want)
-		}
-	}
-}
+// TestBackoffDelay was removed: the private backoffDelay method was replaced
+// by the package-level jitteredBackoff function in the classify-then-retry
+// rewrite. Backoff distribution is now tested in TestJitterDistribution
+// (retry_test.go).
