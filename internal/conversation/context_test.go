@@ -470,6 +470,34 @@ type errMock string
 
 func (e errMock) Error() string { return string(e) }
 
+func TestContext_LatestUserMessageText_ColdStart(t *testing.T) {
+	c := NewContext(Config{MaxTokens: 1000})
+	// Seed with only a system message — no user turn yet.
+	c.SetSystemMessage("welcome")
+	if got := c.LatestUserMessageText(); got != "" {
+		t.Fatalf("cold start = %q, want \"\"", got)
+	}
+}
+
+func TestContext_LatestUserMessageText_LastUserWins(t *testing.T) {
+	c := NewContext(Config{MaxTokens: 1000})
+	c.SetSystemMessage("sys")
+	c.AddUserMessage("first")
+	c.AddAssistantMessage("ack")
+	c.AddUserMessage("second") // most recent user
+	c.AddAssistantMessage("ack2")
+	if got := c.LatestUserMessageText(); got != "second" {
+		t.Fatalf("last user = %q, want \"second\"", got)
+	}
+}
+
+func TestContext_LatestUserMessageText_NoSystemNoUser(t *testing.T) {
+	c := NewContext(Config{MaxTokens: 1000})
+	if got := c.LatestUserMessageText(); got != "" {
+		t.Fatalf("empty context = %q, want \"\"", got)
+	}
+}
+
 func TestEnforceLimitPreservesTranscript(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
