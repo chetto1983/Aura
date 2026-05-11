@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,11 +131,11 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"in": map[string]any{
 				"type":        "string",
-				"description": "One-shot relative duration (e.g. \"60s\", \"5m\", \"2h\", \"1d\"). Server resolves to absolute UTC. Use this when the user says \"in N seconds/minutes/hours\".",
+				"description": "One-shot relative duration (e.g. \"60s\", \"5m\", \"2h\", \"1d\", \"2w\"). Server resolves to absolute UTC. Use this when the user says \"in N seconds/minutes/hours/days/weeks\".",
 			},
 			"at_local": map[string]any{
 				"type":        "string",
-				"description": "One-shot wall-clock time in the user's timezone, no offset (e.g. \"2026-04-30T17:00:00\" for 5pm local). Use this when the user names a specific clock time.",
+				"description": "One-shot wall-clock time in the user's timezone, no offset. Accepts YYYY-MM-DDTHH:MM[:SS] or YYYY-MM-DD HH:MM[:SS] (e.g. \"2026-04-30T17:00:00\" or \"2026-04-30 17:00\" for 5pm local).",
 			},
 			"at": map[string]any{
 				"type":        "string",
@@ -245,7 +246,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	now := time.Now().UTC()
 	switch {
 	case in != "":
-		d, err := time.ParseDuration(in)
+		d, err := parseScheduleDuration(in)
 		if err != nil {
 			return "", fmt.Errorf("schedule_task: parse in: %w", err)
 		}
@@ -529,4 +530,28 @@ func weekdayArg(args map[string]any, key string) string {
 		return ""
 	}
 	return strings.Join(values, ",")
+}
+
+// parseScheduleDuration accepts everything time.ParseDuration takes (s/m/h)
+// plus "d" (days) and "w" (weeks) — units the tool description advertises but
+// Go's stdlib does not. A bare integer falls back to time.ParseDuration which
+// will reject it; this keeps existing diagnostics ("missing unit") intact.
+func parseScheduleDuration(raw string) (time.Duration, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	switch s[len(s)-1] {
+	case 'd':
+		n, err := strconv.Atoi(s[:len(s)-1])
+		if err == nil {
+			return time.Duration(n) * 24 * time.Hour, nil
+		}
+	case 'w':
+		n, err := strconv.Atoi(s[:len(s)-1])
+		if err == nil {
+			return time.Duration(n) * 7 * 24 * time.Hour, nil
+		}
+	}
+	return time.ParseDuration(s)
 }
