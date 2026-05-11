@@ -1,9 +1,12 @@
 package llm
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
+	"strings"
 )
 
 // Bucket classifies an LLM call failure for retry policy selection.
@@ -64,8 +67,67 @@ func redact(s string) string {
 }
 
 // Classify returns (bucket, retryable, cleaned).
-// Stub — implementation in Task 2.
+// Priority: context shape → local sentinel → HTTP status → transport → message-pattern.
+// The cleaned string has secrets stripped via redact() before it escapes this function.
 func Classify(err error) (Bucket, bool, string) {
-	// Not implemented yet — tests will fail (RED state).
-	return BucketTransient, true, ""
+	if err == nil {
+		return BucketPermanent, false, ""
+	}
+	cleaned := redact(err.Error())
+
+	// 1. Context-shape errors.
+	if errors.Is(err, context.Canceled) {
+		return BucketPermanent, false, cleaned
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return BucketTransient, true, cleaned
+	}
+
+	// 2. Local sentinels (set by tool execute path on schema fail).
+	if errors.Is(err, ErrSchemaValidation) {
+		return BucketContent, true, cleaned
+	}
+	if errors.Is(err, ErrEmptyOutput) {
+		return BucketContent, true, cleaned
+	}
+	if errors.Is(err, ErrMalformedToolCall) {
+		return BucketContent, true, cleaned
+	}
+
+	// 3. HTTP status via typed *APIError.
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.StatusCode == 429:
+			return BucketTransient, true, cleaned
+		case apiErr.StatusCode >= 500:
+			return BucketTransient, true, cleaned
+		case apiErr.StatusCode == 401 || apiErr.StatusCode == 403:
+			return BucketPermanent, false, cleaned
+		case apiErr.StatusCode == 400:
+			return BucketPermanent, false, cleaned
+		}
+	}
+
+	// 4. Transport / network errors.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return BucketTransient, true, cleaned
+	}
+
+	// 5. Message-pattern fallback (OpenAI / OpenAI-compatible).
+	lower := strings.ToLower(cleaned)
+	switch {
+	case strings.Contains(lower, "rate limit"):
+		return BucketTransient, true, cleaned
+	case strings.Contains(lower, "overloaded"):
+		return BucketTransient, true, cleaned
+	case strings.Contains(lower, "quota"):
+		return BucketPermanent, false, cleaned
+	case strings.Contains(lower, "model not found"):
+		return BucketPermanent, false, cleaned
+	}
+
+	// Default: unknown errors are treated as transient (one retry is cheap).
+	return BucketTransient, true, cleaned
 }
