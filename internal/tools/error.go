@@ -1,8 +1,43 @@
 package tools
 
 import (
+	"errors"
 	"strings"
 )
+
+// classifyToolError maps a tool error to a low-cardinality class label suitable
+// for logging without leaking LLM-controlled values (URLs, source IDs, file
+// paths, hostnames). CLAUDE.md is explicit: "only tool names and argument
+// *keys* are logged — never values"; tool error messages were the gap.
+func classifyToolError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "not found"), strings.Contains(msg, "does not exist"), strings.Contains(msg, "no such"):
+		return "not_found"
+	case strings.Contains(msg, "validation"), strings.Contains(msg, "invalid"), strings.Contains(msg, "must be"), strings.Contains(msg, "must not"), strings.Contains(msg, "is required"):
+		return "validation"
+	case strings.Contains(msg, "timed out"), strings.Contains(msg, "timeout"):
+		return "timeout"
+	case strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"), strings.Contains(msg, "denied"), strings.Contains(msg, "not allowed"):
+		return "permission"
+	case strings.Contains(msg, "blocked"), strings.Contains(msg, "ssrf"), strings.Contains(msg, "refusing to dial"):
+		return "blocked"
+	case strings.Contains(msg, "rate limit"), strings.Contains(msg, "too many requests"):
+		return "rate_limited"
+	case strings.Contains(msg, "i/o"), strings.Contains(msg, "io error"), strings.Contains(msg, "read"), strings.Contains(msg, "write"):
+		return "io"
+	}
+	return "error"
+}
 
 // FormatToolError converts a Go error into the tool result string the LLM
 // reads back. Plain text — no JSON envelope, no "retryable" flag that invites

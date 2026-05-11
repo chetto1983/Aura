@@ -8,6 +8,8 @@ services:
       - ./data/secrets:/secrets
       - ./data:/data
       - ./runtime-workspace:/workspace
+      - aura-wiki:/workspace/wiki
+      - aura-skills:/workspace/skills
 
   aura:
     build:
