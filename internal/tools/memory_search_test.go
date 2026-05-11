@@ -469,27 +469,40 @@ func memoryKeywordEmbedding(_ context.Context, text string) ([]float32, error) {
 
 func TestRelevanceTimesRecencyAppliesHalfLife(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// fresh archive (age 0d) full weight
-	fresh := relevanceTimesRecency("archive", 0.9, now, now)
+	// fresh archive (age 0d) full weight at the 30d half-life
+	fresh := relevanceTimesRecencyWithHalfLife(0.9, now, now, recencyHalfLifeArchiveDays)
 	if fresh < 0.89 || fresh > 0.91 {
 		t.Fatalf("fresh archive score = %f, want ~0.9", fresh)
 	}
 	// archive aged one half-life (~30d) should halve
-	thirty := relevanceTimesRecency("archive", 0.9, now.AddDate(0, 0, -30), now)
+	thirty := relevanceTimesRecencyWithHalfLife(0.9, now.AddDate(0, 0, -30), now, recencyHalfLifeArchiveDays)
 	if thirty < 0.40 || thirty > 0.50 {
 		t.Fatalf("30d archive score = %f, want ~0.45", thirty)
 	}
-	// wiki aged 30d should barely move (half-life 180)
-	wiki30 := relevanceTimesRecency("wiki", 0.9, now.AddDate(0, 0, -30), now)
+	// wiki aged 30d should barely move at the 180d half-life
+	wiki30 := relevanceTimesRecencyWithHalfLife(0.9, now.AddDate(0, 0, -30), now, recencyHalfLifeWikiDays)
 	if wiki30 < 0.75 || wiki30 > 0.85 {
 		t.Fatalf("30d wiki score = %f, want ~0.79", wiki30)
 	}
 }
 
 func TestRelevanceTimesRecencyZeroUpdatedAtKeepsRelevance(t *testing.T) {
-	got := relevanceTimesRecency("archive", 0.7, time.Time{}, time.Now())
+	got := relevanceTimesRecencyWithHalfLife(0.7, time.Time{}, time.Now(), recencyHalfLifeArchiveDays)
 	if got != 0.7 {
 		t.Fatalf("zero updated_at should keep relevance, got %f", got)
+	}
+}
+
+func TestIsArchiveKindClassifiesOperationalTier(t *testing.T) {
+	for _, kind := range []string{"archive", "proposal"} {
+		if !isArchiveKind(kind) {
+			t.Errorf("isArchiveKind(%q) = false, want true", kind)
+		}
+	}
+	for _, kind := range []string{"wiki", "wiki_page", "graph_node", "graph_index", "source"} {
+		if isArchiveKind(kind) {
+			t.Errorf("isArchiveKind(%q) = true, want false (curated tier)", kind)
+		}
 	}
 }
 

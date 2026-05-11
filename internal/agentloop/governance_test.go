@@ -177,7 +177,7 @@ func TestApplyGovernanceChainsAllTransforms(t *testing.T) {
 		llm.Message{Role: "tool", ToolCallID: "ghost", Content: "i should be dropped"},
 	)
 
-	out := applyGovernance(msgs, 500)
+	out := applyGovernance(msgs, 500, 0, 0)
 
 	// Orphan dropped.
 	for _, msg := range out {

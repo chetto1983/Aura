@@ -45,13 +45,12 @@ const (
 	searchMemorySnippetLimit   = 260
 	searchMemoryDefaultTimeout = 5 * time.Second
 
-	// Half-life in days for the exp(-age/halfLife) recency factor. Wiki and
-	// source knowledge is curated and assumed stable; archive and proposals
-	// are short-lived operational signals.
+	// Half-life in days for the 0.5^(age/halfLife) recency factor.
+	// Curated knowledge (wiki, ingested sources, graph cards) ages slowly;
+	// operational signals (archive, proposed updates) age fast. The split
+	// is binary on purpose — see isArchiveKind in this file.
 	recencyHalfLifeWikiDays    = 180.0
-	recencyHalfLifeSourceDays  = 180.0
 	recencyHalfLifeArchiveDays = 30.0
-	recencyHalfLifeProposalDays = 30.0
 )
 
 type compactMemorySearcher interface {
@@ -59,21 +58,48 @@ type compactMemorySearcher interface {
 }
 
 type SearchMemoryTool struct {
-	wiki    search.Searcher
-	compact compactMemorySearcher
-	timeout time.Duration
-	now     func() time.Time
+	wiki                  search.Searcher
+	compact               compactMemorySearcher
+	timeout               time.Duration
+	halfLifeWikiDays      float64
+	halfLifeArchiveDays   float64
+	now                   func() time.Time
 }
 
 func NewSearchMemoryTool(wiki search.Searcher, compact compactMemorySearcher) *SearchMemoryTool {
 	return NewSearchMemoryToolWithTimeout(wiki, compact, searchMemoryDefaultTimeout)
 }
 
+// NewSearchMemoryToolWithTimeout uses the package-default half-lives. Callers
+// that need to override them (typically wiring from config) should use
+// NewSearchMemoryToolConfigured instead.
 func NewSearchMemoryToolWithTimeout(wiki search.Searcher, compact compactMemorySearcher, timeout time.Duration) *SearchMemoryTool {
+	return NewSearchMemoryToolConfigured(wiki, compact, timeout, recencyHalfLifeWikiDays, recencyHalfLifeArchiveDays)
+}
+
+// NewSearchMemoryToolConfigured is the env-driven constructor. wikiHalfLife
+// applies to wiki/source/graph kinds (curated knowledge ages slowly);
+// archiveHalfLife applies to archive/proposal kinds (operational notes age
+// fast). Zero values fall back to the package defaults so test fixtures
+// can stay terse.
+func NewSearchMemoryToolConfigured(wiki search.Searcher, compact compactMemorySearcher, timeout time.Duration, wikiHalfLifeDays, archiveHalfLifeDays float64) *SearchMemoryTool {
 	if wiki == nil && compact == nil {
 		return nil
 	}
-	return &SearchMemoryTool{wiki: wiki, compact: compact, timeout: timeout, now: time.Now}
+	if wikiHalfLifeDays <= 0 {
+		wikiHalfLifeDays = recencyHalfLifeWikiDays
+	}
+	if archiveHalfLifeDays <= 0 {
+		archiveHalfLifeDays = recencyHalfLifeArchiveDays
+	}
+	return &SearchMemoryTool{
+		wiki:                wiki,
+		compact:             compact,
+		timeout:             timeout,
+		halfLifeWikiDays:    wikiHalfLifeDays,
+		halfLifeArchiveDays: archiveHalfLifeDays,
+		now:                 time.Now,
+	}
 }
 
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
@@ -152,7 +178,11 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 
 	now := t.now()
 	for i := range results {
-		results[i].Score = relevanceTimesRecency(results[i].Kind, results[i].Score, results[i].UpdatedAt, now)
+		halfLife := t.halfLifeWikiDays
+		if isArchiveKind(results[i].Kind) {
+			halfLife = t.halfLifeArchiveDays
+		}
+		results[i].Score = relevanceTimesRecencyWithHalfLife(results[i].Score, results[i].UpdatedAt, now, halfLife)
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
@@ -271,7 +301,7 @@ func compactIdentifier(doc memoryindex.Document) string {
 	return doc.ID
 }
 
-// relevanceTimesRecency computes the final ranking score.
+// relevanceTimesRecencyWithHalfLife is the per-result ranking score.
 //
 // The recency factor uses true half-life decay: 0.5^(age_days / halfLife).
 // With halfLife=30:
@@ -284,7 +314,11 @@ func compactIdentifier(doc memoryindex.Document) string {
 // item cannot displace a relevant-but-aged one. The user can still find
 // old wiki pages via direct query; the ranker simply prefers a recent hit
 // when both are similarly relevant.
-func relevanceTimesRecency(kind string, relevance float64, updatedAt, now time.Time) float64 {
+//
+// The half-life is supplied by the caller because the operator can override
+// it via env (MEMORY_RECENCY_HALFLIFE_WIKI_DAYS / _ARCHIVE_DAYS) — see
+// SearchMemoryTool's two halfLife*Days fields.
+func relevanceTimesRecencyWithHalfLife(relevance float64, updatedAt, now time.Time, halfLifeDays float64) float64 {
 	if relevance <= 0 {
 		return 0
 	}
@@ -292,30 +326,26 @@ func relevanceTimesRecency(kind string, relevance float64, updatedAt, now time.T
 	if updatedAt.IsZero() {
 		return rel
 	}
-	halfLife := recencyHalfLifeForKind(kind)
-	if halfLife <= 0 {
+	if halfLifeDays <= 0 {
 		return rel
 	}
 	ageDays := now.Sub(updatedAt).Hours() / 24.0
 	if ageDays < 0 {
 		ageDays = 0
 	}
-	recency := math.Pow(0.5, ageDays/halfLife)
+	recency := math.Pow(0.5, ageDays/halfLifeDays)
 	return rel * recency
 }
 
-func recencyHalfLifeForKind(kind string) float64 {
+// isArchiveKind reports whether a hit comes from the operational tier (chat
+// archive / proposed updates), as opposed to curated knowledge (wiki pages,
+// graph cards, ingested sources). Picks the matching half-life bucket.
+func isArchiveKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
-	case "wiki", "wiki_page", "graph_node", "graph_index":
-		return recencyHalfLifeWikiDays
-	case "source":
-		return recencyHalfLifeSourceDays
-	case "archive":
-		return recencyHalfLifeArchiveDays
-	case "proposal":
-		return recencyHalfLifeProposalDays
+	case "archive", "proposal":
+		return true
 	default:
-		return recencyHalfLifeWikiDays
+		return false
 	}
 }
 

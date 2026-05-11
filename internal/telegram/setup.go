@@ -574,7 +574,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			}()
 		}
 	}
-	if tool := tools.NewSearchMemoryToolWithTimeout(searchEngine, memoryStore, time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond); tool != nil {
+	if tool := tools.NewSearchMemoryToolConfigured(searchEngine, memoryStore,
+		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
+		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
 		toolRegistry.Register(tool)
 	}
 

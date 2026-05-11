@@ -92,8 +92,14 @@ type Options struct {
 	OnStats                 func(Stats)
 	TerminalHandler         TerminalHandler
 	// MaxToolResultChars caps each tool message size before going to the
-	// LLM. Zero uses DefaultMaxToolResultChars (8 KB).
+	// LLM. Zero uses DefaultMaxToolResultChars (8 KB). Operators tune this
+	// via the MAX_TOOL_RESULT_CHARS env var.
 	MaxToolResultChars int
+	// MicrocompactKeepRecent / MicrocompactMinChars control the rolling
+	// compaction of read_file/exec/web_* tool results. Zero values use the
+	// package defaults (10 / 500). Operators tune via env.
+	MicrocompactKeepRecent int
+	MicrocompactMinChars   int
 }
 
 type Result struct {
@@ -158,7 +164,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 
 		stats.LLMCalls++
 		stats.LoopSteps++
-		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars)
+		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
 		resp, err := client.Chat(ctx, messagesForModel, tools)
 		if err != nil {
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err

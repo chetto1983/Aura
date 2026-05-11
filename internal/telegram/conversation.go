@@ -336,6 +336,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
+			MaxToolResultChars:      b.cfg.MaxToolResultChars,
+			MicrocompactKeepRecent:  b.cfg.MicrocompactKeepRecent,
+			MicrocompactMinChars:    b.cfg.MicrocompactMinChars,
 			BeforeTool:              duplicatePolicy,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every

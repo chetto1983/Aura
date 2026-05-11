@@ -265,10 +265,21 @@ func toolNameForMessage(msg llm.Message, messages []llm.Message, idx int) string
 // stubs for IDs we are about to remove), then backfill (so subsequent passes
 // see a valid call/result alternation), then microcompact (which needs all
 // tool messages present to count "recent" correctly), then truncate.
-func applyGovernance(messages []llm.Message, maxToolResultChars int) []llm.Message {
+//
+// Zero values for microcompactKeepRecent / microcompactMinChars / maxToolResultChars
+// fall back to the package defaults — see the constants at the top of this file.
+// Production wiring passes the env-resolved Options.* values; tests typically
+// pass 0 to opt into the defaults.
+func applyGovernance(messages []llm.Message, maxToolResultChars, microcompactKeepRecent, microcompactMinChars int) []llm.Message {
+	if microcompactKeepRecent <= 0 {
+		microcompactKeepRecent = MicrocompactKeepRecent
+	}
+	if microcompactMinChars <= 0 {
+		microcompactMinChars = MicrocompactMinChars
+	}
 	messages = dropOrphanToolResults(messages)
 	messages = backfillMissingToolResults(messages)
-	messages = microcompactToolResults(messages, MicrocompactKeepRecent, MicrocompactMinChars)
+	messages = microcompactToolResults(messages, microcompactKeepRecent, microcompactMinChars)
 	messages = truncateOversizedToolResults(messages, maxToolResultChars)
 	return messages
 }

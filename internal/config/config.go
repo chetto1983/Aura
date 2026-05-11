@@ -67,6 +67,16 @@ type Config struct {
 	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
 	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
+	// Phase 02 governance knobs. Defaults match the constants we shipped in
+	// agentloop/governance.go and tools/memory_search.go. Operators can
+	// shrink MAX_TOOL_RESULT_CHARS to fit smaller context windows, raise
+	// the half-life for archive when running a project that wants slower
+	// memory aging, etc.
+	MaxToolResultChars         int     `envconfig:"MAX_TOOL_RESULT_CHARS" default:"8000"`
+	MicrocompactKeepRecent     int     `envconfig:"MICROCOMPACT_KEEP_RECENT" default:"10"`
+	MicrocompactMinChars       int     `envconfig:"MICROCOMPACT_MIN_CHARS" default:"500"`
+	RecencyHalfLifeWikiDays    float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_WIKI_DAYS" default:"180"`
+	RecencyHalfLifeArchiveDays float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_ARCHIVE_DAYS" default:"30"`
 	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"fts"`
 	ToolSearchTopK             int     `envconfig:"TOOL_SEARCH_TOP_K" default:"5"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
