@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  test:
+    name: Go test + Phase 2 guards
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go build
+        run: go build ./...
+
+      - name: Phase 2 regression guards
+        shell: pwsh
+        run: |
+          ./scripts/test-heuristic-removal.ps1
+          ./scripts/test-tool-search-removal.ps1
+
+      - name: Run Go tests with race detector
+        run: go test -race -count=1 ./...
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix web ci
+
+      - name: Build dashboard
+        run: npm --prefix web run build
