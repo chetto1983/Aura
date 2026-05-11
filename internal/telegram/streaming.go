@@ -9,30 +9,24 @@ import (
 )
 
 // sendAssistant delivers LLM-generated Markdown using Telegram message
-// entities. Plain operator strings (auth errors, bootstrap messages) keep
-// using c.Send directly so token-like payloads are never transformed. If
-// entity delivery fails, we fall back through the older HTML renderer and
-// then plain text so the user still sees the response.
+// entities (telegramify-markdown-go renders markdown → entity offsets).
+// If entity delivery fails (rare: usually transient network or rate-limit),
+// we fall back to plain text so the user still sees something. The old
+// regex-based HTML fallback was retired with telegramify-markdown-go.
 func (b *Bot) sendAssistant(c tele.Context, text string) {
 	if err := sendTelegramEntityMessages(c.Bot(), c.Recipient(), text); err != nil {
-		b.logger.Warn("entity send failed, falling back to HTML", "error", err)
-		rendered := renderForTelegram(text)
-		if err := c.Send(rendered, tele.ModeHTML); err != nil {
-			b.logger.Warn("HTML send failed, falling back to plain text", "error", err)
-			_ = c.Send(text)
+		b.logger.Warn("entity send failed, falling back to plain text", "error", err)
+		if err := c.Send(text); err != nil {
+			b.logger.Warn("plain-text send failed", "error", err)
 		}
 	}
 }
 
 func (b *Bot) sendAssistantToRecipient(bot tele.API, recipient tele.Recipient, text string) error {
 	if err := sendTelegramEntityMessages(bot, recipient, text); err != nil {
-		b.logger.Warn("entity send failed, falling back to HTML", "error", err)
-		rendered := renderForTelegram(text)
-		if _, htmlErr := bot.Send(recipient, rendered, tele.ModeHTML); htmlErr != nil {
-			b.logger.Warn("HTML send failed, falling back to plain text", "error", htmlErr)
-			_, plainErr := bot.Send(recipient, text)
-			return plainErr
-		}
+		b.logger.Warn("entity send failed, falling back to plain text", "error", err)
+		_, plainErr := bot.Send(recipient, text)
+		return plainErr
 	}
 	return nil
 }
@@ -42,9 +36,8 @@ func (b *Bot) editAssistantMessage(bot tele.API, msg tele.Editable, part rendere
 	if err == nil {
 		return edited, nil
 	}
-	b.logger.Warn("entity edit failed, falling back to HTML", "error", err)
-	rendered := renderForTelegram(rawText)
-	edited, err = bot.Edit(msg, rendered, tele.ModeHTML)
+	b.logger.Warn("entity edit failed, falling back to plain text", "error", err)
+	edited, err = bot.Edit(msg, rawText)
 	if err != nil {
 		return nil, err
 	}

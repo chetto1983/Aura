@@ -361,12 +361,15 @@ func TestAgentJobScheduleContextShowsLateRun(t *testing.T) {
 	}
 }
 
-func TestAgentJobNotificationRendersMarkdownForTelegram(t *testing.T) {
+func TestAgentJobNotificationCarriesTaskNameAndMarkdownBody(t *testing.T) {
+	// The notification is plain markdown; telegramify-markdown-go renders
+	// it into Telegram entities at send time (entity_markdown.go). This
+	// test only asserts the message content reaches the renderer intact —
+	// the entity transform is covered separately.
 	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, scheduler.AgentJobPayload{}, "## Report\n- **Done**")
-	got := renderForTelegram(msg)
-	for _, want := range []string{"Agent job \"daily-brief\" completed.", "<b>Report</b>", "• <b>Done</b>"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("rendered notification missing %q:\n%s", want, got)
+	for _, want := range []string{`Agent job "daily-brief" completed.`, "## Report", "- **Done**"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("notification missing %q:\n%s", want, msg)
 		}
 	}
 }
