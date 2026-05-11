@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -20,7 +21,36 @@ import (
 const (
 	maxSourceToolChars  = 8000
 	excerptDefaultBytes = 4000
+
+	// maxOCRPDFBytes bounds the in-RAM PDF buffer fed to the OCR client. A
+	// hostile uploader pushing a 500MB PDF would otherwise OOM the bot.
+	maxOCRPDFBytes = 64 << 20 // 64 MiB
+
+	// maxSourceReadBytes bounds os.Open + io.ReadAll when serving a source's
+	// original/extracted body to the LLM. We overshoot the visible byte cap
+	// (maxSourceToolChars) so truncation still has room to find a clean
+	// boundary, but we never load an unbounded file into memory.
+	maxSourceReadBytes = 1 << 20 // 1 MiB
 )
+
+// readBoundedFile opens path and reads up to maxBytes+1 to detect overflow.
+// Refuses to allocate an unbounded buffer for an LLM-controlled source ID —
+// the previous os.ReadFile path could OOM the bot on a malicious upload.
+func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, fmt.Errorf("file exceeds %d byte cap", maxBytes)
+	}
+	return body, nil
+}
 
 // StoreSourceTool stores text or a URL as an immutable source.
 //
@@ -180,7 +210,7 @@ func (t *OCRSourceTool) Execute(ctx context.Context, args map[string]any) (strin
 	if pdfPath == "" {
 		return "", fmt.Errorf("ocr_source: invalid source path for %s", id)
 	}
-	pdfBytes, err := os.ReadFile(pdfPath)
+	pdfBytes, err := readBoundedFile(pdfPath, maxOCRPDFBytes)
 	if err != nil {
 		return "", fmt.Errorf("ocr_source: read pdf: %w", err)
 	}
@@ -228,7 +258,12 @@ func (t *OCRSourceTool) Execute(ctx context.Context, args map[string]any) (strin
 		s.Error = ""
 		return nil
 	}); err != nil {
-		return "", fmt.Errorf("ocr_source: update metadata: %w", err)
+		// Roll back the artifact writes so the on-disk view matches the
+		// status field — otherwise list_sources shows status=stored while
+		// ocr.md exists, confusing the LLM about which sources still need OCR.
+		_ = os.Remove(mdPath)
+		_ = os.Remove(jsonPath)
+		return "", fmt.Errorf("ocr_source: update metadata: %w (ocr files rolled back)", err)
 	}
 
 	return fmt.Sprintf("OCR complete · %s · %d page(s) · %s · model=%s",
@@ -348,7 +383,10 @@ func readOriginalContent(store source.FileResolver, id, name string, maxBytes in
 	if path == "" {
 		return "", fmt.Errorf("read_source: invalid path for %s", id)
 	}
-	raw, err := os.ReadFile(path)
+	// Cap the file read to maxSourceReadBytes — much larger than the visible
+	// truncation cap but still bounded, so a multi-GB sandbox_artifact can't
+	// OOM the bot when an LLM asks to read it.
+	raw, err := readBoundedFile(path, int64(maxSourceReadBytes))
 	if err != nil {
 		return "", fmt.Errorf("read_source: %w", err)
 	}
