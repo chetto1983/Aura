@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/reindex"
@@ -84,14 +87,101 @@ func (t *WriteWikiPageTool) Parameters() map[string]any {
 	}
 }
 
-// Execute is implemented in Task 2.
+// Execute validates the LLM-supplied args, writes the wiki page, surfaces
+// conflicts as structured JSON tool results (D-03), and submits a non-blocking
+// reindex job on success.
+//
+// Error mapping:
+//   - Missing/empty required field → fmt.Errorf("%w", llm.ErrSchemaValidation)
+//     (CONTENT bucket — retry wrapper re-prompts the LLM)
+//   - *wiki.ConflictError → nil error, JSON tool result with error:"conflict"
+//     (D-03 — LLM re-reads and retries deterministically)
+//   - Any other store error → propagated as-is (IO/other → retry wrapper decides)
 func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	return "", errors.New("not implemented")
+	title := stringArg(args, "title")
+	body := stringArg(args, "body")
+
+	// Presence test for expected_updated_at: empty string "" is the
+	// create-only sentinel — a valid value. Only a missing key is invalid.
+	rawExpected, hasExpected := args["expected_updated_at"]
+	var expectedUpdatedAt string
+	if hasExpected {
+		if s, ok := rawExpected.(string); ok {
+			expectedUpdatedAt = s
+		} else {
+			return "", fmt.Errorf("write_wiki_page: expected_updated_at must be a string: %w", llm.ErrSchemaValidation)
+		}
+	}
+
+	if strings.TrimSpace(title) == "" {
+		return "", fmt.Errorf("write_wiki_page: title is required: %w", llm.ErrSchemaValidation)
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("write_wiki_page: body is required: %w", llm.ErrSchemaValidation)
+	}
+	if !hasExpected {
+		return "", fmt.Errorf("write_wiki_page: expected_updated_at is required: %w", llm.ErrSchemaValidation)
+	}
+
+	// Server-controlled metadata — LLM input is IGNORED for these keys
+	// (privilege escalation prevention, T-02-B mitigation).
+	// PromptVersion uses "v1" (the canonical v{n} format accepted by
+	// wiki.Validate's promptVersionRe). The plan spec "write_wiki_page/v1"
+	// is not accepted by the regex — see 02-04-SUMMARY.md deviation notes.
+	now := time.Now().UTC().Format(time.RFC3339)
+	page := &wiki.Page{
+		Title:         strings.TrimSpace(title),
+		Body:          body,                       // full replace — no patch mode (D-01)
+		Category:      stringArg(args, "category"),
+		Tags:          stringSliceArg(args, "tags"),
+		Related:       stringSliceArg(args, "related"),
+		Sources:       stringSliceArg(args, "sources"),
+		SchemaVersion: wiki.CurrentSchemaVersion,  // D-09 LOCK — NOT from args
+		PromptVersion: "v1",                       // tool-write provenance; server-controlled
+		CreatedAt:     now,                        // store.WritePage may preserve on update
+		UpdatedAt:     now,
+		// Unversioned: NEVER set from args (server-managed only — D-17/D-18 in wiki.Store)
+	}
+
+	if err := t.store.WritePage(ctx, page, expectedUpdatedAt); err != nil {
+		var conflict *wiki.ConflictError
+		if errors.As(err, &conflict) {
+			// D-03: return a successful tool RESULT (nil error) containing
+			// structured JSON. The LLM parses the result, re-reads the page
+			// to get the current updated_at, and retries.
+			payload := map[string]string{
+				"error":               "conflict",
+				"slug":                conflict.Slug,
+				"expected_updated_at": conflict.Expected,
+				"actual_updated_at":   conflict.Actual,
+			}
+			data, mErr := json.Marshal(payload)
+			if mErr != nil {
+				return "", fmt.Errorf("write_wiki_page: marshal conflict: %w", mErr)
+			}
+			return string(data), nil
+		}
+		return "", fmt.Errorf("write_wiki_page: %w", err)
+	}
+
+	slug := wiki.Slug(page.Title)
+	if t.submitter != nil {
+		// Non-blocking fire-and-forget (drop-newest semantics from Plan 02).
+		// Return value (bool) is intentionally ignored — drop is safe because
+		// disk is source of truth and the worker re-reads on drain.
+		_ = t.submitter.Submit(reindex.Job{Slug: slug, Op: reindex.OpUpsert})
+	}
+
+	result, err := json.Marshal(map[string]string{
+		"status":     "ok",
+		"slug":       slug,
+		"updated_at": page.UpdatedAt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("write_wiki_page: marshal result: %w", err)
+	}
+	return string(result), nil
 }
 
 // Ensure WriteWikiPageTool satisfies the Tool interface at compile time.
 var _ Tool = (*WriteWikiPageTool)(nil)
-
-// Silence unused import during Task 1 stub phase.
-var _ = llm.ErrSchemaValidation
-var _ = fmt.Sprintf
