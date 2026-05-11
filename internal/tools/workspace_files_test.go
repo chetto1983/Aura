@@ -96,6 +96,20 @@ func TestWorkspaceFileToolsDenySensitivePaths(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFileToolsBlockServerManagedWikiFiles(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	write := NewWriteFileTool(root)
+	patch := NewApplyPatchTool(root)
+	for _, p := range []string{"wiki/index.md", "wiki/log.md", "wiki/SCHEMA.md"} {
+		if _, err := write.Execute(context.Background(), map[string]any{"path": p, "content": "junk"}); err == nil {
+			t.Fatalf("write_file(%q) should be rejected as server-managed", p)
+		}
+		if _, err := patch.Execute(context.Background(), map[string]any{"path": p, "old": "a", "new": "b"}); err == nil {
+			t.Fatalf("apply_patch(%q) should be rejected as server-managed", p)
+		}
+	}
+}
+
 func TestWorkspaceFileToolsValidateWikiWrites(t *testing.T) {
 	root := newWorkspaceToolRoot(t)
 	write := NewWriteFileTool(root)

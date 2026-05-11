@@ -11,6 +11,9 @@ import (
 
 func validateWorkspaceWrite(rel string, content []byte) (string, error) {
 	clean := path.Clean(strings.ReplaceAll(strings.TrimSpace(rel), "\\", "/"))
+	if isServerManagedWorkspaceFile(clean) {
+		return "", fmt.Errorf("path %q is server-managed and not writable via tools", clean)
+	}
 	if isWorkspaceWikiPage(clean) {
 		if err := validateWorkspaceWikiPage(clean, content); err != nil {
 			return "", err
@@ -26,16 +29,27 @@ func validateWorkspaceWrite(rel string, content []byte) (string, error) {
 	return "", nil
 }
 
+// isServerManagedWorkspaceFile lists workspace paths that the LLM may read but
+// must never overwrite. wiki/index.md is the regenerated index; wiki/log.md is
+// the append-only audit trail; wiki/SCHEMA.md documents the wiki format and is
+// maintained out-of-band. Skipping wiki-format validation for these (as the
+// original code did) was not enough — the unvalidated write went through.
+func isServerManagedWorkspaceFile(rel string) bool {
+	switch rel {
+	case "wiki/SCHEMA.md", "wiki/index.md", "wiki/log.md":
+		return true
+	}
+	return false
+}
+
 func isWorkspaceWikiPage(rel string) bool {
 	if !strings.HasPrefix(rel, "wiki/") || path.Ext(rel) != ".md" {
 		return false
 	}
-	switch rel {
-	case "wiki/SCHEMA.md", "wiki/index.md", "wiki/log.md":
+	if isServerManagedWorkspaceFile(rel) {
 		return false
-	default:
-		return true
 	}
+	return true
 }
 
 func validateWorkspaceWikiPage(rel string, content []byte) error {
