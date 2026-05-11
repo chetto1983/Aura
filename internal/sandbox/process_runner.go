@@ -117,14 +117,24 @@ func (r *ProcessRunner) CheckAvailability() Availability {
 	return Availability{Available: true, Kind: RuntimeKindProcess, Detail: "python " + strings.TrimSpace(string(out)) + " available in Aura container"}
 }
 
+// ValidateCode is a no-op for the process runtime. Code runs as the Aura user
+// with full container access; static validation here cannot meaningfully sandbox
+// it. Real isolation would require a namespaced or VM-backed runtime.
 func (r *ProcessRunner) ValidateCode(_ string) error {
 	return nil
 }
 
+// Execute runs Python in the Aura container's process namespace. The
+// allowNetwork argument is accepted for interface compatibility with future
+// network-isolated runtimes; the process runtime cannot honor it — code sees
+// the same network reachability as Aura itself. Callers that need true network
+// isolation must select a different Runtime implementation.
 func (r *ProcessRunner) Execute(ctx context.Context, code string, _ bool) (*Result, error) {
 	return r.execute(ctx, code, r.workDir)
 }
 
+// ExecuteCommand has the same network-isolation semantics as Execute: the
+// allowNetwork arg is advisory for the process runtime and ignored here.
 func (r *ProcessRunner) ExecuteCommand(ctx context.Context, command string, _ bool) (*Result, error) {
 	return r.executeCommand(ctx, command, r.workDir)
 }

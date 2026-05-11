@@ -92,14 +92,13 @@ func isNilCommandExecutor(manager sandbox.CommandExecutor) bool {
 func (t *ExecuteCodeTool) Name() string { return "execute_code" }
 
 func (t *ExecuteCodeTool) Description() string {
-	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access as Aura. " +
+	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access AND the same network reachability as Aura — there is no network isolation; any HTTP call from the script can reach localhost and the Aura private network. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
 		"For multi-step workflows, pass tools_allowed and have the script write /tmp/aura_out/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
 		"Use loops, transforms, retries, and structured JSON output inside one script instead of many model/backend round trips. " +
 		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
 		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under /tmp/aura_out; Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. The internal tool-call manifest is control data and is not persisted as a user artifact. " +
-		"Set allow_network=true only when HTTP access is explicitly needed; process runtimes may already share the container network. " +
 		"Use timeout to override the per-call limit (1-300s, default server 120s)."
 }
 
@@ -110,10 +109,6 @@ func (t *ExecuteCodeTool) Parameters() map[string]any {
 			"code": map[string]any{
 				"type":        "string",
 				"description": "Python code to execute in the sandbox",
-			},
-			"allow_network": map[string]any{
-				"type":        "boolean",
-				"description": "Allow network access from the sandbox. Default false.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -152,14 +147,14 @@ func (t *ExecuteCodeTool) Execute(ctx context.Context, args map[string]any) (str
 		defer cancel()
 	}
 
-	allowNetwork := false
-	if v, ok := args["allow_network"].(bool); ok {
-		allowNetwork = v
-	}
 	toolsAllowed := stringSliceArg(args, "tools_allowed")
 	maxCalls := intArg(args, "max_calls", 10, 1, 20)
 
-	result, err := t.manager.Execute(ctx, code, allowNetwork)
+	// The current process runtime shares the Aura container's network namespace,
+	// so no per-call network gate exists. Hard-coded to false to make the
+	// (currently advisory) runtime arg explicit; future namespaced runtimes can
+	// expose the gate back through the tool schema.
+	result, err := t.manager.Execute(ctx, code, false)
 	if err != nil {
 		return "", fmt.Errorf("sandbox execution failed: %w", err)
 	}
@@ -320,11 +315,10 @@ func marshalInternalToolResults(results internalToolCallResults) (string, error)
 func (t *ExecuteShellTool) Name() string { return "execute_shell" }
 
 func (t *ExecuteShellTool) Description() string {
-	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura. " +
+	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
 		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
 		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
-		"Set allow_network=true only when the command intentionally needs network access. " +
 		"Use timeout to override the per-call limit (1-300s, default server 120s)."
 }
 
@@ -335,10 +329,6 @@ func (t *ExecuteShellTool) Parameters() map[string]any {
 			"command": map[string]any{
 				"type":        "string",
 				"description": "Shell command to execute in the Aura runtime workspace.",
-			},
-			"allow_network": map[string]any{
-				"type":        "boolean",
-				"description": "Allow network access from the command. Default false.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -364,12 +354,9 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 		defer cancel()
 	}
 
-	allowNetwork := false
-	if v, ok := args["allow_network"].(bool); ok {
-		allowNetwork = v
-	}
-
-	result, err := t.manager.ExecuteCommand(ctx, command, allowNetwork)
+	// Process runtime shares the Aura container network; hard-code the runtime
+	// arg to false. Future namespaced runtimes can re-expose this through the schema.
+	result, err := t.manager.ExecuteCommand(ctx, command, false)
 	if err != nil {
 		return "", fmt.Errorf("shell command failed: %w", err)
 	}
