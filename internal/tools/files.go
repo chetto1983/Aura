@@ -5,10 +5,35 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/source"
 )
+
+// maxDocumentCaptionChars matches Telegram's documented caption cap so a
+// hostile LLM-fed caption can't pin the bot on a server-side rejection.
+const maxDocumentCaptionChars = 1024
+
+// sanitizeDocumentCaption trims, strips ASCII control bytes (except newline),
+// and length-caps a caption before it leaves Aura for Telegram. The caption is
+// LLM-controlled and can be conversation-injected from any source (e.g. a
+// fetched web page that asks the model to set a caption).
+func sanitizeDocumentCaption(raw string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\n' {
+			return -1
+		}
+		if r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(raw))
+	if len(clean) > maxDocumentCaptionChars {
+		clean = clean[:maxDocumentCaptionChars]
+	}
+	return clean
+}
 
 // DocumentSender ships an arbitrary file body to a user's direct
 // Telegram chat. The bot satisfies this; tests pass a stub.
@@ -199,7 +224,7 @@ func parseCreateXLSXArgs(args map[string]any) (files.XLSXSpec, bool, string, err
 	if v, ok := args["deliver"].(bool); ok {
 		deliver = v
 	}
-	caption, _ := args["caption"].(string)
+	caption := sanitizeDocumentCaption(stringArg(args, "caption"))
 
 	return files.XLSXSpec{Filename: filename, Sheets: sheets}, deliver, caption, nil
 }
@@ -404,7 +429,7 @@ func parseCreateDOCXArgs(args map[string]any) (files.DOCXSpec, bool, string, err
 	if v, ok := args["deliver"].(bool); ok {
 		deliver = v
 	}
-	caption, _ := args["caption"].(string)
+	caption := sanitizeDocumentCaption(stringArg(args, "caption"))
 
 	return files.DOCXSpec{Filename: filename, Title: title, Blocks: blocks}, deliver, caption, nil
 }
@@ -613,7 +638,7 @@ func parseCreatePDFArgs(args map[string]any) (files.PDFSpec, bool, string, error
 	if v, ok := args["deliver"].(bool); ok {
 		deliver = v
 	}
-	caption, _ := args["caption"].(string)
+	caption := sanitizeDocumentCaption(stringArg(args, "caption"))
 
 	return files.PDFSpec{Filename: filename, Title: title, Blocks: blocks}, deliver, caption, nil
 }
