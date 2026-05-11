@@ -30,6 +30,9 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 	outputPerM := floatSetting(ctx, store, settings.KeyCostOutputPerMTokens, "COST_OUTPUT_PER_M_TOKENS", cfg.CostOutputPerMTokens)
 	skillRoutingMode := config.NormalizeSkillRoutingMode(stringSetting(ctx, store, settings.KeySkillRoutingMode, "AURA_SKILL_ROUTING_MODE", cfg.SkillRoutingMode))
 	agentLoopMaxSteps := intRangeSetting(ctx, store, settings.KeyAgentLoopMaxSteps, "AURA_AGENT_LOOP_MAX_STEPS", cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
+	maxToolResultChars := intRangeSetting(ctx, store, settings.KeyMaxToolResultChars, "MAX_TOOL_RESULT_CHARS", cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)
+	microcompactKeepRecent := intRangeSetting(ctx, store, settings.KeyMicrocompactKeepRecent, "MICROCOMPACT_KEEP_RECENT", cfg.MicrocompactKeepRecent, 1, 500, config.DefaultMicrocompactKeepRecent)
+	microcompactMinChars := intRangeSetting(ctx, store, settings.KeyMicrocompactMinChars, "MICROCOMPACT_MIN_CHARS", cfg.MicrocompactMinChars, 100, 100000, config.DefaultMicrocompactMinChars)
 	terminalToolPolicy := config.NormalizeTerminalToolPolicy(stringSetting(ctx, store, settings.KeyTerminalToolPolicy, "AURA_TERMINAL_TOOL_POLICY", cfg.TerminalToolPolicy))
 	delegationMode := config.NormalizeDelegationMode(stringSetting(ctx, store, settings.KeyDelegationMode, "AURA_DELEGATION_MODE", cfg.DelegationMode))
 	traceRetentionDays := intRangeSetting(ctx, store, settings.KeyTraceRetentionDays, "AURA_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
@@ -51,6 +54,9 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 	cfg.CostOutputPerMTokens = outputPerM
 	cfg.SkillRoutingMode = skillRoutingMode
 	cfg.AgentLoopMaxSteps = agentLoopMaxSteps
+	cfg.MaxToolResultChars = maxToolResultChars
+	cfg.MicrocompactKeepRecent = microcompactKeepRecent
+	cfg.MicrocompactMinChars = microcompactMinChars
 	cfg.TerminalToolPolicy = terminalToolPolicy
 	cfg.DelegationMode = delegationMode
 	cfg.TraceRetentionDays = traceRetentionDays
@@ -77,6 +83,9 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 			"output_per_m_tokens", outputPerM,
 			"skill_routing_mode", skillRoutingMode,
 			"agent_loop_max_steps", agentLoopMaxSteps,
+			"max_tool_result_chars", maxToolResultChars,
+			"microcompact_keep_recent", microcompactKeepRecent,
+			"microcompact_min_chars", microcompactMinChars,
 			"terminal_tool_policy", terminalToolPolicy,
 			"delegation_mode", delegationMode,
 			"trace_retention_days", traceRetentionDays,

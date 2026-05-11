@@ -155,6 +155,11 @@ type Deps struct {
 	// the zero-value reindex response so health JSON is always present.
 	// WARNING 12 of 2026-05-10 plan revision (closed without Phase 3 deferral).
 	ReindexHealth func() reindex.Health
+
+	// Chat is the in-process chat pipe used by cmd/chat. Optional — when
+	// nil, POST /chat responds 503. cmd/aura wires this against an
+	// agent.Runner that shares the bot's live LLM client and tool registry.
+	Chat ChatService
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -178,6 +183,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", handleHealth(deps))
+
+	// Chat pipe for cmd/chat. Bearer-gated like everything else; the CLI
+	// reads its token from AURA_CHAT_TOKEN. Returns 503 when deps.Chat is
+	// nil (test fixtures, or operator opted out).
+	mux.HandleFunc("POST /chat", handleChat(deps))
 
 	mux.HandleFunc("GET /wiki/pages", handleWikiPages(deps))
 	mux.HandleFunc("GET /wiki/page", handleWikiPage(deps))

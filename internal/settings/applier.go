@@ -64,6 +64,9 @@ const (
 	KeyPromptVersion           = "AURA_PROMPT_VERSION"
 	KeySkillRoutingMode        = "AURA_SKILL_ROUTING_MODE"
 	KeyAgentLoopMaxSteps       = "AURA_AGENT_LOOP_MAX_STEPS"
+	KeyMaxToolResultChars      = "MAX_TOOL_RESULT_CHARS"
+	KeyMicrocompactKeepRecent  = "MICROCOMPACT_KEEP_RECENT"
+	KeyMicrocompactMinChars    = "MICROCOMPACT_MIN_CHARS"
 	KeyTerminalToolPolicy      = "AURA_TERMINAL_TOOL_POLICY"
 	KeyDelegationMode          = "AURA_DELEGATION_MODE"
 	KeyTraceRetentionDays      = "AURA_TRACE_RETENTION_DAYS"
@@ -104,7 +107,9 @@ func OverridableKeys() []string {
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
 		KeyPromptVersion,
-		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
+		KeySkillRoutingMode, KeyAgentLoopMaxSteps,
+		KeyMaxToolResultChars, KeyMicrocompactKeepRecent, KeyMicrocompactMinChars,
+		KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyWorkspaceTools, KeyWorkspaceRoot,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
 		KeyMistralOCRTableFormat,
@@ -195,6 +200,9 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
 	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
+	cfg.MaxToolResultChars = settingIntRange(ctx, s, KeyMaxToolResultChars, cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)
+	cfg.MicrocompactKeepRecent = settingIntRange(ctx, s, KeyMicrocompactKeepRecent, cfg.MicrocompactKeepRecent, 1, 500, config.DefaultMicrocompactKeepRecent)
+	cfg.MicrocompactMinChars = settingIntRange(ctx, s, KeyMicrocompactMinChars, cfg.MicrocompactMinChars, 100, 100000, config.DefaultMicrocompactMinChars)
 	cfg.TerminalToolPolicy = config.NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
 	cfg.DelegationMode = config.NormalizeDelegationMode(settingString(ctx, s, KeyDelegationMode, cfg.DelegationMode))
 	cfg.TraceRetentionDays = settingIntRange(ctx, s, KeyTraceRetentionDays, cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)

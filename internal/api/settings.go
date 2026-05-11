@@ -99,6 +99,9 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version"},
 	{Key: settings.KeySkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode"},
 	{Key: settings.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps"},
+	{Key: settings.KeyMaxToolResultChars, Group: "agent", Kind: "int", Min: floatPtr(1000), Max: floatPtr(500000), Label: "Max tool result chars", Hint: "Cap per tool message before the LLM call; raise on large-context models"},
+	{Key: settings.KeyMicrocompactKeepRecent, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(500), Label: "Microcompact keep recent", Hint: "Tool results older than the N most recent get collapsed to a one-line stub"},
+	{Key: settings.KeyMicrocompactMinChars, Group: "agent", Kind: "int", Min: floatPtr(100), Max: floatPtr(100000), Label: "Microcompact min chars", Hint: "Tool results smaller than this are never compacted"},
 	{Key: settings.KeyTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy"},
 	{Key: settings.KeyDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode"},
 	{Key: settings.KeySkillsAdmin, Group: "agent", Kind: "bool", Label: "Skills admin (install/delete)"},
@@ -275,6 +278,12 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.SkillRoutingMode
 	case settings.KeyAgentLoopMaxSteps:
 		return strconv.Itoa(cfg.AgentLoopMaxSteps)
+	case settings.KeyMaxToolResultChars:
+		return strconv.Itoa(cfg.MaxToolResultChars)
+	case settings.KeyMicrocompactKeepRecent:
+		return strconv.Itoa(cfg.MicrocompactKeepRecent)
+	case settings.KeyMicrocompactMinChars:
+		return strconv.Itoa(cfg.MicrocompactMinChars)
 	case settings.KeyTerminalToolPolicy:
 		return cfg.TerminalToolPolicy
 	case settings.KeyDelegationMode:
@@ -378,7 +387,9 @@ func touchesLiveRuntimeSetting(keys []string) bool {
 		switch key {
 		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations,
 			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens,
-			settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps, settings.KeyTerminalToolPolicy,
+			settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps,
+			settings.KeyMaxToolResultChars, settings.KeyMicrocompactKeepRecent, settings.KeyMicrocompactMinChars,
+			settings.KeyTerminalToolPolicy,
 			settings.KeyDelegationMode, settings.KeyTraceRetentionDays:
 			return true
 		}
