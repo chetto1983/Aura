@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -70,7 +71,12 @@ func FinalizeTerminalTool(ctx context.Context, in TerminalFinalizationInput) Ter
 }
 
 func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
-	out := append([]llm.Message(nil), messages...)
+	// Apply the same governance passes the main loop runs on every LLM call
+	// — microcompact long tool results, truncate oversized payloads, drop
+	// orphan tool messages — before appending the finalization prompt. Without
+	// this the finalize call sees the full accumulated context exactly when
+	// it is largest, blowing the token budget for no extra signal (F-031).
+	out := agentloop.ApplyGovernance(messages, 0, 0, 0)
 	toolName := strings.TrimSpace(terminalTool)
 	if toolName == "" {
 		toolName = "the terminal tool"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -399,12 +400,35 @@ func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []
 	out, err := r.tools.Execute(toolCtx, call.Name, call.Arguments)
 	if err != nil {
 		if r.logger != nil {
-			r.logger.Warn("agent tool call failed", "tool", call.Name, "error", err)
+			r.logger.Warn("agent tool call failed", "tool", call.Name, "error", redactToolError(err))
 		}
 		return tools.FormatToolError(err)
 	}
 	return out
 }
+
+// redactToolError returns a log-safe representation of a tool error. Tool
+// errors commonly wrap LLM-controlled values (URLs with tokens, source IDs,
+// file paths). CLAUDE.md forbids those in logs. This helper scrubs known
+// patterns; the full err still goes to the LLM via FormatToolError (F-038).
+//
+// Patterns scrubbed:
+//   - Query strings on URLs containing token=/key=/secret=/auth= (?token=... -> ?<redacted>)
+//   - Long base64-shaped runs (32+ chars of [A-Za-z0-9+/=]) → "<base64>"
+func redactToolError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	msg = redactURLCredentialsRe.ReplaceAllString(msg, "$1<redacted>")
+	msg = redactBase64BlobRe.ReplaceAllString(msg, "<base64>")
+	return msg
+}
+
+var (
+	redactURLCredentialsRe = regexp.MustCompile(`([?&](?i:token|api[_-]?key|secret|auth|bearer)=)[^&\s"]+`)
+	redactBase64BlobRe     = regexp.MustCompile(`[A-Za-z0-9+/]{40,}={0,2}`)
+)
 
 // cleanToolList trims, lowercases, and dedupes the LLM-or-config-supplied
 // tool allowlist. Lowercasing is defense-in-depth: tool names in the registry
@@ -431,6 +455,12 @@ func addUsage(total *llm.TokenUsage, usage llm.TokenUsage) {
 	total.TotalTokens += usage.TotalTokens
 }
 
+// splitToolCalls partitions a batch of LLM-emitted tool calls into those the
+// runner will execute (kept) and those it must skip because the per-turn
+// budget is exhausted (skipped). The signature is positional and easy to
+// misread — maxToolCalls is the absolute cap for this Run, alreadyUsed is
+// the running total of previously-executed calls (F-026). A future cleanup
+// could wrap both in a ToolBudget struct.
 func splitToolCalls(calls []llm.ToolCall, maxToolCalls, alreadyUsed int) ([]llm.ToolCall, []llm.ToolCall) {
 	if maxToolCalls <= 0 {
 		return calls, nil

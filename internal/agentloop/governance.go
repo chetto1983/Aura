@@ -280,6 +280,14 @@ func toolNameForMessage(msg llm.Message, messages []llm.Message, idx int) string
 	return "tool"
 }
 
+// ApplyGovernance is the exported entrypoint for callers outside the loop
+// (notably agentruntime.TerminalToolFinalizationMessages) that need the same
+// microcompact + truncate + orphan-drop passes the main loop applies on
+// every LLM call (F-031).
+func ApplyGovernance(messages []llm.Message, maxToolResultChars, microcompactKeepRecent, microcompactMinChars int) []llm.Message {
+	return applyGovernance(messages, maxToolResultChars, microcompactKeepRecent, microcompactMinChars)
+}
+
 // applyGovernance runs the full transform chain in the order required for
 // correctness: drop orphans first (so backfill does not over-eagerly insert
 // stubs for IDs we are about to remove), then backfill (so subsequent passes

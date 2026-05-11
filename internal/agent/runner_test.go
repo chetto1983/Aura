@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -471,5 +472,43 @@ func TestRunnerRequiresPromptOrMessages(t *testing.T) {
 func TestNewRunnerRequiresLLM(t *testing.T) {
 	if _, err := NewRunner(Config{}); err == nil {
 		t.Fatal("expected missing LLM error")
+	}
+}
+
+// TestRunnerParallelToolFanOutRaceFree exercises the parallel tool fan-out
+// path with multiple tools each touching a shared counter. Must pass under
+// `go test -race` — guards F-001 / F-002 against future regressions where a
+// goroutine writes to a shared map or the slice without synchronization.
+func TestRunnerParallelToolFanOutRaceFree(t *testing.T) {
+	const fanout = 8
+	calls := make([]llm.ToolCall, fanout)
+	for i := range calls {
+		calls[i] = llm.ToolCall{ID: fmt.Sprintf("call_%d", i), Name: "race_tool", Arguments: map[string]any{"i": i}}
+	}
+	client := &fakeLLM{resps: []llm.Response{
+		{HasToolCalls: true, ToolCalls: calls},
+		{Content: "done"},
+	}}
+	reg := tools.NewRegistry(nil)
+	race := &fakeTool{name: "race_tool", result: "ok", delay: 5 * time.Millisecond}
+	reg.Register(race)
+
+	runner, err := NewRunner(Config{LLM: client, Tools: reg})
+	if err != nil {
+		t.Fatalf("NewRunner: %v", err)
+	}
+	res, err := runner.Run(context.Background(), Task{
+		Prompt:        "race",
+		ToolAllowlist: []string{"race_tool"},
+		UserID:        "42",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.ToolCalls != fanout {
+		t.Fatalf("tool calls = %d, want %d", res.ToolCalls, fanout)
+	}
+	if race.callCount() != fanout {
+		t.Fatalf("tool executions = %d, want %d", race.callCount(), fanout)
 	}
 }
