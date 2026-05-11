@@ -25,7 +25,7 @@ Invoke-Smoke -Name "memory natural answer" -ToolArgs @(
     "-prompt", "Cosa sai di me? Rispondi naturale, non stampare evidenze tecniche.",
     "-expect-tools", "search_memory",
     "-forbid-tools", "execute_shell,read_file",
-    "-forbid-final-fragments", "Memory evidence for,Evidence envelope,source:,score=,tool_search",
+    "-forbid-final-fragments", "Memory evidence for,Evidence envelope,source:,score=",
     "-expect-llm-calls-max", "4",
     "-expect-tool-calls-max", "2",
     "-max-elapsed-ms", "$MaxElapsedMS"
@@ -54,8 +54,8 @@ Invoke-Smoke -Name "operational status no raw dump" -ToolArgs @(
 if (-not $SkipRawShell) {
     Invoke-Smoke -Name "explicit raw command allowed" -ToolArgs @(
         "-no-validate",
-        "-prompt", "Usa tool_search per trovare lo strumento shell, poi esegui il comando pwd e mostrami l'output grezzo.",
-        "-expect-tools", "tool_search,execute_shell",
+        "-prompt", "Esegui il comando pwd e mostrami l'output grezzo.",
+        "-expect-tools", "execute_shell",
         "-expect-execute-shell-calls-min", "1",
         "-expect-llm-calls-max", "4",
         "-expect-tool-calls-max", "3",

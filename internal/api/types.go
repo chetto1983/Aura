@@ -12,8 +12,32 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/reindex"
 	"github.com/aura/aura/internal/wiki"
 )
+
+// ReindexHealthResponse mirrors reindex.Health for the /api/health JSON
+// contract. Surfaces D-16 worker telemetry to the dashboard. WARNING 12
+// of 2026-05-10 plan revision wires this in (NOT deferred to Phase 3).
+type ReindexHealthResponse struct {
+	QueueDepth       int       `json:"queue_depth"`
+	Dropped          int64     `json:"dropped"`
+	DroppedAfterStop int64     `json:"dropped_after_stop"`
+	LastSuccess      time.Time `json:"last_success"`
+	LastError        string    `json:"last_error,omitempty"`
+}
+
+// reindexHealthFromHealth converts a reindex.Health snapshot to a
+// ReindexHealthResponse suitable for JSON serialization.
+func reindexHealthFromHealth(h reindex.Health) ReindexHealthResponse {
+	return ReindexHealthResponse{
+		QueueDepth:       h.QueueDepth,
+		Dropped:          h.Dropped,
+		DroppedAfterStop: h.DroppedAfterStop,
+		LastSuccess:      h.LastSuccess,
+		LastError:        h.LastError,
+	}
+}
 
 // HealthRollup is the response body of GET /health. It aggregates per-
 // subsystem state in one round-trip so the dashboard can render the home
@@ -29,6 +53,9 @@ type HealthRollup struct {
 	// cache is wired (no EMBEDDING_API_KEY or no DB_PATH).
 	EmbedCache    EmbedCacheHealth         `json:"embed_cache"`
 	CompactMemory memoryindex.VectorHealth `json:"compact_memory"`
+	// Phase 2 D-16: reindex worker operational telemetry. Always present
+	// (zero value when worker is nil) so TypeScript strict types stay stable.
+	Reindex ReindexHealthResponse `json:"reindex"`
 }
 
 // SandboxHealth reports whether local code execution is active. The desired

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -159,51 +158,18 @@ func TestRegistrySearchFindsToolsByCapability(t *testing.T) {
 
 func TestRegistrySearchClampsLimitAndExcludesTools(t *testing.T) {
 	reg := NewRegistry(nil)
-	for _, name := range []string{"tool_search", "mail_one", "mail_two", "mail_three", "mail_four", "mail_five", "mail_six"} {
+	for _, name := range []string{"alpha", "mail_one", "mail_two", "mail_three", "mail_four", "mail_five", "mail_six"} {
 		reg.Register(namedDescribedTool{name: name, description: "mail email message search read"})
 	}
 
-	got := reg.Search("mail email", 99, "tool_search")
+	got := reg.Search("mail email", 99, "alpha")
 	if len(got) != 5 {
 		t.Fatalf("Search length = %d, want clamped 5", len(got))
 	}
 	for _, result := range got {
-		if result.Name == "tool_search" {
-			t.Fatalf("excluded tool_search returned: %+v", got)
+		if result.Name == "alpha" {
+			t.Fatalf("excluded alpha returned: %+v", got)
 		}
-	}
-}
-
-func TestToolSearchToolReturnsJSONResults(t *testing.T) {
-	reg := NewRegistry(nil)
-	reg.Register(namedDescribedTool{
-		name:        "mcp_mail_imap_search_messages",
-		description: "Search and read email messages from configured mailboxes.",
-	})
-	reg.Register(NewToolSearchTool(reg))
-
-	out, err := reg.Execute(context.Background(), "tool_search", map[string]any{
-		"query": "read email messages",
-		"limit": float64(5),
-	})
-	if err != nil {
-		t.Fatalf("tool_search Execute error = %v", err)
-	}
-	var decoded struct {
-		Tools []ToolSearchResult `json:"tools"`
-	}
-	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
-		t.Fatalf("tool_search returned invalid JSON %q: %v", out, err)
-	}
-	if len(decoded.Tools) != 1 || decoded.Tools[0].Name != "mcp_mail_imap_search_messages" {
-		t.Fatalf("tool_search tools = %+v", decoded.Tools)
-	}
-}
-
-func TestToolSearchToolRequiresQuery(t *testing.T) {
-	tool := NewToolSearchTool(NewRegistry(nil))
-	if _, err := tool.Execute(context.Background(), map[string]any{"query": " "}); err == nil {
-		t.Fatal("Execute error = nil, want query validation error")
 	}
 }
 

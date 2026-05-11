@@ -17,6 +17,7 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/reindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/settings"
@@ -149,6 +150,11 @@ type Deps struct {
 	// Garage artifact vault. Optional; when nil, handlers build a manager
 	// from RuntimeConfig so settings changes are picked up without restart.
 	Backups BackupService
+
+	// Phase 2 D-16: reindex worker health callback. Optional — nil yields
+	// the zero-value reindex response so health JSON is always present.
+	// WARNING 12 of 2026-05-10 plan revision (closed without Phase 3 deferral).
+	ReindexHealth func() reindex.Health
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
