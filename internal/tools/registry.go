@@ -57,6 +57,17 @@ func (t categorizedTool) Categories() []string {
 	return append([]string(nil), t.categories...)
 }
 
+// Definition forwards the wrapped tool's curated definition when it provides
+// one. Without this method the type-assertion at definitionForTool checks
+// categorizedTool's own method set, which does NOT include the wrapped
+// interface's Definition — examples were silently lost on every wrapped tool.
+func (t categorizedTool) Definition() ToolDefinition {
+	if provider, ok := t.Tool.(ToolDefinitionProvider); ok {
+		return provider.Definition()
+	}
+	return ToolDefinition{}
+}
+
 // Registry stores tools and dispatches tool calls by name.
 type Registry struct {
 	mu          sync.RWMutex

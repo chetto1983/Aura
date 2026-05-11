@@ -53,6 +53,55 @@ func TestArgKeysSorted(t *testing.T) {
 	}
 }
 
+func TestArgKeysRedactsCredentialShapes(t *testing.T) {
+	got := argKeys(map[string]any{"name": "x", "api_key": "y", "auth_token": "z", "user_password": "p"})
+	for _, key := range got {
+		if key == "api_key" || key == "auth_token" || key == "user_password" {
+			t.Fatalf("argKeys leaked credential-shaped key %q in %#v", key, got)
+		}
+	}
+}
+
+type fakeDefinedTool struct{ fakeTool }
+
+func (fakeDefinedTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:        "fake",
+		Description: "FakeDefined tool",
+		Examples:    []ToolCallExample{{Description: "set x", Arguments: map[string]any{"x": 1}}},
+	}
+}
+
+func TestWithCategoryPreservesDefinitionProvider(t *testing.T) {
+	wrapped := WithCategory(fakeDefinedTool{}, "test_category")
+	provider, ok := wrapped.(ToolDefinitionProvider)
+	if !ok {
+		t.Fatal("WithCategory must preserve ToolDefinitionProvider")
+	}
+	def := provider.Definition()
+	if def.Name != "fake" || len(def.Examples) != 1 || def.Examples[0].Description != "set x" {
+		t.Fatalf("wrapped Definition lost examples: %+v", def)
+	}
+	multi, ok := wrapped.(MultiCategorizedTool)
+	if !ok {
+		t.Fatal("WithCategory must expose Categories()")
+	}
+	cats := multi.Categories()
+	if len(cats) != 1 || cats[0] != "test_category" {
+		t.Fatalf("Categories() = %v, want [test_category]", cats)
+	}
+}
+
+func TestRegistryRegisterCollisionReturnsTrue(t *testing.T) {
+	reg := NewRegistry(nil)
+	if existed := reg.Register(fakeTool{}); existed {
+		t.Fatal("first Register should not report existing")
+	}
+	if existed := reg.Register(fakeTool{}); !existed {
+		t.Fatal("second Register should report existing")
+	}
+}
+
 func TestRegistryExecuteMissingTool(t *testing.T) {
 	reg := NewRegistry(nil)
 	if _, err := reg.Execute(context.Background(), "missing", nil); err == nil {
