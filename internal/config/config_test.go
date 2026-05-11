@@ -700,8 +700,8 @@ func TestLoadToolSearchBackend(t *testing.T) {
 		{"Vector", "vector"},
 		{"Hybrid", "hybrid"},
 		{"  hybrid  ", "hybrid"},
-		{"unknown", "fts"},
-		{"", "fts"},
+		{"unknown", "hybrid"},
+		{"", "hybrid"},
 	}
 	for _, tt := range tests {
 		t.Setenv("TOOL_SEARCH_BACKEND", tt.env)
@@ -749,8 +749,8 @@ func TestNormalizeToolSearchBackend(t *testing.T) {
 		{"hybrid", "hybrid"},
 		{"FTS", "fts"},
 		{"  vector  ", "vector"},
-		{"bad", "fts"},
-		{"", "fts"},
+		{"bad", "hybrid"},
+		{"", "hybrid"},
 	}
 	for _, tt := range tests {
 		got := NormalizeToolSearchBackend(tt.input)

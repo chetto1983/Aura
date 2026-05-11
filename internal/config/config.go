@@ -22,7 +22,7 @@ const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
-const DefaultToolSearchBackend = "fts"
+const DefaultToolSearchBackend = "hybrid"
 const DefaultToolSearchTopK = 5
 
 // Per-user gate configuration defaults (Phase 1 / CONC-01).
@@ -77,7 +77,7 @@ type Config struct {
 	MicrocompactMinChars       int     `envconfig:"MICROCOMPACT_MIN_CHARS" default:"500"`
 	RecencyHalfLifeWikiDays    float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_WIKI_DAYS" default:"180"`
 	RecencyHalfLifeArchiveDays float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_ARCHIVE_DAYS" default:"30"`
-	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"fts"`
+	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"hybrid"`
 	ToolSearchTopK             int     `envconfig:"TOOL_SEARCH_TOP_K" default:"5"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
