@@ -223,7 +223,7 @@ func Load() (*Config, error) {
 	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.ToolSearchBackend = NormalizeToolSearchBackend(getEnv("TOOL_SEARCH_BACKEND", DefaultToolSearchBackend))
-	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 10, DefaultToolSearchTopK)
+	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 50, DefaultToolSearchTopK)
 
 	cfg.WikiPath = getEnv("WIKI_PATH", "./runtime-workspace/wiki")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")

@@ -49,9 +49,10 @@ var alwaysOnCore = []string{
 //   - Retrieval unavailable / empty (Qdrant down OR no semantic match) →
 //     FULL toolset (D-25). Uniform len()==0 check covers BOTH nil and empty
 //     cases (WARNING 11 of 2026-05-10 plan revision).
-//   - Normal turn → core ∪ top-K=5 retrieved. retrievedNames are collected
-//     and passed to defsForFn in a SINGLE batched call (WARNING 16
-//     of 2026-05-10 plan revision).
+//   - Normal turn → core ∪ top-K retrieved (K read live from topKFn so the
+//     dashboard can re-tune retrieval breadth without a restart).
+//     retrievedNames are collected and passed to defsForFn in a SINGLE
+//     batched call (WARNING 16 of 2026-05-10 plan revision).
 //
 // The closure passes coreNames... as searchFn's excluded variadic so the
 // retrieval layer does NOT double-inject any core tool.
@@ -67,6 +68,7 @@ func makeToolsProvider(
 	defsForFn func(names []string) []llm.ToolDefinition,
 	defsAllFn func() []llm.ToolDefinition,
 	latestUserMsgFn func() string,
+	topKFn func() int,
 	logger *slog.Logger,
 ) func() []llm.ToolDefinition {
 	return func() []llm.ToolDefinition {
@@ -76,7 +78,13 @@ func makeToolsProvider(
 			// D-23 / Pitfall #6: cold-start, inject core only.
 			return coreDefs
 		}
-		retrieved := searchFn(latestUserMsg, 5, coreNames...)
+		topK := 5
+		if topKFn != nil {
+			if v := topKFn(); v > 0 {
+				topK = v
+			}
+		}
+		retrieved := searchFn(latestUserMsg, topK, coreNames...)
 		if len(retrieved) == 0 {
 			// D-25 / WARNING 11: Qdrant down OR no semantic match.
 			// Both routes collapse to FULL toolset; never fail the turn.

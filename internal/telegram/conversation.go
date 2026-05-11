@@ -303,6 +303,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		b.tools.DefinitionsFor,        // defsForFn
 		b.tools.Definitions,           // defsAllFn (FULL toolset fallback)
 		convCtx.LatestUserMessageText, // latestUserMsgFn (Task 1 output)
+		func() int { return b.cfg.ToolSearchTopK },
 		b.logger,
 	)
 	maxCallsPerTool := map[string]int{

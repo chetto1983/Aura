@@ -14,6 +14,10 @@ func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func fixedTopK(k int) func() int {
+	return func() int { return k }
+}
+
 // coreStubDefs returns one llm.ToolDefinition per name in the input slice.
 // Used as defsForFn stub. Asymmetric to defsAllFn (which returns ALL tools
 // including non-core) so tests can distinguish the FULL-fallback path.
@@ -37,7 +41,7 @@ func TestToolsProvider_ColdStart(t *testing.T) {
 	}
 	latestUserMsgFn := func() string { return "" }
 
-	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, silentLogger())
+	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, fixedTopK(5), silentLogger())
 	defs := provider()
 	if len(defs) != 6 {
 		t.Fatalf("cold-start returned %d defs, want 6", len(defs))
@@ -71,7 +75,7 @@ func TestToolsProvider_QdrantDown_FullToolset(t *testing.T) {
 	}
 	latestUserMsgFn := func() string { return "send an email" }
 
-	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, silentLogger())
+	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, fixedTopK(5), silentLogger())
 	defs := provider()
 	if len(defs) != 15 {
 		t.Fatalf("FULL-fallback returned %d defs, want 15 (defsAllFn output)", len(defs))
@@ -102,7 +106,7 @@ func TestToolsProvider_NormalRetrieval_BatchedDefinitionsFor(t *testing.T) {
 	}
 	latestUserMsgFn := func() string { return "search the web for AI safety news" }
 
-	provider := makeToolsProvider(alwaysOnCore, searchFn, defsForFn, defsAllFn, latestUserMsgFn, silentLogger())
+	provider := makeToolsProvider(alwaysOnCore, searchFn, defsForFn, defsAllFn, latestUserMsgFn, fixedTopK(5), silentLogger())
 	defs := provider()
 	if len(defs) != 7 {
 		t.Fatalf("normal returned %d defs, want 7 (core 6 + retrieved 1)", len(defs))
@@ -124,9 +128,57 @@ func TestToolsProvider_SearchExcludesCoreNames(t *testing.T) {
 	defsAllFn := func() []llm.ToolDefinition { return nil }
 	latestUserMsgFn := func() string { return "any non-empty user message" }
 
-	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, silentLogger())
+	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, fixedTopK(5), silentLogger())
 	_ = provider()
 	if len(capturedExcluded) != len(alwaysOnCore) {
 		t.Fatalf("excluded len = %d, want %d (all core names passed as variadic)", len(capturedExcluded), len(alwaysOnCore))
+	}
+}
+
+func TestToolsProvider_TopKReadDynamically(t *testing.T) {
+	// topKFn is read on every invocation so dashboard changes to
+	// TOOL_SEARCH_TOP_K propagate without restart. We flip the returned
+	// value between two provider calls and assert searchFn sees both.
+	var capturedLimits []int
+	searchFn := func(q string, limit int, excluded ...string) []tools.ToolSearchResult {
+		capturedLimits = append(capturedLimits, limit)
+		return []tools.ToolSearchResult{{Name: "web_search"}}
+	}
+	defsAllFn := func() []llm.ToolDefinition { return nil }
+	latestUserMsgFn := func() string { return "any non-empty user message" }
+
+	var topK atomic.Int32
+	topK.Store(5)
+	topKFn := func() int { return int(topK.Load()) }
+
+	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, topKFn, silentLogger())
+	_ = provider()
+	topK.Store(20)
+	_ = provider()
+
+	if len(capturedLimits) != 2 {
+		t.Fatalf("captured %d limits, want 2", len(capturedLimits))
+	}
+	if capturedLimits[0] != 5 || capturedLimits[1] != 20 {
+		t.Fatalf("limits = %v, want [5 20] (topK read live per turn)", capturedLimits)
+	}
+}
+
+func TestToolsProvider_TopKZeroFallsBackToFive(t *testing.T) {
+	// A misconfigured topKFn (nil result, 0, negative) must not zero out
+	// retrieval — the provider keeps a sane default of 5 so a bad dashboard
+	// edit can't reduce tool surface to just the core.
+	var capturedLimit int
+	searchFn := func(q string, limit int, excluded ...string) []tools.ToolSearchResult {
+		capturedLimit = limit
+		return []tools.ToolSearchResult{{Name: "web_search"}}
+	}
+	defsAllFn := func() []llm.ToolDefinition { return nil }
+	latestUserMsgFn := func() string { return "any non-empty user message" }
+
+	provider := makeToolsProvider(alwaysOnCore, searchFn, coreStubDefs, defsAllFn, latestUserMsgFn, func() int { return 0 }, silentLogger())
+	_ = provider()
+	if capturedLimit != 5 {
+		t.Fatalf("topK=0 produced limit=%d, want fallback 5", capturedLimit)
 	}
 }

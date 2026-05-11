@@ -119,20 +119,71 @@ func searchTerms(query string) []string {
 	return out
 }
 
-// searchableToolEmbeddingText returns the text used to compute the embedding
-// vector for a tool. Phase 2 D-24 narrows this from the full lex corpus
-// (name+description+tags+examples+parameters) to just name + " " + description.
-// Rationale: smaller index, faster queries, matches Red Hat Tool-RAG findings
-// (https://next.redhat.com/2025/11/26/tool-rag-the-next-breakthrough-in-scalable-ai-agents/).
+// searchableToolEmbeddingText returns the text the embedding model sees per
+// tool. Format borrowed from ToolRAG
+// (https://github.com/antl3x/ToolRAG, packages/@antl3x-toolrag/source/ToolRAG.ts):
 //
-// Lex search (existing searchableToolText) keeps the broader corpus — that
-// path is BM25-style and benefits from more tokens.
+//	<tool name with _ and - turned into spaces>: <description>
+//	    <param1> [<type>]: <param1 description>
+//	    <param2> [<type>]: <param2 description>
+//
+// Why this shape:
+//   - Replacing underscores/dashes with spaces lets the embed model tokenize
+//     `web_fetch` as the natural-language phrase "web fetch" instead of a
+//     single rare identifier — multilingual queries ("analizza l'URL", "leggi
+//     la pagina") then anchor on the same surface area.
+//   - Including per-parameter descriptions captures usage intent that a
+//     terse top-line description omits. For tools like web_fetch whose
+//     description is just "Fetch a web page by URL...", the `url` parameter
+//     carries the bulk of the searchable signal.
+//   - Case is preserved (no lowercase). Modern multilingual sentence-embedding
+//     models case-fold internally; collapsing here just discards the few
+//     entity-like tokens the embedder uses (URL, HTTP, README, OCR).
+//
+// Lex search (searchableToolText below) keeps a broader corpus — that path
+// is BM25-style and benefits from more tokens.
 func searchableToolEmbeddingText(def ToolDefinition) string {
 	var b strings.Builder
-	b.WriteString(def.Name)
-	b.WriteByte(' ')
+	b.WriteString(toolNameForEmbedding(def.Name))
+	b.WriteString(": ")
 	b.WriteString(def.Description)
-	return strings.ToLower(b.String())
+	if props, ok := def.Parameters["properties"].(map[string]any); ok && len(props) > 0 {
+		// Sort parameter keys so the embedding is deterministic across
+		// Build runs — Go map iteration order would otherwise produce a
+		// different hash and bust warm-cache invalidation logic.
+		keys := make([]string, 0, len(props))
+		for k := range props {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, name := range keys {
+			schema, ok := props[name].(map[string]any)
+			if !ok {
+				continue
+			}
+			paramType, _ := schema["type"].(string)
+			paramDesc, _ := schema["description"].(string)
+			b.WriteString("\n    ")
+			b.WriteString(name)
+			if paramType != "" {
+				b.WriteString(" [")
+				b.WriteString(paramType)
+				b.WriteByte(']')
+			}
+			if paramDesc != "" {
+				b.WriteString(": ")
+				b.WriteString(paramDesc)
+			}
+		}
+	}
+	return b.String()
+}
+
+// toolNameForEmbedding renders a tool name in the form best suited for
+// natural-language semantic similarity: underscores and dashes become spaces.
+// `mcp_mail_imap_search` → `mcp mail imap search`.
+func toolNameForEmbedding(name string) string {
+	return strings.NewReplacer("_", " ", "-", " ").Replace(name)
 }
 
 func searchableToolText(def ToolDefinition, tags []string) string {

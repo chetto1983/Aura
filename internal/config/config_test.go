@@ -659,8 +659,10 @@ func TestLoadToolSearchTopK(t *testing.T) {
 		{"3", 3},
 		{"5", 5},
 		{"10", 10},
+		{"30", 30},
+		{"50", 50},
 		{"0", 5},
-		{"11", 5},
+		{"51", 5},
 		{"-1", 5},
 	}
 	for _, tt := range tests {
