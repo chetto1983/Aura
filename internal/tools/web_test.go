@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,7 @@ func TestDirectWebFetchToolRejectsNonHTTPURLs(t *testing.T) {
 }
 
 func TestDirectWebFetchToolExtractsHTML(t *testing.T) {
+	t.Setenv("AURA_WEB_FETCH_ALLOW_LOOPBACK", "1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<html><head><title>Page title</title><script>ignoreMe()</script></head><body><main><h1>Hello Aura</h1><p>Main content here.</p><a href="/next">Next</a></main></body></html>`)
@@ -99,6 +101,7 @@ func TestDirectWebFetchToolExtractsHTML(t *testing.T) {
 }
 
 func TestDirectWebFetchToolCapsLargePages(t *testing.T) {
+	t.Setenv("AURA_WEB_FETCH_ALLOW_LOOPBACK", "1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(strings.Repeat("x", maxDirectFetchResponseBytes+1024)))
@@ -115,6 +118,44 @@ func TestDirectWebFetchToolCapsLargePages(t *testing.T) {
 	}
 	if len(out) > maxWebToolChars+64 {
 		t.Fatalf("output len = %d, want bounded near %d", len(out), maxWebToolChars)
+	}
+}
+
+func TestDirectWebFetchToolBlocksLoopbackByDefault(t *testing.T) {
+	t.Setenv("AURA_WEB_FETCH_ALLOW_LOOPBACK", "")
+	t.Setenv("AURA_WEB_FETCH_ALLOW_HOSTS", "")
+	tool := NewDirectWebFetchTool()
+	for _, target := range []string{
+		"http://127.0.0.1/",
+		"http://localhost:8088/",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/",
+		"http://192.168.1.1/",
+		"http://[::1]/",
+	} {
+		_, err := tool.Execute(t.Context(), map[string]any{"url": target})
+		if err == nil {
+			t.Fatalf("Execute(%q) returned nil error; expected SSRF block", target)
+		}
+	}
+}
+
+func TestDirectWebFetchToolAllowHostsOverride(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	host, _, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
+		t.Fatalf("split host: %v", err)
+	}
+	t.Setenv("AURA_WEB_FETCH_ALLOW_LOOPBACK", "")
+	t.Setenv("AURA_WEB_FETCH_ALLOW_HOSTS", host)
+	tool := NewDirectWebFetchTool()
+	if _, err := tool.Execute(t.Context(), map[string]any{"url": server.URL}); err != nil {
+		t.Fatalf("expected allowlisted fetch to succeed, got %v", err)
 	}
 }
 

@@ -3,11 +3,14 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,17 +28,111 @@ type DirectWebFetchTool struct {
 }
 
 func NewDirectWebFetchTool() *DirectWebFetchTool {
+	transport := &http.Transport{
+		DialContext:           safeDialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          16,
+		IdleConnTimeout:       60 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 	return &DirectWebFetchTool{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 5 {
-					return http.ErrUseLastResponse
+					return errors.New("too many redirects (>5)")
+				}
+				if req.URL == nil {
+					return errors.New("redirect target missing URL")
+				}
+				if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+					return fmt.Errorf("redirect to unsupported scheme %q", req.URL.Scheme)
 				}
 				return nil
 			},
 		},
 	}
+}
+
+// safeDialContext is the SSRF gate for web_fetch. It resolves the host, refuses
+// to dial loopback / private / link-local / cloud-metadata addresses, and then
+// dials the validated IP directly — defeating DNS-rebinding races where the
+// resolver returns a public IP at validation time and a private IP at dial time.
+//
+// Two env knobs override the default-deny:
+//   - AURA_WEB_FETCH_ALLOW_LOOPBACK=1 — permit 127.0.0.0/8 / ::1 (tests, dev).
+//   - AURA_WEB_FETCH_ALLOW_HOSTS=host1,host2 — exact-hostname bypass (ops).
+func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("split host: %w", err)
+	}
+	if isAllowedFetchHost(host) {
+		return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, addr)
+	}
+	resolver := net.DefaultResolver
+	ips, err := resolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host: %w", err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no addresses for host")
+	}
+	allowLoopback := webFetchAllowLoopback()
+	for _, ip := range ips {
+		if !isPublicFetchIP(ip, allowLoopback) {
+			return nil, fmt.Errorf("web_fetch: refusing to dial host (resolved to non-public address)")
+		}
+	}
+	// Dial the first validated IP explicitly so the kernel cannot pick a different
+	// (potentially private) record between LookupIP and Dial.
+	return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+}
+
+// isPublicFetchIP returns true when ip is safe to dial from web_fetch.
+// allowLoopback opens loopback only when the operator opted in.
+func isPublicFetchIP(ip net.IP, allowLoopback bool) bool {
+	if ip == nil {
+		return false
+	}
+	if allowLoopback && ip.IsLoopback() {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
+		return false
+	}
+	// AWS/GCP/Azure metadata service. Already covered by IsLinkLocalUnicast()
+	// for 169.254/16, but explicit equality stays as defense-in-depth.
+	if v4 := ip.To4(); v4 != nil && v4.Equal(net.IPv4(169, 254, 169, 254)) {
+		return false
+	}
+	return true
+}
+
+func isAllowedFetchHost(host string) bool {
+	raw := strings.TrimSpace(os.Getenv("AURA_WEB_FETCH_ALLOW_HOSTS"))
+	if raw == "" {
+		return false
+	}
+	target := strings.ToLower(strings.TrimSpace(host))
+	for _, entry := range strings.Split(raw, ",") {
+		if entry = strings.ToLower(strings.TrimSpace(entry)); entry != "" && entry == target {
+			return true
+		}
+	}
+	return false
+}
+
+func webFetchAllowLoopback() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AURA_WEB_FETCH_ALLOW_LOOPBACK"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func (t *DirectWebFetchTool) Name() string { return "web_fetch" }
