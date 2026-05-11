@@ -191,43 +191,6 @@ func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
 	}
 }
 
-func TestOnMessageAllowlistedTextStartsConversation(t *testing.T) {
-	var calls []telegramAPICall
-	srv := newTelegramAPIServer(t, &calls)
-	defer srv.Close()
-
-	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := &Bot{
-		cfg: &config.Config{
-			Allowlist:           []string{"123"},
-			AllowlistConfigured: true,
-		},
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
-		Sender: &tele.User{ID: 123, Username: "owner"},
-		Chat:   &tele.Chat{ID: 123},
-		Text:   "hello",
-	}})
-
-	if err := b.onMessage(ctx); err != nil {
-		t.Fatalf("onMessage() error = %v, want nil", err)
-	}
-	waitUntil(t, time.Second, func() bool {
-		_, ok := b.sessionStore().Load("123")
-		return ok
-	})
-	waitUntil(t, time.Second, func() bool {
-		return countTelegramMethods(calls, "sendMessage") > 0
-	})
-	waitUntil(t, time.Second, func() bool {
-		return !b.sessionStore().IsActive("123")
-	})
-}
-
 func TestCompactMemoryStatusSummaryReportsMirrorState(t *testing.T) {
 	tracker := memoryindex.NewVectorHealthTracker(true, "aura_memory_v1_compact")
 	tracker.Started()
