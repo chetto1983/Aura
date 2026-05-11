@@ -31,11 +31,23 @@ from Aura as `http://qdrant:6333`.
 
 ## First Run
 
-Start the stack directly. Aura creates missing runtime, data, wiki, skills,
-MCP, and log paths before opening SQLite, so a fresh checkout no longer needs
-manual `data/`, `wiki/`, or `skills/` directory setup. Released installs pull
-the published GHCR image; you may leave `TELEGRAM_TOKEN` blank to use the
-first-run setup wizard:
+On a brand-new checkout, run the `aura-secrets` sidecar once before bringing
+the rest of the stack up. The sidecar generates local Garage and SearXNG
+secrets under `./data/secrets/` and reclaims ownership of `./data` and
+`./runtime-workspace` for the aura user (uid 10001). Skipping this step on a
+fresh install leaves Compose unable to load the Garage default-bucket env
+vars (because `env_file` is resolved before any service starts) and leaves
+`./data` root-owned, so aura crashes with "permission denied" when it tries
+to create `aura.db` or its log directory.
+
+```powershell
+docker compose run --rm aura-secrets
+```
+
+Then start the stack. Aura creates missing runtime, data, wiki, skills, MCP,
+and log paths before opening SQLite, so no additional manual directory setup
+is required. Released installs pull the published GHCR image; you may leave
+`TELEGRAM_TOKEN` blank to use the first-run setup wizard:
 
 ```powershell
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
@@ -67,9 +79,11 @@ docker compose -f compose.yaml -f compose.image.yaml up -d
 
 Then open `http://127.0.0.1:18081`.
 
-For local development, build from the working tree instead:
+For local development, build from the working tree instead (still run
+`docker compose run --rm aura-secrets` once on a fresh checkout first):
 
 ```powershell
+docker compose run --rm aura-secrets
 docker compose up -d --build
 ```
 

@@ -28,7 +28,7 @@ func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing
 	}
 	tool := tools.NewExecuteCodeTool(manager)
 	desc := tool.Description()
-	for _, want := range []string{"Use create_xlsx/create_docx/create_pdf", "for simple documents", "/tmp/aura_out", "computed artifacts"} {
+	for _, want := range []string{"Use create_xlsx/create_docx/create_pdf", "for simple documents", "AURA_OUT_DIR", "computed artifacts"} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
 		}

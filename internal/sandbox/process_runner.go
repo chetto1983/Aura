@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/source"
@@ -21,10 +20,7 @@ const (
 	defaultProcessRunnerTimeout     = 15 * time.Second
 	defaultProcessRunnerOutputBytes = 1 << 20
 	defaultProcessResultOutputBytes = 64 * 1024
-	defaultProcessOutputDir         = "/tmp/aura_out"
 )
-
-var processOutputMu sync.Mutex
 
 type ProcessRunnerConfig struct {
 	PythonPath            string
@@ -195,14 +191,15 @@ func (r *ProcessRunner) execute(ctx context.Context, code, workDir string) (*Res
 		defer cancel()
 	}
 
-	processOutputMu.Lock()
-	defer processOutputMu.Unlock()
-
-	outputDir := processOutputDir()
-	_ = os.RemoveAll(outputDir)
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	// Per-execution output directory. The previous package-level mutex
+	// existed only to keep concurrent calls from clobbering each other's
+	// /tmp/aura_out — give every call its own dir and the serialization
+	// disappears, letting parallel tool calls actually run in parallel.
+	outputDir, err := os.MkdirTemp("", "aura-out-*")
+	if err != nil {
 		return nil, fmt.Errorf("sandbox: prepare output dir: %w", err)
 	}
+	defer os.RemoveAll(outputDir)
 
 	tmpDir, err := os.MkdirTemp("", "aura-python-*")
 	if err != nil {
@@ -272,14 +269,11 @@ func (r *ProcessRunner) executeCommand(ctx context.Context, command, workDir str
 		defer cancel()
 	}
 
-	processOutputMu.Lock()
-	defer processOutputMu.Unlock()
-
-	outputDir := processOutputDir()
-	_ = os.RemoveAll(outputDir)
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	outputDir, err := os.MkdirTemp("", "aura-out-*")
+	if err != nil {
 		return nil, fmt.Errorf("sandbox: prepare output dir: %w", err)
 	}
+	defer os.RemoveAll(outputDir)
 
 	shell, args := processShellCommand(command)
 	cmd := exec.CommandContext(runCtx, shell, args...)
@@ -293,7 +287,7 @@ func (r *ProcessRunner) executeCommand(ctx context.Context, command, workDir str
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	elapsed := time.Since(start)
 	if runCtx.Err() == context.DeadlineExceeded {
 		return nil, fmt.Errorf("sandbox: shell command timed out after %v", timeout)
@@ -333,15 +327,6 @@ func (r *ProcessRunner) env() []string {
 		return append([]string(nil), r.environment...)
 	}
 	return os.Environ()
-}
-
-func processOutputDir() string {
-	if filepath.IsAbs(defaultProcessOutputDir) {
-		if filepath.VolumeName(defaultProcessOutputDir) != "" || os.PathSeparator == '/' {
-			return defaultProcessOutputDir
-		}
-	}
-	return filepath.Join(os.TempDir(), "aura_out")
 }
 
 func collectProcessArtifacts(outputDir string) ([]Artifact, error) {

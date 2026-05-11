@@ -6,6 +6,8 @@ services:
     volumes:
       - ./docker/secrets:/scripts:ro
       - ./data/secrets:/secrets
+      - ./data:/data
+      - ./runtime-workspace:/workspace
 
   aura:
     build:

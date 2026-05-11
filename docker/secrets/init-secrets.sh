@@ -102,4 +102,15 @@ EOF
 mv "$searxng_dir/settings.yml.tmp" "$searxng_dir/settings.yml"
 chmod 0644 "$searxng_dir/settings.yml"
 
+# The aura container runs as uid 10001 (see Dockerfile). On a fresh checkout
+# Docker auto-creates the host bind-mount sources for /data and /workspace as
+# root, leaving the aura user unable to write aura.db, logs, or the runtime
+# workspace. Reclaim ownership here so the first boot succeeds. Mounts are
+# optional so missing paths are not fatal.
+for owned_path in /data /workspace; do
+	if [ -d "$owned_path" ]; then
+		chown -R 10001:10001 "$owned_path" 2>/dev/null || true
+	fi
+done
+
 echo "Aura local service secrets ready in $secrets_dir"
