@@ -94,7 +94,7 @@ func (t *ExecuteCodeTool) Name() string { return "execute_code" }
 func (t *ExecuteCodeTool) Description() string {
 	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access as Aura. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
-		"For multi-step workflows, first use tool_search, then pass tools_allowed and have the script write /tmp/aura_out/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
+		"For multi-step workflows, pass tools_allowed and have the script write /tmp/aura_out/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
 		"Use loops, transforms, retries, and structured JSON output inside one script instead of many model/backend round trips. " +
 		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
 		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
@@ -123,7 +123,7 @@ func (t *ExecuteCodeTool) Parameters() map[string]any {
 			},
 			"tools_allowed": map[string]any{
 				"type":        "array",
-				"description": "Optional tool names returned by tool_search and visible in this turn. Required when the script writes aura_tool_calls.json for internal tool orchestration.",
+				"description": "Optional tool names visible in this turn. Required when the script writes aura_tool_calls.json for internal tool orchestration.",
 				"items": map[string]any{
 					"type": "string",
 				},
@@ -213,7 +213,6 @@ const internalToolCallManifestName = "aura_tool_calls.json"
 var blockedInternalToolCalls = map[string]bool{
 	"execute_code":  true,
 	"execute_shell": true,
-	"tool_search":   true,
 }
 
 type internalToolCallManifest struct {
@@ -266,7 +265,7 @@ func (t *ExecuteCodeTool) executeInternalToolManifest(ctx context.Context, body 
 	}
 	for _, name := range toolsAllowed {
 		if !toolNameInList(name, activeTools) {
-			return "", fmt.Errorf("execute_code: tool %q is not available in the active turn; use tool_search first", name)
+			return "", fmt.Errorf("execute_code: tool %q is not available in the active turn", name)
 		}
 	}
 
@@ -294,7 +293,7 @@ func (t *ExecuteCodeTool) executeInternalToolManifest(ctx context.Context, body 
 			return "", fmt.Errorf("execute_code: tool %q was not listed in tools_allowed", name)
 		}
 		if !toolNameInList(name, activeTools) {
-			return "", fmt.Errorf("execute_code: tool %q is not available in the active turn; use tool_search first", name)
+			return "", fmt.Errorf("execute_code: tool %q is not available in the active turn", name)
 		}
 		if t.registry.Get(name) == nil {
 			return "", fmt.Errorf("execute_code: tool %q is not registered", name)

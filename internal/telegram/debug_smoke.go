@@ -183,8 +183,6 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 			case "execute_shell":
 				result.ExecuteShellCalls++
 				result.SandboxUsed = true
-			case "tool_search":
-				result.ToolSearchCalls++
 			case "read_file":
 				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
 					result.SkillsRead = true
