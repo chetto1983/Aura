@@ -136,12 +136,21 @@ func resolveFileRoot(deps Deps, root, rel string) (absDir, absPath string, err e
 	return dirAbs, resolved, nil
 }
 
+// fileTreeMaxEntries caps recursive walks so a runaway root (think wiki
+// with 5000 pages) can't blow up the dashboard.
+const fileTreeMaxEntries = 5000
+
 // handleFilesList lists one directory entry-by-entry. Files come back with
 // size + mtime; sub-directories carry no size.
+//
+// When ?recursive=true is set the response is a flat list of every entry
+// under the requested path, with the "name" field carrying a forward-slash
+// path relative to the root (e.g. "wiki/notes/idea.md"). svar's React
+// FileManager consumes this shape directly.
 func handleFilesList(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		root := r.PathValue("root")
-		_, abs, err := resolveFileRoot(deps, root, r.URL.Query().Get("path"))
+		rootAbs, abs, err := resolveFileRoot(deps, root, r.URL.Query().Get("path"))
 		if err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 			return
@@ -157,6 +166,16 @@ func handleFilesList(deps Deps) http.HandlerFunc {
 		}
 		if !info.IsDir() {
 			writeError(w, deps.Logger, http.StatusBadRequest, "path is a file; use GET /files/{root}/file")
+			return
+		}
+		recursive := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("recursive")), "true")
+		if recursive {
+			out, err := walkFileTree(rootAbs, abs, fileTreeMaxEntries)
+			if err != nil {
+				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, deps.Logger, http.StatusOK, out)
 			return
 		}
 		entries, err := os.ReadDir(abs)
@@ -191,6 +210,53 @@ func handleFilesList(deps Deps) http.HandlerFunc {
 		})
 		writeJSON(w, deps.Logger, http.StatusOK, out)
 	}
+}
+
+// walkFileTree returns a flat list of entries under base. "name" carries the
+// forward-slash path relative to rootAbs so the dashboard can use it as an
+// id. Hidden entries are skipped at the entry level; entire hidden subtrees
+// are pruned so their contents never appear either.
+func walkFileTree(rootAbs, base string, maxEntries int) ([]fileEntry, error) {
+	out := make([]fileEntry, 0, 64)
+	err := filepath.WalkDir(base, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == base {
+			return nil
+		}
+		name := d.Name()
+		if isHiddenFileEntry(name) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(rootAbs, path)
+		if err != nil {
+			return err
+		}
+		row := fileEntry{Name: filepath.ToSlash(rel), Type: "file"}
+		if d.IsDir() {
+			row.Type = "dir"
+		} else {
+			info, statErr := d.Info()
+			if statErr == nil {
+				row.Size = info.Size()
+				row.Modified = info.ModTime().UTC().Format("2006-01-02T15:04:05Z")
+			}
+		}
+		out = append(out, row)
+		if len(out) >= maxEntries {
+			return io.EOF // signal a stop without returning an error to caller
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 // handleFilesRead returns a single file's content. utf8.Valid bodies come
