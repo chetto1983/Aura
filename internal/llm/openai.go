@@ -172,7 +172,7 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return Response{}, fmt.Errorf("LLM API error (status %d): %s", resp.StatusCode, string(respBody))
+		return Response{}, &APIError{StatusCode: resp.StatusCode, Body: redact(string(respBody))}
 	}
 
 	var chatResp chatResponse
@@ -240,7 +240,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("LLM API error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: redact(string(respBody))}
 	}
 
 	ch := make(chan Token, 64)
