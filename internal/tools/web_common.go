@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 const maxWebToolChars = 8000
@@ -71,7 +72,14 @@ func truncateForToolContext(s string, maxChars int) string {
 	if maxChars <= 0 || len(s) <= maxChars {
 		return s
 	}
-	return strings.TrimSpace(s[:maxChars]) + "\n\n[truncated]"
+	// Walk back to a UTF-8 rune boundary so we never emit an invalid byte
+	// sequence (the conversation archive is JSON-encoded; invalid UTF-8 would
+	// be replaced with U+FFFD and rejected by strict consumers).
+	cut := maxChars
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(s[:cut]) + "\n\n[truncated]"
 }
 
 func requiredString(args map[string]any, key string) (string, error) {
