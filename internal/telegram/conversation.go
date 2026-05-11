@@ -338,6 +338,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				FatalResult:    execution.fatalResult,
 				ReadSkillNames: execution.readSkillNames,
 				TerminalTool:   execution.terminalTool,
+				Results:        execution.results,
 			}
 		}),
 		State:                   convCtx,

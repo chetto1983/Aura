@@ -38,6 +38,10 @@ type toolExecutionSummary struct {
 	readSkillNames  []string
 	terminalTool    string
 	discoveredTools []string
+	// results maps call.ID -> result content so agentloop can decide whether
+	// a repeat call should be deduped or retried after a transient error
+	// (F-006). Empty when no fresh calls executed.
+	results map[string]string
 }
 
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) toolExecutionSummary {
@@ -99,6 +103,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	}
 	wg.Wait()
 
+	summary.results = make(map[string]string, len(results))
 	for _, r := range results {
 		// Envelope output from untrusted-origin tools (web_fetch, web_search,
 		// MCP, etc.) so the LLM sees a clear data-not-instructions boundary
@@ -106,6 +111,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		wrapped := agentloop.WrapUntrustedToolResult(r.tool, r.content)
 		convCtx.AddToolResultMessage(r.id, wrapped)
 		summary.lastResult = r.content
+		summary.results[r.id] = r.content
 		if r.fatal && summary.fatalResult == "" {
 			summary.fatalResult = r.content
 		}

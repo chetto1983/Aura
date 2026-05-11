@@ -54,11 +54,31 @@ func (f ToolExecutorFunc) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 // Fields are best-effort observations; nothing here changes control flow
 // beyond FatalResult (which short-circuits the turn) and TerminalTool
 // (which lets a TerminalHandler take over the final answer).
+//
+// Results maps each freshly-executed call's ID to its result content. The
+// loop uses this to allow legitimate retries of tool calls whose previous
+// result was empty or a FormatToolError sentinel (F-006). Executors that
+// leave Results nil keep the legacy sticky-dedupe behaviour.
 type ExecutionSummary struct {
 	LastResult     string
 	FatalResult    string
 	ReadSkillNames []string
 	TerminalTool   string
+	Results        map[string]string
+}
+
+// IsRetryableToolResult reports whether a prior tool-result text leaves the
+// loop willing to re-execute the same call. FormatToolError / FormatFatalToolError
+// sentinels ("Error: ...") signal a transient failure the LLM should be allowed
+// to retry on a subsequent turn. Empty content is treated as "unknown" —
+// callers that did not populate ExecutionSummary.Results keep the legacy
+// sticky-dedupe behaviour.
+func IsRetryableToolResult(prev string) bool {
+	trimmed := strings.TrimSpace(prev)
+	if trimmed == "" {
+		return false
+	}
+	return strings.HasPrefix(trimmed, "Error:")
 }
 
 type TerminalHandler func(ctx context.Context, terminalTool, lastToolResult string, stats *Stats) (text string, delivered bool, handled bool)
@@ -135,6 +155,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	var lastToolResult string
 	var stats Stats
 	seenToolCalls := map[string]bool{}
+	seenToolCallsResult := map[string]string{}
 	toolCallExecutions := map[string]int{}
 	emitStats := func() {
 		if opts.OnStats != nil {
@@ -236,7 +257,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 					duplicateToolCalls = append(duplicateToolCalls, call)
 					continue
 				}
-			} else if seenToolCalls[key] {
+			} else if seenToolCalls[key] && !IsRetryableToolResult(seenToolCallsResult[key]) {
+				// Sticky dedupe only blocks when the previous identical call
+				// produced a real result. An empty or "Error: ..." result is
+				// treated as transient so the LLM can retry (F-006).
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				continue
 			} else if maxCalls := opts.MaxCallsPerTool[call.Name]; maxCalls > 0 && toolCallExecutions[call.Name] >= maxCalls {
@@ -256,6 +280,18 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
 			if execution.TerminalTool != "" {
 				stats.TerminalTool = execution.TerminalTool
+			}
+			// Cache last-result-per-key for the next iteration's dedupe gate
+			// (F-006). Executors that don't populate Results fall through to
+			// the original sticky behaviour because the map lookup returns
+			// "" and IsRetryableToolResult("") is true — which means a
+			// retry-tolerant default. Operators wanting strict dedupe must
+			// either populate Results or set MaxCallsPerTool.
+			for _, call := range freshCalls {
+				key := duplicateToolCallKey(call)
+				if result, ok := execution.Results[call.ID]; ok {
+					seenToolCallsResult[key] = result
+				}
 			}
 		}
 		for _, duplicate := range duplicateToolCalls {

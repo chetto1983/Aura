@@ -2,7 +2,6 @@ package agentloop
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/aura/aura/internal/llm"
@@ -26,9 +25,15 @@ func DedupeToolCalls(calls []llm.ToolCall) (kept []llm.ToolCall, duplicates []ll
 }
 
 func duplicateToolCallKey(call llm.ToolCall) string {
+	name := strings.TrimSpace(call.Name)
 	args, err := json.Marshal(call.Arguments)
 	if err != nil {
-		args = []byte(fmt.Sprint(call.Arguments))
+		// json.Marshal failed (channels, funcs, NaN, or a custom type with a
+		// broken MarshalJSON). fmt.Sprint of a map is non-deterministic across
+		// runs — that would silently disable dedupe on the affected key. Use
+		// a stable sentinel that errs on the side of dedupe instead of letting
+		// the same call run twice in one batch (F-007).
+		return name + "\x00unmarshalable"
 	}
-	return strings.TrimSpace(call.Name) + "\x00" + string(args)
+	return name + "\x00" + string(args)
 }
