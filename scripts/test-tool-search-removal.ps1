@@ -17,11 +17,20 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path "$PSScriptRoot/.."
 Set-Location $repoRoot
 
+# Patterns are word-boundary regex, case-sensitive. The plain "tool_search"
+# substring catches false positives on legitimate post-Phase-2 names that share
+# the substring: the retained Qdrant collection identifier "aura_tool_search_v2",
+# the configuration env vars TOOL_SEARCH_BACKEND / TOOL_SEARCH_TOP_K (control the
+# retrieval backend, not the deleted tool), and incidental CamelCase substring
+# hits like "SearchesSources" -> "Tool_Searches" in test function names. The
+# word boundary on \btool_search\b + case-sensitive Select-String -CaseSensitive
+# eliminates those without weakening the regression guard for the deleted
+# lowercase symbol.
 $patterns = @(
-    "tool_search",
-    "ToolSearchTool",
-    "tierSearch",
-    "toolNamesFromToolSearchResult"
+    '\btool_search\b',
+    'ToolSearchTool',
+    '\btierSearch\b',
+    'toolNamesFromToolSearchResult'
 )
 
 $excludeDirs = @(
@@ -46,7 +55,7 @@ foreach ($p in $patterns) {
             if ($_.Name -eq "test-tool-search-removal.ps1") { $skip = $true }
             -not $skip
         } |
-        Select-String -Pattern $p -SimpleMatch
+        Select-String -Pattern $p -CaseSensitive
     if ($hits) {
         foreach ($h in $hits) {
             $matched += "$($h.Filename):$($h.LineNumber): $($h.Line.Trim())"
