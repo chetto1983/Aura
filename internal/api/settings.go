@@ -74,23 +74,50 @@ type SettingsTestRequest struct {
 	ProbePath string `json:"probe_path,omitempty"`
 }
 
-// settingsCatalog is the compact dashboard-facing catalog. The settings
-// applier still supports more keys, but the UI intentionally surfaces only
-// the operator knobs that matter during normal Aura operation.
+// settingsCatalog is the dashboard-facing catalog. The settings applier
+// supports more keys than are surfaced here; new rows should still be
+// editable from the .env file but the UI exposes the operator knobs that
+// matter during normal Aura operation. Each key relies on the matching
+// settings.item.<KEY>.{label,hint} entries in the i18n locale files for
+// localized strings; the Label/Hint fields are fallbacks for clients that
+// don't ship locale bundles.
 var settingsCatalog = []SettingItem{
 	{Key: settings.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome"},
+
 	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
 	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
 	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
+	{Key: settings.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
+
+	{Key: settings.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
+	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
+	{Key: settings.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
+	{Key: settings.KeyHardBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Hard budget (USD)"},
+	{Key: settings.KeyCostInputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Input price (USD / 1M tokens)"},
+	{Key: settings.KeyCostOutputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Output price (USD / 1M tokens)"},
+
+	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version"},
+	{Key: settings.KeySkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode"},
+	{Key: settings.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps"},
+	{Key: settings.KeyTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy"},
+	{Key: settings.KeyDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode"},
+	{Key: settings.KeySkillsAdmin, Group: "agent", Kind: "bool", Label: "Skills admin (install/delete)"},
+
 	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng"}, Label: "Web search provider", Hint: "SearXNG is the supported web search provider"},
 	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
+
 	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
 	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
 	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
+
+	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
 	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
+
 	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
 }
+
+func floatPtr(v float64) *float64 { return &v }
 
 func handleSettingsList(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

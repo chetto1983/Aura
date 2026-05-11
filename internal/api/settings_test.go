@@ -149,10 +149,7 @@ func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
 	}
 }
 
-func TestSettingsCatalogIsCompactAndEditable(t *testing.T) {
-	if len(settingsCatalog) != 12 {
-		t.Fatalf("settingsCatalog len = %d, want 12", len(settingsCatalog))
-	}
+func TestSettingsCatalogCoversLLMAndIsEditable(t *testing.T) {
 	catalog := map[string]SettingItem{}
 	for _, item := range settingsCatalog {
 		if !settings.IsOverridable(item.Key) {
@@ -163,22 +160,46 @@ func TestSettingsCatalogIsCompactAndEditable(t *testing.T) {
 		}
 		catalog[item.Key] = item
 	}
+	// Every key the dashboard must surface so the LLM stack is fully
+	// configurable without editing .env. New LLM-adjacent knobs should be
+	// added here so they don't silently drop out of the UI.
 	for _, key := range []string{
 		settings.KeyTimezone,
+
 		settings.KeyLLMBaseURL,
 		settings.KeyLLMModel,
 		settings.KeyLLMAPIKey,
+		settings.KeyLLMMaxRetries,
+
+		settings.KeyMaxContextTokens,
+		settings.KeyMaxHistoryMessages,
+		settings.KeySoftBudget,
+		settings.KeyHardBudget,
+		settings.KeyCostInputPerMTokens,
+		settings.KeyCostOutputPerMTokens,
+
+		settings.KeyPromptVersion,
+		settings.KeySkillRoutingMode,
+		settings.KeyAgentLoopMaxSteps,
+		settings.KeyTerminalToolPolicy,
+		settings.KeyDelegationMode,
+		settings.KeySkillsAdmin,
+
 		settings.KeyWebSearchProvider,
 		settings.KeySearXNGBaseURL,
+
 		settings.KeyQdrantURL,
 		settings.KeyQdrantCollection,
 		settings.KeyQdrantAPIKey,
+
+		settings.KeyEmbeddingBaseURL,
 		settings.KeyEmbeddingModel,
 		settings.KeyEmbeddingAPIKey,
+
 		settings.KeyMistralAPIKey,
 	} {
 		if _, ok := catalog[key]; !ok {
-			t.Fatalf("%s missing from compact settings catalog", key)
+			t.Fatalf("%s missing from settings catalog", key)
 		}
 	}
 }

@@ -271,17 +271,66 @@ type toolOutcome struct {
 }
 
 func (r *Runner) executeToolCalls(ctx context.Context, userID string, allowlist []string, calls []llm.ToolCall, maxChars int, toolTimeout time.Duration) []toolOutcome {
+	// results is a fixed-length slice; each goroutine writes to its own
+	// disjoint index. Backing array is allocated up front so no append-race
+	// can creep in via a future refactor (F-019).
 	results := make([]toolOutcome, len(calls))
+	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
+		// Clone arguments so a tool that mutates its input map (an idiomatic
+		// mistake) cannot stomp on a sibling goroutine's view (F-002). The
+		// outer call.Arguments is built once by parseToolCallArguments and
+		// shared across goroutines — without the clone, two parallel tools
+		// reading the same map could race.
+		argsClone := cloneToolArgs(call.Arguments)
+		callCopy := call
+		callCopy.Arguments = argsClone
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
 			results[i] = toolOutcome{id: call.ID, content: limitToolContent(r.executeOneTool(ctx, userID, allowlist, call, toolTimeout), maxChars)}
-		}(i, call)
+		}(i, callCopy)
 	}
-	wg.Wait()
-	return results
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	// Honor outer ctx cancellation so a stuck tool cannot pin Run() open
+	// after the user disconnects or the swarm parent dies (F-001). The
+	// in-flight goroutines still race their own timeout to completion in
+	// the background; their writes go to a slice we no longer read.
+	select {
+	case <-done:
+		return results
+	case <-ctx.Done():
+		partial := make([]toolOutcome, len(calls))
+		for i, call := range calls {
+			if results[i].id == "" {
+				partial[i] = toolOutcome{id: call.ID, content: tools.FormatToolError(ctx.Err())}
+			} else {
+				partial[i] = results[i]
+			}
+		}
+		return partial
+	}
+}
+
+// cloneToolArgs returns a shallow copy of the LLM-supplied arguments map so
+// parallel tool executions cannot race on shared map mutation. The values
+// themselves (string/float64/bool/nested map/slice from json.Unmarshal) are
+// not deep-copied — but those types are read-only in practice for every
+// built-in tool. If a future tool needs to mutate a nested slice, it must
+// clone internally.
+func cloneToolArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = v
+	}
+	return out
 }
 
 func (r *Runner) executeOneTool(ctx context.Context, userID string, allowlist []string, call llm.ToolCall, toolTimeout time.Duration) string {
