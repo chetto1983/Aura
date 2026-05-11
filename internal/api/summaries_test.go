@@ -459,7 +459,7 @@ type fakeWikiStoreForSummaries struct {
 	written []*wiki.Page
 }
 
-func (f *fakeWikiStoreForSummaries) WritePage(_ context.Context, p *wiki.Page) error {
+func (f *fakeWikiStoreForSummaries) WritePage(_ context.Context, p *wiki.Page, _ ...string) error {
 	f.written = append(f.written, p)
 	return nil
 }

@@ -86,7 +86,7 @@ type fakeWikiStore struct {
 	logs   []struct{ action, slug string }
 }
 
-func (f *fakeWikiStore) WritePage(_ context.Context, page *wiki.Page) error {
+func (f *fakeWikiStore) WritePage(_ context.Context, page *wiki.Page, _ ...string) error {
 	if f.pages == nil {
 		f.pages = map[string]*wiki.Page{}
 	}

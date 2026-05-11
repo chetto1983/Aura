@@ -1,8 +1,49 @@
 package wiki
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestSchema_UnversionedRoundTrip(t *testing.T) {
+	cases := []struct {
+		name        string
+		unversioned bool
+		wantInYAML  bool // omitempty: absent when false, present when true
+	}{
+		{"false_omitted", false, false},
+		{"true_present", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			page := &Page{
+				Title:         "Test",
+				Body:          "x",
+				SchemaVersion: CurrentSchemaVersion,
+				PromptVersion: "v1",
+				CreatedAt:     "2026-05-10T00:00:00Z",
+				UpdatedAt:     "2026-05-10T00:00:00Z",
+				Unversioned:   tc.unversioned,
+			}
+			data, err := MarshalMD(page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			has := strings.Contains(string(data), "unversioned:")
+			if has != tc.wantInYAML {
+				t.Fatalf("unversioned in YAML = %v, want %v\nYAML: %s", has, tc.wantInYAML, string(data))
+			}
+			// Round-trip — ParseMD returns (*Page, error), not (*Page, _, error).
+			back, err := ParseMD(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if back.Unversioned != tc.unversioned {
+				t.Fatalf("round-trip Unversioned = %v, want %v", back.Unversioned, tc.unversioned)
+			}
+		})
+	}
+}
 
 func TestParseYAML(t *testing.T) {
 	input := `

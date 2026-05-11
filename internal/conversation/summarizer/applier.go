@@ -10,8 +10,10 @@ import (
 )
 
 // WikiWriter is the wiki write/read journal surface needed by AutoApplier.
+// WritePage accepts an optional variadic expectedUpdatedAt for ETag-based
+// optimistic concurrency (WIKI-02). Existing callers pass no variadic arg.
 type WikiWriter interface {
-	WritePage(ctx context.Context, page *wiki.Page) error
+	WritePage(ctx context.Context, page *wiki.Page, expectedUpdatedAt ...string) error
 	ReadPage(slug string) (*wiki.Page, error)
 	AppendLog(ctx context.Context, action, slug string)
 }
