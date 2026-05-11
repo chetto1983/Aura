@@ -132,8 +132,20 @@ async function get<T>(path: string): Promise<T> {
 // response. Bypasses the 8s GET timeout because some endpoints (ingest,
 // reocr) run OCR which can take minutes.
 async function post<T>(path: string, body?: unknown): Promise<T> {
+  return write<T>('POST', path, body);
+}
+
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  return write<T>('PUT', path, body);
+}
+
+async function del<T>(path: string, body?: unknown): Promise<T> {
+  return write<T>('DELETE', path, body);
+}
+
+async function write<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = {
-    method: 'POST',
+    method,
     credentials: 'same-origin',
   };
   if (body !== undefined) {
@@ -155,7 +167,11 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   if (!res.ok) {
     throw new ApiError(res.status, await readError(res));
   }
-  return res.json() as Promise<T>;
+  // 204 / empty body — return {} so callers don't choke on undefined.
+  if (res.status === 204) return {} as T;
+  const text = await res.text();
+  if (!text) return {} as T;
+  return JSON.parse(text) as T;
 }
 
 function qs(params?: Record<string, string | undefined>): string {
@@ -202,6 +218,29 @@ export const api = {
   tasks: (q?: { status?: string }) =>
     get<Task[]>('/tasks' + qs(q)),
   task: (name: string) => get<Task>(`/tasks/${name}`),
+
+  // ---- file manager (multi-root) ----
+  filesTree: (root: string, path = '', recursive = false) =>
+    get<Array<{ name: string; type: 'file' | 'dir'; size?: number; modified?: string }>>(
+      `/files/${root}/tree` + qs({ path, recursive: recursive ? 'true' : undefined }),
+    ),
+  filesRead: (root: string, path: string) =>
+    get<{ root: string; path: string; size: number; modified: string; encoding: 'utf-8' | 'base64'; content: string }>(
+      `/files/${root}/file` + qs({ path }),
+    ),
+  filesWrite: (root: string, path: string, content: string, encoding: 'utf-8' | 'base64' = 'utf-8') =>
+    put<{ root: string; path: string; size: number }>(
+      `/files/${root}/file` + qs({ path }),
+      { encoding, content },
+    ),
+  filesDelete: (root: string, path: string) =>
+    del<{ root: string; path: string; deleted: boolean }>(`/files/${root}/file` + qs({ path })),
+  filesMkdir: (root: string, path: string) =>
+    post<{ root: string; path: string; created: boolean }>(`/files/${root}/mkdir` + qs({ path })),
+  filesRename: (root: string, from: string, to: string) =>
+    post<{ root: string; from: string; to: string }>(`/files/${root}/rename`, { from, to }),
+  deleteSource: (id: string) =>
+    del<{ id: string; status: string; memory_purged: boolean; memory_purge_warning?: string }>(`/sources/${id}`),
 
   // ---- write actions (slice 10c) ----
   ingestSource: (id: string) =>

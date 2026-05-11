@@ -25,6 +25,7 @@ const MCPPanel = lazy(() => import('@/components/MCPPanel').then((m) => ({ defau
 const PendingUsersPanel = lazy(() => import('@/components/PendingUsersPanel').then((m) => ({ default: m.PendingUsersPanel })));
 const ConversationsPanel = lazy(() => import('@/components/ConversationsPanel').then((m) => ({ default: m.ConversationsPanel })));
 const SummariesPanel = lazy(() => import('@/components/SummariesPanel').then((m) => ({ default: m.SummariesPanel })));
+const FilesPanel = lazy(() => import('@/components/FilesPanel').then((m) => ({ default: m.FilesPanel })));
 const MaintenancePanel = lazy(() => import('@/components/MaintenancePanel').then((m) => ({ default: m.MaintenancePanel })));
 const BackupsPanel = lazy(() => import('@/components/BackupsPanel').then((m) => ({ default: m.BackupsPanel })));
 const SettingsPanel = lazy(() => import('@/components/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
@@ -75,6 +76,7 @@ export default function App() {
                       <Route path="/summaries" element={<SummariesPanel />} />
                       <Route path="/maintenance" element={<MaintenancePanel />} />
                       <Route path="/backups" element={<BackupsPanel />} />
+                      <Route path="/files" element={<FilesPanel />} />
                       <Route path="/swarm" element={<SwarmPanel />} />
                       <Route path="/settings" element={<SettingsPanel />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
