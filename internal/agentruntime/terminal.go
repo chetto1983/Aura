@@ -147,6 +147,14 @@ func LooksLikeUnsafeFinalAnswer(text string) bool {
 			return true
 		}
 	}
+	// Raw JSON body looks unsafe — the LLM should synthesize it into prose
+	// rather than dumping curl/API responses to the user.
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) >= 4 {
+		if (trimmed[0] == '{' && trimmed[len(trimmed)-1] == '}') || (trimmed[0] == '[' && trimmed[len(trimmed)-1] == ']') {
+			return true
+		}
+	}
 	return false
 }
 
