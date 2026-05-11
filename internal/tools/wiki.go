@@ -125,9 +125,12 @@ func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (s
 
 	// Server-controlled metadata — LLM input is IGNORED for these keys
 	// (privilege escalation prevention, T-02-B mitigation).
-	// PromptVersion uses "v1" (the canonical v{n} format accepted by
-	// wiki.Validate's promptVersionRe). The plan spec "write_wiki_page/v1"
-	// is not accepted by the regex — see 02-04-SUMMARY.md deviation notes.
+	// PromptVersion is the tool-write provenance marker. The historical plan
+	// spec called for "write_wiki_page/v1" but wiki.Validate's promptVersionRe
+	// only accepts the canonical v{n} shape. Until the regex is extended to
+	// accept "tool/v{n}" we use "v1" — the divergence is intentional and
+	// tracked here (F-039). Changing the constant requires a matching
+	// promptVersionRe update in internal/wiki/validate.go.
 	now := time.Now().UTC().Format(time.RFC3339)
 	page := &wiki.Page{
 		Title:         strings.TrimSpace(title),
@@ -137,7 +140,7 @@ func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (s
 		Related:       stringSliceArg(args, "related"),
 		Sources:       stringSliceArg(args, "sources"),
 		SchemaVersion: wiki.CurrentSchemaVersion,  // D-09 LOCK — NOT from args
-		PromptVersion: "v1",                       // tool-write provenance; server-controlled
+		PromptVersion: "v1",                       // see F-039 note above — server-controlled
 		CreatedAt:     now,                        // store.WritePage may preserve on update
 		UpdatedAt:     now,
 		// Unversioned: NEVER set from args (server-managed only — D-17/D-18 in wiki.Store)

@@ -461,7 +461,10 @@ func (t *CancelTaskTool) Execute(ctx context.Context, args map[string]any) (stri
 		return "", fmt.Errorf("cancel_task: %w", err)
 	}
 	if !ok {
-		return fmt.Sprintf("No active task named %q.", name), nil
+		// The TaskWriter boundary cannot distinguish "doesn't exist" from
+		// "already cancelled or completed" without an extra Get; surface both
+		// possibilities so the LLM doesn't waste a turn re-issuing cancel.
+		return fmt.Sprintf("No active task named %q to cancel. The task may not exist, or it may already be cancelled or completed — call list_tasks to verify.", name), nil
 	}
 	return fmt.Sprintf("Cancelled task %q.", name), nil
 }

@@ -76,9 +76,10 @@ func (r *ToolRegistry) ListTools() ([]ToolInfo, error) {
 // SaveTool writes a new Python tool to the tools directory and creates a
 // companion wiki page.
 func (r *ToolRegistry) SaveTool(ctx context.Context, name, description, params, code, usage string) error {
+	raw := name
 	name = sanitizeToolName(name)
 	if name == "" {
-		return fmt.Errorf("invalid tool name")
+		return fmt.Errorf("invalid tool name %q (must contain at least one ASCII letter or digit, snake_case only)", raw)
 	}
 
 	pyPath := filepath.Join(r.toolsDir, name+".py")
@@ -177,21 +178,28 @@ func (r *ToolRegistry) parseToolHeader(filename string) (ToolInfo, error) {
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "# ") {
+		trimmed := strings.TrimSpace(line)
+		// A blank line inside the header should not terminate parsing — a
+		// user-edited tool may insert spacing between metadata fields and
+		// still expect every field to be read.
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "#") {
 			break
 		}
-		line = strings.TrimPrefix(line, "# ")
+		body := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 		switch {
-		case strings.HasPrefix(line, "description:"):
-			info.Description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
-		case strings.HasPrefix(line, "params:"):
-			info.Params = strings.TrimSpace(strings.TrimPrefix(line, "params:"))
-		case strings.HasPrefix(line, "requires:"):
-			info.Requires = strings.TrimSpace(strings.TrimPrefix(line, "requires:"))
-		case strings.HasPrefix(line, "created:"):
-			info.Created = strings.TrimSpace(strings.TrimPrefix(line, "created:"))
-		case strings.HasPrefix(line, "usage:"):
-			info.Usage = strings.TrimSpace(strings.TrimPrefix(line, "usage:"))
+		case strings.HasPrefix(body, "description:"):
+			info.Description = strings.TrimSpace(strings.TrimPrefix(body, "description:"))
+		case strings.HasPrefix(body, "params:"):
+			info.Params = strings.TrimSpace(strings.TrimPrefix(body, "params:"))
+		case strings.HasPrefix(body, "requires:"):
+			info.Requires = strings.TrimSpace(strings.TrimPrefix(body, "requires:"))
+		case strings.HasPrefix(body, "created:"):
+			info.Created = strings.TrimSpace(strings.TrimPrefix(body, "created:"))
+		case strings.HasPrefix(body, "usage:"):
+			info.Usage = strings.TrimSpace(strings.TrimPrefix(body, "usage:"))
 		}
 	}
 	return info, nil
