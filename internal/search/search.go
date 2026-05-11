@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aura/aura/internal/wiki"
 	"gopkg.in/yaml.v3"
@@ -25,13 +26,41 @@ import (
 // repeated work so the constant only matters on a truly cold start.
 const indexConcurrency = 4
 
+// parseSearchPayloadTime accepts the RFC3339 and a couple of common YAML
+// frontmatter layouts (older pages used a space separator). Empty / unparseable
+// values surface as the zero time, which the recency multiplier knows to skip.
+func parseSearchPayloadTime(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if ts, err := time.Parse(layout, raw); err == nil {
+			return ts.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
 // Result is one wiki hit returned by Search.
+//
+// UpdatedAt carries the page's frontmatter updated_at when the backend can
+// supply it (zero time when unknown). Callers that score with a recency factor
+// must guard against a zero time and choose whether to apply recency=1.0 or
+// skip the multiplier.
 type Result struct {
-	Kind    string
-	Slug    string
-	Title   string
-	Content string
-	Score   float32
+	Kind      string
+	Slug      string
+	Title     string
+	Content   string
+	Score     float32
+	UpdatedAt time.Time
 }
 
 // EmbeddingFunc is Aura's embedding provider boundary. Same signature as
@@ -209,10 +238,14 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		}
 		pages[slug] = page
 		title, content := page.Title, page.Title+"\n"+page.Body
+		meta := map[string]string{"slug": slug, "title": title, "kind": "wiki_page"}
+		if updated := strings.TrimSpace(page.Updated); updated != "" {
+			meta["updated_at"] = updated
+		}
 		docs = append(docs, Document{
 			ID:       slug,
 			Content:  content,
-			Metadata: map[string]string{"slug": slug, "title": title, "kind": "wiki_page"},
+			Metadata: meta,
 		})
 	}
 	docs = append(docs, buildGraphDocuments(pages)...)

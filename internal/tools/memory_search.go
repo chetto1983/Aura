@@ -249,6 +249,7 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 			Title:      r.Title,
 			Snippet:    snippet,
 			Score:      float64(r.Score),
+			UpdatedAt:  r.UpdatedAt,
 			Handle:     identifier,
 		})
 	}

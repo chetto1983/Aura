@@ -353,12 +353,14 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 		if slug == "" {
 			slug = strings.TrimSpace(payload["doc_id"])
 		}
+		updatedAt, _ := parseSearchPayloadTime(payload["updated_at"])
 		results = append(results, Result{
-			Kind:    kind,
-			Slug:    slug,
-			Title:   payload["title"],
-			Content: payload["content"],
-			Score:   point.Score,
+			Kind:      kind,
+			Slug:      slug,
+			Title:     payload["title"],
+			Content:   payload["content"],
+			Score:     point.Score,
+			UpdatedAt: updatedAt,
 		})
 	}
 	return results, nil

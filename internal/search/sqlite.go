@@ -186,13 +186,15 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 		if kind == "" {
 			kind = "wiki_page"
 		}
+		updatedAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "updated_at"))
 
 		results = append(results, Result{
-			Kind:    kind,
-			Slug:    slug,
-			Title:   title,
-			Content: content,
-			Score:   float32(-rank),
+			Kind:      kind,
+			Slug:      slug,
+			Title:     title,
+			Content:   content,
+			Score:     float32(-rank),
+			UpdatedAt: updatedAt,
 		})
 	}
 
@@ -242,12 +244,14 @@ func (s *sqliteSearcher) exactSearch(ctx context.Context, query string, topK int
 		if kind == "" {
 			kind = "wiki_page"
 		}
+		updatedAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "updated_at"))
 		results = append(results, Result{
-			Kind:    kind,
-			Slug:    slug,
-			Title:   title,
-			Content: content,
-			Score:   1,
+			Kind:      kind,
+			Slug:      slug,
+			Title:     title,
+			Content:   content,
+			Score:     1,
+			UpdatedAt: updatedAt,
 		})
 	}
 	return results, rows.Err()
