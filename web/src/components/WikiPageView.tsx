@@ -31,12 +31,24 @@ export function WikiPageView() {
   const fm = data.frontmatter;
   const category = typeof fm.category === 'string' ? fm.category : undefined;
   const tags = Array.isArray(fm.tags) ? (fm.tags as string[]) : [];
+  const unversioned = fm.unversioned === true || data.unversioned === true;
 
   return (
     <article className="p-6 max-w-3xl">
       <Link to="/wiki" className="text-sm text-muted-foreground underline">{t('wikiPage.back')}</Link>
       <header className="mt-4 mb-6">
-        <h1 className="text-3xl font-semibold">{data.title}</h1>
+        <div className="flex flex-wrap items-start gap-2">
+          <h1 className="text-3xl font-semibold">{data.title}</h1>
+          {unversioned && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-300 mt-1"
+              title={t('wikiPage.unversionedTitle')}
+              aria-label={t('wikiPage.unversionedBadge')}
+            >
+              {t('wikiPage.unversionedBadge')}
+            </span>
+          )}
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {category && <span className="rounded-full border px-2 py-0.5">{category}</span>}
           {tags.map((tag) => (

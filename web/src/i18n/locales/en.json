@@ -426,6 +426,8 @@
   "wikiPage.notFound": "Page not found",
   "wikiPage.failed": "Failed to load page",
   "wikiPage.noSlug": "No wiki page with slug \"{{slug}}\".",
+  "wikiPage.unversionedBadge": "Git tracking pending",
+  "wikiPage.unversionedTitle": "The most recent write to this page did not produce a git commit. The page is saved on disk; only the audit trail is degraded. Will auto-clear on the next successful commit.",
   "login.title": "Aura dashboard",
   "login.instructions": "Paste your dashboard token to sign in. In Telegram, send",
   "login.startHint": "/start for first setup or /login for a fresh token.",

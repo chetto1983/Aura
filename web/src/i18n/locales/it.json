@@ -426,6 +426,8 @@
   "wikiPage.notFound": "Pagina non trovata",
   "wikiPage.failed": "Caricamento pagina fallito",
   "wikiPage.noSlug": "Nessuna pagina wiki con slug \"{{slug}}\".",
+  "wikiPage.unversionedBadge": "Tracciamento Git in sospeso",
+  "wikiPage.unversionedTitle": "L'ultima scrittura di questa pagina non ha prodotto un commit git. La pagina è salvata su disco; solo la cronologia di audit è degradata. Si azzererà automaticamente al prossimo commit riuscito.",
   "login.title": "Dashboard Aura",
   "login.instructions": "Incolla il tuo token dashboard per accedere. Su Telegram, invia",
   "login.startHint": "/start per la prima configurazione o /login per un nuovo token.",

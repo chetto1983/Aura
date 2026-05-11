@@ -37,6 +37,16 @@ export interface WikiPage {
   title: string;
   body_md: string;
   frontmatter: Record<string, unknown>;
+  /**
+   * True when the most recent write to this page did not produce a git commit
+   * (commit failed or git unavailable). The page IS saved on disk; only the
+   * audit history is degraded. Auto-clears on next successful commit. GIT-01.
+   *
+   * Optional for deploy-window backward compat — old API responses may not
+   * include it. The backend (Plan 07 Task 1) always includes it; new clients
+   * reading `page.frontmatter?.unversioned` also work for zero-downtime deploys.
+   */
+  unversioned?: boolean;
 }
 
 export interface GraphNode {
