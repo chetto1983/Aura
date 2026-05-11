@@ -45,10 +45,17 @@ RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/
 
 COPY --from=mcp-node /usr/local/bin/node /usr/local/bin/node
 COPY --from=mcp-node /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/node /usr/local/lib/node_modules/@executeautomation/database-server/dist/src/index.js "$@"' > /usr/local/bin/ea-database-server \
+# Recreate the npm/npx CLI symlinks the node image normally ships. The COPY
+# above brings the bundled `npm` package over but not the /usr/local/bin
+# entrypoints, so without these links `npx skills add ...` (used by the
+# Skills installer) fails with "npx: not found".
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/node /usr/local/lib/node_modules/@executeautomation/database-server/dist/src/index.js "$@"' > /usr/local/bin/ea-database-server \
     && chmod 0755 /usr/local/bin/ea-database-server \
     && test -x /usr/local/bin/node \
-    && test -x /usr/local/bin/ea-database-server
+    && test -x /usr/local/bin/ea-database-server \
+    && /usr/local/bin/node /usr/local/bin/npx --version
 
 COPY --from=build /out/aura /usr/local/bin/aura
 
