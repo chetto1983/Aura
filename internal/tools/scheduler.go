@@ -228,12 +228,19 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 		if err != nil {
 			return "", fmt.Errorf("schedule_task: %w", err)
 		}
+		uid := UserIDFromContext(ctx)
+		if uid == "" && agentPayload.Notify != nil && *agentPayload.Notify {
+			// Without a user context the dispatcher has no chat to notify on
+			// completion. Reject up front rather than persist a job whose
+			// notify=true is silently undeliverable.
+			return "", errors.New("schedule_task: agent_job with notify=true requires an authenticated user context")
+		}
 		normalized, err := agentPayload.JSON()
 		if err != nil {
 			return "", fmt.Errorf("schedule_task: %w", err)
 		}
 		task.Payload = normalized
-		task.RecipientID = UserIDFromContext(ctx)
+		task.RecipientID = uid
 	}
 	now := time.Now().UTC()
 	switch {
