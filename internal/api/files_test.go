@@ -172,6 +172,139 @@ func TestFilesDelete_BlocksRecursiveSourceDelete(t *testing.T) {
 	}
 }
 
+// TestFilesPanel_RecursiveTreeShape pins the exact JSON the dashboard's
+// FilesPanel consumes from GET /files/{root}/tree?recursive=true. svar's
+// React Filemanager expects every directory in the response to appear as
+// its own entry (so the tree can be reconstructed from `name`/parent
+// inference) AND every nested file to come back with a forward-slash
+// path relative to the root. Regressing either invariant produces a
+// non-functional file manager in the browser, which is hard to catch
+// from pure unit tests on individual handlers — hence this end-to-end
+// contract test.
+func TestFilesPanel_RecursiveTreeShape(t *testing.T) {
+	deps, wikiDir := newFilesTestDeps(t)
+	mustWrite := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(wikiDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	mustWrite("alpha.md", "a")
+	mustWrite("notes/idea.md", "b")
+	mustWrite("notes/nested/deep.md", "c")
+
+	req := httptest.NewRequest(http.MethodGet, "/files/wiki/tree?recursive=true", nil)
+	req.SetPathValue("root", "wiki")
+	w := httptest.NewRecorder()
+	handleFilesList(deps)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var entries []fileEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// Build a set so we can assert by name without caring about order.
+	got := map[string]string{}
+	for _, e := range entries {
+		got[e.Name] = e.Type
+	}
+	want := map[string]string{
+		"alpha.md":              "file",
+		"notes":                 "dir",
+		"notes/idea.md":         "file",
+		"notes/nested":          "dir",
+		"notes/nested/deep.md":  "file",
+	}
+	for name, typ := range want {
+		if got[name] != typ {
+			t.Errorf("entry %q: type=%q, want %q (full=%+v)", name, got[name], typ, entries)
+		}
+	}
+
+	// Forward slashes only — svar uses lastIndexOf('/') to derive parents.
+	for _, e := range entries {
+		if strings.Contains(e.Name, "\\") {
+			t.Errorf("entry name contains backslash, breaks tree parsing: %q", e.Name)
+		}
+	}
+}
+
+// TestFilesPanel_FullCRUDFlow exercises the end-to-end sequence the
+// dashboard performs: list (empty) → write → list (sees file) → read
+// → delete → list (empty again). This is the contract FilesPanel.tsx
+// expects from every root.
+func TestFilesPanel_FullCRUDFlow(t *testing.T) {
+	deps, _ := newFilesTestDeps(t)
+
+	listRecursive := func() []fileEntry {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/files/workspace/tree?recursive=true", nil)
+		req.SetPathValue("root", "workspace")
+		w := httptest.NewRecorder()
+		handleFilesList(deps)(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("list status = %d body = %s", w.Code, w.Body.String())
+		}
+		var out []fileEntry
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("list decode: %v", err)
+		}
+		return out
+	}
+
+	if got := listRecursive(); len(got) != 0 {
+		t.Fatalf("initial list = %+v, want empty", got)
+	}
+
+	body, _ := json.Marshal(fileWriteRequest{Content: "scratch", Encoding: "utf-8"})
+	req := httptest.NewRequest(http.MethodPut, "/files/workspace/file?path=scratch.txt", bytes.NewReader(body))
+	req.SetPathValue("root", "workspace")
+	w := httptest.NewRecorder()
+	handleFilesWrite(deps)(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("write status = %d body = %s", w.Code, w.Body.String())
+	}
+
+	after := listRecursive()
+	if len(after) != 1 || after[0].Name != "scratch.txt" || after[0].Type != "file" {
+		t.Fatalf("post-write list = %+v, want [scratch.txt file]", after)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/files/workspace/file?path=scratch.txt", nil)
+	req.SetPathValue("root", "workspace")
+	w = httptest.NewRecorder()
+	handleFilesRead(deps)(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("read status = %d body = %s", w.Code, w.Body.String())
+	}
+	var read fileReadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &read); err != nil {
+		t.Fatalf("read decode: %v", err)
+	}
+	if read.Content != "scratch" || read.Encoding != "utf-8" {
+		t.Fatalf("read = %+v, want content=scratch utf-8", read)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/files/workspace/file?path=scratch.txt", nil)
+	req.SetPathValue("root", "workspace")
+	w = httptest.NewRecorder()
+	handleFilesDelete(deps)(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body = %s", w.Code, w.Body.String())
+	}
+
+	if final := listRecursive(); len(final) != 0 {
+		t.Fatalf("post-delete list = %+v, want empty", final)
+	}
+}
+
 func TestResolveFileRoot_RejectsTraversal(t *testing.T) {
 	deps, _ := newFilesTestDeps(t)
 	for _, bad := range []string{"../etc/passwd", "/etc/passwd", "subdir/../../escape"} {

@@ -4,8 +4,8 @@ milestone: v4.0
 milestone_name: milestone
 status: phase_complete
 stopped_at: Phase 02 complete — verifier PASS, ready to ship
-last_updated: "2026-05-11T08:00:00.000Z"
-last_activity: 2026-05-11 -- Phase 02 complete (4 waves, 9 plans, verifier PASS)
+last_updated: "2026-05-11T00:00:00.000Z"
+last_activity: 2026-05-11 -- Dashboard files UI refreshed with SVAR native light/dark/contrast file manager and container updated
 progress:
   total_phases: 4
   completed_phases: 2
@@ -71,6 +71,8 @@ Research completed for v4.0 Production Hardening (2026-05-10). Key decisions rec
 
 - 2026-05-10: Removed Ollama chat failover and Ollama web provider paths. LLM configuration is OpenAI-compatible only; web search supports `disabled` or `searxng`; wiki vector search now uses Qdrant when `QDRANT_URL` is configured. Verification: `go build ./...`, `go vet ./...`, `npm run build`, and `go test` for all packages except `internal/release` passed. Full `go test ./...` remains blocked by missing release packaging files (`.goreleaser.yml`, `.github/workflows/release.yml`) outside this slice.
 - 2026-05-10: Cleaned stale handoff references after the Docker-first/Ollama removal pass. Release workflow tests now skip absent legacy desktop packaging files instead of failing the whole suite, Docker workflow assertions match the tracked workflow, and live handoff docs point to `.planning/STATE.md`/`.planning/ROADMAP.md` instead of removed tracker files. Verification: `go test ./...`, `go vet ./...`, and `go build ./...` passed.
+- 2026-05-11: Refreshed the dashboard `/files` surface to use SVAR Filemanager's native light/dark table and panels layout with built-in tree, search, view controls, and preview pane, plus Aura root switching and root usage summary above the widget. Updated embedded dashboard assets and rebuilt/recreated the Docker `aura` service from a locally rebuilt Linux binary because full Docker rebuild was blocked by Debian mirror 403 on `python3-setuptools-whl`. Verification: `npm run i18n:check`, `loops/aura-implementation/scripts/verify-web.ps1`, container healthcheck, and Playwright light/dark `/files` component checks passed with no reproduced `api/files/workspace/file?path=skills` 400.
+- 2026-05-11: Fixed `/files` viewport fit and theme synchronization. The shared app theme hook now notifies multiple hook instances, so the sidebar theme button updates SVAR without a reload; `/files` now cycles through dark, contrast, light, and back to dark. The SVAR frame and grid are constrained to the viewport with internal scrolling instead of clipping the preview/list area. Verification: `npm run lint`, `npm run build`, container healthcheck, and Playwright theme-cycle check passed.
 
 ### Pending Todos
 
