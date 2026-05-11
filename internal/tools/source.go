@@ -561,3 +561,71 @@ func formatToolDuration(d time.Duration) string {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
 }
+
+// sourcePurger is the memoryindex side of "forget this source" — declared
+// here as a local interface to avoid importing the memoryindex package into
+// every tool consumer.
+type sourcePurger interface {
+	PurgeSource(ctx context.Context, sourceID string) error
+}
+
+// DeleteSourceTool removes an ingested source from Aura's memory: the raw
+// directory on disk, the SQLite memoryindex rows, and the Qdrant vectors
+// mirroring those rows. Wiki pages that linked to the source are left in
+// place because they may now describe a deleted source — operator decides
+// what to do with them (memory_hygiene can flag dangling references in a
+// later pass).
+type DeleteSourceTool struct {
+	store  *source.Store
+	purger sourcePurger
+}
+
+func NewDeleteSourceTool(store *source.Store, purger sourcePurger) *DeleteSourceTool {
+	if store == nil {
+		return nil
+	}
+	return &DeleteSourceTool{store: store, purger: purger}
+}
+
+func (t *DeleteSourceTool) Name() string { return "delete_source" }
+
+func (t *DeleteSourceTool) Description() string {
+	return "Permanently delete a source: removes the raw directory under wiki/raw/<id>/ from disk and purges its rows from the memoryindex (SQLite + Qdrant mirror). Wiki pages that referenced the source are left untouched. Confirm intent before calling; this is irreversible."
+}
+
+func (t *DeleteSourceTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"source_id": map[string]any{
+				"type":        "string",
+				"description": "Source ID (e.g. src_<16hex>). Must match the regex enforced by source.Store.",
+			},
+		},
+		"required": []string{"source_id"},
+	}
+}
+
+func (t *DeleteSourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t == nil || t.store == nil {
+		return "", errors.New("delete_source: source store unavailable")
+	}
+	id, err := requiredString(args, "source_id")
+	if err != nil {
+		return "", err
+	}
+	if err := t.store.Delete(ctx, id); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("delete_source: source %s not found", id)
+		}
+		return "", fmt.Errorf("delete_source: remove files: %w", err)
+	}
+	if t.purger != nil {
+		if err := t.purger.PurgeSource(ctx, id); err != nil {
+			// File is already gone; memoryindex mismatch is recoverable on next
+			// rebuild but worth surfacing so the operator can fix it.
+			return "", fmt.Errorf("delete_source: files removed but memoryindex purge failed: %w", err)
+		}
+	}
+	return fmt.Sprintf("Deleted source %s (files + memoryindex). Wiki pages referencing this source are unchanged.", id), nil
+}

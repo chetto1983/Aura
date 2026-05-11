@@ -49,6 +49,7 @@ type Reader interface {
 type Writer interface {
 	Put(ctx context.Context, in PutInput) (*Source, bool, error)
 	Update(id string, mutator func(*Source) error) (*Source, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // FileResolver maps a source id + artifact name to a containment-checked
@@ -169,6 +170,27 @@ func (s *Store) getLocked(id string) (*Source, error) {
 		return nil, fmt.Errorf("source: parse metadata for %s: %w", id, err)
 	}
 	return &rec, nil
+}
+
+// Delete removes the source directory <wikiDir>/raw/<id>/ entirely. It is the
+// disk-side half of "forget this PDF" — the memoryindex (and its Qdrant mirror)
+// must be purged separately via memoryindex.Store.PurgeSource so the LLM can no
+// longer retrieve excerpts of the file. ErrNotFound (wrapped fs.ErrNotExist)
+// is returned for unknown ids; callers can treat that as idempotent success.
+func (s *Store) Delete(ctx context.Context, id string) error {
+	if !idPattern.MatchString(id) {
+		return fmt.Errorf("source: invalid id %q", id)
+	}
+	mu := s.idMutex(id)
+	mu.Lock()
+	defer mu.Unlock()
+	if _, err := s.getLocked(id); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(s.rawDir, id)); err != nil {
+		return fmt.Errorf("source: remove %s: %w", id, err)
+	}
+	return nil
 }
 
 // ListFilter narrows the set returned by List. Empty fields match anything.

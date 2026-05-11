@@ -298,6 +298,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		logger.Warn("compact memory index unavailable", "error", err)
 	}
+	// delete_source needs both the on-disk store and the memoryindex so it
+	// can purge the compact mirror after removing the raw files. Registering
+	// it here (after memoryStore is built) keeps the dependency obvious.
+	if deleteTool := tools.NewDeleteSourceTool(sourceStore, memoryStore); deleteTool != nil {
+		toolRegistry.Register(tools.WithCategory(deleteTool, tools.CategoryAutonomous))
+	}
 
 	swarmStore, err := swarm.NewStoreWithDB(pool)
 	if err != nil {
@@ -696,6 +702,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		EmbedCache:    embedCache,
 		CompactMemory: compactVectorHealth,
 		Sandbox:       sandboxHealth,
+		// SourcePurger lets DELETE /sources/{id} clean up the compact
+		// memoryindex (and its Qdrant mirror) after removing the raw
+		// files. Same store as the delete_source LLM tool.
+		SourcePurger: memoryStore,
 		// Pending-approval pipeline. Bot owns the side-effects (DB
 		// transition + Telegram delivery), so the api package just sees
 		// the interface.

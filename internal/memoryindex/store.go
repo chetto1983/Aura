@@ -313,6 +313,18 @@ func (s *Store) PurgeArchiveAll(ctx context.Context) error {
 	return s.deleteWhere(ctx, `kind = ?`, KindArchive)
 }
 
+// PurgeSource removes every memoryindex entry that points at the given
+// source_id (typically multiple page-level documents for an OCR'd PDF). The
+// Qdrant mirror is updated in the same call via deleteWhere's vector
+// cascade, so callers don't need to re-sync afterwards.
+func (s *Store) PurgeSource(ctx context.Context, sourceID string) error {
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return nil
+	}
+	return s.deleteWhere(ctx, `kind = ? AND source_id = ?`, KindSource, sourceID)
+}
+
 func (s *Store) deleteWhere(ctx context.Context, where string, args ...any) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("memoryindex: store unavailable")

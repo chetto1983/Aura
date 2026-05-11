@@ -223,3 +223,63 @@ func decodeJSONBody(r *http.Request, v any) error {
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
 }
+
+// SourcePurger drops compact memoryindex rows (and their Qdrant mirror) for
+// a given source_id. The router-side Deps struct accepts any impl that
+// satisfies this interface so tests can swap fakes; production wires
+// memoryindex.Store.PurgeSource.
+type SourcePurger interface {
+	PurgeSource(ctx context.Context, sourceID string) error
+}
+
+// DeleteResponse is the JSON body returned by DELETE /sources/{id}.
+type DeleteResponse struct {
+	ID                 string `json:"id"`
+	Status             string `json:"status"`
+	MemoryPurged       bool   `json:"memory_purged"`
+	MemoryPurgeWarning string `json:"memory_purge_warning,omitempty"`
+}
+
+// handleSourceDelete removes the raw directory of a stored source and
+// purges its rows from the compact memoryindex (and Qdrant mirror, via the
+// memoryindex's vector cascade). Wiki pages that linked to the source are
+// left in place — operator decides whether to clean them up separately.
+//
+// Idempotent for "not found": returns 404 so the frontend can show a
+// "source already gone" toast and refresh the list.
+func handleSourceDelete(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !sourceIDRe.MatchString(id) {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid source id")
+			return
+		}
+		if deps.Sources == nil {
+			writeError(w, deps.Logger, http.StatusServiceUnavailable, "source store unavailable")
+			return
+		}
+		if err := deps.Sources.Delete(r.Context(), id); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
+				return
+			}
+			deps.Logger.Warn("api: delete source failed", "id", id, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, "delete failed")
+			return
+		}
+		resp := DeleteResponse{ID: id, Status: "deleted"}
+		if deps.SourcePurger != nil {
+			if err := deps.SourcePurger.PurgeSource(r.Context(), id); err != nil {
+				// Files are gone; index is now stale. Surface the warning
+				// so the frontend can prompt for a rebuild.
+				deps.Logger.Warn("api: source memoryindex purge failed", "id", id, "error", err)
+				resp.MemoryPurgeWarning = err.Error()
+			} else {
+				resp.MemoryPurged = true
+			}
+		} else {
+			resp.MemoryPurgeWarning = "memoryindex purger not configured; rebuild required"
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, resp)
+	}
+}

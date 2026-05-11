@@ -91,6 +91,13 @@ type Deps struct {
 	CompactMemory CompactMemoryHealthReader
 	Sandbox       SandboxHealth
 
+	// SourcePurger purges memoryindex rows (and their Qdrant mirror) for a
+	// given source_id. Wired alongside Sources so DELETE /sources/{id} can
+	// perform a full file+index cleanup. Optional: when nil, the handler
+	// deletes only the on-disk files and warns the operator that the index
+	// is now stale until the next rebuild.
+	SourcePurger SourcePurger
+
 	SkillsAdmin bool
 
 	// Pending-approval pipeline. Bot wires the real implementation;
@@ -170,6 +177,7 @@ func NewRouter(deps Deps) http.Handler {
 	// Slice 10c: write endpoints, also auth-gated.
 	mux.HandleFunc("POST /sources/{id}/ingest", handleSourceIngest(deps))
 	mux.HandleFunc("POST /sources/{id}/reocr", handleSourceReocr(deps))
+	mux.HandleFunc("DELETE /sources/{id}", handleSourceDelete(deps))
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))

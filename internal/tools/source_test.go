@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,6 +86,15 @@ func (f *fakeSourceRepository) Update(id string, mutator func(*source.Source) er
 	}
 	f.records[id] = cp
 	return cloneFakeSource(cp), nil
+}
+
+func (f *fakeSourceRepository) Delete(_ context.Context, id string) error {
+	if _, ok := f.records[id]; !ok {
+		return os.ErrNotExist
+	}
+	delete(f.records, id)
+	_ = os.RemoveAll(filepath.Join(f.dir, id))
+	return nil
 }
 
 func (f *fakeSourceRepository) Path(id, name string) string {
@@ -650,5 +660,86 @@ func TestOCRSourceTool_FailureMarksSourceFailed(t *testing.T) {
 	}
 	if updated.Error == "" {
 		t.Errorf("expected error message recorded")
+	}
+}
+
+type fakeSourcePurger struct {
+	purged []string
+	fail   error
+}
+
+func (f *fakeSourcePurger) PurgeSource(_ context.Context, id string) error {
+	if f.fail != nil {
+		return f.fail
+	}
+	f.purged = append(f.purged, id)
+	return nil
+}
+
+func TestDeleteSourceTool_RemovesFilesAndPurgesIndex(t *testing.T) {
+	ctx := context.Background()
+	store := newTestSourceStore(t)
+	src, _, err := store.Put(ctx, source.PutInput{
+		Kind:     source.KindText,
+		Filename: "to-delete.txt",
+		MimeType: "text/plain",
+		Bytes:    []byte("ephemeral note"),
+	})
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	purger := &fakeSourcePurger{}
+	tool := NewDeleteSourceTool(store, purger)
+	if tool == nil {
+		t.Fatal("expected delete_source tool")
+	}
+	out, err := tool.Execute(ctx, map[string]any{"source_id": src.ID})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "Deleted source "+src.ID) {
+		t.Fatalf("output = %q, want delete confirmation", out)
+	}
+	if _, err := store.Get(src.ID); err == nil {
+		t.Fatal("source still readable after delete")
+	}
+	if len(purger.purged) != 1 || purger.purged[0] != src.ID {
+		t.Fatalf("purger calls = %#v, want [%s]", purger.purged, src.ID)
+	}
+}
+
+func TestDeleteSourceTool_UnknownIDReturnsError(t *testing.T) {
+	store := newTestSourceStore(t)
+	tool := NewDeleteSourceTool(store, &fakeSourcePurger{})
+	_, err := tool.Execute(context.Background(), map[string]any{"source_id": "src_ffffffffffffffff"})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v, want 'not found'", err)
+	}
+}
+
+func TestDeleteSourceTool_PurgeErrorSurfacesAfterFileDelete(t *testing.T) {
+	ctx := context.Background()
+	store := newTestSourceStore(t)
+	src, _, err := store.Put(ctx, source.PutInput{
+		Kind:     source.KindText,
+		Filename: "purge-fail.txt",
+		MimeType: "text/plain",
+		Bytes:    []byte("body"),
+	})
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	purger := &fakeSourcePurger{fail: errors.New("qdrant down")}
+	tool := NewDeleteSourceTool(store, purger)
+	if _, err := tool.Execute(ctx, map[string]any{"source_id": src.ID}); err == nil {
+		t.Fatal("expected purge error to surface")
+	}
+	if _, err := store.Get(src.ID); err == nil {
+		// File deletion must still have happened — we want this irreversible
+		// half completed so the operator can rebuild the index next.
+		t.Fatal("source files survived a partial delete; expected files-gone + warning")
 	}
 }
