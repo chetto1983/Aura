@@ -120,6 +120,7 @@ func pageFrontmatter(p *wiki.Page) map[string]any {
 		"prompt_version": p.PromptVersion,
 		"created_at":     p.CreatedAt,
 		"updated_at":     p.UpdatedAt,
+		"unversioned":    p.Unversioned, // GIT-01 — always present (true or false) for TS strict typing
 	}
 	if p.Category != "" {
 		fm["category"] = p.Category
