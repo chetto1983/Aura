@@ -668,7 +668,10 @@ func stringifyCell(v any) string {
 	default:
 		b, err := json.Marshal(t)
 		if err != nil {
-			return ""
+			// Surface unrenderable values to the user/LLM rather than silently
+			// dropping them into an empty cell — empty cells are an invisible
+			// data-loss bug in the deliverable.
+			return fmt.Sprintf("[unrenderable %T]", t)
 		}
 		return string(b)
 	}
