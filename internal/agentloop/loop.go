@@ -147,9 +147,28 @@ type Stats struct {
 	MaxElapsedHit     bool
 }
 
+// MaxIterationsCeiling is a hard upper bound the loop applies to whatever
+// the caller passed in opts.MaxIterations. A misconfigured caller (or a
+// future bug that propagates an unbounded value) cannot ask for arbitrary
+// iteration counts: 50 is well above any realistic workload (Telegram's
+// default is 8) and well below a per-turn cost-bomb (F-008).
+const MaxIterationsCeiling = 50
+
+// DefaultMaxElapsed is the implicit per-turn wall-clock cap when callers
+// leave opts.MaxElapsed at zero. Five minutes is comfortable for normal
+// chat + tool turns and well below the SLA an operator would want on a
+// background agent (F-008).
+const DefaultMaxElapsed = 5 * time.Minute
+
 func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (Result, error) {
 	if opts.MaxIterations < 1 {
 		opts.MaxIterations = 1
+	}
+	if opts.MaxIterations > MaxIterationsCeiling {
+		opts.MaxIterations = MaxIterationsCeiling
+	}
+	if opts.MaxElapsed <= 0 {
+		opts.MaxElapsed = DefaultMaxElapsed
 	}
 	start := time.Now()
 	var lastToolResult string
@@ -164,14 +183,38 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 	emitStats()
 
+	// iterCancel reclaims the per-iteration deadline. It is replaced on each
+	// iteration; the outer defer catches the final one so no context.Timeout
+	// goroutine survives Run (F-009).
+	var iterCancel context.CancelFunc
+	defer func() {
+		if iterCancel != nil {
+			iterCancel()
+		}
+	}()
+
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
-		if opts.MaxElapsed > 0 && time.Since(start) >= opts.MaxElapsed {
+		remaining := opts.MaxElapsed - time.Since(start)
+		if remaining <= 0 {
 			stats.MaxElapsedHit = true
 			answer := finalAnswerOnBudget(lastToolResult)
 			state.AddAssistantMessage(answer)
 			emitStats()
 			return Result{Text: answer, Stats: stats}, nil
 		}
+		// Bound every blocking call below by the remaining wall-clock budget.
+		// Without this a single slow LLM call or tool run could blow the
+		// MaxElapsed limit by minutes — the original loop only checked the
+		// budget between iterations (F-009).
+		// Replaces the previous iteration's deadline (if any) with one bounded
+		// by the remaining budget. iterCancel is fired at the top of the
+		// next iteration (or at the outer defer on function exit) so every
+		// allocated timer is reclaimed without leaking a goroutine (F-009).
+		if iterCancel != nil {
+			iterCancel()
+		}
+		var iterCtx context.Context
+		iterCtx, iterCancel = context.WithTimeout(ctx, remaining)
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
 				return Result{Text: message, Stats: stats}, nil
@@ -186,7 +229,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		stats.LLMCalls++
 		stats.LoopSteps++
 		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
-		resp, err := client.Chat(ctx, messagesForModel, tools)
+		resp, err := client.Chat(iterCtx, messagesForModel, tools)
 		if err != nil {
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}
@@ -274,7 +317,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		stats.DuplicateToolCall = stats.DuplicateToolCall || len(duplicateToolCalls) > 0
 		var execution ExecutionSummary
 		if len(freshCalls) > 0 {
-			execution = executor.ExecuteToolCalls(ctx, freshCalls)
+			execution = executor.ExecuteToolCalls(iterCtx, freshCalls)
 			lastToolResult = execution.LastResult
 			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
 			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
@@ -311,7 +354,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			return Result{Text: execution.FatalResult, Stats: stats}, nil
 		}
 		if opts.TerminalToolPolicy && execution.TerminalTool != "" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
-			response, delivered, handled := opts.TerminalHandler(ctx, execution.TerminalTool, lastToolResult, &stats)
+			response, delivered, handled := opts.TerminalHandler(iterCtx, execution.TerminalTool, lastToolResult, &stats)
 			emitStats()
 			if handled {
 				return Result{Text: response, Delivered: delivered, Stats: stats}, nil
@@ -341,7 +384,12 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	if client == nil || state == nil || stats == nil {
 		return "", false
 	}
-	messages := append([]llm.Message(nil), state.Messages()...)
+	// Apply the same governance the main loop uses — microcompact long tool
+	// results, truncate oversized payloads, drop orphan tool messages. Without
+	// this the finalize call sends the entire accumulated context to the LLM
+	// exactly at the moment that context is largest, often blowing the token
+	// budget or burning cost for no extra signal (F-010).
+	messages := applyGovernance(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
 	messages = append(messages, llm.Message{
 		Role:    "user",
 		Content: "You reached the per-turn tool budget. Do not call any more tools. Answer the user naturally using the evidence above. Do not paste raw JSON, tool names, scores, or internal IDs. If the evidence is insufficient, say so plainly in one sentence.",
