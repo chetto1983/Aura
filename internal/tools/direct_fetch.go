@@ -205,7 +205,12 @@ func (t *DirectWebFetchTool) fetch(ctx context.Context, targetURL string) (webFe
 
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	var result webFetchResponse
-	if mediaType == "text/html" || mediaType == "application/xhtml+xml" || strings.Contains(strings.ToLower(string(body[:min(len(body), 512)])), "<html") {
+	// Prefer http.DetectContentType — it handles BOMs, leading whitespace,
+	// and DOCTYPE prefixes correctly. The previous substring sniff missed
+	// pages with a long comment header before <html>.
+	sniffLen := min(len(body), 512)
+	detected := http.DetectContentType(body[:sniffLen])
+	if mediaType == "text/html" || mediaType == "application/xhtml+xml" || strings.HasPrefix(detected, "text/html") {
 		result = parseHTMLFetchResult(body, resp.Request.URL)
 	} else {
 		result = webFetchResponse{Title: resp.Request.URL.String(), Content: normalizeWhitespace(string(body))}
@@ -244,8 +249,16 @@ func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 	var text strings.Builder
 	links := make([]string, 0)
 
+	// textWalkCap bounds the in-memory text buffer during the HTML walk. The
+	// post-walk truncation cap (maxDirectFetchTextChars) is what reaches the
+	// LLM; the 4x overshoot keeps that path simple while still cutting peak
+	// RAM on payloads dominated by text nodes.
+	const textWalkCap = maxDirectFetchTextChars * 4
 	var walk func(*html.Node, bool)
 	walk = func(n *html.Node, skip bool) {
+		if text.Len() > textWalkCap {
+			return
+		}
 		if n.Type == html.ElementNode {
 			switch strings.ToLower(n.Data) {
 			case "script", "style", "noscript", "svg":
