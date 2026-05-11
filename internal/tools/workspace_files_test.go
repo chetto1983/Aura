@@ -96,6 +96,40 @@ func TestWorkspaceFileToolsDenySensitivePaths(t *testing.T) {
 	}
 }
 
+func TestApplyPatchRejectsAmbiguousMatch(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	if err := root.WriteAtomic("notes/dup.md", []byte("ping\nping\n")); err != nil {
+		t.Fatal(err)
+	}
+	patch := NewApplyPatchTool(root)
+	if _, err := patch.Execute(context.Background(), map[string]any{
+		"path": "notes/dup.md",
+		"old":  "ping",
+		"new":  "pong",
+	}); err == nil || !strings.Contains(err.Error(), "matches 2 locations") {
+		t.Fatalf("expected ambiguous match rejection, got %v", err)
+	}
+	got, err := root.Read("notes/dup.md", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping\nping\n" {
+		t.Fatalf("file should be unchanged on ambiguous match, got %q", got)
+	}
+	out, err := patch.Execute(context.Background(), map[string]any{
+		"path":        "notes/dup.md",
+		"old":         "ping",
+		"new":         "pong",
+		"replace_all": true,
+	})
+	if err != nil {
+		t.Fatalf("replace_all should succeed: %v", err)
+	}
+	if !strings.Contains(out, `"replacements": 2`) {
+		t.Fatalf("expected 2 replacements: %s", out)
+	}
+}
+
 func TestWorkspaceFileToolsBlockServerManagedWikiFiles(t *testing.T) {
 	root := newWorkspaceToolRoot(t)
 	write := NewWriteFileTool(root)

@@ -287,13 +287,18 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, args map[string]any) (stri
 		return "", fmt.Errorf("apply_patch: file is not UTF-8 text")
 	}
 	current := string(data)
-	if !strings.Contains(current, oldText) {
+	matches := strings.Count(current, oldText)
+	if matches == 0 {
 		return "", fmt.Errorf("apply_patch: old text not found")
+	}
+	replaceAll := boolArg(args, "replace_all")
+	if matches > 1 && !replaceAll {
+		return "", fmt.Errorf("apply_patch: old text matches %d locations; provide a longer unique excerpt or set replace_all=true", matches)
 	}
 	replacements := 1
 	updated := strings.Replace(current, oldText, newText, 1)
-	if boolArg(args, "replace_all") {
-		replacements = strings.Count(current, oldText)
+	if replaceAll {
+		replacements = matches
 		updated = strings.ReplaceAll(current, oldText, newText)
 	}
 	validated, err := validateWorkspaceWrite(rel, []byte(updated))
