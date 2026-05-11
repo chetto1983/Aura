@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,6 +91,15 @@ func (t *StoreSourceTool) Execute(ctx context.Context, args map[string]any) (str
 	case "url":
 		kind = source.KindURL
 		mime = "text/x-uri"
+		trimmed := strings.TrimSpace(content)
+		u, err := url.Parse(trimmed)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return "", fmt.Errorf("store_source: kind=url requires an absolute http(s) URL")
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", fmt.Errorf("store_source: kind=url only accepts http or https schemes")
+		}
+		content = trimmed
 	default:
 		return "", fmt.Errorf("store_source: unsupported kind %q", kindArg)
 	}
