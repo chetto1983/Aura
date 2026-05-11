@@ -176,6 +176,12 @@ func (r *Registry) DefinitionsFor(allowlist []string) []llm.ToolDefinition {
 	return defs
 }
 
+// defaultToolExecTimeout is the upper bound the registry imposes on every
+// tool call as defense-in-depth. Individual tools (execute_code, web_fetch)
+// often install tighter deadlines first; this only kicks in for the worst
+// case where a tool ignores ctx entirely (notably misbehaving MCP servers).
+const defaultToolExecTimeout = 5 * time.Minute
+
 // Execute dispatches a tool call by name.
 func (r *Registry) Execute(ctx context.Context, name string, args map[string]any) (string, error) {
 	if name == "" {
@@ -187,6 +193,12 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	r.mu.RUnlock()
 	if !ok {
 		return "", errors.New("tool not found")
+	}
+
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultToolExecTimeout)
+		defer cancel()
 	}
 
 	start := time.Now()
