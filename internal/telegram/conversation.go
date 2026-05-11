@@ -215,6 +215,13 @@ func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder
 	logger.Debug("telegram cleanup: placeholder delete failed", args...)
 }
 
+// turnRetrievalCapsule carries the per-turn retrieval context text injected
+// into the system message. The zero value represents an empty (no-retrieval)
+// capsule, which keeps the retrieval slot clear for generic turns.
+type turnRetrievalCapsule struct {
+	Text string
+}
+
 // turnStats aggregates per-turn counters returned from runToolCallingLoop
 // so handleConversation can emit a single structured log line covering
 // total latency, LLM round-trips, and tool calls.
@@ -256,7 +263,7 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 	}
 	modules := []string{"base", "runtime", "registered-tools"}
 	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: core tools plus tool_search discoveries\n\nChoose tools autonomously when they help. When a needed capability is not visible, call tool_search with a natural-language capability description, then use only tools returned in that search. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: core tools plus Qdrant top-K=5 retrieval per turn\n\nChoose tools autonomously when they help. Tools are auto-injected each turn based on your latest message — call any tool by name; you never need to discover them. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")
@@ -284,13 +291,23 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		defer toolMu.Unlock()
 		return append([]string(nil), activeToolNames...)
 	}
-	currentToolDefs := func() []llm.ToolDefinition {
-		names := currentToolNames()
-		return orderToolDefinitionsForAllowlist(b.tools.DefinitionsFor(names), names)
-	}
+	// Phase 2 D-22..D-28: per-turn ToolsProvider via the testable
+	// makeToolsProvider helper. WARNING 4 of 2026-05-11 plan revision 2: the
+	// helper lives in tools_provider.go (sibling file) to keep conversation.go
+	// below the 600 LOC god-class ceiling. WARNING 5 of 2026-05-11 plan
+	// revision 2: function-typed deps avoid extracting an interface from
+	// *tools.Registry; tests pass call-counting stubs.
+	toolsProvider := makeToolsProvider(
+		alwaysOnCore,
+		b.tools.Search,               // searchFn — TWO-arg + variadic per registry_search.go:19
+		b.tools.DefinitionsFor,       // defsForFn
+		b.tools.Definitions,          // defsAllFn (FULL toolset fallback)
+		convCtx.LatestUserMessageText, // latestUserMsgFn (Task 1 output)
+		b.logger,
+	)
 	maxCallsPerTool := map[string]int{
-		"search_memory": 2,
-		"tool_search":   2,
+		"search_memory":   2,
+		"write_wiki_page": 3, // WARNING 13 of 2026-05-10 plan revision: matches CONTENT-bucket retry budget (Plan 01 D-07: ContentTemperatures has 3 entries) so the LLM can retry through the temperature staircase without the duplicate-call budget rejecting it.
 	}
 	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 	addActiveTools := func(names []string) {
@@ -303,10 +320,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		promptModules:           append([]string(nil), promptPlan.Modules...),
 		promptHash:              promptPlan.Hash,
 		toolset:                 "registered",
-		toolsetSelectReason:     "core tools plus tool_search discoveries",
+		toolsetSelectReason:     "core tools plus Qdrant top-K=5 retrieval",
 		retrievalCapsulePresent: retrievalCapsulePresent,
 	}
-	toolDefs := currentToolDefs()
+	toolDefs := toolsProvider()
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	var currentStats turnStats
 	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
@@ -328,9 +345,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		PromptHash:              promptPlan.Hash,
 		PromptModules:           promptPlan.Modules,
 		Toolset:                 "registered",
-		ToolsetSelectReason:     "core tools plus tool_search discoveries",
-		Tools:                   toolDefs,
-		ToolsProvider:           currentToolDefs,
+		ToolsetSelectReason:     "core tools plus Qdrant top-K=5 retrieval",
+		Tools:                   toolsProvider(), // one-time initial population for the agentruntime.Invocation
+		ToolsProvider:           toolsProvider,
 		RetrievalCapsulePresent: retrievalCapsulePresent,
 		Options: agentloop.Options{
 			MaxIterations:           maxIterations,
