@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
@@ -205,10 +206,30 @@ func (t *ExecuteCodeTool) Execute(ctx context.Context, args map[string]any) (str
 
 const internalToolCallManifestName = "aura_tool_calls.json"
 
+// blockedInternalToolCalls names tools that must never be invokable from an
+// execute_code internal manifest, regardless of tools_allowed. The list is
+// privilege-escalation-shaped: tools that mint credentials, that can recurse
+// into another sandbox call, or that perform irreversible destructive writes.
+// CLAUDE.md's "tools the LLM trusted in the active turn" allowlist sits on
+// top of this — both must permit the call for it to run.
 var blockedInternalToolCalls = map[string]bool{
-	"execute_code":  true,
-	"execute_shell": true,
+	"execute_code":             true,
+	"execute_shell":            true,
+	"request_dashboard_token":  true,
+	"delete_source":            true,
+	"forget_memory":            true,
 }
+
+// perInternalToolCallTimeout caps each call inside the manifest loop. A single
+// misbehaving tool that ignores ctx would otherwise hang the remaining calls
+// indefinitely — the outer execute_code timeout (1-300s) catches it eventually
+// but blocks the manifest from making forward progress.
+const perInternalToolCallTimeout = 30 * time.Second
+
+// internalManifestConcurrency caps fan-out when execute_code emits a manifest
+// with multiple calls. Aligned with the agent loop's tool-fanout pattern so
+// independent calls run in parallel without exhausting downstream services.
+const internalManifestConcurrency = 4
 
 type internalToolCallManifest struct {
 	Calls []internalToolCall `json:"calls"`
@@ -275,7 +296,10 @@ func (t *ExecuteCodeTool) executeInternalToolManifest(ctx context.Context, body 
 		return "", fmt.Errorf("execute_code: %s requested %d internal calls, max_calls is %d", internalToolCallManifestName, len(manifest.Calls), maxCalls)
 	}
 
-	results := internalToolCallResults{Calls: make([]internalToolCallResult, 0, len(manifest.Calls))}
+	// Validate every call up front so a malformed entry rejects the whole
+	// manifest before any side effects fire. Parallel execution below relies
+	// on this — partial results from a half-rejected manifest would be hard
+	// to reason about from the LLM's side.
 	for i, call := range manifest.Calls {
 		name := strings.TrimSpace(call.Tool)
 		if name == "" {
@@ -293,15 +317,36 @@ func (t *ExecuteCodeTool) executeInternalToolManifest(ctx context.Context, body 
 		if t.registry.Get(name) == nil {
 			return "", fmt.Errorf("execute_code: tool %q is not registered", name)
 		}
-		result, err := t.registry.Execute(ctx, name, call.Args)
-		entry := internalToolCallResult{Tool: name, OK: err == nil, Result: result}
-		if err != nil {
-			entry.Error = err.Error()
-			entry.Result = ""
-		}
-		results.Calls = append(results.Calls, entry)
 	}
-	return marshalInternalToolResults(results)
+
+	// Dispatch in parallel with bounded concurrency. Order is preserved by
+	// indexing into a pre-sized slice; each goroutine writes its own slot,
+	// so no mutex is needed. The per-call timeout bounds any single tool's
+	// damage to the manifest's overall latency.
+	entries := make([]internalToolCallResult, len(manifest.Calls))
+	sem := make(chan struct{}, internalManifestConcurrency)
+	var wg sync.WaitGroup
+	for i, call := range manifest.Calls {
+		i, call := i, call
+		name := strings.TrimSpace(call.Tool)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			callCtx, cancel := context.WithTimeout(ctx, perInternalToolCallTimeout)
+			defer cancel()
+			result, err := t.registry.Execute(callCtx, name, call.Args)
+			entry := internalToolCallResult{Tool: name, OK: err == nil, Result: result}
+			if err != nil {
+				entry.Error = err.Error()
+				entry.Result = ""
+			}
+			entries[i] = entry
+		}()
+	}
+	wg.Wait()
+	return marshalInternalToolResults(internalToolCallResults{Calls: entries})
 }
 
 func marshalInternalToolResults(results internalToolCallResults) (string, error) {
