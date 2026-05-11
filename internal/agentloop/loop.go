@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -311,6 +312,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		}
 		var freshCalls []llm.ToolCall
 		skippedToolResults := map[string]string{}
+		maxCallsHit := map[string]bool{}
 		for _, call := range callsToExecute {
 			key := duplicateToolCallKey(call)
 			stateForCall := ToolCallState{
@@ -336,6 +338,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				continue
 			} else if maxCalls := opts.MaxCallsPerTool[call.Name]; maxCalls > 0 && toolCallExecutions[call.Name] >= maxCalls {
 				duplicateToolCalls = append(duplicateToolCalls, call)
+				maxCallsHit[call.ID] = true
 				continue
 			}
 			seenToolCalls[key] = true
@@ -382,7 +385,11 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				state.AddToolResultMessage(duplicate.ID, result)
 				continue
 			}
-			state.AddToolResultMessage(duplicate.ID, WrapUntrustedToolResult(duplicate.Name, duplicateToolResult(duplicate, opts)))
+			stub := duplicateToolResult(duplicate, opts)
+			if maxCallsHit[duplicate.ID] {
+				stub = maxCallsToolResult(duplicate)
+			}
+			state.AddToolResultMessage(duplicate.ID, WrapUntrustedToolResult(duplicate.Name, stub))
 		}
 		emitStats()
 
@@ -463,11 +470,26 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	return text, true
 }
 
+// duplicateToolResult returns the synthetic message the model sees when a
+// tool call is suppressed. The phrasing matters: the previous "duplicate
+// tool call X skipped" wording was opaque enough that the model often
+// just retried the same call again, producing the 4-5-stub loop the
+// user flagged on 2026-05-11 ("duplicate stub poco chiaro fa loopare il
+// modello"). Rephrase as a direct instruction with the next action the
+// model is supposed to take.
 func duplicateToolResult(call llm.ToolCall, opts Options) string {
 	if opts.DuplicateToolResult != nil {
 		return opts.DuplicateToolResult(call)
 	}
-	return fmt.Sprintf("duplicate tool call %q with identical arguments skipped; use the previous result already returned in this turn", call.Name)
+	return fmt.Sprintf("You already called %s with these exact arguments earlier this turn. The result is above — read it instead of calling again. If you need different data, call with different arguments or pick another tool.", call.Name)
+}
+
+// maxCallsToolResult is the stub emitted when MaxCallsPerTool gates a fresh
+// call. The arguments are different from any earlier call — what triggered
+// the skip is the per-turn budget for the tool, not duplication — so the
+// model needs a different message than duplicateToolResult.
+func maxCallsToolResult(call llm.ToolCall) string {
+	return fmt.Sprintf("You have hit the per-turn call budget for %s. Move on with what you already have, or call a different tool.", call.Name)
 }
 
 func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.ToolCall, ToolCallState) string) BeforeToolCallback {
@@ -484,7 +506,11 @@ func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.T
 			out = result(call, state)
 		}
 		if out == "" {
-			out = fmt.Sprintf("duplicate tool call %q skipped; use the previous result already returned in this turn", call.Name)
+			if limitReached {
+				out = fmt.Sprintf("You have hit the per-turn call budget for %s. Move on with what you already have, or call a different tool.", call.Name)
+			} else {
+				out = fmt.Sprintf("You already called %s with these exact arguments earlier this turn. Re-read the previous result above. If you need different data, change the arguments or pick another tool.", call.Name)
+			}
 		}
 		return ToolCallDecision{Skip: true, Result: out}
 	}
@@ -529,18 +555,9 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 		if addition == "" {
 			continue
 		}
-		if !stringSliceContains(values, addition) {
+		if !slices.Contains(values, addition) {
 			values = append(values, addition)
 		}
 	}
 	return values
-}
-
-func stringSliceContains(values []string, candidate string) bool {
-	for _, value := range values {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
 }

@@ -86,7 +86,7 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 	if !result.Stats.DuplicateToolCall {
 		t.Fatal("DuplicateToolCall = false, want true")
 	}
-	if got := state.toolResult("call-2"); !strings.Contains(got, "duplicate tool call") {
+	if got := state.toolResult("call-2"); !strings.Contains(got, "You already called") {
 		t.Fatalf("duplicate result = %q", got)
 	}
 }
@@ -121,7 +121,7 @@ func TestRunDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
 	if !result.Stats.DuplicateToolCall {
 		t.Fatal("DuplicateToolCall = false, want true")
 	}
-	if got := state.toolResult("call-2"); !strings.Contains(got, "duplicate tool call") {
+	if got := state.toolResult("call-2"); !strings.Contains(got, "You already called") {
 		t.Fatalf("duplicate result = %q", got)
 	}
 }
@@ -153,7 +153,7 @@ func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	if executions != 1 {
 		t.Fatalf("executions = %d, want 1", executions)
 	}
-	if got := state.toolResult("call-2"); !strings.Contains(got, "duplicate tool call") {
+	if got := state.toolResult("call-2"); !strings.Contains(got, "per-turn call budget") {
 		t.Fatalf("repeat result = %q", got)
 	}
 }
