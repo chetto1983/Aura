@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -527,5 +528,69 @@ func TestRetryClientWithOpenAIClient(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+// TestOpenAIClientSendReasoningWireFormat verifies that ReasoningEffort
+// reaches the JSON request body in the two shapes providers expect:
+// the top-level reasoning_effort string (OpenAI o-series / gpt-5*) and
+// the nested reasoning object (OpenRouter / DeepSeek V4 Flash / Anthropic
+// passthroughs). Providers without reasoning support ignore unknown fields.
+func TestOpenAIClientSendReasoningWireFormat(t *testing.T) {
+	cases := []struct {
+		name        string
+		effort      string
+		wantTop     string // value of reasoning_effort top-level field, "" means absent
+		wantNested  bool   // whether reasoning object is present
+		wantEnabled bool   // whether reasoning.enabled is true
+		wantEffort  string // value of reasoning.effort, "" means absent
+	}{
+		{name: "empty disables both shapes", effort: ""},
+		{name: "none disables both shapes", effort: "none"},
+		{name: "off disables both shapes", effort: "off"},
+		{name: "true emits enabled-only", effort: "true", wantNested: true, wantEnabled: true},
+		{name: "enabled emits enabled-only", effort: "enabled", wantNested: true, wantEnabled: true},
+		{name: "high emits both shapes", effort: "high", wantTop: "high", wantNested: true, wantEnabled: true, wantEffort: "high"},
+		{name: "xhigh emits both shapes", effort: "xhigh", wantTop: "xhigh", wantNested: true, wantEnabled: true, wantEffort: "xhigh"},
+		{name: "minimal emits both shapes", effort: "minimal", wantTop: "minimal", wantNested: true, wantEnabled: true, wantEffort: "minimal"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var body []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ = io.ReadAll(r.Body)
+				w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"total_tokens":1}}`))
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "deepseek/deepseek-v4-flash"})
+			_, err := client.Send(context.Background(), Request{
+				Messages:        []Message{{Role: "user", Content: "hi"}},
+				ReasoningEffort: tc.effort,
+			})
+			if err != nil {
+				t.Fatalf("Send error: %v", err)
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal(body, &parsed); err != nil {
+				t.Fatalf("body not JSON: %v\n%s", err, body)
+			}
+			got, _ := parsed["reasoning_effort"].(string)
+			if got != tc.wantTop {
+				t.Errorf("reasoning_effort = %q, want %q\nbody=%s", got, tc.wantTop, body)
+			}
+			nested, hasNested := parsed["reasoning"].(map[string]any)
+			if hasNested != tc.wantNested {
+				t.Errorf("reasoning nested present = %t, want %t\nbody=%s", hasNested, tc.wantNested, body)
+			}
+			if tc.wantNested {
+				if enabled, _ := nested["enabled"].(bool); enabled != tc.wantEnabled {
+					t.Errorf("reasoning.enabled = %t, want %t\nbody=%s", enabled, tc.wantEnabled, body)
+				}
+				if eff, _ := nested["effort"].(string); eff != tc.wantEffort {
+					t.Errorf("reasoning.effort = %q, want %q\nbody=%s", eff, tc.wantEffort, body)
+				}
+			}
+		})
 	}
 }

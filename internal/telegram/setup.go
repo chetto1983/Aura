@@ -340,13 +340,14 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	var auraRunner *agent.Runner
 	if client != nil {
 		auraRunner, err = agent.NewRunner(agent.Config{
-			LLM:           client,
-			Tools:         toolRegistry,
-			Model:         cfg.LLMModel,
-			MaxIterations: maxIterations,
-			Timeout:       time.Duration(timeoutSec) * time.Second,
-			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
-			Logger:        logger,
+			LLM:             client,
+			Tools:           toolRegistry,
+			Model:           cfg.LLMModel,
+			MaxIterations:   maxIterations,
+			Timeout:         time.Duration(timeoutSec) * time.Second,
+			ToolTimeout:     time.Duration(timeoutSec) * time.Second,
+			ReasoningEffort: cfg.ReasoningEffort,
+			Logger:          logger,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating aurabot runner: %w", err)

@@ -115,6 +115,7 @@ func TestApplyToConfigAppliesAgentRuntimeSettings(t *testing.T) {
 	_ = s.Set(ctx, KeyPromptVersion, "aura-agent-v2")
 	_ = s.Set(ctx, KeySkillRoutingMode, " MANIFEST_LLM_REVIEW ")
 	_ = s.Set(ctx, KeyAgentLoopMaxSteps, "9")
+	_ = s.Set(ctx, KeyReasoningEffort, " HIGH ")
 	_ = s.Set(ctx, KeyTerminalToolPolicy, "OFF")
 	_ = s.Set(ctx, KeyDelegationMode, "BOUNDED")
 	_ = s.Set(ctx, KeyTraceRetentionDays, "60")
@@ -131,6 +132,12 @@ func TestApplyToConfigAppliesAgentRuntimeSettings(t *testing.T) {
 	}
 	if cfg.AgentLoopMaxSteps != 9 {
 		t.Fatalf("AgentLoopMaxSteps = %d", cfg.AgentLoopMaxSteps)
+	}
+	if cfg.ReasoningEffort != "high" {
+		t.Fatalf("ReasoningEffort = %q, want canonical lowercased %q", cfg.ReasoningEffort, "high")
+	}
+	if !IsOverridable(KeyReasoningEffort) {
+		t.Fatal("KeyReasoningEffort must be dashboard-overridable")
 	}
 	if cfg.TerminalToolPolicy != "off" {
 		t.Fatalf("TerminalToolPolicy = %q", cfg.TerminalToolPolicy)

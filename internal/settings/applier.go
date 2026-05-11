@@ -64,6 +64,7 @@ const (
 	KeyPromptVersion           = "AURA_PROMPT_VERSION"
 	KeySkillRoutingMode        = "AURA_SKILL_ROUTING_MODE"
 	KeyAgentLoopMaxSteps       = "AURA_AGENT_LOOP_MAX_STEPS"
+	KeyReasoningEffort         = "AURA_REASONING_EFFORT"
 	KeyToolSearchTopK          = "TOOL_SEARCH_TOP_K"
 	KeyToolSearchBackend       = "TOOL_SEARCH_BACKEND"
 	KeyMaxToolResultChars      = "MAX_TOOL_RESULT_CHARS"
@@ -109,7 +110,7 @@ func OverridableKeys() []string {
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
 		KeyPromptVersion,
-		KeySkillRoutingMode, KeyAgentLoopMaxSteps,
+		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyReasoningEffort,
 		KeyToolSearchTopK, KeyToolSearchBackend,
 		KeyMaxToolResultChars, KeyMicrocompactKeepRecent, KeyMicrocompactMinChars,
 		KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
@@ -203,6 +204,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
 	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
+	cfg.ReasoningEffort = config.NormalizeReasoningEffort(settingString(ctx, s, KeyReasoningEffort, cfg.ReasoningEffort))
 	cfg.ToolSearchTopK = settingIntRange(ctx, s, KeyToolSearchTopK, cfg.ToolSearchTopK, 1, 50, config.DefaultToolSearchTopK)
 	cfg.ToolSearchBackend = config.NormalizeToolSearchBackend(settingString(ctx, s, KeyToolSearchBackend, cfg.ToolSearchBackend))
 	cfg.MaxToolResultChars = settingIntRange(ctx, s, KeyMaxToolResultChars, cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)

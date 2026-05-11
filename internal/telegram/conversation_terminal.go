@@ -20,6 +20,7 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 		RawToolResult: rawToolResult,
 		Model:         b.cfg.LLMModel,
 		Send: func(ctx context.Context, req llm.Request) (llm.Response, error) {
+			req.ReasoningEffort = b.cfg.ReasoningEffort
 			return b.llm.Send(ctx, req)
 		},
 		RecordUsage: func(usage llm.TokenUsage) {

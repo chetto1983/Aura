@@ -11,6 +11,20 @@ type Request struct {
 	Model       string
 	Temperature *float64 // nil = API default, 0 = deterministic, >0 = creative. Use 0 for wiki operations.
 	Tools       []ToolDefinition
+
+	// ReasoningEffort enables provider-side chain-of-thought for models that
+	// support it (DeepSeek V4 Flash, OpenAI o-series / gpt-5*, Anthropic
+	// thinking, ...). Allowed values match the lowest-common-denominator set
+	// across providers: "minimal", "low", "medium", "high", "xhigh".
+	// Empty string means "do not include any reasoning field" so providers
+	// without reasoning support (vanilla OpenAI gpt-4o, fakes in tests)
+	// keep working unchanged.
+	//
+	// The wire format depends on the provider: OpenAI accepts the top-level
+	// `reasoning_effort` string; OpenRouter normalizes the legacy top-level
+	// flag and also accepts the nested `reasoning: {effort: "..."}` object.
+	// The openai.go transport emits BOTH so the request is portable.
+	ReasoningEffort string
 }
 
 // Message represents a single message in a conversation.

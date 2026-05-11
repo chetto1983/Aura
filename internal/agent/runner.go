@@ -37,25 +37,27 @@ const (
 // tool boundary, not here. The clone in cloneToolArgs protects shared state;
 // it does NOT sanitize.
 type Runner struct {
-	mu            sync.RWMutex
-	llm           llm.Client
-	tools         *tools.Registry
-	model         string
-	maxIterations int
-	timeout       time.Duration
-	toolTimeout   time.Duration
-	logger        *slog.Logger
+	mu              sync.RWMutex
+	llm             llm.Client
+	tools           *tools.Registry
+	model           string
+	maxIterations   int
+	timeout         time.Duration
+	toolTimeout     time.Duration
+	reasoningEffort string
+	logger          *slog.Logger
 }
 
 // Config wires a Runner. ToolRegistry may be nil for text-only tasks.
 type Config struct {
-	LLM           llm.Client
-	Tools         *tools.Registry
-	Model         string
-	MaxIterations int
-	Timeout       time.Duration
-	ToolTimeout   time.Duration
-	Logger        *slog.Logger
+	LLM             llm.Client
+	Tools           *tools.Registry
+	Model           string
+	MaxIterations   int
+	Timeout         time.Duration
+	ToolTimeout     time.Duration
+	ReasoningEffort string // forwarded to every llm.Request the runner builds
+	Logger          *slog.Logger
 }
 
 // Task is one isolated background-agent assignment.
@@ -109,13 +111,14 @@ func NewRunner(cfg Config) (*Runner, error) {
 		logger = slog.Default()
 	}
 	return &Runner{
-		llm:           cfg.LLM,
-		tools:         cfg.Tools,
-		model:         cfg.Model,
-		maxIterations: maxIterations,
-		timeout:       timeout,
-		toolTimeout:   toolTimeout,
-		logger:        logger,
+		llm:             cfg.LLM,
+		tools:           cfg.Tools,
+		model:           cfg.Model,
+		maxIterations:   maxIterations,
+		timeout:         timeout,
+		toolTimeout:     toolTimeout,
+		reasoningEffort: cfg.ReasoningEffort,
+		logger:          logger,
 	}, nil
 }
 
@@ -188,10 +191,11 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 			sendCtx, sendCancel = context.WithTimeout(ctx, task.FinalizationTimeout)
 		}
 		resp, err := r.llm.Send(sendCtx, llm.Request{
-			Messages:    messages,
-			Model:       r.model,
-			Temperature: task.Temperature,
-			Tools:       turnTools,
+			Messages:        messages,
+			Model:           r.model,
+			Temperature:     task.Temperature,
+			Tools:           turnTools,
+			ReasoningEffort: r.reasoningEffort,
 		})
 		sendCancel()
 		result.LLMCalls++

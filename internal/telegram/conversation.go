@@ -429,9 +429,10 @@ type telegramLoopClient struct {
 
 func (c telegramLoopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolDefinition) (agentloop.ChatResponse, error) {
 	req := llm.Request{
-		Messages: messages,
-		Model:    c.bot.cfg.LLMModel,
-		Tools:    tools,
+		Messages:        messages,
+		Model:           c.bot.cfg.LLMModel,
+		Tools:           tools,
+		ReasoningEffort: c.bot.cfg.ReasoningEffort,
 	}
 	ch, err := c.bot.llm.Stream(ctx, req)
 	if err != nil {

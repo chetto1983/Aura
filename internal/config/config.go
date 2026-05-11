@@ -101,6 +101,13 @@ type Config struct {
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
 	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
+	// ReasoningEffort drives the provider-side chain-of-thought field.
+	// Accepted values: "", "none", "minimal", "low", "medium", "high",
+	// "xhigh", "true"/"enabled". Empty means "do not emit any reasoning
+	// field" — matches default OpenAI gpt-4o, vanilla fakes, etc.
+	// DeepSeek V4 Flash via OpenRouter accepts "high" or "xhigh"; OpenAI
+	// gpt-5/o-series accepts the full set per model.
+	ReasoningEffort string `envconfig:"AURA_REASONING_EFFORT" default:""`
 	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
 	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
 	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
@@ -250,6 +257,7 @@ func Load() (*Config, error) {
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
 	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 50, DefaultAgentLoopMaxSteps)
+	cfg.ReasoningEffort = NormalizeReasoningEffort(getEnv("AURA_REASONING_EFFORT", ""))
 	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
 	cfg.DelegationMode = NormalizeDelegationMode(getEnv("AURA_DELEGATION_MODE", DefaultDelegationMode))
 	cfg.TraceRetentionDays = normalizeIntRange(getEnvInt("AURA_TRACE_RETENTION_DAYS", DefaultTraceRetentionDays), 1, 365, DefaultTraceRetentionDays)
@@ -324,6 +332,23 @@ func NormalizeTerminalToolPolicy(value string) string {
 	default:
 		return DefaultTerminalToolPolicy
 	}
+}
+
+// NormalizeReasoningEffort canonicalizes the AURA_REASONING_EFFORT knob.
+// Empty / "none" / "off" disable the field entirely. Boolean-ish values
+// ("true", "on", "enabled", "yes") map to "enabled" — emitted as
+// reasoning.enabled=true on the wire. Explicit depth strings pass through
+// lowercased so future provider values (e.g. a new "ultra") are forwarded
+// verbatim without a code change here.
+func NormalizeReasoningEffort(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	switch v {
+	case "", "none", "off", "disabled", "false", "0", "no":
+		return ""
+	case "true", "on", "enabled", "yes", "1":
+		return "enabled"
+	}
+	return v
 }
 
 func NormalizeDelegationMode(value string) string {

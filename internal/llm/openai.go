@@ -38,12 +38,57 @@ func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 }
 
 type chatRequest struct {
-	Model         string             `json:"model"`
-	Messages      []chatMessage      `json:"messages"`
-	Temperature   *float64           `json:"temperature,omitempty"`
-	Stream        bool               `json:"stream,omitempty"`
-	StreamOptions *streamOptionsJSON `json:"stream_options,omitempty"`
-	Tools         []toolWrapper      `json:"tools,omitempty"`
+	Model           string             `json:"model"`
+	Messages        []chatMessage      `json:"messages"`
+	Temperature     *float64           `json:"temperature,omitempty"`
+	Stream          bool               `json:"stream,omitempty"`
+	StreamOptions   *streamOptionsJSON `json:"stream_options,omitempty"`
+	Tools           []toolWrapper      `json:"tools,omitempty"`
+	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
+	Reasoning       *reasoningJSON     `json:"reasoning,omitempty"`
+}
+
+// applyReasoning fills both wire shapes from a single user-facing value.
+// Accepted forms:
+//
+//	""                                    → no reasoning fields emitted
+//	"true" / "on" / "enabled" / "yes"     → {reasoning: {enabled: true}}
+//	"low" / "medium" / "high" / "xhigh"   → top-level reasoning_effort + {reasoning: {enabled: true, effort: <v>}}
+//	"minimal"                             → top-level reasoning_effort + {reasoning: {enabled: true, effort: "minimal"}}
+//	"none" / "off" / "disabled" / "false" → no reasoning fields emitted
+//
+// Anything else falls through as an effort string so future provider values
+// (e.g. a new "ultra") are forwarded verbatim.
+func applyReasoning(req *chatRequest, raw string) {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if v == "" || v == "none" || v == "off" || v == "disabled" || v == "false" {
+		return
+	}
+	enabledTrue := true
+	if v == "true" || v == "on" || v == "enabled" || v == "yes" {
+		req.Reasoning = &reasoningJSON{Enabled: &enabledTrue}
+		return
+	}
+	// Effort-level value. Mirror to both wire shapes so the request is
+	// portable across providers.
+	req.ReasoningEffort = v
+	req.Reasoning = &reasoningJSON{Enabled: &enabledTrue, Effort: v}
+}
+
+// reasoningJSON is OpenRouter's / Anthropic's nested reasoning object.
+// Two shapes per OpenRouter docs:
+//
+//	{"reasoning": {"enabled": true}}        — turn reasoning on, provider default depth
+//	{"reasoning": {"effort": "high"}}        — explicit depth (low/medium/high/xhigh)
+//
+// DeepSeek V4 Flash accepts the enabled shape (your curl example) and the
+// effort shape (high or xhigh only). We emit both alongside the top-level
+// reasoning_effort so the same request body works on OpenAI (top-level
+// only), OpenRouter (both accepted), and Anthropic-shaped passthroughs.
+// Providers without reasoning support ignore unknown fields.
+type reasoningJSON struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 // streamOptionsJSON enables the OpenAI 1.0+ usage-in-stream feature.
@@ -147,6 +192,7 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		Temperature: req.Temperature,
 		Stream:      false,
 	}
+	applyReasoning(&chatReq, req.ReasoningEffort)
 	chatReq.Tools = convertToolDefinitions(req.Tools)
 	for _, m := range req.Messages {
 		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
@@ -215,6 +261,7 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 		Stream:        true,
 		StreamOptions: &streamOptionsJSON{IncludeUsage: true},
 	}
+	applyReasoning(&chatReq, req.ReasoningEffort)
 	chatReq.Tools = convertToolDefinitions(req.Tools)
 	for _, m := range req.Messages {
 		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
