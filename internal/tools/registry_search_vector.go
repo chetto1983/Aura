@@ -224,11 +224,18 @@ func (idx *ToolVectorIndex) Search(ctx context.Context, query string, topK int, 
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil, nil
 	}
+	// Snapshot mutable state under the RLock, then release before any HTTP
+	// I/O. Holding the lock across embed + Qdrant calls would starve rebuilds
+	// (Build's idx.mu.Lock waits behind every in-flight search RTT).
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
+	docCount := idx.docCount
+	lastErr := idx.lastError
+	qclient := idx.qclient
+	collection := idx.collection
+	idx.mu.RUnlock()
 
-	if idx.docCount == 0 || idx.lastError != nil {
-		return nil, idx.lastError
+	if docCount == 0 || lastErr != nil {
+		return nil, lastErr
 	}
 
 	vectors, err := idx.embed(ctx, []string{query})
@@ -248,10 +255,10 @@ func (idx *ToolVectorIndex) Search(ctx context.Context, query string, topK int, 
 		}
 	}
 
-	if idx.qclient == nil {
+	if qclient == nil {
 		return nil, fmt.Errorf("qdrant client not initialized")
 	}
-	points, err := idx.qclient.Search(ctx, idx.collection, vectors[0], topK*3, true)
+	points, err := qclient.Search(ctx, collection, vectors[0], topK*3, true)
 	if err != nil {
 		idx.logger.Warn("tool vector search: qdrant query failed", "error", err)
 		return nil, err
