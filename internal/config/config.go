@@ -12,7 +12,7 @@ const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
-const DefaultAgentLoopMaxSteps = 8
+const DefaultAgentLoopMaxSteps = 100
 const DefaultMaxToolResultChars = 8000
 const DefaultMicrocompactKeepRecent = 10
 const DefaultMicrocompactMinChars = 500
@@ -23,7 +23,7 @@ const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
 const DefaultToolSearchBackend = "hybrid"
-const DefaultToolSearchTopK = 5
+const DefaultToolSearchTopK = 20
 
 // Per-user gate configuration defaults (Phase 1 / CONC-01).
 const DefaultInboxSize = 8
@@ -100,20 +100,20 @@ type Config struct {
 	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
-	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"8"`
+	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"100"`
 	// ReasoningEffort drives the provider-side chain-of-thought field.
 	// Accepted values: "", "none", "minimal", "low", "medium", "high",
 	// "xhigh", "true"/"enabled". Empty means "do not emit any reasoning
 	// field" — matches default OpenAI gpt-4o, vanilla fakes, etc.
 	// DeepSeek V4 Flash via OpenRouter accepts "high" or "xhigh"; OpenAI
 	// gpt-5/o-series accepts the full set per model.
-	ReasoningEffort string `envconfig:"AURA_REASONING_EFFORT" default:""`
-	TerminalToolPolicy         string  `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
-	DelegationMode             string  `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
-	TraceRetentionDays         int     `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
-	WorkspaceTools             string  `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
-	WorkspaceRoot              string  `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
-	RuntimeWorkspacePath       string  `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
+	ReasoningEffort      string `envconfig:"AURA_REASONING_EFFORT" default:""`
+	TerminalToolPolicy   string `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
+	DelegationMode       string `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
+	TraceRetentionDays   int    `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
+	WorkspaceTools       string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
+	WorkspaceRoot        string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
+	RuntimeWorkspacePath string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -256,7 +256,7 @@ func Load() (*Config, error) {
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
-	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 50, DefaultAgentLoopMaxSteps)
+	cfg.AgentLoopMaxSteps = normalizeIntRange(getEnvInt("AURA_AGENT_LOOP_MAX_STEPS", DefaultAgentLoopMaxSteps), 1, 10000, DefaultAgentLoopMaxSteps)
 	cfg.ReasoningEffort = NormalizeReasoningEffort(getEnv("AURA_REASONING_EFFORT", ""))
 	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(getEnv("AURA_TERMINAL_TOOL_POLICY", DefaultTerminalToolPolicy))
 	cfg.DelegationMode = NormalizeDelegationMode(getEnv("AURA_DELEGATION_MODE", DefaultDelegationMode))

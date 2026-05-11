@@ -98,7 +98,7 @@ var settingsCatalog = []SettingItem{
 
 	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version"},
 	{Key: settings.KeySkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode"},
-	{Key: settings.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps"},
+	{Key: settings.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(10000), Label: "Agent loop max steps"},
 	{Key: settings.KeyReasoningEffort, Group: "agent", Kind: "enum", Options: []string{"", "enabled", "minimal", "low", "medium", "high", "xhigh"}, Label: "Reasoning effort", Hint: "Provider-side chain-of-thought. Empty disables. 'enabled' turns reasoning on with provider default depth (use this for DeepSeek V4 Flash). 'low'..'xhigh' set explicit depth on models that support it (OpenAI o-series, gpt-5*). Unknown providers ignore the field."},
 	{Key: settings.KeyToolSearchTopK, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Tool search top-K", Hint: "How many retrieved tools to expose per turn on top of the always-on core. Raise on large-context models so web_fetch/web_search aren't crowded out"},
 	{Key: settings.KeyToolSearchBackend, Group: "agent", Kind: "enum", Options: []string{"hybrid", "vector", "fts"}, Label: "Tool search backend", Hint: "Restart required: rebuilds the tool vector index. hybrid mixes BM25 + embeddings; vector is pure semantic; fts is keyword-only"},

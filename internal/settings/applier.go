@@ -203,7 +203,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
-	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 50, config.DefaultAgentLoopMaxSteps)
+	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 10000, config.DefaultAgentLoopMaxSteps)
 	cfg.ReasoningEffort = config.NormalizeReasoningEffort(settingString(ctx, s, KeyReasoningEffort, cfg.ReasoningEffort))
 	cfg.ToolSearchTopK = settingIntRange(ctx, s, KeyToolSearchTopK, cfg.ToolSearchTopK, 1, 50, config.DefaultToolSearchTopK)
 	cfg.ToolSearchBackend = config.NormalizeToolSearchBackend(settingString(ctx, s, KeyToolSearchBackend, cfg.ToolSearchBackend))

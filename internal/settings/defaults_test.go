@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/aura/aura/internal/config"
@@ -132,7 +133,7 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 	}
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
 	assertSetting(t, s, KeySkillRoutingMode, config.DefaultSkillRoutingMode)
-	assertSetting(t, s, KeyAgentLoopMaxSteps, "8")
+	assertSetting(t, s, KeyAgentLoopMaxSteps, strconv.Itoa(config.DefaultAgentLoopMaxSteps))
 	assertSetting(t, s, KeyTerminalToolPolicy, config.DefaultTerminalToolPolicy)
 	assertSetting(t, s, KeyDelegationMode, config.DefaultDelegationMode)
 	assertSetting(t, s, KeyTraceRetentionDays, "30")
