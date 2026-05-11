@@ -394,11 +394,17 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	if exec.calls != 1 {
 		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
 	}
-	if len(fake.requests) != 1 {
-		t.Fatalf("LLM requests = %d, want 1 without preflight retry", len(fake.requests))
+	// Terminal-tool turns now always end with an LLM finalize call (no canned
+	// formatter shortcut). Expect 2 LLM requests: the first emits the tool
+	// call, the second synthesizes the natural-language answer (tools=nil).
+	if len(fake.requests) != 2 {
+		t.Fatalf("LLM requests = %d, want 2 (initial + terminal-tool finalize)", len(fake.requests))
 	}
 	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "execute_code" {
 		t.Fatalf("first exposed tool = %+v, want execute_code first", fake.requests[0].Tools)
+	}
+	if len(fake.requests[1].Tools) != 0 {
+		t.Fatalf("finalize request must run with tools=nil, got %+v", fake.requests[1].Tools)
 	}
 }
 
@@ -410,49 +416,14 @@ func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *test
 	}
 }
 
-func TestTerminalExecuteCodeResultMasksArtifactMetadata(t *testing.T) {
-	raw := "exit_code: 0\nelapsed_ms: 42\n\nwrote files\n\nartifacts:\n- aura_sales_summary.csv (22 bytes, text/csv, delivered=true, persisted=true, source_id=src_0123456789abcdef)\n- aura_sales_plot.png (2048 bytes, image/png, delivered=true, persisted=true, source_id=src_fedcba9876543210)"
-
-	got := formatTerminalExecuteCodeResult(raw)
-
-	for _, leaked := range []string{"source_id", "delivered=true", "persisted=true", "text/csv", "image/png"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
-		}
-	}
-	for _, want := range []string{"wrote files", "aura_sales_summary.csv", "aura_sales_plot.png"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("formatTerminalExecuteCodeResult = %q, want %q", got, want)
-		}
-	}
-}
-
-func TestTerminalFileResultMasksSourceIDAndRawJSON(t *testing.T) {
-	raw := `{"source_id":"src_secret","filename":"report.docx","size_bytes":1234,"delivered":true}`
-
-	got := formatTerminalFileResult("create_docx", raw)
-
-	for _, leaked := range []string{"src_secret", "source_id", "delivered"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalFileResult leaked %q in %q", leaked, got)
-		}
-	}
-	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "sent it here") {
-		t.Fatalf("formatTerminalFileResult = %q, want filename and delivery summary", got)
-	}
-}
-
-func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
-	raw := `{"source_id":"src_secret","metrics":{"tokens_total":123},"exit_code":0}`
-
-	got := terminalToolFallbackResponse("execute_code", raw)
-
-	for _, leaked := range []string{"src_secret", "source_id", "tokens_total", "exit_code"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("terminalToolFallbackResponse leaked %q in %q", leaked, got)
-		}
-	}
-}
+// Note: prior tests asserted that hardcoded canned formatters
+// (formatTerminalExecuteCodeResult, formatTerminalFileResult,
+// terminalToolFallbackResponse) scrubbed internal metadata. Those helpers
+// were removed entirely — the agent now sounds like a copilot, not a
+// templated robot, by routing every terminal-tool turn through the LLM
+// synthesizer with a one-shot retry. The metadata-leak guarantee moved up
+// the stack into the synthesis prompt itself ("no internal markers like
+// exit_code or source_id — plain prose only").
 
 func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	reg := tools.NewRegistry(nil)
@@ -566,38 +537,7 @@ func (f *scriptedTelegramLLM) Stream(_ context.Context, req llm.Request) (<-chan
 	return ch, nil
 }
 
-func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
-	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
-
-	got := formatTerminalExecuteCodeResult(raw)
-	if !strings.Contains(got, "5050") || !strings.Contains(got, "Generated files:") || !strings.Contains(got, "aura_sum.csv") {
-		t.Fatalf("formatTerminalExecuteCodeResult() = %q", got)
-	}
-	for _, leaked := range []string{"exit_code", "elapsed_ms", "source_id", "delivered=true", "persisted=true"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
-		}
-	}
-}
-
-func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
-	got := formatTerminalFileResult("create_docx", `{"source_id":"src_123","filename":"report.docx","size_bytes":42,"delivered":true}`)
-	// F-034: terminal fallback strings are English now ("delivered it here"
-	// instead of "inviato"). The earlier Italian assertion encoded the
-	// pre-fix behaviour.
-	for _, want := range []string{"DOCX", "report.docx", "sent it here"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("formatTerminalFileResult() = %q, missing %q", got, want)
-		}
-	}
-	for _, leaked := range []string{"src_123", "source_id", "delivered"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("formatTerminalFileResult() leaked %q in %q", leaked, got)
-		}
-	}
-}
-
-func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
+func TestTerminalToolFinalizationMessagesAppendsLLMPrompt(t *testing.T) {
 	messages := []llm.Message{
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},
 		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
@@ -608,21 +548,16 @@ func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
 	}
 	last := got[len(got)-1].Content
-	if !strings.Contains(last, "Do not call tools") || !strings.Contains(last, "Do not emit JSON, XML, DSML, or tool-call markup") {
-		t.Fatalf("terminal finalization instruction = %q", last)
+	for _, want := range []string{"Do not call tools", "natural prose"} {
+		if !strings.Contains(last, want) {
+			t.Fatalf("terminal finalization instruction = %q, missing %q", last, want)
+		}
 	}
 }
 
-func TestTerminalToolFallbackRejectsToolMarkup(t *testing.T) {
+func TestLooksLikeToolCallMarkupRecognisesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !looksLikeToolCallMarkup(raw) {
 		t.Fatal("looksLikeToolCallMarkup = false, want true")
-	}
-	got := terminalToolFallbackResponse("write_file", raw)
-	if strings.Contains(got, "DSML") || strings.Contains(got, "tool_calls") {
-		t.Fatalf("fallback leaked tool markup: %q", got)
-	}
-	if !strings.Contains(got, "file") {
-		t.Fatalf("fallback = %q, want file completion", got)
 	}
 }

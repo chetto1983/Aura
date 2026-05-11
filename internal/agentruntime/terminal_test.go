@@ -2,58 +2,13 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
 )
-
-func TestFormatTerminalExecuteCodeResultMasksMetadata(t *testing.T) {
-	raw := "exit_code: 0\nelapsed_ms: 42\n\nwrote files\n\nartifacts:\n- aura_sales_summary.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)\n- aura_sales_plot.png (2048 bytes, image/png, delivered=true, persisted=true, source_id=src_456)"
-
-	got := FormatTerminalExecuteCodeResult(raw)
-
-	for _, leaked := range []string{"source_id", "delivered=true", "persisted=true", "text/csv", "image/png", "exit_code", "elapsed_ms"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
-		}
-	}
-	for _, want := range []string{"wrote files", "aura_sales_summary.csv", "aura_sales_plot.png"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("FormatTerminalExecuteCodeResult = %q, want %q", got, want)
-		}
-	}
-}
-
-func TestFormatTerminalExecuteCodeResultDoesNotLeakBareStderr(t *testing.T) {
-	raw := "exit_code: 0\nelapsed_ms: 17\n\n--- stderr ---\nfind: '/home/user': No such file or directory"
-
-	got := FormatTerminalExecuteCodeResult(raw)
-
-	for _, leaked := range []string{"find:", "/home/user", "--- stderr ---", "exit_code"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
-		}
-	}
-	if !strings.Contains(got, "produced no useful result") {
-		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
-	}
-}
-
-func TestFormatTerminalExecuteCodeResultDoesNotLeakToolErrorJSON(t *testing.T) {
-	raw := `{"ok":false,"error":"shell command failed (exit=1): find: '/home/user': No such file or directory","retryable":true}`
-
-	got := FormatTerminalExecuteCodeResult(raw)
-
-	for _, leaked := range []string{`"ok":false`, "find:", "/home/user", "retryable"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
-		}
-	}
-	if !strings.Contains(got, "command failed") {
-		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
-	}
-}
 
 func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 	var gotRequest llm.Request
@@ -90,62 +45,88 @@ func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 	}
 }
 
-func TestFinalizeTerminalToolFallsBackWhenLLMEmitsToolMarkup(t *testing.T) {
+// TestFinalizeTerminalToolRetriesOnFailedSynthesis covers the new contract:
+// when the LLM returns tool-call markup or empty text, we retry once with a
+// stricter prompt before giving up. The second attempt's plain prose is the
+// answer the user sees — never a hardcoded canned string.
+func TestFinalizeTerminalToolRetriesOnFailedSynthesis(t *testing.T) {
+	var attempts atomic.Int32
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
-		TerminalTool:  "write_file",
-		RawToolResult: `<｜｜DSML｜｜tool_calls>`,
-		Send: func(context.Context, llm.Request) (llm.Response, error) {
-			return llm.Response{Content: `<tool_call name="write_file">`}, nil
+		TerminalTool:  "execute_shell",
+		RawToolResult: "exit_code: 0\n\nconnection refused",
+		Send: func(_ context.Context, _ llm.Request) (llm.Response, error) {
+			n := attempts.Add(1)
+			if n == 1 {
+				// First attempt emits tool-call markup → must trigger retry.
+				return llm.Response{Content: `<tool_call name="anything">`}, nil
+			}
+			return llm.Response{Content: "Ho provato curl ma il servizio ha rifiutato la connessione."}, nil
 		},
 	})
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want exactly 2 (initial + retry)", attempts.Load())
+	}
+	if result.Fallback {
+		t.Fatalf("Fallback = true on successful retry, want false")
+	}
+	if !strings.Contains(result.Text, "rifiutato") {
+		t.Fatalf("Text = %q, want the second LLM attempt's prose", result.Text)
+	}
+}
 
+// TestFinalizeTerminalToolReturnsEmptyOnRepeatedFailure asserts the deliberate
+// "no canned string" contract: if both LLM attempts fail, Text is empty and
+// Fallback=true so the caller (Telegram) can simply send nothing rather than
+// a robotic placeholder sentence.
+func TestFinalizeTerminalToolReturnsEmptyOnRepeatedFailure(t *testing.T) {
+	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
+		TerminalTool: "write_file",
+		Send: func(_ context.Context, _ llm.Request) (llm.Response, error) {
+			return llm.Response{Content: `<tool_call name="x">`}, nil
+		},
+	})
 	if !result.Fallback {
-		t.Fatalf("Fallback = false, want true")
+		t.Fatalf("Fallback = false, want true after exhausting retries")
 	}
-	if strings.Contains(result.Text, "tool_call") || strings.Contains(result.Text, "DSML") {
-		t.Fatalf("fallback leaked tool markup: %q", result.Text)
-	}
-}
-
-func TestFormatTerminalFileResultMasksRawJSON(t *testing.T) {
-	raw := `{"source_id":"src_secret","filename":"report.docx","size_bytes":1234,"delivered":true}`
-
-	got := FormatTerminalFileResult("create_docx", raw)
-
-	for _, leaked := range []string{"src_secret", "source_id", "delivered"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("FormatTerminalFileResult leaked %q in %q", leaked, got)
-		}
-	}
-	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "sent it here") {
-		t.Fatalf("FormatTerminalFileResult = %q, want filename and delivery summary", got)
+	if strings.TrimSpace(result.Text) != "" {
+		t.Fatalf("Text = %q, want empty so Telegram sends nothing", result.Text)
 	}
 }
 
-func TestTerminalToolFallbackMasksInternalResultMetadata(t *testing.T) {
-	raw := `{"source_id":"src_secret","metrics":{"tokens_total":123},"exit_code":0}`
-
-	got := TerminalToolFallbackResponse("execute_code", raw)
-
-	for _, leaked := range []string{"src_secret", "source_id", "tokens_total", "exit_code"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
-		}
+// TestFinalizeTerminalToolReturnsEmptyWhenSendIsNil documents the no-LLM path:
+// callers that did not wire a Send (debug harness, dry-run) get Fallback=true
+// and empty Text — no canned fill-in.
+func TestFinalizeTerminalToolReturnsEmptyWhenSendIsNil(t *testing.T) {
+	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
+		TerminalTool: "write_file",
+	})
+	if !result.Fallback || result.Text != "" {
+		t.Fatalf("FinalizeTerminalTool(send=nil) = %+v, want empty fallback", result)
 	}
 }
 
-func TestTerminalToolFallbackMasksShellDump(t *testing.T) {
-	raw := "Filesystem      Size  Used Avail Use% Mounted on\noverlay          100G   10G   90G  10% /\n/dev/sda /var/lib/docker"
-
-	got := TerminalToolFallbackResponse("execute_shell", raw)
-
-	for _, leaked := range []string{"Filesystem", "overlay", "/var/lib"} {
-		if strings.Contains(got, leaked) {
-			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
-		}
+func TestFinalizeTerminalToolStrictPromptOnRetry(t *testing.T) {
+	var firstPrompt, secondPrompt string
+	_ = FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
+		TerminalTool: "execute_code",
+		Send: func(_ context.Context, req llm.Request) (llm.Response, error) {
+			last := req.Messages[len(req.Messages)-1].Content
+			if firstPrompt == "" {
+				firstPrompt = last
+				return llm.Response{}, errors.New("transient")
+			}
+			secondPrompt = last
+			return llm.Response{Content: "ok"}, nil
+		},
+	})
+	if firstPrompt == "" || secondPrompt == "" {
+		t.Fatalf("both attempts must record a prompt: first=%q second=%q", firstPrompt, secondPrompt)
 	}
-	if !strings.Contains(got, "raw technical output") {
-		t.Fatalf("TerminalToolFallbackResponse = %q, want natural shell fallback", got)
+	if firstPrompt == secondPrompt {
+		t.Fatal("retry must use a different (stricter) prompt")
+	}
+	if !strings.Contains(secondPrompt, "RETRY") {
+		t.Fatalf("retry prompt missing RETRY marker: %q", secondPrompt)
 	}
 }
 
@@ -165,7 +146,7 @@ func TestLooksLikeUnsafeFinalAnswer(t *testing.T) {
 	}
 }
 
-func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
+func TestTerminalToolFinalizationMessagesAppendsPrompt(t *testing.T) {
 	messages := []llm.Message{
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},
 		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
@@ -176,8 +157,10 @@ func TestTerminalToolFinalizationMessagesBlockToolMarkup(t *testing.T) {
 		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
 	}
 	last := got[len(got)-1].Content
-	if !strings.Contains(last, "Do not call tools") || !strings.Contains(last, "Do not emit JSON, XML, DSML, or tool-call markup") {
-		t.Fatalf("terminal finalization instruction = %q", last)
+	for _, want := range []string{"Do not call tools", "natural prose"} {
+		if !strings.Contains(last, want) {
+			t.Fatalf("terminal finalization instruction = %q, missing %q", last, want)
+		}
 	}
 }
 
@@ -194,16 +177,9 @@ func TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation(t *tes
 	}
 }
 
-func TestTerminalToolFallbackRejectsToolMarkup(t *testing.T) {
+func TestLooksLikeToolCallMarkupRecognizesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !LooksLikeToolCallMarkup(raw) {
 		t.Fatal("LooksLikeToolCallMarkup = false, want true")
-	}
-	got := TerminalToolFallbackResponse("write_file", raw)
-	if strings.Contains(got, "DSML") || strings.Contains(got, "tool_calls") {
-		t.Fatalf("fallback leaked tool markup: %q", got)
-	}
-	if !strings.Contains(got, "file") {
-		t.Fatalf("fallback = %q, want file completion", got)
 	}
 }

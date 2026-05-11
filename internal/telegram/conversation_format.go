@@ -5,6 +5,9 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
+// terminalToolFinalizationMessages composes the message list the LLM sees on
+// terminal-tool finalize. Retained as a passthrough so tests can exercise the
+// prompt shape without reaching into agentruntime directly.
 func terminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
 	return agentruntime.TerminalToolFinalizationMessages(messages, terminalTool)
 }
@@ -13,22 +16,13 @@ func looksLikeToolCallMarkup(text string) bool {
 	return agentruntime.LooksLikeToolCallMarkup(text)
 }
 
-func terminalToolFallbackResponse(terminalTool, rawToolResult string) string {
-	return agentruntime.TerminalToolFallbackResponse(terminalTool, rawToolResult)
-}
-
+// toolActivityMessage is the placeholder text shown while a tool turn is in
+// flight. Italian because it is a fixed UX string the user sees during
+// long-running operations and Aura's primary deployment language is Italian.
 func toolActivityMessage(name string) string {
 	return "Sto lavorando alla richiesta..."
 }
 
-func formatTerminalExecuteCodeResult(raw string) string {
-	return agentruntime.FormatTerminalExecuteCodeResult(raw)
-}
-
 func isFileGenerationTool(name string) bool {
 	return agentruntime.IsFileGenerationTool(name)
-}
-
-func formatTerminalFileResult(toolName, raw string) string {
-	return agentruntime.FormatTerminalFileResult(toolName, raw)
 }

@@ -2,7 +2,6 @@ package agentruntime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -31,65 +30,94 @@ type TerminalFinalizationResult struct {
 	CostUSD          float64
 }
 
+// FinalizeTerminalTool asks the LLM to summarize the just-completed terminal
+// tool turn in natural prose. There is NO hardcoded fallback: if the first
+// synthesis fails (empty, tool-call markup, or HasToolCalls), we retry once
+// with a stricter prompt. If both attempts fail, Text is returned empty and
+// Fallback=true — callers decide what to do (Telegram simply sends nothing,
+// the user already sees any delivered artifacts).
+//
+// The agent is meant to sound like a copilot, not a robot reciting canned
+// strings. Trusting the LLM with a strong prompt produces better UX than
+// any handwritten template ever could.
 func FinalizeTerminalTool(ctx context.Context, in TerminalFinalizationInput) TerminalFinalizationResult {
-	if in.Send == nil {
-		return TerminalFinalizationResult{
-			Text:     TerminalToolFallbackResponse(in.TerminalTool, in.RawToolResult),
-			Fallback: true,
-		}
-	}
-	resp, err := in.Send(ctx, llm.Request{
-		Messages: TerminalToolFinalizationMessages(in.Messages, in.TerminalTool),
-		Model:    in.Model,
-		Tools:    nil,
-	})
 	result := TerminalFinalizationResult{}
-	if err != nil {
-		result.Err = err
-		result.Text = TerminalToolFallbackResponse(in.TerminalTool, in.RawToolResult)
+	if in.Send == nil {
 		result.Fallback = true
 		return result
 	}
-	result.Usage = resp.Usage
-	result.TokensPrompt = resp.Usage.PromptTokens
-	result.TokensCompletion = resp.Usage.CompletionTokens
-	result.TokensTotal = resp.Usage.TotalTokens
-	if in.EstimateCost != nil {
-		result.CostUSD = in.EstimateCost(resp.Usage)
+
+	attempts := []llm.Message{
+		terminalFinalizationPrompt(in.TerminalTool, false),
+		terminalFinalizationPrompt(in.TerminalTool, true),
 	}
-	if in.RecordUsage != nil {
-		in.RecordUsage(resp.Usage)
-	}
-	text := strings.TrimSpace(resp.Content)
-	if text == "" || resp.HasToolCalls || LooksLikeToolCallMarkup(text) {
-		result.Text = TerminalToolFallbackResponse(in.TerminalTool, in.RawToolResult)
-		result.Fallback = true
+	baseMessages := agentloop.ApplyGovernance(in.Messages, 0, 0, 0)
+
+	for i, prompt := range attempts {
+		messages := append(append([]llm.Message(nil), baseMessages...), prompt)
+		resp, err := in.Send(ctx, llm.Request{Messages: messages, Model: in.Model, Tools: nil})
+		if err != nil {
+			result.Err = err
+			continue
+		}
+		result.Usage = resp.Usage
+		result.TokensPrompt += resp.Usage.PromptTokens
+		result.TokensCompletion += resp.Usage.CompletionTokens
+		result.TokensTotal += resp.Usage.TotalTokens
+		if in.EstimateCost != nil {
+			result.CostUSD += in.EstimateCost(resp.Usage)
+		}
+		if in.RecordUsage != nil {
+			in.RecordUsage(resp.Usage)
+		}
+		text := strings.TrimSpace(resp.Content)
+		if text == "" || resp.HasToolCalls || LooksLikeToolCallMarkup(text) {
+			// Synthesis failed on this attempt; retry with stricter prompt
+			// unless we just exhausted attempts.
+			if i+1 < len(attempts) {
+				continue
+			}
+			result.Fallback = true
+			result.Text = ""
+			return result
+		}
+		result.Text = text
 		return result
 	}
-	result.Text = text
+	result.Fallback = true
 	return result
 }
 
-func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
-	// Apply the same governance passes the main loop runs on every LLM call
-	// — microcompact long tool results, truncate oversized payloads, drop
-	// orphan tool messages — before appending the finalization prompt. Without
-	// this the finalize call sees the full accumulated context exactly when
-	// it is largest, blowing the token budget for no extra signal (F-031).
-	out := agentloop.ApplyGovernance(messages, 0, 0, 0)
+// terminalFinalizationPrompt returns the user-message that asks the LLM to
+// synthesize a final answer from the tool results already in the context.
+// strict=true tightens the language requirements on retry — "you JUST emitted
+// invalid output, do not repeat it".
+func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 	toolName := strings.TrimSpace(terminalTool)
 	if toolName == "" {
 		toolName = "the terminal tool"
 	}
-	content := fmt.Sprintf("The terminal tool %q completed. Do not call tools. Do not emit JSON, XML, DSML, or tool-call markup. Summarize the completed work for the user in their language using only the tool results already present above.", toolName)
 	if toolName == "search_memory" {
-		content = "search_memory returned a recency-weighted hit list. Do not call tools. Do not repeat the list header or scores. Answer the user's original request in their language, using the hits as background. Cite [[slug]] for wiki pages and src_xxxx for sources when relevant. Keep it concise."
+		content := "search_memory returned a recency-weighted hit list above. Do not call tools. Answer the user's original request in their language, using the hits as background. Cite [[slug]] for wiki pages and src_xxxx for sources when relevant. Be concise and conversational."
+		if strict {
+			content = "RETRY. " + content + " Your previous attempt emitted tool-call markup or empty text — do not do that. Plain prose only."
+		}
+		return llm.Message{Role: "user", Content: content}
 	}
-	out = append(out, llm.Message{
-		Role:    "user",
-		Content: content,
-	})
-	return out
+	content := fmt.Sprintf("The %q tool just finished. Do not call tools. Answer the user in their language, conversationally, using the tool results above. Describe what you did and what you found. No JSON, no tool-call markup, no internal markers like exit_code or source_id — just natural prose.", toolName)
+	if strict {
+		content = "RETRY. " + content + " Your previous attempt was empty or contained tool-call markup. Reply now in plain prose; the user is waiting."
+	}
+	return llm.Message{Role: "user", Content: content}
+}
+
+// TerminalToolFinalizationMessages is retained for callers that compose the
+// finalize prompt themselves (tests, debug harnesses). FinalizeTerminalTool
+// no longer uses this helper — it builds the message list inline so the
+// retry path can swap prompts.
+func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
+	out := agentloop.ApplyGovernance(messages, 0, 0, 0)
+	return append(out, terminalFinalizationPrompt(terminalTool, false))
 }
 
 // markerCategory bitmask classifies known unsafe text markers. One canonical
@@ -182,86 +210,9 @@ func LooksLikeUnsafeFinalAnswer(text string) bool {
 	return false
 }
 
-func TerminalToolFallbackResponse(terminalTool, rawToolResult string) string {
-	raw := strings.TrimSpace(rawToolResult)
-	if raw != "" && !LooksLikeToolCallMarkup(raw) && !LooksLikeInternalToolResult(raw) {
-		return raw
-	}
-	toolName := strings.TrimSpace(terminalTool)
-	if toolName == "" {
-		toolName = "the terminal tool"
-	}
-	// Neutral English fallback (F-034). The previous Italian copy was a
-	// holdover from early single-language development; Aura runs in any
-	// language and the fallback should not assume one. The LLM's own
-	// natural-language synthesis is the higher-fidelity path; this string
-	// only ships when synthesis is unavailable or unsafe.
-	if toolName == "write_file" || toolName == "apply_patch" {
-		return "Done. I updated the requested files and stopped the turn after the save."
-	}
-	if toolName == "execute_shell" {
-		return "I checked the environment and have an answer, but I'm skipping the raw technical output."
-	}
-	return fmt.Sprintf("Done. %s completed the work.", toolName)
-}
-
-func FormatTerminalExecuteCodeResult(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "Sandbox execution completed, but no result was returned."
-	}
-	if looksLikeStructuredToolError(raw) {
-		return "The command failed and produced no useful result to show."
-	}
-	body := raw
-	if idx := strings.Index(body, "\n\n"); idx >= 0 {
-		body = strings.TrimSpace(body[idx+2:])
-	} else if strings.HasPrefix(body, "exit_code:") {
-		return "Sandbox execution completed."
-	}
-	if strings.HasPrefix(strings.TrimSpace(body), "--- stderr ---") {
-		return "The command produced no useful result to show."
-	}
-	artifacts := ""
-	if idx := strings.Index(body, "\n\nartifacts:"); idx >= 0 {
-		artifacts = strings.TrimSpace(body[idx+len("\n\nartifacts:"):])
-		body = strings.TrimSpace(body[:idx])
-	}
-	if body == "" {
-		body = "Sandbox execution completed."
-	}
-	if artifacts == "" {
-		return body
-	}
-	names := artifactNamesFromSandboxResult(artifacts)
-	if len(names) == 0 {
-		return body + "\n\nGenerated the requested attachments."
-	}
-	return body + "\n\nGenerated files: " + strings.Join(names, ", ") + "."
-}
-
-func looksLikeStructuredToolError(raw string) bool {
-	lower := strings.ToLower(strings.TrimSpace(raw))
-	return strings.Contains(lower, `"ok":false`) && strings.Contains(lower, `"error":`)
-}
-
-func artifactNamesFromSandboxResult(artifacts string) []string {
-	var names []string
-	for _, line := range strings.Split(artifacts, "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		if line == "" {
-			continue
-		}
-		if idx := strings.Index(line, " ("); idx >= 0 {
-			line = strings.TrimSpace(line[:idx])
-		}
-		if line != "" {
-			names = append(names, line)
-		}
-	}
-	return names
-}
-
+// IsFileGenerationTool reports whether a tool name produces a user-facing
+// file artifact (xlsx/docx/pdf). Kept as a small routing helper; the
+// per-tool canned response strings were removed in favor of LLM synthesis.
 func IsFileGenerationTool(name string) bool {
 	switch name {
 	case "create_docx", "create_xlsx", "create_pdf":
@@ -269,42 +220,4 @@ func IsFileGenerationTool(name string) bool {
 	default:
 		return false
 	}
-}
-
-func FormatTerminalFileResult(toolName, raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "File created, but no metadata was returned."
-	}
-	var resp struct {
-		SourceID  string `json:"source_id"`
-		Filename  string `json:"filename"`
-		SizeBytes int64  `json:"size_bytes"`
-		Delivered bool   `json:"delivered"`
-		Duplicate bool   `json:"duplicate"`
-	}
-	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
-		return "File created and saved."
-	}
-	kind := strings.TrimPrefix(toolName, "create_")
-	if kind == "" {
-		kind = "file"
-	}
-	var sb strings.Builder
-	if strings.TrimSpace(resp.Filename) != "" {
-		fmt.Fprintf(&sb, "Created %s file `%s`", strings.ToUpper(kind), resp.Filename)
-	} else {
-		fmt.Fprintf(&sb, "Created %s file", strings.ToUpper(kind))
-	}
-	if resp.SizeBytes > 0 {
-		fmt.Fprintf(&sb, " (%d bytes)", resp.SizeBytes)
-	}
-	if resp.Delivered {
-		sb.WriteString(" and sent it here")
-	}
-	if resp.Duplicate {
-		sb.WriteString(" (already existed)")
-	}
-	sb.WriteString(".")
-	return sb.String()
 }

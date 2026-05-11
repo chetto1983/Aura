@@ -379,33 +379,14 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
 				telegramStats := mergeAgentLoopStats(baseStats, *stats)
-				userAskedRaw := userRequestedRawOutput(latestUserText(convCtx.Messages()))
-				if terminalTool == "execute_shell" && !userAskedRaw {
-					response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
-					*stats = applyTelegramTerminalStats(*stats, telegramStats)
-					if delivered {
-						return "", true, true
-					}
-					return response, false, true
-				}
-				if terminalTool == "execute_code" || terminalTool == "execute_shell" {
-					response := formatTerminalExecuteCodeResult(lastToolResult)
-					if !userAskedRaw && agentruntime.LooksLikeUnsafeFinalAnswer(response) {
-						response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
-						*stats = applyTelegramTerminalStats(*stats, telegramStats)
-						if delivered {
-							return "", true, true
-						}
-						return response, false, true
-					}
-					convCtx.AddAssistantMessage(response)
-					return response, false, true
-				}
-				if isFileGenerationTool(terminalTool) {
-					response := formatTerminalFileResult(terminalTool, lastToolResult)
-					convCtx.AddAssistantMessage(response)
-					return response, false, true
-				}
+				// Every terminal-tool branch now routes through the LLM
+				// synthesizer. No canned "Done." strings, no
+				// per-tool reformatters — the agent should sound like a
+				// copilot, not a script. finalizeTerminalToolWithNoToolLLM
+				// already retries once on synthesis failure (empty / DSML /
+				// tool_calls); if both attempts fail the helper returns the
+				// LLM's text (possibly empty) and Telegram simply sends
+				// nothing rather than a hardcoded sentence.
 				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
 				*stats = applyTelegramTerminalStats(*stats, telegramStats)
 				if delivered {
