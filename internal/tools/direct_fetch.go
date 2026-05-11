@@ -169,7 +169,11 @@ func (t *DirectWebFetchTool) Execute(ctx context.Context, args map[string]any) (
 func (t *DirectWebFetchTool) fetch(ctx context.Context, targetURL string) (webFetchResponse, error) {
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
-		return webFetchResponse{}, fmt.Errorf("parse URL: %w", err)
+		// Deliberately drop the wrapped error: url.Parse's Error wraps the
+		// raw input string, and the input may contain a credentialed query
+		// (?token=...). The error is destined for the conversation archive,
+		// which is the durable log channel per CLAUDE.md.
+		return webFetchResponse{}, fmt.Errorf("URL parse failed")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return webFetchResponse{}, fmt.Errorf("only http and https URLs are allowed")
