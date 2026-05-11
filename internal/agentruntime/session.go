@@ -1,6 +1,27 @@
+// Package agentruntime — session.go owns the per-user conversation lifecycle.
+//
+// Concurrency model (CONC-01, F-012, F-016):
+//   - In production, callers MUST wire a *concurrency.UserGate. The gate is
+//     the single source of "user X is active" truth and serializes message
+//     processing per user, so the *conversation.Context owned by a Session
+//     is single-writer by construction.
+//   - When SessionStore is constructed without a gate, two concurrent Begin
+//     calls for the same user share the SAME *conversation.Context and write
+//     to its message slice without any mutex. The active sync.Map is a thin
+//     stand-in for the gate's IsActive signal. This mode is for tests only;
+//     production deployments must pass a non-nil gate.
+//
+// Snapshot lifecycle (F-013):
+//   - Finish and Abort do NOT clear snapshots. Snapshots intentionally
+//     survive session boundaries so a returning user / dashboard can read
+//     the most recent turn's metadata. Operators are expected to call
+//     PruneSnapshots periodically (the bot wires this on a maintenance
+//     cadence). Clear() removes both context and snapshot when an explicit
+//     "forget this user" action is invoked.
 package agentruntime
 
 import (
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -64,10 +85,19 @@ func (s *SessionStore) Begin(userID string, cfg conversation.Config) (*Session, 
 		s = NewSessionStore()
 	}
 	userID = strings.TrimSpace(userID)
-	value, loaded := s.context.LoadOrStore(userID, conversation.NewContext(cfg))
-	ctx, _ := value.(*conversation.Context)
+	// Lazy allocation: only build a fresh Context when this user has never
+	// been seen. LoadOrStore would otherwise allocate on every Begin and
+	// immediately discard the new value when the user already has a
+	// Context — wasteful and a config-drift trap if the caller passes a
+	// different cfg on the second call (the first cfg wins; F-014).
+	ctxValue, ok := s.context.Load(userID)
+	if !ok {
+		ctxValue, _ = s.context.LoadOrStore(userID, conversation.NewContext(cfg))
+	}
+	ctx, _ := ctxValue.(*conversation.Context)
 	// When no gate, maintain the active map for backward compat (tests).
 	// When gate is set, the actor's presence in gate.actors IS the active signal (CONC-01).
+	loaded := ok
 	if s.gate == nil {
 		s.active.Store(userID, true)
 	}
@@ -178,11 +208,20 @@ func (s *Session) Conversation() *conversation.Context {
 	return s.ctx
 }
 
+// Finish marks a graceful end of the session. Snapshots are preserved (see
+// SessionStore docs).
 func (s *Session) Finish() {
 	s.clearActive()
 }
 
+// Abort marks a non-graceful end (panic recovery, parent ctx cancellation,
+// fatal tool error). Snapshots are still preserved so the operator can inspect
+// the last-recorded state, but a warn-level log distinguishes Abort from a
+// clean Finish (F-015).
 func (s *Session) Abort() {
+	if s != nil {
+		slog.Default().Warn("agentruntime: session aborted", "user_id", s.userID)
+	}
 	s.clearActive()
 }
 
