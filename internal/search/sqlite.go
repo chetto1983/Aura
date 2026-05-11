@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -187,6 +188,7 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 			kind = "wiki_page"
 		}
 		updatedAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "updated_at"))
+		size, _ := strconv.ParseInt(extractMetaField(metaJSON, "size"), 10, 64)
 
 		results = append(results, Result{
 			Kind:      kind,
@@ -195,6 +197,12 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 			Content:   content,
 			Score:     float32(-rank),
 			UpdatedAt: updatedAt,
+			FilePath:  extractMetaField(metaJSON, "filepath"),
+			Category:  extractMetaField(metaJSON, "category"),
+			Tags:      splitCSVPayloadField(extractMetaField(metaJSON, "tags")),
+			Related:   splitCSVPayloadField(extractMetaField(metaJSON, "related")),
+			Sources:   splitCSVPayloadField(extractMetaField(metaJSON, "sources")),
+			SizeBytes: size,
 		})
 	}
 
@@ -245,6 +253,7 @@ func (s *sqliteSearcher) exactSearch(ctx context.Context, query string, topK int
 			kind = "wiki_page"
 		}
 		updatedAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "updated_at"))
+		size, _ := strconv.ParseInt(extractMetaField(metaJSON, "size"), 10, 64)
 		results = append(results, Result{
 			Kind:      kind,
 			Slug:      slug,
@@ -252,6 +261,12 @@ func (s *sqliteSearcher) exactSearch(ctx context.Context, query string, topK int
 			Content:   content,
 			Score:     1,
 			UpdatedAt: updatedAt,
+			FilePath:  extractMetaField(metaJSON, "filepath"),
+			Category:  extractMetaField(metaJSON, "category"),
+			Tags:      splitCSVPayloadField(extractMetaField(metaJSON, "tags")),
+			Related:   splitCSVPayloadField(extractMetaField(metaJSON, "related")),
+			Sources:   splitCSVPayloadField(extractMetaField(metaJSON, "sources")),
+			SizeBytes: size,
 		})
 	}
 	return results, rows.Err()

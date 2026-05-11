@@ -216,6 +216,11 @@ type memoryResult struct {
 	Score      float64
 	UpdatedAt  time.Time
 	Handle     string
+	FilePath   string
+	Category   string
+	Tags       []string
+	Related    []string
+	SizeBytes  int64
 }
 
 func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit int) ([]memoryResult, []string) {
@@ -251,6 +256,11 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 			Score:      float64(r.Score),
 			UpdatedAt:  r.UpdatedAt,
 			Handle:     identifier,
+			FilePath:   r.FilePath,
+			Category:   r.Category,
+			Tags:       r.Tags,
+			Related:    r.Related,
+			SizeBytes:  r.SizeBytes,
 		})
 	}
 	return out, nil
@@ -406,6 +416,28 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 			fmt.Fprintf(&sb, " (%s)", age)
 		}
 		fmt.Fprintf(&sb, " score=%.2f", r.Score)
+		// Surface the on-disk file path so the model can read the page
+		// directly (read_file) without a second list_files round-trip
+		// (gap the model itself flagged in 2026-05-11 turn 2393).
+		if r.FilePath != "" {
+			fmt.Fprintf(&sb, " file=wiki/%s", r.FilePath)
+		}
+		if r.Category != "" {
+			fmt.Fprintf(&sb, " category=%s", r.Category)
+		}
+		if len(r.Tags) > 0 {
+			fmt.Fprintf(&sb, " tags=%s", strings.Join(r.Tags, ","))
+		}
+		if len(r.Related) > 0 {
+			// Cap the inline related list — pages with 20+ links would
+			// otherwise dwarf the snippet. The full list is reachable via
+			// read_file when the model wants the graph.
+			rel := r.Related
+			if len(rel) > 5 {
+				rel = rel[:5]
+			}
+			fmt.Fprintf(&sb, " related=[%s]", strings.Join(rel, ","))
+		}
 		if r.Snippet != "" {
 			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
 		}

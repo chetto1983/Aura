@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -354,6 +355,7 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 			slug = strings.TrimSpace(payload["doc_id"])
 		}
 		updatedAt, _ := parseSearchPayloadTime(payload["updated_at"])
+		size, _ := strconv.ParseInt(strings.TrimSpace(payload["size"]), 10, 64)
 		results = append(results, Result{
 			Kind:      kind,
 			Slug:      slug,
@@ -361,6 +363,12 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 			Content:   payload["content"],
 			Score:     point.Score,
 			UpdatedAt: updatedAt,
+			FilePath:  strings.TrimSpace(payload["filepath"]),
+			Category:  strings.TrimSpace(payload["category"]),
+			Tags:      splitCSVPayloadField(payload["tags"]),
+			Related:   splitCSVPayloadField(payload["related"]),
+			Sources:   splitCSVPayloadField(payload["sources"]),
+			SizeBytes: size,
 		})
 	}
 	return results, nil

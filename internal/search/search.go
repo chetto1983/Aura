@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,28 @@ import (
 // hitting Mistral's free-tier rate limits. The embed cache short-circuits
 // repeated work so the constant only matters on a truly cold start.
 const indexConcurrency = 4
+
+// splitCSVPayloadField reverses the comma-join used at index time for
+// list-valued frontmatter fields (tags, related, sources). Empty entries are
+// dropped; whitespace around items is trimmed. Returns nil when the value is
+// empty so callers do not have to distinguish "absent" from "empty list".
+func splitCSVPayloadField(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // parseSearchPayloadTime accepts the RFC3339 and a couple of common YAML
 // frontmatter layouts (older pages used a space separator). Empty / unparseable
@@ -54,6 +77,11 @@ func parseSearchPayloadTime(raw string) (time.Time, bool) {
 // supply it (zero time when unknown). Callers that score with a recency factor
 // must guard against a zero time and choose whether to apply recency=1.0 or
 // skip the multiplier.
+//
+// FilePath, Category, Tags, Related, Sources, and SizeBytes round out the
+// per-hit metadata so search_memory can satisfy the LLM in one round-trip —
+// previously the model had to follow up with list_files/read_file to map a
+// slug back to a .md path or read the page's relations.
 type Result struct {
 	Kind      string
 	Slug      string
@@ -61,6 +89,12 @@ type Result struct {
 	Content   string
 	Score     float32
 	UpdatedAt time.Time
+	FilePath  string
+	Category  string
+	Tags      []string
+	Related   []string
+	Sources   []string
+	SizeBytes int64
 }
 
 // EmbeddingFunc is Aura's embedding provider boundary. Same signature as
@@ -238,9 +272,37 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		}
 		pages[slug] = page
 		title, content := page.Title, page.Title+"\n"+page.Body
-		meta := map[string]string{"slug": slug, "title": title, "kind": "wiki_page"}
+		// Payload metadata kept in Qdrant so search_memory can return more
+		// than slug+snippet — the LLM previously had to round-trip via
+		// list_files/read_file to find the on-disk file. The model itself
+		// flagged this gap on 2026-05-11 turn 2393: "so cosa c'è scritto in
+		// [[davide]] ma non so che file .md corrisponde". Including filepath,
+		// updated_at, category, tags, related, and sources collapses that
+		// detour into the same retrieval call.
+		stat, _ := os.Stat(filePath)
+		var sizeStr string
+		if stat != nil {
+			sizeStr = strconv.FormatInt(stat.Size(), 10)
+		}
+		meta := map[string]string{
+			"slug":      slug,
+			"title":     title,
+			"kind":      "wiki_page",
+			"filepath":  filepath.ToSlash(fi.name),
+			"size":      sizeStr,
+			"category":  strings.TrimSpace(page.Category),
+			"tags":      strings.Join(page.Tags, ","),
+			"related":   strings.Join(page.Related, ","),
+			"sources":   strings.Join(page.Sources, ","),
+		}
 		if updated := strings.TrimSpace(page.Updated); updated != "" {
 			meta["updated_at"] = updated
+		}
+		// Empty values stripped so the payload stays compact in Qdrant.
+		for k, v := range meta {
+			if v == "" {
+				delete(meta, k)
+			}
 		}
 		docs = append(docs, Document{
 			ID:       slug,
