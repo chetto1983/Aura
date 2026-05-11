@@ -182,10 +182,16 @@ func (b *Bot) consumeStream(c tele.Context, ch <-chan llm.Token, userID string, 
 				Usage:        tok.Usage,
 				Reasoning:    strings.TrimSpace(cotBuf.String()),
 			}
-			// Final edit so the message reflects the complete CoT + content
-			// even if the throttle skipped the last delta.
+			// Final edit: drop the CoT prefix and show ONLY the answer.
+			// The reasoning was scaffolding to mask latency — once the
+			// final content is ready the user wants a clean message, not
+			// a transcript of the model's thinking. Reasoning is still
+			// preserved on resp.Reasoning for the archive / dashboard.
 			if msg != nil && !resp.HasToolCalls {
-				raw := composeStreamingMessage(cotBuf.String(), sb.String())
+				raw := strings.TrimSpace(sb.String())
+				if raw == "" {
+					break
+				}
 				parts := renderForTelegramEntities(raw)
 				if len(parts) == 0 {
 					break

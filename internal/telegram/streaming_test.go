@@ -111,6 +111,7 @@ func TestConsumeStreamRendersReasoningAboveContent(t *testing.T) {
 	// At least one edit body must carry the 🧠 prefix + italic CoT block so
 	// the user sees the model thinking live, even before content arrives.
 	var sawCoTPrefix bool
+	var finalEdit string
 	for _, call := range calls {
 		if call.Method != "editMessageText" {
 			continue
@@ -118,11 +119,20 @@ func TestConsumeStreamRendersReasoningAboveContent(t *testing.T) {
 		body, _ := call.Body["text"].(string)
 		if strings.Contains(body, "🧠") && strings.Contains(body, "Considering options") {
 			sawCoTPrefix = true
-			break
 		}
+		finalEdit = body
 	}
 	if !sawCoTPrefix {
 		t.Fatalf("no editMessageText carried the live CoT prefix: %+v", calls)
+	}
+	// Final edit must contain ONLY the answer — the CoT is scaffolding,
+	// once content is complete the user sees a clean message and the
+	// reasoning lives on resp.Reasoning for the archive.
+	if strings.Contains(finalEdit, "🧠") || strings.Contains(finalEdit, "Considering options") || strings.Contains(finalEdit, "short reply") {
+		t.Fatalf("final edit still carries CoT prefix, want clean answer: %q", finalEdit)
+	}
+	if !strings.Contains(finalEdit, "ok") {
+		t.Fatalf("final edit missing answer body: %q", finalEdit)
 	}
 }
 
