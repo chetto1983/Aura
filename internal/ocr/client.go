@@ -82,10 +82,6 @@ func New(cfg Config) *Client {
 // ProcessInput is the per-call payload for OCR.
 type ProcessInput struct {
 	PDFBytes []byte
-	// IncludeImages mirrors MISTRAL_OCR_INCLUDE_IMAGES. When true the response
-	// pages carry image objects; Aura ignores them today but the wire flag is
-	// honored so future slices can pull them.
-	IncludeImages bool
 }
 
 // ProcessResult bundles the parsed response with the raw JSON body. Callers
@@ -114,10 +110,9 @@ func (c *Client) Process(ctx context.Context, in ProcessInput) (*ProcessResult, 
 			Type:        "document_url",
 			DocumentURL: "data:application/pdf;base64," + b64,
 		},
-		IncludeImageBase64: in.IncludeImages,
-		TableFormat:        c.tableFormat,
-		ExtractHeader:      c.extractHeader,
-		ExtractFooter:      c.extractFooter,
+		TableFormat:   c.tableFormat,
+		ExtractHeader: c.extractHeader,
+		ExtractFooter: c.extractFooter,
 	}
 	reqJSON, err := json.Marshal(body)
 	if err != nil {

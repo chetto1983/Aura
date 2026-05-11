@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/aura/aura/internal/config"
@@ -150,79 +149,36 @@ func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
 	}
 }
 
-func TestSettingsCatalogCoversEveryOverridableKey(t *testing.T) {
+func TestSettingsCatalogIsCompactAndEditable(t *testing.T) {
+	if len(settingsCatalog) != 12 {
+		t.Fatalf("settingsCatalog len = %d, want 12", len(settingsCatalog))
+	}
 	catalog := map[string]SettingItem{}
 	for _, item := range settingsCatalog {
-		catalog[item.Key] = item
-	}
-	for _, key := range settings.OverridableKeys() {
-		item, ok := catalog[key]
-		if !ok {
-			t.Fatalf("%s is overridable but missing from settings catalog", key)
+		if !settings.IsOverridable(item.Key) {
+			t.Fatalf("%s is in settings catalog but is not overridable", item.Key)
 		}
 		if item.ReadOnly {
-			t.Fatalf("%s is overridable but marked read-only", key)
+			t.Fatalf("%s is in settings catalog but marked read-only", item.Key)
 		}
+		catalog[item.Key] = item
 	}
-}
-
-func TestSettingsList_ShowsRuntimeAndSandboxKeysEditable(t *testing.T) {
-	store := mustSettingsStore(t)
-	router := NewRouter(Deps{
-		Settings: store,
-		RuntimeConfig: &config.Config{
-			TelegramToken:           "123456:secret",
-			HTTPPort:                "0.0.0.0:8080",
-			Headless:                true,
-			EnvPath:                 "/data/.env",
-			DBPath:                  "/data/aura.db",
-			WikiPath:                "/workspace/wiki",
-			SkillsPath:              "/workspace/skills",
-			SkillsInstallProjectDir: "/workspace/skills",
-			CostInputPerMTokens:     0.28,
-			CostOutputPerMTokens:    0.42,
-			MCPServersPath:          "/workspace/mcp.json",
-			PromptOverlayPath:       "/workspace",
-			DashboardTokenTTLHours:  720,
-			SandboxEnabled:          false,
-			SandboxRuntimeDir:       "/app/runtime/pyodide",
-			SandboxTimeoutSec:       120,
-		},
-	})
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	if rr.Code != 200 {
-		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
-	}
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	want := map[string]string{
-		"AURA_ENV_PATH":              "/data/.env",
-		"DB_PATH":                    "/data/aura.db",
-		"WIKI_PATH":                  "/workspace/wiki",
-		"SKILLS_INSTALL_PROJECT_DIR": "/workspace/skills",
-		"COST_INPUT_PER_M_TOKENS":    "0.28",
-		"COST_OUTPUT_PER_M_TOKENS":   "0.42",
-		"SANDBOX_ENABLED":            "false",
-		"SANDBOX_RUNTIME_DIR":        "/app/runtime/pyodide",
-	}
-	for key, value := range want {
-		found := false
-		for _, it := range resp.Items {
-			if it.Key != key {
-				continue
-			}
-			found = true
-			if it.ReadOnly {
-				t.Fatalf("%s read_only = true, want false", key)
-			}
-			if it.Value != value || it.ActiveValue != value {
-				t.Fatalf("%s = value:%q active:%q, want %q", key, it.Value, it.ActiveValue, value)
-			}
-		}
-		if !found {
-			t.Fatalf("%s not in settings response", key)
+	for _, key := range []string{
+		settings.KeyTimezone,
+		settings.KeyLLMBaseURL,
+		settings.KeyLLMModel,
+		settings.KeyLLMAPIKey,
+		settings.KeyWebSearchProvider,
+		settings.KeySearXNGBaseURL,
+		settings.KeyQdrantURL,
+		settings.KeyQdrantCollection,
+		settings.KeyQdrantAPIKey,
+		settings.KeyEmbeddingModel,
+		settings.KeyEmbeddingAPIKey,
+		settings.KeyMistralAPIKey,
+	} {
+		if _, ok := catalog[key]; !ok {
+			t.Fatalf("%s missing from compact settings catalog", key)
 		}
 	}
 }
@@ -278,104 +234,11 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	if !foundSecret {
 		t.Fatal("QDRANT_API_KEY not in settings response")
 	}
-	foundTimeout := false
-	foundMemoryTimeout := false
-	for _, it := range resp.Items {
-		if it.Key != settings.KeySpeculativeSearchTimeoutMS {
-			continue
-		}
-		foundTimeout = true
-		if it.Kind != "int" || it.Value != "1500" || it.ReadOnly {
-			t.Fatalf("SPECULATIVE_SEARCH_TIMEOUT_MS control = kind:%q value:%q readonly:%v", it.Kind, it.Value, it.ReadOnly)
-		}
-	}
-	if !foundTimeout {
-		t.Fatal("SPECULATIVE_SEARCH_TIMEOUT_MS not in settings response")
-	}
-	for _, it := range resp.Items {
-		if it.Key != settings.KeyMemorySearchTimeoutMS {
-			continue
-		}
-		foundMemoryTimeout = true
-		if it.Kind != "int" || it.Value != "5000" || it.ReadOnly {
-			t.Fatalf("MEMORY_SEARCH_TIMEOUT_MS control = kind:%q value:%q readonly:%v", it.Kind, it.Value, it.ReadOnly)
-		}
-	}
-	if !foundMemoryTimeout {
-		t.Fatal("MEMORY_SEARCH_TIMEOUT_MS not in settings response")
-	}
-
 	for _, it := range resp.Items {
 		if it.Key == "AURA_TOOLSET_MODE" || it.Key == "AURA_ORCHESTRATION_LOG_LEVEL" {
 			t.Fatalf("removed orchestration setting leaked into settings response: %s", it.Key)
 		}
 	}
-}
-
-func TestSettingsList_ShowsAgentRuntimeSettingsMetadataAndActiveValues(t *testing.T) {
-	store := mustSettingsStore(t)
-	router := NewRouter(Deps{
-		Settings: store,
-		RuntimeConfig: &config.Config{
-			SkillRoutingMode:   "manifest_llm_review",
-			AgentLoopMaxSteps:  9,
-			TerminalToolPolicy: "off",
-			DelegationMode:     "bounded",
-			TraceRetentionDays: 90,
-		},
-	})
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	if rr.Code != 200 {
-		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
-	}
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-
-	wantEnums := map[string][]string{
-		settings.KeySkillRoutingMode:   []string{"manifest", "manifest_llm_review"},
-		settings.KeyTerminalToolPolicy: []string{"on", "off"},
-		settings.KeyDelegationMode:     []string{"fast", "bounded", "async"},
-	}
-	wantActive := map[string]string{
-		settings.KeySkillRoutingMode:   "manifest_llm_review",
-		settings.KeyAgentLoopMaxSteps:  "9",
-		settings.KeyTerminalToolPolicy: "off",
-		settings.KeyDelegationMode:     "bounded",
-		settings.KeyTraceRetentionDays: "90",
-	}
-	for key, options := range wantEnums {
-		it := findSettingItem(t, resp.Items, key)
-		if it.Group != "agent" || it.Kind != "enum" || !slices.Equal(it.Options, options) {
-			t.Fatalf("%s row = group:%q kind:%q options:%v", key, it.Group, it.Kind, it.Options)
-		}
-	}
-	for key, active := range wantActive {
-		it := findSettingItem(t, resp.Items, key)
-		if it.Group != "agent" || it.ActiveValue != active {
-			t.Fatalf("%s row = group:%q active:%q, want agent/%q", key, it.Group, it.ActiveValue, active)
-		}
-	}
-	loop := findSettingItem(t, resp.Items, settings.KeyAgentLoopMaxSteps)
-	if loop.Kind != "int" || loop.Min == nil || loop.Max == nil || *loop.Min != 1 || *loop.Max != 50 {
-		t.Fatalf("AURA_AGENT_LOOP_MAX_STEPS bounds = kind:%q min:%v max:%v", loop.Kind, loop.Min, loop.Max)
-	}
-	retention := findSettingItem(t, resp.Items, settings.KeyTraceRetentionDays)
-	if retention.Kind != "int" || retention.Min == nil || retention.Max == nil || *retention.Min != 1 || *retention.Max != 365 {
-		t.Fatalf("AURA_TRACE_RETENTION_DAYS bounds = kind:%q min:%v max:%v", retention.Kind, retention.Min, retention.Max)
-	}
-}
-
-func findSettingItem(t *testing.T, items []SettingItem, key string) SettingItem {
-	t.Helper()
-	for _, it := range items {
-		if it.Key == key {
-			return it
-		}
-	}
-	t.Fatalf("%s not in settings response", key)
-	return SettingItem{}
 }
 
 func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {
@@ -497,56 +360,15 @@ func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
 	}
 }
 
-func TestSettingsList_AuraBotShowsEditableDefaults(t *testing.T) {
-	for _, k := range []string{
-		settings.KeyAuraBotEnabled,
-		settings.KeyAuraBotMaxActive,
-		settings.KeyAuraBotMaxDepth,
-		settings.KeyAuraBotTimeoutSec,
-		settings.KeyAuraBotMaxIterations,
-	} {
-		t.Setenv(k, "")
-	}
-	router, _ := newSettingsEnv(t)
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	var resp SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-
-	want := map[string]string{
-		settings.KeyAuraBotEnabled:       "false",
-		settings.KeyAuraBotMaxActive:     "4",
-		settings.KeyAuraBotMaxDepth:      "1",
-		settings.KeyAuraBotTimeoutSec:    "300",
-		settings.KeyAuraBotMaxIterations: "5",
-	}
-	for key, value := range want {
-		var found bool
-		for _, it := range resp.Items {
-			if it.Key != key {
-				continue
-			}
-			found = true
-			if it.Value != value || it.Source != "default" || it.Group != "aurabot" {
-				t.Fatalf("%s = value:%q source:%q group:%q, want value:%q source:default group:aurabot", key, it.Value, it.Source, it.Group, value)
-			}
-		}
-		if !found {
-			t.Fatalf("%s not in settings catalog", key)
-		}
-	}
-}
-
 func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing.T) {
 	_, store := newSettingsEnv(t)
 	ctx := context.Background()
-	if err := store.Set(ctx, settings.KeyAuraBotTimeoutSec, "600"); err != nil {
-		t.Fatalf("set timeout: %v", err)
+	if err := store.Set(ctx, settings.KeyLLMModel, "next-model"); err != nil {
+		t.Fatalf("set model: %v", err)
 	}
 	router := NewRouter(Deps{
 		Settings:      store,
-		RuntimeConfig: &config.Config{AuraBotTimeoutSec: 300},
+		RuntimeConfig: &config.Config{LLMModel: "running-model"},
 	})
 
 	rr := httptest.NewRecorder()
@@ -555,15 +377,15 @@ func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyAuraBotTimeoutSec {
+		if it.Key != settings.KeyLLMModel {
 			continue
 		}
-		if it.Value != "600" || it.ActiveValue != "300" || !it.RestartRequired {
-			t.Fatalf("timeout row = value:%q active:%q restart:%v", it.Value, it.ActiveValue, it.RestartRequired)
+		if it.Value != "next-model" || it.ActiveValue != "running-model" || !it.RestartRequired {
+			t.Fatalf("model row = value:%q active:%q restart:%v", it.Value, it.ActiveValue, it.RestartRequired)
 		}
 		return
 	}
-	t.Fatal("AURABOT_TIMEOUT_SEC not in items")
+	t.Fatal("LLM_MODEL not in items")
 }
 
 func TestSettingsList_NoStore503(t *testing.T) {
@@ -624,21 +446,9 @@ func TestSettingsUpdate_AppliesRuntimeSettingsHook(t *testing.T) {
 	if !update.OK || !update.RuntimeApplied || calls != 1 {
 		t.Fatalf("update = %+v calls=%d", update, calls)
 	}
-
-	rr = httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
-	var list SettingsListResponse
-	_ = json.Unmarshal(rr.Body.Bytes(), &list)
-	for _, it := range list.Items {
-		if it.Key != settings.KeyAuraBotTimeoutSec {
-			continue
-		}
-		if it.Value != "600" || it.ActiveValue != "600" || it.RestartRequired {
-			t.Fatalf("timeout row = value:%q active:%q restart:%v", it.Value, it.ActiveValue, it.RestartRequired)
-		}
-		return
+	if cfg.AuraBotTimeoutSec != 600 {
+		t.Fatalf("cfg.AuraBotTimeoutSec = %d, want 600", cfg.AuraBotTimeoutSec)
 	}
-	t.Fatal("AURABOT_TIMEOUT_SEC not in items")
 }
 
 func TestSettingsUpdate_DoesNotApplyRuntimeHookForRestartOnlyAuraBotEnable(t *testing.T) {

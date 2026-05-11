@@ -53,7 +53,7 @@ type Deps struct {
 	Scheduler   scheduler.Repository
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
-	Extractor   source.PyodideRunner
+	Extractor   source.SandboxExtractor
 	Auth        auth.DashboardRepository
 	Allowlist   auth.AllowlistFunc
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100

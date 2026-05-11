@@ -51,7 +51,7 @@ In parallelo gira la **Web Dashboard** (`internal/api`) embedded nel binario via
 ## 3.2 Execution Model
 
 * 1 goroutine = 1 conversazione (Telegram).
-* Tool-calling loop con `MAX_TOOL_ITERATIONS` (default 10).
+* Tool-calling loop con `AURA_AGENT_LOOP_MAX_STEPS` (default 8).
 * Tool calls indipendenti nello stesso turn vengono **eseguite in parallelo** (slice 11l).
 * Streaming LLM con **progressive edit Telegram** (slice 11t): placeholder dopo 30 char, edit ogni 800 ms.
 * Cap di history a `MAX_HISTORY_MESSAGES` (default 50) — Picobot pattern, slice 11k. Summarization solo come fallback.
@@ -380,7 +380,7 @@ CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
 # 9. Deployment
 
 * **Docker Compose is the primary release runtime.**
-* `aura` image is server-only, does not carry Node.js, and runs Python directly via `SANDBOX_RUNTIME_MODE=process`.
+* `aura` image is server-only, does not carry Node.js, and runs Python directly for sandbox execution.
 * `searxng`, `garage`, and `qdrant` are local sidecars; Garage UI remains profile-gated.
 * Desktop/tray builds have been removed; releases are Docker-image only.
 

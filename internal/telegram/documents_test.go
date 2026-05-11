@@ -15,14 +15,14 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
-type fakeDocumentPyodideRunner struct {
+type fakeDocumentSandboxExtractor struct {
 	calls        int
 	code         string
 	allowNetwork bool
 	errs         []error
 }
 
-func (r *fakeDocumentPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+func (r *fakeDocumentSandboxExtractor) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
 	r.calls++
 	if len(r.errs) > 0 {
 		err := r.errs[0]
@@ -33,11 +33,11 @@ func (r *fakeDocumentPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (so
 	}
 	return source.ExtractResult{
 		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
+		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
 	}, nil
 }
 
-func (r *fakeDocumentPyodideRunner) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+func (r *fakeDocumentSandboxExtractor) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
 	r.calls++
 	if len(r.errs) > 0 {
 		err := r.errs[0]
@@ -48,7 +48,7 @@ func (r *fakeDocumentPyodideRunner) ExtractDOCX(_ context.Context, _ []byte) (so
 	}
 	return source.ExtractResult{
 		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_docx", TextBytes: 39},
+		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
 	}, nil
 }
 
@@ -399,7 +399,7 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentPyodideRunner{}
+	runner := &fakeDocumentSandboxExtractor{}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
@@ -435,8 +435,8 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 	if runner.calls != 1 {
 		t.Fatalf("runner calls=%d, want 1", runner.calls)
 	}
-	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_xlsx" {
-		t.Fatalf("source extraction metadata = %+v, want pyodide_xlsx", stored[0].Extract)
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_xlsx" {
+		t.Fatalf("source extraction metadata = %+v, want sandbox_xlsx", stored[0].Extract)
 	}
 	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -460,7 +460,7 @@ func TestDocHandlerAuthorizedDOCXDocumentExtractsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentPyodideRunner{}
+	runner := &fakeDocumentSandboxExtractor{}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
@@ -496,8 +496,8 @@ func TestDocHandlerAuthorizedDOCXDocumentExtractsSource(t *testing.T) {
 	if runner.calls != 1 {
 		t.Fatalf("runner calls=%d, want 1", runner.calls)
 	}
-	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_docx" {
-		t.Fatalf("source extraction metadata = %+v, want pyodide_docx", stored[0].Extract)
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_docx" {
+		t.Fatalf("source extraction metadata = %+v, want sandbox_docx", stored[0].Extract)
 	}
 	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -521,7 +521,7 @@ func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentPyodideRunner{errs: []error{errors.New("pyodide unavailable")}}
+	runner := &fakeDocumentSandboxExtractor{errs: []error{errors.New("sandbox unavailable")}}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
@@ -567,7 +567,7 @@ func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
 	if runner.calls != 2 {
 		t.Fatalf("runner calls=%d, want failed attempt plus duplicate retry", runner.calls)
 	}
-	if stored[0].Error != "" || stored[0].Extract == nil || stored[0].Extract.ExtractorName != "pyodide_xlsx" {
+	if stored[0].Error != "" || stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_xlsx" {
 		t.Fatalf("source after retry = %+v", stored[0])
 	}
 	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {

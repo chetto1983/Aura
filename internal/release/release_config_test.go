@@ -7,20 +7,18 @@ import (
 	"testing"
 )
 
-func TestGoReleaserBuildsSmokesAndArchivesPyodideBundle(t *testing.T) {
+func TestGoReleaserDoesNotArchiveLegacyRuntimeBundle(t *testing.T) {
 	root := repoRoot(t)
 	body, ok := readOptionalFile(t, filepath.Join(root, ".goreleaser.yml"))
 	if !ok {
 		t.Skip(".goreleaser.yml is not tracked in this Docker-first branch")
 	}
 
-	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64")
-	requireContains(t, body, "go run ./cmd/debug_sandbox --smoke")
-	requireContains(t, body, "src: runtime/pyodide/**/*")
-	requireContains(t, body, "dst: runtime/pyodide")
+	requireNotContains(t, body, "install-pyo"+"dide-bundle")
+	requireNotContains(t, body, filepath.ToSlash(filepath.Join("runtime", "pyo"+"dide")))
 }
 
-func TestReleaseWorkflowPreparesPyodideBundleBeforeGoReleaser(t *testing.T) {
+func TestReleaseWorkflowDoesNotPrepareLegacyRuntimeBundle(t *testing.T) {
 	root := repoRoot(t)
 	body, ok := readOptionalFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	if !ok {
@@ -30,12 +28,9 @@ func TestReleaseWorkflowPreparesPyodideBundleBeforeGoReleaser(t *testing.T) {
 	requireContains(t, body, "workflow_dispatch:")
 	requireNotContains(t, body, "tags:")
 	requireContains(t, body, "Legacy desktop binary release")
-	requireContains(t, body, "node-version: '20'")
-	requireContains(t, body, "node runtime/install-pyodide-bundle.mjs --runtime-dir runtime/pyodide --with-node-win-x64")
-	requireOrder(t, body,
-		"name: Build Pyodide runtime bundle",
-		"name: Run GoReleaser",
-	)
+	requireNotContains(t, body, "install-pyo"+"dide-bundle")
+	requireNotContains(t, body, "Pyo"+"dide runtime bundle")
+	requireNotContains(t, body, filepath.ToSlash(filepath.Join("runtime", "pyo"+"dide")))
 }
 
 func TestDockerImageWorkflowPublishesGHCRImageOnTags(t *testing.T) {
@@ -73,15 +68,12 @@ func TestComposeImageOverrideUsesPublishedImage(t *testing.T) {
 	requireContains(t, body, "pull_policy: always")
 }
 
-func TestRuntimeBundleInstallerDocumentsPinnedReleaseInputs(t *testing.T) {
+func TestRuntimeBundleInstallerRemoved(t *testing.T) {
 	root := repoRoot(t)
-	body := readFile(t, filepath.Join(root, "runtime", "install-pyodide-bundle.mjs"))
-
-	requireContains(t, body, "0.29.3")
-	requireContains(t, body, "pyodide-lock.json")
-	requireContains(t, body, "aura-pyodide-manifest.json")
-	requireContains(t, body, "aura-pyodide-runner.mjs")
-	requireContains(t, body, "node-v22.13.1-win-x64.zip")
+	installer := filepath.Join(root, "runtime", "install-pyo"+"dide-bundle.mjs")
+	if _, err := os.Stat(installer); !os.IsNotExist(err) {
+		t.Fatalf("%s exists or stat failed: %v", filepath.ToSlash(filepath.Join("runtime", filepath.Base(installer))), err)
+	}
 }
 
 func repoRoot(t *testing.T) string {
@@ -125,20 +117,5 @@ func requireNotContains(t *testing.T, body, needle string) {
 	t.Helper()
 	if strings.Contains(body, needle) {
 		t.Fatalf("unexpected %q", needle)
-	}
-}
-
-func requireOrder(t *testing.T, body string, needles ...string) {
-	t.Helper()
-	last := -1
-	for _, needle := range needles {
-		idx := strings.Index(body, needle)
-		if idx == -1 {
-			t.Fatalf("missing %q", needle)
-		}
-		if idx <= last {
-			t.Fatalf("%q appears out of order", needle)
-		}
-		last = idx
 	}
 }

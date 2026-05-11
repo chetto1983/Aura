@@ -203,9 +203,9 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		return nil, fmt.Errorf("creating source store: %w", err)
 	}
 
-	// OCR client is optional. Required env: MISTRAL_API_KEY + OCR_ENABLED.
+	// OCR client is optional and auto-enables when MISTRAL_API_KEY is present.
 	var ocrClient *ocr.Client
-	if cfg.OCREnabled && cfg.MistralAPIKey != "" {
+	if cfg.MistralAPIKey != "" {
 		ocrClient = ocr.New(ocr.Config{
 			APIKey:        cfg.MistralAPIKey,
 			BaseURL:       cfg.MistralOCRBaseURL,
@@ -215,7 +215,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			ExtractFooter: cfg.MistralOCRExtractFooter,
 		})
 	} else {
-		logger.Info("OCR disabled (set OCR_ENABLED=true and MISTRAL_API_KEY to enable)")
+		logger.Info("OCR disabled (set MISTRAL_API_KEY to enable)")
 	}
 
 	// Ingest pipeline (slice 6) compiles ocr_complete sources into wiki
@@ -850,9 +850,9 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 		MaxRetries:          cfg.LLMMaxRetries,
 		BaseDelay:           time.Second,
 		MaxDelay:            30 * time.Second,
-		MaxContentRetries:   3,                         // D-07 CONTENT bucket budget
+		MaxContentRetries:   3,                        // D-07 CONTENT bucket budget
 		ContentTemperatures: []float64{0.0, 0.3, 0.7}, // D-07 temperature staircase
-		JitterRatio:         0.5,                       // D-07 jitter ratio
+		JitterRatio:         0.5,                      // D-07 jitter ratio
 	})
 }
 
@@ -877,132 +877,30 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	}
 
 	timeout := time.Duration(cfg.SandboxTimeoutSec) * time.Second
-	runtimeMode := strings.ToLower(strings.TrimSpace(cfg.SandboxRuntimeMode))
-	runtimeURL := strings.TrimSpace(cfg.SandboxRuntimeURL)
-	if runtimeMode == "process" || runtimeMode == "aura" {
-		runner, err := sandbox.NewProcessRunner(sandbox.ProcessRunnerConfig{
-			WorkDir: cfg.WorkspaceRoot,
-			Timeout: timeout,
-		})
-		if err != nil {
-			health.Detail = err.Error()
-			logger.Warn("sandbox process runner configuration invalid, execute_code disabled",
-				"runtime_kind", sandbox.RuntimeKindProcess,
-				"workdir", cfg.WorkspaceRoot,
-				"detail", health.Detail)
-			return nil, health
-		}
-		availability := runner.CheckAvailability()
-		health.Runtime = cfg.WorkspaceRoot
-		health.Available = availability.Available
-		health.RuntimeKind = string(availability.Kind)
-		health.Detail = availability.Detail
-		if !availability.Available {
-			logger.Warn("sandbox process runtime unavailable, execute_code disabled",
-				"runtime_kind", health.RuntimeKind,
-				"workdir", cfg.WorkspaceRoot,
-				"detail", availability.Detail)
-			return nil, health
-		}
-		manager, err := sandbox.NewManager(sandbox.Config{
-			Runtime: runner,
-			Timeout: timeout,
-		})
-		if err != nil {
-			health.Available = false
-			health.Detail = err.Error()
-			logger.Warn("sandbox process manager unavailable, execute_code disabled",
-				"runtime_kind", health.RuntimeKind,
-				"workdir", cfg.WorkspaceRoot,
-				"detail", health.Detail)
-			return nil, health
-		}
-		logger.Info("sandbox process runtime available, execute_code enabled",
-			"runtime_kind", health.RuntimeKind,
-			"workdir", cfg.WorkspaceRoot,
-			"detail", health.Detail)
-		return manager, health
-	}
-	if runtimeMode == "container" || (runtimeMode == "auto" && runtimeURL != "") {
-		runner, err := sandbox.NewPyodideContainerRunner(sandbox.PyodideContainerRunnerConfig{
-			BaseURL: runtimeURL,
-			Timeout: timeout,
-		})
-		if err != nil {
-			health.Detail = err.Error()
-			logger.Warn("sandbox container runner configuration invalid, execute_code disabled",
-				"runtime_kind", sandbox.RuntimeKindUnavailable,
-				"runtime_url", runtimeURL,
-				"detail", health.Detail)
-			return nil, health
-		}
-		availability := runner.CheckAvailability()
-		health.Runtime = runtimeURL
-		health.Available = availability.Available
-		health.RuntimeKind = string(availability.Kind)
-		health.Detail = availability.Detail
-		if !availability.Available {
-			if !strings.Contains(availability.Detail, "Pyodide") {
-				health.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
-			}
-			logger.Warn("sandbox container runtime unavailable, execute_code disabled",
-				"runtime_kind", health.RuntimeKind,
-				"runtime_url", runtimeURL,
-				"detail", availability.Detail)
-			return nil, health
-		}
-		manager, err := sandbox.NewManager(sandbox.Config{
-			Runtime: runner,
-			Timeout: timeout,
-		})
-		if err != nil {
-			health.Available = false
-			health.Detail = err.Error()
-			logger.Warn("sandbox container manager unavailable, execute_code disabled",
-				"runtime_kind", health.RuntimeKind,
-				"runtime_url", runtimeURL,
-				"detail", health.Detail)
-			return nil, health
-		}
-		logger.Info("sandbox container runtime available, execute_code enabled",
-			"runtime_kind", health.RuntimeKind,
-			"runtime_url", runtimeURL,
-			"detail", health.Detail)
-		return manager, health
-	}
-
-	runner, err := sandbox.NewPyodideRunner(sandbox.PyodideRunnerConfig{
-		RuntimeDir: cfg.SandboxRuntimeDir,
-		Timeout:    timeout,
+	runner, err := sandbox.NewProcessRunner(sandbox.ProcessRunnerConfig{
+		WorkDir: cfg.WorkspaceRoot,
+		Timeout: timeout,
 	})
 	if err != nil {
 		health.Detail = err.Error()
-		logger.Warn("sandbox runner configuration invalid, execute_code disabled",
-			"runtime_kind", sandbox.RuntimeKindUnavailable,
-			"runtime_dir", cfg.SandboxRuntimeDir,
+		logger.Warn("sandbox process runner configuration invalid, execute_code disabled",
+			"runtime_kind", sandbox.RuntimeKindProcess,
+			"workdir", cfg.WorkspaceRoot,
 			"detail", health.Detail)
 		return nil, health
 	}
-
 	availability := runner.CheckAvailability()
-	health.Runtime = cfg.SandboxRuntimeDir
+	health.Runtime = cfg.WorkspaceRoot
 	health.Available = availability.Available
 	health.RuntimeKind = string(availability.Kind)
-	if health.RuntimeKind == "" {
-		health.RuntimeKind = string(sandbox.RuntimeKindPyodide)
-	}
 	health.Detail = availability.Detail
 	if !availability.Available {
-		if !strings.Contains(availability.Detail, "Pyodide runner") {
-			health.RuntimeKind = string(sandbox.RuntimeKindUnavailable)
-		}
-		logger.Warn("sandbox runtime unavailable, execute_code disabled",
+		logger.Warn("sandbox process runtime unavailable, execute_code disabled",
 			"runtime_kind", health.RuntimeKind,
-			"runtime_dir", cfg.SandboxRuntimeDir,
+			"workdir", cfg.WorkspaceRoot,
 			"detail", availability.Detail)
 		return nil, health
 	}
-
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: runner,
 		Timeout: timeout,
@@ -1010,15 +908,15 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	if err != nil {
 		health.Available = false
 		health.Detail = err.Error()
-		logger.Warn("sandbox manager unavailable, execute_code disabled",
+		logger.Warn("sandbox process manager unavailable, execute_code disabled",
 			"runtime_kind", health.RuntimeKind,
-			"runtime_dir", cfg.SandboxRuntimeDir,
+			"workdir", cfg.WorkspaceRoot,
 			"detail", health.Detail)
 		return nil, health
 	}
-	logger.Info("sandbox runtime available, execute_code enabled",
+	logger.Info("sandbox process runtime available, execute_code enabled",
 		"runtime_kind", health.RuntimeKind,
-		"runtime_dir", cfg.SandboxRuntimeDir,
+		"workdir", cfg.WorkspaceRoot,
 		"detail", health.Detail)
 	return manager, health
 }

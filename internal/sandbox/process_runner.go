@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	defaultProcessPython        = "python3"
-	defaultProcessRunnerTimeout = 15 * time.Second
+	defaultProcessPython            = "python3"
+	defaultProcessRunnerTimeout     = 15 * time.Second
+	defaultProcessRunnerOutputBytes = 1 << 20
+	defaultProcessResultOutputBytes = 64 * 1024
+	defaultProcessOutputDir         = "/tmp/aura_out"
 )
 
 var processOutputMu sync.Mutex
@@ -63,11 +66,11 @@ func NewProcessRunner(cfg ProcessRunnerConfig) (*ProcessRunner, error) {
 	}
 	maxProcessOutput := cfg.MaxProcessOutputBytes
 	if maxProcessOutput == 0 {
-		maxProcessOutput = defaultPyodideRunnerOutputBytes
+		maxProcessOutput = defaultProcessRunnerOutputBytes
 	}
 	maxResultOutput := cfg.MaxResultOutputBytes
 	if maxResultOutput == 0 {
-		maxResultOutput = defaultPyodideResultOutputBytes
+		maxResultOutput = defaultProcessResultOutputBytes
 	}
 	if timeout < 0 || maxProcessOutput < 0 || maxResultOutput < 0 {
 		return nil, errors.New("sandbox: process runner limits must not be negative")
@@ -145,7 +148,7 @@ func (r *ProcessRunner) ExtractXLSX(ctx context.Context, body []byte) (source.Ex
 	if err != nil {
 		return source.ExtractResult{}, err
 	}
-	return extractPyodideMarkdownResult(res, "process")
+	return extractMarkdownResult(res, "process")
 }
 
 func (r *ProcessRunner) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {
@@ -164,7 +167,7 @@ func (r *ProcessRunner) ExtractDOCX(ctx context.Context, body []byte) (source.Ex
 	if err != nil {
 		return source.ExtractResult{}, err
 	}
-	return extractPyodideMarkdownResult(res, "process")
+	return extractMarkdownResult(res, "process")
 }
 
 func (r *ProcessRunner) execute(ctx context.Context, code, workDir string) (*Result, error) {
@@ -232,8 +235,8 @@ func (r *ProcessRunner) execute(ctx context.Context, code, workDir string) (*Res
 	}
 	return &Result{
 		OK:        err == nil,
-		Stdout:    clipPyodideOutput(stdout.String(), r.maxResultOutputBytes),
-		Stderr:    clipPyodideOutput(stderr.String(), r.maxResultOutputBytes),
+		Stdout:    clipOutput(stdout.String(), r.maxResultOutputBytes),
+		Stderr:    clipOutput(stderr.String(), r.maxResultOutputBytes),
 		ExitCode:  exitCode,
 		ElapsedMs: int(elapsed.Milliseconds()),
 		Artifacts: artifacts,
@@ -300,8 +303,8 @@ func (r *ProcessRunner) executeCommand(ctx context.Context, command, workDir str
 	}
 	return &Result{
 		OK:        err == nil,
-		Stdout:    clipPyodideOutput(stdout.String(), r.maxResultOutputBytes),
-		Stderr:    clipPyodideOutput(stderr.String(), r.maxResultOutputBytes),
+		Stdout:    clipOutput(stdout.String(), r.maxResultOutputBytes),
+		Stderr:    clipOutput(stderr.String(), r.maxResultOutputBytes),
 		ExitCode:  exitCode,
 		ElapsedMs: int(elapsed.Milliseconds()),
 		Artifacts: artifacts,
@@ -323,9 +326,9 @@ func (r *ProcessRunner) env() []string {
 }
 
 func processOutputDir() string {
-	if filepath.IsAbs(defaultPyodideOutputDir) {
-		if filepath.VolumeName(defaultPyodideOutputDir) != "" || os.PathSeparator == '/' {
-			return defaultPyodideOutputDir
+	if filepath.IsAbs(defaultProcessOutputDir) {
+		if filepath.VolumeName(defaultProcessOutputDir) != "" || os.PathSeparator == '/' {
+			return defaultProcessOutputDir
 		}
 	}
 	return filepath.Join(os.TempDir(), "aura_out")
@@ -344,16 +347,16 @@ func collectProcessArtifacts(outputDir string) ([]Artifact, error) {
 		if entry.IsDir() {
 			continue
 		}
-		if len(artifacts) >= maxPyodideArtifacts {
-			return nil, fmt.Errorf("sandbox: process emitted more than %d artifacts", maxPyodideArtifacts)
+		if len(artifacts) >= maxArtifacts {
+			return nil, fmt.Errorf("sandbox: process emitted more than %d artifacts", maxArtifacts)
 		}
 		name := entry.Name()
 		info, err := entry.Info()
 		if err != nil {
 			return nil, fmt.Errorf("sandbox: stat artifact %s: %w", name, err)
 		}
-		if info.Size() > maxPyodideArtifactBytes {
-			return nil, fmt.Errorf("sandbox: artifact %s exceeds %d bytes", name, maxPyodideArtifactBytes)
+		if info.Size() > maxArtifactBytes {
+			return nil, fmt.Errorf("sandbox: artifact %s exceeds %d bytes", name, maxArtifactBytes)
 		}
 		body, err := os.ReadFile(filepath.Join(outputDir, name))
 		if err != nil {

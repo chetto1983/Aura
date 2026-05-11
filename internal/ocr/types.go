@@ -17,12 +17,11 @@ package ocr
 // OCRRequest is the wire body for POST /ocr.
 //
 // Field set is verified against https://docs.mistral.ai/capabilities/document_ai/basic_ocr/
-// (TableFormat, ExtractHeader, ExtractFooter, IncludeImageBase64 are all wire-level
-// parameters; they are not Aura-only rendering hints).
+// (TableFormat, ExtractHeader, and ExtractFooter are wire-level parameters;
+// they are not Aura-only rendering hints).
 type OCRRequest struct {
-	Model              string   `json:"model"`
-	Document           Document `json:"document"`
-	IncludeImageBase64 bool     `json:"include_image_base64,omitempty"`
+	Model    string   `json:"model"`
+	Document Document `json:"document"`
 	// TableFormat controls how Mistral renders tables. "" = server default,
 	// "markdown" or "html" are accepted.
 	TableFormat string `json:"table_format,omitempty"`

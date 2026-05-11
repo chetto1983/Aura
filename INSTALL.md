@@ -115,7 +115,7 @@ docker compose -f compose.yaml -f compose.image.yaml restart aura
 ```
 
 SearXNG is available on the host at `http://127.0.0.1:8088`.
-`execute_code` runs in the Aura container with `SANDBOX_RUNTIME_MODE=process`.
+`execute_code` runs through Python in the Aura container when `SANDBOX_ENABLED=true`.
 Garage S3 is available on the host at `http://127.0.0.1:3900`.
 
 Run a manual backup export from a development checkout:

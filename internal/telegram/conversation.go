@@ -299,9 +299,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	// *tools.Registry; tests pass call-counting stubs.
 	toolsProvider := makeToolsProvider(
 		alwaysOnCore,
-		b.tools.Search,               // searchFn — TWO-arg + variadic per registry_search.go:19
-		b.tools.DefinitionsFor,       // defsForFn
-		b.tools.Definitions,          // defsAllFn (FULL toolset fallback)
+		b.tools.Search,                // searchFn — TWO-arg + variadic per registry_search.go:19
+		b.tools.DefinitionsFor,        // defsForFn
+		b.tools.Definitions,           // defsAllFn (FULL toolset fallback)
 		convCtx.LatestUserMessageText, // latestUserMsgFn (Task 1 output)
 		b.logger,
 	)
@@ -361,7 +361,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,
 				// which both burns latency and degrades fidelity.
-				// MaxToolIterations already caps growth within a single user turn.
+				// AgentLoopMaxSteps already caps growth within a single user turn.
 				if b.budget != nil && b.budget.IsHardBudgetExceeded() {
 					b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
 					return "Budget limit reached. LLM calls are temporarily halted.", true
@@ -503,11 +503,8 @@ func (b *Bot) modelToolNames() []string {
 }
 
 func (b *Bot) maxToolLoopIterations() int {
-	maxIterations := 10
-	if b != nil && b.cfg != nil && b.cfg.MaxToolIterations > 0 {
-		maxIterations = b.cfg.MaxToolIterations
-	}
-	if b != nil && b.cfg != nil && b.cfg.AgentLoopMaxSteps > 0 && b.cfg.AgentLoopMaxSteps < maxIterations {
+	maxIterations := config.DefaultAgentLoopMaxSteps
+	if b != nil && b.cfg != nil && b.cfg.AgentLoopMaxSteps > 0 {
 		maxIterations = b.cfg.AgentLoopMaxSteps
 	}
 	if maxIterations < 1 {

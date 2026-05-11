@@ -115,7 +115,7 @@ Invoke-Capture "git-status.txt" { git status --short } | Out-Null
 Invoke-Capture "docker-compose-ps.txt" { docker compose ps } | Out-Null
 Invoke-Capture "docker-compose-config.txt" { docker compose config } | Out-Null
 Invoke-Capture "docker-logs-aura.txt" { docker compose logs --tail $LogTail aura } | Out-Null
-Invoke-Capture "docker-logs-runtime.txt" { docker compose logs --tail $LogTail pyodide qdrant searxng garage } | Out-Null
+Invoke-Capture "docker-logs-runtime.txt" { docker compose logs --tail $LogTail qdrant searxng garage } | Out-Null
 Invoke-Capture "container-health.txt" {
     docker compose exec -T aura sh -lc 'date; echo "--- status"; wget -qO- http://127.0.0.1:8080/status || true; echo; echo "--- workspace"; find /workspace -maxdepth 2 -type f 2>/dev/null | head -120; echo "--- disk"; du -sh /workspace /data 2>/dev/null || true'
 } | Out-Null

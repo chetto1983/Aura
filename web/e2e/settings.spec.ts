@@ -88,7 +88,7 @@ test.describe('settings page (14d)', () => {
 
   test('boolean fields render as a switch and toggle marks dirty', async ({ authedPage: page }) => {
     await page.goto('/settings');
-    // OCR_ENABLED is a bool in the catalog - should render with role="switch".
+    // WEB_SEARCH_PROVIDER is an enum in the compact catalog - should render as a combobox.
     const sw = page.getByRole('switch', { name: /ocr enabled/i });
     await expect(sw).toBeVisible({ timeout: 5_000 });
 

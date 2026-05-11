@@ -15,78 +15,71 @@ import (
 // they only become authoritative after restart when the process can load them
 // before opening long-lived resources.
 const (
-	KeyTelegramToken              = "TELEGRAM_TOKEN"
-	KeyAllowlist                  = "TELEGRAM_ALLOWLIST"
-	KeyHTTPPort                   = "HTTP_PORT"
-	KeyTimezone                   = "AURA_TIMEZONE"
-	KeyHeadless                   = "AURA_HEADLESS"
-	KeyEnvPath                    = "AURA_ENV_PATH"
-	KeyDBPath                     = "DB_PATH"
-	KeyLogLevel                   = "LOG_LEVEL"
-	KeyLogDir                     = "LOG_DIR"
-	KeyWikiPath                   = "WIKI_PATH"
-	KeySkillsPath                 = "SKILLS_PATH"
-	KeySkillsInstallProjectDir    = "SKILLS_INSTALL_PROJECT_DIR"
-	KeyMCPServersPath             = "MCP_SERVERS_PATH"
-	KeyPromptOverlayPath          = "PROMPT_OVERLAY_PATH"
-	KeyDashboardTokenTTLHours     = "DASHBOARD_TOKEN_TTL_HOURS"
-	KeyMaxContextTokens           = "MAX_CONTEXT_TOKENS"
-	KeyMaxHistoryMessages         = "MAX_HISTORY_MESSAGES"
-	KeySoftBudget                 = "SOFT_BUDGET"
-	KeyHardBudget                 = "HARD_BUDGET"
-	KeyCostInputPerMTokens        = "COST_INPUT_PER_M_TOKENS"
-	KeyCostOutputPerMTokens       = "COST_OUTPUT_PER_M_TOKENS"
-	KeyLLMAPIKey                  = "LLM_API_KEY"
-	KeyLLMBaseURL                 = "LLM_BASE_URL"
-	KeyLLMModel                   = "LLM_MODEL"
-	KeyLLMMaxRetries              = "LLM_MAX_RETRIES"
-	KeyWebSearchProvider          = "WEB_SEARCH_PROVIDER"
-	KeySearXNGBaseURL             = "SEARXNG_BASE_URL"
-	KeyGarageS3Endpoint           = "GARAGE_S3_ENDPOINT"
-	KeyGarageS3Region             = "GARAGE_S3_REGION"
-	KeyGarageS3Bucket             = "GARAGE_S3_BUCKET"
-	KeyGarageS3AccessKey          = "GARAGE_S3_ACCESS_KEY"
-	KeyGarageS3SecretKey          = "GARAGE_S3_SECRET_KEY"
-	KeyQdrantURL                  = "QDRANT_URL"
-	KeyQdrantCollection           = "QDRANT_COLLECTION"
-	KeyQdrantAPIKey               = "QDRANT_API_KEY"
-	KeySpeculativeSearchTimeoutMS = "SPECULATIVE_SEARCH_TIMEOUT_MS"
-	KeyMemorySearchTimeoutMS      = "MEMORY_SEARCH_TIMEOUT_MS"
-	KeyMaxToolIterations          = "MAX_TOOL_ITERATIONS"
-	KeySkillsCatalogURL           = "SKILLS_CATALOG_URL"
-	KeySkillsAdmin                = "SKILLS_ADMIN"
-	KeyAuraBotEnabled             = "AURABOT_ENABLED"
-	KeyAuraBotMaxActive           = "AURABOT_MAX_ACTIVE"
-	KeyAuraBotMaxDepth            = "AURABOT_MAX_DEPTH"
-	KeyAuraBotTimeoutSec          = "AURABOT_TIMEOUT_SEC"
-	KeyAuraBotMaxIterations       = "AURABOT_MAX_ITERATIONS"
-	KeyEmbeddingAPIKey            = "EMBEDDING_API_KEY"
-	KeyEmbeddingBaseURL           = "EMBEDDING_BASE_URL"
-	KeyEmbeddingModel             = "EMBEDDING_MODEL"
-	KeyPromptVersion              = "AURA_PROMPT_VERSION"
-	KeySkillRoutingMode           = "AURA_SKILL_ROUTING_MODE"
-	KeyAgentLoopMaxSteps          = "AURA_AGENT_LOOP_MAX_STEPS"
-	KeyTerminalToolPolicy         = "AURA_TERMINAL_TOOL_POLICY"
-	KeyDelegationMode             = "AURA_DELEGATION_MODE"
-	KeyTraceRetentionDays         = "AURA_TRACE_RETENTION_DAYS"
-	KeyWorkspaceTools             = "AURA_WORKSPACE_TOOLS"
-	KeyWorkspaceRoot              = "AURA_WORKSPACE_ROOT"
-	KeyMistralAPIKey              = "MISTRAL_API_KEY"
-	KeyMistralOCRModel            = "MISTRAL_OCR_MODEL"
-	KeyMistralOCRBaseURL          = "MISTRAL_OCR_BASE_URL"
-	KeyMistralOCRTableFormat      = "MISTRAL_OCR_TABLE_FORMAT"
-	KeyMistralOCRIncludeImages    = "MISTRAL_OCR_INCLUDE_IMAGES"
-	KeyMistralOCRExtractHeader    = "MISTRAL_OCR_EXTRACT_HEADER"
-	KeyMistralOCRExtractFooter    = "MISTRAL_OCR_EXTRACT_FOOTER"
-	KeyOCREnabled                 = "OCR_ENABLED"
-	KeyOCRMaxPages                = "OCR_MAX_PAGES"
-	KeyOCRMaxFileMB               = "OCR_MAX_FILE_MB"
-	KeyConvArchiveEnabled         = "CONV_ARCHIVE_ENABLED"
-	KeySandboxEnabled             = "SANDBOX_ENABLED"
-	KeySandboxRuntimeMode         = "SANDBOX_RUNTIME_MODE"
-	KeySandboxRuntimeURL          = "SANDBOX_RUNTIME_URL"
-	KeySandboxRuntimeDir          = "SANDBOX_RUNTIME_DIR"
-	KeySandboxTimeoutSec          = "SANDBOX_TIMEOUT_SEC"
+	KeyTelegramToken           = "TELEGRAM_TOKEN"
+	KeyAllowlist               = "TELEGRAM_ALLOWLIST"
+	KeyHTTPPort                = "HTTP_PORT"
+	KeyTimezone                = "AURA_TIMEZONE"
+	KeyHeadless                = "AURA_HEADLESS"
+	KeyEnvPath                 = "AURA_ENV_PATH"
+	KeyDBPath                  = "DB_PATH"
+	KeyLogLevel                = "LOG_LEVEL"
+	KeyLogDir                  = "LOG_DIR"
+	KeyWikiPath                = "WIKI_PATH"
+	KeySkillsPath              = "SKILLS_PATH"
+	KeySkillsInstallProjectDir = "SKILLS_INSTALL_PROJECT_DIR"
+	KeyMCPServersPath          = "MCP_SERVERS_PATH"
+	KeyPromptOverlayPath       = "PROMPT_OVERLAY_PATH"
+	KeyDashboardTokenTTLHours  = "DASHBOARD_TOKEN_TTL_HOURS"
+	KeyMaxContextTokens        = "MAX_CONTEXT_TOKENS"
+	KeyMaxHistoryMessages      = "MAX_HISTORY_MESSAGES"
+	KeySoftBudget              = "SOFT_BUDGET"
+	KeyHardBudget              = "HARD_BUDGET"
+	KeyCostInputPerMTokens     = "COST_INPUT_PER_M_TOKENS"
+	KeyCostOutputPerMTokens    = "COST_OUTPUT_PER_M_TOKENS"
+	KeyLLMAPIKey               = "LLM_API_KEY"
+	KeyLLMBaseURL              = "LLM_BASE_URL"
+	KeyLLMModel                = "LLM_MODEL"
+	KeyLLMMaxRetries           = "LLM_MAX_RETRIES"
+	KeyWebSearchProvider       = "WEB_SEARCH_PROVIDER"
+	KeySearXNGBaseURL          = "SEARXNG_BASE_URL"
+	KeyGarageS3Endpoint        = "GARAGE_S3_ENDPOINT"
+	KeyGarageS3Region          = "GARAGE_S3_REGION"
+	KeyGarageS3Bucket          = "GARAGE_S3_BUCKET"
+	KeyGarageS3AccessKey       = "GARAGE_S3_ACCESS_KEY"
+	KeyGarageS3SecretKey       = "GARAGE_S3_SECRET_KEY"
+	KeyQdrantURL               = "QDRANT_URL"
+	KeyQdrantCollection        = "QDRANT_COLLECTION"
+	KeyQdrantAPIKey            = "QDRANT_API_KEY"
+	KeyMemorySearchTimeoutMS   = "MEMORY_SEARCH_TIMEOUT_MS"
+	KeySkillsCatalogURL        = "SKILLS_CATALOG_URL"
+	KeySkillsAdmin             = "SKILLS_ADMIN"
+	KeyAuraBotEnabled          = "AURABOT_ENABLED"
+	KeyAuraBotMaxActive        = "AURABOT_MAX_ACTIVE"
+	KeyAuraBotMaxDepth         = "AURABOT_MAX_DEPTH"
+	KeyAuraBotTimeoutSec       = "AURABOT_TIMEOUT_SEC"
+	KeyAuraBotMaxIterations    = "AURABOT_MAX_ITERATIONS"
+	KeyEmbeddingAPIKey         = "EMBEDDING_API_KEY"
+	KeyEmbeddingBaseURL        = "EMBEDDING_BASE_URL"
+	KeyEmbeddingModel          = "EMBEDDING_MODEL"
+	KeyPromptVersion           = "AURA_PROMPT_VERSION"
+	KeySkillRoutingMode        = "AURA_SKILL_ROUTING_MODE"
+	KeyAgentLoopMaxSteps       = "AURA_AGENT_LOOP_MAX_STEPS"
+	KeyTerminalToolPolicy      = "AURA_TERMINAL_TOOL_POLICY"
+	KeyDelegationMode          = "AURA_DELEGATION_MODE"
+	KeyTraceRetentionDays      = "AURA_TRACE_RETENTION_DAYS"
+	KeyWorkspaceTools          = "AURA_WORKSPACE_TOOLS"
+	KeyWorkspaceRoot           = "AURA_WORKSPACE_ROOT"
+	KeyMistralAPIKey           = "MISTRAL_API_KEY"
+	KeyMistralOCRModel         = "MISTRAL_OCR_MODEL"
+	KeyMistralOCRBaseURL       = "MISTRAL_OCR_BASE_URL"
+	KeyMistralOCRTableFormat   = "MISTRAL_OCR_TABLE_FORMAT"
+	KeyMistralOCRExtractHeader = "MISTRAL_OCR_EXTRACT_HEADER"
+	KeyMistralOCRExtractFooter = "MISTRAL_OCR_EXTRACT_FOOTER"
+	KeyOCRMaxPages             = "OCR_MAX_PAGES"
+	KeyOCRMaxFileMB            = "OCR_MAX_FILE_MB"
+	KeyConvArchiveEnabled      = "CONV_ARCHIVE_ENABLED"
+	KeySandboxEnabled          = "SANDBOX_ENABLED"
+	KeySandboxTimeoutSec       = "SANDBOX_TIMEOUT_SEC"
 )
 
 // OverridableKeys returns every key the applier touches. Callers (e.g. the
@@ -105,8 +98,7 @@ func OverridableKeys() []string {
 		KeyWebSearchProvider, KeySearXNGBaseURL,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
-		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeySpeculativeSearchTimeoutMS, KeyMemorySearchTimeoutMS,
-		KeyMaxToolIterations,
+		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeyMemorySearchTimeoutMS,
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
@@ -115,11 +107,11 @@ func OverridableKeys() []string {
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyWorkspaceTools, KeyWorkspaceRoot,
 		KeyMistralAPIKey, KeyMistralOCRModel, KeyMistralOCRBaseURL,
-		KeyMistralOCRTableFormat, KeyMistralOCRIncludeImages,
+		KeyMistralOCRTableFormat,
 		KeyMistralOCRExtractHeader, KeyMistralOCRExtractFooter,
-		KeyOCREnabled, KeyOCRMaxPages, KeyOCRMaxFileMB,
+		KeyOCRMaxPages, KeyOCRMaxFileMB,
 		KeyConvArchiveEnabled,
-		KeySandboxEnabled, KeySandboxRuntimeMode, KeySandboxRuntimeURL, KeySandboxRuntimeDir, KeySandboxTimeoutSec,
+		KeySandboxEnabled, KeySandboxTimeoutSec,
 	}
 }
 
@@ -187,9 +179,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.QdrantURL = settingString(ctx, s, KeyQdrantURL, cfg.QdrantURL)
 	cfg.QdrantCollection = settingString(ctx, s, KeyQdrantCollection, cfg.QdrantCollection)
 	cfg.QdrantAPIKey = settingString(ctx, s, KeyQdrantAPIKey, cfg.QdrantAPIKey)
-	cfg.SpeculativeSearchTimeoutMS = settingInt(ctx, s, KeySpeculativeSearchTimeoutMS, cfg.SpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = settingInt(ctx, s, KeyMemorySearchTimeoutMS, cfg.MemorySearchTimeoutMS)
-	cfg.MaxToolIterations = settingInt(ctx, s, KeyMaxToolIterations, cfg.MaxToolIterations)
 
 	cfg.SkillsCatalogURL = settingString(ctx, s, KeySkillsCatalogURL, cfg.SkillsCatalogURL)
 	cfg.SkillsAdmin = settingBool(ctx, s, KeySkillsAdmin, cfg.SkillsAdmin)
@@ -215,19 +205,14 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.MistralOCRModel = settingString(ctx, s, KeyMistralOCRModel, cfg.MistralOCRModel)
 	cfg.MistralOCRBaseURL = settingString(ctx, s, KeyMistralOCRBaseURL, cfg.MistralOCRBaseURL)
 	cfg.MistralOCRTableFormat = settingString(ctx, s, KeyMistralOCRTableFormat, cfg.MistralOCRTableFormat)
-	cfg.MistralOCRIncludeImages = settingBool(ctx, s, KeyMistralOCRIncludeImages, cfg.MistralOCRIncludeImages)
 	cfg.MistralOCRExtractHeader = settingBool(ctx, s, KeyMistralOCRExtractHeader, cfg.MistralOCRExtractHeader)
 	cfg.MistralOCRExtractFooter = settingBool(ctx, s, KeyMistralOCRExtractFooter, cfg.MistralOCRExtractFooter)
-	cfg.OCREnabled = settingBool(ctx, s, KeyOCREnabled, cfg.OCREnabled)
 	cfg.OCRMaxPages = settingInt(ctx, s, KeyOCRMaxPages, cfg.OCRMaxPages)
 	cfg.OCRMaxFileMB = settingInt(ctx, s, KeyOCRMaxFileMB, cfg.OCRMaxFileMB)
 
 	cfg.ConvArchiveEnabled = settingBool(ctx, s, KeyConvArchiveEnabled, cfg.ConvArchiveEnabled)
 
 	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
-	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeySandboxRuntimeMode, cfg.SandboxRuntimeMode)))
-	cfg.SandboxRuntimeURL = settingString(ctx, s, KeySandboxRuntimeURL, cfg.SandboxRuntimeURL)
-	cfg.SandboxRuntimeDir = settingString(ctx, s, KeySandboxRuntimeDir, cfg.SandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
 }
 

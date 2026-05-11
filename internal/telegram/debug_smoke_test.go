@@ -403,7 +403,7 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 }
 
 func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *testing.T) {
-	b := &Bot{cfg: &config.Config{MaxToolIterations: 20, AgentLoopMaxSteps: 8}}
+	b := &Bot{cfg: &config.Config{AgentLoopMaxSteps: 8}}
 
 	if got := b.maxToolLoopIterations(); got != 8 {
 		t.Fatalf("maxToolLoopIterations = %d, want runtime cap 8", got)
@@ -502,7 +502,6 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 		t.Fatalf("tool result = %q, want plain Error: prefix for model recovery", got)
 	}
 }
-
 
 type countingTelegramTool struct {
 	name     string

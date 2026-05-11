@@ -33,7 +33,6 @@ services:
       AURA_RUNTIME_WORKSPACE_PATH: "/workspace"
       PROMPT_OVERLAY_PATH: "/workspace"
       SANDBOX_ENABLED: "true"
-      SANDBOX_RUNTIME_MODE: "process"
       WEB_SEARCH_PROVIDER: "searxng"
       SEARXNG_BASE_URL: "http://searxng:8080"
       GARAGE_S3_ENDPOINT: "http://garage:3900"

@@ -160,7 +160,7 @@ func main() {
 	fmt.Printf("wiki_path=%s\n", cfg.WikiPath)
 	fmt.Printf("workspace_root=%s\n", cfg.WorkspaceRoot)
 	fmt.Printf("model=%s base_url=%s\n", cfg.LLMModel, cfg.LLMBaseURL)
-	fmt.Printf("runtime_dir=%s sandbox_enabled=%v\n", cfg.SandboxRuntimeDir, cfg.SandboxEnabled)
+	fmt.Printf("workspace_root=%s sandbox_enabled=%v\n", cfg.WorkspaceRoot, cfg.SandboxEnabled)
 	fmt.Printf("prompt=%q\n\n", redactForReport(*prompt))
 
 	result, err := bot.RunDebugTextSmoke(ctx, uid, *username, *prompt)

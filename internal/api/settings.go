@@ -74,95 +74,22 @@ type SettingsTestRequest struct {
 	ProbePath string `json:"probe_path,omitempty"`
 }
 
-// settingsCatalog is the master list of editable keys with their UI
-// metadata. Only fields the operator should reasonably change live are
-// here; LLM_MAX_RETRIES and other fine-tuning knobs stay overridable
-// programmatically but aren't surfaced in the dashboard form.
+// settingsCatalog is the compact dashboard-facing catalog. The settings
+// applier still supports more keys, but the UI intentionally surfaces only
+// the operator knobs that matter during normal Aura operation.
 var settingsCatalog = []SettingItem{
-	{Key: settings.KeyTelegramToken, Group: "runtime", Kind: "text", IsSecret: true, Label: "Telegram bot token", Hint: "Saved as an override; restart Aura after changing the bot token"},
-	{Key: settings.KeyHTTPPort, Group: "runtime", Kind: "text", Label: "Dashboard bind address", Hint: "Restart Aura after changing the bind address"},
-	{Key: settings.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome; restart Aura after changing"},
-	{Key: settings.KeyHeadless, Group: "runtime", Kind: "bool", Label: "Headless/container mode", Hint: "Takes effect on next process start"},
-	{Key: settings.KeyEnvPath, Group: "runtime", Kind: "text", Label: "Env file path", Hint: "Early boot setting; use carefully and restart after changing"},
-	{Key: settings.KeyDBPath, Group: "runtime", Kind: "text", Label: "SQLite database path", Hint: "Early boot setting; use carefully and restart after changing"},
-	{Key: settings.KeyLogLevel, Group: "runtime", Kind: "enum", Options: []string{"debug", "info", "warn", "error"}, Label: "Log level"},
-	{Key: settings.KeyLogDir, Group: "runtime", Kind: "text", Label: "Log directory"},
-	{Key: settings.KeyWikiPath, Group: "runtime", Kind: "text", Label: "Wiki path", Hint: "Restart Aura after moving the wiki root"},
-	{Key: settings.KeySkillsPath, Group: "runtime", Kind: "text", Label: "Skills path", Hint: "Restart Aura after moving skill roots"},
-	{Key: settings.KeySkillsInstallProjectDir, Group: "runtime", Kind: "text", Label: "Skills install project directory", Hint: "Container default is /workspace/skills so catalog installs persist in the narrow runtime workspace"},
-	{Key: settings.KeyMCPServersPath, Group: "runtime", Kind: "text", Label: "MCP servers config path", Hint: "Restart Aura after changing MCP config path"},
-	{Key: settings.KeyPromptOverlayPath, Group: "runtime", Kind: "text", Label: "Prompt overlay path"},
-	{Key: settings.KeyDashboardTokenTTLHours, Group: "runtime", Kind: "int", Label: "Dashboard token TTL (hours)"},
-
+	{Key: settings.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome"},
 	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
 	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
 	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
-	{Key: settings.KeyLLMMaxRetries, Group: "provider", Kind: "int", Label: "LLM max retries"},
 	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng"}, Label: "Web search provider", Hint: "SearXNG is the supported web search provider"},
 	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
-
-	{Key: settings.KeyGarageS3Endpoint, Group: "storage", Kind: "url", Label: "Garage S3 endpoint", Hint: "Compose uses http://garage:3900"},
-	{Key: settings.KeyGarageS3Region, Group: "storage", Kind: "text", Label: "Garage S3 region"},
-	{Key: settings.KeyGarageS3Bucket, Group: "storage", Kind: "text", Label: "Garage S3 bucket"},
-	{Key: settings.KeyGarageS3AccessKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 access key"},
-	{Key: settings.KeyGarageS3SecretKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Garage S3 secret key"},
 	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
 	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
 	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
-	{Key: settings.KeySpeculativeSearchTimeoutMS, Value: "1500", Group: "storage", Kind: "int", Label: "Speculative search timeout (ms)", Hint: "Caps pre-LLM memory injection so a slow sidecar cannot stall Telegram turns"},
-	{Key: settings.KeyMemorySearchTimeoutMS, Value: "5000", Group: "storage", Kind: "int", Label: "Memory search tool timeout (ms)", Hint: "Caps search_memory calls inside agent tool loops"},
-
-	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
 	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
-
 	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
-	{Key: settings.KeyMistralOCRModel, Group: "ocr", Kind: "text", Label: "OCR model"},
-	{Key: settings.KeyMistralOCRBaseURL, Group: "ocr", Kind: "url", Label: "OCR base URL"},
-	{Key: settings.KeyMistralOCRTableFormat, Group: "ocr", Kind: "enum", Options: []string{"markdown", "html"}, Label: "OCR table format"},
-	{Key: settings.KeyMistralOCRIncludeImages, Group: "ocr", Kind: "bool", Label: "OCR include images"},
-	{Key: settings.KeyMistralOCRExtractHeader, Group: "ocr", Kind: "bool", Label: "OCR extract headers"},
-	{Key: settings.KeyMistralOCRExtractFooter, Group: "ocr", Kind: "bool", Label: "OCR extract footers"},
-	{Key: settings.KeyOCREnabled, Group: "ocr", Kind: "bool", Label: "OCR enabled"},
-	{Key: settings.KeyOCRMaxPages, Group: "ocr", Kind: "int", Label: "OCR max pages", Hint: "Aura refuses PDFs longer than this"},
-	{Key: settings.KeyOCRMaxFileMB, Group: "ocr", Kind: "int", Label: "OCR max file size (MB)"},
-
-	{Key: settings.KeySoftBudget, Group: "budget", Kind: "float", Label: "Soft budget (USD)", Hint: "Telegram warning fires once this is crossed"},
-	{Key: settings.KeyHardBudget, Group: "budget", Kind: "float", Label: "Hard budget (USD)", Hint: "Bot refuses LLM calls past this"},
-	{Key: settings.KeyCostInputPerMTokens, Group: "budget", Kind: "float", Label: "Input price (USD / 1M tokens)", Hint: "Set from the selected provider/model pricing"},
-	{Key: settings.KeyCostOutputPerMTokens, Group: "budget", Kind: "float", Label: "Output price (USD / 1M tokens)", Hint: "Set from the selected provider/model pricing"},
-	{Key: settings.KeyMaxContextTokens, Group: "budget", Kind: "int", Label: "Max context tokens", Hint: "Summarization fires at 80% of this"},
-	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Label: "Max in-flight messages", Hint: "Hard cap; oldest evicted first"},
-	{Key: settings.KeyMaxToolIterations, Group: "budget", Kind: "int", Label: "Max tool iterations / turn"},
-
-	{Key: settings.KeyAuraBotEnabled, Value: "false", Group: "aurabot", Kind: "bool", Label: "AuraBot swarm enabled", Hint: "Enables bounded background agents and swarm tools. Restart Aura after changing."},
-	{Key: settings.KeyAuraBotMaxActive, Value: "4", Group: "aurabot", Kind: "int", Label: "Max active workers", Hint: "Parallel workers per swarm run. Applies to new runs when AuraBot is already enabled."},
-	{Key: settings.KeyAuraBotMaxDepth, Value: "1", Group: "aurabot", Kind: "int", Label: "Max delegation depth", Hint: "Current safe default is 1: manager plus direct workers. Applies to new runs."},
-	{Key: settings.KeyAuraBotTimeoutSec, Value: "300", Group: "aurabot", Kind: "int", Label: "Worker timeout (seconds)", Hint: "Wall-clock budget for valuable research. Applies to new workers when AuraBot is already enabled."},
-	{Key: settings.KeyAuraBotMaxIterations, Value: "5", Group: "aurabot", Kind: "int", Label: "Max model/tool iterations", Hint: "Caps each worker loop so longer timeouts do not become endless tool loops. Applies to new workers."},
-
-	{Key: settings.KeySandboxEnabled, Group: "sandbox", Kind: "bool", Label: "Sandbox enabled", Hint: "Restart Aura after enabling or disabling the code execution tool"},
-	{Key: settings.KeySandboxRuntimeMode, Group: "sandbox", Kind: "enum", Options: []string{"process", "auto", "container", "local"}, Label: "Sandbox runtime mode", Hint: "Process runs Python directly in the Aura container; Pyodide modes are legacy"},
-	{Key: settings.KeySandboxRuntimeURL, Group: "sandbox", Kind: "url", Label: "Sandbox runtime URL", Hint: "Used only by legacy container-sidecar mode"},
-	{Key: settings.KeySandboxRuntimeDir, Group: "sandbox", Kind: "text", Label: "Sandbox runtime directory", Hint: "Used only by legacy local Pyodide mode"},
-	{Key: settings.KeySandboxTimeoutSec, Group: "sandbox", Kind: "int", Label: "Sandbox timeout (seconds)"},
-
-	{Key: settings.KeyConvArchiveEnabled, Group: "other", Kind: "bool", Label: "Conversation archive enabled"},
-	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version", Hint: "Default is aura-agent-v1; restart Aura after changing"},
-	{Key: settings.KeySkillRoutingMode, Value: config.DefaultSkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode", Hint: "manifest uses deterministic skill metadata; manifest_llm_review is reserved for ambiguous routing experiments"},
-	{Key: settings.KeyAgentLoopMaxSteps, Value: strconv.Itoa(config.DefaultAgentLoopMaxSteps), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Agent loop max steps", Hint: "Hard cap for the main model/tool loop"},
-	{Key: settings.KeyTerminalToolPolicy, Value: config.DefaultTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy", Hint: "on lets completed file/code tools return immediately without an extra model call"},
-	{Key: settings.KeyDelegationMode, Value: config.DefaultDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode", Hint: "fast keeps delegation small; bounded allows wider swarm execution; async is for future durable tasks"},
-	{Key: settings.KeyTraceRetentionDays, Value: strconv.Itoa(config.DefaultTraceRetentionDays), Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(365), Label: "Trace retention days", Hint: "How long orchestration trace records are kept before cleanup"},
-	{Key: settings.KeyWorkspaceTools, Value: config.DefaultWorkspaceTools, Group: "agent", Kind: "enum", Options: []string{"enabled", "disabled"}, Label: "Workspace file tools", Hint: "Enabled by default. Aura exposes bounded list/read/search/write/patch tools inside the configured workspace root."},
-	{Key: settings.KeyWorkspaceRoot, Value: config.DefaultWorkspaceRoot, Group: "agent", Kind: "text", Label: "Workspace root", Hint: "Default is the process workspace; containers set /workspace. Restart Aura after changing."},
-	{Key: settings.KeySkillsAdmin, Group: "other", Kind: "bool", Label: "Skills admin (catalog install/delete)"},
-	{Key: settings.KeySkillsCatalogURL, Group: "other", Kind: "url", Label: "Skills catalog URL"},
-	{Key: settings.KeyAllowlist, Group: "other", Kind: "text", Label: "Telegram allowlist", Hint: "Comma-separated user IDs; leave blank for first-run bootstrap"},
-}
-
-func floatPtr(value float64) *float64 {
-	return &value
 }
 
 func handleSettingsList(deps Deps) http.HandlerFunc {
@@ -293,12 +220,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.QdrantCollection
 	case settings.KeyQdrantAPIKey:
 		return cfg.QdrantAPIKey
-	case settings.KeySpeculativeSearchTimeoutMS:
-		return strconv.Itoa(cfg.SpeculativeSearchTimeoutMS)
 	case settings.KeyMemorySearchTimeoutMS:
 		return strconv.Itoa(cfg.MemorySearchTimeoutMS)
-	case settings.KeyMaxToolIterations:
-		return strconv.Itoa(cfg.MaxToolIterations)
 	case settings.KeySkillsCatalogURL:
 		return cfg.SkillsCatalogURL
 	case settings.KeySkillsAdmin:
@@ -343,14 +266,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.MistralOCRBaseURL
 	case settings.KeyMistralOCRTableFormat:
 		return cfg.MistralOCRTableFormat
-	case settings.KeyMistralOCRIncludeImages:
-		return strconv.FormatBool(cfg.MistralOCRIncludeImages)
 	case settings.KeyMistralOCRExtractHeader:
 		return strconv.FormatBool(cfg.MistralOCRExtractHeader)
 	case settings.KeyMistralOCRExtractFooter:
 		return strconv.FormatBool(cfg.MistralOCRExtractFooter)
-	case settings.KeyOCREnabled:
-		return strconv.FormatBool(cfg.OCREnabled)
 	case settings.KeyOCRMaxPages:
 		return strconv.Itoa(cfg.OCRMaxPages)
 	case settings.KeyOCRMaxFileMB:
@@ -359,12 +278,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.FormatBool(cfg.ConvArchiveEnabled)
 	case settings.KeySandboxEnabled:
 		return strconv.FormatBool(cfg.SandboxEnabled)
-	case settings.KeySandboxRuntimeMode:
-		return cfg.SandboxRuntimeMode
-	case settings.KeySandboxRuntimeURL:
-		return cfg.SandboxRuntimeURL
-	case settings.KeySandboxRuntimeDir:
-		return cfg.SandboxRuntimeDir
 	case settings.KeySandboxTimeoutSec:
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
 	default:

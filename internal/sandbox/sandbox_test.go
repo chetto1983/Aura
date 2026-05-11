@@ -25,11 +25,11 @@ func TestNewManager_RequiresRuntime(t *testing.T) {
 
 func TestNewManager_RuntimeAdapter(t *testing.T) {
 	runtime := &fakeRuntime{
-		kind: sandbox.RuntimeKindPyodide,
+		kind: sandbox.RuntimeKindProcess,
 		availability: sandbox.Availability{
 			Available: true,
-			Kind:      sandbox.RuntimeKindPyodide,
-			Detail:    "fake pyodide ready",
+			Kind:      sandbox.RuntimeKindProcess,
+			Detail:    "fake process ready",
 		},
 		result: &sandbox.Result{
 			OK:        true,
@@ -43,11 +43,11 @@ func TestNewManager_RuntimeAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	if got := mgr.RuntimeKind(); got != sandbox.RuntimeKindPyodide {
-		t.Fatalf("RuntimeKind() = %q, want pyodide", got)
+	if got := mgr.RuntimeKind(); got != sandbox.RuntimeKindProcess {
+		t.Fatalf("RuntimeKind() = %q, want process", got)
 	}
 	availability := mgr.CheckAvailability()
-	if !availability.Available || availability.Kind != sandbox.RuntimeKindPyodide || availability.Detail != "fake pyodide ready" {
+	if !availability.Available || availability.Kind != sandbox.RuntimeKindProcess || availability.Detail != "fake process ready" {
 		t.Fatalf("availability = %+v", availability)
 	}
 	result, err := mgr.Execute(context.Background(), "print('hi')", true)
@@ -102,7 +102,7 @@ func newValidationManager(t *testing.T, validateErr error) *sandbox.Manager {
 	t.Helper()
 	mgr, err := sandbox.NewManager(sandbox.Config{
 		Runtime: &fakeRuntime{
-			kind:        sandbox.RuntimeKindPyodide,
+			kind:        sandbox.RuntimeKindProcess,
 			validateErr: validateErr,
 		},
 	})

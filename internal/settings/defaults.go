@@ -89,13 +89,9 @@ func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *config.Config)
 
 func validationRules(cfg *config.Config) []defaultRule {
 	webSearchDefault := "disabled"
-	sandboxRuntimeModeDefault := config.DefaultSandboxRuntimeMode
 	if cfg != nil && cfg.Headless {
 		if strings.TrimSpace(cfg.SearXNGBaseURL) != "" {
 			webSearchDefault = "searxng"
-		}
-		if strings.TrimSpace(cfg.SandboxRuntimeURL) != "" {
-			sandboxRuntimeModeDefault = "container"
 		}
 	}
 
@@ -141,12 +137,6 @@ func validationRules(cfg *config.Config) []defaultRule {
 			value:     webSearchDefault,
 			reason:    "repair invalid web search provider",
 			shouldSet: missingOrInvalidSet("disabled", "searxng"),
-		},
-		{
-			key:       KeySandboxRuntimeMode,
-			value:     sandboxRuntimeModeDefault,
-			reason:    "repair invalid sandbox runtime mode",
-			shouldSet: missingOrInvalidSet("auto", "container", "local"),
 		},
 	}
 
@@ -248,12 +238,6 @@ func migrationRules(cfg *config.Config) []defaultRule {
 	if strings.TrimSpace(cfg.GarageS3SecretKey) != "" {
 		rules = append(rules,
 			containerRule(KeyGarageS3SecretKey, cfg.GarageS3SecretKey, "replace public Garage demo secret key", valueIs("aura-local-secret-change-me")),
-		)
-	}
-	if strings.TrimSpace(cfg.SandboxRuntimeURL) != "" {
-		rules = append(rules,
-			containerRule(KeySandboxRuntimeMode, "container", "use always-on Pyodide sidecar in Docker", valueIs("auto", "local")),
-			containerRule(KeySandboxRuntimeURL, cfg.SandboxRuntimeURL, "use container Pyodide service URL", isLocalURLLike),
 		)
 	}
 	return rules

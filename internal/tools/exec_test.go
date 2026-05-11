@@ -85,7 +85,7 @@ func TestExecuteShellToolAcceptsCommandExecutorInterface(t *testing.T) {
 	}
 }
 
-func TestExecuteShellToolNotRegisteredForPyodideManager(t *testing.T) {
+func TestExecuteShellToolNotRegisteredForNonProcessManager(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{OK: true}},
 	})
@@ -390,7 +390,7 @@ type fakeExecRuntime struct {
 	err    error
 }
 
-func (r fakeExecRuntime) Kind() sandbox.RuntimeKind { return sandbox.RuntimeKindPyodide }
+func (r fakeExecRuntime) Kind() sandbox.RuntimeKind { return sandbox.RuntimeKindUnavailable }
 
 func (r fakeExecRuntime) Execute(context.Context, string, bool) (*sandbox.Result, error) {
 	if r.err != nil {
@@ -400,7 +400,7 @@ func (r fakeExecRuntime) Execute(context.Context, string, bool) (*sandbox.Result
 }
 
 func (fakeExecRuntime) CheckAvailability() sandbox.Availability {
-	return sandbox.Availability{Available: true, Kind: sandbox.RuntimeKindPyodide, Detail: "ok"}
+	return sandbox.Availability{Available: true, Kind: sandbox.RuntimeKindUnavailable, Detail: "ok"}
 }
 
 func (fakeExecRuntime) ValidateCode(string) error { return nil }

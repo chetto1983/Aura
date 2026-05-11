@@ -39,8 +39,8 @@ type AfterOCRHook func(ctx context.Context, src *source.Source) (note string, er
 type docHandlerConfig struct {
 	Bot       *tele.Bot
 	Sources   source.Repository
-	OCR       *ocr.Client // may be nil if OCR_ENABLED=false or MISTRAL_API_KEY missing
-	Extractor source.PyodideRunner
+	OCR       *ocr.Client // may be nil if MISTRAL_API_KEY missing
+	Extractor source.SandboxExtractor
 	MaxFileMB int
 	AfterOCR  AfterOCRHook
 	Allowlist func(userID string) bool
@@ -51,7 +51,7 @@ type docHandler struct {
 	bot       *tele.Bot
 	sources   source.Repository
 	ocr       *ocr.Client
-	extractor source.PyodideRunner
+	extractor source.SandboxExtractor
 	maxFileMB int
 	afterOCR  AfterOCRHook
 	allowed   func(string) bool

@@ -8,18 +8,18 @@ import (
 	"testing"
 )
 
-type fakePyodideRunner struct {
+type fakeSandboxExtractor struct {
 	xlsxCalled bool
 	docxCalled bool
 	result     ExtractResult
 }
 
-func (r *fakePyodideRunner) ExtractXLSX(context.Context, []byte) (ExtractResult, error) {
+func (r *fakeSandboxExtractor) ExtractXLSX(context.Context, []byte) (ExtractResult, error) {
 	r.xlsxCalled = true
 	return r.result, nil
 }
 
-func (r *fakePyodideRunner) ExtractDOCX(context.Context, []byte) (ExtractResult, error) {
+func (r *fakeSandboxExtractor) ExtractDOCX(context.Context, []byte) (ExtractResult, error) {
 	r.docxCalled = true
 	return r.result, nil
 }
@@ -71,10 +71,10 @@ func TestExtractUploadedSourceUsesGoForTextLikeFormats(t *testing.T) {
 	}
 }
 
-func TestExtractUploadedSourceUsesPyodideForXLSX(t *testing.T) {
-	runner := &fakePyodideRunner{result: ExtractResult{
+func TestExtractUploadedSourceUsesSandboxForXLSX(t *testing.T) {
+	runner := &fakeSandboxExtractor{result: ExtractResult{
 		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
+		Metadata: ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
 	}}
 	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
 		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
@@ -86,15 +86,15 @@ func TestExtractUploadedSourceUsesPyodideForXLSX(t *testing.T) {
 	if !runner.xlsxCalled {
 		t.Fatalf("runner called = false")
 	}
-	if res.Metadata.ExtractorName != "pyodide_xlsx" || !strings.Contains(res.Markdown, "sandbox") {
+	if res.Metadata.ExtractorName != "sandbox_xlsx" || !strings.Contains(res.Markdown, "sandbox") {
 		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
 	}
 }
 
-func TestExtractUploadedSourceUsesPyodideForDOCX(t *testing.T) {
-	runner := &fakePyodideRunner{result: ExtractResult{
+func TestExtractUploadedSourceUsesSandboxForDOCX(t *testing.T) {
+	runner := &fakeSandboxExtractor{result: ExtractResult{
 		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: ExtractionMeta{ExtractorName: "pyodide_docx", TextBytes: 39},
+		Metadata: ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
 	}}
 	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
 		Source: &Source{ID: "src_0123456789abcdef", Kind: KindDOCX, Filename: "memo.docx"},
@@ -106,7 +106,7 @@ func TestExtractUploadedSourceUsesPyodideForDOCX(t *testing.T) {
 	if !runner.docxCalled {
 		t.Fatalf("runner called = false")
 	}
-	if res.Metadata.ExtractorName != "pyodide_docx" || !strings.Contains(res.Markdown, "decisions") {
+	if res.Metadata.ExtractorName != "sandbox_docx" || !strings.Contains(res.Markdown, "decisions") {
 		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
 	}
 }
@@ -116,8 +116,8 @@ func TestExtractUploadedSourceXLSXRequiresRunner(t *testing.T) {
 		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
 		Bytes:  []byte("xlsx bytes"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "pyodide runner") {
-		t.Fatalf("error = %v, want pyodide runner requirement", err)
+	if err == nil || !strings.Contains(err.Error(), "sandbox runner") {
+		t.Fatalf("error = %v, want sandbox runner requirement", err)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestExtractUploadedSourceDOCXRequiresRunner(t *testing.T) {
 		Source: &Source{ID: "src_0123456789abcdef", Kind: KindDOCX, Filename: "memo.docx"},
 		Bytes:  []byte("docx bytes"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "pyodide runner") {
-		t.Fatalf("error = %v, want pyodide runner requirement", err)
+	if err == nil || !strings.Contains(err.Error(), "sandbox runner") {
+		t.Fatalf("error = %v, want sandbox runner requirement", err)
 	}
 }
 

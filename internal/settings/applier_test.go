@@ -19,7 +19,6 @@ func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 		HardBudget:           20.0,
 		CostInputPerMTokens:  0.20,
 		CostOutputPerMTokens: 0.80,
-		OCREnabled:           true,
 		SkillsAdmin:          false,
 	}
 
@@ -31,7 +30,7 @@ func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 		cfg.LLMModel != "gpt-x" || cfg.LLMMaxRetries != 5 ||
 		cfg.MaxContextTokens != 8000 || cfg.SoftBudget != 10.0 || cfg.HardBudget != 20.0 ||
 		cfg.CostInputPerMTokens != 0.20 || cfg.CostOutputPerMTokens != 0.80 ||
-		!cfg.OCREnabled || cfg.SkillsAdmin {
+		cfg.SkillsAdmin {
 		t.Errorf("empty store mutated cfg: %+v", *cfg)
 	}
 }
@@ -50,7 +49,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 		HardBudget:           20.0,
 		CostInputPerMTokens:  0.20,
 		CostOutputPerMTokens: 0.80,
-		OCREnabled:           true,
 		SkillsAdmin:          false,
 	}
 
@@ -64,7 +62,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	_ = s.Set(ctx, KeyHardBudget, "12.5")
 	_ = s.Set(ctx, KeyCostInputPerMTokens, "0.28")
 	_ = s.Set(ctx, KeyCostOutputPerMTokens, "0.42")
-	_ = s.Set(ctx, KeyOCREnabled, "false")
 	_ = s.Set(ctx, KeySkillsAdmin, "true")
 
 	ApplyToConfig(ctx, s, cfg)
@@ -95,9 +92,6 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	}
 	if cfg.CostOutputPerMTokens != 0.42 {
 		t.Errorf("CostOutputPerMTokens = %v", cfg.CostOutputPerMTokens)
-	}
-	if cfg.OCREnabled {
-		t.Errorf("OCREnabled = true, want false")
 	}
 	if !cfg.SkillsAdmin {
 		t.Errorf("SkillsAdmin = false, want true")
@@ -195,17 +189,15 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	cfg := &config.Config{
-		QdrantURL:                  "http://127.0.0.1:6333",
-		QdrantCollection:           "aura_memory_v1",
-		QdrantAPIKey:               "",
-		SpeculativeSearchTimeoutMS: 1500,
-		MemorySearchTimeoutMS:      5000,
+		QdrantURL:             "http://127.0.0.1:6333",
+		QdrantCollection:      "aura_memory_v1",
+		QdrantAPIKey:          "",
+		MemorySearchTimeoutMS: 5000,
 	}
 
 	_ = s.Set(ctx, KeyQdrantURL, "http://qdrant:6333")
 	_ = s.Set(ctx, KeyQdrantCollection, "aura_memory_v2")
 	_ = s.Set(ctx, KeyQdrantAPIKey, "secret")
-	_ = s.Set(ctx, KeySpeculativeSearchTimeoutMS, "900")
 	_ = s.Set(ctx, KeyMemorySearchTimeoutMS, "3000")
 
 	ApplyToConfig(ctx, s, cfg)
@@ -219,13 +211,10 @@ func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	if cfg.QdrantAPIKey != "secret" {
 		t.Fatalf("QdrantAPIKey not applied")
 	}
-	if cfg.SpeculativeSearchTimeoutMS != 900 {
-		t.Fatalf("SpeculativeSearchTimeoutMS = %d, want 900", cfg.SpeculativeSearchTimeoutMS)
-	}
 	if cfg.MemorySearchTimeoutMS != 3000 {
 		t.Fatalf("MemorySearchTimeoutMS = %d, want 3000", cfg.MemorySearchTimeoutMS)
 	}
-	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) || !IsOverridable(KeySpeculativeSearchTimeoutMS) || !IsOverridable(KeyMemorySearchTimeoutMS) {
+	if !IsOverridable(KeyQdrantURL) || !IsOverridable(KeyQdrantCollection) || !IsOverridable(KeyQdrantAPIKey) || !IsOverridable(KeyMemorySearchTimeoutMS) {
 		t.Fatal("Qdrant settings must be dashboard-overridable")
 	}
 }
@@ -251,7 +240,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 		PromptOverlayPath:       ".",
 		DashboardTokenTTLHours:  720,
 		SandboxEnabled:          true,
-		SandboxRuntimeDir:       "./runtime/pyodide",
 		SandboxTimeoutSec:       120,
 	}
 
@@ -269,7 +257,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	_ = s.Set(ctx, KeyPromptOverlayPath, "/data")
 	_ = s.Set(ctx, KeyDashboardTokenTTLHours, "24")
 	_ = s.Set(ctx, KeySandboxEnabled, "false")
-	_ = s.Set(ctx, KeySandboxRuntimeDir, "/app/runtime/pyodide")
 	_ = s.Set(ctx, KeySandboxTimeoutSec, "45")
 
 	ApplyToConfig(ctx, s, cfg)
@@ -315,9 +302,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	}
 	if cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = true")
-	}
-	if cfg.SandboxRuntimeDir != "/app/runtime/pyodide" {
-		t.Errorf("SandboxRuntimeDir = %q", cfg.SandboxRuntimeDir)
 	}
 	if cfg.SandboxTimeoutSec != 45 {
 		t.Errorf("SandboxTimeoutSec = %d", cfg.SandboxTimeoutSec)
@@ -377,12 +361,10 @@ func TestApplyToConfigUnparseableLeavesEnv(t *testing.T) {
 	cfg := &config.Config{
 		MaxContextTokens: 8000,
 		SoftBudget:       10.0,
-		OCREnabled:       true,
 	}
 
 	_ = s.Set(ctx, KeyMaxContextTokens, "not-a-number")
 	_ = s.Set(ctx, KeySoftBudget, "huh")
-	_ = s.Set(ctx, KeyOCREnabled, "perhaps")
 
 	ApplyToConfig(ctx, s, cfg)
 
@@ -391,9 +373,6 @@ func TestApplyToConfigUnparseableLeavesEnv(t *testing.T) {
 	}
 	if cfg.SoftBudget != 10.0 {
 		t.Errorf("SoftBudget overwritten by garbage: %v", cfg.SoftBudget)
-	}
-	if !cfg.OCREnabled {
-		t.Errorf("OCREnabled overwritten by garbage")
 	}
 }
 

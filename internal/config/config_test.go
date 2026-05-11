@@ -121,9 +121,7 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("QDRANT_URL")
 	os.Unsetenv("QDRANT_COLLECTION")
 	os.Unsetenv("QDRANT_API_KEY")
-	os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
 	os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
-	os.Unsetenv("MAX_TOOL_ITERATIONS")
 	os.Unsetenv("SKILLS_PATH")
 	os.Unsetenv("SKILLS_INSTALL_PROJECT_DIR")
 	os.Unsetenv("SKILLS_CATALOG_URL")
@@ -138,10 +136,8 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("MISTRAL_OCR_MODEL")
 	os.Unsetenv("MISTRAL_OCR_BASE_URL")
 	os.Unsetenv("MISTRAL_OCR_TABLE_FORMAT")
-	os.Unsetenv("MISTRAL_OCR_INCLUDE_IMAGES")
 	os.Unsetenv("MISTRAL_OCR_EXTRACT_HEADER")
 	os.Unsetenv("MISTRAL_OCR_EXTRACT_FOOTER")
-	os.Unsetenv("OCR_ENABLED")
 	os.Unsetenv("OCR_MAX_PAGES")
 	os.Unsetenv("OCR_MAX_FILE_MB")
 	os.Unsetenv("HTTP_PORT")
@@ -158,9 +154,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_WORKSPACE_ROOT")
 	os.Unsetenv("AURA_RUNTIME_WORKSPACE_PATH")
 	os.Unsetenv("SANDBOX_ENABLED")
-	os.Unsetenv("SANDBOX_RUNTIME_MODE")
-	os.Unsetenv("SANDBOX_RUNTIME_URL")
-	os.Unsetenv("SANDBOX_RUNTIME_DIR")
 	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
 
 	cfg, err := Load()
@@ -203,14 +196,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.QdrantCollection != "aura_memory_v1" {
 		t.Errorf("QdrantCollection = %q, want aura_memory_v1", cfg.QdrantCollection)
 	}
-	if cfg.SpeculativeSearchTimeoutMS != DefaultSpeculativeSearchTimeoutMS {
-		t.Errorf("SpeculativeSearchTimeoutMS = %d, want %d", cfg.SpeculativeSearchTimeoutMS, DefaultSpeculativeSearchTimeoutMS)
-	}
 	if cfg.MemorySearchTimeoutMS != DefaultMemorySearchTimeoutMS {
 		t.Errorf("MemorySearchTimeoutMS = %d, want %d", cfg.MemorySearchTimeoutMS, DefaultMemorySearchTimeoutMS)
-	}
-	if cfg.MaxToolIterations != 10 {
-		t.Errorf("MaxToolIterations = %d, want 10", cfg.MaxToolIterations)
 	}
 	if cfg.SkillsPath != "./skills" {
 		t.Errorf("SkillsPath = %q, want ./skills", cfg.SkillsPath)
@@ -251,17 +238,11 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.MistralOCRTableFormat != "markdown" {
 		t.Errorf("MistralOCRTableFormat = %q, want markdown", cfg.MistralOCRTableFormat)
 	}
-	if cfg.MistralOCRIncludeImages {
-		t.Errorf("MistralOCRIncludeImages = true, want false by default")
-	}
 	if cfg.MistralOCRExtractHeader {
 		t.Errorf("MistralOCRExtractHeader = true, want false by default")
 	}
 	if cfg.MistralOCRExtractFooter {
 		t.Errorf("MistralOCRExtractFooter = true, want false by default")
-	}
-	if !cfg.OCREnabled {
-		t.Errorf("OCREnabled = false, want true by default")
 	}
 	if cfg.OCRMaxPages != 500 {
 		t.Errorf("OCRMaxPages = %d, want 500", cfg.OCRMaxPages)
@@ -310,15 +291,6 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if !cfg.SandboxEnabled {
 		t.Errorf("SandboxEnabled = false, want true by default")
-	}
-	if cfg.SandboxRuntimeMode != "auto" {
-		t.Errorf("SandboxRuntimeMode = %q, want auto", cfg.SandboxRuntimeMode)
-	}
-	if cfg.SandboxRuntimeURL != "" {
-		t.Errorf("SandboxRuntimeURL = %q, want empty", cfg.SandboxRuntimeURL)
-	}
-	if cfg.SandboxRuntimeDir != DefaultSandboxRuntimeDir {
-		t.Errorf("SandboxRuntimeDir = %q, want %q", cfg.SandboxRuntimeDir, DefaultSandboxRuntimeDir)
 	}
 	if cfg.SandboxTimeoutSec != DefaultSandboxTimeoutSec {
 		t.Errorf("SandboxTimeoutSec = %d, want %d", cfg.SandboxTimeoutSec, DefaultSandboxTimeoutSec)
@@ -429,12 +401,10 @@ func TestLoadQdrantConfig(t *testing.T) {
 	os.Setenv("QDRANT_URL", "http://qdrant:6333")
 	os.Setenv("QDRANT_COLLECTION", "aura_memory_v2")
 	os.Setenv("QDRANT_API_KEY", "secret")
-	os.Setenv("SPECULATIVE_SEARCH_TIMEOUT_MS", "750")
 	os.Setenv("MEMORY_SEARCH_TIMEOUT_MS", "2500")
 	defer os.Unsetenv("QDRANT_URL")
 	defer os.Unsetenv("QDRANT_COLLECTION")
 	defer os.Unsetenv("QDRANT_API_KEY")
-	defer os.Unsetenv("SPECULATIVE_SEARCH_TIMEOUT_MS")
 	defer os.Unsetenv("MEMORY_SEARCH_TIMEOUT_MS")
 
 	cfg, err := Load()
@@ -449,9 +419,6 @@ func TestLoadQdrantConfig(t *testing.T) {
 	}
 	if cfg.QdrantAPIKey != "secret" {
 		t.Fatalf("QdrantAPIKey not loaded")
-	}
-	if cfg.SpeculativeSearchTimeoutMS != 750 {
-		t.Fatalf("SpeculativeSearchTimeoutMS = %d, want 750", cfg.SpeculativeSearchTimeoutMS)
 	}
 	if cfg.MemorySearchTimeoutMS != 2500 {
 		t.Fatalf("MemorySearchTimeoutMS = %d, want 2500", cfg.MemorySearchTimeoutMS)
@@ -571,37 +538,6 @@ func TestLoadSandboxEnabled(t *testing.T) {
 	}
 	if cfg.SandboxEnabled {
 		t.Fatal("SandboxEnabled = true, want false")
-	}
-}
-
-func TestLoadSandboxRuntimeDir(t *testing.T) {
-	os.Setenv("SANDBOX_RUNTIME_DIR", "D:/Aura/runtime/pyodide")
-	defer os.Unsetenv("SANDBOX_RUNTIME_DIR")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.SandboxRuntimeDir != "D:/Aura/runtime/pyodide" {
-		t.Fatalf("SandboxRuntimeDir = %q", cfg.SandboxRuntimeDir)
-	}
-}
-
-func TestLoadSandboxContainerRuntime(t *testing.T) {
-	os.Setenv("SANDBOX_RUNTIME_MODE", "container")
-	os.Setenv("SANDBOX_RUNTIME_URL", "http://pyodide:8787")
-	defer os.Unsetenv("SANDBOX_RUNTIME_MODE")
-	defer os.Unsetenv("SANDBOX_RUNTIME_URL")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.SandboxRuntimeMode != "container" {
-		t.Fatalf("SandboxRuntimeMode = %q, want container", cfg.SandboxRuntimeMode)
-	}
-	if cfg.SandboxRuntimeURL != "http://pyodide:8787" {
-		t.Fatalf("SandboxRuntimeURL = %q", cfg.SandboxRuntimeURL)
 	}
 }
 

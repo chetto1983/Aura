@@ -17,12 +17,12 @@ import (
 	"github.com/aura/aura/internal/source"
 )
 
-type fakeUploadPyodideRunner struct {
+type fakeUploadSandboxExtractor struct {
 	calls int
 	errs  []error
 }
 
-func (r *fakeUploadPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+func (r *fakeUploadSandboxExtractor) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
 	r.calls++
 	if len(r.errs) > 0 {
 		err := r.errs[0]
@@ -33,11 +33,11 @@ func (r *fakeUploadPyodideRunner) ExtractXLSX(_ context.Context, _ []byte) (sour
 	}
 	return source.ExtractResult{
 		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_xlsx", SheetCount: 1, RowCount: 1},
+		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
 	}, nil
 }
 
-func (r *fakeUploadPyodideRunner) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
+func (r *fakeUploadSandboxExtractor) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
 	r.calls++
 	if len(r.errs) > 0 {
 		err := r.errs[0]
@@ -48,7 +48,7 @@ func (r *fakeUploadPyodideRunner) ExtractDOCX(_ context.Context, _ []byte) (sour
 	}
 	return source.ExtractResult{
 		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "pyodide_docx", TextBytes: 39},
+		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
 	}, nil
 }
 
@@ -86,9 +86,9 @@ func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 	}
 }
 
-func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
+func TestSourceUploadXLSXUsesSandboxExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadPyodideRunner{}
+	runner := &fakeUploadSandboxExtractor{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
@@ -114,8 +114,8 @@ func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Kind != source.KindXLSX || src.Extract == nil || src.Extract.ExtractorName != "pyodide_xlsx" {
-		t.Fatalf("source = %+v, want xlsx with pyodide extraction metadata", src)
+	if src.Kind != source.KindXLSX || src.Extract == nil || src.Extract.ExtractorName != "sandbox_xlsx" {
+		t.Fatalf("source = %+v, want xlsx with sandbox extraction metadata", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -128,7 +128,7 @@ func TestSourceUploadXLSXUsesPyodideExtraction(t *testing.T) {
 
 func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadPyodideRunner{errs: []error{errors.New("pyodide unavailable")}}
+	runner := &fakeUploadSandboxExtractor{errs: []error{errors.New("sandbox unavailable")}}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
@@ -170,7 +170,7 @@ func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Status != source.StatusExtractComplete || src.Error != "" || src.Extract == nil || src.Extract.ExtractorName != "pyodide_xlsx" {
+	if src.Status != source.StatusExtractComplete || src.Error != "" || src.Extract == nil || src.Extract.ExtractorName != "sandbox_xlsx" {
 		t.Fatalf("source after retry = %+v", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(secondResp.ID, source.ExtractMarkdownFile))
@@ -182,9 +182,9 @@ func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 	}
 }
 
-func TestSourceUploadDOCXUsesPyodideExtraction(t *testing.T) {
+func TestSourceUploadDOCXUsesSandboxExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadPyodideRunner{}
+	runner := &fakeUploadSandboxExtractor{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
@@ -210,8 +210,8 @@ func TestSourceUploadDOCXUsesPyodideExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Kind != source.KindDOCX || src.Extract == nil || src.Extract.ExtractorName != "pyodide_docx" {
-		t.Fatalf("source = %+v, want docx with pyodide extraction metadata", src)
+	if src.Kind != source.KindDOCX || src.Extract == nil || src.Extract.ExtractorName != "sandbox_docx" {
+		t.Fatalf("source = %+v, want docx with sandbox extraction metadata", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -276,7 +276,7 @@ func TestSourceUploadXLSXCanBeIngested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest.New: %v", err)
 	}
-	runner := &fakeUploadPyodideRunner{}
+	runner := &fakeUploadSandboxExtractor{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,

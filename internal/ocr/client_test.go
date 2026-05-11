@@ -42,10 +42,6 @@ func TestProcessSuccess(t *testing.T) {
 		if !strings.HasSuffix(body.Document.DocumentURL, wantB64) {
 			t.Errorf("documentURL b64 mismatch")
 		}
-		if body.IncludeImageBase64 {
-			t.Errorf("IncludeImageBase64 = true, want false by default")
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{
 			"model": "mistral-ocr-2512+1",
@@ -74,23 +70,6 @@ func TestProcessSuccess(t *testing.T) {
 	}
 	if !strings.Contains(string(res.RawJSON), `"pages_processed": 2`) {
 		t.Errorf("raw json not preserved: %s", string(res.RawJSON))
-	}
-}
-
-func TestProcessIncludeImagesFlag(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body OCRRequest
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if !body.IncludeImageBase64 {
-			t.Errorf("IncludeImageBase64 = false, want true")
-		}
-		_, _ = io.WriteString(w, `{"pages":[]}`)
-	}))
-	defer srv.Close()
-
-	c := New(Config{APIKey: "k", BaseURL: srv.URL + "/v1"})
-	if _, err := c.Process(context.Background(), ProcessInput{PDFBytes: []byte("x"), IncludeImages: true}); err != nil {
-		t.Fatalf("Process: %v", err)
 	}
 }
 
@@ -138,7 +117,7 @@ func TestProcessOmitsEmptyExtractionFlags(t *testing.T) {
 	if _, err := c.Process(context.Background(), ProcessInput{PDFBytes: []byte("x")}); err != nil {
 		t.Fatalf("Process: %v", err)
 	}
-	for _, key := range []string{"table_format", "extract_header", "extract_footer", "include_image_base64"} {
+	for _, key := range []string{"table_format", "extract_header", "extract_footer"} {
 		if strings.Contains(string(rawBody), `"`+key+`"`) {
 			t.Errorf("body should omit %q when zero, got: %s", key, string(rawBody))
 		}

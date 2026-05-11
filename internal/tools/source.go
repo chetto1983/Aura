@@ -149,7 +149,7 @@ func (t *OCRSourceTool) Execute(ctx context.Context, args map[string]any) (strin
 		return "", errors.New("ocr_source: source store unavailable")
 	}
 	if t.ocr == nil {
-		return "", errors.New("ocr_source: OCR is disabled (set OCR_ENABLED=true and MISTRAL_API_KEY)")
+		return "", errors.New("ocr_source: OCR is disabled (set MISTRAL_API_KEY to enable)")
 	}
 	id, err := requiredString(args, "source_id")
 	if err != nil {

@@ -7,9 +7,9 @@ import { api, ApiError } from '@/api';
 import { useLocale } from '@/hooks/useLocale';
 import type { SettingItem } from '@/types/api';
 
-type Group = 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'sandbox' | 'budget' | 'aurabot' | 'agent' | 'other';
+type Group = 'runtime' | 'provider' | 'search' | 'storage' | 'embeddings' | 'ocr' | 'other';
 
-const GROUP_ORDER: Group[] = ['runtime', 'provider', 'search', 'storage', 'embeddings', 'ocr', 'sandbox', 'budget', 'aurabot', 'agent', 'other'];
+const GROUP_ORDER: Group[] = ['runtime', 'provider', 'search', 'storage', 'embeddings', 'ocr', 'other'];
 const SECRET_PLACEHOLDER = '(configured)';
 
 export function SettingsPanel() {
@@ -145,10 +145,6 @@ export function SettingsPanel() {
       case 'storage': return t('settings.group.storage');
       case 'embeddings': return t('settings.group.embeddings');
       case 'ocr': return t('settings.group.ocr');
-      case 'sandbox': return t('settings.group.sandbox');
-      case 'budget': return t('settings.group.budget');
-      case 'aurabot': return t('settings.group.aurabot');
-      case 'agent': return t('settings.group.agent');
       case 'other': return t('settings.group.other');
     }
   };
@@ -161,10 +157,6 @@ export function SettingsPanel() {
       case 'storage': return t('settings.hint.storage');
       case 'embeddings': return t('settings.hint.embeddings');
       case 'ocr': return t('settings.hint.ocr');
-      case 'sandbox': return t('settings.hint.sandbox');
-      case 'budget': return t('settings.hint.budget');
-      case 'aurabot': return t('settings.hint.aurabot');
-      case 'agent': return t('settings.hint.agent');
       case 'other': return t('settings.hint.other');
     }
   };

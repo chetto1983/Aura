@@ -143,14 +143,14 @@ Compose test profile so the environment matches Aura's Linux container path:
 docker compose --profile test run --rm test
 ```
 
-The test image includes Node for local Pyodide runner tests. The service also
-adds `SYS_ADMIN` with an unconfined seccomp profile because Linux no-network
+The test image includes Node for dashboard/build tests. The service also adds
+`SYS_ADMIN` with an unconfined seccomp profile because Linux no-network
 skill tests create a temporary network namespace; a plain `docker run
 golang:... go test ./...` container cannot do that reliably.
 The command excludes incidental Go packages under `web/node_modules`.
 
-The production code-execution path is `SANDBOX_RUNTIME_MODE=process` in the
-Aura container. Smoke Python directly in that container:
+The production code-execution path is the process sandbox in the Aura
+container. Smoke Python directly in that container:
 
 ```powershell
 docker compose exec aura python3 - <<'PY'
@@ -162,13 +162,6 @@ Smoke the autonomous CLI surface:
 
 ```powershell
 docker compose exec aura sh -c "python3 -m pip --version && rg --version && jq --version && sqlite3 --version"
-```
-
-Live XLSX/DOCX extraction tests remain opt-in because they exercise large
-office/data packages. Run them only after assigning Docker enough memory:
-
-```powershell
-docker compose --profile test run --rm -e AURA_SOURCE_PYODIDE_LIVE=1 test go test ./internal/source -run TestPyodide -count=1 -v
 ```
 
 Inside the Compose network, Aura should use:
@@ -271,9 +264,9 @@ to run while the Compose `aura` service is up.
   Docker-managed `qdrant-storage` volume. Aura exposes `QDRANT_URL`,
   `QDRANT_COLLECTION`, and optional `QDRANT_API_KEY` in the dashboard settings.
   Wiki vector search uses the Qdrant sidecar when `QDRANT_URL` is configured.
-- The app container enables `SANDBOX_ENABLED=true` and uses
-  `SANDBOX_RUNTIME_MODE=process`. `execute_code` runs through `python3` inside
-  the Aura container with the same mounted workspace/data access as Aura.
+- The app container enables `SANDBOX_ENABLED=true`. `execute_code` runs through
+  `python3` inside the Aura container with the same mounted workspace/data
+  access as Aura.
 - SQLite remains Aura's canonical state store. MongoDB was evaluated for future
   high-volume archives/traces/audit logs, but it is not part of the default
   stack and should not replace `aura.db` until repository metrics justify it.

@@ -63,8 +63,7 @@ ENV AURA_HEADLESS=true \
     SKILLS_INSTALL_PROJECT_DIR=/skills \
     MCP_SERVERS_PATH=/data/mcp.json \
     PROMPT_OVERLAY_PATH=/data \
-    SANDBOX_ENABLED=true \
-    SANDBOX_RUNTIME_MODE=process
+    SANDBOX_ENABLED=true
 
 EXPOSE 8080
 

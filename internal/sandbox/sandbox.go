@@ -1,8 +1,7 @@
-// Package sandbox executes LLM-generated Python code in an isolated runtime.
+// Package sandbox executes LLM-generated Python code in a process runtime.
 //
-// Manager owns policy, health, and the stable execute_code boundary. Runtime
-// adapters own the actual backend implementation; release builds are expected
-// to provide the bundled Pyodide adapter.
+// Manager owns policy, health, and the stable execute_code boundary. The
+// process runtime runs Python directly inside the Aura container.
 package sandbox
 
 import (
@@ -45,7 +44,6 @@ type Config struct {
 type RuntimeKind string
 
 const (
-	RuntimeKindPyodide     RuntimeKind = "pyodide"
 	RuntimeKindProcess     RuntimeKind = "process"
 	RuntimeKindUnavailable RuntimeKind = "unavailable"
 )

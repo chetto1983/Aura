@@ -8,11 +8,8 @@ import (
 
 const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
 const DefaultQdrantCollection = "aura_memory_v1"
-const DefaultSpeculativeSearchTimeoutMS = 1500
 const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
-const DefaultSandboxRuntimeDir = "./runtime/pyodide"
-const DefaultSandboxRuntimeMode = "auto"
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 8
@@ -39,34 +36,32 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	TelegramToken              string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
-	Allowlist                  []string `envconfig:"TELEGRAM_ALLOWLIST"`
-	AllowlistConfigured        bool
-	MaxContextTokens           int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
-	MaxHistoryMessages         int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
-	SoftBudget                 float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
-	HardBudget                 float64 `envconfig:"HARD_BUDGET" default:"20.0"`
-	CostInputPerMTokens        float64 `envconfig:"COST_INPUT_PER_M_TOKENS" default:"0.20"`
-	CostOutputPerMTokens       float64 `envconfig:"COST_OUTPUT_PER_M_TOKENS" default:"0.80"`
-	LogLevel                   string  `envconfig:"LOG_LEVEL" default:"info"`
-	LogDir                     string  `envconfig:"LOG_DIR" default:"./logs"`
-	LLMAPIKey                  string  `envconfig:"LLM_API_KEY"`
-	LLMBaseURL                 string  `envconfig:"LLM_BASE_URL"`
-	LLMModel                   string  `envconfig:"LLM_MODEL"`
-	LLMMaxRetries              int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
-	WebSearchProvider          string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
-	SearXNGBaseURL             string  `envconfig:"SEARXNG_BASE_URL"`
-	GarageS3Endpoint           string  `envconfig:"GARAGE_S3_ENDPOINT"`
-	GarageS3Region             string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
-	GarageS3Bucket             string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
-	GarageS3AccessKey          string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
-	GarageS3SecretKey          string  `envconfig:"GARAGE_S3_SECRET_KEY"`
-	QdrantURL                  string  `envconfig:"QDRANT_URL"`
-	QdrantCollection           string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
-	QdrantAPIKey               string  `envconfig:"QDRANT_API_KEY"`
-	SpeculativeSearchTimeoutMS int     `envconfig:"SPECULATIVE_SEARCH_TIMEOUT_MS" default:"1500"`
-	MemorySearchTimeoutMS      int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
-	MaxToolIterations          int     `envconfig:"MAX_TOOL_ITERATIONS" default:"10"`
+	TelegramToken         string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
+	Allowlist             []string `envconfig:"TELEGRAM_ALLOWLIST"`
+	AllowlistConfigured   bool
+	MaxContextTokens      int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
+	MaxHistoryMessages    int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
+	SoftBudget            float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
+	HardBudget            float64 `envconfig:"HARD_BUDGET" default:"20.0"`
+	CostInputPerMTokens   float64 `envconfig:"COST_INPUT_PER_M_TOKENS" default:"0.20"`
+	CostOutputPerMTokens  float64 `envconfig:"COST_OUTPUT_PER_M_TOKENS" default:"0.80"`
+	LogLevel              string  `envconfig:"LOG_LEVEL" default:"info"`
+	LogDir                string  `envconfig:"LOG_DIR" default:"./logs"`
+	LLMAPIKey             string  `envconfig:"LLM_API_KEY"`
+	LLMBaseURL            string  `envconfig:"LLM_BASE_URL"`
+	LLMModel              string  `envconfig:"LLM_MODEL"`
+	LLMMaxRetries         int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	WebSearchProvider     string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
+	SearXNGBaseURL        string  `envconfig:"SEARXNG_BASE_URL"`
+	GarageS3Endpoint      string  `envconfig:"GARAGE_S3_ENDPOINT"`
+	GarageS3Region        string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
+	GarageS3Bucket        string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
+	GarageS3AccessKey     string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
+	GarageS3SecretKey     string  `envconfig:"GARAGE_S3_SECRET_KEY"`
+	QdrantURL             string  `envconfig:"QDRANT_URL"`
+	QdrantCollection      string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
+	QdrantAPIKey          string  `envconfig:"QDRANT_API_KEY"`
+	MemorySearchTimeoutMS int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	// Phase 02 governance knobs. Defaults match the constants we shipped in
 	// agentloop/governance.go and tools/memory_search.go. Operators can
 	// shrink MAX_TOOL_RESULT_CHARS to fit smaller context windows, raise
@@ -117,24 +112,17 @@ type Config struct {
 	MistralOCRModel         string `envconfig:"MISTRAL_OCR_MODEL" default:"mistral-ocr-latest"`
 	MistralOCRBaseURL       string `envconfig:"MISTRAL_OCR_BASE_URL" default:"https://api.mistral.ai/v1"`
 	MistralOCRTableFormat   string `envconfig:"MISTRAL_OCR_TABLE_FORMAT" default:"markdown"`
-	MistralOCRIncludeImages bool   `envconfig:"MISTRAL_OCR_INCLUDE_IMAGES" default:"false"`
 	MistralOCRExtractHeader bool   `envconfig:"MISTRAL_OCR_EXTRACT_HEADER" default:"false"`
 	MistralOCRExtractFooter bool   `envconfig:"MISTRAL_OCR_EXTRACT_FOOTER" default:"false"`
-	OCREnabled              bool   `envconfig:"OCR_ENABLED" default:"true"`
 	OCRMaxPages             int    `envconfig:"OCR_MAX_PAGES" default:"500"`
 	OCRMaxFileMB            int    `envconfig:"OCR_MAX_FILE_MB" default:"100"`
 
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 
-	// Sandbox code execution. Docker production uses process mode, which runs
-	// Python directly inside the Aura container. Pyodide modes remain as legacy
-	// local/sidecar adapters until their extraction paths are fully retired.
-	SandboxEnabled     bool   `envconfig:"SANDBOX_ENABLED" default:"true"`
-	SandboxRuntimeMode string `envconfig:"SANDBOX_RUNTIME_MODE" default:"auto"`
-	SandboxRuntimeURL  string `envconfig:"SANDBOX_RUNTIME_URL"`
-	SandboxRuntimeDir  string `envconfig:"SANDBOX_RUNTIME_DIR" default:"./runtime/pyodide"`
-	SandboxTimeoutSec  int    `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
+	// Sandbox code execution. Runs Python directly inside the Aura container.
+	SandboxEnabled    bool `envconfig:"SANDBOX_ENABLED" default:"true"`
+	SandboxTimeoutSec int  `envconfig:"SANDBOX_TIMEOUT_SEC" default:"120"`
 
 	// Per-user gate configuration (Phase 1 / CONC-01). All four are environment-tunable.
 	// W5: NO `default:"..."` tags here -- defaults come from Default* constants applied
@@ -230,9 +218,7 @@ func Load() (*Config, error) {
 	cfg.QdrantURL = getEnv("QDRANT_URL", "")
 	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
 	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
-	cfg.SpeculativeSearchTimeoutMS = getEnvInt("SPECULATIVE_SEARCH_TIMEOUT_MS", DefaultSpeculativeSearchTimeoutMS)
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
-	cfg.MaxToolIterations = getEnvInt("MAX_TOOL_ITERATIONS", 10)
 	cfg.ToolSearchBackend = NormalizeToolSearchBackend(getEnv("TOOL_SEARCH_BACKEND", DefaultToolSearchBackend))
 	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 10, DefaultToolSearchTopK)
 
@@ -278,19 +264,14 @@ func Load() (*Config, error) {
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")
 	cfg.MistralOCRBaseURL = getEnv("MISTRAL_OCR_BASE_URL", "https://api.mistral.ai/v1")
 	cfg.MistralOCRTableFormat = getEnv("MISTRAL_OCR_TABLE_FORMAT", "markdown")
-	cfg.MistralOCRIncludeImages = getEnvBool("MISTRAL_OCR_INCLUDE_IMAGES", false)
 	cfg.MistralOCRExtractHeader = getEnvBool("MISTRAL_OCR_EXTRACT_HEADER", false)
 	cfg.MistralOCRExtractFooter = getEnvBool("MISTRAL_OCR_EXTRACT_FOOTER", false)
-	cfg.OCREnabled = getEnvBool("OCR_ENABLED", true)
 	cfg.OCRMaxPages = getEnvInt("OCR_MAX_PAGES", 500)
 	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 
 	cfg.SandboxEnabled = getEnvBool("SANDBOX_ENABLED", true)
-	cfg.SandboxRuntimeMode = strings.ToLower(strings.TrimSpace(getEnv("SANDBOX_RUNTIME_MODE", DefaultSandboxRuntimeMode)))
-	cfg.SandboxRuntimeURL = strings.TrimSpace(getEnv("SANDBOX_RUNTIME_URL", ""))
-	cfg.SandboxRuntimeDir = getEnv("SANDBOX_RUNTIME_DIR", DefaultSandboxRuntimeDir)
 	cfg.SandboxTimeoutSec = getEnvInt("SANDBOX_TIMEOUT_SEC", DefaultSandboxTimeoutSec)
 
 	// Per-user gate configuration (Phase 1 / CONC-01).
