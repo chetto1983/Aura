@@ -22,6 +22,7 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
+	"github.com/aura/aura/internal/reindex"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -62,6 +63,7 @@ type Bot struct {
 	api                 http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
 	sandboxMgr          sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
 	toolReg             tools.ToolStore                  // persistent LLM-written Python tools
+	reindex             *reindex.Worker                  // optional; nil when search engine is unavailable (Phase 2 INDEX-01)
 	compactMemoryHealth interface {
 		Snapshot() memoryindex.VectorHealth
 	}
@@ -87,6 +89,17 @@ func (b *Bot) CompactMemoryHealth() memoryindex.VectorHealth {
 		return memoryindex.VectorHealth{}
 	}
 	return b.compactMemoryHealth.Snapshot()
+}
+
+// ReindexHealth returns the current reindex worker's operational snapshot,
+// or the zero value when the worker is not constructed (e.g. in tests).
+// Surfaced via /api/health (Phase 2 D-16). WARNING 12 of 2026-05-10 plan
+// revision wires this into the dashboard health JSON.
+func (b *Bot) ReindexHealth() reindex.Health {
+	if b == nil || b.reindex == nil {
+		return reindex.Health{}
+	}
+	return b.reindex.Health()
 }
 
 func (b *Bot) sessionStore() *agentruntime.SessionStore {
@@ -229,6 +242,10 @@ func (b *Bot) Stop() {
 		if err := b.archiver.Close(context.Background()); err != nil {
 			logger.Error("telegram shutdown: archiver close failed", "error", err)
 		}
+	}
+	// PHASE 2 ADD: stop reindex worker after archiver so final enqueues drain first.
+	if b.reindex != nil {
+		b.reindex.Stop() // cancels in-flight Reindex; waits for drain goroutine exit
 	}
 	for i, c := range b.mcpClients {
 		if c == nil {

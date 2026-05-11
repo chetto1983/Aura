@@ -26,6 +26,7 @@ import (
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/qdrant"
+	"github.com/aura/aura/internal/reindex"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
@@ -173,6 +174,25 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 				logger.Info("qdrant search backend enabled", "url", cfg.QdrantURL, "collection", cfg.QdrantCollection)
 			}
 		}
+	}
+
+	// PHASE 2 INDEX-01: Construct reindex.Worker by capturing the searchEngine
+	// LOCAL variable (search.Repository — which includes ReindexWikiPage via
+	// WikiPageReindexer). BLOCKER 6 Option B of 2026-05-10 plan revision:
+	// passing searchEngine directly avoids widening Bot.search from
+	// search.Searcher to search.Repository. Worker is nil when searchEngine is
+	// nil (no Qdrant configured), and nil is handled gracefully by
+	// wikiStore.SetReindexSubmitter and tools.NewWriteWikiPageTool.
+	var reindexWorker *reindex.Worker
+	if searchEngine != nil {
+		reindexWorker = reindex.NewWorker(searchEngine, reindex.DefaultConfig())
+	}
+
+	// BLOCKER 3 of 2026-05-11 plan revision 2: SetReindexSubmitter lives only
+	// on the concrete *wiki.Store, NOT on the wiki.Repository interface.
+	// Use the local wikiStore variable — NEVER b.wiki for this setter call.
+	if reindexWorker != nil && wikiStore != nil {
+		wikiStore.SetReindexSubmitter(reindexWorker)
 	}
 
 	// Source store backs PDF uploads and OCR artifacts. Always create it —
@@ -443,6 +463,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			OutputCostPerMTokens: cfg.CostOutputPerMTokens,
 		}, logger),
 	}
+	// Wire the reindex worker into the Bot struct after construction.
+	// wikiStore.SetReindexSubmitter was already called above (before Bot was
+	// built) so the same worker drives both the wiki store submitter and the
+	// Bot.ReindexHealth accessor.
+	b.reindex = reindexWorker
 
 	// Create UserGate with real callbacks (D-16).
 	// OnEvict: persists conversation snapshot and clears session (D-10, T-01-22).
@@ -526,7 +551,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		TopK:         cfg.ToolSearchTopK,
 		QdrantURL:    cfg.QdrantURL,
 		QdrantAPIKey: cfg.QdrantAPIKey,
-		Collection:   "aura_tool_search",
+		Collection:   "aura_tool_search_v2", // Phase 2 T-02-F + matches Plan 05 production default
 		EmbedBaseURL: cfg.EmbeddingBaseURL,
 		EmbedAPIKey:  cfg.EmbeddingAPIKey,
 		EmbedModel:   cfg.EmbeddingModel,
@@ -684,6 +709,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Allowlist:   b.isAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
 		Location:    loc,
+		// PHASE 2 WARNING 12: surface reindex worker health via /api/health.
+		ReindexHealth: b.ReindexHealth,
 		// Keep in sync with cmd/aura/main.go's auraVersion. Hardcoded
 		// here because cmd/aura is not importable.
 		Version:   "3.0",
@@ -761,8 +788,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
 		toolRegistry.Register(pdfTool)
 	}
-	if tool := tools.NewToolSearchTool(toolRegistry); tool != nil {
-		toolRegistry.Register(tool)
+	// PHASE 2 WIKI-01: register write_wiki_page tool. Uses the local wikiStore
+	// (*wiki.Store) — not b.wiki (wiki.Repository interface) — consistent with
+	// BLOCKER 3 of 2026-05-11 plan revision 2. reindexWorker is the same
+	// worker wired into wikiStore.SetReindexSubmitter above; nil is safe.
+	if t := tools.NewWriteWikiPageTool(wikiStore, reindexWorker); t != nil {
+		toolRegistry.Register(t)
 	}
 
 	b.registerHandlers()
@@ -816,9 +847,12 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 		Model:   cfg.LLMModel,
 	})
 	return llm.NewRetryClient(openaiClient, llm.RetryConfig{
-		MaxRetries: cfg.LLMMaxRetries,
-		BaseDelay:  time.Second,
-		MaxDelay:   30 * time.Second,
+		MaxRetries:          cfg.LLMMaxRetries,
+		BaseDelay:           time.Second,
+		MaxDelay:            30 * time.Second,
+		MaxContentRetries:   3,                         // D-07 CONTENT bucket budget
+		ContentTemperatures: []float64{0.0, 0.3, 0.7}, // D-07 temperature staircase
+		JitterRatio:         0.5,                       // D-07 jitter ratio
 	})
 }
 

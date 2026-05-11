@@ -100,6 +100,13 @@ func handleHealth(deps Deps) http.HandlerFunc {
 			rollup.CompactMemory = deps.CompactMemory.Snapshot()
 		}
 
+		// Phase 2 D-16: reindex worker telemetry. Always present (zero value
+		// when callback is nil) so TypeScript strict types stay stable.
+		// WARNING 12 of 2026-05-10 plan revision (closed without Phase 3 deferral).
+		if deps.ReindexHealth != nil {
+			rollup.Reindex = reindexHealthFromHealth(deps.ReindexHealth())
+		}
+
 		writeJSON(w, deps.Logger, http.StatusOK, rollup)
 	}
 }
