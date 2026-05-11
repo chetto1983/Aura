@@ -132,6 +132,17 @@ func (r *Runner) UpdateLimits(maxIterations int, timeout time.Duration, toolTime
 	r.toolTimeout = toolTimeout
 }
 
+// Run executes one bounded agent turn.
+//
+// Timeout precedence (F-005):
+//   - r.timeout (default 60s) caps the whole Run via context.WithTimeout.
+//     Once fired, every in-flight tool's ctx is cancelled and partial outcomes
+//     are stamped with FormatToolError(ctx.Err()) per F-001.
+//   - r.toolTimeout (default 30s) caps each individual tool call. Multiple
+//     tools fan out in parallel within one turn, so the effective wall-clock
+//     for a turn is bounded by max(toolTimeouts) + LLM RTT, not the sum.
+//   - A misbehaving tool that ignores its ctx still cannot pin Run open beyond
+//     r.timeout because the parallel-fanout wait races ctx.Done() (F-001).
 func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	start := time.Now()
 	maxIterations, timeout, toolTimeout := r.Limits()
@@ -209,6 +220,15 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 		result.ToolCalls += len(toolCalls)
 		toolResults := r.executeToolCalls(ctx, task.UserID, allowlist, toolCalls, task.MaxToolResultChars, toolTimeout)
 		toolResults = append(toolResults, skippedToolOutcomes(skipped, maxToolCalls)...)
+		// Protocol invariant (F-004): every assistant tool_call announced on
+		// the previous line must have a matching tool-role result. The
+		// upstream Chat Completions API rejects the next request if any
+		// tool_call_id is missing. splitToolCalls + skippedToolOutcomes
+		// hand-maintain the pairing; this guard catches a future refactor
+		// that breaks it.
+		if len(toolResults) != len(resp.ToolCalls) {
+			return Result{}, fmt.Errorf("agent: protocol invariant broken — %d tool results for %d announced tool calls", len(toolResults), len(resp.ToolCalls))
+		}
 		for _, tr := range toolResults {
 			messages = append(messages, llm.Message{
 				Role:       "tool",
