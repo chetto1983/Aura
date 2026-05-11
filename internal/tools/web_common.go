@@ -82,16 +82,23 @@ func truncateForToolContext(s string, maxChars int) string {
 	return strings.TrimSpace(s[:cut]) + "\n\n[truncated]"
 }
 
+// requiredString returns the trimmed string at key. Callers should not
+// re-trim or re-check emptiness. Errors distinguish "missing" from "present
+// but blank" so the LLM gets a precise correction signal.
 func requiredString(args map[string]any, key string) (string, error) {
 	v, ok := args[key]
-	if !ok {
+	if !ok || v == nil {
 		return "", fmt.Errorf("%s is required", key)
 	}
 	s, ok := v.(string)
-	if !ok || strings.TrimSpace(s) == "" {
-		return "", fmt.Errorf("%s must be a non-empty string", key)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string", key)
 	}
-	return strings.TrimSpace(s), nil
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", fmt.Errorf("%s must not be empty or whitespace", key)
+	}
+	return trimmed, nil
 }
 
 func intArg(args map[string]any, key string, fallback, min, max int) int {
