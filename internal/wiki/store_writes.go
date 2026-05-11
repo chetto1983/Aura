@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/reindex"
 )
 
 // ConflictError is returned by WritePage when the on-disk updated_at does
@@ -107,22 +109,28 @@ func (s *Store) WritePage(ctx context.Context, page *Page, expectedUpdatedAt ...
 				}
 			}
 		}
-		return nil // user-facing write succeeded; only versioning is degraded
-	}
-
-	// D-18: commit succeeded — if the page was Unversioned, clear and atomic re-write.
-	// WARNING 14: Validate runs BEFORE re-marshal here too. NO recursive commit
-	// (avoids loop-back).
-	if reread, rerr := s.readPageLocked(slug); rerr == nil && reread.Unversioned {
-		if vErr := Validate(reread); vErr != nil {
-			s.logger.Warn("skipping Unversioned clear: re-read page failed validation",
-				"slug", slug, "error", vErr)
-		} else {
-			reread.Unversioned = false
-			if newData, mErr := MarshalMD(reread); mErr == nil {
-				_ = writeAtomic(s.dir, slug, path, newData)
+	} else {
+		// D-18: commit succeeded — if the page was Unversioned, clear and atomic re-write.
+		// WARNING 14: Validate runs BEFORE re-marshal here too. NO recursive commit
+		// (avoids loop-back).
+		if reread, rerr := s.readPageLocked(slug); rerr == nil && reread.Unversioned {
+			if vErr := Validate(reread); vErr != nil {
+				s.logger.Warn("skipping Unversioned clear: re-read page failed validation",
+					"slug", slug, "error", vErr)
+			} else {
+				reread.Unversioned = false
+				if newData, mErr := MarshalMD(reread); mErr == nil {
+					_ = writeAtomic(s.dir, slug, path, newData)
+				}
 			}
 		}
+	}
+
+	// D-14: Enqueue reindex AFTER file write succeeds, regardless of git commit
+	// outcome. Submission is non-blocking and drop-newest; the worker re-reads
+	// from disk so dropped signals are safe.
+	if s.reindexSubmitter != nil {
+		_ = s.reindexSubmitter.Submit(reindex.Job{Slug: slug, Op: reindex.OpUpsert})
 	}
 	return nil
 }
@@ -157,6 +165,10 @@ func (s *Store) DeletePage(ctx context.Context, slug string) error {
 		s.logger.Error("git commit failed for wiki page deletion", "slug", slug, "error", err)
 	}
 
+	// D-14: Enqueue reindex delete AFTER file removal succeeds, regardless of git commit outcome.
+	if s.reindexSubmitter != nil {
+		_ = s.reindexSubmitter.Submit(reindex.Job{Slug: slug, Op: reindex.OpDelete})
+	}
 	return nil
 }
 

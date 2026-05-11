@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/aura/aura/internal/reindex"
 )
 
 // newWritesTestStore returns a *Store rooted at t.TempDir() with a silent logger.
@@ -297,3 +299,66 @@ func TestUnversionedReWriteValidatesPage(t *testing.T) {
 
 // Compile-time check: ensure ConflictError implements the error interface.
 var _ error = (*ConflictError)(nil)
+
+// recordingSubmitter records submitted reindex jobs for test assertions.
+type recordingSubmitter struct {
+	jobs []reindex.Job
+}
+
+func (r *recordingSubmitter) Submit(j reindex.Job) bool {
+	r.jobs = append(r.jobs, j)
+	return true
+}
+
+func TestWritePage_SubmitsReindex(t *testing.T) {
+	s := newWritesTestStore(t)
+	sub := &recordingSubmitter{}
+	s.SetReindexSubmitter(sub)
+	p := &Page{
+		Title: "Idx", Body: "x",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-10T00:00:00Z", UpdatedAt: "2026-05-10T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if len(sub.jobs) != 1 {
+		t.Fatalf("submitted = %d, want 1", len(sub.jobs))
+	}
+	if sub.jobs[0].Op != reindex.OpUpsert {
+		t.Fatalf("op = %v, want OpUpsert", sub.jobs[0].Op)
+	}
+	if sub.jobs[0].Slug != Slug("Idx") {
+		t.Fatalf("slug = %q, want %q", sub.jobs[0].Slug, Slug("Idx"))
+	}
+}
+
+func TestWritePage_NilSubmitter_NoPanic(t *testing.T) {
+	s := newWritesTestStore(t) // SetReindexSubmitter NOT called
+	p := &Page{
+		Title: "NoSub", Body: "x",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-10T00:00:00Z", UpdatedAt: "2026-05-10T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), p); err != nil {
+		t.Fatalf("nil submitter: %v", err)
+	}
+}
+
+func TestDeletePage_SubmitsReindexDelete(t *testing.T) {
+	s := newWritesTestStore(t)
+	sub := &recordingSubmitter{}
+	s.SetReindexSubmitter(sub)
+	// Create then delete.
+	writeFixturePage(t, s, "ToDel", "x", "2026-05-10T00:00:00Z")
+	sub.jobs = sub.jobs[:0] // reset after the create's OpUpsert
+	if err := s.DeletePage(context.Background(), Slug("ToDel")); err != nil {
+		t.Fatal(err)
+	}
+	if len(sub.jobs) != 1 {
+		t.Fatalf("submitted = %d, want 1 (OpDelete)", len(sub.jobs))
+	}
+	if sub.jobs[0].Op != reindex.OpDelete {
+		t.Fatalf("op = %v, want OpDelete", sub.jobs[0].Op)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/reindex"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -28,6 +29,8 @@ type Store struct {
 	// Production code leaves this nil. Set via SetGitCommitFuncForTest
 	// to drive failure/success paths from external test packages.
 	gitCommitFunc func(ctx context.Context, filename, action string) error
+
+	reindexSubmitter reindex.Submitter // optional; set via SetReindexSubmitter (Phase 2 INDEX-01)
 }
 
 // PageCatalog is the read side for enumerating wiki pages.
@@ -269,6 +272,14 @@ func IsOperationalSlug(slug string) bool {
 // Pass nil to remove the override and restore the production gitCommit.
 func (s *Store) SetGitCommitFuncForTest(fn func(ctx context.Context, filename, action string) error) {
 	s.gitCommitFunc = fn
+}
+
+// SetReindexSubmitter wires an optional reindex.Submitter. Production setup
+// calls this AFTER both wiki.Store and reindex.Worker exist (avoids ctor cycle).
+// Passing nil is allowed (clears the wiring; production code never does this).
+// Phase 2 INDEX-01.
+func (s *Store) SetReindexSubmitter(sub reindex.Submitter) {
+	s.reindexSubmitter = sub
 }
 
 // gitCommit ignores ctx because go-git's Worktree API is synchronous; we
