@@ -104,13 +104,15 @@ func (c *Client) Tools() []Tool { return c.tools }
 
 // CallTool invokes a tool on the MCP server and returns its concatenated
 // text content. isError responses are surfaced as a Go error so the calling
-// LLM tool can show the failure to the model.
-func (c *Client) CallTool(_ context.Context, toolName string, arguments map[string]any) (string, error) {
+// LLM tool can show the failure to the model. ctx is honored: HTTP cancellation
+// is fully supported; stdio cancellation closes the transport (terminating the
+// connection) because bufio.Scanner cannot be interrupted in-flight.
+func (c *Client) CallTool(ctx context.Context, toolName string, arguments map[string]any) (string, error) {
 	params := map[string]any{
 		"name":      toolName,
 		"arguments": arguments,
 	}
-	result, err := c.request("tools/call", params)
+	result, err := c.requestCtx(ctx, "tools/call", params)
 	if err != nil {
 		return "", err
 	}
@@ -157,13 +159,17 @@ func (c *Client) bootstrap() error {
 }
 
 func (c *Client) request(method string, params any) (json.RawMessage, error) {
+	return c.requestCtx(context.Background(), method, params)
+}
+
+func (c *Client) requestCtx(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	req := rpcRequest{JSONRPC: "2.0", ID: &id, Method: method, Params: params}
 	b, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.transport.roundTrip(b)
+	resp, err := c.transport.roundTrip(ctx, b)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +243,7 @@ func (e *rpcError) Error() string {
 // transport hides stdio vs HTTP from Client.
 
 type transport interface {
-	roundTrip(req []byte) ([]byte, error)
+	roundTrip(ctx context.Context, req []byte) ([]byte, error)
 	notify(req []byte) error
 	close() error
 }
@@ -280,28 +286,49 @@ func newStdioTransport(command string, args []string, env map[string]string) (*s
 	return &stdioTransport{cmd: cmd, stdin: stdin, scanner: scanner}, nil
 }
 
-func (t *stdioTransport) roundTrip(req []byte) ([]byte, error) {
+func (t *stdioTransport) roundTrip(ctx context.Context, req []byte) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if _, err := t.stdin.Write(append(req, '\n')); err != nil {
 		return nil, fmt.Errorf("write: %w", err)
 	}
-	for t.scanner.Scan() {
-		line := t.scanner.Bytes()
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		var probe struct {
-			ID *json.RawMessage `json:"id"`
-		}
-		if json.Unmarshal(line, &probe) == nil && probe.ID != nil {
-			return append([]byte(nil), line...), nil
-		}
+	type result struct {
+		line []byte
+		err  error
 	}
-	if err := t.scanner.Err(); err != nil {
-		return nil, err
+	ch := make(chan result, 1)
+	go func() {
+		for t.scanner.Scan() {
+			line := t.scanner.Bytes()
+			if len(bytes.TrimSpace(line)) == 0 {
+				continue
+			}
+			var probe struct {
+				ID *json.RawMessage `json:"id"`
+			}
+			if json.Unmarshal(line, &probe) == nil && probe.ID != nil {
+				ch <- result{line: append([]byte(nil), line...)}
+				return
+			}
+		}
+		if err := t.scanner.Err(); err != nil {
+			ch <- result{err: err}
+			return
+		}
+		ch <- result{err: fmt.Errorf("unexpected EOF from MCP server")}
+	}()
+	select {
+	case <-ctx.Done():
+		// bufio.Scanner cannot be interrupted; closing stdin makes Scan return so
+		// the goroutine drains and we don't leave a shared scanner racy reader
+		// when a future roundTrip acquires the mutex. The connection is dead
+		// after this — operator must reconnect.
+		_ = t.stdin.Close()
+		<-ch // wait for the goroutine to finish before releasing the mutex
+		return nil, ctx.Err()
+	case r := <-ch:
+		return r.line, r.err
 	}
-	return nil, fmt.Errorf("unexpected EOF from MCP server")
 }
 
 func (t *stdioTransport) notify(req []byte) error {
@@ -337,21 +364,21 @@ func newHTTPTransport(url string, headers map[string]string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) roundTrip(req []byte) ([]byte, error) {
+func (t *httpTransport) roundTrip(ctx context.Context, req []byte) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.doPost(req)
+	return t.doPost(ctx, req)
 }
 
 func (t *httpTransport) notify(req []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, err := t.doPost(req)
+	_, err := t.doPost(context.Background(), req)
 	return err
 }
 
-func (t *httpTransport) doPost(body []byte) ([]byte, error) {
-	httpReq, err := http.NewRequest("POST", t.url, bytes.NewReader(body))
+func (t *httpTransport) doPost(ctx context.Context, body []byte) ([]byte, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
