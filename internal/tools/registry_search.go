@@ -119,6 +119,22 @@ func searchTerms(query string) []string {
 	return out
 }
 
+// searchableToolEmbeddingText returns the text used to compute the embedding
+// vector for a tool. Phase 2 D-24 narrows this from the full lex corpus
+// (name+description+tags+examples+parameters) to just name + " " + description.
+// Rationale: smaller index, faster queries, matches Red Hat Tool-RAG findings
+// (https://next.redhat.com/2025/11/26/tool-rag-the-next-breakthrough-in-scalable-ai-agents/).
+//
+// Lex search (existing searchableToolText) keeps the broader corpus — that
+// path is BM25-style and benefits from more tokens.
+func searchableToolEmbeddingText(def ToolDefinition) string {
+	var b strings.Builder
+	b.WriteString(def.Name)
+	b.WriteByte(' ')
+	b.WriteString(def.Description)
+	return strings.ToLower(b.String())
+}
+
 func searchableToolText(def ToolDefinition, tags []string) string {
 	var b strings.Builder
 	b.WriteString(def.Name)
