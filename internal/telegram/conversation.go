@@ -418,7 +418,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			switch event.Type {
 			case agentruntime.EventStats:
 				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
-				currentStats.toolsExposed = currentToolNames()
+				// toolsExposed reflects what the LLM saw at the first round
+				// (set on baseStats from toolsProvider()) — do NOT overwrite
+				// with the broader execution allowlist or the log becomes a
+				// lie about what was actually in the prompt.
 				b.storeOrchestrationSnapshot(userID, currentStats)
 			}
 		},
@@ -427,7 +430,6 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		b.logger.Error("agent loop failed", "user_id", userID, "error", err)
 	}
 	stats := mergeAgentLoopStats(baseStats, result.Stats)
-	stats.toolsExposed = currentToolNames()
 	currentStats = stats
 	if result.Stats.LLMCalls > 0 && result.Stats.TerminalTool == "" {
 		b.notifySoftBudget(c, userID)
