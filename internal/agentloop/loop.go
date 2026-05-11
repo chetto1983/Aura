@@ -220,6 +220,9 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			answer := finalAnswerOnBudget(lastToolResult)
 			state.AddAssistantMessage(answer)
 			emitStats()
+			if iterCancel != nil {
+				iterCancel()
+			}
 			return Result{Text: answer, Stats: stats}, nil
 		}
 		// Bound every blocking call below by the remaining wall-clock budget.
@@ -239,6 +242,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			if message, stop := opts.BeforeLLM(); stop {
 				stats.StopReason = "before_llm"
 				logger.Info("agentloop: before_llm_stop", "iteration", iteration)
+				iterCancel()
 				return Result{Text: message, Stats: stats}, nil
 			}
 		}
@@ -253,6 +257,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
 		resp, err := client.Chat(iterCtx, messagesForModel, tools)
 		if err != nil {
+			iterCancel()
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}
 
@@ -274,6 +279,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 			state.AddAssistantMessage(response)
 			emitStats()
+			iterCancel()
 			if resp.Delivered {
 				return Result{Delivered: true, Stats: stats}, nil
 			}
@@ -382,6 +388,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 
 		if execution.FatalResult != "" {
 			state.AddAssistantMessage(execution.FatalResult)
+			iterCancel()
 			return Result{Text: execution.FatalResult, Stats: stats}, nil
 		}
 		if opts.TerminalToolPolicy && execution.TerminalTool != "" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
@@ -389,6 +396,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			response, delivered, handled := opts.TerminalHandler(iterCtx, execution.TerminalTool, lastToolResult, &stats)
 			emitStats()
 			if handled {
+				iterCancel()
 				return Result{Text: response, Delivered: delivered, Stats: stats}, nil
 			}
 		}
@@ -397,6 +405,10 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	stats.MaxIterationsHit = true
 	stats.StopReason = "max_iterations_hit"
 	logger.Warn("agentloop: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
+	if iterCancel != nil {
+		iterCancel()
+		iterCancel = nil
+	}
 	if opts.AllowNoToolFinalization {
 		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
 			state.AddAssistantMessage(answer)
