@@ -41,6 +41,9 @@ func TestWorker_DropNewest(t *testing.T) {
 	if !w.Submit(Job{Slug: "a"}) {
 		t.Fatal("submit a should succeed")
 	}
+	// Give drain goroutine time to dequeue "a" and block on blockUntil,
+	// freeing both buffer slots for "b" and "c".
+	time.Sleep(10 * time.Millisecond)
 	if !w.Submit(Job{Slug: "b"}) {
 		t.Fatal("submit b should succeed")
 	}
