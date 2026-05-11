@@ -73,11 +73,21 @@ func NewRegistry(logger *slog.Logger) *Registry {
 	}
 }
 
-// Register adds or replaces a tool.
-func (r *Registry) Register(t Tool) {
+// Register adds a tool. If a tool with the same name is already registered, a
+// warning is logged before the previous entry is replaced — callers that
+// genuinely want override semantics get them, but a misbehaving MCP server (or
+// a refactor that resurrects a retired tool) cannot silently shadow a
+// built-in. Returns true when the registration replaced an existing entry.
+func (r *Registry) Register(t Tool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tools[t.Name()] = t
+	name := t.Name()
+	_, existed := r.tools[name]
+	if existed && r.logger != nil {
+		r.logger.Warn("tool registry: replacing existing registration", "tool", name)
+	}
+	r.tools[name] = t
+	return existed
 }
 
 // Get returns a registered tool by name.
