@@ -306,9 +306,16 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		func() int { return b.cfg.ToolSearchTopK },
 		b.logger,
 	)
+	// MaxCallsPerTool used to cap search_memory to 2 per turn — which
+	// produced the 5-stub duplicate-skip loops the user flagged on
+	// 2026-05-11 ("fa troppe call memory search ... lo stiamo
+	// lobotomizzando"). The cap was treating legitimate model
+	// behaviour as misuse; the model knows when it needs more
+	// retrieval. Only write_wiki_page keeps an explicit budget because
+	// its retry path is structured around the 3-temperature staircase
+	// (Plan 01 D-07: ContentTemperatures[0, 0.3, 0.7]).
 	maxCallsPerTool := map[string]int{
-		"search_memory":   2,
-		"write_wiki_page": 3, // WARNING 13 of 2026-05-10 plan revision: matches CONTENT-bucket retry budget (Plan 01 D-07: ContentTemperatures has 3 entries) so the LLM can retry through the temperature staircase without the duplicate-call budget rejecting it.
+		"write_wiki_page": 3,
 	}
 	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 	addActiveTools := func(names []string) {
