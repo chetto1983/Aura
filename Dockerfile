@@ -28,6 +28,14 @@ RUN apt-get update \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app
 
+# Python packages baked into the image so execute_code has the same library
+# surface the old Pyodide bundle provided. Without these, the LLM naturally
+# writes `import requests` / `import openpyxl` and crashes on stdlib-only.
+RUN pip3 install --no-cache-dir --break-system-packages \
+      requests beautifulsoup4 lxml pillow \
+      numpy pandas pyarrow python-calamine openpyxl xlrd \
+      pyyaml python-dateutil pytz regex
+
 RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/releases/download/v${MAIL_MCP_VERSION}/mail-mcp-x86_64-unknown-linux-gnu.tar.xz" \
     && echo "${MAIL_MCP_SHA256}  /tmp/mail-mcp.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/mail-mcp.tar.xz -C /tmp \
