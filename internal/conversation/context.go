@@ -246,6 +246,20 @@ func (c *Context) rebuildSystemMessage() {
 	c.messages = append([]llm.Message{{Role: "system", Content: content}}, c.messages...)
 }
 
+// LatestUserMessageText returns the Content of the most recent user-role
+// message in the conversation, or "" if no user message exists yet
+// (cold start — only system prompt loaded). Used by the per-turn
+// ToolsProvider closure to drive Qdrant tool retrieval (Phase 2 D-23).
+func (c *Context) LatestUserMessageText() string {
+	msgs := c.Messages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
 // Messages returns the current message list, prepending the summary if one exists.
 func (c *Context) Messages() []llm.Message {
 	if c.summary == "" {
