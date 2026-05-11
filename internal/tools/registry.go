@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -210,7 +211,11 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	elapsed := time.Since(start).Round(time.Millisecond)
 	if err != nil {
 		if r.logger != nil {
-			r.logger.Warn("tool failed", "tool", name, "elapsed", elapsed, "error", err)
+			// Log the error CLASS, not the raw message. Tool error strings
+			// often wrap LLM-controlled values (source IDs, hostnames, paths)
+			// and CLAUDE.md forbids logging those values. The LLM still sees
+			// the full err via the tool result; logs see a stable enum.
+			r.logger.Warn("tool failed", "tool", name, "elapsed", elapsed, "error_class", classifyToolError(err))
 		}
 		return "", err
 	}
@@ -280,9 +285,21 @@ func (r *Registry) ToolVectorHealth() ToolVectorHealth {
 	return r.vectorIndex.Health()
 }
 
+// sensitiveArgKeyRe matches argument key names that hint at credentials. The
+// LLM-controlled MCP layer can advertise arbitrary keys; CLAUDE.md's
+// "names + keys, never values" rule still leaks when the KEY itself is the
+// secret (e.g. {"api_key": "..."} — logging arg_keys=["api_key"] confirms the
+// LLM is moving a credential). We redact the name to "<redacted>" so the log
+// records "a sensitive arg was present" without naming it.
+var sensitiveArgKeyRe = regexp.MustCompile(`(?i)(?:^|[._-])(password|passwd|secret|token|api[_-]?key|auth|credential|bearer|session[_-]?id|cookie)(?:$|[._-])`)
+
 func argKeys(args map[string]any) []string {
 	keys := make([]string, 0, len(args))
 	for key := range args {
+		if sensitiveArgKeyRe.MatchString(key) {
+			keys = append(keys, "<redacted>")
+			continue
+		}
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
