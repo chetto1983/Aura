@@ -706,6 +706,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		// memoryindex (and its Qdrant mirror) after removing the raw
 		// files. Same store as the delete_source LLM tool.
 		SourcePurger: memoryStore,
+		// Multi-root file manager (dashboard).
+		WikiDir:      cfg.WikiPath,
+		WorkspaceDir: cfg.WorkspaceRoot,
+		SkillsDir:    cfg.SkillsPath,
+		// Reindex hook: wiki writes/renames/deletes trigger Qdrant
+		// reindex so the LLM never reads stale embeddings.
+		WikiSearch: searchEngine,
 		// Pending-approval pipeline. Bot owns the side-effects (DB
 		// transition + Telegram delivery), so the api package just sees
 		// the interface.

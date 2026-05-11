@@ -98,6 +98,20 @@ type Deps struct {
 	// is now stale until the next rebuild.
 	SourcePurger SourcePurger
 
+	// File-manager roots for /files/{root}/... endpoints. Empty values
+	// disable the matching root (the endpoint returns a "root not
+	// configured" error). WikiDir backs both wiki and sources (sources is
+	// resolved as WikiDir/raw, where Aura keeps ingested PDFs).
+	WikiDir      string
+	WorkspaceDir string
+	SkillsDir    string
+
+	// WikiSearch reindexes a wiki page after the dashboard writes,
+	// renames, or deletes its .md file. Optional: when nil, files writes
+	// still succeed but the LLM's vector index stays stale until the next
+	// rebuild.
+	WikiSearch WikiReindexer
+
 	SkillsAdmin bool
 
 	// Pending-approval pipeline. Bot wires the real implementation;
@@ -178,6 +192,14 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /sources/{id}/ingest", handleSourceIngest(deps))
 	mux.HandleFunc("POST /sources/{id}/reocr", handleSourceReocr(deps))
 	mux.HandleFunc("DELETE /sources/{id}", handleSourceDelete(deps))
+
+	// Multi-root file manager — wiki, sources, workspace, skills.
+	mux.HandleFunc("GET /files/{root}/tree", handleFilesList(deps))
+	mux.HandleFunc("GET /files/{root}/file", handleFilesRead(deps))
+	mux.HandleFunc("PUT /files/{root}/file", handleFilesWrite(deps))
+	mux.HandleFunc("DELETE /files/{root}/file", handleFilesDelete(deps))
+	mux.HandleFunc("POST /files/{root}/mkdir", handleFilesMkdir(deps))
+	mux.HandleFunc("POST /files/{root}/rename", handleFilesRename(deps))
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))
