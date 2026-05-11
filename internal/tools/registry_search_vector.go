@@ -44,7 +44,7 @@ type toolVectorDoc struct {
 	text string
 }
 
-type toolVectorIndex struct {
+type ToolVectorIndex struct {
 	qclient    qdrant.Client
 	collection string
 	cfg        ToolVectorConfig
@@ -68,17 +68,17 @@ type toolVectorIndex struct {
 	logger *slog.Logger
 }
 
-func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *toolVectorIndex {
+func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *ToolVectorIndex {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if cfg.Collection == "" {
-		cfg.Collection = "aura_tool_search"
+		cfg.Collection = "aura_tool_search_v2"
 	}
 	if cfg.Backend == "" {
 		cfg.Backend = "fts"
 	}
-	idx := &toolVectorIndex{
+	idx := &ToolVectorIndex{
 		cfg:        cfg,
 		collection: cfg.Collection,
 		http:       &http.Client{Timeout: 30 * time.Second},
@@ -99,7 +99,7 @@ func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *toolVectorIn
 	return idx
 }
 
-func (idx *toolVectorIndex) Ready(ctx context.Context) error {
+func (idx *ToolVectorIndex) Ready(ctx context.Context) error {
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil
 	}
@@ -121,7 +121,7 @@ func (idx *toolVectorIndex) Ready(ctx context.Context) error {
 // in-memory state (docCount, lastRebuild, lastError). This means Search
 // callers continue to see the previous snapshot during a long rebuild
 // instead of blocking on the rebuild's HTTP round-trips.
-func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) error {
+func (idx *ToolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) error {
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil
 	}
@@ -220,7 +220,7 @@ func (idx *toolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) err
 	return nil
 }
 
-func (idx *toolVectorIndex) Search(ctx context.Context, query string, topK int, excluded ...string) ([]ToolSearchResult, error) {
+func (idx *ToolVectorIndex) Search(ctx context.Context, query string, topK int, excluded ...string) ([]ToolSearchResult, error) {
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil, nil
 	}
@@ -275,7 +275,7 @@ func (idx *toolVectorIndex) Search(ctx context.Context, query string, topK int, 
 	return results, nil
 }
 
-func (idx *toolVectorIndex) Health() ToolVectorHealth {
+func (idx *ToolVectorIndex) Health() ToolVectorHealth {
 	if idx == nil {
 		return ToolVectorHealth{Backend: "fts", Fallback: true}
 	}
@@ -297,7 +297,7 @@ func (idx *toolVectorIndex) Health() ToolVectorHealth {
 	return h
 }
 
-func (idx *toolVectorIndex) embed(ctx context.Context, texts []string) ([][]float32, error) {
+func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]float32, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(idx.cfg.EmbedBaseURL), "/")
 	body := map[string]any{
 		"model": idx.cfg.EmbedModel,

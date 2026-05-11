@@ -60,7 +60,7 @@ func (t categorizedTool) Categories() []string {
 type Registry struct {
 	mu          sync.RWMutex
 	tools       map[string]Tool
-	vectorIndex *toolVectorIndex
+	vectorIndex *ToolVectorIndex
 	logger      *slog.Logger
 }
 
@@ -230,10 +230,10 @@ func (r *Registry) BuildVectorIndex(cfg ToolVectorConfig) {
 	docs := make([]toolVectorDoc, 0, len(r.tools))
 	for _, t := range r.tools {
 		def := definitionForTool(t)
-		tags := toolCategories(t)
+		_ = toolCategories(t) // tags no longer used for embedding (D-24)
 		docs = append(docs, toolVectorDoc{
 			name: def.Name,
-			text: searchableToolText(def, tags),
+			text: searchableToolEmbeddingText(def), // D-24: narrow embedding text
 		})
 	}
 	r.mu.RUnlock()
@@ -247,7 +247,7 @@ func (r *Registry) BuildVectorIndex(cfg ToolVectorConfig) {
 	r.logger.Info("tool vector index ready", "backend", cfg.Backend, "docs", len(docs))
 }
 
-func (r *Registry) SetVectorIndex(idx *toolVectorIndex) {
+func (r *Registry) SetVectorIndex(idx *ToolVectorIndex) {
 	if r == nil {
 		return
 	}

@@ -18,8 +18,8 @@ func TestNewToolVectorIndexDefaults(t *testing.T) {
 	if idx.cfg.Backend != "fts" {
 		t.Fatalf("default backend = %q, want fts", idx.cfg.Backend)
 	}
-	if idx.cfg.Collection != "aura_tool_search" {
-		t.Fatalf("default collection = %q, want aura_tool_search", idx.cfg.Collection)
+	if idx.cfg.Collection != "aura_tool_search_v2" {
+		t.Fatalf("default collection = %q, want aura_tool_search_v2", idx.cfg.Collection)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestToolVectorIndexBuildWhenFTS(t *testing.T) {
 }
 
 func TestToolVectorIndexNilReady(t *testing.T) {
-	var idx *toolVectorIndex
+	var idx *ToolVectorIndex
 	if err := idx.Ready(context.Background()); err != nil {
 		t.Fatalf("nil index Ready should not error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestToolVectorIndexHealthWithError(t *testing.T) {
 }
 
 func TestToolVectorIndexNilHealth(t *testing.T) {
-	var idx *toolVectorIndex
+	var idx *ToolVectorIndex
 	h := idx.Health()
 	if h.Backend != "fts" {
 		t.Fatalf("nil Health.Backend = %q, want fts", h.Backend)
@@ -121,8 +121,8 @@ func TestToolVectorIndexBuildEmptyDocs(t *testing.T) {
 
 func TestToolVectorConfigDefaultCollection(t *testing.T) {
 	idx := NewToolVectorIndex(ToolVectorConfig{Backend: "hybrid", Collection: ""}, nil)
-	if idx.cfg.Collection != "aura_tool_search" {
-		t.Fatalf("Collection = %q, want aura_tool_search", idx.cfg.Collection)
+	if idx.cfg.Collection != "aura_tool_search_v2" {
+		t.Fatalf("Collection = %q, want aura_tool_search_v2", idx.cfg.Collection)
 	}
 }
 
@@ -136,9 +136,9 @@ func TestToolVectorConfigCustomCollection(t *testing.T) {
 	}
 }
 
-// newToolVectorIndexForTest creates a toolVectorIndex backed by a qdrant test server and an
+// newToolVectorIndexForTest creates a ToolVectorIndex backed by a qdrant test server and an
 // optional embed test server. embedServerURL may be empty to assert embed is not called.
-func newToolVectorIndexForTest(t *testing.T, qdrantServerURL, embedServerURL string) *toolVectorIndex {
+func newToolVectorIndexForTest(t *testing.T, qdrantServerURL, embedServerURL string) *ToolVectorIndex {
 	t.Helper()
 	cfg := ToolVectorConfig{
 		Backend:      "vector",
