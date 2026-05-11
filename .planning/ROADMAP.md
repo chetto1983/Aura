@@ -36,7 +36,15 @@ The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram 
   4. Every wiki mutation creates a git commit via go-git v5.19.0; if the commit fails, the page frontmatter shows `unversioned: true` for audit visibility in the dashboard
   5. Wiki writes trigger async reindexing via a buffered-channel background worker with `select/default` coalescing -- the write call returns immediately without waiting for embedding API latency, and dropped reindex signals are safe (Qdrant already has the previous vector)
   6. The agent receives context-relevant tool definitions injected into the prompt via Qdrant semantic matching; the `tool_search` tool is removed and tool discovery is fully automatic
-**Plans**: TBD
+**Plans**: 8 plans
+- [ ] 02-01-PLAN.md -- LLM classify+retry (LLM-01, LLM-02): ErrSchemaValidation sentinels, APIError, redactor, RetryClient rewrite
+- [ ] 02-02-PLAN.md -- Async reindex worker (INDEX-01): internal/reindex package with dedicated-ctx + done-chan lifecycle
+- [ ] 02-03-PLAN.md -- go-git v5.19.0 + Page.Unversioned + store_writes.go factor + ETag (WIKI-02, GIT-01)
+- [ ] 02-04-PLAN.md -- write_wiki_page tool (WIKI-01, WIKI-02): JSON Schema additionalProperties:false, conflict-as-result, reindex submission
+- [ ] 02-05-PLAN.md -- ToolVectorIndex export + embedding-text narrowing + collection v2 rename (TOOL-01)
+- [ ] 02-06-PLAN.md -- Per-turn ToolsProvider closure + setup.go wiring + tool_search deletion sweep (TOOL-01, TOOL-02, INDEX-01, WIKI-01, GIT-01)
+- [ ] 02-07-PLAN.md -- Dashboard API passthrough + WikiPageView badge for unversioned (GIT-01)
+- [ ] 02-08-PLAN.md -- CI god-class guard + heuristic-removal + tool_search-removal scripts + retrieval precision@5 fixture (WIKI-01, TOOL-01, TOOL-02)
 
 ### Phase 3: Resilience Layer
 **Goal**: LLM provider failures are isolated via circuit breakers without serializing concurrent users, and per-user token budgets prevent runaway cost while preserving accurate per-user accounting.
@@ -64,6 +72,6 @@ The v4.0 Production Hardening milestone makes Aura safe for concurrent Telegram 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fondamenta (Concurrency + Qdrant Readiness) | 0/TBD | Not started | - |
-| 2. LLM Reliability & Tool Intelligence | 0/TBD | Not started | - |
+| 2. LLM Reliability & Tool Intelligence | 0/8 | Not started | - |
 | 3. Resilience Layer | 0/TBD | Not started | - |
 | 4. Cleanup & Consolidation | 0/TBD | Not started | - |
