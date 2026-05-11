@@ -154,7 +154,8 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"every_minutes": map[string]any{
 				"type":        "integer",
-				"description": "Recurring interval in minutes (>=1), e.g. 60 hourly, 1440 daily, 10080 weekly. First fire is N minutes from now.",
+				"description": "Recurring interval in minutes (>=5), e.g. 60 hourly, 1440 daily, 10080 weekly. First fire is N minutes from now. Minimum 5 minutes to bound cost and avoid self-DoS.",
+				"minimum":     minScheduleEveryMinutes,
 			},
 		},
 		"required": []string{"name", "kind"},
@@ -478,6 +479,12 @@ func parseLocalWallClock(s string, loc *time.Location) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("expected YYYY-MM-DDTHH:MM[:SS] (no timezone), got %q", s)
 }
 
+// minScheduleEveryMinutes caps how often the LLM may schedule a recurring task.
+// Anything tighter is a cost-bomb / self-DoS surface: a single prompt-injected
+// schedule of every_minutes=1 would fire the agent loop every minute,
+// exhausting LLM budget and writing archive rows on every fire.
+const minScheduleEveryMinutes = 5
+
 func positiveIntArg(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -499,6 +506,9 @@ func positiveIntArg(args map[string]any, key string) (int, bool, error) {
 	}
 	if n < 1 {
 		return 0, true, fmt.Errorf("schedule_task: %s must be >= 1", key)
+	}
+	if key == "every_minutes" && n < minScheduleEveryMinutes {
+		return 0, true, fmt.Errorf("schedule_task: every_minutes must be >= %d", minScheduleEveryMinutes)
 	}
 	return n, true, nil
 }
