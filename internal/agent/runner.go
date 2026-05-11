@@ -255,9 +255,13 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 		}
 	}
 
+	// Bound the inlined tail so the caller never sees a multi-KB JSON dump
+	// when the loop exhausts iterations (F-028). The natural-language
+	// synthesis path (agentloop.finalizeAnswerAfterBudget) is a higher-fidelity
+	// alternative; consolidating both runners is the F-036 follow-up.
 	content := "Agent loop stopped after reaching the maximum iteration limit."
 	if lastToolResult != "" {
-		content += "\n\nLast tool result:\n" + lastToolResult
+		content += "\n\nLast tool result (truncated):\n" + limitToolContent(lastToolResult, 400)
 	}
 	messages = append(messages, llm.Message{Role: "assistant", Content: content})
 	result.Content = content
@@ -458,7 +462,11 @@ func toolBudgetFinalInstruction(maxToolCalls int) string {
 }
 
 func interruptedContent(err error, lastToolResult string, result Result) string {
-	content := fmt.Sprintf("AuraBot worker interrupted before a final answer: %v. Partial metrics: llm_calls=%d tool_calls=%d tokens=%d.", err, result.LLMCalls, result.ToolCalls, result.Tokens.TotalTokens)
+	// User-visible content stays free of internal metrics. The same metrics
+	// already live on the Result struct (LLMCalls, ToolCalls, Tokens) so the
+	// caller can decide whether to surface them. Surfacing them here also
+	// trips LooksLikeUnsafeFinalAnswer in the terminal finaliser (F-027).
+	content := fmt.Sprintf("AuraBot worker interrupted before a final answer: %v.", err)
 	if strings.TrimSpace(lastToolResult) != "" {
 		content += "\n\nLast tool result:\n" + lastToolResult
 	}

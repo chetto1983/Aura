@@ -437,7 +437,7 @@ func TestTerminalFileResultMasksSourceIDAndRawJSON(t *testing.T) {
 			t.Fatalf("formatTerminalFileResult leaked %q in %q", leaked, got)
 		}
 	}
-	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "inviato") {
+	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "sent it here") {
 		t.Fatalf("formatTerminalFileResult = %q, want filename and delivery summary", got)
 	}
 }
@@ -570,7 +570,7 @@ func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
 	raw := "exit_code: 0\nelapsed_ms: 42\n\n5050\n\nartifacts:\n- aura_sum.csv (36 bytes, text/csv, delivered=true, persisted=true, source_id=src_123)"
 
 	got := formatTerminalExecuteCodeResult(raw)
-	if !strings.Contains(got, "5050") || !strings.Contains(got, "File generati:") || !strings.Contains(got, "aura_sum.csv") {
+	if !strings.Contains(got, "5050") || !strings.Contains(got, "Generated files:") || !strings.Contains(got, "aura_sum.csv") {
 		t.Fatalf("formatTerminalExecuteCodeResult() = %q", got)
 	}
 	for _, leaked := range []string{"exit_code", "elapsed_ms", "source_id", "delivered=true", "persisted=true"} {
@@ -582,7 +582,10 @@ func TestFormatTerminalExecuteCodeResultKeepsStdoutAndArtifacts(t *testing.T) {
 
 func TestFormatTerminalFileResultUsesMetadataWithoutExtraLLM(t *testing.T) {
 	got := formatTerminalFileResult("create_docx", `{"source_id":"src_123","filename":"report.docx","size_bytes":42,"delivered":true}`)
-	for _, want := range []string{"DOCX", "report.docx", "inviato"} {
+	// F-034: terminal fallback strings are English now ("delivered it here"
+	// instead of "inviato"). The earlier Italian assertion encoded the
+	// pre-fix behaviour.
+	for _, want := range []string{"DOCX", "report.docx", "sent it here"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTerminalFileResult() = %q, missing %q", got, want)
 		}

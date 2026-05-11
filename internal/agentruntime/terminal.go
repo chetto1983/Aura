@@ -86,74 +86,92 @@ func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool strin
 	return out
 }
 
-func LooksLikeToolCallMarkup(text string) bool {
-	lower := strings.ToLower(text)
-	return strings.Contains(lower, "tool_calls") ||
-		strings.Contains(lower, "dsml") ||
-		strings.Contains(lower, "invoke name=") ||
-		strings.Contains(lower, "parameter name=") ||
-		strings.Contains(lower, "<tool_call") ||
-		strings.Contains(lower, `"tool_calls"`)
+// markerCategory bitmask classifies known unsafe text markers. One canonical
+// table replaces three near-identical functions so adding a new marker only
+// touches one place (F-033). Each marker tags which detectors trip on it;
+// the public LooksLike* helpers filter by category.
+type markerCategory uint8
+
+const (
+	categoryToolCall  markerCategory = 1 << iota // tool-call markup
+	categoryInternal                             // internal/diagnostic noise
+	categoryFinal                                // unsafe final-answer content
+)
+
+var unsafeMarkers = []struct {
+	marker     string
+	categories markerCategory
+}{
+	{"tool_calls", categoryToolCall | categoryInternal | categoryFinal},
+	{`"tool_calls"`, categoryToolCall | categoryFinal},
+	{"<tool_call", categoryToolCall},
+	{"dsml", categoryToolCall},
+	{"invoke name=", categoryToolCall},
+	{"parameter name=", categoryToolCall},
+
+	{"source_id", categoryInternal | categoryFinal},
+	{"tokens_prompt", categoryInternal},
+	{"tokens_completion", categoryInternal},
+	{"tokens_total", categoryInternal | categoryFinal},
+	{"llm_calls", categoryInternal},
+	{"elapsed_ms", categoryInternal | categoryFinal},
+	{"exit_code", categoryInternal},
+	{"exit_code:", categoryFinal},
+	{"workspace_root", categoryInternal | categoryFinal},
+	{"top_dirs_in_workspace", categoryInternal | categoryFinal},
+	{"/var/lib/", categoryInternal | categoryFinal},
+	{"filesystem", categoryInternal},
+	{"mounted on", categoryInternal},
+	{"overlay", categoryInternal},
+	{"tmpfs", categoryInternal},
+	{"--- stderr ---", categoryInternal},
+	{"stdout:", categoryInternal},
+	{"stderr:", categoryInternal},
+	{"cmd:", categoryInternal},
+	{"cwd:", categoryInternal},
+
+	{"memory evidence for", categoryFinal},
+	{"evidence envelope:", categoryFinal},
+	{`"ok":false`, categoryFinal},
 }
 
-func LooksLikeInternalToolResult(text string) bool {
+func containsAnyMarker(text string, cat markerCategory) bool {
 	lower := strings.ToLower(text)
-	for _, marker := range []string{
-		"source_id",
-		"tokens_prompt",
-		"tokens_completion",
-		"tokens_total",
-		"llm_calls",
-		"tool_calls",
-		"elapsed_ms",
-		"exit_code",
-		"workspace_root",
-		"top_dirs_in_workspace",
-		"filesystem",
-		"mounted on",
-		"/var/lib/",
-		"overlay",
-		"tmpfs",
-		"--- stderr ---",
-		"stdout:",
-		"stderr:",
-		"cmd:",
-		"cwd:",
-	} {
-		if strings.Contains(lower, marker) {
+	for _, entry := range unsafeMarkers {
+		if entry.categories&cat == 0 {
+			continue
+		}
+		if strings.Contains(lower, entry.marker) {
 			return true
 		}
 	}
 	return false
 }
 
+func LooksLikeToolCallMarkup(text string) bool {
+	return containsAnyMarker(text, categoryToolCall)
+}
+
+func LooksLikeInternalToolResult(text string) bool {
+	return containsAnyMarker(text, categoryInternal)
+}
+
+// LooksLikeUnsafeFinalAnswer reports content that should not reach the end
+// user as-is — internal markers OR JSON-shaped bodies that also carry one
+// of the internal markers (F-032). The earlier "any text shaped like JSON"
+// check produced false positives when the user explicitly asked for JSON.
 func LooksLikeUnsafeFinalAnswer(text string) bool {
-	lower := strings.ToLower(text)
-	for _, marker := range []string{
-		"memory evidence for",
-		"evidence envelope:",
-		"exit_code:",
-		"elapsed_ms",
-		"source_id",
-		"tokens_total",
-		`"ok":false`,
-		`"tool_calls"`,
-		"tool_calls",
-		"workspace_root",
-		"top_dirs_in_workspace",
-		"/var/lib/",
-	} {
-		if strings.Contains(lower, marker) {
-			return true
-		}
+	if containsAnyMarker(text, categoryFinal) {
+		return true
 	}
-	// Raw JSON body looks unsafe — the LLM should synthesize it into prose
-	// rather than dumping curl/API responses to the user.
 	trimmed := strings.TrimSpace(text)
-	if len(trimmed) >= 4 {
-		if (trimmed[0] == '{' && trimmed[len(trimmed)-1] == '}') || (trimmed[0] == '[' && trimmed[len(trimmed)-1] == ']') {
-			return true
-		}
+	if len(trimmed) < 4 {
+		return false
+	}
+	if (trimmed[0] == '{' && trimmed[len(trimmed)-1] == '}') || (trimmed[0] == '[' && trimmed[len(trimmed)-1] == ']') {
+		// JSON shape alone is not enough; require co-occurrence with an
+		// internal marker so "give me your answer as JSON" round-trips.
+		return containsAnyMarker(trimmed, categoryInternal|categoryToolCall)
 	}
 	return false
 }
@@ -167,13 +185,18 @@ func TerminalToolFallbackResponse(terminalTool, rawToolResult string) string {
 	if toolName == "" {
 		toolName = "the terminal tool"
 	}
+	// Neutral English fallback (F-034). The previous Italian copy was a
+	// holdover from early single-language development; Aura runs in any
+	// language and the fallback should not assume one. The LLM's own
+	// natural-language synthesis is the higher-fidelity path; this string
+	// only ships when synthesis is unavailable or unsafe.
 	if toolName == "write_file" || toolName == "apply_patch" {
-		return "Fatto: ho aggiornato i file richiesti e ho fermato il turno dopo il salvataggio."
+		return "Done. I updated the requested files and stopped the turn after the save."
 	}
 	if toolName == "execute_shell" {
-		return "Ho controllato l'ambiente e ho una risposta, ma evito di incollarti l'output tecnico grezzo."
+		return "I checked the environment and have an answer, but I'm skipping the raw technical output."
 	}
-	return fmt.Sprintf("Fatto: %s ha completato il lavoro.", toolName)
+	return fmt.Sprintf("Done. %s completed the work.", toolName)
 }
 
 func FormatTerminalExecuteCodeResult(raw string) string {
@@ -182,7 +205,7 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 		return "Sandbox execution completed, but no result was returned."
 	}
 	if looksLikeStructuredToolError(raw) {
-		return "Il comando non e riuscito e non ha prodotto un risultato utile da mostrare."
+		return "The command failed and produced no useful result to show."
 	}
 	body := raw
 	if idx := strings.Index(body, "\n\n"); idx >= 0 {
@@ -191,7 +214,7 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 		return "Sandbox execution completed."
 	}
 	if strings.HasPrefix(strings.TrimSpace(body), "--- stderr ---") {
-		return "Il comando non ha prodotto un risultato utile da mostrare."
+		return "The command produced no useful result to show."
 	}
 	artifacts := ""
 	if idx := strings.Index(body, "\n\nartifacts:"); idx >= 0 {
@@ -206,9 +229,9 @@ func FormatTerminalExecuteCodeResult(raw string) string {
 	}
 	names := artifactNamesFromSandboxResult(artifacts)
 	if len(names) == 0 {
-		return body + "\n\nHo generato gli allegati richiesti."
+		return body + "\n\nGenerated the requested attachments."
 	}
-	return body + "\n\nFile generati: " + strings.Join(names, ", ") + "."
+	return body + "\n\nGenerated files: " + strings.Join(names, ", ") + "."
 }
 
 func looksLikeStructuredToolError(raw string) bool {
@@ -255,7 +278,7 @@ func FormatTerminalFileResult(toolName, raw string) string {
 		Duplicate bool   `json:"duplicate"`
 	}
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
-		return "File creato e salvato."
+		return "File created and saved."
 	}
 	kind := strings.TrimPrefix(toolName, "create_")
 	if kind == "" {
@@ -263,18 +286,18 @@ func FormatTerminalFileResult(toolName, raw string) string {
 	}
 	var sb strings.Builder
 	if strings.TrimSpace(resp.Filename) != "" {
-		fmt.Fprintf(&sb, "Ho creato il file %s `%s`", strings.ToUpper(kind), resp.Filename)
+		fmt.Fprintf(&sb, "Created %s file `%s`", strings.ToUpper(kind), resp.Filename)
 	} else {
-		fmt.Fprintf(&sb, "Ho creato il file %s", strings.ToUpper(kind))
+		fmt.Fprintf(&sb, "Created %s file", strings.ToUpper(kind))
 	}
 	if resp.SizeBytes > 0 {
 		fmt.Fprintf(&sb, " (%d bytes)", resp.SizeBytes)
 	}
 	if resp.Delivered {
-		sb.WriteString(" e l'ho inviato qui")
+		sb.WriteString(" and sent it here")
 	}
 	if resp.Duplicate {
-		sb.WriteString(" (era gia' presente)")
+		sb.WriteString(" (already existed)")
 	}
 	sb.WriteString(".")
 	return sb.String()

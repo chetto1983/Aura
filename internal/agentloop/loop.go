@@ -151,6 +151,13 @@ type Stats struct {
 	CostUSD           float64
 	MaxIterationsHit  bool
 	MaxElapsedHit     bool
+	// StopReason names the early-exit branch taken by Run, when applicable:
+	//   "before_llm"          — opts.BeforeLLM returned stop=true (cost/budget gate)
+	//   "max_iterations_hit"  — loop exhausted opts.MaxIterations
+	//   "max_elapsed_hit"     — wall-clock exceeded opts.MaxElapsed
+	//   ""                    — natural completion (LLM returned no tool calls)
+	// (F-030)
+	StopReason string
 }
 
 // MaxIterationsCeiling is a hard upper bound the loop applies to whatever
@@ -208,6 +215,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		remaining := opts.MaxElapsed - time.Since(start)
 		if remaining <= 0 {
 			stats.MaxElapsedHit = true
+			stats.StopReason = "max_elapsed_hit"
 			logger.Warn("agentloop: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 			answer := finalAnswerOnBudget(lastToolResult)
 			state.AddAssistantMessage(answer)
@@ -229,6 +237,8 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		iterCtx, iterCancel = context.WithTimeout(ctx, remaining)
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
+				stats.StopReason = "before_llm"
+				logger.Info("agentloop: before_llm_stop", "iteration", iteration)
 				return Result{Text: message, Stats: stats}, nil
 			}
 		}
@@ -385,6 +395,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	}
 
 	stats.MaxIterationsHit = true
+	stats.StopReason = "max_iterations_hit"
 	logger.Warn("agentloop: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
 	if opts.AllowNoToolFinalization {
 		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {

@@ -35,7 +35,7 @@ func TestFormatTerminalExecuteCodeResultDoesNotLeakBareStderr(t *testing.T) {
 			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
 		}
 	}
-	if !strings.Contains(got, "non ha prodotto un risultato utile") {
+	if !strings.Contains(got, "produced no useful result") {
 		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
 	}
 }
@@ -50,7 +50,7 @@ func TestFormatTerminalExecuteCodeResultDoesNotLeakToolErrorJSON(t *testing.T) {
 			t.Fatalf("FormatTerminalExecuteCodeResult leaked %q in %q", leaked, got)
 		}
 	}
-	if !strings.Contains(got, "non e riuscito") {
+	if !strings.Contains(got, "command failed") {
 		t.Fatalf("FormatTerminalExecuteCodeResult = %q, want natural failure", got)
 	}
 }
@@ -117,7 +117,7 @@ func TestFormatTerminalFileResultMasksRawJSON(t *testing.T) {
 			t.Fatalf("FormatTerminalFileResult leaked %q in %q", leaked, got)
 		}
 	}
-	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "inviato") {
+	if !strings.Contains(got, "report.docx") || !strings.Contains(got, "sent it here") {
 		t.Fatalf("FormatTerminalFileResult = %q, want filename and delivery summary", got)
 	}
 }
@@ -144,7 +144,7 @@ func TestTerminalToolFallbackMasksShellDump(t *testing.T) {
 			t.Fatalf("TerminalToolFallbackResponse leaked %q in %q", leaked, got)
 		}
 	}
-	if !strings.Contains(got, "output tecnico grezzo") {
+	if !strings.Contains(got, "raw technical output") {
 		t.Fatalf("TerminalToolFallbackResponse = %q, want natural shell fallback", got)
 	}
 }
