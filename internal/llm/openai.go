@@ -111,17 +111,40 @@ type chatResponse struct {
 		Message      messageResponseJSON `json:"message"`
 		FinishReason string              `json:"finish_reason"`
 	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
+	Usage usageJSON `json:"usage"`
 }
 
+// usageJSON covers both the legacy OpenAI shape (prompt/completion/total
+// only) and the reasoning-aware shape OpenAI introduced for o-series /
+// gpt-5* and that OpenRouter mirrors for reasoning-capable models.
+// completion_tokens_details.reasoning_tokens lets the caller separate
+// "tokens spent thinking" from "tokens shown to the user" so cost
+// attribution and prompt-budget heuristics can act on the breakdown.
+type usageJSON struct {
+	PromptTokens           int                       `json:"prompt_tokens"`
+	CompletionTokens       int                       `json:"completion_tokens"`
+	TotalTokens            int                       `json:"total_tokens"`
+	CompletionTokensDetail *completionTokensDetailJSON `json:"completion_tokens_details,omitempty"`
+}
+
+type completionTokensDetailJSON struct {
+	ReasoningTokens int `json:"reasoning_tokens,omitempty"`
+}
+
+// messageResponseJSON carries the assistant's response. Reasoning and
+// ReasoningDetails are populated by reasoning-capable providers
+// (OpenRouter, OpenAI Responses-API-compatible passthroughs); everywhere
+// else they stay empty. Reasoning is a plaintext blob (the model's own
+// summary of its thinking), ReasoningDetails an opaque structured slice
+// (summary, encrypted_content, text) the model expects to round-trip on
+// the next turn — surface them so callers that want full fidelity can
+// keep them around.
 type messageResponseJSON struct {
-	Role      string         `json:"role"`
-	Content   string         `json:"content"`
-	ToolCalls []toolCallJSON `json:"tool_calls,omitempty"`
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	ToolCalls        []toolCallJSON  `json:"tool_calls,omitempty"`
+	Reasoning        string          `json:"reasoning,omitempty"`
+	ReasoningDetails json.RawMessage `json:"reasoning_details,omitempty"`
 }
 
 type toolWrapper struct {
@@ -150,6 +173,7 @@ type streamChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content   string              `json:"content"`
+			Reasoning string              `json:"reasoning"`
 			ToolCalls []toolCallDeltaJSON `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
@@ -158,9 +182,10 @@ type streamChunk struct {
 	// is set. Empty Choices in that final chunk signals it's the usage
 	// summary, not a content delta.
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens           int                         `json:"prompt_tokens"`
+		CompletionTokens       int                         `json:"completion_tokens"`
+		TotalTokens            int                         `json:"total_tokens"`
+		CompletionTokensDetail *completionTokensDetailJSON `json:"completion_tokens_details,omitempty"`
 	} `json:"usage"`
 }
 
@@ -236,16 +261,34 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		return Response{}, err
 	}
 
+	var reasoningTokens int
+	if chatResp.Usage.CompletionTokensDetail != nil {
+		reasoningTokens = chatResp.Usage.CompletionTokensDetail.ReasoningTokens
+	}
 	return Response{
-		Content:      msg.Content,
-		HasToolCalls: len(toolCalls) > 0,
-		ToolCalls:    toolCalls,
+		Content:          msg.Content,
+		HasToolCalls:     len(toolCalls) > 0,
+		ToolCalls:        toolCalls,
+		Reasoning:        msg.Reasoning,
+		ReasoningDetails: cloneRawJSON(msg.ReasoningDetails),
 		Usage: TokenUsage{
 			PromptTokens:     chatResp.Usage.PromptTokens,
 			CompletionTokens: chatResp.Usage.CompletionTokens,
 			TotalTokens:      chatResp.Usage.TotalTokens,
+			ReasoningTokens:  reasoningTokens,
 		},
 	}, nil
+}
+
+// cloneRawJSON copies a json.RawMessage so the caller cannot mutate the
+// decoder's backing buffer. Returns nil for empty input.
+func cloneRawJSON(raw json.RawMessage) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]byte, len(raw))
+	copy(out, raw)
+	return out
 }
 
 // Stream makes a streaming call to the LLM, returning a channel of tokens.
@@ -515,12 +558,22 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 				CompletionTokens: chunk.Usage.CompletionTokens,
 				TotalTokens:      chunk.Usage.TotalTokens,
 			}
+			if chunk.Usage.CompletionTokensDetail != nil {
+				usage.ReasoningTokens = chunk.Usage.CompletionTokensDetail.ReasoningTokens
+			}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
 		choice := chunk.Choices[0]
 
+		// Surface reasoning deltas as they arrive so UIs can show the
+		// model's chain-of-thought live instead of stalling on a placeholder
+		// while the provider thinks. Empty everywhere except reasoning-
+		// capable providers (DeepSeek V4 Flash, OpenAI o-series / gpt-5*).
+		if choice.Delta.Reasoning != "" {
+			ch <- Token{Reasoning: choice.Delta.Reasoning}
+		}
 		if choice.Delta.Content != "" {
 			ch <- Token{Content: choice.Delta.Content}
 		}

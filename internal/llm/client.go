@@ -50,18 +50,33 @@ type ToolCall struct {
 }
 
 // Response represents an LLM API response.
+//
+// Reasoning carries the plaintext "thinking" the model produced before its
+// final answer, when the provider surfaces it (OpenRouter on Claude /
+// DeepSeek / o-series; empty everywhere else). ReasoningDetails is the
+// opaque structured array providers want the caller to round-trip on the
+// next turn — kept as raw bytes so we never lose fidelity.
 type Response struct {
-	Content      string
-	Usage        TokenUsage
-	HasToolCalls bool
-	ToolCalls    []ToolCall
+	Content          string
+	Usage            TokenUsage
+	HasToolCalls     bool
+	ToolCalls        []ToolCall
+	Reasoning        string
+	ReasoningDetails []byte
 }
 
 // TokenUsage tracks token consumption for a single LLM call.
+//
+// ReasoningTokens, when non-zero, accounts for tokens the model spent on
+// chain-of-thought that did NOT reach Content. It is included in
+// CompletionTokens (and therefore in TotalTokens) so existing budget
+// math is unchanged; treat it as a finer-grained breakdown rather than a
+// separate counter to add on top.
 type TokenUsage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	ReasoningTokens  int
 }
 
 // Token represents a streaming response chunk.
@@ -82,6 +97,13 @@ type TokenUsage struct {
 // callers must tolerate that.
 type Token struct {
 	Content   string
+	// Reasoning is the chain-of-thought delta produced by reasoning-capable
+	// providers (DeepSeek V4 Flash, OpenAI o-series / gpt-5*, Anthropic
+	// thinking). It is NOT part of the final answer; UIs should render it
+	// in a distinct style (italic, faded, "🧠 thinking…" prefix) so the
+	// user sees progress instead of a stall, and can ignore it once the
+	// Content stream begins. Empty when the provider does not surface it.
+	Reasoning string
 	ToolCalls []ToolCall
 	Usage     TokenUsage
 	Done      bool

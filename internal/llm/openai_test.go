@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -528,6 +529,85 @@ func TestRetryClientWithOpenAIClient(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+// TestOpenAIClientSendParsesReasoningResponse verifies that the response
+// parser lifts the provider-side reasoning fields onto Response and
+// TokenUsage. Tested against the OpenRouter wire shape observed in a
+// real probe against DeepSeek V4 Flash on 2026-05-11.
+func TestOpenAIClientSendParsesReasoningResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"choices":[{"message":{
+				"role":"assistant",
+				"content":"Final answer.",
+				"reasoning":"thinking out loud about the answer",
+				"reasoning_details":[{"type":"reasoning.text","text":"thinking out loud","format":"unknown","index":0}]
+			}}],
+			"usage":{
+				"prompt_tokens":100,
+				"completion_tokens":50,
+				"total_tokens":150,
+				"completion_tokens_details":{"reasoning_tokens":20}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "deepseek/deepseek-v4-flash"})
+	resp, err := client.Send(context.Background(), Request{
+		Messages:        []Message{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "high",
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if resp.Content != "Final answer." {
+		t.Errorf("Content = %q, want %q", resp.Content, "Final answer.")
+	}
+	if resp.Reasoning != "thinking out loud about the answer" {
+		t.Errorf("Reasoning = %q", resp.Reasoning)
+	}
+	if !strings.Contains(string(resp.ReasoningDetails), "reasoning.text") {
+		t.Errorf("ReasoningDetails missing structured type: %s", resp.ReasoningDetails)
+	}
+	if resp.Usage.ReasoningTokens != 20 {
+		t.Errorf("ReasoningTokens = %d, want 20", resp.Usage.ReasoningTokens)
+	}
+	if resp.Usage.CompletionTokens != 50 {
+		t.Errorf("CompletionTokens = %d, want 50", resp.Usage.CompletionTokens)
+	}
+	if resp.Usage.TotalTokens != 150 {
+		t.Errorf("TotalTokens = %d, want 150", resp.Usage.TotalTokens)
+	}
+}
+
+func TestOpenAIClientSendOmitsReasoningTokensWhenAbsent(t *testing.T) {
+	// Vanilla (non-reasoning) provider response — no completion_tokens_details
+	// block, no reasoning field. Response.Reasoning empty and ReasoningTokens=0.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"hi"}}],
+			"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "gpt-4o"})
+	resp, err := client.Send(context.Background(), Request{Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if resp.Reasoning != "" {
+		t.Errorf("Reasoning unexpectedly populated: %q", resp.Reasoning)
+	}
+	if len(resp.ReasoningDetails) != 0 {
+		t.Errorf("ReasoningDetails unexpectedly populated: %s", resp.ReasoningDetails)
+	}
+	if resp.Usage.ReasoningTokens != 0 {
+		t.Errorf("ReasoningTokens = %d, want 0", resp.Usage.ReasoningTokens)
 	}
 }
 

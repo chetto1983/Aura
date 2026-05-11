@@ -71,6 +71,76 @@ func TestConsumeStreamEditsPlaceholderAndSuppressesDoubleSend(t *testing.T) {
 	}
 }
 
+func TestConsumeStreamRendersReasoningAboveContent(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123},
+		Chat:   &tele.Chat{ID: 123},
+		Text:   "hi",
+	}})
+
+	answer := strings.Repeat("ok ", streamingMinThreshold)
+	ch := make(chan llm.Token, 4)
+	ch <- llm.Token{Reasoning: "Considering options carefully so the answer is concise."}
+	ch <- llm.Token{Reasoning: " The user wants a short reply."}
+	ch <- llm.Token{Content: answer}
+	ch <- llm.Token{Done: true, Usage: llm.TokenUsage{TotalTokens: 12, ReasoningTokens: 5}}
+	close(ch)
+
+	b := &Bot{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	resp, delivered, err := b.consumeStream(ctx, ch, "123", &tele.Message{ID: 1, Chat: &tele.Chat{ID: 123}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !delivered {
+		t.Fatal("delivered = false, want true after CoT + content edit")
+	}
+	if !strings.Contains(resp.Reasoning, "Considering options") || !strings.Contains(resp.Reasoning, "short reply") {
+		t.Fatalf("Response.Reasoning lost streamed deltas: %q", resp.Reasoning)
+	}
+	if resp.Usage.ReasoningTokens != 5 {
+		t.Fatalf("Usage.ReasoningTokens = %d, want 5", resp.Usage.ReasoningTokens)
+	}
+	// At least one edit body must carry the 🧠 prefix + italic CoT block so
+	// the user sees the model thinking live, even before content arrives.
+	var sawCoTPrefix bool
+	for _, call := range calls {
+		if call.Method != "editMessageText" {
+			continue
+		}
+		body, _ := call.Body["text"].(string)
+		if strings.Contains(body, "🧠") && strings.Contains(body, "Considering options") {
+			sawCoTPrefix = true
+			break
+		}
+	}
+	if !sawCoTPrefix {
+		t.Fatalf("no editMessageText carried the live CoT prefix: %+v", calls)
+	}
+}
+
+func TestComposeStreamingMessageShape(t *testing.T) {
+	if got := composeStreamingMessage("", ""); got != "" {
+		t.Errorf("empty/empty = %q, want empty", got)
+	}
+	if got := composeStreamingMessage("", "hello"); got != "hello" {
+		t.Errorf("empty/content = %q, want hello", got)
+	}
+	if got := composeStreamingMessage("thinking", ""); got != "🧠 _thinking_" {
+		t.Errorf("cot/empty = %q", got)
+	}
+	if got := composeStreamingMessage("thinking", "answer"); got != "🧠 _thinking_\n\nanswer" {
+		t.Errorf("cot/content = %q", got)
+	}
+}
+
 func TestConsumeStreamToolCallDoesNotMarkDelivered(t *testing.T) {
 	var calls []telegramAPICall
 	srv := newTelegramAPIServer(t, &calls)
