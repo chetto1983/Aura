@@ -372,6 +372,13 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			MicrocompactKeepRecent:  b.cfg.MicrocompactKeepRecent,
 			MicrocompactMinChars:    b.cfg.MicrocompactMinChars,
 			BeforeTool:              duplicatePolicy,
+			// Deferred-tools rollout: the agent pool starts from the
+			// always-on seed (just tool_search). The model invokes a
+			// deferred tool by name after seeing it in the system-prompt
+			// manifest; the loop resolves the schema via this callback
+			// and adds it to the pool. tool_search results are absorbed
+			// the same way. See internal/agentloop/pool.go for details.
+			ToolResolver: b.tools.DefinitionFor,
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,

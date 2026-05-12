@@ -56,7 +56,7 @@ func TestToolSearchTool_ExecuteReturnsHits(t *testing.T) {
 	// Register a couple of fake tools so Search has something to match.
 	reg.Register(&fakeDescribedTool{name: "create_docx", desc: "Generate a Word document from structured blocks"})
 	reg.Register(&fakeDescribedTool{name: "web_search", desc: "Search the web for current information"})
-	reg.Register(&fakeDescribedTool{name: "schedule_task", desc: "Schedule a one-shot or recurring task"})
+	reg.Register(&fakeDescribedTool{name: "task", desc: "Manage scheduled tasks (schedule/list/cancel/run_now)"})
 
 	tool := NewToolSearchTool(reg)
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "word document", "limit": 3})
@@ -95,7 +95,7 @@ func TestToolSearchTool_ExecuteReturnsHits(t *testing.T) {
 
 func TestToolSearchTool_NoMatchReturnsHelpfulMessage(t *testing.T) {
 	reg := NewRegistry(slog.Default())
-	reg.Register(&fakeDescribedTool{name: "schedule_task", desc: "Schedule a one-shot task"})
+	reg.Register(&fakeDescribedTool{name: "task", desc: "Manage scheduled tasks"})
 	tool := NewToolSearchTool(reg)
 
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "xyzzy123nothingmatches"})

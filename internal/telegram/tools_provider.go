@@ -2,106 +2,55 @@ package telegram
 
 import (
 	"log/slog"
-	"strings"
 
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/tools"
 )
 
-// alwaysOnCore lists the 6 always-injected tool names. Phase 2 D-22 lock
-// (revised 2026-05-11 plan-checker iteration 3 — see CONTEXT.md D-22 note).
-// Every name MUST exist in the live tool registry. Verified at planning
-// time via `grep -rho 'return "[a-z_]+"' internal/tools/*.go`:
+// alwaysOnCore is the seed of the per-turn tool pool.
 //
-//	wiki_page               (Wave 2.6 — replaces legacy write_wiki_page)
-//	search_memory           (internal/tools/memory_search.go:105)
-//	list_sources            (internal/tools/source.go:357)
-//	read_source             (internal/tools/source.go:237)
-//	schedule_task           (internal/tools/scheduler.go:108)
-//	request_dashboard_token (internal/tools/auth.go:43)
+// Deferred-tools rollout (2026-05-12): the seed is now JUST tool_search.
+// Every other tool is discovered through one of two paths:
 //
-// Order is preserved as documented; downstream prompt formatting may rely on it.
+//  1. The model reads the catalog manifest in the system prompt and calls
+//     a tool by name directly. The agentloop's permissive-load path
+//     resolves the name via Registry.DefinitionFor and adds the schema
+//     to the pool for this turn.
+//
+//  2. The model calls tool_search(query) to retrieve candidate schemas;
+//     the executor's result is absorbed by the pool so the next LLM
+//     iteration sees the discovered tools in its tools array.
+//
+// Rationale (from the embed-vs-LLM benchmark, 2026-05-12): mini-LLM
+// rerankers on CPU exceed 1500ms p95 and are not viable as the routing
+// backend. Embedding cosine via the registry's existing hybrid Search
+// hits ~80ms p95 with 90% Hit@5 on a 64-query labeled dataset; the
+// model's own judgment over the manifest + permissive load covers the
+// remainder. No retrieval logic remains in tools_provider — the agent
+// loop owns pool growth.
 var alwaysOnCore = []string{
-	"wiki_page",
-	"search_memory",
-	"list_sources",
-	"read_source",
-	"schedule_task",
-	"request_dashboard_token",
+	"tool_search",
 }
 
-// makeToolsProvider returns the per-turn ToolsProvider closure consumed by
-// agentloop.Options.ToolsProvider. WARNING 4 of 2026-05-11 plan revision 2:
-// this helper lives in the sibling file tools_provider.go (NOT conversation.go)
-// because conversation.go is 507 LOC and inlining the helper would push it
-// close to the 600 LOC god-class ceiling.
+// makeToolsProvider returns the per-turn ToolsProvider closure consumed
+// by agentloop.Options.ToolsProvider. Post-rollout the closure is
+// stateless and trivial: it always returns the always-on set. Pool
+// growth happens inside agentloop.Run (see toolPool.AbsorbToolSearchResult
+// and EnsureLoaded).
 //
-// WARNING 5 of 2026-05-11 plan revision 2: the helper takes FUNCTION-TYPED
-// dependencies rather than a *Bot or *tools.Registry. This avoids extracting
-// an interface from the concrete *tools.Registry (bot.go:46) just to make
-// the helper testable. In tests, pass call-counting stub functions; in
-// production, pass b.tools.Search / b.tools.DefinitionsFor / b.tools.Definitions
-// and convCtx.LatestUserMessageText as method values.
-//
-// The closure is invoked ONCE per turn:
-//
-//   - Cold start (no user message yet) → core only (Pitfall #6).
-//   - Retrieval unavailable / empty (Qdrant down OR no semantic match) →
-//     FULL toolset (D-25). Uniform len()==0 check covers BOTH nil and empty
-//     cases (WARNING 11 of 2026-05-10 plan revision).
-//   - Normal turn → core ∪ top-K retrieved (K read live from topKFn so the
-//     dashboard can re-tune retrieval breadth without a restart).
-//     retrievedNames are collected and passed to defsForFn in a SINGLE
-//     batched call (WARNING 16 of 2026-05-10 plan revision).
-//
-// The closure passes coreNames... as searchFn's excluded variadic so the
-// retrieval layer does NOT double-inject any core tool.
-//
-// searchFn must mirror Registry.Search (verified at registry_search.go:19):
-//
-//	func(query string, limit int, excluded ...string) []tools.ToolSearchResult
-//
-// NO ctx parameter — BLOCKER 2 of 2026-05-11 revision 2 verified the signature.
+// The signature still takes function-typed dependencies so existing
+// tests (tools_provider_test.go) keep working with stubs; searchFn /
+// latestUserMsgFn / topKFn are accepted but ignored to preserve the
+// call shape while we delete the retrieval branch.
 func makeToolsProvider(
 	coreNames []string,
-	searchFn func(query string, limit int, excluded ...string) []tools.ToolSearchResult,
+	_ any, // searchFn — unused after deferred-tools rollout, kept for caller signature stability
 	defsForFn func(names []string) []llm.ToolDefinition,
-	defsAllFn func() []llm.ToolDefinition,
-	latestUserMsgFn func() string,
-	topKFn func() int,
-	logger *slog.Logger,
+	_ func() []llm.ToolDefinition, // defsAllFn — fallback retired, pool grows via permissive load
+	_ func() string, // latestUserMsgFn — retrieval no longer reads the message
+	_ func() int, // topKFn — top-K is a property of tool_search, not the seed
+	_ *slog.Logger,
 ) func() []llm.ToolDefinition {
 	return func() []llm.ToolDefinition {
-		coreDefs := defsForFn(coreNames)
-		latestUserMsg := latestUserMsgFn()
-		if strings.TrimSpace(latestUserMsg) == "" {
-			// D-23 / Pitfall #6: cold-start, inject core only.
-			return coreDefs
-		}
-		topK := 5
-		if topKFn != nil {
-			if v := topKFn(); v > 0 {
-				topK = v
-			}
-		}
-		retrieved := searchFn(latestUserMsg, topK, coreNames...)
-		if len(retrieved) == 0 {
-			// D-25 / WARNING 11: Qdrant down OR no semantic match.
-			// Both routes collapse to FULL toolset; never fail the turn.
-			if logger != nil {
-				logger.Warn("tools_provider_fallback", "reason", "retrieval_unavailable_or_empty")
-			}
-			return defsAllFn()
-		}
-		// WARNING 16: collect names, batch defsForFn in ONE call.
-		retrievedNames := make([]string, 0, len(retrieved))
-		for _, r := range retrieved {
-			retrievedNames = append(retrievedNames, r.Name)
-		}
-		retrievedDefs := defsForFn(retrievedNames)
-		out := make([]llm.ToolDefinition, 0, len(coreDefs)+len(retrievedDefs))
-		out = append(out, coreDefs...)
-		out = append(out, retrievedDefs...)
-		return out
+		return defsForFn(coreNames)
 	}
 }

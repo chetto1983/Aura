@@ -400,9 +400,14 @@ func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
 	if len(fake.requests) != 2 {
 		t.Fatalf("LLM requests = %d, want 2 (initial + terminal-tool finalize)", len(fake.requests))
 	}
-	if len(fake.requests[0].Tools) == 0 || fake.requests[0].Tools[0].Name != "execute_code" {
-		t.Fatalf("first exposed tool = %+v, want execute_code first", fake.requests[0].Tools)
-	}
+	// Deferred-tools rollout (2026-05-12): the always-on seed is just
+	// tool_search; execute_code reaches the executor via the permissive
+	// load path (ToolResolver wired to Registry.DefinitionFor). The
+	// fixture registry above does not register tool_search, so the
+	// seed is empty here — what matters is the executor still saw
+	// execute_code and dispatched correctly, asserted on exec.calls
+	// above.
+	_ = fake.requests[0].Tools
 	if len(fake.requests[1].Tools) != 0 {
 		t.Fatalf("finalize request must run with tools=nil, got %+v", fake.requests[1].Tools)
 	}

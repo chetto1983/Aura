@@ -302,9 +302,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		return nil, fmt.Errorf("creating scheduler store: %w", err)
 	}
-	toolRegistry.Register(tools.NewScheduleTaskTool(schedStore, loc))
-	toolRegistry.Register(tools.NewListTasksTool(schedStore))
-	toolRegistry.Register(tools.NewCancelTaskTool(schedStore))
+	// Wave 2.7b: unified task tool replaces schedule_task/list_tasks/cancel_task/run_task_now.
+	// runner stays nil here; SetRunner wires *Bot below once it's constructed.
+	taskTool := tools.NewTaskTool(schedStore, nil, loc)
+	if taskTool != nil {
+		toolRegistry.Register(taskTool)
+	}
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
 	var compactVector memoryindex.VectorIndex
 	compactVectorHealth := memoryindex.NewVectorHealthTracker(false, "")
@@ -533,8 +536,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 
 	_ = qdrantCli // shared client used by search/compact consumers above; no direct Bot field needed
 
-	if tool := tools.NewRunTaskNowTool(b); tool != nil {
-		toolRegistry.Register(tool)
+	// Wave 2.7b: wire the run_now action of the unified task tool now that
+	// *Bot (which implements ScheduledTaskRunner) is available.
+	if taskTool != nil {
+		taskTool.SetRunner(b)
 	}
 
 	// Sandbox tools
@@ -546,6 +551,14 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 	if tool := tools.NewDevToolTool(toolReg); tool != nil {
 		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
+	}
+
+	// Deferred-tools rollout: tool_search is the always-on seed of the
+	// per-turn agent pool. The model uses it to fetch input schemas for
+	// tools advertised in the system-prompt manifest. Registered last so
+	// it sees every other tool in Registry.Search().
+	if tool := tools.NewToolSearchTool(toolRegistry); tool != nil {
+		toolRegistry.Register(tool)
 	}
 
 	// Tool vector search index. Builds embeddings for all registered
