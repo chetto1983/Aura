@@ -488,7 +488,7 @@ func (p *Pipeline) upsertEntityPage(ctx context.Context, ent ExtractedEntity, so
 	existing.Sources = append(existing.Sources, sourceTag)
 	existing.Body = strings.TrimRight(existing.Body, "\n") +
 		"\n\n## From source:" + sourceID + "\n\n" +
-		ent.ShortDescription + "\n"
+		annotateProvenance(ent.ShortDescription, sourceID) + "\n"
 	for _, rel := range cleanedRelated(ent.RelatesTo, ent.Slug) {
 		if !containsString(existing.Related, rel) {
 			existing.Related = append(existing.Related, rel)
@@ -528,11 +528,11 @@ func (p *Pipeline) upsertConceptPage(ctx context.Context, c ExtractedConcept, so
 	existing.Sources = append(existing.Sources, sourceTag)
 	existing.Body = strings.TrimRight(existing.Body, "\n") +
 		"\n\n## From source:" + sourceID + "\n\n" +
-		c.Summary + "\n"
+		annotateProvenance(c.Summary, sourceID) + "\n"
 	if len(c.KeyClaims) > 0 {
 		existing.Body += "\n### Key claims\n\n"
 		for _, claim := range c.KeyClaims {
-			existing.Body += "> " + claim + "\n"
+			existing.Body += "> " + annotateProvenance(claim, sourceID) + "\n"
 		}
 	}
 	existing.UpdatedAt = now
@@ -542,7 +542,10 @@ func (p *Pipeline) upsertConceptPage(ctx context.Context, c ExtractedConcept, so
 // buildEntityBody renders the markdown body for a freshly-created
 // entity page. The single source citation block is the seed; later
 // ingests from other sources add additional "From source:..."
-// sections via the merge path in upsertEntityPage.
+// sections via the merge path in upsertEntityPage. Every extracted
+// claim ends with a Pandoc-style provenance marker `^[src_xxx]`
+// (Wave 2.5) so when claims from multiple sources get interleaved
+// during merges, each line still says where it came from.
 func buildEntityBody(ent ExtractedEntity, sourceID string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", ent.Title)
@@ -550,14 +553,16 @@ func buildEntityBody(ent ExtractedEntity, sourceID string) string {
 	sb.WriteString("## From source:")
 	sb.WriteString(sourceID)
 	sb.WriteString("\n\n")
-	sb.WriteString(ent.ShortDescription)
+	sb.WriteString(annotateProvenance(ent.ShortDescription, sourceID))
 	sb.WriteString("\n")
 	return sb.String()
 }
 
 // buildConceptBody renders the markdown body for a freshly-created
-// concept page. Includes the verbatim Key Claims block so retrieval
-// can match queries against the source's own wording.
+// concept page. Each statement (summary + every key claim) is tagged
+// with a `^[src_xxx]` provenance marker so retrieval and downstream
+// lint can trace any claim back to its source without re-reading the
+// raw markdown.
 func buildConceptBody(c ExtractedConcept, sourceID string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", c.Title)
@@ -565,17 +570,46 @@ func buildConceptBody(c ExtractedConcept, sourceID string) string {
 	sb.WriteString("## From source:")
 	sb.WriteString(sourceID)
 	sb.WriteString("\n\n")
-	sb.WriteString(c.Summary)
+	sb.WriteString(annotateProvenance(c.Summary, sourceID))
 	sb.WriteString("\n")
 	if len(c.KeyClaims) > 0 {
 		sb.WriteString("\n### Key claims\n\n")
 		for _, claim := range c.KeyClaims {
 			sb.WriteString("> ")
-			sb.WriteString(claim)
+			sb.WriteString(annotateProvenance(claim, sourceID))
 			sb.WriteByte('\n')
 		}
 	}
 	return sb.String()
+}
+
+// annotateProvenance appends a Pandoc-style footnote-shaped marker
+// `^[src_xxx]` to the given text. The token is non-rendering in most
+// Markdown viewers (Obsidian renders it as a footnote tooltip,
+// GitHub renders the raw text) and is grep-friendly for lint passes
+// that want to verify every claim in the wiki carries provenance.
+//
+// Idempotent: if the text already ends with the marker for this
+// source, returns it unchanged. Whitespace at the end of the input
+// is collapsed so the marker glues onto the trailing token cleanly.
+func annotateProvenance(text, sourceID string) string {
+	marker := provenanceMarker(sourceID)
+	text = strings.TrimRight(text, " \t\n")
+	if text == "" {
+		return ""
+	}
+	if strings.HasSuffix(text, marker) {
+		return text
+	}
+	return text + " " + marker
+}
+
+// provenanceMarker returns the canonical inline footnote token Aura
+// uses to tag a span of text with its source ID. Format is
+// `^[src_xxx]` — Pandoc footnote syntax, also recognized by
+// Obsidian's footnotes plugin.
+func provenanceMarker(sourceID string) string {
+	return "^[" + sourceID + "]"
 }
 
 // cleanedRelated returns a copy of related slugs with the owner's

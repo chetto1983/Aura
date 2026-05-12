@@ -838,6 +838,134 @@ func TestCompile_EntityPageIdempotentOnSameSource(t *testing.T) {
 	}
 }
 
+// Wave 2.5 — provenance marker tests.
+
+func TestProvenanceMarker_FormatsAsFootnote(t *testing.T) {
+	got := provenanceMarker("src_abc123")
+	if got != "^[src_abc123]" {
+		t.Fatalf("provenanceMarker = %q, want ^[src_abc123]", got)
+	}
+}
+
+func TestAnnotateProvenance_AppendsMarkerOnce(t *testing.T) {
+	out := annotateProvenance("Aura is a second brain.", "src_xyz")
+	if out != "Aura is a second brain. ^[src_xyz]" {
+		t.Fatalf("annotateProvenance = %q", out)
+	}
+	// Idempotent: re-annotating the same text with the same source is a no-op.
+	again := annotateProvenance(out, "src_xyz")
+	if again != out {
+		t.Fatalf("annotateProvenance not idempotent: %q vs %q", again, out)
+	}
+}
+
+func TestAnnotateProvenance_HandlesTrailingWhitespace(t *testing.T) {
+	out := annotateProvenance("trailing space  \n\n", "src_xyz")
+	want := "trailing space ^[src_xyz]"
+	if out != want {
+		t.Fatalf("annotateProvenance = %q, want %q", out, want)
+	}
+}
+
+func TestAnnotateProvenance_EmptyInputReturnsEmpty(t *testing.T) {
+	if out := annotateProvenance("", "src_xyz"); out != "" {
+		t.Fatalf("annotateProvenance(empty) = %q, want empty", out)
+	}
+	if out := annotateProvenance("   \n", "src_xyz"); out != "" {
+		t.Fatalf("annotateProvenance(whitespace-only) = %q, want empty", out)
+	}
+}
+
+func TestCompile_EntityBodyCarriesProvenanceMarker(t *testing.T) {
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Entities: []ExtractedEntity{
+				{Slug: "alice", Title: "Alice", Type: "person", ShortDescription: "Project lead."},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+	src := putOCRComplete(t, env.sources, "body")
+	if _, err := env.pipeline.Compile(context.Background(), src.ID); err != nil {
+		t.Fatal(err)
+	}
+	alice, err := env.wiki.ReadPage("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "^[" + src.ID + "]"
+	if !strings.Contains(alice.Body, want) {
+		t.Fatalf("alice.Body missing provenance marker %q:\n%s", want, alice.Body)
+	}
+}
+
+func TestCompile_ConceptKeyClaimsCarryProvenanceMarker(t *testing.T) {
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Concepts: []ExtractedConcept{
+				{
+					Slug: "graph-memory", Title: "Graph Memory",
+					Summary:   "Wiki as a compounding graph.",
+					KeyClaims: []string{"wiki IS the graph", "edges are mutual"},
+				},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+	src := putOCRComplete(t, env.sources, "body")
+	if _, err := env.pipeline.Compile(context.Background(), src.ID); err != nil {
+		t.Fatal(err)
+	}
+	concept, err := env.wiki.ReadPage("graph-memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := "^[" + src.ID + "]"
+	// Both the summary line and every key-claim line should carry the marker.
+	if !strings.Contains(concept.Body, "Wiki as a compounding graph. "+marker) {
+		t.Fatalf("summary missing marker:\n%s", concept.Body)
+	}
+	if strings.Count(concept.Body, marker) < 3 {
+		// 1 summary + 2 key claims = at least 3 markers
+		t.Fatalf("expected ≥3 markers in concept body, body=\n%s", concept.Body)
+	}
+}
+
+func TestCompile_MergedEntityBodyTagsBothSources(t *testing.T) {
+	// When two sources contribute to the same entity, each section
+	// should carry its own provenance marker so the reader can
+	// untangle which claim came from where.
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Entities: []ExtractedEntity{
+				{Slug: "alice", Title: "Alice", Type: "person", ShortDescription: "First source said."},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+	src1 := putOCRCompleteAs(t, env.sources, "a.pdf", "fake-a", "body a")
+	if _, err := env.pipeline.Compile(context.Background(), src1.ID); err != nil {
+		t.Fatal(err)
+	}
+	ex.delta.Entities[0].ShortDescription = "Second source said."
+	src2 := putOCRCompleteAs(t, env.sources, "b.pdf", "fake-b", "body b")
+	if _, err := env.pipeline.Compile(context.Background(), src2.ID); err != nil {
+		t.Fatal(err)
+	}
+	alice, err := env.wiki.ReadPage("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker1 := "^[" + src1.ID + "]"
+	marker2 := "^[" + src2.ID + "]"
+	if !strings.Contains(alice.Body, "First source said. "+marker1) {
+		t.Fatalf("missing first source marker:\n%s", alice.Body)
+	}
+	if !strings.Contains(alice.Body, "Second source said. "+marker2) {
+		t.Fatalf("missing second source marker:\n%s", alice.Body)
+	}
+}
+
 func TestStaleSlugsToDelete(t *testing.T) {
 	cases := []struct {
 		name    string
