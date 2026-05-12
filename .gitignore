@@ -74,3 +74,4 @@ Thumbs.db
 /.worktrees/
 CLAUDE.md
 .planning/*
+tmp_*
