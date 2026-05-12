@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -598,6 +599,242 @@ func TestShortID(t *testing.T) {
 		if got := shortID(in); got != want {
 			t.Errorf("shortID(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Wave 2.4 — multi-page touch tests.
+
+// stubExtractor returns a canned delta on every Extract call and
+// captures the last request for assertion. Lets the pipeline tests
+// exercise the multi-page-touch path without booting an LLM.
+type stubExtractor struct {
+	delta ExtractionDelta
+	err   error
+	last  ExtractionRequest
+}
+
+func (s *stubExtractor) Extract(_ context.Context, req ExtractionRequest) (ExtractionDelta, error) {
+	s.last = req
+	if s.err != nil {
+		return ExtractionDelta{}, s.err
+	}
+	return s.delta, nil
+}
+
+func newTestPipelineWithExtractor(t *testing.T, ex Extractor) testEnv {
+	t.Helper()
+	wikiDir := t.TempDir()
+	wikiStore, err := wiki.NewStore(wikiDir, nil)
+	if err != nil {
+		t.Fatalf("wiki.NewStore: %v", err)
+	}
+	srcStore, err := source.NewStore(wikiDir, nil)
+	if err != nil {
+		t.Fatalf("source.NewStore: %v", err)
+	}
+	p, err := New(Config{
+		Sources:   srcStore,
+		Wiki:      wikiStore,
+		Extractor: ex,
+		Now:       func() time.Time { return time.Date(2026, 5, 12, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("ingest.New: %v", err)
+	}
+	return testEnv{dir: wikiDir, pipeline: p, sources: srcStore, wiki: wikiStore}
+}
+
+func TestCompile_MultiPageTouchWritesEntitiesAndConcepts(t *testing.T) {
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Entities: []ExtractedEntity{
+				{Slug: "alice", Title: "Alice", Type: "person", ShortDescription: "Project lead."},
+			},
+			Concepts: []ExtractedConcept{
+				{Slug: "graph-memory", Title: "Graph Memory", Summary: "Wiki as a compounding graph.", KeyClaims: []string{"wiki IS the graph"}},
+			},
+			Links: []ExtractedLink{
+				{From: "alice", To: "graph-memory", Type: "mentions"},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+	src := putOCRComplete(t, env.sources, "# Notes\n\nAlice writes about graph memory.")
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	// Source summary page should exist + reference both extracted slugs.
+	summary, err := env.wiki.ReadPage(res.Slug)
+	if err != nil {
+		t.Fatalf("read source summary: %v", err)
+	}
+	if !strings.Contains(summary.Body, "[[alice]]") || !strings.Contains(summary.Body, "[[graph-memory]]") {
+		t.Fatalf("summary body missing extracted wikilinks:\n%s", summary.Body)
+	}
+	if !containsString(summary.Related, "alice") || !containsString(summary.Related, "graph-memory") {
+		t.Fatalf("summary.Related missing entity/concept: %v", summary.Related)
+	}
+
+	// Entity page must exist with citation.
+	alice, err := env.wiki.ReadPage("alice")
+	if err != nil {
+		t.Fatalf("read entity page: %v", err)
+	}
+	if !containsString(alice.Sources, "source:"+src.ID) {
+		t.Fatalf("alice.Sources missing source: %v", alice.Sources)
+	}
+	if alice.Category != "entity" {
+		t.Fatalf("alice.Category = %q, want entity", alice.Category)
+	}
+	// Concept page must exist with the verbatim claim.
+	concept, err := env.wiki.ReadPage("graph-memory")
+	if err != nil {
+		t.Fatalf("read concept page: %v", err)
+	}
+	if !strings.Contains(concept.Body, "wiki IS the graph") {
+		t.Fatalf("concept body missing key claim:\n%s", concept.Body)
+	}
+}
+
+func TestCompile_NoExtractorFallsBackToSinglePage(t *testing.T) {
+	// When Extractor is nil, the legacy single-page-summary behavior
+	// must be preserved exactly so existing deployments without an LLM
+	// extractor configured keep working unchanged.
+	env := newTestPipeline(t) // no extractor in Config
+	src := putExtractComplete(t, env.sources, "legacy.txt", "Just a body, no extraction expected.")
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	summary, err := env.wiki.ReadPage(res.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary.Body, "Extracted Entities") || strings.Contains(summary.Body, "Extracted Concepts") {
+		t.Fatalf("summary should NOT have extraction sections when no extractor:\n%s", summary.Body)
+	}
+	if summary.PromptVersion != "ingest_v1" {
+		t.Fatalf("PromptVersion = %q, want ingest_v1 for non-extractor path", summary.PromptVersion)
+	}
+}
+
+func TestCompile_ExtractorErrorDegradesToSinglePage(t *testing.T) {
+	// Extractor errors must not abort the compile — pipeline degrades
+	// to single-page behavior with the same idempotency guarantees.
+	ex := &stubExtractor{err: errors.New("llm exploded")}
+	env := newTestPipelineWithExtractor(t, ex)
+	src := putExtractComplete(t, env.sources, "bad.txt", "body")
+
+	res, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("Compile should not error on extractor failure: %v", err)
+	}
+	summary, err := env.wiki.ReadPage(res.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary.Body, "Extracted Entities") {
+		t.Fatalf("summary should not have extraction sections after fallback:\n%s", summary.Body)
+	}
+}
+
+func TestCompile_ExtractorReceivesExistingSlugs(t *testing.T) {
+	// The extractor should be passed the list of existing wiki slugs
+	// so it can reuse them instead of minting near-duplicates.
+	ex := &stubExtractor{delta: ExtractionDelta{}}
+	env := newTestPipelineWithExtractor(t, ex)
+
+	// Seed an existing wiki page.
+	seed := &wiki.Page{
+		Title:         "Existing Page",
+		Body:          "seed body",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-12T00:00:00Z",
+		UpdatedAt:     "2026-05-12T00:00:00Z",
+	}
+	if err := env.wiki.WritePage(context.Background(), seed); err != nil {
+		t.Fatal(err)
+	}
+	src := putExtractComplete(t, env.sources, "fresh.txt", "fresh body")
+	_, err := env.pipeline.Compile(context.Background(), src.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(ex.last.ExistingSlugs, "existing-page") {
+		t.Fatalf("extractor missing existing slug in ExistingSlugs: %v", ex.last.ExistingSlugs)
+	}
+}
+
+func TestCompile_EntityPageMergeOnSecondSource(t *testing.T) {
+	// Two different sources both extract the same entity slug. The
+	// entity page should accumulate Sources and bodies, not get
+	// overwritten or duplicated.
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Entities: []ExtractedEntity{
+				{Slug: "alice", Title: "Alice", Type: "person", ShortDescription: "First mention."},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+
+	src1 := putOCRCompleteAs(t, env.sources, "a.pdf", "fake-a", "body a")
+	if _, err := env.pipeline.Compile(context.Background(), src1.ID); err != nil {
+		t.Fatal(err)
+	}
+	ex.delta.Entities[0].ShortDescription = "Second mention."
+	src2 := putOCRCompleteAs(t, env.sources, "b.pdf", "fake-b", "body b")
+	if _, err := env.pipeline.Compile(context.Background(), src2.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	alice, err := env.wiki.ReadPage("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(alice.Sources, "source:"+src1.ID) || !containsString(alice.Sources, "source:"+src2.ID) {
+		t.Fatalf("alice.Sources missing one of the two: %v", alice.Sources)
+	}
+	if !strings.Contains(alice.Body, "First mention.") || !strings.Contains(alice.Body, "Second mention.") {
+		t.Fatalf("alice.Body did not accumulate both descriptions:\n%s", alice.Body)
+	}
+}
+
+func TestCompile_EntityPageIdempotentOnSameSource(t *testing.T) {
+	// Re-compiling the same source must NOT re-append to entity bodies.
+	// The pipeline already short-circuits via source.Status check, but
+	// we belt-and-suspender it with the idempotent Sources contains check
+	// inside upsertEntityPage.
+	ex := &stubExtractor{
+		delta: ExtractionDelta{
+			Entities: []ExtractedEntity{
+				{Slug: "alice", Title: "Alice", Type: "person", ShortDescription: "Once."},
+			},
+		},
+	}
+	env := newTestPipelineWithExtractor(t, ex)
+	src := putOCRComplete(t, env.sources, "body")
+	if _, err := env.pipeline.Compile(context.Background(), src.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Call upsertEntityPage DIRECTLY a second time to exercise the
+	// idempotency path inside (the public Compile short-circuits earlier
+	// once source.Status==ingested).
+	if err := env.pipeline.upsertEntityPage(context.Background(), ex.delta.Entities[0], src.ID); err != nil {
+		t.Fatal(err)
+	}
+	alice, err := env.wiki.ReadPage("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := strings.Count(alice.Body, "Once.")
+	if count != 1 {
+		t.Fatalf("alice.Body should mention 'Once.' exactly once, got %d:\n%s", count, alice.Body)
 	}
 }
 

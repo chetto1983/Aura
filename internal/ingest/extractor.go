@@ -290,6 +290,15 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		if ent.Title == "" {
 			return fmt.Errorf("entity %d (%s): empty title", i, ent.Slug)
 		}
+		// Title -> Slug must be reversible so the multi-page-touch pipeline
+		// can write the page at the slug the LLM declared. wiki.Store derives
+		// the on-disk filename from page.Title via wiki.Slug(), so a
+		// title/slug mismatch would put the page on disk at a slug the
+		// extracted links can't reach.
+		if wiki.Slug(ent.Title) != ent.Slug {
+			return fmt.Errorf("entity %d: slug %q does not match Slug(title=%q)=%q",
+				i, ent.Slug, ent.Title, wiki.Slug(ent.Title))
+		}
 		if !entityTypes[ent.Type] {
 			return fmt.Errorf("entity %d (%s): unknown type %q", i, ent.Slug, ent.Type)
 		}
@@ -315,6 +324,10 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		}
 		if c.Title == "" {
 			return fmt.Errorf("concept %d (%s): empty title", i, c.Slug)
+		}
+		if wiki.Slug(c.Title) != c.Slug {
+			return fmt.Errorf("concept %d: slug %q does not match Slug(title=%q)=%q",
+				i, c.Slug, c.Title, wiki.Slug(c.Title))
 		}
 		if c.Summary == "" {
 			return fmt.Errorf("concept %d (%s): empty summary", i, c.Slug)
