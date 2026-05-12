@@ -144,7 +144,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	var embedCache *search.EmbedCache
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn = createEmbeddingFunc(cfg)
-		batchEmbedFn = search.NewOpenAICompatBatchEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, nil)
+		batchEmbedFn = search.NewOpenAICompatBatchEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingOutputDim, nil)
 		// Slice 11h: wrap the upstream embedding fn with a SHA-keyed
 		// SQLite cache so unchanged wiki pages don't re-embed on every
 		// restart. Same cache also serves query embeddings, so repeat
@@ -867,7 +867,7 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 // dedicated embedding provider config. Aura keeps embeddings separate from
 // LLM chat keys. Vectors are L2-normalized so Qdrant cosine == dot product.
 func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
-	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, true, nil)
+	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingOutputDim, true, nil)
 }
 
 func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {

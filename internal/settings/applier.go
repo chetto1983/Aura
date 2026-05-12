@@ -61,6 +61,7 @@ const (
 	KeyEmbeddingAPIKey         = "EMBEDDING_API_KEY"
 	KeyEmbeddingBaseURL        = "EMBEDDING_BASE_URL"
 	KeyEmbeddingModel          = "EMBEDDING_MODEL"
+	KeyEmbeddingOutputDim      = "EMBEDDING_OUTPUT_DIM"
 	KeyPromptVersion           = "AURA_PROMPT_VERSION"
 	KeySkillRoutingMode        = "AURA_SKILL_ROUTING_MODE"
 	KeyAgentLoopMaxSteps       = "AURA_AGENT_LOOP_MAX_STEPS"
@@ -108,7 +109,7 @@ func OverridableKeys() []string {
 		KeySkillsCatalogURL, KeySkillsAdmin,
 		KeyAuraBotEnabled, KeyAuraBotMaxActive, KeyAuraBotMaxDepth,
 		KeyAuraBotTimeoutSec, KeyAuraBotMaxIterations,
-		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel,
+		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel, KeyEmbeddingOutputDim,
 		KeyPromptVersion,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyReasoningEffort,
 		KeyToolSearchTopK, KeyToolSearchBackend,
@@ -201,6 +202,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingAPIKey = settingString(ctx, s, KeyEmbeddingAPIKey, cfg.EmbeddingAPIKey)
 	cfg.EmbeddingBaseURL = settingString(ctx, s, KeyEmbeddingBaseURL, cfg.EmbeddingBaseURL)
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
+	cfg.EmbeddingOutputDim = settingIntRange(ctx, s, KeyEmbeddingOutputDim, cfg.EmbeddingOutputDim, 0, 768, 0)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
 	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
 	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 10000, config.DefaultAgentLoopMaxSteps)

@@ -119,6 +119,7 @@ var settingsCatalog = []SettingItem{
 	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
 	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
 	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
+	{Key: settings.KeyEmbeddingOutputDim, Group: "embeddings", Kind: "int", Min: floatPtr(0), Max: floatPtr(768), Label: "Embeddings output dim (MRL)", Hint: "0 = native dim. For embeddinggemma-300m, 256 is Aura's locked production target (MRL truncation client-side: slice + L2 renorm). Changing this requires reindexing all Qdrant collections."},
 
 	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
 }
@@ -275,6 +276,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.EmbeddingBaseURL
 	case settings.KeyEmbeddingModel:
 		return cfg.EmbeddingModel
+	case settings.KeyEmbeddingOutputDim:
+		return strconv.Itoa(cfg.EmbeddingOutputDim)
 	case settings.KeyPromptVersion:
 		return cfg.PromptVersion
 	case settings.KeySkillRoutingMode:

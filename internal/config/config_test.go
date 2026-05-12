@@ -223,11 +223,11 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.AuraBotMaxIterations != 5 {
 		t.Errorf("AuraBotMaxIterations = %d, want 5", cfg.AuraBotMaxIterations)
 	}
-	if cfg.EmbeddingBaseURL != "https://api.mistral.ai/v1" {
-		t.Errorf("EmbeddingBaseURL = %q, want Mistral API", cfg.EmbeddingBaseURL)
+	if cfg.EmbeddingBaseURL != "http://aura-llama-embed:8080/v1" {
+		t.Errorf("EmbeddingBaseURL = %q, want llama.cpp sidecar URL", cfg.EmbeddingBaseURL)
 	}
-	if cfg.EmbeddingModel != "mistral-embed" {
-		t.Errorf("EmbeddingModel = %q, want mistral-embed", cfg.EmbeddingModel)
+	if cfg.EmbeddingModel != "embeddinggemma" {
+		t.Errorf("EmbeddingModel = %q, want embeddinggemma", cfg.EmbeddingModel)
 	}
 	if cfg.MistralOCRModel != "mistral-ocr-latest" {
 		t.Errorf("MistralOCRModel = %q, want mistral-ocr-latest", cfg.MistralOCRModel)

@@ -147,7 +147,7 @@ func maybeWrapQueryEmbeddingWithCache(cfg queryCacheConfig, embedFn search.Embed
 }
 
 func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
-	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, true, nil)
+	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingOutputDim, true, nil)
 }
 
 type querySmokeConfig struct {

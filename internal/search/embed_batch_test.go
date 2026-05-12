@@ -28,12 +28,12 @@ func TestOpenAICompatBatchEmbeddingFunctionPreservesOrder(t *testing.T) {
 	}))
 	defer server.Close()
 
-	embed := NewOpenAICompatBatchEmbeddingFunction(server.URL+"/v1", "secret", "mistral-embed", server.Client())
+	embed := NewOpenAICompatBatchEmbeddingFunction(server.URL+"/v1", "secret", "embeddinggemma", 0, server.Client())
 	vectors, err := embed(context.Background(), []string{"one", "two"})
 	if err != nil {
 		t.Fatalf("embed: %v", err)
 	}
-	if request.Model != "mistral-embed" || len(request.Input) != 2 || request.Input[0] != "one" || request.Input[1] != "two" {
+	if request.Model != "embeddinggemma" || len(request.Input) != 2 || request.Input[0] != "one" || request.Input[1] != "two" {
 		t.Fatalf("request = %+v", request)
 	}
 	if len(vectors) != 2 || vectors[0][0] != 1 || vectors[1][0] != 2 {

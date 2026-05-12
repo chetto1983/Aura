@@ -14,15 +14,23 @@ import (
 
 // NewOpenAICompatEmbeddingFunction is the single-vector counterpart of
 // NewOpenAICompatBatchEmbeddingFunction. Both call /v1/embeddings on an
-// OpenAI-compatible host (Mistral, OpenAI, etc.). Single-vector form is
-// what most of Aura uses for query embeddings; the batch form is used
-// during wiki rebuilds.
+// OpenAI-compatible host (Mistral, OpenAI, llama.cpp server, etc.). The
+// single-vector form is what most of Aura uses for query embeddings; the
+// batch form is used during wiki rebuilds.
 //
 // When normalize is true the returned vector is L2-normalized so cosine
 // similarity == dot product. Qdrant's cosine distance benefits from
-// normalized vectors (skips the per-query magnitude division). Aura's
-// chromem-go past used the same flag.
-func NewOpenAICompatEmbeddingFunction(baseURL, apiKey, model string, normalize bool, client *http.Client) EmbeddingFunc {
+// normalized vectors (skips the per-query magnitude division).
+//
+// outputDim activates MRL truncation: when > 0 AND smaller than the model's
+// native dim, the response vector is truncated to the first outputDim
+// components and re-normalized (renorm is mandatory after MRL truncation
+// because the prefix's L2 norm is not 1.0 in general). When 0 the vector
+// is returned at the model's native dim and the `normalize` flag governs
+// L2-normalization. Truncation only makes sense for MRL-trained models
+// such as embeddinggemma-300m; applying it to Mistral-embed (non-MRL)
+// would throw away signal without preserving rank.
+func NewOpenAICompatEmbeddingFunction(baseURL, apiKey, model string, outputDim int, normalize bool, client *http.Client) EmbeddingFunc {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	model = strings.TrimSpace(model)
 	if baseURL == "" || apiKey == "" || model == "" {
@@ -31,7 +39,7 @@ func NewOpenAICompatEmbeddingFunction(baseURL, apiKey, model string, normalize b
 	if client == nil {
 		client = &http.Client{Timeout: 2 * time.Minute}
 	}
-	e := &openAICompatEmbedder{baseURL: baseURL, apiKey: apiKey, model: model, http: client, normalize: normalize}
+	e := &openAICompatEmbedder{baseURL: baseURL, apiKey: apiKey, model: model, http: client, outputDim: outputDim, normalize: normalize}
 	return e.Embed
 }
 
@@ -39,6 +47,7 @@ type openAICompatEmbedder struct {
 	baseURL   string
 	apiKey    string
 	model     string
+	outputDim int
 	normalize bool
 	http      *http.Client
 }
@@ -84,7 +93,15 @@ func (e *openAICompatEmbedder) Embed(ctx context.Context, text string) ([]float3
 		return nil, fmt.Errorf("embeddings returned empty vector")
 	}
 	vec := out.Data[0].Embedding
-	if e.normalize {
+	if e.outputDim > 0 && e.outputDim < len(vec) {
+		// MRL truncation: slice to first outputDim components, then
+		// re-normalize because the prefix's L2 norm is not 1.0 in general.
+		// Renormalization is mandatory after MRL truncation regardless of
+		// the normalize flag — Qdrant cosine distance requires unit vectors
+		// for the truncated dim to compare against indexed vectors of the
+		// same truncated dim.
+		vec = l2Normalize(vec[:e.outputDim])
+	} else if e.normalize {
 		vec = l2Normalize(vec)
 	}
 	return vec, nil

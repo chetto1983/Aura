@@ -12,13 +12,20 @@ import (
 )
 
 type openAICompatBatchEmbedder struct {
-	baseURL string
-	apiKey  string
-	model   string
-	http    *http.Client
+	baseURL   string
+	apiKey    string
+	model     string
+	outputDim int
+	http      *http.Client
 }
 
-func NewOpenAICompatBatchEmbeddingFunction(baseURL, apiKey, model string, client *http.Client) BatchEmbeddingFunction {
+// NewOpenAICompatBatchEmbeddingFunction creates the batch variant of
+// NewOpenAICompatEmbeddingFunction (see that function's docstring for the
+// outputDim semantics — MRL truncation when 0 < outputDim < native_dim).
+// Batch path always renormalizes truncated vectors. Untruncated vectors
+// are returned raw; the indexing code downstream may apply its own
+// normalization if needed.
+func NewOpenAICompatBatchEmbeddingFunction(baseURL, apiKey, model string, outputDim int, client *http.Client) BatchEmbeddingFunction {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	model = strings.TrimSpace(model)
 	if baseURL == "" || apiKey == "" || model == "" {
@@ -28,10 +35,11 @@ func NewOpenAICompatBatchEmbeddingFunction(baseURL, apiKey, model string, client
 		client = &http.Client{Timeout: 2 * time.Minute}
 	}
 	embedder := &openAICompatBatchEmbedder{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		model:   model,
-		http:    client,
+		baseURL:   baseURL,
+		apiKey:    apiKey,
+		model:     model,
+		outputDim: outputDim,
+		http:      client,
 	}
 	return embedder.Embed
 }
@@ -91,6 +99,10 @@ func (e *openAICompatBatchEmbedder) Embed(ctx context.Context, texts []string) (
 	for i, vector := range vectors {
 		if len(vector) == 0 {
 			return nil, fmt.Errorf("batch embeddings missing vector at index %d", i)
+		}
+		if e.outputDim > 0 && e.outputDim < len(vector) {
+			// MRL truncation + renorm; see embed_http.go Embed() docs.
+			vectors[i] = l2Normalize(vector[:e.outputDim])
 		}
 	}
 	return vectors, nil

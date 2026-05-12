@@ -47,6 +47,10 @@ services:
       QDRANT_URL: "http://qdrant:6333"
       QDRANT_COLLECTION: "aura_memory_v1"
       QDRANT_API_KEY: ""
+      EMBEDDING_BASE_URL: "http://aura-llama-embed:8080/v1"
+      EMBEDDING_MODEL: "embeddinggemma"
+      EMBEDDING_API_KEY: "no-key"
+      EMBEDDING_OUTPUT_DIM: "256"
       TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-hybrid}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
@@ -71,6 +75,8 @@ services:
       garage:
         condition: service_started
       qdrant:
+        condition: service_started
+      aura-llama-embed:
         condition: service_started
 
   searxng:
@@ -126,6 +132,26 @@ services:
       - "127.0.0.1:${QDRANT_GRPC_HOST_PORT:-6334}:6334"
     volumes:
       - qdrant-storage:/qdrant/storage
+
+  # Local embedding server. Serves data/embeddinggemma-300m-Q4_0.gguf via
+  # llama.cpp's OpenAI-compatible /v1/embeddings endpoint. Inside the docker
+  # network: http://aura-llama-embed:8080/v1. Aura's EMBEDDING_BASE_URL
+  # points here by default — this IS the embedding backend, no fallback.
+  # 2026-05-12 probe: 32ms median single-query latency on CPU mini-PC,
+  # 768-dim native output, MRL-truncated to 256d client-side
+  # (EMBEDDING_OUTPUT_DIM=256). Host port 8081 exposed for debug.
+  aura-llama-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    command: >-
+      -m /models/embeddinggemma-300m-Q4_0.gguf
+      --embeddings --pooling mean
+      --ctx-size 512 --threads 4
+      --host 0.0.0.0 --port 8080
+    ports:
+      - "127.0.0.1:${LLAMA_EMBED_HOST_PORT:-8081}:8080"
+    volumes:
+      - ./data:/models:ro
 
   test:
     build:

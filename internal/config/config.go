@@ -91,7 +91,14 @@ type Config struct {
 	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
 	EmbeddingAPIKey            string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL           string  `envconfig:"EMBEDDING_BASE_URL"`
-	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"mistral-embed"`
+	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"embeddinggemma"`
+	// EmbeddingOutputDim activates Matryoshka Representation Learning
+	// truncation on the embedding response. 0 returns the model's native
+	// dim (e.g. 768 for embeddinggemma-300m). Setting to 256 or 128 (only
+	// meaningful for MRL-trained models) trades a tiny MTEB delta for
+	// 3x-6x smaller Qdrant vectors and cosine compute. Aura targets 256
+	// in production.
+	EmbeddingOutputDim         int     `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
 	DBPath                     string  `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort                   string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	Timezone                   string  `envconfig:"AURA_TIMEZONE"`
@@ -245,9 +252,11 @@ func Load() (*Config, error) {
 	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
 	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 5)
 
-	cfg.EmbeddingAPIKey = getSecretEnv("EMBEDDING_API_KEY", "")
-	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
-	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "mistral-embed")
+	cfg.EmbeddingAPIKey = getSecretEnv("EMBEDDING_API_KEY", "no-key")
+	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "http://aura-llama-embed:8080/v1")
+	cfg.EmbeddingModel = getEnv("EMBEDDING_MODEL", "embeddinggemma")
+	// 0 keeps native dim. 256 is Aura's locked-in production target via MRL.
+	cfg.EmbeddingOutputDim = normalizeIntRange(getEnvInt("EMBEDDING_OUTPUT_DIM", 0), 0, 768, 0)
 	cfg.DBPath = getEnv("DB_PATH", "./aura.db")
 	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
 	cfg.Timezone = strings.TrimSpace(getEnv("AURA_TIMEZONE", ""))
