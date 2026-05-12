@@ -219,13 +219,22 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Ingest pipeline (slice 6) compiles ocr_complete sources into wiki
-	// summary pages. Always built — it has no external deps beyond the
-	// source and wiki stores, both of which are already present.
+	// summary pages. Wave 2.4 — when an LLM client is configured, the
+	// pipeline ALSO runs entity/concept extraction (one structured-output
+	// call per ingest) so a single source produces 1+N pages with
+	// bidirectional [[wiki-links]] and `^[provenance]` markers. Without
+	// an LLM the pipeline degrades to the legacy single-page-summary
+	// behavior — no abort, no half-state.
+	var ingestExtractor ingest.Extractor
+	if client != nil {
+		ingestExtractor = ingest.NewLLMExtractor(client, cfg.LLMModel)
+	}
 	ingestPipeline, err := ingest.New(ingest.Config{
-		Sources: sourceStore,
-		Wiki:    wikiStore,
-		Search:  searchEngine,
-		Logger:  logger,
+		Sources:   sourceStore,
+		Wiki:      wikiStore,
+		Search:    searchEngine,
+		Extractor: ingestExtractor,
+		Logger:    logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating ingest pipeline: %w", err)
