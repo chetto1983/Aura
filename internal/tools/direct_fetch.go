@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
+	readability "github.com/go-shiori/go-readability"
 	"golang.org/x/net/html"
 )
 
@@ -240,10 +242,85 @@ func readBounded(r io.Reader, maxBytes int) ([]byte, bool, error) {
 	return b, false, nil
 }
 
+// readabilityMinLength sets the floor for Readability's "this is an
+// article" verdict. Below this, we treat the page as not-an-article and
+// fall back to the legacy DOM walker so short pages (login walls, error
+// pages, redirect stubs, single-line API JSON) still surface something
+// useful.
+const readabilityMinLength = 250
+
+// parseHTMLFetchResult is the article-extractor + Markdown-converter
+// pipeline. Per Aura research 2026-05-12: status-quo DOM walker is
+// production-last for LLM consumption; the Readability+Turndown stack
+// is what Claude Code, Firecrawl, and most 2026 production agents use.
+//
+//	1. go-readability isolates the article subtree (drops nav, footer,
+//	   cookie banners, share buttons via Mozilla Readability scoring).
+//	2. html-to-markdown converts that subtree to Markdown preserving
+//	   heading hierarchy, code blocks, lists, and emphasis.
+//	3. Title is taken from Article.Title (often better than <title>).
+//	4. Links are extracted from the cleaned subtree only.
+//
+// Fallback: if Readability rejects the page (Length below threshold or
+// error), drop to the legacy DOM walker so we still return something
+// for non-article pages (API JSON, error pages, redirect stubs).
 func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
+	article, err := readability.FromReader(bytes.NewReader(body), base)
+	if err == nil && article.Length >= readabilityMinLength && strings.TrimSpace(article.Content) != "" {
+		md, mdErr := htmltomarkdown.ConvertString(article.Content)
+		if mdErr == nil && strings.TrimSpace(md) != "" {
+			title := article.Title
+			if title == "" {
+				title = base.String()
+			}
+			return webFetchResponse{
+				Title:   collapseInline(title),
+				Content: structuredNormalize(md),
+				Links:   extractArticleLinks(article.Content, base),
+			}
+		}
+	}
+	return legacyHTMLFetchResult(body, base)
+}
+
+// extractArticleLinks pulls <a href> from the readability-cleaned HTML
+// subtree only. This is the single largest noise reduction vs. the old
+// "first 50 anchors in the document" rule — nav/footer/share links
+// never enter the result.
+func extractArticleLinks(htmlContent string, base *url.URL) []string {
+	root, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return nil
+	}
+	links := make([]string, 0)
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if len(links) >= maxDirectFetchLinks {
+			return
+		}
+		if n.Type == html.ElementNode && strings.ToLower(n.Data) == "a" {
+			if href := attrValue(n, "href"); href != "" {
+				if resolved := resolveLink(base, href); resolved != "" {
+					links = append(links, resolved)
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return uniqueStrings(links)
+}
+
+// legacyHTMLFetchResult is the prior DOM walker, kept as a fallback for
+// pages where Readability rejects the body (too short, not an article,
+// or parse error). Preserves the existing behaviour for non-article
+// pages so we never return a worse result than before the refactor.
+func legacyHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 	root, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
-		return webFetchResponse{Title: base.String(), Content: normalizeWhitespace(string(body))}
+		return webFetchResponse{Title: base.String(), Content: collapseInline(string(body))}
 	}
 	var title string
 	var text strings.Builder
@@ -261,10 +338,17 @@ func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 		}
 		if n.Type == html.ElementNode {
 			switch strings.ToLower(n.Data) {
+			// Drop entirely: scripts, styles, embedded media metadata.
 			case "script", "style", "noscript", "svg":
 				skip = true
+			// Drop entirely: HTML5 landmarks that are NEVER article body.
+			// Skipping these at parse time cuts cookie banners, top-nav,
+			// site-wide footers, and sidebars — the biggest source of
+			// noise an LLM has to ignore when summarizing a fetched page.
+			case "nav", "header", "footer", "aside", "form":
+				skip = true
 			case "title":
-				title = normalizeWhitespace(nodeText(n))
+				title = collapseInline(nodeText(n))
 				skip = true
 			case "a":
 				if href := attrValue(n, "href"); href != "" && len(links) < maxDirectFetchLinks {
@@ -272,7 +356,24 @@ func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 						links = append(links, resolved)
 					}
 				}
-			case "p", "div", "section", "article", "main", "li", "br", "h1", "h2", "h3":
+			// Headings get markdown prefixes so the LLM sees the article
+			// outline. Each heading also gets its own line via the
+			// surrounding newlines below.
+			case "h1":
+				text.WriteString("\n\n# ")
+			case "h2":
+				text.WriteString("\n\n## ")
+			case "h3":
+				text.WriteString("\n\n### ")
+			case "h4":
+				text.WriteString("\n\n#### ")
+			case "h5":
+				text.WriteString("\n\n##### ")
+			case "h6":
+				text.WriteString("\n\n###### ")
+			case "li":
+				text.WriteString("\n- ")
+			case "p", "div", "section", "article", "main", "br":
 				text.WriteString("\n")
 			}
 		}
@@ -283,14 +384,50 @@ func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			walk(child, skip)
 		}
+		// Close the heading line so the next text doesn't run into it.
+		if n.Type == html.ElementNode {
+			switch strings.ToLower(n.Data) {
+			case "h1", "h2", "h3", "h4", "h5", "h6":
+				text.WriteString("\n")
+			}
+		}
 	}
 	walk(root, false)
 
 	return webFetchResponse{
 		Title:   title,
-		Content: normalizeWhitespace(text.String()),
+		Content: structuredNormalize(text.String()),
 		Links:   uniqueStrings(links),
 	}
+}
+
+// collapseInline flattens all whitespace to single spaces. Use for spans
+// that must live on a single line (page title, inline attribute values).
+func collapseInline(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// structuredNormalize keeps the line structure produced by parseHTMLFetchResult
+// while collapsing intra-line whitespace runs. Limits consecutive blank lines
+// to two so a page littered with empty <div>s doesn't produce a 100-line wall
+// of nothing.
+func structuredNormalize(s string) string {
+	var out strings.Builder
+	blanks := 0
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := collapseInline(line)
+		if trimmed == "" {
+			blanks++
+			if blanks <= 1 {
+				out.WriteString("\n")
+			}
+			continue
+		}
+		blanks = 0
+		out.WriteString(trimmed)
+		out.WriteString("\n")
+	}
+	return strings.TrimSpace(out.String())
 }
 
 func nodeText(n *html.Node) string {

@@ -74,6 +74,20 @@ func (t *WebTool) Parameters() map[string]any {
 				"maximum":     10,
 				"description": "search only, optional: max results to return (default 5).",
 			},
+			"category": map[string]any{
+				"type":        "string",
+				"enum":        []string{"general", "news", "science"},
+				"description": "search only, optional: 'news' for current events, 'science' for academic/arxiv, 'general' (default) for everything else.",
+			},
+			"language": map[string]any{
+				"type":        "string",
+				"description": "search only, optional: ISO language code ('it', 'en', 'fr', 'all'). Pass when the query is clearly in one language.",
+			},
+			"time_range": map[string]any{
+				"type":        "string",
+				"enum":        []string{"day", "week", "month", "year"},
+				"description": "search only, optional: recency filter. Use 'day'/'week' for queries implying 'recent'/'latest'/'oggi'.",
+			},
 			"url": map[string]any{
 				"type":        "string",
 				"description": "fetch only: the URL to fetch. http and https only.",
