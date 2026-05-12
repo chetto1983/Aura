@@ -809,21 +809,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tokenTool)
 	}
 
-	// Slice 15a: create_xlsx tool. Same post-construction registration
-	// pattern as request_dashboard_token — bot satisfies tools.DocumentSender
-	// via its own SendDocumentToUser method, so we wait until b exists.
-	if xlsxTool := tools.NewCreateXLSXTool(sourceStore, b); xlsxTool != nil {
-		toolRegistry.Register(xlsxTool)
-	}
-
-	// Slice 15b: create_docx tool. Same wiring as create_xlsx.
-	if docxTool := tools.NewCreateDOCXTool(sourceStore, b); docxTool != nil {
-		toolRegistry.Register(docxTool)
-	}
-
-	// Slice 15c: create_pdf tool. Same wiring as create_xlsx / create_docx.
-	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
-		toolRegistry.Register(pdfTool)
+	// Wave 2.7d: unified doc tool replaces create_xlsx + create_docx + create_pdf.
+	// Same post-construction registration pattern as request_dashboard_token —
+	// bot satisfies tools.DocumentSender via its own SendDocumentToUser method,
+	// so we wait until b exists.
+	if docTool := tools.NewDocTool(sourceStore, b); docTool != nil {
+		toolRegistry.Register(docTool)
 	}
 	// Wave 2.6 — register the unified wiki_page tool. Replaces the legacy
 	// write_wiki_page with a four-action verb family (create/replace/edit/append).

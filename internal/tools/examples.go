@@ -40,12 +40,12 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki/nuova-nota.md", "content": "# Nuova Nota\n\nContenuto."}}}
 	case "apply_patch":
 		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki/nota.md", "patch": "*** Begin Patch\n*** Update File: wiki/nota.md\n@@\n-vecchio\n+nuovo\n*** End Patch"}}}
-	case "create_docx":
-		return []ToolCallExample{{Description: "Create a Word document from typed content blocks.", Arguments: map[string]any{"filename": "riepilogo-aura.docx", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "heading", "level": 1, "text": "Riepilogo Aura"}, map[string]any{"kind": "paragraph", "text": "Sintesi breve basata sulle evidenze recuperate."}}}}}
-	case "create_xlsx":
-		return []ToolCallExample{{Arguments: map[string]any{"filename": "riepilogo-aura.xlsx", "sheets": []any{map[string]any{"name": "Sintesi", "rows": []any{[]any{"Voce", "Valore"}, []any{"Fonti", "3"}}}}}}}
-	case "create_pdf":
-		return []ToolCallExample{{Arguments: map[string]any{"filename": "riepilogo-aura.pdf", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "heading", "level": 1, "text": "Riepilogo Aura"}, map[string]any{"kind": "paragraph", "text": "Sintesi breve."}}}}}
+	case "doc":
+		return []ToolCallExample{
+			{Description: "Generate an Excel workbook from sheets+rows.", Arguments: map[string]any{"action": "xlsx", "filename": "riepilogo-aura.xlsx", "sheets": []any{map[string]any{"name": "Sintesi", "rows": []any{[]any{"Voce", "Valore"}, []any{"Fonti", "3"}}}}}},
+			{Description: "Generate a Word document from typed blocks.", Arguments: map[string]any{"action": "docx", "filename": "riepilogo-aura.docx", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "heading", "level": 1, "text": "Riepilogo Aura"}, map[string]any{"kind": "paragraph", "text": "Sintesi breve basata sulle evidenze recuperate."}}}},
+			{Description: "Generate a PDF using the same block grammar as docx.", Arguments: map[string]any{"action": "pdf", "filename": "riepilogo-aura.pdf", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "paragraph", "text": "Sintesi breve."}}}},
+		}
 	case "execute_code":
 		return []ToolCallExample{{Arguments: map[string]any{"code": "from pathlib import Path\nPath('/tmp/aura_out/result.txt').write_text('ok')\nprint('ok')"}}}
 	case "list_sources":

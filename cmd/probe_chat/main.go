@@ -31,6 +31,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"database/sql"
 	"encoding/json"
@@ -39,10 +40,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/db"
+	"github.com/ledongthuc/pdf"
 )
 
 // ChatReply mirrors api.ChatReply just enough to deserialize the JSON.
@@ -70,6 +73,113 @@ type Env struct {
 	APIBase   string // e.g. http://localhost:18080/api
 	APIToken  string
 	APIClient *http.Client
+}
+
+// sourceIDRe extracts a source_id token (`src_<16 hex>`) from free-form
+// assistant text. The doc tool's JSON reply contains source_id and the
+// model usually echoes it; we grep the natural-language reply for it
+// rather than parse a structured field that may or may not exist.
+var sourceIDRe = regexp.MustCompile(`src_[a-f0-9]{16}`)
+
+// findSourceID returns the first src_xxx token in s, or "" if absent.
+func findSourceID(s string) string {
+	return sourceIDRe.FindString(s)
+}
+
+// fetchSourceRaw returns the raw bytes of a source via /api/sources/{id}/raw.
+func (e *Env) fetchSourceRaw(id string) ([]byte, error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/sources/" + id + "/raw"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return io.ReadAll(resp.Body)
+}
+
+// extractTextFromZipEntry returns the concatenated text content of every
+// `<TAG>...</TAG>` (e.g. <w:t> in docx, <t> in xlsx sharedStrings) inside
+// the named entry of the ZIP body. Returns "" if entry missing.
+func extractTextFromZipEntry(body []byte, entryName, tag string) (string, error) {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return "", fmt.Errorf("not a valid zip: %w", err)
+	}
+	var entry *zip.File
+	for _, f := range zr.File {
+		if f.Name == entryName {
+			entry = f
+			break
+		}
+	}
+	if entry == nil {
+		return "", fmt.Errorf("entry %q not found in zip", entryName)
+	}
+	rc, err := entry.Open()
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", entryName, err)
+	}
+	defer rc.Close()
+	xmlBytes, err := io.ReadAll(rc)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", entryName, err)
+	}
+	xml := string(xmlBytes)
+	// Naive but reliable: scan for `<tag` ... `>` ... `</tag>` segments.
+	// Works for both `<w:t>foo</w:t>` (docx) and `<t>foo</t>` (xlsx) and
+	// tolerates attributes like `<w:t xml:space="preserve">`.
+	var out strings.Builder
+	openMarker := "<" + tag
+	closeMarker := "</" + tag + ">"
+	i := 0
+	for {
+		start := strings.Index(xml[i:], openMarker)
+		if start < 0 {
+			break
+		}
+		afterOpen := strings.Index(xml[i+start:], ">")
+		if afterOpen < 0 {
+			break
+		}
+		textStart := i + start + afterOpen + 1
+		end := strings.Index(xml[textStart:], closeMarker)
+		if end < 0 {
+			break
+		}
+		out.WriteString(xml[textStart : textStart+end])
+		out.WriteString(" ")
+		i = textStart + end + len(closeMarker)
+	}
+	return out.String(), nil
+}
+
+// extractPDFText returns the textual content of a PDF byte buffer via
+// ledongthuc/pdf. Returns "" with a wrapped error on parse failure.
+func extractPDFText(body []byte) (string, error) {
+	reader, err := pdf.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return "", fmt.Errorf("pdf NewReader: %w", err)
+	}
+	var out strings.Builder
+	for i := 1; i <= reader.NumPage(); i++ {
+		page := reader.Page(i)
+		if page.V.IsNull() {
+			continue
+		}
+		text, perr := page.GetPlainText(nil)
+		if perr != nil {
+			continue
+		}
+		out.WriteString(text)
+		out.WriteString("\n")
+	}
+	return out.String(), nil
 }
 
 // fetchWikiPage reads a single wiki page through the dashboard API.
@@ -233,7 +343,124 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
-		// 5. phantom-trap — non-existent task name; model MUST NOT claim it ran.
+		// 5. doc-xlsx — generate a workbook, fetch the bytes, parse the
+		//    sharedStrings table, assert the requested cells round-trip.
+		{
+			Name:   "doc-xlsx-roundtrip",
+			Prompt: fmt.Sprintf("Generami un file Excel chiamato probe-%s.xlsx con un foglio 'Sintesi' che ha questa tabella: prima riga 'Voce' e 'Valore', poi righe ['Anno', '2026'], ['Wave', '2.7d'], ['Marker', 'PROBE-%s']. Non inviarlo via Telegram (deliver:false). Confermami il source_id.", stamp, stamp),
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call (doc xlsx)")
+				}
+				id := findSourceID(r.Reply)
+				if id == "" {
+					miss = append(miss, "reply does not include a src_xxx identifier")
+					return miss
+				}
+				body, err := env.fetchSourceRaw(id)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
+					return miss
+				}
+				// xlsx is a ZIP — sanity check magic header.
+				if len(body) < 4 || string(body[:2]) != "PK" {
+					miss = append(miss, fmt.Sprintf("not a valid xlsx zip (head=%q)", body[:min(len(body), 8)]))
+					return miss
+				}
+				// All cell strings live in xl/sharedStrings.xml as <t>...</t>.
+				strs, err := extractTextFromZipEntry(body, "xl/sharedStrings.xml", "t")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("parse sharedStrings: %v", err))
+					return miss
+				}
+				for _, want := range []string{"Voce", "Valore", "Anno", "2026", "Wave", "2.7d", "Marker", "PROBE-" + stamp} {
+					if !strings.Contains(strs, want) {
+						miss = append(miss, fmt.Sprintf("sharedStrings missing %q (got: %q)", want, truncate(strs, 200)))
+					}
+				}
+				return miss
+			},
+		},
+
+		// 6. doc-docx — generate a Word doc, fetch, parse word/document.xml,
+		//    assert the requested headings/paragraphs round-trip.
+		{
+			Name:   "doc-docx-roundtrip",
+			Prompt: fmt.Sprintf("Generami un file Word chiamato probe-%s.docx con titolo 'Probe Docx %s' e questi blocchi: heading livello 2 testo 'Sezione A', paragraph 'Frase distintiva PROBE-%s', bullet 'Punto uno'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call (doc docx)")
+				}
+				id := findSourceID(r.Reply)
+				if id == "" {
+					miss = append(miss, "reply does not include a src_xxx identifier")
+					return miss
+				}
+				body, err := env.fetchSourceRaw(id)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
+					return miss
+				}
+				if len(body) < 4 || string(body[:2]) != "PK" {
+					miss = append(miss, fmt.Sprintf("not a valid docx zip (head=%q)", body[:min(len(body), 8)]))
+					return miss
+				}
+				// docx text lives in word/document.xml as <w:t>...</w:t>.
+				body_text, err := extractTextFromZipEntry(body, "word/document.xml", "w:t")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("parse word/document.xml: %v", err))
+					return miss
+				}
+				for _, want := range []string{"Probe Docx " + stamp, "Sezione A", "PROBE-" + stamp, "Punto uno"} {
+					if !strings.Contains(body_text, want) {
+						miss = append(miss, fmt.Sprintf("docx text missing %q (got: %q)", want, truncate(body_text, 200)))
+					}
+				}
+				return miss
+			},
+		},
+
+		// 7. doc-pdf — generate a PDF, fetch, extract text via a real PDF
+		//    parser, assert the requested content round-trips.
+		{
+			Name:   "doc-pdf-roundtrip",
+			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call (doc pdf)")
+				}
+				id := findSourceID(r.Reply)
+				if id == "" {
+					miss = append(miss, "reply does not include a src_xxx identifier")
+					return miss
+				}
+				body, err := env.fetchSourceRaw(id)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
+					return miss
+				}
+				if len(body) < 4 || string(body[:4]) != "%PDF" {
+					miss = append(miss, fmt.Sprintf("not a valid pdf (head=%q)", body[:min(len(body), 8)]))
+					return miss
+				}
+				text, err := extractPDFText(body)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("extract pdf text: %v", err))
+					return miss
+				}
+				for _, want := range []string{"Probe Pdf " + stamp, "Risultati", "PROBE-" + stamp} {
+					if !strings.Contains(text, want) {
+						miss = append(miss, fmt.Sprintf("pdf text missing %q (got: %q)", want, truncate(text, 200)))
+					}
+				}
+				return miss
+			},
+		},
+
+		// 8. phantom-trap — non-existent task name; model MUST NOT claim it ran.
 		//    The reply may explain that the task doesn't exist OR may schedule a
 		//    new one of that name. Either is fine; what's forbidden is claiming
 		//    a past run that never happened.
