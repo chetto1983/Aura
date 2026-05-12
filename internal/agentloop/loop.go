@@ -122,6 +122,24 @@ type Options struct {
 	// package defaults (10 / 500). Operators tune via env.
 	MicrocompactKeepRecent int
 	MicrocompactMinChars   int
+	// ToolResolver is the on-demand schema lookup used by the per-turn
+	// tool pool for two purposes:
+	//
+	//  1. Permissive load: when the model emits a tool_call whose name
+	//     isn't in the current pool (typically because it saw the name
+	//     in the system-prompt manifest), the loop asks ToolResolver
+	//     and adds the definition before dispatching. Fails cleanly
+	//     when the name is unknown — the executor surfaces the error.
+	//
+	//  2. tool_search absorption: when the executor returns a result
+	//     for the "tool_search" tool, the loop parses the JSON envelope
+	//     and pre-loads each returned name so the next LLM step sees
+	//     them in its tools array.
+	//
+	// Optional. When nil, the pool stays fixed at whatever the seed
+	// (Tools / ToolsProvider) provided and the loop behaves as before
+	// the deferred-tools rollout.
+	ToolResolver func(name string) (llm.ToolDefinition, bool)
 	// Logger is an optional structured logger. When nil the loop falls back
 	// to slog.Default() so a stuck conversation is debuggable without the
 	// caller having to wire OnStats. Only tool names and argument key sets
@@ -202,6 +220,12 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	emitStats()
 	logger.Debug("agentloop: run start", "max_iterations", opts.MaxIterations, "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 
+	// Per-turn tool pool. Initialized lazily on first iteration so a
+	// before-LLM short-circuit doesn't pay the cost of building it.
+	// Grows monotonically across iterations via permissive load and
+	// tool_search absorption — see Options.ToolResolver doc.
+	var pool *toolPool
+
 	// iterCancel reclaims the per-iteration deadline. It is replaced on each
 	// iteration; the outer defer catches the final one so no context.Timeout
 	// goroutine survives Run (F-009).
@@ -248,10 +272,18 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 
-		tools := opts.Tools
-		if opts.ToolsProvider != nil {
-			tools = opts.ToolsProvider()
+		// Initialize the per-turn tool pool on first iteration. Seed from
+		// ToolsProvider (preferred — typically deferred-tools always-on set)
+		// or Tools. The pool grows monotonically across iterations as
+		// tool_search results are absorbed or permissive loads fire.
+		if pool == nil {
+			seed := opts.Tools
+			if opts.ToolsProvider != nil {
+				seed = opts.ToolsProvider()
+			}
+			pool = newToolPool(seed, opts.ToolResolver)
 		}
+		tools := pool.Defs()
 
 		stats.LLMCalls++
 		stats.LoopSteps++
@@ -304,6 +336,17 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 		emitStats()
+
+		// Permissive load: the model may call a tool by name that isn't in
+		// the current pool because it saw the name in the system-prompt
+		// manifest. Resolve and add to the pool before dispatch so the
+		// executor sees a normal tool call. Unknown names fall through to
+		// the executor where the registry surfaces a clean error.
+		if pool != nil && pool.resolver != nil {
+			for _, call := range resp.Response.ToolCalls {
+				pool.EnsureLoaded(call.Name)
+			}
+		}
 
 		callsToExecute, duplicateToolCalls := DedupeToolCalls(resp.Response.ToolCalls)
 		inBatchDuplicate := map[string]bool{}
@@ -374,6 +417,19 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				key := duplicateToolCallKey(call)
 				if result, ok := execution.Results[call.ID]; ok {
 					seenToolCallsResult[key] = result
+				}
+				// Deferred-tools absorption: when the executor returns a
+				// tool_search result, parse the hits and pre-load each
+				// named tool into the pool so the next iteration's LLM
+				// step sees them in its tools array. No-op when pool or
+				// resolver is nil — falls back to legacy behaviour.
+				if call.Name == "tool_search" {
+					if result, ok := execution.Results[call.ID]; ok {
+						loaded := pool.AbsorbToolSearchResult(result)
+						if loaded > 0 {
+							logger.Debug("agentloop: tool_search_absorbed", "iteration", iteration, "loaded", loaded)
+						}
+					}
 				}
 			}
 		}
