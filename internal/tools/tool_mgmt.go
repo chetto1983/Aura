@@ -4,154 +4,158 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aura/aura/internal/llm"
 )
 
-// ListToolsTool lets the LLM discover available tools in the registry.
-type ListToolsTool struct {
+// DevToolTool consolidates the legacy verb-tools (list_tools, read_tool,
+// save_tool) into a single action-enum surface. The picobot pattern:
+// one tool with the action enum acting as the verb keeps related
+// functionality together so the LLM never has to guess which of three
+// near-identical tools to pick.
+//
+// "Dev" tools live in the Python script registry — they are user-saved
+// snippets the execute_code sandbox can re-run later. They are NOT the
+// Anthropic tool_use registry. The dev_tool name makes that distinction
+// explicit in every prompt where the tool surfaces.
+//
+//	action=list — enumerate all registered scripts. No args.
+//	action=read — fetch the source of one script. Requires name.
+//	action=save — persist a script as reusable. Requires name, description, code.
+type DevToolTool struct {
 	store ToolStore
 }
 
-// NewListToolsTool creates a list_tools tool. Returns nil if store is nil.
-func NewListToolsTool(store ToolStore) *ListToolsTool {
+// NewDevToolTool returns the consolidated dev_tool. nil store returns
+// nil so callers can compose registration unconditionally.
+func NewDevToolTool(store ToolStore) *DevToolTool {
 	if store == nil {
 		return nil
 	}
-	return &ListToolsTool{store: store}
+	return &DevToolTool{store: store}
 }
 
-func (t *ListToolsTool) Name() string { return "list_tools" }
+func (t *DevToolTool) Name() string { return "dev_tool" }
 
-func (t *ListToolsTool) Description() string {
-	return "List all Python tools in the persistent tool registry. " +
-		"Use this before writing new code — a tool may already exist for the task."
+func (t *DevToolTool) Description() string {
+	return `Manage the Python script registry used by execute_code.
+
+Actions (pick one via the "action" field):
+
+  • list — enumerate every registered script (name, description, params).
+    No arguments. Call this BEFORE writing new code — a snippet may
+    already exist for the task.
+
+  • read — fetch the source code of one script. Required: name.
+    Use this to understand what an existing script does before reusing
+    or extending it.
+
+  • save — persist a script as a permanent, reusable tool.
+    Required: name (lowercase_underscores), description (one-liner),
+    code (Python source). Optional: params ("filepath (str), n (int)"),
+    usage ("when the user uploaded a CSV"). Call this AFTER a successful
+    execute_code run that solved a reusable problem so the next session
+    can pick it up via list+read.
+
+The scripts here are not the same as the built-in Aura tools. They are
+user snippets the Python sandbox can execute on demand.`
 }
 
-func (t *ListToolsTool) Parameters() map[string]any {
+func (t *DevToolTool) Parameters() map[string]any {
 	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"action"},
+		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        []string{"list", "read", "save"},
+				"description": "Which operation to perform: list (enumerate), read (fetch source), save (persist new script).",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Script name. Required for read and save. Use lowercase_underscores for save.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "save only: one-line description of what the script does.",
+			},
+			"params": map[string]any{
+				"type":        "string",
+				"description": "save only, optional: comma-separated parameter names with types, e.g. 'filepath (str), col1 (str)'.",
+			},
+			"code": map[string]any{
+				"type":        "string",
+				"description": "save only: the full Python source code.",
+			},
+			"usage": map[string]any{
+				"type":        "string",
+				"description": "save only, optional: when to reach for this script, e.g. 'user uploaded a CSV and wants statistics'.",
+			},
+		},
 	}
 }
 
-func (t *ListToolsTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	tools, err := t.store.ListTools()
-	if err != nil {
-		return "", fmt.Errorf("list tools: %w", err)
+func (t *DevToolTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	action := strings.TrimSpace(stringArg(args, "action"))
+	switch action {
+	case "list":
+		return t.doList(ctx)
+	case "read":
+		return t.doRead(ctx, args)
+	case "save":
+		return t.doSave(ctx, args)
+	case "":
+		return "", fmt.Errorf("dev_tool: action is required: %w", llm.ErrSchemaValidation)
+	default:
+		return "", fmt.Errorf("dev_tool: unknown action %q: %w", action, llm.ErrSchemaValidation)
 	}
-	if len(tools) == 0 {
-		return "No tools registered yet.", nil
+}
+
+func (t *DevToolTool) doList(_ context.Context) (string, error) {
+	scripts, err := t.store.ListTools()
+	if err != nil {
+		return "", fmt.Errorf("dev_tool list: %w", err)
+	}
+	if len(scripts) == 0 {
+		return "No scripts registered yet.", nil
 	}
 	var b strings.Builder
-	for _, tool := range tools {
-		b.WriteString(fmt.Sprintf("- **%s**: %s (params: %s)\n", tool.Name, tool.Description, tool.Params))
+	for _, s := range scripts {
+		fmt.Fprintf(&b, "- **%s**: %s (params: %s)\n", s.Name, s.Description, s.Params)
 	}
 	return b.String(), nil
 }
 
-// ReadToolTool lets the LLM read a tool's source code.
-type ReadToolTool struct {
-	store ToolStore
-}
-
-// NewReadToolTool creates a read_tool tool. Returns nil if store is nil.
-func NewReadToolTool(store ToolStore) *ReadToolTool {
-	if store == nil {
-		return nil
-	}
-	return &ReadToolTool{store: store}
-}
-
-func (t *ReadToolTool) Name() string { return "read_tool" }
-
-func (t *ReadToolTool) Description() string {
-	return "Read the source code of a registered Python tool. " +
-		"Use this to understand what an existing tool does before using or modifying it."
-}
-
-func (t *ReadToolTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type":        "string",
-				"description": "Name of the tool to read",
-			},
-		},
-		"required": []string{"name"},
-	}
-}
-
-func (t *ReadToolTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	name, _ := args["name"].(string)
+func (t *DevToolTool) doRead(_ context.Context, args map[string]any) (string, error) {
+	name := strings.TrimSpace(stringArg(args, "name"))
 	if name == "" {
-		return "", fmt.Errorf("tool name is required")
+		return "", fmt.Errorf("dev_tool read: name is required: %w", llm.ErrSchemaValidation)
 	}
 	code, err := t.store.GetToolCode(name)
 	if err != nil {
-		return "", fmt.Errorf("read tool %s: %w", name, err)
+		return "", fmt.Errorf("dev_tool read %s: %w", name, err)
 	}
 	return code, nil
 }
 
-// SaveToolTool lets the LLM persist useful scripts to the tool registry.
-type SaveToolTool struct {
-	store ToolStore
-}
-
-// NewSaveToolTool creates a save_tool tool. Returns nil if store is nil.
-func NewSaveToolTool(store ToolStore) *SaveToolTool {
-	if store == nil {
-		return nil
+func (t *DevToolTool) doSave(ctx context.Context, args map[string]any) (string, error) {
+	name := strings.TrimSpace(stringArg(args, "name"))
+	description := strings.TrimSpace(stringArg(args, "description"))
+	code := strings.TrimSpace(stringArg(args, "code"))
+	if name == "" {
+		return "", fmt.Errorf("dev_tool save: name is required: %w", llm.ErrSchemaValidation)
 	}
-	return &SaveToolTool{store: store}
-}
-
-func (t *SaveToolTool) Name() string { return "save_tool" }
-
-func (t *SaveToolTool) Description() string {
-	return "Save a Python script as a permanent tool in the registry. " +
-		"Use this after successfully executing code that solves a reusable problem. " +
-		"The tool becomes discoverable by list_tools and can be read with read_tool."
-}
-
-func (t *SaveToolTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type":        "string",
-				"description": "Unique name for the tool (lowercase_underscores)",
-			},
-			"description": map[string]any{
-				"type":        "string",
-				"description": "One-line description of what the tool does",
-			},
-			"params": map[string]any{
-				"type":        "string",
-				"description": "Comma-separated parameter names and types, e.g. 'filepath (str), col1 (str)'",
-			},
-			"code": map[string]any{
-				"type":        "string",
-				"description": "Python source code for the tool",
-			},
-			"usage": map[string]any{
-				"type":        "string",
-				"description": "When to use this tool, e.g. 'user uploaded a CSV and wants statistics'",
-			},
-		},
-		"required": []string{"name", "description", "code"},
+	if description == "" {
+		return "", fmt.Errorf("dev_tool save: description is required: %w", llm.ErrSchemaValidation)
 	}
-}
-
-func (t *SaveToolTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	name, _ := args["name"].(string)
-	description, _ := args["description"].(string)
-	params, _ := args["params"].(string)
-	code, _ := args["code"].(string)
-	usage, _ := args["usage"].(string)
-
+	if code == "" {
+		return "", fmt.Errorf("dev_tool save: code is required: %w", llm.ErrSchemaValidation)
+	}
+	params := strings.TrimSpace(stringArg(args, "params"))
+	usage := strings.TrimSpace(stringArg(args, "usage"))
 	if err := t.store.SaveTool(ctx, name, description, params, code, usage); err != nil {
-		return "", fmt.Errorf("save tool: %w", err)
+		return "", fmt.Errorf("dev_tool save: %w", err)
 	}
-	return fmt.Sprintf("Tool '%s' saved to registry.", name), nil
+	return fmt.Sprintf("Script %q saved to registry.", name), nil
 }

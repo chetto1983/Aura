@@ -82,12 +82,12 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{{Arguments: map[string]any{"name": "docx"}}}
 	case "settings_update":
 		return []ToolCallExample{{Arguments: map[string]any{"key": "AURA_AGENT_LOOP_MAX_STEPS", "value": "8"}}}
-	case "list_tools":
-		return []ToolCallExample{{Arguments: map[string]any{}}}
-	case "read_tool":
-		return []ToolCallExample{{Arguments: map[string]any{"name": "create_docx"}}}
-	case "save_tool":
-		return []ToolCallExample{{Arguments: map[string]any{"name": "example_tool", "description": "Example tool", "command": "echo ok"}}}
+	case "dev_tool":
+		return []ToolCallExample{
+			{Arguments: map[string]any{"action": "list"}},
+			{Arguments: map[string]any{"action": "read", "name": "csv_cleaner"}},
+			{Arguments: map[string]any{"action": "save", "name": "csv_cleaner", "description": "Strip blank rows from a CSV", "code": "import pandas as pd\\ndef run(filepath):\\n    pd.read_csv(filepath).dropna(how='all').to_csv(filepath, index=False)"}},
+		}
 	case "run_aurabot_swarm":
 		return []ToolCallExample{{Arguments: map[string]any{"task": "Analizza la memoria di Aura e riassumi i problemi principali.", "mode": "bounded"}}}
 	case "read_swarm_result":

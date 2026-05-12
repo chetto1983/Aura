@@ -151,9 +151,7 @@ func buildPrecisionTestRegistry(t *testing.T) *Registry {
 		{"delete_source", "Delete an uploaded source document. Removes the source file and its associated data."},
 		{"run_task_now", "Run a scheduled task immediately. Triggers a task to execute right now instead of waiting."},
 		{"cancel_task", "Cancel a scheduled task. Removes a task from the schedule queue."},
-		{"list_tools", "List all available tool definitions. Returns metadata about every tool in the registry."},
-		{"read_tool", "Read the code or definition of a specific tool. Returns the implementation of the named tool."},
-		{"save_tool", "Save a new or updated tool definition. Writes a tool's code and metadata to the tool store."},
+		{"dev_tool", "Manage the Python script registry used by execute_code: list, read, or save reusable snippets."},
 		{"execute_shell", "Execute shell commands in the Aura container. Runs system commands with git, rg, jq, and sqlite."},
 	}
 

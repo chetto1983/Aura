@@ -9,7 +9,9 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/tools"
 )
 
 // chatPipeService adapts agent.Runner to api.ChatService so cmd/chat (the
@@ -18,8 +20,15 @@ import (
 // process-local; it intentionally does NOT share the SessionStore /
 // UserGate that the Telegram path owns, otherwise a chat-pipe turn would
 // serialize behind a live Telegram message for the same user.
+//
+// Both runner and tools registry are reused from the bot so a /api/chat
+// turn sees the same tool surface a Telegram turn would. The system prompt
+// is the canonical conversation.RenderSystemPrompt() — any agent entry
+// point that drops it back to a "be conversational" stub silently strips
+// Aura's tool-awareness (see memory: feedback_agent_must_know_tools_exist).
 type chatPipeService struct {
 	runner *agent.Runner
+	tools  *tools.Registry
 
 	mu       sync.Mutex
 	sessions map[string]*chatPipeSession
@@ -35,14 +44,17 @@ const (
 	chatPipeIdleTTL     = 30 * time.Minute
 )
 
-// NewChatPipeService wires the chat pipe against an existing runner. Nil
-// runner returns nil so cmd/aura's wiring can pass through unconditionally.
-func NewChatPipeService(runner *agent.Runner) api.ChatService {
+// NewChatPipeService wires the chat pipe against an existing runner + tools
+// registry. A nil runner returns nil so cmd/aura's wiring can pass through
+// unconditionally. The registry is the same one the Telegram bot serves
+// from, so /api/chat and Telegram see identical tools.
+func NewChatPipeService(runner *agent.Runner, registry *tools.Registry) api.ChatService {
 	if runner == nil {
 		return nil
 	}
 	return &chatPipeService{
 		runner:   runner,
+		tools:    registry,
 		sessions: make(map[string]*chatPipeSession),
 	}
 }
@@ -54,10 +66,16 @@ func (s *chatPipeService) Chat(ctx context.Context, userID, message string) (api
 	session := s.acquireSession(userID)
 	session.messages = append(session.messages, llm.Message{Role: "user", Content: message})
 
+	var allowlist []string
+	if s.tools != nil {
+		allowlist = s.tools.Names()
+	}
+
 	task := agent.Task{
-		SystemPrompt: "You are Aura — a helpful assistant chatting through the local CLI pipe. Reply in the user's language. Be conversational and concise.",
-		Messages:     append([]llm.Message(nil), session.messages...),
-		UserID:       userID,
+		SystemPrompt:  conversation.RenderSystemPrompt(time.Now(), time.Local),
+		Messages:      append([]llm.Message(nil), session.messages...),
+		ToolAllowlist: allowlist,
+		UserID:        userID,
 	}
 	result, err := s.runner.Run(ctx, task)
 	if err != nil {

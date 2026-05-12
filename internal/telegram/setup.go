@@ -544,14 +544,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if tool := tools.NewExecuteShellTool(sandboxMgr); tool != nil {
 		toolRegistry.Register(tool)
 	}
-	if tool := tools.NewListToolsTool(toolReg); tool != nil {
+	if tool := tools.NewDevToolTool(toolReg); tool != nil {
 		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-	}
-	if tool := tools.NewReadToolTool(toolReg); tool != nil {
-		toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-	}
-	if tool := tools.NewSaveToolTool(toolReg); tool != nil {
-		toolRegistry.Register(tool)
 	}
 
 	// Tool vector search index. Builds embeddings for all registered
@@ -780,7 +774,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		// registry, but per-userID history is kept in a separate in-memory
 		// map so a chat-pipe turn does not serialize behind a Telegram
 		// message via the UserGate.
-		Chat: NewChatPipeService(auraRunner),
+		Chat: NewChatPipeService(auraRunner, toolRegistry),
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
