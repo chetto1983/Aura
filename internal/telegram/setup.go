@@ -561,14 +561,21 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		toolRegistry.Register(tool)
 	}
 
-	// Tool vector search index. Builds embeddings for all registered
-	// tools when TOOL_SEARCH_BACKEND is vector or hybrid.
+	// Tool vector index backs the hybrid backend of Registry.Search, which
+	// the LLM-callable tool_search tool delegates to. Pre-loading at boot
+	// avoids paying ~5-10s per-tool embedding cost on the first tool_search
+	// call of a chat. Warm-cache short-circuits when the collection
+	// already has points (idx.Build, see registry_search_vector.go:162).
+	//
+	// 2026-05-12 benchmark: embed cosine top-5 hits 90% Hit@5 on 64 labeled
+	// queries vs 50% for BM25 alone — vector backend pulls real weight even
+	// though mini-LLM rerankers proved unusable on CPU (p95 ≥ 1500ms).
 	toolRegistry.BuildVectorIndex(tools.ToolVectorConfig{
 		Backend:      cfg.ToolSearchBackend,
 		TopK:         cfg.ToolSearchTopK,
 		QdrantURL:    cfg.QdrantURL,
 		QdrantAPIKey: cfg.QdrantAPIKey,
-		Collection:   "aura_tool_search_v2", // Phase 2 T-02-F + matches Plan 05 production default
+		Collection:   "aura_tool_search_v2",
 		EmbedBaseURL: cfg.EmbeddingBaseURL,
 		EmbedAPIKey:  cfg.EmbeddingAPIKey,
 		EmbedModel:   cfg.EmbeddingModel,
@@ -778,10 +785,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
-		// TEMP (benchmark fixture, 2026-05-12): loopback /health/tools-dump
-		// returns the live tool catalog (built-in + MCP + workspace) used
-		// by the offline tool_search benchmark script. Removed in cleanup.
-		ToolsDumpFn: toolRegistry.Definitions,
 		// Chat pipe for cmd/chat. Reuses the auraRunner so a local CLI
 		// session and a swarm worker share the same LLM client + tool
 		// registry, but per-userID history is kept in a separate in-memory
