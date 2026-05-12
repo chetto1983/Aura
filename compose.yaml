@@ -137,18 +137,28 @@ services:
   # llama.cpp's OpenAI-compatible /v1/embeddings endpoint. Inside the docker
   # network: http://aura-llama-embed:8080/v1. Aura's EMBEDDING_BASE_URL
   # points here by default — this IS the embedding backend, no fallback.
-  # 2026-05-12 probe: 32ms median single-query latency on CPU mini-PC,
-  # 768-dim native output, MRL-truncated to 256d client-side
-  # (EMBEDDING_OUTPUT_DIM=256). Host port 8081 exposed for debug.
+  #
+  # Image tag is parametrized via LLAMA_EMBED_IMAGE_TAG. Default is CPU
+  # (server). For Aura's workload (single-query embeddings from chat +
+  # small batch reindex) the GPU is the WRONG tool — see commit and the
+  # memory note feedback_minipc_cpu_budget. On 2026-05-12 a CUDA probe
+  # on this exact box (RTX A2000 Laptop GPU) measured 2000ms/query vs
+  # 32ms on CPU because the per-request CPU↔GPU sync overhead dominates
+  # the trivial compute. GPU is only worth it for sustained batch
+  # throughput which Aura does not have.
+  #
+  # End-users / power users who actually have batch throughput can set
+  # LLAMA_EMBED_IMAGE_TAG=server-cuda in .env to opt in; the deploy
+  # resources block below is no-op for the CPU image and only kicks in
+  # when an NVIDIA runtime is requested.
   aura-llama-embed:
-    image: ghcr.io/ggml-org/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:${LLAMA_EMBED_IMAGE_TAG:-server}
     restart: unless-stopped
     command: >-
       -m /models/embeddinggemma-300m-Q4_0.gguf
       --embeddings --pooling mean
       --ctx-size 2048 --batch-size 2048 --ubatch-size 2048
-      --threads 2 --threads-batch 4 --parallel 2
-      --mlock --no-warmup
+      --threads 4 --parallel 2
       --host 0.0.0.0 --port 8080
     ports:
       - "127.0.0.1:${LLAMA_EMBED_HOST_PORT:-8081}:8080"
