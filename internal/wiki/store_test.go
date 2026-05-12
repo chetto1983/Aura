@@ -149,7 +149,13 @@ func TestDeletePageRefreshesMaterializedGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadGraphFile: %v", err)
 	}
-	if len(graph.Nodes) != 1 || len(graph.Edges) != 0 || len(graph.BrokenRefs) != 1 {
+	// After Wave 2 GRAPH-01 (bidirectional backlink maintenance), writing
+	// Beta with [[alpha]] added "beta" to alpha.Related as a backlink. So
+	// after deleting Beta, alpha has TWO broken refs: one from the [[beta]]
+	// wikilink in its body and one from the bidirectional `related: [beta]`
+	// frontmatter entry. The previous expectation of a single broken ref
+	// predated backlink maintenance.
+	if len(graph.Nodes) != 1 || len(graph.Edges) != 0 || len(graph.BrokenRefs) != 2 {
 		t.Fatalf("graph after delete = %+v", graph)
 	}
 }

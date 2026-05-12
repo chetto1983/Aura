@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -360,5 +361,184 @@ func TestDeletePage_SubmitsReindexDelete(t *testing.T) {
 	}
 	if sub.jobs[0].Op != reindex.OpDelete {
 		t.Fatalf("op = %v, want OpDelete", sub.jobs[0].Op)
+	}
+}
+
+// Wave 2 — GRAPH-01: bidirectional backlink maintenance tests.
+
+// TestWritePage_AddsBacklinkOnNewLink verifies that writing a page whose
+// body contains [[target]] appends the writer's slug to target.Related.
+// This is the core invariant that makes the wiki graph traversable: every
+// [[link]] in a body has a corresponding entry in the target's related
+// array, so retrieval can rely on `related` as the runtime adjacency list.
+func TestWritePage_AddsBacklinkOnNewLink(t *testing.T) {
+	s := newWritesTestStore(t)
+	// Target page must exist before the writer-side link can backlink.
+	writeFixturePage(t, s, "Target", "target body", "2026-05-12T00:00:00Z")
+
+	writer := &Page{
+		Title:         "Writer",
+		Body:          "Something about [[target]].",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-12T00:01:00Z",
+		UpdatedAt:     "2026-05-12T00:01:00Z",
+	}
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatalf("WritePage writer: %v", err)
+	}
+
+	target, err := s.ReadPage(Slug("Target"))
+	if err != nil {
+		t.Fatalf("ReadPage target: %v", err)
+	}
+	if !slices.Contains(target.Related, "writer") {
+		t.Fatalf("target.Related = %v, want it to contain 'writer'", target.Related)
+	}
+}
+
+// TestWritePage_BacklinkIdempotent verifies that re-writing the same
+// page with the same [[link]] does not duplicate the backlink entry.
+func TestWritePage_BacklinkIdempotent(t *testing.T) {
+	s := newWritesTestStore(t)
+	writeFixturePage(t, s, "Target", "target body", "2026-05-12T00:00:00Z")
+	writer := &Page{
+		Title: "Writer", Body: "Refers to [[target]].",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:01:00Z", UpdatedAt: "2026-05-12T00:01:00Z",
+	}
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatal(err)
+	}
+	// Re-write writer with same link; the backlink delta is empty.
+	writer.Body = "Refers to [[target]] again."
+	writer.UpdatedAt = "2026-05-12T00:02:00Z"
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := s.ReadPage(Slug("Target"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, rel := range target.Related {
+		if rel == "writer" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("target.Related has 'writer' %d times, want exactly 1: %v", count, target.Related)
+	}
+}
+
+// TestWritePage_BacklinkSkipsSelfReference verifies that a page linking
+// to itself ([[self]] in self.md) does NOT add itself to its own
+// related array. Self-loops in the graph would inflate degree without
+// information value.
+func TestWritePage_BacklinkSkipsSelfReference(t *testing.T) {
+	s := newWritesTestStore(t)
+	page := &Page{
+		Title: "Self", Body: "I am [[self]].",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:00:00Z", UpdatedAt: "2026-05-12T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), page); err != nil {
+		t.Fatal(err)
+	}
+	read, err := s.ReadPage(Slug("Self"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(read.Related, "self") {
+		t.Fatalf("self-reference should not be added: %v", read.Related)
+	}
+}
+
+// TestWritePage_BacklinkSkipsMissingTarget verifies that a [[link]] to
+// a non-existent page does NOT fail the write — broken refs are
+// allowed and detected by the lint pass, not the writer.
+func TestWritePage_BacklinkSkipsMissingTarget(t *testing.T) {
+	s := newWritesTestStore(t)
+	page := &Page{
+		Title: "Writer", Body: "References [[ghost]] which doesn't exist.",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:00:00Z", UpdatedAt: "2026-05-12T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), page); err != nil {
+		t.Fatalf("write should succeed even with broken ref: %v", err)
+	}
+	// Confirm ghost still doesn't exist.
+	if _, err := s.ReadPage("ghost"); err == nil {
+		t.Fatalf("ghost page should not be auto-created")
+	}
+}
+
+// TestWritePage_BacklinkPreservesManualRelated verifies that manual
+// entries already in a target's related array are preserved when a
+// backlink is added. The target's existing related field is treated as
+// load-bearing user intent and merged with the new automatic backlink.
+func TestWritePage_BacklinkPreservesManualRelated(t *testing.T) {
+	s := newWritesTestStore(t)
+	target := &Page{
+		Title: "Target", Body: "target body",
+		Related:       []string{"manual-entry"},
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:00:00Z", UpdatedAt: "2026-05-12T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	writer := &Page{
+		Title: "Writer", Body: "Mentions [[target]].",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:01:00Z", UpdatedAt: "2026-05-12T00:01:00Z",
+	}
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := s.ReadPage(Slug("Target"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(read.Related, "manual-entry") {
+		t.Fatalf("manual entry lost: %v", read.Related)
+	}
+	if !slices.Contains(read.Related, "writer") {
+		t.Fatalf("auto backlink missing: %v", read.Related)
+	}
+}
+
+// TestWritePage_BacklinkAddsOnUpdateNewLink verifies that editing a
+// page to ADD a new [[link]] (relative to its previous body) creates a
+// backlink on the newly-linked target. Pre-existing backlinks are not
+// re-added (idempotency, covered by TestWritePage_BacklinkIdempotent).
+func TestWritePage_BacklinkAddsOnUpdateNewLink(t *testing.T) {
+	s := newWritesTestStore(t)
+	writeFixturePage(t, s, "Alpha", "alpha body", "2026-05-12T00:00:00Z")
+	writeFixturePage(t, s, "Beta", "beta body", "2026-05-12T00:00:00Z")
+
+	writer := &Page{
+		Title: "Writer", Body: "Mentions [[alpha]].",
+		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
+		CreatedAt: "2026-05-12T00:01:00Z", UpdatedAt: "2026-05-12T00:01:00Z",
+	}
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatal(err)
+	}
+	// Edit writer: add [[beta]] in addition to [[alpha]].
+	writer.Body = "Mentions [[alpha]] and [[beta]]."
+	writer.UpdatedAt = "2026-05-12T00:02:00Z"
+	if err := s.WritePage(context.Background(), writer); err != nil {
+		t.Fatal(err)
+	}
+
+	beta, err := s.ReadPage(Slug("Beta"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(beta.Related, "writer") {
+		t.Fatalf("beta.Related missing writer after update: %v", beta.Related)
 	}
 }
