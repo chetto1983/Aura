@@ -168,10 +168,7 @@ func main() {
 	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
 		reg.Register(tool)
 	}
-	reg.Register(tools.NewScheduleTaskTool(schedStore, time.Local))
-	reg.Register(tools.NewListTasksTool(schedStore))
-	reg.Register(tools.NewCancelTaskTool(schedStore))
-	if tool := tools.NewRunTaskNowTool(debugRunTaskNowRunner{store: schedStore}); tool != nil {
+	if tool := tools.NewTaskTool(schedStore, debugRunTaskNowRunner{store: schedStore}, time.Local); tool != nil {
 		reg.Register(tool)
 	}
 	if tool := tools.NewDailyBriefingTool(schedStore, srcStore, summariesStore, issuesStore, archiveStore, time.Local); tool != nil {
@@ -242,43 +239,43 @@ func main() {
 		{
 			name:      "schedule_task_in",
 			prompt:    "Schedule a wiki maintenance pass to run in 90 seconds. Use the relative-duration field. Name it slice9-smoke.",
-			wantTools: []string{"schedule_task"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke"},
 		},
 		{
 			name:      "schedule_task_every_minutes",
 			prompt:    "Schedule a wiki maintenance pass every 60 minutes. Name it slice17-every-smoke.",
-			wantTools: []string{"schedule_task"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice17-every-smoke", "every 60 minutes"},
 		},
 		{
 			name:      "schedule_task_weekdays",
 			prompt:    "Schedule a reminder every business day at 10:00 local time. Name it slice17-weekday-smoke and set the reminder text to weekday smoke.",
-			wantTools: []string{"schedule_task"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice17-weekday-smoke", "mon,tue,wed,thu,fri"},
 		},
 		{
 			name:      "schedule_agent_job",
 			prompt:    "Schedule a propose-only agent job every 60 minutes. Name it slice17-agent-smoke. Its goal is to check Aura sources and propose useful wiki updates.",
-			wantTools: []string{"schedule_task"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice17-agent-smoke", "agent_job", "every 60 minutes"},
 		},
 		{
 			name:      "run_task_now",
-			prompt:    "Esegui adesso il task schedulato slice17-agent-smoke. Usa run_task_now, non creare un nuovo swarm.",
-			wantTools: []string{"run_task_now"},
+			prompt:    "Esegui adesso il task schedulato slice17-agent-smoke. Usa l'azione run_now del tool task, non creare un nuovo swarm.",
+			wantTools: []string{"task"},
 			wantText:  []string{"slice17-agent-smoke", "completed", "debug run_task_now"},
 		},
 		{
 			name:      "list_tasks",
 			prompt:    "List every scheduled task you currently know about.",
-			wantTools: []string{"list_tasks"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke", "slice17-every-smoke", "slice17-weekday-smoke", "slice17-agent-smoke"},
 		},
 		{
 			name:      "cancel_task",
 			prompt:    "Cancel the slice9-smoke task we just scheduled.",
-			wantTools: []string{"cancel_task"},
+			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke"},
 		},
 	}
