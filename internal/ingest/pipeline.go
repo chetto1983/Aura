@@ -583,33 +583,20 @@ func buildConceptBody(c ExtractedConcept, sourceID string) string {
 	return sb.String()
 }
 
-// annotateProvenance appends a Pandoc-style footnote-shaped marker
-// `^[src_xxx]` to the given text. The token is non-rendering in most
-// Markdown viewers (Obsidian renders it as a footnote tooltip,
-// GitHub renders the raw text) and is grep-friendly for lint passes
-// that want to verify every claim in the wiki carries provenance.
-//
-// Idempotent: if the text already ends with the marker for this
-// source, returns it unchanged. Whitespace at the end of the input
-// is collapsed so the marker glues onto the trailing token cleanly.
+// annotateProvenance is a thin alias for wiki.AnnotateProvenance kept
+// here so existing call sites in this file don't churn. The shared
+// implementation lives in internal/wiki/provenance.go so the
+// wiki_page tool (Wave 2.6) and the ingest pipeline emit the same
+// marker syntax. Re-exporting at the function level keeps the diff
+// to call sites minimal.
 func annotateProvenance(text, sourceID string) string {
-	marker := provenanceMarker(sourceID)
-	text = strings.TrimRight(text, " \t\n")
-	if text == "" {
-		return ""
-	}
-	if strings.HasSuffix(text, marker) {
-		return text
-	}
-	return text + " " + marker
+	return wiki.AnnotateProvenance(text, sourceID)
 }
 
-// provenanceMarker returns the canonical inline footnote token Aura
-// uses to tag a span of text with its source ID. Format is
-// `^[src_xxx]` — Pandoc footnote syntax, also recognized by
-// Obsidian's footnotes plugin.
+// provenanceMarker is the same thin-alias treatment for the marker
+// helper. See annotateProvenance above.
 func provenanceMarker(sourceID string) string {
-	return "^[" + sourceID + "]"
+	return wiki.ProvenanceMarker(sourceID)
 }
 
 // cleanedRelated returns a copy of related slugs with the owner's

@@ -182,7 +182,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// passing searchEngine directly avoids widening Bot.search from
 	// search.Searcher to search.Repository. Worker is nil when searchEngine is
 	// nil (no Qdrant configured), and nil is handled gracefully by
-	// wikiStore.SetReindexSubmitter and tools.NewWriteWikiPageTool.
+	// wikiStore.SetReindexSubmitter and tools.NewWikiPageTool.
 	var reindexWorker *reindex.Worker
 	if searchEngine != nil {
 		reindexWorker = reindex.NewWorker(searchEngine, reindex.DefaultConfig())
@@ -771,6 +771,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
+		// TEMP (benchmark fixture, 2026-05-12): loopback /health/tools-dump
+		// returns the live tool catalog (built-in + MCP + workspace) used
+		// by the offline tool_search benchmark script. Removed in cleanup.
+		ToolsDumpFn: toolRegistry.Definitions,
 		// Chat pipe for cmd/chat. Reuses the auraRunner so a local CLI
 		// session and a swarm worker share the same LLM client + tool
 		// registry, but per-userID history is kept in a separate in-memory
@@ -804,11 +808,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if pdfTool := tools.NewCreatePDFTool(sourceStore, b); pdfTool != nil {
 		toolRegistry.Register(pdfTool)
 	}
-	// PHASE 2 WIKI-01: register write_wiki_page tool. Uses the local wikiStore
-	// (*wiki.Store) — not b.wiki (wiki.Repository interface) — consistent with
-	// BLOCKER 3 of 2026-05-11 plan revision 2. reindexWorker is the same
-	// worker wired into wikiStore.SetReindexSubmitter above; nil is safe.
-	if t := tools.NewWriteWikiPageTool(wikiStore, reindexWorker); t != nil {
+	// Wave 2.6 — register the unified wiki_page tool. Replaces the legacy
+	// write_wiki_page with a four-action verb family (create/replace/edit/append).
+	// Uses the local wikiStore (*wiki.Store) — not b.wiki (wiki.Repository
+	// interface) — consistent with BLOCKER 3 of 2026-05-11 plan revision 2.
+	// reindexWorker is the same worker wired into wikiStore.SetReindexSubmitter
+	// above; nil is safe.
+	if t := tools.NewWikiPageTool(wikiStore, reindexWorker); t != nil {
 		toolRegistry.Register(t)
 	}
 

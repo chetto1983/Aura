@@ -311,11 +311,11 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	// 2026-05-11 ("fa troppe call memory search ... lo stiamo
 	// lobotomizzando"). The cap was treating legitimate model
 	// behaviour as misuse; the model knows when it needs more
-	// retrieval. Only write_wiki_page keeps an explicit budget because
-	// its retry path is structured around the 3-temperature staircase
+	// retrieval. Only wiki_page keeps an explicit budget because its
+	// retry path is structured around the 3-temperature staircase
 	// (Plan 01 D-07: ContentTemperatures[0, 0.3, 0.7]).
 	maxCallsPerTool := map[string]int{
-		"write_wiki_page": 3,
+		"wiki_page": 3,
 	}
 	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 	addActiveTools := func(names []string) {

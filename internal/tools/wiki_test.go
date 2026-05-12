@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
@@ -14,7 +15,7 @@ import (
 )
 
 // newTestWikiStore returns a *wiki.Store rooted at t.TempDir() with a
-// silent logger. Real signature (verified at internal/wiki/store.go:110):
+// silent logger. Real signature (verified at internal/wiki/store.go):
 //
 //	func NewStore(dir string, logger *slog.Logger) (*Store, error)
 func newTestWikiStore(t *testing.T) *wiki.Store {
@@ -38,204 +39,343 @@ func (f *fakeSubmitter) Submit(j reindex.Job) bool {
 	return true
 }
 
-func TestWriteWikiPage_Name(t *testing.T) {
-	tool := NewWriteWikiPageTool(newTestWikiStore(t), nil)
-	if tool == nil {
-		t.Fatal("NewWriteWikiPageTool returned nil with non-nil store")
+// seedPage writes a starter page directly through the store so the
+// action tests have something to read/edit/append against. Returns the
+// page's updated_at so callers can pass it as expected_updated_at.
+func seedPage(t *testing.T, s *wiki.Store, title, body string, related, sources []string) string {
+	t.Helper()
+	now := "2026-05-12T12:00:00Z"
+	page := &wiki.Page{
+		Title:         title,
+		Body:          body,
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Related:       related,
+		Sources:       sources,
 	}
-	if got := tool.Name(); got != "write_wiki_page" {
-		t.Fatalf("Name() = %q, want %q", got, "write_wiki_page")
+	if err := s.WritePage(context.Background(), page); err != nil {
+		t.Fatalf("seed: %v", err)
 	}
-}
-
-func TestWriteWikiPage_NilStore(t *testing.T) {
-	if tool := NewWriteWikiPageTool(nil, nil); tool != nil {
-		t.Fatal("NewWriteWikiPageTool(nil, ...) should return nil")
-	}
-}
-
-func TestWriteWikiPage_Parameters_AdditionalPropertiesFalse(t *testing.T) {
-	tool := NewWriteWikiPageTool(newTestWikiStore(t), nil)
-	params := tool.Parameters()
-	if params["type"] != "object" {
-		t.Fatalf("type = %v, want object", params["type"])
-	}
-	if ap, ok := params["additionalProperties"].(bool); !ok || ap != false {
-		t.Fatalf("additionalProperties = %v (type %T), want false bool", params["additionalProperties"], params["additionalProperties"])
-	}
-	req, ok := params["required"].([]string)
-	if !ok {
-		t.Fatalf("required type = %T, want []string", params["required"])
-	}
-	wantReq := []string{"title", "body", "expected_updated_at"}
-	if len(req) != len(wantReq) {
-		t.Fatalf("required len = %d, want %d", len(req), len(wantReq))
-	}
-	for _, k := range wantReq {
-		found := false
-		for _, r := range req {
-			if r == k {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("required missing %q: got %v", k, req)
-		}
-	}
-	// Privileged keys MUST NOT appear in properties.
-	props, _ := params["properties"].(map[string]any)
-	for _, priv := range []string{"slug", "unversioned", "schema_version", "prompt_version", "created_at", "updated_at"} {
-		if _, ok := props[priv]; ok {
-			t.Fatalf("properties unexpectedly contains privileged key %q", priv)
-		}
-	}
-}
-
-func TestWriteWikiPage_HappyPath_Create(t *testing.T) {
-	store := newTestWikiStore(t)
-	sub := &fakeSubmitter{}
-	tool := NewWriteWikiPageTool(store, sub)
-	out, err := tool.Execute(context.Background(), map[string]any{
-		"title":               "Test Page",
-		"body":                "Hello world",
-		"expected_updated_at": "", // create-only sentinel
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	var resp map[string]string
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
-		t.Fatalf("non-JSON result: %q", out)
-	}
-	if resp["status"] != "ok" {
-		t.Fatalf("status = %q, want ok", resp["status"])
-	}
-	if resp["slug"] != wiki.Slug("Test Page") {
-		t.Fatalf("slug = %q, want %q", resp["slug"], wiki.Slug("Test Page"))
-	}
-	if sub.calls != 1 {
-		t.Fatalf("submitter calls = %d, want 1", sub.calls)
-	}
-	if sub.last.Op != reindex.OpUpsert {
-		t.Fatalf("submitted op = %v, want OpUpsert", sub.last.Op)
-	}
-}
-
-func TestWriteWikiPage_Conflict_ETagMismatch(t *testing.T) {
-	store := newTestWikiStore(t)
-	tool := NewWriteWikiPageTool(store, nil)
-	// Setup: create the page first.
-	_, _ = tool.Execute(context.Background(), map[string]any{
-		"title": "Conflict Page", "body": "v1", "expected_updated_at": "",
-	})
-	// Now try to update with a STALE expected_updated_at.
-	out, err := tool.Execute(context.Background(), map[string]any{
-		"title": "Conflict Page", "body": "v2", "expected_updated_at": "1999-01-01T00:00:00Z",
-	})
-	if err != nil {
-		t.Fatalf("Execute should return nil error on conflict (tool RESULT), got: %v", err)
-	}
-	var resp map[string]string
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
-		t.Fatalf("non-JSON conflict result: %q", out)
-	}
-	if resp["error"] != "conflict" {
-		t.Fatalf("error = %q, want conflict", resp["error"])
-	}
-	if resp["expected_updated_at"] != "1999-01-01T00:00:00Z" {
-		t.Fatalf("expected_updated_at = %q, want stale value passthrough", resp["expected_updated_at"])
-	}
-	if resp["actual_updated_at"] == "" {
-		t.Fatal("actual_updated_at must be populated")
-	}
-	if resp["slug"] != wiki.Slug("Conflict Page") {
-		t.Fatalf("slug = %q, want derived", resp["slug"])
-	}
-}
-
-func TestWriteWikiPage_CreateOnly_AlreadyExists(t *testing.T) {
-	store := newTestWikiStore(t)
-	tool := NewWriteWikiPageTool(store, nil)
-	_, _ = tool.Execute(context.Background(), map[string]any{
-		"title": "Twice", "body": "v1", "expected_updated_at": "",
-	})
-	out, err := tool.Execute(context.Background(), map[string]any{
-		"title": "Twice", "body": "v2", "expected_updated_at": "",
-	})
-	if err != nil {
-		t.Fatalf("Execute should return nil error on create-only conflict: %v", err)
-	}
-	var resp map[string]string
-	_ = json.Unmarshal([]byte(out), &resp)
-	if resp["error"] != "conflict" {
-		t.Fatalf("error = %q, want conflict", resp["error"])
-	}
-	if resp["expected_updated_at"] != "" {
-		t.Fatalf("expected_updated_at = %q, want empty (create-only sentinel echo)", resp["expected_updated_at"])
-	}
-}
-
-func TestWriteWikiPage_MissingRequiredArg_Wraps_ErrSchemaValidation(t *testing.T) {
-	tool := NewWriteWikiPageTool(newTestWikiStore(t), nil)
-	cases := []map[string]any{
-		{"body": "x", "expected_updated_at": ""},  // missing title
-		{"title": "x", "expected_updated_at": ""},  // missing body
-		{"title": "x", "body": "y"},                // missing expected_updated_at
-	}
-	for i, args := range cases {
-		_, err := tool.Execute(context.Background(), args)
-		if err == nil {
-			t.Fatalf("case %d: expected error, got nil", i)
-		}
-		if !errors.Is(err, llm.ErrSchemaValidation) {
-			t.Fatalf("case %d: err = %v, want wraps llm.ErrSchemaValidation", i, err)
-		}
-	}
-}
-
-func TestWriteWikiPage_PrivilegedFieldsIgnored(t *testing.T) {
-	store := newTestWikiStore(t)
-	tool := NewWriteWikiPageTool(store, nil)
-	// LLM passes privileged fields. additionalProperties:false would reject upstream;
-	// even if they slip through to Execute, they MUST NOT be stored on the Page.
-	// Deviation note: PromptVersion is "v1" (not "write_wiki_page/v1") because
-	// wiki.Validate's promptVersionRe does not accept slash-separated formats.
-	// See 02-04-SUMMARY.md for details.
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"title": "Priv", "body": "x", "expected_updated_at": "",
-		"unversioned":    true,        // should be ignored
-		"schema_version": 99,          // should be ignored
-		"prompt_version": "evil",      // should be ignored
-		"slug":           "evil-slug", // should be ignored — slug is derived
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	page, err := store.ReadPage(wiki.Slug("Priv"))
+	got, err := s.ReadPage(wiki.Slug(title))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Unversioned {
-		t.Fatal("Unversioned was set from LLM input — privilege escalation!")
+	return got.UpdatedAt
+}
+
+func TestWikiPage_Name(t *testing.T) {
+	tool := NewWikiPageTool(newTestWikiStore(t), nil)
+	if tool == nil {
+		t.Fatal("NewWikiPageTool returned nil with non-nil store")
 	}
-	if page.SchemaVersion != wiki.CurrentSchemaVersion {
-		t.Fatalf("SchemaVersion = %d, want %d (LLM cannot override)", page.SchemaVersion, wiki.CurrentSchemaVersion)
-	}
-	// PromptVersion must be the server-controlled value, not "evil".
-	// We use "v1" (passes wiki.Validate's promptVersionRe) rather than
-	// "write_wiki_page/v1" (plan spec) which is rejected by the regex.
-	if page.PromptVersion != "v1" {
-		t.Fatalf("PromptVersion = %q, want \"v1\" (server-controlled)", page.PromptVersion)
+	if got := tool.Name(); got != "wiki_page" {
+		t.Fatalf("Name() = %q, want %q", got, "wiki_page")
 	}
 }
 
-func TestWriteWikiPage_NilSubmitter_DoesNotPanic(t *testing.T) {
-	store := newTestWikiStore(t)
-	tool := NewWriteWikiPageTool(store, nil) // nil Submitter is acceptable
-	_, err := tool.Execute(context.Background(), map[string]any{
-		"title": "NoReindex", "body": "x", "expected_updated_at": "",
+func TestWikiPage_NilStore(t *testing.T) {
+	if tool := NewWikiPageTool(nil, nil); tool != nil {
+		t.Fatal("NewWikiPageTool(nil, ...) should return nil")
+	}
+}
+
+func TestWikiPage_RejectsUnknownAction(t *testing.T) {
+	tool := NewWikiPageTool(newTestWikiStore(t), nil)
+	_, err := tool.Execute(context.Background(), map[string]any{"action": "yeet"})
+	if err == nil {
+		t.Fatal("expected error for unknown action")
+	}
+	if !errors.Is(err, llm.ErrSchemaValidation) {
+		t.Fatalf("expected schema validation error, got %v", err)
+	}
+}
+
+func TestWikiPage_Create_HappyPath(t *testing.T) {
+	s := newTestWikiStore(t)
+	tool := NewWikiPageTool(s, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action": "create",
+		"title":  "Alpha Project",
+		"body":   "Notes about [[beta]].",
 	})
 	if err != nil {
-		t.Fatalf("Execute with nil submitter: %v", err)
+		t.Fatalf("Execute: %v", err)
+	}
+	var result map[string]string
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("result not JSON: %v\n%s", err, out)
+	}
+	if result["status"] != "ok" || result["slug"] != "alpha-project" {
+		t.Fatalf("result = %+v", result)
+	}
+	got, err := s.ReadPage("alpha-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Body != "Notes about [[beta]]." {
+		t.Fatalf("body persisted incorrectly: %q", got.Body)
+	}
+}
+
+func TestWikiPage_Create_RequiresTitle(t *testing.T) {
+	tool := NewWikiPageTool(newTestWikiStore(t), nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action": "create",
+		"body":   "x",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing title")
+	}
+}
+
+func TestWikiPage_Create_ConflictOnExistingSlug(t *testing.T) {
+	s := newTestWikiStore(t)
+	seedPage(t, s, "Existing", "body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action": "create",
+		"title":  "Existing",
+		"body":   "new body",
+	})
+	if err != nil {
+		t.Fatalf("conflict should surface as result, not error: %v", err)
+	}
+	var result map[string]string
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("not JSON: %s", out)
+	}
+	if result["error"] != "conflict" {
+		t.Fatalf("expected conflict result, got %+v", result)
+	}
+}
+
+func TestWikiPage_Replace_OverwritesBody(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "old body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "replace",
+		"slug":                "target",
+		"body":                "new body about [[beta]]",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	_ = out
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Body != "new body about [[beta]]" {
+		t.Fatalf("body not replaced: %q", got.Body)
+	}
+	if got.Title != "Target" {
+		t.Fatalf("title not preserved: %q", got.Title)
+	}
+}
+
+func TestWikiPage_Replace_PreservesUnsetFrontmatter(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "body", []string{"existing-related"}, []string{"source:src_x"})
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "replace",
+		"slug":                "target",
+		"body":                "new body",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsStringSlice(got.Related, "existing-related") {
+		t.Fatalf("related not preserved: %v", got.Related)
+	}
+	if !containsStringSlice(got.Sources, "source:src_x") {
+		t.Fatalf("sources not preserved: %v", got.Sources)
+	}
+}
+
+func TestWikiPage_Replace_ConflictOnStaleETag(t *testing.T) {
+	s := newTestWikiStore(t)
+	seedPage(t, s, "Target", "body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "replace",
+		"slug":                "target",
+		"body":                "x",
+		"expected_updated_at": "1999-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("conflict should be a result, not an error: %v", err)
+	}
+	if !strings.Contains(out, `"error":"conflict"`) {
+		t.Fatalf("expected conflict result: %s", out)
+	}
+}
+
+func TestWikiPage_Edit_SingleMatchReplaces(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "The quick brown fox.", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "edit",
+		"slug":                "target",
+		"old_text":            "brown fox",
+		"new_text":            "red panda",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Body != "The quick red panda." {
+		t.Fatalf("edit produced %q", got.Body)
+	}
+}
+
+func TestWikiPage_Edit_RejectsZeroMatches(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "some body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "edit",
+		"slug":                "target",
+		"old_text":            "missing",
+		"new_text":            "x",
+		"expected_updated_at": stamp,
+	})
+	if err == nil {
+		t.Fatal("expected error for zero-match edit")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestWikiPage_Edit_RejectsMultipleMatches(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "foo bar foo", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "edit",
+		"slug":                "target",
+		"old_text":            "foo",
+		"new_text":            "X",
+		"expected_updated_at": stamp,
+	})
+	if err == nil {
+		t.Fatal("expected error for ambiguous edit")
+	}
+	if !strings.Contains(err.Error(), "appears") {
+		t.Fatalf("expected ambiguity error, got: %v", err)
+	}
+}
+
+func TestWikiPage_Append_AddsSection(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "existing body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "append",
+		"slug":                "target",
+		"heading":             "Update",
+		"body":                "Latest news.",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Body, "## Update") {
+		t.Fatalf("append did not add the heading:\n%s", got.Body)
+	}
+	if !strings.Contains(got.Body, "Latest news.") {
+		t.Fatalf("append did not add the body:\n%s", got.Body)
+	}
+}
+
+func TestWikiPage_Append_WithSourceIDAnnotatesAndAddsSources(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "existing body", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "append",
+		"slug":                "target",
+		"heading":             "From a new source",
+		"body":                "Aura mentioned this fact.\n\nAnother point.",
+		"source_id":           "src_abc123",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both non-heading lines should carry the provenance marker.
+	if strings.Count(got.Body, "^[src_abc123]") < 2 {
+		t.Fatalf("expected ≥2 provenance markers, body:\n%s", got.Body)
+	}
+	// Sources frontmatter should have the new source tagged.
+	if !containsStringSlice(got.Sources, "source:src_abc123") {
+		t.Fatalf("source not appended to Sources: %v", got.Sources)
+	}
+}
+
+func TestWikiPage_Append_BlockquoteLinesGetInnerAnnotation(t *testing.T) {
+	s := newTestWikiStore(t)
+	stamp := seedPage(t, s, "Target", "existing", nil, nil)
+	tool := NewWikiPageTool(s, nil)
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action":              "append",
+		"slug":                "target",
+		"heading":             "Quotes",
+		"body":                "> claim one\n> claim two",
+		"source_id":           "src_xyz",
+		"expected_updated_at": stamp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ReadPage("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Blockquote lines: marker goes after the quote content, with "> " prefix intact.
+	if !strings.Contains(got.Body, "> claim one ^[src_xyz]") {
+		t.Fatalf("blockquote not annotated correctly:\n%s", got.Body)
+	}
+}
+
+func TestWikiPage_SubmitsReindex(t *testing.T) {
+	s := newTestWikiStore(t)
+	sub := &fakeSubmitter{}
+	tool := NewWikiPageTool(s, sub)
+	if _, err := tool.Execute(context.Background(), map[string]any{
+		"action": "create",
+		"title":  "Reindex Me",
+		"body":   "x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sub.calls == 0 {
+		t.Fatal("expected reindex submit on successful create")
+	}
+	if sub.last.Slug != "reindex-me" {
+		t.Fatalf("reindex slug = %q", sub.last.Slug)
 	}
 }

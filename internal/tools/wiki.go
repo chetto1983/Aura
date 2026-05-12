@@ -13,145 +13,350 @@ import (
 	"github.com/aura/aura/internal/wiki"
 )
 
-// WriteWikiPageTool exposes wiki page creation/update to the LLM via the
-// agent loop. Required arguments are enforced both by the JSON Schema (D-01)
-// and by Execute's own field validation (which wraps llm.ErrSchemaValidation
-// so the retry wrapper buckets failures as CONTENT — Plan 01).
+// wikiPagePromptVersion stamps `prompt_version` on pages this tool
+// creates or modifies. Matches the wiki schema regex (v{n}). Bumping
+// requires a coordinated update of wiki.promptVersionRe.
+const wikiPagePromptVersion = "v1"
+
+// WikiPageTool is the single dynamic mutation surface Aura uses for
+// her wiki. It replaces the legacy `write_wiki_page` (which only knew
+// full-body replace) with a four-action verb family in one tool —
+// inspired by picobot's memory tool layout but adapted to Aura's
+// structured-frontmatter, graph-aware wiki:
 //
-// Conflict responses are returned as a successful tool RESULT containing
-// structured JSON (D-03), NOT as an error string — the LLM parses the
-// result and re-reads + retries deterministically.
+//   - create  — fresh new page with full frontmatter + body
+//   - replace — overwrite an existing page's body (and optionally
+//     frontmatter fields); same shape as the legacy tool
+//   - edit    — surgical find/replace on an existing page's body
+//     (Anthropic Edit-tool style; the LLM doesn't have to round-trip
+//     the whole body for a small fix)
+//   - append  — add a new ## section at the bottom; when source_id
+//     is provided, auto-emits `^[src_xxx]` provenance markers
+//     (matches Wave 2.4 ingest merge semantics)
 //
-// Privileged frontmatter keys (slug, unversioned, schema_version,
-// prompt_version, created_at, updated_at) are server-controlled:
-// they are absent from Parameters().properties and never read from args
-// in Execute (T-02-B privilege escalation prevention).
-type WriteWikiPageTool struct {
+// Wave 2.1 backlink maintenance fires after every action that writes
+// a page, so any [[wiki-link]] introduced via this tool gets its
+// reverse-edge wired automatically. Wave 2.2 graph index refreshes
+// on the same path.
+//
+// Conflict responses (D-03) flow through here unchanged: the wiki
+// Store returns a *wiki.ConflictError when expected_updated_at
+// doesn't match the on-disk timestamp, and we surface it as a
+// structured JSON result for the LLM to read+retry.
+type WikiPageTool struct {
 	store     *wiki.Store
 	submitter reindex.Submitter // optional; nil = skip reindex enqueue
 }
 
-// NewWriteWikiPageTool builds the tool. Returns nil if store is missing.
-// submitter MAY be nil — the tool degrades gracefully (no reindex submission).
-func NewWriteWikiPageTool(store *wiki.Store, submitter reindex.Submitter) *WriteWikiPageTool {
+// NewWikiPageTool builds the tool. Returns nil if store is missing.
+// submitter MAY be nil — the tool degrades gracefully (no reindex
+// submission, the search index just lags until a real reindex pass).
+func NewWikiPageTool(store *wiki.Store, submitter reindex.Submitter) *WikiPageTool {
 	if store == nil {
 		return nil
 	}
-	return &WriteWikiPageTool{store: store, submitter: submitter}
+	return &WikiPageTool{store: store, submitter: submitter}
 }
 
-func (t *WriteWikiPageTool) Name() string { return "write_wiki_page" }
+func (t *WikiPageTool) Name() string { return "wiki_page" }
 
-func (t *WriteWikiPageTool) Description() string {
-	return "Create or update a wiki page. Always read the page first to obtain `updated_at`; pass `expected_updated_at=''` only when creating a brand-new page; on conflict, re-read and retry. Slug is derived from title — do not supply it. Server controls schema_version, prompt_version, created_at, updated_at, and unversioned."
+func (t *WikiPageTool) Description() string {
+	return `Create, replace, edit, or append to a wiki page.
+
+Actions (pick one via the "action" field):
+
+  • create  — write a brand-new page from scratch. Required: title, body.
+    Optional: category, tags, related, sources. Slug is derived from title.
+
+  • replace — overwrite an existing page's body (and optionally its
+    frontmatter). Required: slug, body, expected_updated_at. To update
+    metadata only, set body to the existing body (read it first).
+
+  • edit    — surgical find/replace on the page's body. Required: slug,
+    old_text, new_text, expected_updated_at. old_text MUST match exactly
+    one occurrence — provide enough context to disambiguate. new_text=""
+    deletes the match.
+
+  • append  — add a new ## section at the bottom of an existing page.
+    Required: slug, heading, body, expected_updated_at. Optional:
+    source_id — when given, each non-empty body line gets an ^[src_xxx]
+    provenance marker, and source_id is added to the Sources frontmatter.
+
+Concurrency: every action except "create" requires expected_updated_at
+(RFC3339 from the page you just read). On conflict the tool returns
+structured JSON {"error":"conflict", ...} — re-read and retry. "create"
+fails with a conflict if the slug already exists.
+
+Writing style (applies to create/replace/append body):
+- Use [[slug]] inline for every wiki page you reference — backlinks
+  are auto-maintained, do NOT mirror body links into "related:".
+- "related:" is only for intentional cross-references that don't
+  appear in body prose.
+- Categorize: "entity" (person/project/org), "concept" (theme/process),
+  or empty for ad-hoc notes. The "sources" category is reserved for
+  the ingest pipeline.
+- When citing claims from a specific source, append ^[src_xxx] per
+  claim (matches the ingest pipeline's provenance style). See
+  wiki/SCHEMA.md for full guidance.`
 }
 
-func (t *WriteWikiPageTool) Parameters() map[string]any {
+func (t *WikiPageTool) Parameters() map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"title", "body", "expected_updated_at"},
+		"required":             []string{"action"},
 		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        []string{"create", "replace", "edit", "append"},
+				"description": "Which mutation to apply: create (new page), replace (overwrite body), edit (find/replace), append (add a section).",
+			},
 			"title": map[string]any{
 				"type":        "string",
-				"description": "Human-readable page title. Slug is derived from this.",
+				"description": "Page title. Required for create. Optional for replace (preserves existing if omitted). Ignored for edit/append.",
+			},
+			"slug": map[string]any{
+				"type":        "string",
+				"description": "Target page slug (lowercase, dash-separated). Required for replace/edit/append. Ignored for create — derived from title there.",
 			},
 			"body": map[string]any{
 				"type":        "string",
-				"description": "Full markdown body (replaces existing body — there is no patch mode).",
+				"description": "For create/replace: the full markdown body. For append: the new section's content only (the heading is added separately). Ignored for edit.",
 			},
 			"expected_updated_at": map[string]any{
 				"type":        "string",
-				"description": "RFC3339 timestamp from the page you read. Empty string '' to create a brand-new page (rejected if a page with this slug already exists).",
+				"description": "RFC3339 timestamp from the page you just read. Required for replace/edit/append. For create, leave empty or omit — the create path uses the '' create-only sentinel automatically.",
 			},
 			"category": map[string]any{
 				"type":        "string",
-				"description": "Optional category tag.",
+				"description": "Optional category. Common values: 'entity', 'concept', or empty. Applied on create/replace.",
 			},
 			"tags": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional tag list.",
+				"description": "Optional tag list. Applied on create/replace.",
 			},
 			"related": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional list of related page slugs.",
+				"description": "Optional list of slugs for INTENTIONAL cross-references that don't appear as [[wiki-links]] in body. Body [[wiki-links]] already produce auto-backlinks — DO NOT mirror body links here. Applied on create/replace.",
 			},
 			"sources": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional list of source URLs or identifiers.",
+				"description": "Optional list of source URLs or src_xxx identifiers. Applied on create/replace.",
+			},
+			"old_text": map[string]any{
+				"type":        "string",
+				"description": "edit only: the exact substring to find. Must match exactly one occurrence in the page body.",
+			},
+			"new_text": map[string]any{
+				"type":        "string",
+				"description": "edit only: replacement text. Empty string deletes the match.",
+			},
+			"heading": map[string]any{
+				"type":        "string",
+				"description": "append only: the ## section heading text (without the leading '## ').",
+			},
+			"source_id": map[string]any{
+				"type":        "string",
+				"description": "append only, optional: when provided, each non-empty body line in the new section gets an ^[src_xxx] provenance marker appended, and source_id is added to Sources if not already there.",
 			},
 		},
 	}
 }
 
-// Execute validates the LLM-supplied args, writes the wiki page, surfaces
-// conflicts as structured JSON tool results (D-03), and submits a non-blocking
-// reindex job on success.
-//
-// Error mapping:
-//   - Missing/empty required field → fmt.Errorf("%w", llm.ErrSchemaValidation)
-//     (CONTENT bucket — retry wrapper re-prompts the LLM)
-//   - *wiki.ConflictError → nil error, JSON tool result with error:"conflict"
-//     (D-03 — LLM re-reads and retries deterministically)
-//   - Any other store error → propagated as-is (IO/other → retry wrapper decides)
-func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	title := stringArg(args, "title")
-	body := stringArg(args, "body")
-
-	// Presence test for expected_updated_at: empty string "" is the
-	// create-only sentinel — a valid value. Only a missing key is invalid.
-	rawExpected, hasExpected := args["expected_updated_at"]
-	var expectedUpdatedAt string
-	if hasExpected {
-		if s, ok := rawExpected.(string); ok {
-			expectedUpdatedAt = s
-		} else {
-			return "", fmt.Errorf("write_wiki_page: expected_updated_at must be a string: %w", llm.ErrSchemaValidation)
-		}
+// Execute dispatches to the per-action handler. Action-specific
+// argument validation happens inside each handler to keep the
+// top-level Execute readable.
+func (t *WikiPageTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	action := strings.TrimSpace(stringArg(args, "action"))
+	switch action {
+	case "create":
+		return t.doCreate(ctx, args)
+	case "replace":
+		return t.doReplace(ctx, args)
+	case "edit":
+		return t.doEdit(ctx, args)
+	case "append":
+		return t.doAppend(ctx, args)
+	case "":
+		return "", fmt.Errorf("wiki_page: action is required: %w", llm.ErrSchemaValidation)
+	default:
+		return "", fmt.Errorf("wiki_page: unknown action %q: %w", action, llm.ErrSchemaValidation)
 	}
+}
 
-	if strings.TrimSpace(title) == "" {
-		return "", fmt.Errorf("write_wiki_page: title is required: %w", llm.ErrSchemaValidation)
+// doCreate writes a brand-new page. expected_updated_at is implicitly
+// the '' create-only sentinel — the wiki Store rejects the write with
+// a ConflictError if the slug already exists, and we surface that as
+// a structured JSON result so the LLM can decide to use "replace" or
+// "append" on the existing page instead.
+func (t *WikiPageTool) doCreate(ctx context.Context, args map[string]any) (string, error) {
+	title := strings.TrimSpace(stringArg(args, "title"))
+	body := stringArg(args, "body")
+	if title == "" {
+		return "", fmt.Errorf("wiki_page create: title is required: %w", llm.ErrSchemaValidation)
 	}
 	if strings.TrimSpace(body) == "" {
-		return "", fmt.Errorf("write_wiki_page: body is required: %w", llm.ErrSchemaValidation)
+		return "", fmt.Errorf("wiki_page create: body is required: %w", llm.ErrSchemaValidation)
 	}
-	if !hasExpected {
-		return "", fmt.Errorf("write_wiki_page: expected_updated_at is required: %w", llm.ErrSchemaValidation)
-	}
-
-	// Server-controlled metadata — LLM input is IGNORED for these keys
-	// (privilege escalation prevention, T-02-B mitigation).
-	// PromptVersion is the tool-write provenance marker. The historical plan
-	// spec called for "write_wiki_page/v1" but wiki.Validate's promptVersionRe
-	// only accepts the canonical v{n} shape. Until the regex is extended to
-	// accept "tool/v{n}" we use "v1" — the divergence is intentional and
-	// tracked here (F-039). Changing the constant requires a matching
-	// promptVersionRe update in internal/wiki/validate.go.
 	now := time.Now().UTC().Format(time.RFC3339)
 	page := &wiki.Page{
-		Title:         strings.TrimSpace(title),
-		Body:          body,                       // full replace — no patch mode (D-01)
+		Title:         title,
+		Body:          body,
 		Category:      stringArg(args, "category"),
 		Tags:          stringSliceArg(args, "tags"),
 		Related:       stringSliceArg(args, "related"),
 		Sources:       stringSliceArg(args, "sources"),
-		SchemaVersion: wiki.CurrentSchemaVersion,  // D-09 LOCK — NOT from args
-		PromptVersion: "v1",                       // see F-039 note above — server-controlled
-		CreatedAt:     now,                        // store.WritePage may preserve on update
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: wikiPagePromptVersion,
+		CreatedAt:     now,
 		UpdatedAt:     now,
-		// Unversioned: NEVER set from args (server-managed only — D-17/D-18 in wiki.Store)
 	}
+	return t.writeAndRespond(ctx, page, "")
+}
 
+// doReplace overwrites the body (and frontmatter, when present in
+// args) of an existing page. Frontmatter fields that aren't in args
+// are preserved from the existing page so the LLM doesn't have to
+// re-echo every tag/related/source entry to keep them.
+func (t *WikiPageTool) doReplace(ctx context.Context, args map[string]any) (string, error) {
+	slug := strings.TrimSpace(stringArg(args, "slug"))
+	body := stringArg(args, "body")
+	expected := stringArg(args, "expected_updated_at")
+	if slug == "" {
+		return "", fmt.Errorf("wiki_page replace: slug is required: %w", llm.ErrSchemaValidation)
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("wiki_page replace: body is required: %w", llm.ErrSchemaValidation)
+	}
+	if expected == "" {
+		return "", fmt.Errorf("wiki_page replace: expected_updated_at is required: %w", llm.ErrSchemaValidation)
+	}
+	existing, err := t.store.ReadPage(slug)
+	if err != nil {
+		return "", fmt.Errorf("wiki_page replace: read existing: %w", err)
+	}
+	title := strings.TrimSpace(stringArg(args, "title"))
+	if title == "" {
+		title = existing.Title
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	page := &wiki.Page{
+		Title:         title,
+		Body:          body,
+		Category:      pickStringArg(args, "category", existing.Category),
+		Tags:          pickStringSliceArg(args, "tags", existing.Tags),
+		Related:       pickStringSliceArg(args, "related", existing.Related),
+		Sources:       pickStringSliceArg(args, "sources", existing.Sources),
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: wikiPagePromptVersion,
+		CreatedAt:     existing.CreatedAt,
+		UpdatedAt:     now,
+	}
+	return t.writeAndRespond(ctx, page, expected)
+}
+
+// doEdit performs a surgical find/replace on the body of an existing
+// page. old_text must match exactly one occurrence — if zero or
+// multiple matches are found, the tool errors and the LLM is expected
+// to provide a more specific old_text on retry (Anthropic Edit tool
+// semantics, robust against accidental whole-word replacements).
+func (t *WikiPageTool) doEdit(ctx context.Context, args map[string]any) (string, error) {
+	slug := strings.TrimSpace(stringArg(args, "slug"))
+	oldText := stringArg(args, "old_text")
+	newText := stringArg(args, "new_text")
+	expected := stringArg(args, "expected_updated_at")
+	if slug == "" {
+		return "", fmt.Errorf("wiki_page edit: slug is required: %w", llm.ErrSchemaValidation)
+	}
+	if oldText == "" {
+		return "", fmt.Errorf("wiki_page edit: old_text is required: %w", llm.ErrSchemaValidation)
+	}
+	if expected == "" {
+		return "", fmt.Errorf("wiki_page edit: expected_updated_at is required: %w", llm.ErrSchemaValidation)
+	}
+	existing, err := t.store.ReadPage(slug)
+	if err != nil {
+		return "", fmt.Errorf("wiki_page edit: read existing: %w", err)
+	}
+	occurrences := strings.Count(existing.Body, oldText)
+	switch occurrences {
+	case 0:
+		return "", fmt.Errorf("wiki_page edit: old_text not found in body of %q; provide a verbatim substring", slug)
+	case 1:
+		// fall through — single match is the safe case.
+	default:
+		return "", fmt.Errorf("wiki_page edit: old_text appears %d times in %q; widen the context so it matches exactly once", occurrences, slug)
+	}
+	newBody := strings.Replace(existing.Body, oldText, newText, 1)
+	now := time.Now().UTC().Format(time.RFC3339)
+	page := *existing // copy frontmatter
+	page.Body = newBody
+	page.SchemaVersion = wiki.CurrentSchemaVersion
+	page.PromptVersion = wikiPagePromptVersion
+	page.UpdatedAt = now
+	return t.writeAndRespond(ctx, &page, expected)
+}
+
+// doAppend adds a new "## {heading}" section to the page's body.
+// When source_id is supplied, each non-empty non-heading line in the
+// new section gets a ^[src_xxx] marker appended (idempotent — won't
+// double-tag) and source_id is added to Sources if not already
+// present. Matches Wave 2.4 ingest merge semantics so chat-written
+// citations look identical to LLM-extracted ones.
+func (t *WikiPageTool) doAppend(ctx context.Context, args map[string]any) (string, error) {
+	slug := strings.TrimSpace(stringArg(args, "slug"))
+	heading := strings.TrimSpace(stringArg(args, "heading"))
+	body := stringArg(args, "body")
+	expected := stringArg(args, "expected_updated_at")
+	sourceID := strings.TrimSpace(stringArg(args, "source_id"))
+	if slug == "" {
+		return "", fmt.Errorf("wiki_page append: slug is required: %w", llm.ErrSchemaValidation)
+	}
+	if heading == "" {
+		return "", fmt.Errorf("wiki_page append: heading is required: %w", llm.ErrSchemaValidation)
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("wiki_page append: body is required: %w", llm.ErrSchemaValidation)
+	}
+	if expected == "" {
+		return "", fmt.Errorf("wiki_page append: expected_updated_at is required: %w", llm.ErrSchemaValidation)
+	}
+	existing, err := t.store.ReadPage(slug)
+	if err != nil {
+		return "", fmt.Errorf("wiki_page append: read existing: %w", err)
+	}
+	annotatedBody := body
+	if sourceID != "" {
+		annotatedBody = annotateLines(body, sourceID)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	page := *existing
+	page.Body = strings.TrimRight(existing.Body, "\n") + "\n\n## " + heading + "\n\n" + annotatedBody + "\n"
+	if sourceID != "" {
+		tag := "source:" + sourceID
+		if !containsStringSlice(page.Sources, tag) && !containsStringSlice(page.Sources, sourceID) {
+			page.Sources = append(page.Sources, tag)
+		}
+	}
+	page.SchemaVersion = wiki.CurrentSchemaVersion
+	page.PromptVersion = wikiPagePromptVersion
+	page.UpdatedAt = now
+	return t.writeAndRespond(ctx, &page, expected)
+}
+
+// writeAndRespond is the shared tail of every action: validate, write
+// through the wiki Store (which fires Wave 2.1 backlinks + Wave 2.2
+// graph index refresh), submit the reindex job, and emit a structured
+// JSON result. ConflictError is translated into a successful
+// {"error":"conflict",...} result so the LLM retry path stays
+// deterministic.
+func (t *WikiPageTool) writeAndRespond(ctx context.Context, page *wiki.Page, expectedUpdatedAt string) (string, error) {
 	if err := t.store.WritePage(ctx, page, expectedUpdatedAt); err != nil {
 		var conflict *wiki.ConflictError
 		if errors.As(err, &conflict) {
-			// D-03: return a successful tool RESULT (nil error) containing
-			// structured JSON. The LLM parses the result, re-reads the page
-			// to get the current updated_at, and retries.
 			payload := map[string]string{
 				"error":               "conflict",
 				"slug":                conflict.Slug,
@@ -160,31 +365,93 @@ func (t *WriteWikiPageTool) Execute(ctx context.Context, args map[string]any) (s
 			}
 			data, mErr := json.Marshal(payload)
 			if mErr != nil {
-				return "", fmt.Errorf("write_wiki_page: marshal conflict: %w", mErr)
+				return "", fmt.Errorf("wiki_page: marshal conflict: %w", mErr)
 			}
 			return string(data), nil
 		}
-		return "", fmt.Errorf("write_wiki_page: %w", err)
+		return "", fmt.Errorf("wiki_page: %w", err)
 	}
-
 	slug := wiki.Slug(page.Title)
 	if t.submitter != nil {
-		// Non-blocking fire-and-forget (drop-newest semantics from Plan 02).
-		// Return value (bool) is intentionally ignored — drop is safe because
-		// disk is source of truth and the worker re-reads on drain.
 		_ = t.submitter.Submit(reindex.Job{Slug: slug, Op: reindex.OpUpsert})
 	}
-
 	result, err := json.Marshal(map[string]string{
 		"status":     "ok",
 		"slug":       slug,
 		"updated_at": page.UpdatedAt,
 	})
 	if err != nil {
-		return "", fmt.Errorf("write_wiki_page: marshal result: %w", err)
+		return "", fmt.Errorf("wiki_page: marshal result: %w", err)
 	}
 	return string(result), nil
 }
 
-// Ensure WriteWikiPageTool satisfies the Tool interface at compile time.
-var _ Tool = (*WriteWikiPageTool)(nil)
+// annotateLines walks a multi-line body and appends a provenance
+// marker to each non-empty, non-heading, non-blockquote line. Headings
+// (#-prefixed) and blockquote markers (>-prefixed) skip the appendix
+// so the rendered structure stays clean. Matches the per-line
+// behavior of Wave 2.5's ingest path so a chat-driven append produces
+// the same shape as a source-driven multi-page-touch update.
+func annotateLines(body, sourceID string) string {
+	if sourceID == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Blockquote lines: annotate the inner content, keeping the
+		// "> " prefix intact.
+		if strings.HasPrefix(trimmed, ">") {
+			inner := strings.TrimPrefix(trimmed, ">")
+			inner = strings.TrimSpace(inner)
+			if inner == "" {
+				continue
+			}
+			lines[i] = "> " + wiki.AnnotateProvenance(inner, sourceID)
+			continue
+		}
+		lines[i] = wiki.AnnotateProvenance(line, sourceID)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pickStringArg returns args[key] when present and non-empty, else
+// fallback. Used by doReplace so missing optional frontmatter fields
+// preserve the existing page's value instead of clearing it.
+func pickStringArg(args map[string]any, key, fallback string) string {
+	if v, ok := args[key]; ok {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	return fallback
+}
+
+// pickStringSliceArg mirrors pickStringArg for []string. An explicitly
+// empty array in args clears the field (intentional); a missing key
+// preserves existing.
+func pickStringSliceArg(args map[string]any, key string, fallback []string) []string {
+	if _, ok := args[key]; !ok {
+		return fallback
+	}
+	return stringSliceArg(args, key)
+}
+
+// containsStringSlice is a tiny membership test kept local to the
+// tools package to avoid importing slices.Contains everywhere on Go
+// builds where the stdlib version is fine but the lint cost of an
+// extra import bothers.
+func containsStringSlice(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// Ensure WikiPageTool satisfies the Tool interface at compile time.
+var _ Tool = (*WikiPageTool)(nil)

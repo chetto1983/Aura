@@ -13,7 +13,7 @@ import (
 // Every name MUST exist in the live tool registry. Verified at planning
 // time via `grep -rho 'return "[a-z_]+"' internal/tools/*.go`:
 //
-//	write_wiki_page         (added by Plan 04)
+//	wiki_page               (Wave 2.6 — replaces legacy write_wiki_page)
 //	search_memory           (internal/tools/memory_search.go:105)
 //	list_sources            (internal/tools/source.go:357)
 //	read_source             (internal/tools/source.go:237)
@@ -22,7 +22,7 @@ import (
 //
 // Order is preserved as documented; downstream prompt formatting may rely on it.
 var alwaysOnCore = []string{
-	"write_wiki_page",
+	"wiki_page",
 	"search_memory",
 	"list_sources",
 	"read_source",

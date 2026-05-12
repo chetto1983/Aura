@@ -47,7 +47,7 @@ func TestToolsProvider_ColdStart(t *testing.T) {
 		t.Fatalf("cold-start returned %d defs, want 6", len(defs))
 	}
 	wantSet := map[string]bool{
-		"write_wiki_page": true, "search_memory": true, "list_sources": true,
+		"wiki_page": true, "search_memory": true, "list_sources": true,
 		"read_source": true, "schedule_task": true,
 		"request_dashboard_token": true,
 	}
