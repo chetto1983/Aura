@@ -18,13 +18,20 @@ func renderForTelegramEntities(s string) []renderedTelegramMessage {
 	if s == "" {
 		return nil
 	}
-	msgs := tgmd.ConvertAndSplit(s,
+	// Pre-pass: extract GFM tables and replace each with a unique
+	// placeholder. The library renders tables as ASCII grids wrapped in
+	// `pre`, which produces unreadable horizontal-scroll blocks on mobile.
+	// We render them ourselves after tgmd has handled everything else.
+	rewritten, tables := rewriteAtomicTables(s)
+
+	msgs := tgmd.ConvertAndSplit(rewritten,
 		tgmd.WithHeadingSymbols([6]string{"", "", "", "", "", ""}),
 		tgmd.WithBulletMarker("-"),
 		tgmd.WithMaxMessageLen(telegramMaxMessageUTF16),
 	)
 	out := make([]renderedTelegramMessage, 0, len(msgs))
 	for _, msg := range msgs {
+		msg = applyAtomicTables(msg, tables)
 		if msg.Text == "" {
 			continue
 		}
