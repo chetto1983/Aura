@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 )
 
@@ -18,6 +19,15 @@ import (
 // dumping into context.
 const schedulerToolMaxChars = 8000
 
+// minScheduleEveryMinutes caps how often the LLM may schedule a recurring task.
+// Anything tighter is a cost-bomb / self-DoS surface: a single prompt-injected
+// schedule of every_minutes=1 would fire the agent loop every minute,
+// exhausting LLM budget and writing archive rows on every fire.
+const minScheduleEveryMinutes = 5
+
+// RunTaskNowResult is the JSON envelope returned by the run_now action.
+// Surfaces enough telemetry for the LLM to tell the user how the saved
+// routine fared without a second tool call.
 type RunTaskNowResult struct {
 	OK               bool     `json:"ok"`
 	Name             string   `json:"name"`
@@ -37,117 +47,126 @@ type RunTaskNowResult struct {
 	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
 }
 
+// ScheduledTaskRunner is the manual-fire surface the run_now action calls.
+// In production this is implemented by *telegram.Bot.
 type ScheduledTaskRunner interface {
 	RunTaskNow(ctx context.Context, name string) (RunTaskNowResult, error)
 }
 
-type RunTaskNowTool struct {
+// TaskTool consolidates the legacy verb-tools (schedule_task, list_tasks,
+// cancel_task, run_task_now) into a single action-enum surface. Same
+// picobot pattern as wiki_page and dev_tool: one tool, one action enum
+// acting as the verb, so the LLM never has to discriminate between four
+// near-identical schedule entry points.
+//
+//	action=schedule — persist a one-shot or recurring task.
+//	action=list     — surface every task in the scheduler.
+//	action=cancel   — flip an active task to status=cancelled.
+//	action=run_now  — manually fire a saved task.
+//
+// runner may be nil at construction time and set later via SetRunner;
+// the registration order in setup.go builds the *Bot (which implements
+// ScheduledTaskRunner) AFTER the scheduler tools register, so we accept
+// the deferred wiring rather than force a setup re-order.
+type TaskTool struct {
+	store  scheduler.Repository
 	runner ScheduledTaskRunner
+	loc    *time.Location
 }
 
-func NewRunTaskNowTool(runner ScheduledTaskRunner) *RunTaskNowTool {
-	if runner == nil {
+// NewTaskTool builds the unified scheduler tool. store is required;
+// runner can be nil at construction (set later via SetRunner) so the
+// schedule/list/cancel actions stay live even if the manual-fire path
+// isn't wired yet. loc defaults to time.Local when nil.
+func NewTaskTool(store scheduler.Repository, runner ScheduledTaskRunner, loc *time.Location) *TaskTool {
+	if store == nil {
 		return nil
 	}
-	return &RunTaskNowTool{runner: runner}
-}
-
-func (t *RunTaskNowTool) Name() string { return "run_task_now" }
-
-func (t *RunTaskNowTool) Description() string {
-	return "Run a saved scheduled task immediately by name. Use this when the user says to execute a scheduled agent job now, test a saved routine, or run an existing scheduled routine without changing its future schedule. MVP supports agent_job tasks."
-}
-
-func (t *RunTaskNowTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type":        "string",
-				"description": "Name of the saved scheduled task to run now.",
-			},
-		},
-		"required": []string{"name"},
-	}
-}
-
-func (t *RunTaskNowTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	if t.runner == nil {
-		return "", errors.New("run_task_now: runner unavailable")
-	}
-	name, err := requiredString(args, "name")
-	if err != nil {
-		return "", fmt.Errorf("run_task_now: %w", err)
-	}
-	result, err := t.runner.RunTaskNow(ctx, name)
-	if err != nil {
-		return "", fmt.Errorf("run_task_now: %w", err)
-	}
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("run_task_now: marshal result: %w", err)
-	}
-	return string(data), nil
-}
-
-// ScheduleTaskTool lets the LLM persist a one-shot or daily-recurring
-// task. Recognized kinds: reminder (sends payload as a Telegram message),
-// wiki_maintenance (runs the autonomous wiki pass), and agent_job (runs a
-// bounded propose-only agent routine).
-type ScheduleTaskTool struct {
-	store scheduler.Repository
-	loc   *time.Location
-}
-
-func NewScheduleTaskTool(store scheduler.Repository, loc *time.Location) *ScheduleTaskTool {
 	if loc == nil {
 		loc = time.Local
 	}
-	return &ScheduleTaskTool{store: store, loc: loc}
+	return &TaskTool{store: store, runner: runner, loc: loc}
 }
 
-func (t *ScheduleTaskTool) Name() string { return "schedule_task" }
-
-func (t *ScheduleTaskTool) Description() string {
-	return "Schedule a one-shot or recurring task. Kinds: \"reminder\" (sends payload to the user), \"wiki_maintenance\" (runs the autonomous wiki pass), and \"agent_job\" (runs a bounded propose-only agent routine). Pick one schedule field: in, at_local, at, daily, or every_minutes. Use daily with weekdays for business-day schedules."
+// SetRunner wires the manual-fire path after the *Bot is constructed.
+// Safe to call exactly once during setup; not concurrency-protected.
+func (t *TaskTool) SetRunner(runner ScheduledTaskRunner) {
+	t.runner = runner
 }
 
-func (t *ScheduleTaskTool) Parameters() map[string]any {
+func (t *TaskTool) Name() string { return "task" }
+
+func (t *TaskTool) Description() string {
+	return `Manage scheduled tasks (reminders, recurring wiki maintenance, bounded agent jobs).
+
+Actions (pick one via the "action" field):
+
+  • schedule — persist a one-shot or recurring task.
+    Required: name (unique identifier; re-using a name updates the existing task),
+    kind (reminder | wiki_maintenance | agent_job), and exactly one schedule field:
+      in            — relative duration ("60s", "5m", "2h", "1d", "2w")
+      at_local      — wall-clock in user TZ ("2026-04-30T17:00:00" or "2026-04-30 17:00")
+      at            — absolute ISO8601 UTC ("2026-04-30T15:00:00Z")
+      daily         — recurring local HH:MM, e.g. "03:00" (narrow with weekdays)
+      every_minutes — recurring interval (>=5)
+    Optional: payload (reminder text / agent_job goal-or-JSON),
+    weekdays (only with daily; e.g. ["mon","tue","wed","thu","fri"] for business days).
+
+  • list — surface every task. Optional: status filter (active | done | cancelled | failed).
+    Empty status returns everything.
+
+  • cancel — flip an active task to status=cancelled. Required: name.
+
+  • run_now — manually fire a saved task immediately without changing its
+    future schedule. Required: name. MVP supports agent_job kind.
+
+The "in" / "at_local" / "at" / "daily" / "every_minutes" fields are mutually
+exclusive — pick exactly one when scheduling.`
+}
+
+func (t *TaskTool) Parameters() map[string]any {
 	return map[string]any{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"action"},
 		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        []string{"schedule", "list", "cancel", "run_now"},
+				"description": "Which operation to perform: schedule (persist new), list (enumerate), cancel (deactivate), run_now (fire saved task immediately).",
+			},
 			"name": map[string]any{
 				"type":        "string",
-				"description": "Unique task identifier (used for cancellation; re-using a name updates the existing task).",
+				"description": "Task identifier. Required for schedule/cancel/run_now. Re-using a name on schedule UPDATES the existing task.",
 			},
 			"kind": map[string]any{
 				"type":        "string",
-				"description": "Either \"reminder\", \"wiki_maintenance\", or \"agent_job\".",
 				"enum":        []string{"reminder", "wiki_maintenance", "agent_job"},
+				"description": "schedule only, required: reminder | wiki_maintenance | agent_job.",
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "Task body. For reminder: message text. For wiki_maintenance: ignored. For agent_job: the goal to run, or JSON with goal, enabled_toolsets, skills, context_from, wake_if_changed, tool_allowlist, write_policy, notify. Prefer enabled_toolsets over raw tool_allowlist.",
+				"description": "schedule only, optional: task body. For reminder: message text. For wiki_maintenance: ignored. For agent_job: the goal to run, or a JSON object with goal/enabled_toolsets/skills/context_from/wake_if_changed/tool_allowlist/write_policy/notify. Prefer enabled_toolsets over raw tool_allowlist.",
 			},
 			"in": map[string]any{
 				"type":        "string",
-				"description": "One-shot relative duration (e.g. \"60s\", \"5m\", \"2h\", \"1d\", \"2w\"). Server resolves to absolute UTC. Use this when the user says \"in N seconds/minutes/hours/days/weeks\".",
+				"description": "schedule only: one-shot relative duration (\"60s\", \"5m\", \"2h\", \"1d\", \"2w\"). Server resolves to UTC.",
 			},
 			"at_local": map[string]any{
 				"type":        "string",
-				"description": "One-shot wall-clock time in the user's timezone, no offset. Accepts YYYY-MM-DDTHH:MM[:SS] or YYYY-MM-DD HH:MM[:SS] (e.g. \"2026-04-30T17:00:00\" or \"2026-04-30 17:00\" for 5pm local).",
+				"description": "schedule only: one-shot wall-clock in user TZ. Accepts YYYY-MM-DDTHH:MM[:SS] or YYYY-MM-DD HH:MM[:SS].",
 			},
 			"at": map[string]any{
 				"type":        "string",
-				"description": "One-shot absolute ISO8601 UTC (e.g. \"2026-04-30T15:00:00Z\"). Use only when the user is explicit about UTC.",
+				"description": "schedule only: one-shot absolute ISO8601 UTC.",
 			},
 			"daily": map[string]any{
 				"type":        "string",
-				"description": "Recurring local-time HH:MM (e.g. \"03:00\"). Can be narrowed with weekdays.",
+				"description": "schedule only: recurring local HH:MM (narrow with weekdays).",
 			},
 			"weekdays": map[string]any{
 				"type":        "array",
-				"description": "Optional filter for daily schedules. Use mon,tue,wed,thu,fri,sat,sun. For business days use [\"mon\",\"tue\",\"wed\",\"thu\",\"fri\"].",
+				"description": "schedule only, optional with daily: filter to specific weekdays.",
 				"items": map[string]any{
 					"type": "string",
 					"enum": []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"},
@@ -155,17 +174,39 @@ func (t *ScheduleTaskTool) Parameters() map[string]any {
 			},
 			"every_minutes": map[string]any{
 				"type":        "integer",
-				"description": "Recurring interval in minutes (>=5), e.g. 60 hourly, 1440 daily, 10080 weekly. First fire is N minutes from now. Minimum 5 minutes to bound cost and avoid self-DoS.",
+				"description": "schedule only: recurring interval in minutes (>=5). 60 hourly, 1440 daily, 10080 weekly.",
 				"minimum":     minScheduleEveryMinutes,
 			},
+			"status": map[string]any{
+				"type":        "string",
+				"enum":        []string{"", "active", "done", "cancelled", "failed"},
+				"description": "list only, optional: filter (active | done | cancelled | failed). Empty returns all.",
+			},
 		},
-		"required": []string{"name", "kind"},
 	}
 }
 
-func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (t *TaskTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	action := strings.TrimSpace(stringArg(args, "action"))
+	switch action {
+	case "schedule":
+		return t.doSchedule(ctx, args)
+	case "list":
+		return t.doList(ctx, args)
+	case "cancel":
+		return t.doCancel(ctx, args)
+	case "run_now":
+		return t.doRunNow(ctx, args)
+	case "":
+		return "", fmt.Errorf("task: action is required: %w", llm.ErrSchemaValidation)
+	default:
+		return "", fmt.Errorf("task: unknown action %q: %w", action, llm.ErrSchemaValidation)
+	}
+}
+
+func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {
-		return "", errors.New("schedule_task: scheduler unavailable")
+		return "", errors.New("task schedule: scheduler unavailable")
 	}
 	name, err := requiredString(args, "name")
 	if err != nil {
@@ -179,7 +220,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	switch kind {
 	case scheduler.KindReminder, scheduler.KindWikiMaintenance, scheduler.KindAgentJob:
 	default:
-		return "", fmt.Errorf("schedule_task: unknown kind %q", kindStr)
+		return "", fmt.Errorf("task schedule: unknown kind %q", kindStr)
 	}
 
 	payload := stringArg(args, "payload")
@@ -203,42 +244,35 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 		scheduleFields++
 	}
 	if scheduleFields == 0 {
-		return "", errors.New("schedule_task: provide one of in (relative), at_local (wall-clock), at (UTC), daily (HH:MM), or every_minutes (>=1)")
+		return "", errors.New("task schedule: provide one of in (relative), at_local (wall-clock), at (UTC), daily (HH:MM), or every_minutes (>=1)")
 	}
 	if scheduleFields > 1 {
-		return "", errors.New("schedule_task: in / at_local / at / daily / every_minutes are mutually exclusive; pick one")
+		return "", errors.New("task schedule: in / at_local / at / daily / every_minutes are mutually exclusive; pick one")
 	}
 	if weekdays != "" && daily == "" {
-		return "", errors.New("schedule_task: weekdays can only be used with daily")
+		return "", errors.New("task schedule: weekdays can only be used with daily")
 	}
 
 	task := &scheduler.Task{Name: name, Kind: kind, Payload: payload}
-	// Reminders need a recipient — we capture it from the calling
-	// conversation's user. Without it, the dispatcher has no chat to
-	// send to, so reject the call up front rather than persisting a
-	// task that will fail at fire time.
 	if kind == scheduler.KindReminder {
 		uid := UserIDFromContext(ctx)
 		if uid == "" {
-			return "", errors.New("schedule_task: reminder requires an authenticated user context")
+			return "", errors.New("task schedule: reminder requires an authenticated user context")
 		}
 		task.RecipientID = uid
 	}
 	if kind == scheduler.KindAgentJob {
 		agentPayload, err := scheduler.NormalizeAgentJobPayload(payload)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: %w", err)
+			return "", fmt.Errorf("task schedule: %w", err)
 		}
 		uid := UserIDFromContext(ctx)
 		if uid == "" && agentPayload.Notify != nil && *agentPayload.Notify {
-			// Without a user context the dispatcher has no chat to notify on
-			// completion. Reject up front rather than persist a job whose
-			// notify=true is silently undeliverable.
-			return "", errors.New("schedule_task: agent_job with notify=true requires an authenticated user context")
+			return "", errors.New("task schedule: agent_job with notify=true requires an authenticated user context")
 		}
 		normalized, err := agentPayload.JSON()
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: %w", err)
+			return "", fmt.Errorf("task schedule: %w", err)
 		}
 		task.Payload = normalized
 		task.RecipientID = uid
@@ -248,25 +282,23 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	case in != "":
 		d, err := parseScheduleDuration(in)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: parse in: %w", err)
+			return "", fmt.Errorf("task schedule: parse in: %w", err)
 		}
 		if d <= 0 {
-			return "", fmt.Errorf("schedule_task: in %q must be positive", in)
+			return "", fmt.Errorf("task schedule: in %q must be positive", in)
 		}
 		ts := now.Add(d)
 		task.ScheduleKind = scheduler.ScheduleAt
 		task.ScheduleAt = ts
 		task.NextRunAt = ts
 	case atLocal != "":
-		// Accept either "2026-04-30T17:00:00" or "2026-04-30 17:00" so
-		// the LLM doesn't need to be picky about the separator.
 		ts, err := parseLocalWallClock(atLocal, t.loc)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: parse at_local: %w", err)
+			return "", fmt.Errorf("task schedule: parse at_local: %w", err)
 		}
 		ts = ts.UTC()
 		if !ts.After(now) {
-			return "", fmt.Errorf("schedule_task: at_local %s is not in the future (current local time: %s)", atLocal, now.In(t.loc).Format("2006-01-02 15:04:05"))
+			return "", fmt.Errorf("task schedule: at_local %s is not in the future (current local time: %s)", atLocal, now.In(t.loc).Format("2006-01-02 15:04:05"))
 		}
 		task.ScheduleKind = scheduler.ScheduleAt
 		task.ScheduleAt = ts
@@ -274,11 +306,11 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	case at != "":
 		ts, err := time.Parse(time.RFC3339, at)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: parse at: %w", err)
+			return "", fmt.Errorf("task schedule: parse at: %w", err)
 		}
 		ts = ts.UTC()
 		if !ts.After(now) {
-			return "", fmt.Errorf("schedule_task: at %s is not in the future (current UTC: %s)", at, now.Format(time.RFC3339))
+			return "", fmt.Errorf("task schedule: at %s is not in the future (current UTC: %s)", at, now.Format(time.RFC3339))
 		}
 		task.ScheduleKind = scheduler.ScheduleAt
 		task.ScheduleAt = ts
@@ -286,11 +318,11 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	case daily != "":
 		normalizedWeekdays, err := scheduler.NormalizeWeekdays(weekdays)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: %w", err)
+			return "", fmt.Errorf("task schedule: %w", err)
 		}
 		next, err := scheduler.NextDailyRunOnWeekdays(daily, normalizedWeekdays, t.loc, now)
 		if err != nil {
-			return "", fmt.Errorf("schedule_task: %w", err)
+			return "", fmt.Errorf("task schedule: %w", err)
 		}
 		task.ScheduleKind = scheduler.ScheduleDaily
 		task.ScheduleDaily = daily
@@ -304,7 +336,7 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 
 	saved, err := t.store.Upsert(ctx, task)
 	if err != nil {
-		return "", fmt.Errorf("schedule_task: %w", err)
+		return "", fmt.Errorf("task schedule: %w", err)
 	}
 
 	when := saved.NextRunAt.Format(time.RFC3339)
@@ -314,44 +346,15 @@ func (t *ScheduleTaskTool) Execute(ctx context.Context, args map[string]any) (st
 	return fmt.Sprintf("Scheduled %s task %q for %s.", saved.Kind, saved.Name, when), nil
 }
 
-// ListTasksTool surfaces every task in the scheduler. Output is sorted
-// by next_run_at so the LLM sees the next-up entry first.
-type ListTasksTool struct {
-	store scheduler.TaskReader
-}
-
-func NewListTasksTool(store scheduler.TaskReader) *ListTasksTool {
-	return &ListTasksTool{store: store}
-}
-
-func (t *ListTasksTool) Name() string { return "list_tasks" }
-
-func (t *ListTasksTool) Description() string {
-	return "List scheduled tasks. Optional status filter (active|done|cancelled|failed); omit to see everything."
-}
-
-func (t *ListTasksTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"status": map[string]any{
-				"type":        "string",
-				"description": "Optional filter (active|done|cancelled|failed). Empty returns all.",
-				"enum":        []string{"", "active", "done", "cancelled", "failed"},
-			},
-		},
-	}
-}
-
-func (t *ListTasksTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (t *TaskTool) doList(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {
-		return "", errors.New("list_tasks: scheduler unavailable")
+		return "", errors.New("task list: scheduler unavailable")
 	}
 	statusFilter := scheduler.Status(strings.TrimSpace(stringArg(args, "status")))
 
 	tasks, err := t.store.List(ctx, statusFilter)
 	if err != nil {
-		return "", fmt.Errorf("list_tasks: %w", err)
+		return "", fmt.Errorf("task list: %w", err)
 	}
 	if len(tasks) == 0 {
 		if statusFilter == "" {
@@ -360,7 +363,6 @@ func (t *ListTasksTool) Execute(ctx context.Context, args map[string]any) (strin
 		return fmt.Sprintf("No tasks with status %q.", statusFilter), nil
 	}
 
-	// Group by status for a readable layout.
 	byStatus := make(map[scheduler.Status][]*scheduler.Task)
 	for _, task := range tasks {
 		byStatus[task.Status] = append(byStatus[task.Status], task)
@@ -382,6 +384,47 @@ func (t *ListTasksTool) Execute(ctx context.Context, args map[string]any) (strin
 	return truncateForToolContext(sb.String(), schedulerToolMaxChars), nil
 }
 
+func (t *TaskTool) doCancel(ctx context.Context, args map[string]any) (string, error) {
+	if t.store == nil {
+		return "", errors.New("task cancel: scheduler unavailable")
+	}
+	name, err := requiredString(args, "name")
+	if err != nil {
+		return "", err
+	}
+	ok, err := t.store.Cancel(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("task cancel: %w", err)
+	}
+	if !ok {
+		// TaskWriter cannot distinguish "doesn't exist" from "already cancelled
+		// or completed" without an extra Get; surface both possibilities so the
+		// LLM doesn't waste a turn re-issuing cancel.
+		return fmt.Sprintf("No active task named %q to cancel. The task may not exist, or it may already be cancelled or completed — call task(action=list) to verify.", name), nil
+	}
+	return fmt.Sprintf("Cancelled task %q.", name), nil
+}
+
+func (t *TaskTool) doRunNow(ctx context.Context, args map[string]any) (string, error) {
+	if t.runner == nil {
+		return "", errors.New("task run_now: runner unavailable")
+	}
+	name, err := requiredString(args, "name")
+	if err != nil {
+		return "", fmt.Errorf("task run_now: %w", err)
+	}
+	result, err := t.runner.RunTaskNow(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("task run_now: %w", err)
+	}
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("task run_now: marshal result: %w", err)
+	}
+	return string(data), nil
+}
+
+// formatTaskLine renders a single task entry for the list output.
 func formatTaskLine(task *scheduler.Task) string {
 	when := task.NextRunAt.Format(time.RFC3339)
 	scheduleNote := when
@@ -419,59 +462,9 @@ func formatScheduleForUser(task *scheduler.Task, when string) string {
 	}
 }
 
-// CancelTaskTool flips an active task to status='cancelled' so the
-// scheduler ignores it.
-type CancelTaskTool struct {
-	store scheduler.TaskWriter
-}
-
-func NewCancelTaskTool(store scheduler.TaskWriter) *CancelTaskTool {
-	return &CancelTaskTool{store: store}
-}
-
-func (t *CancelTaskTool) Name() string { return "cancel_task" }
-
-func (t *CancelTaskTool) Description() string {
-	return "Cancel an active scheduled task by name. Returns whether the task existed and was active."
-}
-
-func (t *CancelTaskTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type":        "string",
-				"description": "Name of the task to cancel.",
-			},
-		},
-		"required": []string{"name"},
-	}
-}
-
-func (t *CancelTaskTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	if t.store == nil {
-		return "", errors.New("cancel_task: scheduler unavailable")
-	}
-	name, err := requiredString(args, "name")
-	if err != nil {
-		return "", err
-	}
-	ok, err := t.store.Cancel(ctx, name)
-	if err != nil {
-		return "", fmt.Errorf("cancel_task: %w", err)
-	}
-	if !ok {
-		// The TaskWriter boundary cannot distinguish "doesn't exist" from
-		// "already cancelled or completed" without an extra Get; surface both
-		// possibilities so the LLM doesn't waste a turn re-issuing cancel.
-		return fmt.Sprintf("No active task named %q to cancel. The task may not exist, or it may already be cancelled or completed — call list_tasks to verify.", name), nil
-	}
-	return fmt.Sprintf("Cancelled task %q.", name), nil
-}
-
 // parseLocalWallClock parses an ISO-ish wall-clock string in the given
 // location. Accepts both "2006-01-02T15:04:05" and "2006-01-02 15:04",
-// with or without seconds, so the LLM doesn't need to be precise about
+// with or without seconds, so the LLM doesn't need to be picky about
 // formatting. Times are interpreted as wall-clock in loc — never UTC.
 func parseLocalWallClock(s string, loc *time.Location) (time.Time, error) {
 	if loc == nil {
@@ -490,12 +483,6 @@ func parseLocalWallClock(s string, loc *time.Location) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("expected YYYY-MM-DDTHH:MM[:SS] (no timezone), got %q", s)
 }
 
-// minScheduleEveryMinutes caps how often the LLM may schedule a recurring task.
-// Anything tighter is a cost-bomb / self-DoS surface: a single prompt-injected
-// schedule of every_minutes=1 would fire the agent loop every minute,
-// exhausting LLM budget and writing archive rows on every fire.
-const minScheduleEveryMinutes = 5
-
 func positiveIntArg(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -509,17 +496,17 @@ func positiveIntArg(args map[string]any, key string) (int, bool, error) {
 		n = int(x)
 	case float64:
 		if x != float64(int(x)) {
-			return 0, true, fmt.Errorf("schedule_task: %s must be an integer", key)
+			return 0, true, fmt.Errorf("task schedule: %s must be an integer", key)
 		}
 		n = int(x)
 	default:
-		return 0, true, fmt.Errorf("schedule_task: %s must be an integer", key)
+		return 0, true, fmt.Errorf("task schedule: %s must be an integer", key)
 	}
 	if n < 1 {
-		return 0, true, fmt.Errorf("schedule_task: %s must be >= 1", key)
+		return 0, true, fmt.Errorf("task schedule: %s must be >= 1", key)
 	}
 	if key == "every_minutes" && n < minScheduleEveryMinutes {
-		return 0, true, fmt.Errorf("schedule_task: every_minutes must be >= %d", minScheduleEveryMinutes)
+		return 0, true, fmt.Errorf("task schedule: every_minutes must be >= %d", minScheduleEveryMinutes)
 	}
 	return n, true, nil
 }

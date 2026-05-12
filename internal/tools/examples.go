@@ -64,14 +64,13 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{{Arguments: map[string]any{"query": "OpenAI API latest structured outputs", "limit": 5}}}
 	case "web_fetch":
 		return []ToolCallExample{{Arguments: map[string]any{"url": "https://example.com", "max_bytes": 6000}}}
-	case "schedule_task":
-		return []ToolCallExample{{Arguments: map[string]any{"title": "Controlla Aura", "in": "1h", "prompt": "Fai un breve health check di Aura."}}}
-	case "list_tasks":
-		return []ToolCallExample{{Arguments: map[string]any{"status": "active", "limit": 10}}}
-	case "cancel_task":
-		return []ToolCallExample{{Arguments: map[string]any{"id": "task_123"}}}
-	case "run_task_now":
-		return []ToolCallExample{{Arguments: map[string]any{"id": "task_123"}}}
+	case "task":
+		return []ToolCallExample{
+			{Arguments: map[string]any{"action": "schedule", "name": "health-check", "kind": "reminder", "payload": "Fai un breve health check di Aura.", "in": "1h"}},
+			{Arguments: map[string]any{"action": "list", "status": "active"}},
+			{Arguments: map[string]any{"action": "cancel", "name": "health-check"}},
+			{Arguments: map[string]any{"action": "run_now", "name": "morning-watch"}},
+		}
 	case "daily_briefing":
 		return []ToolCallExample{{Arguments: map[string]any{"limit": 8}}}
 	case "request_dashboard_token":

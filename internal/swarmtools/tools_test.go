@@ -131,7 +131,7 @@ func TestRunAuraBotSwarmTool(t *testing.T) {
 			t.Fatalf("task user id = %q", task.UserID)
 		}
 		for _, toolName := range task.ToolAllowlist {
-			if toolName == "write_file" || toolName == "append_log" || toolName == "schedule_task" {
+			if toolName == "write_file" || toolName == "append_log" || toolName == "task" {
 				t.Fatalf("unsafe tool in allowlist: %+v", task.ToolAllowlist)
 			}
 		}

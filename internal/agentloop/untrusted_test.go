@@ -11,7 +11,7 @@ func TestIsUntrustedSourceTool(t *testing.T) {
 			t.Errorf("expected %q to be untrusted", name)
 		}
 	}
-	for _, name := range []string{"search_memory", "list_files", "list_tasks", "create_xlsx", "", "execute_code"} {
+	for _, name := range []string{"search_memory", "list_files", "task", "create_xlsx", "", "execute_code"} {
 		if IsUntrustedSourceTool(name) {
 			t.Errorf("expected %q to be trusted", name)
 		}

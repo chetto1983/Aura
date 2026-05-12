@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 )
 
@@ -93,18 +95,55 @@ func newTestSchedStore(t *testing.T) *scheduler.Store {
 	return store
 }
 
-func TestRunTaskNowTool_ExecutesNamedTask(t *testing.T) {
-	runner := &fakeRunTaskNowRunner{}
-	tool := NewRunTaskNowTool(runner)
-	if tool.Name() != "run_task_now" || tool.Description() == "" {
-		t.Fatal("run_task_now metadata is incomplete")
+func TestTaskTool_NilStore(t *testing.T) {
+	if NewTaskTool(nil, nil, time.UTC) != nil {
+		t.Fatal("nil store should yield nil tool")
 	}
-	out, err := tool.Execute(context.Background(), map[string]any{"name": "morning-watch"})
+}
+
+func TestTaskTool_Schema(t *testing.T) {
+	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
+	if tool.Name() != "task" {
+		t.Fatalf("name = %q, want task", tool.Name())
+	}
+	params := tool.Parameters()
+	required, _ := params["required"].([]string)
+	if len(required) != 1 || required[0] != "action" {
+		t.Fatalf("required = %v, want [action]", required)
+	}
+	props, _ := params["properties"].(map[string]any)
+	action, _ := props["action"].(map[string]any)
+	enum, _ := action["enum"].([]string)
+	if len(enum) != 4 {
+		t.Fatalf("action enum = %v, want [schedule list cancel run_now]", enum)
+	}
+}
+
+func TestTaskTool_MissingActionRejected(t *testing.T) {
+	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
+	_, err := tool.Execute(t.Context(), map[string]any{})
+	if !errors.Is(err, llm.ErrSchemaValidation) {
+		t.Fatalf("missing action: err = %v, want ErrSchemaValidation", err)
+	}
+}
+
+func TestTaskTool_UnknownActionRejected(t *testing.T) {
+	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
+	_, err := tool.Execute(t.Context(), map[string]any{"action": "destroy"})
+	if !errors.Is(err, llm.ErrSchemaValidation) {
+		t.Fatalf("unknown action: err = %v, want ErrSchemaValidation", err)
+	}
+}
+
+func TestTaskTool_RunNow(t *testing.T) {
+	runner := &fakeRunTaskNowRunner{}
+	tool := NewTaskTool(&fakeSchedulerRepository{}, runner, time.UTC)
+	out, err := tool.Execute(t.Context(), map[string]any{"action": "run_now", "name": "morning-watch"})
 	if err != nil {
-		t.Fatalf("Execute: %v", err)
+		t.Fatalf("run_now: %v", err)
 	}
 	if runner.name != "morning-watch" {
-		t.Fatalf("runner name = %q", runner.name)
+		t.Fatalf("runner.name = %q", runner.name)
 	}
 	var result RunTaskNowResult
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -115,10 +154,19 @@ func TestRunTaskNowTool_ExecutesNamedTask(t *testing.T) {
 	}
 }
 
-func TestSchedulerToolsAcceptRepositoryInterface(t *testing.T) {
+func TestTaskTool_RunNowMissingRunner(t *testing.T) {
+	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
+	_, err := tool.Execute(t.Context(), map[string]any{"action": "run_now", "name": "x"})
+	if err == nil {
+		t.Fatal("expected error when runner is nil")
+	}
+}
+
+func TestTaskTool_AcceptsRepositoryInterface(t *testing.T) {
 	repo := &fakeSchedulerRepository{}
-	scheduleTool := NewScheduleTaskTool(repo, time.UTC)
-	out, err := scheduleTool.Execute(WithUserID(t.Context(), "12345"), map[string]any{
+	tool := NewTaskTool(repo, nil, time.UTC)
+	out, err := tool.Execute(WithUserID(t.Context(), "12345"), map[string]any{
+		"action":  "schedule",
 		"name":    "fake-reminder",
 		"kind":    "reminder",
 		"payload": "check fake repo",
@@ -131,8 +179,7 @@ func TestSchedulerToolsAcceptRepositoryInterface(t *testing.T) {
 		t.Fatalf("schedule output = %q", out)
 	}
 
-	listTool := NewListTasksTool(repo)
-	out, err = listTool.Execute(t.Context(), map[string]any{"status": "active"})
+	out, err = tool.Execute(t.Context(), map[string]any{"action": "list", "status": "active"})
 	if err != nil {
 		t.Fatalf("list Execute: %v", err)
 	}
@@ -140,8 +187,7 @@ func TestSchedulerToolsAcceptRepositoryInterface(t *testing.T) {
 		t.Fatalf("list output = %q", out)
 	}
 
-	cancelTool := NewCancelTaskTool(repo)
-	out, err = cancelTool.Execute(t.Context(), map[string]any{"name": "fake-reminder"})
+	out, err = tool.Execute(t.Context(), map[string]any{"action": "cancel", "name": "fake-reminder"})
 	if err != nil {
 		t.Fatalf("cancel Execute: %v", err)
 	}
@@ -150,13 +196,14 @@ func TestSchedulerToolsAcceptRepositoryInterface(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_OneShotReminder(t *testing.T) {
+func TestTaskTool_OneShotReminder(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "12345")
 
 	at := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
 	out, err := tool.Execute(ctx, map[string]any{
+		"action":  "schedule",
 		"name":    "buy-bread",
 		"kind":    "reminder",
 		"payload": "buy bread",
@@ -184,13 +231,13 @@ func TestScheduleTaskTool_OneShotReminder(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_RejectsReminderWithoutUser(t *testing.T) {
+func TestTaskTool_RejectsReminderWithoutUser(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 
 	at := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
 	_, err := tool.Execute(t.Context(), map[string]any{
-		"name": "x", "kind": "reminder", "at": at,
+		"action": "schedule", "name": "x", "kind": "reminder", "at": at,
 	})
 	if err == nil {
 		t.Fatal("expected error: reminder without user context")
@@ -200,14 +247,15 @@ func TestScheduleTaskTool_RejectsReminderWithoutUser(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_DailyWikiMaintenance(t *testing.T) {
+func TestTaskTool_DailyWikiMaintenance(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 
 	out, err := tool.Execute(t.Context(), map[string]any{
-		"name":  "nightly",
-		"kind":  "wiki_maintenance",
-		"daily": "03:00",
+		"action": "schedule",
+		"name":   "nightly",
+		"kind":   "wiki_maintenance",
+		"daily":  "03:00",
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -226,18 +274,18 @@ func TestScheduleTaskTool_DailyWikiMaintenance(t *testing.T) {
 	if got.ScheduleKind != scheduler.ScheduleDaily {
 		t.Errorf("ScheduleKind = %q, want daily", got.ScheduleKind)
 	}
-	// wiki_maintenance must not capture a recipient (it's autonomous).
 	if got.RecipientID != "" {
 		t.Errorf("RecipientID = %q, want empty for wiki_maintenance", got.RecipientID)
 	}
 }
 
-func TestScheduleTaskTool_DailyWeekdays(t *testing.T) {
+func TestTaskTool_DailyWeekdays(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "u")
 
 	out, err := tool.Execute(ctx, map[string]any{
+		"action":   "schedule",
 		"name":     "weekday-briefing",
 		"kind":     "reminder",
 		"payload":  "briefing",
@@ -259,12 +307,13 @@ func TestScheduleTaskTool_DailyWeekdays(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_EveryMinutes(t *testing.T) {
+func TestTaskTool_EveryMinutes(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 
 	before := time.Now().UTC()
 	out, err := tool.Execute(t.Context(), map[string]any{
+		"action":        "schedule",
 		"name":          "hourly-maintenance",
 		"kind":          "wiki_maintenance",
 		"every_minutes": float64(60),
@@ -288,12 +337,13 @@ func TestScheduleTaskTool_EveryMinutes(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_AgentJob(t *testing.T) {
+func TestTaskTool_AgentJob(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "12345")
 
 	out, err := tool.Execute(ctx, map[string]any{
+		"action":   "schedule",
 		"name":     "morning-watch",
 		"kind":     "agent_job",
 		"payload":  "Check project news and propose useful wiki updates.",
@@ -328,9 +378,9 @@ func TestScheduleTaskTool_AgentJob(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_AgentJobStructuredPayload(t *testing.T) {
+func TestTaskTool_AgentJobStructuredPayload(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "12345")
 
 	payloadJSON := `{
@@ -342,6 +392,7 @@ func TestScheduleTaskTool_AgentJobStructuredPayload(t *testing.T) {
 		"tool_allowlist":["search_memory","web_search"]
 	}`
 	_, err := tool.Execute(ctx, map[string]any{
+		"action":        "schedule",
 		"name":          "memory-drift-watch",
 		"kind":          "agent_job",
 		"payload":       payloadJSON,
@@ -374,9 +425,9 @@ func TestScheduleTaskTool_AgentJobStructuredPayload(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
+func TestTaskTool_RejectsBadScheduleInputs(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "u")
 
 	cases := []struct {
@@ -384,52 +435,52 @@ func TestScheduleTaskTool_RejectsBadInputs(t *testing.T) {
 		args map[string]any
 		hint string
 	}{
-		{"missing kind", map[string]any{"name": "a"}, "kind"},
-		{"unknown kind", map[string]any{"name": "a", "kind": "foo"}, "unknown kind"},
-		{"missing schedule", map[string]any{"name": "a", "kind": "reminder"}, "provide one of"},
+		{"missing kind", map[string]any{"action": "schedule", "name": "a"}, "kind"},
+		{"unknown kind", map[string]any{"action": "schedule", "name": "a", "kind": "foo"}, "unknown kind"},
+		{"missing schedule", map[string]any{"action": "schedule", "name": "a", "kind": "reminder"}, "provide one of"},
 		{"both schedules", map[string]any{
-			"name": "a", "kind": "reminder",
+			"action": "schedule", "name": "a", "kind": "reminder",
 			"at":    time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
 			"daily": "03:00",
 		}, "mutually exclusive"},
 		{"in plus at_local", map[string]any{
-			"name": "a", "kind": "reminder",
+			"action": "schedule", "name": "a", "kind": "reminder",
 			"in":       "5m",
 			"at_local": "2026-04-30T17:00:00",
 		}, "mutually exclusive"},
 		{"past at", map[string]any{
-			"name": "a", "kind": "reminder",
+			"action": "schedule", "name": "a", "kind": "reminder",
 			"at": time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
 		}, "not in the future"},
 		{"bad daily", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "daily": "3am",
-		}, ""}, // ParseDailyTime emits its own message
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "daily": "3am",
+		}, ""},
 		{"agent job missing goal", map[string]any{
-			"name": "a", "kind": "agent_job", "daily": "03:00",
+			"action": "schedule", "name": "a", "kind": "agent_job", "daily": "03:00",
 		}, "agent_job payload goal required"},
 		{"bad every", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "every_minutes": float64(0),
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "every_minutes": float64(0),
 		}, "every_minutes must be >= 1"},
 		{"fractional every", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "every_minutes": 1.5,
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "every_minutes": 1.5,
 		}, "every_minutes must be an integer"},
 		{"daily plus every", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "daily": "03:00", "every_minutes": float64(60),
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "daily": "03:00", "every_minutes": float64(60),
 		}, "mutually exclusive"},
 		{"weekdays without daily", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "every_minutes": float64(60), "weekdays": []any{"mon"},
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "every_minutes": float64(60), "weekdays": []any{"mon"},
 		}, "weekdays can only be used with daily"},
 		{"bad weekday", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "daily": "03:00", "weekdays": []any{"moonday"},
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "daily": "03:00", "weekdays": []any{"moonday"},
 		}, "invalid weekday"},
 		{"bad in", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "in": "soon",
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "in": "soon",
 		}, "parse in"},
 		{"non-positive in", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "in": "-5m",
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "in": "-5m",
 		}, "must be positive"},
 		{"bad at_local format", map[string]any{
-			"name": "a", "kind": "wiki_maintenance", "at_local": "domani alle 5",
+			"action": "schedule", "name": "a", "kind": "wiki_maintenance", "at_local": "domani alle 5",
 		}, "parse at_local"},
 	}
 	for _, tc := range cases {
@@ -454,13 +505,14 @@ func containsSchedTestString(values []string, needle string) bool {
 	return false
 }
 
-func TestScheduleTaskTool_RelativeIn(t *testing.T) {
+func TestTaskTool_RelativeIn(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "u")
 
 	before := time.Now().UTC()
 	out, err := tool.Execute(ctx, map[string]any{
+		"action":  "schedule",
 		"name":    "ciao-mondo",
 		"kind":    "reminder",
 		"payload": "ciao mondo",
@@ -477,8 +529,6 @@ func TestScheduleTaskTool_RelativeIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	// next_run_at must be ~60s after the call. Allow a 5s window for
-	// scheduling + db round-trip.
 	delta := got.NextRunAt.Sub(before)
 	if delta < 55*time.Second || delta > 75*time.Second {
 		t.Errorf("next_run_at delta = %v, want ~60s", delta)
@@ -488,24 +538,21 @@ func TestScheduleTaskTool_RelativeIn(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_AtLocal(t *testing.T) {
-	// Pin the location so the test is deterministic regardless of
-	// where the test runs.
+func TestTaskTool_AtLocal(t *testing.T) {
 	rome, err := time.LoadLocation("Europe/Rome")
 	if err != nil {
 		t.Skipf("Europe/Rome tzdata unavailable: %v", err)
 	}
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, rome)
+	tool := NewTaskTool(store, nil, rome)
 	ctx := WithUserID(t.Context(), "u")
 
-	// Pick "tomorrow at 17:00 local" so we know it's strictly in the
-	// future in Rome regardless of CET/CEST.
 	tomorrow := time.Now().In(rome).AddDate(0, 0, 1)
 	atLocal := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 17, 0, 0, 0, rome).
 		Format("2006-01-02T15:04:05")
 
 	out, err := tool.Execute(ctx, map[string]any{
+		"action":   "schedule",
 		"name":     "compra-pane",
 		"kind":     "reminder",
 		"payload":  "compra il pane",
@@ -528,13 +575,13 @@ func TestScheduleTaskTool_AtLocal(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_AtLocalRejectsPast(t *testing.T) {
+func TestTaskTool_AtLocalRejectsPast(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewScheduleTaskTool(store, time.UTC)
+	tool := NewTaskTool(store, nil, time.UTC)
 	ctx := WithUserID(t.Context(), "u")
 
-	// 1970 is comfortably in the past for any test environment.
 	_, err := tool.Execute(ctx, map[string]any{
+		"action":   "schedule",
 		"name":     "x",
 		"kind":     "reminder",
 		"at_local": "1970-01-01T00:00:00",
@@ -562,7 +609,6 @@ func TestParseLocalWallClock_AcceptsCommonShapes(t *testing.T) {
 			}
 			zone, _ := ts.Zone()
 			if !strings.HasPrefix(zone, "CE") {
-				// Rome uses CET/CEST depending on DST; either is fine.
 				t.Errorf("zone = %q, want CET or CEST", zone)
 			}
 			if ts.Hour() != 17 || ts.Minute() != 0 {
@@ -575,10 +621,10 @@ func TestParseLocalWallClock_AcceptsCommonShapes(t *testing.T) {
 func TestParseLocalWallClock_RejectsTimezoneSuffixes(t *testing.T) {
 	loc := time.UTC
 	for _, in := range []string{
-		"2026-04-30T17:00:00Z",      // explicit UTC — at_local must not accept
-		"2026-04-30T17:00:00+02:00", // explicit offset — same
-		"2026-04-30",                // missing time
-		"domani alle 5",             // not a timestamp at all
+		"2026-04-30T17:00:00Z",
+		"2026-04-30T17:00:00+02:00",
+		"2026-04-30",
+		"domani alle 5",
 	} {
 		t.Run(in, func(t *testing.T) {
 			if _, err := parseLocalWallClock(in, loc); err == nil {
@@ -588,18 +634,10 @@ func TestParseLocalWallClock_RejectsTimezoneSuffixes(t *testing.T) {
 	}
 }
 
-func TestScheduleTaskTool_NilStore(t *testing.T) {
-	tool := NewScheduleTaskTool(nil, time.UTC)
-	if _, err := tool.Execute(t.Context(), map[string]any{"name": "a", "kind": "wiki_maintenance", "daily": "03:00"}); err == nil {
-		t.Error("expected error on nil store")
-	}
-}
-
-func TestListTasksTool_Empty(t *testing.T) {
+func TestTaskTool_ListEmpty(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewListTasksTool(store)
-
-	out, err := tool.Execute(t.Context(), map[string]any{})
+	tool := NewTaskTool(store, nil, time.UTC)
+	out, err := tool.Execute(t.Context(), map[string]any{"action": "list"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -608,7 +646,7 @@ func TestListTasksTool_Empty(t *testing.T) {
 	}
 }
 
-func TestListTasksTool_GroupsByStatus(t *testing.T) {
+func TestTaskTool_ListGroupsByStatus(t *testing.T) {
 	store := newTestSchedStore(t)
 	ctx := t.Context()
 
@@ -635,8 +673,8 @@ func TestListTasksTool_GroupsByStatus(t *testing.T) {
 		NextRunAt: at, Status: scheduler.StatusActive,
 	})
 
-	tool := NewListTasksTool(store)
-	out, err := tool.Execute(ctx, map[string]any{})
+	tool := NewTaskTool(store, nil, time.UTC)
+	out, err := tool.Execute(ctx, map[string]any{"action": "list"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -658,7 +696,7 @@ func TestListTasksTool_GroupsByStatus(t *testing.T) {
 	}
 }
 
-func TestListTasksTool_StatusFilter(t *testing.T) {
+func TestTaskTool_ListStatusFilter(t *testing.T) {
 	store := newTestSchedStore(t)
 	at := time.Now().UTC().Add(time.Hour)
 	mustSchedUpsert(t, store, &scheduler.Task{
@@ -672,8 +710,8 @@ func TestListTasksTool_StatusFilter(t *testing.T) {
 		Status: scheduler.StatusCancelled,
 	})
 
-	tool := NewListTasksTool(store)
-	out, err := tool.Execute(t.Context(), map[string]any{"status": "active"})
+	tool := NewTaskTool(store, nil, time.UTC)
+	out, err := tool.Execute(t.Context(), map[string]any{"action": "list", "status": "active"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -685,7 +723,7 @@ func TestListTasksTool_StatusFilter(t *testing.T) {
 	}
 }
 
-func TestCancelTaskTool(t *testing.T) {
+func TestTaskTool_Cancel(t *testing.T) {
 	store := newTestSchedStore(t)
 	at := time.Now().UTC().Add(time.Hour)
 	mustSchedUpsert(t, store, &scheduler.Task{
@@ -694,8 +732,8 @@ func TestCancelTaskTool(t *testing.T) {
 		Status: scheduler.StatusActive,
 	})
 
-	tool := NewCancelTaskTool(store)
-	out, err := tool.Execute(t.Context(), map[string]any{"name": "x"})
+	tool := NewTaskTool(store, nil, time.UTC)
+	out, err := tool.Execute(t.Context(), map[string]any{"action": "cancel", "name": "x"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -703,8 +741,7 @@ func TestCancelTaskTool(t *testing.T) {
 		t.Errorf("response = %q", out)
 	}
 
-	// Re-cancel: returns "no active task" not an error.
-	out, err = tool.Execute(t.Context(), map[string]any{"name": "x"})
+	out, err = tool.Execute(t.Context(), map[string]any{"action": "cancel", "name": "x"})
 	if err != nil {
 		t.Fatalf("re-cancel Execute: %v", err)
 	}
@@ -713,10 +750,10 @@ func TestCancelTaskTool(t *testing.T) {
 	}
 }
 
-func TestCancelTaskTool_MissingName(t *testing.T) {
+func TestTaskTool_CancelMissingName(t *testing.T) {
 	store := newTestSchedStore(t)
-	tool := NewCancelTaskTool(store)
-	if _, err := tool.Execute(t.Context(), map[string]any{}); err == nil {
+	tool := NewTaskTool(store, nil, time.UTC)
+	if _, err := tool.Execute(t.Context(), map[string]any{"action": "cancel"}); err == nil {
 		t.Error("expected error on missing name")
 	}
 }
@@ -730,8 +767,6 @@ func TestUserIDFromContext(t *testing.T) {
 	if got := UserIDFromContext(ctx); got != "42" {
 		t.Errorf("with-id ctx = %q, want 42", got)
 	}
-	// WithUserID("") should be a no-op so we don't accidentally clobber
-	// an existing id.
 	ctx = WithUserID(ctx, "")
 	if got := UserIDFromContext(ctx); got != "42" {
 		t.Errorf("after empty WithUserID = %q, want 42", got)

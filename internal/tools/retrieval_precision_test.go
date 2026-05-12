@@ -127,8 +127,7 @@ func buildPrecisionTestRegistry(t *testing.T) *Registry {
 	precisionSeeds := []struct{ name, description string }{
 		{"write_wiki_page", "Write or update a wiki page in the knowledge base. Use to store notes, facts, memories, and summaries for long-term recall."},
 		{"search_memory", "Search the wiki memory for relevant information. Returns pages matching the query from the knowledge base."},
-		{"schedule_task", "Schedule a task or reminder to run at a specific time. Use to set reminders, alarms, and timed notifications."},
-		{"list_tasks", "List all scheduled tasks and reminders. Returns the current scheduled task queue."},
+		{"task", "Manage scheduled tasks: schedule reminders/recurring jobs, list, cancel, or run a saved routine immediately."},
 		{"request_dashboard_token", "Generate a secure login link to access the Aura web dashboard."},
 		{"web_search", "Search the web using SearXNG for real-time information. Returns web search results for the query."},
 		{"web_fetch", "Fetch the content of a URL from the web. Downloads and returns the text content of a web page."},
@@ -149,8 +148,6 @@ func buildPrecisionTestRegistry(t *testing.T) *Registry {
 		{"read_source", "Read the content of an uploaded source document. Returns the extracted text of the source."},
 		{"lint_sources", "Lint and validate source documents. Checks sources for issues or missing metadata."},
 		{"delete_source", "Delete an uploaded source document. Removes the source file and its associated data."},
-		{"run_task_now", "Run a scheduled task immediately. Triggers a task to execute right now instead of waiting."},
-		{"cancel_task", "Cancel a scheduled task. Removes a task from the schedule queue."},
 		{"dev_tool", "Manage the Python script registry used by execute_code: list, read, or save reusable snippets."},
 		{"execute_shell", "Execute shell commands in the Aura container. Runs system commands with git, rg, jq, and sqlite."},
 	}
