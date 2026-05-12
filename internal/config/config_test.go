@@ -661,9 +661,9 @@ func TestLoadToolSearchTopK(t *testing.T) {
 		{"10", 10},
 		{"30", 30},
 		{"50", 50},
-		{"0", 5},
-		{"51", 5},
-		{"-1", 5},
+		{"0", DefaultToolSearchTopK},
+		{"51", DefaultToolSearchTopK},
+		{"-1", DefaultToolSearchTopK},
 	}
 	for _, tt := range tests {
 		t.Setenv("TOOL_SEARCH_TOP_K", tt.env)

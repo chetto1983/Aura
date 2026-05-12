@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -314,30 +315,84 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 	return docs, len(pages), nil
 }
 
-// mergeHybridResults concatenates result groups in priority order (exact >
-// FTS > vector) and dedupes on (kind, slug). The Telegram-facing search call
-// downstream of this still applies recency decay; this layer only handles
-// the join.
+// rrfMergeConstants for search.Result fusion. Mirrors the constants in
+// internal/memoryindex (rrfK=60, exact/fts/vector weights 1.0/0.6/0.8).
+// Group weights are positional: first group treated as the exact-match
+// channel, second as FTS, third as vector. Extra groups beyond the third
+// fall back to weight=0.5 so a caller that fans out into more channels
+// still gets sane fusion without a code change here.
+const (
+	rrfK                  = 60
+	rrfWeightExactResult  = 1.0
+	rrfWeightFTSResult    = 0.6
+	rrfWeightVectorResult = 0.8
+	rrfWeightExtraResult  = 0.5
+)
+
+// mergeHybridResults fuses ranked Result groups via Reciprocal Rank Fusion.
+// Each Result gets a fused score Σ_g (w_g / (k + rank_in_g + 1)). Results
+// with the same (kind, slug) accumulate contributions across groups; the
+// first-seen Result keeps its metadata. Returns the top-K by fused score.
+//
+// The Telegram-facing search call downstream of this still applies recency
+// decay; this layer only handles the join. The fused score overwrites
+// Result.Score so the recency multiplier sees a value comparable across
+// backends.
 func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 	if topK <= 0 {
 		topK = 5
 	}
-	out := make([]Result, 0, topK)
-	seen := make(map[string]bool, topK)
-	for _, group := range groups {
-		for _, result := range group {
+	type entry struct {
+		result Result
+		score  float32
+	}
+	byKey := map[string]*entry{}
+	for groupIdx, group := range groups {
+		weight := rrfWeightExtraResult
+		switch groupIdx {
+		case 0:
+			weight = rrfWeightExactResult
+		case 1:
+			weight = rrfWeightFTSResult
+		case 2:
+			weight = rrfWeightVectorResult
+		}
+		for rank, result := range group {
 			key := resultKey(result)
-			if key == "" || seen[key] {
+			if key == "" {
 				continue
 			}
-			seen[key] = true
-			out = append(out, result)
-			if len(out) >= topK {
-				return out
+			contribution := float32(weight / float64(rrfK+rank+1))
+			if existing, ok := byKey[key]; ok {
+				existing.score += contribution
+				continue
 			}
+			byKey[key] = &entry{result: result, score: contribution}
 		}
 	}
+	out := make([]Result, 0, len(byKey))
+	for _, e := range byKey {
+		r := e.result
+		r.Score = e.score
+		out = append(out, r)
+	}
+	sortHybridResultsByScore(out)
+	if len(out) > topK {
+		out = out[:topK]
+	}
 	return out
+}
+
+// sortHybridResultsByScore orders fused results by descending Score with a
+// stable tiebreaker on the canonical (kind, slug) key. Extracted so future
+// callers that fuse out-of-band can reuse the ordering.
+func sortHybridResultsByScore(results []Result) {
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return resultKey(results[i]) < resultKey(results[j])
+		}
+		return results[i].Score > results[j].Score
+	})
 }
 
 func resultKey(result Result) string {

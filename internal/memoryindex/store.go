@@ -273,26 +273,26 @@ func (s *Store) Search(ctx context.Context, query string, filter Filter) ([]Docu
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	candidates, err := s.exactSearch(ctx, query, filter, limit)
+	exact, err := s.exactSearch(ctx, query, filter, limit)
 	if err != nil {
 		return nil, err
 	}
-	ftsResults, err := s.ftsSearch(ctx, query, filter, limit)
+	fts, err := s.ftsSearch(ctx, query, filter, limit)
 	if err != nil {
 		return nil, err
 	}
-	candidates = append(candidates, ftsResults...)
+	var vector []Document
 	if s.vector != nil {
-		vectorResults, err := s.vector.Search(ctx, query, filter)
-		if err != nil {
+		vectorResults, vecErr := s.vector.Search(ctx, query, filter)
+		if vecErr != nil {
 			if s.logger != nil {
-				s.logger.Warn("memoryindex: vector search failed; using local compact index", "error", err)
+				s.logger.Warn("memoryindex: vector search failed; using local compact index", "error", vecErr)
 			}
 		} else {
-			candidates = append(candidates, vectorResults...)
+			vector = vectorResults
 		}
 	}
-	return mergeDocuments(candidates, limit), nil
+	return mergeDocumentsRRF(exact, fts, vector, limit), nil
 }
 
 func (s *Store) PurgeArchiveByChat(ctx context.Context, chatID int64) error {
@@ -501,22 +501,60 @@ func scanDocuments(rows *sql.Rows, fixedScore float64) ([]Document, error) {
 	return out, rows.Err()
 }
 
-func mergeDocuments(docs []Document, limit int) []Document {
+// RRF constants. k=60 is the cookbook default
+// (https://www.anthropic.com/news/contextual-retrieval, mirrored across
+// Elastic/Vespa/Weaviate docs). Group weights bias toward exact-id matches
+// and the semantic backend; FTS BM25 gets the smallest weight because its
+// keyword signal spikes most often on incidental token overlap.
+const (
+	rrfK            = 60
+	rrfWeightExact  = 1.0
+	rrfWeightFTS    = 0.6
+	rrfWeightVector = 0.8
+)
+
+// mergeDocumentsRRF fuses three ranked groups (exact, fts, vector) into a
+// single ordered slice via Reciprocal Rank Fusion: score(doc) = Σ_g
+// (w_g / (k + rank_in_g + 1)). Each input slice is assumed already ordered
+// from most-relevant to least-relevant; rank is taken from slice position.
+//
+// The fused score overwrites Document.Score on the returned values so the
+// downstream recency-decay multiplier (memory_search.go:185) sees a value
+// that is comparable across backends. The legacy per-backend Score
+// calibration in scanDocuments is therefore retained but ignored here.
+func mergeDocumentsRRF(exact, fts, vector []Document, limit int) []Document {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	byID := map[string]Document{}
-	for _, doc := range docs {
-		if doc.ID == "" {
-			continue
-		}
-		if existing, ok := byID[doc.ID]; ok && existing.Score >= doc.Score {
-			continue
-		}
-		byID[doc.ID] = doc
+	type entry struct {
+		doc   Document
+		score float64
 	}
+	byID := map[string]*entry{}
+	accumulate := func(group []Document, weight float64) {
+		for rank, doc := range group {
+			if doc.ID == "" {
+				continue
+			}
+			contribution := weight / float64(rrfK+rank+1)
+			if existing, ok := byID[doc.ID]; ok {
+				existing.score += contribution
+				continue
+			}
+			// Copy the doc so later contributions cannot stomp on the
+			// metadata we keep here.
+			docCopy := doc
+			byID[doc.ID] = &entry{doc: docCopy, score: contribution}
+		}
+	}
+	accumulate(exact, rrfWeightExact)
+	accumulate(fts, rrfWeightFTS)
+	accumulate(vector, rrfWeightVector)
+
 	out := make([]Document, 0, len(byID))
-	for _, doc := range byID {
+	for _, e := range byID {
+		doc := e.doc
+		doc.Score = e.score
 		out = append(out, doc)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

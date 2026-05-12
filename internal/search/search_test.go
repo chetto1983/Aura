@@ -94,14 +94,36 @@ func TestExtractTitle(t *testing.T) {
 	}
 }
 
-func TestMergeHybridResultsDedupesByKindAndSlug(t *testing.T) {
+// TestMergeHybridResultsRRFFusion verifies that mergeHybridResults applies
+// Reciprocal Rank Fusion across the three positional channels (exact, FTS,
+// vector) and dedupes on (kind, slug). Expected RRF math with k=60,
+// weights {1.0, 0.6, 0.8}:
+//
+//	wiki_page:alpha  = 1.0/61 + 0.6/61 = 1.6/61 ≈ 0.02623  (exact + fts duplicate)
+//	graph_node:alpha = 0.8/61          ≈ 0.01311           (vector rank 1)
+//	wiki_page:gamma  = 0.8/62          ≈ 0.01290           (vector rank 2)
+//	wiki_page:beta   = 0.6/62          ≈ 0.00968           (fts rank 2 only)
+//
+// Top-3 are therefore [wiki_page:alpha, graph_node:alpha, wiki_page:gamma].
+// The first-seen Result wins on metadata, so wiki_page:alpha keeps the
+// exact-channel title "Alpha", not the fts "Alpha duplicate".
+func TestMergeHybridResultsRRFFusion(t *testing.T) {
 	exact := []Result{{Kind: "wiki_page", Slug: "alpha", Title: "Alpha"}}
 	fts := []Result{{Kind: "wiki_page", Slug: "alpha", Title: "Alpha duplicate"}, {Kind: "wiki_page", Slug: "beta", Title: "Beta"}}
 	vector := []Result{{Kind: "graph_node", Slug: "alpha", Title: "Alpha graph"}, {Kind: "wiki_page", Slug: "gamma", Title: "Gamma"}}
 
 	results := mergeHybridResults("alpha", 3, exact, fts, vector)
-	if got := []string{results[0].Kind + ":" + results[0].Slug, results[1].Kind + ":" + results[1].Slug, results[2].Kind + ":" + results[2].Slug}; !slices.Equal(got, []string{"wiki_page:alpha", "wiki_page:beta", "graph_node:alpha"}) {
+	if got := []string{results[0].Kind + ":" + results[0].Slug, results[1].Kind + ":" + results[1].Slug, results[2].Kind + ":" + results[2].Slug}; !slices.Equal(got, []string{"wiki_page:alpha", "graph_node:alpha", "wiki_page:gamma"}) {
 		t.Fatalf("merged order = %#v", got)
+	}
+	if results[0].Title != "Alpha" {
+		t.Fatalf("first-seen metadata lost: title = %q, want %q", results[0].Title, "Alpha")
+	}
+	// Fused scores should be monotonically decreasing.
+	for i := 1; i < len(results); i++ {
+		if results[i-1].Score < results[i].Score {
+			t.Fatalf("score not descending at i=%d: %f then %f", i, results[i-1].Score, results[i].Score)
+		}
 	}
 }
 
