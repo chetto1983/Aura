@@ -122,6 +122,13 @@ type Options struct {
 	// package defaults (10 / 500). Operators tune via env.
 	MicrocompactKeepRecent int
 	MicrocompactMinChars   int
+	// PhantomToolGuard, when non-nil, runs a post-LLM heuristic on
+	// no-tool-call responses. When it detects content that narrates
+	// tool actions without an actual tool_use, the loop injects a
+	// corrective user-side message (via the optional PhantomCorrector
+	// interface on State) and re-prompts. Capped at the guard's
+	// MaxRetries per turn. See phantom_guard.go for the heuristic.
+	PhantomToolGuard *PhantomToolGuard
 	// ToolResolver is the on-demand schema lookup used by the per-turn
 	// tool pool for two purposes:
 	//
@@ -177,6 +184,15 @@ type Stats struct {
 	//   ""                    — natural completion (LLM returned no tool calls)
 	// (F-030)
 	StopReason string
+	// PhantomToolDetections counts how many times the phantom-tool guard
+	// fired in this turn (LLM described a tool action without invoking
+	// one). Always 0 when Options.PhantomToolGuard is nil.
+	PhantomToolDetections int
+	// PhantomToolCorrected counts how many of the detections successfully
+	// recovered (the subsequent retry produced a real tool_use). Useful
+	// for measuring guard ROI: detections / corrected > 1 means the
+	// correction is the *right* lever; otherwise the model keeps phantoming.
+	PhantomToolCorrected int
 }
 
 // MaxIterationsCeiling is a hard upper bound the loop applies to whatever
@@ -212,6 +228,11 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	seenToolCalls := map[string]bool{}
 	seenToolCallsResult := map[string]string{}
 	toolCallExecutions := map[string]int{}
+	// calledThisTurn tracks which tool names fired in any round of this
+	// turn. The phantom guard consults it to distinguish "model
+	// legitimately summarizes a tool result it just received" from
+	// "model claims an action that never happened."
+	calledThisTurn := map[string]bool{}
 	emitStats := func() {
 		if opts.OnStats != nil {
 			opts.OnStats(stats)
@@ -310,6 +331,33 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			if response == "" {
 				response = finalAnswerOnBudget(lastToolResult)
 			}
+			// Phantom-tool guard: when the response narrates tool actions
+			// but emitted no tool_use, give the model exactly one chance
+			// per turn to either invoke the tools or correct itself.
+			// Requires both an enabled guard and a State that implements
+			// PhantomCorrector (conversation.Context does).
+			if opts.PhantomToolGuard != nil &&
+				stats.PhantomToolDetections < opts.PhantomToolGuard.RetriesAllowed() &&
+				opts.PhantomToolGuard.LooksPhantom(response, false, calledThisTurn) {
+				if corrector, ok := state.(PhantomCorrector); ok {
+					stats.PhantomToolDetections++
+					logger.Warn("agentloop: phantom_tool_detected",
+						"iteration", iteration,
+						"detections_so_far", stats.PhantomToolDetections,
+						"retries_allowed", opts.PhantomToolGuard.RetriesAllowed(),
+					)
+					state.AddAssistantMessage(response)
+					corrector.AddUserMessage(opts.PhantomToolGuard.CorrectionText())
+					emitStats()
+					continue
+				}
+				// Guard wired but state can't accept correction → log
+				// and fall through (commit the phantom reply as-is).
+				logger.Warn("agentloop: phantom_tool_detected_uncorrectable",
+					"iteration", iteration,
+					"reason", "state_lacks_AddUserMessage",
+				)
+			}
 			state.AddAssistantMessage(response)
 			emitStats()
 			iterCancel()
@@ -319,10 +367,25 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			return Result{Text: response, Stats: stats}, nil
 		}
 
+		// Phantom guard ROI metric: if the previous iteration tripped the
+		// guard and THIS iteration actually emitted tool calls, the
+		// correction worked. Count once per detection that landed a
+		// recovery — capped at PhantomToolDetections so a single retry
+		// can't inflate the metric.
+		if opts.PhantomToolGuard != nil &&
+			stats.PhantomToolDetections > 0 &&
+			stats.PhantomToolCorrected < stats.PhantomToolDetections {
+			stats.PhantomToolCorrected++
+			logger.Info("agentloop: phantom_tool_corrected",
+				"iteration", iteration,
+				"corrected_total", stats.PhantomToolCorrected,
+			)
+		}
 		state.AddAssistantToolCallMessage(resp.Response.Content, resp.Response.ToolCalls)
 		stats.ToolCalls += len(resp.Response.ToolCalls)
 		for _, call := range resp.Response.ToolCalls {
 			stats.ToolsCalled = append(stats.ToolsCalled, call.Name)
+			calledThisTurn[call.Name] = true
 			switch call.Name {
 			case "read_file":
 				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {

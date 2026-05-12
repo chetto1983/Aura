@@ -379,6 +379,17 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			// and adds it to the pool. tool_search results are absorbed
 			// the same way. See internal/agentloop/pool.go for details.
 			ToolResolver: b.tools.DefinitionFor,
+			// Wave 2.8b: phantom-tool guard. Detects no-tool replies
+			// that mention a registered tool by name without invoking it
+			// (the 2026-05-12 Wave 2.7b failure mode) and re-prompts the
+			// model with a correction. The state passed to agentloop.Run
+			// is *conversation.Context which implements PhantomCorrector
+			// via its AddUserMessage method. ToolNamesFn reads the live
+			// registry so MCP and dynamic tool additions are picked up
+			// without a restart.
+			PhantomToolGuard: &agentloop.PhantomToolGuard{
+				ToolNamesFn: b.tools.Names,
+			},
 			BeforeLLM: func() (string, bool) {
 				// Context bounding happens after the response. Re-enforcing on every
 				// tool iteration can trigger a compression LLM call mid-response,

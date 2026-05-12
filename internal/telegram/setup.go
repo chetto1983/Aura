@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/auth"
@@ -360,6 +361,12 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			ToolTimeout:     time.Duration(timeoutSec) * time.Second,
 			ReasoningEffort: cfg.ReasoningEffort,
 			Logger:          logger,
+			// Wave 2.8b: phantom-tool guard. Same wiring as the Telegram
+			// bot loop (conversation.go). ToolNamesFn reads the live
+			// registry so MCP additions are picked up without restart.
+			PhantomToolGuard: &agentloop.PhantomToolGuard{
+				ToolNamesFn: toolRegistry.Names,
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating aurabot runner: %w", err)

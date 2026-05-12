@@ -46,6 +46,7 @@ type Runner struct {
 	toolTimeout     time.Duration
 	reasoningEffort string
 	logger          *slog.Logger
+	phantomGuard    *agentloop.PhantomToolGuard
 }
 
 // Config wires a Runner. ToolRegistry may be nil for text-only tasks.
@@ -58,6 +59,11 @@ type Config struct {
 	ToolTimeout     time.Duration
 	ReasoningEffort string // forwarded to every llm.Request the runner builds
 	Logger          *slog.Logger
+	// PhantomToolGuard, when non-nil, runs the agentloop phantom-tool
+	// detection on every no-tool-call response and injects a user-side
+	// correction when the model names a tool it didn't actually invoke
+	// in this turn. Opt-in — when nil, behavior is unchanged.
+	PhantomToolGuard *agentloop.PhantomToolGuard
 }
 
 // Task is one isolated background-agent assignment.
@@ -119,6 +125,7 @@ func NewRunner(cfg Config) (*Runner, error) {
 		toolTimeout:     toolTimeout,
 		reasoningEffort: cfg.ReasoningEffort,
 		logger:          logger,
+		phantomGuard:    cfg.PhantomToolGuard,
 	}, nil
 }
 
@@ -180,6 +187,10 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	var lastToolResult string
 	maxToolCalls := task.MaxToolCalls
 	finalizing := false
+	// calledThisTurn feeds the phantom-tool guard. Mirrors the
+	// agentloop.Run tracking — see internal/agentloop/phantom_guard.go.
+	calledThisTurn := map[string]bool{}
+	phantomRetries := 0
 	for i := 0; i < maxIterations; i++ {
 		turnTools := toolDefs
 		if finalizing {
@@ -220,6 +231,24 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 					content = "Task completed."
 				}
 			}
+			// Phantom-tool guard: detect a no-tool reply that names a
+			// registered tool without invoking it in this turn, and
+			// re-prompt with a correction. Capped per the guard's
+			// retriesAllowed() — default 1.
+			if r.phantomGuard != nil &&
+				phantomRetries < r.phantomGuard.RetriesAllowed() &&
+				r.phantomGuard.LooksPhantom(content, false, calledThisTurn) {
+				phantomRetries++
+				r.logger.Warn("agent runner: phantom_tool_detected",
+					"iteration", i,
+					"retries_so_far", phantomRetries,
+				)
+				messages = append(messages,
+					llm.Message{Role: "assistant", Content: content},
+					llm.Message{Role: "user", Content: r.phantomGuard.CorrectionText()},
+				)
+				continue
+			}
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			result.Content = content
 			result.Messages = messages
@@ -227,6 +256,9 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 			return result, nil
 		}
 
+		for _, call := range resp.ToolCalls {
+			calledThisTurn[call.Name] = true
+		}
 		messages = append(messages, llm.Message{
 			Role:      "assistant",
 			Content:   resp.Content,
