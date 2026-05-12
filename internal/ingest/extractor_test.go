@@ -100,21 +100,60 @@ func TestLLMExtractor_RejectsOverLimit(t *testing.T) {
 	}
 }
 
-func TestLLMExtractor_RejectsBadSlug(t *testing.T) {
-	cases := map[string]string{
-		"uppercase":       `{"slug":"Alice","title":"A","type":"person","short_description":"d"}`,
-		"spaces":          `{"slug":"foo bar","title":"A","type":"person","short_description":"d"}`,
-		"double-hyphen":   `{"slug":"foo--bar","title":"A","type":"person","short_description":"d"}`,
-		"trailing-hyphen": `{"slug":"foo-","title":"A","type":"person","short_description":"d"}`,
+// Wave 2.6 bug fix: malformed slugs are no longer rejected outright —
+// canonicalizeSlugs derives the canonical slug from the title before
+// validation, so the LLM's slug field becomes advisory. The test cases
+// below confirm that each malformed slug gets REWRITTEN to the
+// canonical Slug(title) instead of erroring the whole delta.
+func TestLLMExtractor_CanonicalizesMalformedSlug(t *testing.T) {
+	cases := map[string]struct {
+		json string
+		want string // expected canonical slug after canonicalizeSlugs runs
+	}{
+		"uppercase":       {`{"slug":"Alice","title":"Alice","type":"person","short_description":"d"}`, "alice"},
+		"slug-from-title": {`{"slug":"foo","title":"Foo Bar","type":"person","short_description":"d"}`, "foo-bar"},
+		"short-slug":      {`{"slug":"davide","title":"Davide Marchetto","type":"person","short_description":"d"}`, "davide-marchetto"},
 	}
-	for name, ent := range cases {
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			fake := &fakeLLMClient{response: `{"entities":[` + ent + `],"concepts":[],"links":[]}`}
+			fake := &fakeLLMClient{response: `{"entities":[` + tc.json + `],"concepts":[],"links":[]}`}
 			ex := NewLLMExtractor(fake, "model")
-			if _, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"}); err == nil {
-				t.Fatalf("expected validation error for %s slug", name)
+			delta, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"})
+			if err != nil {
+				t.Fatalf("canonicalization should accept %s, got error: %v", name, err)
+			}
+			if delta.Entities[0].Slug != tc.want {
+				t.Fatalf("%s canonicalized to %q, want %q", name, delta.Entities[0].Slug, tc.want)
 			}
 		})
+	}
+}
+
+// canonicalizeSlugs must remap link references that pointed at the
+// LLM's original (pre-canonical) slug to the new canonical slug, or
+// every cross-reference in the delta breaks silently.
+func TestLLMExtractor_CanonicalizeRemapsLinkReferences(t *testing.T) {
+	fake := &fakeLLMClient{response: `{
+		"entities":[
+			{"slug":"davide","title":"Davide Marchetto","type":"person","short_description":"d"},
+			{"slug":"aura","title":"Aura","type":"project","short_description":"d"}
+		],
+		"concepts":[],
+		"links":[{"from_slug":"davide","to_slug":"aura","type":"uses"}]
+	}`}
+	ex := NewLLMExtractor(fake, "model")
+	delta, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delta.Entities[0].Slug != "davide-marchetto" {
+		t.Fatalf("entity slug = %q, want davide-marchetto", delta.Entities[0].Slug)
+	}
+	if delta.Links[0].From != "davide-marchetto" {
+		t.Fatalf("link.From = %q, want davide-marchetto (remap failed)", delta.Links[0].From)
+	}
+	if delta.Links[0].To != "aura" {
+		t.Fatalf("link.To = %q, want aura (already canonical, not remapped)", delta.Links[0].To)
 	}
 }
 
@@ -180,18 +219,21 @@ func TestLLMExtractor_RejectsSelfLoopLink(t *testing.T) {
 	}
 }
 
-func TestLLMExtractor_RejectsDuplicateSlug(t *testing.T) {
+func TestLLMExtractor_RejectsDuplicateSlugAfterCanonicalize(t *testing.T) {
+	// Two entities with the SAME title canonicalize to the same slug
+	// after canonicalizeSlugs runs. The downstream seenLocal[] check
+	// must still reject this — duplicate pages would clobber each other.
 	fake := &fakeLLMClient{response: `{
 		"entities":[
-			{"slug":"shared","title":"E","type":"concept","short_description":"d"},
-			{"slug":"shared","title":"E2","type":"concept","short_description":"d"}
+			{"slug":"a","title":"Same Title","type":"concept","short_description":"d"},
+			{"slug":"b","title":"Same Title","type":"concept","short_description":"d"}
 		],
 		"concepts":[],
 		"links":[]
 	}`}
 	ex := NewLLMExtractor(fake, "model")
 	if _, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"}); err == nil {
-		t.Fatal("expected validation error for duplicate slug")
+		t.Fatal("expected validation error for post-canonicalize duplicate slug")
 	}
 }
 

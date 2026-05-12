@@ -260,10 +260,21 @@ func parseExtraction(raw string) (ExtractionDelta, error) {
 // strings + drop trailing empties — cheaper than returning a copy and
 // the caller is the only owner of the delta until the multi-page-touch
 // pipeline reads it.
+//
+// Pre-validation canonicalization: when the LLM emits slug ≠ Slug(title)
+// (a common short-slug pattern, e.g. slug="davide" + title="Davide
+// Marchetto"), we rewrite slug = Slug(title) and remap every link
+// + relates_to reference that pointed at the old slug. The wiki Store
+// derives the on-disk filename from page.Title via wiki.Slug() so the
+// page MUST land at Slug(title) — leaving the LLM-provided slug in
+// place would orphan every extracted link. This recovery preserves the
+// full title (information dense) while making the slug consistent
+// (wiki addressable).
 func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 	if delta == nil {
 		return fmt.Errorf("nil delta")
 	}
+	canonicalizeSlugs(delta)
 	if delta.TotalItems() > extractorMaxItems {
 		return fmt.Errorf("delta has %d items, max %d", delta.TotalItems(), extractorMaxItems)
 	}
@@ -290,15 +301,8 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		if ent.Title == "" {
 			return fmt.Errorf("entity %d (%s): empty title", i, ent.Slug)
 		}
-		// Title -> Slug must be reversible so the multi-page-touch pipeline
-		// can write the page at the slug the LLM declared. wiki.Store derives
-		// the on-disk filename from page.Title via wiki.Slug(), so a
-		// title/slug mismatch would put the page on disk at a slug the
-		// extracted links can't reach.
-		if wiki.Slug(ent.Title) != ent.Slug {
-			return fmt.Errorf("entity %d: slug %q does not match Slug(title=%q)=%q",
-				i, ent.Slug, ent.Title, wiki.Slug(ent.Title))
-		}
+		// Slug ↔ Title consistency is now enforced via canonicalizeSlugs
+		// above the loop, so we never reach here with a mismatch.
 		if !entityTypes[ent.Type] {
 			return fmt.Errorf("entity %d (%s): unknown type %q", i, ent.Slug, ent.Type)
 		}
@@ -325,10 +329,7 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		if c.Title == "" {
 			return fmt.Errorf("concept %d (%s): empty title", i, c.Slug)
 		}
-		if wiki.Slug(c.Title) != c.Slug {
-			return fmt.Errorf("concept %d: slug %q does not match Slug(title=%q)=%q",
-				i, c.Slug, c.Title, wiki.Slug(c.Title))
-		}
+		// Slug ↔ Title consistency enforced via canonicalizeSlugs above.
 		if c.Summary == "" {
 			return fmt.Errorf("concept %d (%s): empty summary", i, c.Slug)
 		}
@@ -357,6 +358,72 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		}
 	}
 	return nil
+}
+
+// canonicalizeSlugs ensures every entity / concept slug equals
+// wiki.Slug(title). The wiki Store layer derives on-disk filenames
+// from page.Title, so a slug that doesn't match would land the page
+// at a different slug than every extracted link expects. Rather than
+// reject the whole delta when the LLM emits a short slug with a
+// fuller title (common pattern — slug="davide" + title="Davide
+// Marchetto"), we rewrite the slug and remap every reference.
+//
+// Empty titles short-circuit; they're caught by the per-entity title
+// emptiness check downstream.
+func canonicalizeSlugs(delta *ExtractionDelta) {
+	if delta == nil {
+		return
+	}
+	rename := map[string]string{}
+	for i := range delta.Entities {
+		ent := &delta.Entities[i]
+		title := strings.TrimSpace(ent.Title)
+		if title == "" {
+			continue
+		}
+		canonical := wiki.Slug(title)
+		if canonical == "" || canonical == ent.Slug {
+			continue
+		}
+		if ent.Slug != "" {
+			rename[ent.Slug] = canonical
+		}
+		ent.Slug = canonical
+	}
+	for i := range delta.Concepts {
+		c := &delta.Concepts[i]
+		title := strings.TrimSpace(c.Title)
+		if title == "" {
+			continue
+		}
+		canonical := wiki.Slug(title)
+		if canonical == "" || canonical == c.Slug {
+			continue
+		}
+		if c.Slug != "" {
+			rename[c.Slug] = canonical
+		}
+		c.Slug = canonical
+	}
+	if len(rename) == 0 {
+		return
+	}
+	for i := range delta.Links {
+		if newSlug, ok := rename[delta.Links[i].From]; ok {
+			delta.Links[i].From = newSlug
+		}
+		if newSlug, ok := rename[delta.Links[i].To]; ok {
+			delta.Links[i].To = newSlug
+		}
+	}
+	for i := range delta.Entities {
+		ent := &delta.Entities[i]
+		for j, r := range ent.RelatesTo {
+			if newSlug, ok := rename[r]; ok {
+				ent.RelatesTo[j] = newSlug
+			}
+		}
+	}
 }
 
 // PromptVersion returns the prompt schema identifier so pages written
