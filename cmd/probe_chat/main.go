@@ -197,18 +197,37 @@ func allCases(now time.Time) []Case {
 			// cleanup endpoint would be nicer; leave it for now.
 		},
 
-		// 4. web-search — verify the model uses the unified web tool and
-		//    surfaces at least one URL from a known stable search.
+		// 4. web-fetch-summarize — fetch a specific page and produce a
+		//    real summary. Hardest case in the suite: must call web with
+		//    action=fetch, parse the HTML, and synthesize a faithful
+		//    summary that contains the article's load-bearing concepts.
+		//    Anthropic's "Effective context engineering for AI agents"
+		//    is a stable target with predictable vocabulary.
 		{
-			Name:   "web-search-wikipedia",
-			Prompt: "Cerca sul web il sito ufficiale di Wikipedia. Riportami solo l'URL principale di wikipedia.org.",
+			Name:   "web-fetch-summarize-context-engineering",
+			Prompt: "Vai a https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Cita almeno: context window, tool use, agent loop.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
-					miss = append(miss, "expected at least 1 tool call for a web search")
+					miss = append(miss, "expected at least 1 tool call (web fetch) — got 0, likely phantom")
 				}
-				if !strings.Contains(strings.ToLower(r.Reply), "wikipedia.org") {
-					miss = append(miss, "reply does not contain wikipedia.org")
+				reply := strings.ToLower(r.Reply)
+				// Load-bearing concepts from the actual page. If the
+				// summary doesn't mention these, the model either didn't
+				// fetch or hallucinated content.
+				required := []string{"context", "agent", "tool"}
+				for _, kw := range required {
+					if !strings.Contains(reply, kw) {
+						miss = append(miss, fmt.Sprintf("summary missing required keyword %q (page is about %s)", kw, kw))
+					}
+				}
+				// A real summary should be substantive — at least 300
+				// chars and contain enumeration cues (bullets, numbers).
+				if len(strings.TrimSpace(r.Reply)) < 300 {
+					miss = append(miss, fmt.Sprintf("summary too short: %d chars (real summary of a multi-section article should be >= 300)", len(r.Reply)))
+				}
+				if !strings.Contains(r.Reply, "-") && !strings.Contains(r.Reply, "•") && !strings.Contains(r.Reply, "1.") && !strings.Contains(r.Reply, "1)") {
+					miss = append(miss, "reply has no bullet/numbered enumeration despite the prompt asking for 5 bullet points")
 				}
 				return miss
 			},

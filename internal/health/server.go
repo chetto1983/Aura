@@ -65,10 +65,18 @@ func NewServer(cfg ServerConfig, logger *slog.Logger) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		server: &http.Server{
-			Addr:         cfg.Addr,
-			Handler:      mux,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
+			Addr:        cfg.Addr,
+			Handler:     mux,
+			ReadTimeout: 5 * time.Second,
+			// WriteTimeout was 10s historically — fine for /status and
+			// /health, but the same server hosts /api/chat which runs the
+			// full agent loop (LLM + tools) and routinely takes 30-120s
+			// for fetch+summarize work. A 10s WriteTimeout silently
+			// cuts the response and the client sees "Empty reply from
+			// server" with no log line. Bumped to 5min to match the
+			// agent.Runner default Timeout. Reads still cap at 5s so a
+			// slow client can't hold a connection.
+			WriteTimeout: 5 * time.Minute,
 		},
 		mux:       mux,
 		logger:    logger,
