@@ -31,6 +31,13 @@ type Store struct {
 	gitCommitFunc func(ctx context.Context, filename, action string) error
 
 	reindexSubmitter reindex.Submitter // optional; set via SetReindexSubmitter (Phase 2 INDEX-01)
+
+	// graphIndex is the in-memory adjacency layer over the wiki graph
+	// (Wave 2 — GRAPH-02). Populated from disk at NewStore boot time
+	// and refreshed by WritePage/DeletePage hooks so the runtime graph
+	// stays in sync with .md frontmatter + body wikilinks without a
+	// re-scan. Wave 3 retrieval traverses it for BFS expansion.
+	graphIndex *GraphIndex
 }
 
 // PageCatalog is the read side for enumerating wiki pages.
@@ -118,10 +125,18 @@ func NewStore(dir string, logger *slog.Logger) (*Store, error) {
 		logger = slog.Default()
 	}
 
-	s := &Store{dir: dir, logger: logger}
+	s := &Store{dir: dir, logger: logger, graphIndex: NewGraphIndex()}
 
 	if err := s.initGit(); err != nil {
 		return nil, fmt.Errorf("initializing git repo: %w", err)
+	}
+
+	// GRAPH-02: warm the in-memory graph index from on-disk pages so the
+	// first WritePage / search query doesn't pay a cold scan. Errors are
+	// logged-and-ignored — an empty index is safe (just slower until the
+	// next page write populates it). loadGraphIndex lives in store_graph.go.
+	if err := s.loadGraphIndex(); err != nil {
+		s.logger.Warn("graph index warm-up failed; running with empty index", "error", err)
 	}
 
 	return s, nil
