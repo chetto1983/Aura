@@ -22,11 +22,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// indexConcurrency caps how many wiki pages are embedded in parallel during a
-// rebuild. 4 is a sweet spot that cuts cold-start time ~4x over serial without
-// hitting Mistral's free-tier rate limits. The embed cache short-circuits
-// repeated work so the constant only matters on a truly cold start.
-const indexConcurrency = 4
+// indexConcurrency caps how many wiki pages are embedded in parallel during
+// a rebuild. The host is a 16-core mini-PC shared with the user's daily
+// work — saturating the CPU starves IDE/browser/other services, so we cap
+// at 2: matches llama-embed's --parallel 2 slot count with no over-subscription.
+// Reindex takes ~5-10 min for ~1400 vectors at this setting; that's the
+// intended trade-off (see feedback_minipc_cpu_budget memory).
+const indexConcurrency = 2
 
 // splitCSVPayloadField reverses the comma-join used at index time for
 // list-valued frontmatter fields (tags, related, sources). Empty entries are

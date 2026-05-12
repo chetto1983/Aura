@@ -146,7 +146,9 @@ services:
     command: >-
       -m /models/embeddinggemma-300m-Q4_0.gguf
       --embeddings --pooling mean
-      --ctx-size 512 --threads 4
+      --ctx-size 2048 --batch-size 2048 --ubatch-size 2048
+      --threads 2 --threads-batch 4 --parallel 2
+      --mlock --no-warmup
       --host 0.0.0.0 --port 8080
     ports:
       - "127.0.0.1:${LLAMA_EMBED_HOST_PORT:-8081}:8080"
