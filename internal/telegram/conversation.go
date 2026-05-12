@@ -17,6 +17,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/tools"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -56,7 +57,8 @@ func (b *Bot) handleConversation(c tele.Context) {
 	}
 	retrievalCapsule := turnRetrievalCapsule{}
 	toolAllowlist := b.modelToolNames()
-	promptPlan := composeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, time.Now())
+	toolManifest := tools.RenderToolManifest(b.tools.Definitions())
+	promptPlan := composeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, toolManifest, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
 	b.logger.Info("conversation started",
@@ -256,14 +258,14 @@ type agentPromptPlan struct {
 	Modules []string
 }
 
-func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsBlock string, now time.Time) agentPromptPlan {
+func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsBlock, toolManifest string, now time.Time) agentPromptPlan {
 	version := "aura-agent-v1"
 	if cfg != nil && strings.TrimSpace(cfg.PromptVersion) != "" {
 		version = strings.TrimSpace(cfg.PromptVersion)
 	}
 	modules := []string{"base", "runtime", "registered-tools"}
 	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Surface: core tools plus Qdrant top-K=5 retrieval per turn\n\nChoose tools autonomously when they help. Tools are auto-injected each turn based on your latest message — call any tool by name; you never need to discover them. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Discovery: the catalog below lists every tool you have. Call tool_search to fetch input schemas, OR invoke any tool by name and the agentloop will load its schema for this turn.\n\nChoose tools autonomously when they help. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")
@@ -272,6 +274,10 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 		content += "\n\n" + strings.TrimSpace(skillsBlock)
 		content += "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it or when it materially improves the work."
 		modules = append(modules, "skills")
+	}
+	if strings.TrimSpace(toolManifest) != "" {
+		content += "\n\n" + strings.TrimSpace(toolManifest)
+		modules = append(modules, "tool-manifest")
 	}
 	sum := sha256.Sum256([]byte(content))
 	return agentPromptPlan{
