@@ -275,8 +275,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	skillsCatalog := auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
 	switch strings.ToLower(strings.TrimSpace(cfg.WebSearchProvider)) {
 	case "searxng":
-		toolRegistry.Register(tools.WithCategory(tools.NewSearXNGSearchTool(cfg.SearXNGBaseURL), tools.CategoryAutonomous))
-		toolRegistry.Register(tools.WithCategory(tools.NewDirectWebFetchTool(), tools.CategoryAutonomous))
+		// Wave 2.7c: unified web tool replaces web_search + web_fetch.
+		toolRegistry.Register(tools.WithCategory(tools.NewWebTool(cfg.SearXNGBaseURL), tools.CategoryAutonomous))
 	case "", "disabled":
 		// Explicitly disabled.
 	default:

@@ -9,7 +9,7 @@ func toolsFn(names ...string) func() []string {
 
 func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 	guard := &PhantomToolGuard{
-		ToolNamesFn: toolsFn("task", "wiki_page", "search_memory", "web_search"),
+		ToolNamesFn: toolsFn("task", "wiki_page", "search_memory", "web"),
 	}
 	emptyCalls := map[string]bool{}
 

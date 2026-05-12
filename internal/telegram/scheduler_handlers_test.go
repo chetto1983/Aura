@@ -47,7 +47,7 @@ func (t schedulerFakeTool) Execute(context.Context, map[string]any) (string, err
 func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	fake := &schedulerFakeLLM{}
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	reg.Register(schedulerFakeTool{name: "web_search"})
+	reg.Register(schedulerFakeTool{name: "web"})
 	reg.Register(schedulerFakeTool{name: "read_file"})
 	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 	notify := false
 	payload, err := scheduler.AgentJobPayload{
 		Goal:          "Check Aura gaps",
-		ToolAllowlist: []string{"web_search", "write_file", "read_file"},
+		ToolAllowlist: []string{"web", "write_file", "read_file"},
 		Notify:        &notify,
 	}.JSON()
 	if err != nil {
@@ -99,7 +99,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 		"list_files",
 		"read_file",
 		"search_files",
-		"web_search",
+		"web",
 	} {
 		reg.Register(schedulerFakeTool{name: name})
 	}
@@ -161,15 +161,15 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 			t.Fatalf("tool %q missing from allowlist: %+v", want, names)
 		}
 	}
-	if containsTestString(names, "web_search") {
-		t.Fatalf("web_search should not be enabled by memory_read toolset: %+v", names)
+	if containsTestString(names, "web") {
+		t.Fatalf("web should not be enabled by memory_read toolset: %+v", names)
 	}
 }
 
 func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	fake := &schedulerFakeLLM{}
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	reg.Register(schedulerFakeTool{name: "web_search"})
+	reg.Register(schedulerFakeTool{name: "web"})
 	reg.Register(schedulerFakeTool{name: "read_file"})
 	runner, err := agent.NewRunner(agent.Config{LLM: fake, Tools: reg})
 	if err != nil {
@@ -179,7 +179,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	notify := false
 	payload, err := scheduler.AgentJobPayload{
 		Goal:          "Check Aura gaps",
-		ToolAllowlist: []string{"web_search", "write_file", "read_file"},
+		ToolAllowlist: []string{"web", "write_file", "read_file"},
 		Notify:        &notify,
 	}.JSON()
 	if err != nil {

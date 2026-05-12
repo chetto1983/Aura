@@ -37,8 +37,7 @@ var toolsets = map[string][]string{
 		"search_files",
 	},
 	ToolsetWebResearch: {
-		"web_search",
-		"web_fetch",
+		"web",
 	},
 	ToolsetSandboxCode: {
 		"execute_code",
@@ -53,8 +52,7 @@ var toolsets = map[string][]string{
 		"list_sources",
 		"read_source",
 		"lint_sources",
-		"web_search",
-		"web_fetch",
+		"web",
 	},
 }
 
@@ -77,8 +75,7 @@ var rolePresets = map[string][]string{
 		"list_sources",
 	},
 	"researcher": {
-		"web_search",
-		"web_fetch",
+		"web",
 	},
 	"skillsmith": {
 		"list_files",

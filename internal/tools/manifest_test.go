@@ -18,7 +18,7 @@ func TestRenderToolManifest_EmptyReturnsEmpty(t *testing.T) {
 
 func TestRenderToolManifest_SortsAlphabeticallyForCacheStability(t *testing.T) {
 	defs := []llm.ToolDefinition{
-		{Name: "web_search", Description: "Search the web"},
+		{Name: "web", Description: "Search the web or fetch a URL"},
 		{Name: "create_docx", Description: "Generate a Word document"},
 		{Name: "mcp_mail_imap_search_messages", Description: "Search IMAP messages"},
 	}
@@ -27,7 +27,7 @@ func TestRenderToolManifest_SortsAlphabeticallyForCacheStability(t *testing.T) {
 	// Find positions of each tool name
 	posDocx := strings.Index(got, "- create_docx")
 	posMail := strings.Index(got, "- mcp_mail_imap_search_messages")
-	posWeb := strings.Index(got, "- web_search")
+	posWeb := strings.Index(got, "- web")
 	if posDocx < 0 || posMail < 0 || posWeb < 0 {
 		t.Fatalf("missing tool in manifest:\n%s", got)
 	}

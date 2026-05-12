@@ -138,13 +138,13 @@ func main() {
 			scenario{
 				name:      "web_search",
 				prompt:    "Use web search to find the official SearXNG search API documentation. Reply with one source URL.",
-				wantTools: []string{"web_search"},
+				wantTools: []string{"web"},
 				wantText:  []string{"searxng"},
 			},
 			scenario{
 				name:      "web_fetch",
 				prompt:    "Fetch https://docs.searxng.org/dev/search_api.html and summarize the SearXNG JSON search API in one sentence.",
-				wantTools: []string{"web_fetch"},
+				wantTools: []string{"web"},
 				wantText:  []string{"SearXNG"},
 			},
 		)

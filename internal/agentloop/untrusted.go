@@ -19,10 +19,9 @@ import (
 // scheduler queries, etc.) intentionally bypass the envelope so the LLM does
 // not learn to ignore *every* tool result.
 var untrustedSourceTools = map[string]struct{}{
-	"web_fetch":     {},
-	"web_search":    {},
-	"read_source":   {},
-	"read_skill":    {},
+	"web":            {},
+	"read_source":    {},
+	"read_skill":     {},
 	"daily_briefing": {},
 }
 

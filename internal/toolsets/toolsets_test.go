@@ -11,7 +11,7 @@ func TestResolveToolsetsComposesAndDedupes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveToolsets: %v", err)
 	}
-	want := []string{"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "web_search", "web_fetch"}
+	want := []string{"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "web"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %+v, want %+v", got, want)
 	}
@@ -62,7 +62,7 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 			t.Fatalf("scheduler_safe includes forbidden tool %q: %+v", forbidden, safe)
 		}
 	}
-	for _, required := range []string{"search_memory", "list_files", "read_file", "search_files", "web_search"} {
+	for _, required := range []string{"search_memory", "list_files", "read_file", "search_files", "web"} {
 		if !slices.Contains(safe, required) {
 			t.Fatalf("scheduler_safe missing %q: %+v", required, safe)
 		}
@@ -81,8 +81,8 @@ func TestSandboxCodeToolsetIsExplicit(t *testing.T) {
 }
 
 func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
-	got := FilterAllowed([]string{" web_search ", "write_file", "web_search", "read_file"}, SchedulerSafeTools())
-	want := []string{"web_search", "read_file"}
+	got := FilterAllowed([]string{" web ", "write_file", "web", "read_file"}, SchedulerSafeTools())
+	want := []string{"web", "read_file"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("filtered = %+v, want %+v", got, want)
 	}
@@ -92,7 +92,7 @@ func TestRoleToolsMatchReadOnlyPresets(t *testing.T) {
 	tests := map[string][]string{
 		"librarian":   {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "lint_sources"},
 		"critic":      {"search_memory", "list_files", "read_file", "search_files", "lint_sources", "list_sources"},
-		"researcher":  {"web_search", "web_fetch"},
+		"researcher":  {"web"},
 		"skillsmith":  {"list_files", "read_file", "search_files"},
 		"synthesizer": {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source"},
 	}

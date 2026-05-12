@@ -60,10 +60,11 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{{Arguments: map[string]any{"id": "src_0123456789abcdef"}}}
 	case "lint_sources":
 		return []ToolCallExample{{Arguments: map[string]any{"limit": 20}}}
-	case "web_search":
-		return []ToolCallExample{{Arguments: map[string]any{"query": "OpenAI API latest structured outputs", "limit": 5}}}
-	case "web_fetch":
-		return []ToolCallExample{{Arguments: map[string]any{"url": "https://example.com", "max_bytes": 6000}}}
+	case "web":
+		return []ToolCallExample{
+			{Arguments: map[string]any{"action": "search", "query": "OpenAI API latest structured outputs", "max_results": 5}},
+			{Arguments: map[string]any{"action": "fetch", "url": "https://example.com"}},
+		}
 	case "task":
 		return []ToolCallExample{
 			{Arguments: map[string]any{"action": "schedule", "name": "health-check", "kind": "reminder", "payload": "Fai un breve health check di Aura.", "in": "1h"}},

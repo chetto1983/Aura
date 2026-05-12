@@ -197,7 +197,24 @@ func allCases(now time.Time) []Case {
 			// cleanup endpoint would be nicer; leave it for now.
 		},
 
-		// 4. phantom-trap — non-existent task name; model MUST NOT claim it ran.
+		// 4. web-search — verify the model uses the unified web tool and
+		//    surfaces at least one URL from a known stable search.
+		{
+			Name:   "web-search-wikipedia",
+			Prompt: "Cerca sul web il sito ufficiale di Wikipedia. Riportami solo l'URL principale di wikipedia.org.",
+			Verify: func(r ChatReply, _ *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call for a web search")
+				}
+				if !strings.Contains(strings.ToLower(r.Reply), "wikipedia.org") {
+					miss = append(miss, "reply does not contain wikipedia.org")
+				}
+				return miss
+			},
+		},
+
+		// 5. phantom-trap — non-existent task name; model MUST NOT claim it ran.
 		//    The reply may explain that the task doesn't exist OR may schedule a
 		//    new one of that name. Either is fine; what's forbidden is claiming
 		//    a past run that never happened.

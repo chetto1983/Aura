@@ -68,8 +68,7 @@ var compactableTools = map[string]bool{
 	"list_files":    true,
 	"execute_code":  true,
 	"execute_shell": true,
-	"web_search":    true,
-	"web_fetch":     true,
+	"web":           true,
 	"search_memory": true,
 }
 

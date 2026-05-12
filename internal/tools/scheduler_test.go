@@ -389,7 +389,7 @@ func TestTaskTool_AgentJobStructuredPayload(t *testing.T) {
 		"skills":["aura-implementation"],
 		"context_from":["[[memory-philosophy]]"],
 		"wake_if_changed":["wiki:memory-philosophy"],
-		"tool_allowlist":["search_memory","web_search"]
+		"tool_allowlist":["search_memory","web"]
 	}`
 	_, err := tool.Execute(ctx, map[string]any{
 		"action":        "schedule",
@@ -412,8 +412,8 @@ func TestTaskTool_AgentJobStructuredPayload(t *testing.T) {
 	if payload.Goal != "Check daily project memory drift" {
 		t.Fatalf("goal = %q", payload.Goal)
 	}
-	if strings.Contains(strings.Join(payload.ToolAllowlist, ","), "web_search") {
-		t.Fatalf("web_search should be filtered by memory_read toolset: %+v", payload.ToolAllowlist)
+	if strings.Contains(strings.Join(payload.ToolAllowlist, ","), "web") {
+		t.Fatalf("web should be filtered by memory_read toolset: %+v", payload.ToolAllowlist)
 	}
 	for _, want := range []string{"search_memory", "read_file", "search_files"} {
 		if !containsSchedTestString(payload.ToolAllowlist, want) {

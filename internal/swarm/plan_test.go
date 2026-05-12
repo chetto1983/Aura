@@ -49,7 +49,7 @@ func TestBuildPlanMatchesSwarmToolsReadOnlyPresets(t *testing.T) {
 	want := map[string][]string{
 		"librarian":   {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source", "lint_sources"},
 		"critic":      {"search_memory", "list_files", "read_file", "search_files", "lint_sources", "list_sources"},
-		"researcher":  {"web_search", "web_fetch"},
+		"researcher":  {"web"},
 		"skillsmith":  {"list_files", "read_file", "search_files"},
 		"synthesizer": {"search_memory", "list_files", "read_file", "search_files", "list_sources", "read_source"},
 	}

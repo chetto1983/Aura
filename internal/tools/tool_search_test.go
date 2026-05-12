@@ -55,7 +55,7 @@ func TestToolSearchTool_ExecuteReturnsHits(t *testing.T) {
 	reg := NewRegistry(slog.Default())
 	// Register a couple of fake tools so Search has something to match.
 	reg.Register(&fakeDescribedTool{name: "create_docx", desc: "Generate a Word document from structured blocks"})
-	reg.Register(&fakeDescribedTool{name: "web_search", desc: "Search the web for current information"})
+	reg.Register(&fakeDescribedTool{name: "web", desc: "Search the web or fetch a URL"})
 	reg.Register(&fakeDescribedTool{name: "task", desc: "Manage scheduled tasks (schedule/list/cancel/run_now)"})
 
 	tool := NewToolSearchTool(reg)
