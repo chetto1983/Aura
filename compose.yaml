@@ -188,7 +188,9 @@ services:
       dockerfile: Dockerfile
     image: aura-markitdown:local
     restart: unless-stopped
-    command: ["markitdown-mcp", "--http", "--host", "0.0.0.0", "--port", "3001"]
+    # ENTRYPOINT in docker/markitdown/Dockerfile is already "markitdown-mcp";
+    # `command` only supplies args, not the binary.
+    command: ["--http", "--host", "0.0.0.0", "--port", "3001"]
     environment:
       # Plugins disabled by default — only the converters in the upstream
       # markitdown core run. Re-enable via dashboard if a user installs a

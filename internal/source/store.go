@@ -355,6 +355,19 @@ func extForKind(k Kind) string {
 		return ".xlsx"
 	case KindDOCX:
 		return ".docx"
+	case KindPPTX:
+		return ".pptx"
+	case KindEPUB:
+		return ".epub"
+	case KindHTML:
+		return ".html"
+	case KindZIP:
+		return ".zip"
+	case KindImage:
+		// Image kind is reserved for Wave 2.9.5 (OCRBackend). DetectUploadFormat
+		// rejects the upload, so this branch should be unreachable today, but
+		// keep the table exhaustive.
+		return ".png"
 	case KindPDFGen:
 		// Generated PDFs share the .pdf extension with uploads. The Kind
 		// alone disambiguates; the on-disk file is a real PDF either way.
@@ -367,7 +380,9 @@ func extForKind(k Kind) string {
 
 func validatePutInput(in PutInput) error {
 	switch in.Kind {
-	case KindPDF, KindText, KindMarkdown, KindJSON, KindCSV, KindURL, KindXLSX, KindDOCX, KindPDFGen, KindSandboxArtifact:
+	case KindPDF, KindText, KindMarkdown, KindJSON, KindCSV, KindURL,
+		KindXLSX, KindDOCX, KindPPTX, KindEPUB, KindHTML, KindZIP, KindImage,
+		KindPDFGen, KindSandboxArtifact:
 	default:
 		return fmt.Errorf("source: invalid kind %q", in.Kind)
 	}
