@@ -9,8 +9,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"github.com/aura/aura/internal/source"
 )
 
 // Result holds the output of a sandbox execution.
@@ -124,32 +122,6 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 		return nil, err
 	}
 	return m.runtime.Execute(ctx, code, allowNetwork)
-}
-
-func (m *Manager) ExtractXLSX(ctx context.Context, body []byte) (source.ExtractResult, error) {
-	if m == nil || m.runtime == nil {
-		return source.ExtractResult{}, errors.New("sandbox: runtime is required")
-	}
-	extractor, ok := m.runtime.(interface {
-		ExtractXLSX(context.Context, []byte) (source.ExtractResult, error)
-	})
-	if !ok {
-		return source.ExtractResult{}, errors.New("sandbox: runtime does not support xlsx extraction")
-	}
-	return extractor.ExtractXLSX(ctx, body)
-}
-
-func (m *Manager) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {
-	if m == nil || m.runtime == nil {
-		return source.ExtractResult{}, errors.New("sandbox: runtime is required")
-	}
-	extractor, ok := m.runtime.(interface {
-		ExtractDOCX(context.Context, []byte) (source.ExtractResult, error)
-	})
-	if !ok {
-		return source.ExtractResult{}, errors.New("sandbox: runtime does not support docx extraction")
-	}
-	return extractor.ExtractDOCX(ctx, body)
 }
 
 // ExecuteCommand runs a shell command in runtimes that explicitly support it.

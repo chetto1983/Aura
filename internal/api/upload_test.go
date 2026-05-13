@@ -14,42 +14,36 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/source"
 )
 
-type fakeUploadSandboxExtractor struct {
+// fakeMarkitdown is a markitdown.Converter that returns canned markdown per
+// MIME type. Production wiring goes through internal/markitdown.Client; the
+// fake skips the sidecar to keep upload tests hermetic.
+type fakeMarkitdown struct {
 	calls int
 	errs  []error
 }
 
-func (r *fakeUploadSandboxExtractor) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
-	r.calls++
-	if len(r.errs) > 0 {
-		err := r.errs[0]
-		r.errs = r.errs[1:]
+func (f *fakeMarkitdown) Convert(_ context.Context, in markitdown.ConvertInput) (markitdown.ConvertResult, error) {
+	f.calls++
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
 		if err != nil {
-			return source.ExtractResult{}, err
+			return markitdown.ConvertResult{}, err
 		}
 	}
-	return source.ExtractResult{
-		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
-	}, nil
-}
-
-func (r *fakeUploadSandboxExtractor) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
-	r.calls++
-	if len(r.errs) > 0 {
-		err := r.errs[0]
-		r.errs = r.errs[1:]
-		if err != nil {
-			return source.ExtractResult{}, err
-		}
+	switch {
+	case strings.Contains(in.MimeType, "spreadsheetml"):
+		return markitdown.ConvertResult{Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n"}, nil
+	case strings.Contains(in.MimeType, "wordprocessingml"):
+		return markitdown.ConvertResult{Markdown: "# Memo\n\nAura should remember decisions.\n"}, nil
+	default:
+		// text/csv/json/markdown — return the input bytes as a code fence.
+		return markitdown.ConvertResult{Markdown: "Aura should remember CSV and text files.\n"}, nil
 	}
-	return source.ExtractResult{
-		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
-	}, nil
 }
 
 func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
@@ -80,20 +74,22 @@ func TestSourceUploadAcceptsTextAndRejectsUnsupported(t *testing.T) {
 		t.Fatalf("extract.md = %q", extract)
 	}
 
-	bad := e.uploadFile("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", []byte("pptx"))
+	// Wave 2.9 accepts pptx via markitdown — image uploads stay gated until
+	// Wave 2.9.5 wires the OCRBackend.
+	bad := e.uploadFile("photo.png", "image/png", []byte("PNG bytes"))
 	if bad.Code != http.StatusBadRequest {
-		t.Fatalf("pptx status = %d, want 400 body=%s", bad.Code, bad.Body.String())
+		t.Fatalf("image status = %d, want 400 body=%s", bad.Code, bad.Body.String())
 	}
 }
 
 func TestSourceUploadXLSXUsesSandboxExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadSandboxExtractor{}
+	runner := &fakeMarkitdown{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
 		Scheduler: e.sched,
-		Extractor: runner,
+		Markitdown: runner,
 	})
 
 	rr := e.uploadFile("budget.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", []byte("xlsx bytes"))
@@ -114,7 +110,7 @@ func TestSourceUploadXLSXUsesSandboxExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Kind != source.KindXLSX || src.Extract == nil || src.Extract.ExtractorName != "sandbox_xlsx" {
+	if src.Kind != source.KindXLSX || src.Extract == nil || src.Extract.ExtractorName != "markitdown_xlsx" {
 		t.Fatalf("source = %+v, want xlsx with sandbox extraction metadata", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
@@ -128,12 +124,12 @@ func TestSourceUploadXLSXUsesSandboxExtraction(t *testing.T) {
 
 func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadSandboxExtractor{errs: []error{errors.New("sandbox unavailable")}}
+	runner := &fakeMarkitdown{errs: []error{errors.New("markitdown unavailable")}}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
 		Scheduler: e.sched,
-		Extractor: runner,
+		Markitdown: runner,
 	})
 
 	body := []byte("same workbook bytes")
@@ -170,7 +166,7 @@ func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Status != source.StatusExtractComplete || src.Error != "" || src.Extract == nil || src.Extract.ExtractorName != "sandbox_xlsx" {
+	if src.Status != source.StatusExtractComplete || src.Error != "" || src.Extract == nil || src.Extract.ExtractorName != "markitdown_xlsx" {
 		t.Fatalf("source after retry = %+v", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(secondResp.ID, source.ExtractMarkdownFile))
@@ -184,12 +180,12 @@ func TestSourceUploadXLSXDuplicateFailedRetriesExtraction(t *testing.T) {
 
 func TestSourceUploadDOCXUsesSandboxExtraction(t *testing.T) {
 	e := newTestEnv(t)
-	runner := &fakeUploadSandboxExtractor{}
+	runner := &fakeMarkitdown{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
 		Scheduler: e.sched,
-		Extractor: runner,
+		Markitdown: runner,
 	})
 
 	rr := e.uploadFile("memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", []byte("docx bytes"))
@@ -210,7 +206,7 @@ func TestSourceUploadDOCXUsesSandboxExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source get: %v", err)
 	}
-	if src.Kind != source.KindDOCX || src.Extract == nil || src.Extract.ExtractorName != "sandbox_docx" {
+	if src.Kind != source.KindDOCX || src.Extract == nil || src.Extract.ExtractorName != "markitdown_docx" {
 		t.Fatalf("source = %+v, want docx with sandbox extraction metadata", src)
 	}
 	extract, err := os.ReadFile(e.sources.Path(got.ID, source.ExtractMarkdownFile))
@@ -229,10 +225,11 @@ func TestSourceUploadTextCanBeIngested(t *testing.T) {
 		t.Fatalf("ingest.New: %v", err)
 	}
 	e.router = NewRouter(Deps{
-		Wiki:      e.wiki,
-		Sources:   e.sources,
-		Scheduler: e.sched,
-		Ingest:    pipeline,
+		Wiki:       e.wiki,
+		Sources:    e.sources,
+		Scheduler:  e.sched,
+		Ingest:     pipeline,
+		Markitdown: &fakeMarkitdown{},
 	})
 
 	rr := e.uploadFile("notes.txt", "text/plain", []byte("Aura should compile text sources into the wiki."))
@@ -276,12 +273,12 @@ func TestSourceUploadXLSXCanBeIngested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest.New: %v", err)
 	}
-	runner := &fakeUploadSandboxExtractor{}
+	runner := &fakeMarkitdown{}
 	e.router = NewRouter(Deps{
 		Wiki:      e.wiki,
 		Sources:   e.sources,
 		Scheduler: e.sched,
-		Extractor: runner,
+		Markitdown: runner,
 		Ingest:    pipeline,
 	})
 

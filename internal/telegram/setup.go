@@ -22,6 +22,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/mcppolicy"
 	"github.com/aura/aura/internal/memoryindex"
@@ -217,6 +218,20 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		})
 	} else {
 		logger.Info("OCR disabled (set MISTRAL_API_KEY to enable)")
+	}
+
+	// Markitdown sidecar client. Lazy-connects on first use, so an unreachable
+	// sidecar does not block bot startup — uploads simply fail with a clear
+	// error message until docker compose brings it back. Wave 2.9 replaces
+	// the previous ExtractGo / Python sandbox extractor split with this one
+	// converter for everything non-PDF.
+	var markitdownClient markitdown.Converter
+	if url := strings.TrimSpace(cfg.MarkitdownURL); url != "" {
+		timeout := time.Duration(cfg.MarkitdownTimeoutSec) * time.Second
+		markitdownClient = markitdown.New(markitdown.Config{BaseURL: url, Timeout: timeout})
+		logger.Info("markitdown sidecar configured", "url", url, "timeout_sec", cfg.MarkitdownTimeoutSec)
+	} else {
+		logger.Warn("markitdown sidecar not configured (set MARKITDOWN_URL); non-PDF uploads will fail")
 	}
 
 	// Ingest pipeline (slice 6) compiles ocr_complete sources into wiki
@@ -683,13 +698,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	b.docs = newDocHandler(docHandlerConfig{
-		Bot:       tb,
-		Sources:   sourceStore,
-		OCR:       ocrClient,
-		Extractor: sandboxMgr,
-		MaxFileMB: cfg.OCRMaxFileMB,
-		Allowlist: b.isAllowlisted,
-		Logger:    logger,
+		Bot:        tb,
+		Sources:    sourceStore,
+		OCR:        ocrClient,
+		Markitdown: markitdownClient,
+		MaxFileMB:  cfg.OCRMaxFileMB,
+		Allowlist:  b.isAllowlisted,
+		Logger:     logger,
 		// Slice 6: auto-ingest hook. Compile every freshly-OCR'd source
 		// into a wiki summary page so the user sees a [[source-src-...]]
 		// link in the final progress message instead of "ready for ingest".
@@ -729,7 +744,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		Scheduler:   schedStore,
 		OCR:         ocrClient,
 		Ingest:      ingestPipeline,
-		Extractor:   sandboxMgr,
+		Markitdown:  markitdownClient,
 		Auth:        authStore,
 		Allowlist:   b.isAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,

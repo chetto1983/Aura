@@ -51,9 +51,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(func() { schedStore.Close() })
 
 	router := NewRouter(Deps{
-		Wiki:      wikiStore,
-		Sources:   sourceStore,
-		Scheduler: schedStore,
+		Wiki:       wikiStore,
+		Sources:    sourceStore,
+		Scheduler:  schedStore,
+		Markitdown: &fakeMarkitdown{},
 	})
 	return &testEnv{
 		t:       t,

@@ -2,7 +2,7 @@ package source
 
 import "testing"
 
-func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
+func TestDetectUploadFormatAcceptsSupportedFormats(t *testing.T) {
 	cases := []struct {
 		name string
 		mime string
@@ -16,6 +16,12 @@ func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
 		{"budget.csv", "text/csv", KindCSV, "original.csv"},
 		{"sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", KindXLSX, "original.xlsx"},
 		{"memo.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", KindDOCX, "original.docx"},
+		// Wave 2.9 — markitdown adds these formats.
+		{"deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", KindPPTX, "original.pptx"},
+		{"book.epub", "application/epub+zip", KindEPUB, "original.epub"},
+		{"page.html", "text/html", KindHTML, "original.html"},
+		{"page.htm", "text/html", KindHTML, "original.html"},
+		{"bundle.zip", "application/zip", KindZIP, "original.zip"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -30,8 +36,21 @@ func TestDetectUploadFormatAcceptsV12Formats(t *testing.T) {
 	}
 }
 
+// Image formats are registered in the table but rejected at the upload
+// boundary until Wave 2.9.5 wires an OCRBackend. This gate lives in
+// DetectUploadFormat — flip it when 2.9.5 lands.
+func TestDetectUploadFormatRejectsImagesUntil295(t *testing.T) {
+	for _, name := range []string{"photo.png", "scan.jpg", "image.jpeg", "snap.webp"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := DetectUploadFormat(name, "image/png"); err == nil {
+				t.Fatalf("DetectUploadFormat(%q) error = nil, want rejection (Wave 2.9.5 gate)", name)
+			}
+		})
+	}
+}
+
 func TestDetectUploadFormatRejectsUnsupported(t *testing.T) {
-	for _, name := range []string{"image.png", "deck.pptx", "archive.zip", "audio.mp3"} {
+	for _, name := range []string{"audio.mp3", "video.mp4", "binary.exe", "noext"} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DetectUploadFormat(name, "application/octet-stream"); err == nil {
 				t.Fatalf("DetectUploadFormat(%q) error = nil, want rejection", name)

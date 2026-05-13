@@ -11,8 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/aura/aura/internal/source"
 )
 
 const (
@@ -133,47 +131,6 @@ func (r *ProcessRunner) Execute(ctx context.Context, code string, _ bool) (*Resu
 // allowNetwork arg is advisory for the process runtime and ignored here.
 func (r *ProcessRunner) ExecuteCommand(ctx context.Context, command string, _ bool) (*Result, error) {
 	return r.executeCommand(ctx, command, r.workDir)
-}
-
-func (r *ProcessRunner) ExtractXLSX(ctx context.Context, body []byte) (source.ExtractResult, error) {
-	if r == nil {
-		return source.ExtractResult{}, errors.New("sandbox: process runner not configured")
-	}
-	if err := validateXLSXArchive(body); err != nil {
-		return source.ExtractResult{}, err
-	}
-	tmpDir, err := os.MkdirTemp("", "aura-xlsx-*")
-	if err != nil {
-		return source.ExtractResult{}, fmt.Errorf("sandbox: create xlsx input dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	if err := os.WriteFile(filepath.Join(tmpDir, "workbook.xlsx"), body, 0o600); err != nil {
-		return source.ExtractResult{}, fmt.Errorf("sandbox: write xlsx input: %w", err)
-	}
-	res, err := r.execute(ctx, trustedXLSXExtractorCode, tmpDir)
-	if err != nil {
-		return source.ExtractResult{}, err
-	}
-	return extractMarkdownResult(res, "process")
-}
-
-func (r *ProcessRunner) ExtractDOCX(ctx context.Context, body []byte) (source.ExtractResult, error) {
-	if r == nil {
-		return source.ExtractResult{}, errors.New("sandbox: process runner not configured")
-	}
-	tmpDir, err := os.MkdirTemp("", "aura-docx-*")
-	if err != nil {
-		return source.ExtractResult{}, fmt.Errorf("sandbox: create docx input dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	if err := os.WriteFile(filepath.Join(tmpDir, "document.docx"), body, 0o600); err != nil {
-		return source.ExtractResult{}, fmt.Errorf("sandbox: write docx input: %w", err)
-	}
-	res, err := r.execute(ctx, trustedDOCXExtractorCode, tmpDir)
-	if err != nil {
-		return source.ExtractResult{}, err
-	}
-	return extractMarkdownResult(res, "process")
 }
 
 func (r *ProcessRunner) execute(ctx context.Context, code, workDir string) (*Result, error) {

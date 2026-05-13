@@ -2,181 +2,144 @@ package source
 
 import (
 	"context"
-	"encoding/json"
-	"os"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/markitdown"
 )
 
-type fakeSandboxExtractor struct {
-	xlsxCalled bool
-	docxCalled bool
-	result     ExtractResult
+// fakeConverter captures Convert input and returns canned markdown.
+type fakeConverter struct {
+	calls    int
+	lastIn   markitdown.ConvertInput
+	response markitdown.ConvertResult
+	err      error
 }
 
-func (r *fakeSandboxExtractor) ExtractXLSX(context.Context, []byte) (ExtractResult, error) {
-	r.xlsxCalled = true
-	return r.result, nil
+func (f *fakeConverter) Convert(_ context.Context, in markitdown.ConvertInput) (markitdown.ConvertResult, error) {
+	f.calls++
+	f.lastIn = in
+	if f.err != nil {
+		return markitdown.ConvertResult{}, f.err
+	}
+	return f.response, nil
 }
 
-func (r *fakeSandboxExtractor) ExtractDOCX(context.Context, []byte) (ExtractResult, error) {
-	r.docxCalled = true
-	return r.result, nil
-}
-
-func TestGoExtractorsProduceMarkdownAndMetadata(t *testing.T) {
+func TestExtractUploadedSource_DispatchesByMime(t *testing.T) {
 	cases := []struct {
-		name string
-		kind Kind
-		body []byte
-		want string
+		name     string
+		kind     Kind
+		mime     string
+		expected string // expected ExtractorName
 	}{
-		{"notes.txt", KindText, []byte("Alpha decision\nBeta action"), "Alpha decision"},
-		{"daily.md", KindMarkdown, []byte("# Daily\n\n- ship v1.2"), "# Daily"},
-		{"config.json", KindJSON, []byte(`{"owner":"Davide","milestone":"v1.2"}`), `"milestone": "v1.2"`},
-		{"budget.csv", KindCSV, []byte("item,cost\nsandbox,12\nocr,34\n"), "| item | cost |"},
+		{"csv", KindCSV, "text/csv", "markitdown_csv"},
+		{"xlsx", KindXLSX, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "markitdown_xlsx"},
+		{"docx", KindDOCX, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "markitdown_docx"},
+		{"pptx", KindPPTX, "application/vnd.openxmlformats-officedocument.presentationml.presentation", "markitdown_pptx"},
+		{"epub", KindEPUB, "application/epub+zip", "markitdown_epub"},
+		{"html", KindHTML, "text/html", "markitdown_html"},
+		{"zip", KindZIP, "application/zip", "markitdown_zip"},
+		{"text", KindText, "text/plain", "markitdown_text"},
+		{"markdown", KindMarkdown, "text/markdown", "markitdown_md"},
+		{"json", KindJSON, "application/json", "markitdown_json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := ExtractGo(context.Background(), ExtractInput{
-				Source: &Source{ID: "src_0123456789abcdef", Kind: tc.kind, Filename: tc.name, SHA256: strings.Repeat("a", 64)},
-				Bytes:  tc.body,
+			fc := &fakeConverter{response: markitdown.ConvertResult{Markdown: "# hello\n"}}
+			res, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{
+				Source: &Source{ID: "src_0123456789abcdef", Kind: tc.kind, MimeType: tc.mime, Filename: "x." + tc.name},
+				Bytes:  []byte("payload"),
 			})
 			if err != nil {
-				t.Fatalf("ExtractGo() error = %v", err)
+				t.Fatalf("ExtractUploadedSource: %v", err)
 			}
-			if !strings.Contains(res.Markdown, tc.want) {
-				t.Fatalf("markdown = %q, want substring %q", res.Markdown, tc.want)
+			if fc.calls != 1 {
+				t.Fatalf("converter calls = %d, want 1", fc.calls)
 			}
-			if res.Metadata.ExtractorName == "" || res.Metadata.TextBytes == 0 {
-				t.Fatalf("metadata incomplete: %+v", res.Metadata)
+			if fc.lastIn.MimeType != tc.mime {
+				t.Fatalf("mime forwarded = %q, want %q", fc.lastIn.MimeType, tc.mime)
+			}
+			if res.Metadata.ExtractorName != tc.expected {
+				t.Fatalf("extractor name = %q, want %q", res.Metadata.ExtractorName, tc.expected)
+			}
+			if !strings.HasSuffix(res.Markdown, "\n") {
+				t.Fatalf("markdown does not end with newline: %q", res.Markdown)
+			}
+			if res.Metadata.TextBytes == 0 {
+				t.Fatal("text bytes should be set")
 			}
 		})
 	}
 }
 
-func TestExtractUploadedSourceUsesGoForTextLikeFormats(t *testing.T) {
-	res, err := ExtractUploadedSource(context.Background(), nil, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindCSV, Filename: "budget.csv"},
-		Bytes:  []byte("item,cost\nsandbox,12\n"),
+func TestExtractUploadedSource_RejectsImageUntil295(t *testing.T) {
+	fc := &fakeConverter{}
+	_, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindImage, MimeType: "image/png"},
+		Bytes:  []byte("PNGDATA"),
 	})
-	if err != nil {
-		t.Fatalf("ExtractUploadedSource() error = %v", err)
+	if err == nil {
+		t.Fatal("expected image rejection (Wave 2.9.5 gate)")
 	}
-	if !strings.Contains(res.Markdown, "| item | cost |") {
-		t.Fatalf("markdown = %q, want CSV markdown table", res.Markdown)
-	}
-	if res.Metadata.ExtractorName != "go_csv" {
-		t.Fatalf("extractor = %q, want go_csv", res.Metadata.ExtractorName)
+	if fc.calls != 0 {
+		t.Fatalf("converter should not be called for image, got %d", fc.calls)
 	}
 }
 
-func TestExtractUploadedSourceUsesSandboxForXLSX(t *testing.T) {
-	runner := &fakeSandboxExtractor{result: ExtractResult{
-		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
-	}}
-	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
-		Bytes:  []byte("xlsx bytes"),
+func TestExtractUploadedSource_RejectsUnknownKind(t *testing.T) {
+	fc := &fakeConverter{}
+	_, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: Kind("mystery"), MimeType: "application/x-unknown"},
+		Bytes:  []byte("payload"),
 	})
-	if err != nil {
-		t.Fatalf("ExtractUploadedSource() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no markitdown route") {
+		t.Fatalf("expected unknown-kind error, got %v", err)
 	}
-	if !runner.xlsxCalled {
-		t.Fatalf("runner called = false")
-	}
-	if res.Metadata.ExtractorName != "sandbox_xlsx" || !strings.Contains(res.Markdown, "sandbox") {
-		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
+	if fc.calls != 0 {
+		t.Fatalf("converter should not be called for unknown kind, got %d", fc.calls)
 	}
 }
 
-func TestExtractUploadedSourceUsesSandboxForDOCX(t *testing.T) {
-	runner := &fakeSandboxExtractor{result: ExtractResult{
-		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
-	}}
-	res, err := ExtractUploadedSource(context.Background(), runner, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindDOCX, Filename: "memo.docx"},
-		Bytes:  []byte("docx bytes"),
-	})
-	if err != nil {
-		t.Fatalf("ExtractUploadedSource() error = %v", err)
-	}
-	if !runner.docxCalled {
-		t.Fatalf("runner called = false")
-	}
-	if res.Metadata.ExtractorName != "sandbox_docx" || !strings.Contains(res.Markdown, "decisions") {
-		t.Fatalf("result = %+v\n%s", res.Metadata, res.Markdown)
-	}
-}
-
-func TestExtractUploadedSourceXLSXRequiresRunner(t *testing.T) {
+func TestExtractUploadedSource_RequiresConverter(t *testing.T) {
 	_, err := ExtractUploadedSource(context.Background(), nil, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindXLSX, Filename: "budget.xlsx"},
-		Bytes:  []byte("xlsx bytes"),
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindCSV, MimeType: "text/csv"},
+		Bytes:  []byte("payload"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "sandbox runner") {
-		t.Fatalf("error = %v, want sandbox runner requirement", err)
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("expected converter-required error, got %v", err)
 	}
 }
 
-func TestExtractUploadedSourceDOCXRequiresRunner(t *testing.T) {
-	_, err := ExtractUploadedSource(context.Background(), nil, ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindDOCX, Filename: "memo.docx"},
-		Bytes:  []byte("docx bytes"),
-	})
-	if err == nil || !strings.Contains(err.Error(), "sandbox runner") {
-		t.Fatalf("error = %v, want sandbox runner requirement", err)
+func TestExtractUploadedSource_RejectsNilSource(t *testing.T) {
+	fc := &fakeConverter{}
+	_, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{Source: nil, Bytes: []byte("x")})
+	if err == nil {
+		t.Fatal("expected nil-source error")
 	}
 }
 
-func TestExtractGoRejectsMalformedJSON(t *testing.T) {
-	_, err := ExtractGo(context.Background(), ExtractInput{
-		Source: &Source{ID: "src_0123456789abcdef", Kind: KindJSON, Filename: "broken.json"},
-		Bytes:  []byte(`{"broken":`),
+func TestExtractUploadedSource_PropagatesConverterError(t *testing.T) {
+	fc := &fakeConverter{err: errors.New("sidecar offline")}
+	_, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindCSV, MimeType: "text/csv"},
+		Bytes:  []byte("payload"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "parse json") {
-		t.Fatalf("error = %v, want parse json error", err)
+	if err == nil || !strings.Contains(err.Error(), "sidecar offline") {
+		t.Fatalf("expected sidecar error to propagate, got %v", err)
 	}
 }
 
-func TestWriteExtractionFiles(t *testing.T) {
-	store, err := NewStore(t.TempDir(), nil)
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
-	src, _, err := store.Put(context.Background(), PutInput{
-		Kind:     KindText,
-		Filename: "notes.txt",
-		MimeType: "text/plain",
-		Bytes:    []byte("Alpha"),
+func TestExtractUploadedSource_NormalizesTrailingNewline(t *testing.T) {
+	fc := &fakeConverter{response: markitdown.ConvertResult{Markdown: "# hello"}}
+	res, err := ExtractUploadedSource(context.Background(), fc, ExtractInput{
+		Source: &Source{ID: "src_0123456789abcdef", Kind: KindCSV, MimeType: "text/csv"},
+		Bytes:  []byte("payload"),
 	})
 	if err != nil {
-		t.Fatalf("Put: %v", err)
+		t.Fatalf("ExtractUploadedSource: %v", err)
 	}
-	if err := WriteExtractionFiles(store, src, ExtractResult{
-		Markdown: "Alpha\n",
-		Metadata: ExtractionMeta{ExtractorName: "go_text", TextBytes: 5},
-	}); err != nil {
-		t.Fatalf("WriteExtractionFiles: %v", err)
-	}
-	md, err := os.ReadFile(store.Path(src.ID, ExtractMarkdownFile))
-	if err != nil {
-		t.Fatalf("read extract.md: %v", err)
-	}
-	if string(md) != "Alpha\n" {
-		t.Fatalf("extract.md = %q", md)
-	}
-	metaBytes, err := os.ReadFile(store.Path(src.ID, ExtractJSONFile))
-	if err != nil {
-		t.Fatalf("read extract.json: %v", err)
-	}
-	var meta ExtractionMeta
-	if err := json.Unmarshal(metaBytes, &meta); err != nil {
-		t.Fatalf("parse extract.json: %v", err)
-	}
-	if meta.ExtractorName != "go_text" || meta.TextBytes != 5 {
-		t.Fatalf("metadata = %+v", meta)
+	if res.Markdown != "# hello\n" {
+		t.Fatalf("markdown = %q, want trailing newline normalized", res.Markdown)
 	}
 }

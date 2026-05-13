@@ -239,7 +239,9 @@ func shouldRetryDuplicateExtraction(src *source.Source) bool {
 
 func extractableUploadKind(kind source.Kind) bool {
 	switch kind {
-	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV, source.KindXLSX, source.KindDOCX:
+	case source.KindText, source.KindMarkdown, source.KindJSON, source.KindCSV,
+		source.KindXLSX, source.KindDOCX, source.KindPPTX,
+		source.KindEPUB, source.KindHTML, source.KindZIP:
 		return true
 	default:
 		return false
@@ -247,7 +249,7 @@ func extractableUploadKind(kind source.Kind) bool {
 }
 
 func extractUploadedSource(ctx context.Context, deps Deps, src *source.Source, body []byte) (*source.Source, string, error) {
-	res, err := source.ExtractUploadedSource(ctx, deps.Extractor, source.ExtractInput{Source: src, Bytes: body})
+	res, err := source.ExtractUploadedSource(ctx, deps.Markitdown, source.ExtractInput{Source: src, Bytes: body})
 	if err != nil {
 		updated, _ := upsertSourceStatus(deps.Sources, src.ID, source.StatusFailed, err.Error())
 		if updated == nil {

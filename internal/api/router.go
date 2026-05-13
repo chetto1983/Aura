@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
@@ -53,7 +54,7 @@ type Deps struct {
 	Scheduler   scheduler.Repository
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
-	Extractor   source.SandboxExtractor
+	Markitdown  markitdown.Converter
 	Auth        auth.DashboardRepository
 	Allowlist   auth.AllowlistFunc
 	MaxUploadMB int // upper bound enforced by /sources/upload; 0 means use default 100

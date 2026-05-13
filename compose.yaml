@@ -51,6 +51,8 @@ services:
       EMBEDDING_MODEL: "embeddinggemma"
       EMBEDDING_API_KEY: "no-key"
       EMBEDDING_OUTPUT_DIM: "256"
+      MARKITDOWN_URL: "http://aura-markitdown:3001"
+      MARKITDOWN_TIMEOUT_SEC: "120"
       TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-hybrid}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
@@ -77,6 +79,8 @@ services:
       qdrant:
         condition: service_started
       aura-llama-embed:
+        condition: service_started
+      aura-markitdown:
         condition: service_started
 
   searxng:
@@ -164,6 +168,45 @@ services:
       - "127.0.0.1:${LLAMA_EMBED_HOST_PORT:-8081}:8080"
     volumes:
       - ./data:/models:ro
+
+  # markitdown-mcp sidecar — replaces Aura's hand-rolled extractor zoo
+  # (ExtractGo for text/md/json/csv + Python sandbox for xlsx/docx) with
+  # Microsoft's markitdown via JSON-RPC 2.0 over Streamable HTTP.
+  #
+  # Wave 2.9 wire: Aura's internal/markitdown client POSTs convert_to_markdown
+  # calls to /mcp with the source bytes encoded as a data:<mime>;base64,<...>
+  # URI. The URL converter is reachable from inside the container but never
+  # invoked directly by Aura — web_fetch always pulls bytes first so the SSRF
+  # gate stays at Aura's boundary.
+  #
+  # Image and audio converters are intentionally left untouched here. Wave
+  # 2.9 rejects KindImage uploads at the source layer; Wave 2.9.5 will wire
+  # an OCRBackend selector that the markitdown image converter can call.
+  aura-markitdown:
+    build:
+      context: ./docker/markitdown
+      dockerfile: Dockerfile
+    image: aura-markitdown:local
+    restart: unless-stopped
+    command: ["markitdown-mcp", "--http", "--host", "0.0.0.0", "--port", "3001"]
+    environment:
+      # Plugins disabled by default — only the converters in the upstream
+      # markitdown core run. Re-enable via dashboard if a user installs a
+      # custom plugin under ./docker/markitdown/plugins/.
+      MARKITDOWN_ENABLE_PLUGINS: "False"
+    ports:
+      - "127.0.0.1:${MARKITDOWN_HOST_PORT:-3001}:3001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
 
   test:
     build:

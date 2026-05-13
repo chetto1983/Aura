@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/source"
 	tele "gopkg.in/telebot.v4"
@@ -37,31 +38,31 @@ type AfterOCRHook func(ctx context.Context, src *source.Source) (note string, er
 
 // docHandlerConfig is the per-Bot wiring for slice 4 (Telegram → OCR).
 type docHandlerConfig struct {
-	Bot       *tele.Bot
-	Sources   source.Repository
-	OCR       *ocr.Client // may be nil if MISTRAL_API_KEY missing
-	Extractor source.SandboxExtractor
-	MaxFileMB int
-	AfterOCR  AfterOCRHook
-	Allowlist func(userID string) bool
-	Logger    *slog.Logger
+	Bot        *tele.Bot
+	Sources    source.Repository
+	OCR        *ocr.Client // may be nil if MISTRAL_API_KEY missing
+	Markitdown markitdown.Converter
+	MaxFileMB  int
+	AfterOCR   AfterOCRHook
+	Allowlist  func(userID string) bool
+	Logger     *slog.Logger
 }
 
 type docHandler struct {
-	bot       *tele.Bot
-	sources   source.Repository
-	ocr       *ocr.Client
-	extractor source.SandboxExtractor
-	maxFileMB int
-	afterOCR  AfterOCRHook
-	allowed   func(string) bool
-	logger    *slog.Logger
-	sem       chan struct{}
-	mu        sync.Mutex
-	closed    bool
-	wg        sync.WaitGroup // tracks in-flight workers for graceful shutdown
-	ctx       context.Context
-	cancel    context.CancelFunc
+	bot        *tele.Bot
+	sources    source.Repository
+	ocr        *ocr.Client
+	markitdown markitdown.Converter
+	maxFileMB  int
+	afterOCR   AfterOCRHook
+	allowed    func(string) bool
+	logger     *slog.Logger
+	sem        chan struct{}
+	mu         sync.Mutex
+	closed     bool
+	wg         sync.WaitGroup // tracks in-flight workers for graceful shutdown
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func newDocHandler(cfg docHandlerConfig) *docHandler {
@@ -70,17 +71,17 @@ func newDocHandler(cfg docHandlerConfig) *docHandler {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &docHandler{
-		bot:       cfg.Bot,
-		sources:   cfg.Sources,
-		ocr:       cfg.OCR,
-		extractor: cfg.Extractor,
-		maxFileMB: cfg.MaxFileMB,
-		afterOCR:  cfg.AfterOCR,
-		allowed:   cfg.Allowlist,
-		logger:    cfg.Logger,
-		sem:       make(chan struct{}, docConcurrencyLimit),
-		ctx:       ctx,
-		cancel:    cancel,
+		bot:        cfg.Bot,
+		sources:    cfg.Sources,
+		ocr:        cfg.OCR,
+		markitdown: cfg.Markitdown,
+		maxFileMB:  cfg.MaxFileMB,
+		afterOCR:   cfg.AfterOCR,
+		allowed:    cfg.Allowlist,
+		logger:     cfg.Logger,
+		sem:        make(chan struct{}, docConcurrencyLimit),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -203,7 +204,7 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 
 	if dup {
 		if shouldRetryDocumentExtraction(src) {
-			res, err := source.ExtractUploadedSource(ctx, h.extractor, source.ExtractInput{Source: src, Bytes: pdfBytes})
+			res, err := source.ExtractUploadedSource(ctx, h.markitdown, source.ExtractInput{Source: src, Bytes: pdfBytes})
 			if err != nil {
 				_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
 					s.Status = source.StatusFailed
@@ -239,7 +240,7 @@ func (h *docHandler) process(ctx context.Context, userID string, doc *tele.Docum
 	}
 
 	if format.Kind != source.KindPDF {
-		res, err := source.ExtractUploadedSource(ctx, h.extractor, source.ExtractInput{Source: src, Bytes: pdfBytes})
+		res, err := source.ExtractUploadedSource(ctx, h.markitdown, source.ExtractInput{Source: src, Bytes: pdfBytes})
 		if err != nil {
 			_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
 				s.Status = source.StatusFailed

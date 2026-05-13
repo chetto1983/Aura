@@ -7,6 +7,8 @@ import (
 )
 
 const DefaultSearXNGBaseURL = "http://127.0.0.1:8088"
+const DefaultMarkitdownURL = "http://127.0.0.1:3001"
+const DefaultMarkitdownTimeoutSec = 120
 const DefaultQdrantCollection = "aura_memory_v1"
 const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
@@ -56,6 +58,8 @@ type Config struct {
 	LLMMaxRetries         int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
 	WebSearchProvider     string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
 	SearXNGBaseURL        string  `envconfig:"SEARXNG_BASE_URL"`
+	MarkitdownURL         string  `envconfig:"MARKITDOWN_URL"`
+	MarkitdownTimeoutSec  int     `envconfig:"MARKITDOWN_TIMEOUT_SEC" default:"120"`
 	GarageS3Endpoint      string  `envconfig:"GARAGE_S3_ENDPOINT"`
 	GarageS3Region        string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
 	GarageS3Bucket        string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
@@ -227,6 +231,8 @@ func Load() (*Config, error) {
 
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(getEnv("WEB_SEARCH_PROVIDER", "disabled")))
 	cfg.SearXNGBaseURL = getEnv("SEARXNG_BASE_URL", DefaultSearXNGBaseURL)
+	cfg.MarkitdownURL = strings.TrimSpace(getEnv("MARKITDOWN_URL", DefaultMarkitdownURL))
+	cfg.MarkitdownTimeoutSec = getEnvInt("MARKITDOWN_TIMEOUT_SEC", DefaultMarkitdownTimeoutSec)
 	cfg.GarageS3Endpoint = getEnv("GARAGE_S3_ENDPOINT", "")
 	cfg.GarageS3Region = getEnv("GARAGE_S3_REGION", "garage")
 	cfg.GarageS3Bucket = getEnv("GARAGE_S3_BUCKET", "aura-artifacts")

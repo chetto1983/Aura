@@ -29,14 +29,32 @@ const (
 	KindJSON     Kind = "json"
 	KindCSV      Kind = "csv"
 	KindURL      Kind = "url"
-	// KindXLSX covers XLSX files in the source store. Generated spreadsheets
-	// are written as ingested artifacts; uploaded spreadsheets are normalized
-	// before ingest during v1.2.
+	// KindXLSX covers XLSX files in the source store. Uploaded spreadsheets
+	// go through markitdown's xlsx converter (Wave 2.9); generated
+	// spreadsheets are written as ingested artifacts.
 	KindXLSX Kind = "xlsx"
-	// KindDOCX covers DOCX files in the source store. Generated documents are
-	// written as ingested artifacts; uploaded documents are normalized before
-	// ingest during v1.2.
+	// KindDOCX covers DOCX files in the source store. Uploaded documents
+	// go through markitdown's docx converter (Wave 2.9); generated
+	// documents are written as ingested artifacts.
 	KindDOCX Kind = "docx"
+	// KindPPTX covers PowerPoint decks. Markitdown extracts slide text +
+	// tables; embedded slide images are skipped until OCRBackend (2.9.5)
+	// is wired into markitdown's image converter.
+	KindPPTX Kind = "pptx"
+	// KindEPUB covers ebooks. Markitdown extracts chapter headings and
+	// paragraph text via ebooklib + bs4.
+	KindEPUB Kind = "epub"
+	// KindHTML covers raw HTML uploads. Markitdown strips tags via
+	// readabilipy + markdownify with link preservation.
+	KindHTML Kind = "html"
+	// KindZIP covers ZIP archives. Markitdown recurses members; Aura caps
+	// member count and uncompressed size to reject zip bombs before
+	// handing bytes to the sidecar.
+	KindZIP Kind = "zip"
+	// KindImage covers PNG / JPEG / WebP uploads. Wave 2.9 rejects these
+	// at the upload boundary; Wave 2.9.5 activates the path once an
+	// OCRBackend is selected from the dashboard.
+	KindImage Kind = "image"
 	// KindPDFGen is an Aura-generated PDF (slice 15c). Distinct from
 	// KindPDF (which marks user-uploaded PDFs that get OCR'd) so the
 	// LLM never tries to ingest_source a doc that has no ocr.md and so

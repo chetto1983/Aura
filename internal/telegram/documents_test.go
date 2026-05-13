@@ -11,45 +11,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/source"
 	tele "gopkg.in/telebot.v4"
 )
 
-type fakeDocumentSandboxExtractor struct {
-	calls        int
-	code         string
-	allowNetwork bool
-	errs         []error
+// fakeMarkitdown is a markitdown.Converter that returns canned markdown per
+// MIME type. Tests assert on calls + extract.md disk contents (per the
+// "tests verify the artifact, not the reply" rule).
+type fakeMarkitdown struct {
+	calls    int
+	errs     []error
+	xlsxBody string
+	docxBody string
 }
 
-func (r *fakeDocumentSandboxExtractor) ExtractXLSX(_ context.Context, _ []byte) (source.ExtractResult, error) {
-	r.calls++
-	if len(r.errs) > 0 {
-		err := r.errs[0]
-		r.errs = r.errs[1:]
+func (f *fakeMarkitdown) Convert(_ context.Context, in markitdown.ConvertInput) (markitdown.ConvertResult, error) {
+	f.calls++
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
 		if err != nil {
-			return source.ExtractResult{}, err
+			return markitdown.ConvertResult{}, err
 		}
 	}
-	return source.ExtractResult{
-		Markdown: "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_xlsx", SheetCount: 1, RowCount: 1},
-	}, nil
-}
-
-func (r *fakeDocumentSandboxExtractor) ExtractDOCX(_ context.Context, _ []byte) (source.ExtractResult, error) {
-	r.calls++
-	if len(r.errs) > 0 {
-		err := r.errs[0]
-		r.errs = r.errs[1:]
-		if err != nil {
-			return source.ExtractResult{}, err
+	switch {
+	case strings.Contains(in.MimeType, "spreadsheetml"):
+		md := f.xlsxBody
+		if md == "" {
+			md = "| item | cost |\n| --- | --- |\n| sandbox | 12 |\n"
 		}
+		return markitdown.ConvertResult{Markdown: md}, nil
+	case strings.Contains(in.MimeType, "wordprocessingml"):
+		md := f.docxBody
+		if md == "" {
+			md = "# Memo\n\nAura should remember decisions.\n"
+		}
+		return markitdown.ConvertResult{Markdown: md}, nil
+	default:
+		return markitdown.ConvertResult{Markdown: "# generic\n"}, nil
 	}
-	return source.ExtractResult{
-		Markdown: "# Memo\n\nAura should remember decisions.\n",
-		Metadata: source.ExtractionMeta{ExtractorName: "sandbox_docx", TextBytes: 39},
-	}, nil
 }
 
 func TestValidatePDFAcceptsPDF(t *testing.T) {
@@ -91,10 +92,16 @@ func TestValidateDocumentAcceptsUniversalFormats(t *testing.T) {
 }
 
 func TestValidateDocumentRejectsUnsupported(t *testing.T) {
-	doc := &tele.Document{File: tele.File{FileSize: 1024}, MIME: "application/octet-stream", FileName: "deck.pptx"}
-	_, err := validateDocument(doc, 100)
-	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
-		t.Fatalf("err = %v, want unsupported file type", err)
+	// Wave 2.9 accepts pptx + epub + html + zip via markitdown. mp3 is still
+	// out of scope (audio would need Whisper). Image formats are gated until
+	// Wave 2.9.5 wires the OCRBackend.
+	for _, name := range []string{"audio.mp3", "photo.png"} {
+		t.Run(name, func(t *testing.T) {
+			doc := &tele.Document{File: tele.File{FileSize: 1024}, MIME: "application/octet-stream", FileName: name}
+			if _, err := validateDocument(doc, 100); err == nil {
+				t.Fatalf("validateDocument(%q) err = nil, want rejection", name)
+			}
+		})
 	}
 }
 
@@ -348,8 +355,9 @@ func TestDocHandlerAuthorizedTextDocumentExtractsSource(t *testing.T) {
 	}
 	sources := newDocumentTestSourceStore(t)
 	h := newDocHandler(docHandlerConfig{
-		Bot:     tb,
-		Sources: sources,
+		Bot:        tb,
+		Sources:    sources,
+		Markitdown: &fakeMarkitdown{},
 		Allowlist: func(string) bool {
 			return true
 		},
@@ -399,11 +407,11 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentSandboxExtractor{}
+	runner := &fakeMarkitdown{}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
-		Extractor: runner,
+		Markitdown: runner,
 		Allowlist: func(string) bool {
 			return true
 		},
@@ -435,8 +443,8 @@ func TestDocHandlerAuthorizedXLSXDocumentExtractsSource(t *testing.T) {
 	if runner.calls != 1 {
 		t.Fatalf("runner calls=%d, want 1", runner.calls)
 	}
-	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_xlsx" {
-		t.Fatalf("source extraction metadata = %+v, want sandbox_xlsx", stored[0].Extract)
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "markitdown_xlsx" {
+		t.Fatalf("source extraction metadata = %+v, want markitdown_xlsx", stored[0].Extract)
 	}
 	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -460,11 +468,11 @@ func TestDocHandlerAuthorizedDOCXDocumentExtractsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentSandboxExtractor{}
+	runner := &fakeMarkitdown{}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
-		Extractor: runner,
+		Markitdown: runner,
 		Allowlist: func(string) bool {
 			return true
 		},
@@ -496,8 +504,8 @@ func TestDocHandlerAuthorizedDOCXDocumentExtractsSource(t *testing.T) {
 	if runner.calls != 1 {
 		t.Fatalf("runner calls=%d, want 1", runner.calls)
 	}
-	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_docx" {
-		t.Fatalf("source extraction metadata = %+v, want sandbox_docx", stored[0].Extract)
+	if stored[0].Extract == nil || stored[0].Extract.ExtractorName != "markitdown_docx" {
+		t.Fatalf("source extraction metadata = %+v, want markitdown_docx", stored[0].Extract)
 	}
 	extract, err := os.ReadFile(sources.Path(stored[0].ID, source.ExtractMarkdownFile))
 	if err != nil {
@@ -521,11 +529,11 @@ func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	sources := newDocumentTestSourceStore(t)
-	runner := &fakeDocumentSandboxExtractor{errs: []error{errors.New("sandbox unavailable")}}
+	runner := &fakeMarkitdown{errs: []error{errors.New("markitdown unavailable")}}
 	h := newDocHandler(docHandlerConfig{
 		Bot:       tb,
 		Sources:   sources,
-		Extractor: runner,
+		Markitdown: runner,
 		Allowlist: func(string) bool {
 			return true
 		},
@@ -567,7 +575,7 @@ func TestDocHandlerAuthorizedXLSXDocumentRetriesFailedDuplicate(t *testing.T) {
 	if runner.calls != 2 {
 		t.Fatalf("runner calls=%d, want failed attempt plus duplicate retry", runner.calls)
 	}
-	if stored[0].Error != "" || stored[0].Extract == nil || stored[0].Extract.ExtractorName != "sandbox_xlsx" {
+	if stored[0].Error != "" || stored[0].Extract == nil || stored[0].Extract.ExtractorName != "markitdown_xlsx" {
 		t.Fatalf("source after retry = %+v", stored[0])
 	}
 	if _, err := os.Stat(sources.Path(stored[0].ID, source.ExtractMarkdownFile)); err != nil {

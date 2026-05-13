@@ -42,6 +42,9 @@ const (
 	KeyLLMMaxRetries           = "LLM_MAX_RETRIES"
 	KeyWebSearchProvider       = "WEB_SEARCH_PROVIDER"
 	KeySearXNGBaseURL          = "SEARXNG_BASE_URL"
+	KeyMarkitdownURL           = "MARKITDOWN_URL"
+	KeyMarkitdownTimeoutSec    = "MARKITDOWN_TIMEOUT_SEC"
+	KeyOCRBackend              = "OCR_BACKEND"
 	KeyGarageS3Endpoint        = "GARAGE_S3_ENDPOINT"
 	KeyGarageS3Region          = "GARAGE_S3_REGION"
 	KeyGarageS3Bucket          = "GARAGE_S3_BUCKET"
@@ -103,6 +106,7 @@ func OverridableKeys() []string {
 		KeySoftBudget, KeyHardBudget, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
 		KeyLLMAPIKey, KeyLLMBaseURL, KeyLLMModel, KeyLLMMaxRetries,
 		KeyWebSearchProvider, KeySearXNGBaseURL,
+		KeyMarkitdownURL, KeyMarkitdownTimeoutSec, KeyOCRBackend,
 		KeyGarageS3Endpoint, KeyGarageS3Region, KeyGarageS3Bucket,
 		KeyGarageS3AccessKey, KeyGarageS3SecretKey,
 		KeyQdrantURL, KeyQdrantCollection, KeyQdrantAPIKey, KeyMemorySearchTimeoutMS,
@@ -181,6 +185,10 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 
 	cfg.WebSearchProvider = strings.ToLower(strings.TrimSpace(settingString(ctx, s, KeyWebSearchProvider, cfg.WebSearchProvider)))
 	cfg.SearXNGBaseURL = settingString(ctx, s, KeySearXNGBaseURL, cfg.SearXNGBaseURL)
+	cfg.MarkitdownURL = settingString(ctx, s, KeyMarkitdownURL, cfg.MarkitdownURL)
+	cfg.MarkitdownTimeoutSec = settingInt(ctx, s, KeyMarkitdownTimeoutSec, cfg.MarkitdownTimeoutSec)
+	// KeyOCRBackend is reserved for Wave 2.9.5. Aura reads but does not act on
+	// it yet — the row is dashboard-visible so users can pre-select.
 	cfg.GarageS3Endpoint = settingString(ctx, s, KeyGarageS3Endpoint, cfg.GarageS3Endpoint)
 	cfg.GarageS3Region = settingString(ctx, s, KeyGarageS3Region, cfg.GarageS3Region)
 	cfg.GarageS3Bucket = settingString(ctx, s, KeyGarageS3Bucket, cfg.GarageS3Bucket)
