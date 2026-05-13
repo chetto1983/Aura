@@ -11,6 +11,29 @@ services:
       - aura-wiki:/workspace/wiki
       - aura-skills:/workspace/skills
 
+  # aura-init-models — one-shot init container. Fetches large model artifacts
+  # (embedding GGUFs today, OCR weights in Wave 2.9.5) before sidecars that
+  # need them start. See docs/wave-2.10-install-bootstrap.md.
+  #
+  # Cache-hit (file present + SHA-256 matches) exits in ~1 s.
+  # Fresh download of embeddinggemma-300m-Q4_0.gguf is 265 MB; ~30-60 s on a
+  # typical residential link. Compose dependency keeps aura-llama-embed from
+  # starting until this container exits 0.
+  aura-init-models:
+    build:
+      context: .
+      dockerfile: docker/init-models/Dockerfile
+    image: aura-init-models:local
+    restart: "no"
+    environment:
+      AURA_MODELS_DIR: "/models"
+      # Operators with a private mirror or alternate quantization can override
+      # these without rebuilding. SHA256 MUST be re-pinned alongside the URL.
+      AURA_EMBEDDING_MODEL_URL: "${AURA_EMBEDDING_MODEL_URL:-}"
+      AURA_EMBEDDING_MODEL_SHA256: "${AURA_EMBEDDING_MODEL_SHA256:-}"
+    volumes:
+      - ./data:/models   # shared with aura-llama-embed (rw here, ro there)
+
   aura:
     build:
       context: .
@@ -168,6 +191,11 @@ services:
       - "127.0.0.1:${LLAMA_EMBED_HOST_PORT:-8081}:8080"
     volumes:
       - ./data:/models:ro
+    depends_on:
+      # Block startup until the model file is on disk + SHA-256 verified.
+      # Wave 2.10 — eliminates the cold-start crash loop on a fresh install.
+      aura-init-models:
+        condition: service_completed_successfully
 
   # markitdown-mcp sidecar — replaces Aura's hand-rolled extractor zoo
   # (ExtractGo for text/md/json/csv + Python sandbox for xlsx/docx) with
