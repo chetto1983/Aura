@@ -31,7 +31,6 @@ func main() {
 	liveWeb := flag.Bool("live-web", false, "run real web_search and web_fetch calls with WEB_SEARCH_PROVIDER")
 	var keepWorkspace bool
 	flag.BoolVar(&keepWorkspace, "keep-workspace", false, "keep the temporary workspace directory after the run")
-	flag.BoolVar(&keepWorkspace, "keep-wiki", false, "deprecated alias for -keep-workspace")
 	flag.Parse()
 
 	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {

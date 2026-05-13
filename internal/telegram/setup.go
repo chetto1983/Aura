@@ -756,12 +756,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
 
-	if cancelled, err := schedStore.Cancel(context.Background(), "nightly-auto-improve"); err != nil {
-		logger.Warn("failed to remove legacy auto-improve task", "err", err)
-	} else if cancelled {
-		logger.Info("legacy auto-improve task removed")
-	}
-
 	b.docs = newDocHandler(docHandlerConfig{
 		Bot:        tb,
 		Sources:    sourceStore,
