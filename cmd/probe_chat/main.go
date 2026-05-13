@@ -39,7 +39,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -138,6 +140,96 @@ func (e *Env) fetchSourceRaw(id string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// uploadSourceFile POSTs a binary to /api/sources/upload (multipart) and
+// returns the assigned source id. This is the bytes-of-the-artifact entry
+// point — the LLM is bypassed so Wave 2.9 markitdown probes can verify the
+// extract pipeline directly, without entangling the test with model
+// behavior. See [docs/wave-2.9-markitdown.md](docs/wave-2.9-markitdown.md).
+func (e *Env) uploadSourceFile(filename, mimeType string, body []byte) (id, status string, err error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	hdr.Set("Content-Type", mimeType)
+	part, err := mw.CreatePart(hdr)
+	if err != nil {
+		return "", "", fmt.Errorf("multipart create part: %w", err)
+	}
+	if _, err := part.Write(body); err != nil {
+		return "", "", fmt.Errorf("multipart write: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return "", "", fmt.Errorf("multipart close: %w", err)
+	}
+	url := strings.TrimRight(e.APIBase, "/") + "/sources/upload"
+	req, _ := http.NewRequest(http.MethodPost, url, &buf)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var ur struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &ur); err != nil {
+		return "", "", fmt.Errorf("decode upload response: %w", err)
+	}
+	return ur.ID, ur.Status, nil
+}
+
+// fetchSourceMarkdown returns the on-disk extract.md (or ocr.md for PDF
+// sources) for a given source id via /api/sources/{id}/markdown. The
+// endpoint reads the bytes off the filesystem inside the container, so this
+// is the disk-byte ground truth even when the wiki lives in a named volume
+// that the host can't bind-mount.
+func (e *Env) fetchSourceMarkdown(id string) (string, error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/sources/" + id + "/markdown"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var sm struct {
+		Markdown string `json:"markdown"`
+		File     string `json:"file"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sm); err != nil {
+		return "", fmt.Errorf("decode markdown response: %w", err)
+	}
+	return sm.Markdown, nil
+}
+
+// deleteSource removes a source via DELETE /api/sources/{id}. Used by Cleanup
+// hooks so each probe run starts with an empty wiki/raw for the test ID.
+func (e *Env) deleteSource(id string) error {
+	url := strings.TrimRight(e.APIBase, "/") + "/sources/" + id
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return nil
 }
 
 // extractTextFromZipEntry returns the concatenated text content of every
@@ -843,6 +935,286 @@ func allCases(now time.Time) []Case {
 				}
 				return miss
 			},
+		},
+
+		// =====================================================================
+		// Wave 2.9 — markitdown sidecar verification.
+		//
+		// Each case uploads a real binary directly to /api/sources/upload
+		// (bypassing the LLM), waits for the synchronous extract response,
+		// then fetches extract.md back via /api/sources/{id}/markdown and
+		// asserts that markitdown's output contains the format-specific
+		// must_include strings borrowed from the upstream markitdown test
+		// vectors (D:\tmp\markitdown\packages\markitdown\tests\_test_vectors.py).
+		//
+		// The prompt is a trivial no-op — the LLM is not under test here.
+		// All assertions read disk bytes via the API, not r.Reply.
+		// =====================================================================
+
+		// 9a. markitdown-xlsx-extract — workbook with three known sentinel UUIDs.
+		markitdownProbeCase(
+			"markitdown-xlsx-extract",
+			"sample.xlsx",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			[]string{
+				"## 09060124-b5e7-4717-9d07-3c046eb",
+				"6ff4173b-42a5-4784-9b19-f49caff4d93d",
+				"affc7dad-52dc-4b98-9b5d-51e65d8a8ad0",
+			},
+			nil,
+		),
+
+		// 9b. markitdown-docx-extract — Word doc with heading hierarchy +
+		//     sentinel UUIDs from the upstream fixture.
+		markitdownProbeCase(
+			"markitdown-docx-extract",
+			"sample.docx",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			[]string{
+				"314b0a30-5b04-470b-b9f7-eed2c2bec74a",
+				"## d666f1f7-46cb-42bd-9a39-9a39cf2a509f",
+				"# Abstract",
+				"# Introduction",
+				"AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
+			},
+			nil,
+		),
+
+		// 9c. markitdown-pptx-extract — PowerPoint deck with sentinel UUIDs
+		//     scattered across slides.
+		markitdownProbeCase(
+			"markitdown-pptx-extract",
+			"sample.pptx",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			[]string{
+				"2cdda5c8-e50e-4db4-b5f0-9722a649f455",
+				"04191ea8-5c73-4215-a1d3-1cfb43aaaf12",
+				"44bf7d06-5e7a-4a40-a2e1-a2e42ef28c8a",
+				"AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
+			},
+			nil,
+		),
+
+		// 9d. markitdown-epub-extract — EPUB with chapter headings + blockquote.
+		markitdownProbeCase(
+			"markitdown-epub-extract",
+			"sample.epub",
+			"application/epub+zip",
+			[]string{
+				"# Chapter 1: Test Content",
+				"# Chapter 2: More Content",
+				"This is a **test** paragraph with some formatting",
+				"> This is a blockquote for testing",
+			},
+			nil,
+		),
+
+		// 9e. markitdown-html-extract — synthetic HTML built in-memory with
+		//     a unique stamp so duplicate-detection doesn't collide between
+		//     runs. Markitdown should strip tags and preserve link text.
+		{
+			Name: "markitdown-html-extract",
+			Prompt: "Ok.",
+			Setup: func(env *Env) error {
+				body := []byte(fmt.Sprintf(`<!doctype html><html><head><title>Probe HTML</title></head>
+<body>
+  <h1>Wave 2.9 HTML probe %s</h1>
+  <p>This is a <strong>bold</strong> markitdown sentinel: HTML-PROBE-%s.</p>
+  <p>Link to <a href="https://example.com/aura">example</a>.</p>
+  <ul><li>alpha</li><li>beta</li><li>gamma-%s</li></ul>
+</body></html>`, stamp, stamp, stamp))
+				id, status, err := env.uploadSourceFile("probe-"+stamp+".html", "text/html", body)
+				if err != nil {
+					return fmt.Errorf("upload html: %w", err)
+				}
+				if status != "extract_complete" {
+					return fmt.Errorf("upload html status = %s, want extract_complete", status)
+				}
+				htmlProbeID = id
+				return nil
+			},
+			Verify: func(_ ChatReply, env *Env) []string {
+				var miss []string
+				if htmlProbeID == "" {
+					miss = append(miss, "html probe id not captured by Setup")
+					return miss
+				}
+				md, err := env.fetchSourceMarkdown(htmlProbeID)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch markdown %s: %v", htmlProbeID, err))
+					return miss
+				}
+				for _, want := range []string{
+					"Wave 2.9 HTML probe " + stamp,
+					"HTML-PROBE-" + stamp,
+					"example",
+					"gamma-" + stamp,
+				} {
+					if !strings.Contains(md, want) {
+						miss = append(miss, fmt.Sprintf("extract.md missing %q", want))
+					}
+				}
+				// Tag stripping: markitdown should not leak raw <p>/<h1> markup.
+				for _, leaked := range []string{"<h1>", "<p>", "<strong>", "<a href"} {
+					if strings.Contains(md, leaked) {
+						miss = append(miss, fmt.Sprintf("extract.md leaked raw HTML tag %q", leaked))
+					}
+				}
+				if hasMojibake(md) {
+					miss = append(miss, "extract.md contains mojibake")
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				if htmlProbeID != "" {
+					_ = env.deleteSource(htmlProbeID)
+					htmlProbeID = ""
+				}
+			},
+		},
+
+		// 9f. markitdown-zip-extract — ZIP archive built in-memory containing
+		//     two known members (csv + txt). Markitdown should walk both and
+		//     emit their content in one merged markdown.
+		{
+			Name: "markitdown-zip-extract",
+			Prompt: "Ok.",
+			Setup: func(env *Env) error {
+				var zbuf bytes.Buffer
+				zw := zip.NewWriter(&zbuf)
+				if w, err := zw.Create("data.csv"); err != nil {
+					return fmt.Errorf("zip create csv: %w", err)
+				} else if _, err := w.Write([]byte("city,population\nMilano,1396059\nRoma,2761632\nZIP-PROBE-" + stamp + ",1\n")); err != nil {
+					return fmt.Errorf("zip write csv: %w", err)
+				}
+				if w, err := zw.Create("readme.txt"); err != nil {
+					return fmt.Errorf("zip create txt: %w", err)
+				} else if _, err := w.Write([]byte("Wave 2.9 zip recursion test " + stamp + "\nAura should remember decisions.\n")); err != nil {
+					return fmt.Errorf("zip write txt: %w", err)
+				}
+				if err := zw.Close(); err != nil {
+					return fmt.Errorf("zip close: %w", err)
+				}
+				id, status, err := env.uploadSourceFile("probe-"+stamp+".zip", "application/zip", zbuf.Bytes())
+				if err != nil {
+					return fmt.Errorf("upload zip: %w", err)
+				}
+				if status != "extract_complete" {
+					return fmt.Errorf("upload zip status = %s, want extract_complete", status)
+				}
+				zipProbeID = id
+				return nil
+			},
+			Verify: func(_ ChatReply, env *Env) []string {
+				var miss []string
+				if zipProbeID == "" {
+					miss = append(miss, "zip probe id not captured by Setup")
+					return miss
+				}
+				md, err := env.fetchSourceMarkdown(zipProbeID)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch markdown %s: %v", zipProbeID, err))
+					return miss
+				}
+				// Both members must surface in the merged extract.
+				for _, want := range []string{
+					"ZIP-PROBE-" + stamp,
+					"Milano",
+					"Roma",
+					"Aura should remember decisions",
+					"Wave 2.9 zip recursion test " + stamp,
+				} {
+					if !strings.Contains(md, want) {
+						miss = append(miss, fmt.Sprintf("extract.md missing %q (zip member not extracted)", want))
+					}
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				if zipProbeID != "" {
+					_ = env.deleteSource(zipProbeID)
+					zipProbeID = ""
+				}
+			},
+		},
+	}
+}
+
+// markitdownProbeIDs is module-level scratch space for the Setup→Verify
+// handoff. Each fixture-based probe captures the upload's source_id in
+// Setup and reads it back in Verify. Module-level scope is fine because
+// runAll processes cases sequentially (loop in runAll, no parallelism).
+var (
+	htmlProbeID string
+	zipProbeID  string
+)
+
+// markitdownProbeCase builds a Case that uploads a fixture file from
+// testdata/markitdown/, then asserts that every must_include string appears
+// in the resulting extract.md. Verify reads disk bytes via the API — never
+// the LLM reply.
+func markitdownProbeCase(name, fixture, mimeType string, mustInclude, mustNotInclude []string) Case {
+	var sourceID string
+	return Case{
+		Name: name,
+		// The LLM gets a trivial prompt because the actual assertion runs
+		// against the upload pipeline, not the chat path. Setup uploads
+		// the binary; Verify reads extract.md back via the dashboard API.
+		Prompt: "Ok.",
+		Setup: func(env *Env) error {
+			path := filepath.Join("cmd", "probe_chat", "testdata", "markitdown", fixture)
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read fixture %s: %w", path, err)
+			}
+			// Use a per-run filename so duplicate-detection doesn't collide
+			// when probes re-run. Stamp suffix lives in the closure.
+			now := time.Now().UTC().Format("20060102-150405")
+			uploadName := strings.TrimSuffix(fixture, filepath.Ext(fixture)) + "-" + now + filepath.Ext(fixture)
+			id, status, err := env.uploadSourceFile(uploadName, mimeType, body)
+			if err != nil {
+				return fmt.Errorf("upload %s: %w", fixture, err)
+			}
+			if status != "extract_complete" {
+				return fmt.Errorf("upload status = %s, want extract_complete (markitdown sidecar may be down)", status)
+			}
+			sourceID = id
+			return nil
+		},
+		Verify: func(_ ChatReply, env *Env) []string {
+			var miss []string
+			if sourceID == "" {
+				miss = append(miss, "source id not captured by Setup (upload failed)")
+				return miss
+			}
+			md, err := env.fetchSourceMarkdown(sourceID)
+			if err != nil {
+				miss = append(miss, fmt.Sprintf("fetch markdown %s: %v", sourceID, err))
+				return miss
+			}
+			for _, want := range mustInclude {
+				if !strings.Contains(md, want) {
+					miss = append(miss, fmt.Sprintf("extract.md missing %q", want))
+				}
+			}
+			for _, banned := range mustNotInclude {
+				if strings.Contains(md, banned) {
+					miss = append(miss, fmt.Sprintf("extract.md unexpectedly contains %q", banned))
+				}
+			}
+			if hasMojibake(md) {
+				miss = append(miss, "extract.md contains mojibake (encoding regression)")
+			}
+			if len(md) < 50 {
+				miss = append(miss, fmt.Sprintf("extract.md is suspiciously short (%d bytes) — markitdown likely returned an empty body", len(md)))
+			}
+			return miss
+		},
+		Cleanup: func(env *Env) {
+			if sourceID != "" {
+				_ = env.deleteSource(sourceID)
+				sourceID = ""
+			}
 		},
 	}
 }
