@@ -29,6 +29,7 @@ import (
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"
+	"github.com/aura/aura/internal/toolindex"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 
@@ -64,6 +65,10 @@ type Bot struct {
 	sandboxMgr          sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
 	toolReg             tools.ToolStore                  // persistent LLM-written Python tools
 	reindex             *reindex.Worker                  // optional; nil when search engine is unavailable (Phase 2 INDEX-01)
+	toolReconciler      *toolindex.Reconciler            // Wave 2.10.b — keeps tool embedding index in sync with the registry
+	bgCtx               context.Context                  // long-lived ctx for toolReconciler.Run + mcpwatch
+	bgCancel            context.CancelFunc               // cancels bgCtx during Stop()
+	bgWg                sync.WaitGroup                   // wait for background goroutines on Stop()
 	compactMemoryHealth interface {
 		Snapshot() memoryindex.VectorHealth
 	}
@@ -247,6 +252,13 @@ func (b *Bot) Stop() {
 	if b.reindex != nil {
 		b.reindex.Stop() // cancels in-flight Reindex; waits for drain goroutine exit
 	}
+	// Wave 2.10.b — cancel background goroutines (toolReconciler + mcpwatch)
+	// and wait for them to exit before returning. Safe even when bgCancel is
+	// nil (e.g. constructed-but-never-started in tests).
+	if b.bgCancel != nil {
+		b.bgCancel()
+	}
+	b.bgWg.Wait()
 	for i, c := range b.mcpClients {
 		if c == nil {
 			continue

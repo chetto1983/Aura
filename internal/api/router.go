@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"
+	"github.com/aura/aura/internal/toolindex"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -92,6 +93,12 @@ type Deps struct {
 	EmbedCache    search.EmbedCacheStatsReader
 	CompactMemory CompactMemoryHealthReader
 	Sandbox       SandboxHealth
+
+	// ToolReconciler — Wave 2.10.b. Backs POST /api/tools/reindex and is
+	// notified on skill install/delete success. Optional: when nil, the
+	// reindex endpoint returns 503 and skill admin handlers run without
+	// firing reconcile (next periodic safety-net catches the change).
+	ToolReconciler *toolindex.Reconciler
 
 	// SourcePurger purges memoryindex rows (and their Qdrant mirror) for a
 	// given source_id. Wired alongside Sources so DELETE /sources/{id} can
@@ -248,6 +255,10 @@ func NewRouter(deps Deps) http.Handler {
 	// the gate — operators trust the servers they wired into mcp.json
 	// since the LLM can already call them, so no extra admin flag.
 	mux.HandleFunc("POST /mcp/{server}/tools/{tool}", handleMCPInvoke(deps))
+
+	// Wave 2.10.b — manual tool-index reindex. Synchronous; returns the
+	// reconcile Report as JSON. Bearer-gated like everything else.
+	mux.HandleFunc("POST /tools/reindex", handleToolsReindex(deps))
 
 	// Slice 10d: auth endpoints. Both authed — there's intentionally no
 	// public /auth/login route. Tokens enter the dashboard through the

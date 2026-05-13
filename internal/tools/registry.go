@@ -108,6 +108,21 @@ func (r *Registry) Get(name string) Tool {
 	return r.tools[name]
 }
 
+// Unregister removes a tool by name. Returns true when a tool was actually
+// removed, false when no such tool existed. Used by Wave 2.10.b's
+// toolindex reconciler path to drop MCP tools whose server disappeared
+// from mcp.json (today this is invoked at server-reload time; the
+// reconciler then deletes the matching Qdrant point + state row).
+func (r *Registry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tools[name]; !ok {
+		return false
+	}
+	delete(r.tools, name)
+	return true
+}
+
 // Names returns all registered tool names in deterministic order.
 func (r *Registry) Names() []string {
 	r.mu.RLock()
@@ -270,6 +285,33 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 // currently registered tools. When cfg.Backend is "fts" or the registry
 // is nil, it is a no-op. Readiness and build errors are non-fatal: vector
 // search degrades gracefully to FTS when the index is unavailable.
+// PrepareVectorReader (Wave 2.10.b) wires the *ToolVectorIndex onto the
+// registry as the SEARCH path only — no idx.Build() call, no Qdrant
+// writes. The toolindex.Reconciler owns the write path now; this method
+// just hooks up the query-side client so Registry.Search can do vector
+// cosine against the collection the Reconciler maintains.
+//
+// Pattern split:
+//   - BuildVectorIndex (legacy, kept for tests + non-2.10.b callers):
+//     reader + writer in one call. Still used when no Reconciler is wired.
+//   - PrepareVectorReader (this method): reader only. Boot wires
+//     this + toolindex.Reconciler in tandem; the legacy BuildVectorIndex
+//     is skipped to avoid double-writes with mismatched dimensions.
+func (r *Registry) PrepareVectorReader(cfg ToolVectorConfig) {
+	if r == nil || cfg.Backend == "fts" {
+		return
+	}
+	idx := NewToolVectorIndex(cfg, r.logger)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := idx.Ready(ctx); err != nil {
+		r.logger.Warn("tool vector reader not ready, falling back to fts", "error", err)
+		return
+	}
+	r.SetVectorIndex(idx)
+	r.logger.Info("tool vector reader wired (writes via toolindex.Reconciler)", "backend", cfg.Backend)
+}
+
 func (r *Registry) BuildVectorIndex(cfg ToolVectorConfig) {
 	if r == nil || cfg.Backend == "fts" {
 		return

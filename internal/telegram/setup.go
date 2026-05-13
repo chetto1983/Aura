@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/mcppolicy"
+	"github.com/aura/aura/internal/mcpwatch"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/qdrant"
@@ -37,6 +38,7 @@ import (
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/swarmtools"
+	"github.com/aura/aura/internal/toolindex"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
@@ -464,6 +466,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 	authStore.SetTokenTTL(time.Duration(cfg.DashboardTokenTTLHours) * time.Hour)
 
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	b := &Bot{
 		bot:                 tb,
 		cfg:                 cfg,
@@ -476,6 +479,8 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		sources:             sourceStore,
 		ocr:                 ocrClient,
 		skills:              skillLoader,
+		bgCtx:               bgCtx,
+		bgCancel:            bgCancel,
 		schedDB:             schedStore,
 		agentRunner:         auraRunner,
 		swarmStore:          swarmStore,
@@ -586,16 +591,89 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	// 2026-05-12 benchmark: embed cosine top-5 hits 90% Hit@5 on 64 labeled
 	// queries vs 50% for BM25 alone — vector backend pulls real weight even
 	// though mini-LLM rerankers proved unusable on CPU (p95 ≥ 1500ms).
-	toolRegistry.BuildVectorIndex(tools.ToolVectorConfig{
+	// Wave 2.10.b — Reconciler is the source of truth for the tool
+	// embedding index. BuildVectorIndex (legacy, embeds at full native
+	// dim) is skipped when the Reconciler is wired so we don't get a
+	// dim-mismatch double-write. The legacy path stays in tree for tests
+	// that don't spin up the full Reconciler stack.
+	toolReaderConfig := tools.ToolVectorConfig{
 		Backend:      cfg.ToolSearchBackend,
 		TopK:         cfg.ToolSearchTopK,
 		QdrantURL:    cfg.QdrantURL,
 		QdrantAPIKey: cfg.QdrantAPIKey,
-		Collection:   "aura_tool_search_v2",
+		Collection:   tools.ToolSearchCollection,
 		EmbedBaseURL: cfg.EmbeddingBaseURL,
 		EmbedAPIKey:  cfg.EmbeddingAPIKey,
 		EmbedModel:   cfg.EmbeddingModel,
-	})
+	}
+	reconcilerWired := false
+	if qdrantCli != nil && embedCache != nil && cfg.ToolSearchBackend != "fts" {
+		reconciler, err := toolindex.New(toolindex.Config{
+			Provider:    toolRegistry,
+			Qdrant:      qdrantCli,
+			Embedder:    embedCache,
+			State:       toolindex.NewSQLiteStateStore(pool),
+			Collection:  tools.ToolSearchCollection,
+			VectorDim:   tools.ToolVectorDim(cfg.EmbeddingOutputDim),
+			EmbedModel:  search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel),
+			EmbedTextFn: tools.SearchableEmbeddingTextForLLMDef,
+			PointIDFn:   tools.ToolQdrantPointID,
+			Logger:      logger.With("component", "toolindex"),
+		})
+		if err != nil {
+			logger.Warn("tool index reconciler unavailable", "error", err)
+		} else {
+			rep := reconciler.Reconcile(context.Background(), toolindex.ReasonBoot)
+			logger.Info("tool index reconciled at boot",
+				"upserted", len(rep.Upserted), "deleted", len(rep.Deleted),
+				"unchanged", rep.Unchanged, "errors", len(rep.Errors),
+				"elapsed_ms", rep.ElapsedMs)
+			for i, e := range rep.Errors {
+				logger.Warn("tool index reconcile error", "idx", i, "err", e)
+			}
+			b.toolReconciler = reconciler
+			reconcilerWired = true
+			b.bgWg.Add(1)
+			go func() {
+				defer b.bgWg.Done()
+				reconciler.Run(b.bgCtx)
+			}()
+
+			// fsnotify on mcp.json — debounced notification when the
+			// operator edits the file. Wave 2.10.c will pair this with
+			// MCP server reload; today the watcher just triggers a
+			// reconcile pass so the operator sees confirmation in logs.
+			if cfg.MCPServersPath != "" {
+				watcher, werr := mcpwatch.New(mcpwatch.Config{
+					Path:     cfg.MCPServersPath,
+					Callback: func() { reconciler.Notify(toolindex.ReasonMCPConfig) },
+					Logger:   logger.With("component", "mcpwatch"),
+				})
+				if werr != nil {
+					logger.Warn("mcp.json watcher unavailable", "error", werr)
+				} else {
+					b.bgWg.Add(1)
+					go func() {
+						defer b.bgWg.Done()
+						if rerr := watcher.Run(b.bgCtx); rerr != nil {
+							logger.Warn("mcpwatch exited with error", "error", rerr)
+						}
+					}()
+				}
+			}
+		}
+	}
+
+	// Wire the *ToolVectorIndex on the registry for the search path.
+	// When the Reconciler is up, we use PrepareVectorReader (no Build,
+	// no Qdrant writes — the Reconciler owns those). When the Reconciler
+	// isn't available, fall back to the legacy BuildVectorIndex (reader
+	// + writer in one call) so search still works in degraded mode.
+	if reconcilerWired {
+		toolRegistry.PrepareVectorReader(toolReaderConfig)
+	} else {
+		toolRegistry.BuildVectorIndex(toolReaderConfig)
+	}
 
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the
@@ -769,6 +847,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		EmbedCache:    embedCache,
 		CompactMemory: compactVectorHealth,
 		Sandbox:       sandboxHealth,
+		// ToolReconciler backs POST /api/tools/reindex and is notified
+		// on skill install/delete success (Wave 2.10.b). Nil when
+		// QDRANT_URL or EMBEDDING_API_KEY is unset; the reindex
+		// endpoint returns 503 in that case.
+		ToolReconciler: b.toolReconciler,
 		// SourcePurger lets DELETE /sources/{id} clean up the compact
 		// memoryindex (and its Qdrant mirror) after removing the raw
 		// files. Same store as the delete_source LLM tool.
@@ -837,6 +920,17 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 
 	b.registerHandlers()
 	b.installBotCommands()
+
+	// Wave 2.10.b — late notify. The early boot Reconcile ran before
+	// some tools were registered (search_memory, doc, daily_briefing,
+	// wiki_page, request_dashboard_token, and more wire after b.api +
+	// after the dependency-graph resolution finishes). Fire one final
+	// Notify here so the debounced reconcile picks up every tool that
+	// landed in the registry during setup. No-op when the Reconciler
+	// isn't wired (QDRANT_URL / EMBEDDING_API_KEY missing).
+	if b.toolReconciler != nil {
+		b.toolReconciler.Notify(toolindex.ReasonBoot)
+	}
 	return b, nil
 }
 

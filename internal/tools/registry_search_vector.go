@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/qdrant"
 )
 
@@ -68,12 +69,46 @@ type ToolVectorIndex struct {
 	logger *slog.Logger
 }
 
+// ToolSearchCollection is the canonical Qdrant collection name used by
+// both the legacy BuildVectorIndex reader and the Wave 2.10.b
+// toolindex.Reconciler writer. Exported so boot wiring + tests reference
+// the same constant.
+const ToolSearchCollection = "aura_tool_search_v2"
+
+// ToolVectorDim returns the embedding dimension to declare when creating
+// the Qdrant collection. embedOutputDim is the cfg.EmbeddingOutputDim
+// passed by the operator (0 = full native dim of the embedding model).
+// Aura targets 256 in production (Matryoshka truncation of embeddinggemma).
+func ToolVectorDim(embedOutputDim int) int {
+	if embedOutputDim > 0 {
+		return embedOutputDim
+	}
+	// Native embeddinggemma-300m dim. Falls back here when the operator
+	// has not set EMBEDDING_OUTPUT_DIM (rare; compose ships 256).
+	return 768
+}
+
+// SearchableEmbeddingTextForLLMDef is the public wrapper around the
+// package-private renderer the Reconciler uses to compute the per-tool
+// embedding input. Accepts llm.ToolDefinition so callers outside the
+// tools package (toolindex.Reconciler in particular) don't need to depend
+// on the internal tools.ToolDefinition type. The Examples field is empty
+// at this boundary; the renderer treats that as a no-op, so the
+// resulting bytes are identical to what BuildVectorIndex hashed.
+func SearchableEmbeddingTextForLLMDef(def llm.ToolDefinition) string {
+	return searchableToolEmbeddingText(ToolDefinition{
+		Name:        def.Name,
+		Description: def.Description,
+		Parameters:  def.Parameters,
+	})
+}
+
 func NewToolVectorIndex(cfg ToolVectorConfig, logger *slog.Logger) *ToolVectorIndex {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if cfg.Collection == "" {
-		cfg.Collection = "aura_tool_search_v2"
+		cfg.Collection = ToolSearchCollection
 	}
 	if cfg.Backend == "" {
 		cfg.Backend = "fts"
@@ -357,6 +392,15 @@ func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]floa
 		}
 	}
 	return vectors, nil
+}
+
+// ToolQdrantPointID is exported so toolindex.Reconciler can derive the
+// SAME point ID for a given tool name as the legacy BuildVectorIndex
+// path. Identical IDs mean the two paths upsert into the same row in
+// Qdrant; without this alignment a fresh-boot install could leave two
+// points per tool (one from each writer) until the next reconcile.
+func ToolQdrantPointID(name string) string {
+	return toolQdrantPointID(name)
 }
 
 func toolQdrantPointID(name string) string {

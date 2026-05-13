@@ -20,6 +20,7 @@ var registered = []Migration{
 	{Version: 2, Name: "backfill_current_columns", Up: backfillCurrentColumns},
 	{Version: 3, Name: "add_api_token_expiry", Up: addAPITokenExpiry},
 	{Version: 4, Name: "add_compact_memory_index", Up: addCompactMemoryIndex},
+	{Version: 5, Name: "add_tool_index_state", Up: addToolIndexState},
 }
 
 type columnDef struct {
@@ -420,6 +421,29 @@ func addAPITokenExpiry(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE api_tokens SET expires_at = ? WHERE token_hash = ?`, update.expiresAt, update.hash); err != nil {
 			return fmt.Errorf("migrations: update api token expiry: %w", err)
 		}
+	}
+	return nil
+}
+
+// addToolIndexState creates the tool_index_state table used by
+// internal/toolindex.Reconciler to diff the live tool registry against the
+// indexed set in Qdrant. Qdrant has no scroll API, so this table is the
+// authoritative "what is currently indexed" set; reconcile reads it,
+// computes the upsert/delete buckets, and writes back atomically.
+func addToolIndexState(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS tool_index_state (
+  tool_name    TEXT PRIMARY KEY,
+  content_hash TEXT NOT NULL,
+  point_id     TEXT NOT NULL,
+  embed_model  TEXT NOT NULL,
+  indexed_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_index_state_hash
+  ON tool_index_state(content_hash);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add tool_index_state: %w", err)
 	}
 	return nil
 }
