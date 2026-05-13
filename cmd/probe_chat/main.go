@@ -41,6 +41,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -677,23 +678,35 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
-		// 8b. file-roundtrip — exercise the unified file tool: write a
-		//     marker file under workspace, then read it back, then list
-		//     its directory. Verifies action enum dispatches correctly
-		//     and the file content survives byte-for-byte.
+		// 8b. file-roundtrip — exercise the unified file tool AND verify
+		//     the bytes-on-disk match the requested content. The probe
+		//     reads the host-side bind mount (runtime-workspace/) so we
+		//     never trust the LLM's reply text — only the artifact.
 		{
-			Name:   "file-write-read-list-roundtrip",
-			Prompt: fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
+			Name:   "file-write-read-roundtrip",
+			Prompt: fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto esatto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
 					miss = append(miss, "expected at least 1 tool call (file write+read)")
 				}
-				reply := r.Reply
-				if !strings.Contains(reply, "PROBE-"+stamp) {
-					miss = append(miss, fmt.Sprintf("reply does not echo PROBE-%s", stamp))
+				// Ground truth: the file must exist on the workspace bind
+				// mount with the expected content. Tool said it; verify it.
+				hostPath := filepath.Join("runtime-workspace", "notes", "probe-"+stamp+".md")
+				body, err := os.ReadFile(hostPath)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("ground truth: file %s missing on disk (%v)", hostPath, err))
+					return miss
+				}
+				want := "Wave 2.7e marker PROBE-" + stamp + " alpha beta gamma"
+				got := strings.TrimSpace(string(body))
+				if got != want {
+					miss = append(miss, fmt.Sprintf("disk content mismatch:\n  got:  %q\n  want: %q", got, want))
 				}
 				return miss
+			},
+			Cleanup: func(_ *Env) {
+				_ = os.Remove(filepath.Join("runtime-workspace", "notes", "probe-"+stamp+".md"))
 			},
 		},
 
