@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -76,7 +75,3 @@ func requireBlocksOrTitle(tool, title string, blocks int) error {
 	}
 	return nil
 }
-
-// errBlocksRequired is a sentinel for callers that want a typed empty-doc
-// check; not currently used by either tool but documented as the contract.
-var errBlocksRequired = errors.New("blocks or title required")
