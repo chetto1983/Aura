@@ -27,11 +27,10 @@ type Tracker struct {
 
 // Config holds budget configuration.
 type Config struct {
-	SoftBudget            float64
-	HardBudget            float64
-	InputCostPerMTokens   float64 // USD per 1M input/prompt tokens
-	OutputCostPerMTokens  float64 // USD per 1M output/completion tokens
-	LegacyCostPerTokenUSD float64 // compatibility with the old USD/token setting
+	SoftBudget           float64
+	HardBudget           float64
+	InputCostPerMTokens  float64 // USD per 1M input/prompt tokens
+	OutputCostPerMTokens float64 // USD per 1M output/completion tokens
 }
 
 // Gate is the preflight budget-check surface used before LLM calls.
@@ -97,11 +96,6 @@ func (t *Tracker) ApplyConfig(cfg Config) {
 func normalizePrices(cfg Config) (float64, float64) {
 	inputPerM := cfg.InputCostPerMTokens
 	outputPerM := cfg.OutputCostPerMTokens
-	if inputPerM <= 0 && outputPerM <= 0 && cfg.LegacyCostPerTokenUSD > 0 {
-		perM := cfg.LegacyCostPerTokenUSD * 1_000_000
-		inputPerM = perM
-		outputPerM = perM
-	}
 	if inputPerM <= 0 {
 		inputPerM = 0.20
 	}

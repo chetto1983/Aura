@@ -206,15 +206,6 @@ func Load() (*Config, error) {
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
 	cfg.CostInputPerMTokens = getEnvFloat("COST_INPUT_PER_M_TOKENS", 0)
 	cfg.CostOutputPerMTokens = getEnvFloat("COST_OUTPUT_PER_M_TOKENS", 0)
-	if cfg.CostInputPerMTokens <= 0 && cfg.CostOutputPerMTokens <= 0 {
-		// Compatibility with the old USD/token knob. Values larger than one cent
-		// per token are assumed to be the common "per million token" unit mistake
-		// and intentionally fall back to sane defaults.
-		if legacy := getEnvFloat("COST_PER_TOKEN", 0); legacy > 0 && legacy <= 0.01 {
-			cfg.CostInputPerMTokens = legacy * 1_000_000
-			cfg.CostOutputPerMTokens = legacy * 1_000_000
-		}
-	}
 	if cfg.CostInputPerMTokens <= 0 {
 		cfg.CostInputPerMTokens = DefaultCostInputPerMTokens
 	}

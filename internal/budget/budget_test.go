@@ -141,16 +141,6 @@ func TestDefaultCostPerMillionTokens(t *testing.T) {
 	}
 }
 
-func TestLegacyCostPerTokenCompatibility(t *testing.T) {
-	tr := NewTracker(Config{
-		LegacyCostPerTokenUSD: 0.000001,
-	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn})))
-
-	if cost := tr.PredictCost(1_000_000, 0); cost != 1.0 {
-		t.Errorf("legacy cost = %.4f, want 1.0", cost)
-	}
-}
-
 func TestShouldNotifySoftBudgetOnce(t *testing.T) {
 	tr := newTestTracker(1.0, 5.0, 1.00, 1.00)
 	tr.RecordUsage(llm.TokenUsage{PromptTokens: 1_000_000, TotalTokens: 1_000_000})

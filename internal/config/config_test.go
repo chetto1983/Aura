@@ -109,7 +109,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("HARD_BUDGET")
 	os.Unsetenv("COST_INPUT_PER_M_TOKENS")
 	os.Unsetenv("COST_OUTPUT_PER_M_TOKENS")
-	os.Unsetenv("COST_PER_TOKEN")
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("WEB_SEARCH_PROVIDER")
 	os.Unsetenv("SEARXNG_BASE_URL")
@@ -582,32 +581,6 @@ func TestLoadCostPerMillionTokens(t *testing.T) {
 	}
 	if cfg.CostOutputPerMTokens != 0.42 {
 		t.Fatalf("CostOutputPerMTokens = %v, want 0.42", cfg.CostOutputPerMTokens)
-	}
-}
-
-func TestLoadLegacyCostPerToken(t *testing.T) {
-	os.Setenv("COST_PER_TOKEN", "0.000001")
-	defer os.Unsetenv("COST_PER_TOKEN")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CostInputPerMTokens != 1 || cfg.CostOutputPerMTokens != 1 {
-		t.Fatalf("legacy costs = input %v output %v, want 1/1", cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
-	}
-}
-
-func TestLoadIgnoresOutOfScaleLegacyCostPerToken(t *testing.T) {
-	os.Setenv("COST_PER_TOKEN", "2")
-	defer os.Unsetenv("COST_PER_TOKEN")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CostInputPerMTokens != DefaultCostInputPerMTokens || cfg.CostOutputPerMTokens != DefaultCostOutputPerMTokens {
-		t.Fatalf("costs = input %v output %v, want defaults", cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
 	}
 }
 
