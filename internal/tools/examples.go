@@ -12,8 +12,14 @@ func renderToolDescription(name, description string, examples []ToolCallExample)
 	if len(examples) == 0 {
 		return description
 	}
-	if len(examples) > 2 {
-		examples = examples[:2]
+	// Show up to 5 examples per tool. The previous cap of 2 hid 3+ of the
+	// action variants on action-enum tools (file, source, task, dev_tool,
+	// doc) — observed live 2026-05-13 to drive the model into "I'll just
+	// call read_file" mode where it dropped the `action` field 4 times
+	// before recovering. Showing all valid actions inline costs ~500
+	// chars per enum tool but cuts the retry waste meaningfully.
+	if len(examples) > 5 {
+		examples = examples[:5]
 	}
 	lines := make([]string, 0, len(examples))
 	for _, example := range examples {
@@ -29,7 +35,15 @@ func renderToolDescription(name, description string, examples []ToolCallExample)
 func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 	switch name {
 	case "search_memory":
-		return []ToolCallExample{{Description: "Find compact evidence across Aura memory before answering.", Arguments: map[string]any{"query": "documenti e note disponibili in Aura", "scope": "all", "limit": 3}}}
+		return []ToolCallExample{
+			// Default broad search — prefer ONE call with limit=10 over
+			// multiple narrow calls. The model used to copy limit=3 from
+			// the example, then make 3-4 follow-up searches to cover the
+			// gap — observed live 2026-05-13. A higher default limit in
+			// the example cuts that retry pattern.
+			{Description: "Broad evidence sweep — prefer this single call over multiple narrow searches.", Arguments: map[string]any{"query": "wave 2.9 markitdown", "scope": "all", "limit": 10}},
+			{Description: "Wiki-only follow-up when you already have a slug to confirm.", Arguments: map[string]any{"query": "[[piano-di-miglioramento]]", "scope": "wiki", "limit": 5}},
+		}
 	case "file":
 		return []ToolCallExample{
 			{Description: "List entries under a workspace directory.", Arguments: map[string]any{"action": "list", "path": "wiki", "limit": 50}},

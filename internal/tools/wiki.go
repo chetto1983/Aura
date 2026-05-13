@@ -181,11 +181,25 @@ func (t *WikiPageTool) Execute(ctx context.Context, args map[string]any) (string
 	case "append":
 		return t.doAppend(ctx, args)
 	case "":
-		return "", fmt.Errorf("wiki_page: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("wiki_page", wikiValidActions, args, wikiActionHints, "create")
 	default:
-		return "", fmt.Errorf("wiki_page: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("wiki_page", action, wikiValidActions, args)
 	}
 }
+
+var (
+	wikiValidActions = []string{"create", "replace", "edit", "append"}
+	wikiActionHints  = []ActionHint{
+		// edit + patch shape: old + new on a specific slug
+		{Name: "edit", RequiredKeys: []string{"old_text", "new_text"}},
+		// replace = full body rewrite
+		{Name: "replace", RequiredKeys: []string{"body"}},
+		// append = content tacked onto an existing page
+		{Name: "append", RequiredKeys: []string{"content", "slug"}},
+		// create = brand-new page
+		{Name: "create", RequiredKeys: []string{"title", "body"}},
+	}
+)
 
 // doCreate writes a brand-new page. expected_updated_at is implicitly
 // the '' create-only sentinel — the wiki Store rejects the write with

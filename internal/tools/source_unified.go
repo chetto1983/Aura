@@ -189,11 +189,23 @@ func (t *SourceTool) Execute(ctx context.Context, args map[string]any) (string, 
 	case "lint":
 		return t.lint.Execute(ctx, args)
 	case "":
-		return "", fmt.Errorf("source: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("source", sourceValidActions, args, sourceActionHints, "list")
 	default:
-		return "", fmt.Errorf("source: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("source", action, sourceValidActions, args)
 	}
 }
+
+var (
+	sourceValidActions = []string{"list", "read", "store", "reprocess", "delete", "lint"}
+	sourceActionHints  = []ActionHint{
+		// Order most-specific first so the scorer prefers store over read
+		// when both content + kind appear, etc.
+		{Name: "store", RequiredKeys: []string{"kind", "content"}},
+		{Name: "reprocess", RequiredKeys: []string{"stages"}},
+		{Name: "delete", RequiredKeys: []string{"confirm"}},
+		{Name: "read", RequiredKeys: []string{"source_id"}},
+	}
+)
 
 // doReprocess dispatches to the OCR + ingest helpers based on the stages
 // array. Default is ["ingest"] (most common — re-run LLM extraction on an

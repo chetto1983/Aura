@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/scheduler"
 )
 
@@ -198,11 +197,22 @@ func (t *TaskTool) Execute(ctx context.Context, args map[string]any) (string, er
 	case "run_now":
 		return t.doRunNow(ctx, args)
 	case "":
-		return "", fmt.Errorf("task: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("task", taskValidActions, args, taskActionHints, "list")
 	default:
-		return "", fmt.Errorf("task: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("task", action, taskValidActions, args)
 	}
 }
+
+var (
+	taskValidActions = []string{"schedule", "list", "cancel", "run_now"}
+	taskActionHints  = []ActionHint{
+		// schedule is the most distinctive (needs kind + payload). cancel
+		// and run_now both need only `name`; we default to cancel since
+		// the model can re-clarify with run_now if needed.
+		{Name: "schedule", RequiredKeys: []string{"kind", "payload"}},
+		{Name: "cancel", RequiredKeys: []string{"name"}},
+	}
+)
 
 func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {

@@ -2,10 +2,7 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
-
-	"github.com/aura/aura/internal/llm"
 )
 
 // WebTool consolidates the legacy verb-tools (web_search, web_fetch) into
@@ -104,8 +101,16 @@ func (t *WebTool) Execute(ctx context.Context, args map[string]any) (string, err
 	case "fetch":
 		return t.fetcher.Execute(ctx, args)
 	case "":
-		return "", fmt.Errorf("web: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("web", webValidActions, args, webActionHints, "search")
 	default:
-		return "", fmt.Errorf("web: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("web", action, webValidActions, args)
 	}
 }
+
+var (
+	webValidActions = []string{"search", "fetch"}
+	webActionHints  = []ActionHint{
+		{Name: "fetch", RequiredKeys: []string{"url"}},
+		{Name: "search", RequiredKeys: []string{"query"}},
+	}
+)

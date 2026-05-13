@@ -106,11 +106,21 @@ func (t *DevToolTool) Execute(ctx context.Context, args map[string]any) (string,
 	case "save":
 		return t.doSave(ctx, args)
 	case "":
-		return "", fmt.Errorf("dev_tool: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("dev_tool", devToolValidActions, args, devToolActionHints, "list")
 	default:
-		return "", fmt.Errorf("dev_tool: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("dev_tool", action, devToolValidActions, args)
 	}
 }
+
+var (
+	devToolValidActions = []string{"list", "read", "save"}
+	devToolActionHints  = []ActionHint{
+		// save is the most specific (needs code + description). read only
+		// needs name. list needs nothing.
+		{Name: "save", RequiredKeys: []string{"code"}},
+		{Name: "read", RequiredKeys: []string{"name"}},
+	}
+)
 
 func (t *DevToolTool) doList(_ context.Context) (string, error) {
 	scripts, err := t.store.ListTools()

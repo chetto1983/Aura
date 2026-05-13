@@ -2,10 +2,8 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/workspace"
 )
 
@@ -137,6 +135,21 @@ func (t *FileTool) Parameters() map[string]any {
 	}
 }
 
+// fileValidActions + fileActionHints are package-level so the
+// ActionRequiredError / UnknownActionError helpers stay consistent
+// across invocations. The hint list orders most-specific first so the
+// scorer prefers a multi-key match (patch over read) when both could
+// fit.
+var (
+	fileValidActions = []string{"list", "read", "search", "write", "patch"}
+	fileActionHints  = []ActionHint{
+		{Name: "patch", RequiredKeys: []string{"old", "new"}},
+		{Name: "search", RequiredKeys: []string{"pattern"}},
+		{Name: "write", RequiredKeys: []string{"content"}},
+		{Name: "read", RequiredKeys: []string{"path"}},
+	}
+)
+
 func (t *FileTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	action := strings.TrimSpace(stringArg(args, "action"))
 	switch action {
@@ -151,8 +164,8 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (string, er
 	case "patch":
 		return t.patch.Execute(ctx, args)
 	case "":
-		return "", fmt.Errorf("file: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("file", fileValidActions, args, fileActionHints, "list")
 	default:
-		return "", fmt.Errorf("file: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("file", action, fileValidActions, args)
 	}
 }

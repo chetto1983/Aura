@@ -2,10 +2,8 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/source"
 )
 
@@ -140,8 +138,19 @@ func (t *DocTool) Execute(ctx context.Context, args map[string]any) (string, err
 	case "pdf":
 		return t.pdf.Execute(ctx, args)
 	case "":
-		return "", fmt.Errorf("doc: action is required: %w", llm.ErrSchemaValidation)
+		return "", ActionRequiredError("doc", docValidActions, args, docActionHints, "xlsx")
 	default:
-		return "", fmt.Errorf("doc: unknown action %q: %w", action, llm.ErrSchemaValidation)
+		return "", UnknownActionError("doc", action, docValidActions, args)
 	}
 }
+
+var (
+	docValidActions = []string{"xlsx", "docx", "pdf"}
+	docActionHints  = []ActionHint{
+		// xlsx is uniquely identified by `sheets`. docx/pdf both use
+		// `blocks`; we can't disambiguate from args alone, so prefer
+		// docx (more common per archive observation).
+		{Name: "xlsx", RequiredKeys: []string{"sheets"}},
+		{Name: "docx", RequiredKeys: []string{"blocks"}},
+	}
+)
