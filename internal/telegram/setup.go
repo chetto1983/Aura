@@ -284,18 +284,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	default:
 		logger.Warn("unknown WEB_SEARCH_PROVIDER; web tools disabled", "provider", cfg.WebSearchProvider)
 	}
-	// Source tools (slice 5). store_source/read_source/list_sources/lint_sources
-	// are always registered. ocr_source only when OCR is configured — otherwise
-	// the LLM gets a clearer "OCR disabled" error from the tool itself, which
-	// is better than tempting it to call a tool we can never satisfy.
-	toolRegistry.Register(tools.NewStoreSourceTool(sourceStore))
-	toolRegistry.Register(tools.WithCategory(tools.NewReadSourceTool(sourceStore), tools.CategoryAutonomous))
-	toolRegistry.Register(tools.WithCategory(tools.NewListSourcesTool(sourceStore), tools.CategoryAutonomous))
-	toolRegistry.Register(tools.WithCategory(tools.NewLintSourcesTool(sourceStore), tools.CategoryAutonomous))
-	if ocrClient != nil {
-		toolRegistry.Register(tools.NewOCRSourceTool(sourceStore, ocrClient))
-	}
-	toolRegistry.Register(tools.NewIngestSourceTool(ingestPipeline))
+	// Wave 2.7f: unified source tool replaces store_source / read_source /
+	// list_sources / lint_sources / ocr_source / ingest_source / delete_source.
+	// Registration is deferred to after memoryStore is built (line ~340)
+	// because the unified tool's delete action needs the memoryindex purger.
 	// Scheduler (slice 8). Persistent SQLite-backed task queue with one
 	// goroutine ticking every DefaultTickInterval. Two task kinds ship:
 	// reminder (delivered to the LLM-call's user via Telegram) and
@@ -333,11 +325,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	if err != nil {
 		logger.Warn("compact memory index unavailable", "error", err)
 	}
-	// delete_source needs both the on-disk store and the memoryindex so it
-	// can purge the compact mirror after removing the raw files. Registering
-	// it here (after memoryStore is built) keeps the dependency obvious.
-	if deleteTool := tools.NewDeleteSourceTool(sourceStore, memoryStore); deleteTool != nil {
-		toolRegistry.Register(tools.WithCategory(deleteTool, tools.CategoryAutonomous))
+	// Wave 2.7f: register the unified source tool now that every dependency
+	// is wired (sourceStore, ocrClient, ingestPipeline, memoryStore as the
+	// delete-side purger). One action-enum tool replaces the previous seven.
+	if sourceTool := tools.NewSourceTool(sourceStore, sourceStore, sourceStore, sourceStore, ocrClient, ingestPipeline, memoryStore); sourceTool != nil {
+		toolRegistry.Register(tools.WithCategory(sourceTool, tools.CategoryAutonomous))
 	}
 
 	swarmStore, err := swarm.NewStoreWithDB(pool)

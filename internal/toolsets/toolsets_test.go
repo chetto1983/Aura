@@ -11,7 +11,7 @@ func TestResolveToolsetsComposesAndDedupes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveToolsets: %v", err)
 	}
-	want := []string{"search_memory", "file", "list_sources", "read_source", "web"}
+	want := []string{"search_memory", "file", "source", "web"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %+v, want %+v", got, want)
 	}
@@ -88,11 +88,11 @@ func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
 
 func TestRoleToolsMatchReadOnlyPresets(t *testing.T) {
 	tests := map[string][]string{
-		"librarian":   {"search_memory", "file", "list_sources", "read_source", "lint_sources"},
-		"critic":      {"search_memory", "file", "lint_sources", "list_sources"},
+		"librarian":   {"search_memory", "file", "source"},
+		"critic":      {"search_memory", "file", "source"},
 		"researcher":  {"web"},
 		"skillsmith":  {"file"},
-		"synthesizer": {"search_memory", "file", "list_sources", "read_source"},
+		"synthesizer": {"search_memory", "file", "source"},
 	}
 	for role, want := range tests {
 		got, ok := RoleTools(role)

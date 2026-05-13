@@ -46,18 +46,14 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		}
 	case "execute_code":
 		return []ToolCallExample{{Arguments: map[string]any{"code": "from pathlib import Path\nPath('/tmp/aura_out/result.txt').write_text('ok')\nprint('ok')"}}}
-	case "list_sources":
-		return []ToolCallExample{{Arguments: map[string]any{"limit": 10, "status": "ingested"}}}
-	case "read_source":
-		return []ToolCallExample{{Arguments: map[string]any{"id": "src_0123456789abcdef", "path": "extract.md", "max_bytes": 4000}}}
-	case "store_source":
-		return []ToolCallExample{{Arguments: map[string]any{"filename": "nota.txt", "content": "Nota da salvare come fonte.", "mime_type": "text/plain"}}}
-	case "ingest_source":
-		return []ToolCallExample{{Arguments: map[string]any{"id": "src_0123456789abcdef"}}}
-	case "ocr_source":
-		return []ToolCallExample{{Arguments: map[string]any{"id": "src_0123456789abcdef"}}}
-	case "lint_sources":
-		return []ToolCallExample{{Arguments: map[string]any{"limit": 20}}}
+	case "source":
+		return []ToolCallExample{
+			{Description: "List ingested sources.", Arguments: map[string]any{"action": "list", "status": "ingested", "limit": 10}},
+			{Description: "Read the markdown body of a source.", Arguments: map[string]any{"action": "read", "source_id": "src_0123456789abcdef", "max_bytes": 4000}},
+			{Description: "Store a short text note as a source.", Arguments: map[string]any{"action": "store", "kind": "text", "filename": "nota.txt", "content": "Nota da salvare come fonte."}},
+			{Description: "Re-run the LLM ingest pipeline on an existing source.", Arguments: map[string]any{"action": "reprocess", "source_id": "src_0123456789abcdef", "stages": []any{"ingest"}}},
+			{Description: "Corpus audit — broken refs, orphans, stale OCR.", Arguments: map[string]any{"action": "lint"}},
+		}
 	case "web":
 		return []ToolCallExample{
 			{Arguments: map[string]any{"action": "search", "query": "OpenAI API latest structured outputs", "max_results": 5}},

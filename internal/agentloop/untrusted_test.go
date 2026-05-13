@@ -6,7 +6,7 @@ import (
 )
 
 func TestIsUntrustedSourceTool(t *testing.T) {
-	for _, name := range []string{"web", "read_source", "read_skill", "mcp_anything", "mcp_x_y_z"} {
+	for _, name := range []string{"web", "source", "read_skill", "mcp_anything", "mcp_x_y_z"} {
 		if !IsUntrustedSourceTool(name) {
 			t.Errorf("expected %q to be untrusted", name)
 		}

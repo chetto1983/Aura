@@ -20,7 +20,7 @@ import (
 // not learn to ignore *every* tool result.
 var untrustedSourceTools = map[string]struct{}{
 	"web":            {},
-	"read_source":    {},
+	"source":         {},
 	"read_skill":     {},
 	"daily_briefing": {},
 }

@@ -18,14 +18,12 @@ var toolsets = map[string][]string{
 	ToolsetMemoryRead: {
 		"search_memory",
 		"file",
-		"list_sources",
-		"read_source",
+		"source",
 	},
 	ToolsetWikiReview: {
 		"search_memory",
 		"file",
-		"lint_sources",
-		"list_sources",
+		"source",
 	},
 	ToolsetSkillsRead: {
 		"file",
@@ -41,9 +39,7 @@ var toolsets = map[string][]string{
 	ToolsetSchedulerSafe: {
 		"search_memory",
 		"file",
-		"list_sources",
-		"read_source",
-		"lint_sources",
+		"source",
 		"web",
 	},
 }
@@ -52,15 +48,12 @@ var rolePresets = map[string][]string{
 	"librarian": {
 		"search_memory",
 		"file",
-		"list_sources",
-		"read_source",
-		"lint_sources",
+		"source",
 	},
 	"critic": {
 		"search_memory",
 		"file",
-		"lint_sources",
-		"list_sources",
+		"source",
 	},
 	"researcher": {
 		"web",
@@ -71,8 +64,7 @@ var rolePresets = map[string][]string{
 	"synthesizer": {
 		"search_memory",
 		"file",
-		"list_sources",
-		"read_source",
+		"source",
 	},
 }
 

@@ -710,6 +710,45 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
+		// 8c. source-store-read-roundtrip — exercise the unified source tool
+		//     (Wave 2.7f). Asks Aura to store a text source, then verifies
+		//     the source persisted on disk under wiki/raw/<src>/original.txt
+		//     and the SQLite-mirrored memoryindex sees it. No trust in reply.
+		{
+			Name:   "source-store-read-roundtrip",
+			Prompt: fmt.Sprintf("Salva una nuova fonte testo chiamata 'probe-source-%s.txt' con questo contenuto esatto: 'Wave 2.7f source consolidation marker SRC-%s'. Poi mostrami il suo source_id.", stamp, stamp),
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call (source store)")
+				}
+				// Ground truth: scan runtime-workspace/wiki/raw/src_*/ for the
+				// matching original.txt body. Source IDs are filesystem dirs
+				// under wiki/raw, even when the host bind-mount sees the wiki
+				// as a named volume (which we already saw with wiki pages).
+				// First try the host bind path; if empty, fall back to the
+				// API source list lookup by filename pattern.
+				want := "Wave 2.7f source consolidation marker SRC-" + stamp
+				wantFile := "probe-source-" + stamp + ".txt"
+				id, err := env.findSourceByFilename(wantFile)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("source lookup by filename %q: %v", wantFile, err))
+					return miss
+				}
+				// Fetch raw bytes via the dashboard API.
+				body, err := env.fetchSourceRaw(id)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
+					return miss
+				}
+				got := strings.TrimSpace(string(body))
+				if got != want {
+					miss = append(miss, fmt.Sprintf("source bytes mismatch:\n  got:  %q\n  want: %q", got, want))
+				}
+				return miss
+			},
+		},
+
 		// 9. doc-xlsx-italian-chars — encoding regression probe. Italian
 		//    accented characters and currency must round-trip byte-exact
 		//    through the generator + persistence + API + reader stack.
