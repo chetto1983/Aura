@@ -17,7 +17,7 @@ func TestGovernanceInputPurity(t *testing.T) {
 	build := func() []llm.Message {
 		return []llm.Message{
 			{Role: "user", Content: "hi"},
-			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "read_file"}}},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "file"}}},
 			{Role: "tool", ToolCallID: "call-1", Content: strings.Repeat("x", 9000)},
 			{Role: "tool", ToolCallID: "ghost", Content: "leaked"},
 		}
@@ -46,7 +46,7 @@ func TestGovernanceInputPurity(t *testing.T) {
 func TestDropOrphanToolResultsRemovesUnmatchedToolMessages(t *testing.T) {
 	in := []llm.Message{
 		{Role: "user", Content: "hi"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "read_file"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "file"}}},
 		{Role: "tool", ToolCallID: "call-1", Content: "ok"},
 		{Role: "tool", ToolCallID: "ghost", Content: "leaked"}, // orphan
 	}
@@ -80,7 +80,7 @@ func TestBackfillMissingToolResultsInsertsPlaceholderForOrphanedCall(t *testing.
 	in := []llm.Message{
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{
-			{ID: "a", Name: "read_file"},
+			{ID: "a", Name: "file"},
 			{ID: "b", Name: "execute_code"},
 		}},
 		{Role: "tool", ToolCallID: "a", Content: "ok"},
@@ -110,7 +110,7 @@ func TestMicrocompactToolResultsReplacesStaleResultsBeyondKeepRecent(t *testing.
 	for i := 0; i < 12; i++ {
 		callID := "call-" + string(rune('a'+i))
 		msgs = append(msgs,
-			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "read_file"}}},
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "file"}}},
 			llm.Message{Role: "tool", ToolCallID: callID, Content: strings.Repeat("x", 600)},
 		)
 	}
@@ -140,7 +140,7 @@ func TestMicrocompactToolResultsSkipsShortResults(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		callID := "call-" + string(rune('a'+i))
 		msgs = append(msgs,
-			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "read_file"}}},
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "file"}}},
 			llm.Message{Role: "tool", ToolCallID: callID, Content: "ok"}, // way below minChars
 		)
 	}
@@ -172,7 +172,7 @@ func TestMicrocompactToolResultsIgnoresNonCompactableTools(t *testing.T) {
 func TestTruncateOversizedToolResultsCapsAtMaxChars(t *testing.T) {
 	big := strings.Repeat("y", 10_000)
 	in := []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c", Name: "read_file"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c", Name: "file"}}},
 		{Role: "tool", ToolCallID: "c", Content: big},
 	}
 	out := truncateOversizedToolResults(in, 1000)
@@ -186,7 +186,7 @@ func TestTruncateOversizedToolResultsCapsAtMaxChars(t *testing.T) {
 
 func TestTruncateOversizedToolResultsLeavesSmallResultsAlone(t *testing.T) {
 	in := []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c", Name: "read_file"}}},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c", Name: "file"}}},
 		{Role: "tool", ToolCallID: "c", Content: "small"},
 	}
 	out := truncateOversizedToolResults(in, 1000)
@@ -204,7 +204,7 @@ func TestApplyGovernanceChainsAllTransforms(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		callID := "call-" + string(rune('a'+i))
 		msgs = append(msgs,
-			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "read_file"}}},
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "file"}}},
 			llm.Message{Role: "tool", ToolCallID: callID, Content: strings.Repeat("x", 700)},
 		)
 	}

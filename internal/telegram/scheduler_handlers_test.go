@@ -96,9 +96,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 	reg := tools.NewRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	for _, name := range []string{
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"web",
 	} {
 		reg.Register(schedulerFakeTool{name: name})
@@ -156,7 +154,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 	for _, def := range req.Tools {
 		names = append(names, def.Name)
 	}
-	for _, want := range []string{"search_memory", "read_file", "search_files"} {
+	for _, want := range []string{"search_memory", "file"} {
 		if !containsTestString(names, want) {
 			t.Fatalf("tool %q missing from allowlist: %+v", want, names)
 		}

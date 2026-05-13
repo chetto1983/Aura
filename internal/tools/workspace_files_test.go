@@ -380,5 +380,8 @@ func newWorkspaceToolRoot(t *testing.T) *workspace.Root {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// os.Root holds a dir FD; on Windows TempDir cleanup fails unless
+	// we Close first.
+	t.Cleanup(func() { _ = root.Close() })
 	return root
 }

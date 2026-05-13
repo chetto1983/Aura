@@ -387,10 +387,14 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			stats.ToolsCalled = append(stats.ToolsCalled, call.Name)
 			calledThisTurn[call.Name] = true
 			switch call.Name {
-			case "read_file":
-				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
-					stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, skill)
-					stats.SkillsRead = true
+			case "file":
+				// Wave 2.7e: read_file consolidated under file(action=read).
+				// Detect a SKILL.md read for the SkillsRead stat.
+				if action, _ := call.Arguments["action"].(string); action == "read" {
+					if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
+						stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, skill)
+						stats.SkillsRead = true
+					}
 				}
 			case "run_aurabot_swarm":
 				stats.SwarmUsed = true

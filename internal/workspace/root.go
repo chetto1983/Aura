@@ -1,11 +1,36 @@
+// Package workspace bounds Aura's filesystem-facing tools to one directory.
+//
+// Containment model — two layers, defense-in-depth:
+//
+//  1. Kernel layer: every filesystem operation goes through *os.Root
+//     (Go 1.24+). The kernel uses openat(AT_BENEATH) under the hood,
+//     which atomically refuses to follow any path component that would
+//     escape the root — including symlinks pointed at /etc/passwd or
+//     ../ tricks inside a symlink target. This defeats symlink-escape
+//     and TOCTOU races that pure userspace path-validation cannot.
+//
+//  2. Application layer (Aura-specific): the kernel only knows where the
+//     workspace ENDS, not which paths inside it are sensitive. Even
+//     though /workspace/.env or /workspace/data/aura.db live "inside"
+//     the root, an LLM under prompt injection must not be able to read
+//     them. isSensitivePath enforces a denylist that the kernel can't.
+//     Same logic blocks writes to binary/executable extensions.
+//
+// Picobot uses (1) only; pure VM-isolated coding agents can afford that
+// because every file in the workspace is fair game. Aura's workspace is
+// shared with the user (wiki, AGENT.md, sources, sometimes data/) so
+// (2) is load-bearing for the prompt-injection threat model.
 package workspace
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,8 +51,10 @@ var (
 )
 
 // Root is a workspace-bounded filesystem boundary for LLM tools.
+// Internally backed by *os.Root for kernel-enforced containment.
 type Root struct {
-	root string
+	abs  string // absolute path used at OpenRoot time (returned by Path)
+	root *os.Root
 }
 
 type FileInfo struct {
@@ -43,6 +70,8 @@ type SearchMatch struct {
 	Text   string `json:"text"`
 }
 
+// New opens an os.Root anchored at the supplied directory. Caller is
+// expected to call Close() at shutdown to release the FD.
 func New(root string) (*Root, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
@@ -52,18 +81,51 @@ func New(root string) (*Root, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workspace: resolve root: %w", err)
 	}
-	return &Root{root: filepath.Clean(abs)}, nil
+	abs = filepath.Clean(abs)
+	osRoot, err := os.OpenRoot(abs)
+	if err != nil {
+		return nil, fmt.Errorf("workspace: open root: %w", err)
+	}
+	return &Root{abs: abs, root: osRoot}, nil
 }
 
+// Close releases the underlying *os.Root file descriptor. After Close,
+// every method returns an error.
+func (r *Root) Close() error {
+	if r == nil || r.root == nil {
+		return nil
+	}
+	return r.root.Close()
+}
+
+// Path returns the absolute directory the Root was opened at.
 func (r *Root) Path() string {
 	if r == nil {
 		return ""
 	}
-	return r.root
+	return r.abs
 }
 
+// Resolve validates rel and returns the corresponding ABSOLUTE path
+// on disk for callers that need it. Inside the package we always
+// prefer resolveRel which returns just the cleanRel — passing a
+// cleanRel to *os.Root methods keeps every syscall kernel-anchored.
+// Resolve stays exported for callers and tests that need the absolute
+// form.
 func (r *Root) Resolve(rel string) (string, error) {
-	if r == nil || strings.TrimSpace(r.root) == "" {
+	cleanRel, err := r.resolveRel(rel)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(r.abs, filepath.FromSlash(cleanRel)), nil
+}
+
+// resolveRel validates rel and returns a clean relative path safe to
+// pass to *os.Root methods. The kernel will refuse anything that
+// escapes the root anyway; we only enforce the Aura-specific layer
+// (sensitive-path denylist) here.
+func (r *Root) resolveRel(rel string) (string, error) {
+	if r == nil || r.root == nil {
 		return "", fmt.Errorf("workspace: root unavailable")
 	}
 	cleanRel, err := cleanRelative(rel)
@@ -73,34 +135,21 @@ func (r *Root) Resolve(rel string) (string, error) {
 	if isSensitivePath(cleanRel) {
 		return "", fmt.Errorf("%w: %s", ErrDeniedPath, cleanRel)
 	}
-	abs := filepath.Join(r.root, filepath.FromSlash(cleanRel))
-	resolved, err := filepath.Abs(abs)
-	if err != nil {
-		return "", fmt.Errorf("workspace: resolve %q: %w", rel, err)
-	}
-	inside, err := insideRoot(r.root, resolved)
-	if err != nil {
-		return "", err
-	}
-	if !inside {
-		return "", ErrOutsideRoot
-	}
-	return resolved, nil
+	return cleanRel, nil
 }
 
+// Read returns the file's bytes, capped at maxBytes. Errors on directory
+// targets, missing files, sensitive paths, or oversize binary files.
+// Use ReadBest for the permissive variant that handles all three.
 func (r *Root) Read(rel string, maxBytes int) ([]byte, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultReadLimit
 	}
-	cleanRel, err := cleanRelative(rel)
+	cleanRel, err := r.resolveRel(rel)
 	if err != nil {
 		return nil, err
 	}
-	abs, err := r.Resolve(cleanRel)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(abs)
+	info, err := r.root.Stat(cleanRel)
 	if err != nil {
 		return nil, fmt.Errorf("workspace: stat %s: %w", cleanRel, err)
 	}
@@ -113,7 +162,7 @@ func (r *Root) Read(rel string, maxBytes int) ([]byte, error) {
 	if info.Size() > int64(maxBytes) {
 		return nil, fmt.Errorf("workspace: %s is %d bytes, above max_bytes %d", cleanRel, info.Size(), maxBytes)
 	}
-	f, err := os.Open(abs)
+	f, err := r.root.Open(cleanRel)
 	if err != nil {
 		return nil, fmt.Errorf("workspace: open %s: %w", cleanRel, err)
 	}
@@ -128,9 +177,9 @@ func (r *Root) Read(rel string, maxBytes int) ([]byte, error) {
 	return data, nil
 }
 
-// ReadResult is what tool-facing reads return. It encodes the three cases
-// — file fits, file truncated, target is a directory — so callers never
-// need to interpret a stat error.
+// ReadResult is what tool-facing reads return. It encodes the three
+// cases — file fits, file truncated, target is a directory — so
+// callers never need to interpret a stat error.
 type ReadResult struct {
 	Path        string     `json:"path"`
 	Type        string     `json:"type"` // "file" | "directory"
@@ -144,25 +193,22 @@ type ReadResult struct {
 }
 
 // ReadBest is the permissive read used by the read_file tool. It never
-// errors on oversize (truncates) or on directories (lists). It only errors
-// on missing paths, permission boundaries, or sensitive paths.
+// errors on oversize (truncates) or on directories (lists). It only
+// errors on missing paths, permission boundaries, or sensitive paths.
 //
-// Sibling to Read: Read stays strict for callers that must reject either
-// case (hashing, atomic patch). ReadBest gives the LLM a single tool that
-// always returns something useful and lets it decide next steps.
+// Sibling to Read: Read stays strict for callers that must reject
+// either case (hashing, atomic patch). ReadBest gives the LLM a single
+// tool that always returns something useful and lets it decide next
+// steps.
 func (r *Root) ReadBest(rel string, maxBytes int) (ReadResult, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultReadLimit
 	}
-	cleanRel, err := cleanRelative(rel)
+	cleanRel, err := r.resolveRel(rel)
 	if err != nil {
 		return ReadResult{}, err
 	}
-	abs, err := r.Resolve(cleanRel)
-	if err != nil {
-		return ReadResult{}, err
-	}
-	info, err := os.Stat(abs)
+	info, err := r.root.Stat(cleanRel)
 	if err != nil {
 		return ReadResult{}, fmt.Errorf("workspace: stat %s: %w", cleanRel, err)
 	}
@@ -181,7 +227,7 @@ func (r *Root) ReadBest(rel string, maxBytes int) (ReadResult, error) {
 	if isBinaryExtension(cleanRel) && info.Size() > smallBinaryReadLimit {
 		return ReadResult{}, fmt.Errorf("%w: binary file too large for read-only access", ErrDeniedPath)
 	}
-	f, err := os.Open(abs)
+	f, err := r.root.Open(cleanRel)
 	if err != nil {
 		return ReadResult{}, fmt.Errorf("workspace: open %s: %w", cleanRel, err)
 	}
@@ -211,31 +257,36 @@ func (r *Root) ReadBest(rel string, maxBytes int) (ReadResult, error) {
 	return result, nil
 }
 
+// WriteAtomic writes content via a sibling temp file + rename. The temp
+// file lives in the SAME directory as the target so the rename is
+// atomic on the same filesystem. Both operations go through *os.Root,
+// so the kernel refuses any traversal out of the root.
 func (r *Root) WriteAtomic(rel string, content []byte) error {
-	cleanRel, err := cleanRelative(rel)
+	cleanRel, err := r.resolveRel(rel)
 	if err != nil {
 		return err
 	}
 	if isBinaryExtension(cleanRel) {
 		return fmt.Errorf("%w: binary or executable writes are disabled", ErrDeniedPath)
 	}
-	abs, err := r.Resolve(cleanRel)
+	parent := path.Dir(cleanRel)
+	if parent != "" && parent != "." {
+		if err := r.root.MkdirAll(parent, 0o755); err != nil {
+			return fmt.Errorf("workspace: mkdir %s: %w", parent, err)
+		}
+	}
+	tmpRel, err := r.tempPath(parent)
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace: temp name: %w", err)
 	}
-	parent := filepath.Dir(abs)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return fmt.Errorf("workspace: mkdir %s: %w", cleanRel, err)
-	}
-	tmp, err := os.CreateTemp(parent, ".aura-*")
+	tmp, err := r.root.OpenFile(tmpRel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("workspace: temp file %s: %w", cleanRel, err)
 	}
-	tmpName := tmp.Name()
 	removeTmp := true
 	defer func() {
 		if removeTmp {
-			_ = os.Remove(tmpName)
+			_ = r.root.Remove(tmpRel)
 		}
 	}()
 	if _, err := tmp.Write(content); err != nil {
@@ -249,13 +300,31 @@ func (r *Root) WriteAtomic(rel string, content []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("workspace: close temp %s: %w", cleanRel, err)
 	}
-	if err := os.Rename(tmpName, abs); err != nil {
+	if err := r.root.Rename(tmpRel, cleanRel); err != nil {
 		return fmt.Errorf("workspace: rename %s: %w", cleanRel, err)
 	}
 	removeTmp = false
 	return nil
 }
 
+// tempPath returns a sibling temp path with a random suffix, scoped to
+// the same directory as the target so the eventual rename is atomic.
+func (r *Root) tempPath(parent string) (string, error) {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	name := ".aura-tmp-" + hex.EncodeToString(buf[:])
+	if parent == "" || parent == "." {
+		return name, nil
+	}
+	return path.Join(parent, name), nil
+}
+
+// Search performs a case-insensitive substring scan over text files
+// inside the root. Sensitive paths, binary extensions, and files
+// larger than searchFileLimit are skipped. The walk uses *os.Root's
+// fs.FS so each open is kernel-anchored — no symlink escape risk.
 func (r *Root) Search(pattern string, globs []string, limit int) ([]SearchMatch, error) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
@@ -269,23 +338,19 @@ func (r *Root) Search(pattern string, globs []string, limit int) ([]SearchMatch,
 	}
 	needle := strings.ToLower(pattern)
 	matches := make([]SearchMatch, 0)
-	err := filepath.WalkDir(r.root, func(abs string, entry os.DirEntry, walkErr error) error {
+	rootFS := r.root.FS()
+	err := fs.WalkDir(rootFS, ".", func(rel string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
 		}
-		if abs == r.root {
+		if rel == "." {
 			return nil
 		}
-		rel, err := r.relSlash(abs)
-		if err != nil {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+		// fs.WalkDir uses forward slashes already; clean for consistency.
+		rel = path.Clean(rel)
 		if isSensitivePath(rel) {
 			if entry.IsDir() {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 			return nil
 		}
@@ -299,7 +364,7 @@ func (r *Root) Search(pattern string, globs []string, limit int) ([]SearchMatch,
 		if err != nil || info.Size() > searchFileLimit {
 			return nil
 		}
-		data, err := os.ReadFile(abs)
+		data, err := r.root.ReadFile(rel)
 		if err != nil || bytes.IndexByte(data, 0) >= 0 {
 			return nil
 		}
@@ -327,6 +392,8 @@ func (r *Root) Search(pattern string, globs []string, limit int) ([]SearchMatch,
 	return matches, err
 }
 
+// List returns the entries under rel (default: root). Sensitive paths
+// are filtered. Output is sorted by Path for stable LLM-facing output.
 func (r *Root) List(rel string, limit int) ([]FileInfo, error) {
 	if limit <= 0 {
 		limit = 200
@@ -334,23 +401,26 @@ func (r *Root) List(rel string, limit int) ([]FileInfo, error) {
 	if limit > 1000 {
 		limit = 1000
 	}
-	cleanRel, err := cleanRelative(rel)
+	cleanRel, err := r.resolveRel(rel)
 	if err != nil {
 		return nil, err
 	}
-	abs, err := r.Resolve(cleanRel)
+	dir, err := r.root.Open(cleanRel)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("workspace: open dir %s: %w", cleanRel, err)
 	}
-	entries, err := os.ReadDir(abs)
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
 	if err != nil {
 		return nil, fmt.Errorf("workspace: list %s: %w", cleanRel, err)
 	}
 	out := make([]FileInfo, 0, min(len(entries), limit))
 	for _, entry := range entries {
-		child := path.Join(cleanRel, entry.Name())
+		var child string
 		if cleanRel == "." {
 			child = entry.Name()
+		} else {
+			child = path.Join(cleanRel, entry.Name())
 		}
 		child = path.Clean(strings.ReplaceAll(child, "\\", "/"))
 		if isSensitivePath(child) {
@@ -375,6 +445,10 @@ func (r *Root) List(rel string, limit int) ([]FileInfo, error) {
 
 var errStopWalk = errors.New("workspace: stop walk")
 
+// cleanRelative normalizes user-supplied rel and rejects shapes that
+// could traverse out of root in pure-string analysis. The *os.Root
+// layer also refuses anything outside, so this is mostly a clean-input
+// gate that produces predictable cleanRel strings for downstream use.
 func cleanRelative(rel string) (string, error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
@@ -394,25 +468,9 @@ func cleanRelative(rel string) (string, error) {
 	return clean, nil
 }
 
-func insideRoot(root, abs string) (bool, error) {
-	rel, err := filepath.Rel(root, abs)
-	if err != nil {
-		return false, fmt.Errorf("workspace: containment check: %w", err)
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))), nil
-}
-
-func (r *Root) relSlash(abs string) (string, error) {
-	rel, err := filepath.Rel(r.root, abs)
-	if err != nil {
-		return "", err
-	}
-	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return "", ErrOutsideRoot
-	}
-	return filepath.ToSlash(rel), nil
-}
-
+// isSensitivePath is the Aura-specific denylist layer on top of kernel
+// containment. The kernel only knows where the workspace ENDS; this
+// function knows which paths inside it must never reach the LLM.
 func isSensitivePath(rel string) bool {
 	rel = strings.ToLower(path.Clean(strings.ReplaceAll(rel, "\\", "/")))
 	switch rel {
@@ -425,6 +483,10 @@ func isSensitivePath(rel string) bool {
 		rel == "docker/secrets" || strings.HasPrefix(rel, "docker/secrets/")
 }
 
+// isBinaryExtension blocks reads/writes of binary or executable file
+// types. Reads above smallBinaryReadLimit are refused; writes are
+// always refused. Aura is a text agent; an LLM dropping a .exe into
+// the workspace via a prompt injection is a credible threat.
 func isBinaryExtension(rel string) bool {
 	switch strings.ToLower(path.Ext(rel)) {
 	case ".exe", ".dll", ".so", ".dylib", ".bin", ".dat",

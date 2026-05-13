@@ -35,6 +35,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"io"
@@ -46,6 +47,7 @@ import (
 
 	"github.com/aura/aura/internal/db"
 	"github.com/ledongthuc/pdf"
+	"github.com/xuri/excelize/v2"
 )
 
 // ChatReply mirrors api.ChatReply just enough to deserialize the JSON.
@@ -84,6 +86,40 @@ var sourceIDRe = regexp.MustCompile(`src_[a-f0-9]{16}`)
 // findSourceID returns the first src_xxx token in s, or "" if absent.
 func findSourceID(s string) string {
 	return sourceIDRe.FindString(s)
+}
+
+// findSourceByFilename queries /api/sources for the most recent source
+// whose filename matches the supplied substring. Used by doc probes
+// because the model occasionally fabricates the source_id in the reply
+// (real failure mode observed 2026-05-12: tool fires correctly, but
+// the assistant echoes a hallucinated ID). The filesystem ground truth
+// is the authoritative source list — read it instead of parsing prose.
+func (e *Env) findSourceByFilename(substr string) (string, error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/sources"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var sources []struct {
+		ID       string `json:"id"`
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sources); err != nil {
+		return "", fmt.Errorf("decode sources: %w", err)
+	}
+	for _, s := range sources {
+		if strings.Contains(s.Filename, substr) {
+			return s.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no source matched %q (have %d sources)", substr, len(sources))
 }
 
 // fetchSourceRaw returns the raw bytes of a source via /api/sources/{id}/raw.
@@ -180,6 +216,101 @@ func extractPDFText(body []byte) (string, error) {
 		out.WriteString("\n")
 	}
 	return out.String(), nil
+}
+
+// xmlIsWellFormed returns nil if the byte slice parses to a complete
+// XML document, or the parser error. Catches truncated / corrupt
+// document.xml — the most common DOCX-generator failure that still
+// produces a valid-looking ZIP.
+func xmlIsWellFormed(b []byte) error {
+	dec := xml.NewDecoder(bytes.NewReader(b))
+	for {
+		_, err := dec.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// zipEntryBytes returns the bytes of one entry inside a ZIP archive,
+// or an error if the entry is missing or unreadable.
+func zipEntryBytes(body []byte, entryName string) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("zip reader: %w", err)
+	}
+	for _, f := range zr.File {
+		if f.Name == entryName {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open %s: %w", entryName, err)
+			}
+			defer rc.Close()
+			return io.ReadAll(rc)
+		}
+	}
+	return nil, fmt.Errorf("entry %q not found", entryName)
+}
+
+// zipEntryNames lists every entry name inside a ZIP archive.
+func zipEntryNames(body []byte) ([]string, error) {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(zr.File))
+	for _, f := range zr.File {
+		out = append(out, f.Name)
+	}
+	return out, nil
+}
+
+// sliceContainsStr is a tiny slices.Contains shim — keeps verify cases
+// from each pulling in slices just for one membership check.
+func sliceContainsStr(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
+}
+
+// hasMojibake reports true when the string contains a U+FFFD replacement
+// character — the canonical signal that an encoding round-trip lost
+// information. Useful for catching latin-1/UTF-8 confusion in generated
+// documents.
+func hasMojibake(s string) bool {
+	return strings.ContainsRune(s, '�')
+}
+
+// hasControlChars returns true when the string contains any C0 control
+// byte other than tab/LF/CR, OR any C1 control byte. These should never
+// appear in user-visible document content; if they do, the generator
+// emitted a raw byte where it should have escaped.
+func hasControlChars(s string) bool {
+	for _, r := range s {
+		if r == '\t' || r == '\n' || r == '\r' {
+			continue
+		}
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
+// excelizeOpen wraps excelize.OpenReader so cases can drop into typed
+// workbook inspection without rebuilding the boilerplate every time.
+func excelizeOpen(body []byte) (*excelize.File, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("excelize open: %w", err)
+	}
+	return f, nil
 }
 
 // fetchWikiPage reads a single wiki page through the dashboard API.
@@ -343,8 +474,9 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
-		// 5. doc-xlsx — generate a workbook, fetch the bytes, parse the
-		//    sharedStrings table, assert the requested cells round-trip.
+		// 5. doc-xlsx — generate a workbook and verify STRUCTURE, not just
+		//    "some bytes came back". Opens with excelize, asserts sheet
+		//    name + exact cell coordinates, screens for mojibake.
 		{
 			Name:   "doc-xlsx-roundtrip",
 			Prompt: fmt.Sprintf("Generami un file Excel chiamato probe-%s.xlsx con un foglio 'Sintesi' che ha questa tabella: prima riga 'Voce' e 'Valore', poi righe ['Anno', '2026'], ['Wave', '2.7d'], ['Marker', 'PROBE-%s']. Non inviarlo via Telegram (deliver:false). Confermami il source_id.", stamp, stamp),
@@ -353,38 +485,72 @@ func allCases(now time.Time) []Case {
 				if r.ToolCalls == 0 {
 					miss = append(miss, "expected at least 1 tool call (doc xlsx)")
 				}
-				id := findSourceID(r.Reply)
-				if id == "" {
-					miss = append(miss, "reply does not include a src_xxx identifier")
+				id, err := env.findSourceByFilename(stamp)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("source lookup: %v", err))
 					return miss
+				}
+				if claimed := findSourceID(r.Reply); claimed != "" && claimed != id {
+					miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (model misquoted)", claimed, id))
 				}
 				body, err := env.fetchSourceRaw(id)
 				if err != nil {
 					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
 					return miss
 				}
-				// xlsx is a ZIP — sanity check magic header.
 				if len(body) < 4 || string(body[:2]) != "PK" {
 					miss = append(miss, fmt.Sprintf("not a valid xlsx zip (head=%q)", body[:min(len(body), 8)]))
 					return miss
 				}
-				// All cell strings live in xl/sharedStrings.xml as <t>...</t>.
-				strs, err := extractTextFromZipEntry(body, "xl/sharedStrings.xml", "t")
+				// Required ZIP entries for any conformant xlsx.
+				entries, _ := zipEntryNames(body)
+				for _, must := range []string{"[Content_Types].xml", "xl/workbook.xml", "xl/sharedStrings.xml"} {
+					if !sliceContainsStr(entries, must) {
+						miss = append(miss, fmt.Sprintf("xlsx ZIP missing required entry %q (got: %v)", must, entries))
+					}
+				}
+				// Open with excelize and inspect typed structure.
+				f, err := excelizeOpen(body)
 				if err != nil {
-					miss = append(miss, fmt.Sprintf("parse sharedStrings: %v", err))
+					miss = append(miss, fmt.Sprintf("excelize open: %v", err))
 					return miss
 				}
-				for _, want := range []string{"Voce", "Valore", "Anno", "2026", "Wave", "2.7d", "Marker", "PROBE-" + stamp} {
-					if !strings.Contains(strs, want) {
-						miss = append(miss, fmt.Sprintf("sharedStrings missing %q (got: %q)", want, truncate(strs, 200)))
+				defer f.Close()
+				if !sliceContainsStr(f.GetSheetList(), "Sintesi") {
+					miss = append(miss, fmt.Sprintf("expected sheet 'Sintesi', got %v", f.GetSheetList()))
+					return miss
+				}
+				// Exact-cell assertions (not substring) — this is what "well
+				// formatted" means: the right value in the right coordinate.
+				wantCells := map[string]string{
+					"A1": "Voce", "B1": "Valore",
+					"A2": "Anno", "B2": "2026",
+					"A3": "Wave", "B3": "2.7d",
+					"A4": "Marker", "B4": "PROBE-" + stamp,
+				}
+				for coord, want := range wantCells {
+					got, _ := f.GetCellValue("Sintesi", coord)
+					if got != want {
+						miss = append(miss, fmt.Sprintf("Sintesi!%s = %q, want %q", coord, got, want))
+					}
+				}
+				// Encoding sanity: no mojibake, no rogue control chars.
+				for coord := range wantCells {
+					got, _ := f.GetCellValue("Sintesi", coord)
+					if hasMojibake(got) {
+						miss = append(miss, fmt.Sprintf("Sintesi!%s contains U+FFFD: %q", coord, got))
+					}
+					if hasControlChars(got) {
+						miss = append(miss, fmt.Sprintf("Sintesi!%s contains control chars: %q", coord, got))
 					}
 				}
 				return miss
 			},
 		},
 
-		// 6. doc-docx — generate a Word doc, fetch, parse word/document.xml,
-		//    assert the requested headings/paragraphs round-trip.
+		// 6. doc-docx — generate a Word document and verify STRUCTURE.
+		//    ZIP entries present, document.xml well-formed XML, expected
+		//    text round-trips, no mojibake.
 		{
 			Name:   "doc-docx-roundtrip",
 			Prompt: fmt.Sprintf("Generami un file Word chiamato probe-%s.docx con titolo 'Probe Docx %s' e questi blocchi: heading livello 2 testo 'Sezione A', paragraph 'Frase distintiva PROBE-%s', bullet 'Punto uno'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
@@ -393,10 +559,13 @@ func allCases(now time.Time) []Case {
 				if r.ToolCalls == 0 {
 					miss = append(miss, "expected at least 1 tool call (doc docx)")
 				}
-				id := findSourceID(r.Reply)
-				if id == "" {
-					miss = append(miss, "reply does not include a src_xxx identifier")
+				id, err := env.findSourceByFilename(stamp)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("source lookup: %v", err))
 					return miss
+				}
+				if claimed := findSourceID(r.Reply); claimed != "" && claimed != id {
+					miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (model misquoted)", claimed, id))
 				}
 				body, err := env.fetchSourceRaw(id)
 				if err != nil {
@@ -407,23 +576,46 @@ func allCases(now time.Time) []Case {
 					miss = append(miss, fmt.Sprintf("not a valid docx zip (head=%q)", body[:min(len(body), 8)]))
 					return miss
 				}
-				// docx text lives in word/document.xml as <w:t>...</w:t>.
-				body_text, err := extractTextFromZipEntry(body, "word/document.xml", "w:t")
+				// Required ZIP entries for any conformant docx.
+				entries, _ := zipEntryNames(body)
+				for _, must := range []string{"[Content_Types].xml", "word/document.xml", "_rels/.rels"} {
+					if !sliceContainsStr(entries, must) {
+						miss = append(miss, fmt.Sprintf("docx ZIP missing required entry %q (got: %v)", must, entries))
+					}
+				}
+				// Well-formed XML body.
+				docXML, err := zipEntryBytes(body, "word/document.xml")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("read word/document.xml: %v", err))
+					return miss
+				}
+				if err := xmlIsWellFormed(docXML); err != nil {
+					miss = append(miss, fmt.Sprintf("word/document.xml is not well-formed: %v", err))
+					return miss
+				}
+				// Required runs of text.
+				bodyText, err := extractTextFromZipEntry(body, "word/document.xml", "w:t")
 				if err != nil {
 					miss = append(miss, fmt.Sprintf("parse word/document.xml: %v", err))
 					return miss
 				}
 				for _, want := range []string{"Probe Docx " + stamp, "Sezione A", "PROBE-" + stamp, "Punto uno"} {
-					if !strings.Contains(body_text, want) {
-						miss = append(miss, fmt.Sprintf("docx text missing %q (got: %q)", want, truncate(body_text, 200)))
+					if !strings.Contains(bodyText, want) {
+						miss = append(miss, fmt.Sprintf("docx text missing %q (got: %q)", want, truncate(bodyText, 200)))
 					}
+				}
+				if hasMojibake(bodyText) {
+					miss = append(miss, fmt.Sprintf("docx text contains U+FFFD: %q", truncate(bodyText, 200)))
+				}
+				if hasControlChars(bodyText) {
+					miss = append(miss, "docx text contains stray control chars")
 				}
 				return miss
 			},
 		},
 
-		// 7. doc-pdf — generate a PDF, fetch, extract text via a real PDF
-		//    parser, assert the requested content round-trips.
+		// 7. doc-pdf — generate a PDF and verify STRUCTURE.
+		//    Valid header line, ≥1 page, text round-trips, no mojibake.
 		{
 			Name:   "doc-pdf-roundtrip",
 			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
@@ -432,19 +624,41 @@ func allCases(now time.Time) []Case {
 				if r.ToolCalls == 0 {
 					miss = append(miss, "expected at least 1 tool call (doc pdf)")
 				}
-				id := findSourceID(r.Reply)
-				if id == "" {
-					miss = append(miss, "reply does not include a src_xxx identifier")
+				id, err := env.findSourceByFilename(stamp)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("source lookup: %v", err))
 					return miss
+				}
+				if claimed := findSourceID(r.Reply); claimed != "" && claimed != id {
+					miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (model misquoted)", claimed, id))
 				}
 				body, err := env.fetchSourceRaw(id)
 				if err != nil {
 					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
 					return miss
 				}
-				if len(body) < 4 || string(body[:4]) != "%PDF" {
-					miss = append(miss, fmt.Sprintf("not a valid pdf (head=%q)", body[:min(len(body), 8)]))
+				// PDF version header: %PDF-1.x newline.
+				if len(body) < 8 || string(body[:5]) != "%PDF-" {
+					miss = append(miss, fmt.Sprintf("not a valid PDF header: %q", body[:min(len(body), 16)]))
 					return miss
+				}
+				// %%EOF marker should appear in the last 1024 bytes — without
+				// it, downstream readers reject the file.
+				tail := body
+				if len(tail) > 1024 {
+					tail = body[len(body)-1024:]
+				}
+				if !bytes.Contains(tail, []byte("%%EOF")) {
+					miss = append(miss, "PDF missing %%EOF trailer marker in last 1KB")
+				}
+				// Page count via the real PDF parser.
+				reader, err := pdf.NewReader(bytes.NewReader(body), int64(len(body)))
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("pdf NewReader: %v", err))
+					return miss
+				}
+				if reader.NumPage() < 1 {
+					miss = append(miss, fmt.Sprintf("PDF has %d pages, want >= 1", reader.NumPage()))
 				}
 				text, err := extractPDFText(body)
 				if err != nil {
@@ -454,6 +668,83 @@ func allCases(now time.Time) []Case {
 				for _, want := range []string{"Probe Pdf " + stamp, "Risultati", "PROBE-" + stamp} {
 					if !strings.Contains(text, want) {
 						miss = append(miss, fmt.Sprintf("pdf text missing %q (got: %q)", want, truncate(text, 200)))
+					}
+				}
+				if hasMojibake(text) {
+					miss = append(miss, fmt.Sprintf("pdf text contains U+FFFD: %q", truncate(text, 200)))
+				}
+				return miss
+			},
+		},
+
+		// 8b. file-roundtrip — exercise the unified file tool: write a
+		//     marker file under workspace, then read it back, then list
+		//     its directory. Verifies action enum dispatches correctly
+		//     and the file content survives byte-for-byte.
+		{
+			Name:   "file-write-read-list-roundtrip",
+			Prompt: fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
+			Verify: func(r ChatReply, _ *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected at least 1 tool call (file write+read)")
+				}
+				reply := r.Reply
+				if !strings.Contains(reply, "PROBE-"+stamp) {
+					miss = append(miss, fmt.Sprintf("reply does not echo PROBE-%s", stamp))
+				}
+				return miss
+			},
+		},
+
+		// 9. doc-xlsx-italian-chars — encoding regression probe. Italian
+		//    accented characters and currency must round-trip byte-exact
+		//    through the generator + persistence + API + reader stack.
+		{
+			Name:   "doc-xlsx-italian-chars",
+			Prompt: fmt.Sprintf("Generami un file Excel chiamato encoding-%s.xlsx, foglio 'Test', con queste righe esatte: ['Città', 'Milano'], ['Età', '25 anni'], ['Prezzo', '€100,50'], ['Caffè', 'doppio'], ['Marker', 'È-PROBE-%s']. deliver:false. Confermami il source_id.", stamp, stamp),
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected 1 tool call")
+				}
+				id, err := env.findSourceByFilename(stamp)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("source lookup: %v", err))
+					return miss
+				}
+				if claimed := findSourceID(r.Reply); claimed != "" && claimed != id {
+					miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (model misquoted)", claimed, id))
+				}
+				body, err := env.fetchSourceRaw(id)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch raw %s: %v", id, err))
+					return miss
+				}
+				f, err := excelizeOpen(body)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("excelize open: %v", err))
+					return miss
+				}
+				defer f.Close()
+				if !sliceContainsStr(f.GetSheetList(), "Test") {
+					miss = append(miss, fmt.Sprintf("expected sheet 'Test', got %v", f.GetSheetList()))
+					return miss
+				}
+				wantCells := map[string]string{
+					"A1": "Città", "B1": "Milano",
+					"A2": "Età", "B2": "25 anni",
+					"A3": "Prezzo", "B3": "€100,50",
+					"A4": "Caffè", "B4": "doppio",
+					"A5": "Marker", "B5": "È-PROBE-" + stamp,
+				}
+				for coord, want := range wantCells {
+					got, _ := f.GetCellValue("Test", coord)
+					if got != want {
+						miss = append(miss, fmt.Sprintf("Test!%s = %q, want %q (encoding regression)", coord, got, want))
+					}
+					if hasMojibake(got) {
+						miss = append(miss, fmt.Sprintf("Test!%s mojibake: %q", coord, got))
 					}
 				}
 				return miss

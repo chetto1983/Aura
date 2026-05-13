@@ -63,9 +63,7 @@ const (
 // equivalents exist. Other tool results (e.g. wiki writes, mcp_mail
 // confirmations) carry decisions and stay verbatim.
 var compactableTools = map[string]bool{
-	"read_file":     true,
-	"search_files":  true,
-	"list_files":    true,
+	"file":          true,
 	"execute_code":  true,
 	"execute_shell": true,
 	"web":           true,

@@ -64,7 +64,7 @@ func TestSpawnAuraBotTool(t *testing.T) {
 		"name":  "read context",
 		"role":  "librarian",
 		"task":  "read the wiki index",
-		"tools": []any{"list_files", "read_file"},
+		"tools": []any{"file"},
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -76,14 +76,14 @@ func TestSpawnAuraBotTool(t *testing.T) {
 	if !resp.OK || resp.RunID == "" || resp.TaskID == "" {
 		t.Fatalf("response = %+v", resp)
 	}
-	if resp.LLMCalls != 2 || resp.ToolCalls != 2 || resp.TokensTotal != 8 {
+	if resp.LLMCalls != 2 || resp.ToolCalls != 1 || resp.TokensTotal != 8 {
 		t.Fatalf("metrics = %+v", resp)
 	}
 	last, _ := runner.snapshot()
 	if last.UserID != "user-123" {
 		t.Fatalf("runner user id = %q", last.UserID)
 	}
-	if len(last.ToolAllowlist) != 2 || last.ToolAllowlist[0] != "list_files" || last.ToolAllowlist[1] != "read_file" {
+	if len(last.ToolAllowlist) != 1 || last.ToolAllowlist[0] != "file" {
 		t.Fatalf("allowlist = %+v", last.ToolAllowlist)
 	}
 	task, err := store.GetTask(context.Background(), resp.TaskID)

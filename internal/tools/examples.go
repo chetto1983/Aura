@@ -30,16 +30,14 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 	switch name {
 	case "search_memory":
 		return []ToolCallExample{{Description: "Find compact evidence across Aura memory before answering.", Arguments: map[string]any{"query": "documenti e note disponibili in Aura", "scope": "all", "limit": 3}}}
-	case "list_files":
-		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki", "max_depth": 2}}}
-	case "read_file":
-		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki/index.md", "max_bytes": 4000}}}
-	case "search_files":
-		return []ToolCallExample{{Arguments: map[string]any{"query": "Riepilogo Aura", "globs": []any{"wiki/**/*.md"}, "max_results": 10}}}
-	case "write_file":
-		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki/nuova-nota.md", "content": "# Nuova Nota\n\nContenuto."}}}
-	case "apply_patch":
-		return []ToolCallExample{{Arguments: map[string]any{"path": "wiki/nota.md", "patch": "*** Begin Patch\n*** Update File: wiki/nota.md\n@@\n-vecchio\n+nuovo\n*** End Patch"}}}
+	case "file":
+		return []ToolCallExample{
+			{Description: "List entries under a workspace directory.", Arguments: map[string]any{"action": "list", "path": "wiki", "limit": 50}},
+			{Description: "Read a workspace file (UTF-8 or base64).", Arguments: map[string]any{"action": "read", "path": "wiki/index.md", "max_bytes": 4000}},
+			{Description: "Substring search across text files with glob filters.", Arguments: map[string]any{"action": "search", "pattern": "Riepilogo Aura", "globs": []any{"wiki/**/*.md"}, "limit": 10}},
+			{Description: "Atomic UTF-8 write.", Arguments: map[string]any{"action": "write", "path": "wiki/nuova-nota.md", "content": "# Nuova Nota\n\nContenuto."}},
+			{Description: "Exact text replacement inside one file.", Arguments: map[string]any{"action": "patch", "path": "wiki/nota.md", "old": "vecchio", "new": "nuovo"}},
+		}
 	case "doc":
 		return []ToolCallExample{
 			{Description: "Generate an Excel workbook from sheets+rows.", Arguments: map[string]any{"action": "xlsx", "filename": "riepilogo-aura.xlsx", "sheets": []any{map[string]any{"name": "Sintesi", "rows": []any{[]any{"Voce", "Valore"}, []any{"Fonti", "3"}}}}}},

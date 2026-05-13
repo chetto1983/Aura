@@ -17,24 +17,18 @@ const (
 var toolsets = map[string][]string{
 	ToolsetMemoryRead: {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"list_sources",
 		"read_source",
 	},
 	ToolsetWikiReview: {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"lint_sources",
 		"list_sources",
 	},
 	ToolsetSkillsRead: {
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 	},
 	ToolsetWebResearch: {
 		"web",
@@ -46,9 +40,7 @@ var toolsets = map[string][]string{
 	},
 	ToolsetSchedulerSafe: {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"list_sources",
 		"read_source",
 		"lint_sources",
@@ -59,18 +51,14 @@ var toolsets = map[string][]string{
 var rolePresets = map[string][]string{
 	"librarian": {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"list_sources",
 		"read_source",
 		"lint_sources",
 	},
 	"critic": {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"lint_sources",
 		"list_sources",
 	},
@@ -78,15 +66,11 @@ var rolePresets = map[string][]string{
 		"web",
 	},
 	"skillsmith": {
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 	},
 	"synthesizer": {
 		"search_memory",
-		"list_files",
-		"read_file",
-		"search_files",
+		"file",
 		"list_sources",
 		"read_source",
 	},

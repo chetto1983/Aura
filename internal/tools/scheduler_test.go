@@ -415,7 +415,7 @@ func TestTaskTool_AgentJobStructuredPayload(t *testing.T) {
 	if strings.Contains(strings.Join(payload.ToolAllowlist, ","), "web") {
 		t.Fatalf("web should be filtered by memory_read toolset: %+v", payload.ToolAllowlist)
 	}
-	for _, want := range []string{"search_memory", "read_file", "search_files"} {
+	for _, want := range []string{"search_memory", "file"} {
 		if !containsSchedTestString(payload.ToolAllowlist, want) {
 			t.Fatalf("missing %q in allowlist: %+v", want, payload.ToolAllowlist)
 		}

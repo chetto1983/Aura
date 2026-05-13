@@ -257,8 +257,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		if err != nil {
 			logger.Warn("workspace file tools unavailable", "root", cfg.WorkspaceRoot, "error", err)
 		} else {
-			for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
-				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
+			// Wave 2.7e: unified file tool replaces list_files+read_file+
+			// search_files+write_file+apply_patch.
+			if fileTool := tools.NewFileTool(workspaceRoot); fileTool != nil {
+				toolRegistry.Register(tools.WithCategory(fileTool, tools.CategoryAutonomous))
 			}
 			logger.Info("workspace file tools enabled", "root", workspaceRoot.Path())
 		}
