@@ -28,6 +28,32 @@ const (
 	EventToolsExposed EventType = "tools_exposed"
 	EventStats        EventType = "stats"
 	EventFinal        EventType = "final"
+	// EventLLMStart fires immediately before each LLM round-trip. Carries
+	// iteration number, message count handed to the model, and tool count
+	// exposed. Wave 3.0 Step 2 — mirrors the chathub run_started / round
+	// lifecycle so a future chathub adapter can emit a streaming message
+	// envelope around each round.
+	EventLLMStart EventType = "llm_start"
+	// EventLLMDelta fires after each LLM round returns. Today the
+	// underlying ChatClient is one-shot so this fires ONCE per LLM call
+	// with the full assistant content. When a streaming ChatClient lands
+	// it will fire N times per call without breaking consumers. String
+	// value matches the public chathub.EventMessageDelta wire name.
+	EventLLMDelta EventType = "message_delta"
+	// EventToolStart fires before a fresh tool call dispatches. ToolArgKeys
+	// carries the sorted set of top-level argument key names — NEVER
+	// values, per the CLAUDE.md value-leakage policy.
+	EventToolStart EventType = "tool_start"
+	// EventToolEnd fires after a fresh tool call completes. ToolSuccess is
+	// false when the result starts with the "Error:" sentinel. ToolElapsedMs
+	// reports the WHOLE batch duration (calls in the same batch share a
+	// timestamp because ExecuteToolCalls is batch-atomic).
+	EventToolEnd EventType = "tool_end"
+	// EventQuestionRequested is declared for forward compatibility with
+	// chathub's question state machine (PRD §9.2). Slice 6 will fire this
+	// when a tool result indicates an interactive question is needed;
+	// today no tool produces such a result so the constant stays unfired.
+	EventQuestionRequested EventType = "question_requested"
 )
 
 type Event struct {
@@ -42,6 +68,30 @@ type Event struct {
 	Stats               agentloop.Stats
 	Text                string
 	Delivered           bool
+	// LLMStart fields. Iteration is 0-based; MessagesIn is the count after
+	// governance trimming; ToolsIn is the size of the per-turn tool pool.
+	Iteration  int
+	MessagesIn int
+	ToolsIn    int
+	// Tool lifecycle fields. ToolName is set on ToolStart/ToolEnd/
+	// QuestionRequested; ToolCallID only on the tool events. ToolArgKeys
+	// is the sorted argument key-name set on ToolStart (NEVER values).
+	ToolName    string
+	ToolCallID  string
+	ToolArgKeys []string
+	// ToolSuccess / ToolElapsedMs / ToolResultPreview ride EventToolEnd.
+	// ToolResultPreview is capped at agentloop.MaxToolResultPreviewChars
+	// (~200 runes) — just enough to tell success from "Error: ...".
+	ToolSuccess       bool
+	ToolElapsedMs     int64
+	ToolResultPreview string
+	// Delta is the partial (or full, today) assistant text on
+	// EventLLMDelta. Kept distinct from Text so consumers don't confuse
+	// streaming chunks with the EventFinal answer.
+	Delta string
+	// QuestionPayload rides EventQuestionRequested. Schema lands in Slice 6;
+	// today the field is declared so the Event struct shape is stable.
+	QuestionPayload map[string]any
 }
 
 type Invocation struct {
@@ -102,6 +152,59 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 			previousOnStats(stats)
 		}
 		emit(in, Event{Type: EventStats, RunID: runID, Stats: stats})
+	}
+	// Wave 3.0 Step 2: install proxy callbacks for the streaming/tool
+	// lifecycle events. Same pattern as OnStats above — preserve any
+	// user-supplied callback by calling it first, then emit the matching
+	// agentruntime.Event. Adapters that don't care about a kind get a
+	// no-op switch case in their OnEvent handler.
+	previousOnLLMStart := opts.OnLLMStart
+	opts.OnLLMStart = func(iteration, messagesIn, toolsIn int) {
+		if previousOnLLMStart != nil {
+			previousOnLLMStart(iteration, messagesIn, toolsIn)
+		}
+		emit(in, Event{
+			Type:       EventLLMStart,
+			RunID:      runID,
+			Iteration:  iteration,
+			MessagesIn: messagesIn,
+			ToolsIn:    toolsIn,
+		})
+	}
+	previousOnLLMDelta := opts.OnLLMDelta
+	opts.OnLLMDelta = func(deltaText string) {
+		if previousOnLLMDelta != nil {
+			previousOnLLMDelta(deltaText)
+		}
+		emit(in, Event{Type: EventLLMDelta, RunID: runID, Delta: deltaText})
+	}
+	previousOnToolStart := opts.OnToolStart
+	opts.OnToolStart = func(call llm.ToolCall, argKeys []string) {
+		if previousOnToolStart != nil {
+			previousOnToolStart(call, argKeys)
+		}
+		emit(in, Event{
+			Type:        EventToolStart,
+			RunID:       runID,
+			ToolName:    call.Name,
+			ToolCallID:  call.ID,
+			ToolArgKeys: append([]string(nil), argKeys...),
+		})
+	}
+	previousOnToolEnd := opts.OnToolEnd
+	opts.OnToolEnd = func(callID, toolName string, success bool, elapsed time.Duration, preview string) {
+		if previousOnToolEnd != nil {
+			previousOnToolEnd(callID, toolName, success, elapsed, preview)
+		}
+		emit(in, Event{
+			Type:              EventToolEnd,
+			RunID:             runID,
+			ToolName:          toolName,
+			ToolCallID:        callID,
+			ToolSuccess:       success,
+			ToolElapsedMs:     elapsed.Milliseconds(),
+			ToolResultPreview: preview,
+		})
 	}
 
 	emit(in, Event{

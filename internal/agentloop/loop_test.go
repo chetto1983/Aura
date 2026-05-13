@@ -352,6 +352,218 @@ func TestRunTerminalSwarmCanStopWithHandler(t *testing.T) {
 // regular tool messages and trusts the model to recover. See loop.go header
 // for the rationale.
 
+// Wave 3.0 Step 2: per-callback isolation tests. Each callback has its own
+// firing rule (1× per LLM call for Start/Delta, 1× per FRESH tool call for
+// Start/End — dedupe-skipped calls do NOT fire OnToolStart/OnToolEnd).
+
+func TestRunOnLLMStartFiresOncePerIteration(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+	var starts []int
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "wiki result")
+		return ExecutionSummary{LastResult: "wiki result", Results: map[string]string{calls[0].ID: "wiki result"}}
+	}), state, Options{
+		MaxIterations: 3,
+		OnLLMStart: func(iteration, messagesIn, toolsIn int) {
+			starts = append(starts, iteration)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(starts) != 2 || starts[0] != 0 || starts[1] != 1 {
+		t.Fatalf("OnLLMStart fired with iterations %v, want [0 1]", starts)
+	}
+}
+
+func TestRunOnLLMDeltaFiresOncePerLLMCallWithFullContent(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "the full answer"}},
+	}}
+	var deltas []string
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{
+		MaxIterations: 1,
+		OnLLMDelta: func(delta string) {
+			deltas = append(deltas, delta)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "the full answer" {
+		t.Fatalf("OnLLMDelta deltas = %v, want [\"the full answer\"]", deltas)
+	}
+}
+
+func TestRunOnLLMDeltaSkippedWhenContentEmpty(t *testing.T) {
+	// First round returns ONLY tool calls (empty Content) → no delta.
+	// Second round returns text → exactly one delta.
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
+		{Response: llm.Response{Content: "answer"}},
+	}}
+	var deltas []string
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "r")
+		return ExecutionSummary{Results: map[string]string{calls[0].ID: "r"}}
+	}), state, Options{
+		MaxIterations: 3,
+		OnLLMDelta: func(delta string) {
+			deltas = append(deltas, delta)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "answer" {
+		t.Fatalf("OnLLMDelta deltas = %v, want [\"answer\"]", deltas)
+	}
+}
+
+func TestRunOnToolStartFiresOncePerFreshCall(t *testing.T) {
+	state := newFakeLoopState()
+	// Two fresh calls in one batch, then a final answer.
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-a", Name: "search_files", Arguments: map[string]any{"query": "a"}},
+			{ID: "call-b", Name: "wiki_page", Arguments: map[string]any{"slug": "b"}},
+		}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+	var startNames []string
+	var startKeys [][]string
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		results := map[string]string{}
+		for _, call := range calls {
+			state.AddToolResultMessage(call.ID, "r")
+			results[call.ID] = "r"
+		}
+		return ExecutionSummary{Results: results}
+	}), state, Options{
+		MaxIterations: 3,
+		OnToolStart: func(call llm.ToolCall, argKeys []string) {
+			startNames = append(startNames, call.Name)
+			startKeys = append(startKeys, append([]string(nil), argKeys...))
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(startNames) != 2 || startNames[0] != "search_files" || startNames[1] != "wiki_page" {
+		t.Fatalf("OnToolStart names = %v, want [search_files wiki_page]", startNames)
+	}
+	if len(startKeys[0]) != 1 || startKeys[0][0] != "query" {
+		t.Fatalf("call-a arg keys = %v, want [query]", startKeys[0])
+	}
+	if len(startKeys[1]) != 1 || startKeys[1][0] != "slug" {
+		t.Fatalf("call-b arg keys = %v, want [slug]", startKeys[1])
+	}
+}
+
+func TestRunOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-ok", Name: "tool_ok"},
+			{ID: "call-bad", Name: "tool_bad"},
+		}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+	type endRecord struct {
+		callID  string
+		success bool
+		preview string
+	}
+	var ends []endRecord
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		results := map[string]string{}
+		for _, call := range calls {
+			if call.Name == "tool_bad" {
+				state.AddToolResultMessage(call.ID, "Error: boom")
+				results[call.ID] = "Error: boom"
+			} else {
+				state.AddToolResultMessage(call.ID, "ok result")
+				results[call.ID] = "ok result"
+			}
+		}
+		return ExecutionSummary{Results: results}
+	}), state, Options{
+		MaxIterations: 3,
+		OnToolEnd: func(callID, _ string, success bool, _ time.Duration, preview string) {
+			ends = append(ends, endRecord{callID: callID, success: success, preview: preview})
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(ends) != 2 {
+		t.Fatalf("OnToolEnd fired %d times, want 2 (%+v)", len(ends), ends)
+	}
+	for _, e := range ends {
+		switch e.callID {
+		case "call-ok":
+			if !e.success {
+				t.Fatalf("call-ok success = false, want true")
+			}
+			if e.preview != "ok result" {
+				t.Fatalf("call-ok preview = %q", e.preview)
+			}
+		case "call-bad":
+			if e.success {
+				t.Fatalf("call-bad success = true, want false (Error: prefix)")
+			}
+			if e.preview != "Error: boom" {
+				t.Fatalf("call-bad preview = %q", e.preview)
+			}
+		default:
+			t.Fatalf("unexpected callID %q", e.callID)
+		}
+	}
+}
+
+func TestRunOnToolStartSkippedForDedupedCalls(t *testing.T) {
+	// Two identical calls in the same batch — DedupeToolCalls keeps the
+	// first, the second is a duplicate. OnToolStart MUST fire only once;
+	// the duplicate gets a synthetic stub, not a real tool dispatch.
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
+			{ID: "call-2", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
+		}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+	var starts []string
+	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		results := map[string]string{}
+		for _, call := range calls {
+			state.AddToolResultMessage(call.ID, "wiki result")
+			results[call.ID] = "wiki result"
+		}
+		return ExecutionSummary{LastResult: "wiki result", Results: results}
+	}), state, Options{
+		MaxIterations: 3,
+		OnToolStart: func(call llm.ToolCall, _ []string) {
+			starts = append(starts, call.ID)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(starts) != 1 || starts[0] != "call-1" {
+		t.Fatalf("OnToolStart fired with callIDs %v, want [call-1]", starts)
+	}
+}
+
 type fakeLoopClient struct {
 	responses []ChatResponse
 	requests  int

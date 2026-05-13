@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,7 +113,33 @@ type Options struct {
 	RecordUsage             func(llm.TokenUsage)
 	EstimateCost            func(llm.TokenUsage) float64
 	OnStats                 func(Stats)
-	TerminalHandler         TerminalHandler
+	// OnLLMStart fires immediately before each client.Chat() call in the
+	// per-turn loop. iteration is 0-based; messagesIn is the count handed
+	// to the model after governance trimming; toolsIn is the size of the
+	// per-turn tool pool the model will see. Wave 3.0 Step 2: lets a
+	// chathub adapter emit a message_delta lifecycle around each round.
+	OnLLMStart func(iteration, messagesIn, toolsIn int)
+	// OnLLMDelta fires once per LLM call with the full assistant content
+	// after client.Chat() returns. Current ChatClient.Chat() is one-shot
+	// (the Telegram path internally consumes a stream and hands the
+	// completed Response back), so callers see "one delta per call". When
+	// the streaming ChatClient lands the same callback will fire N times
+	// per call without breaking existing consumers.
+	OnLLMDelta func(deltaText string)
+	// OnToolStart fires once per fresh tool call (post-dedupe, post-policy)
+	// just before the executor batch dispatches. argKeys is the SORTED set
+	// of top-level argument key NAMES — never values, never nested data.
+	// Per the CLAUDE.md value-leakage policy.
+	OnToolStart func(call llm.ToolCall, argKeys []string)
+	// OnToolEnd fires once per fresh tool call after the executor batch
+	// returns. preview is the first ~200 chars of the result string, just
+	// enough to distinguish "tool returned" from "tool returned Error: ..."
+	// in logs and adapters. success reflects whether the result starts
+	// with the FormatToolError "Error:" sentinel (false) or not (true).
+	// elapsed measures the WHOLE batch duration — calls in the same batch
+	// share a timestamp because ExecuteToolCalls is batch-atomic.
+	OnToolEnd       func(callID, toolName string, success bool, elapsed time.Duration, preview string)
+	TerminalHandler TerminalHandler
 	// MaxToolResultChars caps each tool message size before going to the
 	// LLM. Zero uses DefaultMaxToolResultChars (8 KB). Operators tune this
 	// via the MAX_TOOL_RESULT_CHARS env var.
@@ -309,10 +336,16 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		stats.LLMCalls++
 		stats.LoopSteps++
 		messagesForModel := applyGovernance(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
+		if opts.OnLLMStart != nil {
+			opts.OnLLMStart(iteration, len(messagesForModel), len(tools))
+		}
 		resp, err := client.Chat(iterCtx, messagesForModel, tools)
 		if err != nil {
 			iterCancel()
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
+		}
+		if opts.OnLLMDelta != nil && resp.Response.Content != "" {
+			opts.OnLLMDelta(resp.Response.Content)
 		}
 
 		state.TrackTokens(resp.Response.Usage)
@@ -467,7 +500,26 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				"tools", toolNames,
 				"duplicates", len(duplicateToolCalls),
 			)
+			// Fire OnToolStart for every fresh call BEFORE dispatch. The
+			// batch may execute calls in parallel inside the executor, so
+			// the start callbacks come out as a single ordered run of
+			// (start, start, ...) followed by (end, end, ...) — adapters
+			// that want strict 1:1 pairing should match by callID.
+			if opts.OnToolStart != nil {
+				for _, call := range freshCalls {
+					opts.OnToolStart(call, argKeysFromCall(call))
+				}
+			}
+			toolBatchStart := time.Now()
 			execution = executor.ExecuteToolCalls(iterCtx, freshCalls)
+			toolBatchElapsed := time.Since(toolBatchStart)
+			if opts.OnToolEnd != nil {
+				for _, call := range freshCalls {
+					result := execution.Results[call.ID]
+					success := !strings.HasPrefix(strings.TrimSpace(result), "Error:")
+					opts.OnToolEnd(call.ID, call.Name, success, toolBatchElapsed, toolResultPreview(result))
+				}
+			}
 			lastToolResult = execution.LastResult
 			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
 			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
@@ -671,6 +723,48 @@ func finalAnswerOnBudget(lastToolResult string) string {
 	}
 	return "I reached the per-turn budget without a usable result."
 }
+
+// argKeys returns the sorted set of top-level argument key names from a
+// tool call's Arguments map. Values are intentionally dropped — the
+// CLAUDE.md value-leakage policy lets us log/emit key names but never
+// the data behind them. Returns an empty slice (never nil) so callers
+// can append safely.
+//
+// Note: this is the agentloop-local helper. internal/tools has a sibling
+// argKeys() that additionally redacts credential-shaped names (api_key,
+// password, etc.). The agentloop layer keeps the names verbatim because
+// outbound chathub adapters may want to render them and downstream
+// redaction is the right layer for that policy. Plain key names alone
+// never leak the data inside the value.
+func argKeysFromCall(call llm.ToolCall) []string {
+	keys := make([]string, 0, len(call.Arguments))
+	for k := range call.Arguments {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// toolResultPreview caps a tool result string at MaxToolResultPreviewChars
+// runes (NOT bytes, to avoid splitting UTF-8 mid-codepoint). The point is
+// "enough to disambiguate success/error in logs", not "round-trip the
+// result"; full results live in the conversation state.
+func toolResultPreview(result string) string {
+	if len(result) <= MaxToolResultPreviewChars {
+		return result
+	}
+	runes := []rune(result)
+	if len(runes) <= MaxToolResultPreviewChars {
+		return result
+	}
+	return string(runes[:MaxToolResultPreviewChars])
+}
+
+// MaxToolResultPreviewChars caps the preview string emitted on OnToolEnd
+// (and downstream EventToolEnd). Tuned for log readability rather than
+// faithful reproduction of the tool output — the full result lives in
+// the state's tool-result message and is governed by MaxToolResultChars.
+const MaxToolResultPreviewChars = 200
 
 func appendUniqueStrings(values []string, additions ...string) []string {
 	for _, addition := range additions {
