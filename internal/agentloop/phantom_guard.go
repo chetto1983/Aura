@@ -70,6 +70,23 @@ type PhantomCorrector interface {
 //	calledThisTurn  — set of tool names invoked across ALL rounds of the current turn.
 //	                  When the model legitimately references a tool it already called,
 //	                  no phantom. When it references one it didn't, phantom.
+//
+// Wave 2.10.b live-debug fix (2026-05-13): the original detector
+// false-positived on didactic explanations — when the model explains how
+// it works ("Chiamo `wiki_page(action='append')`"), the tool name appears
+// in the prose but the model is not claiming to have executed anything.
+// The injected system correction lobotomized those replies in violation
+// of feedback_no_regex_for_nlp. Two heuristics reduce the false-positive
+// rate without losing the real phantom-claim signal:
+//
+//  1. Strip code fences (``` blocks) and inline backticks before scanning.
+//     Tool names inside `code` markup are virtually always didactic —
+//     never paired with a real performative claim.
+//  2. Require a performative first-person past-tense verb near the tool
+//     name. The set of verbs is small + bilingual (Italian + English)
+//     because Aura's prompt is bilingual; coverage for other languages
+//     means a future user explaining in French/Spanish won't trigger,
+//     which is the right default (safer to skip than over-correct).
 func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, calledThisTurn map[string]bool) bool {
 	if g == nil || g.ToolNamesFn == nil || hasCallsInResp {
 		return false
@@ -78,7 +95,10 @@ func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, cal
 	if len(content) < g.minContent() {
 		return false
 	}
-	contentLower := strings.ToLower(content)
+	// Strip backticked / fenced spans before matching — those are
+	// didactic code references, never performative claims.
+	scrubbed := stripCodeMarkup(content)
+	scrubbedLower := strings.ToLower(scrubbed)
 	for _, name := range g.ToolNamesFn() {
 		if name == "" {
 			continue
@@ -86,12 +106,150 @@ func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, cal
 		if calledThisTurn[name] {
 			continue
 		}
-		// Match the tool name only when surrounded by non-word characters
-		// (or at string boundaries). This is a tiny "word-aware substring"
-		// without resorting to regex — avoids matching "task" inside
-		// "tasks" or "multitasking" while still catching it in
-		// "Ho schedulato il task wave-X".
-		if containsAsWord(contentLower, strings.ToLower(name)) {
+		lname := strings.ToLower(name)
+		// Two signals must align: (a) the tool name appears as a bare
+		// word outside code markup AND (b) a past-tense first-person
+		// performative verb appears within the proximity window before
+		// the tool name. Both signals together = "I did X with tool" —
+		// a phantom claim. Either alone is fine: didactic ("you can use
+		// wiki_page to save things"), descriptive ("ho cercato online"
+		// without naming a tool), or prospective ("se vuoi salvo con
+		// wiki_page" — claim is in the future tense).
+		if hasPerformativeNear(scrubbedLower, lname, performativeWindow) {
+			return true
+		}
+	}
+	return false
+}
+
+// performativeWindow is the character distance (looking backwards from
+// the tool name occurrence) within which we require a performative verb
+// to consider the mention a phantom claim. 120 chars ≈ one clause in
+// Italian or English — wide enough for "Ho schedulato il task per ..."
+// but narrow enough that "ho cercato online" at the start of a paragraph
+// won't pair with a "wiki_page" mention 500 chars later.
+const performativeWindow = 120
+
+// stripCodeMarkup removes triple-backtick fenced blocks and single-backtick
+// inline spans so tool names appearing only as didactic code references
+// don't trigger the guard. Best-effort: malformed fences are tolerated;
+// the goal is "remove the obvious teaching markup", not bulletproof
+// Markdown parsing.
+func stripCodeMarkup(s string) string {
+	// Triple-backtick fenced blocks. ungreedy match.
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if i+3 <= len(s) && s[i:i+3] == "```" {
+			j := strings.Index(s[i+3:], "```")
+			if j < 0 {
+				// unterminated fence — strip the rest as code.
+				break
+			}
+			i += 3 + j + 3
+			continue
+		}
+		if s[i] == '`' {
+			j := strings.IndexByte(s[i+1:], '`')
+			if j < 0 {
+				// unterminated inline — keep the lone backtick literally
+				b.WriteByte(s[i])
+				i++
+				continue
+			}
+			i += 1 + j + 1
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// hasPerformativeNear reports whether the tool name appears as a bare word
+// in contentLower AND a past-tense first-person performative verb appears
+// within `window` characters BEFORE that occurrence. Pre-lowercased input.
+//
+// Why "before only" and not "around": a real claim in natural prose is
+// "<verb> ... <tool name>" — the verb sets up the action, the tool name
+// names the instrument. The reverse ("<tool name> ... <verb>") is much
+// more often descriptive: "wiki_page is the tool I used yesterday" reads
+// as descriptive even though all the same words are present.
+//
+// Why proximity at all: without it, a single performative verb anywhere
+// in a long reply lights up every tool mention as phantom — including
+// mentions in legitimate prospective or descriptive context elsewhere
+// in the same message. Live debugging on a 5-iteration agent run on
+// 2026-05-13 caught exactly this regression.
+func hasPerformativeNear(contentLower, needle string, window int) bool {
+	if needle == "" {
+		return false
+	}
+	rest := contentLower
+	cursor := 0
+	for {
+		i := strings.Index(rest, needle)
+		if i < 0 {
+			return false
+		}
+		absIdx := cursor + i
+		// Word-boundary check on the needle.
+		left := absIdx == 0 || !isWordChar(contentLower[absIdx-1])
+		end := absIdx + len(needle)
+		right := end == len(contentLower) || !isWordChar(contentLower[end])
+		if left && right {
+			// Look back `window` chars for a performative verb.
+			from := absIdx - window
+			if from < 0 {
+				from = 0
+			}
+			lookback := contentLower[from:absIdx]
+			for _, verb := range performativeVerbs {
+				if strings.Contains(lookback, verb) {
+					return true
+				}
+			}
+		}
+		rest = rest[i+1:]
+		cursor = absIdx + 1
+	}
+}
+
+// performativeVerbs is the bilingual past-tense first-person verb list
+// used by hasPerformativeNear. Kept narrow on purpose — we'd rather miss
+// a phantom than fire on a normal explanation. See the legacy
+// hasPerformativeClaim doc comment for the lifecycle reasoning.
+var performativeVerbs = []string{
+	// Italian past-tense first-person + auxiliary
+	"ho schedulato", "ho chiamato", "ho invocato", "ho eseguito",
+	"ho creato", "ho salvato", "ho aggiunto", "ho scritto",
+	"ho letto", "ho cercato", "ho cancellato", "ho rimosso",
+	"ho fatto", "ho usato", "ho compilato", "ho aggiornato",
+	"ho lanciato", "ho avviato", "ho processato",
+	// Italian colloquial participle-led (clause start: "Eseguito X",
+	// "Schedulato X" — idiomatic post-action shorthand)
+	"eseguito ", "schedulato ", "salvato ", "creato ", "lanciato ",
+	"chiamato ", "invocato ", "aggiunto ", "fatto ", "rimosso ",
+	"cancellato ", "aggiornato ", "compilato ", "avviato ",
+	// English past-tense / present perfect
+	"i scheduled", "i called", "i invoked", "i executed",
+	"i created", "i saved", "i added", "i wrote", "i read",
+	"i searched", "i deleted", "i removed", "i ran", "i did",
+	"i used", "i compiled", "i updated", "i launched",
+	"i started", "i processed",
+	"i've scheduled", "i've called", "i've invoked", "i've executed",
+	"i've created", "i've saved", "i've added", "i've written",
+	"i've used", "i've updated",
+	"just scheduled", "just called", "just ran",
+}
+
+// hasPerformativeClaim is kept for backward-compatibility with any
+// caller still using the global-presence check. New code uses
+// hasPerformativeNear instead.
+func hasPerformativeClaim(contentLower string) bool {
+	for _, verb := range performativeVerbs {
+		if strings.Contains(contentLower, verb) {
 			return true
 		}
 	}
