@@ -9,8 +9,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/skills"
 )
 
 // fakeInstaller and fakeDeleter satisfy the api.SkillInstaller /
@@ -36,12 +40,22 @@ type fakeDeleter struct {
 	called bool
 	name   string
 	err    error
+	// onDelete, when non-nil, runs on the success path so a test can
+	// remove the matching SKILL.md from disk to mimic what the real
+	// deleter would do.
+	onDelete func(name string)
 }
 
 func (f *fakeDeleter) Delete(name string) error {
 	f.called = true
 	f.name = name
-	return f.err
+	if f.err != nil {
+		return f.err
+	}
+	if f.onDelete != nil {
+		f.onDelete(name)
+	}
+	return nil
 }
 
 func newSkillsWriteRouter(t *testing.T, admin bool, installer SkillInstaller, deleter SkillDeleter) http.Handler {
@@ -51,6 +65,44 @@ func newSkillsWriteRouter(t *testing.T, admin bool, installer SkillInstaller, de
 		SkillsInstaller: installer,
 		SkillsDeleter:   deleter,
 	})
+}
+
+// newSkillsWriteRouterWithLoader constructs a router that wires a real
+// *skills.Loader into Deps. The cache-invalidation tests need this so
+// they can prime LoadAll, mutate disk through the handler, and assert
+// the next LoadAll sees the change inside the cacheTTL window.
+func newSkillsWriteRouterWithLoader(t *testing.T, admin bool, installer SkillInstaller, deleter SkillDeleter, loader *skills.Loader) http.Handler {
+	t.Helper()
+	return NewRouter(Deps{
+		SkillsAdmin:     admin,
+		SkillsInstaller: installer,
+		SkillsDeleter:   deleter,
+		Skills:          loader,
+	})
+}
+
+// writeSkillFile writes a minimal valid SKILL.md under root/<name>/ so
+// the loader picks it up. Mirrors writeSkill in skills_test.go but kept
+// local to avoid coupling the two test files.
+func writeSkillFile(t *testing.T, root, name, description, body string) {
+	t.Helper()
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n" + body
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func containsSkill(skills []skills.Skill, name string) bool {
+	for _, s := range skills {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func postJSON(t *testing.T, router http.Handler, path string, body any) *httptest.ResponseRecorder {
@@ -238,5 +290,94 @@ func TestSkillDelete_GenericError(t *testing.T) {
 	rr := postJSON(t, router, "/skills/foo/delete", nil)
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+}
+
+// TestSkillInstall_InvalidatesLoaderCache pins the contract that the
+// /skills/install handler clears the LoadAll cache on success. Without
+// the Invalidate call the second LoadAll returns the cached pre-install
+// snapshot for up to cacheTTL (1s) and the prompt-side manifest stays
+// stale; with it, the new skill is visible immediately.
+func TestSkillInstall_InvalidatesLoaderCache(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillFile(t, dir, "alpha", "first", "alpha body")
+	loader := skills.NewLoader(dir)
+
+	// Prime the cache: pull the current state into LoadAll's cached field.
+	before, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("prime LoadAll: %v", err)
+	}
+	if len(before) != 1 || before[0].Name != "alpha" {
+		t.Fatalf("unexpected prime state: %+v", before)
+	}
+
+	// The fake installer doesn't actually write to disk, so we do it
+	// here just before driving the handler. From the loader's point of
+	// view this models the post-install on-disk state.
+	writeSkillFile(t, dir, "bravo", "second", "bravo body")
+
+	inst := &fakeInstaller{out: "added skill 'bravo'\n"}
+	router := newSkillsWriteRouterWithLoader(t, true, inst, nil, loader)
+	rr := postJSON(t, router, "/skills/install", map[string]any{
+		"source":   "user/repo",
+		"skill_id": "bravo",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if !inst.called {
+		t.Fatal("installer not invoked")
+	}
+
+	after, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("post LoadAll: %v", err)
+	}
+	if !containsSkill(after, "bravo") {
+		t.Fatalf("loader cache still stale, expected bravo in %+v", after)
+	}
+}
+
+// TestSkillDelete_InvalidatesLoaderCache is the symmetric assertion for
+// the delete handler. The fake deleter receives an onDelete callback
+// that performs the disk removal; after the handler returns, LoadAll
+// must reflect the removal without waiting on cacheTTL.
+func TestSkillDelete_InvalidatesLoaderCache(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillFile(t, dir, "alpha", "first", "alpha body")
+	writeSkillFile(t, dir, "bravo", "second", "bravo body")
+	loader := skills.NewLoader(dir)
+
+	before, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("prime LoadAll: %v", err)
+	}
+	if !containsSkill(before, "bravo") {
+		t.Fatalf("expected bravo in primed cache: %+v", before)
+	}
+
+	del := &fakeDeleter{
+		onDelete: func(name string) {
+			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
+				t.Errorf("removeAll %q: %v", name, err)
+			}
+		},
+	}
+	router := newSkillsWriteRouterWithLoader(t, true, nil, del, loader)
+	rr := postJSON(t, router, "/skills/bravo/delete", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if !del.called || del.name != "bravo" {
+		t.Fatalf("deleter state: %+v", del)
+	}
+
+	after, err := loader.LoadAll()
+	if err != nil {
+		t.Fatalf("post LoadAll: %v", err)
+	}
+	if containsSkill(after, "bravo") {
+		t.Fatalf("loader cache still stale, bravo should be gone: %+v", after)
 	}
 }

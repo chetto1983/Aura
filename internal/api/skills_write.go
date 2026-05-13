@@ -99,6 +99,12 @@ func handleSkillInstall(deps Deps) http.HandlerFunc {
 		if deps.ToolReconciler != nil {
 			deps.ToolReconciler.Notify(toolindex.ReasonSkillsChanged)
 		}
+		// Drop the prompt-side manifest cache (cacheTTL = 1s) so the next
+		// conversation turn sees the new skill set without waiting for the
+		// TTL window to expire.
+		if deps.Skills != nil {
+			deps.Skills.Invalidate()
+		}
 		writeJSON(w, deps.Logger, http.StatusOK, SkillInstallResponse{
 			OK:     true,
 			Output: clipOutput(out),
@@ -132,6 +138,9 @@ func handleSkillDelete(deps Deps) http.HandlerFunc {
 		}
 		if deps.ToolReconciler != nil {
 			deps.ToolReconciler.Notify(toolindex.ReasonSkillsChanged)
+		}
+		if deps.Skills != nil {
+			deps.Skills.Invalidate()
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SkillDeleteResponse{OK: true, Name: name})
 	}
