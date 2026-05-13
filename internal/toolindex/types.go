@@ -3,19 +3,18 @@
 //
 // Why this package exists (Wave 2.10.b):
 //
-//   - Before: Aura built the tool embedding index once at boot via
-//     Registry.BuildVectorIndex(). Any change to a tool description, an input
-//     schema field, or a skill manifest after boot was invisible to
-//     tool_search until restart. That is wrong by 2026 standards — LangChain
-//     RecordManager, vector-vault, and incremental-indexing patterns all
-//     compute per-document content hashes and apply the diff on every
-//     reconcile pass.
+// Before the Reconciler, Aura built the tool embedding index once at boot.
+// Any change to a tool description, an input schema field, or a skill
+// manifest after boot was invisible to tool_search until restart. That is
+// wrong by 2026 standards — LangChain RecordManager, vector-vault, and
+// incremental-indexing patterns all compute per-document content hashes
+// and apply the diff on every reconcile pass.
 //
-//   - After: Reconciler diffs wanted (Registry.Definitions()) vs indexed
-//     (tool_index_state SQLite table) on every trigger. Upsert only the
-//     changed/added; delete only the removed; the rest costs zero embedder
-//     calls. Same boot wall-clock when cold (one embed call per tool); near-
-//     zero wall-clock on every subsequent reconcile.
+// The Reconciler diffs wanted (Registry.Definitions()) vs indexed
+// (tool_index_state SQLite table) on every trigger. Upsert only the
+// changed/added; delete only the removed; the rest costs zero embedder
+// calls. Same boot wall-clock when cold (one embed call per tool); near-
+// zero wall-clock on every subsequent reconcile.
 //
 // Interfaces are kept narrow so the package is testable without spinning up
 // a real Qdrant or embedding sidecar. The production wiring lives in

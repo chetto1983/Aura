@@ -281,22 +281,13 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	return result, nil
 }
 
-// BuildVectorIndex creates and populates a vector search index from the
-// currently registered tools. When cfg.Backend is "fts" or the registry
-// is nil, it is a no-op. Readiness and build errors are non-fatal: vector
-// search degrades gracefully to FTS when the index is unavailable.
-// PrepareVectorReader (Wave 2.10.b) wires the *ToolVectorIndex onto the
-// registry as the SEARCH path only — no idx.Build() call, no Qdrant
-// writes. The toolindex.Reconciler owns the write path now; this method
-// just hooks up the query-side client so Registry.Search can do vector
-// cosine against the collection the Reconciler maintains.
-//
-// Pattern split:
-//   - BuildVectorIndex (legacy, kept for tests + non-2.10.b callers):
-//     reader + writer in one call. Still used when no Reconciler is wired.
-//   - PrepareVectorReader (this method): reader only. Boot wires
-//     this + toolindex.Reconciler in tandem; the legacy BuildVectorIndex
-//     is skipped to avoid double-writes with mismatched dimensions.
+// PrepareVectorReader wires the *ToolVectorIndex onto the registry as the
+// SEARCH path. Writes are owned by toolindex.Reconciler (Wave 2.10.b+);
+// this method just hooks up the query-side client so Registry.Search can
+// run vector cosine against the collection the Reconciler maintains.
+// When cfg.Backend is "fts" or the registry is nil, it is a no-op.
+// Readiness errors are non-fatal: vector search degrades to FTS when the
+// reader cannot be wired.
 func (r *Registry) PrepareVectorReader(cfg ToolVectorConfig) {
 	if r == nil || cfg.Backend == "fts" {
 		return
@@ -310,40 +301,6 @@ func (r *Registry) PrepareVectorReader(cfg ToolVectorConfig) {
 	}
 	r.SetVectorIndex(idx)
 	r.logger.Info("tool vector reader wired (writes via toolindex.Reconciler)", "backend", cfg.Backend)
-}
-
-func (r *Registry) BuildVectorIndex(cfg ToolVectorConfig) {
-	if r == nil || cfg.Backend == "fts" {
-		return
-	}
-	idx := NewToolVectorIndex(cfg, r.logger)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := idx.Ready(ctx); err != nil {
-		r.logger.Warn("tool vector index not ready, falling back to fts", "error", err)
-		return
-	}
-
-	r.mu.RLock()
-	docs := make([]toolVectorDoc, 0, len(r.tools))
-	for _, t := range r.tools {
-		def := definitionForTool(t)
-		_ = toolCategories(t) // tags no longer used for embedding (D-24)
-		docs = append(docs, toolVectorDoc{
-			name: def.Name,
-			text: searchableToolEmbeddingText(def), // D-24: narrow embedding text
-		})
-	}
-	r.mu.RUnlock()
-
-	if err := idx.Build(ctx, docs); err != nil {
-		r.logger.Warn("tool vector index build failed, falling back to fts", "error", err)
-		return
-	}
-
-	r.SetVectorIndex(idx)
-	r.logger.Info("tool vector index ready", "backend", cfg.Backend, "docs", len(docs))
 }
 
 func (r *Registry) SetVectorIndex(idx *ToolVectorIndex) {

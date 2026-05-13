@@ -18,8 +18,6 @@ import (
 	"github.com/aura/aura/internal/qdrant"
 )
 
-const defaultVectorBatchSize = 32
-
 type ToolVectorConfig struct {
 	Backend      string
 	TopK         int
@@ -40,39 +38,24 @@ type ToolVectorHealth struct {
 	Fallback    bool   `json:"fallback"`
 }
 
-type toolVectorDoc struct {
-	name string
-	text string
-}
-
 type ToolVectorIndex struct {
 	qclient    qdrant.Client
 	collection string
 	cfg        ToolVectorConfig
 	http       *http.Client
 
-	// mu guards the in-memory Build/Search state below. It is held only
-	// for fast in-memory mutations / reads, never around HTTP I/O (WR-04).
-	mu          sync.RWMutex
-	docCount    int
-	lastRebuild time.Time
-	lastError   error
-
-	// buildMu serializes concurrent Build calls so they do not race each
-	// other on the Qdrant collection (delete/create/upsert). Search does
-	// NOT take buildMu — it only takes mu.RLock for the in-memory state,
-	// which means a Search initiated mid-Build returns the previous
-	// build's docCount/lastError snapshot and proceeds without blocking
-	// on the Build's HTTP calls (WR-04).
-	buildMu sync.Mutex
+	// mu guards the optional health fields below. toolindex.Reconciler owns
+	// the indexed state (count, last upsert time) since Wave 2.10.b; these
+	// fields stay zero unless an external probe writes them.
+	mu        sync.RWMutex
+	lastError error
 
 	logger *slog.Logger
 }
 
 // ToolSearchCollection is the canonical Qdrant collection name used by
-// both the legacy BuildVectorIndex reader and the Wave 2.10.b
-// toolindex.Reconciler writer. Exported so boot wiring + tests reference
-// the same constant.
+// the toolindex.Reconciler writer and the ToolVectorIndex reader. Exported
+// so boot wiring + tests reference the same constant.
 const ToolSearchCollection = "aura_tool_search_v2"
 
 // ToolVectorDim returns the embedding dimension to declare when creating
@@ -93,8 +76,7 @@ func ToolVectorDim(embedOutputDim int) int {
 // embedding input. Accepts llm.ToolDefinition so callers outside the
 // tools package (toolindex.Reconciler in particular) don't need to depend
 // on the internal tools.ToolDefinition type. The Examples field is empty
-// at this boundary; the renderer treats that as a no-op, so the
-// resulting bytes are identical to what BuildVectorIndex hashed.
+// at this boundary; the renderer treats that as a no-op.
 func SearchableEmbeddingTextForLLMDef(def llm.ToolDefinition) string {
 	return searchableToolEmbeddingText(ToolDefinition{
 		Name:        def.Name,
@@ -150,126 +132,20 @@ func (idx *ToolVectorIndex) Ready(ctx context.Context) error {
 	return idx.qclient.Health(ctx)
 }
 
-// Build (re)builds the Qdrant-backed tool index. WR-04: idx.mu is NOT held
-// across the Qdrant/embedding HTTP calls. buildMu serializes concurrent
-// Build calls; idx.mu is taken only briefly to publish the resulting
-// in-memory state (docCount, lastRebuild, lastError). This means Search
-// callers continue to see the previous snapshot during a long rebuild
-// instead of blocking on the rebuild's HTTP round-trips.
-func (idx *ToolVectorIndex) Build(ctx context.Context, docs []toolVectorDoc) error {
-	if idx == nil || idx.cfg.Backend == "fts" {
-		return nil
-	}
-	// Serialize Builds so two callers do not race the delete/create/upsert
-	// sequence on the same Qdrant collection.
-	idx.buildMu.Lock()
-	defer idx.buildMu.Unlock()
-
-	// publish writes the build outcome to the shared in-memory state.
-	// Used in defer-style for early returns and at the end on success.
-	publish := func(docCount int, buildErr error) {
-		idx.mu.Lock()
-		idx.docCount = docCount
-		idx.lastError = buildErr
-		idx.lastRebuild = time.Now()
-		idx.mu.Unlock()
-	}
-
-	if len(docs) == 0 {
-		publish(0, nil)
-		return nil
-	}
-
-	if idx.qclient == nil {
-		err := fmt.Errorf("qdrant client not initialized")
-		idx.logger.Warn("tool vector index build: qdrant client unavailable", "error", err)
-		publish(0, err)
-		return nil
-	}
-
-	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
-	// points, skip the rebuild and reuse the cached vectors.
-	//
-	// WR-03 / T-01-24 (accepted): vector-size drift from EMBEDDING_MODEL swaps
-	// is not detected here because CollectionInfo does not expose the stored
-	// vector size. Search queries will fail loudly with a Qdrant dimension
-	// error if the operator changes models without rebuilding the collection.
-	info, infoErr := idx.qclient.CollectionInfo(ctx, idx.collection)
-	if infoErr != nil {
-		// Defensive fallback: a transient probe failure must not block startup.
-		idx.logger.Warn("tool vector index build: collection info probe failed; proceeding with full rebuild", "collection", idx.collection, "error", infoErr)
-	} else if info.PointsCount > 0 {
-		idx.logger.Info("tool vector qdrant warm-cache hit, skipping rebuild", "collection", idx.collection, "points_count", info.PointsCount, "docs", len(docs))
-		publish(len(docs), nil)
-		return nil
-	}
-
-	texts := make([]string, len(docs))
-	for i, doc := range docs {
-		texts[i] = doc.text
-	}
-
-	vectors, err := idx.embed(ctx, texts)
-	if err != nil {
-		idx.logger.Warn("tool vector index build: embedding failed, falling back to fts", "error", err)
-		publish(0, err)
-		return nil
-	}
-	if len(vectors) != len(docs) {
-		publish(0, fmt.Errorf("expected %d vectors, got %d", len(docs), len(vectors)))
-		return nil
-	}
-
-	vectorSize := len(vectors[0])
-	if err := idx.qclient.DeleteCollection(ctx, idx.collection); err != nil {
-		idx.logger.Warn("tool vector index build: qdrant collection delete failed", "error", err)
-		publish(0, err)
-		return nil
-	}
-	if err := idx.qclient.CreateCollection(ctx, idx.collection, vectorSize); err != nil {
-		idx.logger.Warn("tool vector index build: qdrant collection create failed", "error", err)
-		publish(0, err)
-		return nil
-	}
-
-	qpoints := make([]qdrant.Point, len(docs))
-	for i, doc := range docs {
-		qpoints[i] = qdrant.Point{
-			ID:     toolQdrantPointID(doc.name),
-			Vector: vectors[i],
-			Payload: map[string]string{
-				"name": doc.name,
-				"text": doc.text,
-			},
-		}
-	}
-
-	if err := idx.qclient.Upsert(ctx, idx.collection, qpoints); err != nil {
-		idx.logger.Warn("tool vector index build: qdrant upsert failed", "error", err)
-		publish(0, err)
-		return nil
-	}
-
-	publish(len(docs), nil)
-	idx.logger.Info("tool vector index built", "docs", len(docs), "vector_size", vectorSize)
-	return nil
-}
-
 func (idx *ToolVectorIndex) Search(ctx context.Context, query string, topK int, excluded ...string) ([]ToolSearchResult, error) {
 	if idx == nil || idx.cfg.Backend == "fts" {
 		return nil, nil
 	}
 	// Snapshot mutable state under the RLock, then release before any HTTP
-	// I/O. Holding the lock across embed + Qdrant calls would starve rebuilds
-	// (Build's idx.mu.Lock waits behind every in-flight search RTT).
+	// I/O. Holding the lock across embed + Qdrant calls would block any
+	// concurrent health write.
 	idx.mu.RLock()
-	docCount := idx.docCount
 	lastErr := idx.lastError
 	qclient := idx.qclient
 	collection := idx.collection
 	idx.mu.RUnlock()
 
-	if docCount == 0 || lastErr != nil {
+	if lastErr != nil {
 		return nil, lastErr
 	}
 
@@ -317,6 +193,10 @@ func (idx *ToolVectorIndex) Search(ctx context.Context, query string, topK int, 
 	return results, nil
 }
 
+// Health reports the reader's observable state. DocCount and LastRebuild
+// are owned by toolindex.Reconciler post-Wave 2.10.b and stay zero/empty
+// in this view; callers needing those values should query the reconciler
+// or the manual /api/tools/reindex endpoint.
 func (idx *ToolVectorIndex) Health() ToolVectorHealth {
 	if idx == nil {
 		return ToolVectorHealth{Backend: "fts", Fallback: true}
@@ -326,15 +206,11 @@ func (idx *ToolVectorIndex) Health() ToolVectorHealth {
 
 	h := ToolVectorHealth{
 		Backend:    idx.cfg.Backend,
-		DocCount:   idx.docCount,
 		EmbedModel: idx.cfg.EmbedModel,
 	}
 	if idx.lastError != nil {
 		h.LastError = idx.lastError.Error()
 		h.Fallback = true
-	}
-	if !idx.lastRebuild.IsZero() {
-		h.LastRebuild = idx.lastRebuild.Format(time.RFC3339)
 	}
 	return h
 }
@@ -394,11 +270,9 @@ func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]floa
 	return vectors, nil
 }
 
-// ToolQdrantPointID is exported so toolindex.Reconciler can derive the
-// SAME point ID for a given tool name as the legacy BuildVectorIndex
-// path. Identical IDs mean the two paths upsert into the same row in
-// Qdrant; without this alignment a fresh-boot install could leave two
-// points per tool (one from each writer) until the next reconcile.
+// ToolQdrantPointID derives a stable Qdrant point ID from a tool name.
+// Exported so toolindex.Reconciler can compute it the same way as the
+// search-side reader.
 func ToolQdrantPointID(name string) string {
 	return toolQdrantPointID(name)
 }

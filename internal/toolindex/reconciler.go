@@ -65,9 +65,9 @@ type Config struct {
 	PointIDNamespace uuid.UUID
 
 	// PointIDFn overrides the default uuidv5 derivation. The boot wiring
-	// passes tools.ToolQdrantPointID so the Reconciler and the legacy
-	// BuildVectorIndex writer produce identical point IDs for the same
-	// tool name. When nil, falls back to uuidv5(PointIDNamespace, name).
+	// passes tools.ToolQdrantPointID so the Reconciler matches the point
+	// IDs the search-side reader expects. When nil, falls back to
+	// uuidv5(PointIDNamespace, name).
 	PointIDFn func(toolName string) string
 }
 
@@ -145,8 +145,8 @@ func defaultEmbedText(def llm.ToolDefinition) string {
 // PointID derives a stable Qdrant point ID from the tool name. Exposed so
 // tests + the manual reindex handler can compute it the same way. Honors
 // the optional Config.PointIDFn override (used by the boot wiring to match
-// legacy BuildVectorIndex point IDs); otherwise falls back to uuidv5
-// against PointIDNamespace.
+// the search-side reader's IDs); otherwise falls back to uuidv5 against
+// PointIDNamespace.
 func (r *Reconciler) PointID(toolName string) string {
 	if r.cfg.PointIDFn != nil {
 		return r.cfg.PointIDFn(toolName)

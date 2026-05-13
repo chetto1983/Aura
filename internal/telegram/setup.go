@@ -583,19 +583,13 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Tool vector index backs the hybrid backend of Registry.Search, which
-	// the LLM-callable tool_search tool delegates to. Pre-loading at boot
-	// avoids paying ~5-10s per-tool embedding cost on the first tool_search
-	// call of a chat. Warm-cache short-circuits when the collection
-	// already has points (idx.Build, see registry_search_vector.go:162).
+	// the LLM-callable tool_search tool delegates to. toolindex.Reconciler
+	// is the source of truth for the embedding index (Wave 2.10.b+); this
+	// path only wires the search-side reader.
 	//
 	// 2026-05-12 benchmark: embed cosine top-5 hits 90% Hit@5 on 64 labeled
 	// queries vs 50% for BM25 alone — vector backend pulls real weight even
 	// though mini-LLM rerankers proved unusable on CPU (p95 ≥ 1500ms).
-	// Wave 2.10.b — Reconciler is the source of truth for the tool
-	// embedding index. BuildVectorIndex (legacy, embeds at full native
-	// dim) is skipped when the Reconciler is wired so we don't get a
-	// dim-mismatch double-write. The legacy path stays in tree for tests
-	// that don't spin up the full Reconciler stack.
 	toolReaderConfig := tools.ToolVectorConfig{
 		Backend:      cfg.ToolSearchBackend,
 		TopK:         cfg.ToolSearchTopK,
@@ -606,7 +600,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		EmbedAPIKey:  cfg.EmbeddingAPIKey,
 		EmbedModel:   cfg.EmbeddingModel,
 	}
-	reconcilerWired := false
 	if qdrantCli != nil && embedCache != nil && cfg.ToolSearchBackend != "fts" {
 		reconciler, err := toolindex.New(toolindex.Config{
 			Provider:    toolRegistry,
@@ -632,7 +625,6 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 				logger.Warn("tool index reconcile error", "idx", i, "err", e)
 			}
 			b.toolReconciler = reconciler
-			reconcilerWired = true
 			b.bgWg.Add(1)
 			go func() {
 				defer b.bgWg.Done()
@@ -665,15 +657,10 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 
 	// Wire the *ToolVectorIndex on the registry for the search path.
-	// When the Reconciler is up, we use PrepareVectorReader (no Build,
-	// no Qdrant writes — the Reconciler owns those). When the Reconciler
-	// isn't available, fall back to the legacy BuildVectorIndex (reader
-	// + writer in one call) so search still works in degraded mode.
-	if reconcilerWired {
-		toolRegistry.PrepareVectorReader(toolReaderConfig)
-	} else {
-		toolRegistry.BuildVectorIndex(toolReaderConfig)
-	}
+	// Writes are owned by toolindex.Reconciler; this just hooks up the
+	// query-side client. If the Reconciler is not wired (qdrant or embed
+	// cache unavailable) the reader degrades to fts via Ready() check.
+	toolRegistry.PrepareVectorReader(toolReaderConfig)
 
 	// Slice 12b/12c: conversation archive. Open the ArchiveStore on the same
 	// SQLite file as the scheduler (migration is idempotent). Store the
