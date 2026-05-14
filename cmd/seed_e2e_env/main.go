@@ -31,7 +31,7 @@ import (
 
 	"github.com/aura/aura/internal/auth"
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/debugguard"
+	"github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/scheduler"
 )
 
@@ -46,7 +46,7 @@ func main() {
 	if _, err := os.Stat(*dbPath); err != nil {
 		log.Fatalf("database not found at %s: %v", *dbPath, err)
 	}
-	if err := guardLiveDBWriteForSeed(context.Background(), *dbPath, debugguard.IsComposeAuraRunning); err != nil {
+	if err := guardLiveDBWriteForSeed(context.Background(), *dbPath, db.IsComposeAuraRunning); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -154,8 +154,8 @@ func main() {
 	}
 }
 
-func guardLiveDBWriteForSeed(ctx context.Context, dbPath string, auraRunning debugguard.AuraRunningFunc) error {
-	return debugguard.RefuseLiveDockerDBWrite(ctx, dbPath, "seed_e2e_env", auraRunning)
+func guardLiveDBWriteForSeed(ctx context.Context, dbPath string, auraRunning db.AuraRunningFunc) error {
+	return db.RefuseLiveDockerDBWrite(ctx, dbPath, "seed_e2e_env", auraRunning)
 }
 
 // patchEnv updates only the listed keys in path. Lines outside the keys

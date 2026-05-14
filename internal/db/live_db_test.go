@@ -1,4 +1,4 @@
-package debugguard
+package db
 
 import (
 	"context"
