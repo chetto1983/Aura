@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/backup"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"

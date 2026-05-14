@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 // handleAuthLogout revokes the bearer token used to make this request.

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 // PendingApprover is the boundary between the API and the Telegram bot.

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 // fakeApprover records side effects so we can assert ApproveAccess /

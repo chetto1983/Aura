@@ -29,7 +29,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/scheduler"

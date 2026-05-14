@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 type fakeTokenRepository struct {

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"

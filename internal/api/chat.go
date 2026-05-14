@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 // userIDFromRequest returns the authenticated user ID injected by the bearer

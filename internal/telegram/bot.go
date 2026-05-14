@@ -13,7 +13,7 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/agentruntime"
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/config"

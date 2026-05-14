@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/auth"
+	"github.com/aura/aura/internal/api/auth"
 )
 
 type fakeDashboardAuthRepository struct {
