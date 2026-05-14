@@ -864,12 +864,12 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
-		// Chat pipe for cmd/chat. Reuses the auraRunner so a local CLI
-		// session and a swarm worker share the same LLM client + tool
-		// registry, but per-userID history is kept in a separate in-memory
-		// map so a chat-pipe turn does not serialize behind a Telegram
-		// message via the UserGate.
-		Chat: NewChatPipeService(auraRunner, toolRegistry),
+		// Chat pipe for /api/chat. When AURA_USE_HUB=true the request is
+		// routed through chat.Hub + the web adapter (experimental; default
+		// false — Telegram stays on the legacy path until US-704).
+		// When false (or unset), falls back to the direct chatPipeService
+		// that drives agent.Runner inline.
+		Chat: buildChatService(auraRunner, toolRegistry, logger),
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

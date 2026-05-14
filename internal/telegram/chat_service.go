@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/chat"
+	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/tools"
@@ -135,4 +139,79 @@ func (s *chatPipeService) gcLocked() {
 			delete(s.sessions, id)
 		}
 	}
+}
+
+// buildChatService returns the api.ChatService to mount on /api/chat.
+//
+// AURA_USE_HUB=true: route through chat.Hub + web adapter (experimental).
+// The Hub's AgentLoop delegates to a chatPipeService so session history and
+// tool access are identical to the legacy path.  Default is false — Telegram
+// stays on the legacy path until US-704 flips the default.
+//
+// AURA_USE_HUB=false (default): returns a chatPipeService directly.
+func buildChatService(runner *agent.Runner, registry *tools.Registry, logger *slog.Logger) api.ChatService {
+	if os.Getenv("AURA_USE_HUB") != "true" {
+		return NewChatPipeService(runner, registry)
+	}
+
+	// Hub-based web path.
+	inner := NewChatPipeService(runner, registry)
+	loop := &chatServiceAgentLoop{inner: inner}
+	hub, err := chat.New(chat.Config{Loop: loop, Logger: logger})
+	if err != nil {
+		if logger != nil {
+			logger.Warn("AURA_USE_HUB: failed to create hub, falling back to legacy", "error", err)
+		}
+		return inner
+	}
+	router := webadapter.NewRouter()
+	hub.RegisterOutbound(router)
+	webSvc := webadapter.NewChatService(hub, router)
+	return &hubChatServiceAdapter{inner: webSvc}
+}
+
+// chatServiceAgentLoop bridges api.ChatService (chatPipeService) into the
+// chat.AgentLoop interface so chat.Hub can drive it.  Session management
+// (per-userID message history) lives inside the wrapped chatPipeService.
+type chatServiceAgentLoop struct {
+	inner api.ChatService
+}
+
+func (l *chatServiceAgentLoop) Run(ctx context.Context, run *chat.Run, msg chat.InboundMessage, emit chat.EmitFn) error {
+	reply, err := l.inner.Chat(ctx, msg.PrincipalID, msg.Text)
+	if err == nil || reply.Reply != "" {
+		_ = emit(chat.OutboundEvent{
+			Type:    chat.EventMessageDone,
+			Content: reply.Reply,
+			Payload: map[string]any{"delivered": err == nil},
+		})
+	}
+	if err == nil {
+		_ = emit(chat.OutboundEvent{
+			Type: chat.EventUsage,
+			Payload: map[string]any{
+				"llm_calls":    reply.LLMCalls,
+				"tool_calls":   reply.ToolCalls,
+				"tokens_total": reply.Tokens,
+			},
+		})
+	}
+	return err
+}
+
+// hubChatServiceAdapter converts webadapter.ChatReply → api.ChatReply so
+// webadapter.ChatService satisfies api.ChatService without an import cycle.
+type hubChatServiceAdapter struct {
+	inner *webadapter.ChatService
+}
+
+func (a *hubChatServiceAdapter) Chat(ctx context.Context, userID, message string) (api.ChatReply, error) {
+	r, err := a.inner.Chat(ctx, userID, message)
+	return api.ChatReply{
+		Reply:     r.Reply,
+		ElapsedMs: r.ElapsedMs,
+		LLMCalls:  r.LLMCalls,
+		ToolCalls: r.ToolCalls,
+		Tokens:    r.Tokens,
+	}, err
 }

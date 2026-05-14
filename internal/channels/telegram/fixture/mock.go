@@ -1,16 +1,18 @@
 // Package fixture provides a record-and-replay harness for the Telegram
-// streaming path. Capture drives internal/telegram.Bot.ConsumeStream against a
-// lightweight fake Telegram HTTP server, records every Bot API call made during
-// the run, and writes the captured sequence to testdata/<name>.json.
+// streaming path. Capture drives channels/telegram.Outbound.ConsumeStream
+// against a lightweight fake Telegram HTTP server, records every Bot API call
+// made during the run, and writes the captured sequence to
+// testdata/<name>.json.
 //
-// US-301 gate: the committed snapshots serve as byte-comparison baselines for
-// the Step 4 (US-401) port of consumeStream into channels/telegram/outbound.go.
+// US-301 created the initial snapshots using internal/telegram.Bot.ConsumeStream.
+// US-401 switched Capture to use the ported Outbound.ConsumeStream so the
+// fixture validates the new implementation; the committed JSON files are the
+// byte-comparison baseline (diff must be 0 across all scenarios).
 package fixture
 
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,8 +22,8 @@ import (
 	"sync"
 	"testing"
 
+	telegramadapter "github.com/aura/aura/internal/channels/telegram"
 	"github.com/aura/aura/internal/llm"
-	tgtelegram "github.com/aura/aura/internal/telegram"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -38,12 +40,12 @@ type CaptureResult struct {
 	Calls     []APICall    `json:"calls"`
 }
 
-// Capture runs consumeStream for the given token stream, records all Telegram
-// Bot API calls made during the run, and writes the result to
-// testdata/<name>.json. The file is (re)written on every call so a fresh
-// snapshot is always on disk after the test suite runs.
+// Capture runs ConsumeStream on the ported Outbound adapter for the given
+// token stream, records all Telegram Bot API calls made during the run, and
+// writes the result to testdata/<name>.json.  The file is (re)written on every
+// call so a fresh snapshot is always on disk after the test suite runs.
 //
-// placeholder, when non-nil, is passed to consumeStream so the initial
+// placeholder, when non-nil, is passed to ConsumeStream so the initial
 // streaming content edits the existing message rather than sending a new one.
 func Capture(t *testing.T, name string, tokens []llm.Token, placeholder *tele.Message) CaptureResult {
 	t.Helper()
@@ -69,8 +71,8 @@ func Capture(t *testing.T, name string, tokens []llm.Token, placeholder *tele.Me
 	}
 	close(ch)
 
-	bot := tgtelegram.NewTestBot(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	resp, delivered, err := bot.ConsumeStream(ctx, ch, "123", placeholder)
+	out := telegramadapter.NewOutbound(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	resp, delivered, err := out.ConsumeStream(ctx, ch, "123", placeholder)
 	if err != nil {
 		t.Fatalf("fixture.Capture: ConsumeStream: %v", err)
 	}

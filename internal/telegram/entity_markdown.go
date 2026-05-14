@@ -14,6 +14,18 @@ type renderedTelegramMessage struct {
 	Entities tele.Entities
 }
 
+// RenderedMessage is the exported alias for renderedTelegramMessage.
+// Used by channels/telegram/outbound.go so the streaming port can call
+// RenderForEntities without duplicating the rendering logic.
+type RenderedMessage = renderedTelegramMessage
+
+// RenderForEntities is the exported bridge to renderForTelegramEntities.
+// Production callers inside this package use the unexported name; this
+// export exists solely for channels/telegram/outbound.go.
+func RenderForEntities(s string) []RenderedMessage {
+	return renderForTelegramEntities(s)
+}
+
 func renderForTelegramEntities(s string) []renderedTelegramMessage {
 	if s == "" {
 		return nil
