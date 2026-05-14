@@ -17,6 +17,7 @@
 /skills/
 /mcp.json
 /skills-lock.json
+docs/2602.02276v1.pdf
 
 # Databases and logs
 *.db
@@ -75,3 +76,4 @@ Thumbs.db
 CLAUDE.md
 .planning/*
 tmp_*
+
