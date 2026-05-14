@@ -7,12 +7,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aura/aura/internal/agentloop"
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/llm"
 )
 
-// --- Fakes for driving agentruntime.Run end-to-end through the adapter ----
+// --- Fakes for driving agent.Run end-to-end through the adapter ----
 
 // scriptedChatClient returns a canned LLM response on the first call, then a
 // final no-tool-call answer on the second. The first response always has tool
@@ -24,12 +23,12 @@ type scriptedChatClient struct {
 	contentB string
 }
 
-func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.ToolDefinition) (agent.ChatResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
 	if c.calls == 1 {
-		return agentloop.ChatResponse{
+		return agent.ChatResponse{
 			Response: llm.Response{
 				Content:      c.contentA,
 				HasToolCalls: true,
@@ -40,7 +39,7 @@ func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.To
 			},
 		}, nil
 	}
-	return agentloop.ChatResponse{
+	return agent.ChatResponse{
 		Response: llm.Response{
 			Content: c.contentB,
 			Usage:   llm.TokenUsage{PromptTokens: 12, CompletionTokens: 7, TotalTokens: 19},
@@ -50,12 +49,12 @@ func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.To
 
 type scriptedExecutor struct{}
 
-func (scriptedExecutor) ExecuteToolCalls(_ context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+func (scriptedExecutor) ExecuteToolCalls(_ context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
 	results := map[string]string{}
 	for _, c := range calls {
 		results[c.ID] = "ok-result-for-" + c.Name
 	}
-	return agentloop.ExecutionSummary{
+	return agent.ExecutionSummary{
 		LastResult: "ok-result-for-search_memory",
 		Results:    results,
 	}
@@ -101,8 +100,8 @@ func TestAgentLoopAdapter_TranslatesRuntimeEventsToOutbound(t *testing.T) {
 	state := &stubState{}
 	tools := []llm.ToolDefinition{{Name: "search_memory", Description: "test"}}
 
-	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agentruntime.Invocation, error) {
-		return agentruntime.Invocation{
+	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agent.Invocation, error) {
+		return agent.Invocation{
 			Client:        chat,
 			Executor:      scriptedExecutor{},
 			State:         state,
@@ -111,7 +110,7 @@ func TestAgentLoopAdapter_TranslatesRuntimeEventsToOutbound(t *testing.T) {
 			PromptModules: []string{"base"},
 			Toolset:       "test",
 			Tools:         tools,
-			Options: agentloop.Options{
+			Options: agent.Options{
 				MaxIterations:           2,
 				AllowNoToolFinalization: true,
 			},
@@ -218,8 +217,8 @@ func TestAgentLoopAdapter_TranslatesRuntimeEventsToOutbound(t *testing.T) {
 }
 
 func TestAgentLoopAdapter_BuilderError_Propagates(t *testing.T) {
-	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agentruntime.Invocation, error) {
-		return agentruntime.Invocation{}, errors.New("builder broke")
+	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agent.Invocation, error) {
+		return agent.Invocation{}, errors.New("builder broke")
 	})
 	adapter, _ := NewAgentLoopAdapter(builder)
 	run := &Run{ID: "x", Channel: ChannelWeb, Status: RunStatusRunning}
@@ -233,13 +232,13 @@ func TestAgentLoopAdapter_BuilderError_Propagates(t *testing.T) {
 func TestAgentLoopAdapter_EmptyDeltasSkipped(t *testing.T) {
 	chat := &scriptedChatClient{contentA: "", contentB: "done"}
 	state := &stubState{}
-	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agentruntime.Invocation, error) {
-		return agentruntime.Invocation{
+	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agent.Invocation, error) {
+		return agent.Invocation{
 			Client:   chat,
 			Executor: scriptedExecutor{},
 			State:    state,
 			Tools:    []llm.ToolDefinition{{Name: "search_memory"}},
-			Options: agentloop.Options{
+			Options: agent.Options{
 				MaxIterations:           2,
 				AllowNoToolFinalization: true,
 			},

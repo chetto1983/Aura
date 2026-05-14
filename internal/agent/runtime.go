@@ -1,4 +1,4 @@
-package agentruntime
+package agent
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -28,31 +27,15 @@ const (
 	EventToolsExposed EventType = "tools_exposed"
 	EventStats        EventType = "stats"
 	EventFinal        EventType = "final"
-	// EventLLMStart fires immediately before each LLM round-trip. Carries
-	// iteration number, message count handed to the model, and tool count
-	// exposed. Wave 3.0 Step 2 — mirrors the chathub run_started / round
-	// lifecycle so a future chathub adapter can emit a streaming message
-	// envelope around each round.
+	// EventLLMStart fires immediately before each LLM round-trip.
 	EventLLMStart EventType = "llm_start"
-	// EventLLMDelta fires after each LLM round returns. Today the
-	// underlying ChatClient is one-shot so this fires ONCE per LLM call
-	// with the full assistant content. When a streaming ChatClient lands
-	// it will fire N times per call without breaking consumers. String
-	// value matches the public chathub.EventMessageDelta wire name.
+	// EventLLMDelta fires after each LLM round returns.
 	EventLLMDelta EventType = "message_delta"
-	// EventToolStart fires before a fresh tool call dispatches. ToolArgKeys
-	// carries the sorted set of top-level argument key names — NEVER
-	// values, per the CLAUDE.md value-leakage policy.
+	// EventToolStart fires before a fresh tool call dispatches.
 	EventToolStart EventType = "tool_start"
-	// EventToolEnd fires after a fresh tool call completes. ToolSuccess is
-	// false when the result starts with the "Error:" sentinel. ToolElapsedMs
-	// reports the WHOLE batch duration (calls in the same batch share a
-	// timestamp because ExecuteToolCalls is batch-atomic).
+	// EventToolEnd fires after a fresh tool call completes.
 	EventToolEnd EventType = "tool_end"
-	// EventQuestionRequested is declared for forward compatibility with
-	// chathub's question state machine (PRD §9.2). Slice 6 will fire this
-	// when a tool result indicates an interactive question is needed;
-	// today no tool produces such a result so the constant stays unfired.
+	// EventQuestionRequested is declared for forward compatibility.
 	EventQuestionRequested EventType = "question_requested"
 )
 
@@ -65,39 +48,26 @@ type Event struct {
 	Toolset             string
 	ToolsetSelectReason string
 	ToolsExposed        []string
-	Stats               agentloop.Stats
+	Stats               Stats
 	Text                string
 	Delivered           bool
-	// LLMStart fields. Iteration is 0-based; MessagesIn is the count after
-	// governance trimming; ToolsIn is the size of the per-turn tool pool.
-	Iteration  int
-	MessagesIn int
-	ToolsIn    int
-	// Tool lifecycle fields. ToolName is set on ToolStart/ToolEnd/
-	// QuestionRequested; ToolCallID only on the tool events. ToolArgKeys
-	// is the sorted argument key-name set on ToolStart (NEVER values).
-	ToolName    string
-	ToolCallID  string
-	ToolArgKeys []string
-	// ToolSuccess / ToolElapsedMs / ToolResultPreview ride EventToolEnd.
-	// ToolResultPreview is capped at agentloop.MaxToolResultPreviewChars
-	// (~200 runes) — just enough to tell success from "Error: ...".
-	ToolSuccess       bool
-	ToolElapsedMs     int64
-	ToolResultPreview string
-	// Delta is the partial (or full, today) assistant text on
-	// EventLLMDelta. Kept distinct from Text so consumers don't confuse
-	// streaming chunks with the EventFinal answer.
-	Delta string
-	// QuestionPayload rides EventQuestionRequested. Schema lands in Slice 6;
-	// today the field is declared so the Event struct shape is stable.
-	QuestionPayload map[string]any
+	Iteration           int
+	MessagesIn          int
+	ToolsIn             int
+	ToolName            string
+	ToolCallID          string
+	ToolArgKeys         []string
+	ToolSuccess         bool
+	ToolElapsedMs       int64
+	ToolResultPreview   string
+	Delta               string
+	QuestionPayload     map[string]any
 }
 
 type Invocation struct {
-	Client                  agentloop.ChatClient
-	Executor                agentloop.ToolExecutor
-	State                   agentloop.State
+	Client                  ChatClient
+	Executor                ToolExecutor
+	State                   State
 	PromptVersion           string
 	PromptHash              string
 	PromptModules           []string
@@ -106,7 +76,7 @@ type Invocation struct {
 	Tools                   []llm.ToolDefinition
 	ToolsProvider           func() []llm.ToolDefinition
 	RetrievalCapsulePresent bool
-	Options                 agentloop.Options
+	Options                 Options
 	OnEvent                 func(Event)
 	// Logger is the structured logger every Run uses. Nil falls back to
 	// slog.Default(). The runner attaches a per-invocation run_id correlation
@@ -114,10 +84,12 @@ type Invocation struct {
 	Logger *slog.Logger
 }
 
-type Result struct {
+// InvocationResult is the result of a Run call. Named InvocationResult
+// to avoid shadowing agent.Result (the Runner's per-task result type).
+type InvocationResult struct {
 	Text                    string
 	Delivered               bool
-	Stats                   agentloop.Stats
+	Stats                   Stats
 	RunID                   string
 	PromptVersion           string
 	PromptHash              string
@@ -128,7 +100,7 @@ type Result struct {
 	RetrievalCapsulePresent bool
 }
 
-func Run(ctx context.Context, in Invocation) (Result, error) {
+func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	logger := in.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -147,23 +119,18 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 	}
 	toolsExposed := toolDefinitionNames(tools)
 	previousOnStats := opts.OnStats
-	opts.OnStats = func(stats agentloop.Stats) {
+	opts.OnStats = func(stats Stats) {
 		if previousOnStats != nil {
 			previousOnStats(stats)
 		}
-		emit(in, Event{Type: EventStats, RunID: runID, Stats: stats})
+		emitEvent(in, Event{Type: EventStats, RunID: runID, Stats: stats})
 	}
-	// Wave 3.0 Step 2: install proxy callbacks for the streaming/tool
-	// lifecycle events. Same pattern as OnStats above — preserve any
-	// user-supplied callback by calling it first, then emit the matching
-	// agentruntime.Event. Adapters that don't care about a kind get a
-	// no-op switch case in their OnEvent handler.
 	previousOnLLMStart := opts.OnLLMStart
 	opts.OnLLMStart = func(iteration, messagesIn, toolsIn int) {
 		if previousOnLLMStart != nil {
 			previousOnLLMStart(iteration, messagesIn, toolsIn)
 		}
-		emit(in, Event{
+		emitEvent(in, Event{
 			Type:       EventLLMStart,
 			RunID:      runID,
 			Iteration:  iteration,
@@ -176,14 +143,14 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 		if previousOnLLMDelta != nil {
 			previousOnLLMDelta(deltaText)
 		}
-		emit(in, Event{Type: EventLLMDelta, RunID: runID, Delta: deltaText})
+		emitEvent(in, Event{Type: EventLLMDelta, RunID: runID, Delta: deltaText})
 	}
 	previousOnToolStart := opts.OnToolStart
 	opts.OnToolStart = func(call llm.ToolCall, argKeys []string) {
 		if previousOnToolStart != nil {
 			previousOnToolStart(call, argKeys)
 		}
-		emit(in, Event{
+		emitEvent(in, Event{
 			Type:        EventToolStart,
 			RunID:       runID,
 			ToolName:    call.Name,
@@ -196,7 +163,7 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 		if previousOnToolEnd != nil {
 			previousOnToolEnd(callID, toolName, success, elapsed, preview)
 		}
-		emit(in, Event{
+		emitEvent(in, Event{
 			Type:              EventToolEnd,
 			RunID:             runID,
 			ToolName:          toolName,
@@ -207,7 +174,7 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 		})
 	}
 
-	emit(in, Event{
+	emitEvent(in, Event{
 		Type:                EventToolsExposed,
 		RunID:               runID,
 		ToolsExposed:        toolsExposed,
@@ -220,8 +187,8 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 
 	start := time.Now()
 	logger.Info("agentruntime: run start", "tools_exposed", len(toolsExposed))
-	result, err := agentloop.Run(ctx, in.Client, in.Executor, in.State, opts)
-	out := Result{
+	result, err := runLoop(ctx, in.Client, in.Executor, in.State, opts)
+	out := InvocationResult{
 		Text:                    result.Text,
 		Delivered:               result.Delivered,
 		Stats:                   result.Stats,
@@ -247,11 +214,11 @@ func Run(ctx context.Context, in Invocation) (Result, error) {
 		"max_elapsed_hit", result.Stats.MaxElapsedHit,
 		"error", err,
 	)
-	emit(in, Event{Type: EventFinal, RunID: runID, Text: out.Text, Delivered: out.Delivered, Stats: out.Stats})
+	emitEvent(in, Event{Type: EventFinal, RunID: runID, Text: out.Text, Delivered: out.Delivered, Stats: out.Stats})
 	return out, err
 }
 
-func emit(in Invocation, event Event) {
+func emitEvent(in Invocation, event Event) {
 	if in.OnEvent != nil {
 		in.OnEvent(event)
 	}

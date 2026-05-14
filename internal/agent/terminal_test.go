@@ -1,4 +1,4 @@
-package agentruntime
+package agent
 
 import (
 	"context"
@@ -45,10 +45,6 @@ func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 	}
 }
 
-// TestFinalizeTerminalToolRetriesOnFailedSynthesis covers the new contract:
-// when the LLM returns tool-call markup or empty text, we retry once with a
-// stricter prompt before giving up. The second attempt's plain prose is the
-// answer the user sees — never a hardcoded canned string.
 func TestFinalizeTerminalToolRetriesOnFailedSynthesis(t *testing.T) {
 	var attempts atomic.Int32
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
@@ -57,7 +53,6 @@ func TestFinalizeTerminalToolRetriesOnFailedSynthesis(t *testing.T) {
 		Send: func(_ context.Context, _ llm.Request) (llm.Response, error) {
 			n := attempts.Add(1)
 			if n == 1 {
-				// First attempt emits tool-call markup → must trigger retry.
 				return llm.Response{Content: `<tool_call name="anything">`}, nil
 			}
 			return llm.Response{Content: "Ho provato curl ma il servizio ha rifiutato la connessione."}, nil
@@ -74,10 +69,6 @@ func TestFinalizeTerminalToolRetriesOnFailedSynthesis(t *testing.T) {
 	}
 }
 
-// TestFinalizeTerminalToolReturnsEmptyOnRepeatedFailure asserts the deliberate
-// "no canned string" contract: if both LLM attempts fail, Text is empty and
-// Fallback=true so the caller (Telegram) can simply send nothing rather than
-// a robotic placeholder sentence.
 func TestFinalizeTerminalToolReturnsEmptyOnRepeatedFailure(t *testing.T) {
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
 		TerminalTool: "write_file",
@@ -93,9 +84,6 @@ func TestFinalizeTerminalToolReturnsEmptyOnRepeatedFailure(t *testing.T) {
 	}
 }
 
-// TestFinalizeTerminalToolReturnsEmptyWhenSendIsNil documents the no-LLM path:
-// callers that did not wire a Send (debug harness, dry-run) get Fallback=true
-// and empty Text — no canned fill-in.
 func TestFinalizeTerminalToolReturnsEmptyWhenSendIsNil(t *testing.T) {
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
 		TerminalTool: "write_file",

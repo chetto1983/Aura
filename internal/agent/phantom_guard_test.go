@@ -1,4 +1,4 @@
-package agentloop
+package agent
 
 import "testing"
 
@@ -87,14 +87,6 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 		},
 
 		// --- Wave 2.10.b regression guards (live-debug 2026-05-13):
-		//
-		// The first version of LooksPhantom triggered on the model's
-		// didactic explanations of how the loop works. The model dropped
-		// "wiki_page" and "task" inside `code` spans and inside ```fenced
-		// blocks``` while describing a hypothetical sequence — no past-
-		// tense performative claim. The guard incorrectly fired and
-		// injected the bilingual correction, lobotomizing the next reply.
-		// These cases lock down the fix.
 		{
 			name:        "didactic — tool name inside backticks (no claim)",
 			content:     "Ecco come funziono: di solito chiamo `wiki_page` quando devo salvare una pagina, e `task` per gli scheduling. È tutto qui, niente di magico.",
@@ -116,8 +108,7 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			wantPhantom: false,
 		},
 
-		// --- Wave 2.10.b: real-claim path still fires when both signals
-		//                  align (past-tense performative + bare tool name)
+		// --- Wave 2.10.b: real-claim path still fires when both signals align
 		{
 			name:        "real claim — italian past-tense performative + bare tool name",
 			content:     "Ho schedulato il reminder con task, è in coda per le 17 di oggi.",
@@ -130,13 +121,6 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 		},
 
 		// --- Wave 2.10.b: proximity check (live-debug 2026-05-13)
-		//
-		// First-version patch checked "ANY performative verb anywhere"
-		// AND "ANY tool name anywhere" — too loose. A long reply with
-		// a real past-tense claim about tool A in paragraph 1 would
-		// false-trigger on a prospective mention of tool B in paragraph 4
-		// even though they're unrelated. The proximity window is what
-		// keeps the two signals coupled.
 		{
 			name: "mixed — past claim about A, prospective about B (out of proximity window)",
 			content: "Ho cercato online le ultime informazioni e le ho già raccolte. " +
@@ -228,7 +212,7 @@ func TestPhantomToolGuard_CorrectionTextDefault(t *testing.T) {
 		t.Fatal("default correction text is empty")
 	}
 	for _, marker := range []string{"tool", "sistema"} {
-		if !contains(text, marker) {
+		if !containsStr(text, marker) {
 			t.Errorf("correction text missing %q: %s", marker, text)
 		}
 	}
@@ -265,9 +249,9 @@ func TestContainsAsWord(t *testing.T) {
 	}
 }
 
-// contains is a tiny strings.Contains shim so the test file doesn't
+// containsStr is a tiny strings.Contains shim so the test file doesn't
 // need a strings import next to its single use site.
-func contains(haystack, needle string) bool {
+func containsStr(haystack, needle string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		if haystack[i:i+len(needle)] == needle {
 			return true

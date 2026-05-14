@@ -1,11 +1,11 @@
-package agentruntime
+package agent
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/agentloop"
+	governance "github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -51,7 +51,7 @@ func FinalizeTerminalTool(ctx context.Context, in TerminalFinalizationInput) Ter
 		terminalFinalizationPrompt(in.TerminalTool, false),
 		terminalFinalizationPrompt(in.TerminalTool, true),
 	}
-	baseMessages := agentloop.ApplyGovernance(in.Messages, 0, 0, 0)
+	baseMessages := governance.Apply(in.Messages, 0, 0, 0)
 
 	for i, prompt := range attempts {
 		messages := append(append([]llm.Message(nil), baseMessages...), prompt)
@@ -90,8 +90,7 @@ func FinalizeTerminalTool(ctx context.Context, in TerminalFinalizationInput) Ter
 
 // terminalFinalizationPrompt returns the user-message that asks the LLM to
 // synthesize a final answer from the tool results already in the context.
-// strict=true tightens the language requirements on retry — "you JUST emitted
-// invalid output, do not repeat it".
+// strict=true tightens the language requirements on retry.
 func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 	toolName := strings.TrimSpace(terminalTool)
 	if toolName == "" {
@@ -116,14 +115,11 @@ func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 // no longer uses this helper — it builds the message list inline so the
 // retry path can swap prompts.
 func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
-	out := agentloop.ApplyGovernance(messages, 0, 0, 0)
+	out := governance.Apply(messages, 0, 0, 0)
 	return append(out, terminalFinalizationPrompt(terminalTool, false))
 }
 
-// markerCategory bitmask classifies known unsafe text markers. One canonical
-// table replaces three near-identical functions so adding a new marker only
-// touches one place (F-033). Each marker tags which detectors trip on it;
-// the public LooksLike* helpers filter by category.
+// markerCategory bitmask classifies known unsafe text markers.
 type markerCategory uint8
 
 const (
@@ -191,9 +187,7 @@ func LooksLikeInternalToolResult(text string) bool {
 }
 
 // LooksLikeUnsafeFinalAnswer reports content that should not reach the end
-// user as-is — internal markers OR JSON-shaped bodies that also carry one
-// of the internal markers (F-032). The earlier "any text shaped like JSON"
-// check produced false positives when the user explicitly asked for JSON.
+// user as-is.
 func LooksLikeUnsafeFinalAnswer(text string) bool {
 	if containsAnyMarker(text, categoryFinal) {
 		return true
@@ -203,16 +197,13 @@ func LooksLikeUnsafeFinalAnswer(text string) bool {
 		return false
 	}
 	if (trimmed[0] == '{' && trimmed[len(trimmed)-1] == '}') || (trimmed[0] == '[' && trimmed[len(trimmed)-1] == ']') {
-		// JSON shape alone is not enough; require co-occurrence with an
-		// internal marker so "give me your answer as JSON" round-trips.
 		return containsAnyMarker(trimmed, categoryInternal|categoryToolCall)
 	}
 	return false
 }
 
 // IsFileGenerationTool reports whether a tool name produces a user-facing
-// file artifact (xlsx/docx/pdf). Kept as a small routing helper; the
-// per-tool canned response strings were removed in favor of LLM synthesis.
+// file artifact (xlsx/docx/pdf).
 func IsFileGenerationTool(name string) bool {
 	switch name {
 	case "create_docx", "create_xlsx", "create_pdf":

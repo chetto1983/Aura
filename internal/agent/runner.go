@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/agentloop"
-	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/tools"
 )
@@ -45,7 +43,7 @@ type Runner struct {
 	toolTimeout     time.Duration
 	reasoningEffort string
 	logger          *slog.Logger
-	phantomGuard    *agentloop.PhantomToolGuard
+	phantomGuard    *PhantomToolGuard
 }
 
 // Config wires a Runner. ToolRegistry may be nil for text-only tasks.
@@ -58,11 +56,11 @@ type Config struct {
 	ToolTimeout     time.Duration
 	ReasoningEffort string // forwarded to every llm.Request the runner builds
 	Logger          *slog.Logger
-	// PhantomToolGuard, when non-nil, runs the agentloop phantom-tool
-	// detection on every no-tool-call response and injects a user-side
-	// correction when the model names a tool it didn't actually invoke
-	// in this turn. Opt-in — when nil, behavior is unchanged.
-	PhantomToolGuard *agentloop.PhantomToolGuard
+	// PhantomToolGuard, when non-nil, runs phantom-tool detection on every
+	// no-tool-call response and injects a user-side correction when the
+	// model names a tool it didn't actually invoke in this turn.
+	// Opt-in — when nil, behavior is unchanged.
+	PhantomToolGuard *PhantomToolGuard
 }
 
 // Task is one isolated background-agent assignment.
@@ -182,16 +180,16 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	allowlist := cleanToolList(task.ToolAllowlist)
 	state := newAgentState(messages)
 	exec := newAgentExecutor(r.tools, state, r.logger, allowlist, task.UserID, task.MaxToolResultChars, toolTimeout)
-	client := agentruntime.NewNoStreamClient(r.llm, r.model, task.Temperature, r.reasoningEffort)
+	client := NewNoStreamClient(r.llm, r.model, task.Temperature, r.reasoningEffort)
 
-	inv := agentruntime.Invocation{
+	inv := Invocation{
 		Client:   client,
 		Executor: exec,
 		State:    state,
 		Tools:    r.toolDefinitions(allowlist),
-		Options: agentloop.Options{
-			MaxIterations:  maxIterations,
-			MaxToolCalls:   task.MaxToolCalls,
+		Options: Options{
+			MaxIterations:       maxIterations,
+			MaxToolCalls:        task.MaxToolCalls,
 			CompleteOnDeadline:  task.CompleteOnDeadline,
 			FinalizationTimeout: task.FinalizationTimeout,
 			MaxToolResultChars:  task.MaxToolResultChars,
@@ -203,14 +201,14 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 			// multiple times (intentionally, e.g. multi-source research)
 			// are not silently short-changed on their allowed tool budget.
 			DisableInBatchDedup: true,
-			BeforeTool: agentloop.BeforeToolCallback(func(_ llm.ToolCall, _ agentloop.ToolCallState) agentloop.ToolCallDecision {
-				return agentloop.ToolCallDecision{}
+			BeforeTool: BeforeToolCallback(func(_ llm.ToolCall, _ ToolCallState) ToolCallDecision {
+				return ToolCallDecision{}
 			}),
 		},
 		Logger: r.logger,
 	}
 
-	rtResult, err := agentruntime.Run(ctx, inv)
+	rtResult, err := Run(ctx, inv)
 
 	content := rtResult.Text
 	// Preserve the old Runner fallback message when the iteration budget is

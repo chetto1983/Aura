@@ -11,18 +11,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/tools"
 )
 
-// agentExecutor adapts tools.Registry to agentloop.ToolExecutor.
+// agentExecutor adapts tools.Registry to ToolExecutor.
 // It applies allowlist filtering, per-tool timeouts, and untrusted-content
 // wrapping, then adds results to the shared state so subsequent LLM rounds
 // see them in the message history.
 type agentExecutor struct {
 	tools       *tools.Registry
-	state       agentloop.State
+	state       State
 	logger      *slog.Logger
 	allowlist   []string
 	userID      string
@@ -30,11 +29,11 @@ type agentExecutor struct {
 	toolTimeout time.Duration
 }
 
-var _ agentloop.ToolExecutor = (*agentExecutor)(nil)
+var _ ToolExecutor = (*agentExecutor)(nil)
 
 func newAgentExecutor(
 	reg *tools.Registry,
-	state agentloop.State,
+	state State,
 	logger *slog.Logger,
 	allowlist []string,
 	userID string,
@@ -60,7 +59,7 @@ type toolOutcome struct {
 // ExecuteToolCalls runs each call in parallel, wraps results, adds them to
 // state (so the next LLM round sees them), and returns an ExecutionSummary.
 // Mirrors the fan-out pattern in internal/telegram/conversation_tool_exec.go.
-func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCall) ExecutionSummary {
 	outcomes := make([]toolOutcome, len(calls))
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -74,7 +73,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
 			raw := e.executeOneTool(ctx, call)
-			wrapped := agentloop.WrapUntrustedToolResult(call.Name, raw)
+			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}
 		}(i, callCopy)
 	}
@@ -94,7 +93,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 		}
 	}
 
-	summary := agentloop.ExecutionSummary{Results: make(map[string]string, len(outcomes))}
+	summary := ExecutionSummary{Results: make(map[string]string, len(outcomes))}
 	for _, o := range outcomes {
 		// Add to state so the next LLM round sees the result in message
 		// history — the loop only adds stubs for skipped/duplicate calls,

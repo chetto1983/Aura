@@ -1,23 +1,22 @@
-package agentruntime
+package agent
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 )
 
 func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
-	state := &fakeState{}
-	client := &fakeClient{response: agentloop.ChatResponse{Response: llm.Response{Content: "ok"}}}
+	state := &fakeRTState{}
+	client := &fakeRTClient{response: ChatResponse{Response: llm.Response{Content: "ok"}}}
 	var events []Event
 
 	result, err := Run(context.Background(), Invocation{
 		Client: client,
-		Executor: agentloop.ToolExecutorFunc(func(context.Context, []llm.ToolCall) agentloop.ExecutionSummary {
-			return agentloop.ExecutionSummary{}
+		Executor: ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+			return ExecutionSummary{}
 		}),
 		State:                   state,
 		PromptVersion:           "test",
@@ -27,7 +26,7 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 		ToolsetSelectReason:     "test",
 		Tools:                   []llm.ToolDefinition{{Name: "search_memory"}},
 		RetrievalCapsulePresent: true,
-		Options:                 agentloop.Options{MaxIterations: 1},
+		Options:                 Options{MaxIterations: 1},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -63,12 +62,10 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 
 // TestRunEmitsStreamingLifecycleEvents drives a Run through one tool-call
 // round + a final-answer round and asserts the full streaming/tool lifecycle
-// event sequence. Slice 0's chathub expects this exact vocabulary
-// (llm_start, message_delta, tool_start, tool_end) so the future adapter
-// can translate 1:1 without inventing types.
+// event sequence.
 func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
-	state := &fakeState{}
-	client := &scriptedClient{responses: []agentloop.ChatResponse{
+	state := &fakeRTState{}
+	client := &scriptedRTClient{responses: []ChatResponse{
 		{Response: llm.Response{
 			Content:      "",
 			HasToolCalls: true,
@@ -84,14 +81,14 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 
 	_, err := Run(context.Background(), Invocation{
 		Client: client,
-		Executor: agentloop.ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+		Executor: ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 			executed += len(calls)
 			results := map[string]string{}
 			for _, call := range calls {
 				state.AddToolResultMessage(call.ID, "result for "+call.Name)
 				results[call.ID] = "result for " + call.Name
 			}
-			return agentloop.ExecutionSummary{LastResult: "result for wiki_page", Results: results}
+			return ExecutionSummary{LastResult: "result for wiki_page", Results: results}
 		}),
 		State:               state,
 		PromptVersion:       "v",
@@ -101,7 +98,7 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 			{Name: "search_memory"},
 			{Name: "wiki_page"},
 		},
-		Options: agentloop.Options{MaxIterations: 3},
+		Options: Options{MaxIterations: 3},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -113,8 +110,6 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 		t.Fatalf("executor ran %d calls, want 2", executed)
 	}
 
-	// Collapse stats events (they fire repeatedly via emitStats) before
-	// asserting order — the lifecycle types are what we care about.
 	var kinds []EventType
 	for _, ev := range events {
 		switch ev.Type {
@@ -123,12 +118,6 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 			kinds = append(kinds, ev.Type)
 		}
 	}
-	// Expected order: tools_exposed → llm_start → tool_start,tool_start →
-	// tool_end,tool_end → llm_start → message_delta → final. The first LLM
-	// round had empty Content (only tool calls), so no message_delta fires
-	// there — only the second round produces a delta. Tool starts and
-	// ends are batched: all starts before any ends, because they pair with
-	// a single executor.ExecuteToolCalls call.
 	want := []EventType{
 		EventToolsExposed,
 		EventLLMStart,
@@ -151,12 +140,10 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 }
 
 // TestRunToolStartCarriesArgKeysNotValues asserts the CLAUDE.md value-leakage
-// policy at the event-type level: a secret-shaped value in tool args must
-// never appear in any emitted Event, and ToolArgKeys must contain only the
-// key NAME.
+// policy at the event-type level.
 func TestRunToolStartCarriesArgKeysNotValues(t *testing.T) {
-	state := &fakeState{}
-	client := &scriptedClient{responses: []agentloop.ChatResponse{
+	state := &fakeRTState{}
+	client := &scriptedRTClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
 			{ID: "call-1", Name: "store_source", Arguments: map[string]any{"api_key": "secret123", "name": "doc"}},
 		}}},
@@ -166,12 +153,12 @@ func TestRunToolStartCarriesArgKeysNotValues(t *testing.T) {
 
 	_, err := Run(context.Background(), Invocation{
 		Client: client,
-		Executor: agentloop.ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+		Executor: ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 			state.AddToolResultMessage(calls[0].ID, "ok")
-			return agentloop.ExecutionSummary{LastResult: "ok", Results: map[string]string{calls[0].ID: "ok"}}
+			return ExecutionSummary{LastResult: "ok", Results: map[string]string{calls[0].ID: "ok"}}
 		}),
 		State:   state,
-		Options: agentloop.Options{MaxIterations: 2},
+		Options: Options{MaxIterations: 2},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -190,7 +177,7 @@ func TestRunToolStartCarriesArgKeysNotValues(t *testing.T) {
 	if toolStart == nil {
 		t.Fatal("no EventToolStart fired")
 	}
-	if got, want := toolStart.ToolArgKeys, []string{"api_key", "name"}; !equalStringSlice(got, want) {
+	if got, want := toolStart.ToolArgKeys, []string{"api_key", "name"}; !equalStringSlices(got, want) {
 		t.Fatalf("ToolArgKeys = %v, want %v", got, want)
 	}
 	// Belt-and-braces: scan every emitted event for the literal secret.
@@ -209,14 +196,11 @@ func TestRunToolStartCarriesArgKeysNotValues(t *testing.T) {
 	}
 }
 
-// TestRunToolEndCapsResultPreview asserts the preview emitted on
-// EventToolEnd is bounded at MaxToolResultPreviewChars so a chathub
-// adapter can stream it without flooding the wire.
+// TestRunToolEndCapsResultPreview asserts the preview is bounded at MaxToolResultPreviewChars.
 func TestRunToolEndCapsResultPreview(t *testing.T) {
-	state := &fakeState{}
-	// 1000-char result; far above the 200-rune cap.
+	state := &fakeRTState{}
 	hugeResult := strings.Repeat("x", 1000)
-	client := &scriptedClient{responses: []agentloop.ChatResponse{
+	client := &scriptedRTClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
 			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "x"}},
 		}}},
@@ -226,12 +210,12 @@ func TestRunToolEndCapsResultPreview(t *testing.T) {
 
 	_, err := Run(context.Background(), Invocation{
 		Client: client,
-		Executor: agentloop.ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+		Executor: ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 			state.AddToolResultMessage(calls[0].ID, hugeResult)
-			return agentloop.ExecutionSummary{LastResult: hugeResult, Results: map[string]string{calls[0].ID: hugeResult}}
+			return ExecutionSummary{LastResult: hugeResult, Results: map[string]string{calls[0].ID: hugeResult}}
 		}),
 		State:   state,
-		Options: agentloop.Options{MaxIterations: 2},
+		Options: Options{MaxIterations: 2},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -249,16 +233,16 @@ func TestRunToolEndCapsResultPreview(t *testing.T) {
 	if toolEnd == nil {
 		t.Fatal("no EventToolEnd fired")
 	}
-	if len([]rune(toolEnd.ToolResultPreview)) != agentloop.MaxToolResultPreviewChars {
+	if len([]rune(toolEnd.ToolResultPreview)) != MaxToolResultPreviewChars {
 		t.Fatalf("ToolResultPreview length = %d runes, want %d",
-			len([]rune(toolEnd.ToolResultPreview)), agentloop.MaxToolResultPreviewChars)
+			len([]rune(toolEnd.ToolResultPreview)), MaxToolResultPreviewChars)
 	}
 	if !toolEnd.ToolSuccess {
 		t.Fatal("ToolSuccess = false, want true (result has no Error: prefix)")
 	}
 }
 
-func equalStringSlice(a, b []string) bool {
+func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -270,43 +254,41 @@ func equalStringSlice(a, b []string) bool {
 	return true
 }
 
-type fakeClient struct {
-	response agentloop.ChatResponse
+type fakeRTClient struct {
+	response ChatResponse
 }
 
-func (f *fakeClient) Chat(context.Context, []llm.Message, []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+func (f *fakeRTClient) Chat(context.Context, []llm.Message, []llm.ToolDefinition) (ChatResponse, error) {
 	return f.response, nil
 }
 
-// scriptedClient returns a queued series of ChatResponses, one per call.
-// Mirrors fakeLoopClient in internal/agentloop but the agentruntime test
-// scope doesn't import that test type.
-type scriptedClient struct {
-	responses []agentloop.ChatResponse
+// scriptedRTClient returns a queued series of ChatResponses, one per call.
+type scriptedRTClient struct {
+	responses []ChatResponse
 	calls     int
 }
 
-func (s *scriptedClient) Chat(context.Context, []llm.Message, []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+func (s *scriptedRTClient) Chat(context.Context, []llm.Message, []llm.ToolDefinition) (ChatResponse, error) {
 	if s.calls >= len(s.responses) {
-		return agentloop.ChatResponse{}, nil
+		return ChatResponse{}, nil
 	}
 	resp := s.responses[s.calls]
 	s.calls++
 	return resp, nil
 }
 
-type fakeState struct {
+type fakeRTState struct {
 	messages []llm.Message
 }
 
-func (f *fakeState) Messages() []llm.Message    { return f.messages }
-func (f *fakeState) TrackTokens(llm.TokenUsage) {}
-func (f *fakeState) AddAssistantMessage(content string) {
+func (f *fakeRTState) Messages() []llm.Message    { return f.messages }
+func (f *fakeRTState) TrackTokens(llm.TokenUsage) {}
+func (f *fakeRTState) AddAssistantMessage(content string) {
 	f.messages = append(f.messages, llm.Message{Role: "assistant", Content: content})
 }
-func (f *fakeState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
+func (f *fakeRTState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
 	f.messages = append(f.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: calls})
 }
-func (f *fakeState) AddToolResultMessage(id, content string) {
+func (f *fakeRTState) AddToolResultMessage(id, content string) {
 	f.messages = append(f.messages, llm.Message{Role: "tool", ToolCallID: id, Content: content})
 }

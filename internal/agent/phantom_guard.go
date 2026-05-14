@@ -1,4 +1,4 @@
-package agentloop
+package agent
 
 import (
 	"strings"
@@ -31,10 +31,10 @@ import (
 // invoke the tool now or retract the claim. Capped at MaxRetries
 // phantom-corrections per turn to bound latency.
 //
-// The state passed to agentloop.Run must implement PhantomCorrector
-// for the guard to take effect — type-assertion pattern keeps the
-// core State interface unchanged. conversation.Context satisfies it
-// via its existing AddUserMessage method.
+// The state passed to runLoop must implement PhantomCorrector for the
+// guard to take effect — type-assertion pattern keeps the core State
+// interface unchanged. conversation.Context satisfies it via its
+// existing AddUserMessage method.
 type PhantomToolGuard struct {
 	// ToolNamesFn returns the current set of registered tool names.
 	// Called on every detection so registry changes (MCP server
@@ -55,7 +55,7 @@ type PhantomToolGuard struct {
 }
 
 // PhantomCorrector is the optional injection surface for the guard.
-// agentloop.Run() checks via type assertion whether the State also
+// runLoop() checks via type assertion whether the State also
 // implements this interface; when it does, phantom corrections can
 // be injected as user-side messages. When it doesn't, phantom
 // detection still logs but cannot recover within the turn.
@@ -295,13 +295,6 @@ func (g *PhantomToolGuard) minContent() int {
 // non-word characters (or boundary) on both sides. needle must be
 // non-empty. Both args must be lowercased by the caller — this is
 // the hot path; we don't want to ToLower on every call.
-//
-// Examples:
-//
-//	containsAsWord("ho schedulato il task wave", "task") == true
-//	containsAsWord("the tasks list is empty", "task")    == false (plural)
-//	containsAsWord("multitasking is hard", "task")        == false (substring)
-//	containsAsWord("task!", "task")                       == true (trailing punct OK)
 func containsAsWord(haystack, needle string) bool {
 	if needle == "" {
 		return false

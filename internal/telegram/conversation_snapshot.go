@@ -4,10 +4,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 )
 
-type orchestrationSnapshot = agentruntime.Snapshot
+type orchestrationSnapshot = agent.Snapshot
 
 func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
 	if b == nil || strings.TrimSpace(userID) == "" {

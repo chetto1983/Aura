@@ -1,13 +1,12 @@
-package agentruntime
+package agent
 
 import (
 	"context"
 
-	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 )
 
-// noStreamClient adapts llm.Client.Send to the agentloop.ChatClient interface.
+// noStreamClient adapts llm.Client.Send to the ChatClient interface.
 // Background agents (swarm workers, scheduler jobs, /api/chat pipe) use
 // llm.Client.Send rather than Stream: there is no Telegram message to
 // progressively edit. Streaming asymmetry is intentional — see the Runner
@@ -19,9 +18,9 @@ type noStreamClient struct {
 	reasoningEffort string
 }
 
-// NewNoStreamClient returns an agentloop.ChatClient that delegates each
-// Chat call to llm.Client.Send with the given per-run parameters.
-func NewNoStreamClient(client llm.Client, model string, temperature *float64, reasoningEffort string) agentloop.ChatClient {
+// NewNoStreamClient returns a ChatClient that delegates each Chat call to
+// llm.Client.Send with the given per-run parameters.
+func NewNoStreamClient(client llm.Client, model string, temperature *float64, reasoningEffort string) ChatClient {
 	return &noStreamClient{
 		client:          client,
 		model:           model,
@@ -30,7 +29,7 @@ func NewNoStreamClient(client llm.Client, model string, temperature *float64, re
 	}
 }
 
-func (c *noStreamClient) Chat(ctx context.Context, messages []llm.Message, toolDefs []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+func (c *noStreamClient) Chat(ctx context.Context, messages []llm.Message, toolDefs []llm.ToolDefinition) (ChatResponse, error) {
 	resp, err := c.client.Send(ctx, llm.Request{
 		Messages:        messages,
 		Model:           c.model,
@@ -38,5 +37,5 @@ func (c *noStreamClient) Chat(ctx context.Context, messages []llm.Message, toolD
 		Tools:           toolDefs,
 		ReasoningEffort: c.reasoningEffort,
 	})
-	return agentloop.ChatResponse{Response: resp, Delivered: false}, err
+	return ChatResponse{Response: resp, Delivered: false}, err
 }

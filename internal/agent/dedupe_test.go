@@ -1,4 +1,4 @@
-package agentloop
+package agent
 
 import (
 	"testing"

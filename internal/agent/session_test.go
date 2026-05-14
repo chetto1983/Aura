@@ -1,4 +1,4 @@
-package agentruntime
+package agent
 
 import (
 	"testing"

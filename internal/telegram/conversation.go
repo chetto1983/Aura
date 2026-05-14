@@ -11,8 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/agentloop"
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -323,7 +322,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	maxCallsPerTool := map[string]int{
 		"wiki_page": 3,
 	}
-	duplicatePolicy := agentloop.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
+	duplicatePolicy := agent.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 	addActiveTools := func(names []string) {
 		toolMu.Lock()
 		defer toolMu.Unlock()
@@ -340,14 +339,14 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 	toolDefs := toolsProvider()
 	baseStats.toolsExposed = toolDefinitionNames(toolDefs)
 	var currentStats turnStats
-	result, err := agentruntime.Run(ctx, agentruntime.Invocation{
+	result, err := agent.Run(ctx, agent.Invocation{
 		Client: telegramLoopClient{bot: b, teleCtx: c, userID: userID, placeholder: placeholder},
-		Executor: agentloop.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agentloop.ExecutionSummary {
+		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
 			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.readSkills)
 			if len(execution.discoveredTools) > 0 {
 				addActiveTools(execution.discoveredTools)
 			}
-			return agentloop.ExecutionSummary{
+			return agent.ExecutionSummary{
 				LastResult:     execution.lastResult,
 				FatalResult:    execution.fatalResult,
 				ReadSkillNames: execution.readSkillNames,
@@ -361,10 +360,10 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 		PromptModules:           promptPlan.Modules,
 		Toolset:                 "registered",
 		ToolsetSelectReason:     "core tools plus Qdrant top-K=5 retrieval",
-		Tools:                   toolsProvider(), // one-time initial population for the agentruntime.Invocation
+		Tools:                   toolsProvider(), // one-time initial population for the agent.Invocation
 		ToolsProvider:           toolsProvider,
 		RetrievalCapsulePresent: retrievalCapsulePresent,
-		Options: agentloop.Options{
+		Options: agent.Options{
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      b.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
@@ -377,17 +376,17 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			// deferred tool by name after seeing it in the system-prompt
 			// manifest; the loop resolves the schema via this callback
 			// and adds it to the pool. tool_search results are absorbed
-			// the same way. See internal/agentloop/pool.go for details.
+			// the same way. See internal/agent/pool.go for details.
 			ToolResolver: b.tools.DefinitionFor,
 			// Wave 2.8b: phantom-tool guard. Detects no-tool replies
 			// that mention a registered tool by name without invoking it
 			// (the 2026-05-12 Wave 2.7b failure mode) and re-prompts the
-			// model with a correction. The state passed to agentloop.Run
+			// model with a correction. The state passed to agent.Run
 			// is *conversation.Context which implements PhantomCorrector
 			// via its AddUserMessage method. ToolNamesFn reads the live
 			// registry so MCP and dynamic tool additions are picked up
 			// without a restart.
-			PhantomToolGuard: &agentloop.PhantomToolGuard{
+			PhantomToolGuard: &agent.PhantomToolGuard{
 				ToolNamesFn: b.tools.Names,
 			},
 			BeforeLLM: func() (string, bool) {
@@ -409,7 +408,7 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			EstimateCost: func(usage llm.TokenUsage) float64 {
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 			},
-			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agentloop.Stats) (string, bool, bool) {
+			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agent.Stats) (string, bool, bool) {
 				telegramStats := mergeAgentLoopStats(baseStats, *stats)
 				// Every terminal-tool branch now routes through the LLM
 				// synthesizer. No canned "Done." strings, no
@@ -428,9 +427,9 @@ func (b *Bot) runToolCallingLoop(ctx context.Context, c tele.Context, convCtx *c
 			},
 			MaxCallsPerTool: maxCallsPerTool,
 		},
-		OnEvent: func(event agentruntime.Event) {
+		OnEvent: func(event agent.Event) {
 			switch event.Type {
-			case agentruntime.EventStats:
+			case agent.EventStats:
 				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
 				// toolsExposed reflects what the LLM saw at the first round
 				// (set on baseStats from toolsProvider()) — do NOT overwrite
@@ -458,7 +457,7 @@ type telegramLoopClient struct {
 	placeholder *tele.Message
 }
 
-func (c telegramLoopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolDefinition) (agentloop.ChatResponse, error) {
+func (c telegramLoopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.ToolDefinition) (agent.ChatResponse, error) {
 	req := llm.Request{
 		Messages:        messages,
 		Model:           c.bot.cfg.LLMModel,
@@ -468,17 +467,17 @@ func (c telegramLoopClient) Chat(ctx context.Context, messages []llm.Message, to
 	ch, err := c.bot.llm.Stream(ctx, req)
 	if err != nil {
 		c.bot.logger.Error("LLM stream failed", "user_id", c.userID, "error", err)
-		return agentloop.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
 	}
 	resp, delivered, err := c.bot.consumeStream(c.teleCtx, ch, c.userID, c.placeholder)
 	if err != nil {
 		c.bot.logger.Error("LLM stream read failed", "user_id", c.userID, "error", err)
-		return agentloop.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
 	}
-	return agentloop.ChatResponse{Response: resp, Delivered: delivered}, nil
+	return agent.ChatResponse{Response: resp, Delivered: delivered}, nil
 }
 
-func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
+func mergeAgentLoopStats(base turnStats, stats agent.Stats) turnStats {
 	base.llmCalls = stats.LLMCalls
 	base.toolCalls = stats.ToolCalls
 	base.loopSteps = stats.LoopSteps
@@ -496,7 +495,7 @@ func mergeAgentLoopStats(base turnStats, stats agentloop.Stats) turnStats {
 	return base
 }
 
-func applyTelegramTerminalStats(stats agentloop.Stats, telegramStats turnStats) agentloop.Stats {
+func applyTelegramTerminalStats(stats agent.Stats, telegramStats turnStats) agent.Stats {
 	stats.LLMCalls = telegramStats.llmCalls
 	stats.LoopSteps = telegramStats.loopSteps
 	stats.TokensPrompt = telegramStats.tokensPrompt

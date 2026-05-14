@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/tools"
@@ -63,10 +63,10 @@ func TestOnClearDeletesAllowlistedConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := agentruntime.NewSessionStore()
+	store := agent.NewSessionStore()
 	session, _ := store.Begin("123", conversation.Config{})
 	session.Conversation().AddUserMessage("vecchio contesto")
-	store.StoreSnapshot("123", agentruntime.Snapshot{PromptVersion: "v-test"})
+	store.StoreSnapshot("123", agent.Snapshot{PromptVersion: "v-test"})
 	b := &Bot{
 		bot:      tb,
 		cfg:      &config.Config{Allowlist: []string{"123"}, AllowlistConfigured: true},
@@ -109,7 +109,7 @@ func TestOnClearIgnoresUnauthorizedUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := agentruntime.NewSessionStore()
+	store := agent.NewSessionStore()
 	session, _ := store.Begin("999", conversation.Config{})
 	session.Conversation().AddUserMessage("keep")
 	b := &Bot{

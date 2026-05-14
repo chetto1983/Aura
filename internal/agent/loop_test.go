@@ -1,4 +1,4 @@
-package agentloop
+package agent
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-func TestRunNoToolCallsReturnsAssistantText(t *testing.T) {
+func TestRunLoopNoToolCallsReturnsAssistantText(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{{Response: llm.Response{Content: "done"}}}}
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
 		t.Fatal("executor should not run")
 		return ExecutionSummary{}
 	}), state, Options{MaxIterations: 3})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "done" {
 		t.Fatalf("Text = %q, want done", result.Text)
@@ -31,7 +31,7 @@ func TestRunNoToolCallsReturnsAssistantText(t *testing.T) {
 	}
 }
 
-func TestRunToolCallContinuesToFinalResponse(t *testing.T) {
+func TestRunLoopToolCallContinuesToFinalResponse(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}}}}},
@@ -39,13 +39,13 @@ func TestRunToolCallContinuesToFinalResponse(t *testing.T) {
 	}}
 	var executed []llm.ToolCall
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executed = append(executed, calls...)
 		state.AddToolResultMessage(calls[0].ID, "wiki result")
 		return ExecutionSummary{LastResult: "wiki result"}
 	}), state, Options{MaxIterations: 3})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "found it" {
 		t.Fatalf("Text = %q", result.Text)
@@ -58,7 +58,7 @@ func TestRunToolCallContinuesToFinalResponse(t *testing.T) {
 	}
 }
 
-func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T) {
+func TestRunLoopDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -69,13 +69,13 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 	}}
 	executions := 0
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executions += len(calls)
 		state.AddToolResultMessage(calls[0].ID, "wiki result")
 		return ExecutionSummary{LastResult: "wiki result"}
 	}), state, Options{MaxIterations: 3})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "ok" {
 		t.Fatalf("Text = %q", result.Text)
@@ -91,7 +91,7 @@ func TestRunDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T
 	}
 }
 
-func TestRunDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
+func TestRunLoopDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -104,13 +104,13 @@ func TestRunDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
 	}}
 	executions := 0
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executions += len(calls)
 		state.AddToolResultMessage(calls[0].ID, "memory result")
 		return ExecutionSummary{LastResult: "memory result"}
 	}), state, Options{MaxIterations: 4})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "ok" {
 		t.Fatalf("Text = %q", result.Text)
@@ -126,7 +126,7 @@ func TestRunDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
 	}
 }
 
-func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
+func TestRunLoopMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -139,13 +139,13 @@ func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	}}
 	executions := 0
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executions += len(calls)
 		state.AddToolResultMessage(calls[0].ID, "memory result")
 		return ExecutionSummary{LastResult: "memory result"}
 	}), state, Options{MaxIterations: 4, MaxCallsPerTool: map[string]int{"search_memory": 1}})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "ok" {
 		t.Fatalf("Text = %q", result.Text)
@@ -158,12 +158,7 @@ func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	}
 }
 
-func TestRunMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
-	// Round 1: tool call A → executed (executions=1, cap hit).
-	// Round 2: tool call B (different name → not blocked by MaxCallsPerTool;
-	//          would be blocked by MaxToolCalls=1 → budget stub).
-	// Round 3: finalizing mode → loop must hand the model an empty tool slate;
-	//          model returns final assistant text.
+func TestRunLoopMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
 	state := newBudgetLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -181,12 +176,12 @@ func TestRunMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
 		return ExecutionSummary{LastResult: "memory result", Results: map[string]string{calls[0].ID: "memory result"}}
 	})
 
-	result, err := Run(context.Background(), client, executor, state, Options{
+	result, err := runLoop(context.Background(), client, executor, state, Options{
 		MaxIterations: 4,
 		MaxToolCalls:  1,
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "final answer from evidence" {
 		t.Fatalf("Text = %q", result.Text)
@@ -202,7 +197,7 @@ func TestRunMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
 	}
 }
 
-func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
+func TestRunLoopBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -215,7 +210,7 @@ func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 	}}
 	executions := 0
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executions += len(calls)
 		state.AddToolResultMessage(calls[0].ID, "memory result")
 		return ExecutionSummary{LastResult: "memory result"}
@@ -226,7 +221,7 @@ func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 		}),
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "ok" {
 		t.Fatalf("Text = %q", result.Text)
@@ -239,18 +234,18 @@ func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 	}
 }
 
-func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
+func TestRunLoopMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 	}}
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "partial result")
 		return ExecutionSummary{LastResult: "partial result"}
 	}), state, Options{MaxIterations: 1})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if !result.Stats.MaxIterationsHit {
 		t.Fatal("MaxIterationsHit = false")
@@ -263,7 +258,7 @@ func TestRunMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	}
 }
 
-func TestRunMaxIterationFinalizesMemoryEvidenceNaturally(t *testing.T) {
+func TestRunLoopMaxIterationFinalizesMemoryEvidenceNaturally(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
@@ -274,12 +269,12 @@ func TestRunMaxIterationFinalizesMemoryEvidenceNaturally(t *testing.T) {
 Evidence envelope:
 {"query":"scenario test","items":[{"kind":"source","id":"src_1","score":0.85}]}`
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, raw)
 		return ExecutionSummary{LastResult: raw}
 	}), state, Options{MaxIterations: 1, AllowNoToolFinalization: true})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text == raw {
 		t.Fatal("returned raw search_memory evidence")
@@ -294,31 +289,20 @@ Evidence envelope:
 	}
 }
 
-// Removed: TestRunEmptyFinalDoesNotReturnRawShellResult,
-// TestRunSanitizesRawModelFinalAnswer,
-// TestRunMaxIterationDoesNotFallbackToRawMemoryEvidence.
-//
-// These asserted the legacy looksLikeRawToolEvidence scrubber, which
-// regex-detected "exit_code:", "Evidence envelope:", "Memory evidence for"
-// etc. in either the model's reply or the budget fallback, then replaced
-// them with a canned Italian message. The fix moved upstream: tools render
-// human-readable text, the system prompt instructs the model not to echo
-// raw output. The loop no longer post-processes assistant content.
-
-func TestRunMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
+func TestRunLoopMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 		{Response: llm.Response{Content: "too late"}},
 	}}
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "partial result")
 		time.Sleep(5 * time.Millisecond)
 		return ExecutionSummary{LastResult: "partial result"}
 	}), state, Options{MaxIterations: 3, MaxElapsed: time.Millisecond})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if !result.Stats.MaxElapsedHit {
 		t.Fatal("MaxElapsedHit = false")
@@ -334,18 +318,18 @@ func TestRunMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	}
 }
 
-func TestRunBudgetWithoutToolResultReturnsBriefLimitAnswer(t *testing.T) {
+func TestRunLoopBudgetWithoutToolResultReturnsBriefLimitAnswer(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 	}}
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "")
 		return ExecutionSummary{}
 	}), state, Options{MaxIterations: 1})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if !result.Stats.MaxIterationsHit {
 		t.Fatal("MaxIterationsHit = false, want true")
@@ -358,14 +342,14 @@ func TestRunBudgetWithoutToolResultReturnsBriefLimitAnswer(t *testing.T) {
 	}
 }
 
-func TestRunTerminalSwarmCanStopWithHandler(t *testing.T) {
+func TestRunLoopTerminalSwarmCanStopWithHandler(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "run_aurabot_swarm"}}}},
 		{Response: llm.Response{Content: "too late"}},
 	}}
 
-	result, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "swarm synthesis")
 		return ExecutionSummary{LastResult: "swarm synthesis", TerminalTool: "run_aurabot_swarm"}
 	}), state, Options{
@@ -377,7 +361,7 @@ func TestRunTerminalSwarmCanStopWithHandler(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if result.Text != "final from swarm" {
 		t.Fatalf("Text = %q, want terminal response", result.Text)
@@ -390,24 +374,14 @@ func TestRunTerminalSwarmCanStopWithHandler(t *testing.T) {
 	}
 }
 
-// Tests for legacy defensive primitives (SpiralBreaker, TieredBudget,
-// MaxRetryNudgesPerTurn, HiddenRejected) were removed when those primitives
-// were deleted from Options/Stats. The loop now treats tool failures as
-// regular tool messages and trusts the model to recover. See loop.go header
-// for the rationale.
-
-// Wave 3.0 Step 2: per-callback isolation tests. Each callback has its own
-// firing rule (1× per LLM call for Start/Delta, 1× per FRESH tool call for
-// Start/End — dedupe-skipped calls do NOT fire OnToolStart/OnToolEnd).
-
-func TestRunOnLLMStartFiresOncePerIteration(t *testing.T) {
+func TestRunLoopOnLLMStartFiresOncePerIteration(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 		{Response: llm.Response{Content: "done"}},
 	}}
 	var starts []int
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "wiki result")
 		return ExecutionSummary{LastResult: "wiki result", Results: map[string]string{calls[0].ID: "wiki result"}}
 	}), state, Options{
@@ -417,20 +391,20 @@ func TestRunOnLLMStartFiresOncePerIteration(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(starts) != 2 || starts[0] != 0 || starts[1] != 1 {
 		t.Fatalf("OnLLMStart fired with iterations %v, want [0 1]", starts)
 	}
 }
 
-func TestRunOnLLMDeltaFiresOncePerLLMCallWithFullContent(t *testing.T) {
+func TestRunLoopOnLLMDeltaFiresOncePerLLMCallWithFullContent(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{Content: "the full answer"}},
 	}}
 	var deltas []string
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
 		t.Fatal("executor should not run")
 		return ExecutionSummary{}
 	}), state, Options{
@@ -440,23 +414,21 @@ func TestRunOnLLMDeltaFiresOncePerLLMCallWithFullContent(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(deltas) != 1 || deltas[0] != "the full answer" {
 		t.Fatalf("OnLLMDelta deltas = %v, want [\"the full answer\"]", deltas)
 	}
 }
 
-func TestRunOnLLMDeltaSkippedWhenContentEmpty(t *testing.T) {
-	// First round returns ONLY tool calls (empty Content) → no delta.
-	// Second round returns text → exactly one delta.
+func TestRunLoopOnLLMDeltaSkippedWhenContentEmpty(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files"}}}},
 		{Response: llm.Response{Content: "answer"}},
 	}}
 	var deltas []string
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "r")
 		return ExecutionSummary{Results: map[string]string{calls[0].ID: "r"}}
 	}), state, Options{
@@ -466,16 +438,15 @@ func TestRunOnLLMDeltaSkippedWhenContentEmpty(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(deltas) != 1 || deltas[0] != "answer" {
 		t.Fatalf("OnLLMDelta deltas = %v, want [\"answer\"]", deltas)
 	}
 }
 
-func TestRunOnToolStartFiresOncePerFreshCall(t *testing.T) {
+func TestRunLoopOnToolStartFiresOncePerFreshCall(t *testing.T) {
 	state := newFakeLoopState()
-	// Two fresh calls in one batch, then a final answer.
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
 			{ID: "call-a", Name: "search_files", Arguments: map[string]any{"query": "a"}},
@@ -485,7 +456,7 @@ func TestRunOnToolStartFiresOncePerFreshCall(t *testing.T) {
 	}}
 	var startNames []string
 	var startKeys [][]string
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		results := map[string]string{}
 		for _, call := range calls {
 			state.AddToolResultMessage(call.ID, "r")
@@ -500,7 +471,7 @@ func TestRunOnToolStartFiresOncePerFreshCall(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(startNames) != 2 || startNames[0] != "search_files" || startNames[1] != "wiki_page" {
 		t.Fatalf("OnToolStart names = %v, want [search_files wiki_page]", startNames)
@@ -513,7 +484,7 @@ func TestRunOnToolStartFiresOncePerFreshCall(t *testing.T) {
 	}
 }
 
-func TestRunOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
+func TestRunLoopOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -528,7 +499,7 @@ func TestRunOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 		preview string
 	}
 	var ends []endRecord
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		results := map[string]string{}
 		for _, call := range calls {
 			if call.Name == "tool_bad" {
@@ -547,7 +518,7 @@ func TestRunOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(ends) != 2 {
 		t.Fatalf("OnToolEnd fired %d times, want 2 (%+v)", len(ends), ends)
@@ -574,10 +545,7 @@ func TestRunOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 	}
 }
 
-func TestRunOnToolStartSkippedForDedupedCalls(t *testing.T) {
-	// Two identical calls in the same batch — DedupeToolCalls keeps the
-	// first, the second is a duplicate. OnToolStart MUST fire only once;
-	// the duplicate gets a synthetic stub, not a real tool dispatch.
+func TestRunLoopOnToolStartSkippedForDedupedCalls(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
@@ -587,7 +555,7 @@ func TestRunOnToolStartSkippedForDedupedCalls(t *testing.T) {
 		{Response: llm.Response{Content: "done"}},
 	}}
 	var starts []string
-	_, err := Run(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		results := map[string]string{}
 		for _, call := range calls {
 			state.AddToolResultMessage(call.ID, "wiki result")
@@ -601,7 +569,7 @@ func TestRunOnToolStartSkippedForDedupedCalls(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+		t.Fatalf("runLoop returned error: %v", err)
 	}
 	if len(starts) != 1 || starts[0] != "call-1" {
 		t.Fatalf("OnToolStart fired with callIDs %v, want [call-1]", starts)

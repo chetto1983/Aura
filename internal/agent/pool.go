@@ -1,4 +1,4 @@
-package agentloop
+package agent
 
 import (
 	"encoding/json"
@@ -25,7 +25,7 @@ import (
 //     next LLM step sees them in its tools array. This is what makes the
 //     pattern feel native: call tool_search, then call any returned tool.
 //
-// The pool is per-turn (one Run invocation). State does not leak across
+// The pool is per-turn (one runLoop invocation). State does not leak across
 // turns; the next turn starts fresh from ToolsProvider().
 //
 // Concurrency: a single tool batch may execute calls in parallel, but
@@ -145,11 +145,6 @@ func (p *toolPool) AbsorbToolSearchResult(result string) int {
 	loaded := 0
 	for _, hit := range parsed.Hits {
 		if p.EnsureLoaded(hit.Name) {
-			// Count only entries we genuinely loaded (Has==false before).
-			// Cheap approximation: every EnsureLoaded that succeeds with
-			// a name not previously loaded contributes. We don't try to
-			// distinguish duplicates — the next-step's Defs() reflects
-			// the actual count anyway.
 			loaded++
 		}
 	}

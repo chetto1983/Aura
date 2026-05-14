@@ -1,4 +1,4 @@
-// Package agentruntime — session.go owns the per-user conversation lifecycle.
+// Package agent — session.go owns the per-user conversation lifecycle.
 //
 // Concurrency model (CONC-01, F-012, F-016):
 //   - In production, callers MUST wire a *concurrency.UserGate. The gate is
@@ -18,7 +18,7 @@
 //     PruneSnapshots periodically (the bot wires this on a maintenance
 //     cadence). Clear() removes both context and snapshot when an explicit
 //     "forget this user" action is invoked.
-package agentruntime
+package agent
 
 import (
 	"log/slog"
@@ -220,7 +220,7 @@ func (s *Session) Finish() {
 // clean Finish (F-015).
 func (s *Session) Abort() {
 	if s != nil {
-		slog.Default().Warn("agentruntime: session aborted", "user_id", s.userID)
+		slog.Default().Warn("agent: session aborted", "user_id", s.userID)
 	}
 	s.clearActive()
 }

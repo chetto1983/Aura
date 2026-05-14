@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
-	"github.com/aura/aura/internal/agentruntime"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/concurrency"
@@ -75,7 +74,7 @@ type Bot struct {
 	debugDocsMu sync.Mutex
 	debugDocs   []DebugDocumentSend
 	debugDocSeq atomic.Uint64
-	sessions    *agentruntime.SessionStore
+	sessions    *agent.SessionStore
 	started     atomic.Bool
 	gate        *concurrency.UserGate
 }
@@ -107,12 +106,12 @@ func (b *Bot) ReindexHealth() reindex.Health {
 	return b.reindex.Health()
 }
 
-func (b *Bot) sessionStore() *agentruntime.SessionStore {
+func (b *Bot) sessionStore() *agent.SessionStore {
 	if b == nil {
 		return nil
 	}
 	if b.sessions == nil {
-		b.sessions = agentruntime.NewSessionStore()
+		b.sessions = agent.NewSessionStore()
 	}
 	return b.sessions
 }

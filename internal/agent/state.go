@@ -1,21 +1,20 @@
 package agent
 
 import (
-	"github.com/aura/aura/internal/agentloop"
 	"github.com/aura/aura/internal/llm"
 )
 
-// agentState is the agentloop.State + agentloop.PhantomCorrector implementation
-// for background agents (swarm workers, scheduler jobs, /api/chat pipe).
-// Unlike conversation.Context it has no summarisation, sliding window, or
-// Telegram coupling — a background agent turn is bounded by MaxIterations /
-// Timeout on the Runner, so we let the loop own the message slice directly.
+// agentState is the State + PhantomCorrector implementation for background
+// agents (swarm workers, scheduler jobs, /api/chat pipe). Unlike
+// conversation.Context it has no summarisation, sliding window, or Telegram
+// coupling — a background agent turn is bounded by MaxIterations / Timeout
+// on the Runner, so we let the loop own the message slice directly.
 type agentState struct {
 	messages []llm.Message
 }
 
-var _ agentloop.State = (*agentState)(nil)
-var _ agentloop.PhantomCorrector = (*agentState)(nil)
+var _ State = (*agentState)(nil)
+var _ PhantomCorrector = (*agentState)(nil)
 
 func newAgentState(initial []llm.Message) *agentState {
 	msgs := make([]llm.Message, len(initial))

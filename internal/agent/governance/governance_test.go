@@ -1,4 +1,4 @@
-package agentloop
+package governance
 
 import (
 	"reflect"
@@ -8,11 +8,6 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-// TestGovernanceInputPurity asserts the documented "all four functions are
-// pure" invariant in governance.go: mutating the input slice after the call
-// must not change the returned slice. Catches a regression where a future
-// change to llm.Message (pointer field, embedded map) silently breaks the
-// slice-of-values assumption (F-021).
 func TestGovernanceInputPurity(t *testing.T) {
 	build := func() []llm.Message {
 		return []llm.Message{
@@ -48,7 +43,7 @@ func TestDropOrphanToolResultsRemovesUnmatchedToolMessages(t *testing.T) {
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "file"}}},
 		{Role: "tool", ToolCallID: "call-1", Content: "ok"},
-		{Role: "tool", ToolCallID: "ghost", Content: "leaked"}, // orphan
+		{Role: "tool", ToolCallID: "ghost", Content: "leaked"},
 	}
 	out := dropOrphanToolResults(in)
 	if len(out) != 3 {
@@ -69,9 +64,6 @@ func TestDropOrphanToolResultsReturnsInputWhenAllMatched(t *testing.T) {
 	}
 	out := dropOrphanToolResults(in)
 	if &out[0] != &in[0] {
-		// Returning the same backing slice avoids an allocation on the
-		// hot path. The test pins this expectation so we notice if the
-		// implementation grows an unconditional copy.
 		t.Fatalf("expected same backing slice when nothing to drop")
 	}
 }
@@ -84,7 +76,6 @@ func TestBackfillMissingToolResultsInsertsPlaceholderForOrphanedCall(t *testing.
 			{ID: "b", Name: "execute_code"},
 		}},
 		{Role: "tool", ToolCallID: "a", Content: "ok"},
-		// b missing
 	}
 	out := backfillMissingToolResults(in)
 	if len(out) != 4 {
@@ -105,7 +96,6 @@ func TestBackfillMissingToolResultsInsertsPlaceholderForOrphanedCall(t *testing.
 }
 
 func TestMicrocompactToolResultsReplacesStaleResultsBeyondKeepRecent(t *testing.T) {
-	// 12 read_file results in a row. Keep 10, compact 2.
 	msgs := []llm.Message{{Role: "user", Content: "start"}}
 	for i := 0; i < 12; i++ {
 		callID := "call-" + string(rune('a'+i))
@@ -141,7 +131,7 @@ func TestMicrocompactToolResultsSkipsShortResults(t *testing.T) {
 		callID := "call-" + string(rune('a'+i))
 		msgs = append(msgs,
 			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: callID, Name: "file"}}},
-			llm.Message{Role: "tool", ToolCallID: callID, Content: "ok"}, // way below minChars
+			llm.Message{Role: "tool", ToolCallID: callID, Content: "ok"},
 		)
 	}
 	out := microcompactToolResults(msgs, 10, 500)
@@ -196,10 +186,6 @@ func TestTruncateOversizedToolResultsLeavesSmallResultsAlone(t *testing.T) {
 }
 
 func TestApplyGovernanceChainsAllTransforms(t *testing.T) {
-	// Build a history that exercises every transform:
-	// - 12 read_file pairs (microcompact will trim 2)
-	// - One assistant with a missing tool result (backfill)
-	// - One orphan tool message (drop)
 	msgs := []llm.Message{{Role: "user", Content: "start"}}
 	for i := 0; i < 12; i++ {
 		callID := "call-" + string(rune('a'+i))
@@ -213,15 +199,13 @@ func TestApplyGovernanceChainsAllTransforms(t *testing.T) {
 		llm.Message{Role: "tool", ToolCallID: "ghost", Content: "i should be dropped"},
 	)
 
-	out := applyGovernance(msgs, 500, 0, 0)
+	out := Apply(msgs, 500, 0, 0)
 
-	// Orphan dropped.
 	for _, msg := range out {
 		if msg.Role == "tool" && msg.ToolCallID == "ghost" {
-			t.Fatal("orphan survived applyGovernance")
+			t.Fatal("orphan survived Apply")
 		}
 	}
-	// Backfill inserted for "missing".
 	var backfilled bool
 	for _, msg := range out {
 		if msg.Role == "tool" && msg.ToolCallID == "missing" {
@@ -231,8 +215,6 @@ func TestApplyGovernanceChainsAllTransforms(t *testing.T) {
 	if !backfilled {
 		t.Fatal("missing tool_call_id was not backfilled")
 	}
-	// Microcompact + truncate: the two oldest read_file results should be
-	// either stubbed or below the 500-char cap.
 	for _, msg := range out {
 		if msg.Role != "tool" {
 			continue

@@ -66,6 +66,7 @@ The rename/move work is correct only if it converges toward this map.
 internal/
   agent/          core loop, runtime, governance, run state
   chat/           normalized messages, runs, routing, events
+  identity/       principals, channel accounts, actors, capability grants
   channels/       telegram, web, silent, swarm adapters
   agent/tools/    tool registry, tool schemas, tool execution, toolsets
   learning/       tool experience, self-healing lessons, promotion workflow
@@ -173,7 +174,140 @@ InboundMessage -> Run -> OutboundEvents
 
 `chat` is the seam where Telegram, web, cron, silent jobs, and swarm become the same kind of work.
 
-### 5.3 `internal/channels/*`
+The run/event store contract is:
+
+```text
+append RunEvent -> update Run snapshot -> enqueue delivery/outbox work
+```
+
+Aura uses a pragmatic hybrid model:
+
+- `run_events` is the durable append-only causal record for important run facts,
+- `runs` is the current read model/snapshot used by dashboard, API, cancellation, resume, and polling,
+- `runs.current_seq` is updated together with each durable event,
+- event ordering is per `run_id, seq`, not global process order,
+- event payloads are versioned and tolerate additive fields,
+- external side effects use idempotency keys and outbox rows rather than direct best-effort delivery,
+- transient streaming deltas may be compacted or non-durable, but tool calls, questions, memory writes, child runs, final output, errors, and usage are durable.
+
+Minimum durable events:
+
+```text
+run_started
+message_received
+authorization_denied
+prompt_built
+llm_started
+tool_started
+tool_completed
+tool_failed
+question_requested
+question_answered
+memory_write_requested
+memory_write_committed
+child_run_started
+child_run_completed
+run_completed
+run_failed
+run_cancelled
+```
+
+Minimum tables:
+
+```text
+runs
+  id, parent_run_id, thread_id, principal_id, actor_id, channel, mode
+  status, current_seq, started_at, completed_at
+  waiting_question_id, last_error, final_text_preview
+  stats_json, metadata_json
+
+run_events
+  id, run_id, parent_run_id, seq, type, schema_version
+  actor_id, causation_id, correlation_id, idempotency_key
+  payload_json, redaction_level, created_at
+
+run_outbox
+  id, run_id, event_id, target, idempotency_key
+  payload_json, status, attempts, next_attempt_at, last_error, created_at
+```
+
+Do not event-source all of Aura. Wiki pages, source files, indexes, and tool artifacts keep their own source-of-truth rules. The run/event store is the backbone for execution, questions, observability, learning, cron, and swarm.
+
+### 5.3 `internal/identity`
+
+Identity and authorization are the authority model.
+
+They own:
+
+- stable principals,
+- external channel account mappings,
+- per-run actors,
+- capability catalog,
+- capability grants,
+- role-to-grant bootstrap bundles,
+- authorization checks,
+- delegation constraints,
+- audit-friendly authorization decisions.
+
+They must not own:
+
+- Telegram or web transport behavior,
+- dashboard rendering,
+- raw bearer-token HTTP mechanics,
+- tool implementation,
+- wiki or source persistence,
+- prompt text.
+
+The vocabulary is:
+
+```text
+Principal       stable entity: human, system, service, or local owner
+ChannelAccount  external account bound to a principal, such as telegram:123 or web session subject
+Actor           principal acting in a run, job, API request, cron tick, or child swarm run
+Capability      explicit action name such as tool.execute.search_memory or memory.user.write
+Grant           capability assigned to a principal or actor with resource scope and constraints
+Role            convenience bundle that creates grants; not the authorization source of truth
+```
+
+Rules:
+
+- default authorization is deny,
+- channel account IDs are not principal IDs,
+- dashboard tokens authenticate sessions but do not define authority,
+- API routes, tools, memory writes, cron jobs, and swarm runs all call the same authorization boundary,
+- every tool declares its required capability and risk level,
+- every durable run has an actor,
+- cron actors and swarm child actors are delegated from a parent principal or actor,
+- delegated actors receive only a subset of the parent capabilities,
+- delegated grants can be constrained by resource, expiry, parent run, max depth, budget, delivery mode, and tool allowlist,
+- authorization failures are structured events, not hidden branch logic.
+
+Minimum tables:
+
+```text
+principals
+  id, kind, display_name, status, created_at, metadata_json
+
+channel_accounts
+  id, principal_id, provider, external_id, display_name
+  created_at, last_seen_at, metadata_json
+
+actors
+  id, principal_id, actor_type, parent_actor_id, run_id
+  created_at, expires_at, metadata_json
+
+capability_grants
+  id, subject_type, subject_id, capability, resource_type, resource_id
+  constraints_json, granted_by_actor_id, created_at, expires_at, revoked_at
+
+authz_decisions
+  id, actor_id, capability, resource_type, resource_id
+  decision, reason, run_id, event_id, created_at
+```
+
+This is not a full external IAM system. It is the smallest durable authority model that lets Aura support chat apps, dashboard sessions, cron, swarm, memory, and tools without spreading permission logic through every package.
+
+### 5.4 `internal/channels/*`
 
 Channels are adapters.
 
@@ -198,7 +332,7 @@ Examples:
 - `channels/silent` owns background/no-output delivery.
 - `channels/swarm` or equivalent owns child-agent dispatch through the same hub contract.
 
-### 5.4 `internal/agent/tools`
+### 5.5 `internal/agent/tools`
 
 Tools are capabilities available to the agent.
 
@@ -241,6 +375,7 @@ Tool requirements:
 - curated examples when schema is insufficient,
 - untrusted output envelope,
 - secret-safe logging.
+- declared required capability.
 
 Tool visibility tiers:
 
@@ -256,12 +391,13 @@ Advanced tool-use policy:
 - most tools are deferred, not loaded into the model context upfront,
 - `tool_search` or equivalent discovery returns full definitions only when needed,
 - direct permissive-load is allowed when the model saw a tool name in the manifest,
+- active tool visibility is necessary but not sufficient; execution still requires authorization,
 - code-level orchestration may call only active-turn, opt-in, non-recursive tools,
 - large intermediate tool results stay out of the model context when code can reduce them,
 - complex tools need realistic examples showing minimal, partial, and full usage patterns,
 - examples are for disambiguation, not decoration.
 
-### 5.5 `internal/memory`
+### 5.6 `internal/memory`
 
 Memory is the product semantics of remembering. It is not one bucket.
 
@@ -303,12 +439,13 @@ RAG indexes               rebuildable projections over durable layers
 Write policy:
 
 - user memory requires explicit intent, validation, or a question when ambiguous,
+- user memory writes require `memory.user.write` or a narrower capability grant,
 - operational memory belongs to Aura and must not pollute the user wiki,
 - source corpus is immutable evidence until curated,
 - wiki pages are curated knowledge, not chat logs or raw tool failures,
 - indexes are disposable projections.
 
-### 5.6 `internal/learning`
+### 5.7 `internal/learning`
 
 Learning is operational experience, not secret model training.
 
@@ -339,7 +476,7 @@ The minimum loop is:
 tool failure -> structured feedback -> retry in same run -> persist outcome -> retrieve similar lesson later -> promote only after validation
 ```
 
-### 5.7 `internal/rag`
+### 5.8 `internal/rag`
 
 RAG is retrieval intelligence.
 
@@ -399,7 +536,7 @@ The tool surface should avoid `memory(mode=...)`. Prefer task-level tools:
 
 A federated recall path is allowed only if every hit keeps its layer label and citation handle.
 
-### 5.8 `internal/storage`
+### 5.9 `internal/storage`
 
 Storage is persistence infrastructure.
 
@@ -422,7 +559,15 @@ It must not own:
 
 Storage is allowed to be subdivided. A `storage` namespace is good; a `storage` god package is bad.
 
-### 5.9 `internal/cron`
+Persistence implementation policy:
+
+- core storage stays on explicit `database/sql` repositories and versioned SQL migrations,
+- do not adopt GORM as the central ORM for Aura,
+- do not use auto-migration for durable core tables,
+- run/event, outbox, identity grants, FTS/RAG, recovery, backups, and migrations must keep explicit SQL,
+- ORM-style helpers may be considered only for isolated, non-critical CRUD after a spike proves they do not weaken migrations, transactions, logging, or testability.
+
+### 5.10 `internal/cron`
 
 Cron is a scheduled entrypoint.
 
@@ -431,7 +576,8 @@ It owns:
 - recurring jobs,
 - due-work lookup,
 - schedule persistence,
-- triggering work at the right time.
+- triggering work at the right time,
+- delegated background actors.
 
 It must not own:
 
@@ -441,7 +587,9 @@ It must not own:
 
 Cron should submit work into `chat` or `agent` through the same contracts used by other entrypoints.
 
-### 5.10 `internal/api`
+Scheduled work must run as a delegated actor with explicit capabilities, expiry, and notification policy. A cron job is never implicitly the owner.
+
+### 5.11 `internal/api`
 
 API is an external surface.
 
@@ -450,7 +598,7 @@ It owns:
 - HTTP routes,
 - request/response DTOs,
 - dashboard endpoints,
-- auth middleware,
+- bearer/session authentication middleware,
 - setup/health surfaces.
 
 It must not own:
@@ -459,6 +607,8 @@ It must not own:
 - Telegram behavior,
 - tool internals,
 - wiki mutation policy.
+
+API must not own the permission model. API handlers authenticate a request into an actor, then ask `identity` whether that actor can perform the requested capability.
 
 `/api/chat` must keep the public JSON shape stable while its backend migrates.
 
@@ -484,7 +634,7 @@ Bad rename:
 
 Every rename must answer:
 
-> Is this code core, traffic, channel, capability, memory, storage, cron, API, or config?
+> Is this code core, traffic, identity, channel, capability, memory, storage, cron, API, or config?
 
 If the answer is unclear, the module is not ready to move.
 
@@ -502,7 +652,8 @@ Goal: make the package names reflect the target architecture.
 
 Current queue direction:
 
-- health/setup/auth belong under `api`,
+- health/setup/dashboard auth surfaces belong under `api`,
+- principal, channel-account, actor, grant, and authorization logic belong under `identity`,
 - qdrant/search/reindex/memoryindex/memoryquality/sources belong under `storage`,
 - chathub becomes `chat`,
 - adapters become `channels`,
@@ -515,6 +666,49 @@ Gate:
 - build/vet/test green,
 - no god package created,
 - package name explains responsibility.
+
+### Phase 1A - Persist the Run/Event Foundation
+
+Goal: make `chat` durable before more channels depend on it.
+
+Steps:
+
+- add SQLite migrations for `runs`, `run_events`, and `run_outbox`,
+- persist `run_started` and terminal events before adapter delivery becomes more complex,
+- update `runs` snapshot in the same SQLite transaction as durable events,
+- make event sequence monotonic per run,
+- add idempotency keys for inbound messages, tool calls, delivery attempts, and child-run dispatch,
+- keep payloads redacted and schema-versioned.
+
+Gate:
+
+- duplicate inbound delivery with the same idempotency key does not create a second run,
+- events replay into the same run snapshot,
+- terminal run state survives process restart,
+- failed outbound delivery remains retryable through outbox state,
+- tests cover per-run ordering, cancellation, and parent/child correlation.
+
+### Phase 1B - Establish Identity and Capability Grants
+
+Goal: give every run, tool call, cron job, and swarm child a single authority model.
+
+Steps:
+
+- add durable principal, channel account, actor, capability grant, and authorization decision tables,
+- migrate Telegram allowlisted user IDs into `channel_accounts` plus owner/user principals,
+- make dashboard tokens authenticate a session actor instead of acting as permissions,
+- add an `Authorize(actor, capability, resource)` boundary,
+- map existing tool allowlists into capability checks without removing allowlists yet,
+- add delegated actors for cron and child swarm runs,
+- record authorization denials as run events or audit decisions.
+
+Gate:
+
+- Telegram, web/API, cron, and swarm test fixtures all resolve an actor,
+- a dashboard token cannot bypass a missing capability,
+- a visible tool still fails closed when the actor lacks its required capability,
+- a child swarm actor cannot receive capabilities its parent lacks,
+- revoked grants stop future runs without rewriting historical events.
 
 ### Phase 2 - Protect Telegram
 
@@ -589,6 +783,7 @@ Steps:
 - stabilize tool order,
 - enforce typed schemas and structured errors,
 - assign every tool a visibility tier,
+- assign every tool a required capability,
 - assign every tool a retry/idempotency/risk class,
 - keep only the smallest control surface always loaded,
 - make deferred discovery the default for the rest,
@@ -603,6 +798,7 @@ Gate:
 - tool discovery top-k evals pass,
 - parameter accuracy evals pass for example-backed tools,
 - programmatic internal calls are bounded, redacted, audited, and active-turn-only,
+- active-turn visibility never bypasses authorization,
 - no secret value logging,
 - no broad path/URI access,
 - tests/probes inspect tool behavior.

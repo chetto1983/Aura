@@ -1,19 +1,19 @@
 package telegram
 
 import (
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/llm"
 )
 
 // terminalToolFinalizationMessages composes the message list the LLM sees on
 // terminal-tool finalize. Retained as a passthrough so tests can exercise the
-// prompt shape without reaching into agentruntime directly.
+// prompt shape without reaching into agent directly.
 func terminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
-	return agentruntime.TerminalToolFinalizationMessages(messages, terminalTool)
+	return agent.TerminalToolFinalizationMessages(messages, terminalTool)
 }
 
 func looksLikeToolCallMarkup(text string) bool {
-	return agentruntime.LooksLikeToolCallMarkup(text)
+	return agent.LooksLikeToolCallMarkup(text)
 }
 
 // toolActivityMessage is the placeholder text shown while a tool turn is in
@@ -24,5 +24,5 @@ func toolActivityMessage(name string) string {
 }
 
 func isFileGenerationTool(name string) bool {
-	return agentruntime.IsFileGenerationTool(name)
+	return agent.IsFileGenerationTool(name)
 }

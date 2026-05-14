@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/aura/aura/internal/agentruntime"
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 
@@ -14,7 +14,7 @@ import (
 func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
 	stats.llmCalls++
 	stats.loopSteps++
-	finalized := agentruntime.FinalizeTerminalTool(ctx, agentruntime.TerminalFinalizationInput{
+	finalized := agent.FinalizeTerminalTool(ctx, agent.TerminalFinalizationInput{
 		Messages:      convCtx.Messages(),
 		TerminalTool:  stats.terminalTool,
 		RawToolResult: rawToolResult,
