@@ -30,6 +30,13 @@ operational means:
 
 Conversation context is not durable state. Reconstruct state from files.
 
+Codex memory rule:
+
+- For non-trivial Aura work, do not rely on chat memory. Reconstruct the slice
+  from durable files, then keep source files, external references, example
+  paths, adopted patterns, rejected patterns, and verification fixtures close to
+  the decision or module being changed.
+
 ## Architecture Decisions To Preserve
 
 ### Cache Plane
@@ -94,6 +101,74 @@ Do not treat "memory" as one bucket.
 - Schema/control files such as AGENTS.md, CLAUDE.md, and wiki schema docs change
   future agent behavior. Edit them deliberately and with evidence.
 
+### Wiki Graph
+
+Aura's wiki is a graph, not a folder of isolated Markdown pages.
+
+- Pages are graph nodes. Slugs are stable node IDs.
+- Body `[[slug]]` links are semantic narrative edges.
+- `related:` is only for intentional non-prose edges and automatic backlinks.
+  Do not duplicate every body link into `related:`.
+- `sources:` and inline `^[src_xxx]` markers connect claims back to source
+  evidence.
+- Wiki purpose/schema files steer ingest, query, lint, and graph maintenance.
+  Treat them as control memory, not ordinary wiki pages.
+- Ordinary wiki mutations must go through `wiki.Store.WritePage` or tools that
+  call it, so validation, atomic writes, git status, backlinks, materialized
+  graph files, graph index refresh, and reindex submission all happen.
+- Before creating a page, search the existing wiki/graph and reuse a matching
+  slug when one exists.
+- Graph traversal should use bounded graph-aware retrieval or dedicated graph
+  tools. Do not read large graph dumps when a neighborhood/path query would do.
+- Prefer graph relevance signals over raw adjacency dumps: direct links, shared
+  sources, common neighbors, and page-type affinity.
+- No new graph database while Markdown wiki remains the source of truth.
+- GraphRAG for the wiki layer is local-first: hybrid search seeds, GraphIndex
+  expands, graph signals rank, community reports guide global sensemaking, and
+  cited capsules return the bounded result.
+- Community detection and community reports are rebuildable projections with
+  freshness state, not canonical knowledge. Promote useful reports into wiki
+  synthesis pages only through review/proposal flow.
+- Use `D:/Aura/docs/graphrag-local-first-reference-map.md` when working on
+  wiki GraphRAG, graph scoring, community reports, or Neo4j-sidecar questions.
+
+### RAG Freshness
+
+RAG indexes are projections. They accelerate recall but do not define truth.
+
+- Canonical stores must be named before implementing retrieval changes.
+- Every FTS, Qdrant, graph-document, or embedding-cache projection needs an
+  explicit freshness state: fresh, stale, rebuilding, degraded, or disabled.
+- Projection state should include source and indexed watermarks, schema or
+  embedding-model hash, last success/error, pending jobs, and indexed counts.
+- GraphIndex may stay synchronous for wiki writes; FTS and Qdrant reindexing
+  must be durable when losing the job would leave stale user-visible retrieval.
+- Reindex jobs must be op-aware. Delete, rename, and embedding-model changes are
+  not page upserts.
+- Full rebuilds must be forceable. Startup warm-cache reuse must not make an
+  explicit reindex request a no-op.
+- Retrieval capsules must expose stale/degraded projections. An empty stale
+  vector result is never evidence that no source exists.
+- Prefer exact, FTS, and GraphIndex fallback before allowing stale vector state
+  to shape an answer.
+
+### Sources And Examples
+
+Development must make prior research easy to find again.
+
+- Every architectural slice must name its source files, external references, and
+  example projects before planning implementation.
+- Keep source links close to the decision they support: ADR `sources`,
+  `local_evidence`, PRD references, or a dedicated reference map.
+- Prefer concrete example paths over vague notes. Use full paths such as
+  `D:/tmp/llm_wiki/src/lib/wiki-graph.ts` and stable URLs for online sources.
+- When adopting a pattern from an example repo, record what is adopted, what is
+  rejected, and why. Do not leave "inspired by X" without a bounded mapping.
+- Complex tools and modules need discoverable fixtures or examples that show
+  minimal, normal, and failure/recovery usage.
+- If a source or example changes a decision, update the decision log in the same
+  slice. Conversation memory is not enough.
+
 ## Mandatory Startup For Aura Work
 
 For architecture, refactor, loop, agent, Telegram, tool, runtime, or storage
@@ -101,7 +176,7 @@ work, read only the minimum needed, in this order:
 
 1. `D:\Aura\CLAUDE.md`
 2. `D:\Aura\docs\aura-master-plan.md`
-3. `D:\Aura\.planning\progress.txt` if present
+3. `D:\Aura\.planning\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
 4. `D:\Aura\prd.json` if working from the Ralph queue
 5. Directly affected source files
 

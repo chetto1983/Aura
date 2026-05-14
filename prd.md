@@ -56,6 +56,43 @@ The important rule:
 
 The agent core should be boring. The adapters may be messy because the world is messy, but that mess must stop at the boundary.
 
+### 3.1 Research, Sources, And Examples
+
+Development must make prior research easy to rediscover.
+
+For every non-trivial architecture or module slice, Aura needs a small
+traceability trail:
+
+- authoritative source files in Aura,
+- external references or papers that shaped the decision,
+- example repos/files that demonstrate the pattern,
+- what Aura adopts from each example,
+- what Aura explicitly rejects from each example,
+- fixtures or example calls that future workers can run or inspect.
+
+This is a product requirement for the refactor, not documentation polish. Aura is
+being designed from existing code, local examples, papers, and agent-framework
+patterns. If those references are not easy to find, future development will
+re-litigate old choices and reintroduce architectural drift.
+
+The traceability rule:
+
+```text
+decision -> sources -> examples -> adopted pattern -> rejected pattern -> verification
+```
+
+Implementation targets:
+
+- ADR entries keep `sources`, `local_evidence`, and example mappings close to
+  the decision.
+- PRD sections link to the canonical decisions or source/example files when a
+  requirement came from research.
+- Complex tools and modules include discoverable examples for minimal, normal,
+  and failure/recovery usage.
+- Example-derived patterns are mapped to Aura-owned modules before
+  implementation starts.
+- Stale or rejected examples remain recorded with the reason they were rejected.
+
 ---
 
 ## 4. Module Map
@@ -568,8 +605,9 @@ user_profile_memory       stable user facts, preferences, constraints, identity 
 project_decision_memory   PRD, ADRs, open questions, roadmap/progress decisions
 source_corpus             raw files, OCR/extracts, page spans, immutable provenance
 knowledge_wiki            curated pages, concepts, syntheses, comparisons, analyses
-wiki_schema_control       AGENTS/CLAUDE/wiki schema, conventions, templates, workflows
+wiki_schema_control       AGENTS/CLAUDE/wiki schema, purpose, conventions, templates, workflows
 wiki_index_log            index.md catalog plus log.md chronological wiki operations
+wiki_graph                page nodes plus [[slug]], related, source, provenance edges
 derived_artifacts         reports, charts, decks, generated files, query outputs
 
 Aura learning/procedure
@@ -604,9 +642,34 @@ Write policy:
 - raw tool failures live in `experience_store`; only validated lessons may be promoted,
 - source corpus is immutable evidence until curated,
 - wiki pages are curated knowledge, not chat logs, raw tool failures, or private scratchpad noise,
+- wiki purpose/schema files steer ingest, query, lint, and graph maintenance; they are control memory, not ordinary wiki content,
 - wiki schema/control files are edited deliberately because they change future agent behavior,
 - proposal queue entries keep provenance, evidence, target layer, proposed action, and review state,
 - indexes and cache are disposable projections.
+
+Wiki graph contract:
+
+- every normal wiki page is a graph node identified by slug,
+- body `[[slug]]` links are semantic narrative edges,
+- `related:` is for intentional non-prose edges and automatically maintained backlinks,
+- `sources:` and inline `^[src_xxx]` markers are evidence edges into the source corpus,
+- source ingest writes a source-summary hub plus entity/concept pages when extraction succeeds,
+- all wiki graph writes go through `wiki.Store.WritePage` or higher-level tools that call it,
+- the store maintains backlinks, materialized `graph/graph.json`, `graph/context.md`, and the in-memory adjacency index,
+- graph relevance uses multiple signals: direct links, shared source provenance, common-neighbor structure, and page-type affinity,
+- graph health checks own broken refs, orphans, stale backlinks, missing graph documents, and safe repairs,
+- no graph database is introduced while Markdown remains the product truth.
+
+Agent graph-writing policy:
+
+- before creating a page, search existing wiki/graph hits and reuse a matching slug,
+- when editing an existing page, read it first and use `expected_updated_at`,
+- write `[[slug]]` in prose whenever the relationship matters to a reader,
+- do not mirror prose links into `related:` because backlinks are automatic,
+- use `related:` only for important relationships that do not naturally appear in prose,
+- cite source-backed claims with `^[src_xxx]` or source IDs,
+- prefer append/edit over replace unless the task is a deliberate rewrite,
+- never use raw file writes for ordinary wiki page mutation.
 
 ### 5.8 `internal/learning`
 
@@ -720,6 +783,101 @@ The tool surface should avoid `memory(mode=...)`. Prefer task-level tools:
 - `recall_operational` for Aura's own lessons and failed approaches.
 
 A federated recall path is allowed only if every hit keeps its layer label and citation handle.
+
+Graph-aware retrieval is required for the wiki layer.
+
+Aura should not force the model to manually read `graph.json` for ordinary graph traversal. The retrieval layer should:
+
+```text
+query
+  -> hybrid keyword/vector seed hits
+  -> exact slug/page lookup when query contains [[slug]]
+  -> bounded graph expansion from seed slugs
+  -> path/neighborhood scoring using direct-link, source-overlap, common-neighbor, and type-affinity signals
+  -> cited context capsule with slugs, path hints, edge direction, and read handles
+```
+
+Traversal budgets:
+
+- default graph depth is 1; depth 2 is allowed for exploratory synthesis,
+- depth above 2 requires an explicit tool call or workflow budget,
+- cap seed count, neighbors per seed, and total graph candidates,
+- down-rank high-degree generic hubs unless the user asks for overview/navigation,
+- preserve edge provenance: body link, related/backlink, source edge, or derived extraction edge where available.
+
+RAG freshness is part of the retrieval contract.
+
+Every retrieval index is a projection with explicit state, not a silent source of
+truth. Aura must track at least:
+
+```text
+projection_id, corpus_layer, source_scope
+status: fresh|stale|rebuilding|degraded|disabled
+source_watermark, indexed_watermark
+schema_hash, embedding_model_hash
+last_success_at, last_error_at, last_error_kind
+pending_jobs, documents_indexed, chunks_indexed
+```
+
+Projection rules:
+
+- canonical stores remain the source of truth,
+- GraphIndex is refreshed synchronously on wiki writes,
+- FTS and Qdrant are rebuildable projections with durable reindex state,
+- Qdrant upserts/deletes must be idempotent and op-aware,
+- delete, rename, and embedding-model changes must invalidate affected projections,
+- full rebuilds must be forceable and must not be skipped by startup warm-cache reuse.
+
+Query rules:
+
+- fresh projections participate normally in retrieval fusion,
+- stale projections inside a bounded grace window may participate only with a freshness warning and lower trust weight,
+- rebuilding projections may provide last-known-good hits only if the context capsule marks them stale,
+- degraded or config-mismatched vector projections are excluded from fusion,
+- exact, FTS, and GraphIndex fallback must remain available when vector retrieval is degraded,
+- an empty result from a stale or degraded projection is never proof that evidence does not exist,
+- retrieval capsules and tool observations include projection freshness.
+
+Graph maintenance should also surface insight work, not only broken-state repair:
+
+- surprising cross-community or cross-type connections worth reviewing,
+- isolated pages and sparse communities that need links or synthesis,
+- bridge nodes that deserve extra care because many knowledge paths depend on them,
+- review proposals with evidence and suggested searches when the graph suggests a missing page or research gap.
+
+Local-first GraphRAG is the target for the wiki layer.
+
+Aura should implement the useful GraphRAG ideas without adding a graph database
+to the core refactor:
+
+```text
+raw sources
+  -> curated Markdown wiki
+  -> GraphIndex + FTS/Qdrant projections
+  -> community detection and reports
+  -> cited retrieval capsules
+```
+
+Implementation rules:
+
+- Markdown wiki pages remain the canonical graph nodes,
+- GraphIndex owns ordinary low-latency traversal,
+- FTS/Qdrant seed retrieval feeds graph expansion,
+- graph ranking uses direct links, source overlap, common neighbors, type affinity, degree/hub penalties, and explicit traversal budgets,
+- community detection runs offline or as a background maintenance job,
+- community reports are derived projections with freshness state and evidence handles,
+- useful community reports may be promoted into wiki `synthesis` pages only through review/proposal flow,
+- Neo4j or another graph database is a future optional sidecar only, not a core dependency.
+
+Traceability for this area lives in `docs/graphrag-local-first-reference-map.md`.
+
+The agent tool surface should expose task-level graph tools rather than one polymorphic `graph(mode=...)` tool:
+
+- `wiki_neighbors` for adjacent pages around a known slug,
+- `wiki_path` for a shortest/explanatory path between known slugs,
+- `wiki_graph_health` for hubs, orphans, broken refs, and index health.
+
+These tools are for deliberate graph reasoning. Normal answers should use `recall_knowledge`, which performs bounded graph expansion internally and returns a compact cited capsule.
 
 ### 5.10 `internal/cache`
 
@@ -1102,9 +1260,17 @@ Steps:
 - split recall behavior by task intent instead of one polymorphic mode parameter,
 - implement hybrid FTS/vector retrieval with RRF fusion where available,
 - preserve chunk-to-parent source expansion,
+- add a projection freshness registry for FTS, Qdrant, graph documents, and embedding caches,
+- make wiki/source/user-memory reindex jobs durable, idempotent, op-aware, and watermark-based,
+- implement true per-slug wiki upsert/delete reindex plus a separate force full-rebuild command,
+- extend GraphIndex with typed weighted edges, source edges, degree, and bounded neighborhood/path queries,
+- add local community detection and graph insight jobs for wiki graph maintenance,
+- generate community reports as derived projections with citation/evidence handles,
+- use community reports as hints for global sensemaking, not as hidden source of truth,
 - return structured retrieval hits with score components and follow-up handles,
+- return projection freshness and degraded-read warnings with retrieval hits,
 - make retrieval errors recoverable learning events,
-- add golden RAG evals for user facts, wiki/source answers, and operational lessons.
+- add golden RAG evals for user facts, wiki/source answers, operational lessons, stale vectors, deletes, renames, and embedding-model changes.
 
 Gate:
 
@@ -1113,6 +1279,12 @@ Gate:
 - source hits cite source/page/span or stable artifact handle,
 - wiki hits cite `[[slug]]`,
 - retrieval fixtures prove hybrid beats vector-only and keyword-only on the golden set,
+- stale/degraded projections are visible to the agent and dashboard,
+- stale vector-only empty results cannot suppress exact, FTS, or graph evidence,
+- delete and rename fixtures prove stale projection records are removed or marked invalid,
+- wiki GraphRAG evals cover local entity questions and global sensemaking questions separately,
+- community reports carry evidence handles and freshness state,
+- Neo4j or another graph database is not required for Phase 7,
 - repeated bad filters/searches produce self-healing feedback.
 
 ### Phase 8 - Route Cron and Swarm Through the Same Shape
@@ -1306,6 +1478,8 @@ A refactor slice is done when:
 - old behavior is protected by tests or fixtures,
 - build/vet/test are green,
 - public behavior is unchanged unless the PRD explicitly says otherwise,
+- sources, example files, and rejected alternatives are recorded for decisions
+  that came from research or external patterns,
 - `prd.json` and progress notes are updated only after verification,
 - the commit is atomic and named for the architectural change.
 
@@ -1346,7 +1520,9 @@ Before editing any file, a worker must answer:
 2. What dependency direction does this change improve?
 3. What behavior could regress?
 4. What test or fixture proves it did not regress?
-5. What temporary compatibility code is being added, and when can it be removed?
+5. Which source files, external references, and example patterns justify this
+   change?
+6. What temporary compatibility code is being added, and when can it be removed?
 
 If the worker cannot answer these, the task is not ready.
 
