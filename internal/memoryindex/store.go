@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
@@ -67,6 +68,43 @@ type Store struct {
 	vector VectorIndex
 	logger *slog.Logger
 	now    func() time.Time
+
+	// writeMu serializes the delete fan-out: SELECT-ids → Qdrant delete →
+	// SQLite BeginTx-Commit. Without it a batch of N concurrent PurgeSource
+	// callers (e.g. the LLM emitting N parallel delete_source tool calls in
+	// one turn) race for SQLite write lock; with busy_timeout=5000 a batch
+	// of >5 reliably trips SQLITE_BUSY. The lock also shields the Qdrant
+	// sidecar from N parallel HTTP DELETEs that the mini-PC budget cannot
+	// absorb. Read paths (Search, Get, allDocuments) DO NOT take this lock.
+	writeMu sync.Mutex
+}
+
+// acquireWithContext takes mu unless ctx fires first. Plain sync.Mutex.Lock
+// is uncancellable; this wrapper lets a queued PurgeSource caller back out
+// when its deadline expires instead of sitting indefinitely behind a long
+// Qdrant DELETE roundtrip in front of it.
+func acquireWithContext(ctx context.Context, mu *sync.Mutex) error {
+	if ctx == nil {
+		mu.Lock()
+		return nil
+	}
+	acquired := make(chan struct{})
+	go func() {
+		mu.Lock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+		return nil
+	case <-ctx.Done():
+		// The waiter goroutine still holds the position in line; once it
+		// acquires we release immediately so the next caller can proceed.
+		go func() {
+			<-acquired
+			mu.Unlock()
+		}()
+		return ctx.Err()
+	}
 }
 
 func NewStore(db *sql.DB) (*Store, error) {
@@ -329,6 +367,15 @@ func (s *Store) deleteWhere(ctx context.Context, where string, args ...any) erro
 	if s == nil || s.db == nil {
 		return fmt.Errorf("memoryindex: store unavailable")
 	}
+	// Single-writer serialization across all delete fan-outs (Purge*).
+	// See Store.writeMu doc comment for rationale (mini-PC + Qdrant + SQLite
+	// write-lock interaction). Honors ctx cancellation so a stuck caller
+	// can't pin the queue past its deadline.
+	if err := acquireWithContext(ctx, &s.writeMu); err != nil {
+		return err
+	}
+	defer s.writeMu.Unlock()
+
 	rows, err := s.db.QueryContext(ctx, `SELECT id FROM compact_memory_documents WHERE `+where, args...)
 	if err != nil {
 		return fmt.Errorf("memoryindex: list delete ids: %w", err)

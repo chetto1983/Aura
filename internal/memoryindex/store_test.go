@@ -3,8 +3,11 @@ package memoryindex
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -337,6 +340,94 @@ func hasDoc(docs []Document, id string) bool {
 		}
 	}
 	return false
+}
+
+// TestStorePurgeSourceConcurrentDoesNotRaceSQLiteBusy locks the single-writer
+// contract on deleteWhere. Without serialization a fan-out of N parallel
+// PurgeSource callers races the SQLite write lock and one or more eventually
+// fails with SQLITE_BUSY when the per-connection busy_timeout is exhausted —
+// the exact failure mode from the 2026-05-14 07:51 conversation where 27 of 44
+// LLM-emitted delete_source calls failed concurrently. With Store.writeMu the
+// fan-out serializes inside the package and every caller succeeds.
+func TestStorePurgeSourceConcurrentDoesNotRaceSQLiteBusy(t *testing.T) {
+	ctx := context.Background()
+	vector := &fakeVectorIndex{}
+	store := openTestStoreWithVector(t, vector)
+
+	const n = 50
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("src_concurrent_%02d", i)
+		doc := Document{
+			ID:        "source:" + ids[i] + "#page=1",
+			Kind:      KindSource,
+			Title:     ids[i],
+			Body:      "body " + ids[i],
+			Handle:    "source:" + ids[i] + "#page=1",
+			SourceID:  ids[i],
+			Page:      1,
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := store.Upsert(ctx, doc); err != nil {
+			t.Fatalf("Upsert %s: %v", doc.ID, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var failures atomic.Int64
+	errCh := make(chan error, n)
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if err := store.PurgeSource(ctx, id); err != nil {
+				failures.Add(1)
+				errCh <- fmt.Errorf("%s: %w", id, err)
+			}
+		}(id)
+	}
+	wg.Wait()
+	close(errCh)
+
+	if failures.Load() != 0 {
+		var sample []string
+		for err := range errCh {
+			sample = append(sample, err.Error())
+			if len(sample) >= 5 {
+				break
+			}
+		}
+		t.Fatalf("%d/%d PurgeSource calls failed under concurrency (first %d): %v",
+			failures.Load(), n, len(sample), sample)
+	}
+
+	hits, err := store.Search(ctx, "body", Filter{Kinds: []string{KindSource}, Limit: n})
+	if err != nil {
+		t.Fatalf("Search after purge: %v", err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("residual source docs after concurrent purge: %d", len(hits))
+	}
+	if len(vector.deletes) != n {
+		t.Fatalf("vector deletes = %d, want %d (one per PurgeSource)", len(vector.deletes), n)
+	}
+}
+
+// TestStorePurgeSourceRespectsContextCancellation verifies the cancellable
+// mutex acquisition: a queued caller whose context fires before its turn
+// returns ctx.Err() instead of blocking forever.
+func TestStorePurgeSourceRespectsContextCancellation(t *testing.T) {
+	store := openTestStoreWithVector(t, &fakeVectorIndex{})
+	// Manually hold the lock so the next caller has to queue.
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // expire before the call so it can't acquire
+	err := store.PurgeSource(ctx, "src_anything")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("PurgeSource err = %v, want context.Canceled", err)
+	}
 }
 
 func sameStringSet(got, want []string) bool {
