@@ -4,7 +4,8 @@ Fresh Aura sessions must start here.
 
 Current state as of 2026-05-14:
 
-- Deep refactor Phase 1 is complete.
+- Deep refactor Phase 1 map-stabilization is complete; the active parent
+  planning container is `D:/Aura/.planning/deep-refactor/Phase01/`.
 - Last known commit: `b75a02a4 RENAME CRON`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
@@ -12,8 +13,8 @@ Current state as of 2026-05-14:
 - Old `.planning/` wave files are evidence only, not executable queues
   (ADR-036).
 - The next likely slice is
-  `D:/Aura/.planning/deep-refactor/Phase01A_Run_Event_Foundation/`, unless the
-  user chooses a different phase.
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation/`,
+  unless the user chooses a different phase.
 
 Required first reads:
 
