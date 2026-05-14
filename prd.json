@@ -232,8 +232,8 @@
         "Single atomic commit prefix: refactor(app): move Phase C composition wiring to cmd/aura/app.go (US-A13b.3)"
       ],
       "priority": 13.53,
-      "passes": false,
-      "notes": "Med risk. The tool-registrations need *Bot (TokenSender/DocumentSender/ScheduledTaskRunner), so app.go must build *Bot first then register the tools that close over it. Tests that mock setup may need to call the new App.New path or use NewBot directly. Closes US-A13b parent."
+      "passes": true,
+      "notes": "Done 2026-05-14 commit 4c401f6c. Ralph iter-3 shipped 347+/305- across 5 files; setup.go shrunk 420→146 LOC (well under the 200 cap). Ralph parent died during post-commit cleanup (context compaction mid-stream + parent kill) BEFORE setting passes:true / appending progress.txt — done by main session as admin recovery."
     },
     {
       "id": "US-A13c",
