@@ -1,4 +1,4 @@
-// debug_pdf is the slice-15c smoke harness for the create_pdf tool.
+﻿// debug_pdf is the slice-15c smoke harness for the create_pdf tool.
 //
 //	go run ./cmd/debug_pdf                  # build + persist + delivery stub
 //	go run ./cmd/debug_pdf -out report.pdf  # additionally write the file to disk
@@ -25,7 +25,7 @@ import (
 
 	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 type stubSender struct {

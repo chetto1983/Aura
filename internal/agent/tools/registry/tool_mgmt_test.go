@@ -1,4 +1,4 @@
-package tools_test
+﻿package tools_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func TestDevToolTool_NilStore(t *testing.T) {

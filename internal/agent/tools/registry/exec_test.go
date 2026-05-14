@@ -1,4 +1,4 @@
-package tools_test
+﻿package tools_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func TestExecuteCodeTool_NilManager(t *testing.T) {

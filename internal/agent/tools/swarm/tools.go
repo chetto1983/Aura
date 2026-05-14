@@ -1,4 +1,4 @@
-package swarmtools
+﻿package swarmtools
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/tools"
-	"github.com/aura/aura/internal/toolsets"
+	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agent/tools/sets"
 )
 
 type SpawnAuraBotTool struct {

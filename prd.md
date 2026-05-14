@@ -253,10 +253,24 @@ QuestionGate rules:
 - do not ask for low-risk reversible defaults,
 - ask for missing required slots, conflicting instructions, permission escalation, irreversible side effects, user-memory writes without explicit intent, cross-channel delivery choices, or repeated recoverable failures,
 - require a concise `why_blocking`, `blocking_scope`, answer schema, expiry, and fallback policy,
+- use canonical choices for approvals and generated, context-specific choices for clarifications,
+- include free-text/other input for clarification when fixed choices cannot safely cover the user's intent,
+- allow a recommended option only when the runtime can state why it is safe,
 - block only the smallest scope possible: tool call, run, child run, or thread,
 - cap repeated questions per run and record unnecessary-question eval failures.
 
 The model may request input through a narrow structured `request_input` action when it can justify the block. The runtime may also create the question itself when a deterministic policy, authorization boundary, or tool preflight requires it. The channel adapter only renders the question; it does not decide whether asking was valid.
+
+Question options are not generic canned replies. The backend stores a structured answer schema:
+
+```text
+approval     canonical decisions: approve_once, approve_session, approve_persist, deny, cancel
+clarification generated options: 2-4 context-specific choices with impact text, plus optional free text
+secret_input  no buttons, redacted answer handling
+selection     finite choices from a real source of truth, such as channel, file, memory scope, or tool mode
+```
+
+The UI may render buttons, numbered choices, or a form depending on the channel. The semantic answer is normalized before resuming the run.
 
 ### 5.3 `internal/identity`
 

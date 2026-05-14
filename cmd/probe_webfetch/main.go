@@ -1,4 +1,4 @@
-// One-shot: dump WebTool fetch output verbatim for an URL.
+﻿// One-shot: dump WebTool fetch output verbatim for an URL.
 package main
 
 import (
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func main() {

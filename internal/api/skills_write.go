@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aura/aura/internal/toolindex"
+	"github.com/aura/aura/internal/agent/tools/index"
 )
 
 // SkillInstaller is the boundary the API uses to add a skill from the

@@ -15,8 +15,8 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/tools"
-	"github.com/aura/aura/internal/toolsets"
+	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agent/tools/sets"
 	tele "gopkg.in/telebot.v4"
 )
 

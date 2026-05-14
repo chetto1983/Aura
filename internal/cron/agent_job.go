@@ -1,4 +1,4 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/toolsets"
+	"github.com/aura/aura/internal/agent/tools/sets"
 )
 
 const (

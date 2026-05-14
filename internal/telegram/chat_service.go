@@ -1,4 +1,4 @@
-package telegram
+﻿package telegram
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 // chatPipeService adapts agent.Runner to api.ChatService so cmd/chat (the

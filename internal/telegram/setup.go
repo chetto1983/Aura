@@ -34,9 +34,9 @@ import (
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/swarmtools"
-	"github.com/aura/aura/internal/toolindex"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/swarm"
+	"github.com/aura/aura/internal/agent/tools/index"
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
 

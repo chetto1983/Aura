@@ -1,4 +1,4 @@
-// debug_docx is the slice-15b smoke harness for the create_docx tool.
+﻿// debug_docx is the slice-15b smoke harness for the create_docx tool.
 //
 //	go run ./cmd/debug_docx                  # build + persist + delivery stub
 //	go run ./cmd/debug_docx -out memo.docx   # additionally write the file to disk
@@ -28,7 +28,7 @@ import (
 
 	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 type stubSender struct {

@@ -1,4 +1,4 @@
-package swarmtools
+﻿package swarmtools
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 type fakeRunner struct {

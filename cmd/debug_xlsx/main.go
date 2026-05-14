@@ -1,4 +1,4 @@
-// debug_xlsx is the slice-15a smoke harness for the create_xlsx tool.
+﻿// debug_xlsx is the slice-15a smoke harness for the create_xlsx tool.
 //
 //	go run ./cmd/debug_xlsx                  # build + persist + open round-trip
 //	go run ./cmd/debug_xlsx -out report.xlsx # additionally write the file to disk
@@ -29,7 +29,7 @@ import (
 
 	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 
 	"github.com/xuri/excelize/v2"
 )

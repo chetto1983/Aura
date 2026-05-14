@@ -1,11 +1,11 @@
-package api
+﻿package api
 
 import (
 	"context"
 	"net/http"
 	"time"
 
-	"github.com/aura/aura/internal/toolindex"
+	"github.com/aura/aura/internal/agent/tools/index"
 )
 
 // handleToolsReindex serves POST /api/tools/reindex. Synchronously runs

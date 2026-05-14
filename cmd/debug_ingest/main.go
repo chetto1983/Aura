@@ -35,7 +35,7 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
 )

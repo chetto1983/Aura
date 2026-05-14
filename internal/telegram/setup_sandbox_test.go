@@ -1,4 +1,4 @@
-package telegram
+﻿package telegram
 
 import (
 	"log/slog"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/sandbox"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func TestSetupSandboxRuntime_Disabled(t *testing.T) {

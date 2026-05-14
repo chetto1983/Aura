@@ -14,7 +14,7 @@ import (
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/tools"
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 )
 

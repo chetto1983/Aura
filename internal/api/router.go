@@ -24,7 +24,7 @@ import (
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/toolindex"
+	"github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/wiki"
 )
 

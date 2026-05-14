@@ -1,4 +1,4 @@
-package swarmtools
+﻿package swarmtools
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/toolsets"
+	"github.com/aura/aura/internal/agent/tools/sets"
 )
 
 const (

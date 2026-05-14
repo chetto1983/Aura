@@ -1,10 +1,10 @@
-package scheduler
+﻿package scheduler
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/aura/aura/internal/toolsets"
+	"github.com/aura/aura/internal/agent/tools/sets"
 )
 
 func TestNormalizeAgentJobPayload_TextGoal(t *testing.T) {
