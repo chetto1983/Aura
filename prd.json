@@ -73,7 +73,7 @@
         "Single atomic commit: `refactor(api): errorStatus mapper for known error → HTTP code`"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "−30/−40 LOC. Med risk (changes error reporting flow, watch tests)."
     },
     {
@@ -87,7 +87,7 @@
         "Single atomic commit: `chore(testutil): OpenTestDB + TempDBPath consolidation`"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "−16/−40 LOC. Low risk."
     },
     {
@@ -103,7 +103,7 @@
         "Single atomic commit: `refactor(telegram): extract checkBudgetQuota + stats merge in invocation_builder`"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "−40 LOC. Med risk (touches budget logic — tests cover it)."
     },
     {
@@ -118,7 +118,7 @@
         "Single atomic commit: `refactor(telegram): move sendAssistant* to entity_markdown_messages`"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "−38 LOC. Low risk (pure move, no logic change)."
     },
     {
@@ -131,7 +131,7 @@
         "Single atomic commit: `refactor(agent): unify tool-helper duplicate cross-package`"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "−18 LOC. Med risk (changes agent ↔ telegram boundary). Investigate first, then act."
     },
     {
@@ -144,7 +144,7 @@
         "Single atomic commit: `refactor(swarm): unify 3-way duplicate (tools/swarm + cron/agent_job + swarm/store)`"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "−24 LOC. Med risk. Need to read the duplicate to understand semantic."
     },
     {
@@ -157,7 +157,7 @@
         "Single atomic commit: `refactor(cmd): DRY debug_docx + debug_pdf shared setup`"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "−16 LOC. Low risk."
     },
     {
@@ -170,7 +170,7 @@
         "Single atomic commit: `chore: dupl post-cleanup report (was 135 clone groups)`"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Verification step. No LOC change. Locks in the measurement."
     }
   ]
