@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"github.com/aura/aura/internal/config"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/settings"
 )
 
 //go:embed page.html
@@ -34,7 +34,7 @@ type Config struct {
 
 	// SettingsStore receives every non-bootstrap key (LLM_*, embeddings,
 	// OCR, etc.). Required.
-	SettingsStore settings.Writer
+	SettingsStore config.Writer
 
 	// Logger receives wizard activity. Required.
 	Logger *slog.Logger
@@ -150,11 +150,11 @@ func Run(cfg Config) (telegramToken string, err error) {
 		// internal/settings/applier.go.
 		ctx := r.Context()
 		writes := []struct{ key, val string }{
-			{settings.KeyLLMBaseURL, strings.TrimSpace(req.LLMBaseURL)},
-			{settings.KeyLLMModel, strings.TrimSpace(req.LLMModel)},
-			{settings.KeyLLMAPIKey, strings.TrimSpace(req.LLMAPIKey)},
-			{settings.KeyEmbeddingAPIKey, strings.TrimSpace(req.EmbeddingAPIKey)},
-			{settings.KeyMistralAPIKey, strings.TrimSpace(req.MistralAPIKey)},
+			{config.KeyLLMBaseURL, strings.TrimSpace(req.LLMBaseURL)},
+			{config.KeyLLMModel, strings.TrimSpace(req.LLMModel)},
+			{config.KeyLLMAPIKey, strings.TrimSpace(req.LLMAPIKey)},
+			{config.KeyEmbeddingAPIKey, strings.TrimSpace(req.EmbeddingAPIKey)},
+			{config.KeyMistralAPIKey, strings.TrimSpace(req.MistralAPIKey)},
 		}
 		for _, w := range writes {
 			if w.val == "" {

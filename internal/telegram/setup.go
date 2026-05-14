@@ -33,7 +33,6 @@ import (
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
-	"github.com/aura/aura/internal/settings"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"
@@ -64,7 +63,7 @@ func WithRestart(fn func(context.Context) error) Option {
 // cfg.DBPath. It's threaded through so the dashboard's /settings page can
 // persist edits on the shared SQLite pool. May be nil (tests) — in that case
 // the dashboard /settings endpoints respond 503.
-func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, logger *slog.Logger, opts ...Option) (*Bot, error) {
+func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logger *slog.Logger, opts ...Option) (*Bot, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("telegram: db pool required")
 	}

@@ -1,4 +1,4 @@
-package settings
+package config
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 )
 
@@ -60,7 +59,7 @@ func TestNewStoreWithDBDoesNotCreateSchema(t *testing.T) {
 }
 
 func TestApplyToConfigAcceptsReaderInterface(t *testing.T) {
-	cfg := &config.Config{
+	cfg := &Config{
 		LLMModel:          "from-env",
 		AuraBotTimeoutSec: 300,
 	}

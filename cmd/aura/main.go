@@ -26,8 +26,6 @@ import (
 	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/memoryindex"
-	"github.com/aura/aura/internal/runtimebootstrap"
-	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
@@ -221,7 +219,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		}
 	}()
 
-	if err := runtimebootstrap.EnsureLayout(runtimebootstrap.LayoutConfig{
+	if err := config.EnsureLayout(config.LayoutConfig{
 		RuntimeWorkspacePath: cfg.RuntimeWorkspacePath,
 		EnvPath:              cfg.EnvPath,
 		DBPath:               cfg.DBPath,
@@ -263,12 +261,12 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// (TelegramToken / HTTPPort / DBPath / LogLevel and the path roots)
 	// stay env-only; see internal/settings/applier.go. Empty store is a
 	// no-op, so this is safe before the dashboard ever writes a setting.
-	settingsStore, err := settings.NewStoreWithDB(pool)
+	settingsStore, err := config.NewStoreWithDB(pool)
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("open settings store: %w", err)
 	}
 	reconcileBestDefaults(context.Background(), settingsStore, cfg, logger)
-	settings.ApplyToConfig(context.Background(), settingsStore, cfg)
+	config.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = openedDBPath
 
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
@@ -297,7 +295,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			return nil, activeLogger, fmt.Errorf("post-setup config load: %w", err)
 		}
 		reconcileBestDefaults(context.Background(), settingsStore, newCfg, logger)
-		settings.ApplyToConfig(context.Background(), settingsStore, newCfg)
+		config.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		newCfg.DBPath = openedDBPath
 		cfg = newCfg
 	}
@@ -396,8 +394,8 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	return stopCurrent, activeLogger, nil
 }
 
-func reconcileBestDefaults(ctx context.Context, store settings.Repository, cfg *config.Config, logger *slog.Logger) {
-	changes, err := settings.ApplyBestDefaults(ctx, store, cfg)
+func reconcileBestDefaults(ctx context.Context, store config.Repository, cfg *config.Config, logger *slog.Logger) {
+	changes, err := config.ApplyBestDefaults(ctx, store, cfg)
 	if err != nil {
 		logger.Warn("settings best-default reconciliation failed", "error", err)
 		return

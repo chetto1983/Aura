@@ -1,4 +1,4 @@
-package settings
+package config
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aura/aura/internal/config"
 )
 
 const (
@@ -38,7 +37,7 @@ type defaultRule struct {
 // safer Docker-first defaults from the user. It never touches chat provider
 // credentials, embedding credentials, Telegram tokens, or OCR keys. The only
 // secret rows it can rotate are known-public Garage demo credentials.
-func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *config.Config) ([]BestDefaultChange, error) {
+func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *Config) ([]BestDefaultChange, error) {
 	if repo == nil {
 		return nil, nil
 	}
@@ -87,7 +86,7 @@ func ApplyBestDefaults(ctx context.Context, repo Repository, cfg *config.Config)
 	return changes, nil
 }
 
-func validationRules(cfg *config.Config) []defaultRule {
+func validationRules(cfg *Config) []defaultRule {
 	webSearchDefault := "disabled"
 	if cfg != nil && cfg.Headless {
 		if strings.TrimSpace(cfg.SearXNGBaseURL) != "" {
@@ -98,37 +97,37 @@ func validationRules(cfg *config.Config) []defaultRule {
 	rules := []defaultRule{
 		{
 			key:       KeySkillRoutingMode,
-			value:     config.DefaultSkillRoutingMode,
+			value:     DefaultSkillRoutingMode,
 			reason:    "repair invalid skill routing mode",
 			shouldSet: missingOrInvalidSet("manifest", "manifest_llm_review"),
 		},
 		{
 			key:       KeyAgentLoopMaxSteps,
-			value:     strconv.Itoa(config.DefaultAgentLoopMaxSteps),
+			value:     strconv.Itoa(DefaultAgentLoopMaxSteps),
 			reason:    "repair invalid agent loop step limit",
 			shouldSet: missingOrOutOfRangeInt(1, 50),
 		},
 		{
 			key:       KeyTerminalToolPolicy,
-			value:     config.DefaultTerminalToolPolicy,
+			value:     DefaultTerminalToolPolicy,
 			reason:    "repair invalid terminal tool policy",
 			shouldSet: missingOrInvalidSet("on", "off", "toolset", "enabled", "disabled", "true", "false", "1", "0", "yes", "no"),
 		},
 		{
 			key:       KeyDelegationMode,
-			value:     config.DefaultDelegationMode,
+			value:     DefaultDelegationMode,
 			reason:    "repair invalid delegation mode",
 			shouldSet: missingOrInvalidSet("fast", "bounded", "async"),
 		},
 		{
 			key:       KeyTraceRetentionDays,
-			value:     strconv.Itoa(config.DefaultTraceRetentionDays),
+			value:     strconv.Itoa(DefaultTraceRetentionDays),
 			reason:    "repair invalid trace retention days",
 			shouldSet: missingOrOutOfRangeInt(1, 365),
 		},
 		{
 			key:       KeyWorkspaceTools,
-			value:     config.DefaultWorkspaceTools,
+			value:     DefaultWorkspaceTools,
 			reason:    "repair invalid workspace tools mode",
 			shouldSet: missingOrInvalidSet("enabled", "disabled", "true", "false", "1", "0", "on", "off", "yes", "no"),
 		},
@@ -194,7 +193,7 @@ func validationRules(cfg *config.Config) []defaultRule {
 	return rules
 }
 
-func migrationRules(cfg *config.Config) []defaultRule {
+func migrationRules(cfg *Config) []defaultRule {
 	rules := []defaultRule{}
 
 	if cfg == nil || !cfg.Headless {

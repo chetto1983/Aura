@@ -11,32 +11,31 @@ import (
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/swarm"
 )
 
-func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *config.Config, runner agent.LimitController, manager swarm.LimitController, tracker budget.Configurator, logger *slog.Logger) error {
+func applyRuntimeSettings(ctx context.Context, store config.Reader, cfg *config.Config, runner agent.LimitController, manager swarm.LimitController, tracker budget.Configurator, logger *slog.Logger) error {
 	if store == nil || cfg == nil {
 		return nil
 	}
 
-	maxActive := intSetting(ctx, store, settings.KeyAuraBotMaxActive, "AURABOT_MAX_ACTIVE", 4)
-	maxDepth := intSetting(ctx, store, settings.KeyAuraBotMaxDepth, "AURABOT_MAX_DEPTH", 1)
-	timeoutSec := intSetting(ctx, store, settings.KeyAuraBotTimeoutSec, "AURABOT_TIMEOUT_SEC", config.DefaultAuraBotTimeoutSec)
-	maxIterations := intSetting(ctx, store, settings.KeyAuraBotMaxIterations, "AURABOT_MAX_ITERATIONS", 5)
-	softBudget := floatSetting(ctx, store, settings.KeySoftBudget, "SOFT_BUDGET", cfg.SoftBudget)
-	hardBudget := floatSetting(ctx, store, settings.KeyHardBudget, "HARD_BUDGET", cfg.HardBudget)
-	inputPerM := floatSetting(ctx, store, settings.KeyCostInputPerMTokens, "COST_INPUT_PER_M_TOKENS", cfg.CostInputPerMTokens)
-	outputPerM := floatSetting(ctx, store, settings.KeyCostOutputPerMTokens, "COST_OUTPUT_PER_M_TOKENS", cfg.CostOutputPerMTokens)
-	skillRoutingMode := config.NormalizeSkillRoutingMode(stringSetting(ctx, store, settings.KeySkillRoutingMode, "AURA_SKILL_ROUTING_MODE", cfg.SkillRoutingMode))
-	agentLoopMaxSteps := intRangeSetting(ctx, store, settings.KeyAgentLoopMaxSteps, "AURA_AGENT_LOOP_MAX_STEPS", cfg.AgentLoopMaxSteps, 1, 10000, config.DefaultAgentLoopMaxSteps)
-	toolSearchTopK := intRangeSetting(ctx, store, settings.KeyToolSearchTopK, "TOOL_SEARCH_TOP_K", cfg.ToolSearchTopK, 1, 50, config.DefaultToolSearchTopK)
-	maxToolResultChars := intRangeSetting(ctx, store, settings.KeyMaxToolResultChars, "MAX_TOOL_RESULT_CHARS", cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)
-	microcompactKeepRecent := intRangeSetting(ctx, store, settings.KeyMicrocompactKeepRecent, "MICROCOMPACT_KEEP_RECENT", cfg.MicrocompactKeepRecent, 1, 500, config.DefaultMicrocompactKeepRecent)
-	microcompactMinChars := intRangeSetting(ctx, store, settings.KeyMicrocompactMinChars, "MICROCOMPACT_MIN_CHARS", cfg.MicrocompactMinChars, 100, 100000, config.DefaultMicrocompactMinChars)
-	terminalToolPolicy := config.NormalizeTerminalToolPolicy(stringSetting(ctx, store, settings.KeyTerminalToolPolicy, "AURA_TERMINAL_TOOL_POLICY", cfg.TerminalToolPolicy))
-	delegationMode := config.NormalizeDelegationMode(stringSetting(ctx, store, settings.KeyDelegationMode, "AURA_DELEGATION_MODE", cfg.DelegationMode))
-	traceRetentionDays := intRangeSetting(ctx, store, settings.KeyTraceRetentionDays, "AURA_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
+	maxActive := intSetting(ctx, store, config.KeyAuraBotMaxActive, "AURABOT_MAX_ACTIVE", 4)
+	maxDepth := intSetting(ctx, store, config.KeyAuraBotMaxDepth, "AURABOT_MAX_DEPTH", 1)
+	timeoutSec := intSetting(ctx, store, config.KeyAuraBotTimeoutSec, "AURABOT_TIMEOUT_SEC", config.DefaultAuraBotTimeoutSec)
+	maxIterations := intSetting(ctx, store, config.KeyAuraBotMaxIterations, "AURABOT_MAX_ITERATIONS", 5)
+	softBudget := floatSetting(ctx, store, config.KeySoftBudget, "SOFT_BUDGET", cfg.SoftBudget)
+	hardBudget := floatSetting(ctx, store, config.KeyHardBudget, "HARD_BUDGET", cfg.HardBudget)
+	inputPerM := floatSetting(ctx, store, config.KeyCostInputPerMTokens, "COST_INPUT_PER_M_TOKENS", cfg.CostInputPerMTokens)
+	outputPerM := floatSetting(ctx, store, config.KeyCostOutputPerMTokens, "COST_OUTPUT_PER_M_TOKENS", cfg.CostOutputPerMTokens)
+	skillRoutingMode := config.NormalizeSkillRoutingMode(stringSetting(ctx, store, config.KeySkillRoutingMode, "AURA_SKILL_ROUTING_MODE", cfg.SkillRoutingMode))
+	agentLoopMaxSteps := intRangeSetting(ctx, store, config.KeyAgentLoopMaxSteps, "AURA_AGENT_LOOP_MAX_STEPS", cfg.AgentLoopMaxSteps, 1, 10000, config.DefaultAgentLoopMaxSteps)
+	toolSearchTopK := intRangeSetting(ctx, store, config.KeyToolSearchTopK, "TOOL_SEARCH_TOP_K", cfg.ToolSearchTopK, 1, 50, config.DefaultToolSearchTopK)
+	maxToolResultChars := intRangeSetting(ctx, store, config.KeyMaxToolResultChars, "MAX_TOOL_RESULT_CHARS", cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)
+	microcompactKeepRecent := intRangeSetting(ctx, store, config.KeyMicrocompactKeepRecent, "MICROCOMPACT_KEEP_RECENT", cfg.MicrocompactKeepRecent, 1, 500, config.DefaultMicrocompactKeepRecent)
+	microcompactMinChars := intRangeSetting(ctx, store, config.KeyMicrocompactMinChars, "MICROCOMPACT_MIN_CHARS", cfg.MicrocompactMinChars, 100, 100000, config.DefaultMicrocompactMinChars)
+	terminalToolPolicy := config.NormalizeTerminalToolPolicy(stringSetting(ctx, store, config.KeyTerminalToolPolicy, "AURA_TERMINAL_TOOL_POLICY", cfg.TerminalToolPolicy))
+	delegationMode := config.NormalizeDelegationMode(stringSetting(ctx, store, config.KeyDelegationMode, "AURA_DELEGATION_MODE", cfg.DelegationMode))
+	traceRetentionDays := intRangeSetting(ctx, store, config.KeyTraceRetentionDays, "AURA_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
 
 	if manager != nil {
 		manager.UpdateLimits(maxActive, maxDepth)
@@ -97,7 +96,7 @@ func applyRuntimeSettings(ctx context.Context, store settings.Reader, cfg *confi
 	return nil
 }
 
-func intSetting(ctx context.Context, store settings.Reader, key, envKey string, fallback int) int {
+func intSetting(ctx context.Context, store config.Reader, key, envKey string, fallback int) int {
 	if store != nil {
 		if raw, err := store.Get(ctx, key); err == nil {
 			if v, ok := parsePositiveInt(raw); ok {
@@ -113,7 +112,7 @@ func intSetting(ctx context.Context, store settings.Reader, key, envKey string, 
 	return fallback
 }
 
-func intRangeSetting(ctx context.Context, store settings.Reader, key, envKey string, fallback, min, max, defaultValue int) int {
+func intRangeSetting(ctx context.Context, store config.Reader, key, envKey string, fallback, min, max, defaultValue int) int {
 	value := intSetting(ctx, store, key, envKey, fallback)
 	if value < min || value > max {
 		return defaultValue
@@ -121,7 +120,7 @@ func intRangeSetting(ctx context.Context, store settings.Reader, key, envKey str
 	return value
 }
 
-func stringSetting(ctx context.Context, store settings.Reader, key, envKey, fallback string) string {
+func stringSetting(ctx context.Context, store config.Reader, key, envKey, fallback string) string {
 	if store != nil {
 		if raw, err := store.Get(ctx, key); err == nil && strings.TrimSpace(raw) != "" {
 			return raw
@@ -165,7 +164,7 @@ func setenvIfChanged(key, value string) {
 	_ = os.Setenv(key, value)
 }
 
-func floatSetting(ctx context.Context, store settings.Reader, key, envKey string, fallback float64) float64 {
+func floatSetting(ctx context.Context, store config.Reader, key, envKey string, fallback float64) float64 {
 	if store != nil {
 		if raw, err := store.Get(ctx, key); err == nil {
 			if v, ok := parsePositiveFloat(raw); ok {

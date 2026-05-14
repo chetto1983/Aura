@@ -15,7 +15,7 @@
 //     losing access to the bot.
 //   - Uses the same SQLite file as auth/scheduler (cfg.DBPath) so backups
 //     stay one artifact.
-package settings
+package config
 
 import (
 	"context"

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/setup"
 )
 
@@ -78,50 +77,50 @@ type SettingsTestRequest struct {
 // supports more keys than are surfaced here; new rows should still be
 // editable from the .env file but the UI exposes the operator knobs that
 // matter during normal Aura operation. Each key relies on the matching
-// settings.item.<KEY>.{label,hint} entries in the i18n locale files for
+// config.item.<KEY>.{label,hint} entries in the i18n locale files for
 // localized strings; the Label/Hint fields are fallbacks for clients that
 // don't ship locale bundles.
 var settingsCatalog = []SettingItem{
-	{Key: settings.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome"},
+	{Key: config.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome"},
 
-	{Key: settings.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
-	{Key: settings.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
-	{Key: settings.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
-	{Key: settings.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
+	{Key: config.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
+	{Key: config.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
+	{Key: config.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
+	{Key: config.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
 
-	{Key: settings.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
-	{Key: settings.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
-	{Key: settings.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
-	{Key: settings.KeyHardBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Hard budget (USD)"},
-	{Key: settings.KeyCostInputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Input price (USD / 1M tokens)"},
-	{Key: settings.KeyCostOutputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Output price (USD / 1M tokens)"},
+	{Key: config.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
+	{Key: config.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
+	{Key: config.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
+	{Key: config.KeyHardBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Hard budget (USD)"},
+	{Key: config.KeyCostInputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Input price (USD / 1M tokens)"},
+	{Key: config.KeyCostOutputPerMTokens, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Output price (USD / 1M tokens)"},
 
-	{Key: settings.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version"},
-	{Key: settings.KeySkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode"},
-	{Key: settings.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(10000), Label: "Agent loop max steps"},
-	{Key: settings.KeyReasoningEffort, Group: "agent", Kind: "enum", Options: []string{"", "enabled", "minimal", "low", "medium", "high", "xhigh"}, Label: "Reasoning effort", Hint: "Provider-side chain-of-thought. Empty disables. 'enabled' turns reasoning on with provider default depth (use this for DeepSeek V4 Flash). 'low'..'xhigh' set explicit depth on models that support it (OpenAI o-series, gpt-5*). Unknown providers ignore the field."},
-	{Key: settings.KeyToolSearchTopK, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Tool search top-K", Hint: "How many retrieved tools to expose per turn on top of the always-on core. Raise on large-context models so web_fetch/web_search aren't crowded out"},
-	{Key: settings.KeyToolSearchBackend, Group: "agent", Kind: "enum", Options: []string{"hybrid", "vector", "fts"}, Label: "Tool search backend", Hint: "Restart required: rebuilds the tool vector index. hybrid mixes BM25 + embeddings; vector is pure semantic; fts is keyword-only"},
-	{Key: settings.KeyMaxToolResultChars, Group: "agent", Kind: "int", Min: floatPtr(1000), Max: floatPtr(500000), Label: "Max tool result chars", Hint: "Cap per tool message before the LLM call; raise on large-context models"},
-	{Key: settings.KeyMicrocompactKeepRecent, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(500), Label: "Microcompact keep recent", Hint: "Tool results older than the N most recent get collapsed to a one-line stub"},
-	{Key: settings.KeyMicrocompactMinChars, Group: "agent", Kind: "int", Min: floatPtr(100), Max: floatPtr(100000), Label: "Microcompact min chars", Hint: "Tool results smaller than this are never compacted"},
-	{Key: settings.KeyTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy"},
-	{Key: settings.KeyDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode"},
-	{Key: settings.KeySkillsAdmin, Group: "agent", Kind: "bool", Label: "Skills admin (install/delete)"},
+	{Key: config.KeyPromptVersion, Group: "agent", Kind: "text", Label: "Prompt version"},
+	{Key: config.KeySkillRoutingMode, Group: "agent", Kind: "enum", Options: []string{"manifest", "manifest_llm_review"}, Label: "Skill routing mode"},
+	{Key: config.KeyAgentLoopMaxSteps, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(10000), Label: "Agent loop max steps"},
+	{Key: config.KeyReasoningEffort, Group: "agent", Kind: "enum", Options: []string{"", "enabled", "minimal", "low", "medium", "high", "xhigh"}, Label: "Reasoning effort", Hint: "Provider-side chain-of-thought. Empty disables. 'enabled' turns reasoning on with provider default depth (use this for DeepSeek V4 Flash). 'low'..'xhigh' set explicit depth on models that support it (OpenAI o-series, gpt-5*). Unknown providers ignore the field."},
+	{Key: config.KeyToolSearchTopK, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(50), Label: "Tool search top-K", Hint: "How many retrieved tools to expose per turn on top of the always-on core. Raise on large-context models so web_fetch/web_search aren't crowded out"},
+	{Key: config.KeyToolSearchBackend, Group: "agent", Kind: "enum", Options: []string{"hybrid", "vector", "fts"}, Label: "Tool search backend", Hint: "Restart required: rebuilds the tool vector index. hybrid mixes BM25 + embeddings; vector is pure semantic; fts is keyword-only"},
+	{Key: config.KeyMaxToolResultChars, Group: "agent", Kind: "int", Min: floatPtr(1000), Max: floatPtr(500000), Label: "Max tool result chars", Hint: "Cap per tool message before the LLM call; raise on large-context models"},
+	{Key: config.KeyMicrocompactKeepRecent, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(500), Label: "Microcompact keep recent", Hint: "Tool results older than the N most recent get collapsed to a one-line stub"},
+	{Key: config.KeyMicrocompactMinChars, Group: "agent", Kind: "int", Min: floatPtr(100), Max: floatPtr(100000), Label: "Microcompact min chars", Hint: "Tool results smaller than this are never compacted"},
+	{Key: config.KeyTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy"},
+	{Key: config.KeyDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode"},
+	{Key: config.KeySkillsAdmin, Group: "agent", Kind: "bool", Label: "Skills admin (install/delete)"},
 
-	{Key: settings.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng"}, Label: "Web search provider", Hint: "SearXNG is the supported web search provider"},
-	{Key: settings.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
+	{Key: config.KeyWebSearchProvider, Group: "search", Kind: "enum", Options: []string{"disabled", "searxng"}, Label: "Web search provider", Hint: "SearXNG is the supported web search provider"},
+	{Key: config.KeySearXNGBaseURL, Group: "search", Kind: "url", Label: "SearXNG base URL", Hint: "Compose uses http://searxng:8080; local debug commonly uses http://127.0.0.1:8088"},
 
-	{Key: settings.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
-	{Key: settings.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
-	{Key: settings.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
+	{Key: config.KeyQdrantURL, Group: "storage", Kind: "url", Label: "Qdrant URL", Hint: "Compose uses http://qdrant:6333; local debug commonly uses http://127.0.0.1:6333"},
+	{Key: config.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
+	{Key: config.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
 
-	{Key: settings.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
-	{Key: settings.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
-	{Key: settings.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
-	{Key: settings.KeyEmbeddingOutputDim, Group: "embeddings", Kind: "int", Min: floatPtr(0), Max: floatPtr(768), Label: "Embeddings output dim (MRL)", Hint: "0 = native dim. For embeddinggemma-300m, 256 is Aura's locked production target (MRL truncation client-side: slice + L2 renorm). Changing this requires reindexing all Qdrant collections."},
+	{Key: config.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
+	{Key: config.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
+	{Key: config.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
+	{Key: config.KeyEmbeddingOutputDim, Group: "embeddings", Kind: "int", Min: floatPtr(0), Max: floatPtr(768), Label: "Embeddings output dim (MRL)", Hint: "0 = native dim. For embeddinggemma-300m, 256 is Aura's locked production target (MRL truncation client-side: slice + L2 renorm). Changing this requires reindexing all Qdrant collections."},
 
-	{Key: settings.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
+	{Key: config.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
 }
 
 func floatPtr(v float64) *float64 { return &v }
@@ -184,149 +183,149 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return fallback
 	}
 	switch key {
-	case settings.KeyAllowlist:
+	case config.KeyAllowlist:
 		return strings.Join(cfg.Allowlist, ",")
-	case settings.KeyTelegramToken:
+	case config.KeyTelegramToken:
 		return cfg.TelegramToken
-	case settings.KeyHTTPPort:
+	case config.KeyHTTPPort:
 		return cfg.HTTPPort
-	case settings.KeyTimezone:
+	case config.KeyTimezone:
 		return cfg.Timezone
-	case settings.KeyHeadless:
+	case config.KeyHeadless:
 		return strconv.FormatBool(cfg.Headless)
-	case settings.KeyEnvPath:
+	case config.KeyEnvPath:
 		return cfg.EnvPath
-	case settings.KeyDBPath:
+	case config.KeyDBPath:
 		return cfg.DBPath
-	case settings.KeyLogLevel:
+	case config.KeyLogLevel:
 		return cfg.LogLevel
-	case settings.KeyLogDir:
+	case config.KeyLogDir:
 		return cfg.LogDir
-	case settings.KeyWikiPath:
+	case config.KeyWikiPath:
 		return cfg.WikiPath
-	case settings.KeySkillsPath:
+	case config.KeySkillsPath:
 		return cfg.SkillsPath
-	case settings.KeySkillsInstallProjectDir:
+	case config.KeySkillsInstallProjectDir:
 		return cfg.SkillsInstallProjectDir
-	case settings.KeyMCPServersPath:
+	case config.KeyMCPServersPath:
 		return cfg.MCPServersPath
-	case settings.KeyPromptOverlayPath:
+	case config.KeyPromptOverlayPath:
 		return cfg.PromptOverlayPath
-	case settings.KeyDashboardTokenTTLHours:
+	case config.KeyDashboardTokenTTLHours:
 		return strconv.Itoa(cfg.DashboardTokenTTLHours)
-	case settings.KeyMaxContextTokens:
+	case config.KeyMaxContextTokens:
 		return strconv.Itoa(cfg.MaxContextTokens)
-	case settings.KeyMaxHistoryMessages:
+	case config.KeyMaxHistoryMessages:
 		return strconv.Itoa(cfg.MaxHistoryMessages)
-	case settings.KeySoftBudget:
+	case config.KeySoftBudget:
 		return strconv.FormatFloat(cfg.SoftBudget, 'f', -1, 64)
-	case settings.KeyHardBudget:
+	case config.KeyHardBudget:
 		return strconv.FormatFloat(cfg.HardBudget, 'f', -1, 64)
-	case settings.KeyCostInputPerMTokens:
+	case config.KeyCostInputPerMTokens:
 		return strconv.FormatFloat(cfg.CostInputPerMTokens, 'f', -1, 64)
-	case settings.KeyCostOutputPerMTokens:
+	case config.KeyCostOutputPerMTokens:
 		return strconv.FormatFloat(cfg.CostOutputPerMTokens, 'f', -1, 64)
-	case settings.KeyLLMAPIKey:
+	case config.KeyLLMAPIKey:
 		return cfg.LLMAPIKey
-	case settings.KeyLLMBaseURL:
+	case config.KeyLLMBaseURL:
 		return cfg.LLMBaseURL
-	case settings.KeyLLMModel:
+	case config.KeyLLMModel:
 		return cfg.LLMModel
-	case settings.KeyLLMMaxRetries:
+	case config.KeyLLMMaxRetries:
 		return strconv.Itoa(cfg.LLMMaxRetries)
-	case settings.KeyWebSearchProvider:
+	case config.KeyWebSearchProvider:
 		return cfg.WebSearchProvider
-	case settings.KeySearXNGBaseURL:
+	case config.KeySearXNGBaseURL:
 		return cfg.SearXNGBaseURL
-	case settings.KeyGarageS3Endpoint:
+	case config.KeyGarageS3Endpoint:
 		return cfg.GarageS3Endpoint
-	case settings.KeyGarageS3Region:
+	case config.KeyGarageS3Region:
 		return cfg.GarageS3Region
-	case settings.KeyGarageS3Bucket:
+	case config.KeyGarageS3Bucket:
 		return cfg.GarageS3Bucket
-	case settings.KeyGarageS3AccessKey:
+	case config.KeyGarageS3AccessKey:
 		return cfg.GarageS3AccessKey
-	case settings.KeyGarageS3SecretKey:
+	case config.KeyGarageS3SecretKey:
 		return cfg.GarageS3SecretKey
-	case settings.KeyQdrantURL:
+	case config.KeyQdrantURL:
 		return cfg.QdrantURL
-	case settings.KeyQdrantCollection:
+	case config.KeyQdrantCollection:
 		return cfg.QdrantCollection
-	case settings.KeyQdrantAPIKey:
+	case config.KeyQdrantAPIKey:
 		return cfg.QdrantAPIKey
-	case settings.KeyMemorySearchTimeoutMS:
+	case config.KeyMemorySearchTimeoutMS:
 		return strconv.Itoa(cfg.MemorySearchTimeoutMS)
-	case settings.KeySkillsCatalogURL:
+	case config.KeySkillsCatalogURL:
 		return cfg.SkillsCatalogURL
-	case settings.KeySkillsAdmin:
+	case config.KeySkillsAdmin:
 		return strconv.FormatBool(cfg.SkillsAdmin)
-	case settings.KeyAuraBotEnabled:
+	case config.KeyAuraBotEnabled:
 		return strconv.FormatBool(cfg.AuraBotEnabled)
-	case settings.KeyAuraBotMaxActive:
+	case config.KeyAuraBotMaxActive:
 		return strconv.Itoa(cfg.AuraBotMaxActive)
-	case settings.KeyAuraBotMaxDepth:
+	case config.KeyAuraBotMaxDepth:
 		return strconv.Itoa(cfg.AuraBotMaxDepth)
-	case settings.KeyAuraBotTimeoutSec:
+	case config.KeyAuraBotTimeoutSec:
 		return strconv.Itoa(cfg.AuraBotTimeoutSec)
-	case settings.KeyAuraBotMaxIterations:
+	case config.KeyAuraBotMaxIterations:
 		return strconv.Itoa(cfg.AuraBotMaxIterations)
-	case settings.KeyEmbeddingAPIKey:
+	case config.KeyEmbeddingAPIKey:
 		return cfg.EmbeddingAPIKey
-	case settings.KeyEmbeddingBaseURL:
+	case config.KeyEmbeddingBaseURL:
 		return cfg.EmbeddingBaseURL
-	case settings.KeyEmbeddingModel:
+	case config.KeyEmbeddingModel:
 		return cfg.EmbeddingModel
-	case settings.KeyEmbeddingOutputDim:
+	case config.KeyEmbeddingOutputDim:
 		return strconv.Itoa(cfg.EmbeddingOutputDim)
-	case settings.KeyPromptVersion:
+	case config.KeyPromptVersion:
 		return cfg.PromptVersion
-	case settings.KeySkillRoutingMode:
+	case config.KeySkillRoutingMode:
 		return cfg.SkillRoutingMode
-	case settings.KeyAgentLoopMaxSteps:
+	case config.KeyAgentLoopMaxSteps:
 		return strconv.Itoa(cfg.AgentLoopMaxSteps)
-	case settings.KeyReasoningEffort:
+	case config.KeyReasoningEffort:
 		return cfg.ReasoningEffort
-	case settings.KeyToolSearchTopK:
+	case config.KeyToolSearchTopK:
 		return strconv.Itoa(cfg.ToolSearchTopK)
-	case settings.KeyToolSearchBackend:
+	case config.KeyToolSearchBackend:
 		return cfg.ToolSearchBackend
-	case settings.KeyMaxToolResultChars:
+	case config.KeyMaxToolResultChars:
 		return strconv.Itoa(cfg.MaxToolResultChars)
-	case settings.KeyMicrocompactKeepRecent:
+	case config.KeyMicrocompactKeepRecent:
 		return strconv.Itoa(cfg.MicrocompactKeepRecent)
-	case settings.KeyMicrocompactMinChars:
+	case config.KeyMicrocompactMinChars:
 		return strconv.Itoa(cfg.MicrocompactMinChars)
-	case settings.KeyTerminalToolPolicy:
+	case config.KeyTerminalToolPolicy:
 		return cfg.TerminalToolPolicy
-	case settings.KeyDelegationMode:
+	case config.KeyDelegationMode:
 		return cfg.DelegationMode
-	case settings.KeyTraceRetentionDays:
+	case config.KeyTraceRetentionDays:
 		return strconv.Itoa(cfg.TraceRetentionDays)
-	case settings.KeyWorkspaceTools:
+	case config.KeyWorkspaceTools:
 		return cfg.WorkspaceTools
-	case settings.KeyWorkspaceRoot:
+	case config.KeyWorkspaceRoot:
 		return cfg.WorkspaceRoot
-	case settings.KeyMistralAPIKey:
+	case config.KeyMistralAPIKey:
 		return cfg.MistralAPIKey
-	case settings.KeyMistralOCRModel:
+	case config.KeyMistralOCRModel:
 		return cfg.MistralOCRModel
-	case settings.KeyMistralOCRBaseURL:
+	case config.KeyMistralOCRBaseURL:
 		return cfg.MistralOCRBaseURL
-	case settings.KeyMistralOCRTableFormat:
+	case config.KeyMistralOCRTableFormat:
 		return cfg.MistralOCRTableFormat
-	case settings.KeyMistralOCRExtractHeader:
+	case config.KeyMistralOCRExtractHeader:
 		return strconv.FormatBool(cfg.MistralOCRExtractHeader)
-	case settings.KeyMistralOCRExtractFooter:
+	case config.KeyMistralOCRExtractFooter:
 		return strconv.FormatBool(cfg.MistralOCRExtractFooter)
-	case settings.KeyOCRMaxPages:
+	case config.KeyOCRMaxPages:
 		return strconv.Itoa(cfg.OCRMaxPages)
-	case settings.KeyOCRMaxFileMB:
+	case config.KeyOCRMaxFileMB:
 		return strconv.Itoa(cfg.OCRMaxFileMB)
-	case settings.KeyConvArchiveEnabled:
+	case config.KeyConvArchiveEnabled:
 		return strconv.FormatBool(cfg.ConvArchiveEnabled)
-	case settings.KeySandboxEnabled:
+	case config.KeySandboxEnabled:
 		return strconv.FormatBool(cfg.SandboxEnabled)
-	case settings.KeySandboxTimeoutSec:
+	case config.KeySandboxTimeoutSec:
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
 	default:
 		return fallback
@@ -352,7 +351,7 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 		}
 		// Validate every key first so we don't half-apply.
 		for k := range req.Updates {
-			if !settings.IsOverridable(k) {
+			if !config.IsOverridable(k) {
 				writeError(w, deps.Logger, http.StatusBadRequest, "key not overridable: "+k)
 				return
 			}
@@ -397,13 +396,13 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 func touchesLiveRuntimeSetting(keys []string) bool {
 	for _, key := range keys {
 		switch key {
-		case settings.KeyAuraBotMaxActive, settings.KeyAuraBotMaxDepth, settings.KeyAuraBotTimeoutSec, settings.KeyAuraBotMaxIterations,
-			settings.KeySoftBudget, settings.KeyHardBudget, settings.KeyCostInputPerMTokens, settings.KeyCostOutputPerMTokens,
-			settings.KeySkillRoutingMode, settings.KeyAgentLoopMaxSteps, settings.KeyReasoningEffort,
-			settings.KeyToolSearchTopK,
-			settings.KeyMaxToolResultChars, settings.KeyMicrocompactKeepRecent, settings.KeyMicrocompactMinChars,
-			settings.KeyTerminalToolPolicy,
-			settings.KeyDelegationMode, settings.KeyTraceRetentionDays:
+		case config.KeyAuraBotMaxActive, config.KeyAuraBotMaxDepth, config.KeyAuraBotTimeoutSec, config.KeyAuraBotMaxIterations,
+			config.KeySoftBudget, config.KeyHardBudget, config.KeyCostInputPerMTokens, config.KeyCostOutputPerMTokens,
+			config.KeySkillRoutingMode, config.KeyAgentLoopMaxSteps, config.KeyReasoningEffort,
+			config.KeyToolSearchTopK,
+			config.KeyMaxToolResultChars, config.KeyMicrocompactKeepRecent, config.KeyMicrocompactMinChars,
+			config.KeyTerminalToolPolicy,
+			config.KeyDelegationMode, config.KeyTraceRetentionDays:
 			return true
 		}
 	}

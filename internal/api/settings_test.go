@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/settings"
 )
 
 type fakeSettingsRepository struct {
@@ -21,7 +20,7 @@ type fakeSettingsRepository struct {
 func (f *fakeSettingsRepository) Get(_ context.Context, key string) (string, error) {
 	v, ok := f.values[key]
 	if !ok {
-		return "", settings.ErrNotFound
+		return "", config.ErrNotFound
 	}
 	return v, nil
 }
@@ -50,16 +49,16 @@ func (f *fakeSettingsRepository) All(_ context.Context) (map[string]string, erro
 	return out, nil
 }
 
-func newSettingsEnv(t *testing.T) (http.Handler, *settings.Store) {
+func newSettingsEnv(t *testing.T) (http.Handler, *config.Store) {
 	t.Helper()
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{Settings: store})
 	return router, store
 }
 
-func mustSettingsStore(t *testing.T) *settings.Store {
+func mustSettingsStore(t *testing.T) *config.Store {
 	t.Helper()
-	store, err := settings.OpenStore(filepath.Join(t.TempDir(), "settings.db"))
+	store, err := config.OpenStore(filepath.Join(t.TempDir(), "config.db"))
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
@@ -70,7 +69,7 @@ func mustSettingsStore(t *testing.T) *settings.Store {
 func TestSettingsList_HappyPath(t *testing.T) {
 	router, store := newSettingsEnv(t)
 	ctx := context.Background()
-	if err := store.Set(ctx, settings.KeyLLMAPIKey, "sk-test"); err != nil {
+	if err := store.Set(ctx, config.KeyLLMAPIKey, "sk-test"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 
@@ -89,7 +88,7 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	}
 	var found bool
 	for _, it := range resp.Items {
-		if it.Key == settings.KeyLLMAPIKey {
+		if it.Key == config.KeyLLMAPIKey {
 			found = true
 			if it.Value != "" {
 				t.Errorf("LLM_API_KEY value = %q, want redacted empty edit field", it.Value)
@@ -112,7 +111,7 @@ func TestSettingsList_HappyPath(t *testing.T) {
 
 func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
 	repo := &fakeSettingsRepository{values: map[string]string{
-		settings.KeyLLMModel: "fake-model",
+		config.KeyLLMModel: "fake-model",
 	}}
 	router := NewRouter(Deps{Settings: repo})
 
@@ -127,7 +126,7 @@ func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
 	}
 	var found bool
 	for _, it := range list.Items {
-		if it.Key == settings.KeyLLMModel {
+		if it.Key == config.KeyLLMModel {
 			found = true
 			if it.Value != "fake-model" || it.Source != "db" {
 				t.Fatalf("LLM_MODEL row = value:%q source:%q", it.Value, it.Source)
@@ -144,15 +143,15 @@ func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("POST status %d, body %s", rr.Code, rr.Body)
 	}
-	if repo.values[settings.KeyLLMModel] != "updated-model" {
-		t.Fatalf("repo LLM_MODEL = %q, want updated-model", repo.values[settings.KeyLLMModel])
+	if repo.values[config.KeyLLMModel] != "updated-model" {
+		t.Fatalf("repo LLM_MODEL = %q, want updated-model", repo.values[config.KeyLLMModel])
 	}
 }
 
 func TestSettingsCatalogCoversLLMAndIsEditable(t *testing.T) {
 	catalog := map[string]SettingItem{}
 	for _, item := range settingsCatalog {
-		if !settings.IsOverridable(item.Key) {
+		if !config.IsOverridable(item.Key) {
 			t.Fatalf("%s is in settings catalog but is not overridable", item.Key)
 		}
 		if item.ReadOnly {
@@ -164,39 +163,39 @@ func TestSettingsCatalogCoversLLMAndIsEditable(t *testing.T) {
 	// configurable without editing .env. New LLM-adjacent knobs should be
 	// added here so they don't silently drop out of the UI.
 	for _, key := range []string{
-		settings.KeyTimezone,
+		config.KeyTimezone,
 
-		settings.KeyLLMBaseURL,
-		settings.KeyLLMModel,
-		settings.KeyLLMAPIKey,
-		settings.KeyLLMMaxRetries,
+		config.KeyLLMBaseURL,
+		config.KeyLLMModel,
+		config.KeyLLMAPIKey,
+		config.KeyLLMMaxRetries,
 
-		settings.KeyMaxContextTokens,
-		settings.KeyMaxHistoryMessages,
-		settings.KeySoftBudget,
-		settings.KeyHardBudget,
-		settings.KeyCostInputPerMTokens,
-		settings.KeyCostOutputPerMTokens,
+		config.KeyMaxContextTokens,
+		config.KeyMaxHistoryMessages,
+		config.KeySoftBudget,
+		config.KeyHardBudget,
+		config.KeyCostInputPerMTokens,
+		config.KeyCostOutputPerMTokens,
 
-		settings.KeyPromptVersion,
-		settings.KeySkillRoutingMode,
-		settings.KeyAgentLoopMaxSteps,
-		settings.KeyTerminalToolPolicy,
-		settings.KeyDelegationMode,
-		settings.KeySkillsAdmin,
+		config.KeyPromptVersion,
+		config.KeySkillRoutingMode,
+		config.KeyAgentLoopMaxSteps,
+		config.KeyTerminalToolPolicy,
+		config.KeyDelegationMode,
+		config.KeySkillsAdmin,
 
-		settings.KeyWebSearchProvider,
-		settings.KeySearXNGBaseURL,
+		config.KeyWebSearchProvider,
+		config.KeySearXNGBaseURL,
 
-		settings.KeyQdrantURL,
-		settings.KeyQdrantCollection,
-		settings.KeyQdrantAPIKey,
+		config.KeyQdrantURL,
+		config.KeyQdrantCollection,
+		config.KeyQdrantAPIKey,
 
-		settings.KeyEmbeddingBaseURL,
-		settings.KeyEmbeddingModel,
-		settings.KeyEmbeddingAPIKey,
+		config.KeyEmbeddingBaseURL,
+		config.KeyEmbeddingModel,
+		config.KeyEmbeddingAPIKey,
 
-		settings.KeyMistralAPIKey,
+		config.KeyMistralAPIKey,
 	} {
 		if _, ok := catalog[key]; !ok {
 			t.Fatalf("%s missing from settings catalog", key)
@@ -224,8 +223,8 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	want := map[string]string{
-		settings.KeyQdrantURL:        "http://qdrant:6333",
-		settings.KeyQdrantCollection: "aura_memory_v1",
+		config.KeyQdrantURL:        "http://qdrant:6333",
+		config.KeyQdrantCollection: "aura_memory_v1",
 	}
 	for key, value := range want {
 		found := false
@@ -244,7 +243,7 @@ func TestSettingsList_ShowsQdrantKeysEditableAndRedacted(t *testing.T) {
 	}
 	foundSecret := false
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyQdrantAPIKey {
+		if it.Key != config.KeyQdrantAPIKey {
 			continue
 		}
 		foundSecret = true
@@ -270,16 +269,16 @@ func TestSettingsUpdate_AcceptsRuntimeAndSandboxKeys(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
 	}
-	if got, _ := store.Get(context.Background(), settings.KeyHTTPPort); got != "0.0.0.0:9090" {
+	if got, _ := store.Get(context.Background(), config.KeyHTTPPort); got != "0.0.0.0:9090" {
 		t.Fatalf("HTTP_PORT persisted = %q", got)
 	}
-	if got, _ := store.Get(context.Background(), settings.KeySandboxTimeoutSec); got != "45" {
+	if got, _ := store.Get(context.Background(), config.KeySandboxTimeoutSec); got != "45" {
 		t.Fatalf("SANDBOX_TIMEOUT_SEC persisted = %q", got)
 	}
 }
 
 func TestSettingsList_RedactsEnvSecrets(t *testing.T) {
-	t.Setenv(settings.KeyEmbeddingAPIKey, "embed-secret")
+	t.Setenv(config.KeyEmbeddingAPIKey, "embed-secret")
 	router, _ := newSettingsEnv(t)
 
 	rr := httptest.NewRecorder()
@@ -293,7 +292,7 @@ func TestSettingsList_RedactsEnvSecrets(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyEmbeddingAPIKey {
+		if it.Key != config.KeyEmbeddingAPIKey {
 			continue
 		}
 		if it.Value != "" || it.ActiveValue != "(configured)" {
@@ -312,7 +311,7 @@ func TestSettingsList_FallsBackToEnv(t *testing.T) {
 	// with an env value. The dashboard should show that effective value
 	// with source="env" so the operator can see what's actually loaded
 	// before deciding whether to override it.
-	t.Setenv(settings.KeyLLMBaseURL, "https://from.env.example/v1")
+	t.Setenv(config.KeyLLMBaseURL, "https://from.env.example/v1")
 	router, _ := newSettingsEnv(t)
 
 	rr := httptest.NewRecorder()
@@ -321,7 +320,7 @@ func TestSettingsList_FallsBackToEnv(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	for _, it := range resp.Items {
-		if it.Key == settings.KeyLLMBaseURL {
+		if it.Key == config.KeyLLMBaseURL {
 			if it.Value != "https://from.env.example/v1" {
 				t.Errorf("env fallback value = %q", it.Value)
 			}
@@ -335,9 +334,9 @@ func TestSettingsList_FallsBackToEnv(t *testing.T) {
 }
 
 func TestSettingsList_DBOverridesEnv(t *testing.T) {
-	t.Setenv(settings.KeyLLMBaseURL, "https://from.env.example/v1")
+	t.Setenv(config.KeyLLMBaseURL, "https://from.env.example/v1")
 	router, store := newSettingsEnv(t)
-	_ = store.Set(context.Background(), settings.KeyLLMBaseURL, "https://from.db.example/v1")
+	_ = store.Set(context.Background(), config.KeyLLMBaseURL, "https://from.db.example/v1")
 
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
@@ -345,7 +344,7 @@ func TestSettingsList_DBOverridesEnv(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	for _, it := range resp.Items {
-		if it.Key == settings.KeyLLMBaseURL {
+		if it.Key == config.KeyLLMBaseURL {
 			if it.Value != "https://from.db.example/v1" {
 				t.Errorf("DB-wins value = %q", it.Value)
 			}
@@ -359,7 +358,7 @@ func TestSettingsList_DBOverridesEnv(t *testing.T) {
 
 func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
 	// Make sure no leaked env var fights us.
-	for _, k := range []string{settings.KeyLLMBaseURL, settings.KeyLLMAPIKey, settings.KeyLLMModel} {
+	for _, k := range []string{config.KeyLLMBaseURL, config.KeyLLMAPIKey, config.KeyLLMModel} {
 		t.Setenv(k, "")
 	}
 	router, _ := newSettingsEnv(t)
@@ -370,7 +369,7 @@ func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	for _, it := range resp.Items {
-		if it.Key == settings.KeyLLMBaseURL {
+		if it.Key == config.KeyLLMBaseURL {
 			if it.Source != "default" {
 				t.Errorf("source = %q, want default", it.Source)
 			}
@@ -384,7 +383,7 @@ func TestSettingsList_DefaultSourceWhenNoEnvOrDB(t *testing.T) {
 func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing.T) {
 	_, store := newSettingsEnv(t)
 	ctx := context.Background()
-	if err := store.Set(ctx, settings.KeyLLMModel, "next-model"); err != nil {
+	if err := store.Set(ctx, config.KeyLLMModel, "next-model"); err != nil {
 		t.Fatalf("set model: %v", err)
 	}
 	router := NewRouter(Deps{
@@ -398,7 +397,7 @@ func TestSettingsList_ShowsRestartRequiredWhenSavedDiffersFromRuntime(t *testing
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 
 	for _, it := range resp.Items {
-		if it.Key != settings.KeyLLMModel {
+		if it.Key != config.KeyLLMModel {
 			continue
 		}
 		if it.Value != "next-model" || it.ActiveValue != "running-model" || !it.RestartRequired {
@@ -451,7 +450,7 @@ func TestSettingsUpdate_AppliesRuntimeSettingsHook(t *testing.T) {
 		RuntimeConfig: cfg,
 		ApplyRuntimeSettings: func(ctx context.Context) error {
 			calls++
-			cfg.AuraBotTimeoutSec = store.GetInt(ctx, settings.KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
+			cfg.AuraBotTimeoutSec = store.GetInt(ctx, config.KeyAuraBotTimeoutSec, cfg.AuraBotTimeoutSec)
 			return nil
 		},
 	})
@@ -533,7 +532,7 @@ func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status %d", rr.Code)
 	}
-	if _, err := store.Get(context.Background(), "LLM_API_KEY"); err != settings.ErrNotFound {
+	if _, err := store.Get(context.Background(), "LLM_API_KEY"); err != config.ErrNotFound {
 		t.Errorf("expected ErrNotFound after blank update, got %v", err)
 	}
 }
@@ -546,7 +545,7 @@ func TestSettingsUpdate_AcceptsTelegramTokenOverride(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
 	}
-	if got, _ := store.Get(context.Background(), settings.KeyTelegramToken); got != "123456:override" {
+	if got, _ := store.Get(context.Background(), config.KeyTelegramToken); got != "123456:override" {
 		t.Errorf("TELEGRAM_TOKEN persisted = %q", got)
 	}
 }

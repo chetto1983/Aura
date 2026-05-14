@@ -21,7 +21,6 @@ import (
 	"github.com/aura/aura/internal/reindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
-	"github.com/aura/aura/internal/settings"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"
@@ -146,7 +145,7 @@ type Deps struct {
 	// current values) and POST /settings (bulk upsert) so the dashboard
 	// can edit operator-tunable config without a restart. Optional —
 	// when nil, the endpoints return 503.
-	Settings             settings.Repository
+	Settings             config.Repository
 	RuntimeConfig        *config.Config
 	ApplyRuntimeSettings func(context.Context) error
 	Restart              func(context.Context) error

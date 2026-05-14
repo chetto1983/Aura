@@ -1,15 +1,14 @@
-package settings
+package config
 
 import (
 	"context"
 	"testing"
 
-	"github.com/aura/aura/internal/config"
 )
 
 func TestApplyToConfigEmptyStoreIsNoOp(t *testing.T) {
 	s := openTestStore(t)
-	cfg := &config.Config{
+	cfg := &Config{
 		LLMAPIKey:            "env-key",
 		LLMBaseURL:           "https://api.example.com",
 		LLMModel:             "gpt-x",
@@ -39,7 +38,7 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		LLMAPIKey:            "env-key",
 		LLMBaseURL:           "https://api.example.com",
 		LLMModel:             "gpt-x",
@@ -101,7 +100,7 @@ func TestApplyToConfigDBOverridesEnv(t *testing.T) {
 func TestApplyToConfigAppliesAgentRuntimeSettings(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	cfg := &config.Config{
+	cfg := &Config{
 		PromptVersion:      "aura-agent-v1",
 		SkillRoutingMode:   "manifest",
 		AgentLoopMaxSteps:  6,
@@ -164,7 +163,7 @@ func TestApplyToConfigAppliesAgentRuntimeSettings(t *testing.T) {
 func TestApplyToConfigInvalidAgentRuntimeSettingsDegradeToDefaults(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	cfg := &config.Config{
+	cfg := &Config{
 		SkillRoutingMode:   "manifest_llm_review",
 		AgentLoopMaxSteps:  8,
 		TerminalToolPolicy: "off",
@@ -182,12 +181,12 @@ func TestApplyToConfigInvalidAgentRuntimeSettingsDegradeToDefaults(t *testing.T)
 
 	ApplyToConfig(ctx, s, cfg)
 
-	if cfg.SkillRoutingMode != config.DefaultSkillRoutingMode ||
-		cfg.AgentLoopMaxSteps != config.DefaultAgentLoopMaxSteps ||
-		cfg.TerminalToolPolicy != config.DefaultTerminalToolPolicy ||
-		cfg.DelegationMode != config.DefaultDelegationMode ||
-		cfg.TraceRetentionDays != config.DefaultTraceRetentionDays ||
-		cfg.WorkspaceTools != config.DefaultWorkspaceTools {
+	if cfg.SkillRoutingMode != DefaultSkillRoutingMode ||
+		cfg.AgentLoopMaxSteps != DefaultAgentLoopMaxSteps ||
+		cfg.TerminalToolPolicy != DefaultTerminalToolPolicy ||
+		cfg.DelegationMode != DefaultDelegationMode ||
+		cfg.TraceRetentionDays != DefaultTraceRetentionDays ||
+		cfg.WorkspaceTools != DefaultWorkspaceTools {
 		t.Fatalf("invalid agent runtime settings did not degrade to defaults: %+v", cfg)
 	}
 }
@@ -195,7 +194,7 @@ func TestApplyToConfigInvalidAgentRuntimeSettingsDegradeToDefaults(t *testing.T)
 func TestApplyToConfigAppliesQdrantSettings(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	cfg := &config.Config{
+	cfg := &Config{
 		QdrantURL:             "http://127.0.0.1:6333",
 		QdrantCollection:      "aura_memory_v1",
 		QdrantAPIKey:          "",
@@ -232,7 +231,7 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		TelegramToken:           "bootstrap-token",
 		HTTPPort:                "127.0.0.1:8080",
 		Headless:                false,
@@ -319,7 +318,7 @@ func TestApplyToConfigAllowlistOverride(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		Allowlist:           []string{"111"},
 		AllowlistConfigured: true,
 	}
@@ -341,7 +340,7 @@ func TestApplyToConfigBlankAllowlistRowClearsList(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		Allowlist:           []string{"111", "222"},
 		AllowlistConfigured: true,
 	}
@@ -365,7 +364,7 @@ func TestApplyToConfigUnparseableLeavesEnv(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		MaxContextTokens: 8000,
 		SoftBudget:       10.0,
 	}
@@ -384,7 +383,7 @@ func TestApplyToConfigUnparseableLeavesEnv(t *testing.T) {
 }
 
 func TestApplyToConfigNilStoreOrConfigNoCrash(t *testing.T) {
-	ApplyToConfig(context.Background(), nil, &config.Config{})
+	ApplyToConfig(context.Background(), nil, &Config{})
 	ApplyToConfig(context.Background(), nil, nil)
 	s := openTestStore(t)
 	ApplyToConfig(context.Background(), s, nil)

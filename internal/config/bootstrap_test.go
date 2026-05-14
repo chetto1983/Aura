@@ -1,4 +1,4 @@
-package runtimebootstrap
+package config
 
 import (
 	"os"

@@ -1,4 +1,4 @@
-package settings
+package config
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aura/aura/internal/config"
 )
 
 // Settings are persisted in SQLite and overlaid after the database opens.
@@ -140,7 +139,7 @@ func IsOverridable(key string) bool {
 //
 // Empty store (no rows) is a no-op, so wiring this in produces zero
 // behavior change until the dashboard starts writing settings.
-func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
+func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 	if s == nil || cfg == nil {
 		return
 	}
@@ -212,18 +211,18 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *config.Config) {
 	cfg.EmbeddingModel = settingString(ctx, s, KeyEmbeddingModel, cfg.EmbeddingModel)
 	cfg.EmbeddingOutputDim = settingIntRange(ctx, s, KeyEmbeddingOutputDim, cfg.EmbeddingOutputDim, 0, 768, 0)
 	cfg.PromptVersion = settingString(ctx, s, KeyPromptVersion, cfg.PromptVersion)
-	cfg.SkillRoutingMode = config.NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
-	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 10000, config.DefaultAgentLoopMaxSteps)
-	cfg.ReasoningEffort = config.NormalizeReasoningEffort(settingString(ctx, s, KeyReasoningEffort, cfg.ReasoningEffort))
-	cfg.ToolSearchTopK = settingIntRange(ctx, s, KeyToolSearchTopK, cfg.ToolSearchTopK, 1, 50, config.DefaultToolSearchTopK)
-	cfg.ToolSearchBackend = config.NormalizeToolSearchBackend(settingString(ctx, s, KeyToolSearchBackend, cfg.ToolSearchBackend))
-	cfg.MaxToolResultChars = settingIntRange(ctx, s, KeyMaxToolResultChars, cfg.MaxToolResultChars, 1000, 500000, config.DefaultMaxToolResultChars)
-	cfg.MicrocompactKeepRecent = settingIntRange(ctx, s, KeyMicrocompactKeepRecent, cfg.MicrocompactKeepRecent, 1, 500, config.DefaultMicrocompactKeepRecent)
-	cfg.MicrocompactMinChars = settingIntRange(ctx, s, KeyMicrocompactMinChars, cfg.MicrocompactMinChars, 100, 100000, config.DefaultMicrocompactMinChars)
-	cfg.TerminalToolPolicy = config.NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
-	cfg.DelegationMode = config.NormalizeDelegationMode(settingString(ctx, s, KeyDelegationMode, cfg.DelegationMode))
-	cfg.TraceRetentionDays = settingIntRange(ctx, s, KeyTraceRetentionDays, cfg.TraceRetentionDays, 1, 365, config.DefaultTraceRetentionDays)
-	cfg.WorkspaceTools = config.NormalizeWorkspaceTools(settingString(ctx, s, KeyWorkspaceTools, cfg.WorkspaceTools))
+	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
+	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 10000, DefaultAgentLoopMaxSteps)
+	cfg.ReasoningEffort = NormalizeReasoningEffort(settingString(ctx, s, KeyReasoningEffort, cfg.ReasoningEffort))
+	cfg.ToolSearchTopK = settingIntRange(ctx, s, KeyToolSearchTopK, cfg.ToolSearchTopK, 1, 50, DefaultToolSearchTopK)
+	cfg.ToolSearchBackend = NormalizeToolSearchBackend(settingString(ctx, s, KeyToolSearchBackend, cfg.ToolSearchBackend))
+	cfg.MaxToolResultChars = settingIntRange(ctx, s, KeyMaxToolResultChars, cfg.MaxToolResultChars, 1000, 500000, DefaultMaxToolResultChars)
+	cfg.MicrocompactKeepRecent = settingIntRange(ctx, s, KeyMicrocompactKeepRecent, cfg.MicrocompactKeepRecent, 1, 500, DefaultMicrocompactKeepRecent)
+	cfg.MicrocompactMinChars = settingIntRange(ctx, s, KeyMicrocompactMinChars, cfg.MicrocompactMinChars, 100, 100000, DefaultMicrocompactMinChars)
+	cfg.TerminalToolPolicy = NormalizeTerminalToolPolicy(settingString(ctx, s, KeyTerminalToolPolicy, cfg.TerminalToolPolicy))
+	cfg.DelegationMode = NormalizeDelegationMode(settingString(ctx, s, KeyDelegationMode, cfg.DelegationMode))
+	cfg.TraceRetentionDays = settingIntRange(ctx, s, KeyTraceRetentionDays, cfg.TraceRetentionDays, 1, 365, DefaultTraceRetentionDays)
+	cfg.WorkspaceTools = NormalizeWorkspaceTools(settingString(ctx, s, KeyWorkspaceTools, cfg.WorkspaceTools))
 	cfg.WorkspaceRoot = settingString(ctx, s, KeyWorkspaceRoot, cfg.WorkspaceRoot)
 
 	cfg.MistralAPIKey = settingString(ctx, s, KeyMistralAPIKey, cfg.MistralAPIKey)
@@ -293,17 +292,3 @@ func settingBool(ctx context.Context, s Reader, key string, fallback bool) bool 
 	return b
 }
 
-// parseAllowlist mirrors the comma-split semantics in config.Load.
-func parseAllowlist(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if id := strings.TrimSpace(p); id != "" {
-			out = append(out, id)
-		}
-	}
-	return out
-}

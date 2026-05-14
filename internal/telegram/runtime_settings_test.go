@@ -10,7 +10,6 @@ import (
 
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/settings"
 )
 
 type fakeSettingsReader map[string]string
@@ -19,7 +18,7 @@ func (f fakeSettingsReader) Get(_ context.Context, key string) (string, error) {
 	if v, ok := f[key]; ok {
 		return v, nil
 	}
-	return "", settings.ErrNotFound
+	return "", config.ErrNotFound
 }
 
 type fakeAgentLimits struct {
@@ -59,19 +58,19 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
 	store := fakeSettingsReader{
-		settings.KeyAuraBotMaxActive:     "6",
-		settings.KeyAuraBotMaxDepth:      "2",
-		settings.KeyAuraBotTimeoutSec:    "45",
-		settings.KeyAuraBotMaxIterations: "9",
-		settings.KeySoftBudget:           "3.25",
-		settings.KeyHardBudget:           "8.5",
-		settings.KeyCostInputPerMTokens:  "0.14",
-		settings.KeyCostOutputPerMTokens: "0.42",
-		settings.KeySkillRoutingMode:     "manifest_llm_review",
-		settings.KeyAgentLoopMaxSteps:    "8",
-		settings.KeyTerminalToolPolicy:   "off",
-		settings.KeyDelegationMode:       "bounded",
-		settings.KeyTraceRetentionDays:   "45",
+		config.KeyAuraBotMaxActive:     "6",
+		config.KeyAuraBotMaxDepth:      "2",
+		config.KeyAuraBotTimeoutSec:    "45",
+		config.KeyAuraBotMaxIterations: "9",
+		config.KeySoftBudget:           "3.25",
+		config.KeyHardBudget:           "8.5",
+		config.KeyCostInputPerMTokens:  "0.14",
+		config.KeyCostOutputPerMTokens: "0.42",
+		config.KeySkillRoutingMode:     "manifest_llm_review",
+		config.KeyAgentLoopMaxSteps:    "8",
+		config.KeyTerminalToolPolicy:   "off",
+		config.KeyDelegationMode:       "bounded",
+		config.KeyTraceRetentionDays:   "45",
 	}
 	cfg := &config.Config{
 		SoftBudget:           1,

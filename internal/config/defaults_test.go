@@ -1,4 +1,4 @@
-package settings
+package config
 
 import (
 	"context"
@@ -6,20 +6,19 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/aura/aura/internal/config"
 )
 
 func TestApplyBestDefaultsMigratesLegacyRowsOnce(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 
-	changes, err := ApplyBestDefaults(ctx, s, &config.Config{})
+	changes, err := ApplyBestDefaults(ctx, s, &Config{})
 	if err != nil {
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
 	assertChanged(t, changes, BestDefaultsVersionKey)
 
-	changes, err = ApplyBestDefaults(ctx, s, &config.Config{})
+	changes, err = ApplyBestDefaults(ctx, s, &Config{})
 	if err != nil {
 		t.Fatalf("ApplyBestDefaults second run: %v", err)
 	}
@@ -132,10 +131,10 @@ func TestApplyBestDefaultsRepairsInvalidValuesAfterMigration(t *testing.T) {
 		assertChanged(t, changes, key)
 	}
 	assertSetting(t, s, KeyWebSearchProvider, "searxng")
-	assertSetting(t, s, KeySkillRoutingMode, config.DefaultSkillRoutingMode)
-	assertSetting(t, s, KeyAgentLoopMaxSteps, strconv.Itoa(config.DefaultAgentLoopMaxSteps))
-	assertSetting(t, s, KeyTerminalToolPolicy, config.DefaultTerminalToolPolicy)
-	assertSetting(t, s, KeyDelegationMode, config.DefaultDelegationMode)
+	assertSetting(t, s, KeySkillRoutingMode, DefaultSkillRoutingMode)
+	assertSetting(t, s, KeyAgentLoopMaxSteps, strconv.Itoa(DefaultAgentLoopMaxSteps))
+	assertSetting(t, s, KeyTerminalToolPolicy, DefaultTerminalToolPolicy)
+	assertSetting(t, s, KeyDelegationMode, DefaultDelegationMode)
 	assertSetting(t, s, KeyTraceRetentionDays, "30")
 }
 
@@ -153,8 +152,8 @@ func TestApplyBestDefaultsMovesPromptOverlayFromDataToWorkspaceAfterMigration(t 
 	assertSetting(t, s, KeyPromptOverlayPath, "/workspace")
 }
 
-func containerDefaultsConfig() *config.Config {
-	return &config.Config{
+func containerDefaultsConfig() *Config {
+	return &Config{
 		Headless:                true,
 		HTTPPort:                "0.0.0.0:8080",
 		EnvPath:                 "/data/.env",
