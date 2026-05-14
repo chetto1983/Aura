@@ -69,6 +69,7 @@ internal/
   identity/       principals, channel accounts, actors, capability grants
   channels/       telegram, web, silent, swarm adapters
   agent/tools/    tool registry, tool schemas, tool execution, toolsets
+  workflow/       durable tool execution, retries, idempotency, compensation
   learning/       tool experience, self-healing lessons, promotion workflow
   rag/            schema-aware retrieval, hybrid search, rerank, citations
   memory/         wiki semantics, recall behavior, memory policy
@@ -438,7 +439,51 @@ Advanced tool-use policy:
 - complex tools need realistic examples showing minimal, partial, and full usage patterns,
 - examples are for disambiguation, not decoration.
 
-### 5.6 `internal/memory`
+Tool execution policy:
+
+- every tool attempt emits a structured `ToolObservation`,
+- lightweight read-only tools may execute inline,
+- stateful, long-running, side-effecting, background, cron, outbound, source-ingest, memory-write, wiki-mutation, and swarm-spawn tools execute through durable workflow steps,
+- the agent loop sees the same observation shape for inline tools and workflow-backed tools,
+- retry decisions belong to the runtime supervisor, not individual model whim.
+
+### 5.6 `internal/workflow`
+
+Workflow is durable execution for risky work. It is not the agent brain.
+
+It owns:
+
+- persisted tool steps,
+- retry scheduling,
+- idempotency keys,
+- side-effect reconciliation,
+- compensation hooks,
+- cancellation,
+- durable timeouts,
+- outbox coordination,
+- restart recovery,
+- workflow metrics.
+
+It must not own:
+
+- model prompting,
+- tool selection,
+- chat rendering,
+- memory semantics,
+- RAG query planning,
+- user-facing policy decisions.
+
+The key rule:
+
+> Inline tools are allowed only when failure is cheap. Risky tools must be replayable, inspectable, and bounded.
+
+Workflow-backed tools still emit normal agent observations:
+
+```text
+tool_started -> workflow_step_started -> ToolObservation -> workflow_step_completed|failed -> tool_completed|tool_failed
+```
+
+### 5.7 `internal/memory`
 
 Memory is the product semantics of remembering. It is not one bucket.
 
@@ -486,7 +531,7 @@ Write policy:
 - wiki pages are curated knowledge, not chat logs or raw tool failures,
 - indexes are disposable projections.
 
-### 5.7 `internal/learning`
+### 5.8 `internal/learning`
 
 Learning is operational experience, not secret model training.
 
@@ -517,7 +562,29 @@ The minimum loop is:
 tool failure -> structured feedback -> retry in same run -> persist outcome -> retrieve similar lesson later -> promote only after validation
 ```
 
-### 5.8 `internal/rag`
+The common observation contract is:
+
+```text
+ToolObservation
+  status: ok | recoverable_error | blocked_error | fatal_error | cancelled
+  error_kind: validation | missing_required | invalid_action | not_found | conflict | timeout | rate_limited | permission | policy_blocked | transient_upstream | tool_bug | side_effect_unknown
+  retry_policy: no_retry | model_correct_args | auto_retry_idempotent | ask_user | reconcile_first
+  side_effect_state: none | not_started | committed | unknown
+  message_for_model: concise, redacted, corrective feedback
+  idempotency_key, tool_name, tool_version, schema_version, arg_keys, args_hash, redaction_level
+```
+
+Retry rules:
+
+- automatic retry is allowed only for read-only, idempotent, or safely transient work,
+- writes and external side effects require idempotency keys,
+- `side_effect_unknown` means reconcile first, ask the user, or fail with an auditable reason,
+- same tool plus same args plus same error cannot loop indefinitely,
+- retry budgets are per run, per tool, and per error kind,
+- durable workflow execution is the target substrate for risky or long-running tools,
+- no prompt, skill, memory, or code mutation happens automatically from one failure.
+
+### 5.9 `internal/rag`
 
 RAG is retrieval intelligence.
 
@@ -577,7 +644,7 @@ The tool surface should avoid `memory(mode=...)`. Prefer task-level tools:
 
 A federated recall path is allowed only if every hit keeps its layer label and citation handle.
 
-### 5.9 `internal/storage`
+### 5.10 `internal/storage`
 
 Storage is persistence infrastructure.
 
@@ -608,7 +675,7 @@ Persistence implementation policy:
 - run/event, outbox, identity grants, FTS/RAG, recovery, backups, and migrations must keep explicit SQL,
 - ORM-style helpers may be considered only for isolated, non-critical CRUD after a spike proves they do not weaken migrations, transactions, logging, or testability.
 
-### 5.10 `internal/cron`
+### 5.11 `internal/cron`
 
 Cron is a scheduled entrypoint.
 
@@ -630,7 +697,7 @@ Cron should submit work into `chat` or `agent` through the same contracts used b
 
 Scheduled work must run as a delegated actor with explicit capabilities, expiry, and notification policy. A cron job is never implicitly the owner.
 
-### 5.11 `internal/api`
+### 5.12 `internal/api`
 
 API is an external surface.
 
@@ -873,10 +940,14 @@ Goal: Aura improves from preventable tool-call failures instead of repeating the
 
 Steps:
 
-- define structured tool observation and tool error contracts,
-- classify tool results as ok, recoverable error, or fatal error,
+- define `ToolObservation` as the single result/error contract for inline and workflow-backed tools,
+- classify tool results as ok, recoverable error, blocked error, fatal error, or cancelled,
+- add a Tool Supervisor that enforces retry policy, redaction, idempotency, and retry budgets,
 - inject recoverable error feedback into the same run,
-- cap retries and record why a retry was attempted or refused,
+- cap retries by run, tool, and error kind, and record why a retry was attempted or refused,
+- route stateful, long-running, side-effecting, background, cron, outbound, source-ingest, memory-write, wiki-mutation, and swarm-spawn tools through durable workflow execution,
+- require idempotency keys for every retryable side-effecting operation,
+- require reconcile-first behavior for `side_effect_unknown`,
 - persist tool attempts and outcomes as learning events,
 - retrieve validated lessons for similar future tool calls,
 - promote repeated lessons into memory, skills, or tool policy only after validation.
@@ -885,6 +956,8 @@ Gate:
 
 - a recoverable tool error can be corrected in the same run,
 - repeat failures are visible by tool and error kind,
+- workflow-backed tool steps survive process restart and do not double-apply side effects,
+- `side_effect_unknown` is never blindly retried,
 - secrets and raw sensitive args are redacted from learning records,
 - retrieved lessons are versioned against tool schema/version,
 - no automatic prompt/code mutation happens without validation.

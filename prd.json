@@ -200,7 +200,7 @@
         "Single atomic commit: `refactor(swarm): dispatch via chat.Hub with parent_run_id propagation`"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
