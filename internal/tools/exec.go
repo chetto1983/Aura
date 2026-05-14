@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/sandbox"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // ExecuteCodeTool lets the LLM run Python code in Aura's isolated runtime.

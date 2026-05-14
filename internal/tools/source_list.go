@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // ListSourcesTool lists sources matching optional kind/status filters.

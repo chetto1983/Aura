@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/ocr"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 type fakeSourceRepository struct {

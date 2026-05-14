@@ -30,9 +30,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/wiki"
 )
 

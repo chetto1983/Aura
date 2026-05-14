@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/wiki"
 )
 

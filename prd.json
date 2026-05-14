@@ -79,7 +79,7 @@
         "Single atomic commit: `chore(storage): move search + memoryindex + memoryquality under internal/storage/`"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

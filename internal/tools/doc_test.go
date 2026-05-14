@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // docTestStore is a minimal source.Writer that captures bytes per Put.

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // ReadSourceTool reads source metadata or extracted markdown.

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/ocr"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // SourceTool consolidates the seven verb-tools (list_sources, read_source,

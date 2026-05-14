@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/markitdown"
+	"github.com/aura/aura/internal/storage/sources/markitdown"
 )
 
 const markitdownExtractorVersion = "markitdown_v1"

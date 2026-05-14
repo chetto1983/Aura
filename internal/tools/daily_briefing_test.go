@@ -10,7 +10,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/scheduler"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 func TestDailyBriefingTool_ComposesAttentionSignals(t *testing.T) {

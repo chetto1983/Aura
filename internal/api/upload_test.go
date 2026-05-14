@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/ingest"
-	"github.com/aura/aura/internal/markitdown"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/ingest"
+	"github.com/aura/aura/internal/storage/sources/markitdown"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // fakeMarkitdown is a markitdown.Converter that returns canned markdown per

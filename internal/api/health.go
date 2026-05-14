@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/scheduler"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // gitRevision is read once via debug.ReadBuildInfo. The result depends

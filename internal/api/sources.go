@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 func handleSourceList(deps Deps) http.HandlerFunc {

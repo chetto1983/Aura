@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aura/aura/internal/files"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // CreateDOCXTool generates a Word document from a structured spec

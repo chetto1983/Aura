@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 type stubDocSender struct {

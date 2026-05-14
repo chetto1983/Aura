@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/ocr"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // IngestResponse is the JSON body returned by POST /sources/{id}/ingest.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aura/aura/internal/ingest"
+	"github.com/aura/aura/internal/storage/sources/ingest"
 )
 
 // IngestSourceTool compiles a stored source into a wiki summary page via the

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // Output caps for source-reading tools. Bound the LLM context budget the same

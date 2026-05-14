@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 func TestLiveOCR(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/markitdown"
-	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/markitdown"
+	"github.com/aura/aura/internal/storage/sources/ocr"
+	"github.com/aura/aura/internal/storage/sources/store"
 	tele "gopkg.in/telebot.v4"
 )
 

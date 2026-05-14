@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/scheduler"
-	"github.com/aura/aura/internal/source"
+	"github.com/aura/aura/internal/storage/sources/store"
 )
 
 // doLocal mirrors testEnv.do but pins RemoteAddr to a loopback so requests

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/markitdown"
+	"github.com/aura/aura/internal/storage/sources/markitdown"
 )
 
 // fakeConverter captures Convert input and returns canned markdown.
