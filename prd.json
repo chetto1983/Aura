@@ -65,7 +65,7 @@
         "Single atomic commit: `chore(storage): move qdrant + reindex under internal/storage/`"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Storage-as-namespace approach avoids the god-package risk that bit Step 1.5. Each Aura storage subsystem keeps its own package; storage/ is just a folder grouping."
     },
     {

@@ -16,7 +16,7 @@ import (
 
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/storage/qdrant"
-	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/storage/search"
 )
 
 type output struct {

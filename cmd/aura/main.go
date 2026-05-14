@@ -24,7 +24,7 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/logging"
-	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
 )

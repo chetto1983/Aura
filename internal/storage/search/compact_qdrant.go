@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/qdrant"
 )
 

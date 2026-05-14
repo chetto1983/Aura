@@ -32,7 +32,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/ingest"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/tools"

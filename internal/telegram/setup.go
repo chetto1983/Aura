@@ -26,13 +26,13 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	
 	
-	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/storage/qdrant"
 	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
-	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/storage/search"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/swarm"

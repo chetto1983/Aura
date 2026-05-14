@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/memoryindex"
+	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
 func TestCompactMemoryQdrantIndexRecreatesCollectionAndUpsertsPayloads(t *testing.T) {

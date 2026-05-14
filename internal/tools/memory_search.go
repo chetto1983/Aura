@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/aura/aura/internal/memoryindex"
-	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/search"
 )
 
 // search_memory contract

@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/source"
 	"github.com/aura/aura/internal/wiki"
 )

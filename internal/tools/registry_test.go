@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/search"
+	"github.com/aura/aura/internal/storage/search"
 )
 
 type fakeTool struct{}
