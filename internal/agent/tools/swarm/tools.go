@@ -411,7 +411,7 @@ func resolveRoleTools(role string, requested []string) ([]string, error) {
 	if len(requested) == 0 {
 		return allowed, nil
 	}
-	cleaned := cleanList(requested)
+	cleaned := toolsets.CleanList(requested)
 	for _, name := range cleaned {
 		if !slices.Contains(allowed, name) {
 			return nil, fmt.Errorf("spawn_aurabot: tool %q is not allowed for role %q", name, role)
@@ -427,7 +427,7 @@ func roleSystemPrompt(role string) string {
 
 func workerRolesForPolicy(requested []string, policy DelegationPolicy) []string {
 	policy = policy.Clamp()
-	roles := cleanList(requested)
+	roles := toolsets.CleanList(requested)
 	if len(roles) == 0 {
 		roles = defaultDelegationRoles()
 	}
@@ -480,7 +480,7 @@ func stringSliceArg(args map[string]any, key string) []string {
 	}
 	switch x := v.(type) {
 	case []string:
-		return cleanList(x)
+		return toolsets.CleanList(x)
 	case []any:
 		values := make([]string, 0, len(x))
 		for _, item := range x {
@@ -488,24 +488,10 @@ func stringSliceArg(args map[string]any, key string) []string {
 				values = append(values, s)
 			}
 		}
-		return cleanList(values)
+		return toolsets.CleanList(values)
 	default:
 		return nil
 	}
-}
-
-func cleanList(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
 }
 
 func marshal(v any) (string, error) {

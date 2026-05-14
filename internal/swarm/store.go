@@ -7,12 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/agent/tools/sets"
 )
 
 type Store struct {
@@ -215,7 +215,7 @@ func (s *Store) CreateTask(ctx context.Context, runID string, a Assignment) (*Ta
 		Role:          a.Role,
 		Subject:       a.Subject,
 		Prompt:        a.Prompt,
-		ToolAllowlist: cleanList(a.ToolAllowlist),
+		ToolAllowlist: toolsets.CleanList(a.ToolAllowlist),
 		Status:        TaskPending,
 		Depth:         a.Depth,
 		CreatedAt:     now,
@@ -433,16 +433,3 @@ func scanTask(row rowScanner) (*Task, error) {
 	return &task, nil
 }
 
-func cleanList(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
-}

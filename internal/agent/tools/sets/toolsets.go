@@ -157,3 +157,18 @@ func cloneStrings(values []string) []string {
 	copy(out, values)
 	return out
 }
+
+// CleanList trims whitespace and deduplicates a string slice, removing empty entries.
+func CleanList(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}

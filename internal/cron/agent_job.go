@@ -53,10 +53,10 @@ func NormalizeAgentJobPayload(raw string) (AgentJobPayload, error) {
 	if payload.Goal == "" {
 		return AgentJobPayload{}, errors.New("agent_job payload goal required")
 	}
-	payload.EnabledToolsets = cleanUniqueStrings(payload.EnabledToolsets)
-	payload.Skills = cleanUniqueStrings(payload.Skills)
-	payload.ContextFrom = cleanUniqueStrings(payload.ContextFrom)
-	payload.WakeIfChanged = cleanUniqueStrings(payload.WakeIfChanged)
+	payload.EnabledToolsets = toolsets.CleanList(payload.EnabledToolsets)
+	payload.Skills = toolsets.CleanList(payload.Skills)
+	payload.ContextFrom = toolsets.CleanList(payload.ContextFrom)
+	payload.WakeIfChanged = toolsets.CleanList(payload.WakeIfChanged)
 	payload.Language = NormalizeAgentJobLanguage(payload.Language)
 	if len(payload.Skills) > 0 && !containsString(payload.EnabledToolsets, toolsets.ToolsetSkillsRead) {
 		payload.EnabledToolsets = append(payload.EnabledToolsets, toolsets.ToolsetSkillsRead)
@@ -100,8 +100,8 @@ func NormalizeAgentJobLanguage(value string) string {
 }
 
 func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, forceSkillsRead bool) ([]string, error) {
-	enabledToolsets = cleanUniqueStrings(enabledToolsets)
-	requestedTools = cleanUniqueStrings(requestedTools)
+	enabledToolsets = toolsets.CleanList(enabledToolsets)
+	requestedTools = toolsets.CleanList(requestedTools)
 
 	var base []string
 	var err error
@@ -160,20 +160,6 @@ func (p AgentJobPayload) JSON() (string, error) {
 func mustMarshalPayload(p AgentJobPayload) string {
 	data, _ := json.Marshal(p)
 	return string(data)
-}
-
-func cleanUniqueStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
 }
 
 func appendUniqueStrings(out []string, values ...string) []string {
