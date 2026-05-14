@@ -103,6 +103,13 @@ type BeforeToolCallback func(llm.ToolCall, ToolCallState) ToolCallDecision
 type Options struct {
 	MaxIterations int
 	MaxElapsed    time.Duration
+	// DisableInBatchDedup skips the DedupeToolCalls pre-pass so every call
+	// announced in a single LLM response enters the execution path, even
+	// when multiple calls share identical (name, arguments). Defaults to
+	// false (dedup ON). Background agents such as agent.Runner set this to
+	// true to preserve the old Runner semantics: budget enforcement via
+	// MaxToolCalls, not dedup-then-budget.
+	DisableInBatchDedup bool
 	// MaxToolCalls caps the TOTAL number of fresh (post-dedupe, non-skipped)
 	// tool calls dispatched across all iterations of a single Run. Zero
 	// means unlimited. Distinct from MaxCallsPerTool which caps per tool
@@ -241,6 +248,12 @@ type Stats struct {
 	// for measuring guard ROI: detections / corrected > 1 means the
 	// correction is the *right* lever; otherwise the model keeps phantoming.
 	PhantomToolCorrected int
+	// ToolCallsExecuted counts the fresh (post-dedupe, post-budget-cap) tool
+	// calls that the executor actually dispatched across all iterations.
+	// Distinct from ToolCalls, which counts all announced calls (including
+	// deduplicated and budget-capped ones). Background agents map this to
+	// agent.Result.ToolCalls so swarm telemetry reflects executed work.
+	ToolCallsExecuted int
 }
 
 // MaxIterationsCeiling is a hard upper bound the loop applies to whatever
@@ -511,7 +524,12 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 		}
 
-		callsToExecute, duplicateToolCalls := DedupeToolCalls(resp.Response.ToolCalls)
+		var callsToExecute, duplicateToolCalls []llm.ToolCall
+		if opts.DisableInBatchDedup {
+			callsToExecute = resp.Response.ToolCalls
+		} else {
+			callsToExecute, duplicateToolCalls = DedupeToolCalls(resp.Response.ToolCalls)
+		}
 		inBatchDuplicate := map[string]bool{}
 		for _, call := range duplicateToolCalls {
 			inBatchDuplicate[duplicateToolCallKey(call)] = true
@@ -547,11 +565,13 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				maxCallsHit[call.ID] = true
 				continue
-			} else if opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
-				// Per-Run tool budget exhausted. Mirror agent.Runner's
-				// splitToolCalls semantics: kept = first N, rest get a
-				// budget-exhausted stub. Finalizing transition is handled
-				// post-dispatch to keep the dedupe loop side-effect-light.
+			}
+			// Per-Run tool budget check runs regardless of BeforeTool — a
+			// caller that provides BeforeTool (e.g. agent.Runner) still
+			// wants MaxToolCalls enforced. Separated from the else-if chain
+			// so it applies both when BeforeTool returned allow AND when it
+			// was nil and neither sticky-dedup nor MaxCallsPerTool fired.
+			if opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				budgetCapHit[call.ID] = true
 				continue
@@ -585,6 +605,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			}
 			toolBatchStart := time.Now()
 			execution = executor.ExecuteToolCalls(iterCtx, freshCalls)
+			stats.ToolCallsExecuted += len(freshCalls)
 			toolBatchElapsed := time.Since(toolBatchStart)
 			if opts.OnToolEnd != nil {
 				for _, call := range freshCalls {
