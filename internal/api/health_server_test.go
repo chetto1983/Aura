@@ -13,12 +13,12 @@ type mockProvider struct {
 	detail string
 }
 
-func (m *mockProvider) HealthStatus() ComponentHealth {
+func (m *mockProvider) HealthStatus() HealthComponent {
 	return HealthComponent{Status: m.status, Detail: m.detail}
 }
 
 func TestStatusEndpointHealthy(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.RegisterProvider("test", &mockProvider{status: "ok"})
 
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
@@ -42,7 +42,7 @@ func TestStatusEndpointHealthy(t *testing.T) {
 }
 
 func TestStatusEndpointDegraded(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.RegisterProvider("db", &mockProvider{status: "error", detail: "connection refused"})
 
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
@@ -63,7 +63,7 @@ func TestStatusEndpointDegraded(t *testing.T) {
 }
 
 func TestHealthEndpoint(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestTelegramEndpoint(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.SetBotUsername("@aura_test_bot")
 
 	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
@@ -113,7 +113,7 @@ func TestTelegramEndpoint(t *testing.T) {
 }
 
 func TestTelegramEndpointUnavailable(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
 	w := httptest.NewRecorder()
@@ -125,7 +125,7 @@ func TestTelegramEndpointUnavailable(t *testing.T) {
 }
 
 func TestTelegramEndpointRejectsInvalidUsername(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.SetBotUsername("../bad")
 
 	req := httptest.NewRequest(http.MethodGet, "/telegram", nil)
@@ -138,7 +138,7 @@ func TestTelegramEndpointRejectsInvalidUsername(t *testing.T) {
 }
 
 func TestTelegramQREndpoint(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.SetBotUsername("aura_test_bot")
 
 	req := httptest.NewRequest(http.MethodGet, "/telegram/qr.png", nil)
@@ -157,7 +157,7 @@ func TestTelegramQREndpoint(t *testing.T) {
 }
 
 func TestTelegramQREndpointHead(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.SetBotUsername("aura_test_bot")
 
 	req := httptest.NewRequest(http.MethodHead, "/telegram/qr.png", nil)
@@ -173,7 +173,7 @@ func TestTelegramQREndpointHead(t *testing.T) {
 }
 
 func TestTelegramEndpointRejectsUnsupportedMethods(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	s.SetBotUsername("aura_test_bot")
 
 	for _, tc := range []struct {
@@ -196,7 +196,7 @@ func TestTelegramEndpointRejectsUnsupportedMethods(t *testing.T) {
 }
 
 func TestUptimeInStatus(t *testing.T) {
-	s := NewHealthServer(ServerSetupConfig{Addr: ":0"}, nil)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, nil)
 	time.Sleep(10 * time.Millisecond) // small delay to ensure uptime > 0
 
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)

@@ -11,8 +11,8 @@ type HealthSanitizeHandler struct {
 	inner slog.Handler
 }
 
-// NewHealthHealthSanitizeHandler creates a handler that redacts secrets before passing to the inner handler.
-func NewHealthHealthSanitizeHandler(inner slog.Handler) *HealthSanitizeHandler {
+// NewHealthSanitizeHandler creates a handler that redacts secrets before passing to the inner handler.
+func NewHealthSanitizeHandler(inner slog.Handler) *HealthSanitizeHandler {
 	return &HealthSanitizeHandler{inner: inner}
 }
 

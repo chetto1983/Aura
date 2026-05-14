@@ -23,7 +23,6 @@ import (
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
-	"github.com/aura/aura/internal/health"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/setup"
@@ -308,7 +307,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	activeLogger = logger
 
 	// Start health/observability HTTP server
-	healthServer := health.NewServer(health.ServerConfig{
+	healthServer := api.NewHealthServer(api.HealthServerConfig{
 		Addr:    cfg.HTTPPort,
 		Version: auraVersion,
 	}, logger)
@@ -457,8 +456,8 @@ type configHealthProvider struct {
 	cfg *config.Config
 }
 
-func (p *configHealthProvider) HealthStatus() health.ComponentHealth {
-	return health.ComponentHealth{
+func (p *configHealthProvider) HealthStatus() api.HealthComponent {
+	return api.HealthComponent{
 		Status: "ok",
 		Detail: "configuration loaded",
 	}
@@ -468,28 +467,28 @@ type databaseHealthProvider struct {
 	db *sql.DB
 }
 
-func (p *databaseHealthProvider) HealthStatus() health.ComponentHealth {
+func (p *databaseHealthProvider) HealthStatus() api.HealthComponent {
 	status, err := auradb.CheckIntegrity(context.Background(), p.db)
 	if err != nil {
-		return health.ComponentHealth{
+		return api.HealthComponent{
 			Status: "error",
 			Detail: err.Error(),
 		}
 	}
 	if status != "ok" {
-		return health.ComponentHealth{
+		return api.HealthComponent{
 			Status: "error",
 			Detail: status,
 		}
 	}
 	journalMode, err := auradb.JournalMode(context.Background(), p.db)
 	if err != nil {
-		return health.ComponentHealth{
+		return api.HealthComponent{
 			Status: "error",
 			Detail: err.Error(),
 		}
 	}
-	return health.ComponentHealth{
+	return api.HealthComponent{
 		Status: "ok",
 		Detail: "integrity ok; journal=" + journalMode,
 	}
@@ -497,8 +496,8 @@ func (p *databaseHealthProvider) HealthStatus() health.ComponentHealth {
 
 type webSearchHealthProvider struct{}
 
-func (p *webSearchHealthProvider) HealthStatus() health.ComponentHealth {
-	return health.ComponentHealth{
+func (p *webSearchHealthProvider) HealthStatus() api.HealthComponent {
+	return api.HealthComponent{
 		Status: "ok",
 		Detail: "web search provider configured",
 	}
@@ -512,13 +511,13 @@ type compactMemoryHealthProvider struct {
 	reader compactMemoryHealthReader
 }
 
-func (p *compactMemoryHealthProvider) HealthStatus() health.ComponentHealth {
+func (p *compactMemoryHealthProvider) HealthStatus() api.HealthComponent {
 	if p == nil || p.reader == nil {
-		return health.ComponentHealth{Status: "ok", Detail: "compact memory mirror unavailable"}
+		return api.HealthComponent{Status: "ok", Detail: "compact memory mirror unavailable"}
 	}
 	state := p.reader.CompactMemoryHealth()
 	if !state.Enabled {
-		return health.ComponentHealth{Status: "ok", Detail: "compact memory mirror disabled"}
+		return api.HealthComponent{Status: "ok", Detail: "compact memory mirror disabled"}
 	}
 	status := "ok"
 	if state.Running {
@@ -532,7 +531,7 @@ func (p *compactMemoryHealthProvider) HealthStatus() health.ComponentHealth {
 		status = "degraded"
 		detail += " last_error=" + state.LastError
 	}
-	return health.ComponentHealth{Status: status, Detail: detail}
+	return api.HealthComponent{Status: status, Detail: detail}
 }
 
 // dashboardHost translates the HTTP_PORT bind string into a browseable URL

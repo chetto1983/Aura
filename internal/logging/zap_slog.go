@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/aura/aura/internal/health"
+	"github.com/aura/aura/internal/api"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -48,7 +48,7 @@ func Setup(level, logDir string) (*slog.Logger, func()) {
 	zapLogger := zap.New(core, zap.AddCaller())
 
 	handler := &zapHandler{core: core, logger: zapLogger}
-	sanitized := health.NewSanitizeHandler(handler)
+	sanitized := api.NewHealthSanitizeHandler(handler)
 
 	logger := slog.New(sanitized)
 	slog.SetDefault(logger)

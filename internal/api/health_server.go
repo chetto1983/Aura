@@ -15,7 +15,7 @@ import (
 
 // HealthStatusProvider supplies health data for a named component.
 type HealthStatusProvider interface {
-	HealthStatus() ComponentHealth
+	HealthStatus() HealthComponent
 }
 
 // HealthStatus represents the system health for the /status endpoint.
@@ -23,7 +23,7 @@ type HealthStatus struct {
 	Status     string                     `json:"status"`
 	Uptime     string                     `json:"uptime"`
 	Version    string                     `json:"version,omitempty"`
-	Components map[string]ComponentHealth `json:"components"`
+	Components map[string]HealthComponent `json:"components"`
 }
 
 // HealthTelegramInfo is intentionally public: it contains only the bot handle and
@@ -52,18 +52,18 @@ type HealthServer struct {
 	botUsername string
 }
 
-// ServerConfig holds configuration for the health server.
-type ServerSetupConfig struct {
+// HealthServerConfig holds configuration for the health server.
+type HealthServerConfig struct {
 	Addr    string
 	Version string
 }
 
 var telegramUsernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,32}$`)
 
-// NewServer creates a new health HTTP server.
-func NewHealthServer(cfg ServerConfig, logger *slog.Logger) *Server {
+// NewHealthServer creates a new health HTTP server.
+func NewHealthServer(cfg HealthServerConfig, logger *slog.Logger) *HealthServer {
 	mux := http.NewServeMux()
-	s := &Server{
+	s := &HealthServer{
 		server: &http.Server{
 			Addr:        cfg.Addr,
 			Handler:     mux,
@@ -99,18 +99,18 @@ func NewHealthServer(cfg ServerConfig, logger *slog.Logger) *Server {
 // Mount registers a sub-handler at the given prefix. Used by the API
 // (internal/api) to attach JSON routes under /api/ alongside the existing
 // /, /status, /health endpoints.
-func (s *Server) Mount(prefix string, handler http.Handler) {
+func (s *HealthServer) Mount(prefix string, handler http.Handler) {
 	s.mux.Handle(prefix, handler)
 }
 
 // RegisterProvider adds a named component for health reporting.
-func (s *Server) RegisterProvider(name string, provider HealthStatusProvider) {
+func (s *HealthServer) RegisterProvider(name string, provider HealthStatusProvider) {
 	s.providers[name] = provider
 }
 
 // SetBotUsername lets the unauthenticated login page point the user at the
 // exact Telegram bot for first-run bootstrap and future /login tokens.
-func (s *Server) SetBotUsername(username string) {
+func (s *HealthServer) SetBotUsername(username string) {
 	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
 	if !telegramUsernameRE.MatchString(username) {
 		s.botUsername = ""
@@ -120,7 +120,7 @@ func (s *Server) SetBotUsername(username string) {
 }
 
 // Start starts the HTTP server in a goroutine.
-func (s *Server) Start() {
+func (s *HealthServer) Start() {
 	ln, err := net.Listen("tcp", s.server.Addr)
 	if err != nil {
 		s.logger.Error("failed to start health server", "addr", s.server.Addr, "error", err)
@@ -135,16 +135,16 @@ func (s *Server) Start() {
 }
 
 // Shutdown gracefully stops the HTTP server.
-func (s *Server) Shutdown(ctx context.Context) error {
+func (s *HealthServer) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+func (s *HealthServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := HealthStatus{
 		Status:     "ok",
 		Uptime:     time.Since(s.startTime).Round(time.Second).String(),
 		Version:    s.version,
-		Components: make(map[string]ComponentHealth),
+		Components: make(map[string]HealthComponent),
 	}
 
 	allHealthy := true
@@ -167,12 +167,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *HealthServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
-func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
+func (s *HealthServer) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -194,7 +194,7 @@ func (s *Server) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleTelegramQR(w http.ResponseWriter, r *http.Request) {
+func (s *HealthServer) handleTelegramQR(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

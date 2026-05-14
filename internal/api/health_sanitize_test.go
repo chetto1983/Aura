@@ -10,7 +10,7 @@ import (
 func TestHealthSanitizeHandlerRedactsSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
-	handler := NewHealthHealthSanitizeHandler(inner)
+	handler := NewHealthSanitizeHandler(inner)
 	logger := slog.New(handler)
 
 	logger.Info("test message", "api_key", "sk-secret-12345", "token", "abc123", "username", "alice")
@@ -33,7 +33,7 @@ func TestHealthSanitizeHandlerRedactsSecrets(t *testing.T) {
 func TestHealthSanitizeHandlerPassesNonSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
-	handler := NewHealthHealthSanitizeHandler(inner)
+	handler := NewHealthSanitizeHandler(inner)
 	logger := slog.New(handler)
 
 	logger.Info("test", "user_id", "123", "duration", "5s")
