@@ -95,8 +95,8 @@ func BuildPlan(goal string, opts PlanOptions) (Plan, error) {
 			ToolAllowlist:      cloneStrings(roleReadOnlyTools(role)),
 			Depth:              0,
 			UserID:             opts.UserID,
-			MaxToolCalls:       roleMaxToolCalls(role),
-			MaxToolResultChars: roleMaxToolResultChars(role),
+			MaxToolCalls:       RoleMaxToolCalls(role),
+			MaxToolResultChars: RoleMaxToolResultChars(role),
 			CompleteOnDeadline: true,
 		})
 	}
@@ -242,7 +242,7 @@ func rolePrompt(role, goal string) string {
 	}
 }
 
-func roleMaxToolCalls(role string) int {
+func RoleMaxToolCalls(role string) int {
 	switch role {
 	case "researcher":
 		return 3
@@ -255,7 +255,7 @@ func roleMaxToolCalls(role string) int {
 	}
 }
 
-func roleMaxToolResultChars(role string) int {
+func RoleMaxToolResultChars(role string) int {
 	switch role {
 	case "researcher":
 		return 1800

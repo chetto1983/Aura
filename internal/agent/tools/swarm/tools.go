@@ -208,8 +208,8 @@ func (t *SpawnAuraBotTool) Execute(ctx context.Context, args map[string]any) (st
 			ToolAllowlist:      allowlist,
 			Depth:              0,
 			UserID:             tools.UserIDFromContext(ctx),
-			MaxToolCalls:       roleMaxToolCalls(role),
-			MaxToolResultChars: roleMaxToolResultChars(role),
+			MaxToolCalls:       swarm.RoleMaxToolCalls(role),
+			MaxToolResultChars: swarm.RoleMaxToolResultChars(role),
 			CompleteOnDeadline: true,
 		}},
 	})
@@ -424,25 +424,6 @@ func roleSystemPrompt(role string) string {
 	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available allowed tools. Keep tool use selective, avoid repeated equivalent searches, and always finish with a concise result containing evidence, gaps, and the next useful action."
 }
 
-func roleMaxToolCalls(role string) int {
-	switch role {
-	case "researcher":
-		return 3
-	case "librarian", "synthesizer":
-		return 4
-	case "critic", "skillsmith":
-		return 3
-	default:
-		return 3
-	}
-}
-
-func roleMaxToolResultChars(role string) int {
-	if role == "researcher" {
-		return 1800
-	}
-	return 2400
-}
 
 func workerRolesForPolicy(requested []string, policy DelegationPolicy) []string {
 	policy = policy.Clamp()
