@@ -1,0 +1,222 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura restructure — finish the package re-organization (Step 1 tail + Step 2+) and ship the picobot-discipline modular layout. Master-direct workflow: every story is a SINGLE atomic commit on master, no branches, no PR. Suite must stay green at every commit (go build ./..., go vet ./..., go test ./...).",
+  "userStories": [
+    {
+      "id": "US-101",
+      "title": "Step 1.5a — health → internal/api/health_* with Health* prefix on exports",
+      "description": "Move internal/health/{sanitize,server}.go (+tests) into internal/api/ as health_sanitize.go, health_server.go (+tests). Rename package decl to api. To avoid name collisions inside api/, prefix exports: Server→HealthServer, ServerConfig→HealthServerConfig, ComponentHealth→HealthComponent, SanitizeHandler→HealthSanitizeHandler, NewServer→NewHealthServer, NewSanitizeHandler→NewHealthSanitizeHandler, StatusProvider→HealthStatusProvider, TelegramInfo→HealthTelegramInfo. Critical: rename pattern must be applied in DEPENDENCY ORDER (longest names first) to avoid double-prefix bug (e.g. SanitizeHandler→HealthSanitizeHandler must NOT then match the substring inside NewHealthSanitizeHandler).",
+      "acceptanceCriteria": [
+        "internal/health/ directory does not exist",
+        "internal/api/health_sanitize.go, internal/api/health_server.go exist with `package api`",
+        "All callers (cmd/aura/main.go, internal/logging/zap_slog.go, internal/logging/logging_test.go) updated: drop internal/health import, add internal/api import, rename health.X → api.HealthX",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green (no skipped pre-existing tests)",
+        "Single atomic commit with title `chore(api): merge health → api/health_* with Health* prefix`"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Rolled back once during a bulk Step 1.5 attempt — the rename order bug produced 'NewHealthHealthSanitizeHandler'. Fix by replacing NewSanitizeHandler→NewHealthSanitizeHandler FIRST, then SanitizeHandler→HealthSanitizeHandler (with negative lookbehind: only match SanitizeHandler not preceded by 'NewHealth' or 'Health')."
+    },
+    {
+      "id": "US-102",
+      "title": "Step 1.5b — setup → internal/api/setup_* with Setup* prefix on exports",
+      "description": "Move internal/setup/{dotenv,locale,presets,probe,server}.go + page.html (+tests) into internal/api/ as setup_*.go. Rename package decl to api. To avoid collisions (api would otherwise get a writeJSON duplicate from setup_server.go local helper), rename setup's writeJSON to writeSetupJSON. Prefix exports: Run→SetupRun, Config→SetupConfig (avoids confusion with config.Config), Preset→SetupPreset, LLMPresets→SetupLLMPresets, PresetByID→SetupPresetByID, ProbeProvider→SetupProbeProvider, ProbeResult→SetupProbeResult. Critical: bare `Run` and `Config` exist on setup BUT must be qualified Setup-prefix BEFORE the package merges to avoid clashing inside api.",
+      "acceptanceCriteria": [
+        "internal/setup/ directory does not exist",
+        "internal/api/setup_dotenv.go, setup_locale.go, setup_presets.go, setup_probe.go, setup_server.go, setup_page.html exist with `package api`",
+        "internal/api/setup_server.go has func writeSetupJSON not writeJSON (collision avoided)",
+        "internal/api/setup_server.go go:embed directive points at setup_page.html",
+        "All callers (cmd/aura/main.go, internal/api/settings.go) updated: drop internal/setup import, rename setup.X → api.SetupX",
+        "go build + vet + test all green",
+        "Single atomic commit: `chore(api): merge setup → api/setup_* with Setup* prefix`"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Master plan §1.5 also includes auth merge but auth produces a cycle (tools/auth.go → auth → api → swarm → agent → tools) that needs the auth-as-subpackage approach (US-103). Health (US-101) and setup (US-102) are safe in flat merge."
+    },
+    {
+      "id": "US-103",
+      "title": "Step 1.5c — auth as internal/api/auth/ sub-package (break tools→api cycle)",
+      "description": "Master plan wanted flat auth→api merge, but that creates a cycle: internal/tools/auth.go uses auth.TokenWriter; with auth folded into api, tools imports api, api/router.go imports swarm, swarm imports agent, agent imports tools → cycle. Solution: move auth files to internal/api/auth/ as a SUB-PACKAGE (still `package auth`). This way tools keeps importing `internal/api/auth` (now under api/) without importing api itself. internal/auth/ becomes internal/api/auth/. Move 5 files (middleware.go, middleware_test.go, pending_test.go, store.go, store_test.go) preserving names + package auth declaration. Update all callers' import paths: `\"github.com/aura/aura/internal/auth\"` → `\"github.com/aura/aura/internal/api/auth\"`.",
+      "acceptanceCriteria": [
+        "internal/auth/ directory does not exist",
+        "internal/api/auth/ directory exists with 5 .go files, package decl `package auth`",
+        "tools/auth.go imports internal/api/auth (no cycle — tools is leaf below auth)",
+        "All callers updated: cmd/seed_e2e_env/main.go, internal/api/auth.go, internal/api/chat.go, internal/api/pending.go, internal/api/router.go, internal/telegram/{bot,bot_test,setup}.go",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(api): nest auth → api/auth/ sub-package to break tools→api cycle`"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Honors master plan intent (auth moves under api) without breaking layering. tools/auth.go imports internal/api/auth which is a leaf sub-package; api/router.go can still import auth via the new path. No imports api from tools, no cycle."
+    },
+    {
+      "id": "US-104",
+      "title": "Step 1.6a — qdrant + reindex → storage/ sub-packages (single-purpose, no flat merge)",
+      "description": "Master plan §1.6 said merge search+qdrant+reindex+memoryindex+memoryquality into storage/search/ — but 5 distinct concerns (HTTP qdrant client, vector reindex worker, BM25 search engine, memoryindex compact store, memory quality audit) DO NOT belong in one god-package. Use storage/ as a NAMESPACE: storage/qdrant/, storage/reindex/. Move internal/qdrant/ → internal/storage/qdrant/ (keep `package qdrant`). Move internal/reindex/ → internal/storage/reindex/ (keep `package reindex`). Update import paths only — package decls unchanged. Smallest-scope first: just these 2 (least caller surface).",
+      "acceptanceCriteria": [
+        "internal/qdrant/ and internal/reindex/ do not exist",
+        "internal/storage/qdrant/ and internal/storage/reindex/ exist with original package decls",
+        "All callers updated to new import path",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(storage): move qdrant + reindex under internal/storage/`"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Storage-as-namespace approach avoids the god-package risk that bit Step 1.5. Each Aura storage subsystem keeps its own package; storage/ is just a folder grouping."
+    },
+    {
+      "id": "US-105",
+      "title": "Step 1.6b — search + memoryindex + memoryquality → storage/ sub-packages",
+      "description": "Continue storage/ grouping. Move internal/search/ → internal/storage/search/, internal/memoryindex/ → internal/storage/memoryindex/, internal/memoryquality/ → internal/storage/memoryquality/. Keep ALL package decls unchanged. Update import paths.",
+      "acceptanceCriteria": [
+        "internal/search/, internal/memoryindex/, internal/memoryquality/ do not exist",
+        "internal/storage/search/, internal/storage/memoryindex/, internal/storage/memoryquality/ exist",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(storage): move search + memoryindex + memoryquality under internal/storage/`"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-106",
+      "title": "Step 1.6c — source + ocr + ingest + markitdown → storage/sources/ sub-group",
+      "description": "Move internal/source/ → internal/storage/sources/store/ (keep `package source` — caller sites already use that name). Move internal/ocr/ → internal/storage/sources/ocr/, internal/ingest/ → internal/storage/sources/ingest/, internal/markitdown/ → internal/storage/sources/markitdown/. Two-level grouping (storage/sources/<type>) reflects the actual structure: sources have a store + extraction pipelines on top.",
+      "acceptanceCriteria": [
+        "internal/source/, internal/ocr/, internal/ingest/, internal/markitdown/ do not exist",
+        "internal/storage/sources/{store,ocr,ingest,markitdown}/ exist with original package decls",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(storage): move source + ocr + ingest + markitdown under internal/storage/sources/`"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "After US-104+105+106 the storage/ namespace contains: qdrant, reindex, search, memoryindex, memoryquality, sources/store, sources/ocr, sources/ingest, sources/markitdown. internal/wiki/ stays at top level by design (wiki IS the graph — see project_graph_memory_core_strategy memory)."
+    },
+    {
+      "id": "US-201",
+      "title": "Step 2 — rename internal/chathub → internal/chat + adapters → internal/channels/",
+      "description": "git mv internal/chathub → internal/chat. git mv internal/chat/adapters → internal/channels (extract from chat/). Sub-cartelle: internal/channels/telegram/, internal/channels/web/, internal/channels/silent/. Rename package declarations in moved files. DELETE internal/chathub/adapters/telegram/outbound.go (the regression that loses CoT + entity rendering — see master plan §1, scheduled rebuild in Step 4). Update all import paths across the repo.",
+      "acceptanceCriteria": [
+        "internal/chathub/ does not exist (anywhere in tree)",
+        "internal/chat/ exists with hub.go, types.go, agentloop.go",
+        "internal/channels/{telegram,web,silent}/ exist",
+        "internal/channels/telegram/outbound.go does NOT exist (regression deleted)",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(chat): rename chathub → chat + adapters → channels/`"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Per master plan §4 Step 2."
+    },
+    {
+      "id": "US-301",
+      "title": "Step 3 — Telegram record-and-replay fixture for streaming edits",
+      "description": "Create internal/channels/telegram/fixture/ with mockBot.go (implements tele.API: Send/Edit/SendDocument recording every call), helper Capture(t, scenario, builder) that runs streaming.go::consumeStream against the current Telegram path, snapshots the captured edit sequence to testdata/<scenario>.json. 3 scenarios: simple_reply, with_cot, with_tool_call_and_entity_table. This is the GATE for Step 4 byte-comparison test (Reviewer 1 F12 promoted).",
+      "acceptanceCriteria": [
+        "internal/channels/telegram/fixture/mockBot.go exists with tele.API mock",
+        "3 testdata/*.json snapshot files committed",
+        "Helper Capture(t, scenario, builder) returns deterministic JSON",
+        "go test ./internal/channels/telegram/fixture/... green",
+        "Single atomic commit: `test(channels/telegram): record-and-replay fixture per streaming edits`"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Prerequisite for Step 4 (US-401). Without fixture, the streaming.go port has no byte-comparison gate."
+    },
+    {
+      "id": "US-401",
+      "title": "Step 4 — port streaming.go as channels/telegram/outbound + wire Web Hub adapter + AURA_USE_HUB flag",
+      "description": "(a) Port internal/telegram/streaming.go::consumeStream as internal/channels/telegram/outbound.go implementing chat.OutboundAdapter. PRESERVE: 600ms throttle, CoT (`🧠 _cot_`), renderForTelegramEntities, entity fallback. Byte-comparison against US-301 fixture snapshots MUST diff = 0. (b) Wire internal/api/chat.go via webch.NewInbound + chat.Hub.ReceiveMessage behind env flag AURA_USE_HUB=false (default). Telegram stays on legacy path until later step. (c) Document collapse: ChatReply.tokens = Prompt + Completion in JSON shape.",
+      "acceptanceCriteria": [
+        "internal/channels/telegram/outbound.go exists, implements chat.OutboundAdapter",
+        "Fixture byte-diff vs US-301 snapshots = 0 (all 3 scenarios)",
+        "AURA_USE_HUB env flag wired in cmd/aura/main.go (or wherever boot is)",
+        "/api/chat returns identical JSON shape: {reply, elapsed_ms, llm_calls, tool_calls, tokens}",
+        "cmd/probe_chat green with AURA_USE_HUB=true (web path)",
+        "cmd/probe_chat green with AURA_USE_HUB=false (legacy path)",
+        "go build + vet + test green",
+        "Single atomic commit: `refactor(channels/telegram): port streaming.go as outbound + Web Hub flag`"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "High-risk step — Telegram production behavior. Mitigation: flag default false; only flip after manual smoke."
+    },
+    {
+      "id": "US-501",
+      "title": "Step 5 — extract conversation/governance + merge agentloop+agentruntime → internal/agent",
+      "description": "(a) Extract agentloop.applyGovernance + MicrocompactPolicy + ToolResultLimitPolicy into internal/agent/governance/ as a sub-package. conversation.Context.EnforceLimit + CompactCompletedToolResults delegate to governance.Apply. Table tests cover microcompact KeepRecent + ToolResultLimit + edge cases. (b) git mv internal/agentloop/* → internal/agent/loop.go (consolidate into one file, package agent). git mv internal/agentruntime/* → internal/agent/runtime.go. Rename agentruntime.Run → agent.Run. Update import paths everywhere.",
+      "acceptanceCriteria": [
+        "internal/agentloop/ and internal/agentruntime/ do not exist",
+        "internal/agent/{loop,runtime}.go + internal/agent/governance/ exist",
+        "go test -race ./... green",
+        "governance_test.go covers microcompact + ToolResultLimit + edge cases",
+        "Single atomic commit: `refactor(agent): extract governance + merge agentloop+agentruntime`"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "agent.Runner already killed by Ralph in a prior iter (commit 422cf360). This step finishes the agent/ consolidation. After this, internal/agent has: loop.go, runtime.go, state.go, executor.go, runner.go (thin adapter), governance/."
+    },
+    {
+      "id": "US-701",
+      "title": "Step 7a — rename internal/scheduler → internal/cron",
+      "description": "git mv internal/scheduler → internal/cron. Sub-cartelle internal/cron/jobs/, internal/cron/maintenance/, internal/cron/tick/. Update all import paths. Package declarations stay `package scheduler` initially — rename to `package cron` in a follow-up if it doesn't cascade too far.",
+      "acceptanceCriteria": [
+        "internal/scheduler/ does not exist",
+        "internal/cron/ exists with subfolders",
+        "go build + vet + test green",
+        "Single atomic commit: `chore(cron): rename scheduler → cron`"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-702",
+      "title": "Step 7b — merge tools + toolindex + toolsets + swarmtools → internal/agent/tools/",
+      "description": "Master plan §7 says merge these 4 tool-related packages into internal/agent/tools/. tools has 60+ files (registry, individual tool implementations); toolindex has the reconciler; toolsets has presets; swarmtools has swarm-specific tools. Approach as sub-packages: agent/tools/<original-name>/. Move bulk-files but keep original package decls (e.g. agent/tools/registry stays `package tools`). Update import paths.",
+      "acceptanceCriteria": [
+        "internal/tools/, internal/toolindex/, internal/toolsets/, internal/swarmtools/ do not exist",
+        "internal/agent/tools/{registry,index,sets,swarm}/ exist with original package decls",
+        "go build + vet + test green",
+        "Single atomic commit: `refactor(agent/tools): consolidate tool packages under agent/tools/`"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Large surface — many imports to update. Consider splitting into 4 sub-commits internally if size becomes unwieldy."
+    },
+    {
+      "id": "US-703",
+      "title": "Step 7c — swarm via chat.Hub (parent_run_id propagation)",
+      "description": "Add chat.Channel = \"swarm\" + silentch.NewSwarm outbound. Build swarmHubBridge (~40 LOC) implementing swarm.AgentRunner by translating agent.Task → chat.InboundMessage{Channel: swarm}. Output via Router.WaitForRun(runID) helper. Parent run_id propagates to children.",
+      "acceptanceCriteria": [
+        "swarm.Manager dispatches via Hub instead of direct agent.Run call",
+        "New chat.Channel = \"swarm\" constant defined",
+        "internal/swarm/hub_e2e_test.go: parent run + 3 child run, verify parent_run_id present in children",
+        "go test ./internal/swarm/... ./internal/chat/... green",
+        "Single atomic commit: `refactor(swarm): dispatch via chat.Hub with parent_run_id propagation`"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-704",
+      "title": "Step 7d — Telegram via Hub behind AURA_USE_HUB=true flag",
+      "description": "Wire Telegram update handler through chat.Hub.Receive when AURA_USE_HUB=true. Default flag stays false (legacy path). Smoke test: with flag=true, send a Telegram message → CoT visible + fixture byte-diff = 0.",
+      "acceptanceCriteria": [
+        "Telegram message handler reads AURA_USE_HUB env flag",
+        "With flag=true, message goes through chat.Hub.Receive",
+        "With flag=false, message uses legacy handleConversation path (unchanged)",
+        "Fixture byte-diff with flag=true vs flag=false = 0",
+        "Single atomic commit: `refactor(telegram): wire Hub path behind AURA_USE_HUB flag`"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Manual soak 48h before flipping default to true. Don't flip the default in this commit."
+    }
+  ]
+}
