@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/llm"
 
@@ -190,7 +191,7 @@ func debugTextSmokeResultFromMessages(userID, prompt string, messages []llm.Mess
 				result.ExecuteShellCalls++
 				result.SandboxUsed = true
 			case "read_file":
-				if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
+				if skill := agent.SkillNameFromReadFileArgs(call.Arguments); skill != "" {
 					result.SkillsRead = true
 					result.ReadSkills = appendUniqueStrings(result.ReadSkills, skill)
 				}

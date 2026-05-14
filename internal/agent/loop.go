@@ -350,7 +350,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			switch call.Name {
 			case "file":
 				if action, _ := call.Arguments["action"].(string); action == "read" {
-					if skill := skillNameFromReadFileArgs(call.Arguments); skill != "" {
+					if skill := SkillNameFromReadFileArgs(call.Arguments); skill != "" {
 						stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, skill)
 						stats.SkillsRead = true
 					}
@@ -614,7 +614,7 @@ func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.T
 	}
 }
 
-func skillNameFromReadFileArgs(args map[string]any) string {
+func SkillNameFromReadFileArgs(args map[string]any) string {
 	value, ok := args["path"]
 	if !ok {
 		return ""

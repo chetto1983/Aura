@@ -2,8 +2,6 @@ package telegram
 
 import (
 	"encoding/json"
-	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -45,26 +43,6 @@ func orderToolDefinitionsForAllowlist(defs []llm.ToolDefinition, allowlist []str
 		return left < right
 	})
 	return out
-}
-
-func skillNameFromReadFileArgs(args map[string]any) string {
-	value, ok := args["path"]
-	if !ok {
-		return ""
-	}
-	path := strings.TrimSpace(fmt.Sprint(value))
-	if path == "" {
-		return ""
-	}
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
-		return ""
-	}
-	name := strings.TrimSpace(parts[len(parts)-2])
-	if name == "" || strings.EqualFold(name, "skills") {
-		return ""
-	}
-	return name
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {

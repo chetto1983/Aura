@@ -591,7 +591,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 			}
 			readSkillName := ""
 			if err == nil && tc.Name == "read_file" {
-				readSkillName = skillNameFromReadFileArgs(tc.Arguments)
+				readSkillName = agent.SkillNameFromReadFileArgs(tc.Arguments)
 			}
 			terminalTool := ""
 			if err == nil && b.terminalToolPolicyEnabled() && isTerminalTool(tc.Name) {
