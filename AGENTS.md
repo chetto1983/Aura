@@ -30,6 +30,70 @@ operational means:
 
 Conversation context is not durable state. Reconstruct state from files.
 
+## Architecture Decisions To Preserve
+
+### Cache Plane
+
+Aura's cache is a separate plane, not part of canonical state.
+
+- Default L1 cache: bounded process-local disposable cache for hot reads.
+- Default L2 cache: dedicated SQLite cache database such as `cache.db`.
+- Large cached payloads: content-addressed filesystem blobs plus SQLite
+  metadata.
+- The canonical run/event database must not absorb cache churn.
+- Never store runs, run events, workflow steps, outbox/inbox state, questions,
+  approvals, identity grants, memory write authority, delivery status, or
+  side-effect state as cache entries.
+- Embeddings, OCR/extract outputs, rendered prompt/tool blocks, tool schemas,
+  query vectors, and expensive retrieval intermediates are valid cache domains.
+- Existing `embedding_cache` in the main database is only a compatibility
+  bridge. The target architecture moves deterministic caches behind the cache
+  plane.
+- Cache deletion must be a supported recovery path. If deleting the cache
+  changes what Aura believes to be true, the design is wrong.
+- Do not introduce Badger, bbolt, Valkey, Redis, or another cache backend unless
+  a measured slice proves SQLite cache storage is the limiting factor.
+
+### Transaction Boundaries
+
+Aura does not use distributed transactions across SQLite, filesystem, Qdrant,
+cache, chat channels, or external tools.
+
+- Every operation must name its canonical store before implementation.
+- Keep SQLite transactions short and local: append events, update snapshots, and
+  enqueue workflow/outbox work. Do not hold DB transactions across network calls
+  or long filesystem work.
+- External delivery and risky side effects run after commit through durable
+  workflow/outbox rows with idempotency keys.
+- If a side effect is `unknown`, reconcile, ask, compensate, or fail with an
+  auditable reason. Never retry blindly.
+- Qdrant, FTS, RAG indexes, and cache are rebuildable projections.
+- Filesystem writes must be content-addressed or temp-file-plus-rename. Orphaned
+  blobs are acceptable only when they are garbage-collectable.
+- Volatile queues are allowed only when canonical state can reconstruct the work.
+
+### Memory Layers
+
+Do not treat "memory" as one bucket.
+
+- Runtime continuity: active run context, thread/session state, run event log,
+  conversation archive, and agent working memory are separate layers.
+- User/project knowledge: user profile memory, project decision memory, source
+  corpus, knowledge wiki, wiki schema/control files, wiki index/log, and derived
+  artifacts have different write rules.
+- Aura learning/procedure: operational memory, raw experience store, proposal
+  queue, and skills are separate from user memory.
+- Retrieval and acceleration: RAG collection registry, RAG indexes, and cache are
+  projections or support systems, not canonical memory.
+- Ambiguous user-memory writes require the normal question flow. Do not invent a
+  Telegram-only memory approval path.
+- Raw tool failures go to experience/learning. Only validated repeated lessons
+  may become operational memory, skills, or tool policy.
+- The wiki is curated knowledge. Do not put chat logs, raw tool failures, private
+  scratchpad notes, or heartbeat/status noise into it.
+- Schema/control files such as AGENTS.md, CLAUDE.md, and wiki schema docs change
+  future agent behavior. Edit them deliberately and with evidence.
+
 ## Mandatory Startup For Aura Work
 
 For architecture, refactor, loop, agent, Telegram, tool, runtime, or storage

@@ -99,9 +99,8 @@ func Capture(t *testing.T, name string, tokens []llm.Token, placeholder *tele.Me
 
 // newFakeServer returns an httptest.Server that records every Telegram Bot API
 // call into calls and replies with a minimal valid message JSON so the bot
-// library does not error. Requests are sequential (consumeStream makes each
-// HTTP call synchronously), so a mutex protects calls and the message-ID
-// counter against the race detector rather than against real concurrency.
+// library does not error. A mutex protects calls and the message-ID counter
+// against the race detector.
 func newFakeServer(t *testing.T, calls *[]APICall) *httptest.Server {
 	t.Helper()
 	var mu sync.Mutex

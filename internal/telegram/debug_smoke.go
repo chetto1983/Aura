@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/llm"
 
 	tele "gopkg.in/telebot.v4"
@@ -106,10 +107,15 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 	budgetBefore := b.BudgetStatus()
 	start := time.Now()
 
+	if b.hub == nil {
+		return DebugTextSmokeResult{UserID: userIDString, Prompt: prompt}, errors.New("debug smoke: hub not initialized")
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		b.handleConversation(c)
+		if _, err := b.hub.Receive(context.Background(), chat.ChannelTelegram, c); err != nil {
+			b.logger.Error("debug smoke: hub receive failed", "user_id", userIDString, "error", err)
+		}
 	}()
 
 	select {

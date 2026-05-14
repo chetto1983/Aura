@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
 	tele "gopkg.in/telebot.v4"
 )
@@ -41,13 +42,27 @@ func (b *Bot) onMessage(c tele.Context) error {
 	gate := b.userGate()
 	if gate == nil {
 		// Fallback: UserGate not configured (tests, edge case); use direct goroutine.
-		go b.handleConversation(c)
+		go func() {
+			if b.hub == nil {
+				b.logger.Error("hub not initialized, dropping message", "user_id", userID)
+				return
+			}
+			if _, err := b.hub.Receive(context.Background(), chat.ChannelTelegram, c); err != nil {
+				b.logger.Error("hub receive failed", "user_id", userID, "error", err)
+			}
+		}()
 		return nil
 	}
 
 	entry := concurrency.Entry{
 		Process: func(_ context.Context) {
-			b.handleConversation(c)
+			if b.hub == nil {
+				b.logger.Error("hub not initialized, dropping message", "user_id", userID)
+				return
+			}
+			if _, err := b.hub.Receive(context.Background(), chat.ChannelTelegram, c); err != nil {
+				b.logger.Error("hub receive failed", "user_id", userID, "error", err)
+			}
 		},
 	}
 

@@ -862,12 +862,7 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
-		// Chat pipe for /api/chat. When AURA_USE_HUB=true the request is
-		// routed through chat.Hub + the web adapter (experimental; default
-		// false — Telegram stays on the legacy path until US-704).
-		// When false (or unset), falls back to the direct chatPipeService
-		// that drives agent.Runner inline.
-		Chat: buildChatService(auraRunner, toolRegistry, logger),
+		Chat: NewWebChatService(auraRunner, toolRegistry),
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is

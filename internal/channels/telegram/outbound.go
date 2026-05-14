@@ -32,10 +32,9 @@ const (
 	streamingEditThrottle = 600 * time.Millisecond
 )
 
-// Outbound implements chat.OutboundAdapter for the Telegram streaming channel.
-// It drives progressive Telegram message edits via ConsumeStream (token-channel
-// path used by the legacy bot and the US-301 fixture).  The event-based
-// Deliver path is wired in US-704.
+// Outbound implements chat.OutboundAdapter for the Telegram channel.
+// Progressive message streaming happens inside telegramHubChatClient.Chat
+// (internal/telegram), so Deliver only needs to log operational events.
 type Outbound struct {
 	logger *slog.Logger
 }
@@ -53,15 +52,34 @@ func NewOutbound(logger *slog.Logger) *Outbound {
 func (*Outbound) Channel() chat.Channel   { return chat.ChannelTelegram }
 func (*Outbound) Mode() chat.DeliveryMode { return chat.DeliveryModeStreaming }
 
-// Deliver is the event-based outbound path.  The Telegram streaming path uses
-// ConsumeStream (token channel), so Deliver is a no-op until US-704 wires the
-// tele.Context lookup per RunID.
-func (*Outbound) Deliver(_ context.Context, _ chat.OutboundEvent) error { return nil }
+// Deliver logs operational events. Streaming is handled inside
+// telegramHubChatClient.Chat (internal/telegram), so this adapter only
+// needs to surface errors and usage stats for operators.
+func (o *Outbound) Deliver(_ context.Context, ev chat.OutboundEvent) error {
+	switch ev.Type {
+	case chat.EventError:
+		errText, _ := ev.Payload["error"].(string)
+		o.logger.Warn("telegram run error",
+			"run_id", ev.RunID,
+			"thread_id", ev.ThreadID,
+			"error", errText,
+		)
+	case chat.EventUsage:
+		args := []any{"run_id", ev.RunID}
+		for _, k := range []string{"llm_calls", "tool_calls", "tokens_total", "cost_usd", "terminal_tool"} {
+			if v, ok := ev.Payload[k]; ok {
+				args = append(args, k, v)
+			}
+		}
+		o.logger.Info("telegram run usage", args...)
+	}
+	return nil
+}
 
 // ConsumeStream reads tokens from ch and progressively edits a Telegram message
-// as text accumulates.  It is a faithful port of
-// internal/telegram.Bot.consumeStream; the logic is byte-identical so that
-// US-301 fixture snapshots remain valid.
+// as text accumulates. Used by the US-301 fixture for record-and-replay tests;
+// the logic mirrors telegramHubChatClient.streamTokens so fixture snapshots
+// remain valid.
 //
 // Returns an llm.Response shaped like the one llm.Client.Send would have
 // produced, plus a delivered flag (true when a Telegram message was sent and

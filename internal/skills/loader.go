@@ -96,9 +96,9 @@ func (l *Loader) Invalidate() {
 // skills from the prompt. When the same skill name appears in two
 // roots, the first one wins (matching LoadByName precedence).
 //
-// Results are memoized for cacheTTL — Aura's hot path (handleConversation
-// on every Telegram message) was re-reading and re-parsing every
-// SKILL.md per turn even though skills only change on admin actions.
+// Results are memoized for cacheTTL — the agent hot path re-reads every
+// SKILL.md per turn; caching keeps skill loading off the critical path
+// since skills only change on admin actions.
 func (l *Loader) LoadAll() ([]Skill, error) {
 	l.cacheMu.RLock()
 	if l.cached != nil && time.Since(l.cachedAt) < cacheTTL {

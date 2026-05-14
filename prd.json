@@ -224,7 +224,7 @@
         "Single atomic commit: `refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streaming/chat_service — Hub is the only path`"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "User explicitly chose the aggressive cleanup: skip soak, kill flag, delete legacy. The fixture from US-301 + outbound port from US-401 give byte-level confidence the Hub path matches. If Telegram tests break after deletion AND the test asserted on internal-legacy-paths (e.g. mocked handleConversation directly), DELETE those tests too — they tested the legacy implementation, not behavior. If a test asserts on behavior (e.g. 'sending message X produces reply Y'), keep it and route through Hub. After this commit, internal/telegram/ should contain only: bot.go (Telegram tele.Bot wrapper + update handlers that call Hub), maybe access.go (allowlist), maybe commands.go (slash commands). Setup.go's body should stay for now (it's the composition root work, scheduled for Step 8 / a later cleanup)."
     }
   ]

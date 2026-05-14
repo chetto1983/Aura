@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/api"
+	telegramadapter "github.com/aura/aura/internal/channels/telegram"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
@@ -346,6 +347,19 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	bot, err := telegram.New(cfg, settingsStore, pool, logger, telegram.WithRestart(restart))
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("create telegram bot: %w", err)
+	}
+
+	// Wire the Telegram Hub. Adapters live in internal/channels/telegram which
+	// imports internal/telegram, so this must be done at the cmd layer to avoid
+	// an import cycle.
+	{
+		hub, hubErr := bot.NewHub(logger)
+		if hubErr != nil {
+			return nil, activeLogger, fmt.Errorf("create telegram hub: %w", hubErr)
+		}
+		hub.RegisterInbound(telegramadapter.New())
+		hub.RegisterOutbound(telegramadapter.NewOutbound(logger))
+		bot.SetHub(hub)
 	}
 
 	healthServer.SetBotUsername(bot.Username())

@@ -358,60 +358,6 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	}
 }
 
-func TestRunToolCallingLoopExecutesSandboxWithoutRetry(t *testing.T) {
-	reg := tools.NewRegistry(nil)
-	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
-	reg.Register(exec)
-	fake := &scriptedTelegramLLM{responses: []llm.Response{
-		{
-			ToolCalls: []llm.ToolCall{{ID: "exec-early", Name: "execute_code"}},
-		},
-		{Content: "5050"},
-	}}
-	b := &Bot{
-		cfg:   &config.Config{},
-		llm:   fake,
-		tools: reg,
-	}
-	convCtx := conversation.NewContext(conversation.Config{})
-	convCtx.AddUserMessage("Use execute_code to compute sum(range(1, 101)).")
-	allowlist := []string{"execute_code"}
-
-	response, stats := b.runToolCallingLoop(context.Background(), nil, convCtx, "1148481707", nil, allowlist, agentPromptPlan{
-		Version: "test",
-		Hash:    "hash",
-	}, false)
-
-	if response != "5050" {
-		t.Fatalf("response = %q, want 5050", response)
-	}
-	if stats.terminalTool != "execute_code" {
-		t.Fatalf("terminalTool = %q, want execute_code", stats.terminalTool)
-	}
-	if len(stats.readSkills) != 0 {
-		t.Fatalf("readSkills = %+v, want none", stats.readSkills)
-	}
-	if exec.calls != 1 {
-		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
-	}
-	// Terminal-tool turns now always end with an LLM finalize call (no canned
-	// formatter shortcut). Expect 2 LLM requests: the first emits the tool
-	// call, the second synthesizes the natural-language answer (tools=nil).
-	if len(fake.requests) != 2 {
-		t.Fatalf("LLM requests = %d, want 2 (initial + terminal-tool finalize)", len(fake.requests))
-	}
-	// Deferred-tools rollout (2026-05-12): the always-on seed is just
-	// tool_search; execute_code reaches the executor via the permissive
-	// load path (ToolResolver wired to Registry.DefinitionFor). The
-	// fixture registry above does not register tool_search, so the
-	// seed is empty here — what matters is the executor still saw
-	// execute_code and dispatched correctly, asserted on exec.calls
-	// above.
-	_ = fake.requests[0].Tools
-	if len(fake.requests[1].Tools) != 0 {
-		t.Fatalf("finalize request must run with tools=nil, got %+v", fake.requests[1].Tools)
-	}
-}
 
 func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *testing.T) {
 	b := &Bot{cfg: &config.Config{AgentLoopMaxSteps: 8}}
@@ -512,35 +458,6 @@ func (t *errorTelegramTool) Execute(context.Context, map[string]any) (string, er
 	return "", fmt.Errorf("shell command failed (exit=1): find: '/home/user': No such file or directory")
 }
 
-type scriptedTelegramLLM struct {
-	responses []llm.Response
-	requests  []llm.Request
-}
-
-func (f *scriptedTelegramLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
-	f.requests = append(f.requests, req)
-	if len(f.requests) <= len(f.responses) {
-		return f.responses[len(f.requests)-1], nil
-	}
-	return llm.Response{}, nil
-}
-
-func (f *scriptedTelegramLLM) Stream(_ context.Context, req llm.Request) (<-chan llm.Token, error) {
-	f.requests = append(f.requests, req)
-	resp := llm.Response{}
-	if len(f.requests) <= len(f.responses) {
-		resp = f.responses[len(f.requests)-1]
-	}
-	ch := make(chan llm.Token, 1)
-	ch <- llm.Token{
-		Content:   resp.Content,
-		ToolCalls: resp.ToolCalls,
-		Usage:     resp.Usage,
-		Done:      true,
-	}
-	close(ch)
-	return ch, nil
-}
 
 func TestTerminalToolFinalizationMessagesAppendsLLMPrompt(t *testing.T) {
 	messages := []llm.Message{

@@ -72,6 +72,7 @@ internal/
   workflow/       durable tool execution, retries, idempotency, compensation
   learning/       tool experience, self-healing lessons, promotion workflow
   rag/            schema-aware retrieval, hybrid search, rerank, citations
+  cache/          disposable acceleration, cache policy, cache metrics
   memory/         wiki semantics, recall behavior, memory policy
   storage/        sqlite, qdrant, artifacts, sources, indexes
   cron/           scheduled entrypoint into chat/agent
@@ -231,6 +232,49 @@ run_outbox
   id, run_id, event_id, target, idempotency_key
   payload_json, status, attempts, next_attempt_at, last_error, created_at
 ```
+
+Transaction boundary policy:
+
+- Aura does not use distributed transactions across SQLite, filesystem, Qdrant,
+  chat channels, cache, or external tools,
+- every operation names its canonical store before implementation,
+- SQLite transactions stay short and local; they may append events, update
+  snapshots, and enqueue workflow/outbox work, but must not hold locks across
+  network calls or long filesystem work,
+- external delivery and side effects are performed after commit by durable
+  workflow/outbox workers,
+- completion, failure, cancellation, or unknown side-effect state is recorded in
+  a later transaction,
+- blind retry is forbidden when `side_effect_state = unknown`; Aura must
+  reconcile, ask, compensate, or fail with an auditable reason,
+- volatile queues are allowed only when canonical state can reconstruct the
+  latest needed work.
+
+Source-of-truth matrix:
+
+```text
+run execution          SQLite run_events; runs is a snapshot
+workflow execution     SQLite workflow tables
+outbound delivery      outbox rows for Aura intent/attempts/result
+inbound messages       inbox/idempotency records
+questions/approvals    durable question state linked to run_events
+identity/grants        identity SQLite repositories
+source corpus          content-addressed raw files plus source metadata
+artifacts              content-addressed filesystem blobs plus metadata
+wiki memory            Markdown/filesystem governed by memory policy
+rag indexes            rebuildable FTS/Qdrant projections
+cache                  disposable cache plane, never truth
+learning               structured observations until promoted
+```
+
+Implementation pattern:
+
+```text
+commit canonical intent -> execute side effect -> record observation/result
+```
+
+Deletion and forget flows use intent or tombstone records when user-visible truth
+changes before derived stores can be purged.
 
 Do not event-source all of Aura. Wiki pages, source files, indexes, and tool artifacts keep their own source-of-truth rules. The run/event store is the backbone for execution, questions, observability, learning, cron, and swarm.
 
@@ -507,29 +551,62 @@ It must not own:
 
 The key rule:
 
-> The Markdown wiki is the readable memory projection. Search/vector/index state is rebuildable support, not the product truth.
+> The Markdown wiki is the readable curated memory artifact. Raw sources, structured decisions, and run events remain evidence. Search/vector/index/cache state is support, not product truth.
 
-Memory layers:
+Memory layers are grouped by purpose:
 
 ```text
-active run context        runtime only, not source of truth
-conversation archive      audit/history, consolidation input
-user memory               stable user facts, preferences, constraints
-knowledge wiki            curated pages, concepts, syntheses, decisions
-source corpus             raw files, OCR/extracts, page spans, provenance
-Aura operational memory   tool lessons, failed approaches, open questions
-skills                    procedural knowledge and workflows
-RAG indexes               rebuildable projections over durable layers
+Runtime continuity
+active_run_context        current prompt/messages/tool observations; runtime only
+thread_session_state      thread metadata, current focus, pending question refs
+run_event_log             append-only causal execution record
+conversation_archive      turns, compact summaries, cited evidence for consolidation
+agent_working_memory      agent_note scratchpad + pinned core block; per conversation
+
+User/project knowledge
+user_profile_memory       stable user facts, preferences, constraints, identity notes
+project_decision_memory   PRD, ADRs, open questions, roadmap/progress decisions
+source_corpus             raw files, OCR/extracts, page spans, immutable provenance
+knowledge_wiki            curated pages, concepts, syntheses, comparisons, analyses
+wiki_schema_control       AGENTS/CLAUDE/wiki schema, conventions, templates, workflows
+wiki_index_log            index.md catalog plus log.md chronological wiki operations
+derived_artifacts         reports, charts, decks, generated files, query outputs
+
+Aura learning/procedure
+operational_memory        validated Aura lessons, failed approaches, policy notes
+experience_store          raw tool attempts, recoverable errors, retries, feedback
+proposal_queue            review-gated candidate wiki/user/skill/operational updates
+skills                    procedural knowledge and reusable workflows
+
+Retrieval/projections
+rag_collection_registry   layer schemas, fields, filters, citation formats
+rag_indexes               FTS/Qdrant/chunks; rebuildable retrieval projections
+cache_plane               embeddings/OCR/prompt/tool-result cache; not memory
+```
+
+Layer movement is explicit, never accidental:
+
+```text
+source_corpus -> knowledge_wiki        via ingest or curated synthesis
+conversation_archive -> user/project   via validated consolidation or question flow
+experience_store -> operational/skills via repeated-success validation
+derived_artifacts -> wiki/source       only when intentionally filed or attached
+proposal_queue -> durable layer        only after approval or policy-backed acceptance
 ```
 
 Write policy:
 
-- user memory requires explicit intent, validation, or a question when ambiguous,
+- user profile memory requires explicit intent, validation, or a question when ambiguous,
 - user memory writes require `memory.user.write` or a narrower capability grant,
+- project decision memory is changed through PRD/ADR/progress edits, not casual chat recall,
+- agent working memory can be written by Aura during a run, but it is scoped and garbage-collected with the conversation lifecycle,
 - operational memory belongs to Aura and must not pollute the user wiki,
+- raw tool failures live in `experience_store`; only validated lessons may be promoted,
 - source corpus is immutable evidence until curated,
-- wiki pages are curated knowledge, not chat logs or raw tool failures,
-- indexes are disposable projections.
+- wiki pages are curated knowledge, not chat logs, raw tool failures, or private scratchpad noise,
+- wiki schema/control files are edited deliberately because they change future agent behavior,
+- proposal queue entries keep provenance, evidence, target layer, proposed action, and review state,
+- indexes and cache are disposable projections.
 
 ### 5.8 `internal/learning`
 
@@ -644,7 +721,59 @@ The tool surface should avoid `memory(mode=...)`. Prefer task-level tools:
 
 A federated recall path is allowed only if every hit keeps its layer label and citation handle.
 
-### 5.10 `internal/storage`
+### 5.10 `internal/cache`
+
+Cache is acceleration, not memory and not truth.
+
+It owns:
+
+- cache namespaces,
+- cache keys,
+- TTL and eviction policy,
+- hit/miss/size metrics,
+- persistent cache metadata,
+- cache pruning,
+- cache corruption handling,
+- process-local hot cache adapters,
+- durable cache backend adapters.
+
+It must not own:
+
+- run/event truth,
+- workflow truth,
+- outbox/inbox truth,
+- identity grants,
+- question state,
+- memory semantics,
+- delivery status,
+- side-effect state.
+
+The key rule:
+
+> A cache can disappear without changing what Aura knows to be true.
+
+Default cache architecture:
+
+```text
+L1 process cache      bounded, disposable, cost-aware in-memory cache
+L2 persistent cache   dedicated SQLite cache database
+large payload cache   content-addressed files plus SQLite metadata
+```
+
+Cache policy:
+
+- cache is never authoritative,
+- cache writes are best-effort and must not roll back canonical writes,
+- persistent cache lives outside the canonical run/event database,
+- cache keys include namespace, content hash, producer version, model/provider identity, output dimension where relevant, schema version, codec version, and redaction class,
+- embeddings, OCR/extract outputs, rendered prompt/tool blocks, tool schemas, and expensive retrieval intermediates are valid cache domains,
+- runs, events, workflow steps, outbox/inbox, questions, approvals, identity grants, memory write authority, delivery status, and side-effect state are not cache domains,
+- cache deletion must be a supported recovery operation,
+- Badger, bbolt, Valkey, or Redis are backend options only after measured contention or scale requires them.
+
+The existing `embedding_cache` table is a compatibility bridge. The target shape is a cache plane that can move deterministic caches into a separate `cache.db` or equivalent cache namespace without changing agent semantics.
+
+### 5.11 `internal/storage`
 
 Storage is persistence infrastructure.
 
@@ -675,7 +804,7 @@ Persistence implementation policy:
 - run/event, outbox, identity grants, FTS/RAG, recovery, backups, and migrations must keep explicit SQL,
 - ORM-style helpers may be considered only for isolated, non-critical CRUD after a spike proves they do not weaken migrations, transactions, logging, or testability.
 
-### 5.11 `internal/cron`
+### 5.12 `internal/cron`
 
 Cron is a scheduled entrypoint.
 
@@ -697,7 +826,7 @@ Cron should submit work into `chat` or `agent` through the same contracts used b
 
 Scheduled work must run as a delegated actor with explicit capabilities, expiry, and notification policy. A cron job is never implicitly the owner.
 
-### 5.12 `internal/api`
+### 5.13 `internal/api`
 
 API is an external surface.
 
