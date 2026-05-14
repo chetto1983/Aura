@@ -1,4 +1,4 @@
-﻿package scheduler_test
+package cron_test
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func TestMaintenanceJob_AutoFixesSingleMatch(t *testing.T) {
 	// Unrelated page.
 	writeTestPage(t, wikiStore, "baz", "Unrelated content.")
 
-	job := scheduler.NewMaintenanceJob(wikiStore, nil)
+	job := cron.NewMaintenanceJob(wikiStore, nil)
 	fixed, deferred, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -83,7 +83,7 @@ func TestMaintenanceJob_AmbiguousTypo_NotFixed(t *testing.T) {
 	// "test" page has broken link [[barr]] — 2 candidates within distance 1.
 	writeTestPage(t, wikiStore, "test", "See [[barr]] for info.")
 
-	job := scheduler.NewMaintenanceJob(wikiStore, nil)
+	job := cron.NewMaintenanceJob(wikiStore, nil)
 	fixed, deferred, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -101,7 +101,7 @@ func TestMaintenanceJob_NoBrokenLinks(t *testing.T) {
 	writeTestPage(t, wikiStore, "alpha", "No external links.")
 	writeTestPage(t, wikiStore, "beta", "References [[alpha]] which exists.")
 
-	job := scheduler.NewMaintenanceJob(wikiStore, nil)
+	job := cron.NewMaintenanceJob(wikiStore, nil)
 	fixed, deferred, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -141,7 +141,7 @@ func (m *mockWiki) RepairLink(_ context.Context, _, _ string) error {
 // TestMaintenanceJob_LintError covers the lint failure return path.
 func TestMaintenanceJob_LintError(t *testing.T) {
 	w := &mockWiki{lintErr: errors.New("lint unavailable")}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	_, _, err := job.Run(context.Background())
 	if err == nil {
 		t.Fatal("want error when Lint fails, got nil")
@@ -150,7 +150,7 @@ func TestMaintenanceJob_LintError(t *testing.T) {
 
 func TestMaintenanceJob_RunsMemoryHygieneBeforeLint(t *testing.T) {
 	w := &mockWiki{}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	_, _, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -162,7 +162,7 @@ func TestMaintenanceJob_RunsMemoryHygieneBeforeLint(t *testing.T) {
 
 func TestMaintenanceJob_CleanMemoryError(t *testing.T) {
 	w := &mockWiki{cleanErr: errors.New("clean failed")}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	_, _, err := job.Run(context.Background())
 	if err == nil {
 		t.Fatal("want error when CleanMemory fails, got nil")
@@ -178,7 +178,7 @@ func TestMaintenanceJob_ListPagesError(t *testing.T) {
 		lintIssues: []wiki.LintIssue{},
 		listErr:    errors.New("list unavailable"),
 	}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	_, _, err := job.Run(context.Background())
 	if err == nil {
 		t.Fatal("want error when ListPages fails, got nil")
@@ -195,10 +195,10 @@ func TestMaintenanceJob_RepairFails_Enqueues(t *testing.T) {
 		slugs:     []string{"missing-sluf"}, // distance 1 → single candidate
 		repairErr: errors.New("repair failure"),
 	}
-	db := scheduler.NewTestDB(t)
-	issuesStore := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	issuesStore := cron.NewIssuesStore(db)
 
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithIssuesStore(issuesStore)
 
 	fixed, deferred, err := job.Run(context.Background())
@@ -231,10 +231,10 @@ func TestMaintenanceJob_NoCandidates_Enqueues(t *testing.T) {
 		},
 		slugs: []string{"aaa", "bbb"}, // all far from "zzzzz"
 	}
-	db := scheduler.NewTestDB(t)
-	issuesStore := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	issuesStore := cron.NewIssuesStore(db)
 
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithIssuesStore(issuesStore)
 
 	fixed, deferred, err := job.Run(context.Background())
@@ -259,7 +259,7 @@ func TestMaintenanceJob_NonLinkIssue(t *testing.T) {
 		},
 		slugs: []string{"page-a", "page-b"},
 	}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	fixed, deferred, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -279,10 +279,10 @@ func TestMaintenanceJob_PreservesLintIssueKindAndSeverity(t *testing.T) {
 		},
 		slugs: []string{"old-page"},
 	}
-	db := scheduler.NewTestDB(t)
-	issuesStore := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	issuesStore := cron.NewIssuesStore(db)
 
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithIssuesStore(issuesStore)
 
 	fixed, deferred, err := job.Run(context.Background())
@@ -305,11 +305,11 @@ func TestMaintenanceJob_PreservesLintIssueKindAndSeverity(t *testing.T) {
 }
 
 type fakeIssueEnqueuer struct {
-	issues []scheduler.Issue
+	issues []cron.Issue
 	err    error
 }
 
-func (f *fakeIssueEnqueuer) Enqueue(_ context.Context, issue scheduler.Issue) error {
+func (f *fakeIssueEnqueuer) Enqueue(_ context.Context, issue cron.Issue) error {
 	f.issues = append(f.issues, issue)
 	return f.err
 }
@@ -322,7 +322,7 @@ func TestMaintenanceJobAcceptsIssueEnqueuerInterface(t *testing.T) {
 		slugs: []string{"old-page"},
 	}
 	issues := &fakeIssueEnqueuer{}
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithIssuesStore(issues)
 
 	fixed, deferred, err := job.Run(context.Background())
@@ -351,7 +351,7 @@ func TestMaintenanceJob_OwnerNotifier_CalledOnce(t *testing.T) {
 	notifyCalls := 0
 	notifier := func(_ context.Context, _ string) { notifyCalls++ }
 
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithOwnerNotifier(notifier)
 
 	_, deferred, err := job.Run(context.Background())
@@ -375,11 +375,11 @@ func TestMaintenanceJob_WithIssuesStore_EnqueueFailure(t *testing.T) {
 		},
 		slugs: []string{}, // no candidates → deferred
 	}
-	db := scheduler.NewTestDB(t)
-	issuesStore := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	issuesStore := cron.NewIssuesStore(db)
 	db.Close() // close DB so Enqueue fails
 
-	job := scheduler.NewMaintenanceJob(w, nil).
+	job := cron.NewMaintenanceJob(w, nil).
 		WithIssuesStore(issuesStore)
 
 	// Should not return error — enqueue failure is logged and swallowed.
@@ -403,7 +403,7 @@ func TestMaintenanceJob_Levenshtein2Boundary(t *testing.T) {
 		},
 		slugs: []string{"fooo", "foooo"}, // only "fooo" within distance 2
 	}
-	job := scheduler.NewMaintenanceJob(w, nil)
+	job := cron.NewMaintenanceJob(w, nil)
 	fixed, deferred, err := job.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/wiki"
 )
@@ -25,7 +25,7 @@ type testEnv struct {
 	dir     string
 	wiki    *wiki.Store
 	sources *source.Store
-	sched   *scheduler.Store
+	sched   *cron.Store
 	router  http.Handler
 }
 
@@ -44,7 +44,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatalf("source store: %v", err)
 	}
-	schedStore, err := scheduler.OpenStore(filepath.Join(dir, "sched.db"))
+	schedStore, err := cron.OpenStore(filepath.Join(dir, "sched.db"))
 	if err != nil {
 		t.Fatalf("scheduler store: %v", err)
 	}
@@ -104,12 +104,12 @@ func (e *testEnv) seedSourceWithMime(content []byte, kind source.Kind, filename,
 	return rec
 }
 
-func (e *testEnv) seedTask(name string, kind scheduler.TaskKind, status scheduler.Status, nextRun time.Time) *scheduler.Task {
+func (e *testEnv) seedTask(name string, kind cron.TaskKind, status cron.Status, nextRun time.Time) *cron.Task {
 	e.t.Helper()
-	t := &scheduler.Task{
+	t := &cron.Task{
 		Name:         name,
 		Kind:         kind,
-		ScheduleKind: scheduler.ScheduleAt,
+		ScheduleKind: cron.ScheduleAt,
 		ScheduleAt:   nextRun.UTC(),
 		NextRunAt:    nextRun.UTC(),
 		Status:       status,
@@ -236,8 +236,8 @@ func TestHealthRollup_AggregatesAcrossStores(t *testing.T) {
 	e.seedSource([]byte("pdf-bytes-b"), source.KindPDF, "b.pdf")
 
 	now := time.Now().UTC()
-	e.seedTask("future-task", scheduler.KindReminder, scheduler.StatusActive, now.Add(time.Hour))
-	e.seedTask("past-task", scheduler.KindReminder, scheduler.StatusDone, now.Add(-time.Hour))
+	e.seedTask("future-task", cron.KindReminder, cron.StatusActive, now.Add(time.Hour))
+	e.seedTask("past-task", cron.KindReminder, cron.StatusDone, now.Add(-time.Hour))
 
 	rr := e.do("GET", "/health")
 	if rr.Code != http.StatusOK {
@@ -253,8 +253,8 @@ func TestHealthRollup_AggregatesAcrossStores(t *testing.T) {
 	if got.Sources.ByStatus[string(source.StatusStored)] != 2 {
 		t.Errorf("sources stored = %d, want 2", got.Sources.ByStatus[string(source.StatusStored)])
 	}
-	if got.Tasks.ByStatus[string(scheduler.StatusActive)] != 1 {
-		t.Errorf("tasks active = %d, want 1", got.Tasks.ByStatus[string(scheduler.StatusActive)])
+	if got.Tasks.ByStatus[string(cron.StatusActive)] != 1 {
+		t.Errorf("tasks active = %d, want 1", got.Tasks.ByStatus[string(cron.StatusActive)])
 	}
 	if got.Scheduler.NextRun == nil {
 		t.Fatal("next_run is nil; want future task")
@@ -677,8 +677,8 @@ func TestSourceRaw_AllSupportedKinds(t *testing.T) {
 func TestTaskList_AndFilter(t *testing.T) {
 	e := newTestEnv(t)
 	now := time.Now().UTC()
-	e.seedTask("active-1", scheduler.KindReminder, scheduler.StatusActive, now.Add(time.Hour))
-	e.seedTask("done-1", scheduler.KindReminder, scheduler.StatusDone, now.Add(-time.Hour))
+	e.seedTask("active-1", cron.KindReminder, cron.StatusActive, now.Add(time.Hour))
+	e.seedTask("done-1", cron.KindReminder, cron.StatusDone, now.Add(-time.Hour))
 
 	rr := e.do("GET", "/tasks")
 	if rr.Code != http.StatusOK {
@@ -706,7 +706,7 @@ func TestTaskList_AndFilter(t *testing.T) {
 func TestTaskGet_HappyAndNotFound(t *testing.T) {
 	e := newTestEnv(t)
 	now := time.Now().UTC()
-	e.seedTask("hello", scheduler.KindReminder, scheduler.StatusActive, now.Add(time.Hour))
+	e.seedTask("hello", cron.KindReminder, cron.StatusActive, now.Add(time.Hour))
 
 	rr := e.do("GET", "/tasks/hello")
 	if rr.Code != http.StatusOK {

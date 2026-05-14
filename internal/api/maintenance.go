@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ func handleMaintenanceResolve(deps Deps) http.HandlerFunc {
 		// Fetch before resolving to return the updated row.
 		issue, err := deps.Issues.Get(r.Context(), id)
 		if err != nil {
-			if errors.Is(err, scheduler.ErrIssueNotFound) {
+			if errors.Is(err, cron.ErrIssueNotFound) {
 				writeError(w, deps.Logger, http.StatusNotFound, "issue not found")
 				return
 			}
@@ -65,9 +65,9 @@ func handleMaintenanceResolve(deps Deps) http.HandlerFunc {
 
 		if err := deps.Issues.Resolve(r.Context(), id); err != nil {
 			switch {
-			case errors.Is(err, scheduler.ErrIssueNotFound):
+			case errors.Is(err, cron.ErrIssueNotFound):
 				writeError(w, deps.Logger, http.StatusNotFound, "issue not found")
-			case errors.Is(err, scheduler.ErrIssueAlreadyResolved):
+			case errors.Is(err, cron.ErrIssueAlreadyResolved):
 				writeError(w, deps.Logger, http.StatusConflict, "issue already resolved")
 			default:
 				writeError(w, deps.Logger, http.StatusInternalServerError, "failed to resolve issue")
@@ -81,7 +81,7 @@ func handleMaintenanceResolve(deps Deps) http.HandlerFunc {
 	}
 }
 
-func issueToDTO(i scheduler.Issue) WikiIssue {
+func issueToDTO(i cron.Issue) WikiIssue {
 	dto := WikiIssue{
 		ID:         i.ID,
 		Kind:       i.Kind,

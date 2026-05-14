@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"net/http"
@@ -78,7 +78,7 @@ func handleHealth(deps Deps) http.HandlerFunc {
 		if records, err := deps.Scheduler.List(ctx, ""); err == nil {
 			for _, rec := range records {
 				rollup.Tasks.ByStatus[string(rec.Status)]++
-				if rec.Status == scheduler.StatusActive {
+				if rec.Status == cron.StatusActive {
 					next := rec.NextRunAt.UTC()
 					if rollup.Scheduler.NextRun == nil || next.Before(*rollup.Scheduler.NextRun) {
 						rollup.Scheduler.NextRun = &next

@@ -1,4 +1,4 @@
-﻿package scheduler_test
+package cron_test
 
 import (
 	"context"
@@ -8,26 +8,26 @@ import (
 	"github.com/aura/aura/internal/cron"
 )
 
-func newIssuesStore(t *testing.T) *scheduler.IssuesStore {
+func newIssuesStore(t *testing.T) *cron.IssuesStore {
 	t.Helper()
-	db := scheduler.NewTestDB(t)
-	return scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	return cron.NewIssuesStore(db)
 }
 
 var (
-	_ scheduler.IssueLister     = (*scheduler.IssuesStore)(nil)
-	_ scheduler.IssueGetter     = (*scheduler.IssuesStore)(nil)
-	_ scheduler.IssueEnqueuer   = (*scheduler.IssuesStore)(nil)
-	_ scheduler.IssueResolver   = (*scheduler.IssuesStore)(nil)
-	_ scheduler.IssueReader     = (*scheduler.IssuesStore)(nil)
-	_ scheduler.IssueRepository = (*scheduler.IssuesStore)(nil)
+	_ cron.IssueLister     = (*cron.IssuesStore)(nil)
+	_ cron.IssueGetter     = (*cron.IssuesStore)(nil)
+	_ cron.IssueEnqueuer   = (*cron.IssuesStore)(nil)
+	_ cron.IssueResolver   = (*cron.IssuesStore)(nil)
+	_ cron.IssueReader     = (*cron.IssuesStore)(nil)
+	_ cron.IssueRepository = (*cron.IssuesStore)(nil)
 )
 
 func TestIssuesStore_EnqueueAndList(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	issue := scheduler.Issue{
+	issue := cron.Issue{
 		Kind:       "broken_link",
 		Severity:   "high",
 		Slug:       "page-a",
@@ -54,7 +54,7 @@ func TestIssuesStore_Enqueue_Idempotent(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	issue := scheduler.Issue{
+	issue := cron.Issue{
 		Kind:       "broken_link",
 		Severity:   "high",
 		Slug:       "page-a",
@@ -81,7 +81,7 @@ func TestIssuesStore_List_FiltersByStatus(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "broken_link", Severity: "high", Slug: "p1", BrokenLink: "x", Message: "m",
 	}); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestIssuesStore_Resolve_HappyPath(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "missing_category", Severity: "low", Slug: "p2", Message: "m",
 	}); err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestIssuesStore_Resolve_HappyPath(t *testing.T) {
 func TestIssuesStore_Resolve_NotFound(t *testing.T) {
 	store := newIssuesStore(t)
 	err := store.Resolve(context.Background(), 9999)
-	if !errors.Is(err, scheduler.ErrIssueNotFound) {
+	if !errors.Is(err, cron.ErrIssueNotFound) {
 		t.Fatalf("want ErrIssueNotFound, got %v", err)
 	}
 }
@@ -141,7 +141,7 @@ func TestIssuesStore_Resolve_AlreadyResolved(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "orphan", Severity: "medium", Slug: "p3", Message: "m",
 	}); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestIssuesStore_Resolve_AlreadyResolved(t *testing.T) {
 	if err := store.Resolve(ctx, id); err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
-	if err := store.Resolve(ctx, id); !errors.Is(err, scheduler.ErrIssueAlreadyResolved) {
+	if err := store.Resolve(ctx, id); !errors.Is(err, cron.ErrIssueAlreadyResolved) {
 		t.Fatalf("second Resolve should return ErrIssueAlreadyResolved, got %v", err)
 	}
 }
@@ -162,12 +162,12 @@ func TestIssuesStore_List_AllStatuses(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "broken_link", Severity: "high", Slug: "p1", BrokenLink: "x", Message: "m1",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "orphan", Severity: "medium", Slug: "p2", Message: "m2",
 	}); err != nil {
 		t.Fatal(err)
@@ -186,11 +186,11 @@ func TestIssuesStore_List_AllStatuses(t *testing.T) {
 
 // TestIssuesStore_Enqueue_ClosedDB covers the Enqueue DB error path.
 func TestIssuesStore_Enqueue_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
-	store := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	store := cron.NewIssuesStore(db)
 	db.Close()
 
-	err := store.Enqueue(context.Background(), scheduler.Issue{
+	err := store.Enqueue(context.Background(), cron.Issue{
 		Kind: "orphan", Severity: "medium", Slug: "p", Message: "m",
 	})
 	if err == nil {
@@ -200,8 +200,8 @@ func TestIssuesStore_Enqueue_ClosedDB(t *testing.T) {
 
 // TestIssuesStore_List_ClosedDB covers the List query error path.
 func TestIssuesStore_List_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
-	store := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	store := cron.NewIssuesStore(db)
 	db.Close()
 
 	_, err := store.List(context.Background(), "open")
@@ -212,15 +212,15 @@ func TestIssuesStore_List_ClosedDB(t *testing.T) {
 
 // TestIssuesStore_Resolve_ClosedDB covers the Resolve DB exec error path.
 func TestIssuesStore_Resolve_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
-	store := scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	store := cron.NewIssuesStore(db)
 	db.Close()
 
 	err := store.Resolve(context.Background(), 1)
 	if err == nil {
 		t.Fatal("want error from closed DB, got nil")
 	}
-	if errors.Is(err, scheduler.ErrIssueNotFound) {
+	if errors.Is(err, cron.ErrIssueNotFound) {
 		t.Fatal("want DB error, not ErrIssueNotFound")
 	}
 }
@@ -230,7 +230,7 @@ func TestIssuesStore_Get_HappyPath(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	if err := store.Enqueue(ctx, scheduler.Issue{
+	if err := store.Enqueue(ctx, cron.Issue{
 		Kind: "broken_link", Severity: "high", Slug: "pg", BrokenLink: "target", Message: "msg",
 	}); err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestIssuesStore_Get_HappyPath(t *testing.T) {
 func TestIssuesStore_Get_NotFound(t *testing.T) {
 	store := newIssuesStore(t)
 	_, err := store.Get(context.Background(), 9999)
-	if !errors.Is(err, scheduler.ErrIssueNotFound) {
+	if !errors.Is(err, cron.ErrIssueNotFound) {
 		t.Fatalf("want ErrIssueNotFound, got %v", err)
 	}
 }
@@ -264,7 +264,7 @@ func TestIssuesStore_ListBySeverity(t *testing.T) {
 	store := newIssuesStore(t)
 	ctx := context.Background()
 
-	issues := []scheduler.Issue{
+	issues := []cron.Issue{
 		{Kind: "broken_link", Severity: "high", Slug: "p1", BrokenLink: "a", Message: "m1"},
 		{Kind: "orphan", Severity: "medium", Slug: "p2", Message: "m2"},
 		{Kind: "missing_category", Severity: "low", Slug: "p3", Message: "m3"},

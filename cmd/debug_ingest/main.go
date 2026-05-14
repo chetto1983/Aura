@@ -1,4 +1,4 @@
-﻿// debug_ingest is the slice-9 natural-prompt smoke harness for the
+// debug_ingest is the slice-9 natural-prompt smoke harness for the
 // source / ingest / workspace-file / scheduler tools.
 //
 //	go run ./cmd/debug_ingest               # all default scenarios
@@ -28,14 +28,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
-	"github.com/aura/aura/internal/storage/sources/ingest"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/memoryindex"
-	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
 )
@@ -116,14 +116,14 @@ func main() {
 	}
 
 	schedDB := filepath.Join(wikiDir, "scheduler.db")
-	schedStore, err := scheduler.OpenStore(schedDB)
+	schedStore, err := cron.OpenStore(schedDB)
 	if err != nil {
-		fmt.Printf("FAIL: scheduler.OpenStore: %v\n", err)
+		fmt.Printf("FAIL: cron.OpenStore: %v\n", err)
 		os.Exit(1)
 	}
 	defer schedStore.Close()
 	summariesStore := summarizer.NewSummariesStore(schedStore.DB())
-	issuesStore := scheduler.NewIssuesStore(schedStore.DB())
+	issuesStore := cron.NewIssuesStore(schedStore.DB())
 	archiveStore, err := conversation.NewArchiveStore(schedStore.DB())
 	if err != nil {
 		fmt.Printf("FAIL: conversation.NewArchiveStore: %v\n", err)
@@ -367,20 +367,20 @@ func seed(ctx context.Context, store *source.Store) (storedID, ocrID string, err
 
 func seedBriefing(
 	ctx context.Context,
-	schedStore *scheduler.Store,
+	schedStore *cron.Store,
 	summariesStore *summarizer.SummariesStore,
-	issuesStore *scheduler.IssuesStore,
+	issuesStore *cron.IssuesStore,
 	archiveStore *conversation.ArchiveStore,
 ) error {
 	now := time.Now().UTC()
-	_, err := schedStore.Upsert(ctx, &scheduler.Task{
+	_, err := schedStore.Upsert(ctx, &cron.Task{
 		Name:         "smoke-briefing-task",
-		Kind:         scheduler.KindReminder,
+		Kind:         cron.KindReminder,
 		Payload:      "review today's Aura usefulness smoke test",
-		ScheduleKind: scheduler.ScheduleAt,
+		ScheduleKind: cron.ScheduleAt,
 		ScheduleAt:   now.Add(2 * time.Hour),
 		NextRunAt:    now.Add(2 * time.Hour),
-		Status:       scheduler.StatusActive,
+		Status:       cron.StatusActive,
 	})
 	if err != nil {
 		return fmt.Errorf("upsert briefing task: %w", err)
@@ -392,7 +392,7 @@ func seedBriefing(
 	}); err != nil {
 		return fmt.Errorf("proposal: %w", err)
 	}
-	if err := issuesStore.Enqueue(ctx, scheduler.Issue{
+	if err := issuesStore.Enqueue(ctx, cron.Issue{
 		Kind:     "missing_category",
 		Severity: "medium",
 		Slug:     "smoke-briefing",
@@ -413,7 +413,7 @@ func seedBriefing(
 }
 
 type debugRunTaskNowRunner struct {
-	store *scheduler.Store
+	store *cron.Store
 }
 
 func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
@@ -421,7 +421,7 @@ func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (too
 	if err != nil {
 		return tools.RunTaskNowResult{}, err
 	}
-	if task.Kind != scheduler.KindAgentJob {
+	if task.Kind != cron.KindAgentJob {
 		return tools.RunTaskNowResult{}, fmt.Errorf("debug run_task_now: task %q is kind %s", task.Name, task.Kind)
 	}
 	if err := r.store.RecordManualRun(ctx, task.ID, time.Now().UTC(), ""); err != nil {

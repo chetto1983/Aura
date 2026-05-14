@@ -1,4 +1,4 @@
-﻿package telegram
+package telegram
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/cron"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -54,7 +54,7 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 		t.Fatalf("NewRunner: %v", err)
 	}
 	notify := false
-	payload, err := scheduler.AgentJobPayload{
+	payload, err := cron.AgentJobPayload{
 		Goal:          "Check Aura gaps",
 		ToolAllowlist: []string{"web", "write_file", "read_file"},
 		Notify:        &notify,
@@ -66,9 +66,9 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 		agentRunner: runner,
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	err = b.dispatchTask(t.Context(), &scheduler.Task{
+	err = b.dispatchTask(t.Context(), &cron.Task{
 		Name:        "agent-smoke",
-		Kind:        scheduler.KindAgentJob,
+		Kind:        cron.KindAgentJob,
 		Payload:     payload,
 		RecipientID: "123",
 	})
@@ -106,7 +106,7 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 		t.Fatalf("NewRunner: %v", err)
 	}
 	notify := false
-	payload, err := scheduler.AgentJobPayload{
+	payload, err := cron.AgentJobPayload{
 		Goal:            "Review daily memory drift",
 		EnabledToolsets: []string{"memory_read"},
 		Skills:          []string{"aura-implementation"},
@@ -121,9 +121,9 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 		agentRunner: runner,
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	err = b.dispatchTask(t.Context(), &scheduler.Task{
+	err = b.dispatchTask(t.Context(), &cron.Task{
 		Name:        "agent-skilled",
-		Kind:        scheduler.KindAgentJob,
+		Kind:        cron.KindAgentJob,
 		Payload:     payload,
 		RecipientID: "123",
 		NextRunAt:   time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC),
@@ -175,7 +175,7 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 	}
 	store := newTelegramTestSchedulerStore(t)
 	notify := false
-	payload, err := scheduler.AgentJobPayload{
+	payload, err := cron.AgentJobPayload{
 		Goal:          "Check Aura gaps",
 		ToolAllowlist: []string{"web", "write_file", "read_file"},
 		Notify:        &notify,
@@ -184,12 +184,12 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 		t.Fatalf("payload JSON: %v", err)
 	}
 	next := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
-	task, err := store.Upsert(t.Context(), &scheduler.Task{
+	task, err := store.Upsert(t.Context(), &cron.Task{
 		Name:                 "agent-now",
-		Kind:                 scheduler.KindAgentJob,
+		Kind:                 cron.KindAgentJob,
 		Payload:              payload,
 		RecipientID:          "123",
-		ScheduleKind:         scheduler.ScheduleEvery,
+		ScheduleKind:         cron.ScheduleEvery,
 		ScheduleEveryMinutes: 60,
 		NextRunAt:            next,
 	})
@@ -255,7 +255,7 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 		t.Fatalf("WritePage: %v", err)
 	}
 	notify := false
-	payload, err := scheduler.AgentJobPayload{
+	payload, err := cron.AgentJobPayload{
 		Goal:          "Review memory drift",
 		WakeIfChanged: []string{"[[memory-philosophy]]"},
 		Notify:        &notify,
@@ -268,17 +268,17 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 		agentRunner: runner,
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	normalized, err := scheduler.NormalizeAgentJobPayload(payload)
+	normalized, err := cron.NormalizeAgentJobPayload(payload)
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
-	signature, ok := scheduler.AgentJobWakeSignature(t.Context(), normalized, scheduler.AgentJobWakeDeps{Wiki: wikiStore})
+	signature, ok := cron.AgentJobWakeSignature(t.Context(), normalized, cron.AgentJobWakeDeps{Wiki: wikiStore})
 	if !ok || signature == "" {
 		t.Fatalf("expected wake signature, got %q ok=%v", signature, ok)
 	}
-	run, err := b.runAgentJob(t.Context(), &scheduler.Task{
+	run, err := b.runAgentJob(t.Context(), &cron.Task{
 		Name:          "memory-drift",
-		Kind:          scheduler.KindAgentJob,
+		Kind:          cron.KindAgentJob,
 		Payload:       payload,
 		WakeSignature: signature,
 	})
@@ -299,11 +299,11 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 	store := newTelegramTestSchedulerStore(t)
 	next := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
-	task, err := store.Upsert(t.Context(), &scheduler.Task{
+	task, err := store.Upsert(t.Context(), &cron.Task{
 		Name:                 "prior-research",
-		Kind:                 scheduler.KindAgentJob,
+		Kind:                 cron.KindAgentJob,
 		Payload:              "research topic",
-		ScheduleKind:         scheduler.ScheduleEvery,
+		ScheduleKind:         cron.ScheduleEvery,
 		ScheduleEveryMinutes: 60,
 		NextRunAt:            next,
 	})
@@ -314,7 +314,7 @@ func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 		t.Fatalf("RecordAgentJobResult: %v", err)
 	}
 	notify := false
-	payload, err := scheduler.AgentJobPayload{
+	payload, err := cron.AgentJobPayload{
 		Goal:        "Continue the review",
 		ContextFrom: []string{"task:prior-research"},
 		Notify:      &notify,
@@ -322,7 +322,7 @@ func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("payload JSON: %v", err)
 	}
-	normalized, err := scheduler.NormalizeAgentJobPayload(payload)
+	normalized, err := cron.NormalizeAgentJobPayload(payload)
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
@@ -336,9 +336,9 @@ func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 }
 
 func TestAgentJobScheduleContextShowsLateRun(t *testing.T) {
-	task := &scheduler.Task{
+	task := &cron.Task{
 		Name:             "trading-signals-morning",
-		ScheduleKind:     scheduler.ScheduleDaily,
+		ScheduleKind:     cron.ScheduleDaily,
 		ScheduleDaily:    "10:00",
 		ScheduleWeekdays: "mon,tue,wed,thu,fri",
 		NextRunAt:        time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC),
@@ -364,7 +364,7 @@ func TestAgentJobNotificationCarriesTaskNameAndMarkdownBody(t *testing.T) {
 	// it into Telegram entities at send time (entity_markdown.go). This
 	// test only asserts the message content reaches the renderer intact —
 	// the entity transform is covered separately.
-	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, scheduler.AgentJobPayload{}, "## Report\n- **Done**")
+	msg := agentJobNotificationMessage(&cron.Task{Name: "daily-brief"}, cron.AgentJobPayload{}, "## Report\n- **Done**")
 	for _, want := range []string{`Agent job "daily-brief" completed.`, "## Report", "- **Done**"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("notification missing %q:\n%s", want, msg)
@@ -373,8 +373,8 @@ func TestAgentJobNotificationCarriesTaskNameAndMarkdownBody(t *testing.T) {
 }
 
 func TestAgentJobPromptUsesPayloadLanguage(t *testing.T) {
-	got := agentJobSystemPrompt(scheduler.AgentJobPayload{
-		WritePolicy: scheduler.AgentJobWritePolicyProposeOnly,
+	got := agentJobSystemPrompt(cron.AgentJobPayload{
+		WritePolicy: cron.AgentJobWritePolicyProposeOnly,
 		Language:    "it",
 	}, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC), time.UTC)
 	if !strings.Contains(got, "Output language: Italian") {
@@ -383,7 +383,7 @@ func TestAgentJobPromptUsesPayloadLanguage(t *testing.T) {
 }
 
 func TestAgentJobNotificationLocalizesPrefix(t *testing.T) {
-	msg := agentJobNotificationMessage(&scheduler.Task{Name: "daily-brief"}, scheduler.AgentJobPayload{Language: "it"}, "Fatto")
+	msg := agentJobNotificationMessage(&cron.Task{Name: "daily-brief"}, cron.AgentJobPayload{Language: "it"}, "Fatto")
 	if !strings.HasPrefix(msg, "Job agente \"daily-brief\" completato.") {
 		t.Fatalf("unexpected notification prefix: %q", msg)
 	}
@@ -398,7 +398,7 @@ func containsTestString(values []string, needle string) bool {
 	return false
 }
 
-func newTelegramTestSchedulerStore(t *testing.T) *scheduler.Store {
+func newTelegramTestSchedulerStore(t *testing.T) *cron.Store {
 	t.Helper()
 	pool, err := auradb.Open(filepath.Join(t.TempDir(), "sched.db"))
 	if err != nil {
@@ -408,7 +408,7 @@ func newTelegramTestSchedulerStore(t *testing.T) *scheduler.Store {
 	if err := migrations.Run(context.Background(), pool); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	store, err := scheduler.NewStoreWithDB(pool)
+	store, err := cron.NewStoreWithDB(pool)
 	if err != nil {
 		t.Fatalf("new scheduler store: %v", err)
 	}

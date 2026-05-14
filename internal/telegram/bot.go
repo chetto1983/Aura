@@ -1,4 +1,4 @@
-﻿package telegram
+package telegram
 
 import (
 	"bytes"
@@ -12,25 +12,25 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/index"
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/mcp"
-	"github.com/aura/aura/internal/storage/memoryindex"
-	"github.com/aura/aura/internal/storage/sources/ocr"
-	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/sandbox"
-	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/storage/search"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/reindex"
+	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/storage/sources/ocr"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/agent/tools/index"
-	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/wiki"
 
 	tele "gopkg.in/telebot.v4"
@@ -51,8 +51,8 @@ type Bot struct {
 	ocr                 *ocr.Client
 	skills              *auraskills.Loader
 	docs                *docHandler
-	sched               *scheduler.Scheduler
-	schedDB             scheduler.AgentJobRepository
+	sched               *cron.Scheduler
+	schedDB             cron.AgentJobRepository
 	agentRunner         *agent.Runner
 	swarmStore          swarm.Reader
 	swarmMgr            swarm.RunRunner
@@ -60,7 +60,7 @@ type Bot struct {
 	mcpClients          []mcp.ConnectedClient            // active MCP server connections (slice 11a)
 	archiveDB           conversation.ArchiveRepository   // nil when CONV_ARCHIVE_ENABLED=false
 	archiver            conversation.ClosingTurnAppender // nil when CONV_ARCHIVE_ENABLED=false
-	issues              scheduler.IssueRepository        // wiki_issues queue, shared by API + maintenance
+	issues              cron.IssueRepository             // wiki_issues queue, shared by API + maintenance
 	api                 http.Handler                     // read-only JSON API for the dashboard, mounted on the health server
 	sandboxMgr          sandbox.ExecutionRuntime         // nil when SANDBOX_ENABLED=false or runtime unavailable
 	toolReg             tools.ToolStore                  // persistent LLM-written Python tools

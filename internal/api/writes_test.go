@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"bytes"
@@ -136,13 +136,13 @@ func TestTaskUpsert_HappyPath_At(t *testing.T) {
 	if got.Name != "new-task" {
 		t.Errorf("name = %q", got.Name)
 	}
-	if got.Status != string(scheduler.StatusActive) {
+	if got.Status != string(cron.StatusActive) {
 		t.Errorf("status = %q, want active", got.Status)
 	}
-	if got.Kind != string(scheduler.KindReminder) {
+	if got.Kind != string(cron.KindReminder) {
 		t.Errorf("kind = %q", got.Kind)
 	}
-	if got.ScheduleKind != string(scheduler.ScheduleAt) {
+	if got.ScheduleKind != string(cron.ScheduleAt) {
 		t.Errorf("schedule_kind = %q", got.ScheduleKind)
 	}
 	if got.Payload != "hello" {
@@ -164,7 +164,7 @@ func TestTaskUpsert_HappyPath_Daily(t *testing.T) {
 	if got.ScheduleDaily != "03:00" {
 		t.Errorf("schedule_daily = %q", got.ScheduleDaily)
 	}
-	if got.ScheduleKind != string(scheduler.ScheduleDaily) {
+	if got.ScheduleKind != string(cron.ScheduleDaily) {
 		t.Errorf("schedule_kind = %q, want daily", got.ScheduleKind)
 	}
 	if got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
@@ -183,7 +183,7 @@ func TestTaskUpsert_HappyPath_EveryMinutes(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ScheduleKind != string(scheduler.ScheduleEvery) {
+	if got.ScheduleKind != string(cron.ScheduleEvery) {
 		t.Errorf("schedule_kind = %q, want every", got.ScheduleKind)
 	}
 	if got.ScheduleEveryMinutes != 60 {
@@ -202,7 +202,7 @@ func TestTaskUpsert_HappyPath_AgentJob(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Kind != string(scheduler.KindAgentJob) {
+	if got.Kind != string(cron.KindAgentJob) {
 		t.Errorf("kind = %q, want agent_job", got.Kind)
 	}
 	if got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
@@ -254,7 +254,7 @@ func TestTaskUpsert_RejectsBadInput(t *testing.T) {
 func TestTaskCancel_HappyPath(t *testing.T) {
 	e := newTestEnv(t)
 	now := time.Now().UTC()
-	e.seedTask("active-task", scheduler.KindReminder, scheduler.StatusActive, now.Add(time.Hour))
+	e.seedTask("active-task", cron.KindReminder, cron.StatusActive, now.Add(time.Hour))
 	rr := e.doLocal("POST", "/tasks/active-task/cancel", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
@@ -263,7 +263,7 @@ func TestTaskCancel_HappyPath(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != string(scheduler.StatusCancelled) {
+	if got.Status != string(cron.StatusCancelled) {
 		t.Errorf("status = %q, want cancelled", got.Status)
 	}
 }
@@ -279,7 +279,7 @@ func TestTaskCancel_NotFound(t *testing.T) {
 func TestTaskCancel_AlreadyTerminal(t *testing.T) {
 	e := newTestEnv(t)
 	now := time.Now().UTC()
-	e.seedTask("done-task", scheduler.KindReminder, scheduler.StatusDone, now.Add(-time.Hour))
+	e.seedTask("done-task", cron.KindReminder, cron.StatusDone, now.Add(-time.Hour))
 	rr := e.doLocal("POST", "/tasks/done-task/cancel", nil)
 	if rr.Code != http.StatusConflict {
 		t.Errorf("status %d, want 409; body=%s", rr.Code, rr.Body)

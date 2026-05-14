@@ -94,8 +94,8 @@ type ArchiveStore struct {
 }
 
 // NewArchiveStore wraps an existing *sql.DB. The conversations table
-// migration is owned by scheduler.Store (single source of truth for the
-// shared DB schema); callers must open a scheduler.Store on the same DB
+// migration is owned by cron.Store (single source of truth for the
+// shared DB schema); callers must open a cron.Store on the same DB
 // before constructing an ArchiveStore. Returns an error only if a future
 // per-store migration fails — currently never errors.
 func NewArchiveStore(db *sql.DB) (*ArchiveStore, error) {

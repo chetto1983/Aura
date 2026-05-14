@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -13,23 +13,23 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/backup"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
+	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/reindex"
+	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
-	"github.com/aura/aura/internal/mcp"
-	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/sources/ocr"
-	"github.com/aura/aura/internal/storage/reindex"
-	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/storage/search"
-	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -56,7 +56,7 @@ type CompactMemoryHealthReader interface {
 type Deps struct {
 	Wiki        wiki.Repository
 	Sources     source.Repository
-	Scheduler   scheduler.Repository
+	Scheduler   cron.Repository
 	OCR         *ocr.Client
 	Ingest      *ingest.Pipeline
 	Markitdown  markitdown.Converter
@@ -144,7 +144,7 @@ type Deps struct {
 
 	// Slice 12l.1: wiki maintenance issue queue. Optional — when nil, list
 	// returns empty array and resolve returns 404.
-	Issues scheduler.IssueRepository
+	Issues cron.IssueRepository
 
 	// Slice 14d: runtime settings store. Backs GET /settings (list
 	// current values) and POST /settings (bulk upsert) so the dashboard

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -13,13 +13,13 @@ import (
 )
 
 type fakeIssueRepository struct {
-	rows []scheduler.Issue
+	rows []cron.Issue
 }
 
-func (f *fakeIssueRepository) Enqueue(context.Context, scheduler.Issue) error { return nil }
+func (f *fakeIssueRepository) Enqueue(context.Context, cron.Issue) error { return nil }
 
-func (f *fakeIssueRepository) List(_ context.Context, status string) ([]scheduler.Issue, error) {
-	var out []scheduler.Issue
+func (f *fakeIssueRepository) List(_ context.Context, status string) ([]cron.Issue, error) {
+	var out []cron.Issue
 	for _, row := range f.rows {
 		if status == "" || row.Status == status {
 			out = append(out, row)
@@ -28,20 +28,20 @@ func (f *fakeIssueRepository) List(_ context.Context, status string) ([]schedule
 	return out, nil
 }
 
-func (f *fakeIssueRepository) Get(_ context.Context, id int64) (scheduler.Issue, error) {
+func (f *fakeIssueRepository) Get(_ context.Context, id int64) (cron.Issue, error) {
 	for _, row := range f.rows {
 		if row.ID == id {
 			return row, nil
 		}
 	}
-	return scheduler.Issue{}, scheduler.ErrIssueNotFound
+	return cron.Issue{}, cron.ErrIssueNotFound
 }
 
 func (f *fakeIssueRepository) Resolve(_ context.Context, id int64) error {
 	for i, row := range f.rows {
 		if row.ID == id {
 			if row.Status != "open" {
-				return scheduler.ErrIssueAlreadyResolved
+				return cron.ErrIssueAlreadyResolved
 			}
 			now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 			f.rows[i].Status = "resolved"
@@ -49,11 +49,11 @@ func (f *fakeIssueRepository) Resolve(_ context.Context, id int64) error {
 			return nil
 		}
 	}
-	return scheduler.ErrIssueNotFound
+	return cron.ErrIssueNotFound
 }
 
 func TestMaintenanceHandlersAcceptIssueRepositoryInterface(t *testing.T) {
-	repo := &fakeIssueRepository{rows: []scheduler.Issue{{
+	repo := &fakeIssueRepository{rows: []cron.Issue{{
 		ID:        5,
 		Kind:      "broken_link",
 		Severity:  "high",
@@ -82,15 +82,15 @@ func TestMaintenanceHandlersAcceptIssueRepositoryInterface(t *testing.T) {
 	}
 }
 
-func newIssuesTestStore(t *testing.T) *scheduler.IssuesStore {
+func newIssuesTestStore(t *testing.T) *cron.IssuesStore {
 	t.Helper()
-	db := scheduler.NewTestDB(t)
-	return scheduler.NewIssuesStore(db)
+	db := cron.NewTestDB(t)
+	return cron.NewIssuesStore(db)
 }
 
-func seedIssue(t *testing.T, store *scheduler.IssuesStore, kind, severity, slug string) {
+func seedIssue(t *testing.T, store *cron.IssuesStore, kind, severity, slug string) {
 	t.Helper()
-	if err := store.Enqueue(context.Background(), scheduler.Issue{
+	if err := store.Enqueue(context.Background(), cron.Issue{
 		Kind:       kind,
 		Severity:   severity,
 		Slug:       slug,

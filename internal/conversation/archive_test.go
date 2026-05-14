@@ -1,4 +1,4 @@
-﻿package conversation_test
+package conversation_test
 
 import (
 	"context"
@@ -25,7 +25,7 @@ var (
 )
 
 func TestArchiveStore_AppendAndList(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestArchiveStore_AppendAndList(t *testing.T) {
 }
 
 func TestArchiveStore_AppendIdempotentTurnIndex(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestArchiveStore_AppendIdempotentTurnIndex(t *testing.T) {
 }
 
 func TestArchiveStore_ListByChat_Empty(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestArchiveStore_ListByChat_Empty(t *testing.T) {
 }
 
 func TestArchiveStore_Get_NotFound(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestArchiveStore_Get_NotFound(t *testing.T) {
 }
 
 func TestArchiveStore_AppendWithToolCalls(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestArchiveStore_AppendWithToolCalls(t *testing.T) {
 
 // TestArchiveStore_Append_ClosedDB covers the non-duplicate error wrap in Append.
 func TestArchiveStore_Append_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestArchiveStore_Append_ClosedDB(t *testing.T) {
 
 // TestArchiveStore_ListByChat_ClosedDB covers the query-error path in ListByChat.
 func TestArchiveStore_ListByChat_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestArchiveStore_ListByChat_ClosedDB(t *testing.T) {
 
 // TestArchiveStore_Get_ClosedDB covers the non-ErrNoRows error wrap in Get.
 func TestArchiveStore_Get_ClosedDB(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestArchiveStore_Get_ClosedDB(t *testing.T) {
 // TestArchiveStore_ToolCallID_RoundTrip verifies the tool_call_id field
 // persists correctly (non-empty ToolCallID path in scanTurn).
 func TestArchiveStore_ToolCallID_RoundTrip(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestArchiveStore_ToolCallID_RoundTrip(t *testing.T) {
 
 // TestArchiveStore_Get_Found verifies Get happy path and non-zero CreatedAt.
 func TestArchiveStore_Get_Found(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -93,7 +93,7 @@ func TestConversationHandlersAcceptArchiveRepositoryInterface(t *testing.T) {
 func newConvTestEnv(t *testing.T) (*testEnv, *conversation.ArchiveStore) {
 	t.Helper()
 	env := newTestEnv(t)
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatalf("NewArchiveStore: %v", err)
@@ -187,7 +187,7 @@ func TestHandleConversationList_NilArchive(t *testing.T) {
 }
 
 func TestHandleConversationList_Pagination(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func TestHandleConversationList_Pagination(t *testing.T) {
 }
 
 func TestHandleConversationDetail_HappyPath(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +248,7 @@ func TestHandleConversationDetail_HappyPath(t *testing.T) {
 }
 
 func TestHandleConversationDetail_NotFound(t *testing.T) {
-	db := scheduler.NewTestDB(t)
+	db := cron.NewTestDB(t)
 	store, err := conversation.NewArchiveStore(db)
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-﻿package tools
+package tools
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/llm"
 )
 
 type fakeRunTaskNowRunner struct {
@@ -23,7 +23,7 @@ func (r *fakeRunTaskNowRunner) RunTaskNow(_ context.Context, name string) (RunTa
 	return RunTaskNowResult{
 		OK:        true,
 		Name:      name,
-		Kind:      string(scheduler.KindAgentJob),
+		Kind:      string(cron.KindAgentJob),
 		Status:    "completed",
 		Summary:   "checked saved routine",
 		LLMCalls:  1,
@@ -34,24 +34,24 @@ func (r *fakeRunTaskNowRunner) RunTaskNow(_ context.Context, name string) (RunTa
 }
 
 type fakeSchedulerRepository struct {
-	tasks     map[string]*scheduler.Task
+	tasks     map[string]*cron.Task
 	cancelled []string
 }
 
-func (f *fakeSchedulerRepository) Upsert(_ context.Context, task *scheduler.Task) (*scheduler.Task, error) {
+func (f *fakeSchedulerRepository) Upsert(_ context.Context, task *cron.Task) (*cron.Task, error) {
 	if f.tasks == nil {
-		f.tasks = make(map[string]*scheduler.Task)
+		f.tasks = make(map[string]*cron.Task)
 	}
 	cp := *task
 	if cp.ID == 0 {
 		cp.ID = int64(len(f.tasks) + 1)
 	}
-	cp.Status = scheduler.StatusActive
+	cp.Status = cron.StatusActive
 	f.tasks[cp.Name] = &cp
 	return &cp, nil
 }
 
-func (f *fakeSchedulerRepository) GetByName(_ context.Context, name string) (*scheduler.Task, error) {
+func (f *fakeSchedulerRepository) GetByName(_ context.Context, name string) (*cron.Task, error) {
 	if task, ok := f.tasks[name]; ok {
 		cp := *task
 		return &cp, nil
@@ -59,8 +59,8 @@ func (f *fakeSchedulerRepository) GetByName(_ context.Context, name string) (*sc
 	return nil, sql.ErrNoRows
 }
 
-func (f *fakeSchedulerRepository) List(_ context.Context, status scheduler.Status) ([]*scheduler.Task, error) {
-	var out []*scheduler.Task
+func (f *fakeSchedulerRepository) List(_ context.Context, status cron.Status) ([]*cron.Task, error) {
+	var out []*cron.Task
 	for _, task := range f.tasks {
 		if status != "" && task.Status != status {
 			continue
@@ -72,8 +72,8 @@ func (f *fakeSchedulerRepository) List(_ context.Context, status scheduler.Statu
 }
 
 func (f *fakeSchedulerRepository) Cancel(_ context.Context, name string) (bool, error) {
-	if task, ok := f.tasks[name]; ok && task.Status == scheduler.StatusActive {
-		task.Status = scheduler.StatusCancelled
+	if task, ok := f.tasks[name]; ok && task.Status == cron.StatusActive {
+		task.Status = cron.StatusCancelled
 		f.cancelled = append(f.cancelled, name)
 		return true, nil
 	}
@@ -85,9 +85,9 @@ func (f *fakeSchedulerRepository) Delete(_ context.Context, name string) error {
 	return nil
 }
 
-func newTestSchedStore(t *testing.T) *scheduler.Store {
+func newTestSchedStore(t *testing.T) *cron.Store {
 	t.Helper()
-	store, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "sched.db"))
+	store, err := cron.OpenStore(filepath.Join(t.TempDir(), "sched.db"))
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestTaskTool_OneShotReminder(t *testing.T) {
 	if got.Payload != "buy bread" {
 		t.Errorf("Payload = %q", got.Payload)
 	}
-	if got.ScheduleKind != scheduler.ScheduleAt {
+	if got.ScheduleKind != cron.ScheduleAt {
 		t.Errorf("ScheduleKind = %q", got.ScheduleKind)
 	}
 }
@@ -268,10 +268,10 @@ func TestTaskTool_DailyWikiMaintenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	if got.Kind != scheduler.KindWikiMaintenance {
+	if got.Kind != cron.KindWikiMaintenance {
 		t.Errorf("Kind = %q", got.Kind)
 	}
-	if got.ScheduleKind != scheduler.ScheduleDaily {
+	if got.ScheduleKind != cron.ScheduleDaily {
 		t.Errorf("ScheduleKind = %q, want daily", got.ScheduleKind)
 	}
 	if got.RecipientID != "" {
@@ -302,7 +302,7 @@ func TestTaskTool_DailyWeekdays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	if got.ScheduleKind != scheduler.ScheduleDaily || got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
+	if got.ScheduleKind != cron.ScheduleDaily || got.ScheduleWeekdays != "mon,tue,wed,thu,fri" {
 		t.Errorf("schedule = %s/%q, want daily weekdays", got.ScheduleKind, got.ScheduleWeekdays)
 	}
 }
@@ -328,7 +328,7 @@ func TestTaskTool_EveryMinutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	if got.ScheduleKind != scheduler.ScheduleEvery || got.ScheduleEveryMinutes != 60 {
+	if got.ScheduleKind != cron.ScheduleEvery || got.ScheduleEveryMinutes != 60 {
 		t.Errorf("schedule = %s/%d, want every 60", got.ScheduleKind, got.ScheduleEveryMinutes)
 	}
 	delta := got.NextRunAt.Sub(before)
@@ -360,20 +360,20 @@ func TestTaskTool_AgentJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	if got.Kind != scheduler.KindAgentJob {
+	if got.Kind != cron.KindAgentJob {
 		t.Errorf("Kind = %q, want agent_job", got.Kind)
 	}
 	if got.RecipientID != "12345" {
 		t.Errorf("RecipientID = %q, want caller id", got.RecipientID)
 	}
-	payload, err := scheduler.NormalizeAgentJobPayload(got.Payload)
+	payload, err := cron.NormalizeAgentJobPayload(got.Payload)
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
 	if payload.Goal != "Check project news and propose useful wiki updates." {
 		t.Errorf("goal = %q", payload.Goal)
 	}
-	if payload.WritePolicy != scheduler.AgentJobWritePolicyProposeOnly {
+	if payload.WritePolicy != cron.AgentJobWritePolicyProposeOnly {
 		t.Errorf("write policy = %q", payload.WritePolicy)
 	}
 }
@@ -405,7 +405,7 @@ func TestTaskTool_AgentJobStructuredPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByName: %v", err)
 	}
-	payload, err := scheduler.NormalizeAgentJobPayload(got.Payload)
+	payload, err := cron.NormalizeAgentJobPayload(got.Payload)
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
@@ -533,7 +533,7 @@ func TestTaskTool_RelativeIn(t *testing.T) {
 	if delta < 55*time.Second || delta > 75*time.Second {
 		t.Errorf("next_run_at delta = %v, want ~60s", delta)
 	}
-	if got.ScheduleKind != scheduler.ScheduleAt {
+	if got.ScheduleKind != cron.ScheduleAt {
 		t.Errorf("ScheduleKind = %q, want at (in resolves to absolute)", got.ScheduleKind)
 	}
 }
@@ -651,26 +651,26 @@ func TestTaskTool_ListGroupsByStatus(t *testing.T) {
 	ctx := t.Context()
 
 	at := time.Now().UTC().Add(time.Hour)
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "active-1", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
-		Payload: "remember to test", Status: scheduler.StatusActive,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "active-1", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleAt, ScheduleAt: at, NextRunAt: at,
+		Payload: "remember to test", Status: cron.StatusActive,
 	})
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "done-1", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
-		Status: scheduler.StatusDone,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "done-1", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleAt, ScheduleAt: at, NextRunAt: at,
+		Status: cron.StatusDone,
 	})
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "weekday-1", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleDaily, ScheduleDaily: "10:00",
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "weekday-1", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleDaily, ScheduleDaily: "10:00",
 		ScheduleWeekdays: "mon,tue,wed,thu,fri", NextRunAt: at,
-		Status: scheduler.StatusActive,
+		Status: cron.StatusActive,
 	})
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "every-1", Kind: scheduler.KindWikiMaintenance,
-		ScheduleKind: scheduler.ScheduleEvery, ScheduleEveryMinutes: 60,
-		NextRunAt: at, Status: scheduler.StatusActive,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "every-1", Kind: cron.KindWikiMaintenance,
+		ScheduleKind: cron.ScheduleEvery, ScheduleEveryMinutes: 60,
+		NextRunAt: at, Status: cron.StatusActive,
 	})
 
 	tool := NewTaskTool(store, nil, time.UTC)
@@ -699,15 +699,15 @@ func TestTaskTool_ListGroupsByStatus(t *testing.T) {
 func TestTaskTool_ListStatusFilter(t *testing.T) {
 	store := newTestSchedStore(t)
 	at := time.Now().UTC().Add(time.Hour)
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "a", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
-		Status: scheduler.StatusActive,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "a", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleAt, ScheduleAt: at, NextRunAt: at,
+		Status: cron.StatusActive,
 	})
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "b", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
-		Status: scheduler.StatusCancelled,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "b", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleAt, ScheduleAt: at, NextRunAt: at,
+		Status: cron.StatusCancelled,
 	})
 
 	tool := NewTaskTool(store, nil, time.UTC)
@@ -726,10 +726,10 @@ func TestTaskTool_ListStatusFilter(t *testing.T) {
 func TestTaskTool_Cancel(t *testing.T) {
 	store := newTestSchedStore(t)
 	at := time.Now().UTC().Add(time.Hour)
-	mustSchedUpsert(t, store, &scheduler.Task{
-		Name: "x", Kind: scheduler.KindReminder,
-		ScheduleKind: scheduler.ScheduleAt, ScheduleAt: at, NextRunAt: at,
-		Status: scheduler.StatusActive,
+	mustSchedUpsert(t, store, &cron.Task{
+		Name: "x", Kind: cron.KindReminder,
+		ScheduleKind: cron.ScheduleAt, ScheduleAt: at, NextRunAt: at,
+		Status: cron.StatusActive,
 	})
 
 	tool := NewTaskTool(store, nil, time.UTC)
@@ -773,7 +773,7 @@ func TestUserIDFromContext(t *testing.T) {
 	}
 }
 
-func mustSchedUpsert(t *testing.T, store *scheduler.Store, task *scheduler.Task) {
+func mustSchedUpsert(t *testing.T, store *cron.Store, task *cron.Task) {
 	t.Helper()
 	if _, err := store.Upsert(context.Background(), task); err != nil {
 		t.Fatalf("Upsert(%s): %v", task.Name, err)

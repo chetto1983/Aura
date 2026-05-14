@@ -1,4 +1,4 @@
-﻿package tools
+package tools
 
 import (
 	"context"
@@ -17,20 +17,20 @@ const dailyBriefingMaxChars = 8000
 // DailyBriefingTool composes the read-only stores that matter for the
 // everyday "what needs my attention?" question.
 type DailyBriefingTool struct {
-	tasks     scheduler.TaskReader
+	tasks     cron.TaskReader
 	sources   source.Reader
 	summaries summarizer.ProposalLister
-	issues    scheduler.IssueLister
+	issues    cron.IssueLister
 	archive   conversation.TurnReader
 	loc       *time.Location
 	now       func() time.Time
 }
 
 func NewDailyBriefingTool(
-	tasks scheduler.TaskReader,
+	tasks cron.TaskReader,
 	sources source.Reader,
 	summaries summarizer.ProposalLister,
-	issues scheduler.IssueLister,
+	issues cron.IssueLister,
 	archive conversation.TurnReader,
 	loc *time.Location,
 ) *DailyBriefingTool {
@@ -114,7 +114,7 @@ func (t *DailyBriefingTool) writeTasksSection(ctx context.Context, sb *strings.B
 		fmt.Fprintf(sb, "- Scheduler unavailable.\n\n")
 		return nil
 	}
-	tasks, err := t.tasks.List(ctx, scheduler.StatusActive)
+	tasks, err := t.tasks.List(ctx, cron.StatusActive)
 	if err != nil {
 		return fmt.Errorf("daily_briefing: list tasks: %w", err)
 	}
@@ -129,7 +129,7 @@ func (t *DailyBriefingTool) writeTasksSection(ctx context.Context, sb *strings.B
 			label = "overdue"
 		}
 		payload := ""
-		if task.Kind == scheduler.KindReminder && strings.TrimSpace(task.Payload) != "" {
+		if task.Kind == cron.KindReminder && strings.TrimSpace(task.Payload) != "" {
 			payload = " - " + oneLine(task.Payload, 90)
 		}
 		fmt.Fprintf(sb, "- [%s] `%s` %s at %s%s\n", label, task.Name, task.Kind, due.Format("15:04"), payload)

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 
 func handleTaskList(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		statusFilter := scheduler.Status(r.URL.Query().Get("status"))
+		statusFilter := cron.Status(r.URL.Query().Get("status"))
 		if statusFilter != "" && !validTaskStatus(statusFilter) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid status")
 			return
@@ -48,7 +48,7 @@ func handleTaskGet(deps Deps) http.HandlerFunc {
 	}
 }
 
-func taskDTO(t *scheduler.Task) Task {
+func taskDTO(t *cron.Task) Task {
 	dto := Task{
 		Name:                 t.Name,
 		Kind:                 string(t.Kind),
@@ -78,9 +78,9 @@ func taskDTO(t *scheduler.Task) Task {
 	return dto
 }
 
-func validTaskStatus(s scheduler.Status) bool {
+func validTaskStatus(s cron.Status) bool {
 	switch s {
-	case scheduler.StatusActive, scheduler.StatusDone, scheduler.StatusCancelled, scheduler.StatusFailed:
+	case cron.StatusActive, cron.StatusDone, cron.StatusCancelled, cron.StatusFailed:
 		return true
 	}
 	return false

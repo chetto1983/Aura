@@ -1,4 +1,4 @@
-// Package scheduler runs background tasks on a SQLite-backed schedule.
+// Package cron runs background tasks on a SQLite-backed schedule.
 //
 // Task kinds:
 //   - reminder         a Telegram message dispatched to a user/chat.
@@ -20,7 +20,7 @@
 // AND next_run_at <= now, fires them sequentially, then advances
 // next_run_at (daily) or marks done (at). Failures are recorded in the
 // row so the LLM can introspect them via list_tasks.
-package scheduler
+package cron
 
 import "time"
 

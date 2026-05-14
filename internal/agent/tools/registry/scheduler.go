@@ -1,4 +1,4 @@
-﻿package tools
+package tools
 
 import (
 	"context"
@@ -68,7 +68,7 @@ type ScheduledTaskRunner interface {
 // ScheduledTaskRunner) AFTER the scheduler tools register, so we accept
 // the deferred wiring rather than force a setup re-order.
 type TaskTool struct {
-	store  scheduler.Repository
+	store  cron.Repository
 	runner ScheduledTaskRunner
 	loc    *time.Location
 }
@@ -77,7 +77,7 @@ type TaskTool struct {
 // runner can be nil at construction (set later via SetRunner) so the
 // schedule/list/cancel actions stay live even if the manual-fire path
 // isn't wired yet. loc defaults to time.Local when nil.
-func NewTaskTool(store scheduler.Repository, runner ScheduledTaskRunner, loc *time.Location) *TaskTool {
+func NewTaskTool(store cron.Repository, runner ScheduledTaskRunner, loc *time.Location) *TaskTool {
 	if store == nil {
 		return nil
 	}
@@ -226,9 +226,9 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 	if err != nil {
 		return "", err
 	}
-	kind := scheduler.TaskKind(kindStr)
+	kind := cron.TaskKind(kindStr)
 	switch kind {
-	case scheduler.KindReminder, scheduler.KindWikiMaintenance, scheduler.KindAgentJob:
+	case cron.KindReminder, cron.KindWikiMaintenance, cron.KindAgentJob:
 	default:
 		return "", fmt.Errorf("task schedule: unknown kind %q", kindStr)
 	}
@@ -263,16 +263,16 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 		return "", errors.New("task schedule: weekdays can only be used with daily")
 	}
 
-	task := &scheduler.Task{Name: name, Kind: kind, Payload: payload}
-	if kind == scheduler.KindReminder {
+	task := &cron.Task{Name: name, Kind: kind, Payload: payload}
+	if kind == cron.KindReminder {
 		uid := UserIDFromContext(ctx)
 		if uid == "" {
 			return "", errors.New("task schedule: reminder requires an authenticated user context")
 		}
 		task.RecipientID = uid
 	}
-	if kind == scheduler.KindAgentJob {
-		agentPayload, err := scheduler.NormalizeAgentJobPayload(payload)
+	if kind == cron.KindAgentJob {
+		agentPayload, err := cron.NormalizeAgentJobPayload(payload)
 		if err != nil {
 			return "", fmt.Errorf("task schedule: %w", err)
 		}
@@ -298,7 +298,7 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 			return "", fmt.Errorf("task schedule: in %q must be positive", in)
 		}
 		ts := now.Add(d)
-		task.ScheduleKind = scheduler.ScheduleAt
+		task.ScheduleKind = cron.ScheduleAt
 		task.ScheduleAt = ts
 		task.NextRunAt = ts
 	case atLocal != "":
@@ -310,7 +310,7 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 		if !ts.After(now) {
 			return "", fmt.Errorf("task schedule: at_local %s is not in the future (current local time: %s)", atLocal, now.In(t.loc).Format("2006-01-02 15:04:05"))
 		}
-		task.ScheduleKind = scheduler.ScheduleAt
+		task.ScheduleKind = cron.ScheduleAt
 		task.ScheduleAt = ts
 		task.NextRunAt = ts
 	case at != "":
@@ -322,24 +322,24 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 		if !ts.After(now) {
 			return "", fmt.Errorf("task schedule: at %s is not in the future (current UTC: %s)", at, now.Format(time.RFC3339))
 		}
-		task.ScheduleKind = scheduler.ScheduleAt
+		task.ScheduleKind = cron.ScheduleAt
 		task.ScheduleAt = ts
 		task.NextRunAt = ts
 	case daily != "":
-		normalizedWeekdays, err := scheduler.NormalizeWeekdays(weekdays)
+		normalizedWeekdays, err := cron.NormalizeWeekdays(weekdays)
 		if err != nil {
 			return "", fmt.Errorf("task schedule: %w", err)
 		}
-		next, err := scheduler.NextDailyRunOnWeekdays(daily, normalizedWeekdays, t.loc, now)
+		next, err := cron.NextDailyRunOnWeekdays(daily, normalizedWeekdays, t.loc, now)
 		if err != nil {
 			return "", fmt.Errorf("task schedule: %w", err)
 		}
-		task.ScheduleKind = scheduler.ScheduleDaily
+		task.ScheduleKind = cron.ScheduleDaily
 		task.ScheduleDaily = daily
 		task.ScheduleWeekdays = normalizedWeekdays
 		task.NextRunAt = next
 	case hasEveryMinutes:
-		task.ScheduleKind = scheduler.ScheduleEvery
+		task.ScheduleKind = cron.ScheduleEvery
 		task.ScheduleEveryMinutes = everyMinutes
 		task.NextRunAt = now.Add(time.Duration(everyMinutes) * time.Minute)
 	}
@@ -360,7 +360,7 @@ func (t *TaskTool) doList(ctx context.Context, args map[string]any) (string, err
 	if t.store == nil {
 		return "", errors.New("task list: scheduler unavailable")
 	}
-	statusFilter := scheduler.Status(strings.TrimSpace(stringArg(args, "status")))
+	statusFilter := cron.Status(strings.TrimSpace(stringArg(args, "status")))
 
 	tasks, err := t.store.List(ctx, statusFilter)
 	if err != nil {
@@ -373,7 +373,7 @@ func (t *TaskTool) doList(ctx context.Context, args map[string]any) (string, err
 		return fmt.Sprintf("No tasks with status %q.", statusFilter), nil
 	}
 
-	byStatus := make(map[scheduler.Status][]*scheduler.Task)
+	byStatus := make(map[cron.Status][]*cron.Task)
 	for _, task := range tasks {
 		byStatus[task.Status] = append(byStatus[task.Status], task)
 	}
@@ -387,7 +387,7 @@ func (t *TaskTool) doList(ctx context.Context, args map[string]any) (string, err
 	fmt.Fprintf(&sb, "%d task(s):\n\n", len(tasks))
 	for _, st := range statuses {
 		fmt.Fprintf(&sb, "## %s\n", st)
-		for _, task := range byStatus[scheduler.Status(st)] {
+		for _, task := range byStatus[cron.Status(st)] {
 			fmt.Fprintf(&sb, "- %s\n", formatTaskLine(task))
 		}
 	}
@@ -435,7 +435,7 @@ func (t *TaskTool) doRunNow(ctx context.Context, args map[string]any) (string, e
 }
 
 // formatTaskLine renders a single task entry for the list output.
-func formatTaskLine(task *scheduler.Task) string {
+func formatTaskLine(task *cron.Task) string {
 	when := task.NextRunAt.Format(time.RFC3339)
 	scheduleNote := when
 	if task.IsRecurring() {
@@ -446,26 +446,26 @@ func formatTaskLine(task *scheduler.Task) string {
 		string(task.Kind),
 		scheduleNote,
 	}
-	if task.Payload != "" && task.Kind == scheduler.KindReminder {
+	if task.Payload != "" && task.Kind == cron.KindReminder {
 		parts = append(parts, fmt.Sprintf("\"%s\"", truncateForToolContext(task.Payload, 80)))
 	}
 	if task.LastError != "" {
 		parts = append(parts, fmt.Sprintf("last_error=%q", truncateForToolContext(task.LastError, 80)))
 	}
-	if task.Kind == scheduler.KindAgentJob && task.LastOutput != "" {
+	if task.Kind == cron.KindAgentJob && task.LastOutput != "" {
 		parts = append(parts, fmt.Sprintf("last_output=%q", truncateForToolContext(task.LastOutput, 120)))
 	}
 	return strings.Join(parts, " · ")
 }
 
-func formatScheduleForUser(task *scheduler.Task, when string) string {
+func formatScheduleForUser(task *cron.Task, when string) string {
 	switch task.ScheduleKind {
-	case scheduler.ScheduleDaily:
+	case cron.ScheduleDaily:
 		if task.ScheduleWeekdays != "" {
 			return fmt.Sprintf("daily at %s on %s (next run %s)", task.ScheduleDaily, task.ScheduleWeekdays, when)
 		}
 		return fmt.Sprintf("daily at %s (next run %s)", task.ScheduleDaily, when)
-	case scheduler.ScheduleEvery:
+	case cron.ScheduleEvery:
 		return fmt.Sprintf("every %d minutes (next run %s)", task.ScheduleEveryMinutes, when)
 	default:
 		return when

@@ -1,4 +1,4 @@
-﻿package tools
+package tools
 
 import (
 	"context"
@@ -22,17 +22,17 @@ func TestDailyBriefingTool_ComposesAttentionSignals(t *testing.T) {
 		t.Fatalf("source.NewStore: %v", err)
 	}
 	summaries := summarizer.NewSummariesStore(sched.DB())
-	issues := scheduler.NewIssuesStore(sched.DB())
+	issues := cron.NewIssuesStore(sched.DB())
 	archive, err := conversation.NewArchiveStore(sched.DB())
 	if err != nil {
 		t.Fatalf("NewArchiveStore: %v", err)
 	}
 
-	_, err = sched.Upsert(ctx, &scheduler.Task{
+	_, err = sched.Upsert(ctx, &cron.Task{
 		Name:         "call-client",
-		Kind:         scheduler.KindReminder,
+		Kind:         cron.KindReminder,
 		Payload:      "call client about renewal",
-		ScheduleKind: scheduler.ScheduleAt,
+		ScheduleKind: cron.ScheduleAt,
 		ScheduleAt:   now.Add(2 * time.Hour),
 		NextRunAt:    now.Add(2 * time.Hour),
 	})
@@ -46,7 +46,7 @@ func TestDailyBriefingTool_ComposesAttentionSignals(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
-	if err := issues.Enqueue(ctx, scheduler.Issue{
+	if err := issues.Enqueue(ctx, cron.Issue{
 		Kind:     "broken_link",
 		Severity: "high",
 		Slug:     "project-aura",
@@ -191,11 +191,11 @@ func TestDailyBriefingToolAcceptsProposalListerInterface(t *testing.T) {
 }
 
 type fakeBriefingIssueLister struct {
-	issues []scheduler.Issue
+	issues []cron.Issue
 }
 
-func (f fakeBriefingIssueLister) List(_ context.Context, status string) ([]scheduler.Issue, error) {
-	var out []scheduler.Issue
+func (f fakeBriefingIssueLister) List(_ context.Context, status string) ([]cron.Issue, error) {
+	var out []cron.Issue
 	for _, issue := range f.issues {
 		if status == "" || issue.Status == status {
 			out = append(out, issue)
@@ -206,7 +206,7 @@ func (f fakeBriefingIssueLister) List(_ context.Context, status string) ([]sched
 
 func TestDailyBriefingToolAcceptsIssueListerInterface(t *testing.T) {
 	now := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
-	issues := fakeBriefingIssueLister{issues: []scheduler.Issue{{
+	issues := fakeBriefingIssueLister{issues: []cron.Issue{{
 		ID:        3,
 		Kind:      "broken_link",
 		Severity:  "high",

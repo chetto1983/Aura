@@ -1,4 +1,4 @@
-﻿// Command seed_e2e_env mints a fresh bearer token for an existing
+// Command seed_e2e_env mints a fresh bearer token for an existing
 // allowlisted user and patches the AURA_E2E_TOKEN + AURA_E2E_CHAT_ID
 // keys in .env so `npm run e2e` (Playwright) has live credentials.
 //
@@ -31,8 +31,8 @@ import (
 
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/db"
 )
 
 func main() {
@@ -50,8 +50,8 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	// Open via scheduler.OpenStore so all migrations run; auth shares the DB.
-	schedStore, err := scheduler.OpenStore(*dbPath)
+	// Open via cron.OpenStore so all migrations run; auth shares the DB.
+	schedStore, err := cron.OpenStore(*dbPath)
 	if err != nil {
 		log.Fatalf("open scheduler store: %v", err)
 	}

@@ -1,4 +1,4 @@
-﻿package telegram
+package telegram
 
 import (
 	"context"
@@ -17,24 +17,23 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
-	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/storage/sources/markitdown"
 	"github.com/aura/aura/internal/mcp"
-	
-	
-	"github.com/aura/aura/internal/storage/memoryindex"
-	"github.com/aura/aura/internal/storage/sources/ocr"
-	"github.com/aura/aura/internal/storage/qdrant"
-	"github.com/aura/aura/internal/storage/reindex"
-	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/storage/search"
-	auraskills "github.com/aura/aura/internal/skills"
-	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/agent/tools/swarm"
+	"github.com/aura/aura/internal/storage/sources/ingest"
+	"github.com/aura/aura/internal/storage/sources/markitdown"
+
 	"github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agent/tools/swarm"
+	"github.com/aura/aura/internal/cron"
+	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/qdrant"
+	"github.com/aura/aura/internal/storage/reindex"
+	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/storage/sources/ocr"
+	"github.com/aura/aura/internal/storage/sources/store"
+	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
 
@@ -305,7 +304,7 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 	// reminder (delivered to the LLM-call's user via Telegram) and
 	// wiki_maintenance (autonomous nightly pass). Three LLM tools wrap
 	// the queue: schedule_task / list_tasks / cancel_task.
-	schedStore, err := scheduler.NewStoreWithDB(pool)
+	schedStore, err := cron.NewStoreWithDB(pool)
 	if err != nil {
 		return nil, fmt.Errorf("creating scheduler store: %w", err)
 	}
@@ -713,7 +712,7 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 
 	// Slice 12h/12l.1: shared wiki_issues store. Both the API maintenance
 	// handlers and the nightly maintenance job read/write the same queue.
-	b.issues = scheduler.NewIssuesStore(schedStore.DB())
+	b.issues = cron.NewIssuesStore(schedStore.DB())
 	if tool := tools.NewDailyBriefingTool(schedStore, sourceStore, summariesStore, b.issues, b.archiveDB, loc); tool != nil {
 		toolRegistry.Register(tool)
 	}
@@ -721,7 +720,7 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 	// Scheduler dispatcher closes over b so reminder/wiki_maintenance
 	// tasks can invoke the bot's send + the wiki store. Built after b
 	// is initialized.
-	sched, err := scheduler.New(scheduler.Config{
+	sched, err := cron.New(cron.Config{
 		Store:      schedStore,
 		Dispatcher: b.dispatchTask,
 		Logger:     logger,
@@ -736,17 +735,17 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 	// upsert keyed by name so restarting the bot won't duplicate it. The
 	// LLM can override the schedule with schedule_task using the same
 	// name, or cancel it with cancel_task.
-	nightlyAt, err := scheduler.NextDailyRun("03:00", loc, time.Now())
+	nightlyAt, err := cron.NextDailyRun("03:00", loc, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("computing nightly run: %w", err)
 	}
-	if _, err := schedStore.Upsert(context.Background(), &scheduler.Task{
+	if _, err := schedStore.Upsert(context.Background(), &cron.Task{
 		Name:          "nightly-wiki-maintenance",
-		Kind:          scheduler.KindWikiMaintenance,
-		ScheduleKind:  scheduler.ScheduleDaily,
+		Kind:          cron.KindWikiMaintenance,
+		ScheduleKind:  cron.ScheduleDaily,
 		ScheduleDaily: "03:00",
 		NextRunAt:     nightlyAt,
-		Status:        scheduler.StatusActive,
+		Status:        cron.StatusActive,
 	}); err != nil {
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
 	}
@@ -860,7 +859,7 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 		Restart: opt.Restart,
 		// Slice 17d: AuraBot swarm observability.
 		Swarm: swarmStore,
-		Chat: NewWebChatService(auraRunner, toolRegistry),
+		Chat:  NewWebChatService(auraRunner, toolRegistry),
 	})
 
 	// Slice 10d: request_dashboard_token tool. Registered after b is
@@ -904,4 +903,3 @@ func New(cfg *config.Config, settingsStore config.Repository, pool *sql.DB, logg
 	}
 	return b, nil
 }
-

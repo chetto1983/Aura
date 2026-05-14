@@ -1,4 +1,4 @@
-﻿package telegram
+package telegram
 
 import (
 	"context"
@@ -11,34 +11,34 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
-	"github.com/aura/aura/internal/concurrency"
-	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agent/tools/sets"
+	"github.com/aura/aura/internal/concurrency"
+	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/llm"
 	tele "gopkg.in/telebot.v4"
 )
 
-// dispatchTask is the scheduler.Dispatcher implementation. It routes a
+// dispatchTask is the cron.Dispatcher implementation. It routes a
 // fired task to the right side-effect: reminders go to Telegram via the
 // stored RecipientID, wiki_maintenance runs the autonomous pass.
 // Errors are returned so the scheduler records last_error; the row is
 // always persisted regardless of outcome so the LLM can introspect.
-func (b *Bot) dispatchTask(ctx context.Context, task *scheduler.Task) error {
+func (b *Bot) dispatchTask(ctx context.Context, task *cron.Task) error {
 	switch task.Kind {
-	case scheduler.KindReminder:
+	case cron.KindReminder:
 		return b.dispatchReminder(task)
-	case scheduler.KindWikiMaintenance:
+	case cron.KindWikiMaintenance:
 		return b.dispatchWikiMaintenance(ctx)
-	case scheduler.KindAgentJob:
+	case cron.KindAgentJob:
 		return b.dispatchAgentJob(ctx, task)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
 }
 
-func (b *Bot) dispatchReminder(task *scheduler.Task) error {
+func (b *Bot) dispatchReminder(task *cron.Task) error {
 	if task.RecipientID == "" {
 		return fmt.Errorf("reminder %q has no recipient", task.Name)
 	}
@@ -91,7 +91,7 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 		return fmt.Errorf("wiki maintenance: wiki store unavailable")
 	}
 	b.wiki.RebuildIndex(ctx)
-	job := scheduler.NewMaintenanceJob(b.wiki, b.logger).
+	job := cron.NewMaintenanceJob(b.wiki, b.logger).
 		WithIssuesStore(b.issues).
 		WithOwnerNotifier(func(ctx context.Context, msg string) {
 			for _, ownerID := range b.collectOwnerIDs() {
@@ -110,7 +110,7 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 	return nil
 }
 
-func (b *Bot) dispatchAgentJob(ctx context.Context, task *scheduler.Task) error {
+func (b *Bot) dispatchAgentJob(ctx context.Context, task *cron.Task) error {
 	run, err := b.runAgentJob(ctx, task)
 	b.logAgentJobRun(task, run)
 	b.persistAgentJobResult(ctx, task, run)
@@ -128,7 +128,7 @@ func (b *Bot) dispatchAgentJob(ctx context.Context, task *scheduler.Task) error 
 }
 
 type agentJobRun struct {
-	Payload       scheduler.AgentJobPayload
+	Payload       cron.AgentJobPayload
 	ToolAllowlist []string
 	Result        agent.Result
 	Notified      bool
@@ -146,16 +146,16 @@ type agentJobMetrics struct {
 	ElapsedMS        int64 `json:"elapsed_ms"`
 }
 
-func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRun, error) {
+func (b *Bot) runAgentJob(ctx context.Context, task *cron.Task) (agentJobRun, error) {
 	if b.agentRunner == nil {
 		return agentJobRun{}, fmt.Errorf("agent_job %q: agent runner unavailable", task.Name)
 	}
-	payload, err := scheduler.NormalizeAgentJobPayload(task.Payload)
+	payload, err := cron.NormalizeAgentJobPayload(task.Payload)
 	if err != nil {
 		return agentJobRun{}, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
 	allowlist := safeAgentJobTools(payload.ToolAllowlist)
-	wakeSignature, hasWakeSignature := scheduler.AgentJobWakeSignature(ctx, payload, scheduler.AgentJobWakeDeps{
+	wakeSignature, hasWakeSignature := cron.AgentJobWakeSignature(ctx, payload, cron.AgentJobWakeDeps{
 		Wiki:    b.wiki,
 		Sources: b.sources,
 		Tasks:   b.schedDB,
@@ -184,7 +184,7 @@ func (b *Bot) runAgentJob(ctx context.Context, task *scheduler.Task) (agentJobRu
 	return run, nil
 }
 
-func (b *Bot) logAgentJobRun(task *scheduler.Task, run agentJobRun) {
+func (b *Bot) logAgentJobRun(task *cron.Task, run agentJobRun) {
 	b.logger.Info("agent job complete",
 		"name", task.Name,
 		"recipient_id", task.RecipientID,
@@ -198,7 +198,7 @@ func (b *Bot) logAgentJobRun(task *scheduler.Task, run agentJobRun) {
 	)
 }
 
-func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, run agentJobRun) {
+func (b *Bot) persistAgentJobResult(ctx context.Context, task *cron.Task, run agentJobRun) {
 	if b.schedDB == nil || task == nil || task.ID == 0 {
 		return
 	}
@@ -224,8 +224,8 @@ func (b *Bot) persistAgentJobResult(ctx context.Context, task *scheduler.Task, r
 	}
 }
 
-func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error) {
-	payload, _ := scheduler.NormalizeAgentJobPayload(task.Payload)
+func (b *Bot) notifyAgentJob(task *cron.Task, content string) (bool, error) {
+	payload, _ := cron.NormalizeAgentJobPayload(task.Payload)
 	msg := agentJobNotificationMessage(task, payload, content)
 
 	gate := b.userGate()
@@ -255,7 +255,7 @@ func (b *Bot) notifyAgentJob(task *scheduler.Task, content string) (bool, error)
 	return true, nil
 }
 
-func agentJobNotificationMessage(task *scheduler.Task, payload scheduler.AgentJobPayload, content string) string {
+func agentJobNotificationMessage(task *cron.Task, payload cron.AgentJobPayload, content string) string {
 	name := ""
 	if task != nil {
 		name = task.Name
@@ -281,10 +281,10 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 		}
 		return tools.RunTaskNowResult{}, err
 	}
-	if task.Kind != scheduler.KindAgentJob {
+	if task.Kind != cron.KindAgentJob {
 		return tools.RunTaskNowResult{}, fmt.Errorf("task %q is kind %q; run_task_now MVP supports agent_job only", task.Name, task.Kind)
 	}
-	if task.Status == scheduler.StatusCancelled {
+	if task.Status == cron.StatusCancelled {
 		return tools.RunTaskNowResult{}, fmt.Errorf("task %q is cancelled", task.Name)
 	}
 
@@ -330,7 +330,7 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 	}, nil
 }
 
-func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
+func agentJobSystemPrompt(payload cron.AgentJobPayload, now time.Time, loc *time.Location) string {
 	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory or reusable procedural knowledge is useful, report the exact file path and patch you recommend instead of applying it. Return a short report with what you checked, any recommended edit, and unresolved issues."
 	if lang := agentJobLanguageInstruction(payload.Language); lang != "" {
 		prompt += " " + lang
@@ -348,7 +348,7 @@ func agentJobSystemPrompt(payload scheduler.AgentJobPayload, now time.Time, loc 
 }
 
 func agentJobLanguageInstruction(language string) string {
-	switch scheduler.NormalizeAgentJobLanguage(language) {
+	switch cron.NormalizeAgentJobLanguage(language) {
 	case "it":
 		return "Output language: Italian. Write the final report and all user-facing prose in Italian, regardless of tool or web result language."
 	case "en":
@@ -358,7 +358,7 @@ func agentJobLanguageInstruction(language string) string {
 	}
 }
 
-func (b *Bot) agentJobPrompt(ctx context.Context, task *scheduler.Task, payload scheduler.AgentJobPayload, now time.Time, loc *time.Location) string {
+func (b *Bot) agentJobPrompt(ctx context.Context, task *cron.Task, payload cron.AgentJobPayload, now time.Time, loc *time.Location) string {
 	var sb strings.Builder
 	if schedule := agentJobScheduleContext(task, now, loc); schedule != "" {
 		sb.WriteString(schedule)
@@ -383,7 +383,7 @@ func (b *Bot) agentJobPrompt(ctx context.Context, task *scheduler.Task, payload 
 	return sb.String()
 }
 
-func agentJobScheduleContext(task *scheduler.Task, now time.Time, loc *time.Location) string {
+func agentJobScheduleContext(task *cron.Task, now time.Time, loc *time.Location) string {
 	if task == nil || task.NextRunAt.IsZero() {
 		return ""
 	}
@@ -405,12 +405,12 @@ func agentJobScheduleContext(task *scheduler.Task, now time.Time, loc *time.Loca
 	if task.ScheduleKind != "" {
 		fmt.Fprintf(&sb, "Schedule kind: %s", task.ScheduleKind)
 		switch task.ScheduleKind {
-		case scheduler.ScheduleDaily:
+		case cron.ScheduleDaily:
 			fmt.Fprintf(&sb, " daily=%s", task.ScheduleDaily)
 			if task.ScheduleWeekdays != "" {
 				fmt.Fprintf(&sb, " weekdays=%s", task.ScheduleWeekdays)
 			}
-		case scheduler.ScheduleEvery:
+		case cron.ScheduleEvery:
 			fmt.Fprintf(&sb, " every_minutes=%d", task.ScheduleEveryMinutes)
 		}
 		sb.WriteString("\n")
@@ -427,7 +427,7 @@ func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string
 	}
 	var lines []string
 	for _, anchor := range anchors {
-		name, ok := scheduler.AgentJobTaskAnchor(anchor)
+		name, ok := cron.AgentJobTaskAnchor(anchor)
 		if !ok {
 			continue
 		}
@@ -441,9 +441,9 @@ func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string
 }
 
 func safeAgentJobTools(requested []string) []string {
-	out := toolsets.FilterAllowed(requested, scheduler.AgentJobAllowedTools)
+	out := toolsets.FilterAllowed(requested, cron.AgentJobAllowedTools)
 	if len(out) == 0 {
-		return append([]string(nil), scheduler.DefaultAgentJobTools...)
+		return append([]string(nil), cron.DefaultAgentJobTools...)
 	}
 	return out
 }

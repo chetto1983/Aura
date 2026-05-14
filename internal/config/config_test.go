@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"os"
@@ -89,7 +89,7 @@ func TestLoadTimezoneResolvesDailySchedulesInConfiguredZone(t *testing.T) {
 	}
 
 	after := time.Date(2026, 5, 7, 7, 0, 0, 0, time.UTC)
-	got, err := scheduler.NextDailyRun("10:00", loc, after)
+	got, err := cron.NextDailyRun("10:00", loc, after)
 	if err != nil {
 		t.Fatalf("NextDailyRun: %v", err)
 	}

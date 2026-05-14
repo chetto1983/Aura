@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -43,14 +43,14 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		req.At = strings.TrimSpace(req.At)
 		req.Daily = strings.TrimSpace(req.Daily)
 		req.Weekdays = strings.TrimSpace(req.Weekdays)
-		req.Language = scheduler.NormalizeAgentJobLanguage(req.Language)
+		req.Language = cron.NormalizeAgentJobLanguage(req.Language)
 		if !taskNameRe.MatchString(req.Name) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "name must be 1-64 chars [A-Za-z0-9_.-]")
 			return
 		}
-		kind := scheduler.TaskKind(strings.TrimSpace(req.Kind))
+		kind := cron.TaskKind(strings.TrimSpace(req.Kind))
 		switch kind {
-		case scheduler.KindReminder, scheduler.KindWikiMaintenance, scheduler.KindAgentJob:
+		case cron.KindReminder, cron.KindWikiMaintenance, cron.KindAgentJob:
 		default:
 			writeError(w, deps.Logger, http.StatusBadRequest, "kind must be reminder, wiki_maintenance, or agent_job")
 			return
@@ -74,12 +74,12 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "weekdays can only be used with daily")
 			return
 		}
-		if kind == scheduler.KindReminder && strings.TrimSpace(req.RecipientID) == "" {
+		if kind == cron.KindReminder && strings.TrimSpace(req.RecipientID) == "" {
 			writeError(w, deps.Logger, http.StatusBadRequest, "reminder kind requires recipient_id")
 			return
 		}
-		if kind == scheduler.KindAgentJob {
-			payload, err := scheduler.NormalizeAgentJobPayload(req.Payload)
+		if kind == cron.KindAgentJob {
+			payload, err := cron.NormalizeAgentJobPayload(req.Payload)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 				return
@@ -100,12 +100,12 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 		}
 		now := time.Now().UTC()
 
-		task := &scheduler.Task{
+		task := &cron.Task{
 			Name:        req.Name,
 			Kind:        kind,
 			Payload:     req.Payload,
 			RecipientID: strings.TrimSpace(req.RecipientID),
-			Status:      scheduler.StatusActive,
+			Status:      cron.StatusActive,
 		}
 
 		switch {
@@ -120,26 +120,26 @@ func handleTaskUpsert(deps Deps) http.HandlerFunc {
 				writeError(w, deps.Logger, http.StatusBadRequest, "at must be in the future")
 				return
 			}
-			task.ScheduleKind = scheduler.ScheduleAt
+			task.ScheduleKind = cron.ScheduleAt
 			task.ScheduleAt = ts
 			task.NextRunAt = ts
 		case req.Daily != "":
-			weekdays, err := scheduler.NormalizeWeekdays(req.Weekdays)
+			weekdays, err := cron.NormalizeWeekdays(req.Weekdays)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 				return
 			}
-			next, err := scheduler.NextDailyRunOnWeekdays(req.Daily, weekdays, loc, now)
+			next, err := cron.NextDailyRunOnWeekdays(req.Daily, weekdays, loc, now)
 			if err != nil {
 				writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
 				return
 			}
-			task.ScheduleKind = scheduler.ScheduleDaily
+			task.ScheduleKind = cron.ScheduleDaily
 			task.ScheduleDaily = req.Daily
 			task.ScheduleWeekdays = weekdays
 			task.NextRunAt = next
 		default: // EveryMinutes branch — populated > 0 enforced above
-			task.ScheduleKind = scheduler.ScheduleEvery
+			task.ScheduleKind = cron.ScheduleEvery
 			task.ScheduleEveryMinutes = req.EveryMinutes
 			// First fire is one interval from now so the user gets a
 			// predictable "starting in N minutes" feel rather than an

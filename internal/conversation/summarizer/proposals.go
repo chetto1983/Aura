@@ -123,7 +123,7 @@ type ProposalInput struct {
 }
 
 // NewSummariesStore wraps an existing *sql.DB. The migration must already
-// have been applied (scheduler.OpenStore handles this).
+// have been applied (cron.OpenStore handles this).
 func NewSummariesStore(db *sql.DB) *SummariesStore {
 	return &SummariesStore{db: db}
 }
