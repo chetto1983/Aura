@@ -5,7 +5,7 @@
   "phase": "Phase01",
   "phase_name": "Stabilize Map",
   "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01",
-  "status": "paused",
+  "status": "parent-ready-for-discussion",
   "completed_tasks": [
     {
       "id": "P1.1",
@@ -36,9 +36,9 @@
   "remaining_tasks": [
     {
       "id": "NEXT",
-      "name": "Choose and begin the next deep-refactor phase slice",
+      "name": "Begin the first verified Phase01 implementation slice",
       "status": "not_started",
-      "recommended_next": "Review Phase01/subphases/Phase01A_Run_Event_Foundation first unless the user explicitly chooses another gray area."
+      "recommended_next": "Confirm Phase01A open decisions, rerun current-tree baseline tests, then begin Phase01/subphases/Phase01A_Run_Event_Foundation unless the user explicitly chooses another child slice."
     }
   ],
   "decisions": [
@@ -61,8 +61,8 @@
   "blockers": [],
   "human_actions_pending": [
     {
-      "action": "Decide the next slice tomorrow.",
-      "context": "Phase 1 map-stabilization is closed under the Phase01 parent. The most likely next step is Phase01/subphases/Phase01A_Run_Event_Foundation, but the user may choose a different phase.",
+      "action": "Confirm Phase01A open decisions before code edits.",
+      "context": "Phase 1 parent planning is verified for discussion. The recommended next implementation slice is Phase01/subphases/Phase01A_Run_Event_Foundation, but the user may choose a different child slice.",
       "blocking": true
     }
   ],
@@ -77,6 +77,6 @@
     "head": "b75a02a4 RENAME CRON",
     "status": "clean before writing this handoff"
   },
-  "next_action": "Read CONTINUE-HERE.md, AGENTS.md, prd.md Phase 1A, .planning/deep-refactor/INDEX.md, Phase01/progress.md, then discuss/execute Phase01/subphases/Phase01A_Run_Event_Foundation.",
+  "next_action": "Read CONTINUE-HERE.md, AGENTS.md, prd.md Phase 1A, .planning/deep-refactor/INDEX.md, Phase01/subphase-summary.md, and Phase01/subphases/Phase01A_Run_Event_Foundation/{plan.md,source.md,benchmark.md,progress.md}; confirm open decisions, rerun baseline tests, then execute the first bounded Phase01A slice.",
   "context_notes": "The user wants a deep refactor, not quick wins. Keep the PRD as the route, cite sources, use phase folders with plan/source/benchmark/progress, and avoid reopening stale wave plans as executable queues."
 }

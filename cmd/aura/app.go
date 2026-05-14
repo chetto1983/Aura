@@ -582,6 +582,32 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		a.deps.Tools.Register(tool)
 	}
 
+	// ---- Bot-dependent tool registrations (need *Bot as sender/runner) -----
+	// Sandbox tools require b as DocumentSender; ToolSearch, token, doc, wiki_page
+	// need b constructed and available. Registered before scheduler so they're
+	// live when the first Telegram message arrives.
+	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(a.deps.SandboxMgr, b, a.deps.Sources, a.deps.Tools); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
+	if tool := tools.NewExecuteShellTool(a.deps.SandboxMgr); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
+	if tool := tools.NewDevToolTool(a.deps.ToolReg); tool != nil {
+		a.deps.Tools.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
+	}
+	if tool := tools.NewToolSearchTool(a.deps.Tools); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
+	if tokenTool := tools.NewRequestDashboardTokenTool(a.deps.AuthDB, b, b.IsAllowlisted); tokenTool != nil {
+		a.deps.Tools.Register(tokenTool)
+	}
+	if docTool := tools.NewDocTool(a.deps.Sources, b); docTool != nil {
+		a.deps.Tools.Register(docTool)
+	}
+	if t := tools.NewWikiPageTool(a.deps.WikiStore, a.deps.ReindexWorker); t != nil {
+		a.deps.Tools.Register(t)
+	}
+
 	// ---- Cron scheduler -----------------------------------------------------
 	// Dispatcher closes over b so reminder/wiki_maintenance tasks can invoke
 	// the bot's send + the wiki store. Built after b is initialized.

@@ -6,7 +6,6 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/concurrency"
-	tools "github.com/aura/aura/internal/agent/tools/registry"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -15,7 +14,6 @@ import (
 //
 // Phase B: creates the tele.Bot and wires Telegram-specific fields.
 // Phase C (Telegram-specific only): UserGate with Telegram-delivery callbacks,
-// sandbox tools, ToolSearch, bot-sender tools (request_dashboard_token, doc, wiki),
 // docs handler, registerHandlers, installBotCommands.
 //
 // Phase C composition wiring (api.Router, cron.Scheduler, conversation archive,
@@ -95,37 +93,6 @@ func New(deps Deps) (*Bot, error) {
 	// *Bot (which implements ScheduledTaskRunner) is available.
 	if deps.TaskTool != nil {
 		deps.TaskTool.SetRunner(b)
-	}
-
-	// Sandbox tools (need b as DocumentSender / ScheduledTaskRunner).
-	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(deps.SandboxMgr, b, deps.Sources, deps.Tools); tool != nil {
-		deps.Tools.Register(tool)
-	}
-	if tool := tools.NewExecuteShellTool(deps.SandboxMgr); tool != nil {
-		deps.Tools.Register(tool)
-	}
-	if tool := tools.NewDevToolTool(deps.ToolReg); tool != nil {
-		deps.Tools.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-	}
-
-	// Deferred-tools rollout: tool_search is the always-on seed of the
-	// per-turn agent pool. Registered last so it sees every other tool in
-	// Registry.Search(). PrepareVectorReader is called later in wireBot.
-	if tool := tools.NewToolSearchTool(deps.Tools); tool != nil {
-		deps.Tools.Register(tool)
-	}
-
-	// Tools that need b as a sender/runner. Registered after b is
-	// constructed and before the docs handler so they're available on first
-	// message.
-	if tokenTool := tools.NewRequestDashboardTokenTool(deps.AuthDB, b, b.isAllowlisted); tokenTool != nil {
-		deps.Tools.Register(tokenTool)
-	}
-	if docTool := tools.NewDocTool(deps.Sources, b); docTool != nil {
-		deps.Tools.Register(docTool)
-	}
-	if t := tools.NewWikiPageTool(deps.WikiStore, deps.ReindexWorker); t != nil {
-		deps.Tools.Register(t)
 	}
 
 	// Slice 6: doc handler (Telegram document upload → OCR/markitdown pipeline).
