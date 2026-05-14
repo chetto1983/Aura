@@ -142,7 +142,7 @@
         "Single atomic commit: `refactor(channels/telegram): port streaming.go as outbound + Web Hub flag`"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "High-risk step — Telegram production behavior. Mitigation: flag default false; only flip after manual smoke."
     },
     {
