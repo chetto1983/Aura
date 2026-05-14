@@ -344,7 +344,11 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		return nil
 	}
 
-	bot, err := telegram.New(cfg, settingsStore, pool, logger, telegram.WithRestart(restart))
+	app, err := newApp(cfg, settingsStore, pool, logger, restart)
+	if err != nil {
+		return nil, activeLogger, fmt.Errorf("build app deps: %w", err)
+	}
+	bot, err := telegram.New(app.deps, telegram.WithRestart(restart))
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("create telegram bot: %w", err)
 	}

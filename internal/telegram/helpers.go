@@ -13,7 +13,9 @@ import (
 	"github.com/aura/aura/internal/storage/search"
 )
 
-func shouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
+// ShouldBootstrapPromptOverlayDefaults returns true if the overlay path is the
+// standard runtime workspace and default overlay files should be seeded.
+func ShouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
@@ -27,7 +29,8 @@ func shouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
 	return overlayClean == workspaceClean || overlayClean == runtimeClean || overlayClean == filepath.Clean("/workspace")
 }
 
-func skillSearchRoots(cfg *config.Config) []string {
+// SkillSearchRoots returns the ordered skill directory search roots from config.
+func SkillSearchRoots(cfg *config.Config) []string {
 	if cfg == nil {
 		return nil
 	}
@@ -50,7 +53,8 @@ func skillSearchRoots(cfg *config.Config) []string {
 	}
 }
 
-func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
+// CreateLLMClient builds the LLM client with retry wrapper.
+func CreateLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	_ = logger
 	openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
 		APIKey:  cfg.LLMAPIKey,
@@ -67,11 +71,13 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	})
 }
 
-func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
+// CreateEmbeddingFunc builds the embedding function from config.
+func CreateEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
 	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingOutputDim, true, nil)
 }
 
-func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {
+// SetupSandboxRuntime constructs the sandbox execution runtime if enabled.
+func SetupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {
 	if logger == nil {
 		logger = slog.Default()
 	}

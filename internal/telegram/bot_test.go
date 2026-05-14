@@ -35,7 +35,7 @@ func TestToolActivityMessageFallback(t *testing.T) {
 }
 
 func TestNewRequiresDBPool(t *testing.T) {
-	_, err := New(&config.Config{}, nil, nil, nil)
+	_, err := New(Deps{Cfg: &config.Config{}})
 	if err == nil || !strings.Contains(err.Error(), "db pool required") {
 		t.Fatalf("New() error = %v, want db pool required", err)
 	}

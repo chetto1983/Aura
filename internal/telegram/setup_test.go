@@ -13,7 +13,7 @@ func TestSkillSearchRootsIncludeSkillsPathCatalogLayouts(t *testing.T) {
 		SkillsInstallProjectDir: "",
 	}
 
-	roots := skillSearchRoots(cfg)
+	roots := SkillSearchRoots(cfg)
 	for _, want := range []string{
 		filepath.Join("data", "skills"),
 		".agents/skills",

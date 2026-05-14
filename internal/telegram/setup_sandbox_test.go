@@ -11,7 +11,7 @@ import (
 )
 
 func TestSetupSandboxRuntime_Disabled(t *testing.T) {
-	mgr, health := setupSandboxRuntime(&config.Config{SandboxEnabled: false}, slog.Default())
+	mgr, health := SetupSandboxRuntime(&config.Config{SandboxEnabled: false}, slog.Default())
 
 	if mgr != nil {
 		t.Fatal("manager = non-nil, want nil")
@@ -32,7 +32,7 @@ func TestSetupSandboxRuntime_ProcessRunnerEnablesCodeAndShell(t *testing.T) {
 		t.Skip("python3 not available")
 	}
 	workDir := t.TempDir()
-	mgr, health := setupSandboxRuntime(&config.Config{
+	mgr, health := SetupSandboxRuntime(&config.Config{
 		SandboxEnabled:    true,
 		SandboxTimeoutSec: 21,
 		WorkspaceRoot:     workDir,
@@ -88,8 +88,8 @@ func TestShouldBootstrapPromptOverlayDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldBootstrapPromptOverlayDefaults(tt.cfg); got != tt.want {
-				t.Fatalf("shouldBootstrapPromptOverlayDefaults() = %v, want %v", got, tt.want)
+			if got := ShouldBootstrapPromptOverlayDefaults(tt.cfg); got != tt.want {
+				t.Fatalf("ShouldBootstrapPromptOverlayDefaults() = %v, want %v", got, tt.want)
 			}
 		})
 	}
