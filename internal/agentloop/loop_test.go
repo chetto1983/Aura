@@ -158,6 +158,50 @@ func TestRunMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	}
 }
 
+func TestRunMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
+	// Round 1: tool call A → executed (executions=1, cap hit).
+	// Round 2: tool call B (different name → not blocked by MaxCallsPerTool;
+	//          would be blocked by MaxToolCalls=1 → budget stub).
+	// Round 3: finalizing mode → loop must hand the model an empty tool slate;
+	//          model returns final assistant text.
+	state := newBudgetLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "documents"}},
+		}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-2", Name: "web_search", Arguments: map[string]any{"q": "anything"}},
+		}}},
+		{Response: llm.Response{Content: "final answer from evidence"}},
+	}}
+	executions := 0
+	executor := ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		executions += len(calls)
+		state.AddToolResultMessage(calls[0].ID, "memory result")
+		return ExecutionSummary{LastResult: "memory result", Results: map[string]string{calls[0].ID: "memory result"}}
+	})
+
+	result, err := Run(context.Background(), client, executor, state, Options{
+		MaxIterations: 4,
+		MaxToolCalls:  1,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Text != "final answer from evidence" {
+		t.Fatalf("Text = %q", result.Text)
+	}
+	if executions != 1 {
+		t.Fatalf("executions = %d, want 1 (MaxToolCalls=1 should cap fresh dispatches)", executions)
+	}
+	if got := state.toolResult("call-2"); !strings.Contains(got, "per-Run tool budget") {
+		t.Fatalf("call-2 stub = %q, want budget-cap message", got)
+	}
+	if !state.sawUserMessage("Tool budget reached") {
+		t.Fatalf("expected user-side finalize instruction injected; messages = %+v", state.messages)
+	}
+}
+
 func TestRunBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
@@ -618,4 +662,28 @@ func (s *fakeLoopState) toolResult(id string) string {
 
 func deadEndFallbackText() string {
 	return "Mi sono " + "fermato"
+}
+
+// budgetLoopState extends fakeLoopState with AddUserMessage so the
+// MaxToolCalls finalizing transition can inject its prod via the
+// PhantomCorrector type assertion path.
+type budgetLoopState struct {
+	*fakeLoopState
+}
+
+func newBudgetLoopState() *budgetLoopState {
+	return &budgetLoopState{fakeLoopState: newFakeLoopState()}
+}
+
+func (s *budgetLoopState) AddUserMessage(content string) {
+	s.messages = append(s.messages, llm.Message{Role: "user", Content: content})
+}
+
+func (s *budgetLoopState) sawUserMessage(substr string) bool {
+	for _, msg := range s.messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, substr) {
+			return true
+		}
+	}
+	return false
 }

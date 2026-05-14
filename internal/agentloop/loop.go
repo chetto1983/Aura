@@ -15,6 +15,7 @@ package agentloop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -100,8 +101,28 @@ type ToolCallDecision struct {
 type BeforeToolCallback func(llm.ToolCall, ToolCallState) ToolCallDecision
 
 type Options struct {
-	MaxIterations           int
-	MaxElapsed              time.Duration
+	MaxIterations int
+	MaxElapsed    time.Duration
+	// MaxToolCalls caps the TOTAL number of fresh (post-dedupe, non-skipped)
+	// tool calls dispatched across all iterations of a single Run. Zero
+	// means unlimited. Distinct from MaxCallsPerTool which caps per tool
+	// name. When the cap is reached, the loop enters "finalizing" mode:
+	// subsequent LLM rounds are issued with tools=nil and (if the State
+	// implements PhantomCorrector) a user-side instruction is injected so
+	// the model produces a natural-language answer instead of looping on
+	// budget-capped skip stubs.
+	MaxToolCalls int
+	// CompleteOnDeadline returns a partial assistant message instead of an
+	// error when the LLM Chat call hits context.DeadlineExceeded AND at
+	// least one tool call has already been executed. The final message is
+	// synthesized from the last tool result. Mirrors agent.Runner semantics
+	// for swarm workers that prefer a partial answer over a hard failure.
+	CompleteOnDeadline bool
+	// FinalizationTimeout is the wall-clock cap for the LLM round issued
+	// after the loop enters finalizing mode (MaxToolCalls hit). Applied
+	// only when CompleteOnDeadline is also true. Zero leaves the per-
+	// iteration remaining-budget ctx in place.
+	FinalizationTimeout     time.Duration
 	Tools                   []llm.ToolDefinition
 	ToolsProvider           func() []llm.ToolDefinition
 	TerminalToolPolicy      bool
@@ -255,6 +276,17 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 	seenToolCalls := map[string]bool{}
 	seenToolCallsResult := map[string]string{}
 	toolCallExecutions := map[string]int{}
+	// globalToolCallsExecuted counts FRESH (post-dedupe, post-policy) tool
+	// calls that the executor actually ran across the whole turn. Used to
+	// gate opts.MaxToolCalls and to trigger the finalizing transition.
+	// Distinct from stats.ToolCalls which counts ANNOUNCED calls and so
+	// overcounts when the loop suppresses duplicates.
+	globalToolCallsExecuted := 0
+	// finalizing flips on when MaxToolCalls is hit. Subsequent iterations
+	// send tools=nil to the LLM (forcing a natural-language answer) and,
+	// when CompleteOnDeadline + FinalizationTimeout are set, run under a
+	// tightened ctx so a stuck final round still yields a partial answer.
+	finalizing := false
 	// calledThisTurn tracks which tool names fired in any round of this
 	// turn. The phantom guard consults it to distinguish "model
 	// legitimately summarizes a tool result it just received" from
@@ -311,6 +343,14 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		}
 		var iterCtx context.Context
 		iterCtx, iterCancel = context.WithTimeout(ctx, remaining)
+		// Finalizing-round ctx tightening: when MaxToolCalls has been hit
+		// and the caller opted into CompleteOnDeadline + FinalizationTimeout,
+		// rebind iterCtx to the shorter of the two. The previous timer is
+		// cancelled to avoid stacking deadlines (F-009).
+		if finalizing && opts.CompleteOnDeadline && opts.FinalizationTimeout > 0 {
+			iterCancel()
+			iterCtx, iterCancel = context.WithTimeout(ctx, opts.FinalizationTimeout)
+		}
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
 				stats.StopReason = "before_llm"
@@ -332,6 +372,12 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			pool = newToolPool(seed, opts.ToolResolver)
 		}
 		tools := pool.Defs()
+		// Finalizing-round: hide tools so the model is forced to produce a
+		// natural-language answer from the evidence already collected
+		// instead of issuing another budget-capped tool call.
+		if finalizing {
+			tools = nil
+		}
 
 		stats.LLMCalls++
 		stats.LoopSteps++
@@ -342,6 +388,23 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		resp, err := client.Chat(iterCtx, messagesForModel, tools)
 		if err != nil {
 			iterCancel()
+			// CompleteOnDeadline: when the caller prefers a partial result
+			// over a hard failure (swarm workers, scheduled jobs) and the
+			// Chat call was cancelled by the deadline, synthesize a final
+			// assistant message from the last tool result so downstream
+			// telemetry still sees a usable Result. Mirrors agent.Runner
+			// runner.go:218-222.
+			if opts.CompleteOnDeadline && errors.Is(err, context.DeadlineExceeded) && globalToolCallsExecuted > 0 {
+				content := interruptedAssistantContent(err, lastToolResult)
+				state.AddAssistantMessage(content)
+				emitStats()
+				logger.Warn("agentloop: complete_on_deadline",
+					"iteration", iteration,
+					"finalizing", finalizing,
+					"tool_calls_executed", globalToolCallsExecuted,
+				)
+				return Result{Text: content, Stats: stats}, nil
+			}
 			return Result{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
 		}
 		if opts.OnLLMDelta != nil && resp.Response.Content != "" {
@@ -456,6 +519,7 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 		var freshCalls []llm.ToolCall
 		skippedToolResults := map[string]string{}
 		maxCallsHit := map[string]bool{}
+		budgetCapHit := map[string]bool{}
 		for _, call := range callsToExecute {
 			key := duplicateToolCallKey(call)
 			stateForCall := ToolCallState{
@@ -483,9 +547,18 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				maxCallsHit[call.ID] = true
 				continue
+			} else if opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
+				// Per-Run tool budget exhausted. Mirror agent.Runner's
+				// splitToolCalls semantics: kept = first N, rest get a
+				// budget-exhausted stub. Finalizing transition is handled
+				// post-dispatch to keep the dedupe loop side-effect-light.
+				duplicateToolCalls = append(duplicateToolCalls, call)
+				budgetCapHit[call.ID] = true
+				continue
 			}
 			seenToolCalls[key] = true
 			toolCallExecutions[call.Name]++
+			globalToolCallsExecuted++
 			freshCalls = append(freshCalls, call)
 		}
 		stats.DuplicateToolCall = stats.DuplicateToolCall || len(duplicateToolCalls) > 0
@@ -564,7 +637,27 @@ func Run(ctx context.Context, client ChatClient, executor ToolExecutor, state St
 			if maxCallsHit[duplicate.ID] {
 				stub = maxCallsToolResult(duplicate)
 			}
+			if budgetCapHit[duplicate.ID] {
+				stub = budgetCapToolResult(opts.MaxToolCalls)
+			}
 			state.AddToolResultMessage(duplicate.ID, WrapUntrustedToolResult(duplicate.Name, stub))
+		}
+		// Per-Run tool budget transition: when the cap has just been reached,
+		// flip into finalizing mode and (when State supports it) inject a
+		// user-side instruction telling the model to finish from existing
+		// evidence. Mirrors agent.Runner runner.go:289-292. Fires once per
+		// Run — subsequent iterations already see finalizing=true.
+		if !finalizing && opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
+			finalizing = true
+			if corrector, ok := state.(PhantomCorrector); ok {
+				corrector.AddUserMessage(toolBudgetFinalInstruction(opts.MaxToolCalls))
+			} else {
+				logger.Warn("agentloop: tool_budget_finalize_no_corrector",
+					"iteration", iteration,
+					"max_tool_calls", opts.MaxToolCalls,
+					"reason", "state_lacks_AddUserMessage",
+				)
+			}
 		}
 		emitStats()
 
@@ -665,6 +758,37 @@ func duplicateToolResult(call llm.ToolCall, opts Options) string {
 // model needs a different message than duplicateToolResult.
 func maxCallsToolResult(call llm.ToolCall) string {
 	return fmt.Sprintf("You have hit the per-turn call budget for %s. Move on with what you already have, or call a different tool.", call.Name)
+}
+
+// budgetCapToolResult is the stub emitted when the per-Run tool budget
+// (Options.MaxToolCalls) is exhausted. Distinct from maxCallsToolResult
+// because the gate is the TOTAL count, not per-tool: pointing the model
+// at a different tool would not help. Mirrors agent.Runner
+// skippedToolOutcomes phrasing for swarm-worker semantics parity.
+func budgetCapToolResult(maxToolCalls int) string {
+	return fmt.Sprintf("Tool call skipped: per-Run tool budget (%d) reached. Return a concise partial result from the evidence already gathered.", maxToolCalls)
+}
+
+// toolBudgetFinalInstruction is the user-side prod injected when the per-Run
+// tool budget is hit. Tells the model to stop calling tools and finalize
+// the answer from the evidence above. Mirrors agent.Runner
+// toolBudgetFinalInstruction so PHASE B can swap in without behavior drift.
+func toolBudgetFinalInstruction(maxToolCalls int) string {
+	return fmt.Sprintf("Tool budget reached (%d calls). Do not call tools again. Finish the assigned work now with a concise final report from the evidence above: answer, evidence/URLs when available, gaps, and next action.", maxToolCalls)
+}
+
+// interruptedAssistantContent renders the final assistant text returned by
+// CompleteOnDeadline when the LLM Chat call dies on context.DeadlineExceeded
+// AFTER at least one tool call has run. The error is included verbatim so
+// downstream telemetry can distinguish "deadline mid-turn" from "natural
+// completion". Mirrors agent.Runner interruptedContent so PHASE B swaps in
+// without user-visible diff.
+func interruptedAssistantContent(err error, lastToolResult string) string {
+	content := fmt.Sprintf("Agent interrupted before a final answer: %v.", err)
+	if trimmed := strings.TrimSpace(lastToolResult); trimmed != "" {
+		content += "\n\nLast tool result:\n" + trimmed
+	}
+	return content
 }
 
 func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.ToolCall, ToolCallState) string) BeforeToolCallback {
