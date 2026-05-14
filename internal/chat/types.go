@@ -34,6 +34,7 @@ const (
 	ChannelWeb       Channel = "web"
 	ChannelHeartbeat Channel = "heartbeat"
 	ChannelCron      Channel = "cron"
+	ChannelSwarm     Channel = "swarm"
 )
 
 // DeliveryMode tells the outbound adapter how aggressively to surface the
@@ -125,6 +126,12 @@ type InboundMessage struct {
 	TimeZone    string
 	Mode        DeliveryMode
 	CreatedAt   time.Time
+
+	// ParentRunID is non-empty when this message is a child dispatch of a
+	// parent run (e.g. a swarm task spawned by a larger orchestration). The
+	// Hub copies it into Run.Metadata["parent_run_id"] so lineage is
+	// traceable across run records.
+	ParentRunID string
 
 	// ChannelData carries adapter-private state. Examples: telegram tele.Bot
 	// pointer + chat_id needed by the outbound adapter to send the reply;

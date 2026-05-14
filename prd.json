@@ -185,7 +185,7 @@
         "Single atomic commit: `refactor(agent/tools): consolidate tool packages under agent/tools/`"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Large surface — many imports to update. Consider splitting into 4 sub-commits internally if size becomes unwieldy."
     },
     {
@@ -205,18 +205,27 @@
     },
     {
       "id": "US-704",
-      "title": "Step 7d — Telegram via Hub behind AURA_USE_HUB=true flag",
-      "description": "Wire Telegram update handler through chat.Hub.Receive when AURA_USE_HUB=true. Default flag stays false (legacy path). Smoke test: with flag=true, send a Telegram message → CoT visible + fixture byte-diff = 0.",
+      "title": "Step 7d — Telegram via Hub as ONLY path + drop AURA_USE_HUB flag + delete legacy telegram conversation/streaming/chat_service",
+      "description": "Wire the Telegram update handler through chat.Hub.Receive as the SOLE production path. NO flag — direct cutover. The user has explicitly approved skipping the 48h soak with AURA_USE_HUB safety net. The fixture byte-diff verification from US-401 (channels/telegram/outbound.go matches legacy streaming.go) is the gate. After cutover, DELETE the legacy code: internal/telegram/conversation.go, internal/telegram/streaming.go, internal/telegram/chat_service.go, internal/telegram/conversation_*.go (any conversation_tool_exec.go, conversation_*_test.go), and any AURA_USE_HUB env reads. Update internal/telegram/bot.go to call chat.Hub directly. The Bot struct should shrink — drop fields that only existed for the legacy path (the agentRunner, the chatPipe, the consumeStream wiring). cmd/aura/main.go drops the AURA_USE_HUB env wiring. NET: -1500+ LOC of dead Telegram-specific code.",
       "acceptanceCriteria": [
-        "Telegram message handler reads AURA_USE_HUB env flag",
-        "With flag=true, message goes through chat.Hub.Receive",
-        "With flag=false, message uses legacy handleConversation path (unchanged)",
-        "Fixture byte-diff with flag=true vs flag=false = 0",
-        "Single atomic commit: `refactor(telegram): wire Hub path behind AURA_USE_HUB flag`"
+        "internal/telegram/conversation.go does NOT exist",
+        "internal/telegram/streaming.go does NOT exist",
+        "internal/telegram/chat_service.go does NOT exist",
+        "internal/telegram/conversation_tool_exec.go does NOT exist (if it existed)",
+        "Any internal/telegram/conversation_*_test.go does NOT exist",
+        "grep -rn 'AURA_USE_HUB' D:/Aura returns ZERO matches in .go files (env flag is gone)",
+        "grep -rn 'handleConversation\\|chatPipeService\\|consumeStream' D:/Aura --include=*.go returns ZERO matches outside the legacy-file deletions",
+        "Telegram update handler in internal/telegram/bot.go (or equivalent) calls chat.Hub.Receive unconditionally",
+        "internal/telegram/ total LOC ≤ 2000 (was 8957 at session start — massive trim)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green (no skipped pre-existing tests; tests of deleted code may be deleted too)",
+        "Manual smoke: send a Telegram message → CoT visible + reply rendered correctly (NOTE: agent CANNOT verify this; flag in progress.txt as USER-VERIFY-MANUAL)",
+        "Single atomic commit: `refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streaming/chat_service — Hub is the only path`"
       ],
       "priority": 17,
       "passes": false,
-      "notes": "Manual soak 48h before flipping default to true. Don't flip the default in this commit."
+      "notes": "User explicitly chose the aggressive cleanup: skip soak, kill flag, delete legacy. The fixture from US-301 + outbound port from US-401 give byte-level confidence the Hub path matches. If Telegram tests break after deletion AND the test asserted on internal-legacy-paths (e.g. mocked handleConversation directly), DELETE those tests too — they tested the legacy implementation, not behavior. If a test asserts on behavior (e.g. 'sending message X produces reply Y'), keep it and route through Hub. After this commit, internal/telegram/ should contain only: bot.go (Telegram tele.Bot wrapper + update handlers that call Hub), maybe access.go (allowlist), maybe commands.go (slash commands). Setup.go's body should stay for now (it's the composition root work, scheduled for Step 8 / a later cleanup)."
     }
   ]
 }

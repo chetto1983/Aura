@@ -19,6 +19,13 @@ type AgentRunner interface {
 	Run(ctx context.Context, task agent.Task) (agent.Result, error)
 }
 
+// parentRunIDSetter is an optional extension of AgentRunner. When the
+// runner implements it, Manager.Run stamps each child dispatch with the
+// swarm run ID so lineage is traceable across run records.
+type parentRunIDSetter interface {
+	WithParentRunID(id string) AgentRunner
+}
+
 // RunRunner is the execution surface exposed to LLM-facing swarm tools.
 type RunRunner interface {
 	Run(ctx context.Context, req RunRequest) (RunResult, error)
@@ -122,6 +129,14 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{Run: run}, err
 	}
 
+	// If the runner supports parent_run_id propagation, create a child
+	// runner stamped with the swarm run ID so every chat.Run created for
+	// this batch records lineage.
+	runner := m.runner
+	if ps, ok := runner.(parentRunIDSetter); ok {
+		runner = ps.WithParentRunID(run.ID)
+	}
+
 	taskRows := make([]*Task, 0, len(req.Assignments))
 	for _, assignment := range req.Assignments {
 		task, err := m.store.CreateTask(ctx, run.ID, assignment)
@@ -171,7 +186,7 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				mu.Unlock()
 				return
 			}
-			result, err := m.runner.Run(ctx, assignment.AgentTask())
+			result, err := runner.Run(ctx, assignment.AgentTask())
 			if err != nil {
 				if m.logger != nil {
 					m.logger.Warn("swarm task failed", "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)

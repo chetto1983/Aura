@@ -146,6 +146,10 @@ func (h *Hub) ReceiveMessage(ctx context.Context, msg InboundMessage) (*Run, err
 
 func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 	runID := newRunID()
+	meta := map[string]any{}
+	if msg.ParentRunID != "" {
+		meta["parent_run_id"] = msg.ParentRunID
+	}
 	run := &Run{
 		ID:          runID,
 		ThreadID:    msg.ThreadID,
@@ -153,7 +157,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		Channel:     msg.Channel,
 		Status:      RunStatusRunning,
 		StartedAt:   time.Now().UTC(),
-		Metadata:    map[string]any{},
+		Metadata:    meta,
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)

@@ -38,6 +38,11 @@ func NewCron(cfg Config) *Outbound {
 	return build(chat.ChannelCron, cfg)
 }
 
+// NewSwarm returns an Outbound bound to chat.ChannelSwarm.
+func NewSwarm(cfg Config) *Outbound {
+	return build(chat.ChannelSwarm, cfg)
+}
+
 func build(ch chat.Channel, cfg Config) *Outbound {
 	logger := cfg.Logger
 	if logger == nil {
