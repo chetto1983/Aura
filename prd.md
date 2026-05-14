@@ -93,6 +93,39 @@ Implementation targets:
   implementation starts.
 - Stale or rejected examples remain recorded with the reason they were rejected.
 
+### 3.2 Planning-State Reconciliation
+
+Aura already has useful planning work in `.planning/`, but those files are not
+the execution queue for the deep refactor. They were written against an older
+module shape and several of their target paths are moved, deleted, or absorbed
+by this PRD.
+
+The rule:
+
+> Old waves may contribute requirements, examples, and tests. They must not
+> execute as-is when they conflict with the deep-refactor architecture.
+
+Planning-state decisions:
+
+| Plan | Decision | What Survives | Landing Path |
+| --- | --- | --- | --- |
+| `.planning/CONTEXT-ENGINEERING-ROADMAP.md` | Deferred and re-authored by phase | Prompt-cache discipline, deterministic prompt/tool ordering, retrieval capsule, scratchpad, compaction rules, subagent return hygiene | Baseline may run before Phase 1. Prompt/tool determinism lands in Phases 4-5. Working memory and retrieval capsule land in Phase 7. Subagent return hygiene lands in Phase 8. |
+| `.planning/wave1/fix_plan.md` | Superseded as a standalone queue | RRF, deferred tool discovery, vector-router removal, core toolset policy, probe harness | Tool discovery and tool-order work land in Phase 5. RRF and hybrid retrieval scoring land in Phase 7. The probe harness becomes Phase 5/7 verification, not a separate wave. |
+| `.planning/wave2/fix_plan.md` | Deferred into RAG/memory rebuild | Bidirectional backlinks, in-memory graph index, extraction deltas, multi-page touch, provenance markers | Lands in Phase 7 after memory layers, projection freshness, and `wiki.Store.WritePage` invariants are locked. `internal/wiki` remains the graph substrate; ingest/source paths must be re-authored against the new `storage/sources` layout. |
+| `.planning/wave3-agent-swarm/plan.md` | Superseded and re-authored after RunGraph decisions | Live phase visibility, OTel-style trace events, skill-as-code validation, role selection, proposal-only worker writes via `proposed_updates` | Lands in Phase 8 as part of policy-driven RunGraph and `team_collaboration`. Old assumptions such as permanent `max_spawn_depth=1`, fixed read-only-only workers, and lead-only result aggregation are not architecture. |
+
+Operational consequence:
+
+- Do not archive old planning files yet; they remain evidence.
+- Do not implement their file paths literally without checking the phase map
+  above.
+- If a future executor wants to run a wave, first create a small re-authored
+  phase plan against this PRD's module map.
+- Root `prd.md` and `.planning/aura-deep-refactor-decisions.json` are the
+  current source of truth for direction.
+- `docs/aura-restructure-prd*.md` and review files are evidence for why the
+  reconciliation exists, not a competing route.
+
 ---
 
 ## 4. Module Map

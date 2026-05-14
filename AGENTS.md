@@ -37,6 +37,23 @@ Codex memory rule:
   paths, adopted patterns, rejected patterns, and verification fixtures close to
   the decision or module being changed.
 
+Planning-state rule:
+
+- Root `D:/Aura/prd.md` plus
+  `D:/Aura/.planning/aura-deep-refactor-decisions.json` are the active route for
+  the deep refactor.
+- Existing `.planning/CONTEXT-ENGINEERING-ROADMAP.md`,
+  `.planning/wave1/fix_plan.md`, `.planning/wave2/fix_plan.md`, and
+  `.planning/wave3-agent-swarm/plan.md` remain evidence and requirement mines,
+  not executable queues.
+- Do not run old waves as-is. Re-author a bounded phase plan against the current
+  PRD module map before implementing.
+- Preserve useful old-wave ideas by landing them in the PRD phases:
+  context-engineering in Phases 4-8, Wave 1 in Phases 5 and 7, Wave 2 in Phase
+  7, and Wave 3 in Phase 8.
+- `docs/aura-restructure-prd*.md` review files explain why reconciliation was
+  needed; they are not a competing route.
+
 ## Architecture Decisions To Preserve
 
 ### Cache Plane

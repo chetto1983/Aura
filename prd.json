@@ -172,6 +172,111 @@
       "priority": 12,
       "passes": true,
       "notes": "Verification step. No LOC change. Locks in the measurement."
+    },
+    {
+      "id": "US-A13",
+      "title": "Step 8 — Extract telegram/setup.go (1028 LOC) → cmd/aura/app.go composition root",
+      "description": "PRINCIPLE LOCKED BY USER 2026-05-14: 'TELEGRAM DEVE ESSERE SOLO UN WRAPPER — TUTTO IL RESTO DELEGATO AI MODULI DI COMPETENZA'. internal/telegram/setup.go is mislabeled: at 1028 LOC it's the composition root for the ENTIRE Aura binary (wires bot + tools + storage + chathub + cron + mcp + skills + sandbox + auth + api). Move the body of telegram.New() to cmd/aura/app.go as the canonical composition root. internal/telegram/ becomes the Telegram channel adapter ONLY. Goroutine ownership (bgCtx/bgCancel/bgWg) moves from Bot to App. Master plan §4 Step 8 originally estimated 32-40h in 4 sub-commits (8a wire funcs / 8b goroutine ownership / 8c field drop / 8d flag cleanup) — ship as ONE final atomic commit but you may iterate internally.",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go exists with the composition root (the body of telegram.New())",
+        "internal/telegram/setup.go either does NOT exist OR ≤200 LOC (Telegram-specific bits only)",
+        "internal/telegram/ total prod LOC reduced by ≥800",
+        "Bot struct shrinks: drop fields that only existed for composition (wiki, sources, ocr, search, etc.). Keep only bot, cfg, loc, logger, hub, started, api, allowlist.",
+        "Goroutine context (bgCtx/bgCancel/bgWg) lives on *App, not *Bot",
+        "go test -race ./... green",
+        "Single atomic commit: `refactor(app): extract composition root telegram/setup → cmd/aura/app.go`"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "HIGH risk — touches every wiring path. Tests that instantiate the whole Bot may break — they test internal behavior, not contracts; deleting those tests is OK per CLAUDE.md exception clause. Mitigation: split into sub-commits internally for safety but ship ONE final atomic commit. Master plan §4 Step 8 has been on the table since restructure start."
+    },
+    {
+      "id": "US-A14",
+      "title": "Move invocation_builder.go (575 LOC) → internal/channels/telegram/",
+      "description": "PRINCIPLE: telegram = wrapper, agent orchestration belongs elsewhere. internal/telegram/invocation_builder.go is agent-orchestration with Telegram-specific Hub deps (event handling, progressive edit wiring, archive write). It logically belongs to internal/channels/telegram/ (the channel adapter package), not the bot wrapper. Move: git mv to internal/channels/telegram/invocation_builder.go, change package decl, update callers (probably only bot.go).",
+      "acceptanceCriteria": [
+        "internal/telegram/invocation_builder.go does NOT exist",
+        "internal/channels/telegram/invocation_builder.go exists with appropriate package decl",
+        "internal/telegram/ prod LOC reduced by ≥570",
+        "go build + vet + test ./... green",
+        "Single atomic commit: `refactor(channels/telegram): move invocation_builder from telegram/ to channels/telegram/`"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Med risk — caller updates required. Hub is now the sole path so this is the natural home."
+    },
+    {
+      "id": "US-A15",
+      "title": "Relocate atomic_tables.go (499 LOC) → internal/storage/ or internal/db/",
+      "description": "PRINCIPLE: telegram = wrapper. internal/telegram/atomic_tables.go is database/SQL plumbing — has nothing to do with Telegram. READ the file first to identify the responsibility (likely table-creation atomic helpers or schema management), then move to the right home: internal/db/, internal/storage/sources/store/, or new sub-package. Update callers.",
+      "acceptanceCriteria": [
+        "internal/telegram/atomic_tables.go does NOT exist",
+        "Equivalent functionality lives in internal/db/ or internal/storage/ (specify the chosen home in the commit message)",
+        "internal/telegram/ prod LOC reduced by ≥499",
+        "go build + vet + test ./... green",
+        "Single atomic commit: `refactor(storage|db): move atomic_tables from telegram/ to <chosen-home>`"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Low-Med risk — pure relocation. Investigate WHAT it does first; if multiple consumers, may need slight generalization."
+    },
+    {
+      "id": "US-A16",
+      "title": "Move scheduler_handlers.go (457 + 416 test LOC) → internal/cron/",
+      "description": "PRINCIPLE: telegram = wrapper. internal/telegram/scheduler_handlers.go has the agent_job + wake_signature handlers — cron-driven, NOT Telegram-driven. Telegram is just the NOTIFY channel when the job completes. Move the cron-job dispatch logic to internal/cron/telegram_handlers.go (or split: cron part stays in cron/, telegram-notify part stays as small adapter). Use chat.Hub silent channel for the notify path if possible (already exists).",
+      "acceptanceCriteria": [
+        "internal/telegram/scheduler_handlers.go does NOT exist",
+        "internal/cron/telegram_handlers.go exists (or equivalent: cron/ + small notify_handler.go in telegram/)",
+        "internal/telegram/ prod LOC reduced by ≥440",
+        "go build + vet + test ./... green",
+        "Single atomic commit: `refactor(cron): move scheduler_handlers from telegram/ to cron/`"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Med risk — boundary between cron and telegram. chat.Hub silent channel is the canonical bridge."
+    },
+    {
+      "id": "US-A17",
+      "title": "Move web_chat.go (123 LOC) → internal/api/",
+      "description": "PRINCIPLE: telegram = wrapper. internal/telegram/web_chat.go is web chat plumbing — explicitly NOT Telegram. Move to internal/api/web_chat.go OR fold into existing internal/api/chat.go.",
+      "acceptanceCriteria": [
+        "internal/telegram/web_chat.go does NOT exist",
+        "Functionality lives in internal/api/",
+        "go build + vet + test ./... green",
+        "Single atomic commit: `refactor(api): move web_chat from telegram/ to api/`"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Low risk. Small move."
+    },
+    {
+      "id": "US-A18",
+      "title": "Move conversation_tool_helpers.go (104 LOC) + debug_smoke → out of telegram/",
+      "description": "PRINCIPLE: telegram = wrapper. internal/telegram/conversation_tool_helpers.go is mixed agent + telegram logic; should fold into internal/agent/ now that there's no legacy conversation.go alongside it. internal/telegram/debug_smoke.go + debug_smoke_test.go (286 + 485 LOC) are debug harnesses; move to cmd/debug_telegram/ as a small standalone harness.",
+      "acceptanceCriteria": [
+        "internal/telegram/conversation_tool_helpers.go does NOT exist (folded into internal/agent/)",
+        "internal/telegram/debug_smoke.go + debug_smoke_test.go do NOT exist (moved to cmd/debug_telegram/ OR deleted if obsolete)",
+        "internal/telegram/ prod LOC reduced by ≥390 (104 + 286 helper + smoke prod)",
+        "go build + vet + test ./... green",
+        "Single atomic commit: `refactor(telegram): relocate conversation_tool_helpers + debug_smoke out of wrapper`"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Low-Med risk. debug_smoke may have outdated assumptions about the legacy path; delete if it tests removed-functionality, otherwise keep as cmd."
+    },
+    {
+      "id": "US-A19",
+      "title": "Final telegram/ size report + acceptance check",
+      "description": "After US-A13..A18, internal/telegram/ should be ~1500-2000 LOC prod (down from 5266). Run `wc -l internal/telegram/*.go` and document in .planning/telegram-final-size.md with breakdown per file. If still >3000 LOC prod, list which file is the next extraction candidate (don't move it here — note for next round). The principle: 'telegram = wrapper, everything else delegated to competence modules' — verified.",
+      "acceptanceCriteria": [
+        ".planning/telegram-final-size.md exists with prod + test LOC breakdown per file",
+        "internal/telegram/ prod LOC ≤ 2000 (acceptable wrapper size)",
+        "List of files left in internal/telegram/ + 1-line justification each (why this file IS a wrapper concern)",
+        "Single atomic commit: `chore: telegram/ size report (was 5266 prod LOC, now N)`"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Verification + closure. No code change beyond the report. Locks in the wrapper-only invariant."
     }
   ]
 }
