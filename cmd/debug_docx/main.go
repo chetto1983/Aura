@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aura/aura/cmd/debug_common"
 	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/agent/tools/registry"
@@ -52,11 +53,13 @@ func main() {
 	)
 	flag.Parse()
 
+	h := debugcommon.New("debug_docx")
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	wikiDir, err := os.MkdirTemp("", "aura-debug-docx-*")
 	if err != nil {
-		fail("mkdir temp wiki: %v", err)
+		h.Fail("mkdir temp wiki: %v", err)
 	}
 	if !*keep {
 		defer os.RemoveAll(wikiDir)
@@ -66,16 +69,16 @@ func main() {
 
 	store, err := source.NewStore(wikiDir, logger)
 	if err != nil {
-		fail("source.NewStore: %v", err)
+		h.Fail("source.NewStore: %v", err)
 	}
 
 	sender := &stubSender{}
 	tool := tools.NewCreateDOCXTool(store, sender)
 	if tool == nil {
-		fail("NewCreateDOCXTool returned nil")
+		h.Fail("NewCreateDOCXTool returned nil")
 	}
 
-	scenario("scenario 1: full document with delivery", func() error {
+	h.Scenario("scenario 1: full document with delivery", func() error {
 		ctx := tools.WithUserID(context.Background(), "999")
 		args := map[string]any{
 			"filename": "quarterly-memo",
@@ -102,12 +105,12 @@ func main() {
 		if err := json.Unmarshal([]byte(out), &resp); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
 		}
-		mustEqual("filename", resp["filename"], "quarterly-memo.docx")
-		mustEqual("delivered", resp["delivered"], true)
+		h.MustEqual("filename", resp["filename"], "quarterly-memo.docx")
+		h.MustEqual("delivered", resp["delivered"], true)
 		if len(sender.calls) != 1 {
 			return fmt.Errorf("sender called %d times, want 1", len(sender.calls))
 		}
-		mustEqual("call.filename", sender.calls[0].filename, "quarterly-memo.docx")
+		h.MustEqual("call.filename", sender.calls[0].filename, "quarterly-memo.docx")
 
 		// Round-trip the persisted file: verify all three required OOXML
 		// parts and that user content survived.
@@ -157,7 +160,7 @@ func main() {
 		return nil
 	})
 
-	scenario("scenario 2: XML escape (script tag does not leak)", func() error {
+	h.Scenario("scenario 2: XML escape (script tag does not leak)", func() error {
 		ctx := tools.WithUserID(context.Background(), "999")
 		sender.calls = sender.calls[:0]
 		args := map[string]any{
@@ -198,7 +201,7 @@ func main() {
 		return nil
 	})
 
-	scenario("scenario 3: dedup on identical spec", func() error {
+	h.Scenario("scenario 3: dedup on identical spec", func() error {
 		ctx := tools.WithUserID(context.Background(), "999")
 		args := map[string]any{
 			"filename": "dedup",
@@ -219,19 +222,19 @@ func main() {
 		if r1["source_id"] != r2["source_id"] {
 			return fmt.Errorf("source_id differs across identical calls")
 		}
-		mustEqual("duplicate (second)", r2["duplicate"], true)
+		h.MustEqual("duplicate (second)", r2["duplicate"], true)
 		return nil
 	})
 
-	scenario("scenario 4: filename sanitization", func() error {
+	h.Scenario("scenario 4: filename sanitization", func() error {
 		got := files.SanitizeDOCXFilename(`../../etc/passwd`)
-		mustEqual("traversal sanitized", got, "passwd.docx")
+		h.MustEqual("traversal sanitized", got, "passwd.docx")
 		got = files.SanitizeDOCXFilename(`C:\Users\evil\report`)
-		mustEqual("windows path sanitized", got, "report.docx")
+		h.MustEqual("windows path sanitized", got, "report.docx")
 		return nil
 	})
 
-	scenario("scenario 5: caps enforced", func() error {
+	h.Scenario("scenario 5: caps enforced", func() error {
 		blocks := make([]any, files.MaxDOCXBlocks+1)
 		for i := range blocks {
 			blocks[i] = map[string]any{"kind": "paragraph", "text": "x"}
@@ -251,21 +254,3 @@ func main() {
 	fmt.Println("\nall scenarios passed.")
 }
 
-func scenario(name string, fn func() error) {
-	fmt.Printf("→ %s\n", name)
-	if err := fn(); err != nil {
-		fail("  FAIL: %v", err)
-	}
-	fmt.Println("  ok")
-}
-
-func mustEqual(label string, got, want any) {
-	if fmt.Sprintf("%v", got) != fmt.Sprintf("%v", want) {
-		fail("  %s = %v, want %v", label, got, want)
-	}
-}
-
-func fail(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "debug_docx: "+format+"\n", args...)
-	os.Exit(1)
-}
