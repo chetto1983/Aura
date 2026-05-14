@@ -1,0 +1,82 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-14T18:05:49.6548916+02:00",
+  "context": "deep-refactor",
+  "phase": "Phase01",
+  "phase_name": "Stabilize Map",
+  "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01_Stabilize_Map",
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": "P1.1",
+      "name": "Source-state reconciliation",
+      "status": "done",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01_Stabilize_Map/source.md"
+    },
+    {
+      "id": "P1.2",
+      "name": "Package ownership matrix",
+      "status": "done",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01_Stabilize_Map/package-matrix.md"
+    },
+    {
+      "id": "P1.3",
+      "name": "Live gates and benchmarks",
+      "status": "done",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01_Stabilize_Map/benchmark.md"
+    },
+    {
+      "id": "P1-D1",
+      "name": "Rename internal/cron package scheduler to cron",
+      "status": "done",
+      "commit": "b75a02a4",
+      "evidence": "ADR-037 in D:/Aura/.planning/aura-deep-refactor-decisions.json"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": "NEXT",
+      "name": "Choose and begin the next deep-refactor phase slice",
+      "status": "not_started",
+      "recommended_next": "Review Phase01A_Run_Event_Foundation first unless the user explicitly chooses another gray area."
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Old planning waves are evidence, not active execution queue.",
+      "rationale": "ADR-036 prevents stale paths and old plans from driving implementation.",
+      "source": "D:/Aura/.planning/aura-deep-refactor-decisions.json"
+    },
+    {
+      "decision": "Phase 1 is complete after the cron package-name cleanup.",
+      "rationale": "The only safe Phase 1 implementation move was the pure rename from package scheduler to package cron.",
+      "source": "ADR-037"
+    },
+    {
+      "decision": "Do not redesign cron behavior in Phase 1.",
+      "rationale": "Phase 8 still owns cron workflow semantics and RunGraph integration.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01_Stabilize_Map/package-matrix.md"
+    }
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {
+      "action": "Decide the next slice tomorrow.",
+      "context": "Phase 1 is closed. The most likely next step is Phase01A_Run_Event_Foundation, but the user may choose a different phase.",
+      "blocking": true
+    }
+  ],
+  "validation": [
+    "go test ./internal/cron ./internal/api ./internal/agent/tools/registry ./internal/telegram",
+    "go vet ./...",
+    "go build ./...",
+    "go test ./..."
+  ],
+  "uncommitted_files": [],
+  "last_known_git": {
+    "head": "b75a02a4 RENAME CRON",
+    "status": "clean before writing this handoff"
+  },
+  "next_action": "Read CONTINUE-HERE.md, AGENTS.md, prd.md Phase 1A, .planning/deep-refactor/INDEX.md, Phase01_Stabilize_Map/progress.md, then discuss/execute the next phase slice.",
+  "context_notes": "The user wants a deep refactor, not quick wins. Keep the PRD as the route, cite sources, use phase folders with plan/source/benchmark/progress, and avoid reopening stale wave plans as executable queues."
+}

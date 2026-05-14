@@ -30,6 +30,17 @@ operational means:
 
 Conversation context is not durable state. Reconstruct state from files.
 
+Aura resume memory:
+
+- If starting a fresh session for Aura work, read `D:\Aura\CONTINUE-HERE.md`
+  first when it exists.
+- Then read `D:\Aura\.planning\HANDOFF.json` and
+  `D:\Aura\.planning\deep-refactor\.continue-here.md` when present.
+- These files point to the active phase, last completed commit, next action,
+  required reading, decisions, and validation state.
+- Do not assume chat history is available. If these resume files conflict with
+  `prd.md` or the decision log, stop and name the conflict before acting.
+
 Codex memory rule:
 
 - For non-trivial Aura work, do not rely on chat memory. Reconstruct the slice
@@ -287,11 +298,14 @@ Development must make prior research easy to find again.
 For architecture, refactor, loop, agent, Telegram, tool, runtime, or storage
 work, read only the minimum needed, in this order:
 
-1. `D:\Aura\CLAUDE.md`
-2. `D:\Aura\docs\aura-master-plan.md`
-3. `D:\Aura\.planning\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
-4. `D:\Aura\prd.json` if working from the Ralph queue
-5. Directly affected source files
+0. `D:\Aura\CONTINUE-HERE.md` if it exists
+1. `D:\Aura\.planning\HANDOFF.json` and
+   `D:\Aura\.planning\deep-refactor\.continue-here.md` if they exist
+2. `D:\Aura\CLAUDE.md`
+3. `D:\Aura\docs\aura-master-plan.md`
+4. `D:\Aura\.planning\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
+5. `D:\Aura\prd.json` if working from the Ralph queue
+6. Directly affected source files
 
 Do not read the whole repository to feel safer. Make a small map, then act.
 
