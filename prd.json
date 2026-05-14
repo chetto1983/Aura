@@ -109,7 +109,7 @@
         "Single atomic commit: `chore(chat): rename chathub → chat + adapters → channels/`"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Per master plan §4 Step 2."
     },
     {
@@ -124,7 +124,7 @@
         "Single atomic commit: `test(channels/telegram): record-and-replay fixture per streaming edits`"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Prerequisite for Step 4 (US-401). Without fixture, the streaming.go port has no byte-comparison gate."
     },
     {

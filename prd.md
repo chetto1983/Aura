@@ -1,437 +1,895 @@
-# Aura — Personal AI Agent with Compounding Memory
+# Aura Deep Refactor PRD
 
-**Product Requirements Document - Version 4.2**
-**Date:** 2026-05-07
-**Status:** reflects the Docker-first runtime after v1.3 memory closure and the v3.1 orchestration bridge work.
-
----
-
-# 1. Executive Summary
-
-Aura è un agente AI personale, local-first, accessibile via Telegram, che accumula conoscenza in una **wiki markdown maintained-by-the-LLM** e si estende con **tool agentici** (source ingestion, web, scheduler, skills, MCP). Una **dashboard web embedded** offre osservabilità e controllo (sources, wiki/graph, tasks, skills, MCP, pending users) protetta da bearer-token emessi via Telegram.
-
-Rispetto alla v3.0 (planning-only) la v4.2 documenta lo stato realmente in produzione: Docker Compose come install path primario, SQLite invece di PostgreSQL/MongoDB, OpenAI-compat HTTP come client primario, SearXNG per web search, Qdrant per wiki vector search, Garage per backup/artifact, sandbox Python diretta (process mode), pipeline OCR Mistral integrata, dashboard React embedded nel binario, skills.sh + MCP come superfici di estensione, scheduler autonomo persistito, streaming Telegram con markdown→HTML.
-
-Principi invariati: **determinismo, semplicità, file-system + SQLite, controllo esplicito, degradazione esplicita**.
+**Date:** 2026-05-14  
+**Status:** north-star PRD for the deep refactor  
+**Purpose:** give Aura a clear architecture direction so every rename, move, and rewrite has a reason.
 
 ---
 
-# 2. Design Principles
+## 1. The Point
 
-1. **Determinismo > Creatività** — temperature=0 per scritture wiki, prompt/schema versioning.
-2. **Semplicità > Astrazione prematura** — nessun DAG, 1 goroutine = 1 conversazione.
-3. **File system + SQLite > sistemi distribuiti** — wiki su disco + Git, stato runtime in SQLite locale.
-4. **Controllo esplicito > automazione opaca** — feature flag, allowlist, admin gates per operazioni privilegiate.
-5. **degradazione esplicita** — embedding cache, single-message progress, and clear degraded-mode behavior.
-6. **Progressive disclosure** — skills/MCP/sources caricano in contesto solo quando il modello li richiede.
+Aura is not failing because one package has the wrong name. Aura is failing because the codebase no longer makes the central idea obvious.
 
----
+The refactor exists to make this true:
 
-# 3. System Architecture
+> Aura has one agentic core, and everything else is an adapter, capability, or durable memory projection.
 
-## 3.1 Core Loop
-
-```
-User → Telegram → Orchestrator → LLM (streaming + tool calls)
-                                    ↓
-                         ┌──────────┴──────────┐
-                         │  Tool Registry       │
-                         │  - source/wiki/tasks │
-                         │  - web search/fetch  │
-                         │  - skills/MCP        │
-                         └──────────┬──────────┘
-                                    ↓
-                Wiki (MD + frontmatter + [[links]])
-                Sources (raw PDF + ocr.json + ocr.md)
-                SQLite (auth, scheduler, embed cache)
-```
-
-In parallelo gira la **Web Dashboard** (`internal/api`) embedded nel binario via `//go:embed`, e il **Tray icon** (Windows) per aprire la dashboard.
-
-## 3.2 Execution Model
-
-* 1 goroutine = 1 conversazione (Telegram).
-* Tool-calling loop con `AURA_AGENT_LOOP_MAX_STEPS` (default 8).
-* Tool calls indipendenti nello stesso turn vengono **eseguite in parallelo** (slice 11l).
-* Streaming LLM con **progressive edit Telegram** (slice 11t): placeholder dopo 30 char, edit ogni 800 ms.
-* Cap di history a `MAX_HISTORY_MESSAGES` (default 50) — Picobot pattern, slice 11k. Summarization solo come fallback.
-* Speculative wiki retrieval (slice 11p): `search_wiki` viene già fatto prima del primo round LLM e iniettato nel system prompt.
+This PRD is the way forward. It is not a log of every broken thing in the repo. It defines the target shape, the module responsibilities, the migration order, and the gates that prove the system is getting simpler instead of just moving mess into new folders.
 
 ---
 
-# 4. Core Components
+## 2. Product North Star
 
-## 4.1 Orchestrator (`internal/orchestrator`)
+Aura is a local-first personal AI agent with compounding memory.
 
-* Gestione conversazioni (1 per chat).
-* Loop tool-calling deterministico.
-* Retry con exponential backoff (max `LLM_MAX_RETRIES`).
-* Budget enforcement (soft warning + hard halt).
-* Per-turn telemetry: `elapsed_ms`, `llm_calls`, `tool_calls` (slice 11r).
+The user should experience Aura as:
 
-## 4.2 LLM Client Layer (`internal/llm`)
+- a private agent reachable from Telegram and web/API chat,
+- a second brain that remembers through a readable Markdown wiki,
+- a tool-using assistant that can search, ingest sources, schedule work, and operate on local artifacts,
+- an agent that learns from failed tool calls and gets harder to fool over time,
+- a system whose memory and actions can be inspected, debugged, and recovered.
 
-### Interface
+The codebase must support that product by making the core loop small, testable, and reusable.
 
-```go
-type Client interface {
-    Send(ctx, Request) (Response, error)
-    Stream(ctx, Request) (<-chan Token, error)
-}
+---
+
+## 3. Architecture North Star
+
+The target architecture is:
+
+```text
+external input
+  -> channel adapter
+  -> chat/run router
+  -> agent core loop
+  -> tools and memory ports
+  -> observations and learning events
+  -> final answer
+  -> channel adapter
+  -> durable memory/artifacts/events/experience
 ```
 
-### Implementations
+The important rule:
 
-* **OpenAI-compatible HTTP client** (primary) — `LLM_BASE_URL` + `LLM_API_KEY`.
-* **OpenAI-compatible client only** — `LLM_BASE_URL` + `LLM_MODEL`, with retries and explicit degraded-mode behavior when unavailable.
+> Dependencies point inward toward stable contracts, not outward toward Telegram, SQLite, Qdrant, cron, or source-specific code.
 
-`Stream()` supporta tool-calls via `stream_options.include_usage` e accumula i frammenti `function.arguments` per indice (slice 11s) — i consumer non vedono mai JSON parziale.
-
-### Embedding (separato dal chat model)
-
-* `EMBEDDING_BASE_URL=https://api.mistral.ai/v1`, `EMBEDDING_MODEL=mistral-embed`, `EMBEDDING_API_KEY` dedicata. Nessun fallback automatico verso `LLM_API_KEY`.
+The agent core should be boring. The adapters may be messy because the world is messy, but that mess must stop at the boundary.
 
 ---
 
-## 4.3 Wiki System (`internal/wiki`)
+## 4. Module Map
 
-### Storage
+The rename/move work is correct only if it converges toward this map.
 
-* File system + Git (`go-git/go-git/v5`).
-* Path: `WIKI_PATH` (default `./runtime-workspace/wiki` locally, `/workspace/wiki` in Docker).
-
-### Format
-
-Markdown con YAML frontmatter (migrazione completata da `.yaml` → `.md`):
-
-```markdown
----
-title: ...
-slug: ...
-schema_version: 2
-prompt_version: ingest_v1
-category: ...
-tags: [...]
-related: [other-slug, another-slug]
-sources: [src_<id>]
----
-Body markdown con [[wiki-links]] in stile Obsidian.
+```text
+internal/
+  agent/          core loop, runtime, governance, run state
+  chat/           normalized messages, runs, routing, events
+  channels/       telegram, web, silent, swarm adapters
+  agent/tools/    tool registry, tool schemas, tool execution, toolsets
+  learning/       tool experience, self-healing lessons, promotion workflow
+  rag/            schema-aware retrieval, hybrid search, rerank, citations
+  memory/         wiki semantics, recall behavior, memory policy
+  storage/        sqlite, qdrant, artifacts, sources, indexes
+  cron/           scheduled entrypoint into chat/agent
+  api/            HTTP surface and dashboard endpoints
+  config/         configuration loading and runtime settings
 ```
 
-### Special files
-
-* `index.md` — auto-generato per categoria.
-* `log.md` — append-only audit trail (azione, slug, timestamp).
-* `SCHEMA.md` — documentazione formato.
-
-### Write safety
-
-* File-level mutex.
-* Atomic write (temp + rename).
-* `MigrateYAMLToMD` one-shot al boot.
+This map is not just naming. It is the dependency contract.
 
 ---
 
-## 4.4 Source Store + OCR (`internal/source`, `internal/ocr`, `internal/ingest`)
+## 5. Responsibility Contracts
 
-### Source
+### 5.1 `internal/agent`
 
-* Layout: `wiki/raw/src_<sha256-16hex>/{original.pdf, source.json, ocr.json, ocr.md}`.
-* Sha256-based dedup, atomic `source.json` write, per-id mutex.
-* Stati: `stored | ocr_complete | ingested | failed`.
+`agent` is the core.
 
-### OCR
+It owns:
 
-* Mistral Document AI (`/v1/ocr`), bearer auth, base64 PDF.
-* Wire flags: `table_format`, `extract_header`, `extract_footer`, `include_image_base64`.
-* Render in `ocr.md` con layout PDR §4 (`# Source OCR: <filename>`, `## Page N`).
-* Cap: `OCR_MAX_PAGES`, `OCR_MAX_FILE_MB`.
+- the loop,
+- LLM calls,
+- tool-call iteration,
+- observation handling,
+- in-run self-healing feedback,
+- finalization,
+- governance,
+- context limits,
+- run stats,
+- interruption/deadline behavior.
 
-### Ingestion
+It must not own:
 
-* Pipeline `internal/ingest.Pipeline.Compile` — LLM-driven, produce summary page con `[[wiki-link]]`.
-* Auto-trigger via `docHandler.AfterOCR` (Telegram upload) o `POST /api/sources/upload` (browser).
-* Catch-up via tool `ingest_source` per source pre-hook.
+- Telegram formatting,
+- HTTP response shape,
+- cron scheduling,
+- Qdrant client details,
+- source conversion details,
+- wiki file paths,
+- dashboard behavior.
 
----
+The loop contract is:
 
-## 4.5 Tools (`internal/tools`)
-
-Registry condiviso con il modello. Ogni tool implementa `Name/Description/Parameters/Execute`. Le tool-call concorrenti vengono parallelizzate (slice 11l).
-
-### Built-in tools
-
-| Categoria | Tool |
-| --------- | ---- |
-| Web | `web_search` (SearXNG primary), `web_fetch` (bounded direct HTTP fetcher) |
-| Wiki | `write_wiki`, `read_wiki`, `search_wiki`, `list_wiki`, `lint_wiki`, `rebuild_index`, `append_log` |
-| Source | `store_source`, `ocr_source`, `read_source`, `list_sources`, `lint_sources`, `ingest_source` |
-| Scheduler | `schedule_task`, `list_tasks`, `cancel_task` |
-| Skills | `read_skill` (progressive disclosure body fetch) |
-| Auth | `request_dashboard_token` (out-of-band token via Telegram) |
-| MCP | `mcp_<server>_<tool>` (registrato dinamicamente) |
-
-### Argument logging policy
-
-Solo nomi tool e chiavi degli argomenti vengono loggati (slice 5/registry). Mai contenuto raw, URL con token, base64, o testo source.
-
----
-
-## 4.6 Scheduler (`internal/scheduler`)
-
-* SQLite-backed (`scheduled_tasks` table).
-* Kinds: `reminder`, `wiki_maintenance`.
-* Schedule fields: `at` (one-shot), `daily HH:MM`, `in <duration>`, `at_local HH:MM`.
-* Goroutine autonoma con bootstrap di un job nightly 03:00.
-* Runtime time context iniettato nel system prompt.
-
----
-
-## 4.7 Skills (`internal/skills`)
-
-* Anthropic skill format: `skills/<name>/SKILL.md` con frontmatter (`name`, `description`).
-* Multi-root loader: `SKILLS_PATH` (default `./skills`) + `.claude/skills` (priorità a primario).
-* **Progressive disclosure** (slice 11f): system prompt include solo manifest `- **name** — description`. Body caricato on-demand via `read_skill`.
-* Loader memoizzato per 1s (slice 11m).
-* Catalogo: `SKILLS_CATALOG_URL=https://skills.sh/`.
-* Admin install/delete dietro `SKILLS_ADMIN=true` (default off): `npx skills add` con env sanitizzato (drop secrets), 90s timeout, containment + symlink refusal.
-
----
-
-## 4.8 MCP (`internal/mcp`)
-
-* Picobot-port: stdio + Streamable-HTTP transports, JSON-RPC 2.0.
-* Init flow: `initialize` → `tools/list` → `tools/call`.
-* Config: `MCP_SERVERS_PATH=./mcp.json` (`mcp.example.json` tracked).
-* Boot non-fatale: failure di un server è warning, mai abort.
-* Tool wrapper espone come `mcp_<server>_<tool>` nel registry standard.
-* Dashboard `/mcp` + `POST /api/mcp/{server}/tools/{tool}` per invocazione manuale (60s timeout, 64 KiB body/output cap).
-
----
-
-## 4.9 Web Dashboard (`internal/api` + `web/`)
-
-* React 19 + Vite + react-router-dom v7.
-* Build → `internal/api/dist/`, embedded via `//go:embed all:dist`.
-* Listener: `HTTP_PORT` (default `127.0.0.1:8080`).
-* Routes: `/` health, `/wiki`, `/wiki/:slug`, `/wiki/graph`, `/sources`, `/tasks`, `/skills`, `/mcp`, `/pending`, `/login`.
-* Theme: palette derivata dal logo (deep navy + electric cyan), light/dark/contrast in oklch, ambient aurora background, brand glow su nav attivo.
-* UX: skeleton placeholders, mobile drawer, keyboard chord shortcuts (`g h/w/g/s/t/k/m`), help dialog (`?`).
-
-### Auth
-
-* Bearer token in header `Authorization: Bearer <token>`.
-* Tokens hashed (SHA-256) in `api_tokens` (SQLite).
-* Emessi via tool `request_dashboard_token` → consegnati out-of-band via Telegram (`Bot.SendToUser`). Plaintext mai nei log.
-* Endpoints: `GET /api/auth/whoami`, `POST /api/auth/logout`.
-* Sign-out in sidebar; 401 → redirect `/login?expired=1`.
-
-### Write actions
-
-* Sources: ingest, re-OCR, upload (PDF drop-zone).
-* Wiki: rebuild index, append log.
-* Tasks: schedule one-time / daily, cancel.
-* Skills (admin-gated): install, delete.
-* MCP: invoke tool con form auto-seedato dallo schema.
-
----
-
-## 4.10 Tray Icon (`internal/tray`, Windows)
-
-* Multi-resolution `.ico` con weighted centroid + circular mask.
-* Voce "Open Dashboard" lancia browser su `HTTP_PORT`.
-* Quit pulisce shutdown.
-
----
-
-## 4.11 Telegram Interface (`internal/telegram`)
-
-* `telebot.v4`.
-* PDF handler: validate + bounded concurrency (2), single-message progress edit.
-* /start approval queue (slice 11o): unknown user → `pending_users` + fan-out notifica agli owner; approve/deny dalla dashboard. TOFU bootstrap conservato per il primo /start su install vergine.
-* Markdown → HTML renderer (slice 11u): converte `**`/`##`/`-`/`[link]` nel sottoinsieme Telegram (`b/i/s/u/code/pre/a/blockquote`). Headings → `<b>`, bullets → `•`. Schema URL ristretto a http(s)/tg.
-* Streaming: progressive edit con rate-limit 800 ms.
-
----
-
-## 4.12 Conversation Context (`internal/conversation`)
-
-* `active_context` (sliding window) + `rolling_summary` + `transcript`.
-* Cap principale: `MAX_HISTORY_MESSAGES` (Picobot pattern). Summarization solo per messaggi singoli patologicamente grandi.
-* Tool-result messages mantenuti accoppiati ai relativi assistant-tool-call durante trim.
-* Speculative search: `SetSearchContext` chiamato prima del primo LLM call.
-
-### Prompt overlay files (slice 11q)
-
-Letti ogni turn da `PROMPT_OVERLAY_PATH` (default `.`):
-* `SOUL.md` — personality.
-* `AGENTS.md` — collaboration norms.
-* `USER.md` — durable user facts.
-* `TOOLS.md` — tool guidance.
-
-Tutti opzionali; modificabili a runtime senza recompile.
-
----
-
-## 4.13 Search (`internal/search`)
-
-* Primary: Qdrant vector search sulla wiki indicizzata quando `QDRANT_URL` e configurato.
-* Mirror: SQLite FTS per ricerca testuale locale dove ancora previsto dai percorsi legacy.
-* **Embedding cache** SHA-keyed (slice 11h): `embedding_cache(content_sha, model)` in SQLite. Cold start invariato; warm restart skippa Mistral round-trip per pagine immutate.
-* **Concurrent indexing** (slice 11i): `coll.AddDocuments` parallelo (`indexConcurrency=4`).
-* Stats esposte su `/api/health` (`hits`/`misses`/`hit-rate`).
-
----
-
-## 4.14 Health & Observability (`internal/health`, `internal/logging`)
-
-* `GET /api/health`: process block (version, git_revision, started_at, uptime_seconds), embed cache stats, scheduler status.
-* Logging strutturato via `zap`. Nessun secret nei log.
-* Per-turn structured log "conversation complete" (slice 11r).
-
----
-
-## 4.15 Config (`internal/config`)
-
-* `envconfig`.
-* `.env.example` tracked, `.env` gitignored runtime.
-* Caricato esplicitamente all'avvio di `cmd/aura` (no shell env required).
-
----
-
-# 5. Memory Model
-
-## 5.1 Layers
-
-* **Raw** — `wiki/raw/<source_id>/` (PDF originale + OCR durabile).
-* **Wiki** — `wiki/<slug>.md` (markdown maintained dal modello).
-* **Schema** — `wiki/SCHEMA.md` + frontmatter validation.
-* **Conversation (in-memory)** - cap a 50 messaggi.
-* **Conversation archive (SQLite, slice 12a–12c)** — ogni turno persistito su `conversations` table; tool_calls JSON + per-turn telemetry sul ruolo assistant.
-* **Embedding cache** — SQLite, riusa embed tra restart.
-
-## 5.2 Deterministic Mode (MANDATORY per wiki writes)
-
-* `temperature = 0`.
-* `prompt_version`, `schema_version` su ogni pagina (regex: `v{n}` | `ingest_v{n}` | `proposal_v{n}`; `summarizer_v{n}` resta legacy read-only).
-* Atomic write + Git commit per ogni cambio.
-
-## 5.3 Compounding Memory (Phase 12, Runtime Diet)
-
-La memoria durevole passa dal loop esplicito dell'agente: pochi tool bounded su file/wiki/search/graph, con archivio conversazioni per audit e manutenzione wiki notturna. Il vecchio post-turn summarizer automatico e il compounding-rate da `[auto-sum]` sono stati rimossi dal path runtime.
-
-### Pipeline
-
-1. **Archive** (slice 12a–12c). `BufferedAppender` (chan 100, drain goroutine, drop-on-full warn) archivia ogni messaggio nel `conversations` table dietro `CONV_ARCHIVE_ENABLED=true`. `turn_index` allocato monotonicamente da `MAX(turn_index) WHERE chat_id = ?` per resistere ai trim di `EnforceLimit`. API: `GET /api/conversations[?chat_id]&limit=`, `GET /api/conversations/{id}`. Dashboard route: `/conversations` con drawer per turno + tool_calls expanded.
-2. **Manual proposals**. `proposed_updates` resta come coda di revisione per proposte generate da job espliciti, ingest/debug e workflow amministrativi; non viene popolata automaticamente dopo ogni chat.
-3. **Maintain** (slice 12g–12h, 12l.1). `MaintenanceJob` notturno chiama `wiki.Lint`, computa Levenshtein vs slug esistenti; un solo candidato ≤2 → auto-fix via `RepairLink`; ambigui → enqueue in `wiki_issues` (severity policy: `broken_link_unfixable=high, orphan=med, missing_category=low`). High-severity → `notifyOwner` via `Bot.SendToOwner`. API: `GET /api/maintenance/issues[?status,severity]`, `POST /api/maintenance/issues/{id}/resolve`. Dashboard route: `/maintenance` raggruppato per severity.
-4. **Nav** (slice 12n). Sidebar items + chord shortcuts: `g v` /conversations, `g u` /summaries, `g x` /maintenance.
-
-### Configurazione
-
-```env
-CONV_ARCHIVE_ENABLED=true              # write turns to SQLite archive
+```text
+Run(input, context, tools, memory ports) -> result, events, stats
 ```
 
-### Migrazioni / dati legacy
+If `agent` imports a channel package, the refactor is going in the wrong direction.
 
-`scheduler.Store.migrate` esegue `dropLegacyConversations` come passo idempotente: rileva un eventuale `conversations` table preesistente (privo di colonna `chat_id`, residuo di `internal/search/sqlite.go` rimosso in 12.cleanup) e la rimuove prima di applicare lo schema Phase 12. Una sola corsa, silente.
+Prompt and context assembly are part of the agent runtime contract.
+
+Aura must treat prompts as versioned runtime artifacts, not invisible prose scattered through the codebase. A prompt bundle should have clear sections for:
+
+- role and operating mode,
+- task contract,
+- output contract,
+- context capsule,
+- memory policy,
+- tool-use policy,
+- safety/risk policy,
+- examples,
+- verification criteria.
+
+Prompt engineering rules:
+
+- define success criteria and evals before tuning prompts,
+- keep fixed instructions separate from variable user/context data,
+- use stable structured sections for complex prompts,
+- tag source/context blocks with metadata and citation handles,
+- put long retrieved/source context before the final task where provider behavior benefits from it,
+- prefer positive, explicit behavior instructions over vague prohibitions,
+- tune model/effort/context budget separately from prompt wording,
+- do not mutate prompts, skills, or memory policy silently based on one failure,
+- prompt changes require versioning and eval evidence.
+
+### 5.2 `internal/chat`
+
+`chat` is traffic control.
+
+It owns:
+
+- normalized inbound messages,
+- run IDs,
+- parent/child run IDs,
+- run routing,
+- event streams,
+- channel-independent reply flow.
+
+It must not own:
+
+- Telegram rendering,
+- tool implementations,
+- source ingestion,
+- wiki mutation logic,
+- raw LLM loop internals.
+
+The chat contract is:
+
+```text
+InboundMessage -> Run -> OutboundEvents
+```
+
+`chat` is the seam where Telegram, web, cron, silent jobs, and swarm become the same kind of work.
+
+### 5.3 `internal/channels/*`
+
+Channels are adapters.
+
+They own:
+
+- transport-specific input parsing,
+- transport-specific output formatting,
+- retries/throttling/fallbacks required by the transport,
+- channel-specific fixtures.
+
+They must not own:
+
+- agent reasoning,
+- memory policy,
+- tool selection,
+- runtime governance.
+
+Examples:
+
+- `channels/telegram` owns Telegram entities, progressive edits, CoT marker rendering, send/edit fallback.
+- `channels/web` owns web/API delivery.
+- `channels/silent` owns background/no-output delivery.
+- `channels/swarm` or equivalent owns child-agent dispatch through the same hub contract.
+
+### 5.4 `internal/agent/tools`
+
+Tools are capabilities available to the agent.
+
+They own:
+
+- tool registry,
+- tool schemas,
+- tool descriptions,
+- tool visibility tiers,
+- tool discovery/search,
+- tool-use examples,
+- programmatic tool-call policy,
+- allowlists,
+- execution wrappers,
+- toolsets,
+- skill-backed tools,
+- swarm-specific tools if exposed as agent capabilities.
+
+They must not own:
+
+- chat routing,
+- Telegram output,
+- memory persistence decisions,
+- arbitrary global access.
+
+Tool requirements:
+
+- typed input,
+- stable name,
+- deterministic ordering,
+- clear first-sentence description,
+- documented return format,
+- visibility tier,
+- risk level,
+- retry/idempotency class,
+- structured result,
+- structured recoverable error,
+- retry hint,
+- retry safety flag,
+- curated examples when schema is insufficient,
+- untrusted output envelope,
+- secret-safe logging.
+
+Tool visibility tiers:
+
+```text
+always_loaded             tiny control surface, visible every turn
+deferred_discoverable     indexed/searchable, loaded on demand
+programmatic_callable     opt-in tools callable from code orchestration
+blocked_from_programmatic high-risk tools never callable from code orchestration
+```
+
+Advanced tool-use policy:
+
+- most tools are deferred, not loaded into the model context upfront,
+- `tool_search` or equivalent discovery returns full definitions only when needed,
+- direct permissive-load is allowed when the model saw a tool name in the manifest,
+- code-level orchestration may call only active-turn, opt-in, non-recursive tools,
+- large intermediate tool results stay out of the model context when code can reduce them,
+- complex tools need realistic examples showing minimal, partial, and full usage patterns,
+- examples are for disambiguation, not decoration.
+
+### 5.5 `internal/memory`
+
+Memory is the product semantics of remembering. It is not one bucket.
+
+It owns:
+
+- user memory policy,
+- knowledge wiki policy,
+- operational memory promotion policy,
+- what should become durable memory,
+- what must remain archive/source/index only,
+- provenance expectations,
+- compaction and summary policy,
+- memory quality rules.
+
+It must not own:
+
+- low-level SQLite implementation,
+- Qdrant HTTP details,
+- Telegram formatting,
+- source-specific parsing.
+
+The key rule:
+
+> The Markdown wiki is the readable memory projection. Search/vector/index state is rebuildable support, not the product truth.
+
+Memory layers:
+
+```text
+active run context        runtime only, not source of truth
+conversation archive      audit/history, consolidation input
+user memory               stable user facts, preferences, constraints
+knowledge wiki            curated pages, concepts, syntheses, decisions
+source corpus             raw files, OCR/extracts, page spans, provenance
+Aura operational memory   tool lessons, failed approaches, open questions
+skills                    procedural knowledge and workflows
+RAG indexes               rebuildable projections over durable layers
+```
+
+Write policy:
+
+- user memory requires explicit intent, validation, or a question when ambiguous,
+- operational memory belongs to Aura and must not pollute the user wiki,
+- source corpus is immutable evidence until curated,
+- wiki pages are curated knowledge, not chat logs or raw tool failures,
+- indexes are disposable projections.
+
+### 5.6 `internal/learning`
+
+Learning is operational experience, not secret model training.
+
+It owns:
+
+- tool attempt history,
+- recoverable error taxonomy,
+- self-heal outcome tracking,
+- lesson retrieval,
+- promotion workflow into memory, skills, or tool policy,
+- learning metrics.
+
+It must not own:
+
+- raw model fine-tuning,
+- channel behavior,
+- silent memory writes,
+- unvalidated prompt mutation,
+- permanent storage backend details.
+
+The key rule:
+
+> Failed tool calls are feedback. Raw failures are not automatically wisdom.
+
+The minimum loop is:
+
+```text
+tool failure -> structured feedback -> retry in same run -> persist outcome -> retrieve similar lesson later -> promote only after validation
+```
+
+### 5.7 `internal/rag`
+
+RAG is retrieval intelligence.
+
+It owns:
+
+- collection metadata,
+- query planning,
+- hybrid keyword/vector retrieval,
+- filter/type validation,
+- chunk-to-parent expansion,
+- reranking,
+- retrieval result shaping,
+- citations and follow-up handles,
+- RAG evaluation metrics.
+
+It must not own:
+
+- the meaning of memories,
+- channel behavior,
+- raw source conversion,
+- permanent storage clients as concrete dependencies,
+- unbounded context injection.
+
+The RAG contract is:
+
+```text
+RecallRequest -> RetrievalPlan -> RetrievalHits -> cited context capsule
+```
+
+RAG must be schema-aware. Before searching a corpus, Aura should know:
+
+- which layer it belongs to,
+- what fields exist,
+- which fields are filterable,
+- whether vector search is available,
+- which text field is the content field,
+- how a hit should be cited,
+- whether a child chunk needs parent expansion.
+
+Default retrieval should be hybrid where available:
+
+```text
+query
+  -> keyword/FTS candidates
+  -> vector candidates
+  -> metadata filters
+  -> Reciprocal Rank Fusion
+  -> optional rerank
+  -> bounded cited hits
+```
+
+The tool surface should avoid `memory(mode=...)`. Prefer task-level tools:
+
+- `recall_user` for user facts and preferences,
+- `recall_knowledge` for wiki, sources, and curated project knowledge,
+- `recall_operational` for Aura's own lessons and failed approaches.
+
+A federated recall path is allowed only if every hit keeps its layer label and citation handle.
+
+### 5.8 `internal/storage`
+
+Storage is persistence infrastructure.
+
+It owns:
+
+- SQLite access,
+- Qdrant access,
+- artifact/blob storage,
+- source files,
+- conversion outputs,
+- indexes,
+- backup-related storage clients.
+
+It must not own:
+
+- agent loop decisions,
+- user-facing memory semantics,
+- chat routing,
+- channel behavior.
+
+Storage is allowed to be subdivided. A `storage` namespace is good; a `storage` god package is bad.
+
+### 5.9 `internal/cron`
+
+Cron is a scheduled entrypoint.
+
+It owns:
+
+- recurring jobs,
+- due-work lookup,
+- schedule persistence,
+- triggering work at the right time.
+
+It must not own:
+
+- a separate agent loop,
+- separate tool execution rules,
+- special hidden chat behavior.
+
+Cron should submit work into `chat` or `agent` through the same contracts used by other entrypoints.
+
+### 5.10 `internal/api`
+
+API is an external surface.
+
+It owns:
+
+- HTTP routes,
+- request/response DTOs,
+- dashboard endpoints,
+- auth middleware,
+- setup/health surfaces.
+
+It must not own:
+
+- core loop logic,
+- Telegram behavior,
+- tool internals,
+- wiki mutation policy.
+
+`/api/chat` must keep the public JSON shape stable while its backend migrates.
 
 ---
 
-# 6. Persistence
+## 6. Rename Philosophy
 
-* **SQLite** (`DB_PATH`, default `./aura.db`, `/data/aura.db` in containers):
-  * `api_tokens` (auth dashboard)
-  * `pending_users` and `allowed_users` (Telegram approval/allowlist)
-  * dashboard settings overrides
-  * `scheduled_tasks` and agent jobs
-  * `conversations` archive and proposal evidence
-  * `proposed_updates`, `wiki_issues`, swarm/task state, budget usage, and embedding cache
-* **File system**: `wiki/`, source raw/extraction artifacts, skills, prompt overlays.
-* **Qdrant**: optional Docker sidecar for rebuildable wiki vector search.
-* **Garage**: optional S3-compatible artifact/backup layer, not primary state.
-* **MongoDB**: evaluated and deferred; not part of the default stack until measured repository pressure justifies an optional adapter.
+Renaming is part of the refactor, but only when the new name teaches the system.
 
----
+Good rename:
 
-# 7. Cost Control
+- makes responsibility obvious,
+- removes a false abstraction,
+- makes imports easier to reason about,
+- supports the target dependency direction.
 
-* Token tracking per conversazione + globale.
-* Cost prediction prima di ogni LLM call.
-* Soft budget → warning Telegram. Hard budget → halt.
-* `/api/health` espone cache hit-rate per monitorare risparmio embedding.
+Bad rename:
 
----
+- only changes labels,
+- hides a god package under a better name,
+- moves transport behavior into core,
+- makes the next worker read more files to understand the same thing.
 
-# 8. Security
+Every rename must answer:
 
-* Telegram allowlist (env + `allowed_users` SQLite).
-* /start approval queue post-bootstrap.
-* Dashboard bearer-only, token mai nei response body.
-* MCP servers opt-in; skills install dietro `SKILLS_ADMIN`.
-* Tool argument logging: solo chiavi.
-* No secrets nei log.
-* Path containment + symlink refusal per file-system mutations.
-* Markdown→HTML renderer rifiuta schemi `javascript:` ecc.
+> Is this code core, traffic, channel, capability, memory, storage, cron, API, or config?
+
+If the answer is unclear, the module is not ready to move.
 
 ---
 
-# 9. Deployment
+## 7. Migration Strategy
 
-* **Docker Compose is the primary release runtime.**
-* `aura` image is server-only, does not carry Node.js, and runs Python directly for sandbox execution.
-* `searxng`, `garage`, and `qdrant` are local sidecars; Garage UI remains profile-gated.
-* Desktop/tray builds have been removed; releases are Docker-image only.
+The refactor uses a strangler approach.
+
+Do not stop the world and rewrite all of Aura. Create the clearer architecture and move one path at a time behind tests.
+
+### Phase 1 - Stabilize the Map
+
+Goal: make the package names reflect the target architecture.
+
+Current queue direction:
+
+- health/setup/auth belong under `api`,
+- qdrant/search/reindex/memoryindex/memoryquality/sources belong under `storage`,
+- chathub becomes `chat`,
+- adapters become `channels`,
+- scheduler becomes `cron`,
+- tool-related packages move under `agent/tools`.
+
+Gate:
+
+- no import cycles,
+- build/vet/test green,
+- no god package created,
+- package name explains responsibility.
+
+### Phase 2 - Protect Telegram
+
+Goal: create a fixture before moving Telegram behavior.
+
+Telegram is high risk because it contains subtle product behavior:
+
+- progressive edit throttling,
+- CoT marker rendering,
+- entity rendering,
+- fallback behavior,
+- tool progress display.
+
+Gate:
+
+- record-and-replay fixture exists,
+- fixture covers simple reply, CoT, tool/entity table,
+- later adapter output can be byte-compared against the fixture.
+
+### Phase 3 - Move Channels Behind Chat
+
+Goal: make `chat` the normalized traffic layer.
+
+Steps:
+
+- port Telegram outbound into `channels/telegram`,
+- route web chat through `chat` behind a conservative flag,
+- keep `/api/chat` JSON stable,
+- later route Telegram through hub behind a flag.
+
+Gate:
+
+- fixture diff zero,
+- `/api/chat` shape unchanged,
+- default behavior conservative until soak.
+
+### Phase 4 - Collapse the Agent Runtime
+
+Goal: one loop, one runtime path.
+
+Current reality:
+
+- the duplicate `agent.Runner` body was reduced into an adapter,
+- the `agent.Runner` type still exists,
+- production references still exist.
+
+Target:
+
+- governance extracted,
+- prompt/context assembly extracted into a versioned agent-owned bundle,
+- `agentloop` and `agentruntime` merged into `agent`,
+- production paths call the canonical runtime,
+- compatibility wrapper removed only when no longer needed.
+
+Gate:
+
+- no duplicate loop body,
+- prompt bundle snapshots are deterministic,
+- prompt evals cover context utilization, tool triggering, question behavior, and output contract adherence,
+- no production-only inferior path,
+- agent/chat/swarm/cron tests green,
+- loop behavior verified by tests, not comments.
+
+### Phase 5 - Consolidate Tools
+
+Goal: tools become agent capabilities, not random global services.
+
+Steps:
+
+- move registry/toolindex/toolsets/swarmtools under `agent/tools`,
+- preserve subpackage boundaries,
+- stabilize tool order,
+- enforce typed schemas and structured errors,
+- assign every tool a visibility tier,
+- assign every tool a retry/idempotency/risk class,
+- keep only the smallest control surface always loaded,
+- make deferred discovery the default for the rest,
+- harden programmatic tool orchestration through explicit allowlists,
+- add curated examples to complex/action-enum/nested-schema tools,
+- preserve secret-safe logging.
+
+Gate:
+
+- deterministic tool list,
+- deterministic tool pool order before provider calls,
+- tool discovery top-k evals pass,
+- parameter accuracy evals pass for example-backed tools,
+- programmatic internal calls are bounded, redacted, audited, and active-turn-only,
+- no secret value logging,
+- no broad path/URI access,
+- tests/probes inspect tool behavior.
+
+### Phase 6 - Add the Tool Experience Loop
+
+Goal: Aura improves from preventable tool-call failures instead of repeating them.
+
+Steps:
+
+- define structured tool observation and tool error contracts,
+- classify tool results as ok, recoverable error, or fatal error,
+- inject recoverable error feedback into the same run,
+- cap retries and record why a retry was attempted or refused,
+- persist tool attempts and outcomes as learning events,
+- retrieve validated lessons for similar future tool calls,
+- promote repeated lessons into memory, skills, or tool policy only after validation.
+
+Gate:
+
+- a recoverable tool error can be corrected in the same run,
+- repeat failures are visible by tool and error kind,
+- secrets and raw sensitive args are redacted from learning records,
+- retrieved lessons are versioned against tool schema/version,
+- no automatic prompt/code mutation happens without validation.
+
+### Phase 7 - Rebuild RAG On Typed Memory Layers
+
+Goal: retrieval stops being one broad memory soup.
+
+Steps:
+
+- define memory layer IDs and citation handles,
+- create a collection metadata registry for wiki, sources, user memory, archive, and operational memory,
+- split recall behavior by task intent instead of one polymorphic mode parameter,
+- implement hybrid FTS/vector retrieval with RRF fusion where available,
+- preserve chunk-to-parent source expansion,
+- return structured retrieval hits with score components and follow-up handles,
+- make retrieval errors recoverable learning events,
+- add golden RAG evals for user facts, wiki/source answers, and operational lessons.
+
+Gate:
+
+- user facts do not appear in wiki unless intentionally promoted,
+- tool failures do not appear in wiki,
+- source hits cite source/page/span or stable artifact handle,
+- wiki hits cite `[[slug]]`,
+- retrieval fixtures prove hybrid beats vector-only and keyword-only on the golden set,
+- repeated bad filters/searches produce self-healing feedback.
+
+### Phase 8 - Route Cron and Swarm Through the Same Shape
+
+Goal: background and child-agent work stop being special cases.
+
+Cron:
+
+- triggers scheduled work,
+- submits through the same contracts,
+- does not own a private loop.
+
+Swarm:
+
+- uses parent/child run IDs,
+- dispatches via chat/hub or equivalent normalized path,
+- caps subagent outputs,
+- requires artifact references.
+
+Gate:
+
+- parent run ID propagation tested,
+- background jobs observable,
+- no hidden alternate runtime.
+
+### Phase 9 - Memory and Source Discipline
+
+Goal: protect the second-brain product semantics after the core is clean.
+
+Steps:
+
+- clarify `memory` versus `storage`,
+- keep Markdown wiki as readable projection,
+- keep raw sources immutable,
+- make indexes rebuildable,
+- add conversion fixtures for important source types,
+- harden SQLite concurrency.
+
+Gate:
+
+- wiki output inspected,
+- source conversion fixtures use must-include/must-not-include checks,
+- SQLite WAL/busy-timeout/retry behavior verified per connection,
+- Qdrant/search treated as projections.
 
 ---
 
-# 10. Testing Strategy
+## 8. Immediate Queue Direction
 
-* **Unit**: `go test ./...` deve restare verde su ogni slice.
-* **Integration**: `cmd/debug_ingest`, `cmd/debug_tools`, `cmd/debug_llm` per smoke test naturali.
-* **Live OCR**: build tag `live_ocr` per round-trip Mistral reali (`RERENDER_DIRS` per re-render hermetico).
-* **Race-clean**: `go test -race ./internal/{api,auth,mcp,skills,...}` su PR critiche.
-* **Benchmarks** (slice 11n): skills loader cached/uncached, registry sequential/parallel.
+`prd.json` remains the machine queue. The queue should be judged against this PRD, not treated as the architecture itself.
 
----
+Current completed direction:
 
-# 11. Observability
+- `api` consolidation has started,
+- `storage` namespace has started,
+- `chat` and `channels` naming has started,
+- the old duplicate agent runner body was reduced.
 
-* `/api/health` — rollup health.
-* Process info via `runtime/debug.ReadBuildInfo` (version, git revision).
-* Structured per-turn telemetry.
-* Embed-cache stats card su dashboard.
+Next correct work:
 
----
+1. Finish the Telegram fixture before porting outbound behavior.
+2. Port Telegram outbound only with fixture protection.
+3. Merge runtime only after channel risk is controlled.
+4. Rename scheduler to cron.
+5. Consolidate tools under agent capabilities.
+6. Add structured learning events for recoverable tool errors.
+7. Rebuild RAG around typed memory layers and schema-aware retrieval.
+8. Route swarm and Telegram through the normalized path.
 
-# 12. Roadmap (storica)
-
-| Phase | Stato | Note |
-| ----- | ----- | ---- |
-| 1 — Core bot + wiki MD migration | done | Slices preliminari, migrazione YAML→MD. |
-| 2 — PDF/OCR + source store + ingestion | done | Slices 1–6. |
-| 3 — Wiki maintenance + scheduler + natural-prompt tests | done | Slices 7–9. |
-| 4 — Web dashboard (read+write+auth+polish) | done | Slices 10a–10e + browser upload. |
-| 5 — MCP + skills + dashboard panels + admin install | done | Slices 11a–11e. |
-| 6 — Skill format hardening + embed cache + concurrent indexing | done | Slices 11f–11j. |
-| 7 — Smart-and-fast (history cap, parallel tools, skills cache, benchmarks, latency telemetry) | done | Slices 11k–11n, 11r. |
-| 8 — Pending-user gate + speculative wiki + prompt overlay | done | Slices 11o–11q. |
-| 9 — Streaming end-to-end + progressive Telegram edit + Markdown→HTML | done | Slices 11s–11u. |
-| 12 — Compounding memory (archive + summarizer + maintenance) | done | Slices 12a–12u + 12u.1–12u.7 follow-ups. v0.12.0. |
-| 13 — Telegram bot god-file refactor | done | Split `internal/telegram/bot.go` into focused package files. |
-| 14 — Onboarding overhaul + retention controls | done | First-run wizard, runtime `/settings`, task delete + every-N recurrence + conversation cleanup. |
-| 14.5 — Dashboard UX hardening | done | Mobile cards, 44px touch targets, AA contrast, returnTo across auth expiry, custom confirm/prompt modal. Closes 2026-05-02 audit. |
-| **Phase 15 — File creation milestone** — slice 15a `create_xlsx` | done | xuri/excelize/v2 generator with formula-injection sanitization, sources-store persistence (KindXLSX), Telegram delivery via `SendDocumentToUser`, `cmd/debug_xlsx` harness. |
-| Phase 15 follow-ups | done | 15b `create_docx`, 15c `create_pdf`, 15d dashboard download endpoint + UI, and 15e LLM-driven natural-prompt tests via `cmd/debug_files`. |
-| **Historical backlog** — HR-01, HR-02 | done | HR-01 fixed in 12u.8; HR-02 fixed in 12u.9. |
+If a queue item conflicts with this direction, update the queue before executing it.
 
 ---
 
-# 13. Final Notes
+## 9. Dependency Rules
 
-Aura non è un sistema complesso: è una pipeline deterministica con tool agentici discreti e una memoria che si compone nel tempo. La v4.0 documenta lo stato vivo. Ogni nuovo slice deve poter essere descritto in una riga in tabella e in un commit atomico.
+These rules define architectural progress.
+
+Allowed:
+
+- `channels/* -> chat`
+- `channels/* -> agent` only through narrow interfaces if unavoidable
+- `chat -> agent`
+- `agent -> agent/tools`
+- `agent -> learning` through interfaces
+- `agent -> rag` through interfaces
+- `agent -> memory` through interfaces
+- `rag -> memory` through interfaces
+- `rag -> learning` through interfaces
+- `rag -> storage` through interfaces
+- `learning -> storage`
+- `memory -> storage`
+- `api -> chat`
+- `cron -> chat` or `agent`
+
+Forbidden:
+
+- `agent -> channels/*`
+- `agent -> api`
+- `agent -> telegram`
+- `agent -> concrete qdrant/sqlite/source parser details`
+- `memory -> channels/*`
+- `storage -> agent`
+- `rag -> channels/*`
+- `rag` writing durable memory directly
+- `tools -> chat` unless the tool is explicitly a chat-facing capability and reviewed
+- `learning -> channels/*`
+- `learning` auto-editing prompts, code, or skills without validation
+- programmatic tool orchestration calling destructive, recursive, credential-minting, or inactive-turn tools
+- `cron` owning a separate loop
+- `swarm` owning a separate loop
+
+When a forbidden dependency exists, either introduce a small interface or move the code to the layer that actually owns it.
 
 ---
 
-**End of PRD v4.1**
+## 10. Test Strategy
+
+The refactor succeeds only if tests prove behavior moved safely.
+
+### 10.1 Always Required
+
+```powershell
+go build ./...
+go vet ./...
+go test ./...
+```
+
+### 10.2 Boundary Tests
+
+Add or preserve tests that prove:
+
+- `agent` can run without Telegram/API imports,
+- prompt/context assembly is deterministic for the same inputs,
+- `chat` can route without knowing transport formatting,
+- each channel adapter preserves transport-specific behavior,
+- tools execute through registry contracts,
+- deferred tool discovery works without loading every schema upfront,
+- complex tool calls use examples and pass argument-shape probes,
+- programmatic orchestration returns summaries/artifact handles instead of dumping intermediate data,
+- recoverable tool errors become retry feedback and learning events,
+- retrieval returns layer-labelled cited hits, not undifferentiated memory soup,
+- RAG evals cover user memory, wiki/source knowledge, and operational lessons separately,
+- learning retrieval uses validated lessons and redacts sensitive inputs,
+- memory writes inspect durable wiki output,
+- storage/indexes can be rebuilt from durable state.
+
+### 10.3 Prompt Evals
+
+Required for every meaningful prompt/runtime change:
+
+- task fidelity on representative user asks,
+- context utilization on retrieved wiki/source/user-memory/operational-memory capsules,
+- correct tool triggering versus direct answer,
+- correct question emission when intent or memory write is ambiguous,
+- output contract adherence,
+- citation/source faithfulness where sources are used,
+- latency and token cost envelope,
+- style/tone stability for chat channels.
+
+### 10.4 Golden/Fixture Tests
+
+Required for:
+
+- Telegram streaming edits,
+- source conversions,
+- wiki write output,
+- public API response shape.
+
+Use actual artifacts and snapshots where behavior matters.
+
+### 10.5 Concurrency Tests
+
+Required for:
+
+- SQLite hot paths,
+- tool execution fan-out,
+- background/cron runs,
+- swarm child runs.
+
+Prior `SQLITE_BUSY` evidence means database settings must be tested under pressure, not assumed.
+
+---
+
+## 11. Definition of Done
+
+A refactor slice is done when:
+
+- the module responsibility is clearer than before,
+- dependencies move toward the allowed direction,
+- no god package is created,
+- old behavior is protected by tests or fixtures,
+- build/vet/test are green,
+- public behavior is unchanged unless the PRD explicitly says otherwise,
+- `prd.json` and progress notes are updated only after verification,
+- the commit is atomic and named for the architectural change.
+
+A slice is not done when:
+
+- files were merely moved,
+- tests only prove compilation,
+- behavior was "probably" preserved,
+- a package got a better name but still owns too many concerns,
+- a temporary compatibility wrapper becomes the new permanent architecture.
+
+---
+
+## 12. Non-Goals
+
+Do not use this refactor to add:
+
+- a dashboard redesign,
+- a new graph database,
+- an embedding backend migration,
+- a GPU embedding path,
+- a new web chat product,
+- a broad source ingestion rewrite,
+- a new orchestration framework,
+- a Responses API dependency,
+- raw RL/PARL/model fine-tuning inside this refactor,
+- dynamic tool mutation mid-conversation.
+
+These may be valid later. They are distractions before the core is understandable.
+
+---
+
+## 13. Operating Rule For Workers
+
+Before editing any file, a worker must answer:
+
+1. Which target module owns this responsibility?
+2. What dependency direction does this change improve?
+3. What behavior could regress?
+4. What test or fixture proves it did not regress?
+5. What temporary compatibility code is being added, and when can it be removed?
+
+If the worker cannot answer these, the task is not ready.
+
+---
+
+## 14. The One-Sentence Direction
+
+Aura becomes maintainable when every path enters through a channel or scheduled entrypoint, flows through `chat`, uses one `agent` runtime, accesses capabilities through `agent/tools`, learns from recoverable tool failures through `learning`, persists through `memory` and `storage`, and returns through an adapter without the core ever learning about the adapter's world.
