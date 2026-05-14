@@ -55,9 +55,8 @@ func handleSummariesList(deps Deps) http.HandlerFunc {
 
 func handleSummariesApprove(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseProposalID(r)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+		id, ok := pathParamInt64(w, deps.Logger, r, "id")
+		if !ok {
 			return
 		}
 		if deps.Summaries == nil {
@@ -85,9 +84,8 @@ func handleSummariesApprove(deps Deps) http.HandlerFunc {
 
 func handleSummariesReject(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseProposalID(r)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+		id, ok := pathParamInt64(w, deps.Logger, r, "id")
+		if !ok {
 			return
 		}
 		if deps.Summaries == nil {
@@ -265,15 +263,6 @@ func summaryDecisionError(err error) string {
 	default:
 		return "decision failed"
 	}
-}
-
-func parseProposalID(r *http.Request) (int64, error) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid id %q", idStr)
-	}
-	return id, nil
 }
 
 func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {

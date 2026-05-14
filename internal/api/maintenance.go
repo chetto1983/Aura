@@ -2,9 +2,7 @@
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/aura/aura/internal/cron"
@@ -41,10 +39,8 @@ func handleMaintenanceList(deps Deps) http.HandlerFunc {
 
 func handleMaintenanceResolve(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := r.PathValue("id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, fmt.Sprintf("invalid id %q", idStr))
+		id, ok := pathParamInt64(w, deps.Logger, r, "id")
+		if !ok {
 			return
 		}
 		if deps.Issues == nil {

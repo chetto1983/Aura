@@ -3,9 +3,11 @@
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/aura/aura/internal/api/auth"
@@ -346,4 +348,17 @@ func decodeJSONBody(r *http.Request, v any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
+}
+
+// pathParamInt64 extracts a named path parameter, parses it as int64, and
+// writes a 400 response on failure. Returns (0, false) when invalid so
+// callers can return immediately without a separate writeError call.
+func pathParamInt64(w http.ResponseWriter, logger *slog.Logger, r *http.Request, param string) (int64, bool) {
+	s := r.PathValue(param)
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		writeError(w, logger, http.StatusBadRequest, fmt.Sprintf("invalid %s %q", param, s))
+		return 0, false
+	}
+	return id, true
 }

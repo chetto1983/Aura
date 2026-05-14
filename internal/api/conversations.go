@@ -3,7 +3,6 @@ package api
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -63,10 +62,8 @@ func handleConversationList(deps Deps) http.HandlerFunc {
 
 func handleConversationDetail(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := r.PathValue("id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, fmt.Sprintf("invalid id %q", idStr))
+		id, ok := pathParamInt64(w, deps.Logger, r, "id")
+		if !ok {
 			return
 		}
 
