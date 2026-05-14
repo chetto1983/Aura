@@ -99,32 +99,58 @@ func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 	}
 }
 
-func mergeAgentLoopStats(base turnStats, stats agent.Stats) turnStats {
-	base.llmCalls = stats.LLMCalls
-	base.toolCalls = stats.ToolCalls
-	base.loopSteps = stats.LoopSteps
-	base.toolsCalled = append([]string(nil), stats.ToolsCalled...)
-	base.readSkills = append([]string(nil), stats.ReadSkills...)
-	base.skillsRead = stats.SkillsRead
-	base.swarmUsed = stats.SwarmUsed
-	base.sandboxUsed = stats.SandboxUsed
-	base.terminalTool = stats.TerminalTool
-	base.duplicateToolCall = stats.DuplicateToolCall
-	base.tokensPrompt = stats.TokensPrompt
-	base.tokensCompletion = stats.TokensCompletion
-	base.tokensTotal = stats.TokensTotal
-	base.costUSD = stats.CostUSD
-	return base
+// From populates agent-loop–tracked fields from stats, preserving telegram-metadata
+// fields (promptVersion, toolset, toolsExposed, etc.) already set on s.
+func (s turnStats) From(stats agent.Stats) turnStats {
+	s.llmCalls = stats.LLMCalls
+	s.toolCalls = stats.ToolCalls
+	s.loopSteps = stats.LoopSteps
+	s.toolsCalled = append([]string(nil), stats.ToolsCalled...)
+	s.readSkills = append([]string(nil), stats.ReadSkills...)
+	s.skillsRead = stats.SkillsRead
+	s.swarmUsed = stats.SwarmUsed
+	s.sandboxUsed = stats.SandboxUsed
+	s.terminalTool = stats.TerminalTool
+	s.duplicateToolCall = stats.DuplicateToolCall
+	s.tokensPrompt = stats.TokensPrompt
+	s.tokensCompletion = stats.TokensCompletion
+	s.tokensTotal = stats.TokensTotal
+	s.costUSD = stats.CostUSD
+	return s
 }
 
-func applyTelegramTerminalStats(stats agent.Stats, telegramStats turnStats) agent.Stats {
-	stats.LLMCalls = telegramStats.llmCalls
-	stats.LoopSteps = telegramStats.loopSteps
-	stats.TokensPrompt = telegramStats.tokensPrompt
-	stats.TokensCompletion = telegramStats.tokensCompletion
-	stats.TokensTotal = telegramStats.tokensTotal
-	stats.CostUSD = telegramStats.costUSD
-	return stats
+// applyTo writes accumulated turn counters back into agent.Stats after
+// finalizeTerminalToolWithNoToolLLM mutates the turn counters.
+func (s turnStats) applyTo(stats *agent.Stats) {
+	stats.LLMCalls = s.llmCalls
+	stats.LoopSteps = s.loopSteps
+	stats.TokensPrompt = s.tokensPrompt
+	stats.TokensCompletion = s.tokensCompletion
+	stats.TokensTotal = s.tokensTotal
+	stats.CostUSD = s.costUSD
+}
+
+// checkBudgetQuota sends a Telegram budget notice and returns non-nil if the LLM call
+// should be halted. The caller is responsible for session cleanup before returning.
+func (b *Bot) checkBudgetQuota(c tele.Context, userID string, estimatedTokens int) error {
+	if b.budget == nil {
+		return nil
+	}
+	if b.budget.IsHardBudgetExceeded() {
+		b.logger.Warn("hard budget exceeded, halting LLM call", "user_id", userID)
+		if _, err := c.Bot().Send(c.Recipient(), "Budget limit reached. LLM calls are temporarily halted."); err != nil {
+			b.logger.Warn("budget notice send failed", "error", err)
+		}
+		return fmt.Errorf("hard budget exceeded")
+	}
+	if !b.budget.CanAfford(estimatedTokens, 500) {
+		b.logger.Warn("predicted cost exceeds hard budget, halting LLM call", "user_id", userID)
+		if _, err := c.Bot().Send(c.Recipient(), "Predicted cost would exceed budget. Please adjust your budget or wait."); err != nil {
+			b.logger.Warn("budget notice send failed", "error", err)
+		}
+		return fmt.Errorf("budget unaffordable")
+	}
+	return nil
 }
 
 // buildTelegramInvocation is the chat.InvocationBuilder for the Telegram channel.
@@ -184,22 +210,9 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 		return agent.Invocation{}, fmt.Errorf("no LLM configured (echo mode)")
 	}
 
-	// Budget checks before LLM call.
-	if b.budget != nil && b.budget.IsHardBudgetExceeded() {
-		b.logger.Warn("hard budget exceeded, halting LLM call", "user_id", userID)
-		if _, err := c.Bot().Send(c.Recipient(), "Budget limit reached. LLM calls are temporarily halted."); err != nil {
-			b.logger.Warn("budget notice send failed", "error", err)
-		}
+	if err := b.checkBudgetQuota(c, userID, convCtx.EstimatedTokens()); err != nil {
 		session.Finish()
-		return agent.Invocation{}, fmt.Errorf("hard budget exceeded")
-	}
-	if b.budget != nil && !b.budget.CanAfford(convCtx.EstimatedTokens(), 500) {
-		b.logger.Warn("predicted cost exceeds hard budget, halting LLM call", "user_id", userID)
-		if _, err := c.Bot().Send(c.Recipient(), "Predicted cost would exceed budget. Please adjust your budget or wait."); err != nil {
-			b.logger.Warn("budget notice send failed", "error", err)
-		}
-		session.Finish()
-		return agent.Invocation{}, fmt.Errorf("budget unaffordable")
+		return agent.Invocation{}, err
 	}
 
 	// Send the initial placeholder so the user knows the message was received.
@@ -301,9 +314,9 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 				return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agent.Stats) (string, bool, bool) {
-				telegramStats := mergeAgentLoopStats(baseStats, *stats)
+				telegramStats := baseStats.From(*stats)
 				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
-				*stats = applyTelegramTerminalStats(*stats, telegramStats)
+				telegramStats.applyTo(stats)
 				if delivered {
 					return "", true, true
 				}
@@ -314,10 +327,10 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 		OnEvent: func(event agent.Event) {
 			switch event.Type {
 			case agent.EventStats:
-				currentStats = mergeAgentLoopStats(baseStats, event.Stats)
+				currentStats = baseStats.From(event.Stats)
 				b.storeOrchestrationSnapshot(userID, currentStats)
 			case agent.EventFinal:
-				finalStats := mergeAgentLoopStats(baseStats, event.Stats)
+				finalStats := baseStats.From(event.Stats)
 				currentStats = finalStats
 
 				// Non-streaming delivery: edit placeholder or send fresh.
