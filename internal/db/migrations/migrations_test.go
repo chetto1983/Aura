@@ -10,17 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/testutil"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := auradb.Open(filepath.Join(t.TempDir(), "aura.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return testutil.OpenTestDB(t, nil)
 }
 
 func TestFTS5CreateVirtualTableWorksInsideTransaction(t *testing.T) {

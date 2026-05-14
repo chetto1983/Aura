@@ -3,33 +3,15 @@ package scheduler
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
-	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/testutil"
 )
-
-// openTestDBInternal opens a raw SQLite DB with the scheduler + issues migrations
-// applied, without going through the scheduler.NewTestDB exported helper (which
-// would be a circular call from within the same package).
-func openTestDBInternal(t *testing.T) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := auradb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("openTestDBInternal: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := migrations.Run(context.Background(), db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
-}
 
 // TestIssuesStore_Get_ClosedDB covers the non-ErrNoRows error path in Get.
 func TestIssuesStore_Get_ClosedDB(t *testing.T) {
-	db := openTestDBInternal(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := &IssuesStore{db: db}
 	db.Close()
 
@@ -42,7 +24,7 @@ func TestIssuesStore_Get_ClosedDB(t *testing.T) {
 // TestIssuesList_ScanError covers the scanIssue error path inside the List loop
 // by inserting a row with an unparseable created_at via raw SQL.
 func TestIssuesList_ScanError(t *testing.T) {
-	db := openTestDBInternal(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := &IssuesStore{db: db}
 
 	_, err := db.Exec(`INSERT INTO wiki_issues (kind, severity, slug, broken_link, message, status, created_at)

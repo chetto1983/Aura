@@ -3,29 +3,11 @@ package conversation
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
 	"github.com/aura/aura/internal/db/migrations"
-
-	_ "modernc.org/sqlite"
+	"github.com/aura/aura/internal/testutil"
 )
-
-// openTestDB opens a fresh SQLite DB, applies the conversations migration, and
-// registers cleanup.
-func openTestDB(t *testing.T) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("openTestDB: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := migrations.Run(context.Background(), db); err != nil {
-		t.Fatalf("openTestDB migrate: %v", err)
-	}
-	return db
-}
 
 // TestIsDuplicateError_Nil covers the nil-guard branch in isDuplicateError.
 func TestIsDuplicateError_Nil(t *testing.T) {
@@ -84,7 +66,7 @@ func TestScanTurn_BadTimestamp(t *testing.T) {
 // TestListByChat_ScanError covers the scan-error path in ListByChat by
 // inserting a row with a corrupt created_at value via raw SQL.
 func TestListByChat_ScanError(t *testing.T) {
-	db := openTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := &ArchiveStore{db: db}
 
 	// Insert a row with an unparseable created_at directly.
