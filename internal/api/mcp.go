@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/aura/aura/internal/mcppolicy"
+	"github.com/aura/aura/internal/mcp"
 )
 
 func handleMCPServers(deps Deps) http.HandlerFunc {
@@ -82,14 +82,14 @@ func applyMailToolPolicy(provider *ConnectorProviderSummary, status MailSetupSta
 	provider.Status = connectorStatus(status.Configured, status.Connected, status.Error)
 	enableMailBaseCapabilities(provider, status.Connected)
 	if status.EnableSMTP {
-		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcppolicy.MailSendTools...)
-		provider.BlockedTools = removeStrings(provider.BlockedTools, mcppolicy.MailSendTools...)
+		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcp.MailSendTools...)
+		provider.BlockedTools = removeStrings(provider.BlockedTools, mcp.MailSendTools...)
 		provider.RiskBadges = replaceRiskBadge(provider.RiskBadges, "writes_blocked", ConnectorRiskBadge{ID: "send_enabled", Label: "invio abilitato", Level: "high"})
 		enableCapability(provider, "mail.draft_reply", status.Connected)
 	}
 	if status.EnableIMAPMutations {
-		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcppolicy.MailIMAPMutationTools...)
-		provider.BlockedTools = removeStrings(provider.BlockedTools, mcppolicy.MailIMAPMutationTools...)
+		provider.ApprovedTools = appendUniqueStrings(provider.ApprovedTools, mcp.MailIMAPMutationTools...)
+		provider.BlockedTools = removeStrings(provider.BlockedTools, mcp.MailIMAPMutationTools...)
 		provider.RiskBadges = replaceRiskBadge(provider.RiskBadges, "writes_blocked", ConnectorRiskBadge{ID: "mutations_enabled", Label: "modifica mail abilitata", Level: "high"})
 	}
 	provider.SetupHints = mailSetupHints(status)
@@ -275,8 +275,8 @@ var mcpProviderManifests = []ConnectorProviderSummary{
 			{ID: "schema_mutation_blocked", Label: "schema bloccato", Level: "low"},
 		},
 		RequiredSecrets: []string{"database host/path and optional credentials"},
-		ApprovedTools:   append([]string(nil), mcppolicy.DatabaseReadTools...),
-		BlockedTools:    append([]string(nil), mcppolicy.DatabaseBlockedTools...),
+		ApprovedTools:   append([]string(nil), mcp.DatabaseReadTools...),
+		BlockedTools:    append([]string(nil), mcp.DatabaseBlockedTools...),
 		SetupHints:      []string{"Configura dalla dashboard. Aura usa solo query read-only nella card connettore."},
 	},
 }

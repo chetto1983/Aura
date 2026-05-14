@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/mcp"
-	"github.com/aura/aura/internal/mcppolicy"
+	
 )
 
 const mailMCPServerName = "mail"
@@ -153,7 +153,7 @@ func buildMailMCPConfig(req MailSetupRequest, command string, existingEnv map[st
 	}
 	if req.EnableIMAPMutations {
 		env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"] = "true"
-		env[mcppolicy.MailIMAPWriteEnabledEnv] = "true"
+		env[mcp.MailIMAPWriteEnabledEnv] = "true"
 	}
 	return mcp.ServerConfig{Command: command, Env: env}, nil
 }
@@ -199,7 +199,7 @@ func applyConfiguredMailEnv(status *MailSetupStatus, env map[string]string) {
 				status.SMTPPort = atoiDefault(env["MAIL_SMTP_"+segment+"_PORT"], 587)
 				status.SMTPSecure = env["MAIL_SMTP_"+segment+"_SECURE"] != "plain"
 			}
-			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"]) || envFlagBool(env[mcppolicy.MailIMAPWriteEnabledEnv])
+			status.EnableIMAPMutations = envFlagBool(env["AURA_MAIL_"+segment+"_ENABLE_IMAP_MUTATIONS"]) || envFlagBool(env[mcp.MailIMAPWriteEnabledEnv])
 			return
 		}
 	}

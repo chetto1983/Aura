@@ -1,4 +1,4 @@
-package mcpwatch
+package mcp
 
 import (
 	"context"

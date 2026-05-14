@@ -1,4 +1,4 @@
-// Package mcpwatch watches mcp.json for changes and triggers a callback.
+// Watcher (was package mcpwatch) watches mcp.json for changes and triggers a callback.
 //
 // Wave 2.10.b — when the operator edits mcp.json (today by hand, tomorrow
 // via dashboard) the file watcher debounces the burst of events that
@@ -12,7 +12,7 @@
 // boot-only. fsnotify firing today is still useful: the Reconciler runs,
 // confirms no diff, and updates indexed_at — at least the operator gets
 // confirmation in the logs that the edit was seen.
-package mcpwatch
+package mcp
 
 import (
 	"context"

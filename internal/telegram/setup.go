@@ -24,8 +24,8 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/markitdown"
 	"github.com/aura/aura/internal/mcp"
-	"github.com/aura/aura/internal/mcppolicy"
-	"github.com/aura/aura/internal/mcpwatch"
+	
+	
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
 	"github.com/aura/aura/internal/qdrant"
@@ -427,7 +427,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 	}
 	mcpClients := make([]mcp.ConnectedClient, 0, len(mcpServers))
 	for name, srv := range mcpServers {
-		srv.Env = mcppolicy.NormalizeRuntimeEnv(name, srv.Env)
+		srv.Env = mcp.NormalizeRuntimeEnv(name, srv.Env)
 		var client *mcp.Client
 		var err error
 		switch {
@@ -443,11 +443,11 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 		mcpClients = append(mcpClients, client)
 		registeredTools := 0
 		for _, t := range client.Tools() {
-			if !mcppolicy.ToolEnabledForAura(name, srv.Env, t.Name) {
+			if !mcp.ToolEnabledForAura(name, srv.Env, t.Name) {
 				continue
 			}
 			tool := tools.NewMCPTool(client, name, t)
-			if mcppolicy.ToolAutonomousForAura(name, t.Name) {
+			if mcp.ToolAutonomousForAura(name, t.Name) {
 				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
 			} else {
 				toolRegistry.Register(tool)
@@ -636,7 +636,7 @@ func New(cfg *config.Config, settingsStore settings.Repository, pool *sql.DB, lo
 			// MCP server reload; today the watcher just triggers a
 			// reconcile pass so the operator sees confirmation in logs.
 			if cfg.MCPServersPath != "" {
-				watcher, werr := mcpwatch.New(mcpwatch.Config{
+				watcher, werr := mcp.New(mcp.Config{
 					Path:     cfg.MCPServersPath,
 					Callback: func() { reconciler.Notify(toolindex.ReasonMCPConfig) },
 					Logger:   logger.With("component", "mcpwatch"),

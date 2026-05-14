@@ -1,4 +1,4 @@
-package mcppolicy
+package mcp
 
 import "testing"
 
