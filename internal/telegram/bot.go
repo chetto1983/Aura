@@ -288,3 +288,46 @@ func (b *Bot) Stop() {
 		}
 	}
 }
+
+// StartBgGoroutine tracks fn in the bot's background WaitGroup and starts it.
+// fn receives the bot's background context and should return when it is cancelled.
+func (b *Bot) StartBgGoroutine(fn func(context.Context)) {
+	b.bgWg.Add(1)
+	go func() {
+		defer b.bgWg.Done()
+		fn(b.bgCtx)
+	}()
+}
+
+// IsAllowlisted reports whether userID is permitted to use the bot.
+func (b *Bot) IsAllowlisted(userID string) bool { return b.isAllowlisted(userID) }
+
+// DispatchTask is the exported entry point for cron.Scheduler's Dispatcher callback.
+func (b *Bot) DispatchTask(ctx context.Context, task *cron.Task) error {
+	return b.dispatchTask(ctx, task)
+}
+
+// RuntimeSettingsApplier returns a closure for api.Deps.ApplyRuntimeSettings.
+func (b *Bot) RuntimeSettingsApplier(deps Deps) func(context.Context) error {
+	return func(ctx context.Context) error {
+		return applyRuntimeSettings(ctx, deps.SettingsStore, deps.Cfg, deps.AgentRunner, deps.SwarmMgr, b.budget, deps.Logger)
+	}
+}
+
+// SetToolReconciler assigns the tool index reconciler (wired by wireBot).
+func (b *Bot) SetToolReconciler(r *toolindex.Reconciler) { b.toolReconciler = r }
+
+// SetArchiveDB assigns the conversation archive repository (wired by wireBot).
+func (b *Bot) SetArchiveDB(a conversation.ArchiveRepository) { b.archiveDB = a }
+
+// SetArchiver assigns the buffered conversation turn appender (wired by wireBot).
+func (b *Bot) SetArchiver(a conversation.ClosingTurnAppender) { b.archiver = a }
+
+// SetIssues assigns the wiki issues store (wired by wireBot).
+func (b *Bot) SetIssues(is cron.IssueRepository) { b.issues = is }
+
+// SetSched assigns the cron scheduler (wired by wireBot).
+func (b *Bot) SetSched(s *cron.Scheduler) { b.sched = s }
+
+// SetAPI assigns the HTTP API handler served from APIHandler() (wired by wireBot).
+func (b *Bot) SetAPI(h http.Handler) { b.api = h }

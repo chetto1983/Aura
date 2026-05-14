@@ -9,11 +9,15 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/mcp"
 	auraskills "github.com/aura/aura/internal/skills"
@@ -29,8 +33,6 @@ import (
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/wiki"
 	"github.com/aura/aura/internal/workspace"
-	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/conversation/summarizer"
 )
 
 // App holds the pre-built Phase A dependencies for Aura. Constructed by
@@ -435,4 +437,260 @@ func newApp(
 	deps.BgCancel = bgCancel
 
 	return &App{deps: deps, restart: restart}, nil
+}
+
+// wireBot performs Phase C composition wiring after telegram.New() constructs
+// the Bot (Phase B). It builds api.Router, cron.Scheduler, conversation archive,
+// memoryStore rebuild, toolReconciler + mcpwatch goroutines, and wires them onto
+// b via exported setter methods.
+//
+// Must be called from cmd/aura before bot.Start() so all infrastructure is ready
+// before the first Telegram message arrives.
+func (a *App) wireBot(b *telegram.Bot) error {
+	cfg := a.deps.Cfg
+	logger := a.deps.Logger
+	loc := a.deps.Loc
+
+	// ---- Tool vector index: reconciler + mcpwatch goroutines ----------------
+	toolReaderConfig := tools.ToolVectorConfig{
+		Backend:      cfg.ToolSearchBackend,
+		TopK:         cfg.ToolSearchTopK,
+		QdrantURL:    cfg.QdrantURL,
+		QdrantAPIKey: cfg.QdrantAPIKey,
+		Collection:   tools.ToolSearchCollection,
+		EmbedBaseURL: cfg.EmbeddingBaseURL,
+		EmbedAPIKey:  cfg.EmbeddingAPIKey,
+		EmbedModel:   cfg.EmbeddingModel,
+	}
+	var reconciler *toolindex.Reconciler
+	if a.deps.QdrantClient != nil && a.deps.EmbedCache != nil && cfg.ToolSearchBackend != "fts" {
+		r, err := toolindex.New(toolindex.Config{
+			Provider:    a.deps.Tools,
+			Qdrant:      a.deps.QdrantClient,
+			Embedder:    a.deps.EmbedCache,
+			State:       toolindex.NewSQLiteStateStore(a.deps.Pool),
+			Collection:  tools.ToolSearchCollection,
+			VectorDim:   tools.ToolVectorDim(cfg.EmbeddingOutputDim),
+			EmbedModel:  search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel),
+			EmbedTextFn: tools.SearchableEmbeddingTextForLLMDef,
+			PointIDFn:   tools.ToolQdrantPointID,
+			Logger:      logger.With("component", "toolindex"),
+		})
+		if err != nil {
+			logger.Warn("tool index reconciler unavailable", "error", err)
+		} else {
+			rep := r.Reconcile(context.Background(), toolindex.ReasonBoot)
+			logger.Info("tool index reconciled at boot",
+				"upserted", len(rep.Upserted), "deleted", len(rep.Deleted),
+				"unchanged", rep.Unchanged, "errors", len(rep.Errors),
+				"elapsed_ms", rep.ElapsedMs)
+			for i, e := range rep.Errors {
+				logger.Warn("tool index reconcile error", "idx", i, "err", e)
+			}
+			reconciler = r
+			b.SetToolReconciler(r)
+			b.StartBgGoroutine(r.Run)
+
+			// fsnotify on mcp.json — debounced notification when the operator edits the file.
+			if cfg.MCPServersPath != "" {
+				watcher, werr := mcp.New(mcp.Config{
+					Path:     cfg.MCPServersPath,
+					Callback: func() { r.Notify(toolindex.ReasonMCPConfig) },
+					Logger:   logger.With("component", "mcpwatch"),
+				})
+				if werr != nil {
+					logger.Warn("mcp.json watcher unavailable", "error", werr)
+				} else {
+					b.StartBgGoroutine(func(ctx context.Context) {
+						if rerr := watcher.Run(ctx); rerr != nil {
+							logger.Warn("mcpwatch exited with error", "error", rerr)
+						}
+					})
+				}
+			}
+		}
+	}
+	// Wire the ToolVectorIndex on the registry for the search path.
+	a.deps.Tools.PrepareVectorReader(toolReaderConfig)
+
+	// ---- Conversation archive ------------------------------------------------
+	var archiveDB conversation.ArchiveRepository
+	if cfg.ConvArchiveEnabled {
+		archiveStore, err := conversation.NewArchiveStore(a.deps.SchedDB.DB())
+		if err != nil {
+			logger.Warn("conversation archive unavailable", "error", err)
+		} else {
+			if a.deps.MemoryStore != nil {
+				archiveDB = memoryindex.NewIndexingArchiveRepository(archiveStore, a.deps.MemoryStore)
+			} else {
+				archiveDB = archiveStore
+			}
+			b.SetArchiveDB(archiveDB)
+			b.SetArchiver(conversation.NewBufferedAppender(archiveDB, 100))
+		}
+	}
+
+	// ---- Compact memory index rebuild ----------------------------------------
+	if a.deps.MemoryStore != nil {
+		rebuildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		report, err := memoryindex.Rebuild(rebuildCtx, a.deps.MemoryStore, memoryindex.RebuildInput{
+			Sources:    a.deps.Sources,
+			Archive:    archiveDB,
+			Proposals:  a.deps.SummariesStore,
+			SkipVector: a.deps.CompactVector != nil,
+		})
+		cancel()
+		if err != nil {
+			logger.Warn("compact memory index rebuild failed", "error", err)
+		} else {
+			logger.Info("compact memory index rebuilt",
+				"sources", report.SourcesIndexed, "archive", report.ArchiveIndexed,
+				"proposals", report.ProposalsIndexed,
+				"vector_collection", report.Vector.Collection, "vector_docs", report.Vector.DocsIndexed)
+		}
+		if a.deps.CompactVector != nil {
+			go func() {
+				vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				logger.Info("compact memory vector mirror sync started")
+				a.deps.CompactVectorHealth.Started()
+				syncReport, err := a.deps.MemoryStore.SyncVector(vectorCtx)
+				if err != nil {
+					a.deps.CompactVectorHealth.Failed(err)
+					logger.Warn("compact memory vector mirror sync failed", "error", err)
+					return
+				}
+				a.deps.CompactVectorHealth.Succeeded(syncReport)
+				logger.Info("compact memory vector mirror synced",
+					"vector_collection", syncReport.Collection, "vector_docs", syncReport.DocsIndexed,
+					"vector_size", syncReport.VectorSize)
+			}()
+		}
+	}
+
+	// SearchMemoryTool — registered after memory rebuild so the index is populated.
+	if tool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
+		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
+		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
+
+	// ---- Wiki issues store + daily briefing tool ----------------------------
+	issues := cron.NewIssuesStore(a.deps.SchedDB.DB())
+	b.SetIssues(issues)
+	if tool := tools.NewDailyBriefingTool(a.deps.SchedDB, a.deps.Sources, a.deps.SummariesStore, issues, archiveDB, loc); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
+
+	// ---- Cron scheduler -----------------------------------------------------
+	// Dispatcher closes over b so reminder/wiki_maintenance tasks can invoke
+	// the bot's send + the wiki store. Built after b is initialized.
+	sched, err := cron.New(cron.Config{
+		Store:      a.deps.SchedDB,
+		Dispatcher: b.DispatchTask,
+		Logger:     logger,
+		Location:   loc,
+	})
+	if err != nil {
+		return fmt.Errorf("creating scheduler: %w", err)
+	}
+	b.SetSched(sched)
+
+	// Bootstrap the autonomous nightly wiki-maintenance task (idempotent upsert).
+	nightlyAt, err := cron.NextDailyRun("03:00", loc, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing nightly run: %w", err)
+	}
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:          "nightly-wiki-maintenance",
+		Kind:          cron.KindWikiMaintenance,
+		ScheduleKind:  cron.ScheduleDaily,
+		ScheduleDaily: "03:00",
+		NextRunAt:     nightlyAt,
+		Status:        cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
+	}
+
+	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------
+	skillRoots := telegram.SkillSearchRoots(cfg)
+	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, cfg.SkillsInstallProjectDir)
+	if err != nil {
+		logger.Warn("skills installer unavailable", "error", err)
+	}
+	skillsDeleter, err := auraskills.NewFSDeleter(skillRoots[0], skillRoots[1:]...)
+	if err != nil {
+		logger.Warn("skills deleter unavailable", "error", err)
+	}
+	skillProposalApplier, err := auraskills.NewFSProposalApplier(skillRoots[0])
+	if err != nil {
+		logger.Warn("skill proposal applier unavailable", "error", err)
+	}
+
+	// ---- HTTP API router (dashboard + /api endpoints) -----------------------
+	b.SetAPI(api.NewRouter(api.Deps{
+		Wiki:        a.deps.WikiStore,
+		Sources:     a.deps.Sources,
+		Scheduler:   a.deps.SchedDB,
+		OCR:         a.deps.OCR,
+		Ingest:      a.deps.Ingest,
+		Markitdown:  a.deps.Markitdown,
+		Auth:        a.deps.AuthDB,
+		Allowlist:   b.IsAllowlisted,
+		MaxUploadMB: cfg.OCRMaxFileMB,
+		Location:    loc,
+		// Surface reindex worker health via /api/health.
+		ReindexHealth: b.ReindexHealth,
+		// Keep in sync with cmd/aura/main.go's auraVersion.
+		Version:   "3.0",
+		StartedAt: time.Now().UTC(),
+		Logger:    logger,
+		// Skills + MCP dashboard panels.
+		Skills: a.deps.Skills,
+		MCP:    a.deps.MCPClients,
+		// skills.sh catalog + admin-gated install/delete.
+		SkillsCatalog:   a.deps.SkillsCatalog,
+		SkillsInstaller: skillsInstaller,
+		SkillsDeleter:   telegram.NewSkillsDeleterAdapter(skillsDeleter),
+		SkillProposals:  telegram.NewSkillProposalApplierAdapter(skillProposalApplier),
+		SkillsAdmin:     cfg.SkillsAdmin,
+		// Embed cache hit/miss counters in /api/health.
+		EmbedCache:    a.deps.EmbedCache,
+		CompactMemory: a.deps.CompactVectorHealth,
+		Sandbox:       a.deps.SandboxHealth,
+		// ToolReconciler backs POST /api/tools/reindex.
+		ToolReconciler: reconciler,
+		// SourcePurger for DELETE /sources/{id} compact memoryindex cleanup.
+		SourcePurger: a.deps.MemoryStore,
+		// Multi-root file manager.
+		WikiDir:      cfg.WikiPath,
+		WorkspaceDir: cfg.WorkspaceRoot,
+		SkillsDir:    cfg.SkillsPath,
+		// WikiSearch reindexes after dashboard wiki writes/renames/deletes.
+		WikiSearch: a.deps.SearchRepo,
+		// Pending-approval pipeline.
+		PendingApprover: b,
+		// Conversation archive read API.
+		Archive: archiveDB,
+		// Summaries review queue.
+		Summaries:     a.deps.SummariesStore,
+		SummariesWiki: a.deps.WikiStore,
+		// Wiki maintenance issue queue.
+		Issues: issues,
+		// Runtime settings page.
+		Settings:             a.deps.SettingsStore,
+		RuntimeConfig:        cfg,
+		ApplyRuntimeSettings: b.RuntimeSettingsApplier(a.deps),
+		Restart:              a.restart,
+		// AuraBot swarm observability.
+		Swarm: a.deps.SwarmStore,
+		Chat:  telegram.NewWebChatService(a.deps.AgentRunner, a.deps.Tools),
+	}))
+
+	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
+	// picks up every tool that landed in the registry during setup.
+	if reconciler != nil {
+		reconciler.Notify(toolindex.ReasonBoot)
+	}
+	return nil
 }

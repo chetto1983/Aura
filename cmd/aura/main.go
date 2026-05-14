@@ -348,9 +348,12 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("build app deps: %w", err)
 	}
-	bot, err := telegram.New(app.deps, telegram.WithRestart(restart))
+	bot, err := telegram.New(app.deps)
 	if err != nil {
 		return nil, activeLogger, fmt.Errorf("create telegram bot: %w", err)
+	}
+	if err := app.wireBot(bot); err != nil {
+		return nil, activeLogger, fmt.Errorf("wire bot phase C: %w", err)
 	}
 
 	// Wire the Telegram Hub. Adapters live in internal/channels/telegram which

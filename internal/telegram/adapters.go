@@ -42,3 +42,15 @@ func (a skillProposalApplierAdapter) ApplySkillProposal(ctx context.Context, pro
 		Content: proposal.Content,
 	})
 }
+
+// NewSkillsDeleterAdapter wraps an FSDeleter to satisfy api.SkillDeleter.
+// Used by wireBot (cmd/aura) when building the API router.
+func NewSkillsDeleterAdapter(d *auraskills.FSDeleter) api.SkillDeleter {
+	return skillsDeleterAdapter{inner: d}
+}
+
+// NewSkillProposalApplierAdapter wraps an FSProposalApplier to satisfy api.SkillProposalApplier.
+// Used by wireBot (cmd/aura) when building the API router.
+func NewSkillProposalApplierAdapter(p *auraskills.FSProposalApplier) api.SkillProposalApplier {
+	return skillProposalApplierAdapter{inner: p}
+}
