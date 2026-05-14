@@ -188,20 +188,51 @@
       "notes": "Done 2026-05-14 by manual finish-of-Ralph-#4 (Ralph started helpers.go then died on TaskStop; truncated setup.go + cleaned imports). ~120 LOC moved same-package."
     },
     {
-      "id": "US-A13b",
-      "title": "Step 8b — Extract telegram.New() composition root → cmd/aura/app.go",
-      "description": "Move the body of telegram.New() (~850 LOC of full app bootstrap: wiki + qdrant + search + sources + ocr + ingest + sandbox + tools + agent runner + swarm + cron + auth + api + mcp + skills + hub + reconciler) into a new App struct in cmd/aura/app.go. telegram.New() becomes a thin shim that constructs a Bot from a deps bag built by App. DO NOT slim the Bot struct yet — keep all current fields; that's US-A13c. The goal here is to move the wiring code OUT of internal/telegram/ and into cmd/aura/.",
+      "id": "US-A13b.1",
+      "title": "Step 8b.1 — Add telegram.Deps struct + telegram.NewBot(deps) constructor (additive scaffolding)",
+      "description": "Pure additive change. Introduce a Deps struct exposing the fields the Bot literal currently takes in setup.go::New() (around line 463), plus a NewBot(deps Deps) *Bot constructor that does the field assignment. Existing telegram.New() stays unchanged — it can optionally start using NewBot internally as a no-op refactor. No LOC drop yet; the goal is to expose the construction surface so cmd/aura/app.go can populate Bot fields without exporting them.",
       "acceptanceCriteria": [
-        "cmd/aura/app.go exists with an App struct and App.New() that wires the full dep graph",
-        "internal/telegram/setup.go is gone OR reduced to ≤200 LOC (only the Telegram channel-specific bits)",
-        "internal/telegram/ prod LOC reduced by ≥700",
+        "internal/telegram/ has a Deps struct (exported) with the ~22 fields currently in the b := &Bot{...} literal in setup.go",
+        "internal/telegram/ has func NewBot(deps Deps) *Bot",
+        "Existing telegram.New() optionally refactored to use NewBot internally (no behavior change)",
+        "go build + vet + test ./... green",
+        "Single atomic commit prefix: refactor(telegram): add Deps + NewBot constructor (US-A13b.1)"
+      ],
+      "priority": 13.51,
+      "passes": true,
+      "notes": "Safe scaffolding step. No external behavior change. Sets up the surface for US-A13b.2/b.3 to populate Bot from cmd/aura. Done 2026-05-14 commit pending. internal/telegram/deps.go added with Deps struct (23 fields) + NewBot(deps) constructor. No existing call sites changed — purely additive."
+    },
+    {
+      "id": "US-A13b.2",
+      "title": "Step 8b.2 — Move Phase A (pure dep construction) from telegram/setup.go to cmd/aura/app.go",
+      "description": "Move the ~400 LOC of pure dependency construction (wiki, qdrant, search, embedding cache, source store, ocr, markitdown, ingest, sandbox, tools registry, agent runner, swarm, mcp, auth) from setup.go::New() into a new cmd/aura/app.go. Create the App struct with the dep fields. App.New() returns *App. setup.go::New() now becomes a wrapper that accepts these pre-built deps and continues with Phase B + C.",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go exists with type App struct + App.New(cfg, settingsStore, pool, logger, restart) (*App, error)",
+        "Phase A (wiki + search + sources + ocr + ingest + sandbox + tools + agent runner + swarm + mcp + auth + ~10 other deps) lives in App.New()",
+        "internal/telegram/setup.go is at least 350 LOC smaller than after US-A13b.1",
         "go build + vet + test ./... green",
         "go test -race ./... green",
-        "Single atomic commit prefix: refactor(app): extract composition root telegram/setup → cmd/aura/app.go"
+        "Single atomic commit prefix: refactor(app): move Phase A dep construction to cmd/aura/app.go (US-A13b.2)"
       ],
-      "priority": 13.5,
+      "priority": 13.52,
       "passes": false,
-      "notes": "HIGH risk — touches every wiring path. Tests that instantiate the full Bot may break (test internal behavior, not contracts); deletion of such tests is allowed per CLAUDE.md exception. Bot struct shape STAYS THE SAME — only the constructor logic moves."
+      "notes": "Medium-high risk. Touches every callsite that uses telegram.New (mainly cmd/aura/main.go). Tests that mock Bot dependencies may need rewiring."
+    },
+    {
+      "id": "US-A13b.3",
+      "title": "Step 8b.3 — Move Phase C composition wiring (api router, scheduler, archive, toolReconciler, mcpwatch) from telegram/setup.go to cmd/aura/app.go",
+      "description": "After US-A13b.2 moved pure deps, this slice moves the Phase C composition wiring that isn't strictly Telegram-channel concern: api.NewRouter(...), cron scheduler creation, conversation archive, memoryStore rebuild, toolReconciler+mcpwatch background goroutines. These get constructed by App AFTER Bot is built (or use callbacks to integrate with Bot). What stays in telegram/setup.go: only the Telegram-specific glue (userGate with Telegram-overflow callbacks, docs handler, sandbox tools registration that calls into Bot, register handlers, install bot commands).",
+      "acceptanceCriteria": [
+        "App.New() now builds api.Router, cron.Scheduler, archive store, memoryStore rebuild, toolReconciler + mcpwatch goroutines",
+        "internal/telegram/setup.go ≤ 250 LOC (only Telegram-specific glue)",
+        "internal/telegram/ total prod LOC reduced by ≥600 vs start of US-A13b (cumulative across b.1+b.2+b.3)",
+        "go build + vet + test ./... green",
+        "go test -race ./... green",
+        "Single atomic commit prefix: refactor(app): move Phase C composition wiring to cmd/aura/app.go (US-A13b.3)"
+      ],
+      "priority": 13.53,
+      "passes": false,
+      "notes": "Final cut. Leaves telegram/setup.go as Telegram-channel-only. Closes US-A13b parent goal."
     },
     {
       "id": "US-A13c",
