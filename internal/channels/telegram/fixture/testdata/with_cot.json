@@ -1,0 +1,35 @@
+{
+  "response": {
+    "Content": "ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ",
+    "Usage": {
+      "PromptTokens": 0,
+      "CompletionTokens": 0,
+      "TotalTokens": 12,
+      "ReasoningTokens": 5
+    },
+    "HasToolCalls": false,
+    "ToolCalls": null,
+    "Reasoning": "Considering options carefully so the answer is concise. The user wants a short reply.",
+    "ReasoningDetails": null
+  },
+  "delivered": true,
+  "calls": [
+    {
+      "method": "editMessageText",
+      "body": {
+        "chat_id": "123",
+        "entities": "[{\"type\":\"italic\",\"offset\":3,\"length\":55}]",
+        "message_id": "1",
+        "text": "🧠 Considering options carefully so the answer is concise."
+      }
+    },
+    {
+      "method": "editMessageText",
+      "body": {
+        "chat_id": "123",
+        "message_id": "1",
+        "text": "ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok"
+      }
+    }
+  ]
+}

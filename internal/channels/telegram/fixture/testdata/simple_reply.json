@@ -1,0 +1,36 @@
+{
+  "response": {
+    "Content": "**bold** xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "Usage": {
+      "PromptTokens": 0,
+      "CompletionTokens": 0,
+      "TotalTokens": 7,
+      "ReasoningTokens": 0
+    },
+    "HasToolCalls": false,
+    "ToolCalls": null,
+    "Reasoning": "",
+    "ReasoningDetails": null
+  },
+  "delivered": true,
+  "calls": [
+    {
+      "method": "editMessageText",
+      "body": {
+        "chat_id": "123",
+        "entities": "[{\"type\":\"bold\",\"offset\":0,\"length\":4}]",
+        "message_id": "1",
+        "text": "bold xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    },
+    {
+      "method": "editMessageText",
+      "body": {
+        "chat_id": "123",
+        "entities": "[{\"type\":\"bold\",\"offset\":0,\"length\":4}]",
+        "message_id": "1",
+        "text": "bold xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  ]
+}

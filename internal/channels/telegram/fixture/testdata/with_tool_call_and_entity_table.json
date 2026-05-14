@@ -1,0 +1,33 @@
+{
+  "response": {
+    "Content": "| Name  | Value |\n|-------|-------|\n| Alpha | 1     |\n| Beta  | 2     |\n| Gamma | 3     |",
+    "Usage": {
+      "PromptTokens": 0,
+      "CompletionTokens": 0,
+      "TotalTokens": 20,
+      "ReasoningTokens": 0
+    },
+    "HasToolCalls": true,
+    "ToolCalls": [
+      {
+        "id": "call-1",
+        "name": "search_files",
+        "arguments": null
+      }
+    ],
+    "Reasoning": "",
+    "ReasoningDetails": null
+  },
+  "delivered": false,
+  "calls": [
+    {
+      "method": "editMessageText",
+      "body": {
+        "chat_id": "123",
+        "entities": "[{\"type\":\"bold\",\"offset\":2,\"length\":5},{\"type\":\"bold\",\"offset\":13,\"length\":4},{\"type\":\"bold\",\"offset\":23,\"length\":5}]",
+        "message_id": "1",
+        "text": "• Alpha: 1\n• Beta: 2\n• Gamma: 3"
+      }
+    }
+  ]
+}
