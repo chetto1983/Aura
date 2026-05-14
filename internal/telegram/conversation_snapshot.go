@@ -9,34 +9,34 @@ import (
 
 type orchestrationSnapshot = agent.Snapshot
 
-func (b *Bot) storeOrchestrationSnapshot(userID string, stats turnStats) {
+func (b *Bot) storeOrchestrationSnapshot(userID string, stats agent.TurnStats) {
 	if b == nil || strings.TrimSpace(userID) == "" {
 		return
 	}
 	now := time.Now()
 	b.sessionStore().StoreSnapshot(userID, orchestrationSnapshot{
 		StoredAt:                now,
-		PromptVersion:           stats.promptVersion,
-		PromptModules:           append([]string(nil), stats.promptModules...),
-		PromptHash:              stats.promptHash,
-		Toolset:                 stats.toolset,
-		ToolsetSelectReason:     stats.toolsetSelectReason,
-		ToolsExposed:            append([]string(nil), stats.toolsExposed...),
-		ToolsCalled:             append([]string(nil), stats.toolsCalled...),
-		ReadSkills:              append([]string(nil), stats.readSkills...),
-		RetrievalCapsulePresent: stats.retrievalCapsulePresent,
-		LoopSteps:               stats.loopSteps,
-		LLMCalls:                stats.llmCalls,
-		ToolCalls:               stats.toolCalls,
-		SkillsRead:              stats.skillsRead,
-		SwarmUsed:               stats.swarmUsed,
-		SandboxUsed:             stats.sandboxUsed,
-		TerminalTool:            stats.terminalTool,
-		DuplicateToolCall:       stats.duplicateToolCall,
-		TokensPrompt:            stats.tokensPrompt,
-		TokensCompletion:        stats.tokensCompletion,
-		TokensTotal:             stats.tokensTotal,
-		CostUSD:                 stats.costUSD,
+		PromptVersion:           stats.PromptVersion,
+		PromptModules:           append([]string(nil), stats.PromptModules...),
+		PromptHash:              stats.PromptHash,
+		Toolset:                 stats.Toolset,
+		ToolsetSelectReason:     stats.ToolsetSelectReason,
+		ToolsExposed:            append([]string(nil), stats.ToolsExposed...),
+		ToolsCalled:             append([]string(nil), stats.ToolsCalled...),
+		ReadSkills:              append([]string(nil), stats.ReadSkills...),
+		RetrievalCapsulePresent: stats.RetrievalCapsulePresent,
+		LoopSteps:               stats.LoopSteps,
+		LLMCalls:                stats.LLMCalls,
+		ToolCalls:               stats.ToolCalls,
+		SkillsRead:              stats.SkillsRead,
+		SwarmUsed:               stats.SwarmUsed,
+		SandboxUsed:             stats.SandboxUsed,
+		TerminalTool:            stats.TerminalTool,
+		DuplicateToolCall:       stats.DuplicateToolCall,
+		TokensPrompt:            stats.TokensPrompt,
+		TokensCompletion:        stats.TokensCompletion,
+		TokensTotal:             stats.TokensTotal,
+		CostUSD:                 stats.CostUSD,
 	})
 	b.pruneOrchestrationSnapshots(now)
 }

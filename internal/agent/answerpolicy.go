@@ -1,4 +1,4 @@
-package telegram
+package agent
 
 import (
 	"strings"
@@ -6,10 +6,10 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-// userRequestedRawOutput detects when the user explicitly asked for raw
+// UserRequestedRawOutput detects when the user explicitly asked for raw
 // command output (vs a summarized answer). Used by the terminal-tool finalizer
 // to decide whether to render execute_shell output verbatim or to summarize it.
-func userRequestedRawOutput(text string) bool {
+func UserRequestedRawOutput(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	if lower == "" {
 		return false
@@ -36,7 +36,9 @@ func userRequestedRawOutput(text string) bool {
 	return strings.Contains(text, "`")
 }
 
-func latestUserText(messages []llm.Message) string {
+// LatestUserText returns the trimmed content of the last user message,
+// or empty string if no user message exists.
+func LatestUserText(messages []llm.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
 			return strings.TrimSpace(messages[i].Content)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 )
@@ -35,7 +36,7 @@ func TestArchiveConversationTurnsAppendsUserAndLoopMessages(t *testing.T) {
 			{Role: "tool", ToolCallID: "call-1", Content: "5050"},
 			{Role: "assistant", Content: "done"},
 		},
-		Stats:     turnStats{llmCalls: 2, toolCalls: 1},
+		Stats:     agent.TurnStats{LLMCalls: 2, ToolCalls: 1},
 		ElapsedMS: 123,
 		TokensIn:  456,
 	})

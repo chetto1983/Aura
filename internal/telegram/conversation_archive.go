@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 )
@@ -15,7 +16,7 @@ type archiveTurnInput struct {
 	NextIndex    int64
 	UserText     string
 	LoopMessages []llm.Message
-	Stats        turnStats
+	Stats        agent.TurnStats
 	ElapsedMS    int64
 	TokensIn     int
 }
@@ -73,8 +74,8 @@ func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 			}
 		}
 		if msg.Role == "assistant" && i == len(input.LoopMessages)-1 {
-			turn.LLMCalls = input.Stats.llmCalls
-			turn.ToolCallsCount = input.Stats.toolCalls
+			turn.LLMCalls = input.Stats.LLMCalls
+			turn.ToolCallsCount = input.Stats.ToolCalls
 			turn.ElapsedMS = input.ElapsedMS
 			turn.TokensIn = input.TokensIn
 		}

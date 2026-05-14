@@ -1,4 +1,4 @@
-package telegram
+package agent
 
 import (
 	"testing"
@@ -22,20 +22,20 @@ func TestUserRequestedRawOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := userRequestedRawOutput(tt.text); got != tt.want {
-				t.Fatalf("userRequestedRawOutput(%q) = %v, want %v", tt.text, got, tt.want)
+			if got := UserRequestedRawOutput(tt.text); got != tt.want {
+				t.Fatalf("UserRequestedRawOutput(%q) = %v, want %v", tt.text, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestLatestUserText(t *testing.T) {
-	got := latestUserText([]llm.Message{
+	got := LatestUserText([]llm.Message{
 		{Role: "user", Content: "prima"},
 		{Role: "assistant", Content: "ok"},
 		{Role: "user", Content: "ultima"},
 	})
 	if got != "ultima" {
-		t.Fatalf("latestUserText() = %q, want ultima", got)
+		t.Fatalf("LatestUserText() = %q, want ultima", got)
 	}
 }

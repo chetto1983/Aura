@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -172,20 +173,20 @@ func TestDebugTextSmokeResultDetectsOrchestrationToolUsage(t *testing.T) {
 
 func TestRuntimeSnapshotPreservesToolSignals(t *testing.T) {
 	b := &Bot{cfg: &config.Config{TraceRetentionDays: config.DefaultTraceRetentionDays}}
-	b.storeOrchestrationSnapshot("1148481707", turnStats{
-		promptVersion:       "aura-agent-v1",
-		promptHash:          "abc123",
-		toolset:             "registered",
-		toolsetSelectReason: "all registered tools exposed",
-		toolsExposed:        []string{"run_aurabot_swarm"},
-		toolsCalled:         []string{"execute_code"},
-		readSkills:          []string{"subagent-driven-development"},
-		loopSteps:           2,
-		terminalTool:        "run_aurabot_swarm",
-		duplicateToolCall:   true,
-		tokensPrompt:        10,
-		tokensCompletion:    5,
-		tokensTotal:         15,
+	b.storeOrchestrationSnapshot("1148481707", agent.TurnStats{
+		PromptVersion:       "aura-agent-v1",
+		PromptHash:          "abc123",
+		Toolset:             "registered",
+		ToolsetSelectReason: "all registered tools exposed",
+		ToolsExposed:        []string{"run_aurabot_swarm"},
+		ToolsCalled:         []string{"execute_code"},
+		ReadSkills:          []string{"subagent-driven-development"},
+		LoopSteps:           2,
+		TerminalTool:        "run_aurabot_swarm",
+		DuplicateToolCall:   true,
+		TokensPrompt:        10,
+		TokensCompletion:    5,
+		TokensTotal:         15,
 	})
 
 	snap, ok := b.loadOrchestrationSnapshot("1148481707")
@@ -248,8 +249,8 @@ func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *test
 	if target.calls != 1 {
 		t.Fatalf("execute_code called %d times, want 1", target.calls)
 	}
-	if summary.lastResult != "ran" {
-		t.Fatalf("lastResult = %q, want %q", summary.lastResult, "ran")
+	if summary.LastResult != "ran" {
+		t.Fatalf("lastResult = %q, want %q", summary.LastResult, "ran")
 	}
 }
 
@@ -271,8 +272,8 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	if doc.calls != 1 {
 		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
 	}
-	if summary.lastResult != "pdf created" {
-		t.Fatalf("lastResult = %q", summary.lastResult)
+	if summary.LastResult != "pdf created" {
+		t.Fatalf("lastResult = %q", summary.LastResult)
 	}
 }
 
@@ -297,8 +298,8 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 		nil,
 	)
 
-	if len(summary.readSkillNames) != 1 || summary.readSkillNames[0] != "document-pdf" {
-		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.readSkillNames)
+	if len(summary.ReadSkillNames) != 1 || summary.ReadSkillNames[0] != "document-pdf" {
+		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.ReadSkillNames)
 	}
 	if read.calls != 1 {
 		t.Fatalf("read_file calls = %d, want 1", read.calls)
@@ -324,8 +325,8 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 		[]string{"systematic-debugging"},
 	)
 
-	if summary.terminalTool != "execute_code" {
-		t.Fatalf("terminalTool = %q, want execute_code", summary.terminalTool)
+	if summary.TerminalTool != "execute_code" {
+		t.Fatalf("terminalTool = %q, want execute_code", summary.TerminalTool)
 	}
 	if exec.calls != 1 {
 		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
@@ -350,8 +351,8 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 		[]string{"systematic-debugging"},
 	)
 
-	if summary.terminalTool != "" {
-		t.Fatalf("terminalTool = %q, want disabled terminal policy", summary.terminalTool)
+	if summary.TerminalTool != "" {
+		t.Fatalf("terminalTool = %q, want disabled terminal policy", summary.TerminalTool)
 	}
 	if exec.calls != 1 {
 		t.Fatalf("execute_code calls = %d, want 1", exec.calls)
@@ -389,10 +390,10 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 		nil,
 	)
 
-	if !strings.Contains(summary.lastResult, "memory") {
-		t.Fatalf("lastResult = %q", summary.lastResult)
+	if !strings.Contains(summary.LastResult, "memory") {
+		t.Fatalf("lastResult = %q", summary.LastResult)
 	}
-	args := toolArgumentsForTool(
+	args := agent.ToolArgumentsForTool(
 		"search_memory",
 		map[string]any{"query": "private notes", "chat_id": float64(999), "limit": float64(9)},
 		42,
@@ -417,8 +418,8 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 		nil,
 	)
 
-	if summary.terminalTool != "" {
-		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.terminalTool)
+	if summary.TerminalTool != "" {
+		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.TerminalTool)
 	}
 	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.HasPrefix(got, "Error: ") {
 		t.Fatalf("tool result = %q, want plain Error: prefix for model recovery", got)

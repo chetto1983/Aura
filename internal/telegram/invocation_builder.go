@@ -2,8 +2,6 @@ package telegram
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -25,109 +23,6 @@ import (
 // internal/channels/telegram.ChannelDataKeyContext — duplicated here to avoid an
 // import cycle (channels/telegram already imports internal/telegram).
 const channelDataKeyTeleContext = "tele_context"
-
-// turnStats aggregates per-turn counters for structured logging and snapshot storage.
-type turnStats struct {
-	llmCalls                int
-	toolCalls               int
-	loopSteps               int
-	promptVersion           string
-	promptModules           []string
-	promptHash              string
-	toolset                 string
-	toolsetSelectReason     string
-	toolsExposed            []string
-	toolsCalled             []string
-	readSkills              []string
-	retrievalCapsulePresent bool
-	skillsRead              bool
-	swarmUsed               bool
-	sandboxUsed             bool
-	terminalTool            string
-	duplicateToolCall       bool
-	tokensPrompt            int
-	tokensCompletion        int
-	tokensTotal             int
-	costUSD                 float64
-}
-
-type agentPromptPlan struct {
-	Content string
-	Version string
-	Hash    string
-	Modules []string
-}
-
-// toolExecutionSummary holds the outcome of executing a batch of tool calls.
-type toolExecutionSummary struct {
-	lastResult      string
-	fatalResult     string
-	readSkillNames  []string
-	terminalTool    string
-	discoveredTools []string
-	results         map[string]string
-}
-
-func composeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsBlock, toolManifest string, now time.Time) agentPromptPlan {
-	version := "aura-agent-v1"
-	if cfg != nil && strings.TrimSpace(cfg.PromptVersion) != "" {
-		version = strings.TrimSpace(cfg.PromptVersion)
-	}
-	modules := []string{"base", "runtime", "registered-tools"}
-	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Discovery: the catalog below lists every tool you have. Call tool_search to fetch input schemas, OR invoke any tool by name and the agentloop will load its schema for this turn.\n\nChoose tools autonomously when they help. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
-	if strings.TrimSpace(overlay) != "" {
-		content += "\n\n" + strings.TrimSpace(overlay)
-		modules = append(modules, "overlay")
-	}
-	if strings.TrimSpace(skillsBlock) != "" {
-		content += "\n\n" + strings.TrimSpace(skillsBlock)
-		content += "\n\n## Skill Use\nSkills are optional operating procedures. Read a skill when the user names it or when it materially improves the work."
-		modules = append(modules, "skills")
-	}
-	if strings.TrimSpace(toolManifest) != "" {
-		content += "\n\n" + strings.TrimSpace(toolManifest)
-		modules = append(modules, "tool-manifest")
-	}
-	sum := sha256.Sum256([]byte(content))
-	return agentPromptPlan{
-		Content: content,
-		Version: version,
-		Hash:    hex.EncodeToString(sum[:8]),
-		Modules: modules,
-	}
-}
-
-// From populates agent-loop–tracked fields from stats, preserving telegram-metadata
-// fields (promptVersion, toolset, toolsExposed, etc.) already set on s.
-func (s turnStats) From(stats agent.Stats) turnStats {
-	s.llmCalls = stats.LLMCalls
-	s.toolCalls = stats.ToolCalls
-	s.loopSteps = stats.LoopSteps
-	s.toolsCalled = append([]string(nil), stats.ToolsCalled...)
-	s.readSkills = append([]string(nil), stats.ReadSkills...)
-	s.skillsRead = stats.SkillsRead
-	s.swarmUsed = stats.SwarmUsed
-	s.sandboxUsed = stats.SandboxUsed
-	s.terminalTool = stats.TerminalTool
-	s.duplicateToolCall = stats.DuplicateToolCall
-	s.tokensPrompt = stats.TokensPrompt
-	s.tokensCompletion = stats.TokensCompletion
-	s.tokensTotal = stats.TokensTotal
-	s.costUSD = stats.CostUSD
-	return s
-}
-
-// applyTo writes accumulated turn counters back into agent.Stats after
-// finalizeTerminalToolWithNoToolLLM mutates the turn counters.
-func (s turnStats) applyTo(stats *agent.Stats) {
-	stats.LLMCalls = s.llmCalls
-	stats.LoopSteps = s.loopSteps
-	stats.TokensPrompt = s.tokensPrompt
-	stats.TokensCompletion = s.tokensCompletion
-	stats.TokensTotal = s.tokensTotal
-	stats.CostUSD = s.costUSD
-}
 
 // checkBudgetQuota sends a Telegram budget notice and returns non-nil if the LLM call
 // should be halted. The caller is responsible for session cleanup before returning.
@@ -189,7 +84,7 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 	}
 	toolAllowlist := b.modelToolNames()
 	toolManifest := tools.RenderToolManifest(b.rt.tools.Definitions())
-	promptPlan := composeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, toolManifest, time.Now())
+	promptPlan := agent.ComposeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, toolManifest, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
 	b.logger.Info("conversation started",
@@ -242,16 +137,16 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 		b.logger,
 	)
 	toolDefs := toolsProvider()
-	baseStats := turnStats{
-		promptVersion:       promptPlan.Version,
-		promptModules:       append([]string(nil), promptPlan.Modules...),
-		promptHash:          promptPlan.Hash,
-		toolset:             "registered",
-		toolsetSelectReason: "core tools plus Qdrant top-K=5 retrieval",
-		toolsExposed:        toolDefinitionNames(toolDefs),
+	baseStats := agent.TurnStats{
+		PromptVersion:       promptPlan.Version,
+		PromptModules:       append([]string(nil), promptPlan.Modules...),
+		PromptHash:          promptPlan.Hash,
+		Toolset:             "registered",
+		ToolsetSelectReason: "core tools plus Qdrant top-K=5 retrieval",
+		ToolsExposed:        toolDefinitionNames(toolDefs),
 	}
 
-	var currentStats turnStats
+	var currentStats agent.TurnStats
 	var toolMu sync.Mutex
 	activeToolNames := append([]string(nil), toolAllowlist...)
 	currentToolNames := func() []string {
@@ -268,16 +163,16 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 	inv := agent.Invocation{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
-			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.readSkills)
-			if len(execution.discoveredTools) > 0 {
-				addActiveTools(execution.discoveredTools)
+			execution := b.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.ReadSkills)
+			if len(execution.DiscoveredTools) > 0 {
+				addActiveTools(execution.DiscoveredTools)
 			}
 			return agent.ExecutionSummary{
-				LastResult:     execution.lastResult,
-				FatalResult:    execution.fatalResult,
-				ReadSkillNames: execution.readSkillNames,
-				TerminalTool:   execution.terminalTool,
-				Results:        execution.results,
+				LastResult:     execution.LastResult,
+				FatalResult:    execution.FatalResult,
+				ReadSkillNames: execution.ReadSkillNames,
+				TerminalTool:   execution.TerminalTool,
+				Results:        execution.Results,
 			}
 		}),
 		State:                   convCtx,
@@ -319,7 +214,7 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agent.Stats) (string, bool, bool) {
 				telegramStats := baseStats.From(*stats)
 				response, delivered := b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, lastToolResult, &telegramStats)
-				telegramStats.applyTo(stats)
+				telegramStats.ApplyTo(stats)
 				if delivered {
 					return "", true, true
 				}
@@ -405,26 +300,26 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 					"user_id", userID,
 					"tokens_lifetime", convCtx.TotalTokensUsed(),
 					"elapsed_ms", time.Since(turnStart).Milliseconds(),
-					"llm_calls", finalStats.llmCalls,
-					"tool_calls", finalStats.toolCalls,
-					"loop_steps", finalStats.loopSteps,
-					"prompt_version", finalStats.promptVersion,
-					"prompt_hash", finalStats.promptHash,
-					"prompt_modules", strings.Join(finalStats.promptModules, ","),
-					"toolset", finalStats.toolset,
-					"toolset_select_reason", finalStats.toolsetSelectReason,
-					"tools_exposed", strings.Join(finalStats.toolsExposed, ","),
-					"tools_called", strings.Join(finalStats.toolsCalled, ","),
-					"read_skills", strings.Join(finalStats.readSkills, ","),
-					"skills_read", finalStats.skillsRead,
-					"swarm_used", finalStats.swarmUsed,
-					"sandbox_used", finalStats.sandboxUsed,
-					"terminal_tool", finalStats.terminalTool,
-					"duplicate_tool_rejected", finalStats.duplicateToolCall,
-					"tokens_prompt", finalStats.tokensPrompt,
-					"tokens_completion", finalStats.tokensCompletion,
-					"tokens_total", finalStats.tokensTotal,
-					"cost_usd", fmt.Sprintf("%.6f", finalStats.costUSD),
+					"llm_calls", finalStats.LLMCalls,
+					"tool_calls", finalStats.ToolCalls,
+					"loop_steps", finalStats.LoopSteps,
+					"prompt_version", finalStats.PromptVersion,
+					"prompt_hash", finalStats.PromptHash,
+					"prompt_modules", strings.Join(finalStats.PromptModules, ","),
+					"toolset", finalStats.Toolset,
+					"toolset_select_reason", finalStats.ToolsetSelectReason,
+					"tools_exposed", strings.Join(finalStats.ToolsExposed, ","),
+					"tools_called", strings.Join(finalStats.ToolsCalled, ","),
+					"read_skills", strings.Join(finalStats.ReadSkills, ","),
+					"skills_read", finalStats.SkillsRead,
+					"swarm_used", finalStats.SwarmUsed,
+					"sandbox_used", finalStats.SandboxUsed,
+					"terminal_tool", finalStats.TerminalTool,
+					"duplicate_tool_rejected", finalStats.DuplicateToolCall,
+					"tokens_prompt", finalStats.TokensPrompt,
+					"tokens_completion", finalStats.TokensCompletion,
+					"tokens_total", finalStats.TokensTotal,
+					"cost_usd", fmt.Sprintf("%.6f", finalStats.CostUSD),
 				)
 
 				session.Finish()
@@ -434,141 +329,11 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 	return inv, nil
 }
 
-// telegramHubChatClient implements agent.ChatClient for the Hub path.
-// It calls llm.Stream and drives progressive Telegram edits in real time.
-type telegramHubChatClient struct {
-	b           *Bot
-	teleCtx     tele.Context
-	userID      string
-	placeholder *tele.Message
-}
-
-func (c *telegramHubChatClient) Chat(ctx context.Context, messages []llm.Message, toolDefs []llm.ToolDefinition) (agent.ChatResponse, error) {
-	req := llm.Request{
-		Messages:        messages,
-		Model:           c.b.cfg.LLMModel,
-		Tools:           toolDefs,
-		ReasoningEffort: c.b.cfg.ReasoningEffort,
-	}
-	ch, err := c.b.rt.llm.Stream(ctx, req)
-	if err != nil {
-		c.b.logger.Error("LLM stream failed", "user_id", c.userID, "error", err)
-		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
-	}
-	resp, delivered, err := c.streamTokens(ch)
-	if err != nil {
-		c.b.logger.Error("LLM stream read failed", "user_id", c.userID, "error", err)
-		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
-	}
-	return agent.ChatResponse{Response: resp, Delivered: delivered}, nil
-}
-
-// streamTokens reads tokens from ch and progressively edits a Telegram message.
-// Mirrors the legacy bot streaming path with identical flush thresholds.
-func (c *telegramHubChatClient) streamTokens(ch <-chan llm.Token) (llm.Response, bool, error) {
-	var sb strings.Builder
-	var cotBuf strings.Builder
-	var msg *tele.Message
-	var lastEdit time.Time
-	var resp llm.Response
-
-	readyToFlush := func() bool {
-		if sb.Len() >= streamingMinThreshold {
-			return true
-		}
-		if sb.Len() == 0 && cotBuf.Len() >= streamingReasoningMinThreshold {
-			return true
-		}
-		return false
-	}
-
-	flush := func() {
-		if !readyToFlush() {
-			return
-		}
-		raw := composeStreamingMessage(cotBuf.String(), sb.String())
-		parts := renderForTelegramEntities(raw)
-		if len(parts) == 0 {
-			return
-		}
-		if msg == nil {
-			if c.placeholder != nil {
-				if edited, err := c.b.editAssistantMessage(c.teleCtx.Bot(), c.placeholder, parts[0], raw); err != nil {
-					c.b.logger.Debug("placeholder edit failed, falling back to new message", "user_id", c.userID, "error", err)
-					sent, sendErr := c.teleCtx.Bot().Send(c.teleCtx.Recipient(), parts[0].Text, parts[0].Entities)
-					if sendErr != nil {
-						return
-					}
-					msg = sent
-				} else {
-					msg = edited
-				}
-			} else {
-				sent, err := c.teleCtx.Bot().Send(c.teleCtx.Recipient(), parts[0].Text, parts[0].Entities)
-				if err != nil {
-					c.b.logger.Warn("streaming initial send failed", "user_id", c.userID, "error", err)
-					return
-				}
-				msg = sent
-			}
-			lastEdit = time.Now()
-			return
-		}
-		if time.Since(lastEdit) < streamingEditThrottle {
-			return
-		}
-		if _, err := c.b.editAssistantMessage(c.teleCtx.Bot(), msg, parts[0], raw); err != nil {
-			c.b.logger.Debug("streaming edit failed", "user_id", c.userID, "error", err)
-			return
-		}
-		lastEdit = time.Now()
-	}
-
-	for tok := range ch {
-		if tok.Err != nil {
-			return llm.Response{}, msg != nil, tok.Err
-		}
-		if tok.Reasoning != "" {
-			cotBuf.WriteString(tok.Reasoning)
-			flush()
-		}
-		if tok.Content != "" {
-			sb.WriteString(tok.Content)
-			flush()
-		}
-		if tok.Done {
-			resp = llm.Response{
-				Content:      sb.String(),
-				HasToolCalls: len(tok.ToolCalls) > 0,
-				ToolCalls:    tok.ToolCalls,
-				Usage:        tok.Usage,
-				Reasoning:    strings.TrimSpace(cotBuf.String()),
-			}
-			if msg != nil && !resp.HasToolCalls {
-				raw := strings.TrimSpace(sb.String())
-				if raw == "" {
-					break
-				}
-				parts := renderForTelegramEntities(raw)
-				if len(parts) == 0 {
-					break
-				}
-				if _, err := c.b.editAssistantMessage(c.teleCtx.Bot(), msg, parts[0], raw); err != nil {
-					c.b.logger.Warn("streaming final edit failed", "user_id", c.userID, "error", err)
-				}
-				c.b.sendAssistantRemainder(c.teleCtx.Bot(), c.teleCtx.Recipient(), parts, 1)
-			}
-			break
-		}
-	}
-	return resp, msg != nil && !resp.HasToolCalls, nil
-}
-
 // executeToolCalls runs the LLM's tool calls concurrently and appends results
 // in original order.
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) toolExecutionSummary {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
 	if len(calls) == 0 {
-		return toolExecutionSummary{}
+		return agent.ToolExecutionSummary{}
 	}
 
 	type outcome struct {
@@ -587,7 +352,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
 			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), b.rt.tools.Names())
-			args := toolArgumentsForTool(tc.Name, tc.Arguments, chatIDFromTeleContext(c))
+			args := agent.ToolArgumentsForTool(tc.Name, tc.Arguments, chatIDFromTeleContext(c))
 			result, err := b.rt.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {
 				result = tools.FormatToolError(err)
@@ -598,7 +363,7 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 				readSkillName = agent.SkillNameFromReadFileArgs(tc.Arguments)
 			}
 			terminalTool := ""
-			if err == nil && b.terminalToolPolicyEnabled() && isTerminalTool(tc.Name) {
+			if err == nil && b.terminalToolPolicyEnabled() && agent.IsTerminalTool(tc.Name) {
 				terminalTool = tc.Name
 			}
 			results[i] = outcome{
@@ -612,25 +377,24 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 	}
 	wg.Wait()
 
-	summary := toolExecutionSummary{results: make(map[string]string, len(results))}
+	summary := agent.ToolExecutionSummary{Results: make(map[string]string, len(results))}
 	for _, r := range results {
 		wrapped := agent.WrapUntrustedToolResult(r.tool, r.content)
 		convCtx.AddToolResultMessage(r.id, wrapped)
-		summary.lastResult = r.content
-		summary.results[r.id] = r.content
-		if r.fatal && summary.fatalResult == "" {
-			summary.fatalResult = r.content
+		summary.LastResult = r.content
+		summary.Results[r.id] = r.content
+		if r.fatal && summary.FatalResult == "" {
+			summary.FatalResult = r.content
 		}
 		if r.readSkillName != "" {
-			summary.readSkillNames = appendUniqueStrings(summary.readSkillNames, r.readSkillName)
+			summary.ReadSkillNames = appendUniqueStrings(summary.ReadSkillNames, r.readSkillName)
 		}
-		if summary.terminalTool == "" && r.terminalTool != "" {
-			summary.terminalTool = r.terminalTool
+		if summary.TerminalTool == "" && r.terminalTool != "" {
+			summary.TerminalTool = r.terminalTool
 		}
 	}
 	return summary
 }
-
 
 func (b *Bot) modelToolNames() []string {
 	if b == nil || b.rt == nil || b.rt.tools == nil {

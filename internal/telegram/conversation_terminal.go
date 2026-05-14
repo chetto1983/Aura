@@ -11,12 +11,12 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
-func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *turnStats) (string, bool) {
-	stats.llmCalls++
-	stats.loopSteps++
+func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *agent.TurnStats) (string, bool) {
+	stats.LLMCalls++
+	stats.LoopSteps++
 	finalized := agent.FinalizeTerminalTool(ctx, agent.TerminalFinalizationInput{
 		Messages:      convCtx.Messages(),
-		TerminalTool:  stats.terminalTool,
+		TerminalTool:  stats.TerminalTool,
 		RawToolResult: rawToolResult,
 		Model:         b.cfg.LLMModel,
 		Send: func(ctx context.Context, req llm.Request) (llm.Response, error) {
@@ -33,13 +33,13 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 		},
 	})
 	if finalized.Err != nil {
-		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.terminalTool, "error", finalized.Err)
+		b.logger.Warn("terminal tool finalization LLM failed", "user_id", userID, "terminal_tool", stats.TerminalTool, "error", finalized.Err)
 	}
 	convCtx.TrackTokens(finalized.Usage)
-	stats.tokensPrompt += finalized.TokensPrompt
-	stats.tokensCompletion += finalized.TokensCompletion
-	stats.tokensTotal += finalized.TokensTotal
-	stats.costUSD += finalized.CostUSD
+	stats.TokensPrompt += finalized.TokensPrompt
+	stats.TokensCompletion += finalized.TokensCompletion
+	stats.TokensTotal += finalized.TokensTotal
+	stats.CostUSD += finalized.CostUSD
 	response := strings.TrimSpace(finalized.Text)
 	convCtx.AddAssistantMessage(response)
 	if c != nil {
