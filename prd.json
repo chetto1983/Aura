@@ -174,21 +174,50 @@
       "notes": "Verification step. No LOC change. Locks in the measurement."
     },
     {
-      "id": "US-A13",
-      "title": "Step 8 — Extract telegram/setup.go (1028 LOC) → cmd/aura/app.go composition root",
-      "description": "PRINCIPLE LOCKED BY USER 2026-05-14: 'TELEGRAM DEVE ESSERE SOLO UN WRAPPER — TUTTO IL RESTO DELEGATO AI MODULI DI COMPETENZA'. internal/telegram/setup.go is mislabeled: at 1028 LOC it's the composition root for the ENTIRE Aura binary (wires bot + tools + storage + chathub + cron + mcp + skills + sandbox + auth + api). Move the body of telegram.New() to cmd/aura/app.go as the canonical composition root. internal/telegram/ becomes the Telegram channel adapter ONLY. Goroutine ownership (bgCtx/bgCancel/bgWg) moves from Bot to App. Master plan §4 Step 8 originally estimated 32-40h in 4 sub-commits (8a wire funcs / 8b goroutine ownership / 8c field drop / 8d flag cleanup) — ship as ONE final atomic commit but you may iterate internally.",
+      "id": "US-A13a",
+      "title": "Step 8a — Extract telegram/setup.go private helpers to telegram/helpers.go",
+      "description": "Split of original US-A13 (telegram setup.go too big to refactor atomically). Move the 5 stateless helpers from setup.go to a new same-package helpers.go file: shouldBootstrapPromptOverlayDefaults, skillSearchRoots, createLLMClient, createEmbeddingFunc, setupSandboxRuntime. Pure relocation, no signature change, no caller change. Imports re-balance: filepath and sandbox move with their helpers; setup.go drops them.",
       "acceptanceCriteria": [
-        "cmd/aura/app.go exists with the composition root (the body of telegram.New())",
-        "internal/telegram/setup.go either does NOT exist OR ≤200 LOC (Telegram-specific bits only)",
-        "internal/telegram/ total prod LOC reduced by ≥800",
-        "Bot struct shrinks: drop fields that only existed for composition (wiki, sources, ocr, search, etc.). Keep only bot, cfg, loc, logger, hub, started, api, allowlist.",
-        "Goroutine context (bgCtx/bgCancel/bgWg) lives on *App, not *Bot",
-        "go test -race ./... green",
-        "Single atomic commit: `refactor(app): extract composition root telegram/setup → cmd/aura/app.go`"
+        "internal/telegram/helpers.go exists with the 5 helper functions",
+        "internal/telegram/setup.go drops those 5 functions (and their unused imports: path/filepath, internal/sandbox)",
+        "go build + vet + test ./... green",
+        "Single atomic commit prefix: refactor(telegram): extract setup helpers"
       ],
       "priority": 13,
+      "passes": true,
+      "notes": "Done 2026-05-14 by manual finish-of-Ralph-#4 (Ralph started helpers.go then died on TaskStop; truncated setup.go + cleaned imports). ~120 LOC moved same-package."
+    },
+    {
+      "id": "US-A13b",
+      "title": "Step 8b — Extract telegram.New() composition root → cmd/aura/app.go",
+      "description": "Move the body of telegram.New() (~850 LOC of full app bootstrap: wiki + qdrant + search + sources + ocr + ingest + sandbox + tools + agent runner + swarm + cron + auth + api + mcp + skills + hub + reconciler) into a new App struct in cmd/aura/app.go. telegram.New() becomes a thin shim that constructs a Bot from a deps bag built by App. DO NOT slim the Bot struct yet — keep all current fields; that's US-A13c. The goal here is to move the wiring code OUT of internal/telegram/ and into cmd/aura/.",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go exists with an App struct and App.New() that wires the full dep graph",
+        "internal/telegram/setup.go is gone OR reduced to ≤200 LOC (only the Telegram channel-specific bits)",
+        "internal/telegram/ prod LOC reduced by ≥700",
+        "go build + vet + test ./... green",
+        "go test -race ./... green",
+        "Single atomic commit prefix: refactor(app): extract composition root telegram/setup → cmd/aura/app.go"
+      ],
+      "priority": 13.5,
       "passes": false,
-      "notes": "HIGH risk — touches every wiring path. Tests that instantiate the whole Bot may break — they test internal behavior, not contracts; deleting those tests is OK per CLAUDE.md exception clause. Mitigation: split into sub-commits internally for safety but ship ONE final atomic commit. Master plan §4 Step 8 has been on the table since restructure start."
+      "notes": "HIGH risk — touches every wiring path. Tests that instantiate the full Bot may break (test internal behavior, not contracts); deletion of such tests is allowed per CLAUDE.md exception. Bot struct shape STAYS THE SAME — only the constructor logic moves."
+    },
+    {
+      "id": "US-A13c",
+      "title": "Step 8c — Slim Bot struct + move goroutine ownership to App",
+      "description": "After US-A13b makes cmd/aura/App the composition root, the Bot struct can shrink. Drop fields that are now App's responsibility (wiki, sources, ocr, search, agentRunner, swarmStore, swarmMgr, schedDB, authDB, archiveDB, archiver, issues, mcpClients, sandboxMgr, toolReg, reindex, toolReconciler, compactMemoryHealth, skills, llm, tools, budget, docs, sched, gate). Keep only the Telegram-wrapper essentials: bot, cfg, loc, logger, hub, started, api, allowlist, debugDocs*, sessions (if telegram-only). Move bgCtx/bgCancel/bgWg + their lifecycle to App.",
+      "acceptanceCriteria": [
+        "Bot struct fields reduced to ≤10 (Telegram-wrapper essentials only)",
+        "bgCtx + bgCancel + bgWg live on *App, not *Bot",
+        "All former Bot-field consumers either accept the dep directly (constructor arg or parameter) or get it from App via accessor",
+        "go build + vet + test ./... green",
+        "go test -race ./... green",
+        "Single atomic commit prefix: refactor(telegram): slim Bot struct, move goroutine ownership to App"
+      ],
+      "priority": 13.9,
+      "passes": false,
+      "notes": "Medium risk — touches every Bot method that reads composition fields. Many tests touch b.tools/b.wiki/b.sched directly; rewire to take deps as args or delete tests of code that's no longer Bot's responsibility."
     },
     {
       "id": "US-A14",
