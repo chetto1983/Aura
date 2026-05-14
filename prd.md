@@ -315,6 +315,50 @@ changes before derived stores can be purged.
 
 Do not event-source all of Aura. Wiki pages, source files, indexes, and tool artifacts keep their own source-of-truth rules. The run/event store is the backbone for execution, questions, observability, learning, cron, and swarm.
 
+Observability is built from three planes:
+
+- execution trace metadata in `run_events` and derived read models,
+- operational logs for short-retention process diagnostics,
+- governed payload artifacts and audit events for sensitive or high-risk
+  material.
+
+`run_events` is the durable causal timeline. It records what happened, in which
+run, under which actor, with which tool/model/source handles, result status,
+latency, usage, and redaction state. It does not store full prompts, user
+messages, raw tool arguments, raw tool outputs, retrieved chunks, child
+transcripts, OCR JSON, or file contents by default. Those are payload artifacts
+with explicit classification, retention, access policy, and artifact handles.
+
+Operational logs are not the source of truth. Logs may use JSON and
+OpenTelemetry fields such as `trace_id` and `span_id`, but they must stay
+short-lived, sanitized, and correlated back to run events. OpenTelemetry is an
+export and interoperability projection, not Aura's internal domain model.
+
+Audit events are separate from debug logs. Aura must audit:
+
+- identity, role, and capability-grant changes,
+- authorization denials and privilege escalation attempts,
+- settings changes,
+- memory write requests, approvals, commits, rejects, and rollbacks,
+- wiki/source import, delete, purge, re-OCR, and export,
+- skill install, update, enable, disable, and delete,
+- cron schedule create, update, pause, resume, delete, and manual fire,
+- artifact export, backup, restore, purge, and privileged payload access.
+
+Retention defaults:
+
+- operational logs: one day unless local debugging needs more,
+- execution trace metadata: `AURA_TRACE_RETENTION_DAYS`, default 30 days,
+  bounded to 1..365,
+- debug payload artifacts: seven days unless promoted,
+- reviewable payload artifacts: 30 days,
+- audit metadata: 365 days by default,
+- canonical knowledge, sources, wiki pages, and indexes follow their own
+  source-of-truth and delete/forget policies, not trace retention.
+
+Traceability for this area lives in
+`docs/observability-audit-retention-reference-map.md`.
+
 Question and approval state is part of `chat`, but question eligibility is part of the agent/runtime contract.
 
 Aura must not expose a broad `ask_user` tool as an always-loaded escape hatch. That pattern risks making the model passive: instead of resolving uncertainty with available context and tools, it can ask the user for every small choice. The durable question flow uses a gate:
@@ -971,18 +1015,71 @@ It owns:
 - recurring jobs,
 - due-work lookup,
 - schedule persistence,
-- triggering work at the right time,
-- delegated background actors.
+- schedule-fire materialization,
+- missed-run and catch-up policy,
+- overlap policy,
+- delegated background actor creation.
 
 It must not own:
 
 - a separate agent loop,
 - separate tool execution rules,
-- special hidden chat behavior.
+- direct memory or wiki writes,
+- direct channel delivery,
+- special hidden chat behavior,
+- long-running side effects.
 
-Cron should submit work into `chat` or `agent` through the same contracts used by other entrypoints.
+Cron submits work into `chat`, `agent`, or `workflow` through the same contracts used by other entrypoints.
 
-Scheduled work must run as a delegated actor with explicit capabilities, expiry, and notification policy. A cron job is never implicitly the owner.
+The core contract is:
+
+```text
+Schedule due
+-> durable ScheduleFire
+-> delegated Actor
+-> RunRequest or WorkflowStep
+-> RunEvents + RunOutbox
+```
+
+A schedule row describes future intent. A schedule-fire row describes one scheduled occurrence.
+
+Minimum schedule-fire fields:
+
+- `schedule_id`,
+- `schedule_version`,
+- `scheduled_at`,
+- `detected_at`,
+- `fire_id`,
+- `idempotency_key`,
+- `owner_principal_id`,
+- `delegated_actor_id`,
+- `delivery_mode`,
+- `capability_grant_snapshot`,
+- `run_id` or `workflow_id`,
+- `status`,
+- `attempt_count`,
+- `last_error`.
+
+The default idempotency key is:
+
+```text
+cron:{schedule_id}:{schedule_version}:{scheduled_at}
+```
+
+Default policies:
+
+- recurring schedules coalesce missed downtime to the latest due fire inside the catch-up window,
+- one-shot schedules fire once if still inside their grace window, otherwise they become `missed`,
+- overlap defaults to `forbid_per_schedule`,
+- parallel fires require explicit idempotent read-only policy, max concurrency, and budget,
+- retryable failures reuse the same `fire_id` and idempotency key,
+- side-effect-unknown failures reconcile before retry,
+- cancellation preserves schedule and run history,
+- notifications go through `run_outbox`, never direct cron sends.
+
+Scheduled work must run as a delegated actor with explicit capabilities, expiry, tool allowlist, budget, and notification policy. A cron job is never implicitly the owner.
+
+Traceability for this area lives in `docs/cron-background-run-reference-map.md`.
 
 ### 5.13 `internal/api`
 
@@ -1073,7 +1170,14 @@ Steps:
 - update `runs` snapshot in the same SQLite transaction as durable events,
 - make event sequence monotonic per run,
 - add idempotency keys for inbound messages, tool calls, delivery attempts, and child-run dispatch,
-- keep payloads redacted and schema-versioned.
+- keep payloads redacted and schema-versioned,
+- define the trace metadata schema separately from payload artifacts,
+- carry `run_id`, `parent_run_id`, `correlation_id`, and exporter trace/span
+  identifiers where available,
+- persist tool names, call ids, argument keys, status, timing, usage, and error
+  class without raw argument values by default,
+- add audit event types for memory writes, settings, grants, skills, exports,
+  purges, and privileged payload reads.
 
 Gate:
 
@@ -1081,7 +1185,10 @@ Gate:
 - events replay into the same run snapshot,
 - terminal run state survives process restart,
 - failed outbound delivery remains retryable through outbox state,
-- tests cover per-run ordering, cancellation, and parent/child correlation.
+- tests cover per-run ordering, cancellation, and parent/child correlation,
+- logs can be correlated to run events without being required to reconstruct a
+  run,
+- trace payload access has a redaction policy and an audited path.
 
 ### Phase 1B - Establish Identity and Capability Grants
 
@@ -1291,23 +1398,58 @@ Gate:
 
 Goal: background and child-agent work stop being special cases.
 
+Reference maps:
+
+- `docs/cron-background-run-reference-map.md`
+- `docs/agent-parallel-loop-2026-reference-map.md`
+- `docs/observability-audit-retention-reference-map.md`
+
 Cron:
 
-- triggers scheduled work,
-- submits through the same contracts,
-- does not own a private loop.
+- detects due schedules,
+- creates durable schedule-fire records with idempotency keys,
+- submits each fire as a delegated `RunRequest` or workflow-backed step,
+- applies explicit missed-run, catch-up, overlap, retry, and cancellation policy,
+- routes reminder, agent job, wiki maintenance, source-watch, and silent jobs through the same contracts,
+- does not own a private loop, private tool runner, or direct channel delivery.
 
 Swarm:
 
 - uses parent/child run IDs,
-- dispatches via chat/hub or equivalent normalized path,
-- caps subagent outputs,
-- requires artifact references.
+- dispatches child work through the chat/hub or equivalent normalized run path,
+- models swarm as a policy-driven run graph, not a fixed worker list,
+- supports topology tiers over time: direct, read-only fanout, team collaboration, plan-execute, critic-review, artifact-build, repair-loop, hierarchical, and hybrid DAG execution,
+- defines each child as a bounded `NodeSpec` with goal, instruction, curated context, tool/capability grant, model/provider when relevant, budgets, output schema, artifact policy, risk tier, and allowed spawn depth,
+- defines graph `EdgeSpec` records for dependency, artifact consumption, aggregation, critic/review, reroute, and cancellation relationships,
+- models agent teams as lead-managed `RunGraph` instances with a shared task board and durable mailbox,
+- lets named teammates message each other directly when the topology requires debate, handoff, challenge, or coordination,
+- represents broadcast as separate addressed messages, not invisible shared context,
+- uses task states, dependencies, assignment, self-claim, claim locking, plan approval, and quality hooks to keep team work coordinated,
+- caps subagent outputs and returns structured observations, citations, confidence, and artifact handles instead of raw transcripts,
+- treats read-only fanout as a safe first slice, not the permanent architecture ceiling,
+- allows future write-capable workers only through proposal or workflow gates,
+- persists orchestration traces for spawn, delegate, task create/claim/complete, mailbox message, message/workspace update, tool call, return, aggregate, plan approval, stop, retry, cancellation, and budget events,
+- evaluates swarm by critical path, task quality, useful-agent utilization, protocol overhead, useful-message ratio, blocked-task latency, error amplification, cost, and trace debuggability rather than number of agents.
 
 Gate:
 
 - parent run ID propagation tested,
+- child actor grants cannot exceed parent authority,
+- child context, tool grants, budgets, output schema, and artifact policy are persisted for every swarm node,
+- run graph edges are visible enough to replay or debug aggregation,
+- team task board and mailbox are persisted, replayable, and visible in the run timeline,
+- task claiming is race-safe and tested under concurrent claim attempts,
+- teammate-to-teammate messages are addressed, scoped, redacted, and auditable,
+- plan approval can hold risky teammates in read-only mode until approved,
+- fixed roles, read-only-only workers, and `max_spawn_depth=1` are not encoded as permanent architectural limits,
+- cron fire rows link to run IDs or workflow IDs,
+- missed, coalesced, skipped, retried, cancelled, and failed fires are observable,
+- recurring downtime coalesces by policy and cannot burst unbounded work,
+- one-shot stale jobs have a tested grace/missed policy,
+- reminder delivery is produced through outbox,
+- scheduled agent jobs run as delegated actors with explicit capabilities,
 - background jobs observable,
+- swarm traces expose critical-path latency, useful-agent utilization, protocol overhead, and error amplification,
 - no hidden alternate runtime.
 
 ### Phase 9 - Memory and Source Discipline

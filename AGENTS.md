@@ -79,6 +79,25 @@ cache, chat channels, or external tools.
   blobs are acceptable only when they are garbage-collectable.
 - Volatile queues are allowed only when canonical state can reconstruct the work.
 
+### Cron And Background Runs
+
+Cron is a scheduled entrypoint, not a private runtime.
+
+- Cron may detect due schedules and create durable schedule-fire records.
+- Cron must not call the LLM, run tools, write memory/wiki state, or send
+  channel messages directly.
+- Every schedule fire needs an idempotency key, delegated actor, capability
+  grant snapshot, delivery mode, and `run_id` or `workflow_id`.
+- Recurring downtime defaults to coalescing the latest due fire inside the
+  catch-up window; never implement unlimited catch-up bursts.
+- Overlap defaults to forbid per schedule. Parallel fires require explicit
+  idempotent read-only policy, max concurrency, and budget.
+- Retries reuse the same fire id and idempotency key and go through
+  workflow/outbox semantics.
+- Cancellation preserves schedule/fire/run history and prevents future fires.
+- Use `D:/Aura/docs/cron-background-run-reference-map.md` when working on cron,
+  background jobs, scheduled agent jobs, source watchers, or missed-run policy.
+
 ### Memory Layers
 
 Do not treat "memory" as one bucket.
@@ -131,6 +150,83 @@ Aura's wiki is a graph, not a folder of isolated Markdown pages.
   synthesis pages only through review/proposal flow.
 - Use `D:/Aura/docs/graphrag-local-first-reference-map.md` when working on
   wiki GraphRAG, graph scoring, community reports, or Neo4j-sidecar questions.
+- Use `D:/Aura/docs/agent-parallel-loop-2026-reference-map.md` when working on
+  swarm, subagents, parallel agent loops, orchestration traces, or worker
+  authority.
+
+### Swarm And Parallel Agent Loop
+
+Swarm must stay flexible and powerful without becoming an unbounded hidden
+runtime.
+
+- Treat swarm as a policy-driven run graph, not a fixed list of hardcoded
+  workers.
+- Support two distinct collaboration modes:
+  - subagent/delegation mode, where child runs report bounded results back to
+    the caller;
+  - agent-team mode, where named teammates coordinate through a shared task
+    board and durable mailbox.
+- A safe read-only fanout is allowed as an implementation slice, but it is not
+  the final architecture ceiling.
+- Do not make `max_spawn_depth=1`, fixed roles, or read-only-only workers
+  permanent architectural invariants.
+- Every child agent needs an explicit goal, curated context, tool/capability
+  grant, model/provider choice when relevant, budgets, output schema, artifact
+  policy, and parent-run authority.
+- Prefer topology-aware execution: direct, fanout, plan-execute, critic-review,
+  artifact-build, repair-loop, hierarchical, or hybrid DAG execution according
+  to task shape.
+- Child outputs must return structured observations, citations, confidence, and
+  artifact handles. Do not dump full child transcripts into parent context.
+- Child durable writes must pass through proposal or workflow gates; children do
+  not mutate wiki, memory, skills, or source truth directly.
+- Agents may message teammates directly by name when the topology is
+  `team_collaboration`. These messages are durable addressed events, not hidden
+  free-form transcript dumps.
+- Agent teams need a shared task board with pending, in-progress, completed,
+  blocked, and failed states; dependencies; explicit assignment; self-claim;
+  and claim locking or compare-and-swap semantics.
+- Plan approval and quality hooks are part of team coordination. Risky
+  teammates can remain read-only until their plan is approved.
+- Persist orchestration traces for spawn, delegate, message/workspace update,
+  task create/claim/complete, mailbox message, tool call, return, aggregate,
+  plan approval, stop, retry, cancellation, and budget events.
+- Optimize for critical path, task quality, useful-agent utilization, protocol
+  overhead, useful-message ratio, blocked-task latency, error amplification,
+  and trace debuggability, not raw agent count.
+- Do not attempt RL-like self-evolution of swarm policy before traces, evals,
+  rollback, and validation gates exist.
+
+### Observability, Audit, And Retention
+
+Aura must be inspectable without turning logs into a private-data landfill.
+
+- Treat execution traces, operational logs, and governed artifacts/audit events
+  as three separate planes.
+- `run_events`/trace metadata is the durable causal record for runs, tools,
+  questions, memory writes, cron fires, workflows, and swarm graph events.
+- Operational logs are short-retention process diagnostics. They correlate with
+  runs via `run_id`, `trace_id`, and `span_id`, but they are not source of truth.
+- Full prompts, user messages, tool arguments, tool outputs, retrieved chunks,
+  child transcripts, OCR JSON, and file contents are payload artifacts, not
+  default log fields.
+- Default trace policy is metadata-only: tool names, call ids, argument keys,
+  status, elapsed time, token/cost counters, error class, redacted preview,
+  source ids, and artifact handles.
+- Audit events are required for identity/grant changes, authorization denials,
+  settings changes, memory writes, wiki/source changes, skill lifecycle changes,
+  cron schedule changes, exports, purges, backups/restores, and privileged
+  payload access.
+- OpenTelemetry is an export/correlation projection, not Aura's canonical
+  store. Keep local-first SQLite events and artifact metadata authoritative.
+- Retention defaults: operational logs one day, trace metadata 30 days via
+  `AURA_TRACE_RETENTION_DAYS`, debug payload artifacts seven days, reviewable
+  payload artifacts 30 days, audit metadata 365 days.
+- Purges append tombstone/audit events and delete payload artifacts before
+  metadata when causal integrity needs a redacted trail.
+- Use `D:/Aura/docs/observability-audit-retention-reference-map.md` when
+  working on tracing, logging, audit bundles, redaction, retention, dashboards,
+  exporters, or privileged trace payload access.
 
 ### RAG Freshness
 
