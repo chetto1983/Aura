@@ -18,7 +18,7 @@ func TestArchiveConversationTurnsAppendsUserAndLoopMessages(t *testing.T) {
 	appender := &recordingArchiver{}
 	logger := slog.New(slog.DiscardHandler)
 
-	archiveConversationTurns(context.Background(), logger, appender, archiveTurnInput{
+	ArchiveConversationTurns(context.Background(), logger, appender, ArchiveTurnInput{
 		ChatID:    42,
 		UserID:    7,
 		NextIndex: 10,
@@ -82,7 +82,7 @@ func TestArchiveConversationTurnsLogsAppendFailures(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	appender := &failingArchiver{err: errors.New("disk full")}
 
-	archiveConversationTurns(context.Background(), logger, appender, archiveTurnInput{
+	ArchiveConversationTurns(context.Background(), logger, appender, ArchiveTurnInput{
 		ChatID:    42,
 		UserID:    7,
 		NextIndex: 10,

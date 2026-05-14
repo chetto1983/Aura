@@ -9,7 +9,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-func toolDefinitionNames(defs []llm.ToolDefinition) []string {
+func ToolDefinitionNames(defs []llm.ToolDefinition) []string {
 	out := make([]string, 0, len(defs))
 	for _, def := range defs {
 		out = append(out, def.Name)
@@ -91,10 +91,10 @@ func toolResultUsage(raw string, cfg *config.Config) (llm.TokenUsage, float64) {
 		inputPerM = cfg.CostInputPerMTokens
 		outputPerM = cfg.CostOutputPerMTokens
 	}
-	return usage, estimateUsageCost(usage, inputPerM, outputPerM)
+	return usage, EstimateUsageCost(usage, inputPerM, outputPerM)
 }
 
-func estimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {
+func EstimateUsageCost(usage llm.TokenUsage, inputPerM, outputPerM float64) float64 {
 	prompt := usage.PromptTokens
 	completion := usage.CompletionTokens
 	if prompt == 0 && completion == 0 {

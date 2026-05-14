@@ -6,7 +6,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-// alwaysOnCore is the seed of the per-turn tool pool.
+// AlwaysOnCore is the seed of the per-turn tool pool.
 //
 // Deferred-tools rollout (2026-05-12): the seed is now JUST tool_search.
 // Every other tool is discovered through one of two paths:
@@ -27,11 +27,11 @@ import (
 // model's own judgment over the manifest + permissive load covers the
 // remainder. No retrieval logic remains in tools_provider — the agent
 // loop owns pool growth.
-var alwaysOnCore = []string{
+var AlwaysOnCore = []string{
 	"tool_search",
 }
 
-// makeToolsProvider returns the per-turn ToolsProvider closure consumed
+// MakeToolsProvider returns the per-turn ToolsProvider closure consumed
 // by agentloop.Options.ToolsProvider. Post-rollout the closure is
 // stateless and trivial: it always returns the always-on set. Pool
 // growth happens inside agentloop.Run (see toolPool.AbsorbToolSearchResult
@@ -41,7 +41,7 @@ var alwaysOnCore = []string{
 // tests (tools_provider_test.go) keep working with stubs; searchFn /
 // latestUserMsgFn / topKFn are accepted but ignored to preserve the
 // call shape while we delete the retrieval branch.
-func makeToolsProvider(
+func MakeToolsProvider(
 	coreNames []string,
 	_ any, // searchFn — unused after deferred-tools rollout, kept for caller signature stability
 	defsForFn func(names []string) []llm.ToolDefinition,

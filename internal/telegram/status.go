@@ -85,6 +85,12 @@ func (b *Bot) compactMemoryStatusSummary() string {
 	return sb.String()
 }
 
+// NotifySoftBudget is the exported surface of notifySoftBudget.
+// Used by internal/channels/telegram.InvocationBuilder.
+func (b *Bot) NotifySoftBudget(c tele.Context, userID string) {
+	b.notifySoftBudget(c, userID)
+}
+
 // notifySoftBudget sends a one-time warning to the user when soft budget
 // is first exceeded. userID is kept on the signature so future per-user
 // throttling has a hook without changing call sites.

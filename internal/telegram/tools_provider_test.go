@@ -28,14 +28,14 @@ func TestAlwaysOnCore_ContainsToolSearch(t *testing.T) {
 	// If this assertion fails, the manifest-in-system-prompt pattern
 	// has nothing to back it.
 	found := false
-	for _, name := range alwaysOnCore {
+	for _, name := range AlwaysOnCore {
 		if name == "tool_search" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("alwaysOnCore must contain tool_search; got %v", alwaysOnCore)
+		t.Fatalf("AlwaysOnCore must contain tool_search; got %v", AlwaysOnCore)
 	}
 }
 
@@ -44,8 +44,8 @@ func TestToolsProvider_ReturnsAlwaysOnSeed(t *testing.T) {
 	// stateless and message-independent. Pool growth happens in
 	// agentloop.Run via permissive load and tool_search absorption,
 	// not here.
-	provider := makeToolsProvider(
-		alwaysOnCore,
+	provider := MakeToolsProvider(
+		AlwaysOnCore,
 		nil,           // searchFn ignored
 		coreStubDefs,  // defsForFn
 		nil,           // defsAllFn retired
@@ -54,11 +54,11 @@ func TestToolsProvider_ReturnsAlwaysOnSeed(t *testing.T) {
 		silentLogger(),
 	)
 	defs := provider()
-	if len(defs) != len(alwaysOnCore) {
-		t.Fatalf("provider returned %d defs, want %d (alwaysOnCore)", len(defs), len(alwaysOnCore))
+	if len(defs) != len(AlwaysOnCore) {
+		t.Fatalf("provider returned %d defs, want %d (AlwaysOnCore)", len(defs), len(AlwaysOnCore))
 	}
-	wantSet := make(map[string]bool, len(alwaysOnCore))
-	for _, n := range alwaysOnCore {
+	wantSet := make(map[string]bool, len(AlwaysOnCore))
+	for _, n := range AlwaysOnCore {
 		wantSet[n] = true
 	}
 	for _, d := range defs {
@@ -72,8 +72,8 @@ func TestToolsProvider_DoesNotInvokeIgnoredCallbacks(t *testing.T) {
 	// Regression: prior implementation called latestUserMsgFn and
 	// searchFn on every turn. After the rollout, those should never
 	// be invoked from the closure.
-	provider := makeToolsProvider(
-		alwaysOnCore,
+	provider := MakeToolsProvider(
+		AlwaysOnCore,
 		nil,
 		coreStubDefs,
 		func() []llm.ToolDefinition {

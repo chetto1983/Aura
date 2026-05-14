@@ -356,16 +356,14 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		return nil, activeLogger, fmt.Errorf("wire bot phase C: %w", err)
 	}
 
-	// Wire the Telegram Hub. Adapters live in internal/channels/telegram which
-	// imports internal/telegram, so this must be done at the cmd layer to avoid
-	// an import cycle.
+	// Wire the Telegram Hub. NewHub lives in channels/telegram (which imports
+	// internal/telegram) to avoid an import cycle from internal/telegram back
+	// to channels/telegram.
 	{
-		hub, hubErr := bot.NewHub(logger)
+		hub, hubErr := telegramadapter.NewHub(bot, logger)
 		if hubErr != nil {
 			return nil, activeLogger, fmt.Errorf("create telegram hub: %w", hubErr)
 		}
-		hub.RegisterInbound(telegramadapter.New())
-		hub.RegisterOutbound(telegramadapter.NewOutbound(logger))
 		bot.SetHub(hub)
 	}
 

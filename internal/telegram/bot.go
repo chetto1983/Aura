@@ -11,12 +11,15 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/llm"
+	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 
 	tele "gopkg.in/telebot.v4"
@@ -90,16 +93,56 @@ func (b *Bot) SetHub(hub *chat.Hub) {
 	b.hub = hub
 }
 
-// NewHub creates a chat.Hub configured to dispatch Telegram messages through
-// this bot's buildTelegramInvocation. Adapters (inbound + outbound) must be
-// registered by the caller because internal/telegram cannot import
-// internal/channels/telegram (cycle: channels/telegram → telegram).
-func (b *Bot) NewHub(logger *slog.Logger) (*chat.Hub, error) {
-	adapter, err := chat.NewAgentLoopAdapter(b.buildTelegramInvocation)
-	if err != nil {
-		return nil, err
+// Config returns the bot's configuration.
+func (b *Bot) Config() *config.Config { return b.cfg }
+
+// Logger returns the bot's structured logger.
+func (b *Bot) Logger() *slog.Logger { return b.logger }
+
+// TimeLocation returns the display timezone (may be nil).
+func (b *Bot) TimeLocation() *time.Location { return b.loc }
+
+// SessionStore returns the per-user conversation session store.
+func (b *Bot) SessionStore() *agent.SessionStore { return b.sessionStore() }
+
+// LLMClient returns the LLM client (nil when not configured).
+func (b *Bot) LLMClient() llm.Client {
+	if b.rt == nil {
+		return nil
 	}
-	return chat.New(chat.Config{Loop: adapter, Logger: logger})
+	return b.rt.llm
+}
+
+// BudgetRuntime returns the budget runtime (nil when not configured).
+func (b *Bot) BudgetRuntime() budget.Runtime {
+	if b.rt == nil {
+		return nil
+	}
+	return b.rt.budget
+}
+
+// SkillsLoader returns the skills loader (nil when not configured).
+func (b *Bot) SkillsLoader() *auraskills.Loader {
+	if b.rt == nil {
+		return nil
+	}
+	return b.rt.skills
+}
+
+// ToolRegistry returns the tool registry (nil when not configured).
+func (b *Bot) ToolRegistry() *tools.Registry {
+	if b.rt == nil {
+		return nil
+	}
+	return b.rt.tools
+}
+
+// ArchiveRepository returns the conversation archive repository (nil when not configured).
+func (b *Bot) ArchiveRepository() conversation.ArchiveRepository {
+	if b.rt == nil {
+		return nil
+	}
+	return b.rt.archiveDB
 }
 
 // SendToUser delivers a Telegram message to userID's direct chat. Used

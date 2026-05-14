@@ -75,7 +75,8 @@ func (b *Bot) sendAssistantRemainder(bot tele.API, recipient tele.Recipient, par
 	}
 }
 
-func logPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder *tele.Message, err error) {
+// LogPlaceholderDeleteFailure is exported for channels/telegram.InvocationBuilder.
+func LogPlaceholderDeleteFailure(logger *slog.Logger, userID string, placeholder *tele.Message, err error) {
 	if err == nil {
 		return
 	}
@@ -217,4 +218,23 @@ func (c *telegramHubChatClient) streamTokens(ch <-chan llm.Token) (llm.Response,
 		}
 	}
 	return resp, msg != nil && !resp.HasToolCalls, nil
+}
+
+// NewHubChatClient creates a telegramHubChatClient (agent.ChatClient) for use by
+// internal/channels/telegram.InvocationBuilder, which cannot access the private type directly.
+func NewHubChatClient(b *Bot, teleCtx tele.Context, userID string, placeholder *tele.Message) agent.ChatClient {
+	return &telegramHubChatClient{b: b, teleCtx: teleCtx, userID: userID, placeholder: placeholder}
+}
+
+// SendAssistantText is the exported surface of sendAssistant.
+func (b *Bot) SendAssistantText(c tele.Context, text string) { b.sendAssistant(c, text) }
+
+// EditAssistantMsg is the exported surface of editAssistantMessage.
+func (b *Bot) EditAssistantMsg(bot tele.API, msg tele.Editable, part RenderedMessage, rawText string) (*tele.Message, error) {
+	return b.editAssistantMessage(bot, msg, part, rawText)
+}
+
+// SendAssistantMsgRemainder is the exported surface of sendAssistantRemainder.
+func (b *Bot) SendAssistantMsgRemainder(bot tele.API, recipient tele.Recipient, parts []RenderedMessage, start int) {
+	b.sendAssistantRemainder(bot, recipient, parts, start)
 }

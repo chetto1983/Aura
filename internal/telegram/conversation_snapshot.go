@@ -9,6 +9,12 @@ import (
 
 type orchestrationSnapshot = agent.Snapshot
 
+// StoreOrchestrationSnapshot is the exported surface of storeOrchestrationSnapshot.
+// Used by internal/channels/telegram.InvocationBuilder.
+func (b *Bot) StoreOrchestrationSnapshot(userID string, stats agent.TurnStats) {
+	b.storeOrchestrationSnapshot(userID, stats)
+}
+
 func (b *Bot) storeOrchestrationSnapshot(userID string, stats agent.TurnStats) {
 	if b == nil || strings.TrimSpace(userID) == "" {
 		return

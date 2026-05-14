@@ -10,7 +10,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-type archiveTurnInput struct {
+type ArchiveTurnInput struct {
 	ChatID       int64
 	UserID       int64
 	NextIndex    int64
@@ -21,6 +21,11 @@ type archiveTurnInput struct {
 	TokensIn     int
 }
 
+// ArchiveAppender returns the turn appender for use by channels/telegram.InvocationBuilder.
+func (b *Bot) ArchiveAppender() conversation.TurnAppender {
+	return b.archiveAppenderForTurn()
+}
+
 func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
 	if b == nil || b.rt == nil {
 		return nil
@@ -28,7 +33,7 @@ func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
 	return b.rt.archiver
 }
 
-func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input archiveTurnInput) {
+func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input ArchiveTurnInput) {
 	if archiver == nil {
 		return
 	}

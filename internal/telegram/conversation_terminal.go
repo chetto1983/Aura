@@ -11,6 +11,12 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// FinalizeTerminalTool is the exported surface of finalizeTerminalToolWithNoToolLLM.
+// Used by internal/channels/telegram.InvocationBuilder.
+func (b *Bot) FinalizeTerminalTool(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *agent.TurnStats) (string, bool) {
+	return b.finalizeTerminalToolWithNoToolLLM(ctx, c, convCtx, userID, placeholder, rawToolResult, stats)
+}
+
 func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, placeholder *tele.Message, rawToolResult string, stats *agent.TurnStats) (string, bool) {
 	stats.LLMCalls++
 	stats.LoopSteps++
@@ -29,7 +35,7 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 			}
 		},
 		EstimateCost: func(usage llm.TokenUsage) float64 {
-			return estimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+			return EstimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 		},
 	})
 	if finalized.Err != nil {

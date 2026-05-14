@@ -61,7 +61,10 @@ func (b *Bot) onTools(c tele.Context) error {
 	if !b.isAllowlisted(userID) {
 		return nil
 	}
-	names := b.modelToolNames()
+	var names []string
+	if reg := b.ToolRegistry(); reg != nil {
+		names = reg.Names()
+	}
 	if len(names) == 0 {
 		return c.Send("Strumenti visibili ora: nessuno.")
 	}
