@@ -99,7 +99,7 @@ func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
 			APIKey    string `json:"api_key"`
 			ProbePath string `json:"probe_path"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSONBody(r, &req); err != nil {
 			writeSetupJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid JSON"})
 			return
 		}
@@ -129,7 +129,7 @@ func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
 			EmbeddingAPIKey string `json:"embedding_api_key"`
 			MistralAPIKey   string `json:"mistral_api_key"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSONBody(r, &req); err != nil {
 			writeSetupJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid JSON"})
 			return
 		}

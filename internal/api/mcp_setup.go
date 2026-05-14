@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -33,8 +32,7 @@ func handleMCPMailSetupStatus(deps Deps) http.HandlerFunc {
 func handleMCPMailSetupSave(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req MailSetupRequest
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-		if err := dec.Decode(&req); err != nil {
+		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}

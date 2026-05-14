@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"strconv"
@@ -338,9 +337,7 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 			return
 		}
 		var req SettingsUpdateRequest
-		// Cap the body so a runaway client can't OOM the parser.
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-		if err := dec.Decode(&req); err != nil {
+		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}
@@ -413,8 +410,7 @@ func handleSettingsTest(deps Deps) http.HandlerFunc {
 		// No deps.Settings dependency — this just runs an outbound probe
 		// against (base_url, key) so the user can validate before saving.
 		var req SettingsTestRequest
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-		if err := dec.Decode(&req); err != nil {
+		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
 		}

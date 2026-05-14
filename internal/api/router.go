@@ -337,3 +337,13 @@ func writeJSON(w http.ResponseWriter, logger *slog.Logger, status int, v any) {
 func writeError(w http.ResponseWriter, logger *slog.Logger, status int, msg string) {
 	writeJSON(w, logger, status, ErrorResponse{Error: msg})
 }
+
+// decodeJSONBody reads a small JSON body into v. Returns an error message
+// suitable for writeError when parsing fails. Caps body at 64 KiB so a
+// runaway client can't exhaust memory.
+func decodeJSONBody(r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 64*1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
+}

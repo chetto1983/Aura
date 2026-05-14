@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -212,16 +211,6 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, resp)
 	}
-}
-
-// decodeJSONBody reads a small JSON body into v. Returns an error message
-// suitable for writeError when parsing fails. Caps body at 64 KiB so a
-// runaway client can't exhaust memory.
-func decodeJSONBody(r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, 64*1024)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	return dec.Decode(v)
 }
 
 // SourcePurger drops compact memoryindex rows (and their Qdrant mirror) for
