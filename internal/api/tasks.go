@@ -1,8 +1,6 @@
 ﻿package api
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
 
 	"github.com/aura/aura/internal/cron"
@@ -38,8 +36,8 @@ func handleTaskGet(deps Deps) http.HandlerFunc {
 		}
 		rec, err := deps.Scheduler.GetByName(r.Context(), name)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, deps.Logger, http.StatusNotFound, "task not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: get task", "name", name, "error", err)

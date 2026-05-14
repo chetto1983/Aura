@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"os"
 
@@ -51,8 +50,8 @@ func handleSourceIngest(deps Deps) http.HandlerFunc {
 		}
 		rec, err := deps.Sources.Get(id)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: ingest get source", "id", id, "error", err)
@@ -107,8 +106,8 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 		}
 		rec, err := deps.Sources.Get(id)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: reocr get source", "id", id, "error", err)
@@ -127,8 +126,8 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "original.pdf missing on disk")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: reocr read pdf", "id", id, "error", err)
@@ -248,8 +247,8 @@ func handleSourceDelete(deps Deps) http.HandlerFunc {
 			return
 		}
 		if err := deps.Sources.Delete(r.Context(), id); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: delete source failed", "id", id, "error", err)

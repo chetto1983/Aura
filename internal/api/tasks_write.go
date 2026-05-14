@@ -2,7 +2,6 @@
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"io"
 	"net/http"
@@ -174,8 +173,8 @@ func handleTaskDelete(deps Deps) http.HandlerFunc {
 		defer cancel()
 		// Pre-check so a missing row returns 404 instead of silent success.
 		if _, err := deps.Scheduler.GetByName(ctx, name); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, deps.Logger, http.StatusNotFound, "task not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			writeError(w, deps.Logger, http.StatusInternalServerError, "lookup failed: "+err.Error())
@@ -211,8 +210,8 @@ func handleTaskCancel(deps Deps) http.HandlerFunc {
 			// message ("already cancelled" vs "no such task").
 			rec, gerr := deps.Scheduler.GetByName(ctx, name)
 			if gerr != nil {
-				if errors.Is(gerr, sql.ErrNoRows) {
-					writeError(w, deps.Logger, http.StatusNotFound, "task not found")
+				if code, msg := errorStatus(gerr); code != 0 {
+					writeError(w, deps.Logger, code, msg)
 					return
 				}
 				writeError(w, deps.Logger, http.StatusInternalServerError, "lookup failed: "+gerr.Error())

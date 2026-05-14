@@ -2,10 +2,13 @@
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -348,6 +351,17 @@ func decodeJSONBody(r *http.Request, v any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
+}
+
+// errorStatus maps well-known Go error sentinels to their HTTP status code
+// and a generic user-facing message. Returns (0, "") for unrecognized errors
+// so the caller can fall through to its own 500 handler.
+func errorStatus(err error) (int, string) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, os.ErrNotExist):
+		return http.StatusNotFound, "not found"
+	}
+	return 0, ""
 }
 
 // pathParamInt64 extracts a named path parameter, parses it as int64, and

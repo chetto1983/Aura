@@ -1,8 +1,6 @@
 package api
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -58,8 +56,8 @@ func handleSwarmRunGet(deps Deps) http.HandlerFunc {
 		}
 		run, err := deps.Swarm.GetRun(r.Context(), id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, deps.Logger, http.StatusNotFound, "swarm run not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: get swarm run", "run_id", id, "error", err)
@@ -93,8 +91,8 @@ func handleSwarmTaskGet(deps Deps) http.HandlerFunc {
 		}
 		task, err := deps.Swarm.GetTask(r.Context(), id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, deps.Logger, http.StatusNotFound, "swarm task not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			deps.Logger.Warn("api: get swarm task", "task_id", id, "error", err)

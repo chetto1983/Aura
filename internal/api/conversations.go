@@ -1,8 +1,6 @@
 package api
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -74,8 +72,8 @@ func handleConversationDetail(deps Deps) http.HandlerFunc {
 
 		t, err := deps.Archive.Get(r.Context(), id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, deps.Logger, http.StatusNotFound, "conversation not found")
+			if code, msg := errorStatus(err); code != 0 {
+				writeError(w, deps.Logger, code, msg)
 				return
 			}
 			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to get conversation")
