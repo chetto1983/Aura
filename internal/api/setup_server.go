@@ -44,7 +44,7 @@ type SetupConfig struct {
 // valid form, then returns the saved Telegram token. Callers should
 // re-load .env after Run returns. Returns context.Canceled-style error
 // only on shutdown failure.
-func SetupRun(cfg Config) (telegramToken string, err error) {
+func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
 	if cfg.SettingsStore == nil {
 		return "", errors.New("setup: SettingsStore required")
 	}

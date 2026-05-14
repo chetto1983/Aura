@@ -17,7 +17,7 @@
         "Single atomic commit with title `chore(api): merge health → api/health_* with Health* prefix`"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Rolled back once during a bulk Step 1.5 attempt — the rename order bug produced 'NewHealthHealthSanitizeHandler'. Fix by replacing NewSanitizeHandler→NewHealthSanitizeHandler FIRST, then SanitizeHandler→HealthSanitizeHandler (with negative lookbehind: only match SanitizeHandler not preceded by 'NewHealth' or 'Health')."
     },
     {

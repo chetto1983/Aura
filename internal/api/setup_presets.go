@@ -16,7 +16,7 @@ type SetupPreset struct {
 // SetupLLMPresets covers common OpenAI-compatible providers. The "custom" preset
 // lets the user enter any compatible URL, while OpenRouter is just one hosted
 // routing option rather than a special Aura integration.
-var SetupLLMPresets = []Preset{
+var SetupLLMPresets = []SetupPreset{
 	{
 		ID:          "openai",
 		Label:       "OpenAI",
@@ -83,11 +83,11 @@ var SetupLLMPresets = []Preset{
 }
 
 // SetupPresetByID returns the matching preset or false.
-func SetupPresetByID(id string) (Preset, bool) {
+func SetupPresetByID(id string) (SetupPreset, bool) {
 	for _, p := range SetupLLMPresets {
 		if p.ID == id {
 			return p, true
 		}
 	}
-	return Preset{}, false
+	return SetupPreset{}, false
 }

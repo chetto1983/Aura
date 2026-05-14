@@ -25,7 +25,6 @@ import (
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/logging"
 	"github.com/aura/aura/internal/memoryindex"
-	"github.com/aura/aura/internal/setup"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
 )
@@ -273,7 +272,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// HTTP server with a setup form, block until the user submits, then
 	// re-load .env + settings so the saved values flow back into cfg.
 	if !cfg.IsBootstrapped() {
-		token, err := setup.Run(setup.Config{
+		token, err := api.SetupRun(api.SetupConfig{
 			Listen:          cfg.HTTPPort,
 			AllowRemoteBind: cfg.Headless,
 			DotEnvPath:      cfg.EnvPath,

@@ -93,9 +93,9 @@ func setupText(locale string) map[string]string {
 	}
 }
 
-func localizedPresets(locale string) []Preset {
+func localizedPresets(locale string) []SetupPreset {
 	t := setupText(locale)
-	out := make([]Preset, len(SetupLLMPresets))
+	out := make([]SetupPreset, len(SetupLLMPresets))
 	copy(out, SetupLLMPresets)
 	for i := range out {
 		if desc, ok := t[out[i].ID+"Desc"]; ok {

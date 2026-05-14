@@ -100,7 +100,7 @@ func TestSetupProbeProviderConnectFailure(t *testing.T) {
 }
 
 func TestSetupProbeProvider401(t *testing.T) {
-	srv := httptest.NewHealthServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 	}))
 	defer srv.Close()
@@ -114,7 +114,7 @@ func TestSetupProbeProvider401(t *testing.T) {
 }
 
 func TestSetupProbeProviderHappyPath(t *testing.T) {
-	srv := httptest.NewHealthServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
 			t.Errorf("missing bearer header: %q", auth)
@@ -144,7 +144,7 @@ func TestSetupProbeProviderNonStandardResponseStillOK(t *testing.T) {
 	// A provider that returns 200 but a body we can't parse as a model
 	// list should still be reported OK — we connected; the user might
 	// just be using a non-standard endpoint.
-	srv := httptest.NewHealthServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>not json</html>`))
 	}))
 	defer srv.Close()

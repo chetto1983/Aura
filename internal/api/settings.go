@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/setup"
 )
 
 // SettingItem is one row in the GET /settings response.
@@ -425,7 +424,7 @@ func handleSettingsTest(deps Deps) http.HandlerFunc {
 		}
 		// Re-use the wizard's probe so behavior matches first-run setup.
 		// 6s timeout is enforced inside ProbeProvider.
-		result := setup.ProbeProvider(context.Background(), req.BaseURL, req.APIKey, probePath)
+		result := SetupProbeProvider(context.Background(), req.BaseURL, req.APIKey, probePath)
 		writeJSON(w, deps.Logger, http.StatusOK, result)
 	}
 }
