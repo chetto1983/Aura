@@ -34,7 +34,7 @@
         "Single atomic commit: `chore(api): merge setup → api/setup_* with Setup* prefix`"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Master plan §1.5 also includes auth merge but auth produces a cycle (tools/auth.go → auth → api → swarm → agent → tools) that needs the auth-as-subpackage approach (US-103). Health (US-101) and setup (US-102) are safe in flat merge."
     },
     {
