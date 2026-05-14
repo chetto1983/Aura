@@ -50,7 +50,7 @@
         "Single atomic commit: `chore(api): nest auth → api/auth/ sub-package to break tools→api cycle`"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Honors master plan intent (auth moves under api) without breaking layering. tools/auth.go imports internal/api/auth which is a leaf sub-package; api/router.go can still import auth via the new path. No imports api from tools, no cycle."
     },
     {

@@ -28,8 +28,8 @@ import (
 	
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/qdrant"
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/qdrant"
+	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"

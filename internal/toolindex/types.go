@@ -25,7 +25,7 @@ import (
 	"context"
 
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/qdrant"
+	"github.com/aura/aura/internal/storage/qdrant"
 )
 
 // ToolProvider is the source-of-truth for "what tools should be in the

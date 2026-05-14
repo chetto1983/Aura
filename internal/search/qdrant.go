@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/qdrant"
+	"github.com/aura/aura/internal/storage/qdrant"
 )
 
 // QdrantConfig describes Aura's external vector index.

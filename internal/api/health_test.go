@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 )
 
 func TestHealth_ReindexFieldPresent(t *testing.T) {

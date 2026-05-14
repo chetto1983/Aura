@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 )
 
 // newWritesTestStore returns a *Store rooted at t.TempDir() with a silent logger.

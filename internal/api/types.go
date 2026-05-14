@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/memoryindex"
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/wiki"
 )
 

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/wiki"
 )
 

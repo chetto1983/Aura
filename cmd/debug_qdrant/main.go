@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/qdrant"
+	"github.com/aura/aura/internal/storage/qdrant"
 	"github.com/aura/aura/internal/search"
 )
 

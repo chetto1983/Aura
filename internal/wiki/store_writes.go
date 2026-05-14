@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 )
 
 // ConflictError is returned by WritePage when the on-disk updated_at does

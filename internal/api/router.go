@@ -18,7 +18,7 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/memoryindex"
 	"github.com/aura/aura/internal/ocr"
-	"github.com/aura/aura/internal/reindex"
+	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/scheduler"
 	"github.com/aura/aura/internal/search"
 	"github.com/aura/aura/internal/skills"
