@@ -5,13 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 )
 
-// HubReceiver is the narrow subset of chathub.Hub this package needs. Lets
+// HubReceiver is the narrow subset of chat.Hub this package needs. Lets
 // tests inject a fake without dragging the full Hub.
 type HubReceiver interface {
-	ReceiveMessage(ctx context.Context, msg chathub.InboundMessage) (*chathub.Run, error)
+	ReceiveMessage(ctx context.Context, msg chat.InboundMessage) (*chat.Run, error)
 }
 
 // ChatReply mirrors internal/api.ChatReply so the API package can call into
@@ -25,7 +25,7 @@ type ChatReply struct {
 	Tokens    int
 }
 
-// ChatService is the production bridge from api.ChatService onto chathub.Hub.
+// ChatService is the production bridge from api.ChatService onto chat.Hub.
 // Pattern:
 //
 //  1. Boot wires ONE Router into the Hub via Hub.RegisterOutbound.
@@ -39,7 +39,7 @@ type ChatService struct {
 	router *Router
 }
 
-// NewChatService wires a ChatService against an existing chathub.Hub and
+// NewChatService wires a ChatService against an existing chat.Hub and
 // its registered Router. Returns nil when either is nil so callers can
 // pass through unconditionally (matching internal/telegram.NewChatPipeService).
 func NewChatService(hub HubReceiver, router *Router) *ChatService {
@@ -56,11 +56,11 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 	if s == nil || s.hub == nil || s.router == nil {
 		return ChatReply{}, errors.New("webadapter: hub unavailable")
 	}
-	msg := chathub.InboundMessage{
-		Channel:     chathub.ChannelWeb,
+	msg := chat.InboundMessage{
+		Channel:     chat.ChannelWeb,
 		PrincipalID: userID,
 		Text:        message,
-		Mode:        chathub.DeliveryModeDeferred,
+		Mode:        chat.DeliveryModeDeferred,
 		CreatedAt:   time.Now().UTC(),
 	}
 	run, runErr := s.hub.ReceiveMessage(ctx, msg)

@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 	tele "gopkg.in/telebot.v4"
 )
 
 func TestInbound_Channel(t *testing.T) {
-	if got := (Inbound{}).Channel(); got != chathub.ChannelTelegram {
+	if got := (Inbound{}).Channel(); got != chat.ChannelTelegram {
 		t.Fatalf("Channel = %s, want telegram", got)
 	}
 }
@@ -31,7 +31,7 @@ func TestInbound_NormalizeFromTeleContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
-	if msg.Channel != chathub.ChannelTelegram {
+	if msg.Channel != chat.ChannelTelegram {
 		t.Fatalf("Channel = %s", msg.Channel)
 	}
 	if msg.PrincipalID != "1234" {
@@ -46,7 +46,7 @@ func TestInbound_NormalizeFromTeleContext(t *testing.T) {
 	if msg.Locale != "it" {
 		t.Fatalf("Locale = %s", msg.Locale)
 	}
-	if msg.Mode != chathub.DeliveryModeStreaming {
+	if msg.Mode != chat.DeliveryModeStreaming {
 		t.Fatalf("Mode = %s, want streaming", msg.Mode)
 	}
 	if msg.ID != "42" {

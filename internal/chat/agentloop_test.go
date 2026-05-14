@@ -1,4 +1,4 @@
-package chathub
+package chat
 
 import (
 	"context"

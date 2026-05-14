@@ -1,6 +1,6 @@
 // Package telegramadapter wraps the chathub InboundAdapter / OutboundAdapter
 // pair for the Telegram channel. Wave 3.0 Step 3 — these are the
-// production-shape adapters that the bot wires through chathub.Hub in a
+// production-shape adapters that the bot wires through chat.Hub in a
 // later slice. They keep all tele.* coupling under
 // internal/chathub/adapters/telegram so the chathub core stays
 // channel-neutral (PRD §11.5: "adapters live under chathub/adapters/, not
@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -23,7 +23,7 @@ import (
 // payload.
 const ChannelDataKeyContext = "tele_context"
 
-// Inbound implements chathub.InboundAdapter for Telegram. The raw payload
+// Inbound implements chat.InboundAdapter for Telegram. The raw payload
 // is expected to be a tele.Context (the value produced by telebot's update
 // handler). Normalize extracts user / chat / text / locale and stashes the
 // original tele.Context under ChannelData so the outbound side can drive
@@ -37,9 +37,9 @@ func New() *Inbound { return &Inbound{} }
 
 // Channel reports the Telegram channel constant — used by Hub.RegisterInbound
 // for routing.
-func (Inbound) Channel() chathub.Channel { return chathub.ChannelTelegram }
+func (Inbound) Channel() chat.Channel { return chat.ChannelTelegram }
 
-// Normalize extracts a chathub.InboundMessage from a tele.Context. Returns
+// Normalize extracts a chat.InboundMessage from a tele.Context. Returns
 // an error when the raw payload is not a tele.Context (defensive — the bot
 // only ever hands real contexts to this adapter, but a future testing path
 // might).
@@ -53,29 +53,29 @@ func (Inbound) Channel() chathub.Channel { return chathub.ChannelTelegram }
 // the bot's documents.go pipeline and produces a source_id out of band.
 // When the bot transitions to dispatching uploads through chathub the
 // adapter will populate Attachments with the resolved AttachmentRef list.
-func (a Inbound) Normalize(_ context.Context, raw any) (chathub.InboundMessage, error) {
+func (a Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, error) {
 	c, ok := raw.(tele.Context)
 	if !ok {
-		return chathub.InboundMessage{}, fmt.Errorf("telegramadapter: expected tele.Context, got %T", raw)
+		return chat.InboundMessage{}, fmt.Errorf("telegramadapter: expected tele.Context, got %T", raw)
 	}
 	sender := c.Sender()
-	chat := c.Chat()
-	if sender == nil || chat == nil {
-		return chathub.InboundMessage{}, fmt.Errorf("telegramadapter: tele.Context missing sender or chat")
+	tgChat := c.Chat()
+	if sender == nil || tgChat == nil {
+		return chat.InboundMessage{}, fmt.Errorf("telegramadapter: tele.Context missing sender or chat")
 	}
-	threadID := strconv.FormatInt(chat.ID, 10)
+	threadID := strconv.FormatInt(tgChat.ID, 10)
 	msgID := ""
 	if m := c.Message(); m != nil {
 		msgID = strconv.Itoa(m.ID)
 	}
-	return chathub.InboundMessage{
+	return chat.InboundMessage{
 		ID:          msgID,
-		Channel:     chathub.ChannelTelegram,
+		Channel:     chat.ChannelTelegram,
 		PrincipalID: strconv.FormatInt(sender.ID, 10),
 		ThreadID:    threadID,
 		Text:        c.Text(),
 		Locale:      sender.LanguageCode,
-		Mode:        chathub.DeliveryModeStreaming,
+		Mode:        chat.DeliveryModeStreaming,
 		CreatedAt:   time.Now().UTC(),
 		ChannelData: map[string]any{
 			ChannelDataKeyContext: c,

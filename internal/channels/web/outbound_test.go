@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 )
 
 func TestRouter_ChannelAndMode(t *testing.T) {
 	r := NewRouter()
-	if r.Channel() != chathub.ChannelWeb {
+	if r.Channel() != chat.ChannelWeb {
 		t.Fatalf("Channel = %s", r.Channel())
 	}
-	if r.Mode() != chathub.DeliveryModeDeferred {
+	if r.Mode() != chat.DeliveryModeDeferred {
 		t.Fatalf("Mode = %s", r.Mode())
 	}
 }
@@ -23,12 +23,12 @@ func TestRouter_BuffersDeltasAndFinalisesOnDone(t *testing.T) {
 	ctx := context.Background()
 	runID := "run-1"
 
-	events := []chathub.OutboundEvent{
-		{RunID: runID, Type: chathub.EventRunStarted},
-		{RunID: runID, Type: chathub.EventMessageDelta, Content: "Hello, "},
-		{RunID: runID, Type: chathub.EventMessageDelta, Content: "world!"},
-		{RunID: runID, Type: chathub.EventMessageDone, Content: "Hello, world!", Payload: map[string]any{"delivered": false}},
-		{RunID: runID, Type: chathub.EventUsage, Payload: map[string]any{
+	events := []chat.OutboundEvent{
+		{RunID: runID, Type: chat.EventRunStarted},
+		{RunID: runID, Type: chat.EventMessageDelta, Content: "Hello, "},
+		{RunID: runID, Type: chat.EventMessageDelta, Content: "world!"},
+		{RunID: runID, Type: chat.EventMessageDone, Content: "Hello, world!", Payload: map[string]any{"delivered": false}},
+		{RunID: runID, Type: chat.EventUsage, Payload: map[string]any{
 			"llm_calls":         2,
 			"tool_calls":        1,
 			"tokens_total":      150,
@@ -37,7 +37,7 @@ func TestRouter_BuffersDeltasAndFinalisesOnDone(t *testing.T) {
 			"cost_usd":          0.01,
 			"terminal_tool":     "",
 		}},
-		{RunID: runID, Type: chathub.EventDone, Payload: map[string]any{"status": "completed"}},
+		{RunID: runID, Type: chat.EventDone, Payload: map[string]any{"status": "completed"}},
 	}
 	for _, ev := range events {
 		if err := r.Deliver(ctx, ev); err != nil {
@@ -67,12 +67,12 @@ func TestRouter_RunIsolation(t *testing.T) {
 	r := NewRouter()
 	ctx := context.Background()
 
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "A", Type: chathub.EventMessageDelta, Content: "A1"})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "B", Type: chathub.EventMessageDelta, Content: "B1"})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "A", Type: chathub.EventMessageDone, Content: "alpha"})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "B", Type: chathub.EventMessageDone, Content: "beta"})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "A", Type: chathub.EventDone})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "B", Type: chathub.EventDone})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "A", Type: chat.EventMessageDelta, Content: "A1"})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "B", Type: chat.EventMessageDelta, Content: "B1"})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "A", Type: chat.EventMessageDone, Content: "alpha"})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "B", Type: chat.EventMessageDone, Content: "beta"})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "A", Type: chat.EventDone})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "B", Type: chat.EventDone})
 
 	resA, _ := r.Reserve("A").Wait(ctx)
 	resB, _ := r.Reserve("B").Wait(ctx)
@@ -100,8 +100,8 @@ func TestRouter_WaitRespectsContextTimeout(t *testing.T) {
 func TestRouter_ErrorCaptured(t *testing.T) {
 	r := NewRouter()
 	ctx := context.Background()
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "x", Type: chathub.EventError, Payload: map[string]any{"error": "boom"}})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "x", Type: chathub.EventDone, Payload: map[string]any{"status": "failed"}})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "x", Type: chat.EventError, Payload: map[string]any{"error": "boom"}})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "x", Type: chat.EventDone, Payload: map[string]any{"status": "failed"}})
 	res, _ := r.Reserve("x").Wait(ctx)
 	if res.Error != "boom" || res.Status != "failed" {
 		t.Fatalf("res = %+v", res)
@@ -112,9 +112,9 @@ func TestRouter_ErrorCaptured(t *testing.T) {
 func TestRouter_MessageDoneOverridesDeltas(t *testing.T) {
 	r := NewRouter()
 	ctx := context.Background()
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "y", Type: chathub.EventMessageDelta, Content: "partial..."})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "y", Type: chathub.EventMessageDone, Content: "final"})
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "y", Type: chathub.EventDone})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "y", Type: chat.EventMessageDelta, Content: "partial..."})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "y", Type: chat.EventMessageDone, Content: "final"})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "y", Type: chat.EventDone})
 	res, _ := r.Reserve("y").Wait(ctx)
 	if res.FinalContent != "final" {
 		t.Fatalf("FinalContent = %q", res.FinalContent)
@@ -125,7 +125,7 @@ func TestRouter_MessageDoneOverridesDeltas(t *testing.T) {
 func TestRouter_DropClearsBuffer(t *testing.T) {
 	r := NewRouter()
 	ctx := context.Background()
-	_ = r.Deliver(ctx, chathub.OutboundEvent{RunID: "z", Type: chathub.EventDone})
+	_ = r.Deliver(ctx, chat.OutboundEvent{RunID: "z", Type: chat.EventDone})
 	r.Drop("z")
 	if _, ok := r.buffers["z"]; ok {
 		t.Fatalf("buffer not dropped")
@@ -134,7 +134,7 @@ func TestRouter_DropClearsBuffer(t *testing.T) {
 
 func TestRouter_IgnoresEventsWithoutRunID(t *testing.T) {
 	r := NewRouter()
-	if err := r.Deliver(context.Background(), chathub.OutboundEvent{Type: chathub.EventMessageDone, Content: "x"}); err != nil {
+	if err := r.Deliver(context.Background(), chat.OutboundEvent{Type: chat.EventMessageDone, Content: "x"}); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
 	if len(r.buffers) != 0 {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 )
 
 // fakeHub satisfies HubReceiver. It drives a fixed set of events into the
@@ -13,20 +13,20 @@ import (
 // ChatService can read the buffer back.
 type fakeHub struct {
 	router *Router
-	events []chathub.OutboundEvent
+	events []chat.OutboundEvent
 	runID  string
 	err    error
 }
 
-func (h *fakeHub) ReceiveMessage(ctx context.Context, msg chathub.InboundMessage) (*chathub.Run, error) {
+func (h *fakeHub) ReceiveMessage(ctx context.Context, msg chat.InboundMessage) (*chat.Run, error) {
 	for _, ev := range h.events {
 		ev.RunID = h.runID
 		_ = h.router.Deliver(ctx, ev)
 	}
 	if h.err != nil {
-		return &chathub.Run{ID: h.runID, Status: chathub.RunStatusFailed}, h.err
+		return &chat.Run{ID: h.runID, Status: chat.RunStatusFailed}, h.err
 	}
-	return &chathub.Run{ID: h.runID, Status: chathub.RunStatusCompleted}, nil
+	return &chat.Run{ID: h.runID, Status: chat.RunStatusCompleted}, nil
 }
 
 func TestChatService_HappyPath(t *testing.T) {
@@ -34,10 +34,10 @@ func TestChatService_HappyPath(t *testing.T) {
 	hub := &fakeHub{
 		router: router,
 		runID:  "run-happy",
-		events: []chathub.OutboundEvent{
-			{Type: chathub.EventMessageDone, Content: "result"},
-			{Type: chathub.EventUsage, Payload: map[string]any{"llm_calls": 1, "tool_calls": 0, "tokens_total": 42}},
-			{Type: chathub.EventDone, Payload: map[string]any{"status": "completed"}},
+		events: []chat.OutboundEvent{
+			{Type: chat.EventMessageDone, Content: "result"},
+			{Type: chat.EventUsage, Payload: map[string]any{"llm_calls": 1, "tool_calls": 0, "tokens_total": 42}},
+			{Type: chat.EventDone, Payload: map[string]any{"status": "completed"}},
 		},
 	}
 	svc := NewChatService(hub, router)
@@ -78,9 +78,9 @@ func TestChatService_PropagatesRunError(t *testing.T) {
 		router: router,
 		runID:  "run-err",
 		err:    errors.New("agent boom"),
-		events: []chathub.OutboundEvent{
-			{Type: chathub.EventError, Payload: map[string]any{"error": "agent boom"}},
-			{Type: chathub.EventDone, Payload: map[string]any{"status": "failed"}},
+		events: []chat.OutboundEvent{
+			{Type: chat.EventError, Payload: map[string]any{"error": "agent boom"}},
+			{Type: chat.EventDone, Payload: map[string]any{"status": "failed"}},
 		},
 	}
 	svc := NewChatService(hub, router)

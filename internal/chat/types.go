@@ -20,7 +20,7 @@
 //   - channel-specific metadata travels via ChannelData (map[string]any) on
 //     InboundMessage; the Agent Loop MUST NOT read this field. Adapters that
 //     need state across inbound+outbound use Run.Metadata.
-package chathub
+package chat
 
 import "time"
 

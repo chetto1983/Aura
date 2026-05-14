@@ -93,7 +93,7 @@
         "Single atomic commit: `chore(storage): move source + ocr + ingest + markitdown under internal/storage/sources/`"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "After US-104+105+106 the storage/ namespace contains: qdrant, reindex, search, memoryindex, memoryquality, sources/store, sources/ocr, sources/ingest, sources/markitdown. internal/wiki/ stays at top level by design (wiki IS the graph — see project_graph_memory_core_strategy memory)."
     },
     {

@@ -1,4 +1,4 @@
-// Package webadapter implements the buffered chathub.OutboundAdapter for
+// Package webadapter implements the buffered chat.OutboundAdapter for
 // the synchronous /api/chat request shape. The web SSE streaming adapter
 // (Wave 3.0 Slice 4) lives in a sibling file later — today /api/chat is
 // a single round-trip JSON endpoint and the adapter buffers events until
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 )
 
 // Result is the buffered transcript of a single run. Populated by the
@@ -60,22 +60,22 @@ func newBuffer() *Buffer {
 
 // apply processes one event under the buffer lock. Returns true when the
 // buffer reached a terminal state (EventDone).
-func (b *Buffer) apply(ev chathub.OutboundEvent) {
+func (b *Buffer) apply(ev chat.OutboundEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	switch ev.Type {
-	case chathub.EventMessageDelta:
+	case chat.EventMessageDelta:
 		if b.result.FinalContent == "" {
 			b.result.FinalContent += ev.Content
 		}
-	case chathub.EventMessageDone:
+	case chat.EventMessageDone:
 		if ev.Content != "" {
 			b.result.FinalContent = ev.Content
 		}
 		if d, ok := ev.Payload["delivered"].(bool); ok {
 			b.result.Delivered = d
 		}
-	case chathub.EventUsage:
+	case chat.EventUsage:
 		if v, ok := ev.Payload["llm_calls"].(int); ok {
 			b.result.LLMCalls = v
 		}
@@ -97,11 +97,11 @@ func (b *Buffer) apply(ev chathub.OutboundEvent) {
 		if v, ok := ev.Payload["terminal_tool"].(string); ok {
 			b.result.TerminalTool = v
 		}
-	case chathub.EventError:
+	case chat.EventError:
 		if v, ok := ev.Payload["error"].(string); ok {
 			b.result.Error = v
 		}
-	case chathub.EventDone:
+	case chat.EventDone:
 		if v, ok := ev.Payload["status"].(string); ok {
 			b.result.Status = v
 		}
@@ -110,7 +110,7 @@ func (b *Buffer) apply(ev chathub.OutboundEvent) {
 			b.finished = true
 			close(b.done)
 		}
-	case chathub.EventCancelled:
+	case chat.EventCancelled:
 		b.result.Status = "cancelled"
 	}
 }
@@ -153,9 +153,9 @@ func NewRouter() *Router {
 	return &Router{buffers: make(map[string]*Buffer)}
 }
 
-// Channel + Mode satisfy chathub.OutboundAdapter.
-func (*Router) Channel() chathub.Channel   { return chathub.ChannelWeb }
-func (*Router) Mode() chathub.DeliveryMode { return chathub.DeliveryModeDeferred }
+// Channel + Mode satisfy chat.OutboundAdapter.
+func (*Router) Channel() chat.Channel   { return chat.ChannelWeb }
+func (*Router) Mode() chat.DeliveryMode { return chat.DeliveryModeDeferred }
 
 // Reserve allocates a Buffer for the given RunID. Called by ChatService
 // BEFORE Hub dispatch so the buffer is in place when the first event
@@ -188,7 +188,7 @@ func (r *Router) Drop(runID string) {
 // Deliver routes an event to the per-RunID buffer. Events for runs without
 // a reserved buffer are dropped (caller-side dispatch hasn't reserved yet,
 // or the run is a non-chat-pipe web call we don't care about).
-func (r *Router) Deliver(_ context.Context, ev chathub.OutboundEvent) error {
+func (r *Router) Deliver(_ context.Context, ev chat.OutboundEvent) error {
 	if ev.RunID == "" {
 		return nil
 	}

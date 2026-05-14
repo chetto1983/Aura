@@ -7,25 +7,25 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aura/aura/internal/chathub"
+	"github.com/aura/aura/internal/chat"
 )
 
 func TestNewHeartbeatChannel(t *testing.T) {
 	o := NewHeartbeat(Config{})
-	if o.Channel() != chathub.ChannelHeartbeat {
+	if o.Channel() != chat.ChannelHeartbeat {
 		t.Fatalf("Channel = %s", o.Channel())
 	}
-	if o.Mode() != chathub.DeliveryModeSilent {
+	if o.Mode() != chat.DeliveryModeSilent {
 		t.Fatalf("Mode = %s", o.Mode())
 	}
 }
 
 func TestNewCronChannel(t *testing.T) {
 	o := NewCron(Config{})
-	if o.Channel() != chathub.ChannelCron {
+	if o.Channel() != chat.ChannelCron {
 		t.Fatalf("Channel = %s", o.Channel())
 	}
-	if o.Mode() != chathub.DeliveryModeSilent {
+	if o.Mode() != chat.DeliveryModeSilent {
 		t.Fatalf("Mode = %s", o.Mode())
 	}
 }
@@ -35,15 +35,15 @@ func TestSilent_LogsErrorAndDone(t *testing.T) {
 	o := NewHeartbeat(Config{Logger: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 	ctx := context.Background()
 
-	events := []chathub.OutboundEvent{
-		{Type: chathub.EventRunStarted, RunID: "r1"},
-		{Type: chathub.EventMessageDelta, RunID: "r1", Content: "thinking..."},
-		{Type: chathub.EventToolStart, RunID: "r1", Payload: map[string]any{"tool": "search_memory"}},
-		{Type: chathub.EventToolEnd, RunID: "r1", Payload: map[string]any{"tool": "search_memory"}},
-		{Type: chathub.EventMessageDone, RunID: "r1", Content: "done"},
-		{Type: chathub.EventUsage, RunID: "r1", Payload: map[string]any{"llm_calls": 1, "tool_calls": 1}},
-		{Type: chathub.EventError, RunID: "r1", Payload: map[string]any{"error": "transient"}},
-		{Type: chathub.EventDone, RunID: "r1", Payload: map[string]any{"status": "completed"}},
+	events := []chat.OutboundEvent{
+		{Type: chat.EventRunStarted, RunID: "r1"},
+		{Type: chat.EventMessageDelta, RunID: "r1", Content: "thinking..."},
+		{Type: chat.EventToolStart, RunID: "r1", Payload: map[string]any{"tool": "search_memory"}},
+		{Type: chat.EventToolEnd, RunID: "r1", Payload: map[string]any{"tool": "search_memory"}},
+		{Type: chat.EventMessageDone, RunID: "r1", Content: "done"},
+		{Type: chat.EventUsage, RunID: "r1", Payload: map[string]any{"llm_calls": 1, "tool_calls": 1}},
+		{Type: chat.EventError, RunID: "r1", Payload: map[string]any{"error": "transient"}},
+		{Type: chat.EventDone, RunID: "r1", Payload: map[string]any{"status": "completed"}},
 	}
 	for _, ev := range events {
 		if err := o.Deliver(ctx, ev); err != nil {
@@ -79,9 +79,9 @@ func TestSilent_QuietOnOtherEvents(t *testing.T) {
 	var buf bytes.Buffer
 	o := NewCron(Config{Logger: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))})
 	ctx := context.Background()
-	_ = o.Deliver(ctx, chathub.OutboundEvent{Type: chathub.EventMessageDelta, RunID: "x", Content: "hi"})
-	_ = o.Deliver(ctx, chathub.OutboundEvent{Type: chathub.EventToolStart, RunID: "x"})
-	_ = o.Deliver(ctx, chathub.OutboundEvent{Type: chathub.EventToolEnd, RunID: "x"})
+	_ = o.Deliver(ctx, chat.OutboundEvent{Type: chat.EventMessageDelta, RunID: "x", Content: "hi"})
+	_ = o.Deliver(ctx, chat.OutboundEvent{Type: chat.EventToolStart, RunID: "x"})
+	_ = o.Deliver(ctx, chat.OutboundEvent{Type: chat.EventToolEnd, RunID: "x"})
 	if buf.Len() != 0 {
 		t.Fatalf("unexpected log output for quiet events: %s", buf.String())
 	}
