@@ -157,7 +157,7 @@
         "Single atomic commit: `refactor(agent): extract governance + merge agentloop+agentruntime`"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "agent.Runner already killed by Ralph in a prior iter (commit 422cf360). This step finishes the agent/ consolidation. After this, internal/agent has: loop.go, runtime.go, state.go, executor.go, runner.go (thin adapter), governance/."
     },
     {

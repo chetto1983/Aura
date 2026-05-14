@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
 )
 

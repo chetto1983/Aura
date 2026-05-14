@@ -1,4 +1,4 @@
-package scheduler_test
+﻿package scheduler_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/wiki"
 )
 

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 type fakeIssueRepository struct {

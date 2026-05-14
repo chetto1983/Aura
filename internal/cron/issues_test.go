@@ -1,11 +1,11 @@
-package scheduler_test
+﻿package scheduler_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 func newIssuesStore(t *testing.T) *scheduler.IssuesStore {

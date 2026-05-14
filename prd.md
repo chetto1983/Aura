@@ -233,6 +233,31 @@ run_outbox
 
 Do not event-source all of Aura. Wiki pages, source files, indexes, and tool artifacts keep their own source-of-truth rules. The run/event store is the backbone for execution, questions, observability, learning, cron, and swarm.
 
+Question and approval state is part of `chat`, but question eligibility is part of the agent/runtime contract.
+
+Aura must not expose a broad `ask_user` tool as an always-loaded escape hatch. That pattern risks making the model passive: instead of resolving uncertainty with available context and tools, it can ask the user for every small choice. The durable question flow uses a gate:
+
+```text
+model proposes action or needs input
+-> QuestionGate evaluates need
+-> allow action | deny action | emit question_requested/approval_requested
+-> run waits only at the relevant blocking scope
+-> answer arrives
+-> question_answered/approval_answered resumes the run
+```
+
+QuestionGate rules:
+
+- ask only when the answer materially changes the run outcome,
+- do not ask when tools/context can answer safely,
+- do not ask for low-risk reversible defaults,
+- ask for missing required slots, conflicting instructions, permission escalation, irreversible side effects, user-memory writes without explicit intent, cross-channel delivery choices, or repeated recoverable failures,
+- require a concise `why_blocking`, `blocking_scope`, answer schema, expiry, and fallback policy,
+- block only the smallest scope possible: tool call, run, child run, or thread,
+- cap repeated questions per run and record unnecessary-question eval failures.
+
+The model may request input through a narrow structured `request_input` action when it can justify the block. The runtime may also create the question itself when a deterministic policy, authorization boundary, or tool preflight requires it. The channel adapter only renders the question; it does not decide whether asking was valid.
+
 ### 5.3 `internal/identity`
 
 Identity and authorization are the authority model.
@@ -384,11 +409,13 @@ always_loaded             tiny control surface, visible every turn
 deferred_discoverable     indexed/searchable, loaded on demand
 programmatic_callable     opt-in tools callable from code orchestration
 blocked_from_programmatic high-risk tools never callable from code orchestration
+runtime_gated             hidden or narrow until policy/state makes it eligible
 ```
 
 Advanced tool-use policy:
 
 - most tools are deferred, not loaded into the model context upfront,
+- broad user-question tools are runtime-gated, not always loaded,
 - `tool_search` or equivalent discovery returns full definitions only when needed,
 - direct permissive-load is allowed when the model saw a tool name in the manifest,
 - active tool visibility is necessary but not sufficient; execution still requires authorization,
@@ -709,6 +736,29 @@ Gate:
 - a visible tool still fails closed when the actor lacks its required capability,
 - a child swarm actor cannot receive capabilities its parent lacks,
 - revoked grants stop future runs without rewriting historical events.
+
+### Phase 1C - Add the Question Gate
+
+Goal: support clarification and approval without making the agent ask instead of think.
+
+Steps:
+
+- add durable `chat_questions` or equivalent question snapshot state linked to `run_events`,
+- model question events as `question_requested`, `question_answered`, `approval_requested`, and `approval_answered` or a shared typed variant,
+- implement `QuestionGate` before risky tool execution and before durable memory writes,
+- define `request_input` as a narrow structured action, not a broad always-loaded tool,
+- require `why_blocking`, `blocking_scope`, answer schema, expiry, fallback, and producer metadata,
+- route channel button/free-text replies back into the same question id,
+- treat late, duplicate, or wrong-channel answers as explicit states, not loose chat text.
+
+Gate:
+
+- a clear instruction does not produce a needless question,
+- missing required slots produce one scoped question,
+- risky or irreversible tool calls produce approval rather than a generic clarification,
+- the answer resumes the same run or a continuation run with parent correlation,
+- repeated unnecessary question attempts are counted by evals,
+- question state survives process restart.
 
 ### Phase 2 - Protect Telegram
 

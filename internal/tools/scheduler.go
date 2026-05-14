@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 // schedulerToolMaxChars caps the LLM-facing output the same way other

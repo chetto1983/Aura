@@ -1,4 +1,4 @@
-package telegram
+﻿package telegram
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/toolsets"
 	tele "gopkg.in/telebot.v4"

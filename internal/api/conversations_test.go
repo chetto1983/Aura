@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 type fakeConversationArchive struct {

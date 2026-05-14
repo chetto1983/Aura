@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/sources/ocr"
 	"github.com/aura/aura/internal/storage/reindex"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/sources/store"

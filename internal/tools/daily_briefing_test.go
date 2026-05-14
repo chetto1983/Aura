@@ -1,4 +1,4 @@
-package tools
+﻿package tools
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
 )
 

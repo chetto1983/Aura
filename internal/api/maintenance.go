@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 func handleMaintenanceList(deps Deps) http.HandlerFunc {

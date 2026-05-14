@@ -1,4 +1,4 @@
-package telegram
+﻿package telegram
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 	"github.com/aura/aura/internal/storage/sources/ocr"
 	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/aura/aura/internal/sandbox"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/search"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/sources/store"

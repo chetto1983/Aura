@@ -1,4 +1,4 @@
-package conversation_test
+﻿package conversation_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 
 	_ "modernc.org/sqlite"
 )

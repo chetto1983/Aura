@@ -1,4 +1,4 @@
-// debug_ingest is the slice-9 natural-prompt smoke harness for the
+﻿// debug_ingest is the slice-9 natural-prompt smoke harness for the
 // source / ingest / workspace-file / scheduler tools.
 //
 //	go run ./cmd/debug_ingest               # all default scenarios
@@ -33,7 +33,7 @@ import (
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/memoryindex"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"

@@ -1,11 +1,11 @@
-package api
+﻿package api
 
 import (
 	"database/sql"
 	"errors"
 	"net/http"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 func handleTaskList(deps Deps) http.HandlerFunc {

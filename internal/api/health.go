@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"net/http"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
 )
 

@@ -1,11 +1,11 @@
-package config
+﻿package config
 
 import (
 	"os"
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 )
 
 func TestIsAllowlisted(t *testing.T) {

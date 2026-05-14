@@ -1,4 +1,4 @@
-package telegram
+﻿package telegram
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/scheduler"
+	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/tools"
 	"github.com/aura/aura/internal/wiki"
 )
