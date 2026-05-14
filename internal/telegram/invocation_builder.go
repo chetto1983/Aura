@@ -132,17 +132,17 @@ func (s turnStats) applyTo(stats *agent.Stats) {
 // checkBudgetQuota sends a Telegram budget notice and returns non-nil if the LLM call
 // should be halted. The caller is responsible for session cleanup before returning.
 func (b *Bot) checkBudgetQuota(c tele.Context, userID string, estimatedTokens int) error {
-	if b.budget == nil {
+	if b.rt == nil || b.rt.budget == nil {
 		return nil
 	}
-	if b.budget.IsHardBudgetExceeded() {
+	if b.rt.budget.IsHardBudgetExceeded() {
 		b.logger.Warn("hard budget exceeded, halting LLM call", "user_id", userID)
 		if _, err := c.Bot().Send(c.Recipient(), "Budget limit reached. LLM calls are temporarily halted."); err != nil {
 			b.logger.Warn("budget notice send failed", "error", err)
 		}
 		return fmt.Errorf("hard budget exceeded")
 	}
-	if !b.budget.CanAfford(estimatedTokens, 500) {
+	if !b.rt.budget.CanAfford(estimatedTokens, 500) {
 		b.logger.Warn("predicted cost exceeds hard budget, halting LLM call", "user_id", userID)
 		if _, err := c.Bot().Send(c.Recipient(), "Predicted cost would exceed budget. Please adjust your budget or wait."); err != nil {
 			b.logger.Warn("budget notice send failed", "error", err)
@@ -164,10 +164,14 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 	userID := msg.PrincipalID
 	turnStart := time.Now()
 
+	var summarizer llm.Client
+	if b.rt != nil {
+		summarizer = b.rt.llm
+	}
 	session, _ := b.sessionStore().Begin(userID, conversation.Config{
 		MaxTokens:   b.cfg.MaxContextTokens,
 		MaxMessages: b.cfg.MaxHistoryMessages,
-		Summarizer:  b.llm,
+		Summarizer:  summarizer,
 		Logger:      b.logger,
 	})
 	convCtx := session.Conversation()
@@ -175,8 +179,8 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	var skillsBlock string
-	if b.skills != nil {
-		loadedSkills, err := b.skills.LoadAll()
+	if b.rt != nil && b.rt.skills != nil {
+		loadedSkills, err := b.rt.skills.LoadAll()
 		if err != nil {
 			b.logger.Warn("failed to load local skills", "error", err)
 		} else if block := auraskills.PromptBlock(loadedSkills); block != "" {
@@ -184,7 +188,7 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 		}
 	}
 	toolAllowlist := b.modelToolNames()
-	toolManifest := tools.RenderToolManifest(b.tools.Definitions())
+	toolManifest := tools.RenderToolManifest(b.rt.tools.Definitions())
 	promptPlan := composeAgentPrompt(b.cfg, b.loc, overlay, skillsBlock, toolManifest, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
@@ -199,7 +203,7 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 	preLoopIdx := convCtx.MessageCount()
 
 	// Echo mode when no LLM is configured.
-	if b.llm == nil {
+	if b.rt == nil || b.rt.llm == nil {
 		echo := "Echo: " + userText
 		if _, err := c.Bot().Send(c.Recipient(), echo); err != nil {
 			b.logger.Error("failed to send echo", "user_id", userID, "error", err)
@@ -230,9 +234,9 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 
 	toolsProvider := makeToolsProvider(
 		alwaysOnCore,
-		b.tools.Search,
-		b.tools.DefinitionsFor,
-		b.tools.Definitions,
+		b.rt.tools.Search,
+		b.rt.tools.DefinitionsFor,
+		b.rt.tools.Definitions,
 		convCtx.LatestUserMessageText,
 		func() int { return b.cfg.ToolSearchTopK },
 		b.logger,
@@ -293,20 +297,20 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 			MicrocompactKeepRecent:  b.cfg.MicrocompactKeepRecent,
 			MicrocompactMinChars:    b.cfg.MicrocompactMinChars,
 			BeforeTool:              duplicatePolicy,
-			ToolResolver:            b.tools.DefinitionFor,
+			ToolResolver:            b.rt.tools.DefinitionFor,
 			PhantomToolGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: b.tools.Names,
+				ToolNamesFn: b.rt.tools.Names,
 			},
 			BeforeLLM: func() (string, bool) {
-				if b.budget != nil && b.budget.IsHardBudgetExceeded() {
+				if b.rt != nil && b.rt.budget != nil && b.rt.budget.IsHardBudgetExceeded() {
 					b.logger.Warn("hard budget exceeded during tool loop", "user_id", userID)
 					return "Budget limit reached. LLM calls are temporarily halted.", true
 				}
 				return "", false
 			},
 			RecordUsage: func(usage llm.TokenUsage) {
-				if b.budget != nil {
-					b.budget.RecordUsage(usage)
+				if b.rt != nil && b.rt.budget != nil {
+					b.rt.budget.RecordUsage(usage)
 				}
 			},
 			EstimateCost: func(usage llm.TokenUsage) float64 {
@@ -363,11 +367,11 @@ func (b *Bot) buildTelegramInvocation(ctx context.Context, run *chat.Run, msg ch
 				}
 
 				// Archive this turn.
-				if b.archiver != nil && b.archiveDB != nil {
+				if b.rt != nil && b.rt.archiver != nil && b.rt.archiveDB != nil {
 					archiveCtx := context.Background()
 					chatID := c.Chat().ID
 					nextIdx := int64(0)
-					if maxIdx, err := b.archiveDB.MaxTurnIndex(archiveCtx, chatID); err == nil {
+					if maxIdx, err := b.rt.archiveDB.MaxTurnIndex(archiveCtx, chatID); err == nil {
 						nextIdx = maxIdx + 1
 					} else {
 						b.logger.Warn("archive: max turn_index lookup failed", "chat_id", chatID, "error", err)
@@ -446,7 +450,7 @@ func (c *telegramHubChatClient) Chat(ctx context.Context, messages []llm.Message
 		Tools:           toolDefs,
 		ReasoningEffort: c.b.cfg.ReasoningEffort,
 	}
-	ch, err := c.b.llm.Stream(ctx, req)
+	ch, err := c.b.rt.llm.Stream(ctx, req)
 	if err != nil {
 		c.b.logger.Error("LLM stream failed", "user_id", c.userID, "error", err)
 		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
@@ -582,9 +586,9 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
-			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), b.tools.Names())
+			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), b.rt.tools.Names())
 			args := toolArgumentsForTool(tc.Name, tc.Arguments, chatIDFromTeleContext(c))
-			result, err := b.tools.Execute(toolCtx, tc.Name, args)
+			result, err := b.rt.tools.Execute(toolCtx, tc.Name, args)
 			if err != nil {
 				result = tools.FormatToolError(err)
 				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
@@ -629,10 +633,10 @@ func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *con
 
 
 func (b *Bot) modelToolNames() []string {
-	if b == nil || b.tools == nil {
+	if b == nil || b.rt == nil || b.rt.tools == nil {
 		return nil
 	}
-	return b.tools.Names()
+	return b.rt.tools.Names()
 }
 
 func (b *Bot) maxToolLoopIterations() int {

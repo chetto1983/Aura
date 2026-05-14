@@ -87,12 +87,12 @@ func (b *Bot) dispatchReminder(task *cron.Task) error {
 // MaintenanceJob: rebuilds index, lints, auto-fixes single-candidate
 // broken links (Levenshtein ≤ 2), and defers the rest to 12h.
 func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
-	if b.wiki == nil {
+	if b.rt == nil || b.rt.wiki == nil {
 		return fmt.Errorf("wiki maintenance: wiki store unavailable")
 	}
-	b.wiki.RebuildIndex(ctx)
-	job := cron.NewMaintenanceJob(b.wiki, b.logger).
-		WithIssuesStore(b.issues).
+	b.rt.wiki.RebuildIndex(ctx)
+	job := cron.NewMaintenanceJob(b.rt.wiki, b.logger).
+		WithIssuesStore(b.rt.issues).
 		WithOwnerNotifier(func(ctx context.Context, msg string) {
 			for _, ownerID := range b.collectOwnerIDs() {
 				if err := b.SendToUser(ownerID, msg); err != nil {
@@ -104,7 +104,7 @@ func (b *Bot) dispatchWikiMaintenance(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("wiki maintenance: %w", err)
 	}
-	b.wiki.AppendLog(ctx, "nightly-maintenance", "")
+	b.rt.wiki.AppendLog(ctx, "nightly-maintenance", "")
 	b.logger.Info("nightly wiki maintenance complete",
 		"auto_fixed", fixed, "deferred", deferred)
 	return nil
@@ -147,7 +147,7 @@ type agentJobMetrics struct {
 }
 
 func (b *Bot) runAgentJob(ctx context.Context, task *cron.Task) (agentJobRun, error) {
-	if b.agentRunner == nil {
+	if b.rt == nil || b.rt.agentRunner == nil {
 		return agentJobRun{}, fmt.Errorf("agent_job %q: agent runner unavailable", task.Name)
 	}
 	payload, err := cron.NormalizeAgentJobPayload(task.Payload)
@@ -156,9 +156,9 @@ func (b *Bot) runAgentJob(ctx context.Context, task *cron.Task) (agentJobRun, er
 	}
 	allowlist := safeAgentJobTools(payload.ToolAllowlist)
 	wakeSignature, hasWakeSignature := cron.AgentJobWakeSignature(ctx, payload, cron.AgentJobWakeDeps{
-		Wiki:    b.wiki,
-		Sources: b.sources,
-		Tasks:   b.schedDB,
+		Wiki:    b.rt.wiki,
+		Sources: b.rt.sources,
+		Tasks:   b.rt.schedDB,
 	})
 	if hasWakeSignature && task.WakeSignature != "" && task.WakeSignature == wakeSignature {
 		return agentJobRun{
@@ -170,7 +170,7 @@ func (b *Bot) runAgentJob(ctx context.Context, task *cron.Task) (agentJobRun, er
 		}, nil
 	}
 	now := time.Now()
-	result, err := b.agentRunner.Run(ctx, agent.Task{
+	result, err := b.rt.agentRunner.Run(ctx, agent.Task{
 		SystemPrompt:  agentJobSystemPrompt(payload, now, b.loc),
 		Prompt:        b.agentJobPrompt(ctx, task, payload, now, b.loc),
 		ToolAllowlist: allowlist,
@@ -199,7 +199,7 @@ func (b *Bot) logAgentJobRun(task *cron.Task, run agentJobRun) {
 }
 
 func (b *Bot) persistAgentJobResult(ctx context.Context, task *cron.Task, run agentJobRun) {
-	if b.schedDB == nil || task == nil || task.ID == 0 {
+	if b.rt == nil || b.rt.schedDB == nil || task == nil || task.ID == 0 {
 		return
 	}
 	if run.Payload.Goal == "" && run.Result.Content == "" && run.WakeSignature == "" {
@@ -219,7 +219,7 @@ func (b *Bot) persistAgentJobResult(ctx context.Context, task *cron.Task, run ag
 		b.logger.Warn("agent job metrics marshal failed", "name", task.Name, "error", err)
 		return
 	}
-	if err := b.schedDB.RecordAgentJobResult(ctx, task.ID, truncateTelegramText(run.Result.Content, 4000), string(data), run.WakeSignature); err != nil {
+	if err := b.rt.schedDB.RecordAgentJobResult(ctx, task.ID, truncateTelegramText(run.Result.Content, 4000), string(data), run.WakeSignature); err != nil {
 		b.logger.Warn("agent job result persistence failed", "name", task.Name, "error", err)
 	}
 }
@@ -267,14 +267,14 @@ func agentJobNotificationMessage(task *cron.Task, payload cron.AgentJobPayload, 
 }
 
 func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
-	if b.schedDB == nil {
+	if b.rt == nil || b.rt.schedDB == nil {
 		return tools.RunTaskNowResult{}, errors.New("scheduler store unavailable")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return tools.RunTaskNowResult{}, errors.New("task name required")
 	}
-	task, err := b.schedDB.GetByName(ctx, name)
+	task, err := b.rt.schedDB.GetByName(ctx, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return tools.RunTaskNowResult{}, fmt.Errorf("task %q not found", name)
@@ -305,7 +305,7 @@ func (b *Bot) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResu
 		}
 	}
 	b.persistAgentJobResult(ctx, task, run)
-	if err := b.schedDB.RecordManualRun(ctx, task.ID, started, lastErr); err != nil && lastErr == "" {
+	if err := b.rt.schedDB.RecordManualRun(ctx, task.ID, started, lastErr); err != nil && lastErr == "" {
 		status = "failed"
 		lastErr = err.Error()
 	}
@@ -422,7 +422,7 @@ func agentJobScheduleContext(task *cron.Task, now time.Time, loc *time.Location)
 }
 
 func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string {
-	if b.schedDB == nil {
+	if b.rt == nil || b.rt.schedDB == nil {
 		return ""
 	}
 	var lines []string
@@ -431,7 +431,7 @@ func (b *Bot) agentJobPriorOutputs(ctx context.Context, anchors []string) string
 		if !ok {
 			continue
 		}
-		task, err := b.schedDB.GetByName(ctx, name)
+		task, err := b.rt.schedDB.GetByName(ctx, name)
 		if err != nil || strings.TrimSpace(task.LastOutput) == "" {
 			continue
 		}

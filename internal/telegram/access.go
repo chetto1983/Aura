@@ -42,14 +42,14 @@ func (b *Bot) onStart(c tele.Context) error {
 		return b.sendLoginToken(c, userID, "Welcome to Aura. You claimed this first-run install.")
 	}
 
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		b.logger.Warn("start from non-allowlisted user (no auth store)",
 			"user_id", userID,
 			"username", username,
 		)
 		return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
 	}
-	fresh, err := b.authDB.RequestAccess(context.Background(), userID, username)
+	fresh, err := b.rt.authDB.RequestAccess(context.Background(), userID, username)
 	if err != nil {
 		b.logger.Error("pending request enqueue failed", "user_id", userID, "error", err)
 		return c.Send("Aura could not record your access request. Try /start again in a moment.")
@@ -117,8 +117,8 @@ func (b *Bot) collectOwnerIDs() []string {
 			out = append(out, id)
 		}
 	}
-	if b.authDB != nil {
-		ids, err := b.authDB.AllowedUserIDs(context.Background())
+	if b.rt != nil && b.rt.authDB != nil {
+		ids, err := b.rt.authDB.AllowedUserIDs(context.Background())
 		if err != nil {
 			b.logger.Warn("collect owner ids: db lookup failed", "error", err)
 		}
@@ -138,13 +138,13 @@ func (b *Bot) collectOwnerIDs() []string {
 // Telegram so the plaintext never round-trips through the dashboard.
 // Returns auth.ErrInvalid when no open pending request exists for userID.
 func (b *Bot) ApproveAccess(ctx context.Context, userID string) error {
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		return fmt.Errorf("auth store unavailable")
 	}
-	if err := b.authDB.Approve(ctx, userID); err != nil {
+	if err := b.rt.authDB.Approve(ctx, userID); err != nil {
 		return err
 	}
-	token, err := b.authDB.Issue(ctx, userID)
+	token, err := b.rt.authDB.Issue(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("issue token: %w", err)
 	}
@@ -160,10 +160,10 @@ func (b *Bot) ApproveAccess(ctx context.Context, userID string) error {
 // and sends the requester a courtesy Telegram note. Failure to deliver
 // the note is logged but doesn't fail the deny.
 func (b *Bot) DenyAccess(ctx context.Context, userID string) error {
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		return fmt.Errorf("auth store unavailable")
 	}
-	if err := b.authDB.Deny(ctx, userID); err != nil {
+	if err := b.rt.authDB.Deny(ctx, userID); err != nil {
 		return err
 	}
 	if err := b.SendToUser(userID, "Your Aura access request was declined."); err != nil {
@@ -203,23 +203,23 @@ func (b *Bot) onLogin(c tele.Context) error {
 }
 
 func (b *Bot) tryBootstrapUser(userID string) (bool, error) {
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		return false, nil
 	}
 	if b.cfg != nil && b.cfg.AllowlistConfigured {
 		return false, nil
 	}
-	return b.authDB.BootstrapUser(context.Background(), userID)
+	return b.rt.authDB.BootstrapUser(context.Background(), userID)
 }
 
 func (b *Bot) isAllowlisted(userID string) bool {
 	if b.cfg != nil && b.cfg.IsAllowlisted(userID) {
 		return true
 	}
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		return false
 	}
-	ok, err := b.authDB.IsUserAllowed(context.Background(), userID)
+	ok, err := b.rt.authDB.IsUserAllowed(context.Background(), userID)
 	if err != nil {
 		b.logger.Warn("bootstrap allowlist lookup failed", "user_id", userID, "error", err)
 		return false
@@ -228,10 +228,10 @@ func (b *Bot) isAllowlisted(userID string) bool {
 }
 
 func (b *Bot) sendLoginToken(c tele.Context, userID, prefix string) error {
-	if b.authDB == nil {
+	if b.rt == nil || b.rt.authDB == nil {
 		return c.Send(prefix + "\n\nDashboard auth is not available in this run.")
 	}
-	token, err := b.authDB.Issue(context.Background(), userID)
+	token, err := b.rt.authDB.Issue(context.Background(), userID)
 	if err != nil {
 		b.logger.Error("dashboard token issue failed", "user_id", userID, "error", err)
 		return c.Send("I could not create a dashboard token. Check the app logs and try /login again.")

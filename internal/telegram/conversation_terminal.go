@@ -21,11 +21,11 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 		Model:         b.cfg.LLMModel,
 		Send: func(ctx context.Context, req llm.Request) (llm.Response, error) {
 			req.ReasoningEffort = b.cfg.ReasoningEffort
-			return b.llm.Send(ctx, req)
+			return b.rt.llm.Send(ctx, req)
 		},
 		RecordUsage: func(usage llm.TokenUsage) {
-			if b.budget != nil {
-				b.budget.RecordUsage(usage)
+			if b.rt != nil && b.rt.budget != nil {
+				b.rt.budget.RecordUsage(usage)
 			}
 		},
 		EstimateCost: func(usage llm.TokenUsage) float64 {

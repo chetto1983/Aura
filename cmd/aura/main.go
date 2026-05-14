@@ -370,11 +370,11 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}
 
 	healthServer.SetBotUsername(bot.Username())
-	healthServer.RegisterProvider("compact_memory", &compactMemoryHealthProvider{reader: bot})
+	healthServer.RegisterProvider("compact_memory", &compactMemoryHealthProvider{reader: app})
 
 	// Slice 10a: mount the read-only JSON API on the health server. Strip
 	// the /api prefix so api.NewRouter sees /health, /wiki/..., /sources/...
-	healthServer.Mount("/api/", http.StripPrefix("/api", bot.APIHandler()))
+	healthServer.Mount("/api/", http.StripPrefix("/api", app.APIHandler()))
 
 	// Slice 10b: serve the embedded SPA at /. The static handler also handles
 	// SPA fallback for deep links like /wiki/:slug. Register *after* /api/ so
@@ -392,13 +392,13 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	logger.Info("aura starting", "version", auraVersion, "commit", commit, "date", date)
 
-	go bot.Start()
+	go app.Start(bot)
 
 	var stopOnce sync.Once
 	stopCurrent = func() {
 		stopOnce.Do(func() {
 			logger.Info("shutting down")
-			bot.Stop()
+			app.Stop(bot)
 			if err := healthServer.Shutdown(context.Background()); err != nil {
 				logger.Warn("health server shutdown failed", "error", err)
 			}

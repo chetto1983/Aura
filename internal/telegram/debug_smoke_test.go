@@ -113,7 +113,7 @@ func TestDebugTextSmokeResultIgnoresBasePromptRetrievalCapsuleMention(t *testing
 func TestDebugDocumentSendsAfterReturnsOnlyNewSends(t *testing.T) {
 	b := &Bot{}
 	b.recordDebugDocumentSend("old.txt", []byte("old"), "old")
-	after := b.debugDocSeq.Load()
+	after := b.dbg.seq.Load()
 	b.recordDebugDocumentSend("aura_artifact.txt", []byte("hello"), "caption")
 
 	sends := b.debugDocumentSendsAfter(after)
@@ -234,8 +234,8 @@ func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *test
 	target := &countingTelegramTool{name: "execute_code", result: "ran"}
 	reg.Register(target)
 	b := &Bot{
-		cfg:   &config.Config{},
-		tools: reg,
+		cfg: &config.Config{},
+		rt:  &botRuntime{tools: reg},
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
@@ -258,8 +258,8 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	doc := &countingTelegramTool{name: "create_pdf", result: "pdf created"}
 	reg.Register(doc)
 	b := &Bot{
-		cfg:   &config.Config{},
-		tools: reg,
+		cfg: &config.Config{},
+		rt:  &botRuntime{tools: reg},
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
@@ -283,8 +283,8 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 	reg.Register(read)
 	reg.Register(doc)
 	b := &Bot{
-		cfg:   &config.Config{},
-		tools: reg,
+		cfg: &config.Config{},
+		rt:  &botRuntime{tools: reg},
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
@@ -313,8 +313,8 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	exec := &countingTelegramTool{name: "execute_code", result: "5050"}
 	reg.Register(exec)
 	b := &Bot{
-		cfg:   &config.Config{},
-		tools: reg,
+		cfg: &config.Config{},
+		rt:  &botRuntime{tools: reg},
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
@@ -340,7 +340,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 		cfg: &config.Config{
 			TerminalToolPolicy: "off",
 		},
-		tools: reg,
+		rt: &botRuntime{tools: reg},
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
@@ -380,7 +380,7 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	search := &countingTelegramTool{name: "search_memory", result: "memory"}
 	reg.Register(search)
-	b := &Bot{cfg: &config.Config{}, tools: reg}
+	b := &Bot{cfg: &config.Config{}, rt: &botRuntime{tools: reg}}
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
@@ -408,7 +408,7 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&errorTelegramTool{name: "execute_shell"})
-	b := &Bot{cfg: &config.Config{TerminalToolPolicy: "on"}, tools: reg, logger: slog.Default()}
+	b := &Bot{cfg: &config.Config{TerminalToolPolicy: "on"}, rt: &botRuntime{tools: reg}, logger: slog.Default()}
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",

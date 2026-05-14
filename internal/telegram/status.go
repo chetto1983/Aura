@@ -20,8 +20,8 @@ func (b *Bot) onStatus(c tele.Context) error {
 	sb.WriteString("Aura Status\n\n")
 
 	// Budget info
-	if b.budget != nil {
-		status := b.budget.Status()
+	if b.rt != nil && b.rt.budget != nil {
+		status := b.rt.budget.Status()
 		fmt.Fprintf(&sb, "Tokens used: %d\n", status.TotalTokens)
 		fmt.Fprintf(&sb, "Estimated cost: $%.4f\n", status.TotalCost)
 		fmt.Fprintf(&sb, "Token price: input $%.4f/M, output $%.4f/M\n", status.InputPerMTokens, status.OutputPerMTokens)
@@ -45,8 +45,8 @@ func (b *Bot) onStatus(c tele.Context) error {
 	if convCtx, ok := b.sessionStore().Load(userID); ok {
 		fmt.Fprintf(&sb, "\nContext tokens: %d / %d\n", convCtx.EstimatedTokens(), convCtx.MaxTokens())
 		fmt.Fprintf(&sb, "Conversation tokens used: %d\n", convCtx.TotalTokensUsed())
-		if b.budget != nil {
-			predictedCost := b.budget.PredictCost(convCtx.EstimatedTokens(), 500)
+		if b.rt != nil && b.rt.budget != nil {
+			predictedCost := b.rt.budget.PredictCost(convCtx.EstimatedTokens(), 500)
 			fmt.Fprintf(&sb, "Next call est. cost: $%.4f\n", predictedCost)
 		}
 	}
@@ -59,7 +59,7 @@ func (b *Bot) onStatus(c tele.Context) error {
 }
 
 func (b *Bot) compactMemoryStatusSummary() string {
-	if b == nil || b.compactMemoryHealth == nil {
+	if b == nil || b.rt == nil || b.rt.compactMemoryHealth == nil {
 		return ""
 	}
 	health := b.CompactMemoryHealth()
@@ -89,16 +89,16 @@ func (b *Bot) compactMemoryStatusSummary() string {
 // is first exceeded. userID is kept on the signature so future per-user
 // throttling has a hook without changing call sites.
 func (b *Bot) notifySoftBudget(c tele.Context, _ string) {
-	if b.budget != nil && b.budget.ShouldNotifySoftBudget() {
-		status := b.budget.Status()
+	if b.rt != nil && b.rt.budget != nil && b.rt.budget.ShouldNotifySoftBudget() {
+		status := b.rt.budget.Status()
 		c.Send(fmt.Sprintf("Soft budget reached ($%.2f / $%.2f). LLM calls continue until hard budget is hit.", status.TotalCost, status.SoftBudget))
 	}
 }
 
 // BudgetStatus returns the current budget status for external consumers.
 func (b *Bot) BudgetStatus() budget.Status {
-	if b.budget == nil {
+	if b.rt == nil || b.rt.budget == nil {
 		return budget.Status{}
 	}
-	return b.budget.Status()
+	return b.rt.budget.Status()
 }

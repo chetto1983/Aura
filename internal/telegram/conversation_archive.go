@@ -21,10 +21,10 @@ type archiveTurnInput struct {
 }
 
 func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
-	if b == nil {
+	if b == nil || b.rt == nil {
 		return nil
 	}
-	return b.archiver
+	return b.rt.archiver
 }
 
 func archiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input archiveTurnInput) {

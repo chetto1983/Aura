@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"context"
 	"database/sql"
 	"log/slog"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/llm"
@@ -33,10 +33,34 @@ import (
 )
 
 // CompactMemoryHealthProvider exposes the compact-memory mirror snapshot
-// surface. Used to populate Bot.compactMemoryHealth via Deps without
+// surface. Used to populate botRuntime.compactMemoryHealth via Deps without
 // coupling cmd/aura directly to memoryindex internals.
 type CompactMemoryHealthProvider interface {
 	Snapshot() memoryindex.VectorHealth
+}
+
+// botRuntime bundles all non-Telegram operational dependencies onto Bot as a
+// single field (Bot.rt). Keeping it separate from the Bot struct reduces Bot
+// to ~11 Telegram-wrapper essentials and makes goroutine lifecycle ownership
+// (bgCtx/bgCancel/bgWg, reindex, archiver close) clearly App's responsibility.
+//
+// Fields here are wired by cmd/aura/App.wireBot after telegram.New() returns.
+// Only fields actually read by Bot methods live here; deps consumed exclusively
+// by App (reindex, mcpClients, swarmStore, etc.) stay on App/Deps.
+type botRuntime struct {
+	llm                 llm.Client
+	wiki                wiki.Repository
+	tools               *tools.Registry
+	sources             source.Repository
+	skills              *auraskills.Loader
+	schedDB             *cron.Store
+	agentRunner         *agent.Runner
+	authDB              auth.Repository
+	compactMemoryHealth CompactMemoryHealthProvider
+	budget              budget.Runtime
+	archiver            conversation.ClosingTurnAppender
+	archiveDB           conversation.ArchiveRepository
+	issues              cron.IssueRepository
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.
@@ -64,11 +88,11 @@ type Deps struct {
 	EmbedCache *search.EmbedCache // nil when EMBEDDING_API_KEY unset
 
 	// ---- Wiki / search ------------------------------------------------------
-	Wiki          wiki.Repository    // narrow interface stored on b.wiki
+	Wiki          wiki.Repository    // narrow interface stored on rt.wiki
 	WikiStore     *wiki.Store        // concrete type for SetReindexSubmitter + NewWikiPageTool
-	Search        search.Searcher    // stored on b.search
+	Search        search.Searcher    // stored on rt (unused by Bot methods; kept for App wiring)
 	SearchRepo    search.Repository  // full repo (WikiSearch, ingest.Config.Search, reindex)
-	ReindexWorker *reindex.Worker    // nil when search unavailable
+	ReindexWorker *reindex.Worker    // nil when search unavailable; lifecycle owned by App
 	QdrantClient  qdrant.Client      // nil when QDRANT_URL unset
 
 	// ---- Sources / OCR / ingest ---------------------------------------------
@@ -83,8 +107,8 @@ type Deps struct {
 	TaskTool       *tools.TaskTool            // needs SetRunner(b) after Bot construction
 
 	// ---- Memory index -------------------------------------------------------
-	MemoryStore        *memoryindex.Store          // nil when compact memory unavailable
-	CompactVector      memoryindex.VectorIndex     // nil when Qdrant + embed unavailable
+	MemoryStore         *memoryindex.Store           // nil when compact memory unavailable
+	CompactVector       memoryindex.VectorIndex      // nil when Qdrant + embed unavailable
 	CompactVectorHealth *memoryindex.VectorHealthTracker // for Started/Failed/Succeeded in Phase C
 
 	// ---- Agent / swarm ------------------------------------------------------
@@ -106,46 +130,31 @@ type Deps struct {
 	Tools   *tools.Registry
 	ToolReg tools.ToolStore
 
-	// ---- Budget / background lifecycle --------------------------------------
-	Budget   budget.Runtime
-	BgCtx    context.Context
-	BgCancel context.CancelFunc
-
-	// ---- Compact memory health (interface) ----------------------------------
-	// CompactVectorHealth (above) holds the concrete *VectorHealthTracker.
-	// CompactMemoryHealth is the interface stored on b.compactMemoryHealth.
-	CompactMemoryHealth CompactMemoryHealthProvider
+	// ---- Budget -------------------------------------------------------------
+	Budget budget.Runtime
 }
 
-// NewBot creates a Bot from the given Deps. Mirrors the field assignment
-// that used to happen at the end of telegram.New(). Post-construction
-// wiring (gate, scheduler, archive, api router, register handlers) is NOT
-// performed here — callers handle it separately or use telegram.New().
+// NewBot creates a Bot from the given Deps. All non-Telegram operational deps
+// are bundled into a *botRuntime (Bot.rt). Goroutine lifecycle (bgCtx/bgCancel/bgWg)
+// and resource cleanup (reindex, archiver, mcpClients) are owned by *App — not by Bot.
 func NewBot(deps Deps) *Bot {
-	return &Bot{
-		bot:                 deps.Bot,
-		cfg:                 deps.Cfg,
-		loc:                 deps.Loc,
-		logger:              deps.Logger,
+	rt := &botRuntime{
 		llm:                 deps.LLM,
 		wiki:                deps.Wiki,
-		search:              deps.Search,
 		tools:               deps.Tools,
 		sources:             deps.Sources,
-		ocr:                 deps.OCR,
 		skills:              deps.Skills,
-		bgCtx:               deps.BgCtx,
-		bgCancel:            deps.BgCancel,
 		schedDB:             deps.SchedDB,
 		agentRunner:         deps.AgentRunner,
-		swarmStore:          deps.SwarmStore,
-		swarmMgr:            deps.SwarmMgr,
 		authDB:              deps.AuthDB,
-		mcpClients:          deps.MCPClients,
-		sandboxMgr:          deps.SandboxMgr,
-		toolReg:             deps.ToolReg,
-		compactMemoryHealth: deps.CompactMemoryHealth,
+		compactMemoryHealth: deps.CompactVectorHealth,
 		budget:              deps.Budget,
-		reindex:             deps.ReindexWorker,
+	}
+	return &Bot{
+		bot:    deps.Bot,
+		cfg:    deps.Cfg,
+		loc:    deps.Loc,
+		logger: deps.Logger,
+		rt:     rt,
 	}
 }

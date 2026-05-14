@@ -103,11 +103,10 @@ func TestArchiveConversationTurnsLogsAppendFailures(t *testing.T) {
 }
 
 func TestArchiveAppenderForTurnKeepsBufferedWriterWhenMemoryCaptureInactive(t *testing.T) {
-	buffered := &closeFailingArchiver{}
+	buffered := &noopClosingArchiver{}
 	store := &recordingArchiveRepository{}
 	bot := &Bot{
-		archiver:  buffered,
-		archiveDB: store,
+		rt: &botRuntime{archiver: buffered, archiveDB: store},
 	}
 
 	got := bot.archiveAppenderForTurn()
@@ -115,6 +114,11 @@ func TestArchiveAppenderForTurnKeepsBufferedWriterWhenMemoryCaptureInactive(t *t
 		t.Fatalf("archiveAppenderForTurn() = %T, want buffered archiver", got)
 	}
 }
+
+type noopClosingArchiver struct{}
+
+func (n *noopClosingArchiver) Append(context.Context, conversation.Turn) error { return nil }
+func (n *noopClosingArchiver) Close(context.Context) error                     { return nil }
 
 func assertArchivedTurn(t *testing.T, got, want conversation.Turn) {
 	t.Helper()

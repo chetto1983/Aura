@@ -63,8 +63,8 @@ func TestDispatchAgentJobRunsBoundedRunner(t *testing.T) {
 		t.Fatalf("payload JSON: %v", err)
 	}
 	b := &Bot{
-		agentRunner: runner,
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rt:     &botRuntime{agentRunner: runner},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	err = b.dispatchTask(t.Context(), &cron.Task{
 		Name:        "agent-smoke",
@@ -118,8 +118,8 @@ func TestDispatchAgentJobUsesSkillsToolsetsAndContextPrompt(t *testing.T) {
 		t.Fatalf("payload JSON: %v", err)
 	}
 	b := &Bot{
-		agentRunner: runner,
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rt:     &botRuntime{agentRunner: runner},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	err = b.dispatchTask(t.Context(), &cron.Task{
 		Name:        "agent-skilled",
@@ -197,9 +197,8 @@ func TestRunTaskNowRunsSavedAgentJob(t *testing.T) {
 		t.Fatalf("Upsert: %v", err)
 	}
 	b := &Bot{
-		schedDB:     store,
-		agentRunner: runner,
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rt:     &botRuntime{schedDB: store, agentRunner: runner},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	result, err := b.RunTaskNow(t.Context(), task.Name)
 	if err != nil {
@@ -264,9 +263,8 @@ func TestRunAgentJobSkipsWhenWakeSignatureUnchanged(t *testing.T) {
 		t.Fatalf("payload JSON: %v", err)
 	}
 	b := &Bot{
-		wiki:        wikiStore,
-		agentRunner: runner,
-		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rt:     &botRuntime{wiki: wikiStore, agentRunner: runner},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	normalized, err := cron.NormalizeAgentJobPayload(payload)
 	if err != nil {
@@ -326,7 +324,7 @@ func TestAgentJobPromptIncludesPriorTaskOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeAgentJobPayload: %v", err)
 	}
-	b := &Bot{schedDB: store}
+	b := &Bot{rt: &botRuntime{schedDB: store}}
 	prompt := b.agentJobPrompt(t.Context(), nil, normalized, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC), time.UTC)
 	for _, want := range []string{"Prior job outputs", "prior-research", "Found three durable memory gaps"} {
 		if !strings.Contains(prompt, want) {

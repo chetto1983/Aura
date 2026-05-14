@@ -51,7 +51,7 @@ func TestIsAllowlisted_UnionsConfiguredAndPersistedAllowlist(t *testing.T) {
 			Allowlist:           []string{"configured"},
 			AllowlistConfigured: true,
 		},
-		authDB: store,
+		rt: &botRuntime{authDB: store},
 	}
 	if !b.isAllowlisted("configured") {
 		t.Fatal("configured user should be allowed")
@@ -70,8 +70,8 @@ func TestIsAllowlisted_UsesBootstrapStoreWhenAllowlistBlank(t *testing.T) {
 		t.Fatalf("bootstrap claimed=%v err=%v, want true nil", claimed, err)
 	}
 	b := &Bot{
-		cfg:    &config.Config{},
-		authDB: store,
+		cfg: &config.Config{},
+		rt:  &botRuntime{authDB: store},
 	}
 	if !b.isAllowlisted("bootstrap") {
 		t.Fatal("bootstrap user should be allowed")
@@ -100,7 +100,7 @@ func TestCollectOwnerIDs_UnionsEnvAndDB(t *testing.T) {
 		cfg: &config.Config{
 			Allowlist: []string{"env-id", "bootstrap-id"}, // intentional overlap
 		},
-		authDB: store,
+		rt: &botRuntime{authDB: store},
 	}
 	got := b.collectOwnerIDs()
 	want := map[string]struct{}{"env-id": {}, "bootstrap-id": {}, "approved-id": {}}
@@ -135,7 +135,7 @@ func TestOnLoginBootstrapsFirstRunAndSendsToken(t *testing.T) {
 	b := &Bot{
 		bot:    tb,
 		cfg:    &config.Config{},
-		authDB: store,
+		rt:     &botRuntime{authDB: store},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
@@ -195,7 +195,7 @@ func TestCompactMemoryStatusSummaryReportsMirrorState(t *testing.T) {
 	tracker := memoryindex.NewVectorHealthTracker(true, "aura_memory_v1_compact")
 	tracker.Started()
 	tracker.Succeeded(memoryindex.VectorReport{Collection: "aura_memory_v1_compact", DocsIndexed: 7, VectorSize: 1024})
-	b := &Bot{compactMemoryHealth: tracker}
+	b := &Bot{rt: &botRuntime{compactMemoryHealth: tracker}}
 
 	got := b.compactMemoryStatusSummary()
 

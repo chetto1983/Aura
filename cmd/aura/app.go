@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
@@ -35,19 +37,106 @@ import (
 	"github.com/aura/aura/internal/workspace"
 )
 
-// App holds the pre-built Phase A dependencies for Aura. Constructed by
-// newApp() before telegram.New() so the Telegram wrapper package only
-// handles Telegram-specific wiring (Phase B) and composition (Phase C).
+// App holds the composition root for Aura. It owns all goroutine lifecycle
+// (bgCtx/bgCancel/bgWg), resource cleanup (archiver, reindex, mcpClients,
+// sched), and the HTTP API handler. The Telegram Bot is a thin wrapper;
+// App.Stop(bot) performs the authoritative shutdown sequence.
 type App struct {
-	deps telegram.Deps
-	// restart is stored for US-A13b.3 when api.Deps moves to App.
+	deps    telegram.Deps
 	restart func(context.Context) error
+
+	// ---- Goroutine lifecycle (US-A13c) ----------------------------------------
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
+	bgWg     sync.WaitGroup
+
+	// ---- Resources to clean up on Stop ----------------------------------------
+	archiver   conversation.ClosingTurnAppender // nil until wireBot
+	sched      *cron.Scheduler                  // nil until wireBot
+	api        http.Handler                     // nil until wireBot
+}
+
+// startBg starts a background goroutine tracked by bgWg under bgCtx.
+// The goroutine calls fn(bgCtx) and decrements bgWg when fn returns.
+func (a *App) startBg(fn func(context.Context)) {
+	a.bgWg.Add(1)
+	go func() {
+		defer a.bgWg.Done()
+		fn(a.bgCtx)
+	}()
+}
+
+// APIHandler returns the HTTP handler mounted at /api/ by main.go.
+func (a *App) APIHandler() http.Handler {
+	return a.api
+}
+
+// reindexHealth returns a func() reindex.Health for api.Deps.ReindexHealth.
+func (a *App) reindexHealth() reindex.Health {
+	if a.deps.ReindexWorker == nil {
+		return reindex.Health{}
+	}
+	return a.deps.ReindexWorker.Health()
+}
+
+// CompactMemoryHealth satisfies the compactMemoryHealthReader interface used
+// by main.go's compactMemoryHealthProvider.
+func (a *App) CompactMemoryHealth() memoryindex.VectorHealth {
+	if a == nil || a.deps.CompactVectorHealth == nil {
+		return memoryindex.VectorHealth{}
+	}
+	return a.deps.CompactVectorHealth.Snapshot()
+}
+
+// Start starts the cron scheduler (non-blocking) and then starts Telegram
+// polling (blocking). Must be called in a goroutine from main.
+func (a *App) Start(bot *telegram.Bot) {
+	if a.sched != nil {
+		a.sched.Start(a.bgCtx)
+	}
+	bot.Start()
+}
+
+// Stop shuts down the Telegram bot, then cancels background goroutines and
+// waits for them to finish, then closes all owned resources in reverse
+// dependency order. Idempotent: safe to call more than once.
+func (a *App) Stop(bot *telegram.Bot) {
+	// 1. Telegram-specific shutdown (gate, polling, docs).
+	if bot != nil {
+		bot.Stop()
+	}
+	// 2. Cancel background goroutines (toolReconciler, mcpwatch, etc.).
+	if a.bgCancel != nil {
+		a.bgCancel()
+	}
+	a.bgWg.Wait()
+	// 3. Stop reindex worker.
+	if a.deps.ReindexWorker != nil {
+		a.deps.ReindexWorker.Stop()
+	}
+	// 4. Flush + close conversation archiver.
+	if a.archiver != nil {
+		if err := a.archiver.Close(context.Background()); err != nil {
+			a.deps.Logger.Warn("telegram shutdown: archiver close failed", "error", err)
+		}
+	}
+	// 5. Close MCP client subprocesses.
+	for _, cli := range a.deps.MCPClients {
+		if err := cli.Close(); err != nil {
+			a.deps.Logger.Warn("mcp client close failed", "error", err)
+		}
+	}
+	// 6. Stop scheduler (drains in-flight dispatches).
+	if a.sched != nil {
+		a.sched.Stop()
+	}
 }
 
 // newApp builds all Phase A (pure dependency construction) deps and returns
 // an App whose .deps can be handed directly to telegram.New().
 //
 // US-A13b.2: moves ~400 LOC of pure construction out of telegram/setup.go.
+// US-A13c: bgCtx/bgCancel now live on App, not on Deps/Bot.
 func newApp(
 	cfg *config.Config,
 	settingsStore config.Repository,
@@ -123,7 +212,6 @@ func newApp(
 	var batchEmbedFn search.BatchEmbeddingFunction
 	compactVectorHealth := memoryindex.NewVectorHealthTracker(false, "")
 	deps.CompactVectorHealth = compactVectorHealth
-	deps.CompactMemoryHealth = compactVectorHealth
 
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn = telegram.CreateEmbeddingFunc(cfg)
@@ -431,12 +519,10 @@ func newApp(
 		OutputCostPerMTokens: cfg.CostOutputPerMTokens,
 	}, logger)
 
-	// ---- Background context (Bot lifecycle) ---------------------------------
+	// ---- Background context: owned by App (US-A13c) -------------------------
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	deps.BgCtx = bgCtx
-	deps.BgCancel = bgCancel
 
-	return &App{deps: deps, restart: restart}, nil
+	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
 }
 
 // wireBot performs Phase C composition wiring after telegram.New() constructs
@@ -444,8 +530,12 @@ func newApp(
 // memoryStore rebuild, toolReconciler + mcpwatch goroutines, and wires them onto
 // b via exported setter methods.
 //
-// Must be called from cmd/aura before bot.Start() so all infrastructure is ready
-// before the first Telegram message arrives.
+// Goroutine lifecycle is owned by App (a.startBg / a.bgCtx).
+// Resource cleanup (archiver.Close, reindex.Stop, mcp.Close, sched.Stop) is
+// performed by App.Stop, NOT by bot.Stop.
+//
+// Must be called from cmd/aura before App.Start(bot) so all infrastructure is
+// ready before the first Telegram message arrives.
 func (a *App) wireBot(b *telegram.Bot) error {
 	cfg := a.deps.Cfg
 	logger := a.deps.Logger
@@ -488,10 +578,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 				logger.Warn("tool index reconcile error", "idx", i, "err", e)
 			}
 			reconciler = r
-			b.SetToolReconciler(r)
-			b.StartBgGoroutine(r.Run)
+			// toolReconciler.Run goroutine lifecycle owned by App (US-A13c).
+			a.startBg(r.Run)
 
 			// fsnotify on mcp.json — debounced notification when the operator edits the file.
+			// mcpwatch goroutine lifecycle owned by App (US-A13c).
 			if cfg.MCPServersPath != "" {
 				watcher, werr := mcp.New(mcp.Config{
 					Path:     cfg.MCPServersPath,
@@ -501,7 +592,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 				if werr != nil {
 					logger.Warn("mcp.json watcher unavailable", "error", werr)
 				} else {
-					b.StartBgGoroutine(func(ctx context.Context) {
+					a.startBg(func(ctx context.Context) {
 						if rerr := watcher.Run(ctx); rerr != nil {
 							logger.Warn("mcpwatch exited with error", "error", rerr)
 						}
@@ -526,7 +617,10 @@ func (a *App) wireBot(b *telegram.Bot) error {
 				archiveDB = archiveStore
 			}
 			b.SetArchiveDB(archiveDB)
-			b.SetArchiver(conversation.NewBufferedAppender(archiveDB, 100))
+			archiver := conversation.NewBufferedAppender(archiveDB, 100)
+			// App owns the archiver Close lifecycle (US-A13c).
+			a.archiver = archiver
+			b.SetArchiver(archiver)
 		}
 	}
 
@@ -549,6 +643,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 				"vector_collection", report.Vector.Collection, "vector_docs", report.Vector.DocsIndexed)
 		}
 		if a.deps.CompactVector != nil {
+			// Compact memory vector mirror sync goroutine owned by App (US-A13c).
 			go func() {
 				vectorCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 				defer cancel()
@@ -620,7 +715,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		return fmt.Errorf("creating scheduler: %w", err)
 	}
-	b.SetSched(sched)
+	// App owns the scheduler lifecycle (US-A13c).
+	a.sched = sched
 
 	// Bootstrap the autonomous nightly wiki-maintenance task (idempotent upsert).
 	nightlyAt, err := cron.NextDailyRun("03:00", loc, time.Now())
@@ -654,7 +750,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 
 	// ---- HTTP API router (dashboard + /api endpoints) -----------------------
-	b.SetAPI(api.NewRouter(api.Deps{
+	// App owns the api handler; App.APIHandler() exposes it to main.go (US-A13c).
+	a.api = api.NewRouter(api.Deps{
 		Wiki:        a.deps.WikiStore,
 		Sources:     a.deps.Sources,
 		Scheduler:   a.deps.SchedDB,
@@ -665,8 +762,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Allowlist:   b.IsAllowlisted,
 		MaxUploadMB: cfg.OCRMaxFileMB,
 		Location:    loc,
-		// Surface reindex worker health via /api/health.
-		ReindexHealth: b.ReindexHealth,
+		// Surface reindex worker health via /api/health (US-A13c: moved from bot).
+		ReindexHealth: a.reindexHealth,
 		// Keep in sync with cmd/aura/main.go's auraVersion.
 		Version:   "3.0",
 		StartedAt: time.Now().UTC(),
@@ -711,7 +808,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
 		Chat:  telegram.NewWebChatService(a.deps.AgentRunner, a.deps.Tools),
-	}))
+	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
 	// picks up every tool that landed in the registry during setup.

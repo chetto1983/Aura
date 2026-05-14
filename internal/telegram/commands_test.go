@@ -181,7 +181,7 @@ func TestOnToolsListsModelVisibleTools(t *testing.T) {
 	b := &Bot{
 		bot:    tb,
 		cfg:    &config.Config{Allowlist: []string{"123"}, AllowlistConfigured: true},
-		tools:  registry,
+		rt:     &botRuntime{tools: registry},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{

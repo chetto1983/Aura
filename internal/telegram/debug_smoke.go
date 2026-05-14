@@ -104,7 +104,7 @@ func (b *Bot) RunDebugTextSmoke(ctx context.Context, userID int64, username, pro
 		},
 	}
 	c := tele.NewContext(b.bot, update)
-	docSeq := b.debugDocSeq.Load()
+	docSeq := b.dbg.seq.Load()
 	budgetBefore := b.BudgetStatus()
 	start := time.Now()
 
