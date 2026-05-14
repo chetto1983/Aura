@@ -1,4 +1,4 @@
-package memoryquality
+package audit
 
 import (
 	"context"
@@ -250,7 +250,7 @@ func rawLeakMessage(body string) string {
 	if strings.Contains(body, "\n## Preview\n") || strings.HasPrefix(body, "## Preview\n") {
 		return "compiled wiki page contains raw OCR/source preview; keep raw text under wiki/raw and read_source"
 	}
-	if strings.Count(body, "�") >= 3 {
+	if strings.Count(body, "â") >= 3 {
 		return "compiled wiki page contains repeated replacement characters, likely bad extraction text"
 	}
 	return ""
