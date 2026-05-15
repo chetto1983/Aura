@@ -80,7 +80,7 @@
         "Single atomic commit prefix: test(tools): discovery top-k eval fixture (US-I04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "If the current index can't hit ≥70% top-3, lower the threshold to whatever the current state achieves AND open a follow-up story for index quality. Phase-I locks in a regression guard, not a quality bar. Document the chosen threshold in the test header comment."
     },
     {
