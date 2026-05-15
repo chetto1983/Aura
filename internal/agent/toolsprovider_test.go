@@ -1,4 +1,4 @@
-package telegram
+package agent
 
 import (
 	"io"
@@ -46,11 +46,11 @@ func TestToolsProvider_ReturnsAlwaysOnSeed(t *testing.T) {
 	// not here.
 	provider := MakeToolsProvider(
 		AlwaysOnCore,
-		nil,           // searchFn ignored
-		coreStubDefs,  // defsForFn
-		nil,           // defsAllFn retired
-		nil,           // latestUserMsgFn — message no longer drives the seed
-		nil,           // topKFn — top-K is a tool_search property
+		nil,          // searchFn ignored
+		coreStubDefs, // defsForFn
+		nil,          // defsAllFn retired
+		nil,          // latestUserMsgFn — message no longer drives the seed
+		nil,          // topKFn — top-K is a tool_search property
 		silentLogger(),
 	)
 	defs := provider()

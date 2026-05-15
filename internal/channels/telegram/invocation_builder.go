@@ -121,8 +121,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	maxCallsPerTool := map[string]int{"wiki_page": 3}
 	duplicatePolicy := agent.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 
-	toolsProvider := tgtelegram.MakeToolsProvider(
-		tgtelegram.AlwaysOnCore,
+	toolsProvider := agent.MakeToolsProvider(
+		agent.AlwaysOnCore,
 		toolReg.Search,
 		toolReg.DefinitionsFor,
 		toolReg.Definitions,

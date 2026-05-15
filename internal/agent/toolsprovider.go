@@ -1,4 +1,4 @@
-package telegram
+package agent
 
 import (
 	"log/slog"
@@ -25,7 +25,7 @@ import (
 // backend. Embedding cosine via the registry's existing hybrid Search
 // hits ~80ms p95 with 90% Hit@5 on a 64-query labeled dataset; the
 // model's own judgment over the manifest + permissive load covers the
-// remainder. No retrieval logic remains in tools_provider — the agent
+// remainder. No retrieval logic remains in toolsprovider — the agent
 // loop owns pool growth.
 var AlwaysOnCore = []string{
 	"tool_search",
@@ -38,7 +38,7 @@ var AlwaysOnCore = []string{
 // and EnsureLoaded).
 //
 // The signature still takes function-typed dependencies so existing
-// tests (tools_provider_test.go) keep working with stubs; searchFn /
+// tests (toolsprovider_test.go) keep working with stubs; searchFn /
 // latestUserMsgFn / topKFn are accepted but ignored to preserve the
 // call shape while we delete the retrieval branch.
 func MakeToolsProvider(
