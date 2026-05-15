@@ -1,8 +1,18 @@
 # Aura Cleanup Execution Map — North-Star Before Any New Feature
 
 **Date:** 2026-05-15
-**Source of truth:** `D:/Aura/prd.md` (1708 lines) + `D:/Aura/.planning/deep-refactor/INDEX.md` + memory cluster
+**Source of truth:** `D:/Aura/prd.md` +
+`D:/Aura/.planning/deep-refactor/INDEX.md` + current handoff files
 **Trigger to add new features (WhatsApp, etc.):** ALL of the items in this map at status `done`.
+
+**Authority note:** this map is an orientation layer, not the active contract.
+If it conflicts with `D:/Aura/prd.md`,
+`D:/Aura/.planning/deep-refactor/INDEX.md`, `D:/Aura/CONTINUE-HERE.md`,
+`D:/Aura/.planning/HANDOFF.json`, or a phase `progress.md`, the durable PRD and
+handoff files win. Current resume state on 2026-05-15: Phase01A is implemented
+and Go-verified, Phase01B1 and Phase01B2 are implemented and verified locally,
+and the next bounded implementation slice is Phase01B3 dashboard bearer actor
+context.
 
 ---
 
@@ -42,11 +52,12 @@ internal/
 
 | Phase | Status | Evidence |
 |---|---|---|
-| Phase 1 — Stabilize Map | 🔄 70% | api/storage/chat/channels naming done; cron renamed (US-A15..16); telegram wrapper-only (US-A17..19 + US-B*); residual Telegram debt → in flight as Ralph Phase-B |
-| Phase 1A — Run/Event Foundation | 🟡 partial | migration v6 + storage/runs + chat.Hub LifecycleStore committed `d5747eb2`; **`run_outbox` table missing** |
-| Phase 1B1 — Identity foundation | ✅ done | migration v7 + internal/identity committed `d5747eb2` |
-| Phase 1B2 — Allowlist backfill | ⏳ not started | migrate Telegram allowed_users → principals + channel_accounts + actors |
-| Phase 1C — Question Gate | ⏳ scaffolded only | `chat_questions` table, question_requested/answered events, QuestionGate logic |
+| Phase 1 - Stabilize Map | in progress | Phase01 parent exists; continue through bounded sub-phases instead of broad map cleanup. |
+| Phase 1A - Run/Event Foundation | local verified | migration v6 adds `runs`, `run_events`, `run_outbox`, idempotency, and audit tables; `internal/storage/runs` and `internal/chat` Hub metadata persistence are verified in `Phase01A_Run_Event_Foundation/benchmark.md`. |
+| Phase 1B1 - Identity foundation | closed verified | migration v7 plus `internal/identity`; local gates and subagent verification passed. |
+| Phase 1B2 - Allowlist backfill | local verified | migration v8 backfills persisted `allowed_users` into Telegram principals, channel accounts, session actors, and grants; auth bootstrap/approval creates matching identity rows. |
+| Phase 1B3 - Dashboard bearer actor context | next slice | Resolve dashboard bearer tokens into actor context and prevent authenticated user override. |
+| Phase 1C - Question Gate | scaffolded only | `chat_questions` table, question_requested/answered events, QuestionGate logic. |
 | Phase 2 — Protect Telegram | ⏳ scaffolded | record-replay fixture for byte-comparable parity |
 | Phase 3 — Move Channels Behind Chat | ⏳ scaffolded | route Telegram + web fully through Hub |
 | Phase 4 — Collapse Agent Runtime | ⏳ scaffolded | merge agentloop+agentruntime, extract governance + prompt assembly |
@@ -56,7 +67,9 @@ internal/
 | Phase 8 — Cron + Swarm RunGraph | ⏳ scaffolded | durable schedule fires, parent/child run IDs, policy-driven graphs |
 | Phase 9 — Memory & Source Discipline | ⏳ scaffolded | internal/memory (NEW pkg), wiki as projection, sources immutable |
 
-**Working items right now (Ralph Phase-B):** US-B01..B05 done, B06 in flight, B07 pending. After: Phase 1 closes the Telegram tail.
+**Working item right now:** Phase01B3 dashboard bearer actor context. Ralph
+queue files may exist, but they are not the active deep-refactor route unless a
+current turn explicitly selects the Ralph queue.
 
 ---
 
@@ -65,43 +78,41 @@ internal/
 The order matters because of dependencies. Each phase has prerequisites that gate the next.
 
 ```
-[Now] Phase-B (telegram tail) closes
+[Now] Phase01B3 - dashboard bearer actor context
    ↓
-[1] Phase01A2 — add run_outbox table (small, ~1 slice)
+[1] Phase01B4-B7 - tool capability, Telegram/API actor wiring, cron/swarm delegation, denial events
    ↓
-[2] Phase01B2 — allowlist backfill (1-2 slices)
+[2] Phase01C - Question Gate (3-4 slices, real product work)
    ↓
-[3] Phase01C — Question Gate (3-4 slices, real product work)
+[3] Phase 2 — Protect Telegram (record-replay fixture, ~3 slices)
    ↓
-[4] Phase 2 — Protect Telegram (record-replay fixture, ~3 slices)
+[4] Phase 3 — Move Channels Behind Chat (~4 slices)
    ↓
-[5] Phase 3 — Move Channels Behind Chat (~4 slices)
-   ↓
-[6] Phase 4 — Collapse Agent Runtime (~5 slices)
+[5] Phase 4 — Collapse Agent Runtime (~5 slices)
    |    │
    |    ├─► improve-codebase-architecture skill — invoke ONCE before locking interfaces
    |    └─► critical decision: agentloop+agentruntime+agent unification shape
    ↓
-[7] Phase 5 — Consolidate Tools (~5 slices)
+[6] Phase 5 — Consolidate Tools (~5 slices)
    |    │
    |    ├─► improve-codebase-architecture skill — invoke for tool registry/index/sets/swarmtools merge
    |    └─► first time we introduce visibility tiers + capability annotations
    ↓
-[8] Phase 6 — Tool Experience Loop (~6 slices)
+[7] Phase 6 — Tool Experience Loop (~6 slices)
    |    │
    |    ├─► CREATE internal/workflow/ — durable tool execution
    |    ├─► CREATE internal/learning/ — tool experience, lessons, promotion
    |    └─► ToolObservation as single result/error contract
    ↓
-[9] Phase 7 — Rebuild RAG (~7 slices)
+[8] Phase 7 — Rebuild RAG (~7 slices)
    |    │
    |    ├─► CREATE internal/rag/ — schema-aware retrieval
    |    ├─► improve-codebase-architecture skill — invoke for RAG interface shape
    |    └─► GraphRAG patterns from PRD §5.9 (NO Neo4j)
    ↓
-[10] Phase 8 — Cron + Swarm RunGraph (~5 slices)
+[9] Phase 8 — Cron + Swarm RunGraph (~5 slices)
    ↓
-[11] Phase 9 — Memory & Source Discipline (~5 slices)
+[10] Phase 9 — Memory & Source Discipline (~5 slices)
    |    │
    |    ├─► CREATE internal/memory/ — wiki semantics, recall, policy
    |    └─► CREATE internal/cache/ — separate from storage
@@ -117,16 +128,29 @@ Estimated total work: ~45 slices × ~4-15 min each (Ralph speed) = 4-12 hours of
 
 ## Per-Phase Quick Reference
 
-### Phase01A2 — `run_outbox`
-- **Scope:** add `run_outbox` table (PRD §5.2 already defines schema); wire Hub to enqueue outbound delivery into outbox after commit
-- **New code:** ~150 LOC; migration v8; storage/runs additions
-- **Gate:** failed outbound delivery is retryable through outbox state (PRD Phase 1A gate)
+### Phase01A - Run/Event Foundation
+- **Status:** local verified.
+- **Scope already covered:** `runs`, `run_events`, `run_outbox`,
+  idempotency, audit tables, `internal/storage/runs`, and `chat.Hub`
+  metadata persistence.
+- **Gate evidence:** `Phase01A_Run_Event_Foundation/benchmark.md`.
 
-### Phase01B2 — Allowlist Backfill
-- **Scope:** migrate Telegram `allowed_users` → `channel_accounts` + owner/user `principals` + Authorize() boundary checks for allowlisted users
-- **Constraint:** preserve `allowed_users` as compat layer (do NOT delete)
-- **Out-of-scope:** dashboard actor session, tool capability checks, cron delegation, swarm delegation — those land in Phase 4-8
-- **Gate:** Telegram + web/API + cron + swarm test fixtures all resolve an actor
+### Phase01B2 - Allowlist Backfill
+- **Status:** local verified.
+- **Scope already covered:** persisted Telegram `allowed_users` rows are
+  backfilled into principals, channel accounts, session actors, and owner/user
+  grants while preserving `allowed_users`.
+- **Out-of-scope still open:** dashboard actor session, tool capability checks,
+  cron delegation, swarm delegation, and denial-event persistence.
+- **Next slice:** Phase01B3 dashboard bearer actor context.
+
+### Phase01B3 - Dashboard Bearer Actor Context
+- **Scope:** resolve dashboard bearer tokens into actor context and prevent
+  authenticated user override.
+- **Canonical folder:**
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants`.
+- **Do not bundle:** tool capability checks, cron delegation, swarm delegation,
+  or denial-event wiring.
 
 ### Phase01C — Question Gate
 - **Scope:** durable `chat_questions` table; `question_requested`/`answered`/`approval_*` events; `QuestionGate` before risky tool execution + durable memory writes
@@ -289,6 +313,9 @@ This is a planning artifact, NOT a contract. The real contracts are:
 - `D:/Aura/prd.md` (north-star PRD)
 - `D:/Aura/.planning/aura-deep-refactor-decisions.json` (ADR route)
 - `D:/Aura/.planning/deep-refactor/INDEX.md` (phase folder map)
-- `D:/Aura/scripts/ralph/prd.json` (active machine queue)
+- `D:/Aura/CONTINUE-HERE.md` and `D:/Aura/.planning/HANDOFF.json` (resume
+  pointer)
+- `D:/Aura/scripts/ralph/prd.json` only when the current turn explicitly
+  selects the Ralph queue
 
 Update this map only when the underlying contracts change. Otherwise, use it for orientation, not authority.

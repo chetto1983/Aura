@@ -1,13 +1,24 @@
-# Aura — Master Plan (single source of truth)
+# Aura Master Plan - Historical Predecessor
 
 > **Status: HISTORICAL — superseded by [prd.md](../prd.md). Preserved as evidence per prd.md §3.2. The 9-phase plan in prd.md is the current authority; the 8-step plan here is the predecessor whose decisions (D1-D13) and wave disposition (§6) are folded into prd.md §16.**
+
+**Do not execute this file as the active plan.** The active route is
+`D:/Aura/prd.md` plus `D:/Aura/.planning/deep-refactor/INDEX.md` and the
+current handoff files. Use this document only to understand historical decisions
+and rejected paths.
 
 **Versione:** 1.1 — Codex article integrated
 **Data:** 2026-05-14
 **Owner:** solo dev (master-direct)
-**Supersedes:** `docs/aura-restructure-prd.md` v2, `docs/aura-restructure-prd-REVIEW-1.md`, `docs/aura-restructure-prd-REVIEW-2.md`, `D:\tmp\aura-rebuild-strategy.md`, `docs/chat-interface-prd.md` (Wave 3.0), `.planning/CONTEXT-ENGINEERING-ROADMAP.md`, `.planning/wave1/fix_plan.md`, `.planning/wave2/fix_plan.md`, `.planning/wave3-agent-swarm/plan.md`.
+**Historical inputs integrated at the time:** `docs/aura-restructure-prd.md`
+v2, `docs/aura-restructure-prd-REVIEW-1.md`,
+`docs/aura-restructure-prd-REVIEW-2.md`,
+`D:\tmp\aura-rebuild-strategy.md`, `docs/chat-interface-prd.md` (Wave 3.0),
+`.planning/CONTEXT-ENGINEERING-ROADMAP.md`, `.planning/wave1/fix_plan.md`,
+`.planning/wave2/fix_plan.md`, `.planning/wave3-agent-swarm/plan.md`.
 **References integrated:** `D:\tmp\paper.md` (Kimi K2.5, agent-swarm reference), `D:\tmp\codex.md` (OpenAI — "Unrolling the Codex agent loop", Jan 23, 2026; single-loop default, prompt-cache discipline, MCP list_changed mid-conv trap).
-**Status:** ESECUTIVO. Una decisione per fork. Si commit-eseguibile a partire da Step 1 entro 2 ore di lettura.
+**Status:** HISTORICAL EVIDENCE ONLY. The original executable status is no
+longer valid; the 9-phase route in `D:/Aura/prd.md` is authoritative.
 
 **Changelog:**
 - v1.0 (2026-05-14) — synthesizer pass; 12 cross-cutting decisions, 8-step path, 22-dir target.

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-15T11:10:11+02:00",
+  "timestamp": "2026-05-15T12:26:11+02:00",
   "context": "deep-refactor",
   "phase": "Phase01B",
   "phase_name": "Establish Identity and Capability Grants",
@@ -150,27 +150,26 @@
     "go test ./..."
   ],
   "uncommitted_files": [
-    ".planning/HANDOFF.json",
-    ".planning/deep-refactor/.continue-here.md",
-    "CONTINUE-HERE.md",
-    "internal/db/migrations/migrations.go",
-    "internal/db/migrations/migrations_test.go",
-    "internal/api/auth/pending_test.go",
-    "internal/api/auth/store.go",
-    "internal/api/auth/store_test.go",
-    "internal/identity/store.go",
-    "internal/identity/store_test.go",
-    "internal/identity/types.go",
-    ".planning/deep-refactor/Phase01/subphase-summary.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md",
+    "AGENTS.md",
+    "docs/aura-cleanup-execution-map.md",
+    "docs/aura-master-plan.md",
+    "loops/aura-implementation/RALPH.md",
+    "prd.md",
+    ".planning/CONTEXT-ENGINEERING-ROADMAP.md",
+    ".planning/deep-refactor/INDEX.md",
+    ".planning/deep-refactor/Phase01/plan.md",
+    ".planning/deep-refactor/Phase01/benchmark.md",
+    ".planning/deep-refactor/Phase01/progress.md",
+    ".codex/skills/aura-plan-builder/SKILL.md (project-local ignored skill; changed by user request)",
+    ".codex/skills/aura-implementation-loop/SKILL.md (project-local ignored skill; changed by user request)",
+    "scripts/ralph/prd.json -> scripts/ralph/prd-completed-phase-c.json (pre-existing/unrelated; preserve unless queue work)",
     "scripts/ralph/progress.txt (pre-existing/unrelated; preserve unless queue work)",
-    "internal/telegram/tool_exec_helpers.go (pre-existing/unrelated; preserve unless Telegram tool-exec work)"
+    "docs/phase-01c-question-gate-scope.md (pre-existing/untracked; preserve unless Phase01C planning is selected)",
+    "scripts/ralph/prd.json (pre-existing/untracked; Ralph queue; preserve unless queue work)"
   ],
   "last_known_git": {
-    "head": "a00c7c86 refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)",
-    "status": "dirty after Phase01B2 implementation plus unrelated Ralph/Telegram changes"
+    "head": "20d36196 chore(telegram): delete sandbox_integration_test.go placeholder tests",
+    "status": "dirty after documentation/planning/skill alignment plus unrelated Ralph queue changes"
   },
   "next_action": "Start Phase01B3 dashboard bearer actor context as a separate implementation slice.",
   "context_notes": "Do not bundle tool capability checks, cron delegation, swarm delegation, or denial-event wiring into Phase01B3. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B parent remains open for B3-B7."

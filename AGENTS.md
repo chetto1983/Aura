@@ -9,10 +9,13 @@ context anchor, not the conversation history.
 1. Existing code behavior and tests.
 2. `D:\Aura\CLAUDE.md`.
 3. `D:\Aura\prd.md` (north-star deep-refactor PRD; supersedes `docs/aura-master-plan.md` and earlier iterations — those are historical evidence per prd.md §3.2).
-4. `D:\Aura\docs\aura-cleanup-execution-map.md` (operational map derived from prd.md).
-5. `D:\Aura\scripts\ralph\CLAUDE.md` for long-running slice execution.
+4. `D:\Aura\.planning\aura-deep-refactor-decisions.json`,
+   `D:\Aura\.planning\deep-refactor\INDEX.md`, current handoff files, and the
+   selected phase/sub-phase files for execution state.
+5. `D:\Aura\scripts\ralph\CLAUDE.md` only when the current turn explicitly
+   selects Ralph queue execution.
 6. Current user instructions in the active turn.
-7. Web search or model memory.
+7. Orientation/evidence docs, web search, or model memory.
 
 If these conflict, stop and name the conflict before editing.
 
@@ -54,6 +57,10 @@ Planning-state rule:
 - Root `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json` are the active route for
   the deep refactor.
+- The executable state is
+  `D:/Aura/.planning/deep-refactor/INDEX.md`, the current resume/handoff files,
+  and the selected phase or sub-phase `source.md`, `plan.md`, `benchmark.md`,
+  and `progress.md`.
 - Existing `.planning/CONTEXT-ENGINEERING-ROADMAP.md`,
   `.planning/wave1/fix_plan.md`, `.planning/wave2/fix_plan.md`, and
   `.planning/wave3-agent-swarm/plan.md` remain evidence and requirement mines,
@@ -65,6 +72,31 @@ Planning-state rule:
   7, and Wave 3 in Phase 8.
 - `docs/aura-restructure-prd*.md` review files explain why reconciliation was
   needed; they are not a competing route.
+- `docs/aura-cleanup-execution-map.md` is orientation only. Do not treat it as
+  mandatory startup state or as a completion source when it disagrees with PRD,
+  handoff, phase progress, or code.
+- Every planning document must have one visible role: canonical, resume,
+  orientation, phase-plan, reference, evidence, or archive.
+
+Phase benchmark rule:
+
+- Every phase and sub-phase must have a clear `benchmark.md` before it can be
+  called ready. The benchmark must name the exact command, live probe, fixture,
+  artifact, expected ground truth, pass/fail threshold, and the PRD gate it
+  proves.
+- Smoke tests are prohibited as phase completion evidence. A smoke check may
+  appear only as a boot/readiness precheck and must be labeled `precheck`, not
+  `benchmark`, `validation`, or `done`.
+- Benchmarks must assert behavior against ground truth: SQLite rows, API
+  responses, filesystem artifacts, durable events, rendered UI state, retrieved
+  source bytes, or provider/tool response fields. "It runs", "200 OK", nonzero
+  tool-call count, or "no panic" is never sufficient.
+- If a live benchmark cannot run because credentials, fixtures, or services are
+  missing, record it as `blocked` or `not run` with the missing input. Do not
+  downgrade it to a smoke test and do not mark the phase complete.
+- `progress.md`, handoff files, and final reports must distinguish passed
+  benchmarks, skipped prechecks, blocked live benchmarks, and unresolved
+  regressions.
 
 Project-local planning skills:
 
@@ -79,6 +111,21 @@ Project-local planning skills:
 - `to-issues`: use to convert a phase `plan.md` into atomic implementation
   slices when manual `scripts/ralph/prd.json` authoring would create drift.
   Keep slices vertical and independently verifiable.
+
+GSD compatibility:
+
+- GSD is not canonical for Aura deep-refactor work. The canonical route remains
+  `D:/Aura/prd.md`, `D:/Aura/.planning/aura-deep-refactor-decisions.json`,
+  `D:/Aura/.planning/deep-refactor/INDEX.md`, `$aura-plan-builder`, and
+  `$aura-implementation-loop`.
+- Do not run GSD commands directly to create Aura planning state, phase
+  folders, project state, commits, or verification reports.
+- GSD may be consulted only as a read-only pattern source for goal-backward
+  planning, vertical slice sizing, dependency/file ownership analysis,
+  plan-checking, and structured gap reports.
+- Any GSD-derived idea must be translated into Aura's `source.md`, `plan.md`,
+  `benchmark.md`, and `progress.md` contract, with adopted and rejected
+  assumptions recorded near the decision.
 
 Architecture/refactoring rule sources:
 
@@ -373,9 +420,12 @@ work, read only the minimum needed, in this order:
    `D:\Aura\.planning\deep-refactor\.continue-here.md` if they exist
 2. `D:\Aura\CLAUDE.md`
 3. `D:\Aura\prd.md` (current PRD; `docs/aura-master-plan.md` is historical)
-4. `D:\Aura\scripts\ralph\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
-5. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
-6. Directly affected source files
+4. `D:\Aura\.planning\deep-refactor\INDEX.md`
+5. The selected active phase or sub-phase folder
+6. `D:\Aura\.planning\progress.txt` if present; create or update only after a
+   slice actually ships
+7. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
+8. Directly affected source files
 
 Do not read the whole repository to feel safer. Make a small map, then act.
 

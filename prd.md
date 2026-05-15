@@ -1507,29 +1507,28 @@ Gate:
 
 ---
 
-## 8. Immediate Queue Direction
+## 8. Derived Queue Policy
 
-`scripts/ralph/prd.json` remains the machine queue. The queue should be judged against this PRD, not treated as the architecture itself.
+The canonical deep-refactor route is this PRD plus
+`.planning/aura-deep-refactor-decisions.json`. The executable state is
+`.planning/deep-refactor/INDEX.md`, the current handoff files, and the selected
+phase or sub-phase `source.md`, `plan.md`, `benchmark.md`, and `progress.md`.
 
-Current completed direction:
+`scripts/ralph/prd.json`, GSD artifacts, old wave plans, and audit plans are
+derived queues or evidence. They are valid only after being checked against the
+canonical PRD/ADR/phase files. If a queue conflicts with the PRD, current
+handoff, or phase progress, update or re-author the queue before execution.
 
-- `api` consolidation has started,
-- `storage` namespace has started,
-- `chat` and `channels` naming has started,
-- the old duplicate agent runner body was reduced.
+Current execution state on 2026-05-15:
 
-Next correct work:
-
-1. Finish the Telegram fixture before porting outbound behavior.
-2. Port Telegram outbound only with fixture protection.
-3. Merge runtime only after channel risk is controlled.
-4. Rename scheduler to cron.
-5. Consolidate tools under agent capabilities.
-6. Add structured learning events for recoverable tool errors.
-7. Rebuild RAG around typed memory layers and schema-aware retrieval.
-8. Route swarm and Telegram through the normalized path.
-
-If a queue item conflicts with this direction, update the queue before executing it.
+- Phase01A is implemented and Go-verified locally.
+- Phase01B1 and Phase01B2 are implemented and verified locally.
+- Phase01B remains open for B3-B7 integration slices.
+- The next canonical implementation slice is Phase01B3: dashboard bearer actor
+  context. Do not bundle tool capability checks, cron delegation, swarm
+  delegation, or denial-event wiring into that slice.
+- Phase01C and Ralph question-gate queue work remain parked until the canonical
+  route explicitly selects them.
 
 ---
 

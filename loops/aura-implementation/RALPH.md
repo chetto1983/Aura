@@ -31,9 +31,14 @@ Aura is a Go Telegram assistant with an embedded React dashboard. It is evolving
 Before implementing, read:
 
 1. `AGENTS.md`
-2. `.planning/STATE.md`
-3. `.planning/ROADMAP.md`
-4. Any slice-specific plan/doc/code touched by the goal
+2. `CONTINUE-HERE.md` if it exists
+3. `.planning/HANDOFF.json`
+4. `.planning/deep-refactor/.continue-here.md`
+5. `prd.md`
+6. `.planning/deep-refactor/INDEX.md`
+7. The selected phase or sub-phase `source.md`, `plan.md`, `benchmark.md`, and
+   `progress.md`
+8. Any slice-specific code touched by the goal
 
 Use Picobot (`D:\tmp\picobot`) as reference for agent-loop, cron, MCP, tool-registry, memory, and skill patterns. Copy patterns only when they fit Aura's review-gated second-brain model.
 
@@ -48,7 +53,8 @@ Each iteration starts with fresh context and uses persisted files as handoff, no
    - Read only the files needed for this slice.
 
 2. Plan
-   - Write a compact implementation note in `.planning/STATE.md` or the slice doc when the change is not trivial.
+   - Write a compact implementation note in the selected phase `progress.md` or
+     slice doc when the change is not trivial.
    - Define acceptance checks before editing.
    - Split work into backend, frontend, tests, and docs only if the slice needs all of them.
 
@@ -67,7 +73,8 @@ Each iteration starts with fresh context and uses persisted files as handoff, no
 5. Review
    - Inspect `git diff`.
    - Confirm no `.env`, database files, logs, binaries, generated raw wiki data, or unrelated user edits are staged.
-   - Update `.planning/STATE.md` with work completed, tests run, and next slice.
+   - Update the selected phase `progress.md` with work completed, tests run, and
+     next slice.
 
 6. Commit
    - Stage explicit paths only.

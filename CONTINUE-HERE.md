@@ -8,7 +8,7 @@ Current state as of 2026-05-15:
   had become noisy. Clean planning scaffolds were recreated under
   `D:/Aura/.planning/deep-refactor/` from `D:/Aura/prd.md`.
 - Current git HEAD observed:
-  `a00c7c86 refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)`.
+  `20d36196 chore(telegram): delete sandbox_integration_test.go placeholder tests`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
