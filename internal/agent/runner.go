@@ -237,24 +237,6 @@ func (r *Runner) Run(ctx context.Context, task Task) (Result, error) {
 	return out, err
 }
 
-func initialMessages(task Task) ([]llm.Message, error) {
-	if len(task.Messages) > 0 {
-		cp := make([]llm.Message, len(task.Messages))
-		copy(cp, task.Messages)
-		return cp, nil
-	}
-	prompt := strings.TrimSpace(task.Prompt)
-	if prompt == "" {
-		return nil, errors.New("agent runner: prompt or messages required")
-	}
-	messages := make([]llm.Message, 0, 2)
-	if system := strings.TrimSpace(task.SystemPrompt); system != "" {
-		messages = append(messages, llm.Message{Role: "system", Content: system})
-	}
-	messages = append(messages, llm.Message{Role: "user", Content: prompt})
-	return messages, nil
-}
-
 func (r *Runner) toolDefinitions(allowlist []string) []llm.ToolDefinition {
 	if r.tools == nil || len(allowlist) == 0 {
 		return nil
@@ -272,21 +254,4 @@ func (r *Runner) toolDefinitions(allowlist []string) []llm.ToolDefinition {
 	return out
 }
 
-// cleanToolList trims, lowercases, and dedupes the LLM-or-config-supplied
-// tool allowlist. Lowercasing is defense-in-depth: tool names in the registry
-// are canonical snake_case, but if a future schema mismatch or operator typo
-// produces "Web_Fetch" the allowlist would otherwise silently miss
-// "web_fetch" emitted by the LLM (F-018).
-func cleanToolList(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
-}
+

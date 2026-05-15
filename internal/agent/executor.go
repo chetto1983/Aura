@@ -163,21 +163,6 @@ func cloneToolArgs(args map[string]any) map[string]any {
 	return out
 }
 
-// limitToolContent truncates content to maxChars runes. Zero means unlimited.
-func limitToolContent(content string, maxChars int) string {
-	if maxChars <= 0 {
-		return content
-	}
-	runes := []rune(content)
-	if len(runes) <= maxChars {
-		return content
-	}
-	if maxChars <= 16 {
-		return string(runes[:maxChars])
-	}
-	return string(runes[:maxChars-15]) + "\n...[truncated]"
-}
-
 // redactToolError scrubs known credential patterns from a tool error before
 // logging. The full error still goes to the LLM via FormatToolError (F-038).
 func redactToolError(err error) string {

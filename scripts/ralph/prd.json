@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(agent): stateless RunTask helper (US-G01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "RunTaskDeps is intentionally a wider struct than Runner.Config so callers don't need to construct an intermediate Runner. The fields the dashboard mutates at runtime (MaxIterations, Timeout, ToolTimeout) move from Runner.mu-guarded fields to per-call parameters — the caller reads cfg fresh."
     },
     {
