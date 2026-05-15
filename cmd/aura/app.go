@@ -838,7 +838,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Restart:              a.restart,
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
-		Chat:  api.NewWebChatService(a.runner, a.deps.Tools),
+		Chat:  api.NewWebChatService(newWebChatDepsGetter(cfg, &a.deps)),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
@@ -879,6 +879,40 @@ func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest)
 		TokensTotal:      result.Tokens.TotalTokens,
 		Elapsed:          result.Elapsed,
 	}, nil
+}
+
+// newWebChatDepsGetter returns a lazy RunTaskDeps builder for api.NewWebChatService.
+// Returning nil when LLM is unconfigured disables the /api/chat endpoint.
+// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
+// live-tune of MaxIterations/Timeout propagates to the next RunTask without
+// mutating shared state.
+func newWebChatDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
+	if deps.LLM == nil {
+		return nil
+	}
+	return func() agent.RunTaskDeps {
+		timeoutSec := cfg.AuraBotTimeoutSec
+		if timeoutSec <= 0 {
+			timeoutSec = config.DefaultAuraBotTimeoutSec
+		}
+		maxIterations := cfg.AuraBotMaxIterations
+		if maxIterations <= 0 {
+			maxIterations = 5
+		}
+		return agent.RunTaskDeps{
+			LLM:             deps.LLM,
+			Tools:           deps.Tools,
+			Model:           cfg.LLMModel,
+			ReasoningEffort: cfg.ReasoningEffort,
+			PhantomGuard: &agent.PhantomToolGuard{
+				ToolNamesFn: deps.Tools.Names,
+			},
+			Logger:        deps.Logger,
+			MaxIterations: maxIterations,
+			Timeout:       time.Duration(timeoutSec) * time.Second,
+			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+		}
+	}
 }
 
 // scheduledTaskRunnerAdapter bridges cron.Handler.RunNow to tools.ScheduledTaskRunner.

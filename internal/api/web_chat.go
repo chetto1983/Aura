@@ -10,15 +10,13 @@ import (
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	tools "github.com/aura/aura/internal/agent/tools/registry"
 )
 
-// webChatService adapts agent.Runner to ChatService for the /api/chat
-// endpoint. Session state is in-memory and process-local; it deliberately
-// does NOT share the SessionStore / UserGate that the Telegram path owns.
+// webChatService calls agent.RunTask for the /api/chat endpoint.
+// Session state is in-memory and process-local; it deliberately does NOT share
+// the SessionStore / UserGate that the Telegram path owns.
 type webChatService struct {
-	runner *agent.Runner
-	tools  *tools.Registry
+	depsGetter func() agent.RunTaskDeps
 
 	mu       sync.Mutex
 	sessions map[string]*webChatSession
@@ -34,30 +32,30 @@ const (
 	webChatIdleTTL     = 30 * time.Minute
 )
 
-// NewWebChatService wires the web chat service against an existing runner +
-// tools registry. A nil runner returns nil so the caller can pass through
-// unconditionally.
-func NewWebChatService(runner *agent.Runner, registry *tools.Registry) ChatService {
-	if runner == nil {
+// NewWebChatService wires the web chat service with a lazy deps builder.
+// A nil getter returns nil so the caller can pass through unconditionally when
+// no LLM is configured.
+func NewWebChatService(depsGetter func() agent.RunTaskDeps) ChatService {
+	if depsGetter == nil {
 		return nil
 	}
 	return &webChatService{
-		runner:   runner,
-		tools:    registry,
-		sessions: make(map[string]*webChatSession),
+		depsGetter: depsGetter,
+		sessions:   make(map[string]*webChatSession),
 	}
 }
 
 func (s *webChatService) Chat(ctx context.Context, userID, message string) (ChatReply, error) {
-	if s == nil || s.runner == nil {
+	if s == nil || s.depsGetter == nil {
 		return ChatReply{}, errors.New("web chat: runner unavailable")
 	}
 	session := s.acquireSession(userID)
 	session.messages = append(session.messages, llm.Message{Role: "user", Content: message})
 
+	deps := s.depsGetter()
 	var allowlist []string
-	if s.tools != nil {
-		allowlist = s.tools.Names()
+	if deps.Tools != nil {
+		allowlist = deps.Tools.Names()
 	}
 
 	task := agent.Task{
@@ -66,7 +64,7 @@ func (s *webChatService) Chat(ctx context.Context, userID, message string) (Chat
 		ToolAllowlist: allowlist,
 		UserID:        userID,
 	}
-	result, err := s.runner.Run(ctx, task)
+	result, err := agent.RunTask(ctx, deps, task)
 	if err != nil {
 		s.rollbackLastUser(userID)
 		return ChatReply{}, fmt.Errorf("agent run: %w", err)

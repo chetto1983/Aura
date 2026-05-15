@@ -57,7 +57,7 @@
         "Single atomic commit prefix: refactor(api): migrate webChatService off agent.Runner (US-G03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Watch the deps-getter lifecycle: per-request build is safer than struct-stored RunTaskDeps because dashboard mutations of cfg.AuraBot* propagate immediately. Lazy build also keeps webChatService trivially constructable in tests."
     },
     {
