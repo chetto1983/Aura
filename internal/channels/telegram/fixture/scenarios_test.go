@@ -78,6 +78,62 @@ func TestCaptureWithCoT(t *testing.T) {
 	}
 }
 
+// TestCaptureFallback_EntityEditFailsToPlainText records the entity-edit
+// fallback path: Telegram rejects the first edit because of entity parsing,
+// the adapter retries with plain text (no entities), and delivery still
+// succeeds. This is the "fallback behavior" gate item in
+// .planning/deep-refactor/Phase02_Protect_Telegram/plan.md.
+func TestCaptureFallback_EntityEditFailsToPlainText(t *testing.T) {
+	content := "**bold** " + strings.Repeat("x", streamingMinThreshold)
+	tokens := []llm.Token{
+		{Content: content},
+		{Done: true, Usage: llm.TokenUsage{TotalTokens: 7}},
+	}
+	placeholder := &tele.Message{ID: 1, Chat: &tele.Chat{ID: 123}}
+
+	result := Capture(t, "fallback_entity_edit_to_plain_text", tokens, placeholder, WithEntityEditError(1))
+
+	if result.Response.Content != content {
+		t.Fatalf("Response.Content = %q, want %q", result.Response.Content, content)
+	}
+	if !result.Delivered {
+		t.Fatal("Delivered = false, want true after entity-edit fallback succeeded")
+	}
+
+	var failed, edits int
+	var sawPlainTextRetry bool
+	for _, c := range result.Calls {
+		if c.Method != "editMessageText" {
+			continue
+		}
+		edits++
+		if c.Failed {
+			failed++
+			continue
+		}
+		// The plain-text retry has no entities field at all.
+		if _, hasEnt := c.Body["entities"]; !hasEnt {
+			sawPlainTextRetry = true
+			continue
+		}
+		if s, ok := c.Body["entities"].(string); ok {
+			t := strings.TrimSpace(s)
+			if t == "" || t == "[]" {
+				sawPlainTextRetry = true
+			}
+		}
+	}
+	if failed != 1 {
+		t.Fatalf("failed editMessageText calls = %d, want 1 (the entity-bearing attempt)", failed)
+	}
+	if edits < 2 {
+		t.Fatalf("editMessageText calls = %d, want >= 2 (entity attempt + plain-text retry)", edits)
+	}
+	if !sawPlainTextRetry {
+		t.Fatal("no editMessageText recorded without entities (plain-text fallback missing)")
+	}
+}
+
 // TestCaptureWithToolCallAndEntityTable records a run where the model returns
 // a Markdown table (rendered to Telegram entities) and then signals a tool
 // call on the Done token. Delivered must be false because tool calls suppress
