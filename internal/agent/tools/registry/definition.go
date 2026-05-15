@@ -11,6 +11,20 @@ type ToolCallExample struct {
 	Arguments   map[string]any
 }
 
+// VisibilityTier controls when a tool appears in the LLM's active tool pool.
+// It is Aura-specific — not part of the MCP spec — and drives deferred-discovery
+// prompt-budget optimisation.
+type VisibilityTier string
+
+const (
+	// VisibilityAlwaysOn tools are loaded in every turn (discovery + control surface).
+	VisibilityAlwaysOn VisibilityTier = "always_on"
+	// VisibilityActiveTurn tools are loaded in every turn but may be trimmed under budget pressure.
+	VisibilityActiveTurn VisibilityTier = "active_turn"
+	// VisibilityDeferred tools are excluded from the default pool and discovered on-demand.
+	VisibilityDeferred VisibilityTier = "deferred"
+)
+
 // ToolDefinition is Aura's canonical tool contract. Tools may provide one
 // directly, while older tools are adapted from the Tool interface.
 type ToolDefinition struct {
@@ -19,6 +33,17 @@ type ToolDefinition struct {
 	Parameters         map[string]any
 	Examples           []ToolCallExample
 	RequiredCapability identity.Capability
+
+	// MCP-standard behavioral hints. All default to false (fail-closed: "could
+	// write or delete") so unmigrated tools are treated conservatively.
+	ReadOnlyHint    bool
+	DestructiveHint bool
+	IdempotentHint  bool
+	OpenWorldHint   bool
+
+	// VisibilityTier controls when this tool appears in the LLM's active pool.
+	// Default: VisibilityActiveTurn (set by normalizeToolDefinition).
+	VisibilityTier VisibilityTier
 }
 
 // ToolDefinitionProvider lets tools own their LangChain-style definition
@@ -61,6 +86,9 @@ func normalizeToolDefinition(t Tool, def ToolDefinition) ToolDefinition {
 	}
 	if def.RequiredCapability == "" {
 		def.RequiredCapability = identity.CapabilityToolExecute
+	}
+	if def.VisibilityTier == "" {
+		def.VisibilityTier = VisibilityActiveTurn
 	}
 	return def
 }

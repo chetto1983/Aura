@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "MCP source: docs/cli-printing-press/AGENTS.md:33 quote 'MCP hosts use readOnlyHint / destructiveHint / idempotentHint / openWorldHint to decide when to ask for permission. Missing annotations default to could write or delete.' Mirror that vocabulary exactly so MCP-imported tools forward without translation. exclusive flag NOT added — Aura already uses ErrAwaitingUserInput (Phase-D) for exclusivity."
     },
     {
