@@ -1,0 +1,79 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-C — telegram-wrapper purity tail. Phase-B closed the obvious moves (6 file moves + closure report). This arc removes the 3 remaining files in internal/telegram/ that still mix channel-neutral logic into the Telegram package, plus fixes the closure report drift. Each story is ONE atomic commit on master. Suite stays green (go build ./..., go vet ./..., go test ./...). NO NEW FEATURES — only refactor + report fix. After this arc closes, internal/telegram/ should be ~100% Telegram-protocol code and the closure report numbers should match reality. Then Phase01A2 (run_outbox table) can start.",
+  "userStories": [
+    {
+      "id": "US-C01",
+      "title": "Extract agent.NewSnapshotFromTurnStats constructor + collapse conversation_snapshot.go to thin wrappers",
+      "description": "internal/telegram/conversation_snapshot.go (62 LOC) has an inline TurnStats→Snapshot transformation (lines 23-46, ~24 fields copied) buried inside (b *Bot).storeOrchestrationSnapshot. The transformation is channel-neutral and belongs in internal/agent/. Extract a constructor `agent.NewSnapshotFromTurnStats(stats agent.TurnStats, now time.Time) agent.Snapshot` in internal/agent/session.go (or new internal/agent/snapshot_builder.go). Update Bot.storeOrchestrationSnapshot to call the constructor — file shrinks from 62 to ~30 LOC. Tests in conversation_snapshot_test.go stay green (they test storeOrchestrationSnapshot end-to-end, not the inline copy). Add a focused test for NewSnapshotFromTurnStats in internal/agent/ asserting all fields propagate.",
+      "acceptanceCriteria": [
+        "internal/agent/ has a NewSnapshotFromTurnStats(stats TurnStats, now time.Time) Snapshot function with godoc",
+        "internal/agent has a focused test asserting NewSnapshotFromTurnStats copies all expected fields including slice-clone behavior for PromptModules/ToolsExposed/ToolsCalled/ReadSkills",
+        "internal/telegram/conversation_snapshot.go reduced to ~30 LOC: Bot methods delegate to the new constructor + sessionStore + cfg.TraceRetentionDays prune",
+        "internal/telegram/conversation_snapshot_test.go remains green without modification (the public Bot API is unchanged)",
+        "internal/channels/telegram/invocation_builder.go:223 caller unchanged (still calls b.StoreOrchestrationSnapshot)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Smallest slice. Pure extraction — the orchestrationSnapshot type alias in telegram/conversation_snapshot.go (`= agent.Snapshot`) confirms the type itself already lives in agent. Only the BUILDER lives in telegram. Move the builder."
+    },
+    {
+      "id": "US-C02",
+      "title": "Split tool_exec_helpers.go — channel-neutral core to internal/agent/tools/registry, thin Telegram wrapper stays",
+      "description": "internal/telegram/tool_exec_helpers.go (145 LOC) contains 3 functions: ChatIDFromTeleContext(c tele.Context) int64 — Telegram-only helper, ~10 LOC; (b *Bot).executeToolCalls(...) — iterates tool calls, channel-neutral logic ~100 LOC; (b *Bot).ExecToolCalls(...) — exported wrapper, ~10 LOC. The middle function is the real meat and is channel-neutral. Move executeToolCalls logic into internal/agent/tools/registry/ as a package function `ExecuteToolCalls(ctx, runner, convCtx, userID, calls, toolsExposed, readSkills) agent.ToolExecutionSummary` taking a runner interface (Bot will implement it). The Telegram-side file shrinks to: ChatIDFromTeleContext helper + the two Bot methods that pass-through to the new package function with chatID extracted from tele.Context.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry has a new file (e.g. exec_helpers.go) exposing ExecuteToolCalls as a package function",
+        "ExecuteToolCalls signature is channel-neutral: takes a runner interface, chatID/userID, calls, etc. — no tele.Context",
+        "Tests for ExecuteToolCalls exist in internal/agent/tools/registry covering at minimum: success path, tool error propagation, summary aggregation",
+        "internal/telegram/tool_exec_helpers.go reduced to <60 LOC: ChatIDFromTeleContext + thin Bot wrappers calling the package function",
+        "MaxToolLoopIterations and TerminalToolPolicyEnabled (constants from the old file) — preserve in their original or appropriate location; document any move in the commit",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent/tools): extract ExecuteToolCalls channel-neutral core (US-C02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Medium slice. The b.executeToolCalls body needs careful extraction — it likely accesses b.fields. Use a small runner interface so Bot satisfies it without exposing all of *Bot internals."
+    },
+    {
+      "id": "US-C03",
+      "title": "Split conversation_terminal.go — agent-loop core to internal/agent, thin Telegram edit wrapper stays",
+      "description": "internal/telegram/conversation_terminal.go (68 LOC) has 2 functions: FinalizeTerminalTool(ctx, c tele.Context, convCtx, userID, placeholder *tele.Message, rawToolResult, stats) — exported entry point; finalizeTerminalToolWithNoToolLLM(...same args) — does an LLM round without tools then edits the placeholder. The 'no-tool LLM round' logic is agent-loop concern; only the final 'edit the placeholder via tele.Context' is Telegram-specific. Extract the agent-loop part into internal/agent/ as FinalizeAfterTerminalTool(ctx, runner, convCtx, userID, rawToolResult, stats) (string, bool) returning the final text + success bool. The Telegram-side keeps the wrapper that calls the agent function then edits the *tele.Message placeholder.",
+      "acceptanceCriteria": [
+        "internal/agent/ has FinalizeAfterTerminalTool (or similarly named) returning (string, bool) — text to deliver + ok",
+        "Test for FinalizeAfterTerminalTool in internal/agent covering: success path with non-empty text, empty text fallback, LLM error path",
+        "internal/telegram/conversation_terminal.go reduced to <40 LOC: thin wrapper that calls the agent function + edits *tele.Message via tele.Context on success",
+        "Behavior preserved: Telegram placeholder is still edited with the final text and the same fallback policy as before",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent): extract FinalizeAfterTerminalTool from telegram (US-C03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Smallest of the three splits. The runner/LLM dependency must be injected — likely via the same runner interface as US-C02 (if you do C02 first the interface is already there)."
+    },
+    {
+      "id": "US-C04",
+      "title": "Fix telegram-cleanup-arc-closure.md drift — update LOC numbers to match reality",
+      "description": ".planning/telegram-cleanup-arc-closure.md was written during US-B07 with stale LOC numbers: claims 2530 prod LOC total, but actual at commit 9960a05e and at HEAD is 2778 LOC. Every per-file row is off by 5-48 LOC. After US-C01..C03 land, the numbers will drift further. Update the report with the post-C03 actual values: re-run wc -l on every file in internal/telegram/, regenerate the LOC table, update the TOTAL, update the 'Baseline (post US-A19)' line if needed, and append a 'Post Phase-C' section documenting the further reductions from C01/C02/C03 with their commit SHAs. Keep the architecture-conformance narrative (section 3) but update any LOC-specific claims.",
+      "acceptanceCriteria": [
+        ".planning/telegram-cleanup-arc-closure.md LOC table matches `wc -l internal/telegram/*.go` (excluding _test.go) at HEAD",
+        "TOTAL row reflects actual prod LOC at HEAD",
+        "Report has a new 'Post Phase-C' section listing US-C01/C02/C03 with commit SHAs and LOC delta per file",
+        "Criterion check restated: prod LOC ≤ 2800 — show actual value at HEAD and pass/fail",
+        "No new claims beyond what the code supports — verify each Telegram-concern justification against the file content",
+        "Single atomic commit prefix: docs(telegram): refresh closure report LOC numbers post Phase-C (US-C04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Pure documentation slice. Must run AFTER C01/C02/C03 land so numbers are final. No code changes — just update the markdown file."
+    }
+  ]
+}
