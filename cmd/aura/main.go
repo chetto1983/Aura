@@ -25,6 +25,7 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/logging"
+	"github.com/aura/aura/internal/secrets"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
@@ -268,6 +269,15 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	config.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = openedDBPath
 
+	// US-H03: migrate legacy .env secrets to SQLite (idempotent — no-op after
+	// the first post-upgrade boot), then overlay SQLite values on top of the
+	// env-loaded config. Precedence: SQLite secrets table > env var > empty.
+	secretsStore := secrets.NewSQLiteStore(pool)
+	if _, err := secrets.ImportFromDotEnv(context.Background(), secretsStore, cfg.EnvPath, activeLogger); err != nil {
+		activeLogger.Warn("secrets: .env migration failed", "error", err)
+	}
+	applySecretsToConfig(context.Background(), secretsStore, cfg)
+
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
 	// env + settings overlay, the install is fresh. Open a loopback-only
 	// HTTP server with a setup form, block until the user submits, then
@@ -296,6 +306,8 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		reconcileBestDefaults(context.Background(), settingsStore, newCfg, logger)
 		config.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		newCfg.DBPath = openedDBPath
+		// SQLite always wins over env even after the wizard re-load.
+		applySecretsToConfig(context.Background(), secretsStore, newCfg)
 		cfg = newCfg
 	}
 
@@ -360,7 +372,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// internal/telegram) to avoid an import cycle from internal/telegram back
 	// to channels/telegram.
 	{
-		hub, hubErr := telegramadapter.NewHub(bot, logger)
+		hub, hubErr := telegramadapter.NewHub(bot, logger, app.deps.RunStore)
 		if hubErr != nil {
 			return nil, activeLogger, fmt.Errorf("create telegram hub: %w", hubErr)
 		}
