@@ -145,6 +145,8 @@ type Router struct {
 	buffers map[string]*Buffer
 }
 
+var _ chat.OutboundAdapter = (*Router)(nil)
+
 // NewRouter constructs an empty Router. Wire it into the Hub once:
 //
 //	router := webadapter.NewRouter()

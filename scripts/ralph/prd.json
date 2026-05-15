@@ -126,7 +126,7 @@
         "Single atomic commit prefix: chore(telegram): cleanup arc closure + diagram-conformance report (US-B07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Closes the arc. Verifies the repo mirrors the target architecture diagram (Chat Apps row). No behavior change. After this, the next milestone (WhatsApp + production + simplification with 2026 patterns) can start."
     }
   ]

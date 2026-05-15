@@ -23,6 +23,8 @@ type Outbound struct {
 	logger  *slog.Logger
 }
 
+var _ chat.OutboundAdapter = (*Outbound)(nil)
+
 // Config tunes the Outbound. A nil Logger falls back to slog.Default().
 type Config struct {
 	Logger *slog.Logger

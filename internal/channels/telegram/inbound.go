@@ -30,6 +30,8 @@ const ChannelDataKeyContext = "tele_context"
 // progressive edits and final delivery.
 type Inbound struct{}
 
+var _ chat.InboundAdapter = Inbound{}
+
 // New returns a freshly constructed Inbound adapter. No configuration is
 // required today; the constructor exists so future wiring can pass in a
 // logger or principal-resolver without breaking callers.

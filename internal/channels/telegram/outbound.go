@@ -39,6 +39,8 @@ type Outbound struct {
 	logger *slog.Logger
 }
 
+var _ chat.OutboundAdapter = (*Outbound)(nil)
+
 // NewOutbound constructs an Outbound adapter.  A nil logger falls back to
 // slog.Default().
 func NewOutbound(logger *slog.Logger) *Outbound {

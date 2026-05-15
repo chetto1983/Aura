@@ -76,18 +76,17 @@ Current total: **3316 prod LOC / 2656 test LOC**
 
 ## Remaining debt — files clearly NOT Telegram-specific
 
-These files belong in telegram/ only for historical reasons and should be
-relocated in a follow-up story:
+All 6 non-Telegram-specific files have been resolved in the US-B01..B06 arc:
 
-| File | LOC | Target |
-|------|-----|--------|
-| helpers.go | 136 | cmd/aura/helpers.go (or internal/config/) |
-| runtime_settings.go | 197 | internal/config/runtime_settings.go |
-| conversation_archive.go | 90 | internal/conversation/ |
-| conversation_format.go | 28 | Delete — callers can import agent directly |
-| adapters.go | 56 | cmd/aura/adapters.go |
-| tools_provider.go | 56 | internal/agent/toolsprovider.go |
-| **Subtotal** | **563** | Moving these drops prod LOC to ~2753 |
+| File | LOC | Target | Resolved |
+|------|-----|--------|---------|
+| helpers.go | 136 | cmd/aura/helpers.go | resolved in 7d099be7 (US-B05) |
+| runtime_settings.go | 197 | internal/config/runtime_settings.go | resolved in 430371e6 (US-B06) |
+| conversation_archive.go | 90 | internal/conversation/ | resolved in 9b6626f9 (US-B04) |
+| conversation_format.go | 28 | Delete — callers import agent directly | resolved in 5b19fe46 (US-B01) |
+| adapters.go | 56 | cmd/aura/adapters.go | resolved in e7ba8b4d (US-B02) |
+| tools_provider.go | 56 | internal/agent/toolsprovider.go | resolved in 13854ef1 (US-B03) |
+| **Subtotal** | **563** | Dropped prod LOC from 3316 → **2530** | All RESOLVED ✅ |
 
 ---
 

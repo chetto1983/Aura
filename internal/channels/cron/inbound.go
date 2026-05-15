@@ -13,6 +13,8 @@ import (
 // the ChannelCron pipeline. Registered with the cron Hub at boot.
 type InboundAdapter struct{}
 
+var _ chat.InboundAdapter = InboundAdapter{}
+
 // New returns an InboundAdapter ready for Hub registration.
 func New() *InboundAdapter { return &InboundAdapter{} }
 
