@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aura/aura/internal/api/auth"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -25,8 +26,8 @@ func (b *Bot) onStart(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 	username := c.Sender().Username
 
-	if b.isAllowlisted(userID) {
-		return b.sendLoginToken(c, userID, "Welcome back to Aura.")
+	if allowed, source := b.allowlistIdentitySource(userID); allowed {
+		return b.sendLoginToken(c, userID, source, "Welcome back to Aura.")
 	}
 
 	claimed, err := b.tryBootstrapUser(userID)
@@ -39,7 +40,7 @@ func (b *Bot) onStart(c tele.Context) error {
 			"user_id", userID,
 			"username", username,
 		)
-		return b.sendLoginToken(c, userID, "Welcome to Aura. You claimed this first-run install.")
+		return b.sendLoginToken(c, userID, auth.SourceTelegramBootstrap, "Welcome to Aura. You claimed this first-run install.")
 	}
 
 	if b.rt == nil || b.rt.authDB == nil {
@@ -174,8 +175,8 @@ func (b *Bot) DenyAccess(ctx context.Context, userID string) error {
 
 func (b *Bot) onLogin(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
-	if b.isAllowlisted(userID) {
-		return b.sendLoginToken(c, userID, "Here is a fresh dashboard token.")
+	if allowed, source := b.allowlistIdentitySource(userID); allowed {
+		return b.sendLoginToken(c, userID, source, "Here is a fresh dashboard token.")
 	}
 
 	claimed, err := b.tryBootstrapUser(userID)
@@ -192,7 +193,7 @@ func (b *Bot) onLogin(c tele.Context) error {
 			"user_id", userID,
 			"username", c.Sender().Username,
 		)
-		return b.sendLoginToken(c, userID, "Welcome to Aura. You claimed this first-run install.")
+		return b.sendLoginToken(c, userID, auth.SourceTelegramBootstrap, "Welcome to Aura. You claimed this first-run install.")
 	}
 
 	b.logger.Warn("login token requested by non-allowlisted user",
@@ -213,23 +214,32 @@ func (b *Bot) tryBootstrapUser(userID string) (bool, error) {
 }
 
 func (b *Bot) isAllowlisted(userID string) bool {
+	ok, _ := b.allowlistIdentitySource(userID)
+	return ok
+}
+
+func (b *Bot) allowlistIdentitySource(userID string) (bool, string) {
 	if b.cfg != nil && b.cfg.IsAllowlisted(userID) {
-		return true
+		return true, auth.SourceTelegramEnvAllowlist
 	}
 	if b.rt == nil || b.rt.authDB == nil {
-		return false
+		return false, ""
 	}
 	ok, err := b.rt.authDB.IsUserAllowed(context.Background(), userID)
 	if err != nil {
 		b.logger.Warn("bootstrap allowlist lookup failed", "user_id", userID, "error", err)
-		return false
+		return false, ""
 	}
-	return ok
+	return ok, ""
 }
 
-func (b *Bot) sendLoginToken(c tele.Context, userID, prefix string) error {
+func (b *Bot) sendLoginToken(c tele.Context, userID, identitySource, prefix string) error {
 	if b.rt == nil || b.rt.authDB == nil {
 		return c.Send(prefix + "\n\nDashboard auth is not available in this run.")
+	}
+	if _, err := b.rt.authDB.EnsureTelegramAllowlistedIdentity(context.Background(), userID, identitySource); err != nil {
+		b.logger.Error("telegram identity ensure failed", "user_id", userID, "error", err)
+		return c.Send("I could not prepare dashboard access. Check the app logs and try /login again.")
 	}
 	token, err := b.rt.authDB.Issue(context.Background(), userID)
 	if err != nil {

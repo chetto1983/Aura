@@ -1,3 +1,49 @@
+## Reference registrata per Aura (2026-05-15)
+
+Status: adopted reference map for Aura planning and implementation workflow,
+not an executable queue and not a competing master plan.
+
+Re-read these local source files before using the pattern in a slice:
+
+- `D:/tmp/cli-printing-press/AGENTS.md`
+- `D:/tmp/cli-printing-press/README.md`
+- `D:/tmp/cli-printing-press/ONBOARDING.md`
+- `D:/tmp/cli-printing-press/docs/PIPELINE.md`
+- `D:/tmp/cli-printing-press/docs/SKILLS.md`
+- `D:/tmp/cli-printing-press/skills/printing-press/SKILL.md`
+- `D:/tmp/cli-printing-press/internal/cli/dogfood.go`
+- `D:/tmp/cli-printing-press/internal/cli/verify.go`
+- `D:/tmp/cli-printing-press/internal/cli/scorecard.go`
+- `D:/tmp/cli-printing-press/internal/cli/shipcheck.go`
+
+Adopt for Aura:
+
+- Separate machine-readable state from human-facing output.
+- Keep parent skills lean and load `references/` only when the slice needs them.
+- Treat implementation state separately from plan quality.
+- Use one explicit shipcheck/benchmark block per slice: tests, probes,
+  artifact diffs, durable rows, metrics, and known blocked probes.
+- Keep secret/PII rules close to the workflow that can expose data.
+- Let deterministic code own checks; reserve agents for judgment and review.
+
+Reject or defer for Aura:
+
+- Do not adopt the CLI generator, public library publishing flow, or template
+  tree as Aura architecture.
+- Do not treat Printing Press as a canonical route over `D:/Aura/prd.md` and
+  `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
+- Do not add browser/API sniffing unless a later bounded phase requires it.
+- Do not copy Claude-Code-specific skill frontmatter until Aura's skill loader
+  compatibility is explicit.
+
+Destination mapping:
+
+- `D:/Aura/.codex/skills/aura-plan-builder/SKILL.md`
+- `D:/Aura/.codex/skills/aura-implementation-loop/SKILL.md`
+- Per-phase `benchmark.md` files under `D:/Aura/.planning/deep-refactor`
+- Phase04/Phase05 planning sources for runtime/tool consolidation
+- Phase08 planning sources for swarm/agent-loop trace quality
+
 # cli-printing-press — Studio per Aura
 
 Data: 2026-05-15

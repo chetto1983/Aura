@@ -2,9 +2,14 @@ package tools
 
 import (
 	"context"
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/storage/search"
 )
 
@@ -43,6 +48,117 @@ func TestRegistryDefinitionsAndExecute(t *testing.T) {
 	}
 	if result != "ok" {
 		t.Errorf("Execute() = %q, want ok", result)
+	}
+}
+
+func TestRegistryExecuteRequiresIdentityGrant(t *testing.T) {
+	db, identityStore, actor := newRegistryIdentityEnv(t)
+	reg := NewRegistry(nil)
+	tool := &recordingRegistryTool{name: "fake"}
+	reg.Register(tool)
+
+	ctx := identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actor.ID)
+	if _, err := reg.Execute(ctx, "fake", map[string]any{"query": "private value"}); err == nil {
+		t.Fatal("Execute without grant succeeded, want denial")
+	}
+	if tool.executed {
+		t.Fatal("tool executed without required grant")
+	}
+	assertRegistryScalar(t, db, `
+SELECT COUNT(*)
+FROM authz_decisions
+WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? AND decision = ? AND reason = ?
+`, 1, actor.ID, identity.CapabilityToolExecute, "tool", "fake", identity.DecisionDeny, "missing_grant")
+
+	if _, err := identityStore.CreateGrant(context.Background(), identity.GrantParams{
+		ID:          "grant:test:tool.execute",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  identity.CapabilityToolExecute,
+		Resource:    identity.ResourceRef{Type: "tool", ID: "fake"},
+	}); err != nil {
+		t.Fatalf("create tool grant: %v", err)
+	}
+	result, err := reg.Execute(ctx, "fake", map[string]any{"query": "private value"})
+	if err != nil {
+		t.Fatalf("Execute with grant error = %v", err)
+	}
+	if result != "ok:fake" {
+		t.Fatalf("Execute result = %q, want ok:fake", result)
+	}
+	if !tool.executed {
+		t.Fatal("tool did not execute after grant")
+	}
+	assertRegistryScalar(t, db, `
+SELECT COUNT(*)
+FROM authz_decisions
+WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? AND decision = ? AND reason = ?
+`, 1, actor.ID, identity.CapabilityToolExecute, "tool", "fake", identity.DecisionAllow, "active_grant")
+}
+
+func TestRegistryExecuteUsesToolSpecificCapability(t *testing.T) {
+	db, identityStore, actor := newRegistryIdentityEnv(t)
+	reg := NewRegistry(nil)
+	tool := &recordingRegistryTool{
+		name:       "fake",
+		capability: identity.ToolExecuteCapability("fake"),
+	}
+	reg.Register(tool)
+
+	if _, err := identityStore.CreateGrant(context.Background(), identity.GrantParams{
+		ID:          "grant:test:broad-tool",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  identity.CapabilityToolExecute,
+		Resource:    identity.ResourceRef{Type: "tool", ID: "fake"},
+	}); err != nil {
+		t.Fatalf("create broad tool grant: %v", err)
+	}
+
+	ctx := identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actor.ID)
+	if _, err := reg.Execute(ctx, "fake", nil); err == nil {
+		t.Fatal("Execute with broad grant succeeded, want tool-specific denial")
+	}
+	if tool.executed {
+		t.Fatal("tool executed without tool-specific grant")
+	}
+	assertRegistryScalar(t, db, `
+SELECT COUNT(*)
+FROM authz_decisions
+WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? AND decision = ?
+`, 1, actor.ID, identity.ToolExecuteCapability("fake"), "tool", "fake", identity.DecisionDeny)
+
+	if _, err := identityStore.CreateGrant(context.Background(), identity.GrantParams{
+		ID:          "grant:test:narrow-tool",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  identity.ToolExecuteCapability("fake"),
+		Resource:    identity.ResourceRef{Type: "tool", ID: "fake"},
+	}); err != nil {
+		t.Fatalf("create narrow tool grant: %v", err)
+	}
+	if _, err := reg.Execute(ctx, "fake", nil); err != nil {
+		t.Fatalf("Execute with tool-specific grant error = %v", err)
+	}
+	if !tool.executed {
+		t.Fatal("tool did not execute after tool-specific grant")
+	}
+}
+
+func TestRegistryExecuteWithoutAuthorizerPreservesCompatibility(t *testing.T) {
+	reg := NewRegistry(nil)
+	tool := &recordingRegistryTool{name: "fake"}
+	reg.Register(tool)
+
+	result, err := reg.Execute(context.Background(), "fake", nil)
+	if err != nil {
+		t.Fatalf("Execute without authorizer error = %v", err)
+	}
+	if result != "ok:fake" {
+		t.Fatalf("Execute result = %q, want ok:fake", result)
+	}
+	if !tool.executed {
+		t.Fatal("tool did not execute without authorizer")
 	}
 }
 
@@ -264,6 +380,72 @@ func TestKnownToolDefinitionsIncludeSpecificExamples(t *testing.T) {
 
 type namedFakeTool struct {
 	name string
+}
+
+type recordingRegistryTool struct {
+	name       string
+	capability identity.Capability
+	executed   bool
+}
+
+func (t *recordingRegistryTool) Name() string { return t.name }
+func (t *recordingRegistryTool) Description() string {
+	return "Recording registry tool"
+}
+func (t *recordingRegistryTool) Parameters() map[string]any {
+	return map[string]any{"type": "object"}
+}
+func (t *recordingRegistryTool) RequiredCapability() identity.Capability {
+	return t.capability
+}
+func (t *recordingRegistryTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	t.executed = true
+	return "ok:" + t.name, nil
+}
+
+func newRegistryIdentityEnv(t *testing.T) (*sql.DB, *identity.Store, identity.Actor) {
+	t.Helper()
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "registry-auth.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	identityStore, err := identity.NewStore(db)
+	if err != nil {
+		t.Fatalf("identity store: %v", err)
+	}
+	principal, _, err := identityStore.CreateOrResolvePrincipal(context.Background(), identity.PrincipalParams{
+		ID:          "principal:test",
+		Kind:        identity.PrincipalKindHuman,
+		DisplayName: "Registry Test",
+		Status:      identity.PrincipalStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("create principal: %v", err)
+	}
+	actor, err := identityStore.CreateActor(context.Background(), identity.ActorParams{
+		ID:          "actor:test",
+		PrincipalID: principal.ID,
+		ActorType:   identity.ActorTypeSession,
+	})
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	return db, identityStore, actor
+}
+
+func assertRegistryScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {
+	t.Helper()
+	var got int
+	if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+		t.Fatalf("query scalar: %v\nquery: %s", err, query)
+	}
+	if got != want {
+		t.Fatalf("scalar = %d, want %d\nquery: %s\nargs: %#v", got, want, query, args)
+	}
 }
 
 func (t namedFakeTool) Name() string        { return t.name }

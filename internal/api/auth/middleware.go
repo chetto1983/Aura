@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/aura/aura/internal/identity"
 )
 
 // userIDKey is the context key the middleware uses to stash the resolved
@@ -13,11 +15,20 @@ import (
 // UserIDFromContext. The key is unexported and the value type is private
 // so no other package can spoof it.
 type userIDKey struct{}
+type actorIDKey struct{}
 
 // UserIDFromContext returns the user ID resolved by RequireBearer, or "" if
 // the request didn't go through the middleware.
 func UserIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(userIDKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ActorIDFromContext returns the identity actor resolved by RequireBearer.
+func ActorIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(actorIDKey{}).(string); ok {
 		return v
 	}
 	return ""
@@ -72,6 +83,9 @@ func RequireBearer(store TokenReader, allowlist AllowlistFunc, logger *slog.Logg
 			return
 		}
 		ctx := context.WithValue(r.Context(), userIDKey{}, userID)
+		actorID := identity.TelegramSessionActorID(userID)
+		ctx = context.WithValue(ctx, actorIDKey{}, actorID)
+		ctx = identity.WithActorID(ctx, actorID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

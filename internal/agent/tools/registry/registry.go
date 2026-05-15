@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -66,6 +68,13 @@ func (t categorizedTool) Definition() ToolDefinition {
 		return provider.Definition()
 	}
 	return ToolDefinition{}
+}
+
+func (t categorizedTool) RequiredCapability() identity.Capability {
+	if provider, ok := t.Tool.(ToolCapabilityProvider); ok {
+		return provider.RequiredCapability()
+	}
+	return ""
 }
 
 // Registry stores tools and dispatches tool calls by name.
@@ -250,6 +259,19 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	if !ok {
 		return "", errors.New("tool not found")
 	}
+	decision, capability, err := authorizeToolExecution(ctx, name, t)
+	if err != nil {
+		if r.logger != nil {
+			r.logger.Warn(
+				"tool authorization denied",
+				"tool", name,
+				"capability", string(capability),
+				"decision", string(decision.Decision),
+				"reason", decision.Reason,
+			)
+		}
+		return "", err
+	}
 
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
@@ -279,6 +301,31 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 		r.logger.Info("tool completed", "tool", name, "elapsed", elapsed, "bytes", len(result))
 	}
 	return result, nil
+}
+
+func authorizeToolExecution(ctx context.Context, name string, t Tool) (identity.AuthorizationDecision, identity.Capability, error) {
+	capability := requiredCapabilityForTool(t)
+	authorizer, ok := identity.AuthorizerFromContext(ctx)
+	if !ok {
+		return identity.AuthorizationDecision{
+			Capability: capability,
+			Resource:   identity.ResourceRef{Type: "tool", ID: name},
+			Decision:   identity.DecisionAllow,
+			Reason:     "authorizer_not_configured",
+		}, capability, nil
+	}
+	decision, err := authorizer.Authorize(ctx, identity.AuthorizeParams{
+		ActorID:    identity.ActorIDFromContext(ctx),
+		Capability: capability,
+		Resource:   identity.ResourceRef{Type: "tool", ID: name},
+	})
+	if err != nil {
+		return decision, capability, fmt.Errorf("tool authorization failed: %w", err)
+	}
+	if decision.Decision != identity.DecisionAllow {
+		return decision, capability, fmt.Errorf("tool %q is not authorized for capability %q", name, capability)
+	}
+	return decision, capability, nil
 }
 
 // PrepareVectorReader wires the *ToolVectorIndex onto the registry as the

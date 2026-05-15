@@ -1,0 +1,339 @@
+# Aura Planning Progress
+
+## [2026-05-15] - Deep-refactor planning tree recreated cleanly (Codex)
+
+- The previous phase folders under `D:/Aura/.planning/deep-refactor/` were
+  intentionally deleted by the user because they had become noisy.
+- Recreated a clean phase index at
+  `D:/Aura/.planning/deep-refactor/INDEX.md`.
+- Recreated `Phase01/` as the parent/master planning folder with canonical
+  child folders under `Phase01/subphases/`:
+  `Phase01_Stabilize_Map`, `Phase01A_Run_Event_Foundation`,
+  `Phase01B_Identity_Capability_Grants`, and `Phase01C_Question_Gate`.
+- Recreated standalone planning scaffolds for Phase02 through Phase09.
+- Every recreated phase has `plan.md`, `source.md`, `benchmark.md`, and
+  `progress.md`.
+- Status is intentionally conservative: self-audited scaffold, not verified.
+- Updated `CONTINUE-HERE.md`, `.planning/HANDOFF.json`, and
+  `.planning/deep-refactor/.continue-here.md` to point future agents at the
+  clean tree.
+- Next action: use `$aura-plan-builder` to promote
+  `Phase01/subphases/Phase01A_Run_Event_Foundation` from scaffold to verified
+  plan, then use `$aura-implementation-loop` for baseline tests and one bounded
+  implementation slice.
+- Validation: required-file contract passed for 53 phase files;
+  `HANDOFF.json` parsed with `ConvertFrom-Json`; deep-refactor Markdown count
+  is 55 files. Go tests were not run because this was planning-only.
+
+## [2026-05-15] - Phase01A storage foundation first patch shipped locally (Codex)
+
+- Promoted Phase01A from generic scaffold to source-audited local plan.
+- Implemented migration version 6 for `runs`, `run_events`, `run_outbox`,
+  `run_idempotency_keys`, and `audit_events`.
+- Added `D:/Aura/internal/storage/runs` repository with tests for inbound
+  idempotency, per-run event ordering, replay, terminal snapshot persistence,
+  and outbox delivery idempotency.
+- Deferred `internal/chat.Hub` durable lifecycle wiring to the next bounded
+  Phase01A patch.
+- Validation:
+  - `go test ./internal/db/migrations ./internal/chat`
+  - `go test ./internal/db/migrations ./internal/storage/runs ./internal/chat`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./...`
+
+## [2026-05-15] - Phase01B1 closed with subagent verification
+
+- Ran subagent code-risk and goal-verifier loop for Phase01B1.
+- Repaired delegated actor principal-grant inheritance, actor/channel-account
+  principal mismatch, disabled-principal denial, parented-session inheritance,
+  and polymorphic grant-subject validation.
+- Verified:
+  - `go test ./internal/identity`
+  - `go test ./internal/db/migrations ./internal/identity`
+  - `go clean -testcache`
+  - `go test -count=1 ./internal/db/migrations ./internal/identity`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test -count=1 ./...`
+- Subagent results:
+  - goal verifier PASS 10/10 for Phase01B1 only
+  - code-risk recheck PASS 9.5/10 with no Phase01B1 blockers
+- Phase01B parent remains open; next slice is Phase01B2 allowlist backfill.
+
+## [2026-05-15] - CMD-2 document debug harness cleanup
+
+- Started `D:/Aura/.planning/audits/cmd-cleanup/plan.md` slice CMD-2.
+- Moved duplicated document debug plumbing into `cmd/debug_common`:
+  fake document sender, temp source store setup, optional output writer, and
+  shared harness usage.
+- Updated `cmd/debug_xlsx`, `cmd/debug_docx`, and `cmd/debug_pdf` while
+  preserving command names and flags.
+- Verification:
+  - `go test ./cmd/debug_common ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf`
+  - `go build ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf`
+  - `go vet ./cmd/debug_common ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf`
+  - `go test ./cmd/...`
+  - `go build ./cmd/...`
+- Unrelated dirty planning/Ralph files were preserved.
+
+## [2026-05-15] - Phase01A Hub lifecycle persistence shipped locally (Codex)
+
+- Used the explicit Aura Codex Loop for the second Phase01A implementation
+  slice.
+- Added an optional lifecycle store seam to `internal/chat.Hub`.
+- `Hub` now creates durable run snapshots via `internal/storage/runs`, dedupes
+  duplicate inbound message IDs before re-entering the agent loop, and persists
+  redacted lifecycle events for `run_started`, `error`, `cancelled`, and `done`.
+- Added focused chat tests proving happy-path persistence, inbound idempotency,
+  and raw prompt/channel/error redaction from default stored payloads.
+- Phase01A is locally implemented and fully Go-tested, but still requires a
+  fresh independent verifier pass before being called complete.
+- Validation:
+  - `go test ./internal/db/migrations ./internal/storage/runs ./internal/chat`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./...`
+
+## [2026-05-15] - CMD-3 natural debug helper cleanup
+
+- Continued `D:/Aura/.planning/audits/cmd-cleanup/plan.md` slice CMD-3 with
+  read-only subagent planning/review.
+- Moved duplicated `.env` loading, env defaulting, tool/text assertions, and
+  single-line output formatting from `cmd/debug_ingest` and `cmd/debug_tools`
+  into `cmd/debug_common`.
+- Added focused tests for the shared debug helpers.
+- Kept `runScenario`, setup, fixtures, and scenario reporting local because the
+  two commands differ in system prompt, synthetic user ID, timeout,
+  scheduler/memory setup, and live-web mode.
+- Verification:
+  - `go test ./cmd/debug_common ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf ./cmd/debug_ingest ./cmd/debug_tools`
+  - `go build ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf ./cmd/debug_ingest ./cmd/debug_tools`
+  - `go vet ./cmd/debug_common ./cmd/debug_xlsx ./cmd/debug_docx ./cmd/debug_pdf ./cmd/debug_ingest ./cmd/debug_tools`
+  - `go test ./cmd/...`
+  - `go build ./cmd/...`
+- Unrelated dirty handoff/Ralph files were preserved.
+
+## [2026-05-15] - CMD-4 probe_chat same-package split
+
+- Continued `D:/Aura/.planning/audits/cmd-cleanup/plan.md` slice CMD-4 with
+  read-only subagent split planning/review.
+- Split `cmd/probe_chat/main.go` into same-package files:
+  - `main.go` for flags, one-shot mode, DB setup, case filtering, and exit;
+  - `types.go`, `client.go`, `validators.go`, `cases.go`, `runner.go`,
+    `report.go`, and `helpers.go` for the former inline sections.
+- Preserved case order, case names, fixture paths, prompt strings, output
+  format, JSON shape, run sequence, and exit-code behavior.
+- Verification:
+  - `go test ./cmd/probe_chat`
+  - `go build ./cmd/probe_chat`
+  - `go vet ./cmd/probe_chat`
+  - `go test ./cmd/...`
+  - `go build ./cmd/...`
+  - `go vet ./cmd/...`
+  - `git diff --check -- cmd/probe_chat`
+- No live `probe_chat` run was attempted because that requires a running Aura
+  server plus token.
+
+## [2026-05-15] - CMD-5 document probe helper extraction
+
+- Continued `D:/Aura/.planning/audits/cmd-cleanup/plan.md` slice CMD-5 with
+  read-only subagent boundary review.
+- Added `internal/probe/docinspect` for low-level ZIP/XML/XLSX/PDF/encoding
+  document inspection primitives.
+- Reused `docinspect` from `cmd/probe_doc` and `cmd/probe_chat` while keeping
+  CLI reporting, E2E mismatch wording, source/API fetches, and case definitions
+  local to their commands.
+- Added unit tests for ZIP entries, XML well-formedness, XML tag extraction,
+  XLSX open/text extraction, mojibake detection, and control character
+  detection.
+- Verification:
+  - `go test ./internal/probe/docinspect ./cmd/probe_doc ./cmd/probe_chat`
+  - `go build ./cmd/probe_doc ./cmd/probe_chat`
+  - `go vet ./internal/probe/docinspect ./cmd/probe_doc ./cmd/probe_chat`
+  - `go test ./cmd/...`
+  - `go build ./cmd/...`
+  - `go vet ./cmd/...`
+  - `git diff --check -- cmd/probe_doc cmd/probe_chat internal/probe/docinspect`
+- No live probe run was attempted because that requires a running Aura server
+  plus token.
+
+## [2026-05-15] - Phase01B planning promoted (Codex)
+
+- Ran targeted source audit for Phase01B against PRD Phase 1B, ADR-020,
+  current migrations, dashboard auth, Telegram access, API chat/router/skills
+  gates, tool registry/context/toolsets, cron agent jobs, and swarm tools.
+- Checked external primary references for authorization design: Google
+  Zanzibar, OpenFGA concepts, OWASP Authorization Cheat Sheet, and SQLite
+  foreign-key behavior.
+- Promoted Phase01B `plan.md`, `source.md`, `benchmark.md`, and `progress.md`
+  from scaffold to source-audited implementation plan.
+- Selected first bounded implementation slice: migration v7 identity tables
+  plus a minimal `internal/identity` default-deny authorizer.
+- No Phase01B code was edited and no Phase01B code tests were run.
+- No separate subagent verifier was spawned in this turn.
+
+## [2026-05-15] - Phase01B1 implemented and Go-verified locally
+
+- Added migration v7 for `principals`, `channel_accounts`, `actors`,
+  `capability_grants`, `authz_decisions`, and non-breaking `runs.actor_id`.
+- Added `D:/Aura/internal/identity` with principal/channel-account/actor/grant
+  creation plus default-deny `Authorize`.
+- Verified:
+  - `go test ./internal/db/migrations ./internal/identity`
+  - `go test ./internal/db/migrations -run "TestRunCreatesCurrentFreshSchema|TestFreshAndUpgradedSchemasConverge|TestIdentityCapabilityTablesAreUsable"`
+  - `go test ./internal/identity -run "TestAuthorize|TestCreateOrResolveChannelAccount"`
+  - `go vet ./internal/db/migrations ./internal/identity`
+  - `go build ./internal/db/migrations ./internal/identity`
+  - `go test ./internal/db/migrations ./internal/identity ./internal/storage/runs ./internal/chat`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./internal/telegram`
+  - `go test ./...`
+- No Telegram/API/cron/swarm rewiring was included in this slice.
+
+## [2026-05-15] - Phase01A verifier repair shipped locally (Codex)
+
+- Ran a fresh Codex verifier pass against `prd.md` Phase 1A, Phase01A docs,
+  migrations, `internal/storage/runs`, and `internal/chat`.
+- Found one missing PRD path: Hub persistence covered run lifecycle but not
+  durable tool/usage/final-output metadata events.
+- Repaired `internal/chat.Hub` so `tool_start`, `tool_end`, `usage`, and
+  `message_done` persist to `run_events` with whitelisted metadata only.
+- Added a regression test proving raw prompt text, raw tool argument values,
+  raw tool result previews, raw usage notes, and raw delivery values do not
+  enter default stored event payloads.
+- No separate subagent verifier was spawned in this turn.
+- Validation:
+  - `go test ./internal/db/migrations ./internal/storage/runs ./internal/chat`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./...`
+
+## [2026-05-15] - Phase01B2 allowlist backfill implemented and Go-verified locally
+
+- Used `$aura-implementation-loop` and resolved `HANDOFF.json.next_action` to
+  Phase01B2.
+- Added migration v8 to backfill persisted real `allowed_users` rows into
+  deterministic Telegram principals, channel accounts, session actors, and
+  owner/user capability grants.
+- Preserved `allowed_users` as the compatibility layer and excluded
+  `e2e_bootstrap` rows from real-user identity backfill.
+- Extended `internal/identity` with idempotent Telegram allowlist backfill and
+  deterministic IDs for principal, channel account, session actor, and grants.
+- Updated `internal/api/auth` so first-run bootstrap and dashboard approval
+  create the same identity records while keeping `/start`, `/login`, pending
+  approval, token, and allowlist behavior intact.
+- Did not wire dashboard bearer actor context, tool capability enforcement,
+  cron delegation, swarm delegation, or denial-event persistence.
+- Validation:
+  - `go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron`
+  - `go test ./internal/db/migrations ./internal/identity ./internal/api/auth`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./...`
+
+## [2026-05-15] - Phase01B3 dashboard bearer actor context implemented and Go-verified locally
+
+- Used `$aura-implementation-loop` and resolved durable Phase01B state to the
+  dashboard bearer actor context slice.
+- Added bearer request actor context in `internal/api/auth`: a valid dashboard
+  token now carries both the Telegram user ID and deterministic Telegram
+  session actor ID in request context.
+- Extended the auth repository boundary with `Authorizer`, backed by the
+  identity store, so API handlers can enforce capability grants without a local
+  side channel.
+- Updated `/chat` so authenticated dashboard calls cannot override `user_id`
+  from the JSON body and must hold `api.chat` before chat execution.
+- Added API tests proving actor propagation, body-user impersonation rejection,
+  missing-grant `403 Forbidden`, missing-token `401 Unauthorized`, SQL evidence
+  in `principals`, `channel_accounts`, `actors`, `capability_grants`, and
+  `authz_decisions`, plus repeated-run idempotence for identity rows.
+- Did not wire tool required-capability metadata, cron delegation, swarm
+  delegation, or denial-event run/audit persistence.
+- Validation:
+  - `go test ./internal/api ./internal/api/auth`
+  - `go test ./internal/...`
+  - `go build ./...`
+  - `go vet ./...`
+  - `go test ./...`
+
+## [2026-05-15] - Phase01B3 dashboard bearer actor context container E2E verified
+
+- Rebuilt the production Docker image for the `aura` service and recreated
+  only the `aura` container, preserving sidecars and volumes:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`.
+- Running image/container evidence:
+  `aura:local` image `sha256:11729a8095ecf219efc70582d01d24abe8a3e771ef239c1ef1847a295b0d1ba8`,
+  container `aura-aura-1` started at `2026-05-15T13:09:17Z`, health `healthy`.
+- Container HTTP probes:
+  `/health` returned `200`, unauthenticated `/api/health` returned `401`,
+  bearer `/api/health` returned `200`, unauthenticated `/api/chat` returned
+  `401`, and bearer `/api/chat` with mismatched body `user_id` returned `403`.
+- Live chat E2E probe:
+  bearer `/api/chat` returned `AURA_E2E_PHASE01B3_OK`, client latency 2829 ms,
+  API latency 2635 ms, `llm_calls=1`, `tool_calls=0`, `tokens=8654`.
+- Live SQLite evidence from `/data/aura.db`:
+  `principals=1`, `channel_accounts=1`, `actors=1`, `api_chat_grants=1`, and
+  latest `authz_decisions` row for `api.chat` is
+  `allow|api.chat|api|chat|active_grant`.
+- Missing-grant denial was not forced in live production data because revoking
+  or mutating the real grant would be destructive; it remains covered by the
+  targeted Go test `TestChatBearerMissingGrantDenied`.
+- Follow-up targeted regression after container E2E:
+  `go test ./internal/api ./internal/api/auth`.
+
+2026-05-15 - Phase01B4 tool capability checks container verified
+
+- Implemented registry-side tool authorization:
+  `ToolDefinition.RequiredCapability` defaults to `tool.execute`, tools can
+  declare `tool.execute.<tool_name>`, and `Registry.Execute` calls
+  `identity.Authorize` before `Tool.Execute` when an authorizer is present.
+- Dashboard chat now carries the identity authorizer into the agent path after
+  `api.chat` authorization succeeds.
+- Ground-truth fail-closed evidence:
+  `go test ./internal/agent/tools/registry` proves a visible tool without a
+  required grant does not execute and records a disposable SQLite
+  `authz_decisions` denial for `tool.execute|tool|fake|missing_grant`.
+- Verification passed:
+  baseline Phase01B packages; `go test ./internal/identity`;
+  `go test ./internal/agent/tools/registry`;
+  `go test ./internal/api ./internal/api/auth`;
+  `go test ./internal/agent ./internal/telegram ./internal/channels/telegram`;
+  `go test ./internal/...`; `go build ./...`; `go vet ./...`; `go test ./...`.
+- Container verification passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`; health
+  `healthy`; `/health=200`; unauthenticated `/api/health=401`; bearer
+  `/api/health=200`; bearer `/api/chat` returned `AURA_E2E_PHASE01B4_OK` with
+  `llm_calls=1`, `tool_calls=0`, `tokens=8633`; latest live SQLite `api.chat`
+  row is `allow|api.chat|api|chat|active_grant`.
+- Containerized fail-closed verification passed without mutating production
+  grants:
+  `docker compose run --rm test go test ./internal/agent/tools/registry -run "TestRegistryExecuteRequiresIdentityGrant|TestRegistryExecuteUsesToolSpecificCapability" -count=1`.
+
+2026-05-15 - Phase01B5 Telegram identity grant parity container updated
+
+- Registered `D:/tmp/cli-printing-press` as an Aura planning/implementation
+  reference map in `D:/Aura/docs/cli-printing-press-study.md`; it is a pattern
+  source, not an executable queue or competing master plan.
+- Implemented Telegram identity parity before token issuance:
+  env allowlist users call `EnsureTelegramAllowlistedIdentity` with
+  `telegram_env_allowlist` and receive owner grants without being copied into
+  `allowed_users`; persisted allowlist users derive identity/grants from their
+  stored source before `/start` or `/login` mints a token.
+- Verification passed:
+  `go test ./internal/api/auth -run "TestEnsureTelegramAllowlistedIdentity|TestBackfillAllowedUserIdentitiesMigratesExistingRows|TestBootstrapUser_ClaimsEmptyAllowlist" -count=1`;
+  `go test ./internal/telegram -run "TestOnLogin|TestApproveAccessCreatesIdentityBeforeSendingToken|TestIsAllowlisted|TestCollectOwnerIDs" -count=1`;
+  `go test ./internal/identity ./internal/api/auth ./internal/telegram -count=1`;
+  Phase01B baseline package gate; `go test ./internal/... -count=1`;
+  `go build ./...`; `go vet ./...`; `go test ./... -count=1`.
+- Container update passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  image `sha256:d6b8f5dc8e521a0a94ca8f6a60c038618c125352f927c2d1477b26e944acd05e`;
+  `aura-aura-1` health `healthy`; `/health=200`;
+  unauthenticated `/api/health=401`; unauthenticated `/api/chat=401`.
+- Live Telegram fixture and bearer chat marker were blocked in this shell
+  because `AURA_E2E_TOKEN` is not set. B5 ground truth is the deterministic
+  auth/Telegram fixtures and SQL-backed authorization checks.
+- Phase01B parent remains open. Next slice: Phase01B6 cron/swarm delegated
+  actor creation.

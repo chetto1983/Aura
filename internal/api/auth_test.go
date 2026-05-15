@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/api/auth"
+	"github.com/aura/aura/internal/identity"
 )
 
 type fakeDashboardAuthRepository struct {
@@ -51,6 +52,10 @@ func (f *fakeDashboardAuthRepository) ListPending(_ context.Context) ([]auth.Pen
 		return nil, f.pendingErr
 	}
 	return append([]auth.PendingUser(nil), f.pending...), nil
+}
+
+func (f *fakeDashboardAuthRepository) Authorize(context.Context, identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return identity.AuthorizationDecision{Decision: identity.DecisionAllow}, nil
 }
 
 // authedTestEnv is testEnv plus an auth.Store and an Allowlist predicate.

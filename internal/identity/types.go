@@ -2,7 +2,10 @@
 // authorization boundary.
 package identity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type PrincipalKind string
 
@@ -53,6 +56,14 @@ const (
 	CapabilityMemoryUserWrite Capability = "memory.user.write"
 	CapabilityWikiWrite       Capability = "wiki.write"
 )
+
+func ToolExecuteCapability(toolName string) Capability {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return CapabilityToolExecute
+	}
+	return Capability("tool.execute." + toolName)
+}
 
 type Decision string
 

@@ -64,6 +64,24 @@ func LoadDelegationPolicyFromEnv() DelegationPolicy {
 	return policy.Clamp()
 }
 
+// Clamp normalises a DelegationPolicy. Following the Pydantic-style "floor +
+// latency/CPU guardrails" pattern (see D:/tmp/nanobot/nanobot/config/schema.py
+// for the reference) and Aura's Phase-F principle "cap LATENCY and COST, not
+// CAPABILITY":
+//
+//   - capability knobs (ChildMaxIterations, MaxResultChars) keep only a
+//     >0 floor that snaps zero/negative inputs to the engineered default.
+//     They have NO ceiling here: the real runtime caps live in
+//     agent/loop.go (MaxIterationsCeiling) and
+//     agent/governance/governance.go (truncateOversizedToolResults), which
+//     this policy feeds into. Re-capping at parse time would only produce a
+//     silent rewrite and hide the operator's intent;
+//   - latency/CPU guardrails (MaxWorkers, Timeout, FinalizationTimeout) keep
+//     both bounds because the mini-PC CPU budget and the per-turn latency
+//     contract are real product constraints (memory feedback_minipc_cpu_budget).
+//
+// Finalization is an enum, so an invalid value is normalised to the safe
+// default rather than passed through.
 func (p DelegationPolicy) Clamp() DelegationPolicy {
 	if p.MaxWorkers < 1 {
 		p.MaxWorkers = 1
@@ -77,10 +95,10 @@ func (p DelegationPolicy) Clamp() DelegationPolicy {
 	if p.FinalizationTimeout <= 0 || p.FinalizationTimeout > 10*time.Second {
 		p.FinalizationTimeout = 4 * time.Second
 	}
-	if p.ChildMaxIterations < 1 || p.ChildMaxIterations > 100 {
+	if p.ChildMaxIterations < 1 {
 		p.ChildMaxIterations = 100
 	}
-	if p.MaxResultChars < 2000 || p.MaxResultChars > 24000 {
+	if p.MaxResultChars < 1 {
 		p.MaxResultChars = 24000
 	}
 	if p.Finalization != DelegationFinalizationAggregate && p.Finalization != DelegationFinalizationNoToolLLM {

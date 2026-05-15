@@ -32,9 +32,12 @@ func TestDefaultDelegationPolicy(t *testing.T) {
 }
 
 func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
-	// 99 ChildMaxIterations + 99 within new ceiling 100 → kept as-is; only
-	// MaxWorkers (capability throttle staying low for CPU budget) and
-	// MaxResultChars (above 24000) get clamped down.
+	// Latency/CPU guardrails (MaxWorkers, Timeout, FinalizationTimeout) and the
+	// Finalization enum are clamped/normalised — those are real product
+	// constraints. Capability knobs (ChildMaxIterations, MaxResultChars) are
+	// trusted as-is: the runtime ceilings in agent/loop.go and
+	// agent/governance/governance.go apply the actual caps downstream, so
+	// rewriting them at parse time would only hide operator intent.
 	got := (DelegationPolicy{
 		MaxWorkers:          20,
 		Timeout:             90 * time.Second,
@@ -46,16 +49,19 @@ func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 	want := DefaultDelegationPolicy()
 	want.MaxWorkers = 3
 	want.ChildMaxIterations = 99
+	want.MaxResultChars = 99999
 	if got != want {
 		t.Fatalf("Clamp() = %+v, want %+v", got, want)
 	}
 
+	// Zero/negative inputs still snap to the engineered defaults — that is
+	// the >0 floor, not a silent upper-bound rewrite.
 	got = (DelegationPolicy{
 		MaxWorkers:          0,
 		Timeout:             0,
 		FinalizationTimeout: 0,
 		ChildMaxIterations:  0,
-		MaxResultChars:      1999,
+		MaxResultChars:      0,
 		Finalization:        "",
 	}).Clamp()
 	if got != (DelegationPolicy{
@@ -85,10 +91,12 @@ func TestDelegationPolicyClampKeepsAllowedValues(t *testing.T) {
 }
 
 func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
-	// MaxWorkers=9 → clamped to 3 (CPU guardrail). Timeout=45s + FinalizationTimeout=30s
-	// still exceed their per-policy ceilings (30s + 10s) and reset to defaults.
-	// CHILD_MAX_ITERATIONS=7 is now within the new ceiling 100 → kept.
-	// MAX_RESULT_CHARS=25000 exceeds new ceiling 24000 → clamped to 24000.
+	// MaxWorkers=9 → clamped to 3 (CPU guardrail).
+	// Timeout=45s + FinalizationTimeout=30s exceed their latency ceilings and
+	// reset to defaults.
+	// CHILD_MAX_ITERATIONS=7 and MAX_RESULT_CHARS=25000 pass through unchanged
+	// — capability knobs are trusted; runtime layers enforce real caps.
+	// Finalization="tool_loop" is not a valid enum value → normalised.
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "9")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "45000")
 	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "30000")
@@ -100,6 +108,7 @@ func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
 	want := DefaultDelegationPolicy()
 	want.MaxWorkers = 3
 	want.ChildMaxIterations = 7
+	want.MaxResultChars = 25000
 	if got != want {
 		t.Fatalf("LoadDelegationPolicyFromEnv() = %+v, want %+v", got, want)
 	}

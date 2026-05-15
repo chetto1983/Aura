@@ -59,6 +59,9 @@ const defaultTokenTTL = 30 * 24 * time.Hour
 const (
 	// SourceTelegramBootstrap is the normal first-run owner claim path.
 	SourceTelegramBootstrap = "telegram_bootstrap"
+	// SourceTelegramEnvAllowlist identifies users trusted by TELEGRAM_ALLOWLIST.
+	// It creates identity/grants without copying config into allowed_users.
+	SourceTelegramEnvAllowlist = "telegram_env_allowlist"
 	// SourceDashboardApprove is the dashboard-owner approval path.
 	SourceDashboardApprove = "dashboard_approve"
 	// SourceE2EBootstrap grants dashboard access for local smoke tests
@@ -104,6 +107,7 @@ type AccessReader interface {
 type AccessWriter interface {
 	BootstrapUser(ctx context.Context, userID string) (bool, error)
 	BootstrapE2EUser(ctx context.Context, userID string) (bool, error)
+	EnsureTelegramAllowlistedIdentity(ctx context.Context, userID, source string) (identity.TelegramAllowlistBackfillResult, error)
 	RequestAccess(ctx context.Context, userID, username string) (bool, error)
 	Approve(ctx context.Context, userID string) error
 	Deny(ctx context.Context, userID string) error
@@ -121,6 +125,12 @@ type DashboardRepository interface {
 	TokenReader
 	TokenRevoker
 	PendingReader
+	Authorizer
+}
+
+// Authorizer is the dashboard authorization read side.
+type Authorizer interface {
+	Authorize(ctx context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error)
 }
 
 // Repository is the full auth persistence boundary used by Telegram wiring.
@@ -129,6 +139,7 @@ type Repository interface {
 	AccessReader
 	AccessWriter
 	PendingReader
+	Authorizer
 }
 
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
@@ -319,6 +330,11 @@ func (s *Store) Revoke(ctx context.Context, token string) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+// Authorize delegates dashboard authorization checks to the identity store.
+func (s *Store) Authorize(ctx context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return s.identity.Authorize(ctx, params)
 }
 
 // BootstrapUser claims the first-run allowlist for userID. It inserts the
@@ -598,6 +614,27 @@ func (s *Store) BackfillAllowedUserIdentities(ctx context.Context) (identity.Tel
 	return summary, nil
 }
 
+// EnsureTelegramAllowlistedIdentity creates the deterministic Telegram
+// principal/channel-account/session-actor/grants needed before token issuance.
+// When source is blank, the source is derived from the persisted allowed_users
+// row. Env allowlist callers pass SourceTelegramEnvAllowlist so config remains
+// config and does not become an allowed_users row.
+func (s *Store) EnsureTelegramAllowlistedIdentity(ctx context.Context, userID, source string) (identity.TelegramAllowlistBackfillResult, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return identity.TelegramAllowlistBackfillResult{}, errors.New("auth: user id required")
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		var err error
+		source, err = s.allowedUserSource(ctx, userID)
+		if err != nil {
+			return identity.TelegramAllowlistBackfillResult{}, err
+		}
+	}
+	return s.backfillAllowedUserIdentityResult(ctx, userID, source)
+}
+
 func (s *Store) backfillAllowedUserIdentityFromRow(ctx context.Context, userID string) error {
 	source, err := s.allowedUserSource(ctx, userID)
 	if err != nil {
@@ -646,7 +683,7 @@ func (s *Store) allowedUserSource(ctx context.Context, userID string) (string, e
 
 func principalKindForAllowedUserSource(source string) identity.PrincipalKind {
 	switch strings.TrimSpace(source) {
-	case SourceTelegramBootstrap, "manual":
+	case SourceTelegramBootstrap, SourceTelegramEnvAllowlist, "manual":
 		return identity.PrincipalKindOwner
 	default:
 		return identity.PrincipalKindHuman

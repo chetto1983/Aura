@@ -646,3 +646,185 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - archive_test.go had helpers needed by both function tests (recordingArchiver, failingArchiver) and Bot method test (noopClosingArchiver, recordingArchiveRepository); split cleanly since the two groups don't share types
   - After rm of conversation_archive.go, LSP shows stale DuplicateDecl diagnostics for a moment — verify with ls, not LSP
 ---
+
+## [2026-05-15 18:00] — US-B05 shipped as 7d099be7
+- Moved 5 composition-root helpers (shouldBootstrapPromptOverlayDefaults, skillSearchRoots, createLLMClient, createEmbeddingFunc, setupSandboxRuntime) from internal/telegram/helpers.go to cmd/aura/helpers.go (package main, lowercase); tests migrated to cmd/aura/helpers_test.go; 6 call sites in app.go updated
+- Files touched: 4 (helpers.go renamed from telegram/, helpers_test.go renamed from setup_sandbox_test.go, setup_test.go deleted, app.go modified)
+- Validation: go build/vet/test all green (full suite 70+ packages)
+- LOC delta: -63/+50 net (package-name change + rename; git detected 82%/70% similarity renames)
+- Learnings:
+  - setup_test.go was NOT detected as renamed because git matched setup_sandbox_test.go to helpers_test.go first; setup_test.go content (SkillSearchRoots test + containsSetupTestString) was folded into helpers_test.go manually then deleted
+  - LSP "unusedfunc" diagnostics appear for the new helpers.go functions until app.go edits land — expected intermediate state, not a build error
+  - Checking package name of internal/agent/tools/registry: declared as `tools`, so import with no alias works in test file
+---
+
+## [2026-05-15 19:00] — US-B06 shipped as 430371e6
+- Moved ApplyRuntimeSettings (exported) + 8 helpers from internal/telegram/runtime_settings.go to internal/config/runtime_settings.go; defined AgentLimitController + SwarmLimitController interfaces in config/ to avoid import cycle (agent imports config); migrated tests to internal/config/runtime_settings_test.go (package config whitebox); updated bot.RuntimeSettingsApplier to call config.ApplyRuntimeSettings
+- Files touched: 4 (2 renamed + 1 modified bot.go + prd.json)
+- Validation: go build/vet/test all green (full suite 70+ packages)
+- LOC delta: -10 net (git rename at 56%/78% similarity; package name changes + export promotion account for diff)
+- Learnings:
+  - agent imports config → AgentLimitController must be defined in config, not proxied from agent; same duck-typing approach works: *agent.Runner satisfies config.AgentLimitController without any explicit assertion
+  - Test must be package config (whitebox) to access unexported applyDelegationModeRuntime; package config_test would require exporting it
+  - Windows: ls returns MISSING for created files due to path separator; use PowerShell Get-ChildItem to verify existence
+---
+
+## [2026-05-15 20:00] — US-B07 shipped as 9960a05e
+- Created .planning/telegram-cleanup-arc-closure.md (3 sections: LOC table, channel adapter verification, architecture conformance); updated .planning/telegram-final-size.md (6 resolved rows annotated with SHAs); added var _ compile-time assertions to all 5 channel adapter files
+- Files touched: 7 (2 planning docs + 5 channel adapter files)
+- Validation: go build/vet/test all green (full suite 70+ packages)
+- LOC delta: +108/-13 (closure report + assertions; no prod behavior change)
+- Learnings:
+  - web and silent channels are outbound-only — they have no InboundAdapter; the AC that said "all 4 channels implement InboundAdapter" was aspirational; actual architecture has InboundAdapters for telegram+cron only, OutboundAdapters for web+silent; added correct assertions for each
+  - .planning/* is gitignored — use git add -f (precedent from US-A12, US-A19)
+---
+
+## [2026-05-15 21:00] — US-C01 shipped as a00c7c86
+- Added agent.NewSnapshotFromTurnStats(stats TurnStats, now time.Time) Snapshot to internal/agent/session.go; collapsed storeOrchestrationSnapshot from 24-field inline literal to a single constructor call; added snapshot_builder_test.go with all-fields + 4 slice-isolation assertions
+- Files touched: 3 (session.go +30 LOC, conversation_snapshot.go 62→39 LOC, snapshot_builder_test.go new 90 LOC)
+- Validation: go build/vet/test all green (full suite, internal/agent 0.418s fresh, internal/telegram 3.204s fresh)
+- LOC delta: -23 net in telegram/conversation_snapshot.go (62→39); +30 in agent/session.go; +90 test
+- Learnings:
+  - StoreSnapshot in session.go already clones slices internally; NewSnapshotFromTurnStats also clones — double clone is safe and ensures the Snapshot returned by the constructor is independent regardless of whether it passes through StoreSnapshot
+  - unusedfunc diagnostic in phantom_guard.go is pre-existing; don't touch it in this story
+---
+
+## [2026-05-15 22:00] — US-C02 shipped as 5434b217
+- Extracted executeToolCalls body from internal/telegram/tool_exec_helpers.go (145→54 LOC) into internal/agent/exec_helpers.go as channel-neutral agent.ExecuteToolCalls function; added ToolRunner interface + 3 tests
+- Files touched: 3 (2 new: agent/exec_helpers.go + exec_helpers_test.go; 1 modified: telegram/tool_exec_helpers.go)
+- Validation: go build/vet/test all green (full suite ~300s)
+- LOC delta: telegram/tool_exec_helpers.go -91 net (145→54); agent/exec_helpers.go +106; exec_helpers_test.go +87
+- Learnings:
+  - AC said "internal/agent/tools/registry" but import cycle forbids it (agent imports tools/registry; tools/registry cannot import agent). Placed in internal/agent/ instead — same spirit, no cycle. Future iters: note this constraint before targeting tools/registry as extraction destination.
+  - toolsExposed/readSkills params kept in Bot.executeToolCalls signature (invocation_builder.go caller passes them) but not forwarded to agent.ExecuteToolCalls — they are dead params in the current impl, kept for ABI stability
+---
+
+## [2026-05-15 22:30] — US-C03 shipped as 96194491
+- Extracted agent-loop part of terminal finalization into agent.FinalizeAfterTerminalTool via TerminalFinalizer interface; conversation_terminal.go reduced 68→36 LOC (thin wrapper)
+- Files touched: 5 (agent/terminal.go +interface+func, agent/finalize_after_terminal_test.go new, telegram/bot.go +4 interface methods, telegram/conversation_terminal.go rewritten, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite, internal/agent 0.518s fresh)
+- LOC delta: conversation_terminal.go 68→36 (-32 net); bot.go +27; terminal.go +38; +95 test
+- Learnings:
+  - Story notes said "likely via the same runner interface as US-C02" but ToolRunner (Names+Execute) doesn't fit here; needed a new TerminalFinalizer interface with LLM-call capabilities — story notes were approximate, not prescriptive
+  - Dropping userID from FinalizeAfterTerminalTool signature is safe: it was only used for logging, which stays in the Telegram wrapper that has the logger
+  - Bot.FinalizeChat applies ReasoningEffort before delegating to rt.llm.Send — keeps the original behavior of injecting reasoning config at the call site
+---
+
+## [2026-05-15 23:00] — US-C04 shipped as 317b1a0a
+- Refreshed .planning/telegram-cleanup-arc-closure.md with actual post-C03 LOC numbers; added new "Post Phase-C" section with per-story deltas and commit SHAs
+- Files touched: 2 (.planning/telegram-cleanup-arc-closure.md, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (all cached)
+- LOC delta: +43/-13 in the doc (no Go source changed)
+- Learnings:
+  - The story prd.json description said the report claimed 2530 but "actual at 9960a05e is 2778" — this was incorrect in the prd.json itself; git verification confirmed 2530 WAS accurate at B07. Phase-C reduced it by 119 to 2411.
+  - Pre-Phase-C per-file state can be retrieved with `git show <sha>:path | wc -l` — useful for computing deltas when progress notes are approximate.
+---
+
+## [2026-05-15 23:30] — US-D01 shipped as a91ef6b7
+- Implemented ask_user tool + loop pause: ErrAwaitingUserInput sentinel, AskUserTool, exclusive batch semantics, PendingAskUserCall helper, chat.Run status flip.
+- Files touched: 7 (3 new + 4 modified): ask_user.go, pending_ask.go, ask_user_test.go, executor.go, loop.go, agentloop.go, prd.json
+- Validation: go build/vet/test all green (full suite 70+ packages)
+- LOC delta: +557/-8 net (3 new files + minimal changes to executor/loop)
+- Learnings:
+  - ErrAwaitingUserInput must propagate as a real error (not formatted string) through executeOneTool → toolOutcome.awaitingUser → ExecutionSummary.AwaitingUserInput; converting it to string first loses the type
+  - Exclusive semantics require filtering BOTH state (AddAssistantToolCallMessage) and freshCalls BEFORE executor dispatch; filtering only freshCalls leaves the assistant message with orphaned tool_calls that have no results
+  - PendingAskUserCall naturally operates on []llm.Message (not runs.Event); the story description used "events" loosely; llm.Message slice is always available at the agent layer
+  - chat/agentloop.go must set run.Status=RunStatusWaitingForUser based on StopReason; hub.go only overrides RunningRunning→Completed, so loop.go setting Stats.StopReason alone is sufficient if agentloop.go translates it
+---
+
+## [2026-05-15 23:50] — US-D02 shipped as 88f5195c
+- Added ClarificationAndApprovalProtocol() to internal/conversation/system_prompt.go (6 cardinal cases, 4 non-cases, 2 kinds, 1 clarification + 1 approval example, 2 counter-examples); wired into ComposeAgentPrompt in internal/agent/promptplan.go (modules += "clarification-protocol"); created internal/agent/ask_user_promptfx_test.go with 12 contract pairs (7 emit, 5 no-emit) + 5 assertion tests
+- Files touched: 3 (system_prompt.go +52 LOC, promptplan.go +2 LOC, ask_user_promptfx_test.go new 219 LOC)
+- Validation: go build/vet/test all green (full suite 70+ packages)
+- LOC delta: +273 net (new constant + test file)
+- Learnings:
+  - DefaultSystemPrompt() is capped at 2 KB by a test (TestDefaultSystemPromptSlim); added the protocol section via ClarificationAndApprovalProtocol() called from ComposeAgentPrompt — keeps slim base prompt intact
+  - The eval fixture test is package agent (internal), consistent with ask_user_test.go; uses time.Now() directly since no fixedTestTime helper exists in the agent test suite
+  - slicescontains lint hint on module loop in test — harmless, left for readability over micro-optimization
+---
+
+## [2026-05-15 14:25] -- US-D03 shipped as 21fb07e6
+- Telegram ask_user pause/resume: numbered-text question rendering + reply routing
+- Files touched: 8 (ask_user_resume.go NEW, ask_user_resume_test.go NEW, invocation_builder.go, hub.go, hub_test.go, loop.go, runtime.go, prd.json)
+- Validation: go build/vet/test all green; 10 format/parse tests + 4 ThreadRunStatus tests pass
+- LOC delta: +394 across story files
+- Learnings:
+  - tools local variable in runtime.go shadowed the tools package alias; rename to toolDefs immediately when adding a new import alias
+  - Hub.dispatch out-of-range path: loop must set run.Status=WaitingForUser BEFORE returning error; hub checks this flag to suppress EventError and return nil
+  - EventQuestionRequested emitted from OnQuestionRequested callback (loop.go to runtime.go to invocation_builder OnEvent) -- clean chain, no extra fields needed on Event struct
+---
+
+## [2026-05-15 23:59] — US-G01 shipped as cf364f5a
+- Added stateless RunTask(ctx, RunTaskDeps, Task) helper + RunTaskDeps struct; moved initialMessages/cleanToolList from runner.go and limitToolContent from executor.go to new runtask_helpers.go; added runTaskToolDefs package-level function
+- Files touched: 6 (3 new: runtask.go, runtask_helpers.go, runtask_test.go; 2 modified: runner.go, executor.go; prd.json)
+- Validation: go build/vet/test all green (full suite, internal/agent 0.837s fresh)
+- LOC delta: +288/-52 net (3 new files + helpers moved from runner/executor)
+- Learnings:
+  - Story says "copy to runtask_helpers.go" but Go forbids duplicate function names in same package; only valid approach is MOVE (not copy) the private helpers; runner/executor behavior unchanged since same package sees them
+  - limitToolContent was in executor.go, not runner.go as the story description stated; story description was stale
+  - "Runner / runner.go UNCHANGED" means public API + behavior unchanged, not byte-for-byte file identical; private helpers moving to runtask_helpers.go doesn't change Runner semantics
+---
+
+## [2026-05-15 23:59] — US-G02 shipped as da096351
+- Dropped agentRunner from botRuntime + AgentRunner from telegram.Deps; moved runner onto App.runner field; updated all wireBot callers.
+- Files touched: 4 (internal/telegram/deps.go, internal/telegram/bot.go, cmd/aura/app.go, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: -13/+11 net (4 lines removed from telegram/deps.go; 16 changed in app.go)
+- Learnings:
+  - botRuntime.agentRunner was stored but never read in telegram/ — truly dead field; confirmed with grep before removing
+  - bot.go RuntimeSettingsApplier called config.ApplyRuntimeSettings with deps.AgentRunner as AgentLimitController; passing nil is safe (nil-guarded at line 54); US-G05 drops the param entirely
+  - App.runner holds the *agent.Runner for swarm/cron/web-chat; newApp declares var auraRunner *agent.Runner before the conditional block so it's in scope for both the swarm wiring and the App literal
+  - Pre-existing uncommitted changes in internal/api/ (identity auth, chat_test.go) were NOT staged; go test passed with them in the working tree
+---
+
+## [2026-05-15 23:59] — US-G03 shipped as 98e0b4f4
+- Replaced runner *agent.Runner + tools *tools.Registry fields in webChatService with a lazy func() agent.RunTaskDeps; Chat now calls agent.RunTask; newWebChatDepsGetter helper in cmd/aura reads cfg.AuraBot* fresh per call
+- Files touched: 2 (internal/api/web_chat.go, cmd/aura/app.go) + prd.json
+- Validation: go build/vet/test all green (full suite; internal/api 24.9s fresh)
+- LOC delta: +32/-18 net (web_chat.go -4 net; app.go +36 for helper)
+- Learnings:
+  - deps.Tools.Names() can be called without importing tools/registry in the callers file — the type flows from agent.RunTaskDeps and Go only requires the import in the package that declares the type
+  - nil guard: passing nil getter (when LLM unconfigured) produces nil ChatService via NewWebChatService, preserving the original runner==nil→nil semantics exactly
+---
+
+## [2026-05-15 23:59] — US-G04 shipped as 1a3859f0
+- Replaced agentJobRunnerAdapter.r *agent.Runner with getDeps func() agent.RunTaskDeps lazy builder; RunJob now calls agent.RunTask; added newAgentJobDepsGetter helper mirroring newWebChatDepsGetter; updated cron/dispatch.go JobRunner doc comment
+- Files touched: 3 (cmd/aura/app.go, internal/cron/dispatch.go, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: +36 net (app.go +44/-8 for new helper; dispatch.go +1)
+- Learnings:
+  - Wiring guard changes from `if a.runner != nil` to `if depsGetter != nil` — semantically identical since both are nil iff LLM is unconfigured; no behavior change
+  - a.runner field stays on App (still needed by swarm manager); only the cron consumer migrates off it in this story
+---
+
+## [2026-05-15 23:59] — US-G05 shipped as 37b674fb
+- Deleted config.AgentLimitController interface; dropped runner parameter from ApplyRuntimeSettings; removed runner.UpdateLimits call (was already nil at production site since US-G02)
+- Files touched: 4 (internal/config/runtime_settings.go, runtime_settings_test.go, internal/telegram/bot.go, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: -27 net (interface + runtime call + test fake removed)
+- Learnings:
+  - bot.RuntimeSettingsApplier was already passing nil for runner since US-G02; this story makes the nil explicit by removing the parameter entirely
+  - fakeAgentLimits in the test was the only remaining satisfier of AgentLimitController; removing it triggers "time" import cleanup too (only used for Duration fields on that fake)
+---
+
+## [2026-05-15 23:59] — US-G06 shipped as 413277f7
+- Deleted internal/agent/runner.go + runner_test.go; created task.go (Task/Result/RunTaskDeps/constants); replaced agent.NewRunner in app.go with swarmRunnerAdapter wrapping agent.RunTask
+- Files touched: 10 (2 deleted: runner.go + runner_test.go; 1 new: task.go; 7 modified: runtask.go, runtask_test.go, app.go, chat.go, health_server.go, router.go, prd.json)
+- Validation: go build/vet/test all green (full suite 75+ packages)
+- LOC delta: -806 (runner.go 257 + runner_test.go 514) +232 net = -591 net
+- Learnings:
+  - fakeLLM/fakeTool from runner_test.go were used by runtask_test.go — must inline them when deleting the source file, NOT create a new shared file (same package, private helpers)
+  - `git add -u internal/agent/` picks up pre-existing staged files in subdirs (registry/); unstage with `git restore --staged` before committing
+  - defaultTimeout constant becomes unused in task.go (runtask.go never sets a default timeout — if deps.Timeout==0, no timeout is applied); kept constant for documentation value; go vet still passes (info-level only)
+  - swarmRunnerAdapter is the swarm consumer's RunTask bridge; mirrors agentJobRunnerAdapter pattern in same file
+---
+
+## [2026-05-15 23:59] — US-G07 shipped as bd637695
+- Rewrote internal/agent/README.md (agent.Run + RunTask + Task/Result/RunTaskDeps); updated docs/aura-main-loop-limits-audit.md §1 to reflect Phase-G completion; added closure table with SHAs to .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md
+- Files touched: 4 (README.md, aura-main-loop-limits-audit.md, progress.md, prd.json)
+- Validation: go build/vet/test all green (all cached; doc-only change)
+- LOC delta: +135/-76 net (README expanded, audit §1 condensed, progress.md closure table added)
+- Learnings:
+  - Acceptance criterion "no longer mentions Runner/NewRunner/agent.Config" is strict — historical audit notes also need rephrasing, not just the API section
+  - git add -f for .planning/* is established precedent (US-A12, US-A19, US-B07); using it here for progress.md
+---

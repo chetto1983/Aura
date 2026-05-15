@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	tele "gopkg.in/telebot.v4"
 )
@@ -164,6 +165,92 @@ func TestOnLoginBootstrapsFirstRunAndSendsToken(t *testing.T) {
 	if strings.Contains(text, "pending approval") || strings.Contains(text, "Aura is private") {
 		t.Fatalf("login reply = %q, want direct first-run token", text)
 	}
+	token := extractDashboardToken(t, text)
+	if got, err := store.Lookup(context.Background(), token); err != nil || got != "123" {
+		t.Fatalf("issued token lookup = %q, %v; want user 123", got, err)
+	}
+	assertTelegramAuthz(t, store, "123", identity.CapabilitySkillsInstall, identity.DecisionAllow)
+}
+
+func TestOnLoginEnvAllowlistEnsuresIdentityBeforeToken(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newTelegramTestAuthStore(t)
+	b := &Bot{
+		bot: tb,
+		cfg: &config.Config{
+			Allowlist:           []string{"123"},
+			AllowlistConfigured: true,
+		},
+		rt:     &botRuntime{authDB: store},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "envowner"},
+		Chat:   &tele.Chat{ID: 123},
+		Text:   "/login",
+	}})
+
+	if err := b.onLogin(ctx); err != nil {
+		t.Fatalf("onLogin() error = %v, want nil", err)
+	}
+	if got := countTelegramMethods(calls, "sendMessage"); got != 1 {
+		t.Fatalf("sendMessage calls = %d, want 1 (calls=%+v)", got, calls)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	token := extractDashboardToken(t, text)
+	if got, err := store.Lookup(context.Background(), token); err != nil || got != "123" {
+		t.Fatalf("issued token lookup = %q, %v; want user 123", got, err)
+	}
+	if ok, err := store.IsUserAllowed(context.Background(), "123"); err != nil || ok {
+		t.Fatalf("IsUserAllowed(env user) = %v, %v; want false nil", ok, err)
+	}
+	assertTelegramAuthz(t, store, "123", identity.CapabilitySkillsInstall, identity.DecisionAllow)
+}
+
+func TestApproveAccessCreatesIdentityBeforeSendingToken(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newTelegramTestAuthStore(t)
+	ctx := context.Background()
+	if claimed, err := store.BootstrapUser(ctx, "123"); err != nil || !claimed {
+		t.Fatalf("bootstrap owner claimed=%v err=%v, want true nil", claimed, err)
+	}
+	if _, err := store.RequestAccess(ctx, "456", "guest"); err != nil {
+		t.Fatalf("request access: %v", err)
+	}
+	b := &Bot{
+		bot:    tb,
+		cfg:    &config.Config{},
+		rt:     &botRuntime{authDB: store},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	if err := b.ApproveAccess(ctx, "456"); err != nil {
+		t.Fatalf("ApproveAccess() error = %v, want nil", err)
+	}
+	if got := countTelegramMethods(calls, "sendMessage"); got != 1 {
+		t.Fatalf("sendMessage calls = %d, want 1 (calls=%+v)", got, calls)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	token := extractDashboardToken(t, text)
+	if got, err := store.Lookup(ctx, token); err != nil || got != "456" {
+		t.Fatalf("issued token lookup = %q, %v; want user 456", got, err)
+	}
+	assertTelegramAuthz(t, store, "456", identity.CapabilityAPIChat, identity.DecisionAllow)
+	assertTelegramAuthz(t, store, "456", identity.CapabilitySkillsInstall, identity.DecisionDeny)
 }
 
 func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
@@ -235,6 +322,34 @@ func newTelegramTestAuthStore(t *testing.T) *auth.Store {
 		t.Fatalf("new auth store: %v", err)
 	}
 	return store
+}
+
+func extractDashboardToken(t *testing.T, text string) string {
+	t.Helper()
+	parts := strings.Split(text, "\n\n")
+	if len(parts) < 3 {
+		t.Fatalf("dashboard token message has %d sections: %q", len(parts), text)
+	}
+	token := strings.TrimSpace(parts[2])
+	if token == "" || strings.Contains(token, "\n") {
+		t.Fatalf("could not extract dashboard token from %q", text)
+	}
+	return token
+}
+
+func assertTelegramAuthz(t *testing.T, store *auth.Store, userID string, capability identity.Capability, want identity.Decision) {
+	t.Helper()
+	decision, err := store.Authorize(context.Background(), identity.AuthorizeParams{
+		ActorID:    identity.TelegramSessionActorID(userID),
+		Capability: capability,
+		Resource:   identity.ResourceRef{Type: "test", ID: string(capability)},
+	})
+	if err != nil {
+		t.Fatalf("Authorize(%s, %s): %v", userID, capability, err)
+	}
+	if decision.Decision != want {
+		t.Fatalf("Authorize(%s, %s) = %s (%s), want %s", userID, capability, decision.Decision, decision.Reason, want)
+	}
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, ok func() bool) {

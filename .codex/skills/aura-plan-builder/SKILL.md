@@ -87,11 +87,16 @@ Point future agents to the right durable files:
 - Old `.planning/wave*` files are evidence and requirement mines only; never
   treat them as the active plan.
 
-## GSD Boundary
+## GSD / Ralph Boundary
 
-GSD is a pattern source for Aura, not the canonical planning system. Do not
-create GSD `PROJECT.md`, `ROADMAP.md`, `STATE.md`, `.planning/phases`, or GSD
-verification reports as Aura source of truth.
+GSD and Ralph are pattern sources for Aura, not canonical planning systems. Do
+not create GSD `PROJECT.md`, `ROADMAP.md`, `STATE.md`, `.planning/phases`, or
+GSD verification reports as Aura source of truth.
+
+Ralph is a slice-sizing and queue-shaping pattern source only. Treat
+`D:/Aura/scripts/ralph/prd.json` as active only when the current user turn
+explicitly selects Ralph queue work. Otherwise, Ralph ideas must be translated
+into Aura phase files before implementation.
 
 Allowed GSD imports:
 
@@ -107,6 +112,46 @@ Rejected GSD imports:
 - structural grep checks as completion evidence,
 - any artifact that bypasses Aura's `source.md`, `plan.md`, `benchmark.md`,
   and `progress.md` contract.
+
+Allowed Ralph imports:
+
+- one bounded story per fresh context,
+- append-only Aura phase `progress.md` records, not
+  `scripts/ralph/progress.txt` unless the current turn explicitly selects
+  Ralph queue work,
+- archive-before-manual-queue-edit discipline,
+- story sizing that fits one implementation context window.
+
+Rejected Ralph imports:
+
+- `D:/Aura/scripts/ralph/prd.json` as Aura's default active queue,
+- running `scripts/ralph/ralph.sh` unless the current turn explicitly asks,
+- automatic commits or tool-spawn loops,
+- updating queue state instead of Aura phase `progress.md`.
+
+GSD/Ralph-derived ideas must land in the active Aura phase `source.md`,
+`plan.md`, `benchmark.md`, `progress.md`, or the decision log before they can
+guide implementation. Reference maps, parent summaries, and skills may
+cross-link or explain the idea, but they are not enough by themselves to make an
+idea implementation-driving.
+
+## Source Merge Rule
+
+The source merge rule prevents research from becoming a shadow workflow.
+Source findings from `D:/tmp`, online documentation, papers, GSD, Ralph,
+installed skills, or subagents are evidence only until translated into an Aura
+artifact. Implementation-driving findings must be represented in the active
+phase `source.md`, `plan.md`, `benchmark.md`, `progress.md`, or the decision
+log. Supporting cross-links may also be placed in:
+
+- a parent phase summary under `D:/Aura/.planning/deep-refactor/PhaseNN/`;
+- a project reference map under `D:/Aura/docs/`;
+- a parent skill under `D:/Aura/.codex/skills/`.
+
+Every adopted source needs an explicit rejected or deferred counterpart. No
+source can be cited as decoration; each row must name the decision it supports,
+the pattern Aura adopts, the pattern Aura rejects or defers, and the destination
+file that will own the decision.
 
 ## Direct Child Skill Map
 
@@ -137,8 +182,13 @@ contract:
 - affected source files and closest tests,
 - baseline commands and post-edit commands,
 - real debug probes for likely failures,
+- debug-readiness fields,
+- likely failure modes,
+- reproduction command for the highest-risk failure,
+- ground-truth probe that proves the behavior instead of only process health,
+- rollback or stop signal for unsafe drift,
+- residue expectation for files, queues, servers, traces, and generated output,
 - E2E metrics and pass/fail thresholds,
-- residue cleanup expectations.
 
 Required `benchmark.md` rows for implementation-ready phases:
 
@@ -233,7 +283,8 @@ explicitly asks for cleanup.
    Read `D:/Aura/docs/aura-master-plan.md` only as historical evidence when a
    phase decision needs predecessor context. Read `.planning/progress.txt` only
    when the active slice needs the append-only progress log.
-   Read `D:/Aura/prd.json` only when the task is explicitly queue/Ralph work.
+   Read `D:/Aura/scripts/ralph/prd.json` only when the task is explicitly
+   queue/Ralph work.
 3. Infer the requested target before asking the user:
    - explicit user phase or folder wins,
    - if the user names a parent phase such as "Phase 1" and does not name a
@@ -297,8 +348,10 @@ explicitly asks for cleanup.
 17. In `repair`, apply fixes from the verifier, then rerun validation. Repeat
     until there are no BLOCKER or MAJOR findings, or stop and report why the
     remaining finding needs a user decision. In `audit`, report findings only.
-18. Append the verifier result and repair outcome to `progress.md`; do not rely
-    on chat memory for validation state.
+18. In `create` or `repair`, append the verifier result and repair outcome to
+    `progress.md`; do not rely on chat memory for validation state. In `audit`
+    mode, report findings only and do not write progress unless the user
+    explicitly changes the task to repair.
 19. Do not create branches, PRs, pushes, or commits unless the user explicitly
     asks for that git action in the current turn. The phase can be "ready for
     discussion" without a commit.
@@ -524,10 +577,11 @@ Verifier result handling:
 
 - BLOCKER: repair before any readiness claim, or stop and report the conflict.
 - MAJOR: repair and rerun verifier before calling the plan ready.
-- MINOR: repair when cheap; otherwise record it in `progress.md` with why it is
-  acceptable.
-- No findings: append the verifier verdict to `progress.md` and state exactly
-  what is verified.
+- MINOR: in `create` or `repair`, repair when cheap; otherwise record it in
+  `progress.md` with why it is acceptable. In `audit`, report it only.
+- No findings: in `create` or `repair`, append the verifier verdict to
+  `progress.md` and state exactly what is verified. In `audit`, report the
+  verdict only.
 
 ## Readiness Labels
 
@@ -561,7 +615,8 @@ Verifier result handling:
 - Do not create new lettered sub-phase folders beside the parent/master
   `PhaseNN` folder; canonical sub-phase files live under
   `PhaseNN/subphases/`.
-- Do not leave verifier findings only in chat; append the result and repair
-  status to `progress.md`.
+- In `create` or `repair`, do not leave verifier findings only in chat; append
+  the result and repair status to `progress.md`. In `audit`, do not write
+  progress unless the user explicitly changes the task to repair.
 - Do not create branches, commits, PRs, or pushes automatically. Ask or wait for
   explicit user instruction in the current turn.

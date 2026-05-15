@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-15T12:26:11+02:00",
+  "timestamp": "2026-05-15T16:02:38+02:00",
   "context": "deep-refactor",
   "phase": "Phase01B",
   "phase_name": "Establish Identity and Capability Grants",
   "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants",
-  "status": "phase01b2-implemented-local-verified",
+  "status": "phase01b5-container-updated",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -60,14 +60,38 @@
       "name": "Backfill current allowlisted Telegram users into identity records while preserving allowed_users parity",
       "status": "implemented_local_verified",
       "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
+    },
+    {
+      "id": "P1B3-DASHBOARD-ACTOR-CONTEXT",
+      "name": "Resolve dashboard bearer tokens into actor context and prevent authenticated user override",
+      "status": "container_e2e_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B4-TOOL-CAPABILITY-CHECKS",
+      "name": "Enforce capability grants for visible/executable tools",
+      "status": "container_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B5-TELEGRAM-IDENTITY-GRANT-PARITY",
+      "name": "Move Telegram login/bootstrap/approval onto identity grants while keeping allowlist parity",
+      "status": "container_updated",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "P1B3-DASHBOARD-ACTOR-CONTEXT",
-      "name": "Resolve dashboard bearer tokens into actor context and prevent authenticated user override",
+      "id": "P1B6-DELEGATED-ACTORS",
+      "name": "Add delegated actor creation for cron and swarm child runs",
       "status": "not_started",
-      "recommended_next": "Use `$aura-implementation-loop` for Phase01B3. Keep tool capability checks, cron delegation, swarm delegation, and denial-event wiring out of this next slice."
+      "recommended_next": "Use `$aura-implementation-loop` for the next bounded Phase01B slice. Keep denial-event wiring separate unless the Phase01B plan is explicitly narrowed."
+    },
+    {
+      "id": "P1B7-DENIAL-EVENTS",
+      "name": "Wire authorization denials into Phase01A run/audit events",
+      "status": "not_started",
+      "recommended_next": "Run after cron/swarm actor delegation unless the plan is explicitly narrowed."
     }
   ],
   "decisions": [
@@ -115,6 +139,31 @@
       "decision": "Phase01B2 backfills persisted Telegram allowlist identity without removing `allowed_users`.",
       "rationale": "Migration v8 backfills real persisted `allowed_users` rows into deterministic Telegram principals, channel accounts, session actors, and grants; auth bootstrap/approval creates the same rows for newly allowed users. E2E bootstrap rows remain excluded from real-user identity backfill.",
       "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
+    },
+    {
+      "decision": "Phase01B3 gates dashboard `/chat` on bearer actor context plus `api.chat`.",
+      "rationale": "Bearer auth now injects the deterministic Telegram session actor ID, `/chat` rejects authenticated body `user_id` overrides, and the identity authorizer records allow/deny decisions before chat execution.",
+      "source": "D:/Aura/internal/api/chat_test.go"
+    },
+    {
+      "decision": "Phase01B3 is container E2E verified without mutating live grants.",
+      "rationale": "The live container was rebuilt/recreated, bearer chat returned the exact E2E marker with one LLM call and zero tool calls, SQL recorded an `api.chat` allow decision, and destructive live missing-grant mutation was intentionally avoided because the Go test already covers that failure mode.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "decision": "Phase01B4 gates registry tool execution on identity capabilities when an authorizer is present.",
+      "rationale": "Tool definitions now carry `RequiredCapability`, defaulting to `tool.execute`; tools may require `tool.execute.<tool_name>`. The registry calls `identity.Authorize` before `Tool.Execute`, records deny/allow decisions through the identity store, and preserves the no-authorizer compatibility path until Telegram/cron/swarm actor wiring lands.",
+      "source": "D:/Aura/internal/agent/tools/registry/registry_test.go"
+    },
+    {
+      "decision": "Phase01B5 ensures Telegram identity/grants before token issuance while preserving allowlist parity.",
+      "rationale": "Env allowlist remains configuration and is not copied into `allowed_users`; persisted bootstrap/approved users derive identity from stored source. Token minting now fails closed if the deterministic Telegram principal/channel-account/session-actor/grants cannot be prepared.",
+      "source": "D:/Aura/internal/telegram/bot_test.go"
+    },
+    {
+      "decision": "D:/tmp/cli-printing-press is an Aura reference map, not an executable queue.",
+      "rationale": "Aura adopts the workflow patterns for lean skills, machine/human output separation, and explicit shipcheck blocks while rejecting the generator/public-library flow as a canonical route.",
+      "source": "D:/Aura/docs/cli-printing-press-study.md"
     }
   ],
   "blockers": [],
@@ -147,7 +196,57 @@
     "go test ./internal/db/migrations ./internal/identity ./internal/api/auth",
     "go build ./...",
     "go vet ./...",
-    "go test ./..."
+    "go test ./...",
+    "go test ./internal/api ./internal/api/auth",
+    "go test ./internal/...",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./...",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "GET /api/health with AURA_E2E_TOKEN -> 200",
+    "POST /api/chat without bearer -> 401",
+    "POST /api/chat with mismatched body user_id -> 403",
+    "POST /api/chat with AURA_E2E_TOKEN -> AURA_E2E_PHASE01B3_OK, llm_calls=1, tool_calls=0",
+    "sqlite3 /data/aura.db latest api.chat authz decision -> allow active_grant",
+    "go test ./internal/api ./internal/api/auth",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron",
+    "go test ./internal/identity",
+    "go test ./internal/agent/tools/registry",
+    "go test ./internal/api ./internal/api/auth",
+    "go test ./internal/agent ./internal/telegram ./internal/channels/telegram",
+    "go test ./internal/...",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./...",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "GET /api/health with AURA_E2E_TOKEN -> 200",
+    "POST /api/chat with AURA_E2E_TOKEN -> AURA_E2E_PHASE01B4_OK, llm_calls=1, tool_calls=0",
+    "sqlite3 /data/aura.db latest api.chat authz decision -> allow active_grant",
+    "docker compose run --rm test go test ./internal/agent/tools/registry -run \"TestRegistryExecuteRequiresIdentityGrant|TestRegistryExecuteUsesToolSpecificCapability\" -count=1",
+    "rg -n \"Reference registrata per Aura|D:/tmp/cli-printing-press\" docs/cli-printing-press-study.md",
+    "go test ./internal/api/auth -run \"TestEnsureTelegramAllowlistedIdentity|TestBackfillAllowedUserIdentitiesMigratesExistingRows|TestBootstrapUser_ClaimsEmptyAllowlist\" -count=1",
+    "go test ./internal/telegram -run \"TestOnLogin|TestApproveAccessCreatesIdentityBeforeSendingToken|TestIsAllowlisted|TestCollectOwnerIDs\" -count=1",
+    "go test ./internal/identity ./internal/api/auth ./internal/telegram -count=1",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron -count=1",
+    "go test ./internal/... -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "POST /api/chat without bearer -> 401",
+    "Phase01B5 live Telegram fixture and bearer chat marker blocked because AURA_E2E_TOKEN is not set in this shell"
   ],
   "uncommitted_files": [
     "AGENTS.md",
@@ -164,13 +263,23 @@
     ".codex/skills/aura-implementation-loop/SKILL.md (project-local ignored skill; changed by user request)",
     "scripts/ralph/prd.json -> scripts/ralph/prd-completed-phase-c.json (pre-existing/unrelated; preserve unless queue work)",
     "scripts/ralph/progress.txt (pre-existing/unrelated; preserve unless queue work)",
+    "internal/api/auth/middleware.go",
+    "internal/api/auth/store.go",
+    "internal/api/auth_test.go",
+    "internal/api/chat.go",
+    "internal/api/chat_test.go",
+    "internal/agent/tools/registry/definition.go",
+    "internal/agent/tools/registry/registry.go",
+    "internal/agent/tools/registry/registry_test.go",
+    "internal/identity/context.go",
+    "internal/identity/types.go",
     "docs/phase-01c-question-gate-scope.md (pre-existing/untracked; preserve unless Phase01C planning is selected)",
     "scripts/ralph/prd.json (pre-existing/untracked; Ralph queue; preserve unless queue work)"
   ],
   "last_known_git": {
-    "head": "20d36196 chore(telegram): delete sandbox_integration_test.go placeholder tests",
-    "status": "dirty after documentation/planning/skill alignment plus unrelated Ralph queue changes"
+    "head": "2cacf80b docs(planning): scope Phase 4 (kill agent.Runner) into 7-story Ralph queue",
+    "status": "dirty after Phase01B4 implementation and container verification records, documentation/planning/skill alignment, plus unrelated Ralph/agent/runtime changes"
   },
-  "next_action": "Start Phase01B3 dashboard bearer actor context as a separate implementation slice.",
-  "context_notes": "Do not bundle tool capability checks, cron delegation, swarm delegation, or denial-event wiring into Phase01B3. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B parent remains open for B3-B7."
+  "next_action": "Start the next bounded Phase01B slice, likely cron/swarm delegated actor creation, as a separate implementation slice.",
+  "context_notes": "Do not bundle denial-event wiring into the next slice unless the Phase01B plan is explicitly narrowed. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5 is locally verified and container-updated; Phase01B parent remains open for B6-B7."
 }

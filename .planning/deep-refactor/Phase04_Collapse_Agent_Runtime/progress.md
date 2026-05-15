@@ -72,7 +72,7 @@ now calls `agent.RunTask`. docs and README refreshed.
 | US-G04 | 1a3859f0 | Migrated `agentJobRunnerAdapter` off `*agent.Runner` |
 | US-G05 | 37b674fb | Deleted `config.AgentLimitController` + dropped `runner` param from `ApplyRuntimeSettings` |
 | US-G06 | 413277f7 | Deleted `runner.go` + `runner_test.go` (−806 LOC); added `task.go` |
-| US-G07 | TBD | Refreshed `internal/agent/README.md` + limits audit §1 |
+| US-G07 | bd637695 | Refreshed `internal/agent/README.md` + limits audit §1 |
 
 ## Pointers
 

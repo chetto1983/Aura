@@ -400,6 +400,89 @@ INSERT INTO allowed_users (user_id, source, created_at) VALUES
 	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "6", identity.TelegramPrincipalID("approved-user"))
 }
 
+func TestEnsureTelegramAllowlistedIdentity_EnvAllowlistCreatesOwnerWithoutAllowedUserRow(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	result, err := s.EnsureTelegramAllowlistedIdentity(ctx, "env-owner", SourceTelegramEnvAllowlist)
+	if err != nil {
+		t.Fatalf("EnsureTelegramAllowlistedIdentity: %v", err)
+	}
+	if !result.PrincipalCreated || !result.ChannelAccountCreated || !result.ActorCreated {
+		t.Fatalf("created flags = %+v, want all true", result)
+	}
+	if result.GrantsCreated != len(identity.TelegramOwnerCapabilities()) {
+		t.Fatalf("GrantsCreated = %d, want owner grants", result.GrantsCreated)
+	}
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM allowed_users WHERE user_id = ?`, "0", "env-owner")
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "owner", identity.TelegramPrincipalID("env-owner"))
+
+	decision, err := s.Authorize(ctx, identity.AuthorizeParams{
+		ActorID:    identity.TelegramSessionActorID("env-owner"),
+		Capability: identity.CapabilitySkillsInstall,
+		Resource:   identity.ResourceRef{Type: "skills", ID: "install"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize: %v", err)
+	}
+	if decision.Decision != identity.DecisionAllow {
+		t.Fatalf("skills.install decision = %s (%s), want allow", decision.Decision, decision.Reason)
+	}
+
+	again, err := s.EnsureTelegramAllowlistedIdentity(ctx, "env-owner", SourceTelegramEnvAllowlist)
+	if err != nil {
+		t.Fatalf("EnsureTelegramAllowlistedIdentity again: %v", err)
+	}
+	if again.PrincipalCreated || again.ChannelAccountCreated || again.ActorCreated || again.GrantsCreated != 0 {
+		t.Fatalf("second ensure = %+v, want idempotent no-op", again)
+	}
+}
+
+func TestEnsureTelegramAllowlistedIdentity_PersistedAllowedUserUsesStoredSource(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 15, 9, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO allowed_users (user_id, source, created_at)
+VALUES (?, ?, ?)
+`, "approved-user", SourceDashboardApprove, now); err != nil {
+		t.Fatalf("insert allowed user: %v", err)
+	}
+
+	result, err := s.EnsureTelegramAllowlistedIdentity(ctx, "approved-user", "")
+	if err != nil {
+		t.Fatalf("EnsureTelegramAllowlistedIdentity: %v", err)
+	}
+	if result.GrantsCreated != len(identity.TelegramUserCapabilities()) {
+		t.Fatalf("GrantsCreated = %d, want user grants", result.GrantsCreated)
+	}
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "human", identity.TelegramPrincipalID("approved-user"))
+
+	allowed, err := s.Authorize(ctx, identity.AuthorizeParams{
+		ActorID:    identity.TelegramSessionActorID("approved-user"),
+		Capability: identity.CapabilityAPIChat,
+		Resource:   identity.ResourceRef{Type: "api", ID: "chat"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize api.chat: %v", err)
+	}
+	if allowed.Decision != identity.DecisionAllow {
+		t.Fatalf("api.chat decision = %s (%s), want allow", allowed.Decision, allowed.Reason)
+	}
+
+	denied, err := s.Authorize(ctx, identity.AuthorizeParams{
+		ActorID:    identity.TelegramSessionActorID("approved-user"),
+		Capability: identity.CapabilitySkillsInstall,
+		Resource:   identity.ResourceRef{Type: "skills", ID: "install"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize skills.install: %v", err)
+	}
+	if denied.Decision != identity.DecisionDeny || denied.Reason != "missing_grant" {
+		t.Fatalf("skills.install decision = %s (%s), want deny missing_grant", denied.Decision, denied.Reason)
+	}
+}
+
 func assertAuthScalar(t *testing.T, db *sql.DB, query, want string, args ...any) {
 	t.Helper()
 	var got string

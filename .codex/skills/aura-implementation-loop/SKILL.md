@@ -92,8 +92,8 @@ the active PRD/ADR/phase files agree.
   truth.
 - Consult GSD only for read-only patterns such as goal-backward planning,
   vertical slice sizing, dependency analysis, and gap reports.
-- Use `scripts/ralph/prd.json` only when the current turn explicitly selects
-  Ralph queue work.
+- Use `D:/Aura/scripts/ralph/prd.json` only when the current turn explicitly
+  selects Ralph queue work.
 - Translate any GSD/Ralph-derived idea into Aura's phase files before
   implementation. Do not let GSD `STATE.md`/`ROADMAP.md` or a Ralph queue become
   the source of truth.
@@ -129,22 +129,27 @@ Every non-trivial slice follows this chain:
 2. **Implementation gate**: run baseline commands, patch only named files, then
    run targeted package tests before broader gates.
 3. **Real debug gate**: when a test, probe, or user-visible behavior fails,
-   reproduce it against ground truth before patching. Use SQLite rows, API
-   responses, filesystem artifacts, durable events, logs with redaction,
-   rendered UI state, or provider/tool response fields. Do not debug from model
-   claims alone.
-4. **E2E metrics gate**: live probes must capture the full user-visible reply
-   or artifact, durable backing facts, latency, token/cost counters when
-   available, tool-call count and tool names, artifact structure/content, and
-   pass/fail mismatches. Do not expose or persist raw CoT.
+   reproduce it against ground truth before patching. State one hypothesis,
+   inspect the durable fact that can prove or falsify it, patch the smallest
+   owned cause, then rerun the failing command before broader gates. Use SQLite
+   rows, API responses, filesystem artifacts, durable events, logs with
+   redaction, rendered UI state, or provider/tool response fields. Do not debug
+   from model claims alone.
+4. **E2E metrics gate**: live probes must produce an evidence packet with the
+   exact command or live probe, fixture or seed data, full non-sensitive
+   user-visible reply or artifact, redacted preview plus artifact handle when
+   the payload is sensitive/private, durable backing facts, trace/run id or
+   artifact handle, latency/token/cost counters when available, tool-call count
+   and tool names, artifact structure/content, and mismatch diff. Do not expose
+   or persist raw CoT.
 5. **Residue gate**: before final response, check `git status --short`, close
    spawned agents, stop temporary servers started by the slice, leave Docker in
    the requested state, avoid generated junk, and update handoff/progress only
    with verified facts.
 
-No slice is complete if it only passes smoke checks, leaves a stale derived
-queue, leaves unrecorded benchmark drift, or relies on a child skill report
-without translating the accepted result into Aura's phase files.
+No slice is complete if it only passes smoke-level checks, leaves a stale
+derived queue, leaves unrecorded benchmark drift, or relies on a child-skill
+report without translating the accepted result into Aura's phase files.
 
 If the active phase cannot be identified from durable files, ask one concrete
 question before editing. If the phase plan is missing, stale, lacks source
@@ -248,7 +253,8 @@ Keep the active context small and reconstructible:
 - Do not rely on verifier/subagent chat as durable state; record only accepted
   results in phase `progress.md` or handoff files.
 - Before a pause, compaction risk, or handoff, update `CONTINUE-HERE.md`,
-  `.planning/HANDOFF.json`, and `.planning/deep-refactor/.continue-here.md`.
+  `.planning/HANDOFF.json`, and `.planning/deep-refactor/.continue-here.md`,
+  except in read-only/forward-test mode.
 - After a shipped implementation slice, update child `progress.md`, live rows
   in `benchmark.md`, and `.planning/progress.txt`.
 - Do not create extra context-pack files unless existing handoff/progress files
@@ -288,6 +294,40 @@ Smoke tests are allowed only as prechecks. They do not count as phase
 benchmarks, do not close PRD gates, and must not be recorded as completion
 evidence. A valid benchmark names the command or live probe, fixture or data
 source, expected ground truth, pass/fail threshold, PRD gate, and result.
+
+## Evidence Packet Contract
+
+Every verified implementation slice must leave a durable evidence packet in the
+active phase `benchmark.md` and active phase `progress.md`. Handoff files may
+carry pause, blocker, or readiness state, but handoff-only evidence cannot close
+a slice. The final answer may summarize the packet, but chat alone is not
+durable evidence. The packet must include:
+
+- exact command or live probe;
+- fixture, seed data, source id, or user-visible input;
+- non-sensitive user-visible output or generated artifact; use a redacted
+  preview plus artifact handle when the output is sensitive/private;
+- durable ground truth inspected, such as SQLite rows, API state, filesystem
+  artifact bytes, durable events, rendered UI state, or provider/tool fields;
+- trace id, run id, artifact handle, or explicit note that none exists;
+- latency and token/cost counters when available;
+- tool-call count and tool names;
+- mismatch diff or statement that expected and observed facts matched.
+
+Do not store raw CoT, full child transcripts, secrets, or private payloads as
+normal evidence. Store handles, redacted previews, and exact commands whenever
+that is enough to reproduce the check.
+
+## Failed Verification Debug Loop
+
+When verification fails after a patch:
+
+1. Reproduce the failure with the failing command, probe, or artifact diff.
+2. State one hypothesis about the owned cause.
+3. Inspect ground truth that can prove or falsify the hypothesis.
+4. Patch the smallest owned cause; do not edit tests merely to pass.
+5. Rerun the failing command before broader gates.
+6. Update the evidence packet with the mismatch, fix, and rerun result.
 
 ## Agent-Loop Policy
 
@@ -351,6 +391,8 @@ exists. Name the plugin-backed capability and why it is needed before using it.
 Stop and report instead of editing when:
 
 - durable startup files disagree about the active phase,
+- a GSD or Ralph queue conflicts with the active Aura phase files,
+- a child-skill report has not been translated into Aura phase files,
 - the phase folder is not implementation-ready,
 - baseline tests fail before any code edit,
 - `benchmark.md` lacks concrete ground-truth checks, pass/fail thresholds, or

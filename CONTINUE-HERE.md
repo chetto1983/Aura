@@ -46,7 +46,54 @@ Current state as of 2026-05-15:
   `go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron`,
   `go test ./internal/db/migrations ./internal/identity ./internal/api/auth`,
   `go build ./...`, `go vet ./...`, and `go test ./...`.
-- Do not mark the Phase01B parent complete; B3-B7 remain planned integration
+- Phase01B3 is implemented locally: dashboard bearer requests now carry the
+  deterministic Telegram session actor ID, `/chat` rejects authenticated body
+  `user_id` impersonation, and `api.chat` authorization is enforced before
+  chat execution.
+- Phase01B3 verification passed:
+  `go test ./internal/api ./internal/api/auth`, `go test ./internal/...`,
+  `go build ./...`, `go vet ./...`, and `go test ./...`.
+- Phase01B3 container E2E verification passed:
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  `aura-aura-1` health `healthy`, `/health=200`, unauthenticated
+  `/api/health=401`, bearer `/api/health=200`, unauthenticated `/api/chat=401`,
+  bearer mismatched `user_id` `/api/chat=403`, bearer `/api/chat` reply
+  `AURA_E2E_PHASE01B3_OK`, and live SQLite `authz_decisions` recorded
+  `allow|api.chat|api|chat|active_grant`.
+- Phase01B4 is implemented locally and container-verified: registry tool
+  execution now authorizes `tool.execute` or tool-specific capabilities before
+  `Tool.Execute`, dashboard chat carries the identity authorizer into the agent
+  path, and local plus containerized registry tests prove visible-tool
+  fail-closed behavior with disposable SQLite authz evidence.
+- Phase01B4 verification passed:
+  baseline Phase01B packages, `go test ./internal/identity`,
+  `go test ./internal/agent/tools/registry`,
+  `go test ./internal/api ./internal/api/auth`,
+  `go test ./internal/agent ./internal/telegram ./internal/channels/telegram`,
+  `go test ./internal/...`, `go build ./...`, `go vet ./...`,
+  `go test ./...`, `docker compose build aura`,
+  `docker compose up -d --no-deps aura`, live health/API/chat probes with
+  `AURA_E2E_PHASE01B4_OK`, and containerized registry fail-closed tests.
+- Phase01B5 is implemented and verified: Telegram `/start` and `/login` now
+  ensure deterministic identity/grants before dashboard token issuance; env
+  allowlist users remain config-only and are not copied into `allowed_users`;
+  persisted bootstrap/approved users repair identity from stored source before
+  tokens are minted.
+- Phase01B5 verification passed:
+  `go test ./internal/api/auth -run "TestEnsureTelegramAllowlistedIdentity|TestBackfillAllowedUserIdentitiesMigratesExistingRows|TestBootstrapUser_ClaimsEmptyAllowlist" -count=1`,
+  `go test ./internal/telegram -run "TestOnLogin|TestApproveAccessCreatesIdentityBeforeSendingToken|TestIsAllowlisted|TestCollectOwnerIDs" -count=1`,
+  `go test ./internal/identity ./internal/api/auth ./internal/telegram -count=1`,
+  the Phase01B baseline package gate, `go test ./internal/... -count=1`,
+  `go build ./...`, `go vet ./...`, and `go test ./... -count=1`.
+- Phase01B5 container update passed:
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  `aura-aura-1` health `healthy`, `/health=200`,
+  unauthenticated `/api/health=401`, and unauthenticated `/api/chat=401`.
+  Live Telegram fixture and bearer chat marker were not available in this shell
+  because `AURA_E2E_TOKEN` is not set.
+- Registered `D:/tmp/cli-printing-press` as an Aura reference map in
+  `D:/Aura/docs/cli-printing-press-study.md`.
+- Do not mark the Phase01B parent complete; B6-B7 remain planned integration
   slices.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
@@ -67,7 +114,7 @@ Required first reads:
 11. `D:/Aura/internal/identity/store.go`
 
 Do not rely on chat history. Reconstruct the state from the files above before
-planning or editing. For Phase01B, start Phase01B3 dashboard bearer actor
-context as a separate `$aura-implementation-loop` slice. Do not bundle tool
-capability checks, cron delegation, swarm delegation, or denial-event wiring
-into Phase01B3.
+planning or editing. For Phase01B, start the next bounded implementation
+slice, likely Phase01B6 cron/swarm delegated actor creation. Do not bundle
+denial-event wiring into that next slice unless the Phase01B plan is explicitly
+narrowed first.
