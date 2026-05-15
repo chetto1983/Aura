@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(agent): ask_user tool + loop pause + pending-call detection (US-D01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Reference: D:/tmp/nanobot/nanobot/agent/tools/ask.py. The sentinel-error pattern is Aura's analog to nanobot's BaseException-as-interrupt (Python only)."
     },
     {

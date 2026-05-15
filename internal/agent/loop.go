@@ -15,6 +15,7 @@ import (
 	"time"
 
 	governance "github.com/aura/aura/internal/agent/governance"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -52,6 +53,9 @@ type ExecutionSummary struct {
 	ReadSkillNames []string
 	TerminalTool   string
 	Results        map[string]string
+	// AwaitingUserInput is non-nil when the ask_user tool was dispatched and
+	// returned ErrAwaitingUserInput. The loop pauses and does not continue.
+	AwaitingUserInput *tools.ErrAwaitingUserInput
 }
 
 // IsRetryableToolResult reports whether a prior tool-result text leaves the
@@ -342,7 +346,14 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				"corrected_total", stats.PhantomToolCorrected,
 			)
 		}
-		state.AddAssistantToolCallMessage(resp.Response.Content, resp.Response.ToolCalls)
+		// ask_user exclusive semantics: when ask_user is in the batch, keep
+		// only that call in the state so the resume sees a clean single
+		// pending tool_call without orphaned unresolved stubs for other calls.
+		toolCallsForState := resp.Response.ToolCalls
+		if askUserIdx := findAskUserCall(resp.Response.ToolCalls); askUserIdx >= 0 {
+			toolCallsForState = resp.Response.ToolCalls[askUserIdx : askUserIdx+1]
+		}
+		state.AddAssistantToolCallMessage(resp.Response.Content, toolCallsForState)
 		stats.ToolCalls += len(resp.Response.ToolCalls)
 		for _, call := range resp.Response.ToolCalls {
 			stats.ToolsCalled = append(stats.ToolsCalled, call.Name)
@@ -419,6 +430,14 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			freshCalls = append(freshCalls, call)
 		}
 		stats.DuplicateToolCall = stats.DuplicateToolCall || len(duplicateToolCalls) > 0
+
+		// ask_user exclusive semantics: if ask_user is among the fresh calls,
+		// dispatch only it and discard the rest of the batch silently (they
+		// will re-emit on the next LLM turn after resume).
+		if idx := findAskUserCall(freshCalls); idx >= 0 {
+			freshCalls = freshCalls[idx : idx+1]
+		}
+
 		var execution ExecutionSummary
 		if len(freshCalls) > 0 {
 			toolNames := make([]string, 0, len(freshCalls))
@@ -494,6 +513,19 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			}
 		}
 		emitStats()
+
+		// ask_user pause: stop the loop and signal the caller to wait for user.
+		if execution.AwaitingUserInput != nil {
+			stats.StopReason = "waiting_for_user"
+			emitStats()
+			logger.Info("agentloop: ask_user_pause",
+				"iteration", iteration,
+				"kind", execution.AwaitingUserInput.Kind,
+				"options_count", len(execution.AwaitingUserInput.Options),
+			)
+			iterCancel()
+			return loopResult{Stats: stats}, nil
+		}
 
 		if execution.FatalResult != "" {
 			state.AddAssistantMessage(execution.FatalResult)
@@ -675,4 +707,14 @@ func appendUniqueStrings(values []string, additions ...string) []string {
 		}
 	}
 	return values
+}
+
+// findAskUserCall returns the index of the first ask_user call in calls, or -1.
+func findAskUserCall(calls []llm.ToolCall) int {
+	for i, call := range calls {
+		if call.Name == "ask_user" {
+			return i
+		}
+	}
+	return -1
 }

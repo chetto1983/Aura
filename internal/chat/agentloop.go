@@ -171,6 +171,12 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 
 	result, runErr := agent.Run(ctx, inv)
 
+	// ask_user pause: flip run to waiting_for_user so the hub preserves the
+	// status instead of overwriting it with completed after this returns.
+	if runErr == nil && result.Stats.StopReason == "waiting_for_user" && run != nil {
+		run.Status = RunStatusWaitingForUser
+	}
+
 	// Surface the final assistant text + usage even on error: a partial
 	// transcript can still be useful (the LLM might have produced text
 	// before a tool failure). The Hub appends EventDone after this returns.

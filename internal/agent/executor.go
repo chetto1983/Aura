@@ -54,6 +54,9 @@ func newAgentExecutor(
 type toolOutcome struct {
 	id      string
 	content string
+	// awaitingUser is set when the tool returned ErrAwaitingUserInput;
+	// the loop handles the pause, no tool_result is added to state.
+	awaitingUser *tools.ErrAwaitingUserInput
 }
 
 // ExecuteToolCalls runs each call in parallel, wraps results, adds them to
@@ -72,7 +75,12 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 		callCopy.Arguments = argsClone
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			raw := e.executeOneTool(ctx, call)
+			raw, execErr := e.executeOneTool(ctx, call)
+			var awaitErr *tools.ErrAwaitingUserInput
+			if errors.As(execErr, &awaitErr) {
+				outcomes[i] = toolOutcome{id: call.ID, awaitingUser: awaitErr}
+				return
+			}
 			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}
 		}(i, callCopy)
@@ -95,6 +103,13 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 
 	summary := ExecutionSummary{Results: make(map[string]string, len(outcomes))}
 	for _, o := range outcomes {
+		if o.awaitingUser != nil {
+			// ask_user pause: do NOT add a tool_result to state.
+			// The pending tool_call entry already in the assistant message
+			// serves as the marker; the resume path injects the tool_result.
+			summary.AwaitingUserInput = o.awaitingUser
+			continue
+		}
 		// Add to state so the next LLM round sees the result in message
 		// history — the loop only adds stubs for skipped/duplicate calls,
 		// not fresh ones (mirrors conversation_tool_exec.go:112).
@@ -105,12 +120,12 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 	return summary
 }
 
-func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) string {
+func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (string, error) {
 	if len(e.allowlist) == 0 || !slices.Contains(e.allowlist, strings.ToLower(call.Name)) {
-		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name))
+		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), nil
 	}
 	if e.tools == nil {
-		return tools.FormatFatalToolError(errors.New("tool registry unavailable"))
+		return tools.FormatFatalToolError(errors.New("tool registry unavailable")), nil
 	}
 	toolCtx := ctx
 	var cancel context.CancelFunc
@@ -123,12 +138,16 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) s
 	}
 	out, err := e.tools.Execute(toolCtx, call.Name, call.Arguments)
 	if err != nil {
+		var awaitErr *tools.ErrAwaitingUserInput
+		if errors.As(err, &awaitErr) {
+			return "", awaitErr // propagate sentinel without formatting
+		}
 		if e.logger != nil {
 			e.logger.Warn("agent tool call failed", "tool", call.Name, "error", redactToolError(err))
 		}
-		return tools.FormatToolError(err)
+		return tools.FormatToolError(err), nil
 	}
-	return out
+	return out, nil
 }
 
 // cloneToolArgs returns a shallow copy of the LLM-supplied arguments map so
