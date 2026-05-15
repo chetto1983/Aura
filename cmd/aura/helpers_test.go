@@ -1,17 +1,49 @@
-﻿package telegram
+package main
 
 import (
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/sandbox"
-	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
+func TestSkillSearchRootsIncludeSkillsPathCatalogLayouts(t *testing.T) {
+	cfg := &config.Config{
+		SkillsPath:              filepath.Join("data", "skills"),
+		SkillsInstallProjectDir: "",
+	}
+
+	roots := skillSearchRoots(cfg)
+	for _, want := range []string{
+		filepath.Join("data", "skills"),
+		".agents/skills",
+		".claude/skills",
+		filepath.Join("data", "skills", ".agents", "skills"),
+		filepath.Join("data", "skills", ".claude", "skills"),
+		filepath.Join(".", ".agents", "skills"),
+		filepath.Join(".", ".claude", "skills"),
+	} {
+		if !helpersContains(roots, want) {
+			t.Fatalf("roots missing %q: %+v", want, roots)
+		}
+	}
+}
+
+func helpersContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSetupSandboxRuntime_Disabled(t *testing.T) {
-	mgr, health := SetupSandboxRuntime(&config.Config{SandboxEnabled: false}, slog.Default())
+	mgr, health := setupSandboxRuntime(&config.Config{SandboxEnabled: false}, slog.Default())
 
 	if mgr != nil {
 		t.Fatal("manager = non-nil, want nil")
@@ -32,7 +64,7 @@ func TestSetupSandboxRuntime_ProcessRunnerEnablesCodeAndShell(t *testing.T) {
 		t.Skip("python3 not available")
 	}
 	workDir := t.TempDir()
-	mgr, health := SetupSandboxRuntime(&config.Config{
+	mgr, health := setupSandboxRuntime(&config.Config{
 		SandboxEnabled:    true,
 		SandboxTimeoutSec: 21,
 		WorkspaceRoot:     workDir,
@@ -88,8 +120,8 @@ func TestShouldBootstrapPromptOverlayDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ShouldBootstrapPromptOverlayDefaults(tt.cfg); got != tt.want {
-				t.Fatalf("ShouldBootstrapPromptOverlayDefaults() = %v, want %v", got, tt.want)
+			if got := shouldBootstrapPromptOverlayDefaults(tt.cfg); got != tt.want {
+				t.Fatalf("shouldBootstrapPromptOverlayDefaults() = %v, want %v", got, tt.want)
 			}
 		})
 	}

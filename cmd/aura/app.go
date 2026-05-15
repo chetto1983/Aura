@@ -163,7 +163,7 @@ func newApp(
 	// ---- Prompt overlay bootstrap -------------------------------------------
 	// Idempotent; only runs when the overlay path points at the standard
 	// runtime workspace so operator-managed overlays are not overwritten.
-	if telegram.ShouldBootstrapPromptOverlayDefaults(cfg) {
+	if shouldBootstrapPromptOverlayDefaults(cfg) {
 		if err := conversation.EnsurePromptOverlayDefaults(cfg.PromptOverlayPath); err != nil {
 			logger.Warn("failed to bootstrap prompt overlay defaults", "path", cfg.PromptOverlayPath, "error", err)
 		}
@@ -171,7 +171,7 @@ func newApp(
 
 	// ---- LLM client ---------------------------------------------------------
 	if cfg.LLMAPIKey != "" {
-		deps.LLM = telegram.CreateLLMClient(cfg, logger)
+		deps.LLM = createLLMClient(cfg, logger)
 	} else {
 		logger.Warn("no LLM provider configured, bot will echo messages without LLM")
 	}
@@ -217,7 +217,7 @@ func newApp(
 	deps.CompactVectorHealth = compactVectorHealth
 
 	if cfg.EmbeddingAPIKey != "" {
-		embedFn = telegram.CreateEmbeddingFunc(cfg)
+		embedFn = createEmbeddingFunc(cfg)
 		batchEmbedFn = search.NewOpenAICompatBatchEmbeddingFunction(
 			cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey,
 			cfg.EmbeddingModel, cfg.EmbeddingOutputDim, nil)
@@ -306,7 +306,7 @@ func newApp(
 	deps.Ingest = ingestPipeline
 
 	// ---- Sandbox ------------------------------------------------------------
-	sandboxMgr, sandboxHealth := telegram.SetupSandboxRuntime(cfg, logger)
+	sandboxMgr, sandboxHealth := setupSandboxRuntime(cfg, logger)
 	deps.SandboxMgr = sandboxMgr
 	deps.SandboxHealth = sandboxHealth
 
@@ -335,7 +335,7 @@ func newApp(
 	}
 
 	// ---- Skills loader ------------------------------------------------------
-	skillRoots := telegram.SkillSearchRoots(cfg)
+	skillRoots := skillSearchRoots(cfg)
 	skillLoader := auraskills.NewLoader(skillRoots[0], skillRoots[1:]...)
 	deps.Skills = skillLoader
 	deps.SkillsCatalog = auraskills.NewCatalogClient(cfg.SkillsCatalogURL)
@@ -764,7 +764,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------
-	skillRoots := telegram.SkillSearchRoots(cfg)
+	skillRoots := skillSearchRoots(cfg)
 	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, cfg.SkillsInstallProjectDir)
 	if err != nil {
 		logger.Warn("skills installer unavailable", "error", err)

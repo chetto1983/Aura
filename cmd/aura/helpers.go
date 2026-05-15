@@ -1,4 +1,4 @@
-package telegram
+package main
 
 import (
 	"log/slog"
@@ -13,9 +13,7 @@ import (
 	"github.com/aura/aura/internal/storage/search"
 )
 
-// ShouldBootstrapPromptOverlayDefaults returns true if the overlay path is the
-// standard runtime workspace and default overlay files should be seeded.
-func ShouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
+func shouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
@@ -29,8 +27,7 @@ func ShouldBootstrapPromptOverlayDefaults(cfg *config.Config) bool {
 	return overlayClean == workspaceClean || overlayClean == runtimeClean || overlayClean == filepath.Clean("/workspace")
 }
 
-// SkillSearchRoots returns the ordered skill directory search roots from config.
-func SkillSearchRoots(cfg *config.Config) []string {
+func skillSearchRoots(cfg *config.Config) []string {
 	if cfg == nil {
 		return nil
 	}
@@ -53,8 +50,7 @@ func SkillSearchRoots(cfg *config.Config) []string {
 	}
 }
 
-// CreateLLMClient builds the LLM client with retry wrapper.
-func CreateLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
+func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	_ = logger
 	openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
 		APIKey:  cfg.LLMAPIKey,
@@ -71,13 +67,11 @@ func CreateLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	})
 }
 
-// CreateEmbeddingFunc builds the embedding function from config.
-func CreateEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
+func createEmbeddingFunc(cfg *config.Config) search.EmbeddingFunc {
 	return search.NewOpenAICompatEmbeddingFunction(cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey, cfg.EmbeddingModel, cfg.EmbeddingOutputDim, true, nil)
 }
 
-// SetupSandboxRuntime constructs the sandbox execution runtime if enabled.
-func SetupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {
+func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Manager, api.SandboxHealth) {
 	if logger == nil {
 		logger = slog.Default()
 	}
