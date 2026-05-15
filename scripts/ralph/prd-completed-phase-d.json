@@ -1,0 +1,70 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-D = masterplan Phase 1C (Question Gate). Closes Phase 1. Design v2 (nanobot-aligned, see docs/phase-01c-question-gate-scope.md): ask_user is a regular tool with exclusive semantics. Model decides when to use it (system prompt teaches cardinal cases). Pause = run.Status='waiting_for_user' (column exists since Phase 1A). Resume = standard tool_result message from next inbound. NO new chat_questions table, NO new event types, NO custom action grammar. Simpler than the v1 design, aligned with nanobot/LangGraph/Codex industry patterns. Telegram renders numbered-text options (NOT inline keyboard — required for cmd/probe_chat E2E automation). Each story = ONE atomic commit on master.",
+  "userStories": [
+    {
+      "id": "US-D01",
+      "title": "ask_user tool + agent loop pause via sentinel error + pending-call detection helper",
+      "description": "Adopt the nanobot pattern as a regular tool in Aura's registry. (a) internal/agent/tools/registry/ask_user.go (new) implements the Tool interface: Name='ask_user'; Description spells out PRD §5.2.5 cardinal cases (when to use, when NOT); Parameters JSONSchema = {question string required, options []string optional 2-4, kind string optional enum clarification|approval default clarification}; Execute returns a typed sentinel error tools.ErrAwaitingUserInput wrapping the question/options/kind. (b) internal/agent/loop.go: detect the sentinel error from executor return; when present, set run.Status='waiting_for_user' (column already in storage/runs from Phase 1A), set Stats.StopReason='waiting_for_user', return from runLoop without dispatching further tool calls or LLM rounds. The original tool_call entry stays in run_events as the pending marker. (c) New helper agent.PendingAskUserCall(events []runs.Event) (toolCallID string, options []string, kind string, ok bool) — walks the event log backward, finds the most recent tool_call for ask_user that has no matching tool_result. Mirrors nanobot's pending_ask_user_id. (d) The tool is exclusive in spirit: if the LLM batches ask_user with other tool calls in one turn, the loop processes ask_user FIRST (which pauses) and discards the rest of the batch (they'll re-emit on resume). (e) Tests: tool definition shape, Execute returns sentinel, loop pauses on sentinel, PendingAskUserCall finds pending, returns nothing on resolved (matching tool_result exists), returns nothing when ask_user absent.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/ask_user.go exists with Tool interface implementation",
+        "Tool Definition includes Name, Description (PRD §5.2.5 cardinal cases), Parameters (question, options, kind) with JSONSchema",
+        "ErrAwaitingUserInput sentinel error type defined in internal/agent/tools/registry (or internal/agent if more natural)",
+        "internal/agent/loop.go detects ErrAwaitingUserInput, sets run.Status='waiting_for_user', sets Stats.StopReason='waiting_for_user', returns without further iters",
+        "internal/agent.PendingAskUserCall helper exists and is tested",
+        "When LLM emits ask_user batched with other tool calls, ask_user is processed first (pauses) and other batched calls are not dispatched in the same turn",
+        "Tests cover: Execute returns sentinel, loop pause behavior, PendingAskUserCall pending+resolved+absent cases",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(agent): ask_user tool + loop pause + pending-call detection (US-D01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Reference: D:/tmp/nanobot/nanobot/agent/tools/ask.py. The sentinel-error pattern is Aura's analog to nanobot's BaseException-as-interrupt (Python only)."
+    },
+    {
+      "id": "US-D02",
+      "title": "System-prompt teaches when to use ask_user + eval fixture",
+      "description": "Aura's canonical system prompt gains a 'Clarification and Approval Protocol' section so the LLM knows when to use ask_user. Per the design pivot, code-side has NO hardcoded risk list — the prompt is the policy. (a) Locate the system-prompt assembly point (likely internal/agent/promptplan.go or internal/conversation/system_prompt.go). (b) Add a section with: (i) cardinal cases that DO justify ask_user (PRD §5.2.5 verbatim: missing required slot; ambiguous viable interpretations; irreversible destructive action; permission escalation; durable user-memory write without explicit intent; 3+ recoverable tool failures); (ii) cardinal non-cases (clear instruction; low-risk reversible default; resolvable by reading wiki/context; resolvable by a search tool); (iii) the two kinds explained — clarification (2-4 generated options + free-text allowed) vs approval (canonical options approve_once|approve_session|approve_persist|deny|cancel); (iv) at least 1 clarification example + 1 approval example as concrete tool_call illustrations; (v) 2 counter-examples (when NOT to ask). (c) Eval fixture at internal/agent/ask_user_promptfx_test.go: a Go test with a table of (description, user_input, expected_emit bool, rationale) — documents the contract. Does NOT run an actual LLM. Acts as the agreed contract for future eval slices.",
+      "acceptanceCriteria": [
+        "Canonical system prompt has a 'Clarification and Approval Protocol' section",
+        "Section enumerates ≥6 cardinal cases that justify ask_user (from PRD §5.2.5)",
+        "Section enumerates ≥4 cardinal non-cases",
+        "Section explains the 2 kinds (clarification, approval) with their option-shape rules",
+        "Section includes ≥1 concrete clarification example and ≥1 concrete approval example",
+        "Section includes ≥2 counter-examples (no-emit cases)",
+        "internal/agent/ask_user_promptfx_test.go exists with ≥10 contract pairs documenting expected behavior",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(agent): system-prompt clarification/approval protocol + eval fixture (US-D02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "The prompt IS the policy. The fixture is the contract for future LLM evals (out-of-scope here). When the team later runs evals (Phase 6 territory), this fixture becomes the source of truth."
+    },
+    {
+      "id": "US-D03",
+      "title": "Telegram channel rendering + reply parsing for ask_user pause/resume",
+      "description": "Telegram channel handles the pause/resume lifecycle. (a) Outbound (internal/channels/telegram outbound or invocation_builder): when streaming reports tool_start for ask_user, format and send the question — with options as '❓ {question}\\n\\n1. {opt_a}\\n2. {opt_b}\\n3. {opt_c}\\n\\n(reply with number, or text for free input)'; without options as '❓ {question}\\n\\n(reply with text)'. (b) Inbound (internal/channels/telegram inbound or invocation_builder): on each new user message, check chat.Hub for the current thread's run state. If run.Status == 'waiting_for_user' and PendingAskUserCall returns a pending tool_call: parse the user reply — numeric N (1..len(options)) → select options[N-1] as content; numeric out-of-range or 0 → send synthetic reject 'please reply with 1..N or free text' (does NOT consume the pending question); else (non-numeric) → use raw text as content. (c) Inject a tool_result message with {tool_call_id: pending.toolCallID, name: 'ask_user', content: <selected or free-text>} into the next agent loop invocation (NOT a new inbound message — the inbound is consumed by the resume, no separate user_message turn). (d) Run resumes: next loop call sees the resolved tool_call, status returns to running, LLM proceeds. (e) Tests: numbered reply selects correct option; free-text passes through; out-of-range rejected with synthetic message; multi-option round-trip end-to-end; verify run.Status transitions waiting → running.",
+      "acceptanceCriteria": [
+        "Telegram outbound formats ask_user tool_start as numbered-text question with options",
+        "Telegram outbound formats ask_user without options as plain-text question",
+        "Telegram inbound detects run.Status == 'waiting_for_user' + pending ask_user call and routes the next reply as tool_result content",
+        "Numeric reply 1..N selects options[N-1]; out-of-range numeric rejected with synthetic message (does NOT consume the pending question); non-numeric becomes free-text content",
+        "Tool_result message is injected with tool_call_id matching the pending tool_call's id, name='ask_user'",
+        "Run state transitions waiting_for_user → running on resume; loop sees resolved tool_call and continues",
+        "Tests cover: numbered, free-text, out-of-range, multi-option, run state transition",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(channels/telegram): ask_user numbered-text rendering + reply routing (US-D03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Text-numbered (NOT inline keyboard) per design — cmd/probe_chat must be able to automate text replies for E2E. Inline keyboard arrives in v2."
+    }
+  ]
+}

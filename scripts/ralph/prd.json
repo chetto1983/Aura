@@ -1,70 +1,139 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-D = masterplan Phase 1C (Question Gate). Closes Phase 1. Design v2 (nanobot-aligned, see docs/phase-01c-question-gate-scope.md): ask_user is a regular tool with exclusive semantics. Model decides when to use it (system prompt teaches cardinal cases). Pause = run.Status='waiting_for_user' (column exists since Phase 1A). Resume = standard tool_result message from next inbound. NO new chat_questions table, NO new event types, NO custom action grammar. Simpler than the v1 design, aligned with nanobot/LangGraph/Codex industry patterns. Telegram renders numbered-text options (NOT inline keyboard — required for cmd/probe_chat E2E automation). Each story = ONE atomic commit on master.",
+  "description": "Aura Phase-G = masterplan Phase 4 (collapse the agent runtime / kill legacy agent.Runner). Runner is the residual duplicate flagged in PRD §6 and docs/aura-main-loop-limits-audit.md §1. After Phase-F (Phase-3 streaming-protection arc) the canonical path is chat.Hub → chat.AgentLoop → agent.Run (loop.go). Runner is a stateful wrapper around that same agent.Run with mutable LimitController glue for the dashboard. 4 live consumers: cmd/aura/app.go (constructor + cron adapter), internal/api/web_chat.go, internal/telegram/deps.go, internal/cron/dispatch.go (via adapter). 7 stories: introduce stateless agent.RunTask, migrate each consumer one by one, simplify LimitController, then delete runner.go + runner_test.go and refresh docs. Full call graph + per-story scope in .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md. Each story = ONE atomic commit on master.",
   "userStories": [
     {
-      "id": "US-D01",
-      "title": "ask_user tool + agent loop pause via sentinel error + pending-call detection helper",
-      "description": "Adopt the nanobot pattern as a regular tool in Aura's registry. (a) internal/agent/tools/registry/ask_user.go (new) implements the Tool interface: Name='ask_user'; Description spells out PRD §5.2.5 cardinal cases (when to use, when NOT); Parameters JSONSchema = {question string required, options []string optional 2-4, kind string optional enum clarification|approval default clarification}; Execute returns a typed sentinel error tools.ErrAwaitingUserInput wrapping the question/options/kind. (b) internal/agent/loop.go: detect the sentinel error from executor return; when present, set run.Status='waiting_for_user' (column already in storage/runs from Phase 1A), set Stats.StopReason='waiting_for_user', return from runLoop without dispatching further tool calls or LLM rounds. The original tool_call entry stays in run_events as the pending marker. (c) New helper agent.PendingAskUserCall(events []runs.Event) (toolCallID string, options []string, kind string, ok bool) — walks the event log backward, finds the most recent tool_call for ask_user that has no matching tool_result. Mirrors nanobot's pending_ask_user_id. (d) The tool is exclusive in spirit: if the LLM batches ask_user with other tool calls in one turn, the loop processes ask_user FIRST (which pauses) and discards the rest of the batch (they'll re-emit on resume). (e) Tests: tool definition shape, Execute returns sentinel, loop pauses on sentinel, PendingAskUserCall finds pending, returns nothing on resolved (matching tool_result exists), returns nothing when ask_user absent.",
+      "id": "US-G01",
+      "title": "Stateless agent.RunTask helper",
+      "description": "Introduce a stateless agent.RunTask function that does what Runner.Run does today, so Phase-G consumers can migrate off the Runner struct without losing behavior. (a) internal/agent/runtask.go (new): func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) where RunTaskDeps groups the previously-Runner-held fields {LLM llm.Client; Tools *tools.Registry; Model string; ReasoningEffort string; PhantomGuard *PhantomToolGuard; Logger *slog.Logger} plus the previously-mutable limits {MaxIterations int; Timeout time.Duration; ToolTimeout time.Duration} (read once per call — runtime config changes apply to the NEXT call). (b) Body mirrors Runner.Run: context.WithTimeout wrap, initialMessages(task), cleanToolList, agentExecutor + NewNoStreamClient + Invocation, call internal/agent.Run, wrap rtResult into Result with the MaxIterationsHit fallback message. (c) Task, Result, RunTaskDeps stay in a new internal/agent/task.go file (extracted from runner.go in US-G06). For US-G01 we DEFINE these types as fresh aliases/copies so RunTask compiles standalone; the legacy Runner keeps using the same names from runner.go until US-G06. (d) initialMessages, cleanToolList, limitToolContent currently live in runner.go — copy them to a new internal/agent/runtask_helpers.go (private). They'll be deleted from runner.go in US-G06 when the wrapper goes. (e) Test internal/agent/runtask_test.go: ≥3 cases (happy path, MaxIterationsHit fallback message, prompt-or-messages-required error) using the same in-process LLM fake style as runner_test.go.",
       "acceptanceCriteria": [
-        "internal/agent/tools/registry/ask_user.go exists with Tool interface implementation",
-        "Tool Definition includes Name, Description (PRD §5.2.5 cardinal cases), Parameters (question, options, kind) with JSONSchema",
-        "ErrAwaitingUserInput sentinel error type defined in internal/agent/tools/registry (or internal/agent if more natural)",
-        "internal/agent/loop.go detects ErrAwaitingUserInput, sets run.Status='waiting_for_user', sets Stats.StopReason='waiting_for_user', returns without further iters",
-        "internal/agent.PendingAskUserCall helper exists and is tested",
-        "When LLM emits ask_user batched with other tool calls, ask_user is processed first (pauses) and other batched calls are not dispatched in the same turn",
-        "Tests cover: Execute returns sentinel, loop pause behavior, PendingAskUserCall pending+resolved+absent cases",
+        "internal/agent/runtask.go exists exporting RunTask + RunTaskDeps",
+        "internal/agent/runtask_helpers.go exists with initialMessages/cleanToolList/limitToolContent copies (private)",
+        "RunTask uses context.WithTimeout(deps.Timeout) when Timeout > 0",
+        "RunTask returns the same MaxIterationsHit fallback string as Runner.Run when rtResult.Stats.MaxIterationsHit is true",
+        "RunTask returns 'agent: prompt or messages required' when task has neither",
+        "internal/agent/runtask_test.go exists with ≥3 cases",
+        "Runner / runner.go / runner_test.go UNCHANGED in this story (migration starts in US-G02..G04)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(agent): ask_user tool + loop pause + pending-call detection (US-D01)"
+        "Single atomic commit prefix: feat(agent): stateless RunTask helper (US-G01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Reference: D:/tmp/nanobot/nanobot/agent/tools/ask.py. The sentinel-error pattern is Aura's analog to nanobot's BaseException-as-interrupt (Python only)."
+      "passes": false,
+      "notes": "RunTaskDeps is intentionally a wider struct than Runner.Config so callers don't need to construct an intermediate Runner. The fields the dashboard mutates at runtime (MaxIterations, Timeout, ToolTimeout) move from Runner.mu-guarded fields to per-call parameters — the caller reads cfg fresh."
     },
     {
-      "id": "US-D02",
-      "title": "System-prompt teaches when to use ask_user + eval fixture",
-      "description": "Aura's canonical system prompt gains a 'Clarification and Approval Protocol' section so the LLM knows when to use ask_user. Per the design pivot, code-side has NO hardcoded risk list — the prompt is the policy. (a) Locate the system-prompt assembly point (likely internal/agent/promptplan.go or internal/conversation/system_prompt.go). (b) Add a section with: (i) cardinal cases that DO justify ask_user (PRD §5.2.5 verbatim: missing required slot; ambiguous viable interpretations; irreversible destructive action; permission escalation; durable user-memory write without explicit intent; 3+ recoverable tool failures); (ii) cardinal non-cases (clear instruction; low-risk reversible default; resolvable by reading wiki/context; resolvable by a search tool); (iii) the two kinds explained — clarification (2-4 generated options + free-text allowed) vs approval (canonical options approve_once|approve_session|approve_persist|deny|cancel); (iv) at least 1 clarification example + 1 approval example as concrete tool_call illustrations; (v) 2 counter-examples (when NOT to ask). (c) Eval fixture at internal/agent/ask_user_promptfx_test.go: a Go test with a table of (description, user_input, expected_emit bool, rationale) — documents the contract. Does NOT run an actual LLM. Acts as the agreed contract for future eval slices.",
+      "id": "US-G02",
+      "title": "Audit + drop telegram.Deps.agentRunner",
+      "description": "internal/telegram/deps.go has `agentRunner *agent.Runner` on Deps + Bot. Audit every method on *telegram.Bot for actual callers. (a) Grep `b.deps.agentRunner`, `b.agentRunner`, `Bot.AgentRunner` across internal/telegram and channels/telegram. (b) If there are zero live callers, remove the field from `Deps` and the corresponding field on `Bot`; update cmd/aura/app.go to stop passing it in `telegram.Deps{...}` literals. (c) If there ARE callers (likely background ops / scheduler glue), migrate each to call agent.RunTask directly with the deps already held by the bot (b.LLMClient(), b.ToolRegistry(), b.cfg.LLMModel, b.cfg.ReasoningEffort, etc.). Each migrated call site reads RunTaskDeps fresh from the bot config so dashboard live-tune still works. (d) Tests: any test in internal/telegram that injects a Runner gets refactored to inject the same deps (or stubbed RunTaskDeps). No new test scaffolding — reuse what already exists.",
       "acceptanceCriteria": [
-        "Canonical system prompt has a 'Clarification and Approval Protocol' section",
-        "Section enumerates ≥6 cardinal cases that justify ask_user (from PRD §5.2.5)",
-        "Section enumerates ≥4 cardinal non-cases",
-        "Section explains the 2 kinds (clarification, approval) with their option-shape rules",
-        "Section includes ≥1 concrete clarification example and ≥1 concrete approval example",
-        "Section includes ≥2 counter-examples (no-emit cases)",
-        "internal/agent/ask_user_promptfx_test.go exists with ≥10 contract pairs documenting expected behavior",
+        "Grep confirms no `agentRunner` field references remain in internal/telegram/ after this story",
+        "If callers were present, each is migrated to agent.RunTask (no Runner involved)",
+        "cmd/aura/app.go telegram.Deps construction no longer passes AgentRunner",
+        "internal/telegram tests pass (no test injects a *agent.Runner anymore)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: docs(agent): system-prompt clarification/approval protocol + eval fixture (US-D02)"
+        "Single atomic commit prefix: refactor(telegram): drop Deps.agentRunner (US-G02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "The prompt IS the policy. The fixture is the contract for future LLM evals (out-of-scope here). When the team later runs evals (Phase 6 territory), this fixture becomes the source of truth."
+      "passes": false,
+      "notes": "The session-close memo (project_session_close_2026-05-15_evening.md) flagged this field as 'held but NOT called for the normal chat path' — confirm with grep before assuming it's dead. If it IS called, migrate the smallest number of call sites possible in this commit; do not bundle scope from US-G03/G04."
     },
     {
-      "id": "US-D03",
-      "title": "Telegram channel rendering + reply parsing for ask_user pause/resume",
-      "description": "Telegram channel handles the pause/resume lifecycle. (a) Outbound (internal/channels/telegram outbound or invocation_builder): when streaming reports tool_start for ask_user, format and send the question — with options as '❓ {question}\\n\\n1. {opt_a}\\n2. {opt_b}\\n3. {opt_c}\\n\\n(reply with number, or text for free input)'; without options as '❓ {question}\\n\\n(reply with text)'. (b) Inbound (internal/channels/telegram inbound or invocation_builder): on each new user message, check chat.Hub for the current thread's run state. If run.Status == 'waiting_for_user' and PendingAskUserCall returns a pending tool_call: parse the user reply — numeric N (1..len(options)) → select options[N-1] as content; numeric out-of-range or 0 → send synthetic reject 'please reply with 1..N or free text' (does NOT consume the pending question); else (non-numeric) → use raw text as content. (c) Inject a tool_result message with {tool_call_id: pending.toolCallID, name: 'ask_user', content: <selected or free-text>} into the next agent loop invocation (NOT a new inbound message — the inbound is consumed by the resume, no separate user_message turn). (d) Run resumes: next loop call sees the resolved tool_call, status returns to running, LLM proceeds. (e) Tests: numbered reply selects correct option; free-text passes through; out-of-range rejected with synthetic message; multi-option round-trip end-to-end; verify run.Status transitions waiting → running.",
+      "id": "US-G03",
+      "title": "Migrate internal/api/web_chat.go off agent.Runner",
+      "description": "internal/api/web_chat.go holds `runner *agent.Runner` and calls `s.runner.Run(ctx, task)` per /api/chat request. (a) Replace the `runner` field with a `deps func() agent.RunTaskDeps` lazy-builder (or an explicit RunTaskDeps stored at construction time — pick the simplest of the two; lazy avoids stashing stale limits at startup). (b) `webChatService.Chat` builds RunTaskDeps + Task and calls `agent.RunTask(ctx, deps, task)`. (c) Update `NewWebChatService` signature: drop `runner *agent.Runner` parameter, accept the same fields RunTaskDeps wraps (LLM, tools, model, reasoningEffort, phantomGuard, logger, limits getter). (d) Chase the single call site in cmd/aura/app.go that calls `NewWebChatService(...)` and pass the new args from `deps` / `cfg`. (e) Tests in internal/api/ that exercise web_chat must still pass; if a test injects a Runner stub, replace it with a RunTaskDeps stub that returns a fake LLM.",
       "acceptanceCriteria": [
-        "Telegram outbound formats ask_user tool_start as numbered-text question with options",
-        "Telegram outbound formats ask_user without options as plain-text question",
-        "Telegram inbound detects run.Status == 'waiting_for_user' + pending ask_user call and routes the next reply as tool_result content",
-        "Numeric reply 1..N selects options[N-1]; out-of-range numeric rejected with synthetic message (does NOT consume the pending question); non-numeric becomes free-text content",
-        "Tool_result message is injected with tool_call_id matching the pending tool_call's id, name='ask_user'",
-        "Run state transitions waiting_for_user → running on resume; loop sees resolved tool_call and continues",
-        "Tests cover: numbered, free-text, out-of-range, multi-option, run state transition",
+        "internal/api/web_chat.go no longer references *agent.Runner",
+        "webChatService.Chat calls agent.RunTask (not s.runner.Run)",
+        "NewWebChatService signature updated; the one cmd/aura/app.go call site is updated",
+        "Existing internal/api tests pass without modification of their assertions",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(channels/telegram): ask_user numbered-text rendering + reply routing (US-D03)"
+        "Single atomic commit prefix: refactor(api): migrate webChatService off agent.Runner (US-G03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Text-numbered (NOT inline keyboard) per design — cmd/probe_chat must be able to automate text replies for E2E. Inline keyboard arrives in v2."
+      "passes": false,
+      "notes": "Watch the deps-getter lifecycle: per-request build is safer than struct-stored RunTaskDeps because dashboard mutations of cfg.AuraBot* propagate immediately. Lazy build also keeps webChatService trivially constructable in tests."
+    },
+    {
+      "id": "US-G04",
+      "title": "Migrate agentJobRunnerAdapter off agent.Runner",
+      "description": "cmd/aura/app.go has `type agentJobRunnerAdapter struct { r *agent.Runner }` implementing cron.JobRunner.RunJob by translating cron.JobRequest → agent.Task and calling r.Run. (a) Replace the adapter's `r *agent.Runner` field with the same RunTaskDeps-shaped fields as US-G03 (or a `func() agent.RunTaskDeps` getter — match US-G03's choice for consistency). (b) Update the adapter constructor and the single place where it's wired in cmd/aura/app.go. (c) `RunJob` calls agent.RunTask. (d) cron/dispatch.go::JobRunner interface stays untouched (it doesn't mention Runner). The doc comment 'satisfied by *agent.Runner via adapter' becomes 'satisfied by agentJobRunnerAdapter (cmd/aura) which calls agent.RunTask'. (e) Update internal/cron tests if any inject a Runner (likely they inject a JobRunner stub, so probably nothing changes).",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go::agentJobRunnerAdapter no longer holds a *agent.Runner",
+        "Adapter RunJob calls agent.RunTask",
+        "internal/cron/dispatch.go doc comment updated (no behavior change)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(cmd): migrate agentJobRunnerAdapter off agent.Runner (US-G04)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "After this story, no production code holds *agent.Runner. cmd/aura/app.go still CONSTRUCTS one via agent.NewRunner — that construction goes away in US-G06."
+    },
+    {
+      "id": "US-G05",
+      "title": "Drop AgentLimitController runtime mutation",
+      "description": "internal/config/runtime_settings.go::ApplyRuntimeSettings takes a `runner config.AgentLimitController` parameter and calls `runner.UpdateLimits(...)` to mutate the Runner's limits live. With the consumers migrated (US-G02..G04) and Runner about to be deleted (US-G06), this knob has nothing to mutate. (a) Drop the `runner config.AgentLimitController` parameter from ApplyRuntimeSettings. (b) Delete the config.AgentLimitController interface (declared in internal/config/) and any test fakes that satisfy it. (c) Update cmd/aura/app.go's single call site to pass one fewer arg. (d) cfg.AuraBotMaxIterations / AuraBotTimeoutSec STILL update from settings (that part is unchanged — they live on the Config struct). They just propagate to NEXT agent.RunTask invocation instead of mutating a live runner. (e) Confirm via test that dashboard settings still flow into Config; the change is only that there's no longer a runner instance to push limits into.",
+      "acceptanceCriteria": [
+        "config.AgentLimitController interface deleted",
+        "ApplyRuntimeSettings signature drops the runner parameter",
+        "cmd/aura/app.go call site updated",
+        "cfg.AuraBot* settings still update from store via ApplyRuntimeSettings",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(config): drop AgentLimitController runtime mutation (US-G05)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "config.SwarmLimitController (the manager.UpdateLimits one) is UNRELATED and stays — internal/swarm still has its own live-mutable limits. Only the runner-side controller goes."
+    },
+    {
+      "id": "US-G06",
+      "title": "Delete internal/agent/runner.go + runner_test.go",
+      "description": "With every consumer migrated (US-G02..G05), the legacy Runner type has no callers. (a) Delete internal/agent/runner.go (Runner struct, NewRunner constructor, Limits/UpdateLimits, Run, Config, defaultMaxIterations/defaultTimeout/defaultToolTimeout, the LimitController interface declaration if it lives here). (b) Delete internal/agent/runner_test.go in its entirety — its contract is now tested via internal/agent/runtask_test.go (US-G01). (c) Move Task, Result, RunTaskDeps types that US-G01 placed in runtask.go into a new internal/agent/task.go so the public API is cleanly documented (Task = input contract, Result = output contract, RunTaskDeps = wiring). runtask.go keeps just the RunTask function. (d) Remove the `auraRunner, err := agent.NewRunner(...)` block from cmd/aura/app.go — US-G02..G04 ensured nothing reads it. (e) Run go test ./... to confirm no broken refs.",
+      "acceptanceCriteria": [
+        "internal/agent/runner.go does NOT exist",
+        "internal/agent/runner_test.go does NOT exist",
+        "internal/agent/task.go exists with Task + Result + RunTaskDeps type definitions",
+        "internal/agent/runtask.go references task.go types (no duplicate definitions)",
+        "cmd/aura/app.go no longer calls agent.NewRunner",
+        "grep 'agent.NewRunner' returns zero hits across .go files",
+        "grep 'agent.Runner' returns zero hits across .go files (comments + identifiers)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent): delete legacy Runner type (US-G06)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "This is the moment the duplicate-loop debt from PRD §6 / D1 finally lands. Expect -800 LOC across the two deleted files (Runner 292 + runner_test 514 = 806). Some new LOC lands in task.go but the net delta should be strongly negative."
+    },
+    {
+      "id": "US-G07",
+      "title": "Refresh agent README + limits audit post-Runner-removal",
+      "description": "internal/agent/README.md still documents Runner as 'the package's single export'. The limits audit (docs/aura-main-loop-limits-audit.md §1) still names agent/runner.go as the residual to delete. (a) Rewrite internal/agent/README.md: package's main exports are now agent.Run (the streaming-capable loop entry used by chat.Hub) and agent.RunTask (the stateless one-shot wrapper for non-streaming callers — web chat, cron jobs). Document Task / Result / RunTaskDeps contracts. Keep the 'background agents in internal/swarm' note but link them to RunTask, not Runner. (b) Edit docs/aura-main-loop-limits-audit.md §1 'Main Loop Structure': remove the 'Two legacy callers still hit the loop via internal/agent/runner.go' bullet block; replace with 'agent.Run is the canonical loop; agent.RunTask is the stateless wrapper for one-shot callers'. Replace 'agent.Runner still exists but is the residual to delete per PRD D1' with 'Phase-G (2026-05-15) completed the deletion'. Bump the date line at the top to today. (c) Update .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md with a closure row + final commit SHA list (one row per US-G01..G07).",
+      "acceptanceCriteria": [
+        "internal/agent/README.md no longer mentions Runner / NewRunner / agent.Config (the old struct)",
+        "internal/agent/README.md documents agent.Run + agent.RunTask + Task + Result + RunTaskDeps",
+        "docs/aura-main-loop-limits-audit.md §1 reflects Phase-G completion",
+        "docs/aura-main-loop-limits-audit.md date line updated to today's date",
+        ".planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md has a closure row with commit SHAs for US-G01..G07",
+        "go build ./... green (doc-only change but run the gates anyway)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(agent): refresh README + audit post-Runner-removal (US-G07)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Doc-only commit. Use `git add -f .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md` because .planning/* is gitignored — precedent: every prior Phase closure commit."
     }
   ]
 }
