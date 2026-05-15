@@ -304,7 +304,7 @@ work, read only the minimum needed, in this order:
 2. `D:\Aura\CLAUDE.md`
 3. `D:\Aura\docs\aura-master-plan.md`
 4. `D:\Aura\scripts\ralph\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
-5. `D:\Aura\prd.json` if working from the Ralph queue
+5. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
 6. Directly affected source files
 
 Do not read the whole repository to feel safer. Make a small map, then act.
@@ -327,7 +327,7 @@ Never bundle unrelated cleanup with a slice.
 Aura already has a Ralph-style loop:
 
 - Prompt: `D:\Aura\scripts\ralph\CLAUDE.md`
-- Queue: `D:\Aura\prd.json`
+- Queue: `D:\Aura\scripts\ralph\prd.json`
 - Progress: `D:\Aura\scripts\ralph\progress.txt`
 - Script: `D:\Aura\scripts\ralph\ralph.sh`
 - Logs: `D:\Aura\scripts\ralph\logs\`
@@ -341,7 +341,7 @@ When executing a Ralph queue story manually:
 
 - Pick exactly one `passes: false` story, normally the lowest priority number.
 - Do not modify other stories.
-- Do not reformat the whole `prd.json`.
+- Do not reformat the whole `scripts/ralph/prd.json`.
 - Mark `passes: true` only after verification succeeds.
 - Append to `scripts/ralph/progress.txt` only after the slice is actually shipped.
 
@@ -394,7 +394,7 @@ context pack from files:
 
 - Goal from the user.
 - Applicable rule from `CLAUDE.md` or this file.
-- Current slice from `prd.json` or master plan.
+- Current slice from `scripts/ralph/prd.json` or master plan.
 - Last relevant entry in `scripts/ralph/progress.txt`.
 - Affected files and tests.
 

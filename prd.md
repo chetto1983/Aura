@@ -1509,7 +1509,7 @@ Gate:
 
 ## 8. Immediate Queue Direction
 
-`prd.json` remains the machine queue. The queue should be judged against this PRD, not treated as the architecture itself.
+`scripts/ralph/prd.json` remains the machine queue. The queue should be judged against this PRD, not treated as the architecture itself.
 
 Current completed direction:
 
@@ -1655,7 +1655,7 @@ A refactor slice is done when:
 - public behavior is unchanged unless the PRD explicitly says otherwise,
 - sources, example files, and rejected alternatives are recorded for decisions
   that came from research or external patterns,
-- `prd.json` and progress notes are updated only after verification,
+- `scripts/ralph/prd.json` and progress notes are updated only after verification,
 - the commit is atomic and named for the architectural change.
 
 A slice is not done when:

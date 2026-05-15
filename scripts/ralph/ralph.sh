@@ -1,5 +1,5 @@
 #!/bin/bash
-# Aura Ralph autonomous loop — drives D:/Aura/prd.json
+# Aura Ralph autonomous loop — drives scripts/ralph/prd.json
 #
 # Each iter spawns a fresh `claude -p` against the same prompt (scripts/ralph/CLAUDE.md).
 # The agent picks the next passes:false story from prd.json, ships ONE atomic commit,
@@ -14,7 +14,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROMPT_FILE="$SCRIPT_DIR/CLAUDE.md"
-PRD_FILE="$REPO_DIR/prd.json"
+PRD_FILE="$SCRIPT_DIR/prd.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
