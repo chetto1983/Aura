@@ -319,3 +319,15 @@ func (b *Bot) SetIssues(is cron.IssueRepository) {
 		b.rt.issues = is
 	}
 }
+
+// ArchiveAppender returns the turn appender for use by channels/telegram.InvocationBuilder.
+func (b *Bot) ArchiveAppender() conversation.TurnAppender {
+	return b.archiveAppenderForTurn()
+}
+
+func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.archiver
+}

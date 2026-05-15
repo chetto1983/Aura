@@ -267,13 +267,14 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 					} else {
 						b.Logger().Warn("archive: max turn_index lookup failed", "chat_id", chatID, "error", err)
 					}
-					tgtelegram.ArchiveConversationTurns(archiveCtx, b.Logger(), archiveAppender, tgtelegram.ArchiveTurnInput{
+					conversation.ArchiveConversationTurns(archiveCtx, b.Logger(), archiveAppender, conversation.ArchiveTurnInput{
 						ChatID:       chatID,
 						UserID:       c.Sender().ID,
 						NextIndex:    nextIdx,
 						UserText:     userText,
 						LoopMessages: convCtx.MessagesSince(preLoopIdx),
-						Stats:        finalStats,
+						LLMCalls:     finalStats.LLMCalls,
+						ToolCalls:    finalStats.ToolCalls,
 						ElapsedMS:    time.Since(turnStart).Milliseconds(),
 						TokensIn:     convCtx.TotalTokensUsed(),
 					})

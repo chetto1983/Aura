@@ -1,39 +1,30 @@
-package telegram
+package conversation
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
 
-	"github.com/aura/aura/internal/agent"
-	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 )
 
+// ArchiveTurnInput carries all per-turn data needed to persist a conversation
+// turn to the archive. It is channel-neutral: no Telegram types referenced.
 type ArchiveTurnInput struct {
 	ChatID       int64
 	UserID       int64
 	NextIndex    int64
 	UserText     string
 	LoopMessages []llm.Message
-	Stats        agent.TurnStats
+	LLMCalls     int
+	ToolCalls    int
 	ElapsedMS    int64
 	TokensIn     int
 }
 
-// ArchiveAppender returns the turn appender for use by channels/telegram.InvocationBuilder.
-func (b *Bot) ArchiveAppender() conversation.TurnAppender {
-	return b.archiveAppenderForTurn()
-}
-
-func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
-	if b == nil || b.rt == nil {
-		return nil
-	}
-	return b.rt.archiver
-}
-
-func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver conversation.TurnAppender, input ArchiveTurnInput) {
+// ArchiveConversationTurns persists one conversation turn (user message +
+// subsequent loop messages) to archiver. It is a no-op when archiver is nil.
+func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver TurnAppender, input ArchiveTurnInput) {
 	if archiver == nil {
 		return
 	}
@@ -42,7 +33,7 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	}
 
 	nextIdx := input.NextIndex
-	appendTurn := func(turn conversation.Turn) {
+	appendTurn := func(turn Turn) {
 		if err := archiver.Append(ctx, turn); err != nil {
 			logger.Error("archive: append failed",
 				"chat_id", turn.ChatID,
@@ -52,7 +43,7 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 		}
 	}
 
-	appendTurn(conversation.Turn{
+	appendTurn(Turn{
 		ChatID:    input.ChatID,
 		UserID:    input.UserID,
 		TurnIndex: nextIdx,
@@ -62,7 +53,7 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	nextIdx++
 
 	for i, msg := range input.LoopMessages {
-		turn := conversation.Turn{
+		turn := Turn{
 			ChatID:     input.ChatID,
 			UserID:     input.UserID,
 			TurnIndex:  nextIdx,
@@ -79,8 +70,8 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 			}
 		}
 		if msg.Role == "assistant" && i == len(input.LoopMessages)-1 {
-			turn.LLMCalls = input.Stats.LLMCalls
-			turn.ToolCallsCount = input.Stats.ToolCalls
+			turn.LLMCalls = input.LLMCalls
+			turn.ToolCallsCount = input.ToolCalls
 			turn.ElapsedMS = input.ElapsedMS
 			turn.TokensIn = input.TokensIn
 		}
