@@ -24,13 +24,19 @@ type DelegationPolicy struct {
 	Finalization        string
 }
 
+// DefaultDelegationPolicy returns the conservative defaults applied when no
+// env override is present. ChildMaxIterations and MaxResultChars are aligned
+// with MaxIterationsCeiling (100) and DefaultMaxToolResultChars (24000) so
+// subagents inherit the same capability budget as the main loop. MaxWorkers
+// and the two timeouts stay low — those are CPU/latency guardrails (per
+// memory feedback_minipc_cpu_budget), not capability throttles.
 func DefaultDelegationPolicy() DelegationPolicy {
 	return DelegationPolicy{
 		MaxWorkers:          1,
 		Timeout:             25 * time.Second,
 		FinalizationTimeout: 4 * time.Second,
-		ChildMaxIterations:  3,
-		MaxResultChars:      12000,
+		ChildMaxIterations:  100,
+		MaxResultChars:      24000,
 		Finalization:        DelegationFinalizationAggregate,
 	}
 }
@@ -71,11 +77,11 @@ func (p DelegationPolicy) Clamp() DelegationPolicy {
 	if p.FinalizationTimeout <= 0 || p.FinalizationTimeout > 10*time.Second {
 		p.FinalizationTimeout = 4 * time.Second
 	}
-	if p.ChildMaxIterations < 1 || p.ChildMaxIterations > 3 {
-		p.ChildMaxIterations = 3
+	if p.ChildMaxIterations < 1 || p.ChildMaxIterations > 100 {
+		p.ChildMaxIterations = 100
 	}
-	if p.MaxResultChars < 2000 || p.MaxResultChars > 12000 {
-		p.MaxResultChars = 12000
+	if p.MaxResultChars < 2000 || p.MaxResultChars > 24000 {
+		p.MaxResultChars = 24000
 	}
 	if p.Finalization != DelegationFinalizationAggregate && p.Finalization != DelegationFinalizationNoToolLLM {
 		p.Finalization = DelegationFinalizationAggregate

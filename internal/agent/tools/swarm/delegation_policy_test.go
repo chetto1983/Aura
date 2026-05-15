@@ -20,11 +20,11 @@ func TestDefaultDelegationPolicy(t *testing.T) {
 	if got.FinalizationTimeout != 4*time.Second {
 		t.Fatalf("FinalizationTimeout = %s, want 4s", got.FinalizationTimeout)
 	}
-	if got.ChildMaxIterations != 3 {
-		t.Fatalf("ChildMaxIterations = %d, want 3", got.ChildMaxIterations)
+	if got.ChildMaxIterations != 100 {
+		t.Fatalf("ChildMaxIterations = %d, want 100", got.ChildMaxIterations)
 	}
-	if got.MaxResultChars != 12000 {
-		t.Fatalf("MaxResultChars = %d, want 12000", got.MaxResultChars)
+	if got.MaxResultChars != 24000 {
+		t.Fatalf("MaxResultChars = %d, want 24000", got.MaxResultChars)
 	}
 	if got.Finalization != "aggregate" {
 		t.Fatalf("Finalization = %q, want aggregate", got.Finalization)
@@ -32,6 +32,9 @@ func TestDefaultDelegationPolicy(t *testing.T) {
 }
 
 func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
+	// 99 ChildMaxIterations + 99 within new ceiling 100 → kept as-is; only
+	// MaxWorkers (capability throttle staying low for CPU budget) and
+	// MaxResultChars (above 24000) get clamped down.
 	got := (DelegationPolicy{
 		MaxWorkers:          20,
 		Timeout:             90 * time.Second,
@@ -42,6 +45,7 @@ func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 	}).Clamp()
 	want := DefaultDelegationPolicy()
 	want.MaxWorkers = 3
+	want.ChildMaxIterations = 99
 	if got != want {
 		t.Fatalf("Clamp() = %+v, want %+v", got, want)
 	}
@@ -58,8 +62,8 @@ func TestDelegationPolicyClampEnforcesBounds(t *testing.T) {
 		MaxWorkers:          1,
 		Timeout:             25 * time.Second,
 		FinalizationTimeout: 4 * time.Second,
-		ChildMaxIterations:  3,
-		MaxResultChars:      12000,
+		ChildMaxIterations:  100,
+		MaxResultChars:      24000,
 		Finalization:        "aggregate",
 	}) {
 		t.Fatalf("Clamp() lower bounds = %+v", got)
@@ -81,6 +85,10 @@ func TestDelegationPolicyClampKeepsAllowedValues(t *testing.T) {
 }
 
 func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
+	// MaxWorkers=9 → clamped to 3 (CPU guardrail). Timeout=45s + FinalizationTimeout=30s
+	// still exceed their per-policy ceilings (30s + 10s) and reset to defaults.
+	// CHILD_MAX_ITERATIONS=7 is now within the new ceiling 100 → kept.
+	// MAX_RESULT_CHARS=25000 exceeds new ceiling 24000 → clamped to 24000.
 	t.Setenv("SWARM_RESEARCH_MAX_WORKERS", "9")
 	t.Setenv("SWARM_RESEARCH_TIMEOUT_MS", "45000")
 	t.Setenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "30000")
@@ -91,6 +99,7 @@ func TestLoadDelegationPolicyFromEnvClampsOverrides(t *testing.T) {
 	got := LoadDelegationPolicyFromEnv()
 	want := DefaultDelegationPolicy()
 	want.MaxWorkers = 3
+	want.ChildMaxIterations = 7
 	if got != want {
 		t.Fatalf("LoadDelegationPolicyFromEnv() = %+v, want %+v", got, want)
 	}

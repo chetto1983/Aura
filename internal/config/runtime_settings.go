@@ -139,22 +139,24 @@ func applyDelegationModeRuntime(mode string) {
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "3")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "30000")
 		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "7000")
-		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
-		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "16000")
+		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "100")
+		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "24000")
 	case "async":
 		// Until durable async delegation lands, keep the bounded runtime shape
 		// while exposing the operator intent in config/telemetry.
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "3")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "30000")
 		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "7000")
-		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
-		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "16000")
+		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "100")
+		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "24000")
 	default:
+		// Capability budgets aligned with the main loop ceiling/result chars;
+		// MaxWorkers stays low (CPU guardrail per feedback_minipc_cpu_budget).
 		setenvIfChanged("SWARM_RESEARCH_MAX_WORKERS", "1")
 		setenvIfChanged("SWARM_RESEARCH_TIMEOUT_MS", "25000")
 		setenvIfChanged("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS", "4000")
-		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "3")
-		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "12000")
+		setenvIfChanged("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "100")
+		setenvIfChanged("SWARM_RESEARCH_MAX_RESULT_CHARS", "24000")
 	}
 }
 

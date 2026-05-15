@@ -242,26 +242,22 @@ func rolePrompt(role, goal string) string {
 	}
 }
 
+// RoleMaxToolCalls is the per-role tool-call budget for swarm child agents.
+// Aligned with MaxIterationsCeiling (agent/loop.go = 100) per the Phase-F
+// principle: cap LATENCY (DelegationPolicy.Timeout) and CPU (MaxWorkers 1-3),
+// not CAPABILITY. A researcher fetching 8 sources or a synthesizer comparing
+// 10 wiki pages is a feature, not a runaway. DelegationPolicy.Clamp still
+// enforces a per-role upper bound an operator can dial down via env.
 func RoleMaxToolCalls(role string) int {
-	switch role {
-	case "researcher":
-		return 3
-	case "librarian", "synthesizer":
-		return 4
-	case "critic", "skillsmith":
-		return 3
-	default:
-		return 3
-	}
+	return 100
 }
 
+// RoleMaxToolResultChars aligns with config.DefaultMaxToolResultChars (24000
+// after Phase-F). Modern long-context LLMs handle large observations; clipping
+// rich tool output is the capability-throttle pattern called out in
+// docs/aura-main-loop-limits-audit.md §3.5.
 func RoleMaxToolResultChars(role string) int {
-	switch role {
-	case "researcher":
-		return 1800
-	default:
-		return 2400
-	}
+	return 24000
 }
 
 func buildRunSynthesisSummary(s RunSynthesis) string {

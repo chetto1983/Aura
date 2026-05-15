@@ -94,7 +94,7 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	}
 	if os.Getenv("SWARM_RESEARCH_MAX_WORKERS") != "3" ||
 		os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS") != "7000" ||
-		os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS") != "16000" {
+		os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS") != "24000" {
 		t.Fatalf("bounded delegation env = workers:%q final:%q chars:%q", os.Getenv("SWARM_RESEARCH_MAX_WORKERS"), os.Getenv("SWARM_RESEARCH_FINALIZATION_TIMEOUT_MS"), os.Getenv("SWARM_RESEARCH_MAX_RESULT_CHARS"))
 	}
 }

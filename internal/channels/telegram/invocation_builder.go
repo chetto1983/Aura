@@ -154,7 +154,11 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder)
 
 	maxIterations := ib.maxToolLoopIterations()
-	maxCallsPerTool := map[string]int{"wiki_page": 3}
+	// No hardcoded per-tool caps — DuplicatePolicy alone protects against
+	// repeated identical (name, args) calls. The model decides how many
+	// distinct wiki/web/etc lookups a turn needs; the loop ceiling +
+	// wall-clock + budget bound runaway behavior.
+	maxCallsPerTool := map[string]int{}
 	duplicatePolicy := agent.DuplicateOrMaxCallsPolicy(maxCallsPerTool, nil)
 
 	toolsProvider := agent.MakeToolsProvider(
