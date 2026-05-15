@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(tools): catalogue native tool metadata (US-I02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DO NOT modify Execute() bodies. Definition() metadata only. If a tool's Execute body contradicts the proposed metadata (e.g. you mark X read_only=true but Execute writes to disk), the metadata is wrong — fix the metadata, not the code."
     },
     {

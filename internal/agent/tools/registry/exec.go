@@ -92,6 +92,16 @@ func isNilCommandExecutor(manager sandbox.CommandExecutor) bool {
 
 func (t *ExecuteCodeTool) Name() string { return "execute_code" }
 
+func (t *ExecuteCodeTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // Python sandbox can write files and run arbitrary side-effects
+		VisibilityTier:  VisibilityDeferred,
+	}
+}
+
 func (t *ExecuteCodeTool) Description() string {
 	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access AND the same network reachability as Aura — there is no network isolation; any HTTP call from the script can reach localhost and the Aura private network. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
@@ -358,6 +368,16 @@ func marshalInternalToolResults(results internalToolCallResults) (string, error)
 }
 
 func (t *ExecuteShellTool) Name() string { return "execute_shell" }
+
+func (t *ExecuteShellTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // shell commands can modify filesystem, network, and runtime state
+		VisibilityTier:  VisibilityDeferred,
+	}
+}
 
 func (t *ExecuteShellTool) Description() string {
 	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +

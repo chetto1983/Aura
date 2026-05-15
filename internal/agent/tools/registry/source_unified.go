@@ -79,6 +79,16 @@ func NewSourceTool(
 
 func (t *SourceTool) Name() string { return "source" }
 
+func (t *SourceTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // delete action permanently removes source + memoryindex rows
+		VisibilityTier:  VisibilityActiveTurn,
+	}
+}
+
 func (t *SourceTool) Description() string {
 	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX, CSV, JSON, MD).
 Lifecycle: stored → ocr_complete | extract_complete → ingested.

@@ -2,9 +2,12 @@ package tools
 
 func (t *SearchMemoryTool) Definition() ToolDefinition {
 	return ToolDefinition{
-		Name:        t.Name(),
-		Description: t.Description(),
-		Parameters:  t.Parameters(),
+		Name:          t.Name(),
+		Description:   t.Description(),
+		Parameters:    t.Parameters(),
+		ReadOnlyHint:  true,
+		OpenWorldHint: true,
+		VisibilityTier: VisibilityActiveTurn,
 		Examples: []ToolCallExample{
 			{
 				Description: "Retrieve compact evidence before answering from Aura memory.",

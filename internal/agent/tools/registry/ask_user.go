@@ -76,6 +76,15 @@ func (t *AskUserTool) Parameters() map[string]any {
 	}
 }
 
+func (t *AskUserTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		VisibilityTier: VisibilityAlwaysOn,
+	}
+}
+
 // Execute returns ErrAwaitingUserInput — the agent loop converts this into a
 // run pause rather than a tool-result string.
 func (t *AskUserTool) Execute(_ context.Context, args map[string]any) (string, error) {

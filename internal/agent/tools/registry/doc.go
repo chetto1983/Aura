@@ -41,6 +41,15 @@ func NewDocTool(store source.Writer, sender DocumentSender) *DocTool {
 
 func (t *DocTool) Name() string { return "doc" }
 
+func (t *DocTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		VisibilityTier: VisibilityDeferred,
+	}
+}
+
 func (t *DocTool) Description() string {
 	return `Generate a document (.xlsx / .docx / .pdf) from a structured spec and persist it as a source.
 Optionally deliver to the user's Telegram chat.

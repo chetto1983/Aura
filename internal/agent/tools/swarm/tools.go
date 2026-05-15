@@ -32,6 +32,16 @@ func NewRunAuraBotSwarmTool(manager swarm.RunRunner) *RunAuraBotSwarmTool {
 
 func (t *RunAuraBotSwarmTool) Name() string { return "run_aurabot_swarm" }
 
+func (t *RunAuraBotSwarmTool) Definition() tools.ToolDefinition {
+	return tools.ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true, // MVP supports read-only worker roles only
+		VisibilityTier: tools.VisibilityDeferred,
+	}
+}
+
 func (t *RunAuraBotSwarmTool) RequiredCapability() identity.Capability {
 	return identity.CapabilitySwarmSpawn
 }
@@ -138,6 +148,16 @@ func NewSpawnAuraBotTool(manager swarm.RunRunner) *SpawnAuraBotTool {
 }
 
 func (t *SpawnAuraBotTool) Name() string { return "spawn_aurabot" }
+
+func (t *SpawnAuraBotTool) Definition() tools.ToolDefinition {
+	return tools.ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true, // worker roles are read-only; spawning itself doesn't mutate shared state
+		VisibilityTier: tools.VisibilityDeferred,
+	}
+}
 
 func (t *SpawnAuraBotTool) RequiredCapability() identity.Capability {
 	return identity.CapabilitySwarmSpawn
@@ -296,6 +316,17 @@ func NewListSwarmTasksTool(store swarm.TaskLister) *ListSwarmTasksTool {
 
 func (t *ListSwarmTasksTool) Name() string { return "list_swarm_tasks" }
 
+func (t *ListSwarmTasksTool) Definition() tools.ToolDefinition {
+	return tools.ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: tools.VisibilityDeferred,
+	}
+}
+
 func (t *ListSwarmTasksTool) Description() string {
 	return "List AuraBot swarm tasks for a run ID, including status and metrics."
 }
@@ -341,6 +372,17 @@ func NewReadSwarmResultTool(store swarm.TaskGetter) *ReadSwarmResultTool {
 }
 
 func (t *ReadSwarmResultTool) Name() string { return "read_swarm_result" }
+
+func (t *ReadSwarmResultTool) Definition() tools.ToolDefinition {
+	return tools.ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: tools.VisibilityDeferred,
+	}
+}
 
 func (t *ReadSwarmResultTool) Description() string {
 	return "Read one AuraBot task result, including final content, errors, and metrics."

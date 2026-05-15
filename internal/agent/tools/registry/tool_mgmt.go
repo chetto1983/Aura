@@ -37,6 +37,16 @@ func NewDevToolTool(store ToolStore) *DevToolTool {
 
 func (t *DevToolTool) Name() string { return "dev_tool" }
 
+func (t *DevToolTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		IdempotentHint: true, // save with same name is an upsert; list/read are side-effect free
+		VisibilityTier: VisibilityDeferred,
+	}
+}
+
 func (t *DevToolTool) Description() string {
 	return `Manage the Python script registry used by execute_code.
 

@@ -42,6 +42,15 @@ func NewRequestDashboardTokenTool(store auth.TokenWriter, sender TokenSender, al
 
 func (t *RequestDashboardTokenTool) Name() string { return "request_dashboard_token" }
 
+func (t *RequestDashboardTokenTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		VisibilityTier: VisibilityAlwaysOn,
+	}
+}
+
 func (t *RequestDashboardTokenTool) Description() string {
 	return "Mint a fresh bearer token for this user's dashboard session and send it to them via Telegram. Use when the user asks for dashboard access, login link, or token. The token is delivered out-of-band — never echo it in your reply."
 }

@@ -60,6 +60,16 @@ func NewWikiPageTool(store *wiki.Store, submitter reindex.Submitter) *WikiPageTo
 
 func (t *WikiPageTool) Name() string { return "wiki_page" }
 
+func (t *WikiPageTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // replace/edit actions can overwrite or delete page content
+		VisibilityTier:  VisibilityActiveTurn,
+	}
+}
+
 func (t *WikiPageTool) Description() string {
 	return `Create, replace, edit, or append to a wiki page.
 

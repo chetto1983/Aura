@@ -58,12 +58,15 @@ func (t *ToolSearchTool) Parameters() map[string]any {
 	}
 }
 
-// Definition exposes curated examples to the prompt assembler.
+// Definition exposes curated examples and metadata to the prompt assembler.
 func (t *ToolSearchTool) Definition() ToolDefinition {
 	return ToolDefinition{
-		Name:        t.Name(),
-		Description: t.Description(),
-		Parameters:  t.Parameters(),
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: VisibilityAlwaysOn,
 		Examples: []ToolCallExample{
 			{
 				Description: "User asks for a Word document with a news summary; you don't have create_docx in the current pool.",

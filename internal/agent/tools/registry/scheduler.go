@@ -95,6 +95,16 @@ func (t *TaskTool) SetRunner(runner ScheduledTaskRunner) {
 
 func (t *TaskTool) Name() string { return "task" }
 
+func (t *TaskTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // cancel and run_now mutate or permanently remove tasks
+		VisibilityTier:  VisibilityDeferred,
+	}
+}
+
 func (t *TaskTool) Description() string {
 	return `Manage scheduled tasks (reminders, recurring wiki maintenance, bounded agent jobs).
 

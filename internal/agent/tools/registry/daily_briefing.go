@@ -53,6 +53,17 @@ func NewDailyBriefingTool(
 
 func (t *DailyBriefingTool) Name() string { return "daily_briefing" }
 
+func (t *DailyBriefingTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true, // same-day call returns the same briefing summary
+		VisibilityTier: VisibilityActiveTurn,
+	}
+}
+
 func (t *DailyBriefingTool) Description() string {
 	return "Build a read-only daily briefing from Aura's tasks, pending wiki proposals, source inbox, wiki issues, and recent conversation archive. Use when the user asks what to do today, what changed, or for a morning briefing."
 }

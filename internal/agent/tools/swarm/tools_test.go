@@ -381,3 +381,31 @@ func TestListAndReadSwarmToolsAcceptTaskReaderInterfaces(t *testing.T) {
 		t.Fatalf("read output not JSON: %q", readOut)
 	}
 }
+
+// TestCatalogueSwarmToolMetadata verifies that every swarm tool has been
+// explicitly catalogued with MCP hints + VisibilityTier. Swarm tools cannot
+// be checked from the registry package scan test (import cycle), so they are
+// covered here instead.
+func TestCatalogueSwarmToolMetadata(t *testing.T) {
+	isDefaultState := func(d tools.ToolDefinition) bool {
+		return !d.ReadOnlyHint && !d.DestructiveHint && !d.IdempotentHint && !d.OpenWorldHint &&
+			d.VisibilityTier == tools.VisibilityActiveTurn
+	}
+
+	// Use zero-value structs — Definition() methods are hardcoded and do not
+	// read struct fields, so nil deps are safe for metadata validation.
+	swarmTools := []interface{ Definition() tools.ToolDefinition }{
+		&RunAuraBotSwarmTool{},
+		&SpawnAuraBotTool{},
+		&ListSwarmTasksTool{},
+		&ReadSwarmResultTool{},
+	}
+
+	for _, tool := range swarmTools {
+		def := tool.Definition()
+		if isDefaultState(def) {
+			t.Errorf("swarm tool %q has all-defaults metadata (not explicitly catalogued); "+
+				"add explicit hints + VisibilityTier to its Definition() method", def.Name)
+		}
+	}
+}

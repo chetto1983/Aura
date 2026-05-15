@@ -189,6 +189,19 @@ func toolCategories(tool Tool) []string {
 	return nil
 }
 
+// FullDefinitions returns the registered tools with their full Aura metadata
+// (hints + VisibilityTier). Used by the catalogue scan test and any runtime
+// path that needs behavioural metadata beyond the LLM-facing schema.
+func (r *Registry) FullDefinitions() []ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	defs := make([]ToolDefinition, 0, len(r.tools))
+	for _, t := range r.tools {
+		defs = append(defs, definitionForTool(t))
+	}
+	return defs
+}
+
 // Definitions returns the registered tools in the LLM-facing format.
 func (r *Registry) Definitions() []llm.ToolDefinition {
 	r.mu.RLock()

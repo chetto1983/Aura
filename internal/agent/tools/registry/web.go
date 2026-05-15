@@ -33,6 +33,17 @@ func NewWebTool(searxBaseURL string) *WebTool {
 
 func (t *WebTool) Name() string { return "web" }
 
+func (t *WebTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		OpenWorldHint:  true,
+		VisibilityTier: VisibilityActiveTurn,
+	}
+}
+
 func (t *WebTool) Description() string {
 	return `Search the web or fetch a single URL.
 

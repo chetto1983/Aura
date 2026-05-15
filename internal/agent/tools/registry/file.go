@@ -49,6 +49,16 @@ func NewFileTool(root *workspace.Root) *FileTool {
 
 func (t *FileTool) Name() string { return "file" }
 
+func (t *FileTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true, // write/patch actions can overwrite workspace files
+		VisibilityTier:  VisibilityDeferred,
+	}
+}
+
 func (t *FileTool) Description() string {
 	return `Read, write, list, search, or patch files inside Aura's workspace.
 
