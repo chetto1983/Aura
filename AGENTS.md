@@ -303,7 +303,7 @@ work, read only the minimum needed, in this order:
    `D:\Aura\.planning\deep-refactor\.continue-here.md` if they exist
 2. `D:\Aura\CLAUDE.md`
 3. `D:\Aura\docs\aura-master-plan.md`
-4. `D:\Aura\.planning\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
+4. `D:\Aura\scripts\ralph\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
 5. `D:\Aura\prd.json` if working from the Ralph queue
 6. Directly affected source files
 
@@ -328,8 +328,9 @@ Aura already has a Ralph-style loop:
 
 - Prompt: `D:\Aura\scripts\ralph\CLAUDE.md`
 - Queue: `D:\Aura\prd.json`
-- Progress: `D:\Aura\.planning\progress.txt`
+- Progress: `D:\Aura\scripts\ralph\progress.txt`
 - Script: `D:\Aura\scripts\ralph\ralph.sh`
+- Logs: `D:\Aura\scripts\ralph\logs\`
 
 Use the Ralph files as operating guidance, not as an automatic command to run.
 Do not run `scripts/ralph/ralph.sh` unless the user explicitly asks. It is
@@ -342,7 +343,7 @@ When executing a Ralph queue story manually:
 - Do not modify other stories.
 - Do not reformat the whole `prd.json`.
 - Mark `passes: true` only after verification succeeds.
-- Append to `.planning/progress.txt` only after the slice is actually shipped.
+- Append to `scripts/ralph/progress.txt` only after the slice is actually shipped.
 
 ## Hard Constraints
 
@@ -394,7 +395,7 @@ context pack from files:
 - Goal from the user.
 - Applicable rule from `CLAUDE.md` or this file.
 - Current slice from `prd.json` or master plan.
-- Last relevant entry in `.planning/progress.txt`.
+- Last relevant entry in `scripts/ralph/progress.txt`.
 - Affected files and tests.
 
 Then continue from that pack.

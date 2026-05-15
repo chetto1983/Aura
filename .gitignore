@@ -77,3 +77,7 @@ CLAUDE.md
 .planning/*
 tmp_*
 
+# Ralph autonomous loop runtime artifacts (driver + prompt are tracked)
+/scripts/ralph/logs/
+/scripts/ralph/progress.txt
+

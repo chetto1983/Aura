@@ -15,9 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROMPT_FILE="$SCRIPT_DIR/CLAUDE.md"
 PRD_FILE="$REPO_DIR/prd.json"
-PROGRESS_FILE="$REPO_DIR/.planning/progress.txt"
-LOG_DIR="$REPO_DIR/.planning/ralph-logs"
-mkdir -p "$LOG_DIR" "$REPO_DIR/.planning"
+PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
 [ -f "$PROGRESS_FILE" ] || echo "# Aura Ralph Progress Log (started $(date))" > "$PROGRESS_FILE"
 
 MAX_ITER="${1:-15}"          # 15 iter default — enough for the ~14 user stories in prd.json
