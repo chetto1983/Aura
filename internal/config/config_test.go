@@ -219,8 +219,8 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.AuraBotTimeoutSec != DefaultAuraBotTimeoutSec {
 		t.Errorf("AuraBotTimeoutSec = %d, want %d", cfg.AuraBotTimeoutSec, DefaultAuraBotTimeoutSec)
 	}
-	if cfg.AuraBotMaxIterations != 25 {
-		t.Errorf("AuraBotMaxIterations = %d, want 25", cfg.AuraBotMaxIterations)
+	if cfg.AuraBotMaxIterations != 100 {
+		t.Errorf("AuraBotMaxIterations = %d, want 100", cfg.AuraBotMaxIterations)
 	}
 	if cfg.EmbeddingBaseURL != "http://aura-llama-embed:8080/v1" {
 		t.Errorf("EmbeddingBaseURL = %q, want llama.cpp sidecar URL", cfg.EmbeddingBaseURL)

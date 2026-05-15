@@ -98,7 +98,7 @@ type Config struct {
 	AuraBotMaxActive           int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
 	AuraBotMaxDepth            int     `envconfig:"AURABOT_MAX_DEPTH" default:"3"`
 	AuraBotTimeoutSec          int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
-	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"25"`
+	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"100"`
 	EmbeddingAPIKey            string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL           string  `envconfig:"EMBEDDING_BASE_URL"`
 	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"embeddinggemma"`
@@ -253,7 +253,7 @@ func Load() (*Config, error) {
 	cfg.AuraBotMaxActive = getEnvInt("AURABOT_MAX_ACTIVE", 4)
 	cfg.AuraBotMaxDepth = getEnvInt("AURABOT_MAX_DEPTH", 3)
 	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
-	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 25)
+	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 100)
 
 	cfg.EmbeddingAPIKey = getSecretEnv("EMBEDDING_API_KEY", "no-key")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "http://aura-llama-embed:8080/v1")

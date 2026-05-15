@@ -9,9 +9,18 @@ import (
 )
 
 const (
-	defaultMaxIterations = 5
-	defaultTimeout       = 60 * time.Second
-	defaultToolTimeout   = 30 * time.Second
+	// defaultMaxIterations is the fallback when RunTaskDeps.MaxIterations <= 0.
+	// Aligned with MaxIterationsCeiling (loop.go) per Phase-F principle: cap
+	// LATENCY and COST, not CAPABILITY. The wall-clock cap (defaultTimeout)
+	// and the budget guardrail still bound runaway loops; the iteration count
+	// just needs enough headroom for legitimately wide research/debug
+	// workflows. Operators can still narrow via env/dashboard.
+	defaultMaxIterations = 100
+	// defaultTimeout is the fallback wall clock when RunTaskDeps.Timeout <= 0.
+	// Aligned with DefaultAuraBotTimeoutSec (config.go = 300s) so background
+	// agents have the same wall-clock budget as the cfg defaults declare.
+	defaultTimeout     = 300 * time.Second
+	defaultToolTimeout = 30 * time.Second
 )
 
 // Task is one isolated background-agent assignment.

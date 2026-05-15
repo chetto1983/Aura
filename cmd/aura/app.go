@@ -856,7 +856,7 @@ func newSwarmDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.Ru
 		}
 		maxIterations := cfg.AuraBotMaxIterations
 		if maxIterations <= 0 {
-			maxIterations = 5
+			maxIterations = 100
 		}
 		return agent.RunTaskDeps{
 			LLM:             deps.LLM,
@@ -920,7 +920,7 @@ func newAgentJobDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent
 		}
 		maxIterations := cfg.AuraBotMaxIterations
 		if maxIterations <= 0 {
-			maxIterations = 5
+			maxIterations = 100
 		}
 		return agent.RunTaskDeps{
 			LLM:             deps.LLM,
@@ -954,7 +954,7 @@ func newWebChatDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.
 		}
 		maxIterations := cfg.AuraBotMaxIterations
 		if maxIterations <= 0 {
-			maxIterations = 5
+			maxIterations = 100
 		}
 		return agent.RunTaskDeps{
 			LLM:             deps.LLM,

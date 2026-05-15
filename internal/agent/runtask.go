@@ -16,11 +16,13 @@ import (
 func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	start := time.Now()
 
-	if deps.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, deps.Timeout)
-		defer cancel()
+	timeout := deps.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
 	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	messages, err := initialMessages(task)
 	if err != nil {
