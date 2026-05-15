@@ -83,6 +83,12 @@ type ToolCallDecision struct {
 
 type BeforeToolCallback func(llm.ToolCall, ToolCallState) ToolCallDecision
 
+// ToolBriefer summarises recent tool-call failures into a compact capsule for
+// injection into the per-turn LLM context (US-J04).
+type ToolBriefer interface {
+	Brief(ctx context.Context, threadID string, toolNames []string, availableSet map[string]struct{}) string
+}
+
 type Options struct {
 	MaxIterations int
 	MaxElapsed    time.Duration
@@ -142,6 +148,12 @@ type Options struct {
 	// Logger is an optional structured logger. When nil the loop falls back to
 	// slog.Default().
 	Logger *slog.Logger
+	// Briefer, when non-nil, is called before each LLM round to inject a
+	// one-turn tool-experience capsule into the message context (US-J04).
+	// NEVER mutates state.Messages(); the capsule lives for one turn only.
+	Briefer ToolBriefer
+	// BrieferRunID is the run/thread identifier passed to the Briefer.
+	BrieferRunID string
 }
 
 // loopResult is the internal result of one runLoop invocation.
@@ -285,6 +297,17 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		stats.LLMCalls++
 		stats.LoopSteps++
 		messagesForModel := governance.Apply(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
+		if opts.Briefer != nil && len(tools) > 0 {
+			availableSet := make(map[string]struct{}, len(tools))
+			toolNames := make([]string, 0, len(tools))
+			for _, t := range tools {
+				availableSet[t.Name] = struct{}{}
+				toolNames = append(toolNames, t.Name)
+			}
+			if capsule := opts.Briefer.Brief(iterCtx, opts.BrieferRunID, toolNames, availableSet); capsule != "" {
+				messagesForModel = append([]llm.Message{{Role: "system", Content: capsule}}, messagesForModel...)
+			}
+		}
 		if opts.OnLLMStart != nil {
 			opts.OnLLMStart(iteration, len(messagesForModel), len(tools))
 		}

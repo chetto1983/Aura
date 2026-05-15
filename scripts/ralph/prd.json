@@ -92,7 +92,7 @@
         "Single atomic commit prefix: feat(agent): pre-LLM tool-experience briefer (US-J04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness gate: the '(currently unavailable)' annotation for offline MCP tools is required per §9.2 of the plan. Read internal/agent/loop.go around line 287 (where messagesForModel is constructed for the LLM call) to confirm the integration point. DO NOT make the briefer mutate state - it's one-turn ephemeral."
     },
     {
