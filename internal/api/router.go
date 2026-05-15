@@ -169,8 +169,8 @@ type Deps struct {
 	ReindexHealth func() reindex.Health
 
 	// Chat is the in-process chat pipe used by cmd/chat. Optional — when
-	// nil, POST /chat responds 503. cmd/aura wires this against an
-	// agent.Runner that shares the bot's live LLM client and tool registry.
+	// nil, POST /chat responds 503. cmd/aura wires this via agent.RunTask
+	// sharing the live LLM client and tool registry.
 	Chat ChatService
 }
 

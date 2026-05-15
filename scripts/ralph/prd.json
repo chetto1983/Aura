@@ -113,7 +113,7 @@
         "Single atomic commit prefix: refactor(agent): delete legacy Runner type (US-G06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "This is the moment the duplicate-loop debt from PRD §6 / D1 finally lands. Expect -800 LOC across the two deleted files (Runner 292 + runner_test 514 = 806). Some new LOC lands in task.go but the net delta should be strongly negative."
     },
     {

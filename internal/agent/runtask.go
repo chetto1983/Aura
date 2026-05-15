@@ -6,27 +6,8 @@ import (
 	"strings"
 	"time"
 
-	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
-
-// RunTaskDeps groups the wiring needed by RunTask. Unlike Runner, the limits
-// are per-call parameters read fresh from the caller's config each invocation,
-// so dashboard live-tune of MaxIterations/Timeout/ToolTimeout propagates to
-// the next call without mutating shared state.
-type RunTaskDeps struct {
-	LLM             llm.Client
-	Tools           *tools.Registry
-	Model           string
-	ReasoningEffort string
-	PhantomGuard    *PhantomToolGuard
-	Logger          *slog.Logger
-	// Per-call limits — read once at RunTask entry; runtime changes apply
-	// to the NEXT call, never to a call already in flight.
-	MaxIterations int
-	Timeout       time.Duration
-	ToolTimeout   time.Duration
-}
 
 // RunTask executes one bounded agent turn using the supplied deps and task.
 // It is the stateless counterpart to Runner.Run: callers read limits fresh

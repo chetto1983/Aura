@@ -46,7 +46,6 @@ import (
 // App.Stop(bot) performs the authoritative shutdown sequence.
 type App struct {
 	deps    telegram.Deps
-	runner  *agent.Runner // nil when no LLM configured; used by swarm/cron/web-chat
 	restart func(context.Context) error
 
 	// ---- Goroutine lifecycle (US-A13c) ----------------------------------------
@@ -413,25 +412,9 @@ func newApp(
 		maxIterations = 5
 	}
 
-	var auraRunner *agent.Runner
+	var swarmRunner swarm.AgentRunner
 	if deps.LLM != nil {
-		var err error
-		auraRunner, err = agent.NewRunner(agent.Config{
-			LLM:             deps.LLM,
-			Tools:           toolRegistry,
-			Model:           cfg.LLMModel,
-			MaxIterations:   maxIterations,
-			Timeout:         time.Duration(timeoutSec) * time.Second,
-			ToolTimeout:     time.Duration(timeoutSec) * time.Second,
-			ReasoningEffort: cfg.ReasoningEffort,
-			Logger:          logger,
-			PhantomToolGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: toolRegistry.Names,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("creating aurabot runner: %w", err)
-		}
+		swarmRunner = &swarmRunnerAdapter{getDeps: newSwarmDepsGetter(cfg, &deps)}
 	}
 
 	if cfg.AuraBotEnabled {
@@ -439,7 +422,7 @@ func newApp(
 			logger.Warn("AuraBot swarm enabled but no LLM provider configured; swarm tools disabled")
 		} else {
 			swarmManager, err := swarm.NewManager(swarm.ManagerConfig{
-				Runner:    auraRunner,
+				Runner:    swarmRunner,
 				Store:     swarmStore,
 				MaxActive: cfg.AuraBotMaxActive,
 				MaxDepth:  cfg.AuraBotMaxDepth,
@@ -527,7 +510,7 @@ func newApp(
 	// ---- Background context: owned by App (US-A13c) -------------------------
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 
-	return &App{deps: deps, runner: auraRunner, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
+	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
 }
 
 // wireBot performs Phase C composition wiring after telegram.New() constructs
@@ -851,6 +834,45 @@ func (a *App) wireBot(b *telegram.Bot) error {
 }
 
 // ---- import-cycle adapters --------------------------------------------------
+
+// swarmRunnerAdapter bridges agent.RunTask to swarm.AgentRunner.
+type swarmRunnerAdapter struct {
+	getDeps func() agent.RunTaskDeps
+}
+
+func (a *swarmRunnerAdapter) Run(ctx context.Context, task agent.Task) (agent.Result, error) {
+	return agent.RunTask(ctx, a.getDeps(), task)
+}
+
+// newSwarmDepsGetter returns a lazy RunTaskDeps builder for swarmRunnerAdapter.
+// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
+// live-tune of MaxIterations/Timeout propagates to the next RunTask without
+// mutating shared state.
+func newSwarmDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
+	return func() agent.RunTaskDeps {
+		timeoutSec := cfg.AuraBotTimeoutSec
+		if timeoutSec <= 0 {
+			timeoutSec = config.DefaultAuraBotTimeoutSec
+		}
+		maxIterations := cfg.AuraBotMaxIterations
+		if maxIterations <= 0 {
+			maxIterations = 5
+		}
+		return agent.RunTaskDeps{
+			LLM:             deps.LLM,
+			Tools:           deps.Tools,
+			Model:           cfg.LLMModel,
+			ReasoningEffort: cfg.ReasoningEffort,
+			PhantomGuard: &agent.PhantomToolGuard{
+				ToolNamesFn: deps.Tools.Names,
+			},
+			Logger:        deps.Logger,
+			MaxIterations: maxIterations,
+			Timeout:       time.Duration(timeoutSec) * time.Second,
+			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+		}
+	}
+}
 
 // agentJobRunnerAdapter bridges agent.RunTask to cron.JobRunner.
 type agentJobRunnerAdapter struct {

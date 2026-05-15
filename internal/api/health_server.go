@@ -74,7 +74,7 @@ func NewHealthServer(cfg HealthServerConfig, logger *slog.Logger) *HealthServer 
 			// for fetch+summarize work. A 10s WriteTimeout silently
 			// cuts the response and the client sees "Empty reply from
 			// server" with no log line. Bumped to 5min to match the
-			// agent.Runner default Timeout. Reads still cap at 5s so a
+			// agent default Timeout (5min). Reads still cap at 5s so a
 			// slow client can't hold a connection.
 			WriteTimeout: 5 * time.Minute,
 		},
