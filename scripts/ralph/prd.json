@@ -23,7 +23,7 @@
         "Single atomic commit prefix: feat(secrets): add SQLite-backed secrets store (US-H01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Keep the secret values OUT of any log lines, error strings, or List() results. The dashboard must be able to enumerate `Telegram token: SET` without ever seeing the token itself. This is the privacy invariant the table separation enforces."
     },
     {

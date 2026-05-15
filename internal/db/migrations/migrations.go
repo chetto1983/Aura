@@ -24,6 +24,7 @@ var registered = []Migration{
 	{Version: 6, Name: "add_run_event_foundation", Up: addRunEventFoundation},
 	{Version: 7, Name: "add_identity_capability_grants", Up: addIdentityCapabilityGrants},
 	{Version: 8, Name: "backfill_allowed_users_identity", Up: backfillAllowedUsersIdentity},
+	{Version: 9, Name: "add_secrets_table", Up: addSecretsTable},
 }
 
 type columnDef struct {
@@ -1014,6 +1015,20 @@ USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities,
 `)
 	if err != nil {
 		return fmt.Errorf("migrations: add compact memory index: %w", err)
+	}
+	return nil
+}
+
+func addSecretsTable(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS secrets (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add secrets table: %w", err)
 	}
 	return nil
 }

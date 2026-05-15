@@ -180,6 +180,7 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"run_outbox",
 		"run_idempotency_keys",
 		"audit_events",
+		"secrets",
 	}
 	for _, table := range tables {
 		var name string
@@ -551,8 +552,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 8 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8]", first)
+	if len(first) != 9 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9]", first)
 	}
 }
 
