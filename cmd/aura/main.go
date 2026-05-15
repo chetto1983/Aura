@@ -51,6 +51,7 @@ func main() {
 	}
 	initialEnvPath := config.EnvPathFromEnvironment()
 	envErr := loadDotEnv(initialEnvPath)
+	applyBootstrapMetaConfig()
 
 	cfg, err := config.Load()
 	logLevel, logDir := "info", os.Getenv("LOG_DIR")

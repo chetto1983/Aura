@@ -105,7 +105,7 @@
         "Single atomic commit prefix: feat(bootstrap): hardcode meta-config defaults (US-H05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This story decouples Aura from .env. After it lands, deleting .env is safe (the migration helper from US-H02 already imported any legacy secrets to SQLite)."
     },
     {
