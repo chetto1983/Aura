@@ -17,7 +17,7 @@
         "Single atomic commit prefix: refactor(telegram): delete conversation_format.go thin wrappers (US-B01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Easiest slice. No new file created — pure deletion + 2-line import fix at callsites."
     },
     {
@@ -34,7 +34,7 @@
         "Single atomic commit prefix: refactor(telegram): move adapters.go to cmd/aura/ (US-B02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Wiring adapter, no behavior change."
     },
     {
@@ -53,7 +53,7 @@
         "Single atomic commit prefix: refactor(agent): move tools_provider from telegram/ to agent/ (US-B03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Belongs with the agent loop per the diagram (Context -> Tools edge)."
     },
     {
@@ -72,7 +72,7 @@
         "Single atomic commit prefix: refactor(conversation): move archive from telegram/ to conversation/ (US-B04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Memory-side concern per the diagram, not channel-side."
     },
     {
