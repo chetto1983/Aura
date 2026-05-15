@@ -1,7 +1,8 @@
-﻿package swarmtools
+package swarmtools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"sync"
@@ -9,21 +10,24 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/swarm"
-	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 type fakeRunner struct {
-	mu    sync.Mutex
-	last  agent.Task
-	tasks []agent.Task
+	mu       sync.Mutex
+	last     agent.Task
+	tasks    []agent.Task
+	actorIDs []string
 }
 
-func (r *fakeRunner) Run(_ context.Context, task agent.Task) (agent.Result, error) {
+func (r *fakeRunner) Run(ctx context.Context, task agent.Task) (agent.Result, error) {
 	r.mu.Lock()
 	r.last = task
 	r.tasks = append(r.tasks, task)
+	r.actorIDs = append(r.actorIDs, identity.ActorIDFromContext(ctx))
 	r.mu.Unlock()
 	return agent.Result{
 		Content:   "worker result",
@@ -41,6 +45,23 @@ func (r *fakeRunner) snapshot() (agent.Task, []agent.Task) {
 	return r.last, tasks
 }
 
+func (r *fakeRunner) actors() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.actorIDs...)
+}
+
+func assertSwarmToolScalar[T comparable](t *testing.T, db *sql.DB, query string, want T, args ...any) {
+	t.Helper()
+	var got T
+	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("query %q = %v, want %v", query, got, want)
+	}
+}
+
 func newToolTest(t *testing.T) (*swarm.Store, *fakeRunner, *swarm.Manager) {
 	t.Helper()
 	store, err := swarm.OpenStore(filepath.Join(t.TempDir(), "swarm.db"))
@@ -56,10 +77,29 @@ func newToolTest(t *testing.T) (*swarm.Store, *fakeRunner, *swarm.Manager) {
 	return store, runner, manager
 }
 
+func authorizedSwarmToolContext(t *testing.T, store *swarm.Store, userID string) context.Context {
+	t.Helper()
+	identityStore, err := identity.NewStore(store.DB())
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	if _, err := identityStore.BackfillTelegramAllowlistedUser(context.Background(), identity.TelegramAllowlistUserParams{
+		UserID:        userID,
+		Source:        "test",
+		PrincipalKind: identity.PrincipalKindOwner,
+		Capabilities:  []identity.Capability{identity.CapabilitySwarmSpawn, identity.CapabilityToolExecute},
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	ctx := tools.WithUserID(context.Background(), userID)
+	ctx = identity.WithAuthority(ctx, identityStore)
+	return identity.WithActorID(ctx, identity.TelegramSessionActorID(userID))
+}
+
 func TestSpawnAuraBotTool(t *testing.T) {
 	store, runner, manager := newToolTest(t)
 	tool := NewSpawnAuraBotTool(manager)
-	ctx := tools.WithUserID(context.Background(), "user-123")
+	ctx := authorizedSwarmToolContext(t, store, "user-123")
 	out, err := tool.Execute(ctx, map[string]any{
 		"name":  "read context",
 		"role":  "librarian",
@@ -96,9 +136,9 @@ func TestSpawnAuraBotTool(t *testing.T) {
 }
 
 func TestRunAuraBotSwarmTool(t *testing.T) {
-	_, runner, manager := newToolTest(t)
+	store, runner, manager := newToolTest(t)
 	tool := NewRunAuraBotSwarmTool(manager)
-	ctx := tools.WithUserID(context.Background(), "user-456")
+	ctx := authorizedSwarmToolContext(t, store, "user-456")
 	out, err := tool.Execute(ctx, map[string]any{
 		"goal":  "audit wiki health",
 		"roles": []any{"librarian", "critic", "synthesizer"},
@@ -136,6 +176,58 @@ func TestRunAuraBotSwarmTool(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRunAuraBotSwarmToolRequiresSwarmSpawnCapabilityAndDelegatesWorkers(t *testing.T) {
+	store, runner, manager := newToolTest(t)
+	identityStore, err := identity.NewStore(store.DB())
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := identityStore.BackfillTelegramAllowlistedUser(ctx, identity.TelegramAllowlistUserParams{
+		UserID:        "999",
+		Source:        "test",
+		PrincipalKind: identity.PrincipalKindOwner,
+		Capabilities:  []identity.Capability{identity.CapabilityToolExecute},
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	parentActorID := identity.TelegramSessionActorID("999")
+	runCtx := identity.WithActorID(identity.WithAuthority(ctx, identityStore), parentActorID)
+	registry := tools.NewRegistry(nil)
+	registry.Register(NewRunAuraBotSwarmTool(manager))
+
+	_, err = registry.Execute(runCtx, "run_aurabot_swarm", map[string]any{"goal": "audit wiki health"})
+	if err == nil {
+		t.Fatal("expected missing swarm.spawn grant to fail")
+	}
+	assertSwarmToolScalar(t, store.DB(), `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'swarm.spawn' AND decision = 'deny'`, int64(1), parentActorID)
+	_, tasks := runner.snapshot()
+	if len(tasks) != 0 {
+		t.Fatalf("runner tasks before swarm.spawn grant = %d, want 0", len(tasks))
+	}
+
+	if _, err := identityStore.CreateGrant(ctx, identity.GrantParams{
+		ID:          "grant-parent-swarm",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   identity.TelegramPrincipalID("999"),
+		Capability:  identity.CapabilitySwarmSpawn,
+	}); err != nil {
+		t.Fatalf("CreateGrant swarm.spawn: %v", err)
+	}
+	out, err := registry.Execute(runCtx, "run_aurabot_swarm", map[string]any{"goal": "audit wiki health"})
+	if err != nil {
+		t.Fatalf("Execute with swarm.spawn: %v\nout=%s", err, out)
+	}
+	actors := runner.actors()
+	if len(actors) != 1 || actors[0] == "" || actors[0] == parentActorID {
+		t.Fatalf("runner actors = %+v, parent = %q", actors, parentActorID)
+	}
+	assertSwarmToolScalar(t, store.DB(), `SELECT actor_type FROM actors WHERE id = ?`, "swarm", actors[0])
+	assertSwarmToolScalar(t, store.DB(), `SELECT parent_actor_id FROM actors WHERE id = ?`, parentActorID, actors[0])
+	assertSwarmToolScalar(t, store.DB(), `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), actors[0])
+	assertSwarmToolScalar(t, store.DB(), `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'tool.execute' AND decision = 'allow'`, int64(1), parentActorID)
 }
 
 type fakeSwarmRunner struct {
@@ -203,7 +295,7 @@ func TestSpawnAuraBotRejectsDisallowedTool(t *testing.T) {
 func TestListAndReadSwarmTools(t *testing.T) {
 	store, _, manager := newToolTest(t)
 	spawn := NewSpawnAuraBotTool(manager)
-	out, err := spawn.Execute(context.Background(), map[string]any{
+	out, err := spawn.Execute(authorizedSwarmToolContext(t, store, "user-789"), map[string]any{
 		"role": "critic",
 		"task": "lint",
 	})

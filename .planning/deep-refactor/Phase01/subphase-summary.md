@@ -3,14 +3,17 @@
 Status: Phase01A locally implemented, verifier-repaired, and fully Go-tested.
 Phase01B1 is closed with local gates and subagent verification. Phase01B2
 allowlist backfill is implemented and Go-verified locally. Phase01B3 and
-Phase01B4 are container-verified. Phase01B parent remains open for B5-B7
-integration slices.
+Phase01B4 are container-verified. Phase01B5, Phase01B6, Phase01B7, and the
+Phase01B fail-closed repair are repo-verified and container-updated. The
+Phase01B parent closure verifier passed local/live auth-boundary gates,
+repaired Chat Hub actor persistence, fixed the DB-backed provider secret path,
+removed runtime `.env`, and passed the live LLM marker probe.
 
 | Subphase | Canonical Folder | Planning Status | Verifier Status | Next Action |
 | --- | --- | --- | --- | --- |
 | Phase 1 - Stabilize the Map | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map` | self-audited scaffold | not run | Verify package-map plan before more renames. |
 | Phase 1A - Persist the Run/Event Foundation | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation` | storage foundation plus `chat.Hub` lifecycle/tool/usage persistence implemented and fully Go-tested locally | Codex verifier repair passed; subagent verifier not run | Optional separate verifier, otherwise proceed to Phase01B planning promotion. |
-| Phase 1B - Establish Identity and Capability Grants | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants` | Phase01B1 migration v7 plus `internal/identity` closed; Phase01B2 migration v8/auth backfill closed locally; Phase01B3 dashboard actor context container-verified; Phase01B4 tool capability checks container-verified; Phase01B5 Telegram identity parity locally verified and container-updated; B6-B7 planned | goal verifier PASS 10/10 for B1; code-risk recheck PASS 9.5/10 with no B1 blockers; Phase01B2 full Go gates passed locally; Phase01B3/B4 repo and container gates passed; Phase01B5 auth/Telegram/full Go gates passed | Start Phase01B6 cron/swarm delegated actor creation as a separate slice. |
+| Phase 1B - Establish Identity and Capability Grants | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants` | Phase01B1 migration v7 plus `internal/identity` closed; Phase01B2 migration v8/auth backfill closed locally; Phase01B3 dashboard actor context container-verified; Phase01B4 tool capability checks container-verified; Phase01B5 Telegram identity parity locally verified and container-updated; Phase01B6 cron/swarm delegated actors locally verified and container-updated; Phase01B7 authorization denial run/audit events repo-verified and container-updated; fail-open authority paths removed and verified; parent closure verifier repaired Chat Hub actor persistence and the DB-backed provider secret path | goal verifier PASS 10/10 for B1; code-risk recheck PASS 9.5/10 with no B1 blockers; Phase01B2 full Go gates passed locally; Phase01B3/B4 repo and container gates passed; Phase01B5 auth/Telegram/full Go gates passed; Phase01B6 delegated actor SQL benchmarks plus full Go gates passed; Phase01B7 denial event SQL benchmarks plus full Go gates passed; fail-closed repair full repo gate passed; parent closure local/code, live auth-boundary, DB/secrets, and live chat-marker gates passed | Closed for Phase01B. Select the next bounded phase slice before editing more code. |
 | Phase 1C - Add the Question Gate | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate` | self-audited scaffold | not run | Keep queued after Phase01A/B unless question gate blocks work. |
 
 ## First Bounded Implementation Candidate
@@ -23,13 +26,13 @@ Phase01A local implementation is complete after verifier repair:
 - verification: narrow tests, build, vet, and full `go test ./...` all green
 - non-goals: no Telegram rendering change, no web API shape change, no cron or
   swarm behavior migration
-- next bounded action: continue to Phase01B6 cron/swarm delegated actor creation as
-  a separate slice.
+- next bounded action: select the next phase slice from the canonical deep
+  refactor index; Phase01B no longer owns the active blocker.
 
 ## Phase01B First Bounded Implementation Candidate
 
 Phase01B is planned as a sequence instead of a single broad rewrite. Phase01B1
-through Phase01B4 are closed locally, with Phase01B3-B4 container verification:
+through Phase01B7 are closed locally, with Phase01B3-B7 container verification:
 
 - canonical store: SQLite identity tables in the main Aura database
 - first code area: `internal/db/migrations` plus new `internal/identity`
@@ -46,9 +49,23 @@ through Phase01B4 are closed locally, with Phase01B3-B4 container verification:
 - fourth behavior: registry tool execution authorizes `tool.execute` or a
   tool-specific capability before `Tool.Execute`, with disposable SQLite tests
   proving visible-tool fail-closed behavior
-- deferred rewiring: Telegram env-only grant parity, cron delegated actors,
-  swarm delegated actors, and denial run/audit events
+- fifth behavior: Telegram login/bootstrap/approval prepares deterministic
+  identity records and grants before token issuance while preserving allowlist
+  parity
+- sixth behavior: cron manual/Hub agent jobs and swarm workers create delegated
+  child actors with direct grants bounded by the parent actor authority
+- seventh behavior: authorization denials are correlated into metadata-only
+  `run_events` and `audit_events`
+- fail-closed repair: registry, cron manual jobs, cron Hub jobs, and swarm
+  delegated assignments no longer run on missing identity authority
+- parent closure repair: Hub-backed runs/events now persist the actor ID from
+  context into `runs.actor_id` and lifecycle `run_events.actor_id`
 - verification: migration/identity targeted tests, targeted build/vet,
   `go build ./...`, `go vet ./...`, `go test -count=1 ./...`, and subagent
   closure verification passed for B1; `go build ./...`, `go vet ./...`, and
-  `go test ./...` passed again for B2, B3, and B4.
+  `go test ./...` passed again for B2-B7 and the fail-closed repair, with SQL
+  benchmarks covering identity, cron, cron Hub, swarm, denial run/audit events,
+  and composition wiring.
+- final closure repair: the DB-backed provider secret path was repaired, runtime
+  `.env` was removed, and the 2026-05-15 parent closure live bearer chat marker
+  passed with exact `PHASE01B_CLOSE_OK`.

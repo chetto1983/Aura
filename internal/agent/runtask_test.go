@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -21,6 +22,23 @@ type fakeLLM struct {
 	errs     []error
 	delays   []time.Duration
 	err      error
+}
+
+type allowRunTaskAuthorizer struct{}
+
+func (allowRunTaskAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return identity.AuthorizationDecision{
+		ActorID:    params.ActorID,
+		Capability: params.Capability,
+		Resource:   params.Resource,
+		Decision:   identity.DecisionAllow,
+		Reason:     "test_grant",
+	}, nil
+}
+
+func authorizedRunTaskContext() context.Context {
+	ctx := identity.WithAuthorizer(context.Background(), allowRunTaskAuthorizer{})
+	return identity.WithActorID(ctx, "actor:test-run-task")
 }
 
 func (f *fakeLLM) Send(ctx context.Context, req llm.Request) (llm.Response, error) {
@@ -110,7 +128,7 @@ func TestRunTaskHappyPath(t *testing.T) {
 		Content: "task done",
 		Usage:   llm.TokenUsage{PromptTokens: 1, CompletionTokens: 2, TotalTokens: 3},
 	}}}
-	res, err := RunTask(context.Background(), RunTaskDeps{
+	res, err := RunTask(authorizedRunTaskContext(), RunTaskDeps{
 		LLM:   client,
 		Model: "test-model",
 	}, Task{
@@ -143,7 +161,7 @@ func TestRunTaskMaxIterationsHitFallbackMessage(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&fakeTool{name: "lookup", result: "last result"})
 
-	res, err := RunTask(context.Background(), RunTaskDeps{
+	res, err := RunTask(authorizedRunTaskContext(), RunTaskDeps{
 		LLM:           client,
 		Tools:         reg,
 		MaxIterations: 1,

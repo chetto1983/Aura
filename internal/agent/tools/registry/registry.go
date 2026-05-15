@@ -310,14 +310,16 @@ func authorizeToolExecution(ctx context.Context, name string, t Tool) (identity.
 		return identity.AuthorizationDecision{
 			Capability: capability,
 			Resource:   identity.ResourceRef{Type: "tool", ID: name},
-			Decision:   identity.DecisionAllow,
-			Reason:     "authorizer_not_configured",
-		}, capability, nil
+			Decision:   identity.DecisionDeny,
+			Reason:     "authorizer_required",
+		}, capability, fmt.Errorf("%w: tool %q requires identity authorizer", identity.ErrUnauthorized, name)
 	}
 	decision, err := authorizer.Authorize(ctx, identity.AuthorizeParams{
 		ActorID:    identity.ActorIDFromContext(ctx),
 		Capability: capability,
 		Resource:   identity.ResourceRef{Type: "tool", ID: name},
+		RunID:      identity.RunIDFromContext(ctx),
+		EventID:    identity.EventIDFromContext(ctx),
 	})
 	if err != nil {
 		return decision, capability, fmt.Errorf("tool authorization failed: %w", err)

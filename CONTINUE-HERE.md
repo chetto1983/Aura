@@ -8,7 +8,7 @@ Current state as of 2026-05-15:
   had become noisy. Clean planning scaffolds were recreated under
   `D:/Aura/.planning/deep-refactor/` from `D:/Aura/prd.md`.
 - Current git HEAD observed:
-  `20d36196 chore(telegram): delete sandbox_integration_test.go placeholder tests`.
+  `009639ae feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
@@ -91,13 +91,73 @@ Current state as of 2026-05-15:
   unauthenticated `/api/health=401`, and unauthenticated `/api/chat=401`.
   Live Telegram fixture and bearer chat marker were not available in this shell
   because `AURA_E2E_TOKEN` is not set.
+- Phase01B6 is implemented, repo-verified, and container-updated: identity now
+  exposes bounded delegated actor creation; cron `RunNow`, cron Hub agent jobs,
+  and swarm workers can run under delegated child actors whose direct grants
+  are bounded by the parent actor authorization envelope; swarm tools require
+  `swarm.spawn`.
+- Phase01B6 verification passed:
+  `go test ./internal/identity -run TestDelegateActor -count=1`,
+  `go test ./internal/cron -run "TestRunNowDelegatesCronActor|TestRunNowDelegationRejectsMissingParentGrant" -count=1`,
+  `go test ./internal/channels/cron -run TestCronAgentLoopDelegatesActorContext -count=1`,
+  `go test ./internal/agent/tools/swarm ./internal/swarm -run "Test.*DelegatedActor|Test.*SwarmSpawnCapability" -count=1`,
+  `go test ./cmd/aura -run TestAuthStoreImplementsDelegationInterfaces -count=1`,
+  the Phase01B baseline package gate, `go build ./...`, `go vet ./...`, and
+  `go test ./... -count=1`.
+- Phase01B6 container update passed:
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  image `sha256:946e9c4f5d71429bb6e487a0cea50bc17fde1171dd37133b1a31f6e1c329a0ec`,
+  `aura-aura-1` health `healthy`, `/health=200`, and unauthenticated
+  `/api/health=401`.
+- Phase01B7 is implemented, repo-verified, and container-updated:
+  authorization denials now carry run/event provenance; `runs.Store` records
+  metadata-only `authorization_denied` run and audit events; chat Hub attaches
+  run provenance and the denial recorder; registry tool denials correlate to
+  run/audit evidence; production Telegram/Cron Hubs use the shared run store.
+- The Phase01B fail-open authority paths have been removed and verified:
+  registry execution denies without an identity authorizer; cron manual jobs,
+  cron Hub jobs, and swarm delegated assignments deny before runner execution
+  when identity delegation is missing; app startup no longer falls back to a
+  cron agent dispatch path when cron Hub construction fails.
+- Phase01B7 and fail-closed repair verification passed:
+  targeted run/identity/chat/registry/cron/cron-Hub/swarm/cmd tests, the
+  Phase01B baseline gate, shared Phase01B gate, `go build ./...`,
+  `go vet ./...`, and `go test ./... -count=1`.
+- Phase01B7/fail-closed container update passed:
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  image `sha256:3c1e5ea6893c3425bd508fb8925528f741e7d315efc3ab41f215949291312777`,
+  `aura-aura-1` health `healthy`, `/health=200`, unauthenticated
+  `/api/health=401`, unauthenticated `/api/chat=401`, and startup logs
+  inspected with no errors.
+- Phase01B parent closure verifier was run on 2026-05-15. It passed local
+  Phase01B gates, `go build ./...`, `go vet ./...`, `go test ./... -count=1`,
+  rebuilt/restarted the `aura` container, and passed live auth-boundary probes:
+  `/health=200`, unauthenticated `/api/health=401`, unauthenticated
+  `/api/chat=401`, bearer `/api/health=200`, bearer mismatched
+  `/api/chat=403`, and live SQLite `authz_decisions` recorded
+  `allow|actor:telegram:session:1148481707|api.chat|api|chat|active_grant`.
+- The closure verifier found and repaired a Phase01B gap: Hub-backed
+  `runs.actor_id` and lifecycle `run_events.actor_id` now inherit the actor
+  from context. Verification:
+  `go test ./internal/storage/runs ./internal/chat -count=1`.
+- Phase01B parent closure provider/config repair passed on 2026-05-15.
+  Dashboard writes for secret-shaped config keys now route to the canonical
+  `secrets` table, the stale legacy `settings.LLM_API_KEY` row was removed
+  from the live DB, and runtime `D:/Aura/data/.env` plus its temporary retired
+  copy were removed from `D:/Aura/data`.
+- Phase01B parent live marker passed after the DB/secrets repair and container
+  update: `cmd/chat` returned exact `AURA_PIPE_OK`; bearer `/api/chat` returned
+  exact `PHASE01B_CLOSE_OK` with `llm_calls=1`, `tool_calls=0`, and durable
+  `api.chat` authorization allow evidence for
+  `actor:telegram:session:1148481707`.
 - Registered `D:/tmp/cli-printing-press` as an Aura reference map in
   `D:/Aura/docs/cli-printing-press-study.md`.
-- Do not mark the Phase01B parent complete; B6-B7 remain planned integration
-  slices.
+- Phase01B parent can now be treated as closed for the prior identity/capability
+  slice. Do not reopen it unless a new regression is found; keep Phase 8
+  RunGraph/swarm topology and Phase 7 memory work in their own phase folders.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
-  authority`; the latest observed HEAD adds Ralph queue archival/opening.
+  authority`; the latest observed HEAD is `009639ae`.
 
 Required first reads:
 
@@ -114,7 +174,7 @@ Required first reads:
 11. `D:/Aura/internal/identity/store.go`
 
 Do not rely on chat history. Reconstruct the state from the files above before
-planning or editing. For Phase01B, start the next bounded implementation
-slice, likely Phase01B6 cron/swarm delegated actor creation. Do not bundle
-denial-event wiring into that next slice unless the Phase01B plan is explicitly
-narrowed first.
+planning or editing. For new work, select the next phase folder from
+`D:/Aura/.planning/deep-refactor/INDEX.md` and rebuild only that slice from its
+`source.md`, `plan.md`, `benchmark.md`, and `progress.md`. Do not bundle Phase
+8 cron RunGraph or swarm topology redesign into unrelated slices.

@@ -7,9 +7,22 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/api/auth"
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/sandbox"
+	runstore "github.com/aura/aura/internal/storage/runs"
 )
+
+func TestAuthStoreImplementsDelegationInterfaces(t *testing.T) {
+	var _ identity.Delegator = (*auth.Store)(nil)
+}
+
+func TestChatHubLifecycleStoreWiring(t *testing.T) {
+	var _ chat.LifecycleStore = (*runstore.Store)(nil)
+	var _ identity.AuthorizationDenialRecorder = (*runstore.Store)(nil)
+}
 
 func TestSkillSearchRootsIncludeSkillsPathCatalogLayouts(t *testing.T) {
 	cfg := &config.Config{

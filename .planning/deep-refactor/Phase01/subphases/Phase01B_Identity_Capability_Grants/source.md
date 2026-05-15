@@ -1,7 +1,10 @@
 # Phase01B Source Audit
 
-Status: source-audited. Phase01B1-B4 have implementation evidence in
-`benchmark.md`; Phase01B5-B7 remain open.
+Status: source-audited. Phase01B1-B7 have implementation evidence in
+`benchmark.md`. The 2026-05-15 parent closure verifier passed local and live
+auth-boundary evidence, repaired Chat Hub `actor_id` run/event persistence, and
+is blocked only on the live LLM provider credential required for the exact chat
+marker probe.
 
 ## Canonical Requirements
 
@@ -28,8 +31,16 @@ Status: source-audited. Phase01B1-B4 have implementation evidence in
 | `D:/Aura/internal/agent/tools/registry/registry.go` | Registry has categories, visible definitions, and redacted arg-key logging. | Tool metadata can gain required capability/risk without exposing raw args. | Do not log tool argument values or raw payloads. |
 | `D:/Aura/internal/agent/tools/sets/toolsets.go` | Toolsets and role presets constrain cron/swarm/tool surfaces by name. | Treat these as grant constraints and migration compatibility. | Do not let name allowlists replace capability decisions permanently. |
 | `D:/Aura/internal/agent/tools/swarm/tools.go` | Swarm tools pass `CreatedBy`/`UserID` and role tool allowlists. | Later slice should create delegated child actors with subset grants. | Child actors must not exceed parent grants. |
-| `D:/Aura/internal/cron/dispatch.go` | Scheduled agent jobs run with `task.RecipientID` as `UserID` and safe tool allowlists. | Later slice should run cron as delegated actor with grant snapshot. | Cron must not become a private runtime authority path. |
+| `D:/Aura/internal/cron/dispatch.go` | Manual `RunNow` agent jobs still call `JobRunner.RunJob` with `task.RecipientID` and safe tool allowlists. | Phase01B6 wraps this path with a delegated `cron` actor derived from caller context or recipient identity. | Missing identity delegator or missing parent actor must fail closed before the runner executes; full schedule-fire workflow belongs to Phase 8. |
+| `D:/Aura/internal/channels/cron/loop.go` | Hub-routed cron agent jobs normalize into `chat.InboundMessage` and call `cron.JobRunner` from a silent channel loop. | Phase01B6 should pass delegated actor context through this loop when available so scheduled jobs use the same tool authorization boundary. | Do not make cron own a private agent loop or direct delivery path. |
+| `D:/Aura/internal/swarm/manager.go` and `internal/swarm/types.go` | Swarm manager persists flat run/task rows and executes each assignment through `AgentRunner.Run(ctx, agent.Task)`. | Phase01B6 should let assignments carry a delegated actor ID and run each worker context as that actor. | Do not redesign swarm into Phase 8 RunGraph or persist raw child transcripts. |
+| `D:/Aura/internal/identity/store.go` | Existing `Authorize` already forces delegated and parented actors to use direct actor grants. | Add a small delegation helper that verifies the parent authorization envelope before creating child actor grants. | Do not bypass `Authorize` by copying roles or allowlists directly into child authority. |
+| `D:/Aura/cmd/aura/app.go` | Composition root wires auth, cron handler, cron Hub loop, web chat, swarm manager, and tool registry. | Phase01B6 should pass the shared auth/identity store into cron delegation and ensure web chat contexts expose both authorizer and delegator. | Do not create a second identity store, separate cron authority path, or app-only permission logic. |
 | `D:/Aura/internal/chat/types.go` and `internal/storage/runs` | Runs already carry `PrincipalID`; run events have `actor_id` in storage schema. | Use Phase01A run/event foundation as the durable decision/audit target. | Actor resolution must happen before future privileged events. |
+| `D:/Aura/internal/storage/runs/store.go` | The store can append `run_events` but has no typed `audit_events` writer yet. | Add a narrow metadata-only denial writer that appends `authorization_denied` run and audit evidence without schema churn. | Do not expose raw prompts, tool arguments, tool outputs, request bodies, or tokens in audit payloads. |
+| `D:/Aura/internal/chat/hub.go` | The Hub creates durable runs when a `LifecycleStore` is configured and owns the run context passed to the agent loop. | Attach run provenance and a denial recorder to the agent-loop context so run-bound tool denials can correlate to Phase01A events. | Do not make each channel adapter invent a separate audit path. |
+| `D:/Aura/internal/agent/tools/registry/registry.go` | Registry authorization already denies before `Tool.Execute` but does not pass run/event provenance into `identity.Authorize`. | Pass context run IDs into authorization and let the identity denial hook record metadata-only evidence. | Do not log or persist argument values, raw result previews, or tool payloads to prove denial. |
+| `D:/Aura/internal/channels/telegram/invocation_builder.go` and `D:/Aura/cmd/aura/app.go` | Production Telegram and cron Hubs are currently created without a lifecycle store. | Wire the shared run store into Hub construction so denial recording is not test-only. | Do not create a second run database or a channel-private trace store. |
 
 ## External Source Audit
 
@@ -52,5 +63,9 @@ Status: source-audited. Phase01B1-B4 have implementation evidence in
 
 ## Remaining Verification Gap
 
-- No separate verifier/subagent has reviewed the full Phase01B parent. Do not
-  label the parent complete until B5-B7 land and a fresh verifier pass runs.
+- Parent closure verifier ran on 2026-05-15 and found no remaining local
+  Phase01B code/auth blocker after the Chat Hub `actor_id` repair.
+- The parent is still not complete because the live bearer chat marker returned
+  `500`; container logs show the configured LLM provider rejected the request
+  with `401 Missing Authentication header`. Rerun the marker after fixing the
+  provider credential path.

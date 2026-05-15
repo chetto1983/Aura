@@ -1,4 +1,4 @@
-﻿package tools_test
+package tools_test
 
 import (
 	"context"
@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func TestExecuteCodeTool_NilManager(t *testing.T) {
@@ -38,6 +39,23 @@ func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing
 type fakeSandboxExecutor struct {
 	result *sandbox.Result
 	code   string
+}
+
+type allowInternalToolAuthorizer struct{}
+
+func (allowInternalToolAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return identity.AuthorizationDecision{
+		ActorID:    params.ActorID,
+		Capability: params.Capability,
+		Resource:   params.Resource,
+		Decision:   identity.DecisionAllow,
+		Reason:     "test_grant",
+	}, nil
+}
+
+func authorizedInternalToolContext(ctx context.Context) context.Context {
+	ctx = identity.WithAuthorizer(ctx, allowInternalToolAuthorizer{})
+	return identity.WithActorID(ctx, "actor:test-internal-tool")
 }
 
 func (f *fakeSandboxExecutor) Execute(_ context.Context, code string, _ bool) (*sandbox.Result, error) {
@@ -271,7 +289,7 @@ func TestExecuteCodeTool_ExecutesInternalToolManifestWhenAllowed(t *testing.T) {
 		t.Fatal("tool = nil")
 	}
 
-	ctx := tools.WithAllowedToolNames(context.Background(), []string{"execute_code", "fake_internal"})
+	ctx := tools.WithAllowedToolNames(authorizedInternalToolContext(context.Background()), []string{"execute_code", "fake_internal"})
 	out, err := tool.Execute(ctx, map[string]any{
 		"code":          "emit manifest",
 		"tools_allowed": []any{"fake_internal"},
@@ -362,7 +380,7 @@ func TestExecuteCodeTool_ManifestArtifactIsNotPersistedOrDelivered(t *testing.T)
 	registry.Register(fakeInternalTool{})
 	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, sender, store, registry)
 
-	ctx := tools.WithAllowedToolNames(tools.WithUserID(context.Background(), "12345"), []string{"execute_code", "fake_internal"})
+	ctx := tools.WithAllowedToolNames(authorizedInternalToolContext(tools.WithUserID(context.Background(), "12345")), []string{"execute_code", "fake_internal"})
 	out, err := tool.Execute(ctx, map[string]any{
 		"code":          "emit manifest and plot",
 		"tools_allowed": []any{"fake_internal"},

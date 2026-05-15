@@ -1,4 +1,27 @@
-# Settings / Secrets read-vs-write audit — 2026-05-15
+# Settings / Secrets read-vs-write audit - 2026-05-15
+
+## Resolution
+
+Status: fixed by `efce2036 fix(api): route secret-shaped dashboard writes to
+secrets store`.
+
+The dashboard now routes every catalog key that `cmd/aura/secrets_boot.go`
+overlays from the secrets table through `secrets.Store` on read, write, and
+delete:
+
+- `TELEGRAM_TOKEN`
+- `LLM_API_KEY`
+- `EMBEDDING_API_KEY`
+- `GARAGE_S3_ACCESS_KEY`
+- `GARAGE_S3_SECRET_KEY`
+- `QDRANT_API_KEY`
+
+On 2026-05-15 the live DB was repaired so `secrets.llm_api_key` contains the
+provider key, the legacy `settings.LLM_API_KEY` row count is `0`, and runtime
+no `.env*` file remains in `D:/Aura/data`. The exact live chat markers
+`AURA_PIPE_OK` and `PHASE01B_CLOSE_OK` passed after container rebuild.
+
+The original audit below is kept as evidence for the pre-fix failure mode.
 
 Scope: every key in `internal/api/settings.go::settingsCatalog` (the dashboard
 registry, lines 81-122). For each key we trace:

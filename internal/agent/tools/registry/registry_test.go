@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,7 @@ func (fakeTool) Execute(ctx context.Context, args map[string]any) (string, error
 }
 
 func TestRegistryDefinitionsAndExecute(t *testing.T) {
+	_, identityStore, actor := newRegistryIdentityEnv(t)
 	reg := NewRegistry(nil)
 	reg.Register(fakeTool{})
 
@@ -42,7 +44,18 @@ func TestRegistryDefinitionsAndExecute(t *testing.T) {
 		t.Fatal("Get(fake) returned nil")
 	}
 
-	result, err := reg.Execute(context.Background(), "fake", map[string]any{})
+	if _, err := identityStore.CreateGrant(context.Background(), identity.GrantParams{
+		ID:          "grant:test:registry-definition-execute",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  identity.CapabilityToolExecute,
+		Resource:    identity.ResourceRef{Type: "tool", ID: "fake"},
+	}); err != nil {
+		t.Fatalf("create tool grant: %v", err)
+	}
+
+	ctx := identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actor.ID)
+	result, err := reg.Execute(ctx, "fake", map[string]any{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -96,6 +109,43 @@ WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? 
 `, 1, actor.ID, identity.CapabilityToolExecute, "tool", "fake", identity.DecisionAllow, "active_grant")
 }
 
+func TestRegistryExecuteRecordsAuthorizationDenialEvent(t *testing.T) {
+	db, identityStore, actor := newRegistryIdentityEnv(t)
+	reg := NewRegistry(nil)
+	tool := &recordingRegistryTool{name: "fake"}
+	reg.Register(tool)
+	recorder := &recordingRegistryDenialRecorder{}
+	ctx := identity.WithRunID(
+		identity.WithAuthorizationDenialRecorder(
+			identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actor.ID),
+			recorder,
+		),
+		"run-registry-denial",
+	)
+
+	if _, err := reg.Execute(ctx, "fake", map[string]any{"query": "private value"}); err == nil {
+		t.Fatal("Execute without grant succeeded, want denial")
+	}
+	if tool.executed {
+		t.Fatal("tool executed without required grant")
+	}
+	assertRegistryScalar(t, db, `
+SELECT COUNT(*)
+FROM authz_decisions
+WHERE actor_id = ? AND run_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? AND decision = ?
+`, 1, actor.ID, "run-registry-denial", identity.CapabilityToolExecute, "tool", "fake", identity.DecisionDeny)
+	if len(recorder.decisions) != 1 {
+		t.Fatalf("recorder decisions = %d, want 1", len(recorder.decisions))
+	}
+	decision := recorder.decisions[0]
+	if decision.RunID != "run-registry-denial" || decision.Resource.Type != "tool" || decision.Resource.ID != "fake" {
+		t.Fatalf("recorded decision = %+v, want run/tool metadata", decision)
+	}
+	if strings.Contains(decision.Reason, "private value") {
+		t.Fatalf("recorder leaked arg value in reason %q", decision.Reason)
+	}
+}
+
 func TestRegistryExecuteUsesToolSpecificCapability(t *testing.T) {
 	db, identityStore, actor := newRegistryIdentityEnv(t)
 	reg := NewRegistry(nil)
@@ -145,20 +195,16 @@ WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? 
 	}
 }
 
-func TestRegistryExecuteWithoutAuthorizerPreservesCompatibility(t *testing.T) {
+func TestRegistryExecuteWithoutAuthorizerFailsClosed(t *testing.T) {
 	reg := NewRegistry(nil)
 	tool := &recordingRegistryTool{name: "fake"}
 	reg.Register(tool)
 
-	result, err := reg.Execute(context.Background(), "fake", nil)
-	if err != nil {
-		t.Fatalf("Execute without authorizer error = %v", err)
+	if _, err := reg.Execute(context.Background(), "fake", nil); !errors.Is(err, identity.ErrUnauthorized) {
+		t.Fatalf("Execute without authorizer error = %v, want ErrUnauthorized", err)
 	}
-	if result != "ok:fake" {
-		t.Fatalf("Execute result = %q, want ok:fake", result)
-	}
-	if !tool.executed {
-		t.Fatal("tool did not execute without authorizer")
+	if tool.executed {
+		t.Fatal("tool executed without authorizer")
 	}
 }
 
@@ -186,6 +232,15 @@ func (fakeDefinedTool) Definition() ToolDefinition {
 		Description: "FakeDefined tool",
 		Examples:    []ToolCallExample{{Description: "set x", Arguments: map[string]any{"x": 1}}},
 	}
+}
+
+type recordingRegistryDenialRecorder struct {
+	decisions []identity.AuthorizationDecision
+}
+
+func (r *recordingRegistryDenialRecorder) RecordAuthorizationDenial(_ context.Context, decision identity.AuthorizationDecision) error {
+	r.decisions = append(r.decisions, decision)
+	return nil
 }
 
 func TestWithCategoryPreservesDefinitionProvider(t *testing.T) {

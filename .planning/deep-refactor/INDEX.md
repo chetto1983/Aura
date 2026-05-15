@@ -34,11 +34,23 @@ Historical and evidence-only files:
 
 Current next implementation slice:
 
-- `Phase01B5` - Telegram identity grant parity.
+- `Phase01B closure verification` - closed on 2026-05-15 after the final
+  parent-level verifier for identity authority, denial evidence, fail-closed
+  runtime paths, DB-backed provider secrets, and live chat-marker execution.
 - Source folder:
   `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants`.
-- Do not bundle cron delegation, swarm delegation, or denial-event wiring into
-  Phase01B5.
+- Do not bundle Phase 8 cron RunGraph redesign or full swarm topology redesign
+  into the Phase01B closure verifier.
+
+Prepared next memory slice:
+
+- `Phase07A Compact Archive Hygiene` - planned after the user selected the
+  compact-memory/tool-output pollution as the next memory phase on 2026-05-15.
+- Source folder:
+  `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07A_Compact_Archive_Hygiene`.
+- This does not mark Phase01B complete. If the user explicitly continues memory
+  work before closing Phase01B, use the Phase07A files and record the Phase01B
+  verifier as still open.
 
 ## Layout Contract
 
@@ -96,16 +108,18 @@ PhaseNN_Description/
 - `Phase05_Consolidate_Tools`
 - `Phase06_Tool_Experience_Loop`
 - `Phase07_Rebuild_RAG_Typed_Memory`
+  - `subphases/Phase07A_Compact_Archive_Hygiene`
 - `Phase08_Cron_And_Swarm_RunGraph`
 - `Phase09_Memory_Source_Discipline`
 - `Phase10_Single_Source_Of_Truth_Config`
 
 ## Next Operating Step
 
-Current canonical slice: Phase01B5 Telegram identity grant parity under
-`Phase01/subphases/Phase01B_Identity_Capability_Grants/`.
+Current canonical slice: Phase01B is closed for the prior identity/capability
+work after the provider-secret repair and live marker rerun. Select the next
+phase from the prepared phase folders before editing more code.
 
-Use `$aura-implementation-loop` for Phase01B5 after confirming its benchmark
-rows. Use `$aura-plan-builder` only when the selected phase or sub-phase is
-still a self-audited scaffold, missing source/plan/benchmark coverage, or needs
-promotion before implementation.
+Use `$aura-implementation-loop` for the Phase01B closure verifier after
+confirming its benchmark rows. Use `$aura-plan-builder` only when the selected
+phase or sub-phase is still a self-audited scaffold, missing source/plan/
+benchmark coverage, or needs promotion before implementation.

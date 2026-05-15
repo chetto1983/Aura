@@ -36,13 +36,13 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 // NewHub creates a chat.Hub wired with Telegram inbound/outbound adapters and
 // this bot's InvocationBuilder. It replaces the former bot.NewHub method so that
 // internal/telegram does not need to import internal/channels/telegram (cycle).
-func NewHub(b *tgtelegram.Bot, logger *slog.Logger) (*chat.Hub, error) {
+func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStore) (*chat.Hub, error) {
 	ib := NewInvocationBuilder(b)
 	adapter, err := chat.NewAgentLoopAdapter(ib.Build)
 	if err != nil {
 		return nil, err
 	}
-	hub, err := chat.New(chat.Config{Loop: adapter, Logger: logger})
+	hub, err := chat.New(chat.Config{Loop: adapter, LifecycleStore: lifecycle, Logger: logger})
 	if err != nil {
 		return nil, err
 	}

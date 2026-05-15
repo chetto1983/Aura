@@ -20,6 +20,7 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/qdrant"
 	"github.com/aura/aura/internal/storage/reindex"
+	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
@@ -80,18 +81,19 @@ type Deps struct {
 	// ---- Core infrastructure ------------------------------------------------
 	Pool          *sql.DB           // shared SQLite pool (toolindex state, archive, issues)
 	SettingsStore config.Repository // runtime settings overlay
+	RunStore      *runstore.Store   // canonical run/event/audit store
 
 	// ---- LLM / embedding ----------------------------------------------------
 	LLM        llm.Client
 	EmbedCache *search.EmbedCache // nil when EMBEDDING_API_KEY unset
 
 	// ---- Wiki / search ------------------------------------------------------
-	Wiki          wiki.Repository    // narrow interface stored on rt.wiki
-	WikiStore     *wiki.Store        // concrete type for SetReindexSubmitter + NewWikiPageTool
-	Search        search.Searcher    // stored on rt (unused by Bot methods; kept for App wiring)
-	SearchRepo    search.Repository  // full repo (WikiSearch, ingest.Config.Search, reindex)
-	ReindexWorker *reindex.Worker    // nil when search unavailable; lifecycle owned by App
-	QdrantClient  qdrant.Client      // nil when QDRANT_URL unset
+	Wiki          wiki.Repository   // narrow interface stored on rt.wiki
+	WikiStore     *wiki.Store       // concrete type for SetReindexSubmitter + NewWikiPageTool
+	Search        search.Searcher   // stored on rt (unused by Bot methods; kept for App wiring)
+	SearchRepo    search.Repository // full repo (WikiSearch, ingest.Config.Search, reindex)
+	ReindexWorker *reindex.Worker   // nil when search unavailable; lifecycle owned by App
+	QdrantClient  qdrant.Client     // nil when QDRANT_URL unset
 
 	// ---- Sources / OCR / ingest ---------------------------------------------
 	Sources    source.Repository
@@ -100,18 +102,18 @@ type Deps struct {
 	Ingest     *ingest.Pipeline
 
 	// ---- Cron / scheduler ---------------------------------------------------
-	SchedDB        *cron.Store               // full concrete store (satisfies AgentJobRepository + Repository)
+	SchedDB        *cron.Store                // full concrete store (satisfies AgentJobRepository + Repository)
 	SummariesStore *summarizer.SummariesStore // proposals review queue
 	TaskTool       *tools.TaskTool            // needs SetRunner(b) after Bot construction
 
 	// ---- Memory index -------------------------------------------------------
-	MemoryStore         *memoryindex.Store           // nil when compact memory unavailable
-	CompactVector       memoryindex.VectorIndex      // nil when Qdrant + embed unavailable
+	MemoryStore         *memoryindex.Store               // nil when compact memory unavailable
+	CompactVector       memoryindex.VectorIndex          // nil when Qdrant + embed unavailable
 	CompactVectorHealth *memoryindex.VectorHealthTracker // for Started/Failed/Succeeded in Phase C
 
 	// ---- Agent / swarm ------------------------------------------------------
-	SwarmStore  *swarm.Store   // full concrete store (satisfies swarm.Reader + swarm.Repository)
-	SwarmMgr    *swarm.Manager // nil when AURABOT_ENABLED=false
+	SwarmStore *swarm.Store   // full concrete store (satisfies swarm.Reader + swarm.Repository)
+	SwarmMgr   *swarm.Manager // nil when AURABOT_ENABLED=false
 
 	// ---- Auth / MCP / sandbox -----------------------------------------------
 	AuthDB        auth.Repository

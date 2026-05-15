@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/identity"
 )
 
 const (
@@ -186,7 +187,18 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				mu.Unlock()
 				return
 			}
-			result, err := runner.Run(ctx, assignment.AgentTask())
+			taskCtx, err := m.delegateAssignmentActor(ctx, run.ID, task, assignment)
+			if err != nil {
+				if m.logger != nil {
+					m.logger.Warn("swarm task delegation failed", "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)
+				}
+				_ = m.store.FailTask(context.Background(), task.ID, err.Error())
+				mu.Lock()
+				failed = append(failed, err)
+				mu.Unlock()
+				return
+			}
+			result, err := runner.Run(taskCtx, assignment.AgentTask())
 			if err != nil {
 				if m.logger != nil {
 					m.logger.Warn("swarm task failed", "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)
@@ -226,6 +238,41 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 	out := RunResult{Run: freshRun, Tasks: tasks}
 	return out, runErr
+}
+
+func (m *Manager) delegateAssignmentActor(ctx context.Context, runID string, task *Task, assignment Assignment) (context.Context, error) {
+	if len(assignment.DelegatedCapabilities) == 0 {
+		return ctx, nil
+	}
+	delegator, ok := identity.DelegatorFromContext(ctx)
+	if !ok || delegator == nil {
+		return ctx, fmt.Errorf("%w: swarm assignment requires identity delegator", identity.ErrUnauthorized)
+	}
+	parentActorID := identity.ActorIDFromContext(ctx)
+	if parentActorID == "" {
+		return ctx, fmt.Errorf("%w: swarm assignment requires parent actor", identity.ErrUnauthorized)
+	}
+	actorID := assignment.ActorID
+	if actorID == "" {
+		actorID = identity.DelegatedActorID(identity.ActorTypeSwarm, parentActorID, task.ID)
+	}
+	constraints := assignment.DelegationConstraintsJSON
+	if constraints == "" {
+		constraints = "{}"
+	}
+	result, err := delegator.DelegateActor(ctx, identity.DelegateActorParams{
+		ID:              actorID,
+		ParentActorID:   parentActorID,
+		ActorType:       identity.ActorTypeSwarm,
+		RunID:           runID,
+		Capabilities:    assignment.DelegatedCapabilities,
+		ConstraintsJSON: constraints,
+		MetadataJSON:    fmt.Sprintf(`{"swarm_run_id":%q,"task_id":%q,"role":%q}`, runID, task.ID, assignment.Role),
+	})
+	if err != nil {
+		return ctx, fmt.Errorf("swarm delegate actor: %w", err)
+	}
+	return identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), nil
 }
 
 func (m *Manager) ListTasks(ctx context.Context, runID string) ([]Task, error) {

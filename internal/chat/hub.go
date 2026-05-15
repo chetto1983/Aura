@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aura/aura/internal/identity"
 	runstore "github.com/aura/aura/internal/storage/runs"
 )
 
@@ -172,6 +173,7 @@ func (h *Hub) ReceiveMessage(ctx context.Context, msg InboundMessage) (*Run, err
 
 func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 	runID := newRunID()
+	actorID := identity.ActorIDFromContext(ctx)
 	meta := map[string]any{}
 	if msg.ParentRunID != "" {
 		meta["parent_run_id"] = msg.ParentRunID
@@ -181,6 +183,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		ID:          runID,
 		ThreadID:    msg.ThreadID,
 		PrincipalID: msg.PrincipalID,
+		ActorID:     actorID,
 		Channel:     msg.Channel,
 		Status:      RunStatusRunning,
 		StartedAt:   startedAt,
@@ -192,6 +195,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 			ParentRunID:    msg.ParentRunID,
 			ThreadID:       msg.ThreadID,
 			PrincipalID:    msg.PrincipalID,
+			ActorID:        actorID,
 			Channel:        string(msg.Channel),
 			Status:         string(RunStatusRunning),
 			IdempotencyKey: msg.ID,
@@ -208,6 +212,10 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
+	runCtx = identity.WithRunID(runCtx, run.ID)
+	if recorder, ok := h.lifecycle.(identity.AuthorizationDenialRecorder); ok {
+		runCtx = identity.WithAuthorizationDenialRecorder(runCtx, recorder)
+	}
 	h.cancels.Store(runID, cancel)
 	defer func() {
 		h.cancels.Delete(runID)
@@ -365,6 +373,7 @@ func lifecycleEventParams(run *Run, ev OutboundEvent) runstore.AppendEventParams
 		ID:             ev.ID,
 		RunID:          run.ID,
 		Type:           string(ev.Type),
+		ActorID:        run.ActorID,
 		IdempotencyKey: ev.ID,
 		Payload:        lifecyclePayload(run, ev),
 		RedactionLevel: runstore.RedactionMetadata,
@@ -413,6 +422,9 @@ func lifecyclePayload(run *Run, ev OutboundEvent) map[string]any {
 	}
 	if run.PrincipalID != "" {
 		payload["principal_id"] = run.PrincipalID
+	}
+	if run.ActorID != "" {
+		payload["actor_id"] = run.ActorID
 	}
 	if parentRunID, _ := run.Metadata["parent_run_id"].(string); parentRunID != "" {
 		payload["parent_run_id"] = parentRunID
@@ -482,6 +494,7 @@ func chatRunFromStored(stored runstore.Run) *Run {
 		ID:          stored.ID,
 		ThreadID:    stored.ThreadID,
 		PrincipalID: stored.PrincipalID,
+		ActorID:     stored.ActorID,
 		Channel:     Channel(stored.Channel),
 		Status:      RunStatus(stored.Status),
 		Model:       stored.Model,

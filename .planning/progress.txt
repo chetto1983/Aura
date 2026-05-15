@@ -337,3 +337,112 @@
   auth/Telegram fixtures and SQL-backed authorization checks.
 - Phase01B parent remains open. Next slice: Phase01B6 cron/swarm delegated
   actor creation.
+
+2026-05-15 - Phase01B6 cron/swarm delegated actors container updated
+
+- Implemented bounded delegated actor creation in `internal/identity`:
+  `identity.DelegateActor` authorizes every requested child capability against
+  the parent actor before creating deterministic child actors and direct child
+  grants.
+- Wired delegated actor context through cron manual `RunNow`, cron Hub agent
+  jobs, and swarm worker execution when identity authority is present. Swarm
+  tools now require `swarm.spawn` before creating worker assignments.
+- Verification passed:
+  `go test ./internal/identity -run TestDelegateActor -count=1`;
+  `go test ./internal/cron -run "TestRunNowDelegatesCronActor|TestRunNowDelegationRejectsMissingParentGrant" -count=1`;
+  `go test ./internal/channels/cron -run TestCronAgentLoopDelegatesActorContext -count=1`;
+  `go test ./internal/agent/tools/swarm ./internal/swarm -run "Test.*DelegatedActor|Test.*SwarmSpawnCapability" -count=1`;
+  `go test ./cmd/aura -run TestAuthStoreImplementsDelegationInterfaces -count=1`;
+  Phase01B baseline package gate; `go build ./...`; `go vet ./...`;
+  `go test ./... -count=1`.
+- Container update passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  image `sha256:946e9c4f5d71429bb6e487a0cea50bc17fde1171dd37133b1a31f6e1c329a0ec`;
+  `aura-aura-1` health `healthy`; `/health=200`; unauthenticated
+  `/api/health=401`.
+- CI was not checked because the slice has not been committed or pushed yet.
+  Phase01B parent remains open for Phase01B7 authorization denial run/audit
+  events.
+
+2026-05-15 - Phase01B7 authorization denial events and fail-closed repair container updated
+
+- Implemented metadata-only authorization denial correlation: identity
+  authorization can carry run/event provenance, denied decisions notify a narrow
+  recorder, `internal/storage/runs` persists `authorization_denied` run and
+  audit evidence, and chat/registry production wiring passes the shared run
+  store without importing concrete storage into `internal/identity`.
+- Removed Phase01B fail-open authority paths: registry execution denies when no
+  authorizer is present; cron manual jobs, cron Hub jobs, and swarm delegated
+  assignments fail before runner execution when identity delegation is missing;
+  app startup no longer falls back to a cron agent dispatch path if cron Hub
+  creation fails.
+- Verification passed:
+  `go test ./internal/storage/runs -run TestRecordAuthorizationDenial -count=1`;
+  `go test ./internal/identity -run TestAuthorize_DenialRecorder -count=1`;
+  `go test ./internal/chat -run TestReceiveMessage_WithLifecycleStoreRecordsAuthorizationDenial -count=1`;
+  `go test ./internal/agent/tools/registry -run "TestRegistryDefinitionsAndExecute|TestRegistryExecuteWithoutAuthorizerFailsClosed|TestRegistryExecuteRequiresIdentityGrant|TestRegistryExecuteRecordsAuthorizationDenialEvent" -count=1`;
+  `go test ./internal/cron -run "TestRunNowDelegatesCronActor|TestRunNowDelegationRejectsMissingParentGrant|TestRunNowRequiresIdentityDelegation" -count=1`;
+  `go test ./internal/channels/cron -run "TestCronAgentLoopDelegatesActorContext|TestCronAgentLoopRequiresIdentityDelegation" -count=1`;
+  `go test ./internal/swarm -run "TestManagerDelegatesAssignmentActorContext|TestManagerDelegationRejectsMissingParentGrant|TestManagerDelegationRequiresIdentity" -count=1`;
+  Phase01B baseline package gate; shared Phase01B gate; `go build ./...`;
+  `go vet ./...`; `go test ./... -count=1`.
+- Container update passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  image `sha256:3c1e5ea6893c3425bd508fb8925528f741e7d315efc3ab41f215949291312777`;
+  `aura-aura-1` health `healthy`; `/health=200`; unauthenticated
+  `/api/health=401`; unauthenticated `/api/chat=401`; startup logs inspected
+  with no errors.
+- CI was not checked because the slice has not been committed or pushed yet.
+  Phase01B parent remains open for a final closure verifier only.
+
+2026-05-15 - Phase01B parent closure verifier local/auth gates passed; live LLM marker blocked
+
+- Ran the Phase01B parent closure verifier. It found and repaired a durable
+  actor persistence gap in the Hub path: `internal/storage/runs` now stores
+  `CreateRunParams.ActorID`, defaults run events to the run actor, and
+  `internal/chat.Hub` passes the context actor into Hub-backed runs/events.
+- Verification passed:
+  `go test ./internal/storage/runs ./internal/chat -count=1`;
+  Phase01B target package gate; `go build ./...`; `go vet ./...`;
+  `go test ./... -count=1`.
+- Container update passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  image manifest `sha256:37467baf138b32745fc7764b89528287614e434a1f1ac2a9164c2f09ee9c06f1`;
+  `aura-aura-1` health `healthy`; `/health=200`; unauthenticated
+  `/api/health=401`; unauthenticated `/api/chat=401`; bearer
+  `/api/health=200`; bearer mismatched `/api/chat=403`; live SQLite
+  `authz_decisions` records `api.chat` allow for
+  `actor:telegram:session:1148481707`.
+- Blocker: bearer `/api/chat` exact marker `PHASE01B_CLOSE_OK` returned `500`
+  because the configured LLM provider returned `401 Missing Authentication header`.
+  The `secrets` table contains `llm_api_key`, but the provider still
+  rejects the request. Phase01B parent is not complete until this marker rerun
+  passes.
+- CI was not checked because the slice has not been committed or pushed yet.
+
+2026-05-15 - Phase01B parent provider-secret repair passed; runtime .env removed
+
+- Repaired the active provider-secret path instead of restoring `.env`:
+  secret-shaped dashboard keys route to `secrets`, the live stale
+  `settings.LLM_API_KEY` row was removed, and no `.env*` file remains in
+  `D:/Aura/data`.
+- Adjusted `cmd/chat` so bearer-authenticated calls do not send synthetic
+  `user_id=chat-cli`; the server now resolves the token owner unless
+  `AURA_CHAT_USER` is explicitly set.
+- Verification passed:
+  `go test ./internal/api -run TestSettings -count=1`;
+  `go test ./cmd/chat -count=1`;
+  `go test ./cmd/aura -run TestChatHubLifecycleStoreWiring -count=1`;
+  `go test ./internal/secrets ./internal/config -count=1`;
+  `go test ./internal/api ./cmd/aura ./internal/secrets ./internal/config -count=1`;
+  Phase01B baseline package gate; `go build ./...`; `go vet ./...`;
+  `go test ./... -count=1`.
+- Container and live E2E passed:
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  image manifest `sha256:ea46cdf1d5eafb534e5494c501d14227d4a3d556e0cdfe4fc0ed281ecf6cb9b0`;
+  `aura-aura-1` healthy; `/health=200`; unauthenticated `/api/health=401`;
+  bearer `/api/health=200`; `cmd/chat` returned exact `AURA_PIPE_OK`;
+  bearer `/api/chat` returned exact `PHASE01B_CLOSE_OK` with `llm_calls=1`,
+  `tool_calls=0`, and `tokens=8790`.
+- Phase01B parent blocker is closed. CI was not checked because this turn did
+  not push.

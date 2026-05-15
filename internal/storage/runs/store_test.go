@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/testutil"
 )
 
@@ -67,6 +68,50 @@ func TestCreateOrGetRunDedupesInboundIdempotencyKey(t *testing.T) {
 	if second.ThreadID != "thread-1" {
 		t.Fatalf("deduped thread = %q, want original thread-1", second.ThreadID)
 	}
+}
+
+func TestCreateRunAndEventsPersistActorID(t *testing.T) {
+	db, store := openStore(t)
+	ctx := context.Background()
+	run, created, err := store.CreateOrGetRun(ctx, CreateRunParams{
+		ID:          "run-actor",
+		ThreadID:    "thread-actor",
+		PrincipalID: "principal-actor",
+		ActorID:     "actor-session-1",
+		Channel:     "web",
+		Status:      "running",
+		StartedAt:   time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrGetRun: %v", err)
+	}
+	if !created {
+		t.Fatal("CreateOrGetRun created=false")
+	}
+	if run.ActorID != "actor-session-1" {
+		t.Fatalf("run ActorID = %q", run.ActorID)
+	}
+
+	event, err := store.AppendEvent(ctx, AppendEventParams{
+		RunID: run.ID,
+		Type:  "run_started",
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	if event.ActorID != "actor-session-1" {
+		t.Fatalf("event ActorID = %q", event.ActorID)
+	}
+
+	stored, err := store.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.ActorID != "actor-session-1" {
+		t.Fatalf("stored ActorID = %q", stored.ActorID)
+	}
+	assertRunScalar(t, db, `SELECT COUNT(*) FROM runs WHERE id = ? AND actor_id = ?`, 1, run.ID, "actor-session-1")
+	assertRunScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND actor_id = ?`, 1, run.ID, "actor-session-1")
 }
 
 func TestAppendEventAdvancesPerRunSeqAndSnapshot(t *testing.T) {
@@ -223,6 +268,62 @@ func TestOutboxRequiresAndDedupesDeliveryIdempotency(t *testing.T) {
 	}
 }
 
+func TestRecordAuthorizationDenial(t *testing.T) {
+	db, store := openStore(t)
+	ctx := context.Background()
+	run := createRun(t, store, "run-authz-denial")
+	createdAt := time.Date(2026, 5, 15, 9, 30, 0, 0, time.UTC)
+
+	decision := identity.AuthorizationDecision{
+		ID:         "authz-deny-1",
+		ActorID:    "actor-1",
+		Capability: identity.CapabilityToolExecute,
+		Resource:   identity.ResourceRef{Type: "tool", ID: "fake"},
+		Decision:   identity.DecisionDeny,
+		Reason:     "missing_grant",
+		RunID:      run.ID,
+		CreatedAt:  createdAt,
+	}
+	if err := store.RecordAuthorizationDenial(ctx, decision); err != nil {
+		t.Fatalf("RecordAuthorizationDenial: %v", err)
+	}
+
+	var eventID, payloadJSON, redaction string
+	if err := db.QueryRow(`
+SELECT id, payload_json, redaction_level
+FROM run_events
+WHERE run_id = ? AND type = ? AND actor_id = ?
+`, run.ID, EventAuthorizationDenied, decision.ActorID).Scan(&eventID, &payloadJSON, &redaction); err != nil {
+		t.Fatalf("query authorization_denied run event: %v", err)
+	}
+	if redaction != RedactionMetadata {
+		t.Fatalf("run event redaction = %q, want %q", redaction, RedactionMetadata)
+	}
+	assertPayloadField(t, payloadJSON, "decision_id", decision.ID)
+	assertPayloadField(t, payloadJSON, "capability", string(decision.Capability))
+	assertPayloadField(t, payloadJSON, "resource_id", decision.Resource.ID)
+
+	var auditPayload, auditRedaction string
+	if err := db.QueryRow(`
+SELECT payload_json, redaction_level
+FROM audit_events
+WHERE run_id = ? AND event_id = ? AND type = ? AND actor_id = ? AND target_id = ?
+`, run.ID, eventID, EventAuthorizationDenied, decision.ActorID, decision.ID).Scan(&auditPayload, &auditRedaction); err != nil {
+		t.Fatalf("query authorization_denied audit event: %v", err)
+	}
+	if auditRedaction != RedactionMetadata {
+		t.Fatalf("audit redaction = %q, want %q", auditRedaction, RedactionMetadata)
+	}
+	assertPayloadField(t, auditPayload, "reason", decision.Reason)
+	assertNoPayloadText(t, db, "secret prompt")
+
+	if err := store.RecordAuthorizationDenial(ctx, decision); err != nil {
+		t.Fatalf("RecordAuthorizationDenial duplicate: %v", err)
+	}
+	assertRunScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND type = ?`, 1, run.ID, EventAuthorizationDenied)
+	assertRunScalar(t, db, `SELECT COUNT(*) FROM audit_events WHERE run_id = ? AND type = ?`, 1, run.ID, EventAuthorizationDenied)
+}
+
 func TestTerminalRunStateSurvivesStoreReopen(t *testing.T) {
 	db, store := openStore(t)
 	ctx := context.Background()
@@ -260,6 +361,7 @@ func createRun(t *testing.T, store *Store, id string) Run {
 		ParentRunID:    "parent-run",
 		ThreadID:       "thread-1",
 		PrincipalID:    "principal-1",
+		ActorID:        "actor:run:" + id,
 		Channel:        "web",
 		Status:         "running",
 		IdempotencyKey: "inbound:" + id,
@@ -273,4 +375,41 @@ func createRun(t *testing.T, store *Store, id string) Run {
 		t.Fatalf("CreateOrGetRun(%s) created=false", id)
 	}
 	return run
+}
+
+func assertPayloadField(t *testing.T, payloadJSON, key string, want any) {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		t.Fatalf("decode payload %s: %v", payloadJSON, err)
+	}
+	if got := payload[key]; got != want {
+		t.Fatalf("payload[%s] = %#v, want %#v", key, got, want)
+	}
+}
+
+func assertNoPayloadText(t *testing.T, db *sql.DB, needle string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(`
+SELECT COUNT(*)
+FROM run_events
+WHERE payload_json LIKE ?
+`, "%"+needle+"%").Scan(&count); err != nil {
+		t.Fatalf("query run payload text: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("run payload contains %q", needle)
+	}
+}
+
+func assertRunScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {
+	t.Helper()
+	var got int
+	if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+		t.Fatalf("query scalar %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("scalar %q = %d, want %d", query, got, want)
+	}
 }

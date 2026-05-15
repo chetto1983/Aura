@@ -8,9 +8,8 @@
 //   AURA_CHAT_URL    HTTP base URL of the Aura instance. Default: http://127.0.0.1:18080
 //   AURA_CHAT_TOKEN  Bearer token (mint one via the Telegram /start command
 //                    or with the request_dashboard_token LLM tool). Required.
-//   AURA_CHAT_USER   Optional user_id sent in the payload. Defaults to
-//                    "chat-cli", which keeps the local pipe history separate
-//                    from any Telegram user's conversation.
+//   AURA_CHAT_USER   Optional user_id sent in the payload. Leave blank for
+//                    bearer-authenticated calls so Aura uses the token owner.
 //
 // Usage:
 //
@@ -54,7 +53,7 @@ func main() {
 	var (
 		baseURL = envOr("AURA_CHAT_URL", "http://127.0.0.1:18080")
 		token   = strings.TrimSpace(os.Getenv("AURA_CHAT_TOKEN"))
-		user    = envOr("AURA_CHAT_USER", "chat-cli")
+		user    = strings.TrimSpace(os.Getenv("AURA_CHAT_USER"))
 		oneShot = flag.String("m", "", "single-message mode: send this message, print the reply, and exit")
 		quiet   = flag.Bool("quiet", false, "suppress the stats line under each reply")
 	)
@@ -88,7 +87,11 @@ func main() {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "aura chat pipe → %s (user=%s) — Ctrl+D to exit\n", endpoint, user)
+	displayUser := user
+	if displayUser == "" {
+		displayUser = "(token owner)"
+	}
+	fmt.Fprintf(os.Stderr, "aura chat pipe → %s (user=%s) — Ctrl+D to exit\n", endpoint, displayUser)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1<<16), 1<<20)
 	for {

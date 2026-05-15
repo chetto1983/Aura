@@ -141,6 +141,7 @@ type Repository interface {
 	AccessWriter
 	PendingReader
 	Authorizer
+	identity.Delegator
 }
 
 // Store wraps a *sql.DB with the SQL needed to mint, look up, and revoke
@@ -336,6 +337,10 @@ func (s *Store) Revoke(ctx context.Context, token string) error {
 // Authorize delegates dashboard authorization checks to the identity store.
 func (s *Store) Authorize(ctx context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
 	return s.identity.Authorize(ctx, params)
+}
+
+func (s *Store) DelegateActor(ctx context.Context, params identity.DelegateActorParams) (identity.DelegateActorResult, error) {
+	return s.identity.DelegateActor(ctx, params)
 }
 
 // BootstrapUser claims the first-run allowlist for userID. It inserts the

@@ -12,6 +12,7 @@ import (
 
 	toolsets "github.com/aura/aura/internal/agent/tools/sets"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -81,6 +82,7 @@ type HandlerConfig struct {
 	Issues      IssueRepository
 	Sources     AgentJobSourceReader
 	SchedDB     AgentJobRepository
+	Identity    identity.Delegator
 	Logger      *slog.Logger
 	Location    *time.Location
 }
@@ -95,6 +97,7 @@ type Handler struct {
 	issues   IssueRepository
 	sources  AgentJobSourceReader
 	schedDB  AgentJobRepository
+	identity identity.Delegator
 	logger   *slog.Logger
 	loc      *time.Location
 }
@@ -116,6 +119,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		issues:   cfg.Issues,
 		sources:  cfg.Sources,
 		schedDB:  cfg.SchedDB,
+		identity: cfg.Identity,
 		logger:   logger,
 		loc:      loc,
 	}
@@ -244,6 +248,7 @@ func (h *Handler) dispatchWikiMaintenance(ctx context.Context) error {
 type agentJobRun struct {
 	Payload       AgentJobPayload
 	ToolAllowlist []string
+	ActorID       string
 	Result        JobResult
 	Notified      bool
 	Skipped       bool
@@ -283,20 +288,79 @@ func (h *Handler) runAgentJob(ctx context.Context, task *Task) (agentJobRun, err
 			WakeSignature: wakeSignature,
 		}, nil
 	}
+	runCtx, actorID, err := h.delegateAgentJobActor(ctx, task, allowlist)
+	if err != nil {
+		return agentJobRun{Payload: payload, ToolAllowlist: allowlist}, fmt.Errorf("agent_job %q: %w", task.Name, err)
+	}
 	now := time.Now()
 	zero := 0.0
-	result, err := h.runner.RunJob(ctx, JobRequest{
+	result, err := h.runner.RunJob(runCtx, JobRequest{
 		SystemPrompt:  AgentJobSystemPrompt(payload, now, h.loc),
 		Prompt:        h.agentJobPrompt(ctx, task, payload, now, h.loc),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
 		Temperature:   &zero,
 	})
-	run := agentJobRun{Payload: payload, ToolAllowlist: allowlist, Result: result, WakeSignature: wakeSignature}
+	run := agentJobRun{Payload: payload, ToolAllowlist: allowlist, ActorID: actorID, Result: result, WakeSignature: wakeSignature}
 	if err != nil {
 		return run, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
 	return run, nil
+}
+
+func (h *Handler) delegateAgentJobActor(ctx context.Context, task *Task, allowlist []string) (context.Context, string, error) {
+	delegator, parentActorID := h.delegationAuthority(ctx, task)
+	if delegator == nil {
+		return ctx, "", fmt.Errorf("%w: cron agent job requires identity delegator", identity.ErrUnauthorized)
+	}
+	if parentActorID == "" {
+		return ctx, "", fmt.Errorf("%w: cron agent job requires parent actor", identity.ErrUnauthorized)
+	}
+	constraints, err := json.Marshal(map[string]any{
+		"task_id":        task.ID,
+		"task_name":      task.Name,
+		"tool_allowlist": allowlist,
+		"channel":        "cron",
+	})
+	if err != nil {
+		return ctx, "", fmt.Errorf("cron delegation constraints: %w", err)
+	}
+	scopeID := fmt.Sprintf("cron:%d:%s", task.ID, task.Name)
+	result, err := delegator.DelegateActor(ctx, identity.DelegateActorParams{
+		ID:              identity.DelegatedActorID(identity.ActorTypeCron, parentActorID, scopeID),
+		ParentActorID:   parentActorID,
+		ActorType:       identity.ActorTypeCron,
+		RunID:           scopeID,
+		Capabilities:    delegatedAgentJobCapabilities(allowlist),
+		ConstraintsJSON: string(constraints),
+	})
+	if err != nil {
+		return ctx, "", err
+	}
+	return identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), result.Actor.ID, nil
+}
+
+func (h *Handler) delegationAuthority(ctx context.Context, task *Task) (identity.Delegator, string) {
+	delegator, ok := identity.DelegatorFromContext(ctx)
+	if !ok {
+		delegator = h.identity
+	}
+	if delegator == nil {
+		return nil, ""
+	}
+	parentActorID := identity.ActorIDFromContext(ctx)
+	if parentActorID == "" && task != nil && strings.TrimSpace(task.RecipientID) != "" && strings.TrimSpace(task.RecipientID) != "cron" {
+		parentActorID = identity.TelegramSessionActorID(task.RecipientID)
+	}
+	return delegator, parentActorID
+}
+
+func delegatedAgentJobCapabilities(allowlist []string) []identity.Capability {
+	capabilities := []identity.Capability{identity.CapabilityCronRun}
+	if len(allowlist) > 0 {
+		capabilities = append(capabilities, identity.CapabilityToolExecute)
+	}
+	return capabilities
 }
 
 func (h *Handler) persistAgentJobResult(ctx context.Context, task *Task, run agentJobRun) {

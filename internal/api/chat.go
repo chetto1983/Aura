@@ -84,7 +84,7 @@ func handleChat(deps Deps) http.HandlerFunc {
 				writeError(w, deps.Logger, http.StatusForbidden, "missing api.chat grant")
 				return
 			}
-			chatCtx = identity.WithAuthorizer(chatCtx, deps.Auth)
+			chatCtx = identity.WithAuthority(chatCtx, deps.Auth)
 		} else {
 			userID = strings.TrimSpace(req.UserID)
 		}

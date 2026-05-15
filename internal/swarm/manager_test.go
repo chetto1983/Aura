@@ -2,12 +2,14 @@ package swarm
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/identity"
 )
 
 type fakeRunner struct {
@@ -18,6 +20,7 @@ type fakeRunner struct {
 	active    int
 	maxActive int
 	calls     int
+	actorIDs  []string
 }
 
 var _ LimitController = (*Manager)(nil)
@@ -29,6 +32,7 @@ func (r *fakeRunner) Run(ctx context.Context, task agent.Task) (agent.Result, er
 		r.maxActive = r.active
 	}
 	r.calls++
+	r.actorIDs = append(r.actorIDs, identity.ActorIDFromContext(ctx))
 	r.mu.Unlock()
 
 	defer func() {
@@ -59,6 +63,23 @@ func (r *fakeRunner) stats() (calls, maxActive int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls, r.maxActive
+}
+
+func (r *fakeRunner) actors() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.actorIDs...)
+}
+
+func assertSwarmScalar[T comparable](t *testing.T, db *sql.DB, query string, want T, args ...any) {
+	t.Helper()
+	var got T
+	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("query %q = %v, want %v", query, got, want)
+	}
 }
 
 func TestManagerRunExecutesAssignmentsAndPersistsResults(t *testing.T) {
@@ -185,6 +206,136 @@ func TestManagerDepthLimitFailsTaskWithoutRunning(t *testing.T) {
 	}
 	if failed.LastError == "" {
 		t.Fatalf("failed task missing error: %+v", res.Tasks)
+	}
+}
+
+func TestManagerDelegatesAssignmentActorContext(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	identityStore, err := identity.NewStore(store.DB())
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	if _, err := identityStore.BackfillTelegramAllowlistedUser(ctx, identity.TelegramAllowlistUserParams{
+		UserID:        "12345",
+		Source:        "test",
+		PrincipalKind: identity.PrincipalKindOwner,
+		Capabilities:  []identity.Capability{identity.CapabilitySwarmSpawn, identity.CapabilityToolExecute},
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	parentActorID := identity.TelegramSessionActorID("12345")
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{Runner: runner, Store: store, MaxActive: 1, MaxDepth: 1})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	runCtx := identity.WithActorID(identity.WithAuthority(ctx, identityStore), parentActorID)
+	res, err := manager.Run(runCtx, RunRequest{
+		Goal:      "delegated",
+		CreatedBy: "12345",
+		Assignments: []Assignment{{
+			Role:                  "librarian",
+			Subject:               "read",
+			Prompt:                "read",
+			ToolAllowlist:         []string{"file"},
+			DelegatedCapabilities: []identity.Capability{identity.CapabilityToolExecute},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Run.Status != RunCompleted {
+		t.Fatalf("run status = %s", res.Run.Status)
+	}
+	actors := runner.actors()
+	if len(actors) != 1 || actors[0] == "" || actors[0] == parentActorID {
+		t.Fatalf("runner actors = %+v, parent = %q", actors, parentActorID)
+	}
+	assertSwarmScalar(t, store.DB(), `SELECT actor_type FROM actors WHERE id = ?`, "swarm", actors[0])
+	assertSwarmScalar(t, store.DB(), `SELECT parent_actor_id FROM actors WHERE id = ?`, parentActorID, actors[0])
+	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), actors[0])
+	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'tool.execute' AND decision = 'allow'`, int64(1), parentActorID)
+}
+
+func TestManagerDelegationRejectsMissingParentGrant(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	identityStore, err := identity.NewStore(store.DB())
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	if _, err := identityStore.BackfillTelegramAllowlistedUser(ctx, identity.TelegramAllowlistUserParams{
+		UserID:        "67890",
+		Source:        "test",
+		PrincipalKind: identity.PrincipalKindOwner,
+		Capabilities:  []identity.Capability{identity.CapabilitySwarmSpawn},
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	parentActorID := identity.TelegramSessionActorID("67890")
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{Runner: runner, Store: store, MaxActive: 1, MaxDepth: 1})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	runCtx := identity.WithActorID(identity.WithAuthority(ctx, identityStore), parentActorID)
+	res, err := manager.Run(runCtx, RunRequest{
+		Goal:      "delegated",
+		CreatedBy: "67890",
+		Assignments: []Assignment{{
+			Role:                  "librarian",
+			Subject:               "read",
+			Prompt:                "read",
+			ToolAllowlist:         []string{"file"},
+			DelegatedCapabilities: []identity.Capability{identity.CapabilityToolExecute},
+		}},
+	})
+	if !errors.Is(err, identity.ErrUnauthorized) {
+		t.Fatalf("Run error = %v, want ErrUnauthorized", err)
+	}
+	if res.Run.Status != RunFailed {
+		t.Fatalf("run status = %s", res.Run.Status)
+	}
+	calls, _ := runner.stats()
+	if calls != 0 {
+		t.Fatalf("runner calls = %d, want 0", calls)
+	}
+	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM actors WHERE parent_actor_id = ? AND actor_type = 'swarm'`, int64(0), parentActorID)
+	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'tool.execute' AND decision = 'deny'`, int64(1), parentActorID)
+}
+
+func TestManagerDelegationRequiresIdentity(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{Runner: runner, Store: store, MaxActive: 1, MaxDepth: 1})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	res, err := manager.Run(ctx, RunRequest{
+		Goal:      "delegated",
+		CreatedBy: "12345",
+		Assignments: []Assignment{{
+			Role:                  "librarian",
+			Subject:               "read",
+			Prompt:                "read",
+			ToolAllowlist:         []string{"file"},
+			DelegatedCapabilities: []identity.Capability{identity.CapabilityToolExecute},
+		}},
+	})
+	if !errors.Is(err, identity.ErrUnauthorized) {
+		t.Fatalf("Run error = %v, want ErrUnauthorized", err)
+	}
+	if res.Run.Status != RunFailed {
+		t.Fatalf("run status = %s", res.Run.Status)
+	}
+	calls, _ := runner.stats()
+	if calls != 0 {
+		t.Fatalf("runner calls = %d, want 0", calls)
 	}
 }
 

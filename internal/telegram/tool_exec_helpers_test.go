@@ -8,11 +8,29 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/agent"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
-	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 )
+
+type allowTelegramToolAuthorizer struct{}
+
+func (allowTelegramToolAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return identity.AuthorizationDecision{
+		ActorID:    params.ActorID,
+		Capability: params.Capability,
+		Resource:   params.Resource,
+		Decision:   identity.DecisionAllow,
+		Reason:     "test_grant",
+	}, nil
+}
+
+func authorizedTelegramToolContext(userID string) context.Context {
+	ctx := identity.WithAuthorizer(context.Background(), allowTelegramToolAuthorizer{})
+	return identity.WithActorID(ctx, identity.TelegramSessionActorID(userID))
+}
 
 func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *testing.T) {
 	// Registry is the single source of truth. The toolsExposed slice is kept
@@ -28,7 +46,7 @@ func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *test
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"search_memory"}, // narrower than registry
 		nil,
@@ -52,7 +70,7 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
 		[]string{"create_pdf"},
 		nil,
@@ -77,7 +95,7 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{
 			{ID: "skill-1", Name: "read_file", Arguments: map[string]any{"path": ".agents/skills/document-pdf/SKILL.md"}},
 			{ID: "pdf-1", Name: "create_pdf"},
@@ -107,7 +125,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
 		[]string{"systematic-debugging"},
@@ -133,7 +151,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
 		[]string{"execute_code"},
 		[]string{"systematic-debugging"},
@@ -162,7 +180,7 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	b := &Bot{cfg: &config.Config{}, rt: &botRuntime{tools: reg}}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}},
 		[]string{"search_memory"},
 		nil,
@@ -190,7 +208,7 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	b := &Bot{cfg: &config.Config{TerminalToolPolicy: "on"}, rt: &botRuntime{tools: reg}, logger: slog.Default()}
 	convCtx := conversation.NewContext(conversation.Config{})
 
-	summary := b.executeToolCalls(context.Background(), nil, convCtx, "1148481707",
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
 		[]llm.ToolCall{{ID: "shell-1", Name: "execute_shell", Arguments: map[string]any{"command": "find /home/user"}}},
 		[]string{"execute_shell"},
 		nil,

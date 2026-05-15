@@ -204,3 +204,22 @@ type TelegramAllowlistBackfillSummary struct {
 	ActorsCreated          int
 	GrantsCreated          int
 }
+
+type DelegateActorParams struct {
+	ID              string
+	ParentActorID   string
+	ActorType       ActorType
+	RunID           string
+	Capabilities    []Capability
+	Resource        ResourceRef
+	ConstraintsJSON string
+	ExpiresAt       *time.Time
+	MetadataJSON    string
+}
+
+type DelegateActorResult struct {
+	Actor         Actor
+	ActorCreated  bool
+	GrantsCreated int
+	Decisions     []AuthorizationDecision
+}

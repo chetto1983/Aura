@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/identity"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/testutil"
 )
@@ -23,6 +25,16 @@ type recordingLoop struct {
 	mu          sync.Mutex
 	calls       int
 	finalStatus RunStatus
+}
+
+type registryAuthorizationLoop struct {
+	reg  *tools.Registry
+	args map[string]any
+}
+
+func (r *registryAuthorizationLoop) Run(ctx context.Context, _ *Run, _ InboundMessage, _ EmitFn) error {
+	_, err := r.reg.Execute(ctx, "fake", r.args)
+	return err
 }
 
 func (r *recordingLoop) Run(_ context.Context, run *Run, _ InboundMessage, emit EmitFn) error {
@@ -62,6 +74,20 @@ type fakeOutbound struct {
 	mu      sync.Mutex
 	got     []OutboundEvent
 	err     error
+}
+
+type chatRegistryTool struct {
+	executed *atomic.Bool
+}
+
+func (t chatRegistryTool) Name() string        { return "fake" }
+func (t chatRegistryTool) Description() string { return "fake" }
+func (t chatRegistryTool) Parameters() map[string]any {
+	return map[string]any{"type": "object"}
+}
+func (t chatRegistryTool) Execute(context.Context, map[string]any) (string, error) {
+	t.executed.Store(true)
+	return "ok", nil
 }
 
 func (f *fakeOutbound) Channel() Channel   { return f.channel }
@@ -376,6 +402,40 @@ func TestReceiveMessage_WithLifecycleStoreDedupesInboundMessage(t *testing.T) {
 	}
 }
 
+func TestReceiveMessage_WithLifecycleStorePersistsActorOnRunAndEvents(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	h := newPersistentHub(t, &recordingLoop{}, store)
+	ctx := identity.WithActorID(context.Background(), "actor:web:session:1")
+	msg := InboundMessage{
+		ID:          "actor-inbound-id",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "hello",
+		Mode:        DeliveryModeDeferred,
+	}
+
+	run, err := h.ReceiveMessage(ctx, msg)
+	if err != nil {
+		t.Fatalf("ReceiveMessage: %v", err)
+	}
+	if run.ActorID != "actor:web:session:1" {
+		t.Fatalf("run ActorID = %q", run.ActorID)
+	}
+	stored, err := store.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.ActorID != "actor:web:session:1" {
+		t.Fatalf("stored ActorID = %q", stored.ActorID)
+	}
+	assertChatScalar(t, db, `
+SELECT COUNT(*)
+FROM run_events
+WHERE run_id = ? AND actor_id = ?
+`, 2, run.ID, "actor:web:session:1")
+}
+
 func TestReceiveMessage_LoopErrorPersistsRedactedErrorLifecycle(t *testing.T) {
 	db, store := newLifecycleStore(t)
 	rawErr := "boom secret raw error"
@@ -510,6 +570,56 @@ func TestReceiveMessage_WithLifecycleStorePersistsRedactedToolUsageAndFinalEvent
 	assertNoStoredText(t, db, "secret delivery value")
 }
 
+func TestReceiveMessage_WithLifecycleStoreRecordsAuthorizationDenial(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	identityStore, err := identity.NewStore(db)
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	actorID := seedHubIdentityActor(t, identityStore)
+	var executed atomic.Bool
+	reg := tools.NewRegistry(nil)
+	reg.Register(chatRegistryTool{executed: &executed})
+	h := newPersistentHub(t, &registryAuthorizationLoop{
+		reg:  reg,
+		args: map[string]any{"query": "secret tool arg value"},
+	}, store)
+	ctx := identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actorID)
+
+	run, err := h.ReceiveMessage(ctx, InboundMessage{
+		ID:          "authz-denial-inbound",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "secret prompt",
+		Mode:        DeliveryModeDeferred,
+	})
+	if err == nil {
+		t.Fatal("ReceiveMessage error = nil, want registry authorization denial")
+	}
+	if executed.Load() {
+		t.Fatal("tool executed despite missing grant")
+	}
+
+	assertChatScalar(t, db, `
+SELECT COUNT(*)
+FROM authz_decisions
+WHERE actor_id = ? AND run_id = ? AND capability = 'tool.execute' AND decision = 'deny'
+`, 1, actorID, run.ID)
+	assertChatScalar(t, db, `
+SELECT COUNT(*)
+FROM run_events
+WHERE run_id = ? AND type = 'authorization_denied' AND actor_id = ?
+`, 1, run.ID, actorID)
+	assertChatScalar(t, db, `
+SELECT COUNT(*)
+FROM audit_events
+WHERE run_id = ? AND type = 'authorization_denied' AND actor_id = ?
+`, 1, run.ID, actorID)
+	assertNoStoredText(t, db, "secret prompt")
+	assertNoStoredText(t, db, "secret tool arg value")
+}
+
 func TestRegisterOutbound_MultipleAdaptersFanout(t *testing.T) {
 	loop := &recordingLoop{emits: []OutboundEvent{{Type: EventMessageDone}}}
 	h := newHub(t, loop)
@@ -627,6 +737,38 @@ func eventTypes(events []runstore.Event) []string {
 	return types
 }
 
+func seedHubIdentityActor(t *testing.T, store *identity.Store) string {
+	t.Helper()
+	ctx := context.Background()
+	if _, _, err := store.CreateOrResolvePrincipal(ctx, identity.PrincipalParams{
+		ID:          "principal-1",
+		Kind:        identity.PrincipalKindHuman,
+		DisplayName: "Owner",
+	}); err != nil {
+		t.Fatalf("CreateOrResolvePrincipal: %v", err)
+	}
+	account, _, err := store.CreateOrResolveChannelAccount(ctx, identity.ChannelAccountParams{
+		ID:          "acct-1",
+		PrincipalID: "principal-1",
+		Provider:    "telegram",
+		ExternalID:  "123",
+		DisplayName: "Owner TG",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrResolveChannelAccount: %v", err)
+	}
+	actor, err := store.CreateActor(ctx, identity.ActorParams{
+		ID:               "actor-1",
+		PrincipalID:      "principal-1",
+		ActorType:        identity.ActorTypeSession,
+		ChannelAccountID: account.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateActor: %v", err)
+	}
+	return actor.ID
+}
+
 func sameStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -637,6 +779,17 @@ func sameStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func assertChatScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {
+	t.Helper()
+	var got int
+	if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+		t.Fatalf("query scalar %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("scalar %q = %d, want %d", query, got, want)
+	}
 }
 
 func assertNoStoredText(t *testing.T, db *sql.DB, text string) {
@@ -665,6 +818,11 @@ func assertNoStoredText(t *testing.T, db *sql.DB, text string) {
 		{
 			name:  "run events payload",
 			query: `SELECT COUNT(*) FROM run_events WHERE payload_json LIKE ?`,
+			args:  []any{pattern},
+		},
+		{
+			name:  "audit events payload",
+			query: `SELECT COUNT(*) FROM audit_events WHERE payload_json LIKE ?`,
 			args:  []any{pattern},
 		},
 	}

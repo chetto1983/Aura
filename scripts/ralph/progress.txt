@@ -828,3 +828,69 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - Acceptance criterion "no longer mentions Runner/NewRunner/agent.Config" is strict — historical audit notes also need rephrasing, not just the API section
   - git add -f for .planning/* is established precedent (US-A12, US-A19, US-B07); using it here for progress.md
 ---
+
+## [2026-05-15 23:59] — US-H01 shipped as 27e1812f
+- Added migration v9 (add_secrets_table) + internal/secrets/SQLiteStore with Get/Set/Delete/List; canonical key constants for all 6 secrets; no callers wired (foundation only)
+- Files touched: 5 (migrations.go, migrations_test.go, secrets/store.go, secrets/store_test.go, prd.json)
+- Validation: go build/vet/test all green (full suite 75+ packages)
+- LOC delta: +378 net (2 new files + migration function + test count update)
+- Learnings:
+  - migrations_test.go TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent hardcodes the exact migration version list [1..8]; adding migration 9 requires updating both the count and the list — this is expected maintenance when adding migrations
+  - TestRunCreatesCurrentFreshSchema also needs secrets table added to the expected table list
+  - SQLite ON CONFLICT(key) DO UPDATE is the canonical upsert pattern; matches the settings table's existing convention exactly
+---
+
+## [2026-05-15 HH:MM] — US-H02 shipped as 3634d371
+- Created internal/secrets/migrate.go with ImportFromDotEnv (idempotent .env→SQLite migration) and parseDotEnvForMigration (file parser returning a map, never setting env vars); migrate_test.go with 8 tests covering happy path, idempotency, empty values, missing file, punctuation roundtrip, quoted values, unknown vars, no-values-in-returned-slice
+- Files touched: 3 (migrate.go new, migrate_test.go new, prd.json updated)
+- Validation: go build/vet/test all green (full suite 75+ packages; internal/secrets 5.493s fresh)
+- LOC delta: +382 net (2 new files)
+- Learnings:
+  - os.Discard does not exist; use io.Discard for a discard writer in tests
+  - parseDotEnvForMigration mirrors loadDotEnv in main.go but returns map[string]string instead of calling os.Setenv; the two parsers stay in sync (same quote-strip + skip-blank logic) but neither calls the other to avoid coupling cmd/aura into internal/secrets
+  - Missing file (os.ErrNotExist) returns (nil, nil) — a nil slice is equivalent to the empty slice ([]string{}) for callers using len()/range
+---
+
+## [2026-05-15 HH:MM] — US-H03 shipped as 4f430a9b
+- Wired secrets overlay into startAura: ImportFromDotEnv (idempotent .env→SQLite) + applySecretsToConfig (SQLite wins over env) called after migrations; second applySecretsToConfig call on newCfg after wizard re-load
+- Files touched: 3 (secrets_boot.go new, secrets_boot_test.go new, main.go +14 LOC, prd.json)
+- Validation: go build/vet/test all green (full suite 75+ packages; cmd/aura 0.757s fresh)
+- LOC delta: +183 net (2 new files + 14 lines in main.go)
+- Learnings:
+  - applySecretsToConfig must be called both BEFORE IsBootstrapped() check (for existing installs) AND after wizard re-load on newCfg (so SQLite always wins post-wizard)
+  - The stubSecretsStore in test file implements all 4 interface methods (Get/Set/Delete/List) even though only Get is exercised — required by the secrets.Store interface
+  - LSP "unusedfunc" for applySecretsToConfig is transient: it disappears once main.go wires it in
+---
+
+## [2026-05-15 HH:MM] — US-H05 shipped as ef234d7c
+- Added cmd/aura/bootstrap_defaults.go with hardcoded meta-config defaults and TTY-based headless auto-detection; called applyBootstrapMetaConfig() in main() after loadDotEnv
+- Files touched: 3 (bootstrap_defaults.go new, bootstrap_defaults_test.go new, main.go +1 line, prd.json)
+- Validation: go build/vet/test all green (full suite; cmd/aura 0.896s fresh)
+- LOC delta: +175 net (2 new files)
+- Learnings:
+  - Bootstrap defaults belong in cmd/aura (not config package) so they can be unit-tested with injectable headless detector without spawning a real process
+  - t.Setenv("KEY", "") correctly simulates "not set" for getEnv logic that checks os.Getenv(key)==""
+  - Order: loadDotEnv first (so .env wins over bootstrap), then setBootstrapMetaConfig (so any still-unset vars get defaults), then config.Load
+  - DB_PATH default is headless-aware: ./data/aura.db for containers, ./aura.db for desktop
+---
+
+## [2026-05-15 21:46] — US-H06 shipped as 913bb787
+- Removed both env_file: directives from compose.yaml (aura + garage services); rewrote INSTALL.md + README.md to describe SQLite-only first-run flow; replaced .env.example with 1-paragraph legacy stub; added Phase 10 closure row to progress.md
+- Files touched: 5 (compose.yaml, INSTALL.md, README.md, .env.example, .planning/.../progress.md) + prd.json fix-up commit 65c073b3
+- Validation: go build/vet/test all green (doc-only changes, all cached)
+- LOC delta: -137/+14 net (.env.example stripped from 126 to 13 lines; docs trimmed)
+- Learnings:
+  - Stage prd.json AFTER editing it — `git add scripts/ralph/prd.json` before flipping passes:true stages no changes; verify with `git diff --cached --stat` BEFORE committing
+  - compose.yaml garage service had its own env_file block for garage-default.env (line ~125 as story noted); the story AC "no env_file directive" required removing both; both are required:false so removal is safe
+  - progress.md US-H06 SHA self-reference: wrote "this commit — see git log HEAD" since SHA is unknown before the commit; this is the documented orphan-state-recovery approach
+---
+
+## [2026-05-15 HH:MM] — US-I01 shipped as 009639ae
+- Added 4 MCP behavioral hint bools + VisibilityTier typed string to ToolDefinition in definition.go; normalizeToolDefinition defaults VisibilityTier to VisibilityActiveTurn; created definition_test.go with 6 tests covering defaults, provider-supplied overrides for all new fields, and typed-constant compile guard
+- Files touched: 2 (definition.go +28 LOC, definition_test.go new 124 LOC) + prd.json
+- Validation: go build/vet/test all green (full suite 75+ packages)
+- LOC delta: +152 net (definition.go +28, definition_test.go +124)
+- Learnings:
+  - Bool fields in Go default to false — no explicit normalization needed for the 4 hint fields; only VisibilityTier (string) needs a default in normalizeToolDefinition
+  - No catalogue migration in this story per AC; US-I02 wires the hints onto individual tools
+---

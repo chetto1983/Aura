@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-15T16:02:38+02:00",
+  "timestamp": "2026-05-15T22:32:25+02:00",
   "context": "deep-refactor",
   "phase": "Phase01B",
   "phase_name": "Establish Identity and Capability Grants",
   "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants",
-  "status": "phase01b5-container-updated",
+  "status": "phase01b-parent-closed-container-e2e-verified",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -78,22 +78,39 @@
       "name": "Move Telegram login/bootstrap/approval onto identity grants while keeping allowlist parity",
       "status": "container_updated",
       "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
-    }
-  ],
-  "remaining_tasks": [
+    },
     {
       "id": "P1B6-DELEGATED-ACTORS",
       "name": "Add delegated actor creation for cron and swarm child runs",
-      "status": "not_started",
-      "recommended_next": "Use `$aura-implementation-loop` for the next bounded Phase01B slice. Keep denial-event wiring separate unless the Phase01B plan is explicitly narrowed."
+      "status": "container_updated",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     },
     {
       "id": "P1B7-DENIAL-EVENTS",
       "name": "Wire authorization denials into Phase01A run/audit events",
-      "status": "not_started",
-      "recommended_next": "Run after cron/swarm actor delegation unless the plan is explicitly narrowed."
+      "status": "container_updated",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-NO-FAIL-OPEN",
+      "name": "Remove Phase01B missing-authority fail-open paths",
+      "status": "container_updated",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-CLOSURE-ACTOR-PERSISTENCE",
+      "name": "Repair parent-verifier actor persistence gap for Hub-backed runs and lifecycle events",
+      "status": "repo_verified_container_updated",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-CLOSURE-VERIFIER",
+      "name": "Close Phase01B parent with DB-backed provider secret repair, runtime .env removal, and exact live chat markers",
+      "status": "container_e2e_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     }
   ],
+  "remaining_tasks": [],
   "decisions": [
     {
       "decision": "Old phase folders were intentionally discarded.",
@@ -131,8 +148,8 @@
       "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     },
     {
-      "decision": "Phase01B1 is closed, but the Phase01B parent remains open.",
-      "rationale": "Subagent goal verifier returned PASS 10/10 for Phase01B1 only, and code-risk recheck returned PASS 9.5/10 with no B1 blockers. Phase01B2 is now locally implemented, while dashboard/API/tool/cron/swarm/denial-event wiring remains planned B3-B7 work.",
+      "decision": "Phase01B1 closed first, then later Phase01B slices closed the parent.",
+      "rationale": "Subagent goal verifier returned PASS 10/10 for Phase01B1 only, and code-risk recheck returned PASS 9.5/10 with no B1 blockers. Later Phase01B slices closed B2-B7, fail-closed runtime paths, actor persistence, provider-secret repair, and the live marker.",
       "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
     },
     {
@@ -152,13 +169,38 @@
     },
     {
       "decision": "Phase01B4 gates registry tool execution on identity capabilities when an authorizer is present.",
-      "rationale": "Tool definitions now carry `RequiredCapability`, defaulting to `tool.execute`; tools may require `tool.execute.<tool_name>`. The registry calls `identity.Authorize` before `Tool.Execute`, records deny/allow decisions through the identity store, and preserves the no-authorizer compatibility path until Telegram/cron/swarm actor wiring lands.",
+      "rationale": "Tool definitions now carry `RequiredCapability`, defaulting to `tool.execute`; tools may require `tool.execute.<tool_name>`. The registry calls `identity.Authorize` before `Tool.Execute`, records deny/allow decisions through the identity store, and fails closed when no identity authorizer is present.",
       "source": "D:/Aura/internal/agent/tools/registry/registry_test.go"
     },
     {
       "decision": "Phase01B5 ensures Telegram identity/grants before token issuance while preserving allowlist parity.",
       "rationale": "The configured allowlist remains DB/settings-backed configuration and is not copied into `allowed_users`; persisted bootstrap/approved users derive identity from stored source. Token minting now fails closed if the deterministic Telegram principal/channel-account/session-actor/grants cannot be prepared.",
       "source": "D:/Aura/internal/telegram/bot_test.go"
+    },
+    {
+      "decision": "Phase01B6 delegates cron and swarm child execution under bounded child actors.",
+      "rationale": "`identity.DelegateActor` authorizes every requested child capability against the parent actor before creating direct child grants; cron manual/Hub jobs and swarm workers use the delegated actor context when identity authority is present, while Phase 8 RunGraph/topology work remains out of scope.",
+      "source": "D:/Aura/internal/identity/store_test.go"
+    },
+    {
+      "decision": "Phase01B7 records authorization denials as metadata-only run/audit evidence.",
+      "rationale": "`identity.Authorize` keeps `authz_decisions` authoritative while a narrow denial recorder appends correlated `authorization_denied` run and audit events through the Phase01A run store. Payloads include decision/capability/resource metadata, not raw prompts, tool arguments, tool outputs, request bodies, or tokens.",
+      "source": "D:/Aura/internal/storage/runs/store_test.go"
+    },
+    {
+      "decision": "Phase01B missing-authority runtime paths fail closed.",
+      "rationale": "Registry execution now denies when no authorizer is present; cron manual jobs, cron Hub jobs, and swarm delegated assignments fail before runner execution when identity delegation is missing; app startup returns an error instead of falling back to a cron agent dispatch path if cron Hub construction fails.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "decision": "Phase01B parent closure is complete after the provider-secret repair.",
+      "rationale": "The closure verifier passed Phase01B package gates, repo build/vet/test, container rebuild, live auth-boundary probes, Chat Hub actor persistence, DB/secrets provider repair, runtime .env removal, and exact live chat markers.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "decision": "Runtime provider credentials are DB/secrets-backed, not .env-backed.",
+      "rationale": "Dashboard writes for keys overlaid by applySecretsToConfig now route through secrets.Store; the live stale settings.LLM_API_KEY row was removed, no .env* file remains in D:/Aura/data, and Aura chat succeeded after container rebuild without loading .env.",
+      "source": "D:/Aura/docs/settings-audit-2026-05-15.md"
     },
     {
       "decision": "D:/tmp/cli-printing-press is an Aura reference map, not an executable queue.",
@@ -246,40 +288,131 @@
     "GET /health -> 200",
     "GET /api/health without bearer -> 401",
     "POST /api/chat without bearer -> 401",
-    "Phase01B5 live Telegram fixture and bearer chat marker blocked because AURA_E2E_TOKEN is not set in this shell"
+    "Phase01B5 live Telegram fixture and bearer chat marker blocked because AURA_E2E_TOKEN is not set in this shell",
+    "go test ./internal/identity -run TestDelegateActor -count=1",
+    "go test ./internal/cron -run \"TestRunNowDelegatesCronActor|TestRunNowDelegationRejectsMissingParentGrant\" -count=1",
+    "go test ./internal/channels/cron -run TestCronAgentLoopDelegatesActorContext -count=1",
+    "go test ./internal/agent/tools/swarm ./internal/swarm -run \"Test.*DelegatedActor|Test.*SwarmSpawnCapability\" -count=1",
+    "go test ./cmd/aura -run TestAuthStoreImplementsDelegationInterfaces -count=1",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron -count=1",
+    "go test ./internal/identity ./internal/cron ./internal/channels/cron ./internal/agent/tools/swarm ./internal/swarm ./cmd/aura -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image: sha256:946e9c4f5d71429bb6e487a0cea50bc17fde1171dd37133b1a31f6e1c329a0ec",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "Phase01B6 CI not checked because the slice has not been committed or pushed yet",
+    "go test ./internal/storage/runs -run TestRecordAuthorizationDenial -count=1",
+    "go test ./internal/identity -run TestAuthorize_DenialRecorder -count=1",
+    "go test ./internal/chat -run TestReceiveMessage_WithLifecycleStoreRecordsAuthorizationDenial -count=1",
+    "go test ./internal/agent/tools/registry -run \"TestRegistryDefinitionsAndExecute|TestRegistryExecuteWithoutAuthorizerFailsClosed|TestRegistryExecuteRequiresIdentityGrant|TestRegistryExecuteRecordsAuthorizationDenialEvent\" -count=1",
+    "go test ./internal/cron -run \"TestRunNowDelegatesCronActor|TestRunNowDelegationRejectsMissingParentGrant|TestRunNowRequiresIdentityDelegation\" -count=1",
+    "go test ./internal/channels/cron -run \"TestCronAgentLoopDelegatesActorContext|TestCronAgentLoopRequiresIdentityDelegation\" -count=1",
+    "go test ./internal/swarm -run \"TestManagerDelegatesAssignmentActorContext|TestManagerDelegationRejectsMissingParentGrant|TestManagerDelegationRequiresIdentity\" -count=1",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron -count=1",
+    "go test ./internal/storage/runs ./internal/identity ./internal/chat ./internal/agent/tools/registry ./internal/cron ./internal/channels/cron ./internal/swarm ./cmd/aura -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image: sha256:3c1e5ea6893c3425bd508fb8925528f741e7d315efc3ab41f215949291312777",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "POST /api/chat without bearer -> 401",
+    "Phase01B7/fail-closed CI not checked because the slice has not been committed or pushed yet",
+    "go test ./internal/storage/runs ./internal/chat -count=1",
+    "go test ./internal/identity ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/swarm ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/storage/runs ./internal/chat ./cmd/aura -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image manifest: sha256:37467baf138b32745fc7764b89528287614e434a1f1ac2a9164c2f09ee9c06f1",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "POST /api/chat without bearer -> 401",
+    "GET /api/health with bearer -> 200",
+    "POST /api/chat with bearer and mismatched user_id -> 403",
+    "SQLite authz_decisions latest api.chat rows allow actor:telegram:session:1148481707",
+    "POST /api/chat exact marker PHASE01B_CLOSE_OK initially blocked: 500 due LLM provider 401 Missing Authentication header; superseded by DB/secrets provider repair",
+    "go test ./internal/api -run TestSettings -count=1",
+    "go test ./cmd/chat -count=1",
+    "go test ./cmd/aura -run TestChatHubLifecycleStoreWiring -count=1",
+    "go test ./internal/secrets ./internal/config -count=1",
+    "go test ./internal/api ./cmd/aura ./internal/secrets ./internal/config -count=1",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "live SQLite secrets llm_api_key present with expected provider-key shape and settings.LLM_API_KEY row count 0",
+    "runtime D:/Aura/data has no .env* files",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image manifest: sha256:ea46cdf1d5eafb534e5494c501d14227d4a3d556e0cdfe4fc0ed281ecf6cb9b0",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "GET /api/health with bearer -> 200",
+    "cmd/chat exact marker -> AURA_PIPE_OK",
+    "POST /api/chat exact marker PHASE01B_CLOSE_OK -> 200, llm_calls=1, tool_calls=0, tokens=8790"
   ],
   "uncommitted_files": [
     "AGENTS.md",
-    "docs/aura-cleanup-execution-map.md",
-    "docs/aura-master-plan.md",
-    "loops/aura-implementation/RALPH.md",
-    "prd.md",
-    ".planning/CONTEXT-ENGINEERING-ROADMAP.md",
+    "CONTINUE-HERE.md",
+    ".planning/HANDOFF.json",
+    ".planning/progress.txt",
+    ".planning/deep-refactor/.continue-here.md",
     ".planning/deep-refactor/INDEX.md",
-    ".planning/deep-refactor/Phase01/plan.md",
-    ".planning/deep-refactor/Phase01/benchmark.md",
-    ".planning/deep-refactor/Phase01/progress.md",
-    ".codex/skills/aura-plan-builder/SKILL.md (project-local ignored skill; changed by user request)",
-    ".codex/skills/aura-implementation-loop/SKILL.md (project-local ignored skill; changed by user request)",
-    "scripts/ralph/prd.json -> scripts/ralph/prd-completed-phase-c.json (pre-existing/unrelated; preserve unless queue work)",
-    "scripts/ralph/progress.txt (pre-existing/unrelated; preserve unless queue work)",
-    "internal/api/auth/middleware.go",
-    "internal/api/auth/store.go",
-    "internal/api/auth_test.go",
-    "internal/api/chat.go",
-    "internal/api/chat_test.go",
-    "internal/agent/tools/registry/definition.go",
+    ".planning/deep-refactor/Phase01/subphase-summary.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/source.md",
+    "docs/settings-audit-2026-05-15.md",
+    "cmd/aura/app.go",
+    "cmd/aura/helpers_test.go",
+    "cmd/aura/main.go",
+    "internal/agent/runtask_test.go",
+    "internal/agent/tools/registry/exec_test.go",
     "internal/agent/tools/registry/registry.go",
     "internal/agent/tools/registry/registry_test.go",
+    "internal/agent/tools/swarm/tools.go",
+    "internal/agent/tools/swarm/tools_test.go",
+    "internal/api/auth/store.go",
+    "internal/api/chat.go",
+    "internal/channels/cron/dispatcher_test.go",
+    "internal/channels/cron/loop.go",
+    "internal/channels/telegram/invocation_builder.go",
+    "internal/chat/hub.go",
+    "internal/chat/hub_test.go",
+    "internal/chat/types.go",
+    "internal/cron/dispatch.go",
+    "internal/cron/dispatch_test.go",
     "internal/identity/context.go",
+    "internal/identity/store.go",
+    "internal/identity/store_test.go",
     "internal/identity/types.go",
-    "docs/phase-01c-question-gate-scope.md (pre-existing/untracked; preserve unless Phase01C planning is selected)",
-    "scripts/ralph/prd.json (pre-existing/untracked; Ralph queue; preserve unless queue work)"
+    "internal/storage/runs/store.go",
+    "internal/storage/runs/store_test.go",
+    "internal/swarm/manager.go",
+    "internal/swarm/manager_test.go",
+    "internal/swarm/types.go",
+    "internal/telegram/deps.go",
+    "internal/telegram/tool_exec_helpers_test.go",
+    "scripts/ralph/progress.txt (pre-existing/modified; preserve unless explicitly selected)",
+    "docs/Aura_Completo_7_Mermaid_INTEGRALE.md (pre-existing/untracked; preserve unless explicitly selected)"
   ],
   "last_known_git": {
-    "head": "2cacf80b docs(planning): scope Phase 4 (kill agent.Runner) into 7-story Ralph queue",
-    "status": "dirty after Phase01B4 implementation and container verification records, documentation/planning/skill alignment, plus unrelated Ralph/agent/runtime changes"
+    "head": "009639ae feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)",
+    "status": "dirty after Phase01B6 delegated actor implementation, Phase01B7 denial-event implementation, fail-closed authority repair, parent closure actor-persistence repair, provider-secret closure docs, AGENTS.md CI-after-push rule, and unrelated untracked Markdown files"
   },
-  "next_action": "Start the next bounded Phase01B slice, likely cron/swarm delegated actor creation, as a separate implementation slice.",
-  "context_notes": "Do not bundle denial-event wiring into the next slice unless the Phase01B plan is explicitly narrowed. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5 is locally verified and container-updated; Phase01B parent remains open for B6-B7."
+  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code.",
+  "context_notes": "Do not bundle Phase 8 cron RunGraph, missed-run policy, or full swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, and exact live markers are verified. CI must be checked after any future push."
 }

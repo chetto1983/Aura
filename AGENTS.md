@@ -500,6 +500,11 @@ After web edits:
 npm --prefix web run build
 ```
 
+After any push, verify the CI run for the pushed commit before reporting the
+work as shipped. If CI fails, inspect the failing job/logs and either fix the
+regression in the same slice or report the exact blocker. Local tests do not
+replace CI verification.
+
 For Aura behavior, prefer ground-truth probes over textual claims. Use
 `cmd/probe_chat` and artifact inspection when relevant. Tool-call counts alone
 are not sufficient.

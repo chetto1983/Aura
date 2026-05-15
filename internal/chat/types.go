@@ -54,13 +54,13 @@ const (
 type RunStatus string
 
 const (
-	RunStatusQueued          RunStatus = "queued"
-	RunStatusRunning         RunStatus = "running"
-	RunStatusWaitingForUser  RunStatus = "waiting_for_user"
-	RunStatusCancelling      RunStatus = "cancelling"
-	RunStatusCancelled       RunStatus = "cancelled"
-	RunStatusCompleted       RunStatus = "completed"
-	RunStatusFailed          RunStatus = "failed"
+	RunStatusQueued         RunStatus = "queued"
+	RunStatusRunning        RunStatus = "running"
+	RunStatusWaitingForUser RunStatus = "waiting_for_user"
+	RunStatusCancelling     RunStatus = "cancelling"
+	RunStatusCancelled      RunStatus = "cancelled"
+	RunStatusCompleted      RunStatus = "completed"
+	RunStatusFailed         RunStatus = "failed"
 )
 
 // EventType enumerates every event the Agent Loop can emit. Subset of
@@ -171,6 +171,7 @@ type Run struct {
 	ID          string
 	ThreadID    string
 	PrincipalID string
+	ActorID     string
 	Channel     Channel
 	Status      RunStatus
 	Model       string

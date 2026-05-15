@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/identity"
 )
 
 type RunStatus string
@@ -61,19 +62,22 @@ type Task struct {
 }
 
 type Assignment struct {
-	ParentID            string
-	Role                string
-	Subject             string
-	Prompt              string
-	SystemPrompt        string
-	ToolAllowlist       []string
-	Depth               int
-	UserID              string
-	Temperature         *float64
-	MaxToolCalls        int
-	MaxToolResultChars  int
-	FinalizationTimeout time.Duration
-	CompleteOnDeadline  bool
+	ParentID                  string
+	Role                      string
+	Subject                   string
+	Prompt                    string
+	SystemPrompt              string
+	ToolAllowlist             []string
+	Depth                     int
+	UserID                    string
+	Temperature               *float64
+	MaxToolCalls              int
+	MaxToolResultChars        int
+	FinalizationTimeout       time.Duration
+	CompleteOnDeadline        bool
+	ActorID                   string
+	DelegatedCapabilities     []identity.Capability
+	DelegationConstraintsJSON string
 }
 
 func (a Assignment) AgentTask() agent.Task {

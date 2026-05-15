@@ -2,13 +2,18 @@ package cronadapter_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/aura/aura/internal/channels/cron"
 	"github.com/aura/aura/internal/chat"
 	ourcron "github.com/aura/aura/internal/cron"
+	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/identity"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -16,6 +21,21 @@ import (
 type stubLoop struct {
 	calls atomic.Int32
 	err   error
+}
+
+type recordingCronJobRunner struct {
+	calls      int
+	actorID    string
+	authorizer bool
+	req        ourcron.JobRequest
+}
+
+func (r *recordingCronJobRunner) RunJob(ctx context.Context, req ourcron.JobRequest) (ourcron.JobResult, error) {
+	r.calls++
+	r.actorID = identity.ActorIDFromContext(ctx)
+	_, r.authorizer = identity.AuthorizerFromContext(ctx)
+	r.req = req
+	return ourcron.JobResult{Content: "cron loop ok"}, nil
 }
 
 func (s *stubLoop) Run(_ context.Context, _ *chat.Run, _ chat.InboundMessage, _ chat.EmitFn) error {
@@ -33,6 +53,47 @@ func newTestHub(t *testing.T, loop chat.AgentLoop) *chat.Hub {
 	}
 	hub.RegisterInbound(cronadapter.New())
 	return hub
+}
+
+func openCronLoopIdentityStore(t *testing.T) (*identity.Store, *sql.DB) {
+	t.Helper()
+	db, err := auradb.Open(filepath.Join(t.TempDir(), "cron-loop.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	store, err := identity.NewStore(db)
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+	return store, db
+}
+
+func seedCronLoopParent(t *testing.T, store *identity.Store, userID string, capabilities ...identity.Capability) identity.Actor {
+	t.Helper()
+	if _, err := store.BackfillTelegramAllowlistedUser(context.Background(), identity.TelegramAllowlistUserParams{
+		UserID:        userID,
+		Source:        "test",
+		PrincipalKind: identity.PrincipalKindOwner,
+		Capabilities:  capabilities,
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	return identity.Actor{ID: identity.TelegramSessionActorID(userID)}
+}
+
+func assertCronLoopScalar[T comparable](t *testing.T, db *sql.DB, query string, want T, args ...any) {
+	t.Helper()
+	var got T
+	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("query %q = %v, want %v", query, got, want)
+	}
 }
 
 // --- dispatcher routing ------------------------------------------------------
@@ -112,6 +173,56 @@ func TestHubDispatcher_AgentJob_PropagatesLoopError(t *testing.T) {
 	err := d(context.Background(), task)
 	if err == nil {
 		t.Fatal("expected error from loop to propagate")
+	}
+}
+
+func TestCronAgentLoopDelegatesActorContext(t *testing.T) {
+	identityStore, db := openCronLoopIdentityStore(t)
+	parent := seedCronLoopParent(t, identityStore, "12345", identity.CapabilityCronRun, identity.CapabilityToolExecute)
+	runner := &recordingCronJobRunner{}
+	loop := cronadapter.NewCronAgentLoop(runner, nil, cronadapter.WithIdentity(identityStore))
+	run := &chat.Run{ID: "run-cron-loop"}
+	msg := chat.InboundMessage{
+		Channel:     chat.ChannelCron,
+		PrincipalID: "12345",
+		ThreadID:    "cron:nightly",
+		Text:        `{"goal":"check context","tool_allowlist":["file"]}`,
+		Mode:        chat.DeliveryModeSilent,
+	}
+
+	if err := loop.Run(context.Background(), run, msg, func(chat.OutboundEvent) error { return nil }); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	}
+	if runner.actorID == "" || runner.actorID == parent.ID {
+		t.Fatalf("runner actor id = %q, parent = %q", runner.actorID, parent.ID)
+	}
+	if !runner.authorizer {
+		t.Fatal("runner context missing authorizer")
+	}
+	assertCronLoopScalar(t, db, `SELECT actor_type FROM actors WHERE id = ?`, "cron", runner.actorID)
+	assertCronLoopScalar(t, db, `SELECT parent_actor_id FROM actors WHERE id = ?`, parent.ID, runner.actorID)
+	assertCronLoopScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), runner.actorID)
+	assertCronLoopScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND decision = 'allow'`, int64(2), parent.ID)
+}
+
+func TestCronAgentLoopRequiresIdentityDelegation(t *testing.T) {
+	runner := &recordingCronJobRunner{}
+	loop := cronadapter.NewCronAgentLoop(runner, nil)
+	err := loop.Run(context.Background(), &chat.Run{ID: "run-no-identity"}, chat.InboundMessage{
+		Channel:     chat.ChannelCron,
+		PrincipalID: "12345",
+		ThreadID:    "cron:no-identity",
+		Text:        `{"goal":"check context","tool_allowlist":["file"]}`,
+		Mode:        chat.DeliveryModeSilent,
+	}, func(chat.OutboundEvent) error { return nil })
+	if !errors.Is(err, identity.ErrUnauthorized) {
+		t.Fatalf("Run error = %v, want ErrUnauthorized", err)
+	}
+	if runner.calls != 0 {
+		t.Fatalf("runner calls = %d, want 0", runner.calls)
 	}
 }
 

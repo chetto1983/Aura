@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 var (
 	ErrInvalidInput = errors.New("identity: invalid input")
+	ErrUnauthorized = errors.New("identity: unauthorized")
 )
 
 type Store struct {
@@ -229,6 +231,79 @@ INSERT INTO capability_grants (
 	return grant, created, err
 }
 
+func (s *Store) DelegateActor(ctx context.Context, params DelegateActorParams) (DelegateActorResult, error) {
+	params.ParentActorID = strings.TrimSpace(params.ParentActorID)
+	if params.ParentActorID == "" {
+		return DelegateActorResult{}, fmt.Errorf("%w: parent actor id required", ErrInvalidInput)
+	}
+	if params.ActorType == "" {
+		return DelegateActorResult{}, fmt.Errorf("%w: delegated actor type required", ErrInvalidInput)
+	}
+	capabilities := uniqueNonEmptyCapabilities(params.Capabilities)
+	if len(capabilities) == 0 {
+		return DelegateActorResult{}, fmt.Errorf("%w: delegated capabilities required", ErrInvalidInput)
+	}
+	parent, err := s.getActor(ctx, params.ParentActorID)
+	if err != nil {
+		return DelegateActorResult{}, fmt.Errorf("identity: get parent actor: %w", err)
+	}
+
+	result := DelegateActorResult{Decisions: make([]AuthorizationDecision, 0, len(capabilities))}
+	for _, capability := range capabilities {
+		decision, err := s.Authorize(ctx, AuthorizeParams{
+			ActorID:    parent.ID,
+			Capability: capability,
+			Resource:   cleanResource(params.Resource),
+			RunID:      strings.TrimSpace(params.RunID),
+		})
+		result.Decisions = append(result.Decisions, decision)
+		if err != nil {
+			return result, err
+		}
+		if decision.Decision != DecisionAllow {
+			return result, fmt.Errorf("%w: parent actor %q lacks capability %q", ErrUnauthorized, parent.ID, capability)
+		}
+	}
+
+	if strings.TrimSpace(params.ID) == "" {
+		params.ID = DelegatedActorID(params.ActorType, parent.ID, params.RunID)
+	}
+	actor, actorCreated, err := s.CreateOrResolveActor(ctx, ActorParams{
+		ID:            params.ID,
+		PrincipalID:   parent.PrincipalID,
+		ActorType:     params.ActorType,
+		ParentActorID: parent.ID,
+		RunID:         strings.TrimSpace(params.RunID),
+		ExpiresAt:     params.ExpiresAt,
+		MetadataJSON:  params.MetadataJSON,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Actor = actor
+	result.ActorCreated = actorCreated
+
+	for _, capability := range capabilities {
+		_, created, err := s.CreateOrResolveGrant(ctx, GrantParams{
+			ID:               DelegatedActorGrantID(actor.ID, capability, params.Resource),
+			SubjectType:      SubjectTypeActor,
+			SubjectID:        actor.ID,
+			Capability:       capability,
+			Resource:         cleanResource(params.Resource),
+			ConstraintsJSON:  params.ConstraintsJSON,
+			GrantedByActorID: parent.ID,
+			ExpiresAt:        params.ExpiresAt,
+		})
+		if err != nil {
+			return result, err
+		}
+		if created {
+			result.GrantsCreated++
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) BackfillTelegramAllowlistedUser(ctx context.Context, params TelegramAllowlistUserParams) (TelegramAllowlistBackfillResult, error) {
 	userID := strings.TrimSpace(params.UserID)
 	if userID == "" {
@@ -321,6 +396,8 @@ WHERE id = ? AND (revoked_at IS NULL OR revoked_at = '')
 
 func (s *Store) Authorize(ctx context.Context, params AuthorizeParams) (AuthorizationDecision, error) {
 	params.ActorID = strings.TrimSpace(params.ActorID)
+	params.RunID = firstNonEmptyString(params.RunID, RunIDFromContext(ctx))
+	params.EventID = firstNonEmptyString(params.EventID, EventIDFromContext(ctx))
 	if params.ActorID == "" {
 		return AuthorizationDecision{
 			Decision:   DecisionDeny,
@@ -381,6 +458,31 @@ func (s *Store) Authorize(ctx context.Context, params AuthorizeParams) (Authoriz
 		EventID:    strings.TrimSpace(params.EventID),
 		CreatedAt:  s.now(),
 	})
+}
+
+func (s *Store) recordDecision(ctx context.Context, decision AuthorizationDecision) (AuthorizationDecision, error) {
+	if decision.ID == "" {
+		decision.ID = mustID("authz")
+	}
+	if decision.CreatedAt.IsZero() {
+		decision.CreatedAt = s.now()
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO authz_decisions (
+  id, actor_id, capability, resource_type, resource_id, decision, reason,
+  run_id, event_id, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, decision.ID, decision.ActorID, string(decision.Capability), decision.Resource.Type, decision.Resource.ID, string(decision.Decision), decision.Reason, decision.RunID, decision.EventID, decision.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
+		return AuthorizationDecision{}, fmt.Errorf("identity: record authz decision: %w", err)
+	}
+	if decision.Decision == DecisionDeny {
+		if recorder, ok := AuthorizationDenialRecorderFromContext(ctx); ok {
+			if err := recorder.RecordAuthorizationDenial(ctx, decision); err != nil {
+				return decision, fmt.Errorf("identity: record authorization denial event: %w", err)
+			}
+		}
+	}
+	return decision, nil
 }
 
 func (s *Store) hasActiveGrant(ctx context.Context, actor Actor, capability Capability, resource ResourceRef) (bool, error) {
@@ -466,24 +568,6 @@ func (s *Store) validateGrantSubject(ctx context.Context, subjectType SubjectTyp
 		return fmt.Errorf("%w: subject type required", ErrInvalidInput)
 	}
 	return nil
-}
-
-func (s *Store) recordDecision(ctx context.Context, decision AuthorizationDecision) (AuthorizationDecision, error) {
-	if decision.ID == "" {
-		decision.ID = mustID("authz")
-	}
-	if decision.CreatedAt.IsZero() {
-		decision.CreatedAt = s.now()
-	}
-	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO authz_decisions (
-  id, actor_id, capability, resource_type, resource_id, decision, reason,
-  run_id, event_id, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, decision.ID, decision.ActorID, string(decision.Capability), decision.Resource.Type, decision.Resource.ID, string(decision.Decision), decision.Reason, decision.RunID, decision.EventID, decision.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
-		return AuthorizationDecision{}, fmt.Errorf("identity: record authz decision: %w", err)
-	}
-	return decision, nil
 }
 
 func (s *Store) getPrincipal(ctx context.Context, id string) (Principal, error) {
@@ -637,6 +721,15 @@ func TelegramPrincipalGrantID(userID string, capability Capability) string {
 	return "grant:telegram:" + strings.TrimSpace(userID) + ":" + string(capability)
 }
 
+func DelegatedActorID(actorType ActorType, parentActorID, scopeID string) string {
+	return "actor:" + string(actorType) + ":delegated:" + stableID(parentActorID, string(actorType), scopeID)
+}
+
+func DelegatedActorGrantID(actorID string, capability Capability, resource ResourceRef) string {
+	resource = cleanResource(resource)
+	return "grant:delegated:" + stableID(actorID, string(capability), resource.Type, resource.ID)
+}
+
 func TelegramUserCapabilities() []Capability {
 	return []Capability{
 		CapabilityAPIChat,
@@ -682,6 +775,41 @@ func uniqueCapabilities(capabilities []Capability) []Capability {
 		out = append(out, capability)
 	}
 	return out
+}
+
+func uniqueNonEmptyCapabilities(capabilities []Capability) []Capability {
+	seen := make(map[Capability]struct{}, len(capabilities))
+	out := make([]Capability, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if capability == "" {
+			continue
+		}
+		if _, ok := seen[capability]; ok {
+			continue
+		}
+		seen[capability] = struct{}{}
+		out = append(out, capability)
+	}
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stableID(parts ...string) string {
+	h := sha256.New()
+	for _, part := range parts {
+		h.Write([]byte(strings.TrimSpace(part)))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 
 func telegramAllowlistMetadata(source string) string {

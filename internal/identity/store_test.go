@@ -180,6 +180,58 @@ func TestAuthorize_DefaultDenyRecordsDecision(t *testing.T) {
 	}
 }
 
+func TestAuthorize_DenialRecorder(t *testing.T) {
+	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
+	store, db := openIdentityStore(t, now)
+	actor := seedActor(t, store)
+	recorder := &recordingAuthorizationDenialRecorder{}
+	ctx := WithRunID(WithAuthorizationDenialRecorder(context.Background(), recorder), "run-1")
+
+	decision, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    actor.ID,
+		Capability: CapabilityAPIChat,
+		Resource:   ResourceRef{Type: "api", ID: "chat"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize deny: %v", err)
+	}
+	if decision.Decision != DecisionDeny {
+		t.Fatalf("deny decision = %s, want deny", decision.Decision)
+	}
+	if len(recorder.decisions) != 1 {
+		t.Fatalf("recorder decisions = %d, want 1", len(recorder.decisions))
+	}
+	if recorder.decisions[0].ID == "" || recorder.decisions[0].RunID != "run-1" {
+		t.Fatalf("recorded decision = %+v, want id and run_id", recorder.decisions[0])
+	}
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND run_id = ? AND decision = 'deny'`, "1", actor.ID, "run-1")
+
+	if _, err := store.CreateGrant(context.Background(), GrantParams{
+		ID:          "grant-api-chat",
+		SubjectType: SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  CapabilityAPIChat,
+		Resource:    ResourceRef{Type: "api", ID: "chat"},
+	}); err != nil {
+		t.Fatalf("CreateGrant: %v", err)
+	}
+	allowed, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    actor.ID,
+		Capability: CapabilityAPIChat,
+		Resource:   ResourceRef{Type: "api", ID: "chat"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize allow: %v", err)
+	}
+	if allowed.Decision != DecisionAllow {
+		t.Fatalf("allow decision = %s, want allow", allowed.Decision)
+	}
+	if len(recorder.decisions) != 1 {
+		t.Fatalf("recorder fired on allow; decisions = %d, want 1", len(recorder.decisions))
+	}
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND run_id = ? AND decision = 'allow'`, "1", actor.ID, "run-1")
+}
+
 func TestAuthorize_AllowsActivePrincipalGrant(t *testing.T) {
 	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
 	store, _ := openIdentityStore(t, now)
@@ -430,6 +482,92 @@ func TestAuthorize_DelegatedActorRequiresDirectGrant(t *testing.T) {
 	}
 }
 
+func TestDelegateActorCreatesBoundedDirectGrants(t *testing.T) {
+	now := time.Date(2026, 5, 15, 9, 0, 0, 0, time.UTC)
+	store, db := openIdentityStore(t, now)
+	parent := seedActor(t, store)
+	ctx := context.Background()
+
+	if _, err := store.CreateGrant(ctx, GrantParams{
+		ID:          "grant-parent-cron",
+		SubjectType: SubjectTypePrincipal,
+		SubjectID:   parent.PrincipalID,
+		Capability:  CapabilityCronRun,
+	}); err != nil {
+		t.Fatalf("CreateGrant cron.run: %v", err)
+	}
+	if _, err := store.CreateGrant(ctx, GrantParams{
+		ID:          "grant-parent-tool",
+		SubjectType: SubjectTypePrincipal,
+		SubjectID:   parent.PrincipalID,
+		Capability:  CapabilityToolExecute,
+	}); err != nil {
+		t.Fatalf("CreateGrant tool.execute: %v", err)
+	}
+
+	result, err := store.DelegateActor(ctx, DelegateActorParams{
+		ID:              "actor:cron:delegated:test",
+		ParentActorID:   parent.ID,
+		ActorType:       ActorTypeCron,
+		RunID:           "run-cron",
+		Capabilities:    []Capability{CapabilityCronRun, CapabilityToolExecute, CapabilityToolExecute},
+		ConstraintsJSON: `{"tool_allowlist":["file"]}`,
+	})
+	if err != nil {
+		t.Fatalf("DelegateActor: %v", err)
+	}
+	if !result.ActorCreated || result.Actor.ID != "actor:cron:delegated:test" {
+		t.Fatalf("result actor = %+v", result)
+	}
+	if result.Actor.ParentActorID != parent.ID || result.Actor.ActorType != ActorTypeCron {
+		t.Fatalf("delegated actor = %+v", result.Actor)
+	}
+	if result.GrantsCreated != 2 || len(result.Decisions) != 2 {
+		t.Fatalf("result = %+v, want 2 grants and 2 decisions", result)
+	}
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ?`, "2", result.Actor.ID)
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND decision = 'allow'`, "2", parent.ID)
+
+	decision, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    result.Actor.ID,
+		Capability: CapabilityToolExecute,
+		Resource:   ResourceRef{Type: "tool", ID: "file"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize child: %v", err)
+	}
+	if decision.Decision != DecisionAllow {
+		t.Fatalf("child decision = %+v, want allow", decision)
+	}
+}
+
+func TestDelegateActorRejectsMissingParentCapability(t *testing.T) {
+	now := time.Date(2026, 5, 15, 9, 30, 0, 0, time.UTC)
+	store, db := openIdentityStore(t, now)
+	parent := seedActor(t, store)
+	ctx := context.Background()
+	if _, err := store.CreateGrant(ctx, GrantParams{
+		ID:          "grant-parent-cron",
+		SubjectType: SubjectTypePrincipal,
+		SubjectID:   parent.PrincipalID,
+		Capability:  CapabilityCronRun,
+	}); err != nil {
+		t.Fatalf("CreateGrant cron.run: %v", err)
+	}
+
+	_, err := store.DelegateActor(ctx, DelegateActorParams{
+		ID:            "actor:cron:delegated:denied",
+		ParentActorID: parent.ID,
+		ActorType:     ActorTypeCron,
+		Capabilities:  []Capability{CapabilityCronRun, CapabilityToolExecute},
+	})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("DelegateActor error = %v, want ErrUnauthorized", err)
+	}
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM actors WHERE parent_actor_id = ?`, "0", parent.ID)
+	assertIdentityScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'tool.execute' AND decision = 'deny'`, "1", parent.ID)
+}
+
 func TestAuthorize_ParentedSessionRequiresDirectGrant(t *testing.T) {
 	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
 	store, _ := openIdentityStore(t, now)
@@ -624,4 +762,13 @@ func assertIdentityScalar(t *testing.T, db *sql.DB, query, want string, args ...
 	if got != want {
 		t.Fatalf("scalar %q = %q, want %q", query, got, want)
 	}
+}
+
+type recordingAuthorizationDenialRecorder struct {
+	decisions []AuthorizationDecision
+}
+
+func (r *recordingAuthorizationDenialRecorder) RecordAuthorizationDenial(_ context.Context, decision AuthorizationDecision) error {
+	r.decisions = append(r.decisions, decision)
+	return nil
 }
