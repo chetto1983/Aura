@@ -191,6 +191,36 @@ func (s *SessionStore) PruneSnapshots(now time.Time, retentionDays int) {
 	})
 }
 
+// NewSnapshotFromTurnStats builds an agent.Snapshot from a TurnStats value and
+// a wall-clock timestamp. Slice fields are deep-copied so the caller cannot
+// mutate the returned value via the original stats slices.
+func NewSnapshotFromTurnStats(stats TurnStats, now time.Time) Snapshot {
+	return Snapshot{
+		StoredAt:                now,
+		PromptVersion:           stats.PromptVersion,
+		PromptModules:           append([]string(nil), stats.PromptModules...),
+		PromptHash:              stats.PromptHash,
+		Toolset:                 stats.Toolset,
+		ToolsetSelectReason:     stats.ToolsetSelectReason,
+		ToolsExposed:            append([]string(nil), stats.ToolsExposed...),
+		ToolsCalled:             append([]string(nil), stats.ToolsCalled...),
+		ReadSkills:              append([]string(nil), stats.ReadSkills...),
+		RetrievalCapsulePresent: stats.RetrievalCapsulePresent,
+		LoopSteps:               stats.LoopSteps,
+		LLMCalls:                stats.LLMCalls,
+		ToolCalls:               stats.ToolCalls,
+		SkillsRead:              stats.SkillsRead,
+		SwarmUsed:               stats.SwarmUsed,
+		SandboxUsed:             stats.SandboxUsed,
+		TerminalTool:            stats.TerminalTool,
+		DuplicateToolCall:       stats.DuplicateToolCall,
+		TokensPrompt:            stats.TokensPrompt,
+		TokensCompletion:        stats.TokensCompletion,
+		TokensTotal:             stats.TokensTotal,
+		CostUSD:                 stats.CostUSD,
+	}
+}
+
 // clearActive removes the active marker for userID.
 // When gate is set, this is a no-op -- lifecycle is owned by the gate (CONC-01).
 // When gate is nil, it removes from the active sync.Map (backward compat, tests).

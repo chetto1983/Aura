@@ -19,7 +19,7 @@
         "Single atomic commit prefix: refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest slice. Pure extraction — the orchestrationSnapshot type alias in telegram/conversation_snapshot.go (`= agent.Snapshot`) confirms the type itself already lives in agent. Only the BUILDER lives in telegram. Move the builder."
     },
     {
