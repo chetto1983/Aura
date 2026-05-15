@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/aura/aura/internal/budget"
 )
@@ -18,18 +17,6 @@ func (f fakeSettingsReader) Get(_ context.Context, key string) (string, error) {
 		return v, nil
 	}
 	return "", ErrNotFound
-}
-
-type fakeAgentLimits struct {
-	maxIterations int
-	timeout       time.Duration
-	toolTimeout   time.Duration
-}
-
-func (f *fakeAgentLimits) UpdateLimits(maxIterations int, timeout time.Duration, toolTimeout time.Duration) {
-	f.maxIterations = maxIterations
-	f.timeout = timeout
-	f.toolTimeout = toolTimeout
 }
 
 type fakeSwarmLimits struct {
@@ -82,19 +69,15 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 		DelegationMode:       DefaultDelegationMode,
 		TraceRetentionDays:   DefaultTraceRetentionDays,
 	}
-	runner := &fakeAgentLimits{}
 	manager := &fakeSwarmLimits{}
 	tracker := &fakeBudgetConfigurator{}
 
-	if err := ApplyRuntimeSettings(context.Background(), store, cfg, runner, manager, tracker, slog.Default()); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), store, cfg, manager, tracker, slog.Default()); err != nil {
 		t.Fatalf("ApplyRuntimeSettings: %v", err)
 	}
 
 	if manager.maxActive != 6 || manager.maxDepth != 2 {
 		t.Fatalf("swarm limits = active:%d depth:%d", manager.maxActive, manager.maxDepth)
-	}
-	if runner.maxIterations != 9 || runner.timeout != 45*time.Second || runner.toolTimeout != 45*time.Second {
-		t.Fatalf("runner limits = iterations:%d timeout:%s tool:%s", runner.maxIterations, runner.timeout, runner.toolTimeout)
 	}
 	if cfg.AuraBotMaxActive != 6 || cfg.AuraBotMaxDepth != 2 || cfg.AuraBotTimeoutSec != 45 || cfg.AuraBotMaxIterations != 9 {
 		t.Fatalf("cfg aurabot limits = %+v", cfg)
@@ -139,10 +122,10 @@ func TestApplyDelegationModeRuntimeFastAndBounded(t *testing.T) {
 }
 
 func TestApplyRuntimeSettingsIgnoresMissingStoreAndConfig(t *testing.T) {
-	if err := ApplyRuntimeSettings(context.Background(), nil, &Config{}, nil, nil, nil, nil); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), nil, &Config{}, nil, nil, nil); err != nil {
 		t.Fatalf("nil store error = %v", err)
 	}
-	if err := ApplyRuntimeSettings(context.Background(), fakeSettingsReader{}, nil, nil, nil, nil, nil); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), fakeSettingsReader{}, nil, nil, nil, nil); err != nil {
 		t.Fatalf("nil config error = %v", err)
 	}
 }
@@ -157,7 +140,7 @@ func TestApplyRuntimeSettingsFallsBackWhenReaderErrors(t *testing.T) {
 	}
 	tracker := &fakeBudgetConfigurator{}
 
-	if err := ApplyRuntimeSettings(context.Background(), store, cfg, nil, nil, tracker, nil); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), store, cfg, nil, tracker, nil); err != nil {
 		t.Fatalf("ApplyRuntimeSettings: %v", err)
 	}
 	if tracker.cfg.SoftBudget != 1 || tracker.cfg.HardBudget != 2 || tracker.cfg.InputCostPerMTokens != 0.2 || tracker.cfg.OutputCostPerMTokens != 0.8 {

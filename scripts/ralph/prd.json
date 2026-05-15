@@ -92,7 +92,7 @@
         "Single atomic commit prefix: refactor(config): drop AgentLimitController runtime mutation (US-G05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "config.SwarmLimitController (the manager.UpdateLimits one) is UNRELATED and stays — internal/swarm still has its own live-mutable limits. Only the runner-side controller goes."
     },
     {

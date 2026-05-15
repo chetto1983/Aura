@@ -6,16 +6,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aura/aura/internal/budget"
 )
-
-// AgentLimitController is the live runtime tuning surface for an agent runner.
-// Defined here (not in internal/agent) to avoid an import cycle: agent imports config.
-type AgentLimitController interface {
-	UpdateLimits(maxIterations int, timeout, toolTimeout time.Duration)
-}
 
 // SwarmLimitController is the live swarm concurrency/depth tuning surface.
 type SwarmLimitController interface {
@@ -25,7 +18,7 @@ type SwarmLimitController interface {
 // ApplyRuntimeSettings reads the SQLite settings store (and env fallbacks) to
 // patch the agent runner, swarm manager, and budget tracker at runtime without
 // a process restart.
-func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, runner AgentLimitController, manager SwarmLimitController, tracker budget.Configurator, logger *slog.Logger) error {
+func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, manager SwarmLimitController, tracker budget.Configurator, logger *slog.Logger) error {
 	if store == nil || cfg == nil {
 		return nil
 	}
@@ -50,9 +43,6 @@ func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, runner
 
 	if manager != nil {
 		manager.UpdateLimits(maxActive, maxDepth)
-	}
-	if runner != nil {
-		runner.UpdateLimits(maxIterations, time.Duration(timeoutSec)*time.Second, time.Duration(timeoutSec)*time.Second)
 	}
 
 	cfg.AuraBotMaxActive = maxActive
