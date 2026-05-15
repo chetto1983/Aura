@@ -1,0 +1,111 @@
+# Aura Deep Refactor Phase Index
+
+This directory is the developer-facing execution map for the Aura deep
+refactor. The canonical product route remains `D:/Aura/prd.md`; this folder
+turns that route into bounded implementation units.
+
+Status: clean skeleton recreated on 2026-05-15 after the previous phase folders
+were intentionally deleted. The folders are self-audited planning scaffolds, not
+fresh-agent verified plans.
+
+## Plan Authority
+
+Use this ladder when multiple files look like plans:
+
+1. `D:/Aura/prd.md` is the canonical PRD route and phase order.
+2. `D:/Aura/.planning/aura-deep-refactor-decisions.json` is the ADR route.
+3. `D:/Aura/.planning/deep-refactor/INDEX.md` is this execution folder map.
+4. `D:/Aura/CONTINUE-HERE.md`,
+   `D:/Aura/.planning/HANDOFF.json`, and
+   `D:/Aura/.planning/deep-refactor/.continue-here.md` name the current resume
+   state and next likely slice.
+5. Each phase or sub-phase folder owns only its local `plan.md`, `source.md`,
+   `benchmark.md`, and `progress.md`.
+
+Historical and evidence-only files:
+
+- `D:/Aura/docs/aura-master-plan.md` is a historical predecessor, not the active
+  plan.
+- `D:/Aura/docs/aura-restructure-prd*.md`,
+  `D:/Aura/docs/chat-interface-prd.md`, and review files are evidence for why
+  the PRD exists.
+- Old wave/context plans may contribute requirements and tests, but must be
+  re-authored into the PRD phase folders before implementation.
+
+Current next implementation slice:
+
+- `Phase01B5` - Telegram identity grant parity.
+- Source folder:
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants`.
+- Do not bundle cron delegation, swarm delegation, or denial-event wiring into
+  Phase01B5.
+
+## Layout Contract
+
+```text
+PhaseNN/
+  plan.md
+  source.md
+  benchmark.md
+  progress.md
+  subphase-summary.md
+  subphases/
+    PhaseNN_Description/
+      plan.md
+      source.md
+      benchmark.md
+      progress.md
+    PhaseNNX_Description/
+      plan.md
+      source.md
+      benchmark.md
+      progress.md
+```
+
+Standalone phases without lettered children use:
+
+```text
+PhaseNN_Description/
+  plan.md
+  source.md
+  benchmark.md
+  progress.md
+```
+
+## Rules
+
+- Do not implement a phase until `source.md`, `plan.md`, and `benchmark.md`
+  name the slice, affected files, baseline tests, and non-goals.
+- Do not execute old `.planning/wave*` files directly. They are evidence mines.
+- Every source row must say what Aura adopts and what Aura rejects.
+- `benchmark.md` must separate planned checks from live results.
+- `progress.md` is append-only and must record verification, blockers, and
+  deviations.
+- Lettered Phase 1 children live only under `Phase01/subphases/`.
+
+## Phase Folders
+
+- `Phase01`
+  - `subphases/Phase01_Stabilize_Map`
+  - `subphases/Phase01A_Run_Event_Foundation`
+  - `subphases/Phase01B_Identity_Capability_Grants`
+  - `subphases/Phase01C_Question_Gate`
+- `Phase02_Protect_Telegram`
+- `Phase03_Move_Channels_Behind_Chat`
+- `Phase04_Collapse_Agent_Runtime`
+- `Phase05_Consolidate_Tools`
+- `Phase06_Tool_Experience_Loop`
+- `Phase07_Rebuild_RAG_Typed_Memory`
+- `Phase08_Cron_And_Swarm_RunGraph`
+- `Phase09_Memory_Source_Discipline`
+- `Phase10_Single_Source_Of_Truth_Config`
+
+## Next Operating Step
+
+Current canonical slice: Phase01B5 Telegram identity grant parity under
+`Phase01/subphases/Phase01B_Identity_Capability_Grants/`.
+
+Use `$aura-implementation-loop` for Phase01B5 after confirming its benchmark
+rows. Use `$aura-plan-builder` only when the selected phase or sub-phase is
+still a self-audited scaffold, missing source/plan/benchmark coverage, or needs
+promotion before implementation.

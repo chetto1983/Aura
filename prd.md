@@ -1505,6 +1505,38 @@ Gate:
 - SQLite WAL/busy-timeout/retry behavior verified per connection,
 - Qdrant/search treated as projections.
 
+### Phase 10 - Single Source of Truth Config
+
+Goal: make SQLite the only place an operator (or the bot) reads or writes
+configuration. Eliminate `.env` as a runtime input. The dashboard becomes the
+sole config UX; first-run setup writes directly to SQLite. Existing installs
+migrate transparently on first post-upgrade boot.
+
+Steps:
+
+- add a `secrets` table (separate from `settings` to mark the privacy
+  boundary) for TELEGRAM_TOKEN, LLM_API_KEY, EMBEDDING_API_KEY, GARAGE_S3_*,
+- hardcode the bootstrap meta-config (DB_PATH, HTTP_PORT, AURA_HEADLESS,
+  AURA_TIMEZONE) with env override fallback,
+- rewrite `internal/setup/` first-run wizard to write SQLite,
+- one-shot migration helper: import existing `.env` values into SQLite on
+  first post-upgrade boot,
+- drop `env_file:` from `compose.yaml`; replace with a `data/` volume mount,
+- update INSTALL.md, README, and `.env.example` (or delete the latter).
+
+Gate:
+
+- fresh install boots without `.env` (wizard reachable at HTTP_PORT default),
+- wizard persists secrets to SQLite, never writes `.env`,
+- existing install with `.env` migrates automatically on first boot; logs
+  list imported keys; secret values never logged,
+- bootstrap env vars (DB_PATH, HTTP_PORT) still respected when set,
+- docker compose boots without `env_file:` and reaches the wizard.
+
+Non-goals: no encryption-at-rest in this phase (filesystem permissions +
+full-disk encryption documented in INSTALL.md); no new setup-UX invention
+(reuse the existing wizard, only redirect its persistence target).
+
 ---
 
 ## 8. Derived Queue Policy
