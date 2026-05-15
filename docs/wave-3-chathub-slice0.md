@@ -1,5 +1,7 @@
 # Wave 3.0 — Chat Hub Slice 0: Single Agent Loop
 
+> **Status: SHIPPED pre-Phase01 in the `internal/chathub/` package (now `internal/chat/`). Plan preserved as evidence; implementation evolved through US-A* arc.**
+
 **Status:** plan (not yet implemented)
 **Date drafted:** 2026-05-13
 **Predecessor:** Wave 2.10.b (tool reconciler), Wave 2.7-fix (action-enum tools, commit `5313397d`)

@@ -1,5 +1,7 @@
 # PRD — Aura Restructure (3-cut surgery)
 
+> **Status: HISTORICAL — first iteration of the deep-refactor PRD ("3-cut surgery"), superseded by [docs/aura-master-plan.md](aura-master-plan.md) and then by [prd.md](../prd.md). Preserved as evidence per prd.md §3.2.**
+
 **Versione:** 2 (post-REVIEW-1)
 **Data:** 2026-05-14
 **Owner:** Aura core / solo dev

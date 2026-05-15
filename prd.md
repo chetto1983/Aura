@@ -1706,3 +1706,260 @@ If the worker cannot answer these, the task is not ready.
 ## 14. The One-Sentence Direction
 
 Aura becomes maintainable when every path enters through a channel or scheduled entrypoint, flows through `chat`, uses one `agent` runtime, accesses capabilities through `agent/tools`, learns from recoverable tool failures through `learning`, persists through `memory` and `storage`, and returns through an adapter without the core ever learning about the adapter's world.
+
+---
+
+## 15. Web Chat Product Surface
+
+This section consolidates the chat-product requirements previously documented in `docs/chat-interface-prd.md`. That doc is preserved as historical evidence; the active requirements live here.
+
+### 15.1 Product Decisions (closed)
+
+| Theme | v1 Decision |
+| --- | --- |
+| Memory sharing | Web and Telegram share the curated memory of the same Aura principal when accounts are linked; threads stay per-channel. |
+| Identity | Channel-neutral canonical principal. Telegram user, dashboard bearer user, heartbeat, cron all map to that principal. New endpoints DO NOT accept `user_id` from the client. |
+| Interactive chat runtime | Chat Hub uses a channel-neutral runtime extracted from `agentruntime/agentloop`. `agent.Runner` legacy is removed (Phase 4 kill-runner). |
+| Model selector | Read-only v1: shows the active model. Per-thread model switch only after a reliable model catalog and `chat_threads.model` persistence. |
+| Upload default | Source-first always. File without prompt = `store only`. File + prompt or explicit choice = `store and analyze`. |
+| Upload async | Upload endpoint returns attachment/source ref quickly. OCR/extract/ingest continue async with `attachment_status` events. |
+| Delete thread | Soft-delete v1, retention/purge later. |
+| Questions | Backend primitive (not frontend heuristic). Empty state can show conservative starter prompts; clarifications come from backend. |
+| Clarification format | `chat_questions` table, reusable for future automation/tasks. |
+| Heartbeat/Cron silent | Supported via `DeliveryMode=silent`: update thread/memory without notification unless task opts in. |
+| `/api/chat` | Stays as compat wrapper over Chat Hub during migration. No new features land here only. |
+
+### 15.2 UX Target
+
+`/chat` is the primary web conversational surface. First screen must be directly usable.
+
+**Layout desktop:**
+
+- viewport full-height, no body scroll
+- chat sidebar 248-280px
+- thread content centered, max-width 760-920px
+- composer sticky/fixed bottom, centered
+- separate scroll for sidebar and thread
+- no outer card around main chat
+
+**Layout mobile:**
+
+- sidebar collapsed in drawer
+- compact top bar (menu, thread title, actions)
+- composer always reachable, safe-area aware
+- messages full-width with reduced lateral padding
+
+**Shell:** `/chat` uses a dedicated `ChatShell` (or existing shell with `fullscreenChat` mode). Body/root stays no-scroll; only sidebar and thread scroll. Composer requires spacer / `scroll-padding-bottom` equal to its max visible height.
+
+### 15.3 Sidebar
+
+- toggle collapse
+- `New Chat` (lucide icon)
+- `Launch` (quick access to operational dashboard)
+- `Settings` (quick access to `/settings`)
+- conversations grouped by period: Today, This Week, Older
+- thread title from first user message or first assistant summary
+- active state via `--sidebar-accent` + `--primary`
+- context menu per thread: rename, delete, export markdown/json
+
+### 15.4 Thread and Messages
+
+**Functional requirements:**
+
+- create new empty thread; send user messages; render assistant streaming reply; preserve per-thread history; resume thread without losing context
+- show `user`, `assistant`, `tool`, `system/error` with distinct styles
+- copy message, retry last response, stop generation
+- auto-scroll to bottom ONLY if user was near bottom; never force-scroll while reading older content
+
+**Assistant messages:** full GFM markdown; readable tables; code blocks with horizontal overflow; tables in `overflow-x-auto` wrapper with `min-width: 0` container; links open in new tab; raw-text fallback on markdown crash.
+
+**Tool messages:** collapsed by default; show tool name + status + duration + error; expandable for tech output; NO secrets or sensitive args in clear text.
+
+### 15.5 Composer
+
+Fixed bottom, includes:
+
+- multiline autosize textarea (1 row min, ~8 rows max)
+- placeholder `Send a message` (i18n)
+- Enter to send, Shift+Enter for newline
+- `+` button for attachments/actions
+- web/search or tool mode button when available
+- model selector (active value, e.g. `deepseek-v4-flash:cloud`)
+- circular send button; stop button while generating
+- disabled state when LLM unconfigured, token expired, or hard budget reached
+
+`+` menu: upload file → source inbox; paste/import text as source; create task/reminder from selected prompt; quick link to workspace files when available.
+
+**Upload requirements:** drag-and-drop on thread and composer; multi-file; per-file preview (name, ext, size, status); per-file removal pre-send; per-file progress; per-file retry; size limit aligned to `MaxUploadMB`; type validation aligned to supported extractors; attachments sendable with text prompt; explicit `store only` vs `store and analyze`; post-upload chip/link to `src_*`; status chain `queued`→`uploading`→`stored`→`ocr_complete`→`extracting`→`extract_complete`→`ingested`/`failed`/`cancelled`; if upload produces wiki pages, response links them.
+
+**Upload constraints:**
+
+- never show full browser local paths
+- never forward files to LLM provider if Aura can save them to source store first
+- never block composer during long uploads
+- upload cancellable until request body completes
+- real progress needs `XMLHttpRequest.upload.onprogress` equivalent; with `fetch` declare indeterminate progress, do not fake percentages
+- each file has stable `client_attachment_id` for preview/response/SSE/retry correlation
+- multi-file v1 can upload sequentially but UI shows per-file state and never loses the batch on partial failure
+
+### 15.6 Question UX
+
+Questions are interaction elements, not free-form text.
+
+**Types:**
+
+- **Starter questions** — empty state suggestions, aligned with Aura + available memory
+
+- **Follow-up questions** — post-reply suggestions, generated from thread context
+- **Clarification questions** — Aura asks when missing data for action
+- **Question cards** — compact 2-4 option blocks when structured choice is safer than free text
+
+**Requirements:**
+
+- empty state shows 3-5 starter questions
+- after each assistant reply, show up to 3 follow-up questions
+- click compiles and sends composer, or pre-fills if modification needed
+- clarifications block only the specific action, never the whole chat
+- question cards support single, multi-select, free response
+- question card answers enter thread as readable user messages
+- questions can be disabled per thread
+- no suggestions if assistant errored or thread is streaming
+- questions never invent capability — respect available tools and backend
+
+**Question contract (minimum):**
+
+```go
+type Question struct {
+    ID               string
+    RunID            string
+    ThreadID         string
+    MessageID        string
+    Kind             string // starter | follow_up | clarification | approval
+    Prompt           string
+    Options          []QuestionOption
+    Multiple         bool
+    FreeTextAllowed  bool
+    FreeTextRequired bool
+    DefaultOptionID  string
+    BlockingScope    string // none | run | tool_call | attachment | thread
+    Dismissible      bool
+    Status           string // pending | answered | dismissed | expired
+}
+```
+
+This is the web-surface projection of the §5.2 QuestionGate contract. The two must stay aligned.
+
+### 15.7 Theme
+
+Use existing tokens — never raw Tailwind colors when a semantic Aura token exists.
+
+| Element | Token |
+| --- | --- |
+| Thread canvas | `--bg`, `--surface-sunken` |
+| Chat sidebar | `--sidebar`, `--sidebar-border`, `--sidebar-accent` |
+| User bubble | `--user-bubble` |
+| Assistant bubble | `--assistant-bubble` |
+| Tool event | `--tool-bubble`, `--brand-soft` |
+| Composer | `--surface-raised`, `--border`, `--brand` |
+| Error state | `--destructive`, `--destructive-foreground` |
+| Focus ring | `--brand` |
+
+**Visual constraints:** dark mode is the reference; cyan accent visible but measured; no hero/marketing-card/decorative-orb/gradient outside the existing global background; sidebar darker than thread with thin border; thread on clean canvas (no outer card); composer raised surface, thin border, generous-but-consistent radius; icon-only buttons with accessible tooltip; `lucide-react` icons; Geist font; no viewport-width-based font-size.
+
+### 15.8 API Surface (web chat)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/chat/threads` | List threads |
+| `POST` | `/api/chat/threads` | Create thread |
+| `GET` | `/api/chat/threads/{id}` | Thread detail + messages |
+| `PATCH` | `/api/chat/threads/{id}` | Rename, archive, update model |
+| `DELETE` | `/api/chat/threads/{id}` | Delete thread |
+| `POST` | `/api/chat/threads/{id}/messages` | Non-streaming fallback |
+| `POST` | `/api/chat/threads/{id}/stream` | Streaming send |
+| `POST` | `/api/chat/threads/{id}/stop` | Best-effort cancel |
+| `POST` | `/api/chat/threads/{id}/attachments` | Upload |
+| `POST` | `/api/chat/threads/{id}/attachments/{aid}/ingest` | Start analysis |
+| `DELETE` | `/api/chat/threads/{id}/attachments/{aid}` | Remove unused attachment |
+| `GET` | `/api/chat/threads/{id}/questions` | Current questions |
+| `POST` | `/api/chat/threads/{id}/questions/{qid}/answer` | Answer a question |
+| `GET` | `/api/chat/models` | Active + available models (best-effort) |
+
+**Streaming:** Server-Sent Events preferred; `fetch + ReadableStream` alternative. Minimum events: `run_started`, `message_created`, `message_delta`, `message_done`, `tool_start`, `tool_delta`, `tool_end`, `attachment_status`, `question_requested`, `question_answered`, `usage`, `done`, `error`. Each event has `thread_id`, `message_id` or `client_message_id`. Heartbeats during long waits. Mid-stream errors must be recoverable UI events, not parser crashes. Provider format (OpenAI/OpenRouter/Anthropic SSE, Ollama NDJSON) adapted before reaching frontend. Each persistible event has `event_id`, `run_id`, `seq`, `created_at` and `idempotency_key` when from retry. Order is per `run_id, seq`. Client tolerates duplicates and partial replay. Backend MAY coalesce `message_delta`, but never reorder tool/question/error events. Non-streaming fallback persists at least `message_created`, `message_done`, `usage`, `done` in `chat_events`.
+
+### 15.9 Non-Goals (web chat)
+
+- Replace Telegram as supported channel — both stay.
+- Create a new agent/prompt for web chat.
+- Hardcode an LLM provider on the frontend.
+- Expose destructive tools without the gates already in Aura.
+- Build a landing or marketing page.
+- Create a second agent loop just for web chat.
+
+### 15.10 Where this lands in the 9-Phase Plan
+
+- **Phase 2-3** (channels behind chat): provides the Hub seam that web chat plugs into.
+- **Phase 4** (collapse runtime): the channel-neutral runtime that web chat needs.
+- **Phase 1C** (QuestionGate): the backend primitive for §15.6.
+- **Phase 8** (cron + silent channels): heartbeat/cron `DeliveryMode=silent` flow.
+- **Post-Phase 9**: SSE streaming endpoint hardening, model catalog v1, full UX polish.
+
+The slice ordering documented in the historical `docs/chat-interface-prd.md` §18 is superseded by the 9-phase plan; the requirements above survive.
+
+---
+
+## 16. Decision Records (D1-D13)
+
+These are the cross-cutting decisions inherited from the predecessor `docs/aura-master-plan.md` (now historical). Each was validated by the deep-refactor work that followed. Authoritative ADR storage is `.planning/aura-deep-refactor-decisions.json`; this section is the human-readable narrative.
+
+### D1. `agent.Runner` — cancel or extend?
+
+**Winner: Cancel.** Route swarm + chatPipe + scheduler agent_job onto `agent.Run`. The legacy `runner.go` exists because nobody replaced it; the canonical runtime by design is `agentruntime`+`agentloop`. Wave 3 Pack A's PhaseSink work would have invested 350-450 LOC into the wrong runtime. **Cost-if-wrong:** 1 day revert. *Implemented in Phase 4 / past commit chain.*
+
+### D2. Restructure-first vs feature-first
+
+**Winner: Surgical-first** — kill duplicate runtime + chathub merge, then waves resume on the right shape. Avoids rework where Wave 3 would have written code on `runner.go` that we'd cancel. **Cost-if-wrong:** user perceives 4 weeks of restructure as "more disorder" — mitigated by per-step user-verifiable G-criteria and atomic revert-safe slices.
+
+### D3. Package count target
+
+**Winner: 22 (stretch 21).** Verified arithmetic 49→22 via mechanical merges. Empty `orchestration/`, `tracing/`, `release/` are delete-free. Merge packs `agent/*`, `mcp/*`, `storage/search/*`, `storage/sources/*`, `agent/tools/*` reduce by 14; `config/*`, `api/*`, `db/*`, `session/*` by 7 more. **Cost-if-wrong:** 23-25 instead of 22 — acceptable.
+
+### D4. chathub layer — keep, integrate, delete?
+
+**Winner: Integrate now.** The spine (`types.go`+`hub.go`+`agentloop.go` ≈ 620 LOC) is sound. Web router + silent + chat_service are fine. Only `adapters/telegram/outbound.go` needed replacement (port from `streaming.go`). **Cost-if-wrong:** CoT/entity regression — mitigated by feature flag + record-replay fixture.
+
+### D5. chathub Telegram outbound regression — delete now or after?
+
+**Winner: Replace before adoption.** Build fixture harness (Phase 2 record-and-replay) first, then port `streaming.go` atomically as `channels/telegram/outbound.go`. Snapshot diff is the gate. **Cost-if-wrong:** 1 edit+revert cycle.
+
+### D6. `.planning/` waves — superseded, deferred, interleaved?
+
+**Winner:** see PRD §3.2 table for the full per-wave disposition. Wave 1 task 3 SHIPPED; Wave 1 tasks 1/2/4/5 deferred; Wave 2 deferred to Phase 7; Wave 3 Pack A SUPERSEDED (events flow via Hub `OutboundEvent`); Pack B/C deferred to Phase 6/8; Context-Eng Fase 0 INTERLEAVED-now, Fase 1.1 promoted as PREREQ to Phase 4 (kill runner), Fase 3.3 inside Phase 4, Fase 5 inside Phase 4 mapping table.
+
+### D7. Hub responsibility — thick or thin?
+
+**Winner: Thick ≤700 LOC.** Already verified (hub 251 + types 159 + agentloop 210 = 620). Carries 7 EventType cases, dispatcher with event-tap, run/event ID minting, `/stop` registry. Cannot be reduced below 600 without dropping features. **Cost-if-wrong:** if it grows >700, refactor.
+
+### D8. Swarm — first-class channel or tool?
+
+**Winner: First-class channel.** D1 cancels `agent.Runner`; D8 closes the loop. Swarm sub-task = `InboundMessage{Channel: swarm, Mode: silent, ChannelData: {parent_run_id, assignment_id}}`. Manager collects results via `Router.WaitForRun(runID)`. Wave 3 Pack A folds into Hub event stream. **Cost-if-wrong:** 1 day revert (swarm back to calling `agent.Run` directly).
+
+### D9. External references (Kimi K2.5 + OpenAI Codex)
+
+**Winner: Reference only — cite both, adopt neither as architecture.** Kimi K2.5 (parallel decomposition, swarm as tool opt-in for decomposable tasks). OpenAI Codex Jan 2026 (single flat agent loop as default — what Aura IS and stays). Aura confirms single-loop default; swarm is `swarmtools.delegate` opt-in for decomposable tasks, NOT a replacement for the main loop.
+
+### D10. Effort horizon — sprint or campaign?
+
+**Winner: Short campaign (3-4 weeks).** Step 1-8 of the historical plan ≈ 70 productive hours ≈ ~4 calendar weeks at 4h/day. Wave 1 residue + Wave 2 + Wave 3 Pack B/C after. Context-Eng Fasi 0+1 INTERLEAVED. **Cost-if-wrong:** 1-2 week slip — absorbable.
+
+### D11. `streaming.go` port — verbatim or rewrite?
+
+**Winner: Verbatim + thin wrapper.** `consumeStream` becomes `chat.OutboundAdapter.Deliver`; `tele.Bot` helpers stay private in `channels/telegram`. 30 LOC of wrapper. Fixture harness captures pre-port snapshot; post-port byte-compares. **Cost-if-wrong:** fixture errors — revert.
+
+### D12. Composition root — `cmd/aura/app.go` or `telegram/setup.go`?
+
+**Winner: `cmd/aura/app.go`.** Honors "telegram is only an adapter"; composition root visible. Implemented in deep-refactor Phase 1 (US-A13 series). **Cost-if-wrong:** shutdown race — mitigated by `go test -race ./...` gate.
+
+### D13. Prompt-cache discipline — feature wave or config-engineering policy?
+
+**Winner: Policy locked BEFORE Phase 4 (kill runner).** Codex Jan 2026 explicitly: *"place static content at the beginning of your prompt, and put variable content at the end."* Static-first prefix + tool order stability + append-not-mutate runtime context. Phase 4 touches prompt assembly; without lock, cache-miss regression is invisible. **Cost-if-wrong:** cache hit <50% → p95 doubles. Gauge: prompt token reuse ratio (Context-Eng Fase 1.2 telemetry).

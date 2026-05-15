@@ -1,5 +1,7 @@
 # REVIEW-2: Domain invariants + planning-state alignment
 
+> **Status: HISTORICAL — planning-state review of `aura-restructure-prd.md` v2. F1 BLOCKER ("planning-state reconciliation") became [prd.md §3.2](../prd.md#32-planning-state-reconciliation). Preserved as evidence.**
+
 **Date:** 2026-05-14
 **Reviewer:** Domain + Planning
 **PRD version reviewed:** v2 (`docs/aura-restructure-prd.md`, 960 lines)

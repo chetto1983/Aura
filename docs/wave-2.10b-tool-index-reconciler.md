@@ -1,5 +1,7 @@
 # Wave 2.10.b — Tool Index Reconciler (Hash-Based, Cache-Aware)
 
+> **Status: SHIPPED 2026-05-13 in commit `2367f502`. Plan preserved as evidence; implementation is in `internal/agent/tools/index/`.**
+
 **Status:** plan (not implemented)
 **Date drafted:** 2026-05-13
 **Predecessor:** Wave 2.10 (install bootstrap, commit `eb7e61ad`)

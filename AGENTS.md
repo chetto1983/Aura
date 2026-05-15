@@ -8,10 +8,11 @@ context anchor, not the conversation history.
 
 1. Existing code behavior and tests.
 2. `D:\Aura\CLAUDE.md`.
-3. `D:\Aura\docs\aura-master-plan.md`.
-4. `D:\Aura\scripts\ralph\CLAUDE.md` for long-running slice execution.
-5. Current user instructions in the active turn.
-6. Web search or model memory.
+3. `D:\Aura\prd.md` (north-star deep-refactor PRD; supersedes `docs/aura-master-plan.md` and earlier iterations — those are historical evidence per prd.md §3.2).
+4. `D:\Aura\docs\aura-cleanup-execution-map.md` (operational map derived from prd.md).
+5. `D:\Aura\scripts\ralph\CLAUDE.md` for long-running slice execution.
+6. Current user instructions in the active turn.
+7. Web search or model memory.
 
 If these conflict, stop and name the conflict before editing.
 
@@ -302,7 +303,7 @@ work, read only the minimum needed, in this order:
 1. `D:\Aura\.planning\HANDOFF.json` and
    `D:\Aura\.planning\deep-refactor\.continue-here.md` if they exist
 2. `D:\Aura\CLAUDE.md`
-3. `D:\Aura\docs\aura-master-plan.md`
+3. `D:\Aura\prd.md` (current PRD; `docs/aura-master-plan.md` is historical)
 4. `D:\Aura\scripts\ralph\progress.txt` IF NOT PRENDET CREATE UP UPDATE EVERY TIME
 5. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
 6. Directly affected source files

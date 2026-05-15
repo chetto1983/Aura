@@ -1,5 +1,7 @@
 # Aura — Master Plan (single source of truth)
 
+> **Status: HISTORICAL — superseded by [prd.md](../prd.md). Preserved as evidence per prd.md §3.2. The 9-phase plan in prd.md is the current authority; the 8-step plan here is the predecessor whose decisions (D1-D13) and wave disposition (§6) are folded into prd.md §16.**
+
 **Versione:** 1.1 — Codex article integrated
 **Data:** 2026-05-14
 **Owner:** solo dev (master-direct)

@@ -1,5 +1,7 @@
 # Wave 2.10 — Install Bootstrap (Auto-Download Embedding Model)
 
+> **Status: SHIPPED 2026-05-13 in commit `eb7e61ad`. Plan preserved as evidence; implementation is in `internal/install/`.**
+
 **Status:** plan (not implemented)
 **Date drafted:** 2026-05-13
 **Predecessor:** Wave 2.9 (markitdown sidecar)

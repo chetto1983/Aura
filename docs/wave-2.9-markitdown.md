@@ -1,5 +1,7 @@
 # Wave 2.9 — Markitdown Integration (PLAN)
 
+> **Status: SHIPPED 2026-05-13 in commits `b8991a64 b7ad1aa2 23a52edc`. Plan preserved as evidence; implementation is in the codebase.**
+
 **Status:** plan (not yet implemented)
 **Date drafted:** 2026-05-13
 **Predecessor:** Wave 2.7f (source action-enum consolidation done)

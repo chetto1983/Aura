@@ -1,5 +1,7 @@
 # PRD - Chat completa Aura
 
+> **Status: HISTORICAL — web-chat product PRD. Active requirements consolidated into [prd.md §15 Web Chat Product Surface](../prd.md). Preserved as evidence per prd.md §3.2.**
+
 **Versione:** 0.1  
 **Data:** 2026-05-13  
 **Stato:** proposta aggiornata con deep research e pronta per pianificazione  

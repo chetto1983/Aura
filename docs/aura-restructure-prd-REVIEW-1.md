@@ -1,5 +1,7 @@
 # REVIEW-1: Architecture critic
 
+> **Status: HISTORICAL — architecture review of `aura-restructure-prd.md` v1. Findings F1-F15 are mostly addressed in [prd.md](../prd.md). Preserved as evidence per prd.md §3.2.**
+
 **Date:** 2026-05-14
 **Reviewer:** Architecture
 **PRD version reviewed:** v1 (`docs/aura-restructure-prd.md`)

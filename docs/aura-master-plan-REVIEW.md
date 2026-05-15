@@ -1,5 +1,7 @@
 # REVIEW: Aura Master Plan v1.1 — executability + risk reality check
 
+> **Status: HISTORICAL — review of the predecessor master plan (now historical). Preserved as evidence: this review's DOWNSCOPE_RECOMMENDED verdict and 4-commit alternative were validated by the actual deep-refactor work that followed. See [prd.md](../prd.md) for the current plan.**
+
 **Date:** 2026-05-14
 **Reviewer:** Independent — executability + risk
 **Plan version reviewed:** v1.1 (synthesizer pass + Codex integration)
