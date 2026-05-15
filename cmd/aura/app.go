@@ -803,8 +803,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// skills.sh catalog + admin-gated install/delete.
 		SkillsCatalog:   a.deps.SkillsCatalog,
 		SkillsInstaller: skillsInstaller,
-		SkillsDeleter:   telegram.NewSkillsDeleterAdapter(skillsDeleter),
-		SkillProposals:  telegram.NewSkillProposalApplierAdapter(skillProposalApplier),
+		SkillsDeleter:   newSkillsDeleterAdapter(skillsDeleter),
+		SkillProposals:  newSkillProposalApplierAdapter(skillProposalApplier),
 		SkillsAdmin:     cfg.SkillsAdmin,
 		// Embed cache hit/miss counters in /api/health.
 		EmbedCache:    a.deps.EmbedCache,

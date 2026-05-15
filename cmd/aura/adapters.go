@@ -1,4 +1,4 @@
-package telegram
+package main
 
 import (
 	"context"
@@ -43,14 +43,10 @@ func (a skillProposalApplierAdapter) ApplySkillProposal(ctx context.Context, pro
 	})
 }
 
-// NewSkillsDeleterAdapter wraps an FSDeleter to satisfy api.SkillDeleter.
-// Used by wireBot (cmd/aura) when building the API router.
-func NewSkillsDeleterAdapter(d *auraskills.FSDeleter) api.SkillDeleter {
+func newSkillsDeleterAdapter(d *auraskills.FSDeleter) api.SkillDeleter {
 	return skillsDeleterAdapter{inner: d}
 }
 
-// NewSkillProposalApplierAdapter wraps an FSProposalApplier to satisfy api.SkillProposalApplier.
-// Used by wireBot (cmd/aura) when building the API router.
-func NewSkillProposalApplierAdapter(p *auraskills.FSProposalApplier) api.SkillProposalApplier {
+func newSkillProposalApplierAdapter(p *auraskills.FSProposalApplier) api.SkillProposalApplier {
 	return skillProposalApplierAdapter{inner: p}
 }
