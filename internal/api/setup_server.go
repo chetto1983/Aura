@@ -1,7 +1,6 @@
 package api
 
 import (
-	"github.com/aura/aura/internal/config"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/secrets"
 )
 
 //go:embed setup_page.html
@@ -28,12 +29,17 @@ type SetupConfig struct {
 	// for headless/container installs where Docker controls host exposure.
 	AllowRemoteBind bool
 
-	// DotEnvPath is where the wizard writes TELEGRAM_TOKEN. Defaults to
+	// DotEnvPath is used for backward-compatible .env migration only.
+	// Secrets are no longer written to .env by the wizard. Defaults to
 	// "./.env" when blank.
 	DotEnvPath string
 
-	// SettingsStore receives every non-bootstrap key (LLM_*, embeddings,
-	// OCR, etc.). Required.
+	// SecretsStore receives secret keys (Telegram token, LLM API keys, etc.).
+	// Required — wizard cannot proceed without it.
+	SecretsStore secrets.Store
+
+	// SettingsStore receives non-secret tunables (LLM base URL, model,
+	// OCR settings, etc.). Required.
 	SettingsStore config.Writer
 
 	// Logger receives wizard activity. Required.
@@ -45,6 +51,9 @@ type SetupConfig struct {
 // re-load .env after Run returns. Returns context.Canceled-style error
 // only on shutdown failure.
 func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
+	if cfg.SecretsStore == nil {
+		return "", errors.New("setup: SecretsStore required")
+	}
 	if cfg.SettingsStore == nil {
 		return "", errors.New("setup: SettingsStore required")
 	}
@@ -139,21 +148,29 @@ func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
 			return
 		}
 
-		// 1. .env: persist the bootstrap secret so a restart finds it.
-		if err := writeDotEnvKey(cfg.DotEnvPath, "TELEGRAM_TOKEN", token); err != nil {
-			cfg.Logger.Error("setup: write .env", "error", err)
-			writeSetupJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "could not write .env: " + err.Error()})
+		ctx := r.Context()
+
+		// 1. Secrets store: Telegram token + API keys never touch .env.
+		if err := writeSecret(ctx, cfg.SecretsStore, secrets.KeyTelegramToken, token); err != nil {
+			cfg.Logger.Error("setup: write telegram token", "error", err)
+			writeSetupJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "could not save Telegram token"})
 			return
 		}
+		secretWrites := []struct{ key, val string }{
+			{secrets.KeyLLMAPIKey, strings.TrimSpace(req.LLMAPIKey)},
+			{secrets.KeyEmbeddingAPIKey, strings.TrimSpace(req.EmbeddingAPIKey)},
+		}
+		for _, sw := range secretWrites {
+			if err := writeSecret(ctx, cfg.SecretsStore, sw.key, sw.val); err != nil {
+				cfg.Logger.Error("setup: write secret", "key", sw.key, "error", err)
+			}
+		}
 
-		// 2. settings DB: everything else. Each key is overridable per
-		// internal/settings/applier.go.
-		ctx := r.Context()
+		// 2. Settings DB: non-secret tunables only. Each key is overridable
+		// per internal/config/applier.go.
 		writes := []struct{ key, val string }{
 			{config.KeyLLMBaseURL, strings.TrimSpace(req.LLMBaseURL)},
 			{config.KeyLLMModel, strings.TrimSpace(req.LLMModel)},
-			{config.KeyLLMAPIKey, strings.TrimSpace(req.LLMAPIKey)},
-			{config.KeyEmbeddingAPIKey, strings.TrimSpace(req.EmbeddingAPIKey)},
 			{config.KeyMistralAPIKey, strings.TrimSpace(req.MistralAPIKey)},
 		}
 		for _, w := range writes {

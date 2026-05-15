@@ -1,14 +1,73 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/aura/aura/internal/secrets"
 )
+
+// stubSettingsWriter is a minimal config.Writer for setup tests.
+type stubSettingsWriter struct {
+	data map[string]string
+}
+
+func (s *stubSettingsWriter) Set(_ context.Context, key, value string) error {
+	if s.data == nil {
+		s.data = map[string]string{}
+	}
+	s.data[key] = value
+	return nil
+}
+
+func (s *stubSettingsWriter) Delete(_ context.Context, key string) error {
+	delete(s.data, key)
+	return nil
+}
+
+// stubSecrets is an in-memory secrets.Store for setup tests.
+type stubSecrets struct {
+	data map[string]string
+}
+
+func (s *stubSecrets) Get(_ context.Context, key string) (string, error) {
+	if v, ok := s.data[key]; ok {
+		return v, nil
+	}
+	return "", secrets.ErrSecretNotFound
+}
+
+func (s *stubSecrets) Set(_ context.Context, key, value string) error {
+	if s.data == nil {
+		s.data = map[string]string{}
+	}
+	s.data[key] = value
+	return nil
+}
+
+func (s *stubSecrets) Delete(_ context.Context, key string) error {
+	delete(s.data, key)
+	return nil
+}
+
+func (s *stubSecrets) List(_ context.Context) ([]string, error) {
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
 
 func TestEncodeDotEnvValue(t *testing.T) {
 	tests := []struct {
@@ -231,5 +290,124 @@ func TestListenAddressAllowsContainerBind(t *testing.T) {
 	}
 	if got := listenAddress("0.0.0.0:8080", false); got != "127.0.0.1:8080" {
 		t.Fatalf("listenAddress(desktop) = %q, want 127.0.0.1:8080", got)
+	}
+}
+
+func TestWriteSecretNilStoreReturnsError(t *testing.T) {
+	err := writeSecret(context.Background(), nil, secrets.KeyTelegramToken, "tok")
+	if err == nil {
+		t.Fatal("expected error with nil store, got nil")
+	}
+}
+
+func TestWriteSecretEmptyValueCallsDelete(t *testing.T) {
+	store := &stubSecrets{data: map[string]string{secrets.KeyLLMAPIKey: "existing"}}
+	if err := writeSecret(context.Background(), store, secrets.KeyLLMAPIKey, ""); err != nil {
+		t.Fatalf("writeSecret empty: %v", err)
+	}
+	if _, err := store.Get(context.Background(), secrets.KeyLLMAPIKey); err == nil {
+		t.Error("expected key to be deleted after writeSecret with empty value")
+	}
+}
+
+func TestWriteSecretRoundtrip(t *testing.T) {
+	store := &stubSecrets{data: map[string]string{}}
+	if err := writeSecret(context.Background(), store, secrets.KeyTelegramToken, "123:ABC"); err != nil {
+		t.Fatalf("writeSecret: %v", err)
+	}
+	got, err := store.Get(context.Background(), secrets.KeyTelegramToken)
+	if err != nil {
+		t.Fatalf("Get after writeSecret: %v", err)
+	}
+	if got != "123:ABC" {
+		t.Errorf("Get = %q, want 123:ABC", got)
+	}
+}
+
+func TestSetupWizardSaveWritesSecretsToStore(t *testing.T) {
+	// Find a free port before starting the server.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+
+	secretsStore := &stubSecrets{data: map[string]string{}}
+	settingsStore := &stubSettingsWriter{data: map[string]string{}}
+	dir := t.TempDir()
+	dotenvPath := filepath.Join(dir, ".env")
+
+	type result struct {
+		token string
+		err   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		tok, err := SetupRun(SetupConfig{
+			Listen:          addr,
+			AllowRemoteBind: true,
+			DotEnvPath:      dotenvPath,
+			SecretsStore:    secretsStore,
+			SettingsStore:   settingsStore,
+			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		ch <- result{tok, err}
+	}()
+
+	// Retry until the server is up.
+	payload, _ := json.Marshal(map[string]string{
+		"telegram_token":   "123:ABC",
+		"llm_api_key":      "sk-key",
+		"embedding_api_key": "emb-key",
+		"llm_base_url":     "https://api.openai.com/v1",
+		"llm_model":        "gpt-4o",
+	})
+	var resp *http.Response
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = http.Post("http://"+addr+"/save", "application/json", bytes.NewReader(payload))
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("POST /save: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /save status = %d, want 200", resp.StatusCode)
+	}
+
+	res := <-ch
+	if res.err != nil {
+		t.Fatalf("SetupRun: %v", res.err)
+	}
+
+	// Secrets store must have token + API keys.
+	checkSecret := func(key, want string) {
+		t.Helper()
+		got, err := secretsStore.Get(context.Background(), key)
+		if err != nil {
+			t.Errorf("secretsStore.Get(%q): %v", key, err)
+			return
+		}
+		if got != want {
+			t.Errorf("secretsStore[%q] = %q, want %q", key, got, want)
+		}
+	}
+	checkSecret(secrets.KeyTelegramToken, "123:ABC")
+	checkSecret(secrets.KeyLLMAPIKey, "sk-key")
+	checkSecret(secrets.KeyEmbeddingAPIKey, "emb-key")
+
+	// .env must NOT contain the secret values.
+	if data, err := os.ReadFile(dotenvPath); err == nil {
+		content := string(data)
+		for _, secret := range []string{"123:ABC", "sk-key", "emb-key"} {
+			if strings.Contains(content, secret) {
+				t.Errorf(".env contains secret value %q: %s", secret, content)
+			}
+		}
 	}
 }

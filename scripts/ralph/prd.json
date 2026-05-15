@@ -86,7 +86,7 @@
         "Single atomic commit prefix: refactor(setup): wizard writes secrets to SQLite (US-H04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Pair with US-H03: after this story, new installs never have a .env file with secrets in it — wizard writes straight to SQLite. Existing installs already got their secrets migrated by US-H02 + US-H03 boot path."
     },
     {

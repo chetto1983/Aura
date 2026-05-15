@@ -287,6 +287,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 			Listen:          cfg.HTTPPort,
 			AllowRemoteBind: cfg.Headless,
 			DotEnvPath:      cfg.EnvPath,
+			SecretsStore:    secretsStore,
 			SettingsStore:   settingsStore,
 			Logger:          logger,
 		})
