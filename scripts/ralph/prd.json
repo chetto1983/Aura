@@ -118,7 +118,7 @@
         "Single atomic commit prefix: docs(planning): Phase 5 closure + audit refresh (US-I06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": ".planning/* is gitignored — use git add -f. Precedent: every prior Phase closure commit."
     }
   ]

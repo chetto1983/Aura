@@ -264,7 +264,7 @@ PRD §5.1 says agent owns: loop, LLM calls, tool-call iteration, observation han
 | Run stats | ✅ | `Stats` struct |
 | Interruption/deadline | ✅ | `CompleteOnDeadline`, ctx wiring |
 
-`Phase 6` (Tool Experience Loop) is the explicit next step in masterplan to fill the partial gaps. Phase 5 (Consolidate Tools) doesn't add new limits but standardizes the surface.
+`Phase 6` (Tool Experience Loop) is the explicit next step in masterplan to fill the partial gaps. Phase 5 (Consolidate Tools) is now **closed (2026-05-15, US-I01..I05)**: MCP behavioral hints + VisibilityTier added to every native tool, catalogue scan + top-k + parameter-accuracy evals all green, authorization invariant locked by test.
 
 ---
 

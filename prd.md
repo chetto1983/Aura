@@ -1361,6 +1361,8 @@ Gate:
 - no broad path/URI access,
 - tests/probes inspect tool behavior.
 
+**Phase 5 closed 2026-05-15** — all gate criteria met (US-I01..I05, commits 009639ae..28ae9324).
+
 ### Phase 6 - Add the Tool Experience Loop
 
 Goal: Aura improves from preventable tool-call failures instead of repeating them.
