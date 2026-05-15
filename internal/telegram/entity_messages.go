@@ -238,3 +238,10 @@ func (b *Bot) EditAssistantMsg(bot tele.API, msg tele.Editable, part RenderedMes
 func (b *Bot) SendAssistantMsgRemainder(bot tele.API, recipient tele.Recipient, parts []RenderedMessage, start int) {
 	b.sendAssistantRemainder(bot, recipient, parts, start)
 }
+
+// toolActivityMessage returns the generic activity placeholder shown while a
+// tool turn is in flight. The tool name is intentionally not included in the
+// output (privacy: argument values must never appear in user-visible strings).
+func toolActivityMessage(_ string) string {
+	return "Sto lavorando alla richiesta..."
+}

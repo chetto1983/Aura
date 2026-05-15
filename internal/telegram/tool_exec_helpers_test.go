@@ -210,7 +210,7 @@ func TestTerminalToolFinalizationMessagesAppendsLLMPrompt(t *testing.T) {
 		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
 	}
 
-	got := terminalToolFinalizationMessages(messages, "write_file")
+	got := agent.TerminalToolFinalizationMessages(messages, "write_file")
 	if len(got) != len(messages)+1 {
 		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
 	}
@@ -224,7 +224,7 @@ func TestTerminalToolFinalizationMessagesAppendsLLMPrompt(t *testing.T) {
 
 func TestLooksLikeToolCallMarkupRecognisesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
-	if !looksLikeToolCallMarkup(raw) {
+	if !agent.LooksLikeToolCallMarkup(raw) {
 		t.Fatal("looksLikeToolCallMarkup = false, want true")
 	}
 }
