@@ -305,7 +305,7 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 			// often wrap LLM-controlled values (source IDs, hostnames, paths)
 			// and CLAUDE.md forbids logging those values. The LLM still sees
 			// the full err via the tool result; logs see a stable enum.
-			r.logger.Warn("tool failed", "tool", name, "elapsed", elapsed, "error_class", classifyToolError(err))
+			r.logger.Warn("tool failed", "tool", name, "elapsed", elapsed, "error_class", ClassifyToolError(err))
 		}
 		return "", err
 	}

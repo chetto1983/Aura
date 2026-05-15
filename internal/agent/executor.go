@@ -25,6 +25,7 @@ type agentExecutor struct {
 	logger      *slog.Logger
 	allowlist   []string
 	userID      string
+	runID       string // thread-scoped run identifier; wired by US-J03
 	maxChars    int
 	toolTimeout time.Duration
 }
@@ -37,6 +38,7 @@ func newAgentExecutor(
 	logger *slog.Logger,
 	allowlist []string,
 	userID string,
+	runID string,
 	maxChars int,
 	toolTimeout time.Duration,
 ) *agentExecutor {
@@ -46,6 +48,7 @@ func newAgentExecutor(
 		logger:      logger,
 		allowlist:   allowlist,
 		userID:      userID,
+		runID:       runID,
 		maxChars:    maxChars,
 		toolTimeout: toolTimeout,
 	}
@@ -75,7 +78,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 		callCopy.Arguments = argsClone
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			raw, execErr := e.executeOneTool(ctx, call)
+			raw, _, execErr := e.executeOneTool(ctx, call) // observation consumed by US-J03
 			var awaitErr *tools.ErrAwaitingUserInput
 			if errors.As(execErr, &awaitErr) {
 				outcomes[i] = toolOutcome{id: call.ID, awaitingUser: awaitErr}
@@ -120,12 +123,38 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 	return summary
 }
 
-func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (string, error) {
+func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (string, tools.ToolObservation, error) {
+	startedAt := time.Now()
+
+	// buildObs constructs a ToolObservation for each code path.
+	// execErr is the underlying Go error (nil on success); class is the
+	// pre-classified label (empty string means OutcomeOK).
+	buildObs := func(class string, execErr error) tools.ToolObservation {
+		argsHash, argKeys := tools.ObservationArgsHash(call.Arguments)
+		errRedacted := ""
+		if execErr != nil {
+			errRedacted = redactToolError(execErr)
+		}
+		return tools.ToolObservation{
+			RunID:         e.runID,
+			ToolName:      call.Name,
+			ToolKind:      tools.ToolKindOf(call.Name),
+			AttemptN:      1,
+			Outcome:       tools.BucketOf(class),
+			Class:         class,
+			ArgsHash:      argsHash,
+			ArgKeys:       argKeys,
+			ErrorRedacted: errRedacted,
+			StartedAt:     startedAt,
+			ElapsedMS:     time.Since(startedAt).Milliseconds(),
+		}
+	}
+
 	if len(e.allowlist) == 0 || !slices.Contains(e.allowlist, strings.ToLower(call.Name)) {
-		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), nil
+		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), buildObs("permission", nil), nil
 	}
 	if e.tools == nil {
-		return tools.FormatFatalToolError(errors.New("tool registry unavailable")), nil
+		return tools.FormatFatalToolError(errors.New("tool registry unavailable")), buildObs("error", nil), nil
 	}
 	toolCtx := ctx
 	var cancel context.CancelFunc
@@ -140,14 +169,15 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 	if err != nil {
 		var awaitErr *tools.ErrAwaitingUserInput
 		if errors.As(err, &awaitErr) {
-			return "", awaitErr // propagate sentinel without formatting
+			return "", buildObs("cancelled", nil), awaitErr // propagate sentinel without formatting
 		}
 		if e.logger != nil {
 			e.logger.Warn("agent tool call failed", "tool", call.Name, "error", redactToolError(err))
 		}
-		return tools.FormatToolError(err), nil
+		class := tools.ClassifyToolError(err)
+		return tools.FormatToolError(err), buildObs(class, err), nil
 	}
-	return out, nil
+	return out, buildObs("", nil), nil
 }
 
 // cloneToolArgs returns a shallow copy of the LLM-supplied arguments map so

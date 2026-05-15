@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(agent): ToolObservation contract + 5-bucket classifier (US-J01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness: tool_kind derivation at observation-construction time is the single point that distinguishes native vs MCP. Read internal/agent/tools/registry/mcp.go:26-27 first to confirm the `mcp_<server>_<tool>` prefix is the convention."
     },
     {

@@ -6,11 +6,14 @@ import (
 	"strings"
 )
 
-// classifyToolError maps a tool error to a low-cardinality class label suitable
+// ClassifyToolError maps a tool error to a low-cardinality class label suitable
 // for logging without leaking LLM-controlled values (URLs, source IDs, file
 // paths, hostnames). CLAUDE.md is explicit: "only tool names and argument
 // *keys* are logged — never values"; tool error messages were the gap.
-func classifyToolError(err error) string {
+//
+// The returned labels form the 10-label vocabulary consumed by BucketOf in
+// observation.go to collapse into 5 Outcome buckets for the Phase-6 loop.
+func ClassifyToolError(err error) string {
 	if err == nil {
 		return ""
 	}

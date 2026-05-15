@@ -45,7 +45,7 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 
 	allowlist := cleanToolList(task.ToolAllowlist)
 	state := newAgentState(messages)
-	exec := newAgentExecutor(deps.Tools, state, logger, allowlist, task.UserID, task.MaxToolResultChars, toolTimeout)
+	exec := newAgentExecutor(deps.Tools, state, logger, allowlist, task.UserID, "", task.MaxToolResultChars, toolTimeout)
 	client := NewNoStreamClient(deps.LLM, deps.Model, task.Temperature, deps.ReasoningEffort)
 
 	inv := Invocation{
