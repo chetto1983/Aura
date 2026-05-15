@@ -68,7 +68,7 @@
         "Single atomic commit prefix: feat(agent): wire tool_attempts into executor (US-J03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness: the integration test for tool_kind='mcp' is the gate. The fake tool in the test should be wired with a name like 'mcp_test_echo' to exercise the prefix-derivation in observation.go (US-J01)."
     },
     {

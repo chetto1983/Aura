@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -23,6 +24,9 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if deps.RunID != "" {
+		ctx = identity.WithRunID(ctx, deps.RunID)
+	}
 
 	messages, err := initialMessages(task)
 	if err != nil {
@@ -45,7 +49,7 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 
 	allowlist := cleanToolList(task.ToolAllowlist)
 	state := newAgentState(messages)
-	exec := newAgentExecutor(deps.Tools, state, logger, allowlist, task.UserID, "", task.MaxToolResultChars, toolTimeout)
+	exec := newAgentExecutor(deps.Tools, state, logger, allowlist, task.UserID, deps.RunID, task.MaxToolResultChars, toolTimeout, deps.AttemptsRepo)
 	client := NewNoStreamClient(deps.LLM, deps.Model, task.Temperature, deps.ReasoningEffort)
 
 	inv := Invocation{
@@ -85,9 +89,9 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	}
 
 	out := Result{
-		Content:  content,
-		Messages: state.Messages(),
-		LLMCalls: rtResult.Stats.LLMCalls,
+		Content:   content,
+		Messages:  state.Messages(),
+		LLMCalls:  rtResult.Stats.LLMCalls,
 		ToolCalls: rtResult.Stats.ToolCallsExecuted,
 		Tokens: llm.TokenUsage{
 			PromptTokens:     rtResult.Stats.TokensPrompt,

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
@@ -57,8 +58,12 @@ type RunTaskDeps struct {
 	Tools           *tools.Registry
 	Model           string
 	ReasoningEffort string
+	RunID           string
 	PhantomGuard    *PhantomToolGuard
 	Logger          *slog.Logger
+	// AttemptsRepo persists tool-call observations to tool_attempts (Phase-6
+	// US-J03). Nil disables persistence without affecting tool execution.
+	AttemptsRepo attempts.Repo
 	// Per-call limits — read once at RunTask entry; runtime changes apply
 	// to the NEXT call, never to a call already in flight.
 	MaxIterations int

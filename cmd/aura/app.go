@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/agent"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
@@ -24,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/mcp"
 	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
@@ -772,6 +774,10 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		logger.Warn("skill proposal applier unavailable", "error", err)
 	}
+	webChat, err := newHubBackedWebChatService(cfg, &a.deps, logger)
+	if err != nil {
+		return fmt.Errorf("wire web chat hub: %w", err)
+	}
 
 	// ---- HTTP API router (dashboard + /api endpoints) -----------------------
 	// App owns the api handler; App.APIHandler() exposes it to main.go (US-A13c).
@@ -836,7 +842,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		SecretsStore: secretspkg.NewSQLiteStore(a.deps.Pool),
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
-		Chat:  api.NewWebChatService(newWebChatDepsGetter(cfg, &a.deps)),
+		Chat:  webChat,
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
@@ -855,7 +861,9 @@ type swarmRunnerAdapter struct {
 }
 
 func (a *swarmRunnerAdapter) Run(ctx context.Context, task agent.Task) (agent.Result, error) {
-	return agent.RunTask(ctx, a.getDeps(), task)
+	deps := a.getDeps()
+	deps.RunID = identity.RunIDFromContext(ctx)
+	return agent.RunTask(ctx, deps, task)
 }
 
 // newSwarmDepsGetter returns a lazy RunTaskDeps builder for swarmRunnerAdapter.
@@ -881,6 +889,7 @@ func newSwarmDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.Ru
 				ToolNamesFn: deps.Tools.Names,
 			},
 			Logger:        deps.Logger,
+			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
 			MaxIterations: maxIterations,
 			Timeout:       time.Duration(timeoutSec) * time.Second,
 			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
@@ -897,7 +906,12 @@ func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest)
 	if a.getDeps == nil {
 		return cron.JobResult{}, fmt.Errorf("agent runner unavailable")
 	}
-	result, err := agent.RunTask(ctx, a.getDeps(), agent.Task{
+	deps := a.getDeps()
+	deps.RunID = req.RunID
+	if deps.RunID == "" {
+		deps.RunID = identity.RunIDFromContext(ctx)
+	}
+	result, err := agent.RunTask(ctx, deps, agent.Task{
 		SystemPrompt:  req.SystemPrompt,
 		Prompt:        req.Prompt,
 		ToolAllowlist: req.ToolAllowlist,
@@ -945,6 +959,7 @@ func newAgentJobDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent
 				ToolNamesFn: deps.Tools.Names,
 			},
 			Logger:        deps.Logger,
+			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
 			MaxIterations: maxIterations,
 			Timeout:       time.Duration(timeoutSec) * time.Second,
 			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
@@ -952,7 +967,7 @@ func newAgentJobDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent
 	}
 }
 
-// newWebChatDepsGetter returns a lazy RunTaskDeps builder for api.NewWebChatService.
+// newWebChatDepsGetter returns a lazy RunTaskDeps builder for the Hub-backed web chat service.
 // Returning nil when LLM is unconfigured disables the /api/chat endpoint.
 // The closure reads cfg.AuraBot* fields fresh on every call so dashboard
 // live-tune of MaxIterations/Timeout propagates to the next RunTask without
@@ -979,6 +994,7 @@ func newWebChatDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.
 				ToolNamesFn: deps.Tools.Names,
 			},
 			Logger:        deps.Logger,
+			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
 			MaxIterations: maxIterations,
 			Timeout:       time.Duration(timeoutSec) * time.Second,
 			ToolTimeout:   time.Duration(timeoutSec) * time.Second,

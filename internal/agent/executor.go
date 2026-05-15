@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/llm"
 )
 
 // agentExecutor adapts tools.Registry to ToolExecutor.
@@ -25,9 +26,10 @@ type agentExecutor struct {
 	logger      *slog.Logger
 	allowlist   []string
 	userID      string
-	runID       string // thread-scoped run identifier; wired by US-J03
+	runID       string
 	maxChars    int
 	toolTimeout time.Duration
+	repo        attempts.Repo // Phase-6 US-J03: synchronous observation persistence; nil = disabled
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -41,6 +43,7 @@ func newAgentExecutor(
 	runID string,
 	maxChars int,
 	toolTimeout time.Duration,
+	repo attempts.Repo,
 ) *agentExecutor {
 	return &agentExecutor{
 		tools:       reg,
@@ -51,6 +54,7 @@ func newAgentExecutor(
 		runID:       runID,
 		maxChars:    maxChars,
 		toolTimeout: toolTimeout,
+		repo:        repo,
 	}
 }
 
@@ -150,11 +154,28 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 		}
 	}
 
+	// recordObs persists the observation synchronously before the function
+	// returns. Write failures are logged but never propagated — the tool
+	// result must still reach the user. A nil repo is skipped silently
+	// (feature-flag-ready: set repo=nil to disable persistence).
+	recordObs := func(obs tools.ToolObservation) {
+		if e.repo == nil {
+			return
+		}
+		if err := e.repo.Record(ctx, obs); err != nil && e.logger != nil {
+			e.logger.Error("tool_attempts_write_failed", "err", err, "tool_name", obs.ToolName)
+		}
+	}
+
 	if len(e.allowlist) == 0 || !slices.Contains(e.allowlist, strings.ToLower(call.Name)) {
-		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), buildObs("permission", nil), nil
+		obs := buildObs("permission", nil)
+		recordObs(obs)
+		return tools.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), obs, nil
 	}
 	if e.tools == nil {
-		return tools.FormatFatalToolError(errors.New("tool registry unavailable")), buildObs("error", nil), nil
+		obs := buildObs("error", nil)
+		recordObs(obs)
+		return tools.FormatFatalToolError(errors.New("tool registry unavailable")), obs, nil
 	}
 	toolCtx := ctx
 	var cancel context.CancelFunc
@@ -169,15 +190,21 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 	if err != nil {
 		var awaitErr *tools.ErrAwaitingUserInput
 		if errors.As(err, &awaitErr) {
-			return "", buildObs("cancelled", nil), awaitErr // propagate sentinel without formatting
+			obs := buildObs("cancelled", nil)
+			recordObs(obs)
+			return "", obs, awaitErr // propagate sentinel without formatting
 		}
 		if e.logger != nil {
 			e.logger.Warn("agent tool call failed", "tool", call.Name, "error", redactToolError(err))
 		}
 		class := tools.ClassifyToolError(err)
-		return tools.FormatToolError(err), buildObs(class, err), nil
+		obs := buildObs(class, err)
+		recordObs(obs)
+		return tools.FormatToolError(err), obs, nil
 	}
-	return out, buildObs("", nil), nil
+	obs := buildObs("", nil)
+	recordObs(obs)
+	return out, obs, nil
 }
 
 // cloneToolArgs returns a shallow copy of the LLM-supplied arguments map so
