@@ -2,11 +2,8 @@ package telegram
 
 import (
 	"context"
-	"strings"
-	"sync"
 
 	"github.com/aura/aura/internal/agent"
-	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -21,74 +18,8 @@ func ChatIDFromTeleContext(c tele.Context) int64 {
 	return c.Chat().ID
 }
 
-// executeToolCalls runs the LLM's tool calls concurrently and appends results
-// to convCtx in original call order. Used by both this package's tests and by
-// channels/telegram.InvocationBuilder via ExecToolCalls.
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
-	if len(calls) == 0 {
-		return agent.ToolExecutionSummary{}
-	}
-
-	toolReg := b.ToolRegistry()
-
-	type outcome struct {
-		id            string
-		tool          string
-		content       string
-		fatal         bool
-		readSkillName string
-		terminalTool  string
-	}
-	results := make([]outcome, len(calls))
-
-	var wg sync.WaitGroup
-	for i, tc := range calls {
-		wg.Add(1)
-		go func(i int, tc llm.ToolCall) {
-			defer wg.Done()
-			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), toolReg.Names())
-			args := agent.ToolArgumentsForTool(tc.Name, tc.Arguments, ChatIDFromTeleContext(c))
-			result, err := toolReg.Execute(toolCtx, tc.Name, args)
-			if err != nil {
-				result = tools.FormatToolError(err)
-				b.logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
-			}
-			readSkillName := ""
-			if err == nil && tc.Name == "read_file" {
-				readSkillName = agent.SkillNameFromReadFileArgs(tc.Arguments)
-			}
-			terminalTool := ""
-			if err == nil && b.terminalToolPolicyEnabled() && agent.IsTerminalTool(tc.Name) {
-				terminalTool = tc.Name
-			}
-			results[i] = outcome{
-				id:            tc.ID,
-				tool:          tc.Name,
-				content:       result,
-				readSkillName: readSkillName,
-				terminalTool:  terminalTool,
-			}
-		}(i, tc)
-	}
-	wg.Wait()
-
-	summary := agent.ToolExecutionSummary{Results: make(map[string]string, len(results))}
-	for _, r := range results {
-		wrapped := agent.WrapUntrustedToolResult(r.tool, r.content)
-		convCtx.AddToolResultMessage(r.id, wrapped)
-		summary.LastResult = r.content
-		summary.Results[r.id] = r.content
-		if r.fatal && summary.FatalResult == "" {
-			summary.FatalResult = r.content
-		}
-		if r.readSkillName != "" {
-			summary.ReadSkillNames = appendUniqueStrings(summary.ReadSkillNames, r.readSkillName)
-		}
-		if summary.TerminalTool == "" && r.terminalTool != "" {
-			summary.TerminalTool = r.terminalTool
-		}
-	}
-	return summary
+	return agent.ExecuteToolCalls(ctx, b.ToolRegistry(), convCtx, userID, ChatIDFromTeleContext(c), calls, b.terminalToolPolicyEnabled(), b.logger)
 }
 
 // ExecToolCalls is the exported entry point for channels/telegram.InvocationBuilder.
@@ -121,25 +52,3 @@ func (b *Bot) terminalToolPolicyEnabled() bool {
 
 // TerminalToolPolicyEnabled is the exported entry point for channels/telegram.InvocationBuilder.
 func (b *Bot) TerminalToolPolicyEnabled() bool { return b.terminalToolPolicyEnabled() }
-
-func appendUniqueStrings(values []string, additions ...string) []string {
-	for _, addition := range additions {
-		addition = strings.TrimSpace(addition)
-		if addition == "" {
-			continue
-		}
-		if !stringSliceContains(values, addition) {
-			values = append(values, addition)
-		}
-	}
-	return values
-}
-
-func stringSliceContains(values []string, candidate string) bool {
-	for _, value := range values {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
-}

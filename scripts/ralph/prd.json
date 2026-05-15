@@ -38,7 +38,7 @@
         "Single atomic commit prefix: refactor(agent/tools): extract ExecuteToolCalls channel-neutral core (US-C02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Medium slice. The b.executeToolCalls body needs careful extraction — it likely accesses b.fields. Use a small runner interface so Bot satisfies it without exposing all of *Bot internals."
     },
     {
