@@ -33,12 +33,16 @@ const (
 
 	// MicrocompactMinChars skips microcompacting any tool result smaller
 	// than this — there is nothing to gain compressing a one-line OK.
-	MicrocompactMinChars = 500
+	// Raised from 500 in Phase-F: middling-size tool results stay verbatim;
+	// only large outputs (>2 KB) compact.
+	MicrocompactMinChars = 2000
 
 	// DefaultMaxToolResultChars caps each tool result at this many bytes
-	// before going to the LLM. 8 KB is a balance between giving the model
-	// enough to work with and avoiding token-budget thrashing.
-	DefaultMaxToolResultChars = 8000
+	// before going to the LLM. Raised from 8000 in Phase-F: modern long-context
+	// LLMs can handle larger observations, and clipping rich tool output is
+	// the capability-throttle pattern documented in
+	// docs/aura-main-loop-limits-audit.md §3.5.
+	DefaultMaxToolResultChars = 24000
 
 	// truncationMarker is appended in place of trimmed bytes so the model
 	// knows content was elided rather than absent.

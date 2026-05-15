@@ -31,9 +31,9 @@ func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, runner
 	}
 
 	maxActive := intSetting(ctx, store, KeyAuraBotMaxActive, "AURABOT_MAX_ACTIVE", 4)
-	maxDepth := intSetting(ctx, store, KeyAuraBotMaxDepth, "AURABOT_MAX_DEPTH", 1)
+	maxDepth := intSetting(ctx, store, KeyAuraBotMaxDepth, "AURABOT_MAX_DEPTH", 3)
 	timeoutSec := intSetting(ctx, store, KeyAuraBotTimeoutSec, "AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
-	maxIterations := intSetting(ctx, store, KeyAuraBotMaxIterations, "AURABOT_MAX_ITERATIONS", 5)
+	maxIterations := intSetting(ctx, store, KeyAuraBotMaxIterations, "AURABOT_MAX_ITERATIONS", 25)
 	softBudget := floatSetting(ctx, store, KeySoftBudget, "SOFT_BUDGET", cfg.SoftBudget)
 	hardBudget := floatSetting(ctx, store, KeyHardBudget, "HARD_BUDGET", cfg.HardBudget)
 	inputPerM := floatSetting(ctx, store, KeyCostInputPerMTokens, "COST_INPUT_PER_M_TOKENS", cfg.CostInputPerMTokens)

@@ -179,7 +179,12 @@ type Stats struct {
 }
 
 // MaxIterationsCeiling is a hard upper bound on opts.MaxIterations.
-const MaxIterationsCeiling = 50
+// Raised from 50 in Phase-F: per docs/aura-main-loop-limits-audit.md §3.5,
+// Aura caps LATENCY (MaxElapsed = 5 min) and COST (HardBudget = $20), not
+// CAPABILITY. The wall clock + budget already bound runaway loops; iteration
+// count just needs enough headroom for legitimately wide multi-step
+// research/debug workflows.
+const MaxIterationsCeiling = 100
 
 // DefaultMaxElapsed is the implicit per-turn wall-clock cap when callers
 // leave opts.MaxElapsed at zero.

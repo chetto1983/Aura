@@ -15,9 +15,12 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 100
-const DefaultMaxToolResultChars = 8000
+// Capability limits raised in Phase-F (2026-05-15): the agent caps LATENCY
+// and COST, not CAPABILITY. Per docs/aura-main-loop-limits-audit.md §3.5
+// "cap LATENCY and COST, not CAPABILITY".
+const DefaultMaxToolResultChars = 24000
 const DefaultMicrocompactKeepRecent = 10
-const DefaultMicrocompactMinChars = 500
+const DefaultMicrocompactMinChars = 2000
 const DefaultTerminalToolPolicy = "on"
 const DefaultDelegationMode = "fast"
 const DefaultTraceRetentionDays = 30
@@ -44,7 +47,10 @@ type Config struct {
 	TelegramToken         string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
 	Allowlist             []string `envconfig:"TELEGRAM_ALLOWLIST"`
 	AllowlistConfigured   bool
-	MaxContextTokens      int     `envconfig:"MAX_CONTEXT_TOKENS" default:"4000"`
+	// MaxContextTokens is the LLM OUTPUT cap (passed as llm.Request.MaxTokens).
+	// The env var name is historical; see docs/aura-main-loop-limits-audit.md
+	// §3.1 for the misname analysis. Rename deferred to a future cleanup story.
+	MaxContextTokens      int     `envconfig:"MAX_CONTEXT_TOKENS" default:"16000"`
 	MaxHistoryMessages    int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
 	SoftBudget            float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
 	HardBudget            float64 `envconfig:"HARD_BUDGET" default:"20.0"`
@@ -74,9 +80,9 @@ type Config struct {
 	// shrink MAX_TOOL_RESULT_CHARS to fit smaller context windows, raise
 	// the half-life for archive when running a project that wants slower
 	// memory aging, etc.
-	MaxToolResultChars         int     `envconfig:"MAX_TOOL_RESULT_CHARS" default:"8000"`
+	MaxToolResultChars         int     `envconfig:"MAX_TOOL_RESULT_CHARS" default:"24000"`
 	MicrocompactKeepRecent     int     `envconfig:"MICROCOMPACT_KEEP_RECENT" default:"10"`
-	MicrocompactMinChars       int     `envconfig:"MICROCOMPACT_MIN_CHARS" default:"500"`
+	MicrocompactMinChars       int     `envconfig:"MICROCOMPACT_MIN_CHARS" default:"2000"`
 	RecencyHalfLifeWikiDays    float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_WIKI_DAYS" default:"180"`
 	RecencyHalfLifeArchiveDays float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_ARCHIVE_DAYS" default:"30"`
 	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"hybrid"`
@@ -90,9 +96,9 @@ type Config struct {
 	MCPServersPath             string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
 	AuraBotEnabled             bool    `envconfig:"AURABOT_ENABLED" default:"false"`
 	AuraBotMaxActive           int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
-	AuraBotMaxDepth            int     `envconfig:"AURABOT_MAX_DEPTH" default:"1"`
+	AuraBotMaxDepth            int     `envconfig:"AURABOT_MAX_DEPTH" default:"3"`
 	AuraBotTimeoutSec          int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
-	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"5"`
+	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"25"`
 	EmbeddingAPIKey            string  `envconfig:"EMBEDDING_API_KEY"`
 	EmbeddingBaseURL           string  `envconfig:"EMBEDDING_BASE_URL"`
 	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"embeddinggemma"`
@@ -200,7 +206,7 @@ func Load() (*Config, error) {
 	cfg.Allowlist = parseAllowlist(allowlistStr)
 	cfg.AllowlistConfigured = len(cfg.Allowlist) > 0
 
-	cfg.MaxContextTokens = getEnvInt("MAX_CONTEXT_TOKENS", 4000)
+	cfg.MaxContextTokens = getEnvInt("MAX_CONTEXT_TOKENS", 16000)
 	cfg.MaxHistoryMessages = getEnvInt("MAX_HISTORY_MESSAGES", 50)
 	cfg.SoftBudget = getEnvFloat("SOFT_BUDGET", 10.0)
 	cfg.HardBudget = getEnvFloat("HARD_BUDGET", 20.0)
@@ -245,9 +251,9 @@ func Load() (*Config, error) {
 	cfg.MCPServersPath = getEnv("MCP_SERVERS_PATH", "./mcp.json")
 	cfg.AuraBotEnabled = getEnvBool("AURABOT_ENABLED", false)
 	cfg.AuraBotMaxActive = getEnvInt("AURABOT_MAX_ACTIVE", 4)
-	cfg.AuraBotMaxDepth = getEnvInt("AURABOT_MAX_DEPTH", 1)
+	cfg.AuraBotMaxDepth = getEnvInt("AURABOT_MAX_DEPTH", 3)
 	cfg.AuraBotTimeoutSec = getEnvInt("AURABOT_TIMEOUT_SEC", DefaultAuraBotTimeoutSec)
-	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 5)
+	cfg.AuraBotMaxIterations = getEnvInt("AURABOT_MAX_ITERATIONS", 25)
 
 	cfg.EmbeddingAPIKey = getSecretEnv("EMBEDDING_API_KEY", "no-key")
 	cfg.EmbeddingBaseURL = getEnv("EMBEDDING_BASE_URL", "http://aura-llama-embed:8080/v1")

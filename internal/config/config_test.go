@@ -168,8 +168,8 @@ func TestLoadSuccess(t *testing.T) {
 	if !cfg.AllowlistConfigured {
 		t.Error("AllowlistConfigured = false, want true")
 	}
-	if cfg.MaxContextTokens != 4000 {
-		t.Errorf("MaxContextTokens = %d, want 4000", cfg.MaxContextTokens)
+	if cfg.MaxContextTokens != 16000 {
+		t.Errorf("MaxContextTokens = %d, want 16000", cfg.MaxContextTokens)
 	}
 	if cfg.CostInputPerMTokens != DefaultCostInputPerMTokens {
 		t.Errorf("CostInputPerMTokens = %v, want %v", cfg.CostInputPerMTokens, DefaultCostInputPerMTokens)
@@ -213,14 +213,14 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.AuraBotMaxActive != 4 {
 		t.Errorf("AuraBotMaxActive = %d, want 4", cfg.AuraBotMaxActive)
 	}
-	if cfg.AuraBotMaxDepth != 1 {
-		t.Errorf("AuraBotMaxDepth = %d, want 1", cfg.AuraBotMaxDepth)
+	if cfg.AuraBotMaxDepth != 3 {
+		t.Errorf("AuraBotMaxDepth = %d, want 3", cfg.AuraBotMaxDepth)
 	}
 	if cfg.AuraBotTimeoutSec != DefaultAuraBotTimeoutSec {
 		t.Errorf("AuraBotTimeoutSec = %d, want %d", cfg.AuraBotTimeoutSec, DefaultAuraBotTimeoutSec)
 	}
-	if cfg.AuraBotMaxIterations != 5 {
-		t.Errorf("AuraBotMaxIterations = %d, want 5", cfg.AuraBotMaxIterations)
+	if cfg.AuraBotMaxIterations != 25 {
+		t.Errorf("AuraBotMaxIterations = %d, want 25", cfg.AuraBotMaxIterations)
 	}
 	if cfg.EmbeddingBaseURL != "http://aura-llama-embed:8080/v1" {
 		t.Errorf("EmbeddingBaseURL = %q, want llama.cpp sidecar URL", cfg.EmbeddingBaseURL)
