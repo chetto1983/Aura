@@ -292,7 +292,7 @@ func (b *Bot) RuntimeSettingsApplier(deps Deps) func(context.Context) error {
 		if b.rt != nil {
 			bgd = b.rt.budget
 		}
-		return config.ApplyRuntimeSettings(ctx, deps.SettingsStore, deps.Cfg, deps.AgentRunner, deps.SwarmMgr, bgd, deps.Logger)
+		return config.ApplyRuntimeSettings(ctx, deps.SettingsStore, deps.Cfg, nil, deps.SwarmMgr, bgd, deps.Logger)
 	}
 }
 

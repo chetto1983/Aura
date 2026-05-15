@@ -46,6 +46,7 @@ import (
 // App.Stop(bot) performs the authoritative shutdown sequence.
 type App struct {
 	deps    telegram.Deps
+	runner  *agent.Runner // nil when no LLM configured; used by swarm/cron/web-chat
 	restart func(context.Context) error
 
 	// ---- Goroutine lifecycle (US-A13c) ----------------------------------------
@@ -412,8 +413,10 @@ func newApp(
 		maxIterations = 5
 	}
 
+	var auraRunner *agent.Runner
 	if deps.LLM != nil {
-		auraRunner, err := agent.NewRunner(agent.Config{
+		var err error
+		auraRunner, err = agent.NewRunner(agent.Config{
 			LLM:             deps.LLM,
 			Tools:           toolRegistry,
 			Model:           cfg.LLMModel,
@@ -429,7 +432,6 @@ func newApp(
 		if err != nil {
 			return nil, fmt.Errorf("creating aurabot runner: %w", err)
 		}
-		deps.AgentRunner = auraRunner
 	}
 
 	if cfg.AuraBotEnabled {
@@ -437,7 +439,7 @@ func newApp(
 			logger.Warn("AuraBot swarm enabled but no LLM provider configured; swarm tools disabled")
 		} else {
 			swarmManager, err := swarm.NewManager(swarm.ManagerConfig{
-				Runner:    deps.AgentRunner,
+				Runner:    auraRunner,
 				Store:     swarmStore,
 				MaxActive: cfg.AuraBotMaxActive,
 				MaxDepth:  cfg.AuraBotMaxDepth,
@@ -525,7 +527,7 @@ func newApp(
 	// ---- Background context: owned by App (US-A13c) -------------------------
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 
-	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
+	return &App{deps: deps, runner: auraRunner, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
 }
 
 // wireBot performs Phase C composition wiring after telegram.New() constructs
@@ -724,8 +726,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// Route KindAgentJob through the cron Hub (InboundAdapter → CronAgentLoop →
 	// silent Outbound); all other kinds fall back to cronHandler.Dispatch.
 	cronDispatcher := cron.Dispatcher(cronHandler.Dispatch)
-	if a.deps.AgentRunner != nil {
-		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{r: a.deps.AgentRunner}, loc)
+	if a.runner != nil {
+		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{r: a.runner}, loc)
 		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, Logger: logger})
 		if hubErr != nil {
 			logger.Warn("cron hub unavailable; falling back to legacy agent dispatch", "error", hubErr)
@@ -836,7 +838,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Restart:              a.restart,
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
-		Chat:  api.NewWebChatService(a.deps.AgentRunner, a.deps.Tools),
+		Chat:  api.NewWebChatService(a.runner, a.deps.Tools),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile

@@ -39,7 +39,7 @@
         "Single atomic commit prefix: refactor(telegram): drop Deps.agentRunner (US-G02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "The session-close memo (project_session_close_2026-05-15_evening.md) flagged this field as 'held but NOT called for the normal chat path' — confirm with grep before assuming it's dead. If it IS called, migrate the smallest number of call sites possible in this commit; do not bundle scope from US-G03/G04."
     },
     {

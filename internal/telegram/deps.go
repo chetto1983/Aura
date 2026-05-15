@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aura/aura/internal/agent"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
@@ -54,7 +53,6 @@ type botRuntime struct {
 	sources             source.Repository
 	skills              *auraskills.Loader
 	schedDB             *cron.Store
-	agentRunner         *agent.Runner
 	authDB              auth.Repository
 	compactMemoryHealth CompactMemoryHealthProvider
 	budget              budget.Runtime
@@ -112,7 +110,6 @@ type Deps struct {
 	CompactVectorHealth *memoryindex.VectorHealthTracker // for Started/Failed/Succeeded in Phase C
 
 	// ---- Agent / swarm ------------------------------------------------------
-	AgentRunner *agent.Runner
 	SwarmStore  *swarm.Store   // full concrete store (satisfies swarm.Reader + swarm.Repository)
 	SwarmMgr    *swarm.Manager // nil when AURABOT_ENABLED=false
 
@@ -145,7 +142,6 @@ func NewBot(deps Deps) *Bot {
 		sources:             deps.Sources,
 		skills:              deps.Skills,
 		schedDB:             deps.SchedDB,
-		agentRunner:         deps.AgentRunner,
 		authDB:              deps.AuthDB,
 		compactMemoryHealth: deps.CompactVectorHealth,
 		budget:              deps.Budget,
