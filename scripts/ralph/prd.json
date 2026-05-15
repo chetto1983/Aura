@@ -46,7 +46,7 @@
         "Single atomic commit prefix: feat(agent): tool_attempts SQLite table + Repo (US-J02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness: the test 'tool_kind=mcp for mcp_* tool names' is a hard gate. Read internal/db/migrations/migrations.go v8 + v9 for the migration idiom Aura uses (CREATE TABLE IF NOT EXISTS + indexes). DO NOT use a foreign key on tool_name - MCP servers can be added/removed/renamed and historic rows must survive."
     },
     {
