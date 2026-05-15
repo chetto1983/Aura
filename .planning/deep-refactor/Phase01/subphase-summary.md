@@ -10,7 +10,7 @@ integration slices.
 | --- | --- | --- | --- | --- |
 | Phase 1 - Stabilize the Map | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map` | self-audited scaffold | not run | Verify package-map plan before more renames. |
 | Phase 1A - Persist the Run/Event Foundation | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation` | storage foundation plus `chat.Hub` lifecycle/tool/usage persistence implemented and fully Go-tested locally | Codex verifier repair passed; subagent verifier not run | Optional separate verifier, otherwise proceed to Phase01B planning promotion. |
-| Phase 1B - Establish Identity and Capability Grants | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants` | Phase01B1 migration v7 plus `internal/identity` closed; Phase01B2 migration v8/auth backfill closed locally; Phase01B3 dashboard actor context container-verified; Phase01B4 tool capability checks container-verified; B5-B7 planned | goal verifier PASS 10/10 for B1; code-risk recheck PASS 9.5/10 with no B1 blockers; Phase01B2 full Go gates passed locally; Phase01B3/B4 repo and container gates passed | Start Phase01B5 Telegram identity grant parity as a separate slice. |
+| Phase 1B - Establish Identity and Capability Grants | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants` | Phase01B1 migration v7 plus `internal/identity` closed; Phase01B2 migration v8/auth backfill closed locally; Phase01B3 dashboard actor context container-verified; Phase01B4 tool capability checks container-verified; Phase01B5 Telegram identity parity locally verified and container-updated; B6-B7 planned | goal verifier PASS 10/10 for B1; code-risk recheck PASS 9.5/10 with no B1 blockers; Phase01B2 full Go gates passed locally; Phase01B3/B4 repo and container gates passed; Phase01B5 auth/Telegram/full Go gates passed | Start Phase01B6 cron/swarm delegated actor creation as a separate slice. |
 | Phase 1C - Add the Question Gate | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate` | self-audited scaffold | not run | Keep queued after Phase01A/B unless question gate blocks work. |
 
 ## First Bounded Implementation Candidate
@@ -23,7 +23,7 @@ Phase01A local implementation is complete after verifier repair:
 - verification: narrow tests, build, vet, and full `go test ./...` all green
 - non-goals: no Telegram rendering change, no web API shape change, no cron or
   swarm behavior migration
-- next bounded action: continue to Phase01B5 Telegram identity grant parity as
+- next bounded action: continue to Phase01B6 cron/swarm delegated actor creation as
   a separate slice.
 
 ## Phase01B First Bounded Implementation Candidate

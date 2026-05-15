@@ -317,10 +317,10 @@
   reference map in `D:/Aura/docs/cli-printing-press-study.md`; it is a pattern
   source, not an executable queue or competing master plan.
 - Implemented Telegram identity parity before token issuance:
-  env allowlist users call `EnsureTelegramAllowlistedIdentity` with
-  `telegram_env_allowlist` and receive owner grants without being copied into
-  `allowed_users`; persisted allowlist users derive identity/grants from their
-  stored source before `/start` or `/login` mints a token.
+  configured allowlist users call `EnsureTelegramAllowlistedIdentity` with
+  `telegram_config_allowlist` and receive owner grants without being copied
+  into `allowed_users`; persisted allowlist users derive identity/grants from
+  their stored source before `/start` or `/login` mints a token.
 - Verification passed:
   `go test ./internal/api/auth -run "TestEnsureTelegramAllowlistedIdentity|TestBackfillAllowedUserIdentitiesMigratesExistingRows|TestBootstrapUser_ClaimsEmptyAllowlist" -count=1`;
   `go test ./internal/telegram -run "TestOnLogin|TestApproveAccessCreatesIdentityBeforeSendingToken|TestIsAllowlisted|TestCollectOwnerIDs" -count=1`;

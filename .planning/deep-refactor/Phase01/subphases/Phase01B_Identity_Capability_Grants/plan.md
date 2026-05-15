@@ -2,8 +2,8 @@
 
 Status: Phase01B1 closed with local gates and subagent verification. Phase01B2
 allowlist backfill is implemented and Go-verified locally. Phase01B3 and
-Phase01B4 are container-verified. Phase01B5 is the next separate
-implementation slice.
+Phase01B4 are container-verified. Phase01B5 is locally verified and
+container-updated. Phase01B6 is the next separate implementation slice.
 
 ## Goal
 
@@ -70,7 +70,7 @@ Verification for this slice is listed in `benchmark.md`.
 | Phase01B2 | Backfill/migrate current allowlisted Telegram users into principals, channel accounts, session actors, and owner/user grants while preserving `allowed_users`. | `internal/api/auth`, `internal/identity`, migrations/tests | Done locally; existing `/start`, `/login`, pending approval, and token tests keep behavior. |
 | Phase01B3 | Resolve dashboard bearer tokens into actor context and remove/constrain `/chat` body user override under auth. | `internal/api/auth`, `internal/api/chat.go`, `internal/api/router.go` | Dashboard token cannot impersonate another user or bypass missing grant. |
 | Phase01B4 | Add tool required-capability metadata and a registry/tool execution authorization guard. | `internal/agent/tools/registry`, selected tool tests | Done; visible tool fails closed without required grant in local and containerized registry tests. |
-| Phase01B5 | Move Telegram login/bootstrap/approval onto identity grants while keeping allowlist parity. | `internal/telegram/access.go`, `internal/telegram/bot_test.go`, `internal/api/auth` | Env allowlist, persisted allowlist, first-run bootstrap, and approved users all mint tokens only after deterministic Telegram identity/grants exist; pending/deny behavior is unchanged. |
+| Phase01B5 | Move Telegram login/bootstrap/approval onto identity grants while keeping allowlist parity. | `internal/telegram/access.go`, `internal/telegram/bot_test.go`, `internal/api/auth` | Configured allowlist, persisted allowlist, first-run bootstrap, and approved users all mint tokens only after deterministic Telegram identity/grants exist; pending/deny behavior is unchanged. |
 | Phase01B6 | Add delegated actor creation for cron and swarm child runs. | `internal/cron`, `internal/agent/tools/swarm`, `internal/swarm` | Child/cron actors cannot exceed parent or owner grant envelope. |
 | Phase01B7 | Wire auth denials into Phase01A run/audit events and run broader behavior gates. | `internal/chat`, `internal/storage/runs`, `internal/api`, `internal/agent/tools` | Denials are durable metadata events without raw payloads. |
 
@@ -79,14 +79,15 @@ Verification for this slice is listed in `benchmark.md`.
 Scope:
 
 - Preserve the existing allowlist compatibility plane:
-  `TELEGRAM_ALLOWLIST`, persisted `allowed_users`, first-run bootstrap, pending
-  approval, and deny keep their current user-visible behavior.
+  the configured Telegram allowlist, persisted `allowed_users`, first-run
+  bootstrap, pending approval, and deny keep their current user-visible
+  behavior.
 - Add identity parity before token issuance on Telegram login paths. A token may
   still identify a Telegram user ID for compatibility, but the matching
   principal, channel account, session actor, and grants must exist first.
-- Do not persist env-only allowlist entries into `allowed_users` just to satisfy
-  identity lookup. Env allowlist remains configuration; identity/grants become
-  the authority layer for capabilities.
+- Do not copy configured allowlist entries into `allowed_users` just to satisfy
+  identity lookup. The configured allowlist remains DB/settings-backed
+  configuration; identity/grants become the authority layer for capabilities.
 - Keep `SourceE2EBootstrap` excluded from real Telegram owner notifications and
   identity backfill.
 

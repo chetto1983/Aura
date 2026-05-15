@@ -157,7 +157,7 @@
     },
     {
       "decision": "Phase01B5 ensures Telegram identity/grants before token issuance while preserving allowlist parity.",
-      "rationale": "Env allowlist remains configuration and is not copied into `allowed_users`; persisted bootstrap/approved users derive identity from stored source. Token minting now fails closed if the deterministic Telegram principal/channel-account/session-actor/grants cannot be prepared.",
+      "rationale": "The configured allowlist remains DB/settings-backed configuration and is not copied into `allowed_users`; persisted bootstrap/approved users derive identity from stored source. Token minting now fails closed if the deterministic Telegram principal/channel-account/session-actor/grants cannot be prepared.",
       "source": "D:/Aura/internal/telegram/bot_test.go"
     },
     {

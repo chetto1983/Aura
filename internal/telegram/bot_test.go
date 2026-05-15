@@ -58,7 +58,7 @@ func TestIsAllowlisted_UnionsConfiguredAndPersistedAllowlist(t *testing.T) {
 		t.Fatal("configured user should be allowed")
 	}
 	if !b.isAllowlisted("persisted") {
-		t.Fatal("persisted bootstrap/approved user should be allowed even when env allowlist is configured")
+		t.Fatal("persisted bootstrap/approved user should be allowed even when configured allowlist exists")
 	}
 	if b.isAllowlisted("other") {
 		t.Fatal("unknown user should not be allowed")
@@ -99,12 +99,12 @@ func TestCollectOwnerIDs_UnionsEnvAndDB(t *testing.T) {
 	}
 	b := &Bot{
 		cfg: &config.Config{
-			Allowlist: []string{"env-id", "bootstrap-id"}, // intentional overlap
+			Allowlist: []string{"configured-id", "bootstrap-id"}, // intentional overlap
 		},
 		rt: &botRuntime{authDB: store},
 	}
 	got := b.collectOwnerIDs()
-	want := map[string]struct{}{"env-id": {}, "bootstrap-id": {}, "approved-id": {}}
+	want := map[string]struct{}{"configured-id": {}, "bootstrap-id": {}, "approved-id": {}}
 	if len(got) != len(want) {
 		t.Fatalf("got %d ids, want %d (got=%v)", len(got), len(want), got)
 	}
@@ -172,7 +172,7 @@ func TestOnLoginBootstrapsFirstRunAndSendsToken(t *testing.T) {
 	assertTelegramAuthz(t, store, "123", identity.CapabilitySkillsInstall, identity.DecisionAllow)
 }
 
-func TestOnLoginEnvAllowlistEnsuresIdentityBeforeToken(t *testing.T) {
+func TestOnLoginConfiguredAllowlistEnsuresIdentityBeforeToken(t *testing.T) {
 	var calls []telegramAPICall
 	srv := newTelegramAPIServer(t, &calls)
 	defer srv.Close()
@@ -192,7 +192,7 @@ func TestOnLoginEnvAllowlistEnsuresIdentityBeforeToken(t *testing.T) {
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
-		Sender: &tele.User{ID: 123, Username: "envowner"},
+		Sender: &tele.User{ID: 123, Username: "configuredowner"},
 		Chat:   &tele.Chat{ID: 123},
 		Text:   "/login",
 	}})
@@ -209,7 +209,7 @@ func TestOnLoginEnvAllowlistEnsuresIdentityBeforeToken(t *testing.T) {
 		t.Fatalf("issued token lookup = %q, %v; want user 123", got, err)
 	}
 	if ok, err := store.IsUserAllowed(context.Background(), "123"); err != nil || ok {
-		t.Fatalf("IsUserAllowed(env user) = %v, %v; want false nil", ok, err)
+		t.Fatalf("IsUserAllowed(configured user) = %v, %v; want false nil", ok, err)
 	}
 	assertTelegramAuthz(t, store, "123", identity.CapabilitySkillsInstall, identity.DecisionAllow)
 }

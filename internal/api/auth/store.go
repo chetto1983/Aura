@@ -59,9 +59,10 @@ const defaultTokenTTL = 30 * 24 * time.Hour
 const (
 	// SourceTelegramBootstrap is the normal first-run owner claim path.
 	SourceTelegramBootstrap = "telegram_bootstrap"
-	// SourceTelegramEnvAllowlist identifies users trusted by TELEGRAM_ALLOWLIST.
-	// It creates identity/grants without copying config into allowed_users.
-	SourceTelegramEnvAllowlist = "telegram_env_allowlist"
+	// SourceTelegramConfiguredAllowlist identifies users trusted by the
+	// configured allowlist. The allowlist may be DB-backed by settings; this
+	// creates identity/grants without copying config into allowed_users.
+	SourceTelegramConfiguredAllowlist = "telegram_config_allowlist"
 	// SourceDashboardApprove is the dashboard-owner approval path.
 	SourceDashboardApprove = "dashboard_approve"
 	// SourceE2EBootstrap grants dashboard access for local smoke tests
@@ -617,8 +618,8 @@ func (s *Store) BackfillAllowedUserIdentities(ctx context.Context) (identity.Tel
 // EnsureTelegramAllowlistedIdentity creates the deterministic Telegram
 // principal/channel-account/session-actor/grants needed before token issuance.
 // When source is blank, the source is derived from the persisted allowed_users
-// row. Env allowlist callers pass SourceTelegramEnvAllowlist so config remains
-// config and does not become an allowed_users row.
+// row. Configured-allowlist callers pass SourceTelegramConfiguredAllowlist so
+// settings remain config and do not become an allowed_users row.
 func (s *Store) EnsureTelegramAllowlistedIdentity(ctx context.Context, userID, source string) (identity.TelegramAllowlistBackfillResult, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -683,7 +684,7 @@ func (s *Store) allowedUserSource(ctx context.Context, userID string) (string, e
 
 func principalKindForAllowedUserSource(source string) identity.PrincipalKind {
 	switch strings.TrimSpace(source) {
-	case SourceTelegramBootstrap, SourceTelegramEnvAllowlist, "manual":
+	case SourceTelegramBootstrap, SourceTelegramConfiguredAllowlist, "manual":
 		return identity.PrincipalKindOwner
 	default:
 		return identity.PrincipalKindHuman

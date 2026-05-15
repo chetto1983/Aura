@@ -48,7 +48,7 @@ func (b *Bot) onStart(c tele.Context) error {
 			"user_id", userID,
 			"username", username,
 		)
-		return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
+		return c.Send("Aura is private. Ask the owner to add your Telegram user ID to the Aura allowlist: " + userID)
 	}
 	fresh, err := b.rt.authDB.RequestAccess(context.Background(), userID, username)
 	if err != nil {
@@ -71,7 +71,7 @@ func (b *Bot) onStart(c tele.Context) error {
 }
 
 // notifyOwnersOfPendingRequest fans out a Telegram message to every
-// allowlisted user (env allowlist + persisted bootstrap/approved set)
+// allowlisted user (configured allowlist + persisted bootstrap/approved set)
 // telling them a stranger just hit /start. Best-effort — a delivery
 // failure to one owner shouldn't block the rest. Only triggered for
 // fresh requests so a user spamming /start can't pingstorm the owner.
@@ -99,7 +99,7 @@ func (b *Bot) notifyOwnersOfPendingRequest(userID, username string) {
 	}
 }
 
-// collectOwnerIDs returns the union of env-configured allowlist IDs and
+// collectOwnerIDs returns the union of configured allowlist IDs and
 // persisted bootstrap/approved IDs, deduplicated so a user that lives in
 // both places is not notified twice.
 func (b *Bot) collectOwnerIDs() []string {
@@ -200,7 +200,7 @@ func (b *Bot) onLogin(c tele.Context) error {
 		"user_id", userID,
 		"username", c.Sender().Username,
 	)
-	return c.Send("Aura is private. Ask the owner to add your Telegram user ID to TELEGRAM_ALLOWLIST: " + userID)
+	return c.Send("Aura is private. Ask the owner to add your Telegram user ID to the Aura allowlist: " + userID)
 }
 
 func (b *Bot) tryBootstrapUser(userID string) (bool, error) {
@@ -220,7 +220,7 @@ func (b *Bot) isAllowlisted(userID string) bool {
 
 func (b *Bot) allowlistIdentitySource(userID string) (bool, string) {
 	if b.cfg != nil && b.cfg.IsAllowlisted(userID) {
-		return true, auth.SourceTelegramEnvAllowlist
+		return true, auth.SourceTelegramConfiguredAllowlist
 	}
 	if b.rt == nil || b.rt.authDB == nil {
 		return false, ""

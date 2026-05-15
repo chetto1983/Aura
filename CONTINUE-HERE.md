@@ -75,10 +75,10 @@ Current state as of 2026-05-15:
   `docker compose up -d --no-deps aura`, live health/API/chat probes with
   `AURA_E2E_PHASE01B4_OK`, and containerized registry fail-closed tests.
 - Phase01B5 is implemented and verified: Telegram `/start` and `/login` now
-  ensure deterministic identity/grants before dashboard token issuance; env
-  allowlist users remain config-only and are not copied into `allowed_users`;
-  persisted bootstrap/approved users repair identity from stored source before
-  tokens are minted.
+  ensure deterministic identity/grants before dashboard token issuance;
+  configured allowlist users remain config-only and are not copied into
+  `allowed_users`; persisted bootstrap/approved users repair identity from
+  stored source before tokens are minted.
 - Phase01B5 verification passed:
   `go test ./internal/api/auth -run "TestEnsureTelegramAllowlistedIdentity|TestBackfillAllowedUserIdentitiesMigratesExistingRows|TestBootstrapUser_ClaimsEmptyAllowlist" -count=1`,
   `go test ./internal/telegram -run "TestOnLogin|TestApproveAccessCreatesIdentityBeforeSendingToken|TestIsAllowlisted|TestCollectOwnerIDs" -count=1`,

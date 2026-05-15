@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,34 @@ func TestRunLoopNoToolCallsReturnsAssistantText(t *testing.T) {
 	}
 	if result.Stats.LLMCalls != 1 || result.Stats.ToolCalls != 0 {
 		t.Fatalf("stats = %+v", result.Stats)
+	}
+}
+
+func TestRunLoopWarnsWhenMaxIterationsIsCapped(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{{Response: llm.Response{Content: "done"}}}}
+
+	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 500, Logger: logger})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+
+	got := logs.String()
+	for _, want := range []string{
+		"agentloop: max_iterations_capped",
+		"requested_max_iterations=500",
+		"effective_max_iterations=100",
+		"max_iterations_ceiling=100",
+		"reason=runtime_ceiling",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cap warning log = %q, missing %q", got, want)
+		}
 	}
 }
 

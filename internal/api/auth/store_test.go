@@ -400,11 +400,11 @@ INSERT INTO allowed_users (user_id, source, created_at) VALUES
 	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "6", identity.TelegramPrincipalID("approved-user"))
 }
 
-func TestEnsureTelegramAllowlistedIdentity_EnvAllowlistCreatesOwnerWithoutAllowedUserRow(t *testing.T) {
+func TestEnsureTelegramAllowlistedIdentity_ConfiguredAllowlistCreatesOwnerWithoutAllowedUserRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	result, err := s.EnsureTelegramAllowlistedIdentity(ctx, "env-owner", SourceTelegramEnvAllowlist)
+	result, err := s.EnsureTelegramAllowlistedIdentity(ctx, "configured-owner", SourceTelegramConfiguredAllowlist)
 	if err != nil {
 		t.Fatalf("EnsureTelegramAllowlistedIdentity: %v", err)
 	}
@@ -414,11 +414,11 @@ func TestEnsureTelegramAllowlistedIdentity_EnvAllowlistCreatesOwnerWithoutAllowe
 	if result.GrantsCreated != len(identity.TelegramOwnerCapabilities()) {
 		t.Fatalf("GrantsCreated = %d, want owner grants", result.GrantsCreated)
 	}
-	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM allowed_users WHERE user_id = ?`, "0", "env-owner")
-	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "owner", identity.TelegramPrincipalID("env-owner"))
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM allowed_users WHERE user_id = ?`, "0", "configured-owner")
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "owner", identity.TelegramPrincipalID("configured-owner"))
 
 	decision, err := s.Authorize(ctx, identity.AuthorizeParams{
-		ActorID:    identity.TelegramSessionActorID("env-owner"),
+		ActorID:    identity.TelegramSessionActorID("configured-owner"),
 		Capability: identity.CapabilitySkillsInstall,
 		Resource:   identity.ResourceRef{Type: "skills", ID: "install"},
 	})
@@ -429,7 +429,7 @@ func TestEnsureTelegramAllowlistedIdentity_EnvAllowlistCreatesOwnerWithoutAllowe
 		t.Fatalf("skills.install decision = %s (%s), want allow", decision.Decision, decision.Reason)
 	}
 
-	again, err := s.EnsureTelegramAllowlistedIdentity(ctx, "env-owner", SourceTelegramEnvAllowlist)
+	again, err := s.EnsureTelegramAllowlistedIdentity(ctx, "configured-owner", SourceTelegramConfiguredAllowlist)
 	if err != nil {
 		t.Fatalf("EnsureTelegramAllowlistedIdentity again: %v", err)
 	}

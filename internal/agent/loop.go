@@ -191,18 +191,26 @@ const MaxIterationsCeiling = 100
 const DefaultMaxElapsed = 5 * time.Minute
 
 func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, state State, opts Options) (loopResult, error) {
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	if opts.MaxIterations < 1 {
 		opts.MaxIterations = 1
 	}
 	if opts.MaxIterations > MaxIterationsCeiling {
+		requestedMaxIterations := opts.MaxIterations
 		opts.MaxIterations = MaxIterationsCeiling
+		logger.Warn(
+			"agentloop: max_iterations_capped",
+			"requested_max_iterations", requestedMaxIterations,
+			"effective_max_iterations", opts.MaxIterations,
+			"max_iterations_ceiling", MaxIterationsCeiling,
+			"reason", "runtime_ceiling",
+		)
 	}
 	if opts.MaxElapsed <= 0 {
 		opts.MaxElapsed = DefaultMaxElapsed
-	}
-	logger := opts.Logger
-	if logger == nil {
-		logger = slog.Default()
 	}
 	start := time.Now()
 	var lastToolResult string
