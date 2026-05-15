@@ -66,6 +66,75 @@ Planning-state rule:
 - `docs/aura-restructure-prd*.md` review files explain why reconciliation was
   needed; they are not a competing route.
 
+Project-local planning skills:
+
+- `improve-codebase-architecture`: use once for critical architecture phases,
+  especially Phase 4 runtime collapse, Phase 5 tool consolidation, and Phase 7
+  RAG. Before locking the plan, produce 3-4 design alternatives plus a short RFC
+  that names the chosen deep module shape, rejected alternatives, source files,
+  verification, and remaining risk.
+- `zoom-out`: use when implementation details obscure the Phase X map. First
+  rebuild the module/caller map, active source-of-truth docs, and current slice
+  before editing more code.
+- `to-issues`: use to convert a phase `plan.md` into atomic implementation
+  slices when manual `scripts/ralph/prd.json` authoring would create drift.
+  Keep slices vertical and independently verifiable.
+
+Architecture/refactoring rule sources:
+
+- `mattpocock/skills`: project-local skills installed under
+  `D:/Aura/.codex/skills`
+  (`https://github.com/mattpocock/skills/tree/main/skills/engineering`).
+- `ciembor/agent-rules-books`: Clean Architecture mini and Refactoring mini are
+  adopted as Aura guardrails, paraphrased below rather than copied verbatim
+  (`https://github.com/ciembor/agent-rules-books`).
+
+Clean Architecture for Aura:
+
+- Treat `prd.md` section 9 module dependency rules as Aura's Clean Architecture
+  map. Source dependencies must point toward durable policy and away from
+  volatile delivery mechanisms.
+- Domain policy, run/workflow/event semantics, identity/capability rules,
+  memory/wiki rules, cache policy, and retrieval freshness decisions must not
+  import HTTP, Telegram, cron entrypoints, command packages, provider SDKs,
+  filesystem details, Qdrant, SQLite row types, or UI concerns directly.
+- Outer layers own translation. API handlers, Telegram adapters, cron launchers,
+  command packages, storage adapters, provider clients, and filesystem tools
+  translate external formats into plain application inputs and map outputs back.
+- Inner packages own the ports they need. Concrete adapters and object wiring
+  belong in `cmd/aura`, a composition-root package, or another outer runtime
+  layer, not inside core policy.
+- Use plain request/response models across use-case boundaries. Do not pass web
+  requests, bot updates, SQL rows, ORM-like structs, provider payloads, or
+  framework contexts through core policy APIs.
+- Choose boundaries by volatility, policy value, testability, replacement cost,
+  and operational risk. Prefer the smallest enforceable boundary that protects
+  the decision; avoid both pass-through abstractions and god packages.
+- Enforce important boundaries with package layout, visibility, import checks,
+  focused tests, build constraints, or narrow APIs. A diagram or folder name is
+  not enough.
+
+Refactoring guardrails:
+
+- Refactoring is behavior-preserving design work. Separate structural cleanup
+  from feature changes, migrations, prompt changes, schema changes, and runtime
+  behavior changes whenever practical.
+- Work in small, reversible, buildable slices. Each slice should have a local
+  safety net: existing tests, characterization tests, compile/build gates, probe
+  output parity, or explicit manual verification.
+- Refactor the current blocking smell, not every smell nearby. Stop when the
+  requested change is easier, ownership is clearer, and the next cleanup would
+  be speculative.
+- Improve names, extract functions, move code, split mixed responsibilities,
+  introduce value objects, remove duplication, or clarify conditionals only when
+  the current code provides evidence for the move.
+- Do not hide behavior changes inside cleanup. Preserve error semantics, output
+  shape, case names, flags, persistence behavior, prompt behavior, and side
+  effects unless the active slice explicitly owns that change.
+- Avoid broad patches that rename, move, redesign, and change logic together.
+  For large files, prefer same-package splits or low-level helper extraction
+  before changing ownership across packages.
+
 ## Architecture Decisions To Preserve
 
 ### Cache Plane
