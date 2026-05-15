@@ -1,4 +1,4 @@
-﻿// debug_docx is the slice-15b smoke harness for the create_docx tool.
+// debug_docx is the slice-15b smoke harness for the create_docx tool.
 //
 //	go run ./cmd/debug_docx                  # build + persist + delivery stub
 //	go run ./cmd/debug_docx -out memo.docx   # additionally write the file to disk
@@ -21,30 +21,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/aura/aura/cmd/debug_common"
-	"github.com/aura/aura/internal/files"
-	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/files"
 )
-
-type stubSender struct {
-	calls []stubCall
-}
-
-type stubCall struct {
-	userID, filename, caption string
-	bodyLen                   int
-}
-
-func (s *stubSender) SendDocumentToUser(userID, filename string, body []byte, caption string) error {
-	s.calls = append(s.calls, stubCall{userID, filename, caption, len(body)})
-	return nil
-}
 
 func main() {
 	var (
@@ -55,24 +38,10 @@ func main() {
 
 	h := debugcommon.New("debug_docx")
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	store, _, cleanup := h.TempSourceStore("aura-debug-docx-*", *keep)
+	defer cleanup()
 
-	wikiDir, err := os.MkdirTemp("", "aura-debug-docx-*")
-	if err != nil {
-		h.Fail("mkdir temp wiki: %v", err)
-	}
-	if !*keep {
-		defer os.RemoveAll(wikiDir)
-	} else {
-		fmt.Printf("temp wiki: %s\n", wikiDir)
-	}
-
-	store, err := source.NewStore(wikiDir, logger)
-	if err != nil {
-		h.Fail("source.NewStore: %v", err)
-	}
-
-	sender := &stubSender{}
+	sender := &debugcommon.DocumentSender{}
 	tool := tools.NewCreateDOCXTool(store, sender)
 	if tool == nil {
 		h.Fail("NewCreateDOCXTool returned nil")
@@ -107,10 +76,10 @@ func main() {
 		}
 		h.MustEqual("filename", resp["filename"], "quarterly-memo.docx")
 		h.MustEqual("delivered", resp["delivered"], true)
-		if len(sender.calls) != 1 {
-			return fmt.Errorf("sender called %d times, want 1", len(sender.calls))
+		if len(sender.Calls) != 1 {
+			return fmt.Errorf("sender called %d times, want 1", len(sender.Calls))
 		}
-		h.MustEqual("call.filename", sender.calls[0].filename, "quarterly-memo.docx")
+		h.MustEqual("call.filename", sender.Calls[0].Filename, "quarterly-memo.docx")
 
 		// Round-trip the persisted file: verify all three required OOXML
 		// parts and that user content survived.
@@ -151,18 +120,14 @@ func main() {
 		}
 
 		if *outFile != "" {
-			abs, _ := filepath.Abs(*outFile)
-			if err := os.WriteFile(abs, body, 0o644); err != nil {
-				return fmt.Errorf("write -out: %w", err)
-			}
-			fmt.Printf("  wrote %d bytes to %s\n", len(body), abs)
+			return debugcommon.WriteOptionalOutput(*outFile, body)
 		}
 		return nil
 	})
 
 	h.Scenario("scenario 2: XML escape (script tag does not leak)", func() error {
 		ctx := tools.WithUserID(context.Background(), "999")
-		sender.calls = sender.calls[:0]
+		sender.Reset()
 		args := map[string]any{
 			"filename": "escape-test",
 			"blocks": []any{
@@ -176,7 +141,7 @@ func main() {
 		}
 		var resp map[string]any
 		_ = json.Unmarshal([]byte(out), &resp)
-		if len(sender.calls) != 0 {
+		if len(sender.Calls) != 0 {
 			return fmt.Errorf("sender invoked despite deliver=false")
 		}
 		id, _ := resp["source_id"].(string)
@@ -253,4 +218,3 @@ func main() {
 
 	fmt.Println("\nall scenarios passed.")
 }
-

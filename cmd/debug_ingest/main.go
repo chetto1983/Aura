@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -28,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/cmd/debug_common"
 	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -52,7 +52,7 @@ func main() {
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
 	flag.Parse()
 
-	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := debugcommon.LoadDotEnv(debugcommon.EnvDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("warning: could not load .env: %v\n", err)
 	}
 
@@ -61,15 +61,15 @@ func main() {
 		fmt.Println("FAIL: LLM_API_KEY is required")
 		os.Exit(1)
 	}
-	baseURL := envDefault("LLM_BASE_URL", "https://api.openai.com/v1")
-	model := envDefault("LLM_MODEL", "gpt-4")
+	baseURL := debugcommon.EnvDefault("LLM_BASE_URL", "https://api.openai.com/v1")
+	model := debugcommon.EnvDefault("LLM_MODEL", "gpt-4")
 	embeddingAPIKey := os.Getenv("EMBEDDING_API_KEY")
 	if embeddingAPIKey == "" {
 		fmt.Println("FAIL: EMBEDDING_API_KEY is required")
 		os.Exit(1)
 	}
-	embeddingBaseURL := envDefault("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
-	embeddingModel := envDefault("EMBEDDING_MODEL", "mistral-embed")
+	embeddingBaseURL := debugcommon.EnvDefault("EMBEDDING_BASE_URL", "https://api.mistral.ai/v1")
+	embeddingModel := debugcommon.EnvDefault("EMBEDDING_MODEL", "mistral-embed")
 
 	wikiDir, err := os.MkdirTemp("", "aura-debug-ingest-*")
 	if err != nil {
@@ -291,9 +291,9 @@ func main() {
 		elapsed := time.Since(started)
 		text := final + "\n" + strings.Join(toolResults, "\n")
 		ok := err == nil &&
-			containsTools(called, sc.wantTools) &&
-			containsAllText(text, sc.wantText) &&
-			containsNoText(text, append(sc.rejectText, "(tool error)"))
+			debugcommon.ContainsTools(called, sc.wantTools) &&
+			debugcommon.ContainsAllText(text, sc.wantText) &&
+			debugcommon.ContainsNoText(text, append(sc.rejectText, "(tool error)"))
 
 		status := "PASS"
 		if !ok {
@@ -311,7 +311,7 @@ func main() {
 			fmt.Printf("  error: %v\n", err)
 		}
 		if final != "" {
-			fmt.Printf("  final: %s\n", singleLine(final, 220))
+			fmt.Printf("  final: %s\n", debugcommon.SingleLine(final, 220))
 		}
 		fmt.Println()
 	}
@@ -488,80 +488,4 @@ func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, mo
 	return called, lastToolResult, toolResults, fmt.Errorf("max tool iterations reached")
 }
 
-func loadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
-}
-
-func envDefault(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func ptrBool(b bool) *bool { return &b }
-
-func containsTools(called, wants []string) bool {
-	seen := make(map[string]bool, len(called))
-	for _, name := range called {
-		seen[name] = true
-	}
-	for _, want := range wants {
-		if !seen[want] {
-			return false
-		}
-	}
-	return true
-}
-
-func containsAllText(text string, wants []string) bool {
-	text = strings.ToLower(text)
-	for _, want := range wants {
-		if !strings.Contains(text, strings.ToLower(want)) {
-			return false
-		}
-	}
-	return true
-}
-
-func containsNoText(text string, rejects []string) bool {
-	text = strings.ToLower(text)
-	for _, reject := range rejects {
-		if strings.TrimSpace(reject) == "" {
-			continue
-		}
-		if strings.Contains(text, strings.ToLower(reject)) {
-			return false
-		}
-	}
-	return true
-}
-
-func singleLine(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
-}

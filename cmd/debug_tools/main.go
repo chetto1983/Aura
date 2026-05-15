@@ -1,7 +1,6 @@
-﻿package main
+package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -12,10 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/cmd/debug_common"
+	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/workspace"
 )
 
@@ -33,7 +33,7 @@ func main() {
 	flag.BoolVar(&keepWorkspace, "keep-workspace", false, "keep the temporary workspace directory after the run")
 	flag.Parse()
 
-	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := debugcommon.LoadDotEnv(debugcommon.EnvDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("warning: could not load .env: %v\n", err)
 	}
 
@@ -43,10 +43,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	baseURL := envDefault("LLM_BASE_URL", "https://api.openai.com/v1")
-	model := envDefault("LLM_MODEL", "gpt-4")
-	webSearchProvider := strings.ToLower(envDefault("WEB_SEARCH_PROVIDER", "disabled"))
-	searxngBaseURL := envDefault("SEARXNG_BASE_URL", config.DefaultSearXNGBaseURL)
+	baseURL := debugcommon.EnvDefault("LLM_BASE_URL", "https://api.openai.com/v1")
+	model := debugcommon.EnvDefault("LLM_MODEL", "gpt-4")
+	webSearchProvider := strings.ToLower(debugcommon.EnvDefault("WEB_SEARCH_PROVIDER", "disabled"))
+	searxngBaseURL := debugcommon.EnvDefault("SEARXNG_BASE_URL", config.DefaultSearXNGBaseURL)
 
 	workspaceDir, err := os.MkdirTemp("", "aura-debug-tools-*")
 	if err != nil {
@@ -160,9 +160,9 @@ func main() {
 		called, final, toolResults, err := runScenario(ctx, client, reg, model, sc.prompt)
 		text := final + "\n" + strings.Join(toolResults, "\n")
 		ok := err == nil &&
-			containsTools(called, sc.wantTools) &&
-			containsAllText(text, sc.wantText) &&
-			containsNoText(text, append(sc.rejectText, "(tool error)"))
+			debugcommon.ContainsTools(called, sc.wantTools) &&
+			debugcommon.ContainsAllText(text, sc.wantText) &&
+			debugcommon.ContainsNoText(text, append(sc.rejectText, "(tool error)"))
 
 		status := "PASS"
 		if !ok {
@@ -179,7 +179,7 @@ func main() {
 			fmt.Printf("  error: %v\n", err)
 		}
 		if final != "" {
-			fmt.Printf("  final: %s\n", singleLine(final, 220))
+			fmt.Printf("  final: %s\n", debugcommon.SingleLine(final, 220))
 		}
 		fmt.Println()
 	}
@@ -241,81 +241,4 @@ func seedWorkspace(root string) error {
 	}
 	content := "# Aura Seeded Tool Smoke Marker\n\nThe seeded natural tool smoke marker is magenta-284.\n"
 	return os.WriteFile(filepath.Join(notesDir, "seeded-tool-smoke-marker.md"), []byte(content), 0o644)
-}
-
-func loadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
-}
-
-func envDefault(key, fallback string) string {
-	if v := os.Getenv(key); strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v)
-	}
-	return fallback
-}
-
-func containsTools(called, wants []string) bool {
-	seen := make(map[string]bool, len(called))
-	for _, name := range called {
-		seen[name] = true
-	}
-	for _, want := range wants {
-		if !seen[want] {
-			return false
-		}
-	}
-	return true
-}
-
-func containsAllText(text string, wants []string) bool {
-	text = strings.ToLower(text)
-	for _, want := range wants {
-		if !strings.Contains(text, strings.ToLower(want)) {
-			return false
-		}
-	}
-	return true
-}
-
-func containsNoText(text string, rejects []string) bool {
-	text = strings.ToLower(text)
-	for _, reject := range rejects {
-		if strings.TrimSpace(reject) == "" {
-			continue
-		}
-		if strings.Contains(text, strings.ToLower(reject)) {
-			return false
-		}
-	}
-	return true
-}
-
-func singleLine(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }
