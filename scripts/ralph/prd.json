@@ -132,7 +132,7 @@
         "Single atomic commit prefix: docs(agent): refresh README + audit post-Runner-removal (US-G07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Doc-only commit. Use `git add -f .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md` because .planning/* is gitignored — precedent: every prior Phase closure commit."
     }
   ]

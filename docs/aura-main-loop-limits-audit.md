@@ -23,13 +23,13 @@ chat.Hub.Receive
         ↳ dedupe.go (in-batch dedupe)
 ```
 
-Two legacy callers still hit the loop via `internal/agent/runner.go` (the legacy
-`Runner` type per PRD D1 — slated for deletion):
-- `internal/swarm` (child agents)
-- `internal/scheduler/agent_job.go` (background agent jobs)
+`agent.Run` is the canonical loop; `agent.RunTask` is the stateless wrapper
+for one-shot callers (web chat `/api/chat`, cron background jobs). Both paths
+share the same `loop.go` core — there is no duplicate loop body.
 
-`agentloop/` and `agentruntime/` directories are **gone** (Phase 4 already
-shipped). `agent.Runner` still exists but is the residual to delete per PRD D1.
+Phase-G (2026-05-15) completed the `agent.Runner` deletion (PRD D1). All
+former consumers (`internal/api/web_chat`, `cmd/aura` cron adapter, swarm
+adapter) now call `agent.RunTask` directly.
 
 ---
 

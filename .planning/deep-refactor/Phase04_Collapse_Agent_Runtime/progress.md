@@ -59,8 +59,23 @@ The goal: delete `runner.go` + `runner_test.go` while keeping every consumer wor
 - Per `feedback_ralph_for_heavy_work` memory: refactor multi-step / >1h → Ralph (fresh ctx per iter), NON in-session.
 - The 7 stories above are sized for one Ralph iter each; the queue is mechanical once written.
 
+## Phase-G Closure (2026-05-15)
+
+All 7 US-G stories shipped on master. `agent.Runner` is deleted. Every consumer
+now calls `agent.RunTask`. docs and README refreshed.
+
+| Story | Commit | What shipped |
+|---|---|---|
+| US-G01 | cf364f5a | Stateless `RunTask` helper + `RunTaskDeps` + 3 tests |
+| US-G02 | da096351 | Dropped `telegram.Deps.agentRunner` (dead field) |
+| US-G03 | 98e0b4f4 | Migrated `webChatService` off `*agent.Runner` |
+| US-G04 | 1a3859f0 | Migrated `agentJobRunnerAdapter` off `*agent.Runner` |
+| US-G05 | 37b674fb | Deleted `config.AgentLimitController` + dropped `runner` param from `ApplyRuntimeSettings` |
+| US-G06 | 413277f7 | Deleted `runner.go` + `runner_test.go` (−806 LOC); added `task.go` |
+| US-G07 | TBD | Refreshed `internal/agent/README.md` + limits audit §1 |
+
 ## Pointers
 
 - Last Phase-F commit: `b58dc1ef`.
-- Limits audit: `docs/aura-main-loop-limits-audit.md` §1 ("Main Loop Structure" — names `agent/runner.go` as the residual to delete per PRD D1).
-- Ralph driver: `scripts/ralph/`. Driver convention requires `scripts/ralph/prd.json` populated with US-G* stories before launch.
+- Limits audit: `docs/aura-main-loop-limits-audit.md` §1 updated — Phase-G completion recorded.
+- Ralph driver: `scripts/ralph/`. All US-G stories `passes: true`.
