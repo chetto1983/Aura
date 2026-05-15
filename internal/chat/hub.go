@@ -68,13 +68,25 @@ type LifecycleStore interface {
 // is called by inbound entry points (Telegram update handler, /api/chat
 // handler, scheduler tick) with the channel-specific raw payload.
 type Hub struct {
-	loop       AgentLoop
-	lifecycle  LifecycleStore
-	inbound    map[Channel]InboundAdapter
-	outbound   map[outboundKey][]OutboundAdapter
-	logger     *slog.Logger
-	cancels    sync.Map // RunID → context.CancelFunc; used by /stop
-	seqCounter atomic.Int64
+	loop         AgentLoop
+	lifecycle    LifecycleStore
+	inbound      map[Channel]InboundAdapter
+	outbound     map[outboundKey][]OutboundAdapter
+	logger       *slog.Logger
+	cancels      sync.Map // RunID → context.CancelFunc; used by /stop
+	seqCounter   atomic.Int64
+	threadStatus sync.Map // ThreadID → RunStatus; updated after each dispatch
+}
+
+// ThreadRunStatus returns the most recent run status for the given thread.
+// Returns ("", false) when no run has been dispatched for this thread yet.
+func (h *Hub) ThreadRunStatus(threadID string) (RunStatus, bool) {
+	if v, ok := h.threadStatus.Load(threadID); ok {
+		if s, ok := v.(RunStatus); ok {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 type outboundKey struct {
@@ -218,18 +230,27 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		if errors.Is(err, context.Canceled) {
 			run.Status = RunStatusCancelled
 			_ = emit(OutboundEvent{Type: EventCancelled, Payload: map[string]any{"reason": "context canceled"}})
+		} else if run.Status == RunStatusWaitingForUser {
+			// AgentLoop set WaitingForUser before returning error (e.g., ask_user
+			// out-of-range reply — the question is still pending, not a real failure).
+			// Suppress EventError; the caller already sent a reject message.
 		} else {
 			run.Status = RunStatusFailed
 			run.LastError = err.Error()
 			_ = emit(OutboundEvent{Type: EventError, Payload: map[string]any{"error": err.Error()}})
 		}
 		_ = emit(OutboundEvent{Type: EventDone, Payload: map[string]any{"status": string(run.Status)}})
+		h.threadStatus.Store(run.ThreadID, run.Status)
+		if run.Status == RunStatusWaitingForUser {
+			return run, nil // not a real error; question still pending
+		}
 		return run, err
 	}
 	if run.Status == RunStatusRunning {
 		run.Status = RunStatusCompleted
 	}
 	_ = emit(OutboundEvent{Type: EventDone, Payload: map[string]any{"status": string(run.Status)}})
+	h.threadStatus.Store(run.ThreadID, run.Status)
 	return run, nil
 }
 

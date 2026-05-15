@@ -63,7 +63,7 @@
         "Single atomic commit prefix: feat(channels/telegram): ask_user numbered-text rendering + reply routing (US-D03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Text-numbered (NOT inline keyboard) per design — cmd/probe_chat must be able to automate text replies for E2E. Inline keyboard arrives in v2."
     }
   ]

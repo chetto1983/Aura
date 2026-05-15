@@ -136,6 +136,9 @@ type Options struct {
 	PhantomToolGuard *PhantomToolGuard
 	// ToolResolver is the on-demand schema lookup used by the per-turn pool.
 	ToolResolver func(name string) (llm.ToolDefinition, bool)
+	// OnQuestionRequested fires when ask_user pauses the loop, carrying the
+	// full question payload so channel adapters can render it to the user.
+	OnQuestionRequested func(*tools.ErrAwaitingUserInput)
 	// Logger is an optional structured logger. When nil the loop falls back to
 	// slog.Default().
 	Logger *slog.Logger
@@ -517,6 +520,9 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		// ask_user pause: stop the loop and signal the caller to wait for user.
 		if execution.AwaitingUserInput != nil {
 			stats.StopReason = "waiting_for_user"
+			if opts.OnQuestionRequested != nil {
+				opts.OnQuestionRequested(execution.AwaitingUserInput)
+			}
 			emitStats()
 			logger.Info("agentloop: ask_user_pause",
 				"iteration", iteration,

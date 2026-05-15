@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -113,11 +114,11 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	if opts.Logger == nil {
 		opts.Logger = logger
 	}
-	tools := in.Tools
+	toolDefs := in.Tools
 	if in.ToolsProvider != nil {
-		tools = in.ToolsProvider()
+		toolDefs = in.ToolsProvider()
 	}
-	toolsExposed := toolDefinitionNames(tools)
+	toolsExposed := toolDefinitionNames(toolDefs)
 	previousOnStats := opts.OnStats
 	opts.OnStats = func(stats Stats) {
 		if previousOnStats != nil {
@@ -171,6 +172,26 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 			ToolSuccess:       success,
 			ToolElapsedMs:     elapsed.Milliseconds(),
 			ToolResultPreview: preview,
+		})
+	}
+
+	previousOnQuestionRequested := opts.OnQuestionRequested
+	opts.OnQuestionRequested = func(e *tools.ErrAwaitingUserInput) {
+		if previousOnQuestionRequested != nil {
+			previousOnQuestionRequested(e)
+		}
+		payload := map[string]any{
+			"question": e.Question,
+			"kind":     e.Kind,
+		}
+		if len(e.Options) > 0 {
+			payload["options"] = append([]string(nil), e.Options...)
+		}
+		emitEvent(in, Event{
+			Type:            EventQuestionRequested,
+			RunID:           runID,
+			ToolName:        "ask_user",
+			QuestionPayload: payload,
 		})
 	}
 

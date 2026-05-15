@@ -527,6 +527,77 @@ func TestRegisterOutbound_MultipleAdaptersFanout(t *testing.T) {
 	}
 }
 
+// --- ThreadRunStatus -------------------------------------------------------
+
+func TestThreadRunStatus_UnknownThreadReturnsFalse(t *testing.T) {
+	h := newHub(t, &recordingLoop{})
+	if _, ok := h.ThreadRunStatus("unknown"); ok {
+		t.Fatal("expected ok=false for unknown thread")
+	}
+}
+
+func TestThreadRunStatus_AfterCompletedRun(t *testing.T) {
+	h := newHub(t, &recordingLoop{})
+	h.RegisterInbound(&fakeInbound{channel: ChannelWeb, out: InboundMessage{Channel: ChannelWeb, ThreadID: "t1", Mode: DeliveryModeDeferred}})
+	h.RegisterOutbound(&fakeOutbound{channel: ChannelWeb, mode: DeliveryModeDeferred})
+
+	if _, err := h.Receive(context.Background(), ChannelWeb, nil); err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	status, ok := h.ThreadRunStatus("t1")
+	if !ok {
+		t.Fatal("expected ok=true after completed run")
+	}
+	if status != RunStatusCompleted {
+		t.Fatalf("status=%s want completed", status)
+	}
+}
+
+func TestThreadRunStatus_WaitingForUserPause(t *testing.T) {
+	loop := &recordingLoop{finalStatus: RunStatusWaitingForUser}
+	h := newHub(t, loop)
+	h.RegisterInbound(&fakeInbound{channel: ChannelWeb, out: InboundMessage{Channel: ChannelWeb, ThreadID: "t2", Mode: DeliveryModeDeferred}})
+	h.RegisterOutbound(&fakeOutbound{channel: ChannelWeb, mode: DeliveryModeDeferred})
+
+	if _, err := h.Receive(context.Background(), ChannelWeb, nil); err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	status, ok := h.ThreadRunStatus("t2")
+	if !ok {
+		t.Fatal("expected ok=true after waiting_for_user pause")
+	}
+	if status != RunStatusWaitingForUser {
+		t.Fatalf("status=%s want waiting_for_user", status)
+	}
+}
+
+func TestThreadRunStatus_OutOfRangePreservesWaitingForUser(t *testing.T) {
+	// Simulates out-of-range reply: loop sets WaitingForUser then returns error.
+	// Hub must suppress the error and preserve WaitingForUser in threadStatus.
+	loop := blockingLoopFn(func(_ context.Context, run *Run, _ InboundMessage, _ EmitFn) error {
+		run.Status = RunStatusWaitingForUser
+		return errors.New("out-of-range reply")
+	})
+	h := newHub(t, loop)
+	h.RegisterInbound(&fakeInbound{channel: ChannelWeb, out: InboundMessage{Channel: ChannelWeb, ThreadID: "t3", Mode: DeliveryModeDeferred}})
+	h.RegisterOutbound(&fakeOutbound{channel: ChannelWeb, mode: DeliveryModeDeferred})
+
+	run, err := h.Receive(context.Background(), ChannelWeb, nil)
+	if err != nil {
+		t.Fatalf("expected nil error for WaitingForUser abort, got %v", err)
+	}
+	if run.Status != RunStatusWaitingForUser {
+		t.Fatalf("run status=%s want waiting_for_user", run.Status)
+	}
+	status, ok := h.ThreadRunStatus("t3")
+	if !ok {
+		t.Fatal("expected ok=true after WaitingForUser abort")
+	}
+	if status != RunStatusWaitingForUser {
+		t.Fatalf("thread status=%s want waiting_for_user", status)
+	}
+}
+
 // --- Helpers ---------------------------------------------------------------
 
 func newPersistentHub(t *testing.T, loop AgentLoop, store LifecycleStore) *Hub {

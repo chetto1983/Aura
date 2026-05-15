@@ -23,7 +23,8 @@ import (
 // It is the channels/telegram counterpart of the former Bot.buildTelegramInvocation
 // method, extracted so internal/telegram/ remains a thin channel wrapper.
 type InvocationBuilder struct {
-	b *tgtelegram.Bot
+	b   *tgtelegram.Bot
+	hub *chat.Hub // set after hub creation; used for ask_user resume routing
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -46,6 +47,7 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger) (*chat.Hub, error) {
 	}
 	hub.RegisterInbound(New())
 	hub.RegisterOutbound(NewOutbound(logger))
+	ib.hub = hub // Build is lazy (called per-message), so wiring here is safe.
 	return hub, nil
 }
 
@@ -92,7 +94,34 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		"message", userText,
 	)
 
-	convCtx.AddUserMessage(userText)
+	// Resume detection: if this thread has a pending ask_user question, route
+	// the inbound text as the tool_result instead of a new user message.
+	addedUserInput := false
+	if ib.hub != nil {
+		if status, ok := ib.hub.ThreadRunStatus(msg.ThreadID); ok && status == chat.RunStatusWaitingForUser {
+			if callID, options, _, ok2 := agent.PendingAskUserCall(convCtx.Messages()); ok2 {
+				content, rejected, rejectMsg := parseAskUserReply(userText, options)
+				if rejected {
+					if _, sendErr := c.Bot().Send(c.Recipient(), rejectMsg); sendErr != nil {
+						b.Logger().Warn("ask_user: failed to send reject message", "user_id", userID, "error", sendErr)
+					}
+					// Signal Hub to preserve WaitingForUser status on error.
+					run.Status = chat.RunStatusWaitingForUser
+					session.Finish()
+					return agent.Invocation{}, fmt.Errorf("ask_user: out-of-range reply, question still pending")
+				}
+				convCtx.AddToolResultMessage(callID, content)
+				addedUserInput = true
+				b.Logger().Info("ask_user: resume with tool_result",
+					"user_id", userID,
+					"tool_call_id", callID,
+				)
+			}
+		}
+	}
+	if !addedUserInput {
+		convCtx.AddUserMessage(userText)
+	}
 	convCtx.SetSearchContext("")
 	preLoopIdx := convCtx.MessageCount()
 
@@ -218,6 +247,18 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		},
 		OnEvent: func(event agent.Event) {
 			switch event.Type {
+			case agent.EventQuestionRequested:
+				// ask_user fired: render the question as a Telegram message.
+				question, _ := event.QuestionPayload["question"].(string)
+				options := extractStringSlice(event.QuestionPayload["options"])
+				kind, _ := event.QuestionPayload["kind"].(string)
+				formatted := formatAskUserQuestion(question, options, kind)
+				if formatted != "" {
+					if _, sendErr := c.Bot().Send(c.Recipient(), formatted); sendErr != nil {
+						b.Logger().Warn("ask_user: failed to send question to user",
+							"user_id", userID, "error", sendErr)
+					}
+				}
 			case agent.EventStats:
 				currentStats = baseStats.From(event.Stats)
 				b.StoreOrchestrationSnapshot(userID, currentStats)
