@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,8 +17,14 @@ var (
 )
 
 type Store struct {
-	db  *sql.DB
+	db  sqlRunner
 	now func() time.Time
+}
+
+type sqlRunner interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
 type Option func(*Store)
@@ -34,6 +41,17 @@ func NewStore(db *sql.DB, opts ...Option) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("identity: db required")
 	}
+	return newStore(db, opts...), nil
+}
+
+func NewStoreWithTx(tx *sql.Tx, opts ...Option) (*Store, error) {
+	if tx == nil {
+		return nil, errors.New("identity: tx required")
+	}
+	return newStore(tx, opts...), nil
+}
+
+func newStore(db sqlRunner, opts ...Option) *Store {
 	s := &Store{
 		db:  db,
 		now: func() time.Time { return time.Now().UTC() },
@@ -43,7 +61,7 @@ func NewStore(db *sql.DB, opts ...Option) (*Store, error) {
 			opt(s)
 		}
 	}
-	return s, nil
+	return s
 }
 
 func (s *Store) CreateOrResolvePrincipal(ctx context.Context, params PrincipalParams) (Principal, bool, error) {
@@ -109,58 +127,173 @@ ON CONFLICT(provider, external_id) DO NOTHING
 }
 
 func (s *Store) CreateActor(ctx context.Context, params ActorParams) (Actor, error) {
+	actor, _, err := s.createOrResolveActor(ctx, params, false)
+	return actor, err
+}
+
+func (s *Store) CreateOrResolveActor(ctx context.Context, params ActorParams) (Actor, bool, error) {
+	return s.createOrResolveActor(ctx, params, true)
+}
+
+func (s *Store) createOrResolveActor(ctx context.Context, params ActorParams, resolve bool) (Actor, bool, error) {
 	if strings.TrimSpace(params.PrincipalID) == "" {
-		return Actor{}, fmt.Errorf("%w: principal id required", ErrInvalidInput)
+		return Actor{}, false, fmt.Errorf("%w: principal id required", ErrInvalidInput)
 	}
 	if params.ActorType == "" {
-		return Actor{}, fmt.Errorf("%w: actor type required", ErrInvalidInput)
+		return Actor{}, false, fmt.Errorf("%w: actor type required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(params.ID) == "" {
 		params.ID = mustID("actor")
 	}
 	if err := s.validateActorChannelAccount(ctx, params.PrincipalID, params.ChannelAccountID); err != nil {
-		return Actor{}, err
+		return Actor{}, false, err
 	}
 	params.MetadataJSON = defaultJSON(params.MetadataJSON)
 	now := s.now().Format(time.RFC3339)
-	if _, err := s.db.ExecContext(ctx, `
+	stmt := `
 INSERT INTO actors (
   id, principal_id, actor_type, parent_actor_id, channel_account_id, run_id,
   created_at, expires_at, metadata_json
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.ID, params.PrincipalID, string(params.ActorType), nullString(params.ParentActorID), nullString(params.ChannelAccountID), strings.TrimSpace(params.RunID), now, nullableTime(params.ExpiresAt), params.MetadataJSON); err != nil {
-		return Actor{}, fmt.Errorf("identity: create actor: %w", err)
+`
+	if resolve {
+		stmt += `ON CONFLICT(id) DO NOTHING
+`
 	}
-	return s.getActor(ctx, params.ID)
+	res, err := s.db.ExecContext(ctx, stmt, params.ID, params.PrincipalID, string(params.ActorType), nullString(params.ParentActorID), nullString(params.ChannelAccountID), strings.TrimSpace(params.RunID), now, nullableTime(params.ExpiresAt), params.MetadataJSON)
+	if err != nil {
+		return Actor{}, false, fmt.Errorf("identity: create actor: %w", err)
+	}
+	created, err := rowsAffected(res)
+	if err != nil {
+		return Actor{}, false, err
+	}
+	actor, err := s.getActor(ctx, params.ID)
+	if err != nil {
+		return Actor{}, false, err
+	}
+	if !created && resolve {
+		if err := validateResolvedActor(actor, params); err != nil {
+			return Actor{}, false, err
+		}
+	}
+	return actor, created, nil
 }
 
 func (s *Store) CreateGrant(ctx context.Context, params GrantParams) (Grant, error) {
+	grant, _, err := s.createOrResolveGrant(ctx, params, false)
+	return grant, err
+}
+
+func (s *Store) CreateOrResolveGrant(ctx context.Context, params GrantParams) (Grant, bool, error) {
+	return s.createOrResolveGrant(ctx, params, true)
+}
+
+func (s *Store) createOrResolveGrant(ctx context.Context, params GrantParams, resolve bool) (Grant, bool, error) {
 	if params.SubjectType != SubjectTypePrincipal && params.SubjectType != SubjectTypeActor {
-		return Grant{}, fmt.Errorf("%w: subject type required", ErrInvalidInput)
+		return Grant{}, false, fmt.Errorf("%w: subject type required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(params.SubjectID) == "" {
-		return Grant{}, fmt.Errorf("%w: subject id required", ErrInvalidInput)
+		return Grant{}, false, fmt.Errorf("%w: subject id required", ErrInvalidInput)
 	}
 	if params.Capability == "" {
-		return Grant{}, fmt.Errorf("%w: capability required", ErrInvalidInput)
+		return Grant{}, false, fmt.Errorf("%w: capability required", ErrInvalidInput)
 	}
 	if err := s.validateGrantSubject(ctx, params.SubjectType, params.SubjectID); err != nil {
-		return Grant{}, err
+		return Grant{}, false, err
 	}
 	if strings.TrimSpace(params.ID) == "" {
 		params.ID = mustID("grant")
 	}
 	params.ConstraintsJSON = defaultJSON(params.ConstraintsJSON)
 	now := s.now().Format(time.RFC3339)
-	if _, err := s.db.ExecContext(ctx, `
+	stmt := `
 INSERT INTO capability_grants (
   id, subject_type, subject_id, capability, resource_type, resource_id,
   constraints_json, granted_by_actor_id, created_at, expires_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, params.ID, string(params.SubjectType), params.SubjectID, string(params.Capability), params.Resource.Type, params.Resource.ID, params.ConstraintsJSON, nullString(params.GrantedByActorID), now, nullableTime(params.ExpiresAt)); err != nil {
-		return Grant{}, fmt.Errorf("identity: create grant: %w", err)
+`
+	if resolve {
+		stmt += `ON CONFLICT(id) DO NOTHING
+`
 	}
-	return s.getGrant(ctx, params.ID)
+	res, err := s.db.ExecContext(ctx, stmt, params.ID, string(params.SubjectType), params.SubjectID, string(params.Capability), params.Resource.Type, params.Resource.ID, params.ConstraintsJSON, nullString(params.GrantedByActorID), now, nullableTime(params.ExpiresAt))
+	if err != nil {
+		return Grant{}, false, fmt.Errorf("identity: create grant: %w", err)
+	}
+	created, err := rowsAffected(res)
+	if err != nil {
+		return Grant{}, false, err
+	}
+	grant, err := s.getGrant(ctx, params.ID)
+	return grant, created, err
+}
+
+func (s *Store) BackfillTelegramAllowlistedUser(ctx context.Context, params TelegramAllowlistUserParams) (TelegramAllowlistBackfillResult, error) {
+	userID := strings.TrimSpace(params.UserID)
+	if userID == "" {
+		return TelegramAllowlistBackfillResult{}, fmt.Errorf("%w: telegram user id required", ErrInvalidInput)
+	}
+	if params.PrincipalKind == "" {
+		params.PrincipalKind = PrincipalKindHuman
+	}
+	displayName := strings.TrimSpace(params.DisplayName)
+	if displayName == "" {
+		displayName = "Telegram " + userID
+	}
+	metadata := telegramAllowlistMetadata(params.Source)
+	principal, principalCreated, err := s.CreateOrResolvePrincipal(ctx, PrincipalParams{
+		ID:           TelegramPrincipalID(userID),
+		Kind:         params.PrincipalKind,
+		DisplayName:  displayName,
+		Status:       PrincipalStatusActive,
+		MetadataJSON: metadata,
+	})
+	if err != nil {
+		return TelegramAllowlistBackfillResult{}, err
+	}
+	account, accountCreated, err := s.CreateOrResolveChannelAccount(ctx, ChannelAccountParams{
+		ID:           TelegramChannelAccountID(userID),
+		PrincipalID:  principal.ID,
+		Provider:     "telegram",
+		ExternalID:   userID,
+		DisplayName:  displayName,
+		MetadataJSON: metadata,
+	})
+	if err != nil {
+		return TelegramAllowlistBackfillResult{}, err
+	}
+	_, actorCreated, err := s.CreateOrResolveActor(ctx, ActorParams{
+		ID:               TelegramSessionActorID(userID),
+		PrincipalID:      principal.ID,
+		ActorType:        ActorTypeSession,
+		ChannelAccountID: account.ID,
+		MetadataJSON:     metadata,
+	})
+	if err != nil {
+		return TelegramAllowlistBackfillResult{}, err
+	}
+	result := TelegramAllowlistBackfillResult{
+		PrincipalCreated:      principalCreated,
+		ChannelAccountCreated: accountCreated,
+		ActorCreated:          actorCreated,
+	}
+	for _, capability := range uniqueCapabilities(params.Capabilities) {
+		_, created, err := s.CreateOrResolveGrant(ctx, GrantParams{
+			ID:              TelegramPrincipalGrantID(userID, capability),
+			SubjectType:     SubjectTypePrincipal,
+			SubjectID:       principal.ID,
+			Capability:      capability,
+			ConstraintsJSON: metadata,
+		})
+		if err != nil {
+			return TelegramAllowlistBackfillResult{}, err
+		}
+		if created {
+			result.GrantsCreated++
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) RevokeGrant(ctx context.Context, grantID string) error {
@@ -473,6 +606,98 @@ func rowsAffected(res sql.Result) (bool, error) {
 		return false, fmt.Errorf("identity: rows affected: %w", err)
 	}
 	return n > 0, nil
+}
+
+func validateResolvedActor(actor Actor, params ActorParams) error {
+	if actor.PrincipalID != strings.TrimSpace(params.PrincipalID) {
+		return fmt.Errorf("%w: resolved actor belongs to different principal", ErrInvalidInput)
+	}
+	if actor.ActorType != params.ActorType {
+		return fmt.Errorf("%w: resolved actor has different type", ErrInvalidInput)
+	}
+	if strings.TrimSpace(params.ChannelAccountID) != "" && actor.ChannelAccountID != strings.TrimSpace(params.ChannelAccountID) {
+		return fmt.Errorf("%w: resolved actor has different channel account", ErrInvalidInput)
+	}
+	return nil
+}
+
+func TelegramPrincipalID(userID string) string {
+	return "principal:telegram:" + strings.TrimSpace(userID)
+}
+
+func TelegramChannelAccountID(userID string) string {
+	return "acct:telegram:" + strings.TrimSpace(userID)
+}
+
+func TelegramSessionActorID(userID string) string {
+	return "actor:telegram:session:" + strings.TrimSpace(userID)
+}
+
+func TelegramPrincipalGrantID(userID string, capability Capability) string {
+	return "grant:telegram:" + strings.TrimSpace(userID) + ":" + string(capability)
+}
+
+func TelegramUserCapabilities() []Capability {
+	return []Capability{
+		CapabilityAPIChat,
+		CapabilityDashboardRead,
+		CapabilityDashboardWrite,
+		CapabilityToolExecute,
+		CapabilityMemoryUserWrite,
+		CapabilityWikiWrite,
+	}
+}
+
+func TelegramOwnerCapabilities() []Capability {
+	return []Capability{
+		CapabilityAPIChat,
+		CapabilityDashboardRead,
+		CapabilityDashboardWrite,
+		CapabilityToolExecute,
+		CapabilityMemoryUserWrite,
+		CapabilityWikiWrite,
+		CapabilitySkillsInstall,
+		CapabilitySkillsDelete,
+		CapabilitySettingsWrite,
+		CapabilityCronCreate,
+		CapabilityCronRun,
+		CapabilitySwarmSpawn,
+	}
+}
+
+func uniqueCapabilities(capabilities []Capability) []Capability {
+	if len(capabilities) == 0 {
+		return TelegramUserCapabilities()
+	}
+	seen := make(map[Capability]struct{}, len(capabilities))
+	out := make([]Capability, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if capability == "" {
+			continue
+		}
+		if _, ok := seen[capability]; ok {
+			continue
+		}
+		seen[capability] = struct{}{}
+		out = append(out, capability)
+	}
+	return out
+}
+
+func telegramAllowlistMetadata(source string) string {
+	payload := map[string]string{
+		"compat_layer": "allowed_users",
+		"provider":     "telegram",
+	}
+	source = strings.TrimSpace(source)
+	if source != "" {
+		payload["source"] = source
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func nullString(value string) any {

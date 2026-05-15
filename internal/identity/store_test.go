@@ -62,6 +62,93 @@ func seedActor(t *testing.T, store *Store) Actor {
 	return actor
 }
 
+func TestBackfillTelegramAllowlistedUserCreatesIdentityRecordsAndGrants(t *testing.T) {
+	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
+	store, db := openIdentityStore(t, now)
+	ctx := context.Background()
+
+	result, err := store.BackfillTelegramAllowlistedUser(ctx, TelegramAllowlistUserParams{
+		UserID:        "12345",
+		Source:        "telegram_bootstrap",
+		PrincipalKind: PrincipalKindOwner,
+		Capabilities:  TelegramOwnerCapabilities(),
+	})
+	if err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+	if !result.PrincipalCreated || !result.ChannelAccountCreated || !result.ActorCreated {
+		t.Fatalf("created result = %+v, want principal/account/actor created", result)
+	}
+	if result.GrantsCreated != len(TelegramOwnerCapabilities()) {
+		t.Fatalf("GrantsCreated = %d, want %d", result.GrantsCreated, len(TelegramOwnerCapabilities()))
+	}
+
+	assertIdentityScalar(t, db, `SELECT kind FROM principals WHERE id = ?`, "owner", TelegramPrincipalID("12345"))
+	assertIdentityScalar(t, db, `SELECT principal_id FROM channel_accounts WHERE id = ?`, TelegramPrincipalID("12345"), TelegramChannelAccountID("12345"))
+	assertIdentityScalar(t, db, `SELECT actor_type FROM actors WHERE id = ?`, "session", TelegramSessionActorID("12345"))
+
+	decision, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    TelegramSessionActorID("12345"),
+		Capability: CapabilitySkillsInstall,
+	})
+	if err != nil {
+		t.Fatalf("Authorize owner grant: %v", err)
+	}
+	if decision.Decision != DecisionAllow {
+		t.Fatalf("owner skills.install decision = %s, want allow", decision.Decision)
+	}
+
+	again, err := store.BackfillTelegramAllowlistedUser(ctx, TelegramAllowlistUserParams{
+		UserID:        "12345",
+		Source:        "telegram_bootstrap",
+		PrincipalKind: PrincipalKindOwner,
+		Capabilities:  TelegramOwnerCapabilities(),
+	})
+	if err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser again: %v", err)
+	}
+	if again.PrincipalCreated || again.ChannelAccountCreated || again.ActorCreated || again.GrantsCreated != 0 {
+		t.Fatalf("second backfill result = %+v, want no new rows", again)
+	}
+}
+
+func TestBackfillTelegramAllowlistedUserSeedsUserCapabilitiesOnly(t *testing.T) {
+	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
+	store, _ := openIdentityStore(t, now)
+	ctx := context.Background()
+
+	if _, err := store.BackfillTelegramAllowlistedUser(ctx, TelegramAllowlistUserParams{
+		UserID:        "67890",
+		Source:        "dashboard_approve",
+		PrincipalKind: PrincipalKindHuman,
+		Capabilities:  TelegramUserCapabilities(),
+	}); err != nil {
+		t.Fatalf("BackfillTelegramAllowlistedUser: %v", err)
+	}
+
+	allowed, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    TelegramSessionActorID("67890"),
+		Capability: CapabilityAPIChat,
+	})
+	if err != nil {
+		t.Fatalf("Authorize api.chat: %v", err)
+	}
+	if allowed.Decision != DecisionAllow {
+		t.Fatalf("api.chat decision = %s, want allow", allowed.Decision)
+	}
+
+	denied, err := store.Authorize(ctx, AuthorizeParams{
+		ActorID:    TelegramSessionActorID("67890"),
+		Capability: CapabilitySkillsInstall,
+	})
+	if err != nil {
+		t.Fatalf("Authorize skills.install: %v", err)
+	}
+	if denied.Decision != DecisionDeny {
+		t.Fatalf("skills.install decision = %s, want deny", denied.Decision)
+	}
+}
+
 func TestAuthorize_DefaultDenyRecordsDecision(t *testing.T) {
 	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
 	store, db := openIdentityStore(t, now)
@@ -525,5 +612,16 @@ func TestCreateGrantRequiresExistingSubject(t *testing.T) {
 		Capability:  CapabilityAPIChat,
 	}); err != nil {
 		t.Fatalf("CreateGrant existing actor: %v", err)
+	}
+}
+
+func assertIdentityScalar(t *testing.T, db *sql.DB, query, want string, args ...any) {
+	t.Helper()
+	var got string
+	if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+		t.Fatalf("query scalar %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("scalar %q = %q, want %q", query, got, want)
 	}
 }

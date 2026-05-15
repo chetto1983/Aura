@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/aura/aura/internal/identity"
 )
 
 func TestRequestAccess_Fresh(t *testing.T) {
@@ -99,6 +101,9 @@ func TestApprove_GrantsAccess(t *testing.T) {
 	if !ok {
 		t.Fatal("u1 should be allowed after approve")
 	}
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "human", identity.TelegramPrincipalID("u1"))
+	assertAuthScalar(t, s.db, `SELECT principal_id FROM channel_accounts WHERE provider = 'telegram' AND external_id = ?`, identity.TelegramPrincipalID("u1"), "u1")
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "6", identity.TelegramPrincipalID("u1"))
 	// Pending list now empty — decision was set.
 	pending, err := s.ListPending(ctx)
 	if err != nil {

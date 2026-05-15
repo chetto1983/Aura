@@ -170,3 +170,26 @@ type AuthorizeParams struct {
 	RunID      string
 	EventID    string
 }
+
+type TelegramAllowlistUserParams struct {
+	UserID        string
+	Source        string
+	PrincipalKind PrincipalKind
+	DisplayName   string
+	Capabilities  []Capability
+}
+
+type TelegramAllowlistBackfillResult struct {
+	PrincipalCreated      bool
+	ChannelAccountCreated bool
+	ActorCreated          bool
+	GrantsCreated         int
+}
+
+type TelegramAllowlistBackfillSummary struct {
+	Users                  int
+	PrincipalsCreated      int
+	ChannelAccountsCreated int
+	ActorsCreated          int
+	GrantsCreated          int
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/identity"
 )
 
 var (
@@ -291,6 +292,10 @@ func TestBootstrapUser_ClaimsEmptyAllowlist(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("allowed user count = %d, want 1", count)
 	}
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "owner", identity.TelegramPrincipalID("u1"))
+	assertAuthScalar(t, s.db, `SELECT principal_id FROM channel_accounts WHERE provider = 'telegram' AND external_id = ?`, identity.TelegramPrincipalID("u1"), "u1")
+	assertAuthScalar(t, s.db, `SELECT actor_type FROM actors WHERE id = ?`, "session", identity.TelegramSessionActorID("u1"))
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "12", identity.TelegramPrincipalID("u1"))
 }
 
 func TestBootstrapUser_OnlyFirstUserWins(t *testing.T) {
@@ -365,5 +370,43 @@ func TestBootstrapE2EUser_DoesNotBypassExistingRealOwner(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("e2e user should not be added after a real owner exists")
+	}
+}
+
+func TestBackfillAllowedUserIdentitiesMigratesExistingRows(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO allowed_users (user_id, source, created_at) VALUES
+  ('manual-owner', 'manual', ?),
+  ('approved-user', ?, ?),
+  ('synthetic-e2e', ?, ?)
+`, now, SourceDashboardApprove, now, SourceE2EBootstrap, now); err != nil {
+		t.Fatalf("insert allowed users: %v", err)
+	}
+
+	summary, err := s.BackfillAllowedUserIdentities(ctx)
+	if err != nil {
+		t.Fatalf("BackfillAllowedUserIdentities: %v", err)
+	}
+	if summary.Users != 2 {
+		t.Fatalf("summary.Users = %d, want 2 real users", summary.Users)
+	}
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "owner", identity.TelegramPrincipalID("manual-owner"))
+	assertAuthScalar(t, s.db, `SELECT kind FROM principals WHERE id = ?`, "human", identity.TelegramPrincipalID("approved-user"))
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM principals WHERE id = ?`, "0", identity.TelegramPrincipalID("synthetic-e2e"))
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "12", identity.TelegramPrincipalID("manual-owner"))
+	assertAuthScalar(t, s.db, `SELECT CAST(COUNT(*) AS TEXT) FROM capability_grants WHERE subject_id = ?`, "6", identity.TelegramPrincipalID("approved-user"))
+}
+
+func assertAuthScalar(t *testing.T, db *sql.DB, query, want string, args ...any) {
+	t.Helper()
+	var got string
+	if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+		t.Fatalf("query scalar %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("scalar %q = %q, want %q", query, got, want)
 	}
 }

@@ -496,6 +496,11 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 	assertScalar(t, db, `SELECT value FROM settings WHERE key = 'timezone'`, "Europe/Rome")
 	assertScalar(t, db, `SELECT COUNT(*) FROM api_tokens WHERE token_hash = 'hash-1'`, 1)
 	assertScalar(t, db, `SELECT COUNT(*) FROM allowed_users WHERE user_id = 'user-1'`, 1)
+	assertScalar(t, db, `SELECT kind FROM principals WHERE id = 'principal:telegram:user-1'`, "owner")
+	assertScalar(t, db, `SELECT principal_id FROM channel_accounts WHERE provider = 'telegram' AND external_id = 'user-1'`, "principal:telegram:user-1")
+	assertScalar(t, db, `SELECT actor_type FROM actors WHERE id = 'actor:telegram:session:user-1'`, "session")
+	assertScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_id = 'principal:telegram:user-1'`, 12)
+	assertScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_id = 'principal:telegram:user-1' AND capability = 'skills.install'`, 1)
 	assertScalar(t, db, `SELECT COUNT(*) FROM pending_users WHERE user_id = 'user-2'`, 1)
 	assertScalar(t, db, `SELECT COUNT(*) FROM scheduled_tasks WHERE name = 'daily-review'`, 1)
 	assertScalar(t, db, `SELECT content FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "remember migration safety")
@@ -546,8 +551,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 7 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7]", first)
+	if len(first) != 8 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8]", first)
 	}
 }
 

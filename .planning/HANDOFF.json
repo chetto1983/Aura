@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-15T10:14:00+02:00",
+  "timestamp": "2026-05-15T11:10:11+02:00",
   "context": "deep-refactor",
   "phase": "Phase01B",
   "phase_name": "Establish Identity and Capability Grants",
   "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants",
-  "status": "phase01b1-go-verified",
+  "status": "phase01b2-implemented-local-verified",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -52,16 +52,22 @@
     {
       "id": "P1B1-IDENTITY-FOUNDATION",
       "name": "Add identity/capability schema and default-deny identity authorizer",
-      "status": "verified_locally",
-      "evidence": "D:/Aura/internal/identity/store.go"
+      "status": "closed_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B2-ALLOWLIST-BACKFILL",
+      "name": "Backfill current allowlisted Telegram users into identity records while preserving allowed_users parity",
+      "status": "implemented_local_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "P1B1-VERIFIER-OR-P1B2",
-      "name": "Verify Phase01B1 independently or start Phase01B2 allowlist backfill",
+      "id": "P1B3-DASHBOARD-ACTOR-CONTEXT",
+      "name": "Resolve dashboard bearer tokens into actor context and prevent authenticated user override",
       "status": "not_started",
-      "recommended_next": "Run a fresh verifier for Phase01B1 or use `$aura-implementation-loop` for Phase01B2: backfill/migrate current allowlisted Telegram users into principals, channel_accounts, and owner/user grants while preserving `allowed_users`."
+      "recommended_next": "Use `$aura-implementation-loop` for Phase01B3. Keep tool capability checks, cron delegation, swarm delegation, and denial-event wiring out of this next slice."
     }
   ],
   "decisions": [
@@ -99,14 +105,19 @@
       "decision": "Phase01B1 is locally Go-verified.",
       "rationale": "Migration/identity tests, targeted build/vet, repo-wide build/vet, and full Go tests pass.",
       "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
-    }
-  ],
-  "blockers": [
+    },
     {
-      "blocker": "Phase01B planning is self-audited but not subagent-verified.",
-      "resolution": "Run a fresh verifier before marking Phase01B complete. Implementation may start with the bounded Phase01B1 slice."
+      "decision": "Phase01B1 is closed, but the Phase01B parent remains open.",
+      "rationale": "Subagent goal verifier returned PASS 10/10 for Phase01B1 only, and code-risk recheck returned PASS 9.5/10 with no B1 blockers. Phase01B2 is now locally implemented, while dashboard/API/tool/cron/swarm/denial-event wiring remains planned B3-B7 work.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
+    },
+    {
+      "decision": "Phase01B2 backfills persisted Telegram allowlist identity without removing `allowed_users`.",
+      "rationale": "Migration v8 backfills real persisted `allowed_users` rows into deterministic Telegram principals, channel accounts, session actors, and grants; auth bootstrap/approval creates the same rows for newly allowed users. E2E bootstrap rows remain excluded from real-user identity backfill.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md"
     }
   ],
+  "blockers": [],
   "human_actions_pending": [],
   "validation": [
     "go test ./internal/db/migrations ./internal/chat",
@@ -124,6 +135,18 @@
     "go build ./...",
     "go vet ./...",
     "go test ./internal/telegram",
+    "go test ./...",
+    "go clean -testcache",
+    "go test -count=1 ./internal/db/migrations ./internal/identity",
+    "go build ./...",
+    "go vet ./...",
+    "go test -count=1 ./...",
+    "Phase01B1 goal verifier PASS 10/10",
+    "Phase01B1 code-risk recheck PASS 9.5/10 with no blockers",
+    "go test ./internal/db/migrations ./internal/api/auth ./internal/api ./internal/telegram ./internal/agent/tools/registry ./internal/agent/tools/sets ./internal/agent/tools/swarm ./internal/cron",
+    "go test ./internal/db/migrations ./internal/identity ./internal/api/auth",
+    "go build ./...",
+    "go vet ./...",
     "go test ./..."
   ],
   "uncommitted_files": [
@@ -132,23 +155,23 @@
     "CONTINUE-HERE.md",
     "internal/db/migrations/migrations.go",
     "internal/db/migrations/migrations_test.go",
-    "internal/chat/hub.go",
-    "internal/chat/hub_test.go",
-    "internal/storage/runs/store.go",
-    "internal/storage/runs/store_test.go",
+    "internal/api/auth/pending_test.go",
+    "internal/api/auth/store.go",
+    "internal/api/auth/store_test.go",
     "internal/identity/store.go",
     "internal/identity/store_test.go",
     "internal/identity/types.go",
+    ".planning/deep-refactor/Phase01/subphase-summary.md",
     ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/source.md",
     ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md",
     ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md",
-    "scripts/ralph/prd.json (pre-existing/parallel Ralph queue change; preserve unless queue work)"
+    "scripts/ralph/progress.txt (pre-existing/unrelated; preserve unless queue work)",
+    "internal/telegram/tool_exec_helpers.go (pre-existing/unrelated; preserve unless Telegram tool-exec work)"
   ],
   "last_known_git": {
-    "head": "e2ba8fad refactor(api): move web_chat from telegram/ to api/ (US-A17)",
-    "status": "dirty after Phase01A, Phase01B1, and unrelated Ralph queue changes"
+    "head": "a00c7c86 refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)",
+    "status": "dirty after Phase01B2 implementation plus unrelated Ralph/Telegram changes"
   },
-  "next_action": "Run a fresh verifier for Phase01B1 or start Phase01B2 allowlist backfill as a separate implementation slice.",
-  "context_notes": "Do not bundle dashboard actor session, tool capability checks, cron delegation, or swarm delegation into Phase01B2. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 local Go verification passed, but Phase01B is not subagent-verified."
+  "next_action": "Start Phase01B3 dashboard bearer actor context as a separate implementation slice.",
+  "context_notes": "Do not bundle tool capability checks, cron delegation, swarm delegation, or denial-event wiring into Phase01B3. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B parent remains open for B3-B7."
 }
