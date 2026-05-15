@@ -125,7 +125,7 @@
         "Single atomic commit prefix: docs(install): kill .env from compose + INSTALL flow (US-H06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "End-of-phase story. Use `git add -f .planning/deep-refactor/Phase10_Single_Source_Of_Truth_Config/progress.md` because .planning/* is gitignored — precedent: every prior Phase closure commit."
     }
   ]
