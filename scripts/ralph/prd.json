@@ -42,7 +42,7 @@
         "Single atomic commit prefix: docs(agent): system-prompt clarification/approval protocol + eval fixture (US-D02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "The prompt IS the policy. The fixture is the contract for future LLM evals (out-of-scope here). When the team later runs evals (Phase 6 territory), this fixture becomes the source of truth."
     },
     {

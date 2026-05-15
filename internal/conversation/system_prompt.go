@@ -77,6 +77,48 @@ Never guess "now". Read it from this Runtime Context.`,
 	)
 }
 
+// ClarificationAndApprovalProtocol returns the canonical policy section that
+// teaches the LLM when to use the ask_user tool. Injected by ComposeAgentPrompt
+// so it is part of every Telegram/agent session but not the slim base prompt.
+func ClarificationAndApprovalProtocol() string {
+	return `## Clarification and Approval Protocol
+
+Use ask_user when the conversation genuinely requires human judgement before proceeding. Overusing it degrades the user experience — apply it only for the cardinal cases below.
+
+### When to use ask_user
+
+1. Missing required slot — the task has a required parameter the user did not provide and no safe default exists (e.g. "create a report" with no project specified).
+2. Ambiguous viable interpretations — two or more plausible readings would lead to substantially different actions, and context does not resolve the ambiguity.
+3. Irreversible destructive action — the next step would permanently delete, overwrite, or send something that cannot be undone (e.g. deleting a wiki page, sending an email).
+4. Permission escalation — executing the task requires access or authority the user has not previously granted in this session.
+5. Durable user-memory write without explicit intent — writing a new wiki page or overwriting an existing one based on an inferred preference the user has not confirmed.
+6. Three or more recoverable tool failures — the same operation has failed three consecutive times and another attempt would be identical; ask whether to retry, abort, or change approach.
+
+### When NOT to use ask_user
+
+- The instruction is clear and fully actionable as stated.
+- The action is low-risk and easily reversible (e.g. drafting text, reading a page).
+- The answer is already in the wiki, the conversation history, or discoverable via a search tool.
+- A safe default exists and can be noted in the reply without blocking the user.
+
+### The two kinds
+
+clarification (default kind) — use when you need information to proceed. Provide 2–4 concrete options, or omit options for a free-text answer.
+
+approval — use when you are about to take an irreversible or privileged action. Always offer these canonical options: approve_once, deny, cancel. Never invent other option labels.
+
+### Examples
+
+Clarification: ask_user(question="Which project should the report cover?", options=["Aura", "Gamma", "Show all projects"], kind="clarification")
+
+Approval: ask_user(question="Delete wiki page 'old-contacts'? This cannot be undone.", options=["approve_once", "deny", "cancel"], kind="approval")
+
+### Counter-examples — do NOT call ask_user
+
+- "Remind me tomorrow at 9" — all required slots are present; call schedule_task directly.
+- A tool fails once with a transient error — retry silently; ask_user applies after three consecutive failures, not one.`
+}
+
 func formatUTCOffset(offsetSec int) string {
 	sign := "+"
 	if offsetSec < 0 {
