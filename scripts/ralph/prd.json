@@ -99,7 +99,7 @@
         "Single atomic commit prefix: test(tools): parameter accuracy eval (US-I05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "If you hit a tool whose Examples are wrong (Argument doesn't match Parameters), the FIX is to edit the Example to match the schema, NOT relax the validator. Examples are the canonical model-facing illustration — they MUST be valid by construction."
     },
     {
