@@ -7,7 +7,12 @@ import (
 	"unicode/utf8"
 )
 
-const maxWebToolChars = 8000
+// maxWebToolChars caps web-tool results before they reach the LLM. Aligned
+// with config.DefaultMaxToolResultChars (24000) per Phase-F: cap LATENCY and
+// COST, not CAPABILITY. The governance layer applies the final per-tool cap;
+// this is the upstream pre-truncation that keeps the formatting code's
+// intermediate buffers bounded.
+const maxWebToolChars = 24000
 
 type webSearchResponse struct {
 	Results []webSearchResult `json:"results"`

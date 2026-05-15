@@ -19,7 +19,12 @@ const (
 	KindProposal = "proposal"
 )
 
-const defaultSearchLimit = 8
+// defaultSearchLimit caps memory-search results when the caller's Filter.Limit
+// is zero. Aligned with config.DefaultToolSearchTopK (20) per Phase-F: cap
+// LATENCY and COST, not CAPABILITY. The wiki/archive search is the core of
+// the second-brain product; an 8-result default was a capability throttle on
+// the memory layer.
+const defaultSearchLimit = 20
 
 const compactMemoryFTSCreateSQL = `
 CREATE VIRTUAL TABLE compact_memory_fts

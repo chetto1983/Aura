@@ -20,7 +20,16 @@ import (
 )
 
 const maxDirectFetchResponseBytes = 2 << 20
-const maxDirectFetchTextChars = 12000
+
+// maxDirectFetchTextChars caps the extracted text from a direct web fetch
+// before downstream formatters touch it. Aligned with
+// config.DefaultMaxToolResultChars (24000) per Phase-F: cap LATENCY and
+// COST, not CAPABILITY.
+const maxDirectFetchTextChars = 24000
+
+// maxDirectFetchLinks bounds link extraction per fetched page — anti-DoS on
+// pathological HTML, NOT a capability throttle (a typical wiki/article page
+// has 10-30 outbound links).
 const maxDirectFetchLinks = 50
 
 // DirectWebFetchTool fetches http(s) URLs with strict local bounds while
