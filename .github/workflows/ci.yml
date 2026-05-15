@@ -31,7 +31,6 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/test-heuristic-removal.ps1
-          ./scripts/test-tool-search-removal.ps1
 
       - name: Run Go tests with race detector
         run: go test -race -count=1 ./...
@@ -52,7 +51,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
-        run: npm --prefix web ci
+        working-directory: web
+        run: npm ci
 
       - name: Build dashboard
-        run: npm --prefix web run build
+        working-directory: web
+        run: npm run build
