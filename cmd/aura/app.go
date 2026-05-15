@@ -726,8 +726,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// Route KindAgentJob through the cron Hub (InboundAdapter → CronAgentLoop →
 	// silent Outbound); all other kinds fall back to cronHandler.Dispatch.
 	cronDispatcher := cron.Dispatcher(cronHandler.Dispatch)
-	if a.runner != nil {
-		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{r: a.runner}, loc)
+	depsGetter := newAgentJobDepsGetter(cfg, &a.deps)
+	if depsGetter != nil {
+		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{getDeps: depsGetter}, loc)
 		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, Logger: logger})
 		if hubErr != nil {
 			logger.Warn("cron hub unavailable; falling back to legacy agent dispatch", "error", hubErr)
@@ -851,16 +852,16 @@ func (a *App) wireBot(b *telegram.Bot) error {
 
 // ---- import-cycle adapters --------------------------------------------------
 
-// agentJobRunnerAdapter bridges *agent.Runner to cron.JobRunner.
+// agentJobRunnerAdapter bridges agent.RunTask to cron.JobRunner.
 type agentJobRunnerAdapter struct {
-	r *agent.Runner
+	getDeps func() agent.RunTaskDeps
 }
 
 func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest) (cron.JobResult, error) {
-	if a.r == nil {
+	if a.getDeps == nil {
 		return cron.JobResult{}, fmt.Errorf("agent runner unavailable")
 	}
-	result, err := a.r.Run(ctx, agent.Task{
+	result, err := agent.RunTask(ctx, a.getDeps(), agent.Task{
 		SystemPrompt:  req.SystemPrompt,
 		Prompt:        req.Prompt,
 		ToolAllowlist: req.ToolAllowlist,
@@ -879,6 +880,40 @@ func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest)
 		TokensTotal:      result.Tokens.TotalTokens,
 		Elapsed:          result.Elapsed,
 	}, nil
+}
+
+// newAgentJobDepsGetter returns a lazy RunTaskDeps builder for agentJobRunnerAdapter.
+// Returning nil when LLM is unconfigured disables scheduled agent job execution.
+// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
+// live-tune of MaxIterations/Timeout propagates to the next RunTask without
+// mutating shared state.
+func newAgentJobDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
+	if deps.LLM == nil {
+		return nil
+	}
+	return func() agent.RunTaskDeps {
+		timeoutSec := cfg.AuraBotTimeoutSec
+		if timeoutSec <= 0 {
+			timeoutSec = config.DefaultAuraBotTimeoutSec
+		}
+		maxIterations := cfg.AuraBotMaxIterations
+		if maxIterations <= 0 {
+			maxIterations = 5
+		}
+		return agent.RunTaskDeps{
+			LLM:             deps.LLM,
+			Tools:           deps.Tools,
+			Model:           cfg.LLMModel,
+			ReasoningEffort: cfg.ReasoningEffort,
+			PhantomGuard: &agent.PhantomToolGuard{
+				ToolNamesFn: deps.Tools.Names,
+			},
+			Logger:        deps.Logger,
+			MaxIterations: maxIterations,
+			Timeout:       time.Duration(timeoutSec) * time.Second,
+			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+		}
+	}
 }
 
 // newWebChatDepsGetter returns a lazy RunTaskDeps builder for api.NewWebChatService.

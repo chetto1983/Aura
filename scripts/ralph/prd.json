@@ -74,7 +74,7 @@
         "Single atomic commit prefix: refactor(cmd): migrate agentJobRunnerAdapter off agent.Runner (US-G04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "After this story, no production code holds *agent.Runner. cmd/aura/app.go still CONSTRUCTS one via agent.NewRunner — that construction goes away in US-G06."
     },
     {

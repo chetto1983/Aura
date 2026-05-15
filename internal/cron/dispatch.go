@@ -27,7 +27,8 @@ type Notifier interface {
 }
 
 // JobRunner executes a bounded scheduled agent job.
-// *agent.Runner satisfies this via an adapter in cmd/aura (import-cycle boundary).
+// Satisfied by agentJobRunnerAdapter (cmd/aura) which calls agent.RunTask
+// (import-cycle boundary: agent package cannot depend on cron).
 type JobRunner interface {
 	RunJob(ctx context.Context, req JobRequest) (JobResult, error)
 }
