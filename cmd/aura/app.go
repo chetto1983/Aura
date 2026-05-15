@@ -836,7 +836,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Restart:              a.restart,
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
-		Chat:  telegram.NewWebChatService(a.deps.AgentRunner, a.deps.Tools),
+		Chat:  api.NewWebChatService(a.deps.AgentRunner, a.deps.Tools),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile

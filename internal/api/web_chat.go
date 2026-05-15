@@ -1,4 +1,4 @@
-package telegram
+package api
 
 import (
 	"context"
@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
-	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 )
 
-// webChatService adapts agent.Runner to api.ChatService for the /api/chat
+// webChatService adapts agent.Runner to ChatService for the /api/chat
 // endpoint. Session state is in-memory and process-local; it deliberately
 // does NOT share the SessionStore / UserGate that the Telegram path owns.
 type webChatService struct {
@@ -37,8 +36,8 @@ const (
 
 // NewWebChatService wires the web chat service against an existing runner +
 // tools registry. A nil runner returns nil so the caller can pass through
-// unconditionally (matching internal/telegram.NewChatPipeService).
-func NewWebChatService(runner *agent.Runner, registry *tools.Registry) api.ChatService {
+// unconditionally.
+func NewWebChatService(runner *agent.Runner, registry *tools.Registry) ChatService {
 	if runner == nil {
 		return nil
 	}
@@ -49,9 +48,9 @@ func NewWebChatService(runner *agent.Runner, registry *tools.Registry) api.ChatS
 	}
 }
 
-func (s *webChatService) Chat(ctx context.Context, userID, message string) (api.ChatReply, error) {
+func (s *webChatService) Chat(ctx context.Context, userID, message string) (ChatReply, error) {
 	if s == nil || s.runner == nil {
-		return api.ChatReply{}, errors.New("web chat: runner unavailable")
+		return ChatReply{}, errors.New("web chat: runner unavailable")
 	}
 	session := s.acquireSession(userID)
 	session.messages = append(session.messages, llm.Message{Role: "user", Content: message})
@@ -70,7 +69,7 @@ func (s *webChatService) Chat(ctx context.Context, userID, message string) (api.
 	result, err := s.runner.Run(ctx, task)
 	if err != nil {
 		s.rollbackLastUser(userID)
-		return api.ChatReply{}, fmt.Errorf("agent run: %w", err)
+		return ChatReply{}, fmt.Errorf("agent run: %w", err)
 	}
 
 	reply := result.Content
@@ -80,7 +79,7 @@ func (s *webChatService) Chat(ctx context.Context, userID, message string) (api.
 		session.messages = append([]llm.Message(nil), session.messages[drop:]...)
 	}
 	session.updatedAt = time.Now()
-	return api.ChatReply{
+	return ChatReply{
 		Reply:     reply,
 		ElapsedMs: result.Elapsed.Milliseconds(),
 		LLMCalls:  result.LLMCalls,
