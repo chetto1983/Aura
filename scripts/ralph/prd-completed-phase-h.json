@@ -1,0 +1,132 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-H = masterplan Phase 10 (Single Source of Truth Config). Move ALL config to SQLite; eliminate .env as a runtime input. Per .planning/deep-refactor/Phase10_Single_Source_Of_Truth_Config/plan.md + prd.md §6 Phase 10. Current state: .env.example already declares 'Most configuration now lives in the dashboard's Settings page, persisted to aura.db' but 15 keys (secrets + bootstrap meta-config) still need .env. Goal: secrets table in SQLite, boot reads from SQLite, setup wizard writes SQLite, existing installs migrate .env -> SQLite transparently on first post-upgrade boot, then operator can delete .env. Each story = ONE atomic commit on master.",
+  "userStories": [
+    {
+      "id": "US-H01",
+      "title": "Add `secrets` table + repo (migration v9)",
+      "description": "Create the SQLite storage foundation for Aura secrets, separate from the existing `settings` table so the privacy boundary is explicit. (a) New migration in internal/db/migrations/migrations.go: Version 9, Name 'add_secrets_table'. Schema: CREATE TABLE secrets ( key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL ). Same shape as the existing `settings` table on purpose — same code path semantics, just a different table so SELECT against `settings` never accidentally exposes a secret. (b) New file internal/secrets/store.go (or internal/storage/secrets/) with a Store struct + interface: Get(ctx, key) (value string, err error), Set(ctx, key, value string) error, Delete(ctx, key) error, List(ctx) ([]string, error) — List returns KEYS ONLY, never values (logs/dashboard need to enumerate without leaking). Reader-side returns ErrSecretNotFound (typed) when missing. (c) Define the canonical secret keys as exported constants: KeyTelegramToken, KeyLLMAPIKey, KeyEmbeddingAPIKey, KeyGarageS3AccessKey, KeyGarageS3SecretKey, KeyQdrantAPIKey. (d) Test: migration applies cleanly on a fresh DB and a v8 DB; Store roundtrip (Set -> Get returns value, Delete -> Get returns ErrSecretNotFound, List returns keys but never values); concurrent Set/Get is safe (uses the same sql.DB pool the rest of the storage layer uses). NO callers wired yet — this is foundation. NO logging of values anywhere.",
+      "acceptanceCriteria": [
+        "internal/db/migrations/migrations.go has Version 9 entry `add_secrets_table`",
+        "Schema creates `secrets(key PRIMARY KEY, value, updated_at)` distinct from `settings`",
+        "internal/secrets/store.go (or internal/storage/secrets/) exists with Get/Set/Delete/List",
+        "List returns keys only — values never marshalled into the result",
+        "ErrSecretNotFound is a typed sentinel callers can errors.Is against",
+        "Canonical key constants exported (KeyTelegramToken, KeyLLMAPIKey, KeyEmbeddingAPIKey, KeyGarageS3AccessKey, KeyGarageS3SecretKey, KeyQdrantAPIKey)",
+        "Tests cover migration on fresh + v8 DB, Set/Get/Delete/List roundtrips, missing-key sentinel",
+        "Test confirms NO secret value appears in any returned error message or log",
+        "No callers wired in this story — Store is foundation only",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(secrets): add SQLite-backed secrets store (US-H01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Keep the secret values OUT of any log lines, error strings, or List() results. The dashboard must be able to enumerate `Telegram token: SET` without ever seeing the token itself. This is the privacy invariant the table separation enforces."
+    },
+    {
+      "id": "US-H02",
+      "title": "One-shot .env -> SQLite migration helper",
+      "description": "Existing installs have secrets in .env. On first post-upgrade boot we must import them to SQLite before the boot loader (US-H03) starts reading from SQLite, otherwise upgrade is a breaking change. (a) New function internal/secrets/migrate.go (or similar): ImportFromDotEnv(ctx, store secrets.Store, dotenvPath, logger) (imported []string, err error). Returns the list of KEYS imported (no values). Idempotent: if a key is already present in the store (set previously), skip — do NOT overwrite. The legacy .env is the LOSER on conflict. (b) Reads .env via the existing cmd/aura/main.go::loadDotEnv parser (or its exported equivalent — extract if needed). (c) Maps env-var names to canonical secret keys: TELEGRAM_TOKEN -> KeyTelegramToken, LLM_API_KEY -> KeyLLMAPIKey, EMBEDDING_API_KEY -> KeyEmbeddingAPIKey, GARAGE_S3_ACCESS_KEY -> KeyGarageS3AccessKey, GARAGE_S3_SECRET_KEY -> KeyGarageS3SecretKey, QDRANT_API_KEY -> KeyQdrantAPIKey. Unknown env keys are SKIPPED (no error). (d) Empty values are skipped (env stub like TELEGRAM_TOKEN= must not pollute SQLite with empty strings). (e) Logger emits Info with the KEY names imported (never values) and a count summary. (f) Tests: migrate from a .env with all secrets present -> all keys imported; second run is no-op (already present); empty values skipped; missing .env file returns ([], nil) not error; values containing quotes survive roundtrip exactly (telebot tokens contain ':' and other punctuation).",
+      "acceptanceCriteria": [
+        "internal/secrets/migrate.go (or internal/storage/secrets/migrate.go) exists with ImportFromDotEnv",
+        "Returns imported keys slice (never values)",
+        "Idempotent: re-run does not overwrite existing SQLite values",
+        "Empty .env values are skipped",
+        "Missing .env path returns ([], nil) not error",
+        "Logger logs only key names + count summary; no secret values appear",
+        "Unknown env-var names are silently skipped",
+        "Tests cover happy path, idempotency, empty values, missing file, values with punctuation",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(secrets): one-shot .env to SQLite migration helper (US-H02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "MUST land BEFORE US-H03 (boot reads from SQLite). Otherwise existing installs break because their secrets are still in .env, not in SQLite, and the boot loader can't find them. Order is non-negotiable."
+    },
+    {
+      "id": "US-H03",
+      "title": "Boot loader reads secrets from SQLite (post-migration)",
+      "description": "Switch the boot path so secrets come from SQLite, not env vars. (a) cmd/aura/main.go (or wherever bootstrap lives): after `db.Open()` succeeds and migrations applied, call secrets.ImportFromDotEnv (US-H02 helper) to migrate any legacy .env values — this runs every boot but is idempotent, so it only does work on the first post-upgrade boot. (b) Then construct the secrets.Store and read each secret key with store.Get; populate cfg.TelegramToken, cfg.LLMAPIKey, cfg.EmbeddingAPIKey, cfg.GarageS3AccessKey, cfg.GarageS3SecretKey, cfg.QdrantAPIKey FROM the store, NOT from `getSecretEnv(...)`. (c) If TelegramToken is empty after SQLite read, fall through to the existing first-run setup wizard exactly as today (the wizard switch in US-H04 will redirect its write target to SQLite). (d) DO NOT remove `getSecretEnv` calls in this story — leave them as last-resort fallback for operators who explicitly set env vars (containers with secret managers). The precedence becomes: SQLite secrets table > env var > empty. (e) Tests: cmd/aura test harness that boots with a stub Store + stub env -> cfg fields populated from store; with empty store + env vars present -> cfg fields populated from env (back-compat); with both -> SQLite wins.",
+      "acceptanceCriteria": [
+        "cmd/aura/main.go (or startAura helper) calls secrets.ImportFromDotEnv once after migrations apply",
+        "cmd/aura/main.go reads secrets via secrets.Store.Get, not getSecretEnv, as the primary source",
+        "Precedence is SQLite secrets table > env var > empty",
+        "First-run wizard still triggers when TelegramToken is empty post-SQLite-read",
+        "getSecretEnv calls KEPT (not removed) as final fallback",
+        "Tests cover store-populated, env-only, store-and-env precedence",
+        "Boot completes on a fresh DB (empty secrets table, empty env) without panic — wizard reached",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(boot): read secrets from SQLite (US-H03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "The fallback-to-env path stays — operators using Docker secret managers or AWS Secrets Manager + AURA_*=... env injection are a valid deployment pattern. Phase 10 removes the .env file as a runtime artifact, not the env-var contract entirely."
+    },
+    {
+      "id": "US-H04",
+      "title": "Setup wizard writes secrets to SQLite",
+      "description": "First-run setup wizard currently calls writeDotEnvKey (internal/api/setup_dotenv.go) to write TELEGRAM_TOKEN, LLM_API_KEY, etc. into .env. Switch its target to the SQLite secrets store. (a) internal/api/setup_dotenv.go: rename / refactor the writeDotEnvKey contract. The cleanest path is to add a parallel writeSecret(store secrets.Store, key, value string) error and migrate every caller of writeDotEnvKey that targets a secret-shaped key to use it. (b) Identify the secret-shaped keys among current writeDotEnvKey callers in internal/api/setup_*.go (TELEGRAM_TOKEN definitely; LLM_API_KEY if present; EMBEDDING_API_KEY likewise; etc.). Non-secret keys (DB_PATH, HTTP_PORT, AURA_TIMEZONE — actually those are bootstrap meta and US-H05 handles them) STAY as writeDotEnvKey IF still needed; ideally those are not written by the wizard at all (defaults in code). (c) The wizard's HTTP handlers in setup_server.go that drive the form submission now call writeSecret for token + API keys, and writeDotEnvKey ONLY for the few bootstrap meta-config keys that genuinely need to survive without SQLite. (d) Tests in setup_setup_test.go: wizard submission populates secrets.Store with the right keys; .env (if the test temp-dir uses one) does NOT contain TELEGRAM_TOKEN after submission.",
+      "acceptanceCriteria": [
+        "internal/api/setup_dotenv.go grows a writeSecret helper that targets secrets.Store",
+        "TELEGRAM_TOKEN, LLM_API_KEY, EMBEDDING_API_KEY (and any other secret-shaped writes) go through writeSecret",
+        "Non-secret writes (if any) go through writeDotEnvKey as before",
+        "After wizard submission in tests, secrets.Store has the expected keys",
+        "After wizard submission in tests, .env (if written at all) does NOT contain secret values",
+        "Tests in setup_setup_test.go updated to assert new behavior",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(setup): wizard writes secrets to SQLite (US-H04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Pair with US-H03: after this story, new installs never have a .env file with secrets in it — wizard writes straight to SQLite. Existing installs already got their secrets migrated by US-H02 + US-H03 boot path."
+    },
+    {
+      "id": "US-H05",
+      "title": "Hardcode bootstrap meta-config with env override fallback",
+      "description": "Bootstrap meta-config (DB_PATH, HTTP_PORT, AURA_HEADLESS, AURA_TIMEZONE, AURA_ENV_PATH) is needed BEFORE SQLite is open. Today these come from .env. After Phase 10 they should have hardcoded sensible defaults so a brand-new install needs NO .env file at all; operators can still override via env var when needed. (a) cmd/aura/main.go bootstrap: set DB_PATH default to './aura.db' (or container-aware './data/aura.db' if AURA_HEADLESS path detected), HTTP_PORT to '127.0.0.1:8080', AURA_HEADLESS to auto-detect (false on TTY, true otherwise), AURA_TIMEZONE to OS detection (empty = use OS local). (b) Read os.Getenv for each — if set non-empty, use the env value; else use the hardcoded default. (c) AURA_ENV_PATH becomes a no-op: the loader still calls loadDotEnv if .env exists (for back-compat — US-H02 still imports it once), but never WRITES a fresh .env. (d) Tests: cmd/aura boot with no env vars + no .env -> uses all hardcoded defaults; with DB_PATH=/tmp/foo.db env override -> opens /tmp/foo.db; with HTTP_PORT=:9999 -> binds :9999.",
+      "acceptanceCriteria": [
+        "cmd/aura/main.go defines hardcoded defaults for DB_PATH, HTTP_PORT, AURA_HEADLESS, AURA_TIMEZONE",
+        "Each meta-config key respects env override when set non-empty",
+        "Tests confirm fresh-install (no .env, no env vars) boots with hardcoded defaults",
+        "Tests confirm env override wins over hardcoded default",
+        "AURA_ENV_PATH retained as a back-compat env var (read-only — never written)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(bootstrap): hardcode meta-config defaults (US-H05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "This story decouples Aura from .env. After it lands, deleting .env is safe (the migration helper from US-H02 already imported any legacy secrets to SQLite)."
+    },
+    {
+      "id": "US-H06",
+      "title": "Drop env_file from compose.yaml + update INSTALL/README/.env.example",
+      "description": "Final cleanup: drop the env_file reference from compose.yaml and rewrite the installer docs to reflect the new flow. (a) compose.yaml: remove the two `env_file:` blocks (lines ~43 and ~125 in the current file). The data/ volume mount that already provides aura.db is the new source of truth — secrets live in aura.db, bootstrap meta-config is hardcoded. (b) INSTALL.md / README.md: rewrite first-run section. Old flow: 'copy .env.example to .env, set TELEGRAM_TOKEN, run aura'. New flow: 'run aura -> opens setup wizard at 127.0.0.1:8080 -> paste token -> done; aura.db is your one backup artifact'. (c) .env.example: either delete it entirely OR keep as a 'legacy reference' file with a clear header explaining that as of Phase 10 the only thing it does is feed a one-shot migration helper for upgrades from pre-Phase-10 installs (US-H02). Recommend DELETING — Phase 10's whole point is that .env is gone. (d) docs/Aura_Completo_*.md and any other doc that mentions .env: spot-check + update. (e) Closing report appended to .planning/deep-refactor/Phase10_Single_Source_Of_Truth_Config/progress.md with the US-H01..H06 commit SHAs.",
+      "acceptanceCriteria": [
+        "compose.yaml no longer has any `env_file:` directive",
+        "INSTALL.md describes the SQLite-only first-run flow (no .env step)",
+        "README.md first-run section matches INSTALL.md",
+        ".env.example deleted (or kept only as a 1-paragraph legacy stub)",
+        ".planning/deep-refactor/Phase10_Single_Source_Of_Truth_Config/progress.md has a closure row listing US-H01..H06 SHAs",
+        "Docker compose up still boots cleanly (manual check — operator runs `docker compose up` and the bot reaches the wizard at http://localhost:8080)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(install): kill .env from compose + INSTALL flow (US-H06)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "End-of-phase story. Use `git add -f .planning/deep-refactor/Phase10_Single_Source_Of_Truth_Config/progress.md` because .planning/* is gitignored — precedent: every prior Phase closure commit."
+    }
+  ]
+}
