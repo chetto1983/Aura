@@ -40,9 +40,6 @@ services:
       dockerfile: Dockerfile
     image: aura:local
     restart: unless-stopped
-    env_file:
-      - path: ./data/secrets/aura.env
-        required: false
     environment:
       AURA_HEADLESS: "true"
       AURA_TIMEZONE: "${AURA_TIMEZONE:-Europe/Rome}"
@@ -122,9 +119,6 @@ services:
     image: dxflrs/garage:v2.3.0
     restart: unless-stopped
     command: /garage server --single-node --default-bucket
-    env_file:
-      - path: ./data/secrets/garage-default.env
-        required: false
     ports:
       - "127.0.0.1:3900:3900"
     volumes:

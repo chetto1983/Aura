@@ -39,7 +39,6 @@ path is manual-only for legacy testing.
 git clone https://github.com/chetto1983/Aura
 cd Aura
 New-Item -ItemType Directory -Force data,runtime-workspace,garage | Out-Null
-Copy-Item .env.example data/.env
 $env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
@@ -63,8 +62,7 @@ The first-run wizard asks for:
 Optional settings such as embeddings, OCR, web search, sandbox runtime, and
 Garage backups can be configured from the dashboard later.
 
-The wizard writes bootstrap values to `data/.env`; runtime settings are stored
-in `data/aura.db`.
+The wizard writes all secrets and settings to `data/aura.db`.
 
 ## Step 4 - Claim Your Bot
 
@@ -78,8 +76,7 @@ Unknown users go into the dashboard approval queue.
 
 | Path | Purpose |
 | --- | --- |
-| `data/.env` | Bootstrap config such as Telegram token and paths |
-| `data/aura.db` | SQLite state: settings, auth, tasks, conversations, budget, embedding cache |
+| `data/aura.db` | SQLite state: secrets, settings, auth, tasks, conversations, budget, embedding cache |
 | Docker volume `aura-wiki` | Compiled memory pages and source evidence |
 | Docker volume `aura-skills` | Installed skills |
 | `garage/` | Garage S3 metadata/object data |
@@ -136,7 +133,7 @@ PY
 
 **Setup wizard does not appear**
 
-Clear `TELEGRAM_TOKEN=` in `data/.env` and restart Aura.
+Open the dashboard Settings page, clear the Telegram Token field, save, and restart Aura.
 
 **Port 18080 is already allocated**
 
