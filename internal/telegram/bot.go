@@ -25,6 +25,15 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// DebugDocumentSend records metadata for documents delivered by the bot during
+// a debug smoke. It never stores file bodies.
+type DebugDocumentSend struct {
+	Seq       uint64
+	Filename  string
+	Caption   string
+	SizeBytes int
+}
+
 // debugDocState aggregates the debug-document tracking fields.
 // Treated as a single "debugDocs* aggregate" field on Bot (US-A13c).
 type debugDocState struct {

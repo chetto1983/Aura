@@ -137,7 +137,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		PromptHash:          promptPlan.Hash,
 		Toolset:             "registered",
 		ToolsetSelectReason: "core tools plus Qdrant top-K=5 retrieval",
-		ToolsExposed:        tgtelegram.ToolDefinitionNames(toolDefs),
+		ToolsExposed:        agent.ToolDefinitionNames(toolDefs),
 	}
 
 	var currentStats agent.TurnStats
@@ -203,7 +203,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				}
 			},
 			EstimateCost: func(usage llm.TokenUsage) float64 {
-				return tgtelegram.EstimateUsageCost(usage, cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
+				return agent.EstimateUsageCost(usage, cfg.CostInputPerMTokens, cfg.CostOutputPerMTokens)
 			},
 			TerminalHandler: func(ctx context.Context, terminalTool, lastToolResult string, stats *agent.Stats) (string, bool, bool) {
 				telegramStats := baseStats.From(*stats)

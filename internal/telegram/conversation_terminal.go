@@ -35,7 +35,7 @@ func (b *Bot) finalizeTerminalToolWithNoToolLLM(ctx context.Context, c tele.Cont
 			}
 		},
 		EstimateCost: func(usage llm.TokenUsage) float64 {
-			return EstimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+			return agent.EstimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
 		},
 	})
 	if finalized.Err != nil {

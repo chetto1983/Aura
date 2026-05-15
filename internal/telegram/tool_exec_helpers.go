@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/aura/aura/internal/agent"
@@ -120,3 +121,25 @@ func (b *Bot) terminalToolPolicyEnabled() bool {
 
 // TerminalToolPolicyEnabled is the exported entry point for channels/telegram.InvocationBuilder.
 func (b *Bot) TerminalToolPolicyEnabled() bool { return b.terminalToolPolicyEnabled() }
+
+func appendUniqueStrings(values []string, additions ...string) []string {
+	for _, addition := range additions {
+		addition = strings.TrimSpace(addition)
+		if addition == "" {
+			continue
+		}
+		if !stringSliceContains(values, addition) {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func stringSliceContains(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
