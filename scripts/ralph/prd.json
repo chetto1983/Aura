@@ -1,133 +1,79 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura post-restructure cleanup arc — finish making internal/telegram/ a TRUE wrapper by relocating the 6 files that are NOT Telegram-specific (per .planning/telegram-final-size.md remaining-debt section). Goal: repo mirrors the target architecture diagram (Chat Apps -> Agent Loop -> Tools -> Context/Memory+Skills). Each story is a SINGLE atomic commit on master, no branches. Suite must stay green at every commit (go build ./..., go vet ./..., go test ./...). NO NEW FEATURES — only relocations and deletions. WhatsApp and other new functionality come AFTER this arc closes.",
+  "description": "Aura Phase-C — telegram-wrapper purity tail. Phase-B closed the obvious moves (6 file moves + closure report). This arc removes the 3 remaining files in internal/telegram/ that still mix channel-neutral logic into the Telegram package, plus fixes the closure report drift. Each story is ONE atomic commit on master. Suite stays green (go build ./..., go vet ./..., go test ./...). NO NEW FEATURES — only refactor + report fix. After this arc closes, internal/telegram/ should be ~100% Telegram-protocol code and the closure report numbers should match reality. Then Phase01A2 (run_outbox table) can start.",
   "userStories": [
     {
-      "id": "US-B01",
-      "title": "Delete conversation_format.go — thin wrappers, callers import agent directly",
-      "description": "internal/telegram/conversation_format.go (28 LOC) contains 3 thin re-export wrappers: TerminalToolFinalizationMessages, LooksLikeToolCallMarkup, IsFileGenerationTool — each just calls the agent.* function with the same signature. Delete the file and update callers to import the agent package directly. Per .planning/telegram-final-size.md these are the cleanest deletion in the debt list.",
+      "id": "US-C01",
+      "title": "Extract agent.NewSnapshotFromTurnStats constructor + collapse conversation_snapshot.go to thin wrappers",
+      "description": "internal/telegram/conversation_snapshot.go (62 LOC) has an inline TurnStats→Snapshot transformation (lines 23-46, ~24 fields copied) buried inside (b *Bot).storeOrchestrationSnapshot. The transformation is channel-neutral and belongs in internal/agent/. Extract a constructor `agent.NewSnapshotFromTurnStats(stats agent.TurnStats, now time.Time) agent.Snapshot` in internal/agent/session.go (or new internal/agent/snapshot_builder.go). Update Bot.storeOrchestrationSnapshot to call the constructor — file shrinks from 62 to ~30 LOC. Tests in conversation_snapshot_test.go stay green (they test storeOrchestrationSnapshot end-to-end, not the inline copy). Add a focused test for NewSnapshotFromTurnStats in internal/agent/ asserting all fields propagate.",
       "acceptanceCriteria": [
-        "internal/telegram/conversation_format.go does NOT exist",
-        "All callers updated to call agent.TerminalToolFinalizationMessages / agent.LooksLikeToolCallMarkup / agent.IsFileGenerationTool directly (with internal/agent import added where missing)",
-        "grep -r 'telegram\\.TerminalToolFinalizationMessages\\|telegram\\.LooksLikeToolCallMarkup\\|telegram\\.IsFileGenerationTool' returns zero hits across the repo",
+        "internal/agent/ has a NewSnapshotFromTurnStats(stats TurnStats, now time.Time) Snapshot function with godoc",
+        "internal/agent has a focused test asserting NewSnapshotFromTurnStats copies all expected fields including slice-clone behavior for PromptModules/ToolsExposed/ToolsCalled/ReadSkills",
+        "internal/telegram/conversation_snapshot.go reduced to ~30 LOC: Bot methods delegate to the new constructor + sessionStore + cfg.TraceRetentionDays prune",
+        "internal/telegram/conversation_snapshot_test.go remains green without modification (the public Bot API is unchanged)",
+        "internal/channels/telegram/invocation_builder.go:223 caller unchanged (still calls b.StoreOrchestrationSnapshot)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: refactor(telegram): delete conversation_format.go thin wrappers (US-B01)"
+        "Single atomic commit prefix: refactor(agent): extract NewSnapshotFromTurnStats constructor (US-C01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Easiest slice. No new file created — pure deletion + 2-line import fix at callsites."
+      "passes": false,
+      "notes": "Smallest slice. Pure extraction — the orchestrationSnapshot type alias in telegram/conversation_snapshot.go (`= agent.Snapshot`) confirms the type itself already lives in agent. Only the BUILDER lives in telegram. Move the builder."
     },
     {
-      "id": "US-B02",
-      "title": "Move adapters.go from telegram/ to cmd/aura/adapters.go",
-      "description": "internal/telegram/adapters.go (56 LOC) contains skillsDeleterAdapter and skillProposalApplierAdapter — both are wiring adapters used by cmd/aura/app.go to break a circular import between api and skills. They have NO Telegram concern. Move the file to cmd/aura/adapters.go with package main, drop the telegram package prefix at the callsite in cmd/aura/app.go.",
+      "id": "US-C02",
+      "title": "Split tool_exec_helpers.go — channel-neutral core to internal/agent/tools/registry, thin Telegram wrapper stays",
+      "description": "internal/telegram/tool_exec_helpers.go (145 LOC) contains 3 functions: ChatIDFromTeleContext(c tele.Context) int64 — Telegram-only helper, ~10 LOC; (b *Bot).executeToolCalls(...) — iterates tool calls, channel-neutral logic ~100 LOC; (b *Bot).ExecToolCalls(...) — exported wrapper, ~10 LOC. The middle function is the real meat and is channel-neutral. Move executeToolCalls logic into internal/agent/tools/registry/ as a package function `ExecuteToolCalls(ctx, runner, convCtx, userID, calls, toolsExposed, readSkills) agent.ToolExecutionSummary` taking a runner interface (Bot will implement it). The Telegram-side file shrinks to: ChatIDFromTeleContext helper + the two Bot methods that pass-through to the new package function with chatID extracted from tele.Context.",
       "acceptanceCriteria": [
-        "internal/telegram/adapters.go does NOT exist",
-        "cmd/aura/adapters.go exists with package main, both adapter types defined",
-        "cmd/aura/app.go no longer references telegram.skillsDeleterAdapter or telegram.skillProposalApplierAdapter (or any of their type names)",
+        "internal/agent/tools/registry has a new file (e.g. exec_helpers.go) exposing ExecuteToolCalls as a package function",
+        "ExecuteToolCalls signature is channel-neutral: takes a runner interface, chatID/userID, calls, etc. — no tele.Context",
+        "Tests for ExecuteToolCalls exist in internal/agent/tools/registry covering at minimum: success path, tool error propagation, summary aggregation",
+        "internal/telegram/tool_exec_helpers.go reduced to <60 LOC: ChatIDFromTeleContext + thin Bot wrappers calling the package function",
+        "MaxToolLoopIterations and TerminalToolPolicyEnabled (constants from the old file) — preserve in their original or appropriate location; document any move in the commit",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: refactor(telegram): move adapters.go to cmd/aura/ (US-B02)"
+        "Single atomic commit prefix: refactor(agent/tools): extract ExecuteToolCalls channel-neutral core (US-C02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Wiring adapter, no behavior change."
+      "passes": false,
+      "notes": "Medium slice. The b.executeToolCalls body needs careful extraction — it likely accesses b.fields. Use a small runner interface so Bot satisfies it without exposing all of *Bot internals."
     },
     {
-      "id": "US-B03",
-      "title": "Move tools_provider.go to internal/agent/toolsprovider.go",
-      "description": "internal/telegram/tools_provider.go (56 LOC) defines MakeToolsProvider — the always-on tool seed for the agent loop. No telebot import. Per .planning/telegram-final-size.md the target is internal/agent/toolsprovider.go. Also move tools_provider_test.go to keep coverage. Update the single import in cmd/aura/app.go (and any other caller).",
+      "id": "US-C03",
+      "title": "Split conversation_terminal.go — agent-loop core to internal/agent, thin Telegram edit wrapper stays",
+      "description": "internal/telegram/conversation_terminal.go (68 LOC) has 2 functions: FinalizeTerminalTool(ctx, c tele.Context, convCtx, userID, placeholder *tele.Message, rawToolResult, stats) — exported entry point; finalizeTerminalToolWithNoToolLLM(...same args) — does an LLM round without tools then edits the placeholder. The 'no-tool LLM round' logic is agent-loop concern; only the final 'edit the placeholder via tele.Context' is Telegram-specific. Extract the agent-loop part into internal/agent/ as FinalizeAfterTerminalTool(ctx, runner, convCtx, userID, rawToolResult, stats) (string, bool) returning the final text + success bool. The Telegram-side keeps the wrapper that calls the agent function then edits the *tele.Message placeholder.",
       "acceptanceCriteria": [
-        "internal/telegram/tools_provider.go does NOT exist",
-        "internal/telegram/tools_provider_test.go does NOT exist",
-        "internal/agent/toolsprovider.go exists with package agent and MakeToolsProvider exported",
-        "internal/agent/toolsprovider_test.go exists with the migrated tests still passing",
-        "All callers updated to call agent.MakeToolsProvider",
+        "internal/agent/ has FinalizeAfterTerminalTool (or similarly named) returning (string, bool) — text to deliver + ok",
+        "Test for FinalizeAfterTerminalTool in internal/agent covering: success path with non-empty text, empty text fallback, LLM error path",
+        "internal/telegram/conversation_terminal.go reduced to <40 LOC: thin wrapper that calls the agent function + edits *tele.Message via tele.Context on success",
+        "Behavior preserved: Telegram placeholder is still edited with the final text and the same fallback policy as before",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: refactor(agent): move tools_provider from telegram/ to agent/ (US-B03)"
+        "Single atomic commit prefix: refactor(agent): extract FinalizeAfterTerminalTool from telegram (US-C03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Belongs with the agent loop per the diagram (Context -> Tools edge)."
+      "passes": false,
+      "notes": "Smallest of the three splits. The runner/LLM dependency must be injected — likely via the same runner interface as US-C02 (if you do C02 first the interface is already there)."
     },
     {
-      "id": "US-B04",
-      "title": "Move conversation_archive.go to internal/conversation/",
-      "description": "internal/telegram/conversation_archive.go (90 LOC) defines ArchiveConversationTurns — persists per-turn conversation archive to SQLite. NO tele import. Per .planning/telegram-final-size.md the target is internal/conversation/. Also move the test file. Update the import at the callsite (currently in internal/channels/telegram/ per the audit).",
+      "id": "US-C04",
+      "title": "Fix telegram-cleanup-arc-closure.md drift — update LOC numbers to match reality",
+      "description": ".planning/telegram-cleanup-arc-closure.md was written during US-B07 with stale LOC numbers: claims 2530 prod LOC total, but actual at commit 9960a05e and at HEAD is 2778 LOC. Every per-file row is off by 5-48 LOC. After US-C01..C03 land, the numbers will drift further. Update the report with the post-C03 actual values: re-run wc -l on every file in internal/telegram/, regenerate the LOC table, update the TOTAL, update the 'Baseline (post US-A19)' line if needed, and append a 'Post Phase-C' section documenting the further reductions from C01/C02/C03 with their commit SHAs. Keep the architecture-conformance narrative (section 3) but update any LOC-specific claims.",
       "acceptanceCriteria": [
-        "internal/telegram/conversation_archive.go does NOT exist",
-        "internal/telegram/archive_test.go (or equivalent) does NOT exist in telegram/",
-        "internal/conversation/archive.go (or similar idiomatic name) exists with package conversation and ArchiveConversationTurns exported",
-        "Equivalent test file moved alongside",
-        "All callers updated to call conversation.ArchiveConversationTurns",
-        "go build ./... green",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: refactor(conversation): move archive from telegram/ to conversation/ (US-B04)"
+        ".planning/telegram-cleanup-arc-closure.md LOC table matches `wc -l internal/telegram/*.go` (excluding _test.go) at HEAD",
+        "TOTAL row reflects actual prod LOC at HEAD",
+        "Report has a new 'Post Phase-C' section listing US-C01/C02/C03 with commit SHAs and LOC delta per file",
+        "Criterion check restated: prod LOC ≤ 2800 — show actual value at HEAD and pass/fail",
+        "No new claims beyond what the code supports — verify each Telegram-concern justification against the file content",
+        "Single atomic commit prefix: docs(telegram): refresh closure report LOC numbers post Phase-C (US-C04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Memory-side concern per the diagram, not channel-side."
-    },
-    {
-      "id": "US-B05",
-      "title": "Move helpers.go to cmd/aura/helpers.go",
-      "description": "internal/telegram/helpers.go (136 LOC) defines ShouldBootstrapPromptOverlayDefaults, SkillSearchRoots, CreateLLMClient, CreateEmbeddingFunc, SetupSandboxRuntime — all composition-root helpers used exclusively by cmd/aura/app.go. NO telebot import. Move to cmd/aura/helpers.go with package main. Drop the telegram. prefix at all callsites in cmd/aura/app.go and cmd/aura/main.go.",
-      "acceptanceCriteria": [
-        "internal/telegram/helpers.go does NOT exist",
-        "cmd/aura/helpers.go exists with package main and the 5 functions exported as local identifiers (lowercase first letter is fine since package-local)",
-        "cmd/aura/app.go and cmd/aura/main.go no longer import or reference telegram for these 5 helpers",
-        "go build ./... green (specifically: ./cmd/aura compiles)",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: refactor(cmd/aura): move composition-root helpers out of telegram/ (US-B05)"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "These are composition wiring, belong in main package not in telegram channel."
-    },
-    {
-      "id": "US-B06",
-      "title": "Move runtime_settings.go to internal/config/runtime_settings.go",
-      "description": "internal/telegram/runtime_settings.go (197 LOC) defines applyRuntimeSettings — reads SQLite settings + env and patches agent/swarm/budget config at runtime. NO telebot import. Per .planning/telegram-final-size.md the target is internal/config/. Move file + test. Update callsites (cmd/aura/app.go is the main caller).",
-      "acceptanceCriteria": [
-        "internal/telegram/runtime_settings.go does NOT exist",
-        "internal/telegram/runtime_settings_test.go does NOT exist",
-        "internal/config/runtime_settings.go exists with package config and ApplyRuntimeSettings exported (case-promoted because crossing package)",
-        "internal/config/runtime_settings_test.go exists with migrated tests passing",
-        "All callers updated to call config.ApplyRuntimeSettings",
-        "go build ./... green",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: refactor(config): move runtime_settings from telegram/ to config/ (US-B06)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Biggest LOC slice in the arc. Settings concern belongs with config package."
-    },
-    {
-      "id": "US-B07",
-      "title": "Final diagram-conformance report + chat.InboundAdapter audit + closure",
-      "description": "After US-B01..B06 land, internal/telegram/ should be ~2753 prod LOC and contain ONLY files with a clear Telegram concern. Produce .planning/telegram-cleanup-arc-closure.md with: (1) updated wc -l table for internal/telegram/*.go showing the LOC drop from 3322 (post US-A19) to ~2753; (2) verification block: every channel in internal/channels/{telegram,web,silent,cron} declares a type that satisfies chat.InboundAdapter — show the type + assertion line for each; (3) one-paragraph summary mapping each remaining telegram/ file to the diagram's 'Chat Apps -> Telegram' node. Update .planning/telegram-final-size.md remaining-debt sections to mark all 6 files as RESOLVED with the commit SHA that moved them.",
-      "acceptanceCriteria": [
-        ".planning/telegram-cleanup-arc-closure.md exists with the 3 sections described",
-        "internal/telegram/ prod LOC <= 2800 (was 3322 post US-A19)",
-        ".planning/telegram-final-size.md updated: 'Files clearly NOT Telegram-specific' table either removed or each row annotated 'resolved in <SHA>'",
-        "All 4 channels (telegram, web, silent, cron) verified as implementing chat.InboundAdapter (compile-time assertion present in each, e.g. var _ chat.InboundAdapter = (*Adapter)(nil))",
-        "go build ./... green",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: chore(telegram): cleanup arc closure + diagram-conformance report (US-B07)"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Closes the arc. Verifies the repo mirrors the target architecture diagram (Chat Apps row). No behavior change. After this, the next milestone (WhatsApp + production + simplification with 2026 patterns) can start."
+      "passes": false,
+      "notes": "Pure documentation slice. Must run AFTER C01/C02/C03 land so numbers are final. No code changes — just update the markdown file."
     }
   ]
 }
