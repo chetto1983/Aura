@@ -79,6 +79,27 @@ func WithEntityEditError(n int) Option {
 // entity-edit failures so fallback paths become observable.
 func Capture(t *testing.T, name string, tokens []llm.Token, placeholder *tele.Message, opts ...Option) CaptureResult {
 	t.Helper()
+	result, data := captureBytes(t, tokens, placeholder, opts...)
+	if err := os.MkdirAll("testdata", 0o755); err != nil {
+		t.Fatalf("fixture.Capture: mkdir testdata: %v", err)
+	}
+	snapshotPath := filepath.Join("testdata", name+".json")
+	if err := os.WriteFile(snapshotPath, data, 0o644); err != nil {
+		t.Fatalf("fixture.Capture: write snapshot %s: %v", snapshotPath, err)
+	}
+	return result
+}
+
+// CaptureBytes runs the same Capture pipeline but returns the marshaled JSON
+// bytes WITHOUT writing them. Used by the byte-parity guard test (US-E03) so
+// it can compare a fresh capture against the bytes committed to git.
+func CaptureBytes(t *testing.T, tokens []llm.Token, placeholder *tele.Message, opts ...Option) (CaptureResult, []byte) {
+	t.Helper()
+	return captureBytes(t, tokens, placeholder, opts...)
+}
+
+func captureBytes(t *testing.T, tokens []llm.Token, placeholder *tele.Message, opts ...Option) (CaptureResult, []byte) {
+	t.Helper()
 
 	var calls []APICall
 	srv := newFakeServer(t, &calls, opts...)
@@ -113,18 +134,11 @@ func Capture(t *testing.T, name string, tokens []llm.Token, placeholder *tele.Me
 		Calls:     calls,
 	}
 
-	if err := os.MkdirAll("testdata", 0o755); err != nil {
-		t.Fatalf("fixture.Capture: mkdir testdata: %v", err)
-	}
-	snapshotPath := filepath.Join("testdata", name+".json")
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		t.Fatalf("fixture.Capture: marshal: %v", err)
 	}
-	if err := os.WriteFile(snapshotPath, data, 0o644); err != nil {
-		t.Fatalf("fixture.Capture: write snapshot %s: %v", snapshotPath, err)
-	}
-	return result
+	return result, data
 }
 
 // newFakeServer returns an httptest.Server that records every Telegram Bot API
