@@ -1,0 +1,443 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/aura/aura/internal/agent"
+	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/api"
+	webadapter "github.com/aura/aura/internal/channels/web"
+	"github.com/aura/aura/internal/chat"
+	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/telegram"
+)
+
+const (
+	webChatMaxMessages = 30
+	webChatIdleTTL     = 30 * time.Minute
+)
+
+func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
+	depsGetter := newWebChatDepsGetter(cfg, deps)
+	if depsGetter == nil {
+		return nil, nil
+	}
+	sessions := newWebChatSessions()
+	builder := &webInvocationBuilder{
+		depsGetter: depsGetter,
+		sessions:   sessions,
+		cfg:        cfg,
+		logger:     logger,
+	}
+	loop, err := chat.NewAgentLoopAdapter(builder.Build)
+	if err != nil {
+		return nil, err
+	}
+	hub, err := chat.New(chat.Config{Loop: loop, LifecycleStore: deps.RunStore, Logger: logger})
+	if err != nil {
+		return nil, err
+	}
+	router := webadapter.NewRouter()
+	hub.RegisterOutbound(router)
+	svc := webadapter.NewChatService(hub, router)
+	if svc == nil {
+		return nil, errors.New("web chat hub service unavailable")
+	}
+	return &apiChatServiceAdapter{svc: svc, sessions: sessions}, nil
+}
+
+type apiChatServiceAdapter struct {
+	svc      *webadapter.ChatService
+	sessions *webChatSessions
+}
+
+func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, message string) (api.ChatReply, error) {
+	reply, err := a.svc.Chat(ctx, userID, message)
+	if err != nil {
+		a.sessions.rollback(reply.RunID)
+	} else {
+		a.sessions.commit(reply.RunID, userID)
+	}
+	return api.ChatReply{
+		Reply:     reply.Reply,
+		ElapsedMs: reply.ElapsedMs,
+		LLMCalls:  reply.LLMCalls,
+		ToolCalls: reply.ToolCalls,
+		Tokens:    reply.Tokens,
+	}, err
+}
+
+type webInvocationBuilder struct {
+	depsGetter func() agent.RunTaskDeps
+	sessions   *webChatSessions
+	cfg        *config.Config
+	logger     *slog.Logger
+}
+
+func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
+	if b == nil || b.depsGetter == nil {
+		return agent.Invocation{}, errors.New("web chat: deps unavailable")
+	}
+	deps := b.depsGetter()
+	if deps.LLM == nil {
+		return agent.Invocation{}, errors.New("web chat: LLM unavailable")
+	}
+	userID := strings.TrimSpace(msg.PrincipalID)
+	system := conversation.RenderSystemPrompt(time.Now(), time.Local)
+	state := b.sessions.begin(run.ID, userID, system, msg.Text)
+	allowlist := cleanWebToolList(nil)
+	var toolDefs []llm.ToolDefinition
+	if deps.Tools != nil {
+		allowlist = cleanWebToolList(deps.Tools.Names())
+		toolDefs = deps.Tools.DefinitionsFor(allowlist)
+	}
+	toolTimeout := deps.ToolTimeout
+	if toolTimeout <= 0 {
+		toolTimeout = deps.Timeout
+	}
+	logger := deps.Logger
+	if logger == nil {
+		logger = b.logger
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	inv := agent.Invocation{
+		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort),
+		Executor: &webToolExecutor{
+			tools:                 deps.Tools,
+			state:                 state,
+			logger:                logger,
+			allowlist:             allowlist,
+			userID:                userID,
+			maxChars:              b.maxToolResultChars(),
+			toolTimeout:           toolTimeout,
+			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
+		},
+		State: state,
+		Tools: toolDefs,
+		Options: agent.Options{
+			MaxIterations:           deps.MaxIterations,
+			MaxToolResultChars:      b.maxToolResultChars(),
+			MicrocompactKeepRecent:  b.microcompactKeepRecent(),
+			MicrocompactMinChars:    b.microcompactMinChars(),
+			PhantomToolGuard:        deps.PhantomGuard,
+			DisableInBatchDedup:     true,
+			AllowNoToolFinalization: true,
+			Logger:                  logger,
+		},
+		Logger: logger,
+	}
+	if deps.Tools != nil {
+		inv.ToolsProvider = func() []llm.ToolDefinition {
+			return deps.Tools.DefinitionsFor(allowlist)
+		}
+		inv.Options.ToolResolver = deps.Tools.DefinitionFor
+	}
+	return inv, nil
+}
+
+func (b *webInvocationBuilder) maxToolResultChars() int {
+	if b == nil || b.cfg == nil {
+		return 0
+	}
+	return b.cfg.MaxToolResultChars
+}
+
+func (b *webInvocationBuilder) microcompactKeepRecent() int {
+	if b == nil || b.cfg == nil {
+		return 0
+	}
+	return b.cfg.MicrocompactKeepRecent
+}
+
+func (b *webInvocationBuilder) microcompactMinChars() int {
+	if b == nil || b.cfg == nil {
+		return 0
+	}
+	return b.cfg.MicrocompactMinChars
+}
+
+func (b *webInvocationBuilder) terminalToolPolicyEnabled() bool {
+	if b == nil || b.cfg == nil {
+		return true
+	}
+	return config.NormalizeTerminalToolPolicy(b.cfg.TerminalToolPolicy) != "off"
+}
+
+type webChatSessions struct {
+	mu       sync.Mutex
+	sessions map[string][]llm.Message
+	active   map[string]*webAgentState
+	updated  map[string]time.Time
+}
+
+func newWebChatSessions() *webChatSessions {
+	return &webChatSessions{
+		sessions: make(map[string][]llm.Message),
+		active:   make(map[string]*webAgentState),
+		updated:  make(map[string]time.Time),
+	}
+}
+
+func (s *webChatSessions) begin(runID, userID, system, message string) *webAgentState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gcLocked()
+	messages := cloneMessages(s.sessions[userID])
+	messages = setSystemMessage(messages, system)
+	messages = append(messages, llm.Message{Role: "user", Content: message})
+	state := &webAgentState{messages: messages}
+	if runID != "" {
+		s.active[runID] = state
+	}
+	return state
+}
+
+func (s *webChatSessions) commit(runID, userID string) {
+	if runID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.active[runID]
+	if !ok {
+		return
+	}
+	delete(s.active, runID)
+	s.sessions[userID] = trimWebMessages(state.Messages())
+	s.updated[userID] = time.Now()
+}
+
+func (s *webChatSessions) rollback(runID string) {
+	if runID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.active, runID)
+	s.mu.Unlock()
+}
+
+func (s *webChatSessions) gcLocked() {
+	cutoff := time.Now().Add(-webChatIdleTTL)
+	for userID, updated := range s.updated {
+		if updated.Before(cutoff) {
+			delete(s.sessions, userID)
+			delete(s.updated, userID)
+		}
+	}
+}
+
+type webAgentState struct {
+	messages []llm.Message
+}
+
+var _ agent.State = (*webAgentState)(nil)
+var _ agent.PhantomCorrector = (*webAgentState)(nil)
+
+func (s *webAgentState) Messages() []llm.Message {
+	return cloneMessages(s.messages)
+}
+
+func (s *webAgentState) TrackTokens(llm.TokenUsage) {}
+
+func (s *webAgentState) AddUserMessage(content string) {
+	s.messages = append(s.messages, llm.Message{Role: "user", Content: content})
+}
+
+func (s *webAgentState) AddAssistantMessage(content string) {
+	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content})
+}
+
+func (s *webAgentState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
+	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: calls})
+}
+
+func (s *webAgentState) AddToolResultMessage(id, content string) {
+	s.messages = append(s.messages, llm.Message{Role: "tool", Content: content, ToolCallID: id})
+}
+
+type webToolExecutor struct {
+	tools                 *toolregistry.Registry
+	state                 agent.State
+	logger                *slog.Logger
+	allowlist             []string
+	userID                string
+	maxChars              int
+	toolTimeout           time.Duration
+	terminalPolicyEnabled bool
+}
+
+func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
+	type outcome struct {
+		id        string
+		tool      string
+		content   string
+		awaiting  *toolregistry.ErrAwaitingUserInput
+		readSkill string
+		terminal  string
+	}
+	outcomes := make([]outcome, len(calls))
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		wg.Add(1)
+		callCopy := call
+		callCopy.Arguments = cloneToolArgs(call.Arguments)
+		go func(i int, call llm.ToolCall) {
+			defer wg.Done()
+			raw, err := e.executeOne(ctx, call)
+			var awaitErr *toolregistry.ErrAwaitingUserInput
+			if errors.As(err, &awaitErr) {
+				outcomes[i] = outcome{id: call.ID, awaiting: awaitErr}
+				return
+			}
+			content := raw
+			if err != nil {
+				content = toolregistry.FormatToolError(err)
+				if e.logger != nil {
+					e.logger.Warn("web chat tool call failed", "tool", call.Name, "error", err)
+				}
+			}
+			wrapped := agent.WrapUntrustedToolResult(call.Name, content)
+			outcomes[i] = outcome{
+				id:        call.ID,
+				tool:      call.Name,
+				content:   limitToolContent(wrapped, e.maxChars),
+				readSkill: agent.SkillNameFromReadFileArgs(call.Arguments),
+				terminal:  terminalToolName(call.Name, err == nil && e.terminalPolicyEnabled),
+			}
+		}(i, callCopy)
+	}
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		for i, call := range calls {
+			if outcomes[i].id == "" {
+				outcomes[i] = outcome{id: call.ID, content: toolregistry.FormatToolError(ctx.Err())}
+			}
+		}
+	}
+	summary := agent.ExecutionSummary{Results: make(map[string]string, len(outcomes))}
+	for _, item := range outcomes {
+		if item.awaiting != nil {
+			summary.AwaitingUserInput = item.awaiting
+			continue
+		}
+		e.state.AddToolResultMessage(item.id, item.content)
+		summary.LastResult = item.content
+		summary.Results[item.id] = item.content
+		if item.readSkill != "" && !slices.Contains(summary.ReadSkillNames, item.readSkill) {
+			summary.ReadSkillNames = append(summary.ReadSkillNames, item.readSkill)
+		}
+		if summary.TerminalTool == "" && item.terminal != "" {
+			summary.TerminalTool = item.terminal
+		}
+	}
+	return summary
+}
+
+func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (string, error) {
+	if len(e.allowlist) == 0 || !slices.Contains(e.allowlist, strings.ToLower(call.Name)) {
+		return toolregistry.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), nil
+	}
+	if e.tools == nil {
+		return toolregistry.FormatFatalToolError(errors.New("tool registry unavailable")), nil
+	}
+	toolCtx := ctx
+	var cancel context.CancelFunc
+	if e.toolTimeout > 0 {
+		toolCtx, cancel = context.WithTimeout(toolCtx, e.toolTimeout)
+		defer cancel()
+	}
+	toolCtx = toolregistry.WithAllowedToolNames(toolCtx, e.allowlist)
+	if e.userID != "" {
+		toolCtx = toolregistry.WithUserID(toolCtx, e.userID)
+	}
+	return e.tools.Execute(toolCtx, call.Name, call.Arguments)
+}
+
+func cleanWebToolList(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func terminalToolName(name string, ok bool) string {
+	if ok && agent.IsTerminalTool(name) {
+		return name
+	}
+	return ""
+}
+
+func setSystemMessage(messages []llm.Message, system string) []llm.Message {
+	system = strings.TrimSpace(system)
+	if system == "" {
+		return messages
+	}
+	if len(messages) > 0 && messages[0].Role == "system" {
+		messages[0].Content = system
+		return messages
+	}
+	return append([]llm.Message{{Role: "system", Content: system}}, messages...)
+}
+
+func trimWebMessages(messages []llm.Message) []llm.Message {
+	if len(messages) <= webChatMaxMessages {
+		return cloneMessages(messages)
+	}
+	drop := len(messages) - webChatMaxMessages
+	return cloneMessages(messages[drop:])
+}
+
+func cloneMessages(messages []llm.Message) []llm.Message {
+	out := make([]llm.Message, len(messages))
+	copy(out, messages)
+	return out
+}
+
+func cloneToolArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = v
+	}
+	return out
+}
+
+func limitToolContent(content string, maxChars int) string {
+	if maxChars <= 0 {
+		return content
+	}
+	runes := []rune(content)
+	if len(runes) <= maxChars {
+		return content
+	}
+	if maxChars <= 16 {
+		return string(runes[:maxChars])
+	}
+	return string(runes[:maxChars-15]) + "\n...[truncated]"
+}

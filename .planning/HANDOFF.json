@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-15T22:32:25+02:00",
+  "timestamp": "2026-05-16T00:20:22+02:00",
   "context": "deep-refactor",
   "phase": "Phase01B",
   "phase_name": "Establish Identity and Capability Grants",
   "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants",
-  "status": "phase01b-parent-closed-container-e2e-verified",
+  "status": "phase01b-parent-closed-runtask-runid-stable",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -108,6 +108,24 @@
       "name": "Close Phase01B parent with DB-backed provider secret repair, runtime .env removal, and exact live chat markers",
       "status": "container_e2e_verified",
       "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-WEB-CHAT-LEGACY-REMOVAL",
+      "name": "Remove legacy direct web /api/chat runner and route API chat through Hub/run store",
+      "status": "container_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-WEB-CHAT-STABILITY-PASS",
+      "name": "Stabilize Hub-backed web chat context and verify repeated live web runs",
+      "status": "race_and_container_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
+    },
+    {
+      "id": "P1B-RUNTASK-RUNID-PROPAGATION",
+      "name": "Propagate cron and swarm run IDs through the legacy RunTask bridge",
+      "status": "race_and_container_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     }
   ],
   "remaining_tasks": [],
@@ -206,6 +224,11 @@
       "decision": "D:/tmp/cli-printing-press is an Aura reference map, not an executable queue.",
       "rationale": "Aura adopts the workflow patterns for lean skills, machine/human output separation, and explicit shipcheck blocks while rejecting the generator/public-library flow as a canonical route.",
       "source": "D:/Aura/docs/cli-printing-press-study.md"
+    },
+    {
+      "decision": "Legacy RunTask bridge calls must carry the canonical parent run ID.",
+      "rationale": "Cron and swarm delegated actors already have a canonical run context; `RunTaskDeps.RunID` now carries that ID into `agent.RunTask`, executor observations, and tool contexts instead of passing an empty run ID through the adapter seam.",
+      "source": "D:/Aura/internal/agent/runtask.go"
     }
   ],
   "blockers": [],
@@ -361,7 +384,59 @@
     "GET /api/health without bearer -> 401",
     "GET /api/health with bearer -> 200",
     "cmd/chat exact marker -> AURA_PIPE_OK",
-    "POST /api/chat exact marker PHASE01B_CLOSE_OK -> 200, llm_calls=1, tool_calls=0, tokens=8790"
+    "POST /api/chat exact marker PHASE01B_CLOSE_OK -> 200, llm_calls=1, tool_calls=0, tokens=8790",
+    "go test ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram -count=1",
+    "go test ./internal/storage/runs ./internal/chat ./internal/channels/web ./internal/telegram ./internal/api ./cmd/aura -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "rg legacy web chat scan in D:/Aura/internal and D:/Aura/cmd returned no NewWebChatService/webChatService/api.NewWebChatService/direct web agent.RunTask matches",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image manifest: sha256:0dcb1cb74ba687b5e921121beda58782e27aff6762e97a9d8b781f00ef741139",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "POST /api/chat exact marker WEB_HUB_LIVE_OK -> 200, llm_calls=1, tool_calls=0, tokens=9820",
+    "SQLite latest web run -> 6983e1e41855db95|actor:telegram:session:1148481707|web|completed|WEB_HUB_LIVE_OK",
+    "SQLite run_events for live web run -> count 4 with min/max actor actor:telegram:session:1148481707",
+    "temporary live probe bearer revoked count -> 1",
+    "go test ./cmd/aura -run \"TestWebToolExecutorCarriesVisibleToolContext|TestHubBackedWebChatPersistsRunAndActor\" -count=1",
+    "go test ./internal/telegram -run TestTelegramHubContextCarriesActorAndAuthority -count=1",
+    "go test ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram ./internal/chat ./internal/storage/runs ./internal/agent/tools/registry -count=1",
+    "go vet ./...",
+    "go build ./...",
+    "go test ./... -count=1",
+    "installed D:/tmp/w64devkit/bin/gcc.exe and D:/tmp/w64devkit/bin/as.exe; go env CC/CXX point to w64devkit",
+    "go test -race ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram ./internal/chat ./internal/storage/runs -count=1 with D:/tmp/w64devkit/bin first in PATH",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image manifest: sha256:e5cc463996ec1abc67077c690d83aa8898a2548c7cd0621f6e3df042db78eb77",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "POST /api/chat exact markers WEB_STABLE_A/WEB_STABLE_B/WEB_STABLE_C -> all exact with llm_calls=1 and tool_calls=0",
+    "SQLite stable web runs -> a632a3749f93e881, 53f595d4ad841334, f17712e30bbe9f17 all actor:telegram:session:1148481707|web|completed",
+    "SQLite stable web run_events -> 4 actor-matched events per run",
+    "temporary stability probe bearer revoked count -> 1",
+    "docker compose logs --since=10m aura contained no warn/error/fatal/panic levels",
+    "go test ./internal/agent -run TestRunTaskDepsRunIDPropagatesToToolContext -count=1",
+    "go test ./cmd/aura -run \"TestAgentJobRunnerAdapterPassesRequestRunID|TestSwarmRunnerAdapterPassesContextRunID\" -count=1",
+    "go test ./internal/cron -run TestRunNowDelegatesCronActor -count=1",
+    "go test ./internal/channels/cron -run TestCronAgentLoopDelegatesActorContext -count=1",
+    "go test ./internal/swarm -run TestManagerDelegatesAssignmentActorContext -count=1",
+    "go test ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1",
+    "go test -race ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1 with D:/tmp/w64devkit/bin first in PATH",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "container image manifest: sha256:5b2d7496c2a8fb56c4b06d1bba7dc200266ded99885830191853c18215b7026a",
+    "container health: aura-aura-1 healthy",
+    "GET /health -> 200",
+    "GET /api/health without bearer -> 401",
+    "docker compose logs --since=2m aura contained no warn/error/fatal/panic levels"
   ],
   "uncommitted_files": [
     "AGENTS.md",
@@ -379,7 +454,11 @@
     "cmd/aura/app.go",
     "cmd/aura/helpers_test.go",
     "cmd/aura/main.go",
+    "cmd/aura/web_chat.go",
+    "cmd/aura/web_chat_test.go",
     "internal/agent/runtask_test.go",
+    "internal/agent/tools/registry/daily_briefing_test.go",
+    "internal/agent/tools/registry/error.go",
     "internal/agent/tools/registry/exec_test.go",
     "internal/agent/tools/registry/registry.go",
     "internal/agent/tools/registry/registry_test.go",
@@ -387,6 +466,8 @@
     "internal/agent/tools/swarm/tools_test.go",
     "internal/api/auth/store.go",
     "internal/api/chat.go",
+    "internal/api/web_chat.go (deleted legacy direct API chat runner)",
+    "internal/channels/web/chat_service.go",
     "internal/channels/cron/dispatcher_test.go",
     "internal/channels/cron/loop.go",
     "internal/channels/telegram/invocation_builder.go",
@@ -405,14 +486,17 @@
     "internal/swarm/manager_test.go",
     "internal/swarm/types.go",
     "internal/telegram/deps.go",
+    "internal/telegram/bot_test.go",
+    "internal/telegram/handlers.go",
     "internal/telegram/tool_exec_helpers_test.go",
+    "docs/aura-interactive-debug-report-2026-05-15.md",
     "scripts/ralph/progress.txt (pre-existing/modified; preserve unless explicitly selected)",
     "docs/Aura_Completo_7_Mermaid_INTEGRALE.md (pre-existing/untracked; preserve unless explicitly selected)"
   ],
   "last_known_git": {
-    "head": "009639ae feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)",
-    "status": "dirty after Phase01B6 delegated actor implementation, Phase01B7 denial-event implementation, fail-closed authority repair, parent closure actor-persistence repair, provider-secret closure docs, AGENTS.md CI-after-push rule, and unrelated untracked Markdown files"
+    "head": "7f3c4a37 docs(planning): Phase 5 closure + audit refresh (US-I06)",
+    "status": "dirty after legacy web /api/chat removal, Hub-backed web chat wiring, web tool-context stabilization, RunTask RunID propagation repair, Telegram Hub actor-context repair, Phase01B benchmark/progress updates, handoff updates, AGENTS.md CI-after-push rule, and unrelated untracked Markdown files"
   },
   "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code.",
-  "context_notes": "Do not bundle Phase 8 cron RunGraph, missed-run policy, or full swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, and exact live markers are verified. CI must be checked after any future push."
+  "context_notes": "Do not bundle Phase 8 cron RunGraph, missed-run policy, or full swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. CI must be checked after any future push."
 }

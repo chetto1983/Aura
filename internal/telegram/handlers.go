@@ -6,6 +6,7 @@ import (
 
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
+	"github.com/aura/aura/internal/identity"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -47,7 +48,7 @@ func (b *Bot) onMessage(c tele.Context) error {
 				b.logger.Error("hub not initialized, dropping message", "user_id", userID)
 				return
 			}
-			if _, err := b.hub.Receive(context.Background(), chat.ChannelTelegram, c); err != nil {
+			if _, err := b.hub.Receive(b.telegramHubContext(context.Background(), userID), chat.ChannelTelegram, c); err != nil {
 				b.logger.Error("hub receive failed", "user_id", userID, "error", err)
 			}
 		}()
@@ -55,12 +56,12 @@ func (b *Bot) onMessage(c tele.Context) error {
 	}
 
 	entry := concurrency.Entry{
-		Process: func(_ context.Context) {
+		Process: func(ctx context.Context) {
 			if b.hub == nil {
 				b.logger.Error("hub not initialized, dropping message", "user_id", userID)
 				return
 			}
-			if _, err := b.hub.Receive(context.Background(), chat.ChannelTelegram, c); err != nil {
+			if _, err := b.hub.Receive(b.telegramHubContext(ctx, userID), chat.ChannelTelegram, c); err != nil {
 				b.logger.Error("hub receive failed", "user_id", userID, "error", err)
 			}
 		},
@@ -76,4 +77,13 @@ func (b *Bot) onMessage(c tele.Context) error {
 		)
 	}
 	return nil
+}
+
+func (b *Bot) telegramHubContext(ctx context.Context, userID string) context.Context {
+	actorID := identity.TelegramSessionActorID(userID)
+	ctx = identity.WithActorID(ctx, actorID)
+	if b != nil && b.rt != nil && b.rt.authDB != nil {
+		ctx = identity.WithAuthority(ctx, b.rt.authDB)
+	}
+	return ctx
 }

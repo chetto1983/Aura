@@ -18,6 +18,7 @@ type HubReceiver interface {
 // the bridge without importing webadapter (avoiding an import cycle). The
 // HTTP handler does the final JSON marshal.
 type ChatReply struct {
+	RunID     string
 	Reply     string
 	ElapsedMs int64
 	LLMCalls  int
@@ -76,6 +77,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 	}
 	if runErr != nil {
 		return ChatReply{
+			RunID:     run.ID,
 			Reply:     res.FinalContent,
 			ElapsedMs: res.ElapsedMs,
 			LLMCalls:  res.LLMCalls,
@@ -84,6 +86,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 		}, runErr
 	}
 	return ChatReply{
+		RunID:     run.ID,
 		Reply:     res.FinalContent,
 		ElapsedMs: res.ElapsedMs,
 		LLMCalls:  res.LLMCalls,

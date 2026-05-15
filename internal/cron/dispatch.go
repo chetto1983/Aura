@@ -36,6 +36,7 @@ type JobRunner interface {
 
 // JobRequest is the cron-native agent task request passed to JobRunner.
 type JobRequest struct {
+	RunID         string
 	SystemPrompt  string
 	Prompt        string
 	ToolAllowlist []string
@@ -295,6 +296,7 @@ func (h *Handler) runAgentJob(ctx context.Context, task *Task) (agentJobRun, err
 	now := time.Now()
 	zero := 0.0
 	result, err := h.runner.RunJob(runCtx, JobRequest{
+		RunID:         identity.RunIDFromContext(runCtx),
 		SystemPrompt:  AgentJobSystemPrompt(payload, now, h.loc),
 		Prompt:        h.agentJobPrompt(ctx, task, payload, now, h.loc),
 		ToolAllowlist: allowlist,
@@ -337,7 +339,7 @@ func (h *Handler) delegateAgentJobActor(ctx context.Context, task *Task, allowli
 	if err != nil {
 		return ctx, "", err
 	}
-	return identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), result.Actor.ID, nil
+	return identity.WithRunID(identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), scopeID), result.Actor.ID, nil
 }
 
 func (h *Handler) delegationAuthority(ctx context.Context, task *Task) (identity.Delegator, string) {

@@ -8,7 +8,7 @@ Current state as of 2026-05-15:
   had become noisy. Clean planning scaffolds were recreated under
   `D:/Aura/.planning/deep-refactor/` from `D:/Aura/prd.md`.
 - Current git HEAD observed:
-  `009639ae feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)`.
+  `7f3c4a37 docs(planning): Phase 5 closure + audit refresh (US-I06)`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
@@ -150,6 +150,55 @@ Current state as of 2026-05-15:
   exact `PHASE01B_CLOSE_OK` with `llm_calls=1`, `tool_calls=0`, and durable
   `api.chat` authorization allow evidence for
   `actor:telegram:session:1148481707`.
+- Post-closure interactive debug repair is implemented and repo-verified:
+  the legacy direct web `/api/chat` service in `internal/api/web_chat.go` was
+  removed, `cmd/aura` now wires `/api/chat` through `chat.Hub` plus the shared
+  `runs.Store`, and Telegram Hub entrypoints now receive actor/authority
+  context instead of `context.Background()`. Verification passed:
+  `go test ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram -count=1`,
+  `go test ./internal/storage/runs ./internal/chat ./internal/channels/web ./internal/telegram ./internal/api ./cmd/aura -count=1`,
+  `go build ./...`, `go vet ./...`, `go test ./... -count=1`,
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  container health `healthy`, `/health=200`, unauthenticated
+  `/api/health=401`, temporary bearer `/api/chat` exact
+  `WEB_HUB_LIVE_OK`, `llm_calls=1`, `tool_calls=0`, `tokens=9820`, live
+  SQLite run `6983e1e41855db95|actor:telegram:session:1148481707|web|completed|WEB_HUB_LIVE_OK`,
+  four `run_events` with matching actor, and temporary bearer revoked.
+- Follow-up stability pass for the Hub-backed web chat route is complete:
+  web tool execution now propagates the model-visible tool allowlist into the
+  tool context, `D:/tmp/w64devkit/bin/gcc.exe` plus matching binutils are
+  installed, `go env CC/CXX` point to w64devkit, and the race gate passes when
+  `D:/tmp/w64devkit/bin` is first in `PATH`. Verification passed:
+  targeted web/API/Telegram/chat/run-store/registry tests, `go vet ./...`,
+  `go build ./...`, `go test ./... -count=1`,
+  `go test -race ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram ./internal/chat ./internal/storage/runs -count=1`,
+  `docker compose build aura`, `docker compose up -d --no-deps aura`,
+  container health `healthy`, exact live markers `WEB_STABLE_A`,
+  `WEB_STABLE_B`, `WEB_STABLE_C`, durable web run rows with actor
+  `actor:telegram:session:1148481707`, four actor-matched events per run,
+  temporary bearer revoked, and recent logs without `warn`, `error`, `fatal`,
+  or `panic`.
+- RunTask RunID propagation repair is implemented, repo/race verified, and
+  container-updated: `RunTaskDeps` now carries `RunID`, `RunTask` installs it
+  into the executor and tool context, cron `JobRequest` carries the delegated
+  run ID, and `swarmRunnerAdapter.Run` plus `agentJobRunnerAdapter.RunJob`
+  populate it from context/request state instead of leaving the legacy bridge
+  empty.
+- RunTask RunID propagation verification passed:
+  targeted `internal/agent`, `cmd/aura`, `internal/cron`,
+  `internal/channels/cron`, and `internal/swarm` RunID propagation tests,
+  `go test ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1`,
+  `go build ./...`, `go vet ./...`, `go test ./... -count=1`,
+  `go test -race ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1`
+  with `D:/tmp/w64devkit/bin` first in `PATH`, `docker compose build aura`,
+  `docker compose up -d --no-deps aura`, image
+  `sha256:5b2d7496c2a8fb56c4b06d1bba7dc200266ded99885830191853c18215b7026a`,
+  container health `healthy`, `/health=200`, unauthenticated
+  `/api/health=401`, and recent logs without `warn`, `error`, `fatal`, or
+  `panic`.
+- During the full gate rerun, a pre-existing time-of-day flake in the daily
+  briefing fixture was made deterministic and `connection refused`/reset/network
+  unreachable are now classified as recoverable I/O tool errors.
 - Registered `D:/tmp/cli-printing-press` as an Aura reference map in
   `D:/Aura/docs/cli-printing-press-study.md`.
 - Phase01B parent can now be treated as closed for the prior identity/capability
@@ -157,7 +206,7 @@ Current state as of 2026-05-15:
   RunGraph/swarm topology and Phase 7 memory work in their own phase folders.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
-  authority`; the latest observed HEAD is `009639ae`.
+  authority`; the latest observed HEAD is `7f3c4a37`.
 
 Required first reads:
 

@@ -228,8 +228,12 @@ func TestRunNowDelegatesCronActor(t *testing.T) {
 	if !runner.authorizer {
 		t.Fatal("runner context missing authorizer")
 	}
+	if runner.req.RunID == "" {
+		t.Fatal("runner request missing RunID")
+	}
 	assertCronScalar(t, db, `SELECT actor_type FROM actors WHERE id = ?`, "cron", runner.actorID)
 	assertCronScalar(t, db, `SELECT parent_actor_id FROM actors WHERE id = ?`, parent.ID, runner.actorID)
+	assertCronScalar(t, db, `SELECT run_id FROM actors WHERE id = ?`, runner.req.RunID, runner.actorID)
 	assertCronScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), runner.actorID)
 	assertCronScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND decision = 'allow'`, int64(2), parent.ID)
 }

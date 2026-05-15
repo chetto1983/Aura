@@ -55,6 +55,7 @@ func (l *CronAgentLoop) Run(ctx context.Context, run *chat.Run, msg chat.Inbound
 	}
 	zero := 0.0
 	result, err := l.runner.RunJob(runCtx, cron.JobRequest{
+		RunID:         identity.RunIDFromContext(runCtx),
 		SystemPrompt:  cron.AgentJobSystemPrompt(payload, time.Now(), l.loc),
 		Prompt:        cron.AgentJobUserPrompt(payload),
 		ToolAllowlist: allowlist,
@@ -108,7 +109,7 @@ func (l *CronAgentLoop) delegateCronActor(ctx context.Context, run *chat.Run, ms
 	if err != nil {
 		return ctx, fmt.Errorf("cron agent loop: delegate actor: %w", err)
 	}
-	return identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), nil
+	return identity.WithRunID(identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), scopeID), nil
 }
 
 func delegatedCronCapabilities(allowlist []string) []identity.Capability {

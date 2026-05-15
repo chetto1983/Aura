@@ -97,6 +97,7 @@ type fakeTool struct {
 	mu     sync.Mutex
 	calls  int
 	userID string
+	runID  string
 	delay  time.Duration
 }
 
@@ -117,6 +118,7 @@ func (t *fakeTool) Execute(ctx context.Context, _ map[string]any) (string, error
 	defer t.mu.Unlock()
 	t.calls++
 	t.userID = tools.UserIDFromContext(ctx)
+	t.runID = identity.RunIDFromContext(ctx)
 	if t.err != nil {
 		return "", t.err
 	}
@@ -146,6 +148,35 @@ func TestRunTaskHappyPath(t *testing.T) {
 	}
 	if res.Tokens.TotalTokens != 3 {
 		t.Fatalf("TotalTokens = %d", res.Tokens.TotalTokens)
+	}
+}
+
+func TestRunTaskDepsRunIDPropagatesToToolContext(t *testing.T) {
+	client := &fakeLLM{resps: []llm.Response{
+		{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "call_1", Name: "lookup"}},
+		},
+		{Content: "done"},
+	}}
+	tool := &fakeTool{name: "lookup", result: "tool ok"}
+	reg := tools.NewRegistry(nil)
+	reg.Register(tool)
+
+	_, err := RunTask(authorizedRunTaskContext(), RunTaskDeps{
+		LLM:           client,
+		Tools:         reg,
+		RunID:         "run-task-123",
+		MaxIterations: 3,
+	}, Task{
+		Prompt:        "use lookup",
+		ToolAllowlist: []string{"lookup"},
+	})
+	if err != nil {
+		t.Fatalf("RunTask: %v", err)
+	}
+	if tool.runID != "run-task-123" {
+		t.Fatalf("tool runID = %q, want run-task-123", tool.runID)
 	}
 }
 

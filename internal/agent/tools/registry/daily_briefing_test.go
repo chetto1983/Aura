@@ -15,7 +15,7 @@ import (
 
 func TestDailyBriefingTool_ComposesAttentionSignals(t *testing.T) {
 	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Date(2026, 5, 15, 9, 0, 0, 0, time.UTC)
 	sched := newTestSchedStore(t)
 	srcStore, err := source.NewStore(filepath.Join(t.TempDir(), "wiki"), nil)
 	if err != nil {

@@ -241,6 +241,7 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 }
 
 func (m *Manager) delegateAssignmentActor(ctx context.Context, runID string, task *Task, assignment Assignment) (context.Context, error) {
+	ctx = identity.WithRunID(ctx, runID)
 	if len(assignment.DelegatedCapabilities) == 0 {
 		return ctx, nil
 	}
@@ -272,7 +273,7 @@ func (m *Manager) delegateAssignmentActor(ctx context.Context, runID string, tas
 	if err != nil {
 		return ctx, fmt.Errorf("swarm delegate actor: %w", err)
 	}
-	return identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), nil
+	return identity.WithRunID(identity.WithActorID(identity.WithAuthority(ctx, delegator), result.Actor.ID), runID), nil
 }
 
 func (m *Manager) ListTasks(ctx context.Context, runID string) ([]Task, error) {

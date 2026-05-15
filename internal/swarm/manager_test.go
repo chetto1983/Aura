@@ -21,6 +21,7 @@ type fakeRunner struct {
 	maxActive int
 	calls     int
 	actorIDs  []string
+	runIDs    []string
 }
 
 var _ LimitController = (*Manager)(nil)
@@ -33,6 +34,7 @@ func (r *fakeRunner) Run(ctx context.Context, task agent.Task) (agent.Result, er
 	}
 	r.calls++
 	r.actorIDs = append(r.actorIDs, identity.ActorIDFromContext(ctx))
+	r.runIDs = append(r.runIDs, identity.RunIDFromContext(ctx))
 	r.mu.Unlock()
 
 	defer func() {
@@ -69,6 +71,12 @@ func (r *fakeRunner) actors() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.actorIDs...)
+}
+
+func (r *fakeRunner) runIDsSeen() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.runIDs...)
 }
 
 func assertSwarmScalar[T comparable](t *testing.T, db *sql.DB, query string, want T, args ...any) {
@@ -253,8 +261,13 @@ func TestManagerDelegatesAssignmentActorContext(t *testing.T) {
 	if len(actors) != 1 || actors[0] == "" || actors[0] == parentActorID {
 		t.Fatalf("runner actors = %+v, parent = %q", actors, parentActorID)
 	}
+	runIDs := runner.runIDsSeen()
+	if len(runIDs) != 1 || runIDs[0] != res.Run.ID {
+		t.Fatalf("runner runIDs = %+v, want %q", runIDs, res.Run.ID)
+	}
 	assertSwarmScalar(t, store.DB(), `SELECT actor_type FROM actors WHERE id = ?`, "swarm", actors[0])
 	assertSwarmScalar(t, store.DB(), `SELECT parent_actor_id FROM actors WHERE id = ?`, parentActorID, actors[0])
+	assertSwarmScalar(t, store.DB(), `SELECT run_id FROM actors WHERE id = ?`, res.Run.ID, actors[0])
 	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), actors[0])
 	assertSwarmScalar(t, store.DB(), `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND capability = 'tool.execute' AND decision = 'allow'`, int64(1), parentActorID)
 }

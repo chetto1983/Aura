@@ -202,8 +202,12 @@ func TestCronAgentLoopDelegatesActorContext(t *testing.T) {
 	if !runner.authorizer {
 		t.Fatal("runner context missing authorizer")
 	}
+	if runner.req.RunID != run.ID {
+		t.Fatalf("runner request RunID = %q, want %q", runner.req.RunID, run.ID)
+	}
 	assertCronLoopScalar(t, db, `SELECT actor_type FROM actors WHERE id = ?`, "cron", runner.actorID)
 	assertCronLoopScalar(t, db, `SELECT parent_actor_id FROM actors WHERE id = ?`, parent.ID, runner.actorID)
+	assertCronLoopScalar(t, db, `SELECT run_id FROM actors WHERE id = ?`, run.ID, runner.actorID)
 	assertCronLoopScalar(t, db, `SELECT COUNT(*) FROM capability_grants WHERE subject_type = 'actor' AND subject_id = ? AND capability = 'tool.execute'`, int64(1), runner.actorID)
 	assertCronLoopScalar(t, db, `SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND decision = 'allow'`, int64(2), parent.ID)
 }

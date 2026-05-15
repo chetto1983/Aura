@@ -278,6 +278,22 @@ func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
 	}
 }
 
+func TestTelegramHubContextCarriesActorAndAuthority(t *testing.T) {
+	store := newTelegramTestAuthStore(t)
+	b := &Bot{rt: &botRuntime{authDB: store}}
+
+	ctx := b.telegramHubContext(context.Background(), "12345")
+	if got, want := identity.ActorIDFromContext(ctx), identity.TelegramSessionActorID("12345"); got != want {
+		t.Fatalf("ActorIDFromContext = %q, want %q", got, want)
+	}
+	if _, ok := identity.AuthorizerFromContext(ctx); !ok {
+		t.Fatal("telegram hub context missing identity authorizer")
+	}
+	if _, ok := identity.DelegatorFromContext(ctx); !ok {
+		t.Fatal("telegram hub context missing identity delegator")
+	}
+}
+
 func TestCompactMemoryStatusSummaryReportsMirrorState(t *testing.T) {
 	tracker := memoryindex.NewVectorHealthTracker(true, "aura_memory_v1_compact")
 	tracker.Started()

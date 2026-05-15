@@ -37,7 +37,13 @@ func ClassifyToolError(err error) string {
 		return "blocked"
 	case strings.Contains(msg, "rate limit"), strings.Contains(msg, "too many requests"):
 		return "rate_limited"
-	case strings.Contains(msg, "i/o"), strings.Contains(msg, "io error"), strings.Contains(msg, "read"), strings.Contains(msg, "write"):
+	case strings.Contains(msg, "i/o"),
+		strings.Contains(msg, "io error"),
+		strings.Contains(msg, "read"),
+		strings.Contains(msg, "write"),
+		strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "connection reset"),
+		strings.Contains(msg, "network unreachable"):
 		return "io"
 	}
 	return "error"

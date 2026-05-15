@@ -7,8 +7,13 @@ Phase01B5, Phase01B6, and Phase01B7 are locally verified and
 container-updated. The 2026-05-15 parent closure verifier passed local code
 gates and live auth-boundary probes, repaired missing Chat Hub `actor_id`
 persistence, repaired the DB-backed provider secret path, removed runtime
-`.env`, and passed the exact live chat-marker probe. Phase01B is closed for the
-identity/capability slice.
+`.env`, and passed the exact live chat-marker probe. A later interactive debug
+repair removed the legacy web `/api/chat` runner and verified that the route now
+uses `chat.Hub` plus the shared `runs.Store` in repo-level tests and a live
+container `/api/chat` probe. A follow-up stability pass propagated the active
+tool allowlist into the web tool execution context, restored the local
+CGO/race toolchain with `D:/tmp/w64devkit`, and passed a three-turn live web
+chat probe. Phase01B is closed for the identity/capability slice.
 
 ## Baseline Commands
 
@@ -241,6 +246,60 @@ passed exact live chat markers. SQLite records `api.chat` allow decisions for
 | Settings/secrets provider repair | code fix from `efce2036 fix(api): route secret-shaped dashboard writes to secrets store`; live SQLite repair; `docker compose stop aura`; `docker compose exec -T aura sqlite3 /data/aura.db ...`; remove `D:/Aura/data/.env*` | running compose DB plus runtime volume | secret-shaped keys that `applySecretsToConfig` reads are canonical in `secrets`, legacy `settings.LLM_API_KEY` row is gone, and runtime does not load `.env` | passed; live DB shows `llm_api_key` present with expected provider-key shape and `settings.LLM_API_KEY` row count `0`; no `.env*` file remains in `D:/Aura/data` | passed |
 | Container image update after provider repair | `docker compose build aura`; `docker compose up -d --no-deps aura`; `docker compose ps aura` | local compose stack | rebuilt `aura:local` contains current code and starts without runtime `.env` | passed; image manifest `sha256:ea46cdf1d5eafb534e5494c501d14227d4a3d556e0cdfe4fc0ed281ecf6cb9b0`; `aura-aura-1` healthy on `127.0.0.1:18080` | passed |
 | Live bearer chat marker | `go run ./cmd/chat -quiet -m "Rispondi esattamente AURA_PIPE_OK e niente altro."`; bearer `POST /api/chat` asking for exact `PHASE01B_CLOSE_OK` | running local compose stack and DB-backed configured LLM provider | chat returns `200`, exact marker, LLM metrics, and zero tool calls | passed; `cmd/chat` returned exact `AURA_PIPE_OK`; direct bearer `/api/chat` returned exact `PHASE01B_CLOSE_OK`, elapsed 5208 ms, `llm_calls=1`, `tool_calls=0`, `tokens=8790` | passed |
+
+## Phase01B Interactive Debug Repair - 2026-05-15
+
+Status: repo and container verified. This repair closes the two P1 findings from
+`D:/Aura/docs/aura-interactive-debug-report-2026-05-15.md`: the old web
+`/api/chat` path bypassed durable `runs`, and Telegram Hub entrypoints lost
+actor context before lifecycle persistence. The legacy web runner was removed
+instead of wrapped.
+
+| Check | Command / Method | Fixture / Data Source | Expected Ground Truth | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- |
+| Web API chat uses Hub run plane | `go test ./cmd/aura -run TestHubBackedWebChatPersistsRunAndActor -count=1` | fake LLM plus disposable SQLite run store and actor context | reply metrics remain compatible, `runs` has one completed `channel='web'` row with `actor_id`, and lifecycle `run_events` have matching actor context | passed on 2026-05-15; SQL assertions cover `runs`, `run_started`, `message_done`, `usage`, and `done` | passed |
+| Telegram Hub context carries actor authority | `go test ./internal/telegram -run TestTelegramHubContextCarriesActorAndAuthority -count=1` | Telegram auth-store fixture | Hub context contains `actor:telegram:session:<id>`, an `identity.Authorizer`, and an `identity.Delegator` | passed on 2026-05-15 | passed |
+| Legacy web direct runner removed | `rg -n "NewWebChatService|webChatService|agent\.RunTask\(ctx, deps, task\)|api.NewWebChatService" D:/Aura/internal D:/Aura/cmd -g "*.go"` | source tree | no direct API web chat service and no direct `agent.RunTask(ctx, deps, task)` web route remain | passed; no matches found | passed |
+| Shared regression gate | `go test ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram -count=1`; `go test ./internal/storage/runs ./internal/chat ./internal/channels/web ./internal/telegram ./internal/api ./cmd/aura -count=1`; `go build ./...`; `go vet ./...`; `go test ./... -count=1` | repository packages | all targeted, build, vet, and full tests pass after deleting the legacy file | passed on 2026-05-15 | passed |
+| Container/live rerun | `docker compose build aura`; `docker compose up -d --no-deps aura`; `GET /health`; unauthenticated `GET /api/health`; temporary bearer `POST /api/chat`; SQLite `runs` and `run_events` query; token revocation query | running local compose stack with temporary bearer for `1148481707` | rebuilt container contains the Hub-backed web route; live `/api/chat` returns exact marker; SQLite records a completed `channel='web'` run with actor context and matching actor on lifecycle events; temporary bearer is revoked | passed; image `sha256:0dcb1cb74ba687b5e921121beda58782e27aff6762e97a9d8b781f00ef741139`, health `200`, unauth API health `401`, reply `WEB_HUB_LIVE_OK`, `llm_calls=1`, `tool_calls=0`, `tokens=9820`, run `6983e1e41855db95|actor:telegram:session:1148481707|web|completed|WEB_HUB_LIVE_OK`, `run_events` count `4` with matching actor, temporary token revoked count `1` | passed |
+
+## Phase01B Web Chat Stability Pass - 2026-05-15
+
+Status: repo, race, and container verified. This pass hardens the Hub-backed
+web chat replacement after the legacy route was removed. It proves the web
+tool executor carries the same model-visible tool context expected by internal
+tool orchestration, and that the live container can handle repeated web chat
+turns with durable run/event actor evidence.
+
+| Check | Command / Method | Fixture / Data Source | Expected Ground Truth | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- |
+| Web tool executor carries visible tool context | `go test ./cmd/aura -run TestWebToolExecutorCarriesVisibleToolContext -count=1` | fake registry tool plus identity authorizer context | tool receives `AllowedToolNamesFromContext` containing the visible web tool list and `UserIDFromContext` containing the API user | passed on 2026-05-15 | passed |
+| Targeted regression gate | `go test ./cmd/aura -run "TestWebToolExecutorCarriesVisibleToolContext|TestHubBackedWebChatPersistsRunAndActor" -count=1`; `go test ./internal/telegram -run TestTelegramHubContextCarriesActorAndAuthority -count=1` | local package tests | web Hub run persistence, web tool context propagation, and Telegram actor/authority context remain green | passed on 2026-05-15 | passed |
+| Shared Go gate | `go test ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram ./internal/chat ./internal/storage/runs ./internal/agent/tools/registry -count=1`; `go vet ./...`; `go build ./...`; `go test ./... -count=1` | repository packages | targeted packages, vet, build, and full test suite pass after the stabilization patch | passed on 2026-05-15 | passed |
+| Race gate for touched runtime packages | `go test -race ./cmd/aura ./internal/api ./internal/channels/web ./internal/telegram ./internal/chat ./internal/storage/runs -count=1` with `D:/tmp/w64devkit/bin` first in `PATH` | local Windows Go toolchain plus installed `w64devkit` | race detector builds and passes on the web/API/Telegram/chat/run-store runtime packages | passed on 2026-05-15 after installing `D:/tmp/w64devkit/bin/gcc.exe`; `go env CC/CXX` point to w64devkit | passed |
+| Three-turn live web stability probe | temporary bearer `POST /api/chat` exact markers `WEB_STABLE_A`, `WEB_STABLE_B`, `WEB_STABLE_C`; SQLite `runs` and `run_events` queries; token revocation query | rebuilt local compose stack, image `sha256:e5cc463996ec1abc67077c690d83aa8898a2548c7cd0621f6e3df042db78eb77` | each marker returns exactly, each turn creates a completed `channel='web'` run with actor `actor:telegram:session:1148481707`, each run has matching actor on lifecycle events, and the temporary bearer is revoked | passed; replies exact, `llm_calls=1`, `tool_calls=0`, tokens `9830/9839/9863`, run IDs `a632a3749f93e881`, `53f595d4ad841334`, `f17712e30bbe9f17`, each with 4 actor-matched events, revoked count `1` | passed |
+| Container log health | `docker compose logs --since=10m aura` filtered for `warn`, `error`, `fatal`, and `panic` log levels | running local compose stack after live probes | no warning/error/fatal/panic levels in recent Aura logs | passed; no matching log lines | passed |
+
+## Phase01B RunTask RunID Propagation Repair - 2026-05-16
+
+Status: repo, race, and container verified. This repair closes a remaining
+legacy bridge gap where cron/swarm delegated actor paths could enter
+`agent.RunTask` with an empty executor run ID even though the parent run was
+known in context. The benchmark is intentionally fixture-backed: the ground
+truth is the `RunID` seen by tool context plus delegated actor SQL evidence,
+not a live smoke check.
+
+| Check | Command / Method | Fixture / Data Source | Expected Ground Truth | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- |
+| `RunTaskDeps.RunID` reaches tool context | `go test ./internal/agent -run TestRunTaskDepsRunIDPropagatesToToolContext -count=1` | fake LLM plus fake registry tool | tool receives `identity.RunIDFromContext(ctx) == "run-task-123"` and executor is constructed with the same run ID | passed on 2026-05-16 | passed |
+| Cron app adapter uses `cron.JobRequest.RunID` | `go test ./cmd/aura -run TestAgentJobRunnerAdapterPassesRequestRunID -count=1` | fake tool-calling LLM plus app adapter and fake tool | tool context receives the cron job request run ID instead of an empty bridge value | passed on 2026-05-16 | passed |
+| Swarm app adapter uses context run ID | `go test ./cmd/aura -run TestSwarmRunnerAdapterPassesContextRunID -count=1` | fake tool-calling LLM plus app adapter and fake tool | tool context receives `swarm-run-123` from `identity.WithRunID` | passed on 2026-05-16 | passed |
+| Cron manual delegation carries run ID | `go test ./internal/cron -run TestRunNowDelegatesCronActor -count=1` | disposable cron task, identity store, and recording `JobRunner` | `JobRequest.RunID` is non-empty and delegated cron actor row has matching `run_id` | passed on 2026-05-16 | passed |
+| Cron Hub delegation carries run ID | `go test ./internal/channels/cron -run TestCronAgentLoopDelegatesActorContext -count=1` | disposable cron Hub inbound run and recording `JobRunner` | `JobRequest.RunID == run.ID` and delegated cron actor row has `run_id == run.ID` | passed on 2026-05-16 | passed |
+| Swarm delegated worker carries run ID | `go test ./internal/swarm -run TestManagerDelegatesAssignmentActorContext -count=1` | disposable swarm store, identity store, and recording `AgentRunner` | worker context carries `res.Run.ID`; delegated swarm actor row has `run_id == res.Run.ID` | passed on 2026-05-16 | passed |
+| Touched-package regression gate | `go test ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1`; `go build ./...`; `go vet ./...`; `go test ./... -count=1` | repository packages | all commands green after RunID propagation and the daily briefing/classifier repairs | passed on 2026-05-16 | passed |
+| Race gate for touched runtime packages | `go test -race ./internal/agent ./cmd/aura ./internal/cron ./internal/channels/cron ./internal/swarm ./internal/agent/tools/registry -count=1` with `D:/tmp/w64devkit/bin` first in `PATH` | local Windows Go toolchain plus installed `w64devkit` | race detector builds and passes on agent/cmd/cron/swarm/registry packages | passed on 2026-05-16 | passed |
+| Container update and live precheck | `docker compose build aura`; `docker compose up -d --no-deps aura`; `GET /health`; unauthenticated `GET /api/health`; recent log scan | running local compose stack, image `sha256:5b2d7496c2a8fb56c4b06d1bba7dc200266ded99885830191853c18215b7026a` | rebuilt image contains the RunID propagation repair, container is healthy, auth boundary remains intact, and logs contain no warn/error/fatal/panic levels | passed; `/health=200`, unauthenticated `/api/health=401`, no matching log lines since restart | passed |
 
 ## Manual Probe Candidates
 
