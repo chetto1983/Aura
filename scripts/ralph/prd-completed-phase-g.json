@@ -1,0 +1,139 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-G = masterplan Phase 4 (collapse the agent runtime / kill legacy agent.Runner). Runner is the residual duplicate flagged in PRD §6 and docs/aura-main-loop-limits-audit.md §1. After Phase-F (Phase-3 streaming-protection arc) the canonical path is chat.Hub → chat.AgentLoop → agent.Run (loop.go). Runner is a stateful wrapper around that same agent.Run with mutable LimitController glue for the dashboard. 4 live consumers: cmd/aura/app.go (constructor + cron adapter), internal/api/web_chat.go, internal/telegram/deps.go, internal/cron/dispatch.go (via adapter). 7 stories: introduce stateless agent.RunTask, migrate each consumer one by one, simplify LimitController, then delete runner.go + runner_test.go and refresh docs. Full call graph + per-story scope in .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md. Each story = ONE atomic commit on master.",
+  "userStories": [
+    {
+      "id": "US-G01",
+      "title": "Stateless agent.RunTask helper",
+      "description": "Introduce a stateless agent.RunTask function that does what Runner.Run does today, so Phase-G consumers can migrate off the Runner struct without losing behavior. (a) internal/agent/runtask.go (new): func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) where RunTaskDeps groups the previously-Runner-held fields {LLM llm.Client; Tools *tools.Registry; Model string; ReasoningEffort string; PhantomGuard *PhantomToolGuard; Logger *slog.Logger} plus the previously-mutable limits {MaxIterations int; Timeout time.Duration; ToolTimeout time.Duration} (read once per call — runtime config changes apply to the NEXT call). (b) Body mirrors Runner.Run: context.WithTimeout wrap, initialMessages(task), cleanToolList, agentExecutor + NewNoStreamClient + Invocation, call internal/agent.Run, wrap rtResult into Result with the MaxIterationsHit fallback message. (c) Task, Result, RunTaskDeps stay in a new internal/agent/task.go file (extracted from runner.go in US-G06). For US-G01 we DEFINE these types as fresh aliases/copies so RunTask compiles standalone; the legacy Runner keeps using the same names from runner.go until US-G06. (d) initialMessages, cleanToolList, limitToolContent currently live in runner.go — copy them to a new internal/agent/runtask_helpers.go (private). They'll be deleted from runner.go in US-G06 when the wrapper goes. (e) Test internal/agent/runtask_test.go: ≥3 cases (happy path, MaxIterationsHit fallback message, prompt-or-messages-required error) using the same in-process LLM fake style as runner_test.go.",
+      "acceptanceCriteria": [
+        "internal/agent/runtask.go exists exporting RunTask + RunTaskDeps",
+        "internal/agent/runtask_helpers.go exists with initialMessages/cleanToolList/limitToolContent copies (private)",
+        "RunTask uses context.WithTimeout(deps.Timeout) when Timeout > 0",
+        "RunTask returns the same MaxIterationsHit fallback string as Runner.Run when rtResult.Stats.MaxIterationsHit is true",
+        "RunTask returns 'agent: prompt or messages required' when task has neither",
+        "internal/agent/runtask_test.go exists with ≥3 cases",
+        "Runner / runner.go / runner_test.go UNCHANGED in this story (migration starts in US-G02..G04)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(agent): stateless RunTask helper (US-G01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "RunTaskDeps is intentionally a wider struct than Runner.Config so callers don't need to construct an intermediate Runner. The fields the dashboard mutates at runtime (MaxIterations, Timeout, ToolTimeout) move from Runner.mu-guarded fields to per-call parameters — the caller reads cfg fresh."
+    },
+    {
+      "id": "US-G02",
+      "title": "Audit + drop telegram.Deps.agentRunner",
+      "description": "internal/telegram/deps.go has `agentRunner *agent.Runner` on Deps + Bot. Audit every method on *telegram.Bot for actual callers. (a) Grep `b.deps.agentRunner`, `b.agentRunner`, `Bot.AgentRunner` across internal/telegram and channels/telegram. (b) If there are zero live callers, remove the field from `Deps` and the corresponding field on `Bot`; update cmd/aura/app.go to stop passing it in `telegram.Deps{...}` literals. (c) If there ARE callers (likely background ops / scheduler glue), migrate each to call agent.RunTask directly with the deps already held by the bot (b.LLMClient(), b.ToolRegistry(), b.cfg.LLMModel, b.cfg.ReasoningEffort, etc.). Each migrated call site reads RunTaskDeps fresh from the bot config so dashboard live-tune still works. (d) Tests: any test in internal/telegram that injects a Runner gets refactored to inject the same deps (or stubbed RunTaskDeps). No new test scaffolding — reuse what already exists.",
+      "acceptanceCriteria": [
+        "Grep confirms no `agentRunner` field references remain in internal/telegram/ after this story",
+        "If callers were present, each is migrated to agent.RunTask (no Runner involved)",
+        "cmd/aura/app.go telegram.Deps construction no longer passes AgentRunner",
+        "internal/telegram tests pass (no test injects a *agent.Runner anymore)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(telegram): drop Deps.agentRunner (US-G02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "The session-close memo (project_session_close_2026-05-15_evening.md) flagged this field as 'held but NOT called for the normal chat path' — confirm with grep before assuming it's dead. If it IS called, migrate the smallest number of call sites possible in this commit; do not bundle scope from US-G03/G04."
+    },
+    {
+      "id": "US-G03",
+      "title": "Migrate internal/api/web_chat.go off agent.Runner",
+      "description": "internal/api/web_chat.go holds `runner *agent.Runner` and calls `s.runner.Run(ctx, task)` per /api/chat request. (a) Replace the `runner` field with a `deps func() agent.RunTaskDeps` lazy-builder (or an explicit RunTaskDeps stored at construction time — pick the simplest of the two; lazy avoids stashing stale limits at startup). (b) `webChatService.Chat` builds RunTaskDeps + Task and calls `agent.RunTask(ctx, deps, task)`. (c) Update `NewWebChatService` signature: drop `runner *agent.Runner` parameter, accept the same fields RunTaskDeps wraps (LLM, tools, model, reasoningEffort, phantomGuard, logger, limits getter). (d) Chase the single call site in cmd/aura/app.go that calls `NewWebChatService(...)` and pass the new args from `deps` / `cfg`. (e) Tests in internal/api/ that exercise web_chat must still pass; if a test injects a Runner stub, replace it with a RunTaskDeps stub that returns a fake LLM.",
+      "acceptanceCriteria": [
+        "internal/api/web_chat.go no longer references *agent.Runner",
+        "webChatService.Chat calls agent.RunTask (not s.runner.Run)",
+        "NewWebChatService signature updated; the one cmd/aura/app.go call site is updated",
+        "Existing internal/api tests pass without modification of their assertions",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(api): migrate webChatService off agent.Runner (US-G03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Watch the deps-getter lifecycle: per-request build is safer than struct-stored RunTaskDeps because dashboard mutations of cfg.AuraBot* propagate immediately. Lazy build also keeps webChatService trivially constructable in tests."
+    },
+    {
+      "id": "US-G04",
+      "title": "Migrate agentJobRunnerAdapter off agent.Runner",
+      "description": "cmd/aura/app.go has `type agentJobRunnerAdapter struct { r *agent.Runner }` implementing cron.JobRunner.RunJob by translating cron.JobRequest → agent.Task and calling r.Run. (a) Replace the adapter's `r *agent.Runner` field with the same RunTaskDeps-shaped fields as US-G03 (or a `func() agent.RunTaskDeps` getter — match US-G03's choice for consistency). (b) Update the adapter constructor and the single place where it's wired in cmd/aura/app.go. (c) `RunJob` calls agent.RunTask. (d) cron/dispatch.go::JobRunner interface stays untouched (it doesn't mention Runner). The doc comment 'satisfied by *agent.Runner via adapter' becomes 'satisfied by agentJobRunnerAdapter (cmd/aura) which calls agent.RunTask'. (e) Update internal/cron tests if any inject a Runner (likely they inject a JobRunner stub, so probably nothing changes).",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go::agentJobRunnerAdapter no longer holds a *agent.Runner",
+        "Adapter RunJob calls agent.RunTask",
+        "internal/cron/dispatch.go doc comment updated (no behavior change)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(cmd): migrate agentJobRunnerAdapter off agent.Runner (US-G04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "After this story, no production code holds *agent.Runner. cmd/aura/app.go still CONSTRUCTS one via agent.NewRunner — that construction goes away in US-G06."
+    },
+    {
+      "id": "US-G05",
+      "title": "Drop AgentLimitController runtime mutation",
+      "description": "internal/config/runtime_settings.go::ApplyRuntimeSettings takes a `runner config.AgentLimitController` parameter and calls `runner.UpdateLimits(...)` to mutate the Runner's limits live. With the consumers migrated (US-G02..G04) and Runner about to be deleted (US-G06), this knob has nothing to mutate. (a) Drop the `runner config.AgentLimitController` parameter from ApplyRuntimeSettings. (b) Delete the config.AgentLimitController interface (declared in internal/config/) and any test fakes that satisfy it. (c) Update cmd/aura/app.go's single call site to pass one fewer arg. (d) cfg.AuraBotMaxIterations / AuraBotTimeoutSec STILL update from settings (that part is unchanged — they live on the Config struct). They just propagate to NEXT agent.RunTask invocation instead of mutating a live runner. (e) Confirm via test that dashboard settings still flow into Config; the change is only that there's no longer a runner instance to push limits into.",
+      "acceptanceCriteria": [
+        "config.AgentLimitController interface deleted",
+        "ApplyRuntimeSettings signature drops the runner parameter",
+        "cmd/aura/app.go call site updated",
+        "cfg.AuraBot* settings still update from store via ApplyRuntimeSettings",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(config): drop AgentLimitController runtime mutation (US-G05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "config.SwarmLimitController (the manager.UpdateLimits one) is UNRELATED and stays — internal/swarm still has its own live-mutable limits. Only the runner-side controller goes."
+    },
+    {
+      "id": "US-G06",
+      "title": "Delete internal/agent/runner.go + runner_test.go",
+      "description": "With every consumer migrated (US-G02..G05), the legacy Runner type has no callers. (a) Delete internal/agent/runner.go (Runner struct, NewRunner constructor, Limits/UpdateLimits, Run, Config, defaultMaxIterations/defaultTimeout/defaultToolTimeout, the LimitController interface declaration if it lives here). (b) Delete internal/agent/runner_test.go in its entirety — its contract is now tested via internal/agent/runtask_test.go (US-G01). (c) Move Task, Result, RunTaskDeps types that US-G01 placed in runtask.go into a new internal/agent/task.go so the public API is cleanly documented (Task = input contract, Result = output contract, RunTaskDeps = wiring). runtask.go keeps just the RunTask function. (d) Remove the `auraRunner, err := agent.NewRunner(...)` block from cmd/aura/app.go — US-G02..G04 ensured nothing reads it. (e) Run go test ./... to confirm no broken refs.",
+      "acceptanceCriteria": [
+        "internal/agent/runner.go does NOT exist",
+        "internal/agent/runner_test.go does NOT exist",
+        "internal/agent/task.go exists with Task + Result + RunTaskDeps type definitions",
+        "internal/agent/runtask.go references task.go types (no duplicate definitions)",
+        "cmd/aura/app.go no longer calls agent.NewRunner",
+        "grep 'agent.NewRunner' returns zero hits across .go files",
+        "grep 'agent.Runner' returns zero hits across .go files (comments + identifiers)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent): delete legacy Runner type (US-G06)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "This is the moment the duplicate-loop debt from PRD §6 / D1 finally lands. Expect -800 LOC across the two deleted files (Runner 292 + runner_test 514 = 806). Some new LOC lands in task.go but the net delta should be strongly negative."
+    },
+    {
+      "id": "US-G07",
+      "title": "Refresh agent README + limits audit post-Runner-removal",
+      "description": "internal/agent/README.md still documents Runner as 'the package's single export'. The limits audit (docs/aura-main-loop-limits-audit.md §1) still names agent/runner.go as the residual to delete. (a) Rewrite internal/agent/README.md: package's main exports are now agent.Run (the streaming-capable loop entry used by chat.Hub) and agent.RunTask (the stateless one-shot wrapper for non-streaming callers — web chat, cron jobs). Document Task / Result / RunTaskDeps contracts. Keep the 'background agents in internal/swarm' note but link them to RunTask, not Runner. (b) Edit docs/aura-main-loop-limits-audit.md §1 'Main Loop Structure': remove the 'Two legacy callers still hit the loop via internal/agent/runner.go' bullet block; replace with 'agent.Run is the canonical loop; agent.RunTask is the stateless wrapper for one-shot callers'. Replace 'agent.Runner still exists but is the residual to delete per PRD D1' with 'Phase-G (2026-05-15) completed the deletion'. Bump the date line at the top to today. (c) Update .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md with a closure row + final commit SHA list (one row per US-G01..G07).",
+      "acceptanceCriteria": [
+        "internal/agent/README.md no longer mentions Runner / NewRunner / agent.Config (the old struct)",
+        "internal/agent/README.md documents agent.Run + agent.RunTask + Task + Result + RunTaskDeps",
+        "docs/aura-main-loop-limits-audit.md §1 reflects Phase-G completion",
+        "docs/aura-main-loop-limits-audit.md date line updated to today's date",
+        ".planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md has a closure row with commit SHAs for US-G01..G07",
+        "go build ./... green (doc-only change but run the gates anyway)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(agent): refresh README + audit post-Runner-removal (US-G07)"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Doc-only commit. Use `git add -f .planning/deep-refactor/Phase04_Collapse_Agent_Runtime/progress.md` because .planning/* is gitignored — precedent: every prior Phase closure commit."
+    }
+  ]
+}
