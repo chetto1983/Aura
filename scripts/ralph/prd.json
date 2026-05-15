@@ -60,7 +60,7 @@
         "Single atomic commit prefix: test(tools): visibility doesn't bypass authorization (US-I03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "If the real code already enforces this invariant (likely — Phase01B identity capability grants is mature), the test is a regression guard. If it doesn't, the test should still land as red and a follow-up code-fix story opens. Either way US-I03 ships the test."
     },
     {
