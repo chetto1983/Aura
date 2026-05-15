@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aura/aura/internal/conversation"
@@ -15,13 +16,13 @@ type stubToolRunner struct {
 	names  []string
 	result string
 	err    error
-	calls  int
+	calls  atomic.Int32
 }
 
 func (s *stubToolRunner) Names() []string { return s.names }
 
 func (s *stubToolRunner) Execute(_ context.Context, _ string, _ map[string]any) (string, error) {
-	s.calls++
+	s.calls.Add(1)
 	return s.result, s.err
 }
 
@@ -38,8 +39,8 @@ func TestExecuteToolCallsSuccessPath(t *testing.T) {
 	if summary.Results["call-1"] != "found memory" {
 		t.Fatalf("Results[call-1] = %q, want found memory", summary.Results["call-1"])
 	}
-	if runner.calls != 1 {
-		t.Fatalf("runner.calls = %d, want 1", runner.calls)
+	if got := runner.calls.Load(); got != 1 {
+		t.Fatalf("runner.calls = %d, want 1", got)
 	}
 }
 
@@ -81,7 +82,7 @@ func TestExecuteToolCallsSummaryAggregation(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("convCtx messages len = %d, want 2", len(msgs))
 	}
-	if runner.calls != 2 {
-		t.Fatalf("runner.calls = %d, want 2", runner.calls)
+	if got := runner.calls.Load(); got != 2 {
+		t.Fatalf("runner.calls = %d, want 2", got)
 	}
 }
