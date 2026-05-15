@@ -2,33 +2,45 @@ package chat
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aura/aura/internal/db/migrations"
+	runstore "github.com/aura/aura/internal/storage/runs"
+	"github.com/aura/aura/internal/testutil"
 )
 
 // --- Mocks ------------------------------------------------------------------
 
 type recordingLoop struct {
-	emits  []OutboundEvent
-	err    error
-	mu     sync.Mutex
+	emits       []OutboundEvent
+	err         error
+	mu          sync.Mutex
+	calls       int
 	finalStatus RunStatus
 }
 
 func (r *recordingLoop) Run(_ context.Context, run *Run, _ InboundMessage, emit EmitFn) error {
-	if r.err != nil {
-		return r.err
-	}
 	r.mu.Lock()
-	for _, ev := range r.emits {
+	r.calls++
+	emits := append([]OutboundEvent(nil), r.emits...)
+	err := r.err
+	finalStatus := r.finalStatus
+	r.mu.Unlock()
+
+	if err != nil {
+		return err
+	}
+	for _, ev := range emits {
 		_ = emit(ev)
 	}
-	r.mu.Unlock()
-	if r.finalStatus != "" {
-		run.Status = r.finalStatus
+	if finalStatus != "" {
+		run.Status = finalStatus
 	}
 	return nil
 }
@@ -52,8 +64,8 @@ type fakeOutbound struct {
 	err     error
 }
 
-func (f *fakeOutbound) Channel() Channel    { return f.channel }
-func (f *fakeOutbound) Mode() DeliveryMode  { return f.mode }
+func (f *fakeOutbound) Channel() Channel   { return f.channel }
+func (f *fakeOutbound) Mode() DeliveryMode { return f.mode }
 func (f *fakeOutbound) Deliver(_ context.Context, ev OutboundEvent) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -277,6 +289,227 @@ func TestReceiveMessage_BypassesInboundAdapter(t *testing.T) {
 	}
 }
 
+func TestReceiveMessage_WithLifecycleStorePersistsRunStartedAndDone(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	loop := &recordingLoop{}
+	h := newPersistentHub(t, loop, store)
+
+	msg := InboundMessage{
+		ID:          "inbound-1",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "secret user prompt",
+		Mode:        DeliveryModeDeferred,
+		Locale:      "it-IT",
+		TimeZone:    "Europe/Rome",
+		ParentRunID: "parent-run-1",
+		ChannelData: map[string]any{"chat_id": "do-not-store"},
+	}
+	run, err := h.ReceiveMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("ReceiveMessage: %v", err)
+	}
+
+	stored, err := store.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.Status != string(RunStatusCompleted) {
+		t.Fatalf("stored status = %s, want completed", stored.Status)
+	}
+	if stored.ParentRunID != msg.ParentRunID {
+		t.Fatalf("stored parent_run_id = %q, want %q", stored.ParentRunID, msg.ParentRunID)
+	}
+	if stored.CurrentSeq != 2 {
+		t.Fatalf("stored current_seq = %d, want 2", stored.CurrentSeq)
+	}
+
+	events, err := store.Events(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if got, want := eventTypes(events), []string{string(EventRunStarted), string(EventDone)}; !sameStrings(got, want) {
+		t.Fatalf("event types = %v, want %v", got, want)
+	}
+	assertNoStoredText(t, db, "secret user prompt")
+	assertNoStoredText(t, db, "do-not-store")
+}
+
+func TestReceiveMessage_WithLifecycleStoreDedupesInboundMessage(t *testing.T) {
+	_, store := newLifecycleStore(t)
+	loop := &recordingLoop{}
+	h := newPersistentHub(t, loop, store)
+	msg := InboundMessage{
+		ID:          "same-inbound-id",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "dedupe text",
+		Mode:        DeliveryModeDeferred,
+	}
+
+	first, err := h.ReceiveMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("first ReceiveMessage: %v", err)
+	}
+	second, err := h.ReceiveMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("second ReceiveMessage: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("second run ID = %s, want %s", second.ID, first.ID)
+	}
+	loop.mu.Lock()
+	calls := loop.calls
+	loop.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("loop calls = %d, want 1", calls)
+	}
+
+	events, err := store.Events(context.Background(), first.ID)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want 2", len(events))
+	}
+}
+
+func TestReceiveMessage_LoopErrorPersistsRedactedErrorLifecycle(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	rawErr := "boom secret raw error"
+	h := newPersistentHub(t, &recordingLoop{err: errors.New(rawErr)}, store)
+	msg := InboundMessage{
+		ID:          "error-inbound-id",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "secret failing prompt",
+		Mode:        DeliveryModeDeferred,
+	}
+
+	run, err := h.ReceiveMessage(context.Background(), msg)
+	if err == nil || err.Error() != rawErr {
+		t.Fatalf("expected raw loop error for caller, got %v", err)
+	}
+	if run.Status != RunStatusFailed {
+		t.Fatalf("run status = %s, want failed", run.Status)
+	}
+
+	stored, err := store.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.Status != string(RunStatusFailed) {
+		t.Fatalf("stored status = %s, want failed", stored.Status)
+	}
+	if stored.LastError != "agent_loop_error" {
+		t.Fatalf("stored last_error = %q, want redacted class", stored.LastError)
+	}
+
+	events, err := store.Events(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if got, want := eventTypes(events), []string{string(EventRunStarted), string(EventError), string(EventDone)}; !sameStrings(got, want) {
+		t.Fatalf("event types = %v, want %v", got, want)
+	}
+	assertNoStoredText(t, db, rawErr)
+	assertNoStoredText(t, db, "secret failing prompt")
+}
+
+func TestReceiveMessage_WithLifecycleStorePersistsRedactedToolUsageAndFinalEvents(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	loop := &recordingLoop{emits: []OutboundEvent{
+		{
+			Type: EventToolStart,
+			Payload: map[string]any{
+				"tool":           "search_memory",
+				"tool_call_id":   "call-1",
+				"arg_keys":       []string{"query"},
+				"raw_arg_values": "secret tool arg value",
+			},
+		},
+		{
+			Type: EventToolEnd,
+			Payload: map[string]any{
+				"tool":         "search_memory",
+				"tool_call_id": "call-1",
+				"success":      false,
+				"elapsed_ms":   int64(12),
+				"preview":      "secret tool result preview",
+			},
+		},
+		{
+			Type: EventUsage,
+			Payload: map[string]any{
+				"llm_calls":         2,
+				"tool_calls":        1,
+				"loop_steps":        2,
+				"tokens_prompt":     10,
+				"tokens_completion": 5,
+				"tokens_total":      15,
+				"cost_usd":          0.01,
+				"terminal_tool":     "",
+				"raw_usage_note":    "secret usage note",
+			},
+		},
+		{
+			Type:    EventMessageDone,
+			Content: "final answer for the user",
+			Payload: map[string]any{
+				"delivered":    true,
+				"raw_delivery": "secret delivery value",
+			},
+		},
+	}}
+	h := newPersistentHub(t, loop, store)
+	msg := InboundMessage{
+		ID:          "tool-inbound-id",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-1",
+		Text:        "secret tool prompt",
+		Mode:        DeliveryModeDeferred,
+	}
+
+	run, err := h.ReceiveMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("ReceiveMessage: %v", err)
+	}
+	events, err := store.Events(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if got, want := eventTypes(events), []string{
+		string(EventRunStarted),
+		string(EventToolStart),
+		string(EventToolEnd),
+		string(EventUsage),
+		string(EventMessageDone),
+		string(EventDone),
+	}; !sameStrings(got, want) {
+		t.Fatalf("event types = %v, want %v", got, want)
+	}
+
+	stored, err := store.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if stored.FinalTextPreview != "final answer for the user" {
+		t.Fatalf("final_text_preview = %q", stored.FinalTextPreview)
+	}
+	if !strings.Contains(stored.StatsJSON, `"tokens_total":15`) {
+		t.Fatalf("stats_json missing tokens_total: %s", stored.StatsJSON)
+	}
+	assertNoStoredText(t, db, "secret tool prompt")
+	assertNoStoredText(t, db, "secret tool arg value")
+	assertNoStoredText(t, db, "secret tool result preview")
+	assertNoStoredText(t, db, "secret usage note")
+	assertNoStoredText(t, db, "secret delivery value")
+}
+
 func TestRegisterOutbound_MultipleAdaptersFanout(t *testing.T) {
 	loop := &recordingLoop{emits: []OutboundEvent{{Type: EventMessageDone}}}
 	h := newHub(t, loop)
@@ -296,6 +529,88 @@ func TestRegisterOutbound_MultipleAdaptersFanout(t *testing.T) {
 
 // --- Helpers ---------------------------------------------------------------
 
+func newPersistentHub(t *testing.T, loop AgentLoop, store LifecycleStore) *Hub {
+	t.Helper()
+	h, err := New(Config{Loop: loop, LifecycleStore: store})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
+}
+
+func newLifecycleStore(t *testing.T) (*sql.DB, *runstore.Store) {
+	t.Helper()
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return db, store
+}
+
+func eventTypes(events []runstore.Event) []string {
+	types := make([]string, 0, len(events))
+	for _, event := range events {
+		types = append(types, event.Type)
+	}
+	return types
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func assertNoStoredText(t *testing.T, db *sql.DB, text string) {
+	t.Helper()
+	pattern := "%" + text + "%"
+	queries := []struct {
+		name  string
+		query string
+		args  []any
+	}{
+		{
+			name:  "runs metadata",
+			query: `SELECT COUNT(*) FROM runs WHERE metadata_json LIKE ?`,
+			args:  []any{pattern},
+		},
+		{
+			name:  "runs final text",
+			query: `SELECT COUNT(*) FROM runs WHERE final_text_preview LIKE ?`,
+			args:  []any{pattern},
+		},
+		{
+			name:  "runs last error",
+			query: `SELECT COUNT(*) FROM runs WHERE last_error LIKE ?`,
+			args:  []any{pattern},
+		},
+		{
+			name:  "run events payload",
+			query: `SELECT COUNT(*) FROM run_events WHERE payload_json LIKE ?`,
+			args:  []any{pattern},
+		},
+	}
+	for _, q := range queries {
+		var count int
+		if err := db.QueryRow(q.query, q.args...).Scan(&count); err != nil {
+			t.Fatalf("%s query failed: %v", q.name, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s contains raw text %q", q.name, text)
+		}
+	}
+	if strings.Contains(text, "%") || strings.Contains(text, "_") {
+		t.Fatalf("test text %q contains LIKE wildcard", text)
+	}
+}
+
 type blockingLoopFn func(context.Context, *Run, InboundMessage, EmitFn) error
 
 func (f blockingLoopFn) Run(ctx context.Context, run *Run, msg InboundMessage, emit EmitFn) error {
@@ -303,14 +618,14 @@ func (f blockingLoopFn) Run(ctx context.Context, run *Run, msg InboundMessage, e
 }
 
 type outboundFnAdapter struct {
-	ch   Channel
-	md   DeliveryMode
-	fn   func(OutboundEvent) error
+	ch Channel
+	md DeliveryMode
+	fn func(OutboundEvent) error
 }
 
-func (a outboundFnAdapter) Channel() Channel                                    { return a.ch }
-func (a outboundFnAdapter) Mode() DeliveryMode                                  { return a.md }
-func (a outboundFnAdapter) Deliver(_ context.Context, ev OutboundEvent) error  { return a.fn(ev) }
+func (a outboundFnAdapter) Channel() Channel                                  { return a.ch }
+func (a outboundFnAdapter) Mode() DeliveryMode                                { return a.md }
+func (a outboundFnAdapter) Deliver(_ context.Context, ev OutboundEvent) error { return a.fn(ev) }
 
 func outboundFn(ch Channel, md DeliveryMode, fn func(OutboundEvent) error) OutboundAdapter {
 	return outboundFnAdapter{ch: ch, md: md, fn: fn}

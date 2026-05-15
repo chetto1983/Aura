@@ -168,8 +168,18 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"wiki_documents",
 		"compact_memory_documents",
 		"compact_memory_fts",
+		"principals",
+		"channel_accounts",
+		"actors",
+		"capability_grants",
+		"authz_decisions",
 		"swarm_runs",
 		"swarm_tasks",
+		"runs",
+		"run_events",
+		"run_outbox",
+		"run_idempotency_keys",
+		"audit_events",
 	}
 	for _, table := range tables {
 		var name string
@@ -216,6 +226,158 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"entities_json",
 		"tags_json",
 		"updated_at",
+	})
+	assertColumns(t, db, "principals", []string{
+		"id",
+		"kind",
+		"display_name",
+		"status",
+		"created_at",
+		"metadata_json",
+	})
+	assertColumns(t, db, "channel_accounts", []string{
+		"id",
+		"principal_id",
+		"provider",
+		"external_id",
+		"display_name",
+		"created_at",
+		"last_seen_at",
+		"metadata_json",
+	})
+	assertColumns(t, db, "actors", []string{
+		"id",
+		"principal_id",
+		"actor_type",
+		"parent_actor_id",
+		"channel_account_id",
+		"run_id",
+		"created_at",
+		"expires_at",
+		"metadata_json",
+	})
+	assertColumns(t, db, "capability_grants", []string{
+		"id",
+		"subject_type",
+		"subject_id",
+		"capability",
+		"resource_type",
+		"resource_id",
+		"constraints_json",
+		"granted_by_actor_id",
+		"created_at",
+		"expires_at",
+		"revoked_at",
+	})
+	assertColumns(t, db, "authz_decisions", []string{
+		"id",
+		"actor_id",
+		"capability",
+		"resource_type",
+		"resource_id",
+		"decision",
+		"reason",
+		"run_id",
+		"event_id",
+		"created_at",
+	})
+	assertColumns(t, db, "runs", []string{
+		"id",
+		"parent_run_id",
+		"thread_id",
+		"principal_id",
+		"actor_id",
+		"channel",
+		"status",
+		"current_seq",
+		"idempotency_key",
+		"correlation_id",
+		"final_text_preview",
+		"stats_json",
+		"metadata_json",
+	})
+	assertColumns(t, db, "run_events", []string{
+		"id",
+		"run_id",
+		"parent_run_id",
+		"seq",
+		"type",
+		"schema_version",
+		"idempotency_key",
+		"payload_json",
+		"redaction_level",
+	})
+	assertColumns(t, db, "run_outbox", []string{
+		"id",
+		"run_id",
+		"event_id",
+		"target",
+		"idempotency_key",
+		"payload_json",
+		"status",
+		"attempts",
+		"next_attempt_at",
+		"last_error",
+	})
+	assertColumns(t, db, "run_idempotency_keys", []string{
+		"scope",
+		"key",
+		"run_id",
+		"event_id",
+		"created_at",
+	})
+	assertColumns(t, db, "audit_events", []string{
+		"id",
+		"run_id",
+		"event_id",
+		"type",
+		"actor_id",
+		"target_type",
+		"target_id",
+		"payload_json",
+		"redaction_level",
+	})
+	assertIndexes(t, db, "runs", []string{
+		"idx_runs_status_updated",
+		"idx_runs_thread_updated",
+		"idx_runs_actor_updated",
+		"idx_runs_parent",
+		"idx_runs_idempotency",
+	})
+	assertIndexes(t, db, "run_events", []string{
+		"idx_run_events_run_seq",
+		"idx_run_events_type_created",
+		"idx_run_events_correlation",
+		"idx_run_events_idempotency",
+	})
+	assertIndexes(t, db, "run_outbox", []string{
+		"idx_run_outbox_status_next",
+		"idx_run_outbox_target_idempotency",
+	})
+	assertIndexes(t, db, "audit_events", []string{
+		"idx_audit_events_type_created",
+		"idx_audit_events_actor_created",
+	})
+	assertIndexes(t, db, "principals", []string{
+		"idx_principals_kind_status",
+	})
+	assertIndexes(t, db, "channel_accounts", []string{
+		"idx_channel_accounts_principal",
+	})
+	assertIndexes(t, db, "actors", []string{
+		"idx_actors_principal_created",
+		"idx_actors_parent",
+		"idx_actors_run",
+	})
+	assertIndexes(t, db, "capability_grants", []string{
+		"idx_capability_grants_subject",
+		"idx_capability_grants_capability_resource",
+		"idx_capability_grants_revoked",
+	})
+	assertIndexes(t, db, "authz_decisions", []string{
+		"idx_authz_decisions_actor_created",
+		"idx_authz_decisions_run_created",
+		"idx_authz_decisions_capability_created",
 	})
 }
 
@@ -384,9 +546,99 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 5 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5]", first)
+	if len(first) != 7 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7]", first)
 	}
+}
+
+func TestIdentityCapabilityTablesAreUsable(t *testing.T) {
+	db := openTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := db.Exec(`
+INSERT INTO principals (id, kind, display_name, status, created_at, metadata_json)
+VALUES ('principal-1', 'human', 'Owner', 'active', '2026-05-15T08:00:00Z', '{}');
+INSERT INTO channel_accounts (id, principal_id, provider, external_id, display_name, created_at, metadata_json)
+VALUES ('acct-1', 'principal-1', 'telegram', '123', 'Owner TG', '2026-05-15T08:00:00Z', '{}');
+INSERT INTO actors (id, principal_id, actor_type, channel_account_id, run_id, created_at, metadata_json)
+VALUES ('actor-1', 'principal-1', 'session', 'acct-1', 'run-1', '2026-05-15T08:00:00Z', '{}');
+INSERT INTO capability_grants (
+  id, subject_type, subject_id, capability, resource_type, resource_id,
+  constraints_json, granted_by_actor_id, created_at
+) VALUES (
+  'grant-1', 'principal', 'principal-1', 'api.chat', 'thread', 'thread-1',
+  '{}', 'actor-1', '2026-05-15T08:00:00Z'
+);
+INSERT INTO authz_decisions (
+  id, actor_id, capability, resource_type, resource_id, decision, reason,
+  run_id, event_id, created_at
+) VALUES (
+  'decision-1', 'actor-1', 'api.chat', 'thread', 'thread-1', 'allow',
+  'active_grant', 'run-1', 'event-1', '2026-05-15T08:00:01Z'
+);
+`); err != nil {
+		t.Fatalf("insert identity rows: %v", err)
+	}
+
+	assertScalar(t, db, `SELECT principal_id FROM channel_accounts WHERE id = 'acct-1'`, "principal-1")
+	assertScalar(t, db, `SELECT decision FROM authz_decisions WHERE id = 'decision-1'`, "allow")
+
+	if _, err := db.Exec(`
+INSERT INTO channel_accounts (id, principal_id, provider, external_id, created_at, metadata_json)
+VALUES ('acct-bad', 'missing-principal', 'telegram', '404', '2026-05-15T08:00:00Z', '{}')
+`); err == nil {
+		t.Fatal("expected foreign-key failure for missing principal")
+	}
+}
+
+func TestRunEventFoundationTablesAreUsable(t *testing.T) {
+	db := openTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := db.Exec(`
+INSERT INTO runs (
+  id, parent_run_id, thread_id, principal_id, channel, status, started_at,
+  updated_at, idempotency_key, correlation_id, stats_json, metadata_json
+) VALUES (
+  'run-1', 'parent-1', 'thread-1', 'principal-1', 'web', 'running',
+  '2026-05-15T08:00:00Z', '2026-05-15T08:00:00Z', 'inbound-1',
+  'corr-1', '{}', '{}'
+);
+INSERT INTO run_events (
+  id, run_id, parent_run_id, seq, type, schema_version, correlation_id,
+  idempotency_key, payload_json, redaction_level, created_at
+) VALUES (
+  'event-1', 'run-1', 'parent-1', 1, 'run_started', 1, 'corr-1',
+  'event-1-key', '{"arg_keys":["q"]}', 'metadata', '2026-05-15T08:00:01Z'
+);
+INSERT INTO run_outbox (
+  id, run_id, event_id, target, idempotency_key, payload_json, status,
+  attempts, created_at, updated_at
+) VALUES (
+  'outbox-1', 'run-1', 'event-1', 'web:sse', 'deliver-1', '{}',
+  'pending', 0, '2026-05-15T08:00:01Z', '2026-05-15T08:00:01Z'
+);
+INSERT INTO run_idempotency_keys (scope, key, run_id, event_id, created_at)
+VALUES ('inbound', 'inbound-1', 'run-1', '', '2026-05-15T08:00:00Z');
+INSERT INTO audit_events (
+  id, run_id, event_id, type, actor_id, target_type, target_id, payload_json,
+  redaction_level, created_at
+) VALUES (
+  'audit-1', 'run-1', 'event-1', 'privileged_payload_read', 'principal-1',
+  'run', 'run-1', '{}', 'metadata', '2026-05-15T08:00:02Z'
+);
+`); err != nil {
+		t.Fatalf("insert run event foundation rows: %v", err)
+	}
+
+	assertScalar(t, db, `SELECT parent_run_id FROM run_events WHERE id = 'event-1'`, "parent-1")
+	assertScalar(t, db, `SELECT status FROM run_outbox WHERE id = 'outbox-1'`, "pending")
+	assertScalar(t, db, `SELECT run_id FROM run_idempotency_keys WHERE scope = 'inbound' AND key = 'inbound-1'`, "run-1")
+	assertScalar(t, db, `SELECT type FROM audit_events WHERE id = 'audit-1'`, "privileged_payload_read")
 }
 
 func TestFreshAndUpgradedSchemasConverge(t *testing.T) {

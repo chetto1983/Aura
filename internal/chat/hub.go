@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	runstore "github.com/aura/aura/internal/storage/runs"
 )
 
 // AgentLoop is the single channel-neutral entry point into the agent
@@ -53,15 +56,24 @@ type OutboundAdapter interface {
 	Deliver(ctx context.Context, event OutboundEvent) error
 }
 
+// LifecycleStore is the minimal durable run/event store the Hub needs.
+// It records metadata-level lifecycle state only; full prompts, tool
+// arguments, and adapter payloads stay out of the default trace plane.
+type LifecycleStore interface {
+	CreateOrGetRun(ctx context.Context, params runstore.CreateRunParams) (runstore.Run, bool, error)
+	AppendEvent(ctx context.Context, params runstore.AppendEventParams) (runstore.Event, error)
+}
+
 // Hub is the central dispatcher. Boot wires every adapter once; Receive
 // is called by inbound entry points (Telegram update handler, /api/chat
 // handler, scheduler tick) with the channel-specific raw payload.
 type Hub struct {
-	loop      AgentLoop
-	inbound   map[Channel]InboundAdapter
-	outbound  map[outboundKey][]OutboundAdapter
-	logger    *slog.Logger
-	cancels   sync.Map // RunID → context.CancelFunc; used by /stop
+	loop       AgentLoop
+	lifecycle  LifecycleStore
+	inbound    map[Channel]InboundAdapter
+	outbound   map[outboundKey][]OutboundAdapter
+	logger     *slog.Logger
+	cancels    sync.Map // RunID → context.CancelFunc; used by /stop
 	seqCounter atomic.Int64
 }
 
@@ -72,8 +84,9 @@ type outboundKey struct {
 
 // Config bundles the dependencies for New.
 type Config struct {
-	Loop   AgentLoop
-	Logger *slog.Logger
+	Loop           AgentLoop
+	LifecycleStore LifecycleStore
+	Logger         *slog.Logger
 }
 
 // New constructs an empty Hub. Adapters are registered via
@@ -87,10 +100,11 @@ func New(cfg Config) (*Hub, error) {
 		logger = slog.Default()
 	}
 	return &Hub{
-		loop:     cfg.Loop,
-		inbound:  make(map[Channel]InboundAdapter),
-		outbound: make(map[outboundKey][]OutboundAdapter),
-		logger:   logger,
+		loop:      cfg.Loop,
+		lifecycle: cfg.LifecycleStore,
+		inbound:   make(map[Channel]InboundAdapter),
+		outbound:  make(map[outboundKey][]OutboundAdapter),
+		logger:    logger,
 	}, nil
 }
 
@@ -150,14 +164,35 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 	if msg.ParentRunID != "" {
 		meta["parent_run_id"] = msg.ParentRunID
 	}
+	startedAt := time.Now().UTC()
 	run := &Run{
 		ID:          runID,
 		ThreadID:    msg.ThreadID,
 		PrincipalID: msg.PrincipalID,
 		Channel:     msg.Channel,
 		Status:      RunStatusRunning,
-		StartedAt:   time.Now().UTC(),
+		StartedAt:   startedAt,
 		Metadata:    meta,
+	}
+	if h.lifecycle != nil {
+		stored, created, err := h.lifecycle.CreateOrGetRun(ctx, runstore.CreateRunParams{
+			ID:             run.ID,
+			ParentRunID:    msg.ParentRunID,
+			ThreadID:       msg.ThreadID,
+			PrincipalID:    msg.PrincipalID,
+			Channel:        string(msg.Channel),
+			Status:         string(RunStatusRunning),
+			IdempotencyKey: msg.ID,
+			StartedAt:      startedAt,
+			Metadata:       lifecycleRunMetadata(msg),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("chathub: persist run: %w", err)
+		}
+		run = chatRunFromStored(stored)
+		if !created {
+			return run, nil
+		}
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -167,7 +202,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		cancel()
 	}()
 
-	emit := h.makeEmit(runCtx, run, msg.Mode)
+	emit := h.makeEmit(runCtx, context.WithoutCancel(ctx), run, msg.Mode)
 
 	if err := emit(OutboundEvent{
 		Type:    EventRunStarted,
@@ -217,7 +252,7 @@ func (h *Hub) Stop(runID string) bool {
 // adapter registered for (msg.Channel, msg.Mode). Adds the run-level
 // fields (RunID, ThreadID, Seq, CreatedAt) so the AgentLoop callback
 // only fills the event-specific bits.
-func (h *Hub) makeEmit(ctx context.Context, run *Run, mode DeliveryMode) EmitFn {
+func (h *Hub) makeEmit(ctx, persistCtx context.Context, run *Run, mode DeliveryMode) EmitFn {
 	key := outboundKey{Channel: run.Channel, Mode: mode}
 	adapters := h.outbound[key]
 	if len(adapters) == 0 {
@@ -246,6 +281,14 @@ func (h *Hub) makeEmit(ctx context.Context, run *Run, mode DeliveryMode) EmitFn 
 			ev.CreatedAt = time.Now().UTC()
 		}
 		var firstErr error
+		if h.lifecycle != nil && isDurableRunEvent(ev.Type) {
+			if err := h.persistLifecycleEvent(persistCtx, run, ev); err != nil {
+				firstErr = err
+				h.logger.Error("chathub: persist lifecycle event failed",
+					"run_id", run.ID, "channel", run.Channel,
+					"event", ev.Type, "err", err)
+			}
+		}
 		for _, a := range adapters {
 			if err := a.Deliver(ctx, ev); err != nil && firstErr == nil {
 				firstErr = err
@@ -256,6 +299,201 @@ func (h *Hub) makeEmit(ctx context.Context, run *Run, mode DeliveryMode) EmitFn 
 		}
 		return firstErr
 	}
+}
+
+func (h *Hub) persistLifecycleEvent(ctx context.Context, run *Run, ev OutboundEvent) error {
+	persistCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := h.lifecycle.AppendEvent(persistCtx, lifecycleEventParams(run, ev))
+	if err != nil {
+		return fmt.Errorf("chathub: append lifecycle event: %w", err)
+	}
+	return nil
+}
+
+func isDurableRunEvent(eventType EventType) bool {
+	switch eventType {
+	case EventRunStarted, EventToolStart, EventToolEnd, EventMessageDone, EventUsage, EventDone, EventError, EventCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func lifecycleRunMetadata(msg InboundMessage) map[string]any {
+	metadata := map[string]any{
+		"delivery_mode": string(msg.Mode),
+	}
+	if msg.ID != "" {
+		metadata["inbound_message_id"] = msg.ID
+	}
+	if msg.ParentRunID != "" {
+		metadata["parent_run_id"] = msg.ParentRunID
+	}
+	if msg.Locale != "" {
+		metadata["locale"] = msg.Locale
+	}
+	if msg.TimeZone != "" {
+		metadata["time_zone"] = msg.TimeZone
+	}
+	return metadata
+}
+
+func lifecycleEventParams(run *Run, ev OutboundEvent) runstore.AppendEventParams {
+	params := runstore.AppendEventParams{
+		ID:             ev.ID,
+		RunID:          run.ID,
+		Type:           string(ev.Type),
+		IdempotencyKey: ev.ID,
+		Payload:        lifecyclePayload(run, ev),
+		RedactionLevel: runstore.RedactionMetadata,
+		CreatedAt:      ev.CreatedAt,
+	}
+	switch ev.Type {
+	case EventRunStarted:
+		params.RunStatus = string(RunStatusRunning)
+	case EventCancelled:
+		params.RunStatus = string(RunStatusCancelled)
+		params.CancelledAt = &ev.CreatedAt
+		params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+		params.LastError = "context_canceled"
+	case EventError:
+		params.RunStatus = string(RunStatusFailed)
+		params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+		params.LastError = "agent_loop_error"
+	case EventToolStart, EventToolEnd:
+	case EventUsage:
+		params.Stats = durableStats(ev.Payload)
+	case EventMessageDone:
+		params.FinalTextPreview = textPreview(ev.Content)
+	case EventDone:
+		params.RunStatus = string(run.Status)
+		params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+		if run.Status == RunStatusCancelled {
+			params.CancelledAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+			params.LastError = "context_canceled"
+		}
+		if run.Status == RunStatusFailed {
+			params.LastError = "agent_loop_error"
+		}
+		params.FinalTextPreview = finalTextPreview(run)
+	}
+	return params
+}
+
+func lifecyclePayload(run *Run, ev OutboundEvent) map[string]any {
+	payload := map[string]any{
+		"event_type": string(ev.Type),
+		"status":     string(run.Status),
+		"channel":    string(run.Channel),
+	}
+	if run.ThreadID != "" {
+		payload["thread_id"] = run.ThreadID
+	}
+	if run.PrincipalID != "" {
+		payload["principal_id"] = run.PrincipalID
+	}
+	if parentRunID, _ := run.Metadata["parent_run_id"].(string); parentRunID != "" {
+		payload["parent_run_id"] = parentRunID
+	}
+	switch ev.Type {
+	case EventToolStart:
+		copyPayloadKeys(payload, ev.Payload, "tool", "tool_call_id", "arg_keys")
+	case EventToolEnd:
+		copyPayloadKeys(payload, ev.Payload, "tool", "tool_call_id", "success", "elapsed_ms")
+		if success, _ := ev.Payload["success"].(bool); !success {
+			payload["error_class"] = "tool_failed"
+		}
+		if ev.Payload["preview"] != nil {
+			payload["result_redaction"] = "preview_omitted"
+		}
+	case EventUsage:
+		for k, v := range durableStats(ev.Payload) {
+			payload[k] = v
+		}
+	case EventMessageDone:
+		copyPayloadKeys(payload, ev.Payload, "delivered")
+		if preview := textPreview(ev.Content); preview != "" {
+			payload["final_text_preview"] = preview
+		}
+	case EventCancelled:
+		payload["reason_class"] = "context_canceled"
+	case EventError:
+		payload["error_class"] = "agent_loop_error"
+	}
+	return payload
+}
+
+func copyPayloadKeys(dst, src map[string]any, keys ...string) {
+	for _, key := range keys {
+		if value, ok := src[key]; ok {
+			dst[key] = value
+		}
+	}
+}
+
+func durableStats(payload map[string]any) map[string]any {
+	stats := map[string]any{}
+	copyPayloadKeys(
+		stats,
+		payload,
+		"llm_calls",
+		"tool_calls",
+		"loop_steps",
+		"tokens_prompt",
+		"tokens_completion",
+		"tokens_total",
+		"cost_usd",
+		"terminal_tool",
+	)
+	return stats
+}
+
+func chatRunFromStored(stored runstore.Run) *Run {
+	metadata := map[string]any{}
+	if stored.MetadataJSON != "" {
+		_ = json.Unmarshal([]byte(stored.MetadataJSON), &metadata)
+	}
+	if stored.ParentRunID != "" {
+		metadata["parent_run_id"] = stored.ParentRunID
+	}
+	return &Run{
+		ID:          stored.ID,
+		ThreadID:    stored.ThreadID,
+		PrincipalID: stored.PrincipalID,
+		Channel:     Channel(stored.Channel),
+		Status:      RunStatus(stored.Status),
+		Model:       stored.Model,
+		StartedAt:   stored.StartedAt,
+		CompletedAt: stored.CompletedAt,
+		LastError:   stored.LastError,
+		Metadata:    metadata,
+	}
+}
+
+func firstTime(candidates ...*time.Time) *time.Time {
+	for _, candidate := range candidates {
+		if candidate != nil {
+			return candidate
+		}
+	}
+	return nil
+}
+
+func finalTextPreview(run *Run) string {
+	text, _ := run.Metadata["final_text"].(string)
+	return textPreview(text)
+}
+
+func textPreview(text string) string {
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) > 280 {
+		runes = runes[:280]
+	}
+	return string(runes)
 }
 
 // newRunID + newEventID generate short hex correlators (8 bytes = 16 hex

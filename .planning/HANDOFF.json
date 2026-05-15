@@ -1,82 +1,154 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-14T18:05:49.6548916+02:00",
+  "timestamp": "2026-05-15T10:14:00+02:00",
   "context": "deep-refactor",
-  "phase": "Phase01",
-  "phase_name": "Stabilize Map",
-  "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01",
-  "status": "parent-ready-for-discussion",
+  "phase": "Phase01B",
+  "phase_name": "Establish Identity and Capability Grants",
+  "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants",
+  "status": "phase01b1-go-verified",
   "completed_tasks": [
     {
-      "id": "P1.1",
-      "name": "Source-state reconciliation",
+      "id": "CLEAN-INDEX",
+      "name": "Recreate deep-refactor phase index",
       "status": "done",
-      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map/source.md"
+      "evidence": "D:/Aura/.planning/deep-refactor/INDEX.md"
     },
     {
-      "id": "P1.2",
-      "name": "Package ownership matrix",
+      "id": "CLEAN-PHASE01",
+      "name": "Recreate Phase01 parent and canonical subphases",
       "status": "done",
-      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map/package-matrix.md"
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphase-summary.md"
     },
     {
-      "id": "P1.3",
-      "name": "Live gates and benchmarks",
+      "id": "P1A-PLAN",
+      "name": "Promote Phase01A to a local source-audited implementation plan",
       "status": "done",
-      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map/benchmark.md"
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation/plan.md"
     },
     {
-      "id": "P1-D1",
-      "name": "Rename internal/cron package scheduler to cron",
+      "id": "P1A-STORAGE",
+      "name": "Add run/event storage foundation",
       "status": "done",
-      "commit": "b75a02a4",
-      "evidence": "ADR-037 in D:/Aura/.planning/aura-deep-refactor-decisions.json"
+      "evidence": "D:/Aura/internal/storage/runs/store.go"
+    },
+    {
+      "id": "P1A-HUB-LIFECYCLE",
+      "name": "Wire minimal chat Hub lifecycle persistence",
+      "status": "done",
+      "evidence": "D:/Aura/internal/chat/hub.go"
+    },
+    {
+      "id": "P1A-VERIFIER-REPAIR",
+      "name": "Persist redacted tool, usage, and final-output metadata events",
+      "status": "done",
+      "evidence": "D:/Aura/internal/chat/hub_test.go"
+    },
+    {
+      "id": "P1B-PLAN",
+      "name": "Promote Phase01B to a source-audited implementation plan",
+      "status": "done",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md"
+    },
+    {
+      "id": "P1B1-IDENTITY-FOUNDATION",
+      "name": "Add identity/capability schema and default-deny identity authorizer",
+      "status": "verified_locally",
+      "evidence": "D:/Aura/internal/identity/store.go"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "NEXT",
-      "name": "Begin the first verified Phase01 implementation slice",
+      "id": "P1B1-VERIFIER-OR-P1B2",
+      "name": "Verify Phase01B1 independently or start Phase01B2 allowlist backfill",
       "status": "not_started",
-      "recommended_next": "Confirm Phase01A open decisions, rerun current-tree baseline tests, then begin Phase01/subphases/Phase01A_Run_Event_Foundation unless the user explicitly chooses another child slice."
+      "recommended_next": "Run a fresh verifier for Phase01B1 or use `$aura-implementation-loop` for Phase01B2: backfill/migrate current allowlisted Telegram users into principals, channel_accounts, and owner/user grants while preserving `allowed_users`."
     }
   ],
   "decisions": [
     {
-      "decision": "Old planning waves are evidence, not active execution queue.",
-      "rationale": "ADR-036 prevents stale paths and old plans from driving implementation.",
+      "decision": "Old phase folders were intentionally discarded.",
+      "rationale": "The user deleted them because they were too noisy; recreated folders do not inherit stale verification.",
+      "source": "Current user instruction on 2026-05-15"
+    },
+    {
+      "decision": "Phase01A storage foundation lands before Hub wiring.",
+      "rationale": "Migration and repository contract can be verified independently before touching channel/chat runtime behavior.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation/plan.md"
+    },
+    {
+      "decision": "Run execution facts use SQLite `runs` snapshots plus append-only `run_events`.",
+      "rationale": "This follows ADR-019 and preserves cache/logs as non-canonical support planes.",
       "source": "D:/Aura/.planning/aura-deep-refactor-decisions.json"
     },
     {
-      "decision": "Phase 1 is complete after the cron package-name cleanup.",
-      "rationale": "The only safe Phase 1 implementation move was the pure rename from package scheduler to package cron.",
-      "source": "ADR-037"
+      "decision": "The Hub lifecycle store seam is optional and stores metadata-level lifecycle events only.",
+      "rationale": "This keeps existing adapter delivery behavior stable while preventing raw prompts, channel data, and raw loop errors from becoming default stored event payloads.",
+      "source": "D:/Aura/internal/chat/hub.go"
     },
     {
-      "decision": "Do not redesign cron behavior in Phase 1.",
-      "rationale": "Phase 8 still owns cron workflow semantics and RunGraph integration.",
-      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map/package-matrix.md"
-    }
-  ],
-  "blockers": [],
-  "human_actions_pending": [
+      "decision": "Hub persists tool/usage/final-output metadata with an allowlist.",
+      "rationale": "PRD Phase 1A requires durable tool names, call ids, argument keys, status, timing, usage, and final output without raw argument values or raw tool result payloads by default.",
+      "source": "D:/Aura/internal/chat/hub.go"
+    },
     {
-      "action": "Confirm Phase01A open decisions before code edits.",
-      "context": "Phase 1 parent planning is verified for discussion. The recommended next implementation slice is Phase01/subphases/Phase01A_Run_Event_Foundation, but the user may choose a different child slice.",
-      "blocking": true
+      "decision": "Phase01B first slice is schema plus `internal/identity`, not direct channel rewiring.",
+      "rationale": "The source audit found auth, Telegram, cron, swarm, and tool allowlists all depend on the same missing authority boundary; landing schema/default-deny Authorize first prevents broad cross-surface churn.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md"
+    },
+    {
+      "decision": "Phase01B1 is locally Go-verified.",
+      "rationale": "Migration/identity tests, targeted build/vet, repo-wide build/vet, and full Go tests pass.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md"
     }
   ],
+  "blockers": [
+    {
+      "blocker": "Phase01B planning is self-audited but not subagent-verified.",
+      "resolution": "Run a fresh verifier before marking Phase01B complete. Implementation may start with the bounded Phase01B1 slice."
+    }
+  ],
+  "human_actions_pending": [],
   "validation": [
-    "go test ./internal/cron ./internal/api ./internal/agent/tools/registry ./internal/telegram",
-    "go vet ./...",
+    "go test ./internal/db/migrations ./internal/chat",
+    "go test ./internal/db/migrations ./internal/storage/runs ./internal/chat",
     "go build ./...",
+    "go vet ./...",
+    "go test ./...",
+    "Phase01B plan/source/benchmark/progress promoted by source audit",
+    "go test ./internal/db/migrations ./internal/identity",
+    "go test ./internal/db/migrations -run \"TestRunCreatesCurrentFreshSchema|TestFreshAndUpgradedSchemasConverge|TestIdentityCapabilityTablesAreUsable\"",
+    "go test ./internal/identity -run \"TestAuthorize|TestCreateOrResolveChannelAccount\"",
+    "go vet ./internal/db/migrations ./internal/identity",
+    "go build ./internal/db/migrations ./internal/identity",
+    "go test ./internal/db/migrations ./internal/identity ./internal/storage/runs ./internal/chat",
+    "go build ./...",
+    "go vet ./...",
+    "go test ./internal/telegram",
     "go test ./..."
   ],
-  "uncommitted_files": [],
+  "uncommitted_files": [
+    ".planning/HANDOFF.json",
+    ".planning/deep-refactor/.continue-here.md",
+    "CONTINUE-HERE.md",
+    "internal/db/migrations/migrations.go",
+    "internal/db/migrations/migrations_test.go",
+    "internal/chat/hub.go",
+    "internal/chat/hub_test.go",
+    "internal/storage/runs/store.go",
+    "internal/storage/runs/store_test.go",
+    "internal/identity/store.go",
+    "internal/identity/store_test.go",
+    "internal/identity/types.go",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/plan.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/source.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/benchmark.md",
+    ".planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/progress.md",
+    "scripts/ralph/prd.json (pre-existing/parallel Ralph queue change; preserve unless queue work)"
+  ],
   "last_known_git": {
-    "head": "b75a02a4 RENAME CRON",
-    "status": "clean before writing this handoff"
+    "head": "e2ba8fad refactor(api): move web_chat from telegram/ to api/ (US-A17)",
+    "status": "dirty after Phase01A, Phase01B1, and unrelated Ralph queue changes"
   },
-  "next_action": "Read CONTINUE-HERE.md, AGENTS.md, prd.md Phase 1A, .planning/deep-refactor/INDEX.md, Phase01/subphase-summary.md, and Phase01/subphases/Phase01A_Run_Event_Foundation/{plan.md,source.md,benchmark.md,progress.md}; confirm open decisions, rerun baseline tests, then execute the first bounded Phase01A slice.",
-  "context_notes": "The user wants a deep refactor, not quick wins. Keep the PRD as the route, cite sources, use phase folders with plan/source/benchmark/progress, and avoid reopening stale wave plans as executable queues."
+  "next_action": "Run a fresh verifier for Phase01B1 or start Phase01B2 allowlist backfill as a separate implementation slice.",
+  "context_notes": "Do not bundle dashboard actor session, tool capability checks, cron delegation, or swarm delegation into Phase01B2. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 local Go verification passed, but Phase01B is not subagent-verified."
 }
