@@ -72,7 +72,7 @@
         "Single atomic commit prefix: docs(telegram): refresh closure report LOC numbers post Phase-C (US-C04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Pure documentation slice. Must run AFTER C01/C02/C03 land so numbers are final. No code changes — just update the markdown file."
     }
   ]
