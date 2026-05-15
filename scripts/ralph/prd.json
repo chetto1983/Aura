@@ -1,384 +1,133 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Refactor PRD — leave internal/telegram/ as a thin Telegram-channel wrapper. Target architecture (from the user's diagram): Channels (Telegram + Cron) → Chat Hub (Inbound) → Agent Loop (build context, call LLM, execute tools — backed by Memory/Sessions/Skills, LLM provider, filesystem/exec/web) → Chat Hub (Outbound) → Channels (Telegram). Telegram becomes one of N channel adapters; cron-driven agent jobs become a real chat.InboundAdapter publishing through chat.Hub. End state: internal/telegram/ contains ONLY Telegram-channel concerns (telebot wiring, entity rendering, document upload, /commands, allowlist gating). All composition wiring lives in cmd/aura/app.go. All agent orchestration lives in internal/agent/ + internal/channels/telegram/. All scheduled-dispatch logic lives in internal/cron/ + internal/channels/cron/. One story = one atomic commit on master (memory feedback_one_module_per_slice 2026-05-14). Heartbeat is a future channel (constant declared in chat.ChannelHeartbeat but no producer today) — out of scope for this queue.",
+  "description": "Aura post-restructure cleanup arc — finish making internal/telegram/ a TRUE wrapper by relocating the 6 files that are NOT Telegram-specific (per .planning/telegram-final-size.md remaining-debt section). Goal: repo mirrors the target architecture diagram (Chat Apps -> Agent Loop -> Tools -> Context/Memory+Skills). Each story is a SINGLE atomic commit on master, no branches. Suite must stay green at every commit (go build ./..., go vet ./..., go test ./...). NO NEW FEATURES — only relocations and deletions. WhatsApp and other new functionality come AFTER this arc closes.",
   "userStories": [
     {
-      "id": "US-A01",
-      "title": "Kill duplicate roleMaxToolCalls + roleMaxToolResultChars (swarm + agent/tools/swarm)",
-      "description": "Both internal/swarm/plan.go:245 and internal/agent/tools/swarm/tools.go:427 define IDENTICAL functions `roleMaxToolCalls(role string) int` and `roleMaxToolResultChars(role string) int`. Confirmed by audit + dupl. Move to internal/swarm/plan.go ONLY (exported), update internal/agent/tools/swarm/tools.go to import and call swarm.RoleMaxToolCalls + swarm.RoleMaxToolResultChars. Delete the duplicates in tools.go. No API change at LLM-tool level.",
+      "id": "US-B01",
+      "title": "Delete conversation_format.go — thin wrappers, callers import agent directly",
+      "description": "internal/telegram/conversation_format.go (28 LOC) contains 3 thin re-export wrappers: TerminalToolFinalizationMessages, LooksLikeToolCallMarkup, IsFileGenerationTool — each just calls the agent.* function with the same signature. Delete the file and update callers to import the agent package directly. Per .planning/telegram-final-size.md these are the cleanest deletion in the debt list.",
       "acceptanceCriteria": [
-        "internal/agent/tools/swarm/tools.go no longer defines roleMaxToolCalls or roleMaxToolResultChars",
-        "internal/swarm/plan.go exports RoleMaxToolCalls and RoleMaxToolResultChars (capitalized)",
-        "All call sites updated to swarm.RoleMaxToolCalls(...) / swarm.RoleMaxToolResultChars(...)",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(swarm): kill duplicate roleMax* helpers, single source in swarm.RoleMaxToolCalls`"
+        "internal/telegram/conversation_format.go does NOT exist",
+        "All callers updated to call agent.TerminalToolFinalizationMessages / agent.LooksLikeToolCallMarkup / agent.IsFileGenerationTool directly (with internal/agent import added where missing)",
+        "grep -r 'telegram\\.TerminalToolFinalizationMessages\\|telegram\\.LooksLikeToolCallMarkup\\|telegram\\.IsFileGenerationTool' returns zero hits across the repo",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(telegram): delete conversation_format.go thin wrappers (US-B01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "-48 LOC, Low risk. Pure refactor, no behavior change."
+      "passes": false,
+      "notes": "Easiest slice. No new file created — pure deletion + 2-line import fix at callsites."
     },
     {
-      "id": "US-A02",
-      "title": "Fold memoryquality -> storage/memoryindex/audit/ sub-package",
-      "description": "Audit confirmed: internal/storage/memoryquality has ZERO external callers (0 files import it). It audits memoryindex but lives as a peer top-level package. Move internal/storage/memoryquality/{audit,audit_test}.go -> internal/storage/memoryindex/audit/{audit,audit_test}.go (new sub-package), change `package memoryquality` -> `package audit`, update internal callers if any (none expected). Delete the now-empty internal/storage/memoryquality/ directory.",
+      "id": "US-B02",
+      "title": "Move adapters.go from telegram/ to cmd/aura/adapters.go",
+      "description": "internal/telegram/adapters.go (56 LOC) contains skillsDeleterAdapter and skillProposalApplierAdapter — both are wiring adapters used by cmd/aura/app.go to break a circular import between api and skills. They have NO Telegram concern. Move the file to cmd/aura/adapters.go with package main, drop the telegram package prefix at the callsite in cmd/aura/app.go.",
       "acceptanceCriteria": [
-        "internal/storage/memoryquality/ does not exist",
-        "internal/storage/memoryindex/audit/ exists with audit.go + audit_test.go, `package audit`",
-        "grep -rn 'internal/storage/memoryquality' D:/Aura returns ZERO matches",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `chore(storage): fold memoryquality into memoryindex/audit/ sub-package`"
+        "internal/telegram/adapters.go does NOT exist",
+        "cmd/aura/adapters.go exists with package main, both adapter types defined",
+        "cmd/aura/app.go no longer references telegram.skillsDeleterAdapter or telegram.skillProposalApplierAdapter (or any of their type names)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(telegram): move adapters.go to cmd/aura/ (US-B02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "0 net LOC change, but kills 1 top-level package (27 -> 26 internal dirs). Low risk."
+      "passes": false,
+      "notes": "Wiring adapter, no behavior change."
     },
     {
-      "id": "US-A03",
-      "title": "api/ DRY phase 1 — export decodeJSONBody from sources_write to router",
-      "description": "internal/api/sources_write.go:220 defines private decodeJSONBody(). The same pattern (json.NewDecoder + r.Body + error -> BadRequest) is open-coded in 5+ other handlers. Move decodeJSONBody to internal/api/router.go (next to writeJSON/writeError), export it (lowercase OK since same package — just move scope). Replace open-coded decodes in skills_write.go, tasks_write.go, settings.go, mcp_setup.go with the helper.",
+      "id": "US-B03",
+      "title": "Move tools_provider.go to internal/agent/toolsprovider.go",
+      "description": "internal/telegram/tools_provider.go (56 LOC) defines MakeToolsProvider — the always-on tool seed for the agent loop. No telebot import. Per .planning/telegram-final-size.md the target is internal/agent/toolsprovider.go. Also move tools_provider_test.go to keep coverage. Update the single import in cmd/aura/app.go (and any other caller).",
       "acceptanceCriteria": [
-        "internal/api/router.go contains decodeJSONBody function",
-        "internal/api/sources_write.go no longer defines decodeJSONBody (uses the one in router.go)",
-        "grep -n 'json.NewDecoder(r.Body)' internal/api/ shows <=2 occurrences (only ones with custom decoder options)",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(api): centralize decodeJSONBody helper, replace open-coded decodes`"
+        "internal/telegram/tools_provider.go does NOT exist",
+        "internal/telegram/tools_provider_test.go does NOT exist",
+        "internal/agent/toolsprovider.go exists with package agent and MakeToolsProvider exported",
+        "internal/agent/toolsprovider_test.go exists with the migrated tests still passing",
+        "All callers updated to call agent.MakeToolsProvider",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(agent): move tools_provider from telegram/ to agent/ (US-B03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "-30/-50 LOC. Low risk. Tests stay unchanged."
+      "passes": false,
+      "notes": "Belongs with the agent loop per the diagram (Context -> Tools edge)."
     },
     {
-      "id": "US-A04",
-      "title": "api/ DRY phase 2 — generic pathParamInt64 helper",
-      "description": "Many api/ handlers parse r.PathValue('id') with strconv.ParseInt then writeError on failure. Pattern repeats in summaries.go, sources_write.go, tasks_write.go, conversations_write.go. Add helper pathParamInt64(w, deps.Logger, r, 'id') (int64, bool) to router.go. Replace 8+ call sites.",
+      "id": "US-B04",
+      "title": "Move conversation_archive.go to internal/conversation/",
+      "description": "internal/telegram/conversation_archive.go (90 LOC) defines ArchiveConversationTurns — persists per-turn conversation archive to SQLite. NO tele import. Per .planning/telegram-final-size.md the target is internal/conversation/. Also move the test file. Update the import at the callsite (currently in internal/channels/telegram/ per the audit).",
       "acceptanceCriteria": [
-        "internal/api/router.go contains pathParamInt64 helper",
-        "At least 5 call sites replaced",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(api): pathParamInt64 helper for handler path-value parsing`"
+        "internal/telegram/conversation_archive.go does NOT exist",
+        "internal/telegram/archive_test.go (or equivalent) does NOT exist in telegram/",
+        "internal/conversation/archive.go (or similar idiomatic name) exists with package conversation and ArchiveConversationTurns exported",
+        "Equivalent test file moved alongside",
+        "All callers updated to call conversation.ArchiveConversationTurns",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(conversation): move archive from telegram/ to conversation/ (US-B04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "-40/-60 LOC. Low risk."
+      "passes": false,
+      "notes": "Memory-side concern per the diagram, not channel-side."
     },
     {
-      "id": "US-A05",
-      "title": "api/ DRY phase 3 — errorStatus mapper for common error -> HTTP status",
-      "description": "Handlers branch on errors.Is(err, sql.ErrNoRows) -> 404, errors.Is(err, ErrInvalid) -> 409, etc. Pattern in pending.go, summaries.go, conversations.go (8+ handlers). Add errorStatus(err error) (int, string) helper that maps known error types to HTTP status + user message. Replace branches.",
+      "id": "US-B05",
+      "title": "Move helpers.go to cmd/aura/helpers.go",
+      "description": "internal/telegram/helpers.go (136 LOC) defines ShouldBootstrapPromptOverlayDefaults, SkillSearchRoots, CreateLLMClient, CreateEmbeddingFunc, SetupSandboxRuntime — all composition-root helpers used exclusively by cmd/aura/app.go. NO telebot import. Move to cmd/aura/helpers.go with package main. Drop the telegram. prefix at all callsites in cmd/aura/app.go and cmd/aura/main.go.",
       "acceptanceCriteria": [
-        "internal/api/router.go (or new internal/api/errors.go) contains errorStatus mapper",
-        "At least 5 call sites refactored to use errorStatus",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(api): errorStatus mapper for known error -> HTTP code`"
+        "internal/telegram/helpers.go does NOT exist",
+        "cmd/aura/helpers.go exists with package main and the 5 functions exported as local identifiers (lowercase first letter is fine since package-local)",
+        "cmd/aura/app.go and cmd/aura/main.go no longer import or reference telegram for these 5 helpers",
+        "go build ./... green (specifically: ./cmd/aura compiles)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(cmd/aura): move composition-root helpers out of telegram/ (US-B05)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "-30/-40 LOC. Med risk (changes error reporting flow, watch tests)."
+      "passes": false,
+      "notes": "These are composition wiring, belong in main package not in telegram channel."
     },
     {
-      "id": "US-A06",
-      "title": "Create internal/testutil/ with OpenTestDB + TempDBPath helpers",
-      "description": "3 packages (conversation, db/migrations, cron) re-implement openTestDB(t) with TempDir + sql.Open + cleanup. Audit found this safe to consolidate. Create internal/testutil/dbhelpers.go with OpenTestDB(t *testing.T, withMigrations bool) *sql.DB. Update 3 callers to use it. No other helpers in this commit (fakeRunner KEEP_LOCAL per audit).",
+      "id": "US-B06",
+      "title": "Move runtime_settings.go to internal/config/runtime_settings.go",
+      "description": "internal/telegram/runtime_settings.go (197 LOC) defines applyRuntimeSettings — reads SQLite settings + env and patches agent/swarm/budget config at runtime. NO telebot import. Per .planning/telegram-final-size.md the target is internal/config/. Move file + test. Update callsites (cmd/aura/app.go is the main caller).",
       "acceptanceCriteria": [
-        "internal/testutil/dbhelpers.go exists with OpenTestDB and TempDBPath",
-        "internal/conversation/, internal/db/migrations/, internal/cron/ tests use testutil.OpenTestDB",
+        "internal/telegram/runtime_settings.go does NOT exist",
+        "internal/telegram/runtime_settings_test.go does NOT exist",
+        "internal/config/runtime_settings.go exists with package config and ApplyRuntimeSettings exported (case-promoted because crossing package)",
+        "internal/config/runtime_settings_test.go exists with migrated tests passing",
+        "All callers updated to call config.ApplyRuntimeSettings",
+        "go build ./... green",
+        "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit: `chore(testutil): OpenTestDB + TempDBPath consolidation`"
+        "Single atomic commit prefix: refactor(config): move runtime_settings from telegram/ to config/ (US-B06)"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "-16/-40 LOC. Low risk."
+      "passes": false,
+      "notes": "Biggest LOC slice in the arc. Settings concern belongs with config package."
     },
     {
-      "id": "US-A07",
-      "title": "Simplify invocation_builder.go — extract checkBudgetQuota + stats merge",
-      "description": "internal/telegram/invocation_builder.go is 743 LOC (created today by Ralph for US-704). Audit identified 5 bloat candidates with concrete savings. This story does TWO of them (smallest first): (1) Extract checkBudgetQuota(ctx) error helper to replace duplicate budget-check pattern at lines 187-203. (2) Consolidate stat merging functions (mergeAgentLoopStats + applyTelegramTerminalStats) by giving turnStats a From(agent.Stats) constructor.",
+      "id": "US-B07",
+      "title": "Final diagram-conformance report + chat.InboundAdapter audit + closure",
+      "description": "After US-B01..B06 land, internal/telegram/ should be ~2753 prod LOC and contain ONLY files with a clear Telegram concern. Produce .planning/telegram-cleanup-arc-closure.md with: (1) updated wc -l table for internal/telegram/*.go showing the LOC drop from 3322 (post US-A19) to ~2753; (2) verification block: every channel in internal/channels/{telegram,web,silent,cron} declares a type that satisfies chat.InboundAdapter — show the type + assertion line for each; (3) one-paragraph summary mapping each remaining telegram/ file to the diagram's 'Chat Apps -> Telegram' node. Update .planning/telegram-final-size.md remaining-debt sections to mark all 6 files as RESOLVED with the commit SHA that moved them.",
       "acceptanceCriteria": [
-        "internal/telegram/invocation_builder.go contains private checkBudgetQuota helper",
-        "Duplicate budget-check block (lines ~187-203) replaced by helper call",
-        "turnStats.From(agent.Stats) constructor exists, replaces two separate merge functions",
-        "invocation_builder.go LOC <= 700 (was 743)",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(telegram): extract checkBudgetQuota + stats merge in invocation_builder`"
+        ".planning/telegram-cleanup-arc-closure.md exists with the 3 sections described",
+        "internal/telegram/ prod LOC <= 2800 (was 3322 post US-A19)",
+        ".planning/telegram-final-size.md updated: 'Files clearly NOT Telegram-specific' table either removed or each row annotated 'resolved in <SHA>'",
+        "All 4 channels (telegram, web, silent, cron) verified as implementing chat.InboundAdapter (compile-time assertion present in each, e.g. var _ chat.InboundAdapter = (*Adapter)(nil))",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: chore(telegram): cleanup arc closure + diagram-conformance report (US-B07)"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "-40 LOC. Med risk (touches budget logic — tests cover it)."
-    },
-    {
-      "id": "US-A08",
-      "title": "Simplify invocation_builder.go — move sendAssistant* utilities to entity_markdown.go",
-      "description": "4 thin wrappers (sendAssistant, sendAssistantToRecipient, editAssistantMessage, sendAssistantRemainder) at end of invocation_builder.go are UI output formatting, not invocation logic. Move them to entity_markdown.go (which already owns the renderForTelegramEntities + entity -> plaintext fallback chain). Adjust import order in invocation_builder.go to call them.",
-      "acceptanceCriteria": [
-        "4 sendAssistant* functions moved out of invocation_builder.go",
-        "entity_markdown.go (or new entity_messages.go) hosts them",
-        "invocation_builder.go LOC <= 660",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(telegram): move sendAssistant* to entity_markdown_messages`"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "-38 LOC. Low risk (pure move, no logic change)."
-    },
-    {
-      "id": "US-A09",
-      "title": "Kill cross-package duplicate: agent/loop.go <-> telegram/conversation_tool_helpers.go",
-      "description": "dupl found internal/agent/loop.go:617-635 duplicates internal/telegram/conversation_tool_helpers.go:50-68. Cross-package duplicate of 18 LOC of tool-call helper logic. Investigate which is the canonical source. If agent/ owns the loop logic, delete the telegram/ copy and update the telegram caller to call agent.X (where X is the canonical). If they're slightly different, document why and add a TODO.",
-      "acceptanceCriteria": [
-        "dupl -t 50 D:/Aura/internal/agent D:/Aura/internal/telegram | grep -i 'conversation_tool_helpers' returns ZERO matches (or 1 with documented TODO)",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(agent): unify tool-helper duplicate cross-package`"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "-18 LOC. Med risk (changes agent <-> telegram boundary). Investigate first, then act."
-    },
-    {
-      "id": "US-A10",
-      "title": "Kill 3-way duplicate: agent/tools/swarm/tools.go:516 + cron/agent_job.go:165 + swarm/store.go:436",
-      "description": "dupl found a 3-way 12-LOC duplicate of probably timestamp-formatting or status-mapping logic. Identify the canonical location (probably swarm/store.go since it's the persistence layer), export it (if private), update the other 2 callers.",
-      "acceptanceCriteria": [
-        "dupl finds only 1 instance of this clone (the canonical)",
-        "go build + vet + test ./... green",
-        "Single atomic commit: `refactor(swarm): unify 3-way duplicate (tools/swarm + cron/agent_job + swarm/store)`"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "-24 LOC. Med risk. Need to read the duplicate to understand semantic."
-    },
-    {
-      "id": "US-A11",
-      "title": "Kill debug_docx + debug_pdf cmd duplicate",
-      "description": "dupl found cmd/debug_docx/main.go:80-96 duplicates cmd/debug_pdf/main.go:77-93. Both are debug harnesses with similar setup logic. Extract shared helper into cmd/debug_common/ or a internal/files helper, update both.",
-      "acceptanceCriteria": [
-        "cmd/debug_docx/main.go and cmd/debug_pdf/main.go share the helper, not duplicate it",
-        "go build ./... green (debug harnesses still build)",
-        "Single atomic commit: `refactor(cmd): DRY debug_docx + debug_pdf shared setup`"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "-16 LOC. Low risk."
-    },
-    {
-      "id": "US-A12",
-      "title": "Run dupl post-cleanup + write report to .planning/dupl-after.txt",
-      "description": "After US-A01..A11 are shipped, re-run `dupl -t 50` on internal/ + cmd/ and write the new report to .planning/dupl-after.txt. Compare clone count before (135) vs after. Commit the report.",
-      "acceptanceCriteria": [
-        ".planning/dupl-after.txt exists with current dupl output",
-        "Diff vs .planning/dupl-report.txt shows fewer clone groups",
-        "Single atomic commit: `chore: dupl post-cleanup report (was 135 clone groups)`"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Verification step. No LOC change. Locks in the measurement."
-    },
-    {
-      "id": "US-A13a",
-      "title": "Step 8a — Extract telegram/setup.go private helpers to telegram/helpers.go",
-      "description": "Split of original US-A13 (telegram setup.go too big to refactor atomically). Move the 5 stateless helpers from setup.go to a new same-package helpers.go file: shouldBootstrapPromptOverlayDefaults, skillSearchRoots, createLLMClient, createEmbeddingFunc, setupSandboxRuntime. Pure relocation, no signature change, no caller change. Imports re-balance: filepath and sandbox move with their helpers; setup.go drops them.",
-      "acceptanceCriteria": [
-        "internal/telegram/helpers.go exists with the 5 helper functions",
-        "internal/telegram/setup.go drops those 5 functions (and their unused imports: path/filepath, internal/sandbox)",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(telegram): extract setup helpers"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "Done 2026-05-14 by manual finish-of-Ralph-#4 (Ralph started helpers.go then died on TaskStop; truncated setup.go + cleaned imports). ~120 LOC moved same-package."
-    },
-    {
-      "id": "US-A13b.1",
-      "title": "Step 8b.1 — Add telegram.Deps struct + telegram.NewBot(deps) constructor (additive scaffolding)",
-      "description": "Pure additive change. Introduce a Deps struct exposing the fields the Bot literal currently takes in setup.go::New() (around line 463), plus a NewBot(deps Deps) *Bot constructor that does the field assignment. Existing telegram.New() stays unchanged — it can optionally start using NewBot internally as a no-op refactor. No LOC drop yet; the goal is to expose the construction surface so cmd/aura/app.go can populate Bot fields without exporting them.",
-      "acceptanceCriteria": [
-        "internal/telegram/ has a Deps struct (exported) with the ~22 fields currently in the b := &Bot{...} literal in setup.go",
-        "internal/telegram/ has func NewBot(deps Deps) *Bot",
-        "Existing telegram.New() optionally refactored to use NewBot internally (no behavior change)",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(telegram): add Deps + NewBot constructor (US-A13b.1)"
-      ],
-      "priority": 13.51,
-      "passes": true,
-      "notes": "Safe scaffolding step. No external behavior change. Done 2026-05-14 commit 360df40c."
-    },
-    {
-      "id": "US-A13b.2",
-      "title": "Step 8b.2 — Move Phase A (pure dep construction) from telegram/setup.go to cmd/aura/app.go",
-      "description": "Move the ~400 LOC of pure dependency construction (wiki, qdrant, search, embedding cache, source store, ocr, markitdown, ingest, sandbox, tools registry, agent runner, swarm, mcp, auth) from setup.go::New() into a new cmd/aura/app.go. Create the App struct with the dep fields. App.New() returns *App. setup.go::New() now becomes a wrapper that accepts these pre-built deps and continues with Phase B + C.",
-      "acceptanceCriteria": [
-        "cmd/aura/app.go exists with type App struct + App.New(cfg, settingsStore, pool, logger, restart) (*App, error)",
-        "Phase A (wiki + search + sources + ocr + ingest + sandbox + tools + agent runner + swarm + mcp + auth + ~10 other deps) lives in App.New()",
-        "internal/telegram/setup.go is at least 350 LOC smaller than after US-A13b.1",
-        "go build + vet + test ./... green",
-        "go test -race ./... green",
-        "Single atomic commit prefix: refactor(app): move Phase A dep construction to cmd/aura/app.go (US-A13b.2)"
-      ],
-      "priority": 13.52,
-      "passes": true,
-      "notes": "Done 2026-05-14 commit 0fae7a39. Setup.go now ~420 LOC; rest goes to US-A13b.3."
-    },
-    {
-      "id": "US-A13b.3",
-      "title": "Step 8b.3 — Move Phase C composition wiring from telegram/setup.go to cmd/aura/app.go",
-      "description": "After US-A13b.2 moved pure deps, the remaining ~420 LOC in setup.go is composition wiring that mostly is NOT Telegram-channel concern. Move the following out of telegram/setup.go into cmd/aura/app.go (App.New finishes its assembly AFTER tele.NewBot returns, so the *Bot can be passed in as TokenSender / DocumentSender / ScheduledTaskRunner): (1) conversation archive (NewArchiveStore + IndexingArchiveRepository + BufferedAppender); (2) memoryindex.Rebuild + compact vector mirror sync goroutine; (3) toolReconciler creation + Run goroutine + mcpwatch goroutine; (4) cron.New(scheduler) + nightly-wiki-maintenance bootstrap; (5) api.NewRouter(...) with the full api.Deps assembly; (6) wiki_issues store; (7) tool registrations that need *Bot (execute_code, execute_shell, dev_tool, tool_search, search_memory, daily_briefing, request_dashboard_token, doc, wiki_page); (8) deps.Tools.PrepareVectorReader + late toolReconciler.Notify. What STAYS in telegram/setup.go: only Telegram-specific glue — tele.NewBot, UserGate creation with Telegram-specific OnEvict/OnOverflow/OnQueueNotice callbacks, newDocHandler (Telegram document upload), b.registerHandlers, b.installBotCommands. Wire the App.api into bot via b.SetAPI(app.api) (new method) or expose b.api as a returned value of App.New for cmd/aura/main.go to mount.",
-      "acceptanceCriteria": [
-        "cmd/aura/app.go builds: archive, memoryindex.Rebuild + vector sync goroutine, toolReconciler + mcpwatch goroutines, cron.Scheduler, nightly wiki-maintenance task, api.NewRouter, wiki_issues store, and the *Bot-dependent tool registrations",
-        "internal/telegram/setup.go <= 200 prod LOC",
-        "internal/telegram/setup.go contains ONLY: tele.NewBot, NewBot(deps) call, UserGate with Telegram-specific callbacks, newDocHandler, registerHandlers, installBotCommands",
-        "internal/telegram/ total prod LOC reduced by >= 220 vs HEAD (sum of removed Phase C lines)",
-        "go build + vet + test ./... green",
-        "go test -race ./internal/telegram ./cmd/aura ./internal/cron ./internal/api green",
-        "Single atomic commit prefix: refactor(app): move Phase C composition wiring to cmd/aura/app.go (US-A13b.3)"
-      ],
-      "priority": 13.53,
-      "passes": true,
-      "notes": "Done 2026-05-14 commit 4c401f6c. Ralph iter-3 shipped 347+/305- across 5 files; setup.go shrunk 420→146 LOC (well under the 200 cap). Ralph parent died during post-commit cleanup (context compaction mid-stream + parent kill) BEFORE setting passes:true / appending progress.txt — done by main session as admin recovery."
-    },
-    {
-      "id": "US-A13c",
-      "title": "Step 8c — Slim Bot struct + move background-goroutine ownership to App",
-      "description": "After US-A13b.3 makes cmd/aura/App the composition root, the Bot struct can shrink. Drop fields that are now App's responsibility: wiki, sources, ocr, search, agentRunner, swarmStore, swarmMgr, schedDB, authDB, archiveDB, archiver, issues, mcpClients, sandboxMgr, toolReg, reindex, toolReconciler, compactMemoryHealth, skills, llm, tools, budget, docs (telegram-side stays), sched. Move bgCtx/bgCancel/bgWg + their lifecycle to *App. The Bot methods that read those fields either accept the dep directly as an argument, get it from an interface satisfied by App, or are themselves moved to App. Bot.Stop() shrinks to: gate.Close + bot.Stop. App.Stop() owns the rest.",
-      "acceptanceCriteria": [
-        "Bot struct fields reduced to <= 10 (Telegram-wrapper essentials: bot, cfg, loc, logger, gate, sessions, hub, started, allowlist, debugDocs* aggregate, docs)",
-        "bgCtx + bgCancel + bgWg live on *App, not *Bot",
-        "toolReconciler.Run goroutine lifecycle owned by App",
-        "mcpwatch goroutine lifecycle owned by App",
-        "compact memory vector mirror sync goroutine owned by App",
-        "All former Bot-field consumers either accept the dep as a constructor/method arg or query an App-side interface",
-        "Bot.Stop() does NOT call b.bgCancel / b.bgWg.Wait / b.reindex.Stop / b.archiver.Close — those move to App.Stop",
-        "go build + vet + test ./... green",
-        "go test -race ./... green",
-        "Single atomic commit prefix: refactor(telegram): slim Bot struct, move goroutine ownership to App (US-A13c)"
-      ],
-      "priority": 13.9,
       "passes": false,
-      "notes": "Med-High risk. Many tests touch b.tools / b.wiki / b.sched directly; rewire them to pass deps in or assert via App. Some tests may be deletable if the code they tested is no longer Bot's responsibility."
-    },
-    {
-      "id": "US-A14a",
-      "title": "Extract channel-neutral parts of telegram/invocation_builder.go to internal/agent/",
-      "description": "telegram/invocation_builder.go (654 LOC) mixes channel-neutral agent orchestration with Telegram-specific delivery. Extract the channel-neutral pieces to internal/agent/ so they're usable from any channel adapter. Targets: (1) composeAgentPrompt + agentPromptPlan struct -> internal/agent/promptplan.go (channel-neutral; takes cfg, overlay, skillsBlock, toolManifest, now and returns the plan); (2) turnStats struct + From(agent.Stats) constructor -> internal/agent/turnstats.go (the merge logic from US-A07 is channel-neutral); (3) toolExecutionSummary -> internal/agent/toolexec.go (already mirrors agent loop concepts); (4) tool_exec_helpers.go's toolArgumentsForTool + isTerminalTool -> internal/agent/toolexec.go (chatIDFromTeleContext stays in telegram); (5) runtime_answer_policy.go (userRequestedRawOutput + latestUserText) -> internal/agent/answerpolicy.go (operates on llm.Message; not Telegram-specific). Update callers in telegram/ to reference the new locations.",
-      "acceptanceCriteria": [
-        "internal/agent/promptplan.go exists with composeAgentPrompt + agentPromptPlan",
-        "internal/agent/turnstats.go exists with turnStats + From constructor",
-        "internal/agent/toolexec.go exists with toolExecutionSummary + toolArgumentsForTool + isTerminalTool",
-        "internal/agent/answerpolicy.go exists with userRequestedRawOutput + latestUserText",
-        "internal/telegram/invocation_builder.go imports + uses agent.composeAgentPrompt etc.; no longer defines these locally",
-        "internal/telegram/tool_exec_helpers.go shrinks to only chatIDFromTeleContext + isFileGenerationTool (or moves entirely if both leave)",
-        "internal/telegram/runtime_answer_policy.go is deleted (logic moved)",
-        "internal/telegram/invocation_builder.go LOC <= 450 (was 654)",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(agent): extract channel-neutral pieces from telegram/invocation_builder (US-A14a)"
-      ],
-      "priority": 14.1,
-      "passes": false,
-      "notes": "Med risk. composeAgentPrompt has no Telegram coupling so it's a clean lift. runtime_answer_policy_test.go must move or be re-pointed at internal/agent/answerpolicy_test.go."
-    },
-    {
-      "id": "US-A14b",
-      "title": "Move remaining Telegram delivery glue from invocation_builder.go to internal/channels/telegram/",
-      "description": "After US-A14a, what is left in telegram/invocation_builder.go is the Telegram-specific orchestration: buildTelegramInvocation, the agentloop adapter that wires hub events to tele.Context, progressive-edit timing, sandbox/file-tool result delivery via tele.Bot.Send. Move this file to internal/channels/telegram/invocation_builder.go (where outbound.go + inbound.go already live). The channels/telegram package is allowed to import internal/telegram for Bot accessors (existing channels/telegram/outbound.go already does). Update callers — primarily b.NewHub in telegram/bot.go which currently calls chat.NewAgentLoopAdapter(b.buildTelegramInvocation): now the adapter is constructed via channels/telegram.NewInvocationBuilder(b).Adapter().",
-      "acceptanceCriteria": [
-        "internal/telegram/invocation_builder.go does NOT exist",
-        "internal/channels/telegram/invocation_builder.go exists with the orchestration logic",
-        "internal/telegram/bot.go NewHub uses channels/telegram.NewInvocationBuilder(b) (or equivalent constructor)",
-        "internal/telegram/ prod LOC reduced by >= 400 (cumulative across US-A14a + US-A14b)",
-        "No new import cycles (channels/telegram -> telegram is already allowed; telegram -> channels/telegram is FORBIDDEN — verify with go list -deps)",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(channels/telegram): move invocation_builder from telegram/ to channels/telegram/ (US-A14b)"
-      ],
-      "priority": 14.2,
-      "passes": false,
-      "notes": "Med-High risk. The Bot accessors that buildTelegramInvocation reads (b.llm, b.tools, b.agentRunner, b.archiver, b.budget) must be exposed via getters or the function must take them as args. Coordinate with US-A13c which removes most of those fields — order matters: do US-A13c first OR pass deps in explicitly."
-    },
-    {
-      "id": "US-A15",
-      "title": "Move scheduler_handlers.go from telegram/ to cron/ with injected Notifier",
-      "description": "internal/telegram/scheduler_handlers.go (457 LOC + 416 test LOC) owns dispatchTask + dispatchReminder + dispatchWikiMaintenance + dispatchAgentJob. These are cron-driven, NOT Telegram-driven. Telegram is the NOTIFY surface when the job completes. Move to internal/cron/dispatch.go with a `Notifier` interface the package depends on for user-facing output: Notifier.SendReminder(userID, body string) error and Notifier.SendCompletion(userID, body string) error. The Bot implements Notifier (it already has SendToUser + sendGeneratedToUser). cron.Scheduler.Config gains a Notifier field; dispatcher closes over it instead of *Bot. dispatchAgentJob also closes over the agent runner — pass it in via cron.Config.AgentRunner. wiki maintenance closes over the wiki store + issues store — pass via cron.Config too. Test file scheduler_handlers_test.go moves to internal/cron/dispatch_test.go and uses a fake Notifier.",
-      "acceptanceCriteria": [
-        "internal/telegram/scheduler_handlers.go does NOT exist",
-        "internal/telegram/scheduler_handlers_test.go does NOT exist (moved or rewritten under cron/)",
-        "internal/cron/dispatch.go exists with dispatchTask + dispatchReminder + dispatchWikiMaintenance + dispatchAgentJob",
-        "internal/cron/dispatch.go declares a Notifier interface and depends on it (no import of internal/telegram)",
-        "internal/cron/dispatch_test.go covers the four dispatch paths with a fake Notifier",
-        "cron.Config gains: Notifier, AgentRunner, WikiStore, IssuesStore, MemoryStore (or a subset matching what dispatchers need); app.go wires Bot as Notifier + the rest from App",
-        "internal/telegram/ prod LOC reduced by >= 440",
-        "no import of internal/telegram in internal/cron",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(cron): move scheduler_handlers from telegram/ to cron/ with Notifier interface (US-A15)"
-      ],
-      "priority": 15,
-      "passes": false,
-      "notes": "Med-High risk. This is the seam where Telegram-as-channel becomes real: cron no longer knows the user's transport. Note: previous prd had US-A15 as 'move atomic_tables to db/storage' — that was WRONG. atomic_tables.go is a Telegram entity-rendering helper for GFM pipe tables (the file's own comment confirms it), NOT DB plumbing — it STAYS in telegram/."
-    },
-    {
-      "id": "US-A16",
-      "title": "Make Cron a real chat.InboundAdapter via internal/channels/cron/",
-      "description": "After US-A15 lands, dispatchAgentJob still synchronously invokes the agent runner from inside cron. Per the architecture image, cron is an INBOUND CHANNEL: cron.Scheduler should publish a chat.InboundMessage (Channel=ChannelCron, Mode=Silent) through chat.Hub.ReceiveMessage and let the Hub run the agent loop. Create internal/channels/cron/ with: (1) inbound.go declaring an InboundAdapter that builds a chat.InboundMessage from a cron.Task (PrincipalID = task.RecipientID or 'cron', ThreadID = 'cron:' + task.Name, Text = task.Payload, Mode = DeliveryModeSilent, ChannelData = {'task_id': task.ID, 'kind': string(task.Kind)}); (2) dispatcher.go declaring NewHubDispatcher(hub *chat.Hub, fallback cron.Dispatcher) cron.Dispatcher that, for KindAgentJob, calls hub.ReceiveMessage(ctx, msg), and for other kinds falls back to the legacy dispatcher (reminders + wiki_maintenance still use the Notifier path until they become channels in a later round). The silent OUTBOUND adapter (internal/channels/silent/outbound.go::NewCron) already exists — register it in app.go so the Hub fans EventDone / EventError to the operator log.",
-      "acceptanceCriteria": [
-        "internal/channels/cron/inbound.go exists with InboundAdapter implementing chat.InboundAdapter (Channel = ChannelCron)",
-        "internal/channels/cron/dispatcher.go exists with NewHubDispatcher",
-        "cmd/aura/app.go registers channels/cron Inbound + channels/silent NewCron Outbound on the Hub, and passes NewHubDispatcher(hub, fallback) as cron.Config.Dispatcher",
-        "Legacy dispatchAgentJob path is removed once the Hub-driven path is the default",
-        "An integration test exercises: cron.Scheduler fires a KindAgentJob -> hub.Receive normalizes -> AgentLoop runs -> silent Outbound logs EventDone",
-        "go build + vet + test ./... green",
-        "go test -race ./internal/cron ./internal/channels/cron ./internal/chat green",
-        "Single atomic commit prefix: feat(channels/cron): make cron a real chat.InboundAdapter (US-A16)"
-      ],
-      "priority": 16,
-      "passes": false,
-      "notes": "High risk. New behavior wired through the Hub. Heartbeat is NOT scoped here — it has no producer in the codebase today; add a follow-up only when a heartbeat trigger exists."
-    },
-    {
-      "id": "US-A17",
-      "title": "Move telegram/web_chat.go to internal/api/",
-      "description": "internal/telegram/web_chat.go (123 LOC) is web chat plumbing for the dashboard — explicitly NOT a Telegram concern. Move to internal/api/web_chat.go (or fold into the existing api.Deps.Chat surface). api.NewRouter currently receives a Chat field built from NewWebChatService(deps.AgentRunner, deps.Tools) — after this move the service constructor lives in api/ and app.go builds it directly.",
-      "acceptanceCriteria": [
-        "internal/telegram/web_chat.go does NOT exist",
-        "Functionality lives in internal/api/web_chat.go (or internal/channels/web/chat_service.go if a better fit)",
-        "cmd/aura/app.go imports the new package, not telegram/, to build the chat service",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: refactor(api): move web_chat from telegram/ to api/ (US-A17)"
-      ],
-      "priority": 17,
-      "passes": false,
-      "notes": "Low risk. Pure move with one caller (api.NewRouter)."
-    },
-    {
-      "id": "US-A18",
-      "title": "Fold conversation_tool_helpers.go into agent/ + move debug_smoke to cmd/debug_telegram/",
-      "description": "Two unrelated relocations in one commit because both are residual cleanup leaving telegram/ as a wrapper. (a) internal/telegram/conversation_tool_helpers.go (104 LOC) is mostly agent-loop concerns dressed up for telegram. After US-A09 unified the cross-package duplicate, fold the remaining helpers into internal/agent/. (b) internal/telegram/debug_smoke.go (286 LOC) + debug_smoke_test.go (485 LOC) are a debug harness; move to cmd/debug_telegram/ as a standalone binary. If any subtest depends on Bot internals that no longer exist after US-A13c, delete that subtest with a one-line justification in the commit body.",
-      "acceptanceCriteria": [
-        "internal/telegram/conversation_tool_helpers.go does NOT exist",
-        "internal/telegram/debug_smoke.go does NOT exist",
-        "internal/telegram/debug_smoke_test.go does NOT exist",
-        "cmd/debug_telegram/ exists with the debug harness as a runnable main",
-        "Agent-side helpers from conversation_tool_helpers.go live under internal/agent/ (specify the file in the commit message)",
-        "internal/telegram/ prod LOC reduced by >= 390",
-        "go build ./... green (debug harness still compiles)",
-        "go vet + test ./... green",
-        "Single atomic commit prefix: refactor(telegram): fold conv tool helpers into agent + relocate debug_smoke (US-A18)"
-      ],
-      "priority": 18,
-      "passes": false,
-      "notes": "Low-Med risk. debug_smoke may have outdated assumptions about removed code paths — delete or rewrite, do not silently weaken."
-    },
-    {
-      "id": "US-A19",
-      "title": "Final telegram/ size report + wrapper-only invariant lock-in",
-      "description": "After US-A13b.3..US-A18 land, internal/telegram/ should be a thin wrapper over telebot + Telegram entity rendering + Telegram document upload + Telegram /commands. Produce .planning/telegram-final-size.md with: (1) `wc -l internal/telegram/*.go` table split into prod + test LOC; (2) per-file 1-line justification of why that file IS a Telegram-channel concern (rejecting files that are not); (3) a remaining-debt list if any prod file > 200 LOC. Add an architecture assertion to internal/telegram/doc.go (package doc comment): 'internal/telegram is a CHANNEL ADAPTER — it owns telebot wiring, Telegram entity rendering, document upload, /commands. Composition lives in cmd/aura/app.go. Agent orchestration lives in internal/agent + internal/channels/telegram. Cron dispatch lives in internal/cron + internal/channels/cron. Do not add new responsibilities here.'",
-      "acceptanceCriteria": [
-        ".planning/telegram-final-size.md exists with prod + test LOC table and per-file justifications",
-        "internal/telegram/ prod LOC <= 1500 (was 5266 at the start of the wrapper-cleanup arc)",
-        "internal/telegram/doc.go (or top of an existing file) contains the wrapper-only assertion text verbatim",
-        "Every prod file in internal/telegram/ is justified in the report (no orphans)",
-        "go build + vet + test ./... green",
-        "Single atomic commit prefix: chore(telegram): wrapper-only size report + invariant lock-in (US-A19)"
-      ],
-      "priority": 19,
-      "passes": false,
-      "notes": "Verification + closure. No behavior change. Locks in the architecture invariant from the diagram."
+      "notes": "Closes the arc. Verifies the repo mirrors the target architecture diagram (Chat Apps row). No behavior change. After this, the next milestone (WhatsApp + production + simplification with 2026 patterns) can start."
     }
   ]
 }
