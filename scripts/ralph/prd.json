@@ -45,7 +45,7 @@
         "Single atomic commit prefix: feat(secrets): one-shot .env to SQLite migration helper (US-H02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "MUST land BEFORE US-H03 (boot reads from SQLite). Otherwise existing installs break because their secrets are still in .env, not in SQLite, and the boot loader can't find them. Order is non-negotiable."
     },
     {
