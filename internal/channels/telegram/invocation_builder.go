@@ -147,14 +147,11 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// Send the initial placeholder so the user knows the message was received.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	// Route streaming through the canonical channels/telegram.Outbound; falls
-	// back to the legacy telegramHubChatClient only if outbound wiring failed.
-	var chatClient agent.ChatClient
-	if ib.outbound != nil {
-		chatClient = newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder)
-	} else {
-		chatClient = tgtelegram.NewHubChatClient(b, c, userID, placeholder)
+	// Route streaming through the canonical channels/telegram.Outbound.
+	if ib.outbound == nil {
+		ib.outbound = NewOutbound(b.Logger())
 	}
+	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder)
 
 	maxIterations := ib.maxToolLoopIterations()
 	maxCallsPerTool := map[string]int{"wiki_page": 3}
