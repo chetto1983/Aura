@@ -1,0 +1,99 @@
+# Phase 6 Alt A — STORAGE-FIRST Tool Experience Loop
+
+**Date:** 2026-05-15 · **Status:** alternative architecture proposal
+
+## 1. One-sentence pitch
+
+The `tool_attempts` SQLite table is the synchronous source of truth — every observation writes before the loop advances, every briefing reads back from disk.
+
+## 2. Story breakdown (Phase-J Ralph queue, 7 commits)
+
+**US-J01** — `ToolObservation` contract + 10→5 bucket classifier. Add `internal/agent/tools/registry/observation.go` with `Outcome` enum (`ok`/`recoverable`/`blocked`/`fatal`/`cancelled`) and `BucketOf(class string) Outcome` mapping the 10 labels at `internal/agent/tools/registry/error.go:13-41` into the 5 buckets. `recoverable = {validation, not_found, rate_limited, io}`; `blocked = {permission, blocked}`; `fatal = {error, timeout}`; `cancelled = {cancelled}`. Plumb a `ToolObservation{RunID, ToolName, AttemptN, Outcome, Class, Reason, ArgsHash, ArgKeys, ToolSchemaHash, StartedAt, EndedAt, ErrorRedacted}` through `executor.executeOneTool` (`internal/agent/executor.go:123-151`).
+
+**US-J02** — Migration v10 `tool_attempts` + synchronous `Repo.Record`. New `internal/agent/tools/attempts/` package, single hot-path method `Record(ctx, ToolObservation) error` with `INSERT ... RETURNING id` inside `BEGIN IMMEDIATE`. SHA-256 hashing of args at write time; no raw value ever stored.
+
+**US-J03** — Wire `Record` into executor hot path. Modify `agentExecutor.executeOneTool` and `ExecuteToolCalls`. On Record failure, log + continue — never block user-visible result.
+
+**US-J04** — Pre-LLM briefer reads from `tool_attempts`. New governance-style step before `client.Chat`. For each tool in the per-turn pool, query `SELECT outcome, class, reason FROM tool_attempts WHERE run_id IN (recent_run_ids_for_thread, limit 5) AND tool_name = ? AND outcome IN ('recoverable','blocked','fatal') ORDER BY ended_at DESC LIMIT 3`. Render as synthetic system message; cap ≤ 800 chars total.
+
+**US-J05** — Per-(tool,class) retry budget enforced via `tool_attempts` count. `Options.RetryBudgets map[string]int` default `{recoverable: 2, blocked: 0, fatal: 0, cancelled: 0}`. Before executor dispatch, `SELECT COUNT(*) WHERE run_id=? AND tool_name=? AND outcome=?`. If over budget, divert with stub error + record refusal as a row.
+
+**US-J06** — `tool_warnings` aggregation view + operator API. `CREATE VIEW tool_warnings AS SELECT tool_name, class, COUNT(*) AS n, MAX(ended_at) AS last_seen FROM tool_attempts WHERE outcome IN ('recoverable','blocked','fatal') AND ended_at > datetime('now','-7 days') GROUP BY tool_name, class`. New endpoint `GET /api/tool-warnings` admin-gated.
+
+**US-J07** — Phase 6 closure docs + benchmark probes.
+
+## 3. Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS tool_attempts (
+  id                TEXT PRIMARY KEY,              -- ULID
+  run_id            TEXT NOT NULL,                 -- FK runs.id
+  tool_call_id      TEXT NOT NULL DEFAULT '',     -- joins conversations.tool_call_id
+  attempt_n         INTEGER NOT NULL DEFAULT 1,
+  tool_name         TEXT NOT NULL,
+  tool_schema_hash  TEXT NOT NULL DEFAULT '',     -- SHA-256 of ToolDefinition.Parameters
+  outcome           TEXT NOT NULL,                 -- enum: ok|recoverable|blocked|fatal|cancelled
+  class             TEXT NOT NULL DEFAULT '',     -- classifyToolError 10-label vocab
+  reason            TEXT NOT NULL DEFAULT '',     -- closed-set refusal/retry-skip code
+  args_hash         TEXT NOT NULL DEFAULT '',     -- SHA-256(canonical-json(args))
+  arg_keys_json     TEXT NOT NULL DEFAULT '[]',   -- JSON array of KEY NAMES only
+  error_redacted    TEXT NOT NULL DEFAULT '',
+  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
+  started_at        TEXT NOT NULL,                 -- RFC3339Nano
+  ended_at          TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(id)
+);
+
+CREATE INDEX idx_tool_attempts_run_tool     ON tool_attempts(run_id, tool_name, ended_at DESC);
+CREATE INDEX idx_tool_attempts_tool_outcome ON tool_attempts(tool_name, outcome, ended_at DESC);
+CREATE INDEX idx_tool_attempts_run_outcome  ON tool_attempts(run_id, outcome);
+CREATE INDEX idx_tool_attempts_signature    ON tool_attempts(tool_name, args_hash, outcome);
+
+CREATE VIEW tool_warnings AS
+  SELECT tool_name, class, COUNT(*) AS n, MAX(ended_at) AS last_seen,
+         SUM(CASE WHEN outcome='recoverable' THEN 1 ELSE 0 END) AS n_recoverable,
+         SUM(CASE WHEN outcome='blocked'     THEN 1 ELSE 0 END) AS n_blocked,
+         SUM(CASE WHEN outcome='fatal'       THEN 1 ELSE 0 END) AS n_fatal
+  FROM tool_attempts
+  WHERE outcome IN ('recoverable','blocked','fatal') AND ended_at > datetime('now','-7 days')
+  GROUP BY tool_name, class;
+```
+
+## 4. Hot-path cost
+
+- **Writes, N=8 tool calls:** 8 synchronous `INSERT INTO tool_attempts`. Each ~400 bytes. SQLite WAL: ~30µs uncontended → 8 inserts = ~240µs added latency per turn. Versus an LLM round (1-30s), this is < 0.01% of turn budget.
+- **Reads, M=6 in-pool tools:** 1 single SELECT with `idx_tool_attempts_run_tool`. ~6µs at 10k-row scale. Then in-Go group-by tool_name, take top 3.
+- **Budget checks:** up to 8 per turn × ~3µs each = 24µs. Covered by `idx_tool_attempts_run_outcome`.
+- **Per-turn added latency: ~270µs writes + ~30µs reads = ~0.3ms.**
+
+## 5. Failure modes
+
+- **SQLite lock contention:** WAL mode + `database/sql` pool serializes. Worst case ~1ms wait under high parallel-tool fan-out. Mitigation: `Repo.Record` retries 3× with 10ms backoff on `SQLITE_BUSY`; on persistent failure, log + drop row, do NOT block tool result.
+- **Disk full:** `INSERT` returns `SQLITE_FULL`. Repo logs + continues. Briefer next turn sees fewer rows = graceful degradation.
+- **Crash mid-write:** `BEGIN IMMEDIATE` / `COMMIT` — atomic. No torn-write window.
+- **Pre-deploy legacy data:** `run_events.payload_json` has only "tool_failed" string; NOT migrated. Briefer starts fresh from `tool_attempts` and gains signal over time.
+
+## 6. Pros vs Alt B and Alt C
+
+**vs Alt B (in-memory):** WIN durability (zero loss on crash), cross-run learning works from first restart, operator dashboard is one-line view, `args_hash` enables cross-run signature detection. LOSE ~0.3ms added latency per turn (Alt B is zero).
+
+**vs Alt C (conversation-archive piggyback):** WIN typed columns indexable (Alt C must JSON-parse), privacy boundary cleaner, independent of `CONV_ARCHIVE_ENABLED`. LOSE Alt C reuses existing infrastructure — zero new tables.
+
+## 7. Risks + mitigations
+
+1. **Write contention under swarm fan-out.** Mitigation: `_busy_timeout=5000`; batch in 50ms windows if needed.
+2. **Hash canonicalisation:** sorted-keys canonical JSON; test both orderings.
+3. **Briefer prompt bloat:** hard cap LIMIT 3 per tool × 8 tools × ≤60 chars = ≤1.5kB; skip injection when empty.
+
+## 8. Estimated LOC
+
+| Story | Files | LOC impl | LOC tests |
+|---|---|---|---|
+| US-J01 ToolObservation | observation.go (new) | 60 | 80 |
+| US-J02 Migration + Repo | migrations.go, attempts/repo.go + sql.go (new) | 180 | 150 |
+| US-J03 Executor wiring | executor.go (~20 LOC delta) | 25 | 60 |
+| US-J04 Pre-LLM briefer | loop.go, governance.go, attempts/briefer.go (new) | 110 | 130 |
+| US-J05 Retry budget | loop.go, attempts/budget.go (new) | 80 | 100 |
+| US-J06 Operator API + view | api/tool_warnings.go (new) | 90 | 70 |
+| US-J07 Closure docs | docs only | 0 | 30 |
+| **Total** | **8 files, 1 migration** | **~545** | **~620** |
