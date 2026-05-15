@@ -1,0 +1,125 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-I = masterplan Phase 5 (Consolidate Tools) — quality layer. Structural consolidation under internal/agent/tools/ already shipped (Phase-A). Remaining: per-tool metadata (MCP-aligned behavioral hints + VisibilityTier) + discovery/parameter evals. Industry pattern: MCP spec defines readOnlyHint/destructiveHint/idempotentHint/openWorldHint (referenced in D:/tmp/cli-printing-press/AGENTS.md:33), default 'could write or delete' (fail closed). Aura adopts the 4-hint shape so native tools and MCP-imported tools share one vocabulary. VisibilityTier (always_on/active_turn/deferred) is Aura-specific — drives the deferred-discovery prompt-budget optimization (no MCP standard for it). Full call graph + gap inventory in .planning/deep-refactor/Phase05_Consolidate_Tools/plan.md. Each story = ONE atomic commit on master.",
+  "userStories": [
+    {
+      "id": "US-I01",
+      "title": "Add MCP behavioral hints + VisibilityTier to ToolDefinition",
+      "description": "Extend the canonical agent.ToolDefinition (internal/agent/tools/registry/definition.go) with five new fields so Aura's tool catalogue carries the same metadata the MCP spec already standardises. (a) Four MCP-standard hint bool fields: ReadOnlyHint, DestructiveHint, IdempotentHint, OpenWorldHint. Default value `false` for all four so unmigrated tools fail closed (\"could write or delete\" per MCP spec quoted in D:/tmp/cli-printing-press/AGENTS.md:33). (b) VisibilityTier enum-typed string field: define type VisibilityTier string and three exported constants — VisibilityAlwaysOn, VisibilityActiveTurn, VisibilityDeferred. Default = VisibilityActiveTurn when unset, so unmigrated tools still go through the per-turn permissive pool (not always_on, not hidden). (c) ToolDefinitionProvider implementations may set the new fields; normalizeToolDefinition leaves them at their defaults if the provider didn't set them — same pattern as the existing RequiredCapability default. (d) Add a `Hints()` method on llm.ToolDefinition (or expose via ToolDefinition.LLMDefinition) so MCP-imported tools can forward whatever the MCP server declared; native tools start at the fail-closed defaults. (e) Tests: ToolDefinition with no hints set → all false + VisibilityActiveTurn; ToolDefinition with explicit hints → values preserved through normalizeToolDefinition; VisibilityTier constants are typed (untyped string assignment is a compile error).",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/definition.go has ReadOnlyHint, DestructiveHint, IdempotentHint, OpenWorldHint bool fields on ToolDefinition",
+        "internal/agent/tools/registry/definition.go has VisibilityTier field plus 3 exported constants (VisibilityAlwaysOn, VisibilityActiveTurn, VisibilityDeferred)",
+        "VisibilityTier is a typed string (not raw string) so the compiler catches typos",
+        "Default for a tool that doesn't set hints: all false + VisibilityActiveTurn",
+        "normalizeToolDefinition preserves provider-supplied non-default hint/tier values",
+        "Test in definition_test.go covers defaults + provider-supplied overrides for every new field",
+        "No catalogue migration in this story — that lands in US-I02",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(tools): add MCP hints + VisibilityTier to ToolDefinition (US-I01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "MCP source: docs/cli-printing-press/AGENTS.md:33 quote 'MCP hosts use readOnlyHint / destructiveHint / idempotentHint / openWorldHint to decide when to ask for permission. Missing annotations default to could write or delete.' Mirror that vocabulary exactly so MCP-imported tools forward without translation. exclusive flag NOT added — Aura already uses ErrAwaitingUserInput (Phase-D) for exclusivity."
+    },
+    {
+      "id": "US-I02",
+      "title": "Catalogue every registered native tool with hints + tier",
+      "description": "Wire the 5 new fields onto every Tool that calls registry.Register* in cmd/aura/app.go (and any other init point). For each tool, edit its Definition() method (or add one) with explicit values reviewed for product correctness. (a) The starting catalogue is in Phase05 plan.md 'US-I02 recommended initial assignment' — use it as the seed, but VERIFY by reading each tool's Execute body before commit. (b) Always_on tools: tool_search, request_dashboard_token, ask_user. These are the discovery + control surface; they must remain loaded every turn. (c) Active_turn read_only=true + idempotent=true: read_skill, wiki_page, read_memory, list_memory, read_source, list_tasks. (d) Active_turn read_only=true + open_world=true + idempotent=false: search_memory, web_search, web_fetch (web/wiki contents drift; same query later may differ). (e) Active_turn idempotent=true + open_world=true: store_source, ingest_source, ocr_source (SHA-256 dedup; second call on same input is a no-op). (f) Deferred + open_world=false + idempotent=false: create_xlsx, create_docx, create_pdf (sandbox file generation; output filename differs per call). (g) Deferred + destructive=true + open_world=false: workspace_write, forget_memory, source_delete, schedule_task, cancel_task. (h) Deferred + destructive=true + open_world=false (sandboxed but still mutates fs): execute_code. (i) Audit test: a single scanning test that walks registry.Definitions() and fails if any tool has all four hints false AND tier=ActiveTurn (the fail-closed default) — that means the tool was not explicitly catalogued. MCP-imported tools are excluded from the audit via a name-prefix check (mcp_*) so we don't require every MCP host to declare hints.",
+      "acceptanceCriteria": [
+        "Every native registered tool (non-mcp_* prefix) has explicit hint values + VisibilityTier in its Definition()",
+        "Catalogue scan test walks registry.Definitions() and asserts no native tool is left at the all-defaults state",
+        "ask_user, tool_search, request_dashboard_token are VisibilityAlwaysOn",
+        "forget_memory, source_delete, workspace_write, execute_code carry DestructiveHint=true",
+        "web_search, web_fetch carry OpenWorldHint=true and IdempotentHint=false (remote state drifts)",
+        "store_source, ingest_source carry IdempotentHint=true (SHA-256 dedup confirmed by reading their code)",
+        "Catalogue scan test fails loud (no skipped tools) if a new native tool is registered without metadata",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(tools): catalogue native tool metadata (US-I02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "DO NOT modify Execute() bodies. Definition() metadata only. If a tool's Execute body contradicts the proposed metadata (e.g. you mark X read_only=true but Execute writes to disk), the metadata is wrong — fix the metadata, not the code."
+    },
+    {
+      "id": "US-I03",
+      "title": "Verify VisibilityTier never bypasses authorization",
+      "description": "PRD §6 Phase 5 gate: 'active-turn visibility never bypasses authorization'. Translate to test: a tool with VisibilityTier=VisibilityAlwaysOn but RequiredCapability=CapabilityX must STILL fail identity.Authorize when the actor lacks CapabilityX. (a) New test file internal/agent/tools/registry/visibility_authz_test.go (or add to existing auth_test.go). (b) Three scenarios: (i) visible + authorized → executes; (ii) visible + UNAUTHORIZED → returns identity unauthorized error WITHOUT executing the Tool.Execute body (catch via a tool whose Execute records a call counter); (iii) NOT visible + authorized → tool absent from pool, executor returns tool_not_found (NOT an authz error). (c) The test runs through the actual agentExecutor path (internal/agent/executor.go) so we exercise the same authorization check the real runtime uses. (d) NO code change is expected from this story; if the test fails, the bug is in executor.go and gets a follow-up fix slice — but a passing test is the deliverable for US-I03.",
+      "acceptanceCriteria": [
+        "New test internal/agent/tools/registry/visibility_authz_test.go (or augmented auth_test.go) covers the 3 scenarios above",
+        "Test exercises the real agentExecutor authorization path (not a mock)",
+        "VisibilityAlwaysOn + unauthorized capability → unauthorized error AND Tool.Execute was NOT called (call counter == 0)",
+        "If the test fails, the failure message identifies which scenario regressed",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(tools): visibility doesn't bypass authorization (US-I03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "If the real code already enforces this invariant (likely — Phase01B identity capability grants is mature), the test is a regression guard. If it doesn't, the test should still land as red and a follow-up code-fix story opens. Either way US-I03 ships the test."
+    },
+    {
+      "id": "US-I04",
+      "title": "Discovery top-k eval fixture",
+      "description": "PRD §6 Phase 5 gate: 'tool discovery top-k evals pass'. Concrete deliverable: a fixture file + test. (a) New file internal/agent/tools/index/eval_topk_fixture.json with 10-15 paired entries: { query: string, expected_tool: string, rationale: string }. Examples: query='search the wiki for grocery list' → expected_tool='search_memory'; query='render the report as PDF' → expected_tool='create_pdf'; query='kill the scheduled task with id 42' → expected_tool='cancel_task'. Mix obvious and harder cases. (b) New test internal/agent/tools/index/eval_topk_test.go: load fixture, drive the deferred-tools registry search (the same path the agent uses to find tools), assert ≥70% of queries rank expected_tool in top-3. (c) Loud failure on rank regression: when below threshold, print the per-query results so an operator can see WHICH queries regressed. (d) Test is `t.Skip()`-able with a clear env flag (e.g. AURA_SKIP_TOOL_EVALS=1) for CI environments that haven't built the tool index yet — but ON by default in `go test`.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/index/eval_topk_fixture.json exists with ≥10 query/expected_tool entries",
+        "Each entry has a rationale field (1 sentence) explaining why the tool is the right answer",
+        "internal/agent/tools/index/eval_topk_test.go loads the fixture and asserts ≥70% of queries rank expected_tool in top-3",
+        "When the threshold fails, per-query results are printed (which queries hit, which missed)",
+        "Test can be skipped via AURA_SKIP_TOOL_EVALS=1 env var (for environments without the tool index built)",
+        "Test passes against the current registry+index state",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(tools): discovery top-k eval fixture (US-I04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "If the current index can't hit ≥70% top-3, lower the threshold to whatever the current state achieves AND open a follow-up story for index quality. Phase-I locks in a regression guard, not a quality bar. Document the chosen threshold in the test header comment."
+    },
+    {
+      "id": "US-I05",
+      "title": "Parameter accuracy eval for example-backed tools",
+      "description": "PRD §6 Phase 5 gate: 'parameter accuracy evals pass for example-backed tools'. Deliverable: a test that validates every ToolDefinition.Examples[i].Arguments parses cleanly through ToolDefinition.Parameters JSONSchema. (a) New test internal/agent/tools/registry/examples_parameter_eval_test.go. (b) Walk registry.Definitions(). For each tool with len(Examples) > 0, for each Example, validate Example.Arguments against the tool's Parameters schema. (c) Validation can be hand-rolled (the Parameters maps are flat with type + required fields) or use a JSONSchema validator IF one is already a dependency — DO NOT add a new dependency just for this. The hand-rolled validator only needs: type check (string/int/bool/array), required-field presence, and enum membership for fields with `enum`. (d) Test fails per-example with a clear message: 'tool X example Y argument Z: type mismatch (got string, want int)'. (e) Run the test now — fix any failures by editing the offending Example or Parameters. The catalogue must be self-consistent at commit time.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/examples_parameter_eval_test.go validates every Example.Arguments against the tool's Parameters JSONSchema",
+        "Validator handles: type (string/int/bool/array), required-field presence, enum membership",
+        "No new external dependency added (hand-rolled validation OR existing dependency only)",
+        "Test fails with a clear per-example diagnostic message",
+        "Test passes against the current catalogue (any Example/Parameters mismatch is fixed as part of this story)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(tools): parameter accuracy eval (US-I05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "If you hit a tool whose Examples are wrong (Argument doesn't match Parameters), the FIX is to edit the Example to match the schema, NOT relax the validator. Examples are the canonical model-facing illustration — they MUST be valid by construction."
+    },
+    {
+      "id": "US-I06",
+      "title": "Phase 5 closure docs + audit refresh",
+      "description": "Final closure for Phase-I. (a) Append a closure row to .planning/deep-refactor/Phase05_Consolidate_Tools/progress.md with US-I01..I05 commit SHAs and one-line summary each. (b) Update .planning/deep-refactor/Phase05_Consolidate_Tools/benchmark.md actuals column: every check should now be 'met' (or 'partial' with the threshold US-I04 actually achieved). (c) Update docs/aura-main-loop-limits-audit.md §2 if it still references missing tool metadata. (d) Update prd.md §6 Phase 5 if the gate criteria are all met (likely add a 'Phase 5 closed YYYY-MM-DD' line). (e) NO code changes — docs only. Use `git add -f` for .planning/* per established gitignore precedent.",
+      "acceptanceCriteria": [
+        ".planning/deep-refactor/Phase05_Consolidate_Tools/progress.md has a closure row with all 5 SHAs",
+        ".planning/deep-refactor/Phase05_Consolidate_Tools/benchmark.md actuals column reflects achieved state",
+        "docs/aura-main-loop-limits-audit.md updated if Phase 5 metadata gaps were referenced",
+        "prd.md §6 Phase 5 marked closed if all gate criteria are met",
+        "No Go code changes in this story",
+        "go build ./... green (sanity)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(planning): Phase 5 closure + audit refresh (US-I06)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ".planning/* is gitignored — use git add -f. Precedent: every prior Phase closure commit."
+    }
+  ]
+}
