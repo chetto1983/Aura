@@ -1,4 +1,4 @@
-package telegram
+package config
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/budget"
-	"github.com/aura/aura/internal/config"
 )
 
 type fakeSettingsReader map[string]string
@@ -18,7 +17,7 @@ func (f fakeSettingsReader) Get(_ context.Context, key string) (string, error) {
 	if v, ok := f[key]; ok {
 		return v, nil
 	}
-	return "", config.ErrNotFound
+	return "", ErrNotFound
 }
 
 type fakeAgentLimits struct {
@@ -58,37 +57,37 @@ func TestApplyRuntimeSettingsUsesServiceBoundaries(t *testing.T) {
 	t.Setenv("SWARM_RESEARCH_CHILD_MAX_ITERATIONS", "")
 	t.Setenv("SWARM_RESEARCH_MAX_RESULT_CHARS", "")
 	store := fakeSettingsReader{
-		config.KeyAuraBotMaxActive:     "6",
-		config.KeyAuraBotMaxDepth:      "2",
-		config.KeyAuraBotTimeoutSec:    "45",
-		config.KeyAuraBotMaxIterations: "9",
-		config.KeySoftBudget:           "3.25",
-		config.KeyHardBudget:           "8.5",
-		config.KeyCostInputPerMTokens:  "0.14",
-		config.KeyCostOutputPerMTokens: "0.42",
-		config.KeySkillRoutingMode:     "manifest_llm_review",
-		config.KeyAgentLoopMaxSteps:    "8",
-		config.KeyTerminalToolPolicy:   "off",
-		config.KeyDelegationMode:       "bounded",
-		config.KeyTraceRetentionDays:   "45",
+		KeyAuraBotMaxActive:     "6",
+		KeyAuraBotMaxDepth:      "2",
+		KeyAuraBotTimeoutSec:    "45",
+		KeyAuraBotMaxIterations: "9",
+		KeySoftBudget:           "3.25",
+		KeyHardBudget:           "8.5",
+		KeyCostInputPerMTokens:  "0.14",
+		KeyCostOutputPerMTokens: "0.42",
+		KeySkillRoutingMode:     "manifest_llm_review",
+		KeyAgentLoopMaxSteps:    "8",
+		KeyTerminalToolPolicy:   "off",
+		KeyDelegationMode:       "bounded",
+		KeyTraceRetentionDays:   "45",
 	}
-	cfg := &config.Config{
+	cfg := &Config{
 		SoftBudget:           1,
 		HardBudget:           2,
 		CostInputPerMTokens:  0.2,
 		CostOutputPerMTokens: 0.8,
-		SkillRoutingMode:     config.DefaultSkillRoutingMode,
-		AgentLoopMaxSteps:    config.DefaultAgentLoopMaxSteps,
-		TerminalToolPolicy:   config.DefaultTerminalToolPolicy,
-		DelegationMode:       config.DefaultDelegationMode,
-		TraceRetentionDays:   config.DefaultTraceRetentionDays,
+		SkillRoutingMode:     DefaultSkillRoutingMode,
+		AgentLoopMaxSteps:    DefaultAgentLoopMaxSteps,
+		TerminalToolPolicy:   DefaultTerminalToolPolicy,
+		DelegationMode:       DefaultDelegationMode,
+		TraceRetentionDays:   DefaultTraceRetentionDays,
 	}
 	runner := &fakeAgentLimits{}
 	manager := &fakeSwarmLimits{}
 	tracker := &fakeBudgetConfigurator{}
 
-	if err := applyRuntimeSettings(context.Background(), store, cfg, runner, manager, tracker, slog.Default()); err != nil {
-		t.Fatalf("applyRuntimeSettings: %v", err)
+	if err := ApplyRuntimeSettings(context.Background(), store, cfg, runner, manager, tracker, slog.Default()); err != nil {
+		t.Fatalf("ApplyRuntimeSettings: %v", err)
 	}
 
 	if manager.maxActive != 6 || manager.maxDepth != 2 {
@@ -140,17 +139,17 @@ func TestApplyDelegationModeRuntimeFastAndBounded(t *testing.T) {
 }
 
 func TestApplyRuntimeSettingsIgnoresMissingStoreAndConfig(t *testing.T) {
-	if err := applyRuntimeSettings(context.Background(), nil, &config.Config{}, nil, nil, nil, nil); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), nil, &Config{}, nil, nil, nil, nil); err != nil {
 		t.Fatalf("nil store error = %v", err)
 	}
-	if err := applyRuntimeSettings(context.Background(), fakeSettingsReader{}, nil, nil, nil, nil, nil); err != nil {
+	if err := ApplyRuntimeSettings(context.Background(), fakeSettingsReader{}, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("nil config error = %v", err)
 	}
 }
 
 func TestApplyRuntimeSettingsFallsBackWhenReaderErrors(t *testing.T) {
 	store := failingSettingsReader{}
-	cfg := &config.Config{
+	cfg := &Config{
 		SoftBudget:           1,
 		HardBudget:           2,
 		CostInputPerMTokens:  0.2,
@@ -158,8 +157,8 @@ func TestApplyRuntimeSettingsFallsBackWhenReaderErrors(t *testing.T) {
 	}
 	tracker := &fakeBudgetConfigurator{}
 
-	if err := applyRuntimeSettings(context.Background(), store, cfg, nil, nil, tracker, nil); err != nil {
-		t.Fatalf("applyRuntimeSettings: %v", err)
+	if err := ApplyRuntimeSettings(context.Background(), store, cfg, nil, nil, tracker, nil); err != nil {
+		t.Fatalf("ApplyRuntimeSettings: %v", err)
 	}
 	if tracker.cfg.SoftBudget != 1 || tracker.cfg.HardBudget != 2 || tracker.cfg.InputCostPerMTokens != 0.2 || tracker.cfg.OutputCostPerMTokens != 0.8 {
 		t.Fatalf("fallback budget config = %+v", tracker.cfg)

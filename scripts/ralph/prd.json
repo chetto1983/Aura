@@ -89,7 +89,7 @@
         "Single atomic commit prefix: refactor(cmd/aura): move composition-root helpers out of telegram/ (US-B05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "These are composition wiring, belong in main package not in telegram channel."
     },
     {
@@ -108,7 +108,7 @@
         "Single atomic commit prefix: refactor(config): move runtime_settings from telegram/ to config/ (US-B06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Biggest LOC slice in the arc. Settings concern belongs with config package."
     },
     {
