@@ -257,9 +257,23 @@ func (b *Bot) Stop() {
 // IsAllowlisted reports whether userID is permitted to use the bot.
 func (b *Bot) IsAllowlisted(userID string) bool { return b.isAllowlisted(userID) }
 
-// DispatchTask is the exported entry point for cron.Scheduler's Dispatcher callback.
-func (b *Bot) DispatchTask(ctx context.Context, task *cron.Task) error {
-	return b.dispatchTask(ctx, task)
+// SendReminder implements cron.Notifier: delivers a plain-text reminder via Telegram.
+func (b *Bot) SendReminder(userID, body string) error {
+	return b.SendToUser(userID, body)
+}
+
+// SendCompletion implements cron.Notifier: delivers a Markdown agent-job completion report.
+func (b *Bot) SendCompletion(userID, body string) error {
+	return b.sendGeneratedToUser(userID, body)
+}
+
+// NotifyOwners implements cron.Notifier: broadcasts a maintenance message to all owners.
+func (b *Bot) NotifyOwners(_ context.Context, msg string) {
+	for _, ownerID := range b.collectOwnerIDs() {
+		if err := b.SendToUser(ownerID, msg); err != nil {
+			b.logger.Warn("owner notification failed", "owner", ownerID, "error", err)
+		}
+	}
 }
 
 // RuntimeSettingsApplier returns a closure for api.Deps.ApplyRuntimeSettings.

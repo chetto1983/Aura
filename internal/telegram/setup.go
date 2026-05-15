@@ -89,12 +89,6 @@ func New(deps Deps) (*Bot, error) {
 	b.gate = userGate
 	b.sessions = agent.NewSessionStore(userGate)
 
-	// Wave 2.7b: wire the run_now action of the unified task tool now that
-	// *Bot (which implements ScheduledTaskRunner) is available.
-	if deps.TaskTool != nil {
-		deps.TaskTool.SetRunner(b)
-	}
-
 	// Slice 6: doc handler (Telegram document upload → OCR/markitdown pipeline).
 	b.docs = newDocHandler(docHandlerConfig{
 		Bot:        tb,

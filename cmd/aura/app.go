@@ -704,11 +704,24 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 
 	// ---- Cron scheduler -----------------------------------------------------
-	// Dispatcher closes over b so reminder/wiki_maintenance tasks can invoke
-	// the bot's send + the wiki store. Built after b is initialized.
+	// Build a Handler from injected deps so cron no longer depends on *Bot directly.
+	cronHandler := cron.NewHandler(cron.HandlerConfig{
+		Notifier:    b,
+		AgentRunner: &agentJobRunnerAdapter{r: a.deps.AgentRunner},
+		Wiki:        a.deps.Wiki,
+		Issues:      issues,
+		Sources:     a.deps.Sources,
+		SchedDB:     a.deps.SchedDB,
+		Logger:      logger,
+		Location:    loc,
+	})
+	// Wire run_now action now that the handler (not *Bot) implements RunNow.
+	if a.deps.TaskTool != nil {
+		a.deps.TaskTool.SetRunner(&scheduledTaskRunnerAdapter{h: cronHandler})
+	}
 	sched, err := cron.New(cron.Config{
 		Store:      a.deps.SchedDB,
-		Dispatcher: b.DispatchTask,
+		Dispatcher: cronHandler.Dispatch,
 		Logger:     logger,
 		Location:   loc,
 	})
@@ -816,4 +829,66 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		reconciler.Notify(toolindex.ReasonBoot)
 	}
 	return nil
+}
+
+// ---- import-cycle adapters --------------------------------------------------
+
+// agentJobRunnerAdapter bridges *agent.Runner to cron.JobRunner.
+type agentJobRunnerAdapter struct {
+	r *agent.Runner
+}
+
+func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest) (cron.JobResult, error) {
+	if a.r == nil {
+		return cron.JobResult{}, fmt.Errorf("agent runner unavailable")
+	}
+	result, err := a.r.Run(ctx, agent.Task{
+		SystemPrompt:  req.SystemPrompt,
+		Prompt:        req.Prompt,
+		ToolAllowlist: req.ToolAllowlist,
+		UserID:        req.UserID,
+		Temperature:   req.Temperature,
+	})
+	if err != nil {
+		return cron.JobResult{}, err
+	}
+	return cron.JobResult{
+		Content:          result.Content,
+		LLMCalls:         result.LLMCalls,
+		ToolCalls:        result.ToolCalls,
+		TokensPrompt:     result.Tokens.PromptTokens,
+		TokensCompletion: result.Tokens.CompletionTokens,
+		TokensTotal:      result.Tokens.TotalTokens,
+		Elapsed:          result.Elapsed,
+	}, nil
+}
+
+// scheduledTaskRunnerAdapter bridges cron.Handler.RunNow to tools.ScheduledTaskRunner.
+type scheduledTaskRunnerAdapter struct {
+	h *cron.Handler
+}
+
+func (a *scheduledTaskRunnerAdapter) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
+	res, err := a.h.RunNow(ctx, name)
+	if err != nil {
+		return tools.RunTaskNowResult{}, err
+	}
+	return tools.RunTaskNowResult{
+		OK:               res.OK,
+		Name:             res.Name,
+		Kind:             res.Kind,
+		Status:           res.Status,
+		Summary:          res.Summary,
+		LastError:        res.LastError,
+		LLMCalls:         res.LLMCalls,
+		ToolCalls:        res.ToolCalls,
+		TokensPrompt:     res.TokensPrompt,
+		TokensCompletion: res.TokensCompletion,
+		TokensTotal:      res.TokensTotal,
+		ElapsedMS:        res.ElapsedMS,
+		Notified:         res.Notified,
+		Skipped:          res.Skipped,
+		WakeSignature:    res.WakeSignature,
+		ToolAllowlist:    res.ToolAllowlist,
+	}, nil
 }

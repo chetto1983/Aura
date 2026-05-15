@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/aura/aura/internal/wiki"
 )
 
 // DefaultTickInterval is how often the scheduler wakes to check for due
@@ -26,6 +28,14 @@ type Config struct {
 	TickInterval time.Duration  // defaults to DefaultTickInterval
 	// Now is overridable for tests; defaults to time.Now.
 	Now func() time.Time
+
+	// Handler deps — wired by cmd/aura/app.go; ignored when Dispatcher is non-nil.
+	Notifier    Notifier
+	AgentRunner JobRunner
+	WikiStore   wiki.Repository
+	IssuesStore IssueRepository
+	Sources     AgentJobSourceReader
+	AgentJobDB  AgentJobRepository
 }
 
 // Scheduler runs a tick loop that picks up due tasks from the store and
@@ -50,8 +60,22 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Store == nil {
 		return nil, fmt.Errorf("scheduler: store required")
 	}
-	if cfg.Dispatcher == nil {
-		return nil, fmt.Errorf("scheduler: dispatcher required")
+	dispatcher := cfg.Dispatcher
+	if dispatcher == nil {
+		if cfg.AgentJobDB == nil {
+			return nil, fmt.Errorf("scheduler: dispatcher required (or set AgentJobDB + handler deps)")
+		}
+		h := NewHandler(HandlerConfig{
+			Notifier:    cfg.Notifier,
+			AgentRunner: cfg.AgentRunner,
+			Wiki:        cfg.WikiStore,
+			Issues:      cfg.IssuesStore,
+			Sources:     cfg.Sources,
+			SchedDB:     cfg.AgentJobDB,
+			Logger:      cfg.Logger,
+			Location:    cfg.Location,
+		})
+		dispatcher = h.Dispatch
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -71,7 +95,7 @@ func New(cfg Config) (*Scheduler, error) {
 	}
 	return &Scheduler{
 		store:      cfg.Store,
-		dispatcher: cfg.Dispatcher,
+		dispatcher: dispatcher,
 		logger:     logger,
 		loc:        loc,
 		tick:       tick,
