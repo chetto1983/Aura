@@ -23,8 +23,9 @@ import (
 // It is the channels/telegram counterpart of the former Bot.buildTelegramInvocation
 // method, extracted so internal/telegram/ remains a thin channel wrapper.
 type InvocationBuilder struct {
-	b   *tgtelegram.Bot
-	hub *chat.Hub // set after hub creation; used for ask_user resume routing
+	b        *tgtelegram.Bot
+	hub      *chat.Hub // set after hub creation; used for ask_user resume routing
+	outbound *Outbound // canonical streaming path used by streamingChatClient
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -45,9 +46,11 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger) (*chat.Hub, error) {
 	if err != nil {
 		return nil, err
 	}
+	outbound := NewOutbound(logger)
 	hub.RegisterInbound(New())
-	hub.RegisterOutbound(NewOutbound(logger))
+	hub.RegisterOutbound(outbound)
 	ib.hub = hub // Build is lazy (called per-message), so wiring here is safe.
+	ib.outbound = outbound
 	return hub, nil
 }
 
@@ -144,7 +147,14 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// Send the initial placeholder so the user knows the message was received.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
-	chatClient := tgtelegram.NewHubChatClient(b, c, userID, placeholder)
+	// Route streaming through the canonical channels/telegram.Outbound; falls
+	// back to the legacy telegramHubChatClient only if outbound wiring failed.
+	var chatClient agent.ChatClient
+	if ib.outbound != nil {
+		chatClient = newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder)
+	} else {
+		chatClient = tgtelegram.NewHubChatClient(b, c, userID, placeholder)
+	}
 
 	maxIterations := ib.maxToolLoopIterations()
 	maxCallsPerTool := map[string]int{"wiki_page": 3}
