@@ -37,17 +37,6 @@ func (f *fakeNotifier) NotifyOwners(_ context.Context, msg string) {
 	f.owners = append(f.owners, msg)
 }
 
-// ---- fake JobRunner ---------------------------------------------------------
-
-type fakeJobRunner struct {
-	result JobResult
-	err    error
-}
-
-func (f *fakeJobRunner) RunJob(_ context.Context, _ JobRequest) (JobResult, error) {
-	return f.result, f.err
-}
-
 // ---- fake wiki.Repository ---------------------------------------------------
 
 type fakeWiki struct {
@@ -113,16 +102,15 @@ func TestDispatch_Routing(t *testing.T) {
 		}
 	})
 
-	t.Run("agent_job routes to JobRunner", func(t *testing.T) {
-		runner := &fakeJobRunner{result: JobResult{Content: "done"}}
-		h3 := NewHandler(HandlerConfig{AgentRunner: runner})
+	t.Run("agent_job returns unknown-kind error (now handled by Hub)", func(t *testing.T) {
 		task := &Task{
 			Kind:    KindAgentJob,
 			Name:    "market-check",
 			Payload: `{"goal":"check markets"}`,
 		}
-		if err := h3.Dispatch(ctx, task); err != nil {
-			t.Fatalf("Dispatch agent_job: %v", err)
+		err := h.Dispatch(ctx, task)
+		if err == nil {
+			t.Fatal("expected error: agent_job is no longer handled by cron.Handler")
 		}
 	})
 
@@ -252,97 +240,10 @@ func TestDispatchWikiMaintenance_NotifiesOwnersWhenWired(t *testing.T) {
 	_ = notifier.owners
 }
 
-// ---- dispatchAgentJob -------------------------------------------------------
-
-func TestDispatchAgentJob_RunsRunner(t *testing.T) {
-	runner := &fakeJobRunner{result: JobResult{Content: "all good", LLMCalls: 2}}
-	h := NewHandler(HandlerConfig{AgentRunner: runner})
-	task := &Task{
-		Kind:    KindAgentJob,
-		Name:    "daily-check",
-		Payload: `{"goal":"check memory and propose updates"}`,
-	}
-	if err := h.dispatchAgentJob(context.Background(), task); err != nil {
-		t.Fatalf("dispatchAgentJob: %v", err)
-	}
-}
-
-func TestDispatchAgentJob_ErrorOnMissingRunner(t *testing.T) {
-	h := NewHandler(HandlerConfig{})
-	task := &Task{
-		Kind:    KindAgentJob,
-		Name:    "x",
-		Payload: `{"goal":"check memory"}`,
-	}
-	err := h.dispatchAgentJob(context.Background(), task)
-	if err == nil {
-		t.Fatal("expected error: no runner")
-	}
-}
-
-func TestDispatchAgentJob_NotifiesOnCompletion(t *testing.T) {
-	notifier := &fakeNotifier{}
-	runner := &fakeJobRunner{result: JobResult{Content: "report body"}}
-	trueBool := true
-	h := NewHandler(HandlerConfig{
-		Notifier:    notifier,
-		AgentRunner: runner,
-	})
-	payload := `{"goal":"check sources","notify":true}`
-	task := &Task{
-		Kind:        KindAgentJob,
-		Name:        "source-check",
-		Payload:     payload,
-		RecipientID: "42",
-	}
-	_ = trueBool
-	if err := h.dispatchAgentJob(context.Background(), task); err != nil {
-		t.Fatalf("dispatchAgentJob: %v", err)
-	}
-	if len(notifier.completions) == 0 {
-		t.Fatal("expected SendCompletion to be called when notify=true")
-	}
-}
-
-func TestDispatchAgentJob_SkipsNotifyWhenFalse(t *testing.T) {
-	notifier := &fakeNotifier{}
-	runner := &fakeJobRunner{result: JobResult{Content: "report body"}}
-	h := NewHandler(HandlerConfig{
-		Notifier:    notifier,
-		AgentRunner: runner,
-	})
-	task := &Task{
-		Kind:        KindAgentJob,
-		Name:        "quiet-job",
-		Payload:     `{"goal":"check sources","notify":false}`,
-		RecipientID: "42",
-	}
-	if err := h.dispatchAgentJob(context.Background(), task); err != nil {
-		t.Fatalf("dispatchAgentJob: %v", err)
-	}
-	if len(notifier.completions) != 0 {
-		t.Fatal("expected SendCompletion NOT to be called when notify=false")
-	}
-}
-
-func TestDispatchAgentJob_RunnerErrorPropagates(t *testing.T) {
-	runner := &fakeJobRunner{err: errors.New("llm unavailable")}
-	h := NewHandler(HandlerConfig{AgentRunner: runner})
-	task := &Task{
-		Kind:    KindAgentJob,
-		Name:    "x",
-		Payload: `{"goal":"check memory"}`,
-	}
-	if err := h.dispatchAgentJob(context.Background(), task); err == nil {
-		t.Fatal("expected runner error to propagate")
-	}
-}
-
 // ---- compile-time interface checks ------------------------------------------
 
 var (
-	_ Notifier  = (*fakeNotifier)(nil)
-	_ JobRunner = (*fakeJobRunner)(nil)
+	_ Notifier        = (*fakeNotifier)(nil)
 	_ wiki.Repository = (*fakeWiki)(nil)
 )
 

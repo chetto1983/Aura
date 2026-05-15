@@ -128,8 +128,6 @@ func (h *Handler) Dispatch(ctx context.Context, task *Task) error {
 		return h.dispatchReminder(task)
 	case KindWikiMaintenance:
 		return h.dispatchWikiMaintenance(ctx)
-	case KindAgentJob:
-		return h.dispatchAgentJob(ctx, task)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
@@ -240,23 +238,6 @@ func (h *Handler) dispatchWikiMaintenance(ctx context.Context) error {
 	return nil
 }
 
-func (h *Handler) dispatchAgentJob(ctx context.Context, task *Task) error {
-	run, err := h.runAgentJob(ctx, task)
-	h.logAgentJobRun(task, run)
-	h.persistAgentJobResult(ctx, task, run)
-	if err != nil {
-		return err
-	}
-	if run.Payload.Notify != nil && *run.Payload.Notify && task.RecipientID != "" {
-		notified, err := h.notifyAgentJob(task, run.Result.Content)
-		run.Notified = notified
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ---- agent job internals ----------------------------------------------------
 
 type agentJobRun struct {
@@ -286,7 +267,7 @@ func (h *Handler) runAgentJob(ctx context.Context, task *Task) (agentJobRun, err
 	if err != nil {
 		return agentJobRun{}, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
-	allowlist := safeAgentJobTools(payload.ToolAllowlist)
+	allowlist := SafeAgentJobTools(payload.ToolAllowlist)
 	wakeSignature, hasWakeSignature := AgentJobWakeSignature(ctx, payload, AgentJobWakeDeps{
 		Wiki:    h.wiki,
 		Sources: h.sources,
@@ -304,7 +285,7 @@ func (h *Handler) runAgentJob(ctx context.Context, task *Task) (agentJobRun, err
 	now := time.Now()
 	zero := 0.0
 	result, err := h.runner.RunJob(ctx, JobRequest{
-		SystemPrompt:  agentJobSystemPrompt(payload, now, h.loc),
+		SystemPrompt:  AgentJobSystemPrompt(payload, now, h.loc),
 		Prompt:        h.agentJobPrompt(ctx, task, payload, now, h.loc),
 		ToolAllowlist: allowlist,
 		UserID:        task.RecipientID,
@@ -315,20 +296,6 @@ func (h *Handler) runAgentJob(ctx context.Context, task *Task) (agentJobRun, err
 		return run, fmt.Errorf("agent_job %q: %w", task.Name, err)
 	}
 	return run, nil
-}
-
-func (h *Handler) logAgentJobRun(task *Task, run agentJobRun) {
-	h.logger.Info("agent job complete",
-		"name", task.Name,
-		"recipient_id", task.RecipientID,
-		"skipped", run.Skipped,
-		"llm_calls", run.Result.LLMCalls,
-		"tool_calls", run.Result.ToolCalls,
-		"tokens_prompt", run.Result.TokensPrompt,
-		"tokens_completion", run.Result.TokensCompletion,
-		"tokens_total", run.Result.TokensTotal,
-		"elapsed_ms", run.Result.Elapsed.Milliseconds(),
-	)
 }
 
 func (h *Handler) persistAgentJobResult(ctx context.Context, task *Task, run agentJobRun) {
@@ -382,7 +349,7 @@ func agentJobNotificationMessage(task *Task, payload AgentJobPayload, content st
 	return fmt.Sprintf("Agent job %q completed.\n\n%s", name, truncate(content, 3200))
 }
 
-func agentJobSystemPrompt(payload AgentJobPayload, now time.Time, loc *time.Location) string {
+func AgentJobSystemPrompt(payload AgentJobPayload, now time.Time, loc *time.Location) string {
 	prompt := "You are Aura running a scheduled agent job. Complete the saved routine with concise, evidence-oriented work. Write policy: " + payload.WritePolicy + ". Do not mutate wiki pages, sources, skills, settings, tasks, files, or external state directly. If durable memory or reusable procedural knowledge is useful, report the exact file path and patch you recommend instead of applying it. Return a short report with what you checked, any recommended edit, and unresolved issues."
 	if lang := agentJobLanguageInstruction(payload.Language); lang != "" {
 		prompt += " " + lang
@@ -397,6 +364,26 @@ func agentJobSystemPrompt(payload AgentJobPayload, now time.Time, loc *time.Loca
 	}
 	prompt += conversation.RenderRuntimeContext(now, loc)
 	return prompt
+}
+
+// AgentJobUserPrompt builds a minimal user-turn prompt for Hub-routed agent jobs.
+// It omits schedule context and prior outputs (not available from InboundMessage alone).
+func AgentJobUserPrompt(payload AgentJobPayload) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Goal: %s", payload.Goal)
+	if len(payload.EnabledToolsets) > 0 {
+		fmt.Fprintf(&sb, "\n\nEnabled toolsets: %s", strings.Join(payload.EnabledToolsets, ", "))
+	}
+	if len(payload.Skills) > 0 {
+		fmt.Fprintf(&sb, "\n\nAttached skills: %s\nFind and read the matching SKILL.md files before relying on their procedures. Do not install, delete, or edit skills directly.", strings.Join(payload.Skills, ", "))
+	}
+	if len(payload.ContextFrom) > 0 {
+		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets.", strings.Join(payload.ContextFrom, ", "))
+	}
+	if len(payload.WakeIfChanged) > 0 {
+		fmt.Fprintf(&sb, "\n\nWake-if-changed signals: %s\nBefore doing the full routine, check whether these signals changed materially. If not, return a concise no-change report and stop.", strings.Join(payload.WakeIfChanged, ", "))
+	}
+	return sb.String()
 }
 
 func agentJobLanguageInstruction(language string) string {
@@ -494,7 +481,7 @@ func (h *Handler) agentJobPriorOutputs(ctx context.Context, anchors []string) st
 
 // ---- helpers ----------------------------------------------------------------
 
-func safeAgentJobTools(requested []string) []string {
+func SafeAgentJobTools(requested []string) []string {
 	out := toolsets.FilterAllowed(requested, AgentJobAllowedTools)
 	if len(out) == 0 {
 		return append([]string(nil), DefaultAgentJobTools...)

@@ -17,6 +17,9 @@ import (
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
+	"github.com/aura/aura/internal/chat"
+	cronadapter "github.com/aura/aura/internal/channels/cron"
+	silentadapter "github.com/aura/aura/internal/channels/silent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -706,22 +709,35 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// ---- Cron scheduler -----------------------------------------------------
 	// Build a Handler from injected deps so cron no longer depends on *Bot directly.
 	cronHandler := cron.NewHandler(cron.HandlerConfig{
-		Notifier:    b,
-		AgentRunner: &agentJobRunnerAdapter{r: a.deps.AgentRunner},
-		Wiki:        a.deps.Wiki,
-		Issues:      issues,
-		Sources:     a.deps.Sources,
-		SchedDB:     a.deps.SchedDB,
-		Logger:      logger,
-		Location:    loc,
+		Notifier: b,
+		Wiki:     a.deps.Wiki,
+		Issues:   issues,
+		Sources:  a.deps.Sources,
+		SchedDB:  a.deps.SchedDB,
+		Logger:   logger,
+		Location: loc,
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
 	if a.deps.TaskTool != nil {
 		a.deps.TaskTool.SetRunner(&scheduledTaskRunnerAdapter{h: cronHandler})
 	}
+	// Route KindAgentJob through the cron Hub (InboundAdapter → CronAgentLoop →
+	// silent Outbound); all other kinds fall back to cronHandler.Dispatch.
+	cronDispatcher := cron.Dispatcher(cronHandler.Dispatch)
+	if a.deps.AgentRunner != nil {
+		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{r: a.deps.AgentRunner}, loc)
+		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, Logger: logger})
+		if hubErr != nil {
+			logger.Warn("cron hub unavailable; falling back to legacy agent dispatch", "error", hubErr)
+		} else {
+			cronHub.RegisterInbound(cronadapter.New())
+			cronHub.RegisterOutbound(silentadapter.NewCron(silentadapter.Config{Logger: logger}))
+			cronDispatcher = cronadapter.NewHubDispatcher(cronHub, cronHandler.Dispatch)
+		}
+	}
 	sched, err := cron.New(cron.Config{
 		Store:      a.deps.SchedDB,
-		Dispatcher: cronHandler.Dispatch,
+		Dispatcher: cronDispatcher,
 		Logger:     logger,
 		Location:   loc,
 	})
