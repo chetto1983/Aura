@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	governance "github.com/aura/aura/internal/agent/governance"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -211,4 +212,39 @@ func IsFileGenerationTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+// TerminalFinalizer provides the LLM and cost-accounting capabilities needed
+// to finalize a terminal tool turn without a channel-specific dependency.
+type TerminalFinalizer interface {
+	FinalizeModel() string
+	FinalizeChat(ctx context.Context, req llm.Request) (llm.Response, error)
+	FinalizeRecordUsage(usage llm.TokenUsage)
+	FinalizeEstimateCost(usage llm.TokenUsage) float64
+}
+
+// FinalizeAfterTerminalTool handles the agent-loop part of terminal tool
+// finalization: increments stats, calls the LLM for a prose summary, and
+// updates convCtx. Returns the trimmed response text and true when
+// finalization produced a non-empty reply.
+func FinalizeAfterTerminalTool(ctx context.Context, runner TerminalFinalizer, convCtx *conversation.Context, rawToolResult string, stats *TurnStats) (string, bool) {
+	stats.LLMCalls++
+	stats.LoopSteps++
+	finalized := FinalizeTerminalTool(ctx, TerminalFinalizationInput{
+		Messages:      convCtx.Messages(),
+		TerminalTool:  stats.TerminalTool,
+		RawToolResult: rawToolResult,
+		Model:         runner.FinalizeModel(),
+		Send:          runner.FinalizeChat,
+		RecordUsage:   runner.FinalizeRecordUsage,
+		EstimateCost:  runner.FinalizeEstimateCost,
+	})
+	convCtx.TrackTokens(finalized.Usage)
+	stats.TokensPrompt += finalized.TokensPrompt
+	stats.TokensCompletion += finalized.TokensCompletion
+	stats.TokensTotal += finalized.TokensTotal
+	stats.CostUSD += finalized.CostUSD
+	response := strings.TrimSpace(finalized.Text)
+	convCtx.AddAssistantMessage(response)
+	return response, finalized.Err == nil && !finalized.Fallback && response != ""
 }

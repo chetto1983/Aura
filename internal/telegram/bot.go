@@ -331,3 +331,27 @@ func (b *Bot) archiveAppenderForTurn() conversation.TurnAppender {
 	}
 	return b.rt.archiver
 }
+
+// FinalizeModel returns the configured LLM model name (implements agent.TerminalFinalizer).
+func (b *Bot) FinalizeModel() string { return b.cfg.LLMModel }
+
+// FinalizeChat sends a no-tool LLM request, applying the configured reasoning effort
+// (implements agent.TerminalFinalizer).
+func (b *Bot) FinalizeChat(ctx context.Context, req llm.Request) (llm.Response, error) {
+	req.ReasoningEffort = b.cfg.ReasoningEffort
+	return b.rt.llm.Send(ctx, req)
+}
+
+// FinalizeRecordUsage records token usage against the per-user budget
+// (implements agent.TerminalFinalizer).
+func (b *Bot) FinalizeRecordUsage(usage llm.TokenUsage) {
+	if b.rt != nil && b.rt.budget != nil {
+		b.rt.budget.RecordUsage(usage)
+	}
+}
+
+// FinalizeEstimateCost returns the estimated cost in USD for the given token usage
+// (implements agent.TerminalFinalizer).
+func (b *Bot) FinalizeEstimateCost(usage llm.TokenUsage) float64 {
+	return agent.EstimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+}

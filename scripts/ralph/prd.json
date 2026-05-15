@@ -56,7 +56,7 @@
         "Single atomic commit prefix: refactor(agent): extract FinalizeAfterTerminalTool from telegram (US-C03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest of the three splits. The runner/LLM dependency must be injected — likely via the same runner interface as US-C02 (if you do C02 first the interface is already there)."
     },
     {
