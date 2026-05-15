@@ -2,13 +2,37 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/secrets"
 )
+
+// secretRouteForCatalogKey maps an overridable config key (uppercase, formerly
+// written to the settings table) to its canonical secrets-table key (lowercase)
+// when the boot loader expects the value from the secrets table. The keys that
+// applySecretsToConfig (cmd/aura/secrets_boot.go) overrides are listed here.
+// MistralAPIKey is IsSecret=true for UI redaction only and stays single-table
+// in settings.
+var secretRouteForCatalogKey = map[string]string{
+	config.KeyTelegramToken:     secrets.KeyTelegramToken,
+	config.KeyLLMAPIKey:         secrets.KeyLLMAPIKey,
+	config.KeyEmbeddingAPIKey:   secrets.KeyEmbeddingAPIKey,
+	config.KeyGarageS3AccessKey: secrets.KeyGarageS3AccessKey,
+	config.KeyGarageS3SecretKey: secrets.KeyGarageS3SecretKey,
+	config.KeyQdrantAPIKey:      secrets.KeyQdrantAPIKey,
+}
+
+// routeToSecretsStore reports whether a dashboard catalog key should read/write
+// through the secrets store rather than the settings store.
+func routeToSecretsStore(catalogKey string) (secretKey string, ok bool) {
+	v, ok := secretRouteForCatalogKey[catalogKey]
+	return v, ok
+}
 
 // SettingItem is one row in the GET /settings response.
 //
@@ -133,10 +157,26 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 		items := make([]SettingItem, 0, len(settingsCatalog))
 		for _, meta := range settingsCatalog {
 			it := meta
-			// DB row wins. Else fall back to the env value the bot
-			// loaded at startup so the form reflects effective state.
-			// Source flag tells the UI which it is.
-			if v, err := deps.Settings.Get(ctx, meta.Key); err == nil && v != "" {
+			// DB row wins. Secret-shaped keys route through the secrets
+			// store (matches the boot loader's applySecretsToConfig
+			// precedence — see docs/settings-audit-2026-05-15.md).
+			// Else fall back to the env value the bot loaded at startup
+			// so the form reflects effective state. Source flag tells
+			// the UI which it is.
+			if secretKey, ok := routeToSecretsStore(meta.Key); ok && deps.SecretsStore != nil {
+				if v, err := deps.SecretsStore.Get(ctx, secretKey); err == nil && v != "" {
+					it.Value = v
+					it.Source = "db"
+				} else if v, err := deps.Settings.Get(ctx, meta.Key); err == nil && v != "" {
+					it.Value = v
+					it.Source = "db"
+				} else if envVal := os.Getenv(meta.Key); envVal != "" {
+					it.Value = envVal
+					it.Source = "env"
+				} else {
+					it.Source = "default"
+				}
+			} else if v, err := deps.Settings.Get(ctx, meta.Key); err == nil && v != "" {
 				it.Value = v
 				it.Source = "db"
 			} else if envVal := os.Getenv(meta.Key); envVal != "" {
@@ -357,6 +397,33 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 		errs := []string{}
 		for k, v := range req.Updates {
 			v = strings.TrimSpace(v)
+			// Secret-shaped keys route through the secrets store so the
+			// dashboard rotates the same row applySecretsToConfig reads at
+			// boot (Phase-H closure). Also delete any legacy settings-table
+			// row so the precedence collision documented in
+			// docs/settings-audit-2026-05-15.md cannot recur.
+			if secretKey, isSecret := routeToSecretsStore(k); isSecret {
+				if deps.SecretsStore == nil {
+					errs = append(errs, k+": secrets store unavailable")
+					continue
+				}
+				if v == "" {
+					if err := deps.SecretsStore.Delete(ctx, secretKey); err != nil && !errors.Is(err, secrets.ErrSecretNotFound) {
+						errs = append(errs, k+": "+err.Error())
+						continue
+					}
+				} else {
+					if err := deps.SecretsStore.Set(ctx, secretKey, v); err != nil {
+						errs = append(errs, k+": "+err.Error())
+						continue
+					}
+				}
+				// Clean legacy settings row so the old write target stops
+				// shadowing future reads (best-effort: ignore "not found").
+				_ = deps.Settings.Delete(ctx, k)
+				applied = append(applied, k)
+				continue
+			}
 			if v == "" {
 				if err := deps.Settings.Delete(ctx, k); err != nil {
 					errs = append(errs, k+": "+err.Error())

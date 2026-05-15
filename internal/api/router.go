@@ -21,6 +21,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/secrets"
 	"github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/reindex"
@@ -154,6 +155,13 @@ type Deps struct {
 	RuntimeConfig        *config.Config
 	ApplyRuntimeSettings func(context.Context) error
 	Restart              func(context.Context) error
+
+	// Phase-H closure fix: secret-shaped settings (IsSecret=true in the
+	// catalog) route their writes/reads through SecretsStore so the
+	// dashboard rotates the same row applySecretsToConfig reads at boot.
+	// Optional — when nil, secret keys fall back to deps.Settings.Set and
+	// surface a "secrets store unavailable" warning.
+	SecretsStore secrets.Store
 
 	// Slice 17d: AuraBot swarm observability. Optional â€” when nil, the
 	// dashboard returns empty run lists and 404s for details.

@@ -12,23 +12,25 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
-	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
-	"github.com/aura/aura/internal/chat"
 	cronadapter "github.com/aura/aura/internal/channels/cron"
 	silentadapter "github.com/aura/aura/internal/channels/silent"
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/mcp"
+	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/qdrant"
 	"github.com/aura/aura/internal/storage/reindex"
+	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
@@ -54,9 +56,9 @@ type App struct {
 	bgWg     sync.WaitGroup
 
 	// ---- Resources to clean up on Stop ----------------------------------------
-	archiver   conversation.ClosingTurnAppender // nil until wireBot
-	sched      *cron.Scheduler                  // nil until wireBot
-	api        http.Handler                     // nil until wireBot
+	archiver conversation.ClosingTurnAppender // nil until wireBot
+	sched    *cron.Scheduler                  // nil until wireBot
+	api      http.Handler                     // nil until wireBot
 }
 
 // startBg starts a background goroutine tracked by bgWg under bgCtx.
@@ -499,6 +501,12 @@ func newApp(
 	authStore.SetTokenTTL(time.Duration(cfg.DashboardTokenTTLHours) * time.Hour)
 	deps.AuthDB = authStore
 
+	runStore, err := runstore.NewStore(pool)
+	if err != nil {
+		return nil, fmt.Errorf("creating run store: %w", err)
+	}
+	deps.RunStore = runStore
+
 	// ---- Budget tracker -----------------------------------------------------
 	deps.Budget = budget.NewTracker(budget.Config{
 		SoftBudget:           cfg.SoftBudget,
@@ -699,6 +707,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Issues:   issues,
 		Sources:  a.deps.Sources,
 		SchedDB:  a.deps.SchedDB,
+		Identity: a.deps.AuthDB,
 		Logger:   logger,
 		Location: loc,
 	})
@@ -711,15 +720,14 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	cronDispatcher := cron.Dispatcher(cronHandler.Dispatch)
 	depsGetter := newAgentJobDepsGetter(cfg, &a.deps)
 	if depsGetter != nil {
-		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{getDeps: depsGetter}, loc)
-		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, Logger: logger})
+		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{getDeps: depsGetter}, loc, cronadapter.WithIdentity(a.deps.AuthDB))
+		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, LifecycleStore: a.deps.RunStore, Logger: logger})
 		if hubErr != nil {
-			logger.Warn("cron hub unavailable; falling back to legacy agent dispatch", "error", hubErr)
-		} else {
-			cronHub.RegisterInbound(cronadapter.New())
-			cronHub.RegisterOutbound(silentadapter.NewCron(silentadapter.Config{Logger: logger}))
-			cronDispatcher = cronadapter.NewHubDispatcher(cronHub, cronHandler.Dispatch)
+			return fmt.Errorf("creating cron hub: %w", hubErr)
 		}
+		cronHub.RegisterInbound(cronadapter.New())
+		cronHub.RegisterOutbound(silentadapter.NewCron(silentadapter.Config{Logger: logger}))
+		cronDispatcher = cronadapter.NewHubDispatcher(cronHub, cronHandler.Dispatch)
 	}
 	sched, err := cron.New(cron.Config{
 		Store:      a.deps.SchedDB,
@@ -820,6 +828,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		RuntimeConfig:        cfg,
 		ApplyRuntimeSettings: b.RuntimeSettingsApplier(a.deps),
 		Restart:              a.restart,
+		// Phase-H closure: route secret-shaped dashboard writes to the
+		// secrets store so dashboard rotations actually update what
+		// applySecretsToConfig reads at boot
+		// (docs/settings-audit-2026-05-15.md).
+		SecretsStore: secretspkg.NewSQLiteStore(a.deps.Pool),
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
 		Chat:  api.NewWebChatService(newWebChatDepsGetter(cfg, &a.deps)),

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/secrets"
 )
 
 type fakeSettingsRepository struct {
@@ -49,11 +50,52 @@ func (f *fakeSettingsRepository) All(_ context.Context) (map[string]string, erro
 	return out, nil
 }
 
+type fakeSecretsStore struct {
+	values map[string]string
+}
+
+func (f *fakeSecretsStore) Get(_ context.Context, key string) (string, error) {
+	v, ok := f.values[key]
+	if !ok {
+		return "", secrets.ErrSecretNotFound
+	}
+	return v, nil
+}
+
+func (f *fakeSecretsStore) Set(_ context.Context, key, value string) error {
+	if f.values == nil {
+		f.values = map[string]string{}
+	}
+	f.values[key] = value
+	return nil
+}
+
+func (f *fakeSecretsStore) Delete(_ context.Context, key string) error {
+	delete(f.values, key)
+	return nil
+}
+
+func (f *fakeSecretsStore) List(_ context.Context) ([]string, error) {
+	keys := make([]string, 0, len(f.values))
+	for k := range f.values {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
 func newSettingsEnv(t *testing.T) (http.Handler, *config.Store) {
 	t.Helper()
 	store := mustSettingsStore(t)
 	router := NewRouter(Deps{Settings: store})
 	return router, store
+}
+
+func newSettingsEnvWithSecrets(t *testing.T) (http.Handler, *config.Store, *fakeSecretsStore) {
+	t.Helper()
+	store := mustSettingsStore(t)
+	secretStore := &fakeSecretsStore{values: map[string]string{}}
+	router := NewRouter(Deps{Settings: store, SecretsStore: secretStore})
+	return router, store, secretStore
 }
 
 func mustSettingsStore(t *testing.T) *config.Store {
@@ -107,6 +149,32 @@ func TestSettingsList_HappyPath(t *testing.T) {
 	if !found {
 		t.Errorf("LLM_API_KEY not in items")
 	}
+}
+
+func TestSettingsList_ReadsSecretKeysFromSecretsStore(t *testing.T) {
+	router, _, secretStore := newSettingsEnvWithSecrets(t)
+	_ = secretStore.Set(context.Background(), secrets.KeyLLMAPIKey, "sk-secret")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/settings", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+
+	var resp SettingsListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, it := range resp.Items {
+		if it.Key != config.KeyLLMAPIKey {
+			continue
+		}
+		if it.Value != "" || it.ActiveValue != "(configured)" || it.Source != "db" {
+			t.Fatalf("LLM_API_KEY row = value:%q active:%q source:%q", it.Value, it.ActiveValue, it.Source)
+		}
+		return
+	}
+	t.Fatal("LLM_API_KEY not in items")
 }
 
 func TestSettingsHandlersAcceptRepositoryInterface(t *testing.T) {
@@ -418,7 +486,7 @@ func TestSettingsList_NoStore503(t *testing.T) {
 }
 
 func TestSettingsUpdate_HappyPath(t *testing.T) {
-	router, store := newSettingsEnv(t)
+	router, store, secretStore := newSettingsEnvWithSecrets(t)
 
 	body := `{"updates":{"LLM_API_KEY":"sk-new","LLM_MODEL":"gpt-4o"}}`
 	rr := httptest.NewRecorder()
@@ -433,8 +501,11 @@ func TestSettingsUpdate_HappyPath(t *testing.T) {
 		t.Errorf("update result: %+v", resp)
 	}
 
-	if got, _ := store.Get(context.Background(), "LLM_API_KEY"); got != "sk-new" {
-		t.Errorf("LLM_API_KEY persisted = %q", got)
+	if got, _ := secretStore.Get(context.Background(), secrets.KeyLLMAPIKey); got != "sk-new" {
+		t.Errorf("LLM_API_KEY secret persisted = %q", got)
+	}
+	if _, err := store.Get(context.Background(), "LLM_API_KEY"); err != config.ErrNotFound {
+		t.Errorf("legacy LLM_API_KEY settings row should be absent, got %v", err)
 	}
 	if got, _ := store.Get(context.Background(), "LLM_MODEL"); got != "gpt-4o" {
 		t.Errorf("LLM_MODEL persisted = %q", got)
@@ -523,8 +594,9 @@ func TestRestartEndpointUnavailableWithoutHook(t *testing.T) {
 }
 
 func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
-	router, store := newSettingsEnv(t)
+	router, store, secretStore := newSettingsEnvWithSecrets(t)
 	_ = store.Set(context.Background(), "LLM_API_KEY", "sk-old")
+	_ = secretStore.Set(context.Background(), secrets.KeyLLMAPIKey, "sk-old")
 
 	body := `{"updates":{"LLM_API_KEY":""}}`
 	rr := httptest.NewRecorder()
@@ -533,20 +605,26 @@ func TestSettingsUpdate_BlankValueDeletes(t *testing.T) {
 		t.Fatalf("status %d", rr.Code)
 	}
 	if _, err := store.Get(context.Background(), "LLM_API_KEY"); err != config.ErrNotFound {
-		t.Errorf("expected ErrNotFound after blank update, got %v", err)
+		t.Errorf("expected settings ErrNotFound after blank update, got %v", err)
+	}
+	if _, err := secretStore.Get(context.Background(), secrets.KeyLLMAPIKey); !errors.Is(err, secrets.ErrSecretNotFound) {
+		t.Errorf("expected secret ErrSecretNotFound after blank update, got %v", err)
 	}
 }
 
 func TestSettingsUpdate_AcceptsTelegramTokenOverride(t *testing.T) {
-	router, store := newSettingsEnv(t)
+	router, store, secretStore := newSettingsEnvWithSecrets(t)
 	body := `{"updates":{"TELEGRAM_TOKEN":"123456:override"}}`
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("POST", "/settings", bytes.NewReader([]byte(body))))
 	if rr.Code != 200 {
 		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
 	}
-	if got, _ := store.Get(context.Background(), config.KeyTelegramToken); got != "123456:override" {
-		t.Errorf("TELEGRAM_TOKEN persisted = %q", got)
+	if got, _ := secretStore.Get(context.Background(), secrets.KeyTelegramToken); got != "123456:override" {
+		t.Errorf("TELEGRAM_TOKEN secret persisted = %q", got)
+	}
+	if _, err := store.Get(context.Background(), config.KeyTelegramToken); err != config.ErrNotFound {
+		t.Errorf("legacy TELEGRAM_TOKEN settings row should be absent, got %v", err)
 	}
 }
 
