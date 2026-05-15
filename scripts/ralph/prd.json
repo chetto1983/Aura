@@ -115,7 +115,7 @@
         "Single atomic commit prefix: feat(agent): per-(tool,class) retry budget (US-J05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness: outer-loop-only semantics is the comment that must appear in the source so future maintainers don't try to double-count MCP server retries. Read internal/llm/retry.go to see the same pattern (LLM retry budget doesn't see provider-side retries)."
     },
     {

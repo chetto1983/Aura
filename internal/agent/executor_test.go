@@ -179,3 +179,7 @@ func (alwaysErrRepo) Record(_ context.Context, _ tools.ToolObservation) error {
 func (alwaysErrRepo) Recent(_ context.Context, _, _ string, _ int) ([]attempts.ToolAttempt, error) {
 	return nil, errors.New("repo always fails")
 }
+
+func (alwaysErrRepo) CountOutcome(_ context.Context, _, _ string, _ tools.Outcome) (int, error) {
+	return 0, errors.New("repo always fails")
+}

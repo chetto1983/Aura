@@ -90,6 +90,22 @@ func (r *SQLiteRepo) Record(ctx context.Context, obs tools.ToolObservation) erro
 	return nil
 }
 
+// CountOutcome returns the count of tool_attempts rows matching (runID, toolName, outcome).
+func (r *SQLiteRepo) CountOutcome(ctx context.Context, runID, toolName string, outcome tools.Outcome) (int, error) {
+	if r.db == nil {
+		return 0, ErrRepoUnavailable
+	}
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tool_attempts WHERE run_id = ? AND tool_name = ? AND outcome = ?`,
+		runID, toolName, outcome.String(),
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("attempts: count outcome: %w", err)
+	}
+	return count, nil
+}
+
 // Recent returns up to n most-recent attempts for toolName within runID, newest first.
 func (r *SQLiteRepo) Recent(ctx context.Context, runID, toolName string, n int) ([]ToolAttempt, error) {
 	if r.db == nil {

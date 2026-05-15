@@ -28,6 +28,16 @@ func (f *fakeRepo) Recent(_ context.Context, _, toolName string, n int) ([]attem
 	return append([]attempts.ToolAttempt(nil), rows...), nil
 }
 
+func (f *fakeRepo) CountOutcome(_ context.Context, _, toolName string, outcome tools.Outcome) (int, error) {
+	count := 0
+	for _, row := range f.data[toolName] {
+		if row.Outcome == outcome.String() {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // failAttempt builds a ToolAttempt with outcome derived from class, for test setup.
 func failAttempt(toolName, class string, endedAt time.Time) attempts.ToolAttempt {
 	return attempts.ToolAttempt{

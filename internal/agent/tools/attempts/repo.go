@@ -38,4 +38,9 @@ type Repo interface {
 	// Recent returns up to n most-recent attempts for toolName within runID,
 	// ordered newest first (by ended_at DESC).
 	Recent(ctx context.Context, runID, toolName string, n int) ([]ToolAttempt, error)
+
+	// CountOutcome returns the number of attempts for toolName within runID
+	// that match the given outcome string (e.g. "recoverable", "blocked").
+	// Used by CheckBudget (US-J05) to enforce per-(tool,class) retry ceilings.
+	CountOutcome(ctx context.Context, runID, toolName string, outcome tools.Outcome) (int, error)
 }

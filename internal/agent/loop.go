@@ -15,6 +15,7 @@ import (
 	"time"
 
 	governance "github.com/aura/aura/internal/agent/governance"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
@@ -152,8 +153,28 @@ type Options struct {
 	// one-turn tool-experience capsule into the message context (US-J04).
 	// NEVER mutates state.Messages(); the capsule lives for one turn only.
 	Briefer ToolBriefer
-	// BrieferRunID is the run/thread identifier passed to the Briefer.
+	// BrieferRunID is the run/thread identifier passed to the Briefer and to
+	// the retry-budget checker (US-J05). It identifies the current run in the
+	// tool_attempts table.
 	BrieferRunID string
+	// RetryBudgets caps how many prior failures of a given outcome class the
+	// loop tolerates before refusing the next dispatch of the same tool.
+	//
+	// Defaults when this field is populated:
+	//   OutcomeRecoverable: 2  — allow up to 2 recoverable errors, refuse 3rd
+	//   OutcomeBlocked:     0  — refuse after the very first blocked failure
+	//   OutcomeFatal:       0  — refuse after the very first fatal failure
+	//   OutcomeCancelled:   0  — refuse after the very first cancelled result
+	//
+	// Outer-loop only — MCP server internal retries are invisible: a single
+	// Aura-side dispatch may trigger multiple provider-side retries, but
+	// AttemptN counts only Aura dispatches, keeping the budget semantics clean.
+	//
+	// When nil or empty, no budget check is performed.
+	RetryBudgets map[tools.Outcome]int
+	// RetryBudgetRepo is the attempts.Repo consulted by the retry-budget check.
+	// When nil the check is skipped (feature-flag-ready: set to nil to disable).
+	RetryBudgetRepo attempts.Repo
 }
 
 // loopResult is the internal result of one runLoop invocation.
@@ -289,18 +310,18 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			}
 			pool = newToolPool(seed, opts.ToolResolver)
 		}
-		tools := pool.Defs()
+		toolDefs := pool.Defs()
 		if finalizing {
-			tools = nil
+			toolDefs = nil
 		}
 
 		stats.LLMCalls++
 		stats.LoopSteps++
 		messagesForModel := governance.Apply(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
-		if opts.Briefer != nil && len(tools) > 0 {
-			availableSet := make(map[string]struct{}, len(tools))
-			toolNames := make([]string, 0, len(tools))
-			for _, t := range tools {
+		if opts.Briefer != nil && len(toolDefs) > 0 {
+			availableSet := make(map[string]struct{}, len(toolDefs))
+			toolNames := make([]string, 0, len(toolDefs))
+			for _, t := range toolDefs {
 				availableSet[t.Name] = struct{}{}
 				toolNames = append(toolNames, t.Name)
 			}
@@ -309,9 +330,9 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			}
 		}
 		if opts.OnLLMStart != nil {
-			opts.OnLLMStart(iteration, len(messagesForModel), len(tools))
+			opts.OnLLMStart(iteration, len(messagesForModel), len(toolDefs))
 		}
-		resp, err := client.Chat(iterCtx, messagesForModel, tools)
+		resp, err := client.Chat(iterCtx, messagesForModel, toolDefs)
 		if err != nil {
 			iterCancel()
 			if opts.CompleteOnDeadline && errors.Is(err, context.DeadlineExceeded) && globalToolCallsExecuted > 0 {
@@ -462,6 +483,39 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				duplicateToolCalls = append(duplicateToolCalls, call)
 				budgetCapHit[call.ID] = true
 				continue
+			}
+			// US-J05: per-(tool,class) retry budget check. Fires before each
+			// fresh dispatch so repeated failures of the same class are capped.
+			if opts.RetryBudgetRepo != nil && len(opts.RetryBudgets) > 0 && opts.BrieferRunID != "" {
+				budgetRefused := false
+				for outcome, budget := range opts.RetryBudgets {
+					if allowed, reason := attempts.CheckBudget(iterCtx, opts.RetryBudgetRepo, opts.BrieferRunID, call.Name, outcome, budget); !allowed {
+						logger.Debug("agentloop: retry_budget_exhausted",
+							"iteration", iteration,
+							"tool", call.Name,
+							"outcome", outcome.String(),
+							"reason", reason,
+						)
+						skippedToolResults[call.ID] = "Error: " + reason
+						// Persist a refusal row so briefer and /api/tool-warnings can observe it.
+						_ = opts.RetryBudgetRepo.Record(iterCtx, tools.ToolObservation{
+							RunID:     opts.BrieferRunID,
+							ToolName:  call.Name,
+							ToolKind:  tools.ToolKindOf(call.Name),
+							Outcome:   tools.OutcomeBlocked,
+							Reason:    reason,
+							StartedAt: time.Now(),
+						})
+						seenToolCalls[key] = true
+						toolCallExecutions[call.Name]++
+						duplicateToolCalls = append(duplicateToolCalls, call)
+						budgetRefused = true
+						break
+					}
+				}
+				if budgetRefused {
+					continue
+				}
 			}
 			seenToolCalls[key] = true
 			toolCallExecutions[call.Name]++
