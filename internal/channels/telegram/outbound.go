@@ -194,6 +194,11 @@ func (o *Outbound) ConsumeStream(
 }
 
 // editMessage calls bot.Edit with entities, falling back to plain text on error.
+// rawText is kept for the entity-rendering side (it's the markdown source that
+// produced part), but the plain-text fallback uses part.Text — the already-split,
+// length-bounded variant — so it never trips Telegram's 4096 UTF-16 cap.
+// Live debug 2026-05-16 hit "MESSAGE_TOO_LONG (400)" when the fallback re-sent
+// rawText for an oversize buffer; using part.Text closes that path.
 func (o *Outbound) editMessage(
 	bot tele.API,
 	msg tele.Editable,
@@ -203,12 +208,19 @@ func (o *Outbound) editMessage(
 	if bot == nil {
 		return nil, errors.New("telegramadapter: bot is nil")
 	}
+	_ = rawText // kept for API symmetry; future debug logging may surface the unsplit source
 	edited, err := bot.Edit(msg, part.Text, part.Entities)
 	if err == nil {
 		return edited, nil
 	}
-	o.logger.Warn("entity edit failed, falling back to plain text", "error", err)
-	edited, err = bot.Edit(msg, rawText)
+	o.logger.Warn("entity edit failed, falling back to plain text",
+		"error", err,
+		"part_text_len", len(part.Text),
+	)
+	// Fallback uses part.Text (length-bounded by tgmd.WithMaxMessageLen at split
+	// time), NOT rawText (which may exceed Telegram's 4096 UTF-16 message cap
+	// and re-trigger MESSAGE_TOO_LONG).
+	edited, err = bot.Edit(msg, part.Text)
 	if err != nil {
 		return nil, err
 	}
