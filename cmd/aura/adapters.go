@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -111,4 +113,13 @@ type lessonPromoterAdapter struct {
 
 func (a *lessonPromoterAdapter) Promote(ctx context.Context) (promoted, skipped int, err error) {
 	return learning.PromoteLessons(ctx, a.attemptsRepo, a.proposalStore, 3, 7)
+}
+
+// proposalTTLSweeperAdapter bridges learning.SweepStaleProposals to cron.ProposalTTLSweeper.
+type proposalTTLSweeperAdapter struct {
+	db *sql.DB
+}
+
+func (a *proposalTTLSweeperAdapter) Sweep(ctx context.Context) (int, error) {
+	return learning.SweepStaleProposals(ctx, a.db, 30*24*time.Hour)
 }

@@ -81,34 +81,42 @@ type LessonPromoter interface {
 	Promote(ctx context.Context) (promoted, skipped int, err error)
 }
 
+// ProposalTTLSweeper sweeps stale pending proposals older than a configured age.
+// Satisfied by an adapter in cmd/aura that calls learning.SweepStaleProposals.
+type ProposalTTLSweeper interface {
+	Sweep(ctx context.Context) (purged int, err error)
+}
+
 // HandlerConfig wires a Handler's dispatch dependencies.
 type HandlerConfig struct {
-	Notifier    Notifier
-	AgentRunner JobRunner
-	Wiki        wiki.Repository
-	Issues      IssueRepository
-	Sources     AgentJobSourceReader
-	SchedDB     AgentJobRepository
-	Identity    identity.Delegator
-	Logger      *slog.Logger
-	Location    *time.Location
-	Promoter    LessonPromoter
+	Notifier        Notifier
+	AgentRunner     JobRunner
+	Wiki            wiki.Repository
+	Issues          IssueRepository
+	Sources         AgentJobSourceReader
+	SchedDB         AgentJobRepository
+	Identity        identity.Delegator
+	Logger          *slog.Logger
+	Location        *time.Location
+	Promoter        LessonPromoter
+	ProposalSweeper ProposalTTLSweeper
 }
 
 // Handler dispatches cron tasks using injected deps.
 // It is the cron-package implementation of cron.Dispatcher and exposes
 // RunNow for manual agent-job execution (wired via cmd/aura as ScheduledTaskRunner).
 type Handler struct {
-	notifier Notifier
-	runner   JobRunner
-	wiki     wiki.Repository
-	issues   IssueRepository
-	sources  AgentJobSourceReader
-	schedDB  AgentJobRepository
-	identity identity.Delegator
-	logger   *slog.Logger
-	loc      *time.Location
-	promoter LessonPromoter
+	notifier        Notifier
+	runner          JobRunner
+	wiki            wiki.Repository
+	issues          IssueRepository
+	sources         AgentJobSourceReader
+	schedDB         AgentJobRepository
+	identity        identity.Delegator
+	logger          *slog.Logger
+	loc             *time.Location
+	promoter        LessonPromoter
+	proposalSweeper ProposalTTLSweeper
 }
 
 // NewHandler constructs a Handler from the supplied config.
@@ -122,16 +130,17 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		loc = time.Local
 	}
 	return &Handler{
-		notifier: cfg.Notifier,
-		runner:   cfg.AgentRunner,
-		wiki:     cfg.Wiki,
-		issues:   cfg.Issues,
-		sources:  cfg.Sources,
-		schedDB:  cfg.SchedDB,
-		identity: cfg.Identity,
-		logger:   logger,
-		loc:      loc,
-		promoter: cfg.Promoter,
+		notifier:        cfg.Notifier,
+		runner:          cfg.AgentRunner,
+		wiki:            cfg.Wiki,
+		issues:          cfg.Issues,
+		sources:         cfg.Sources,
+		schedDB:         cfg.SchedDB,
+		identity:        cfg.Identity,
+		logger:          logger,
+		loc:             loc,
+		promoter:        cfg.Promoter,
+		proposalSweeper: cfg.ProposalSweeper,
 	}
 }
 
@@ -145,6 +154,8 @@ func (h *Handler) Dispatch(ctx context.Context, task *Task) error {
 		return h.dispatchWikiMaintenance(ctx)
 	case KindLessonPromotion:
 		return h.dispatchLessonPromotion(ctx)
+	case KindProposalTTLSweep:
+		return h.dispatchProposalTTLSweep(ctx)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
@@ -264,6 +275,18 @@ func (h *Handler) dispatchLessonPromotion(ctx context.Context) error {
 		return fmt.Errorf("lesson promotion: %w", err)
 	}
 	h.logger.Info("lesson promotion complete", "promoted", promoted, "skipped", skipped)
+	return nil
+}
+
+func (h *Handler) dispatchProposalTTLSweep(ctx context.Context) error {
+	if h.proposalSweeper == nil {
+		return fmt.Errorf("proposal TTL sweep: sweeper unavailable")
+	}
+	purged, err := h.proposalSweeper.Sweep(ctx)
+	if err != nil {
+		return fmt.Errorf("proposal TTL sweep: %w", err)
+	}
+	h.logger.Info("proposal TTL sweep complete", "purged", purged)
 	return nil
 }
 

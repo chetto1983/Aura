@@ -86,7 +86,7 @@
         "Single atomic commit prefix: feat(swarm,learning,docs): write_proposal integration test + TTL sweep + Phase-S closure (US-S04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1471 'workflow or proposal gates'. Master plan Wave 3 Pack C deferred: 'propose_patch + sanitization + TTL'. TTL pattern mirrors Phase-N cron task wiring."
     }
   ]

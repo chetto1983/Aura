@@ -784,16 +784,18 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		attemptsRepo:  attempts.NewSQLiteRepo(a.deps.Pool),
 		proposalStore: learning.NewSQLProposalStore(a.deps.Pool),
 	}
+	proposalSweeper := &proposalTTLSweeperAdapter{db: a.deps.Pool}
 	cronHandler := cron.NewHandler(cron.HandlerConfig{
-		Notifier: b,
-		Wiki:     a.deps.Wiki,
-		Issues:   issues,
-		Sources:  a.deps.Sources,
-		SchedDB:  a.deps.SchedDB,
-		Identity: a.deps.AuthDB,
-		Logger:   logger,
-		Location: loc,
-		Promoter: lessonPromoter,
+		Notifier:        b,
+		Wiki:            a.deps.Wiki,
+		Issues:          issues,
+		Sources:         a.deps.Sources,
+		SchedDB:         a.deps.SchedDB,
+		Identity:        a.deps.AuthDB,
+		Logger:          logger,
+		Location:        loc,
+		Promoter:        lessonPromoter,
+		ProposalSweeper: proposalSweeper,
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
 	if a.deps.TaskTool != nil {
@@ -855,6 +857,22 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Status:        cron.StatusActive,
 	}); err != nil {
 		logger.Warn("failed to bootstrap daily lesson-promotion task", "err", err)
+	}
+
+	// Bootstrap the daily proposal TTL sweep task (idempotent upsert).
+	proposalTTLAt, err := cron.NextDailyRun("03:00", loc, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing proposal TTL run: %w", err)
+	}
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:          "proposal_ttl_sweep",
+		Kind:          cron.KindProposalTTLSweep,
+		ScheduleKind:  cron.ScheduleDaily,
+		ScheduleDaily: "03:00",
+		NextRunAt:     proposalTTLAt,
+		Status:        cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap proposal TTL sweep task", "err", err)
 	}
 
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------

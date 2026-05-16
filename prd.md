@@ -1197,7 +1197,8 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **Phase-P** — Agent Note Scratchpad (capability #4) | ✅ | 2026-05-16 | US-P01..P04 — `79159b4a..`(US-P04) | agent_note scratchpad wired (capability #4 closed): SQLite table + Store API + action-dispatch tool + system-prompt injection + GC + web-path fix + probe |
 | **Phase-Q** — User Memory Write Guards (Phase 9 partial close) | ✅ | 2026-05-16 | US-Q01..Q04 — `c0189ac4..`(US-Q04) | user_memory write guards wired (Phase 9 partial close — capability check + question gate): memory.user.write Authorize gate at WriteApprovedUserFact + ambiguity question gate Score<0.7 + integration tests |
 | **Phase-R** — Subagent Dispatch Primitive (Phase 8 read-only fanout first slice) | ✅ | 2026-05-16 | US-R01..R04 — `b4124b54..`(US-R04) | subagent dispatch primitive wired (Phase 8 read-only fanout — capability #5 closed): NodeSpec + HubBridge.Dispatch + WaitForRun + subagent_dispatch LLM tool + E2E integration test |
-| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 first-slice closed | 2026-05-16 (Phase-R) | Phase08 first slice (Phase-R) closed 2026-05-16; full Phase 8 (write-capable workers, team_collaboration, plan-execute, critic-review, hierarchical DAG) remains deferred | **Capability #5 closed by Phase-R.** Full Phase 8 substrate (8B–8G) gated on open decisions. |
+| **Phase-S** — Write-capable Workers via propose_patch (Phase 8 second slice) | ✅ | 2026-05-16 | US-S01..S04 — `64b6623d..`(US-S04) | write-capable workers wired (Phase 8 second slice): propose_patch tool (3 actions, idempotency, provenance) + RiskTier=write_proposal enforcement + subagent_dispatch risk_tier param + E2E integration test + SweepStaleProposals TTL cron |
+| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 second-slice closed | 2026-05-16 (Phase-S) | Phase08 first slice (Phase-R) + second slice (Phase-S) closed 2026-05-16; full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred | **Capability #5 extended by Phase-S.** write_proposal workers via propose_patch wired. Full Phase 8 substrate (8B–8G) gated on open decisions. |
 | **9** — Memory and Source Discipline | 🟡 partial-close | 2026-05-16 (partial) | Phase-O + Phase-Q closed (write-policy + guards); remaining: clarify memory vs storage docs, conversion fixtures, SQLite concurrency hardening | **Phase 9 partial-close 2026-05-16** — capability #1 (autonomous write-policy) core wired; doc/invariant hardening deferred |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
 
@@ -1668,6 +1669,13 @@ WaitForRun + `subagent_dispatch` LLM tool. Capability #5 from the "Aura come Cla
 Code" brainstorm is now closed. Full Phase 8 remaining scope (8B durable substrate,
 8C swarm normalization, 8D–8E cron migration, 8F team collaboration, 8G autonomous
 E2E) remains explicitly deferred.
+
+**Phase 8 second slice closed 2026-05-16 (write_proposal workers via propose_patch + TTL sweep).** Phase-S
+(US-S01..S04) extended the fanout primitive with `RiskTier='write_proposal'`: `propose_patch` tool
+(wiki / user_memory / operational actions, sha256[:16] idempotency, provenance), NodeSpec allowlist
+enforcement via `DirectWriteToolNames`, `subagent_dispatch` optional `risk_tier` per node, E2E
+integration test, and `SweepStaleProposals` TTL cron (daily 03:00, 30-day pending-only purge).
+Full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred.
 
 ### Phase 9 - Memory and Source Discipline
 

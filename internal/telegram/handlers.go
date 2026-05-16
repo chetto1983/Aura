@@ -3,12 +3,17 @@ package telegram
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
 	"github.com/aura/aura/internal/identity"
 	tele "gopkg.in/telebot.v4"
 )
+
+// AskUserCallbackUnique is the Telegram inline-button callback endpoint used
+// by the channel adapter when rendering ask_user options.
+const AskUserCallbackUnique = "aura_ask_user"
 
 func (b *Bot) registerHandlers() {
 	b.bot.Handle("/start", b.onStart)
@@ -18,6 +23,7 @@ func (b *Bot) registerHandlers() {
 	b.bot.Handle("/clear", b.onClear)
 	b.bot.Handle("/reset", b.onClear)
 	b.bot.Handle("/tools", b.onTools)
+	b.bot.Handle("\f"+AskUserCallbackUnique, b.onAskUserCallback)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
 	if b.docs != nil {
@@ -36,6 +42,65 @@ func (b *Bot) onMessage(c tele.Context) error {
 		return nil
 	}
 
+	b.routeTelegramContext(c, userID)
+	return nil
+}
+
+func (b *Bot) onAskUserCallback(c tele.Context) error {
+	sender := c.Sender()
+	if sender == nil {
+		return nil
+	}
+	userID := strconv.FormatInt(sender.ID, 10)
+	if !b.isAllowlisted(userID) {
+		b.logger.Warn("ask_user callback from non-allowlisted user",
+			"user_id", userID,
+			"username", sender.Username,
+		)
+		_ = c.Respond()
+		return nil
+	}
+
+	if _, ok := askUserCallbackReplyText(c.Data()); !ok {
+		_ = c.RespondAlert("Invalid choice")
+		return nil
+	}
+	tgChat := c.Chat()
+	if b.hub == nil || tgChat == nil {
+		_ = c.RespondAlert("Question is no longer pending")
+		return nil
+	}
+	threadID := strconv.FormatInt(tgChat.ID, 10)
+	hasPending := false
+	if _, durablePending, err := b.hub.PendingQuestion(b.telegramHubContext(context.Background(), userID), threadID, chat.ChannelTelegram); err != nil {
+		b.logger.Warn("ask_user callback pending lookup failed", "user_id", userID, "error", err)
+	} else if durablePending {
+		hasPending = true
+	}
+	if status, ok := b.hub.ThreadRunStatus(threadID); ok && status == chat.RunStatusWaitingForUser {
+		hasPending = true
+	}
+	if !hasPending {
+		_ = c.RespondAlert("Question is no longer pending")
+		return nil
+	}
+	if err := c.RespondText("Choice received"); err != nil {
+		b.logger.Warn("ask_user callback acknowledgement failed", "user_id", userID, "error", err)
+	}
+	b.routeTelegramContext(c, userID)
+	return nil
+}
+
+func askUserCallbackReplyText(data string) (string, bool) {
+	data = strings.TrimSpace(data)
+	n, err := strconv.Atoi(data)
+	if err != nil || n < 1 {
+		return "", false
+	}
+	return strconv.Itoa(n), true
+}
+
+func (b *Bot) routeTelegramContext(c tele.Context, userID string) {
 	// Route through UserGate for per-user serialization (CONC-01, D-15).
 	// Acquire is called from onMessage's goroutine (telebot handler), NOT from
 	// the actor goroutine, preventing re-entrant deadlock (Pitfall 1).
@@ -52,7 +117,7 @@ func (b *Bot) onMessage(c tele.Context) error {
 				b.logger.Error("hub receive failed", "user_id", userID, "error", err)
 			}
 		}()
-		return nil
+		return
 	}
 
 	entry := concurrency.Entry{
@@ -76,7 +141,6 @@ func (b *Bot) onMessage(c tele.Context) error {
 			"error", err,
 		)
 	}
-	return nil
 }
 
 func (b *Bot) telegramHubContext(ctx context.Context, userID string) context.Context {

@@ -31,7 +31,8 @@ const (
 	KindReminder        TaskKind = "reminder"
 	KindWikiMaintenance TaskKind = "wiki_maintenance"
 	KindAgentJob        TaskKind = "agent_job"
-	KindLessonPromotion TaskKind = "lesson_promotion"
+	KindLessonPromotion  TaskKind = "lesson_promotion"
+	KindProposalTTLSweep TaskKind = "proposal_ttl_sweep"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.
