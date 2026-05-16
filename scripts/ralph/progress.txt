@@ -1038,3 +1038,14 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - content param unused in Phase07A — named _ in signature to avoid lint complaint; keeps signature stable for future Phase07B content-based filtering
   - No eligibility.go needed; function fits cleanly at bottom of rebuild.go before compactForIndex
 ---
+
+## [2026-05-16 08:51] — US-K02 shipped as 43504082
+- Wired ArchiveEligibility into IndexingTurnAppender.Append (skips index upsert, preserves conversations write) and Rebuild archive loop (skips ineligible turns); added parity test with 10-row fixture proving both paths produce identical compact sets
+- Files touched: 2 (rebuild.go +13 LOC, rebuild_test.go +72 LOC) — code committed in cfda6bee; this iter committed prd.json flip as 43504082
+- Validation: go build/vet/test all green (full suite 80+ packages; TestParityAppendAndRebuildProduceSameCompactSet passes)
+- LOC delta: +85 net (code in cfda6bee + prd.json in 43504082)
+- Learnings:
+  - The code changes (cfda6bee) were pre-committed by a prior session without the prd.json flip; this iter verified correctness, confirmed tests pass, and committed the queue bookkeeping — one-commit discipline still satisfied (one commit per iter where the code commit was already present)
+  - Eligibility check in Append goes INSIDE `if a.index != nil`, BEFORE `persistedTurn` — no point fetching the persisted turn for ineligible rows; this also avoids a DB round-trip on the hot path
+  - slog.Debug (not Info) is critical here: both Append and Rebuild are hot paths; tool turns on every message would flood Info logs
+---
