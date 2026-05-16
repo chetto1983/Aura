@@ -92,17 +92,3 @@ func TestBootstrapMetaDefaults_HeadlessEnvOverride(t *testing.T) {
 	}
 }
 
-func TestBootstrapMetaDefaults_EnvPathReadOnly(t *testing.T) {
-	// AURA_ENV_PATH is retained as a back-compat env var but never written by bootstrap.
-	clearBootstrapEnv(t)
-	t.Setenv("AURA_ENV_PATH", "/data/.env")
-	setBootstrapMetaConfig(func() bool { return false })
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-	if cfg.EnvPath != "/data/.env" {
-		t.Errorf("EnvPath = %q, want /data/.env (AURA_ENV_PATH must not be modified by bootstrap)", cfg.EnvPath)
-	}
-}

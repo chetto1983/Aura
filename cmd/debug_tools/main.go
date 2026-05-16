@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -32,10 +31,6 @@ func main() {
 	var keepWorkspace bool
 	flag.BoolVar(&keepWorkspace, "keep-workspace", false, "keep the temporary workspace directory after the run")
 	flag.Parse()
-
-	if err := debugcommon.LoadDotEnv(debugcommon.EnvDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("warning: could not load .env: %v\n", err)
-	}
 
 	apiKey := os.Getenv("LLM_API_KEY")
 	if apiKey == "" {

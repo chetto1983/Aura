@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"errors"
@@ -49,8 +48,6 @@ func main() {
 	if handleCLIArgs(os.Args[1:], os.Stdout) {
 		return
 	}
-	initialEnvPath := config.EnvPathFromEnvironment()
-	envErr := loadDotEnv(initialEnvPath)
 	applyBootstrapMetaConfig()
 
 	cfg, err := config.Load()
@@ -64,13 +61,10 @@ func main() {
 	}
 
 	// Initialize structured logger with zap backend and secret sanitization.
-	// Load dotenv/config first so container defaults such as LOG_DIR=/data/logs
-	// are honored before the first log file is opened.
+	// Container defaults such as LOG_DIR=/data/logs come from process env (set
+	// by Docker Compose), so they are honored before the first log file opens.
 	logger, cleanupLog := logging.Setup(logLevel, logDir)
 	maybeDelayRestartChild(logger)
-	if envErr != nil && !errors.Is(envErr, os.ErrNotExist) {
-		logger.Warn("could not load .env", "error", envErr)
-	}
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		cleanupLog()
@@ -90,7 +84,7 @@ func handleCLIArgs(args []string, out io.Writer) bool {
 	}
 	switch strings.TrimSpace(args[0]) {
 	case "-h", "--help", "help":
-		fmt.Fprintf(out, "Aura %s\n\nUsage:\n  aura\n\nEnvironment:\n  AURA_HEADLESS=true       run without desktop tray\n  AURA_ENV_PATH=/data/.env load container/runtime configuration\n  HTTP_PORT=0.0.0.0:8080  dashboard listen address\n", auraVersion)
+		fmt.Fprintf(out, "Aura %s\n\nUsage:\n  aura\n\nEnvironment:\n  AURA_HEADLESS=true       run without desktop tray\n  HTTP_PORT=0.0.0.0:8080  dashboard listen address\n", auraVersion)
 		return true
 	case "-v", "--version", "version":
 		fmt.Fprintf(out, "Aura %s (%s, %s)\n", auraVersion, commit, date)
@@ -222,7 +216,6 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	if err := config.EnsureLayout(config.LayoutConfig{
 		RuntimeWorkspacePath: cfg.RuntimeWorkspacePath,
-		EnvPath:              cfg.EnvPath,
 		DBPath:               cfg.DBPath,
 		LogDir:               cfg.LogDir,
 		WikiPath:             cfg.WikiPath,
@@ -270,24 +263,19 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	config.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = openedDBPath
 
-	// US-H03: migrate retired .env secrets to SQLite (idempotent — no-op after
-	// the first post-upgrade boot), then overlay SQLite values on top of the
-	// env-loaded config. Precedence: SQLite secrets table > env var > empty.
+	// Overlay SQLite values on top of the env-loaded config.
+	// Precedence: SQLite secrets table > env var > empty.
 	secretsStore := secrets.NewSQLiteStore(pool)
-	if _, err := secrets.ImportFromDotEnv(context.Background(), secretsStore, cfg.EnvPath, activeLogger); err != nil {
-		activeLogger.Warn("secrets: .env migration failed", "error", err)
-	}
 	applySecretsToConfig(context.Background(), secretsStore, cfg)
 
 	// Slice 14b: first-run wizard. If TELEGRAM_TOKEN is still blank after
 	// env + settings overlay, the install is fresh. Open a loopback-only
 	// HTTP server with a setup form, block until the user submits, then
-	// re-load .env + settings so the saved values flow back into cfg.
+	// reload settings so the saved values flow back into cfg.
 	if !cfg.IsBootstrapped() {
 		token, err := api.SetupRun(api.SetupConfig{
 			Listen:          cfg.HTTPPort,
 			AllowRemoteBind: cfg.Headless,
-			DotEnvPath:      cfg.EnvPath,
 			SecretsStore:    secretsStore,
 			SettingsStore:   settingsStore,
 			Logger:          logger,
@@ -295,12 +283,9 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		if err != nil {
 			return nil, activeLogger, fmt.Errorf("setup wizard: %w", err)
 		}
-		// Re-load: .env now has TELEGRAM_TOKEN, settings DB now has
-		// LLM_*, etc. Replace cfg in place with the fresh values.
+		// Inject the freshly-minted token into process env so the next
+		// config.Load() sees it; SQLite secrets table is the durable copy.
 		os.Setenv("TELEGRAM_TOKEN", token)
-		if err := loadDotEnv(cfg.EnvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			logger.Warn("re-load .env after setup", "error", err)
-		}
 		newCfg, err := config.Load()
 		if err != nil {
 			return nil, activeLogger, fmt.Errorf("post-setup config load: %w", err)
@@ -308,7 +293,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		reconcileBestDefaults(context.Background(), settingsStore, newCfg, logger)
 		config.ApplyToConfig(context.Background(), settingsStore, newCfg)
 		newCfg.DBPath = openedDBPath
-		// SQLite always wins over env even after the wizard re-load.
+		// SQLite always wins over env even after the wizard reload.
 		applySecretsToConfig(context.Background(), secretsStore, newCfg)
 		cfg = newCfg
 	}
@@ -579,34 +564,3 @@ func dashboardHost(port string) string {
 	return port
 }
 
-// loadDotEnv reads KEY=VALUE pairs from the given file and sets them in the
-// process environment when the key is not already set. Explicit process
-// environment wins so Docker Compose can provide container paths/ports while
-// mounted .env fills in user-managed secrets like TELEGRAM_TOKEN.
-// Lines starting with `#` and blank lines are ignored. Surrounding
-// single/double quotes are stripped.
-func loadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" && os.Getenv(key) == "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
-}

@@ -62,11 +62,10 @@ func TestEnsureLayoutDoesNotOverwriteExistingFiles(t *testing.T) {
 	}
 }
 
-func TestEnsureLayoutCreatesParentDirsForEnvDBLogsSkillsAndMCP(t *testing.T) {
+func TestEnsureLayoutCreatesParentDirsForDBLogsSkillsAndMCP(t *testing.T) {
 	root := t.TempDir()
 	cfg := LayoutConfig{
 		RuntimeWorkspacePath: filepath.Join(root, "workspace"),
-		EnvPath:              filepath.Join(root, "data", "nested", ".env"),
 		DBPath:               filepath.Join(root, "data", "db", "aura.db"),
 		LogDir:               filepath.Join(root, "data", "logs"),
 		WikiPath:             filepath.Join(root, "wiki"),
@@ -80,7 +79,6 @@ func TestEnsureLayoutCreatesParentDirsForEnvDBLogsSkillsAndMCP(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		filepath.Dir(cfg.EnvPath),
 		filepath.Dir(cfg.DBPath),
 		cfg.LogDir,
 		cfg.WikiPath,
@@ -91,7 +89,6 @@ func TestEnsureLayoutCreatesParentDirsForEnvDBLogsSkillsAndMCP(t *testing.T) {
 	} {
 		assertDir(t, path)
 	}
-	assertNotExists(t, cfg.EnvPath)
 	assertNotExists(t, cfg.DBPath)
 	assertFileContent(t, cfg.MCPServersPath, "{}\n")
 }
@@ -151,7 +148,6 @@ func TestEnsureLayoutCreatesEmbeddedPublicSkills(t *testing.T) {
 func testLayoutConfig(root string) LayoutConfig {
 	return LayoutConfig{
 		RuntimeWorkspacePath: filepath.Join(root, "runtime-workspace"),
-		EnvPath:              filepath.Join(root, "data", ".env"),
 		DBPath:               filepath.Join(root, "data", "aura.db"),
 		LogDir:               filepath.Join(root, "data", "logs"),
 		WikiPath:             filepath.Join(root, "wiki"),

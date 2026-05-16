@@ -37,8 +37,6 @@ const DefaultInboxQueueNoticeAfter = 30 * time.Second
 const DefaultInactivityThreshold = 30 * time.Minute
 const DefaultInactivitySweepInterval = 60 * time.Second
 const (
-	DefaultEnvPath = ".env"
-
 	DefaultCostInputPerMTokens  = 0.20
 	DefaultCostOutputPerMTokens = 0.80
 )
@@ -114,7 +112,6 @@ type Config struct {
 	HTTPPort               string `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	Timezone               string `envconfig:"AURA_TIMEZONE"`
 	Headless               bool   `envconfig:"AURA_HEADLESS" default:"false"`
-	EnvPath                string `envconfig:"AURA_ENV_PATH" default:".env"`
 	DashboardTokenTTLHours int    `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	PromptVersion          string `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	SkillRoutingMode       string `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
@@ -265,7 +262,6 @@ func Load() (*Config, error) {
 	cfg.HTTPPort = getEnv("HTTP_PORT", "127.0.0.1:8080")
 	cfg.Timezone = strings.TrimSpace(getEnv("AURA_TIMEZONE", ""))
 	cfg.Headless = getEnvBool("AURA_HEADLESS", false)
-	cfg.EnvPath = EnvPathFromEnvironment()
 	cfg.DashboardTokenTTLHours = getEnvInt("DASHBOARD_TOKEN_TTL_HOURS", 720)
 	cfg.PromptVersion = getEnv("AURA_PROMPT_VERSION", "aura-agent-v1")
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(getEnv("AURA_SKILL_ROUTING_MODE", DefaultSkillRoutingMode))
@@ -398,10 +394,6 @@ func normalizeIntRange(value, min, max, fallback int) int {
 		return fallback
 	}
 	return value
-}
-
-func EnvPathFromEnvironment() string {
-	return getEnv("AURA_ENV_PATH", DefaultEnvPath)
 }
 
 func parseAllowlist(raw string) []string {

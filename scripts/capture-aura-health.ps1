@@ -145,10 +145,8 @@ if (-not [string]::IsNullOrWhiteSpace($TelegramBotToken)) {
 }
 
 if ($RunTelegramSmoke) {
-    $previousAuraEnvPath = $env:AURA_ENV_PATH
     $previousWikiPath = $env:WIKI_PATH
     try {
-        $env:AURA_ENV_PATH = "data\.env"
         if ([string]::IsNullOrWhiteSpace($env:WIKI_PATH) -or $env:WIKI_PATH -eq ".\wiki" -or $env:WIKI_PATH -eq "./wiki") {
             $env:WIKI_PATH = "runtime-workspace\wiki"
         }
@@ -156,7 +154,6 @@ if ($RunTelegramSmoke) {
             go run ./cmd/debug_telegram_sandbox -timeout 90s -no-validate -prompt $SmokePrompt
         } | Out-Null
     } finally {
-        $env:AURA_ENV_PATH = $previousAuraEnvPath
         $env:WIKI_PATH = $previousWikiPath
     }
 }

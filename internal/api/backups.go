@@ -105,7 +105,6 @@ func backupConfigFromRuntime(deps Deps) backup.Config {
 		Bucket:     cfg.GarageS3Bucket,
 		AccessKey:  cfg.GarageS3AccessKey,
 		SecretKey:  cfg.GarageS3SecretKey,
-		EnvPath:    cfg.EnvPath,
 		DBPath:     cfg.DBPath,
 		WikiPath:   cfg.WikiPath,
 		SkillsPath: cfg.SkillsPath,

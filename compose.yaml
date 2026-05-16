@@ -43,7 +43,6 @@ services:
     environment:
       AURA_HEADLESS: "true"
       AURA_TIMEZONE: "${AURA_TIMEZONE:-Europe/Rome}"
-      AURA_ENV_PATH: "/data/.env"
       HTTP_PORT: "0.0.0.0:8080"
       DB_PATH: "/data/aura.db"
       AURA_SQLITE_JOURNAL_MODE: "DELETE"
@@ -94,8 +93,8 @@ services:
         condition: service_completed_successfully
       searxng:
         condition: service_started
-      garage:
-        condition: service_started
+      garage-init:
+        condition: service_completed_successfully
       qdrant:
         condition: service_started
       aura-llama-embed:
@@ -118,7 +117,11 @@ services:
   garage:
     image: dxflrs/garage:v2.3.0
     restart: unless-stopped
-    command: /garage server --single-node --default-bucket
+    # `--default-bucket` was removed alongside the env_file in 913bb787 — it
+    # only fires when GARAGE_DEFAULT_* env vars are present, which they no
+    # longer are. The garage-init sidecar below provisions the key and bucket
+    # explicitly via the CLI, so the daemon stays a vanilla single-node setup.
+    command: /garage server --single-node
     ports:
       - "127.0.0.1:3900:3900"
     volumes:
@@ -127,6 +130,31 @@ services:
     depends_on:
       aura-secrets:
         condition: service_completed_successfully
+
+  # garage-init — one-shot sidecar that registers the S3 access key generated
+  # by aura-secrets with the running garage daemon and grants it owner rights
+  # on the aura-artifacts bucket. Idempotent: every step is guarded by an
+  # `info` probe so re-runs after restarts are no-ops. See
+  # docker/garage-init/Dockerfile.
+  garage-init:
+    build:
+      context: ./docker/garage-init
+      dockerfile: Dockerfile
+    image: aura-garage-init:local
+    restart: "no"
+    volumes:
+      - ./docker/garage-init:/scripts:ro
+      - ./data/secrets:/secrets:ro
+      - ./data/secrets/garage.toml:/etc/garage.toml:ro
+      # garage CLI reads metadata_dir/node_key to identify itself on the
+      # local single-node cluster. Read-only mount of the same state dir the
+      # daemon owns is the documented pattern for CLI co-location.
+      - ./garage:/var/lib/garage:ro
+    depends_on:
+      aura-secrets:
+        condition: service_completed_successfully
+      garage:
+        condition: service_started
 
   garage-webui:
     image: khairul169/garage-webui:1.1.0

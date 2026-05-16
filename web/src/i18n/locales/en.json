@@ -166,8 +166,6 @@
   "settings.item.HTTP_PORT.hint": "Restart Aura after changing the bind address",
   "settings.item.AURA_HEADLESS.label": "Headless/container mode",
   "settings.item.AURA_HEADLESS.hint": "Takes effect on next process start",
-  "settings.item.AURA_ENV_PATH.label": "Env file path",
-  "settings.item.AURA_ENV_PATH.hint": "Early boot setting; use carefully and restart after changing",
   "settings.item.DB_PATH.label": "SQLite database path",
   "settings.item.DB_PATH.hint": "Early boot setting; use carefully and restart after changing",
   "settings.item.LOG_LEVEL.label": "Log level",

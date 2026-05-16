@@ -16,9 +16,9 @@ const (
 )
 
 // applyBootstrapMetaConfig fills in bootstrap meta-config env vars before
-// config.Load(). Called in main() after loadDotEnv so any explicit .env value
-// still wins. AURA_TIMEZONE is intentionally left untouched: empty means
-// "use OS local timezone" which is handled by config.Location().
+// config.Load(). Process env values still win — this only fills blanks.
+// AURA_TIMEZONE is intentionally left untouched: empty means "use OS local
+// timezone" which is handled by config.Location().
 func applyBootstrapMetaConfig() {
 	setBootstrapMetaConfig(detectHeadless)
 }

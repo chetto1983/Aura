@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -42,9 +40,6 @@ func main() {
 	jsonOut := flag.Bool("json", false, "print JSON")
 	flag.Parse()
 
-	if err := loadDotEnv(config.EnvPathFromEnvironment()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: could not load env file: %v\n", err)
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		fail(*jsonOut, output{Error: "load config: " + err.Error()})
@@ -386,28 +381,3 @@ func fail(jsonOut bool, out output) {
 	os.Exit(2)
 }
 
-func loadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
-}

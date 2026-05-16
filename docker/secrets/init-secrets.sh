@@ -37,27 +37,20 @@ ensure_secret "$secrets_dir/garage_admin_token" 32
 ensure_secret "$secrets_dir/garage_metrics_token" 32
 ensure_secret "$secrets_dir/searxng_secret_key" 32
 
-garage_access="$(cat "$secrets_dir/garage_s3_access_key")"
-garage_secret="$(cat "$secrets_dir/garage_s3_secret_key")"
 garage_rpc="$(cat "$secrets_dir/garage_rpc_secret")"
 garage_admin="$(cat "$secrets_dir/garage_admin_token")"
 garage_metrics="$(cat "$secrets_dir/garage_metrics_token")"
 searxng_secret="$(cat "$secrets_dir/searxng_secret_key")"
 
-cat > "$secrets_dir/aura.env.tmp" <<EOF
-GARAGE_S3_ACCESS_KEY=$garage_access
-GARAGE_S3_SECRET_KEY=$garage_secret
-EOF
-mv "$secrets_dir/aura.env.tmp" "$secrets_dir/aura.env"
-chmod 0644 "$secrets_dir/aura.env"
-
-cat > "$secrets_dir/garage-default.env.tmp" <<EOF
-GARAGE_DEFAULT_ACCESS_KEY=$garage_access
-GARAGE_DEFAULT_SECRET_KEY=$garage_secret
-GARAGE_DEFAULT_BUCKET=aura-artifacts
-EOF
-mv "$secrets_dir/garage-default.env.tmp" "$secrets_dir/garage-default.env"
-chmod 0644 "$secrets_dir/garage-default.env"
+# aura.env / garage-default.env were removed in commit 913bb787 (US-H06):
+#   - aura reads GARAGE_S3_*_KEY_FILE directly from /data/secrets
+#   - garage gets the key + bucket via the garage-init sidecar (CLI)
+# Stale copies from older installs are pruned to avoid confusion.
+for stale_env in "$secrets_dir/aura.env" "$secrets_dir/garage-default.env"; do
+	if [ -f "$stale_env" ]; then
+		rm -f "$stale_env"
+	fi
+done
 
 cat > "$secrets_dir/garage.toml.tmp" <<EOF
 metadata_dir = "/var/lib/garage/meta"

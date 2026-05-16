@@ -15,7 +15,6 @@ var defaultRuntimeFS embed.FS
 
 type LayoutConfig struct {
 	RuntimeWorkspacePath string
-	EnvPath              string
 	DBPath               string
 	LogDir               string
 	WikiPath             string
@@ -40,7 +39,6 @@ func EnsureLayout(cfg LayoutConfig) error {
 		cfg.LogDir,
 		cfg.SkillsPath,
 		cfg.PromptOverlayPath,
-		parentDir(cfg.EnvPath),
 		parentDir(cfg.DBPath),
 		parentDir(cfg.MCPServersPath),
 	}

@@ -142,7 +142,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("HTTP_PORT")
 	os.Unsetenv("AURA_TIMEZONE")
 	os.Unsetenv("AURA_HEADLESS")
-	os.Unsetenv("AURA_ENV_PATH")
 	os.Unsetenv("DASHBOARD_TOKEN_TTL_HOURS")
 	os.Unsetenv("AURA_SKILL_ROUTING_MODE")
 	os.Unsetenv("AURA_AGENT_LOOP_MAX_STEPS")
@@ -257,9 +256,6 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.Timezone != "" {
 		t.Errorf("Timezone = %q, want empty by default", cfg.Timezone)
-	}
-	if cfg.EnvPath != ".env" {
-		t.Errorf("EnvPath = %q, want .env", cfg.EnvPath)
 	}
 	if cfg.DashboardTokenTTLHours != 720 {
 		t.Errorf("DashboardTokenTTLHours = %d, want 720", cfg.DashboardTokenTTLHours)
@@ -511,19 +507,6 @@ func TestLoadHeadless(t *testing.T) {
 	}
 	if !cfg.Headless {
 		t.Fatal("Headless = false, want true")
-	}
-}
-
-func TestLoadEnvPath(t *testing.T) {
-	os.Setenv("AURA_ENV_PATH", "/data/.env")
-	defer os.Unsetenv("AURA_ENV_PATH")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.EnvPath != "/data/.env" {
-		t.Fatalf("EnvPath = %q, want /data/.env", cfg.EnvPath)
 	}
 }
 

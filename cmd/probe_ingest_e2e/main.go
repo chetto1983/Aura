@@ -10,7 +10,7 @@
 //   - merge accumulates citations (Wave 2.4)
 //   - `^[src_xxx]` provenance markers on every claim (Wave 2.5)
 //
-// Reads LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from env (or .env).
+// Reads LLM_API_KEY / LLM_BASE_URL / LLM_MODEL from process env.
 // Reuses the temp wiki on disk after exit when --keep-wiki is set so
 // the operator can grep wiki/*.md for backlinks and markers.
 //
@@ -19,9 +19,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -78,9 +76,6 @@ func main() {
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
 	flag.Parse()
 
-	if err := loadDotEnv(envDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("warning: could not load .env: %v\n", err)
-	}
 	apiKey := os.Getenv("LLM_API_KEY")
 	if apiKey == "" {
 		fmt.Println("FAIL: LLM_API_KEY is required")
@@ -228,34 +223,5 @@ func envDefault(key, fallback string) string {
 	return fallback
 }
 
-// loadDotEnv reads KEY=VALUE pairs from a file and sets them in the
-// process environment unless already set. Tolerates missing file
-// (returns os.ErrNotExist) so callers can decide whether to log.
-func loadDotEnv(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		eq := strings.IndexByte(line, '=')
-		if eq < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:eq])
-		val := strings.TrimSpace(line[eq+1:])
-		val = strings.Trim(val, `"'`)
-		if key == "" || os.Getenv(key) != "" {
-			continue
-		}
-		_ = os.Setenv(key, val)
-	}
-	return scanner.Err()
-}
 
 var _ = filepath.Join // future-proof path helper imports

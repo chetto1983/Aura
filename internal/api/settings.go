@@ -231,8 +231,6 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return cfg.Timezone
 	case config.KeyHeadless:
 		return strconv.FormatBool(cfg.Headless)
-	case config.KeyEnvPath:
-		return cfg.EnvPath
 	case config.KeyDBPath:
 		return cfg.DBPath
 	case config.KeyLogLevel:

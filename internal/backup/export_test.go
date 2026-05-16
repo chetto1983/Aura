@@ -43,7 +43,6 @@ func (f *fakeUploader) PutObject(ctx context.Context, bucket, key string, body i
 
 func TestExportNamesAndArchivesState(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, ".env"), []byte("LLM_API_KEY=secret\n"))
 	mustCreateSQLiteDB(t, filepath.Join(dir, "aura.db"))
 	mustWrite(t, filepath.Join(dir, "wiki", "page.md"), []byte("# Page\n"))
 	mustWrite(t, filepath.Join(dir, "skills", "demo", "SKILL.md"), []byte("---\nname: demo\n---\n"))
@@ -51,7 +50,6 @@ func TestExportNamesAndArchivesState(t *testing.T) {
 
 	uploader := &fakeUploader{}
 	res, err := Export(context.Background(), Config{
-		EnvPath:    filepath.Join(dir, ".env"),
 		DBPath:     filepath.Join(dir, "aura.db"),
 		WikiPath:   filepath.Join(dir, "wiki"),
 		SkillsPath: filepath.Join(dir, "skills"),
@@ -67,7 +65,7 @@ func TestExportNamesAndArchivesState(t *testing.T) {
 		t.Fatalf("bucket = %q", uploader.bucket)
 	}
 	names := tarNames(t, uploader.body)
-	for _, want := range []string{"env/.env", "data/aura.db", "wiki/page.md", "skills/demo/SKILL.md", "wiki/sources/source-1/ocr.md"} {
+	for _, want := range []string{"data/aura.db", "wiki/page.md", "skills/demo/SKILL.md", "wiki/sources/source-1/ocr.md"} {
 		if !containsString(names, want) {
 			t.Fatalf("archive missing %s in %v", want, names)
 		}
@@ -76,7 +74,6 @@ func TestExportNamesAndArchivesState(t *testing.T) {
 
 func TestExportArtifactSetUploadsCategorizedArchives(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, ".env"), []byte("LLM_API_KEY=secret\n"))
 	mustCreateSQLiteDB(t, filepath.Join(dir, "aura.db"))
 	mustWrite(t, filepath.Join(dir, "wiki", "index.md"), []byte("# Index\n"))
 	mustWrite(t, filepath.Join(dir, "wiki", "page.md"), []byte("# Page\n"))
@@ -91,7 +88,6 @@ func TestExportArtifactSetUploadsCategorizedArchives(t *testing.T) {
 
 	uploader := &fakeUploader{}
 	res, err := ExportArtifactSet(context.Background(), Config{
-		EnvPath:    filepath.Join(dir, ".env"),
 		DBPath:     filepath.Join(dir, "aura.db"),
 		WikiPath:   filepath.Join(dir, "wiki"),
 		SkillsPath: filepath.Join(dir, "skills"),

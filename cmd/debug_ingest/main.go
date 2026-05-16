@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -51,10 +50,6 @@ type scenario struct {
 func main() {
 	keepWiki := flag.Bool("keep-wiki", false, "keep the temporary wiki directory after the run")
 	flag.Parse()
-
-	if err := debugcommon.LoadDotEnv(debugcommon.EnvDefault("AURA_ENV_PATH", ".env")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("warning: could not load .env: %v\n", err)
-	}
 
 	apiKey := os.Getenv("LLM_API_KEY")
 	if apiKey == "" {

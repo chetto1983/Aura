@@ -13,6 +13,3 @@
 !internal/
 !internal/**
 
-# Keep safe examples available to Docker builds without shipping local secrets.
-!.env.example
-

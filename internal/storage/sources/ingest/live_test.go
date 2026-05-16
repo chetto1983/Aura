@@ -6,15 +6,14 @@
 //	INGEST_SOURCE_IDS="src_a,src_b" \
 //	  go test -tags=live_ingest -run TestLiveIngest -v ./internal/ingest/...
 //
-// Reads WIKI_PATH from .env (or LIVE_WIKI_PATH override). For each ID it
-// asserts the source exists with status=ocr_complete (or already ingested),
-// runs Pipeline.Compile, and verifies the wiki page is on disk and reports
-// "Status: ingested" in the body. Side effects are intentional — this is the
-// production catch-up recipe.
+// Reads WIKI_PATH from process env (or LIVE_WIKI_PATH override). For each
+// ID it asserts the source exists with status=ocr_complete (or already
+// ingested), runs Pipeline.Compile, and verifies the wiki page is on disk
+// and reports "Status: ingested" in the body. Side effects are intentional
+// — this is the production catch-up recipe.
 package ingest
 
 import (
-	"bufio"
 	"context"
 	"os"
 	"path/filepath"
@@ -26,8 +25,6 @@ import (
 )
 
 func TestLiveIngest(t *testing.T) {
-	loadDotEnvForLiveIngest(t)
-
 	idsCSV := strings.TrimSpace(os.Getenv("INGEST_SOURCE_IDS"))
 	if idsCSV == "" {
 		t.Skip("INGEST_SOURCE_IDS not set (comma-separated source IDs)")
@@ -95,37 +92,4 @@ func TestLiveIngest(t *testing.T) {
 			}
 		})
 	}
-}
-
-// loadDotEnvForLiveIngest mirrors the loader in internal/ocr/live_test.go so
-// tests can read WIKI_PATH from the project's .env without shell sourcing.
-// Never logs values; only the file path it found.
-func loadDotEnvForLiveIngest(t *testing.T) {
-	t.Helper()
-	for _, candidate := range []string{".env", "../.env", "../../.env"} {
-		f, err := os.Open(candidate)
-		if err != nil {
-			continue
-		}
-		defer f.Close()
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			k, v, ok := strings.Cut(line, "=")
-			if !ok {
-				continue
-			}
-			k = strings.TrimSpace(k)
-			v = strings.Trim(strings.TrimSpace(v), `"'`)
-			if k != "" && os.Getenv(k) == "" {
-				os.Setenv(k, v)
-			}
-		}
-		t.Logf(".env loaded from %s", candidate)
-		return
-	}
-	t.Logf(".env not found (tried .env, ../.env, ../../.env)")
 }

@@ -235,7 +235,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 		TelegramToken:           "bootstrap-token",
 		HTTPPort:                "127.0.0.1:8080",
 		Headless:                false,
-		EnvPath:                 ".env",
 		DBPath:                  "./aura.db",
 		LogLevel:                "info",
 		LogDir:                  "./logs",
@@ -252,7 +251,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	_ = s.Set(ctx, KeyTelegramToken, "override-token")
 	_ = s.Set(ctx, KeyHTTPPort, "0.0.0.0:9090")
 	_ = s.Set(ctx, KeyHeadless, "true")
-	_ = s.Set(ctx, KeyEnvPath, "/data/.env")
 	_ = s.Set(ctx, KeyDBPath, "/data/aura-next.db")
 	_ = s.Set(ctx, KeyLogLevel, "debug")
 	_ = s.Set(ctx, KeyLogDir, "/data/logs")
@@ -275,9 +273,6 @@ func TestApplyToConfigAppliesRuntimeAndSandboxFields(t *testing.T) {
 	}
 	if !cfg.Headless {
 		t.Errorf("Headless = false")
-	}
-	if cfg.EnvPath != "/data/.env" {
-		t.Errorf("EnvPath = %q", cfg.EnvPath)
 	}
 	if cfg.DBPath != "/data/aura-next.db" {
 		t.Errorf("DBPath = %q", cfg.DBPath)

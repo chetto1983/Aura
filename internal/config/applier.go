@@ -9,17 +9,16 @@ import (
 )
 
 // Settings are persisted in SQLite and overlaid after the database opens.
-// Early process fields such as AURA_HEADLESS, AURA_ENV_PATH, and DB_PATH are
-// still surfaced so the dashboard can be the single place to edit config, but
-// they only become authoritative after restart when the process can load them
-// before opening long-lived resources.
+// Early process fields such as AURA_HEADLESS and DB_PATH are still surfaced
+// so the dashboard can be the single place to edit config, but they only
+// become authoritative after restart when the process can load them before
+// opening long-lived resources.
 const (
 	KeyTelegramToken           = "TELEGRAM_TOKEN"
 	KeyAllowlist               = "TELEGRAM_ALLOWLIST"
 	KeyHTTPPort                = "HTTP_PORT"
 	KeyTimezone                = "AURA_TIMEZONE"
 	KeyHeadless                = "AURA_HEADLESS"
-	KeyEnvPath                 = "AURA_ENV_PATH"
 	KeyDBPath                  = "DB_PATH"
 	KeyLogLevel                = "LOG_LEVEL"
 	KeyLogDir                  = "LOG_DIR"
@@ -98,7 +97,7 @@ func OverridableKeys() []string {
 	return []string{
 		KeyTelegramToken,
 		KeyAllowlist,
-		KeyHTTPPort, KeyTimezone, KeyHeadless, KeyEnvPath, KeyDBPath,
+		KeyHTTPPort, KeyTimezone, KeyHeadless, KeyDBPath,
 		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir,
 		KeyMCPServersPath, KeyPromptOverlayPath, KeyDashboardTokenTTLHours,
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
@@ -155,7 +154,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 	cfg.HTTPPort = settingString(ctx, s, KeyHTTPPort, cfg.HTTPPort)
 	cfg.Timezone = settingString(ctx, s, KeyTimezone, cfg.Timezone)
 	cfg.Headless = settingBool(ctx, s, KeyHeadless, cfg.Headless)
-	cfg.EnvPath = settingString(ctx, s, KeyEnvPath, cfg.EnvPath)
 	cfg.DBPath = settingString(ctx, s, KeyDBPath, cfg.DBPath)
 	cfg.LogLevel = settingString(ctx, s, KeyLogLevel, cfg.LogLevel)
 	cfg.LogDir = settingString(ctx, s, KeyLogDir, cfg.LogDir)

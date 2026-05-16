@@ -2,7 +2,6 @@
 package debugcommon
 
 import (
-	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
@@ -100,33 +99,6 @@ func WriteOptionalOutput(outFile string, body []byte) error {
 	}
 	fmt.Printf("  wrote %d bytes to %s\n", len(body), abs)
 	return nil
-}
-
-// LoadDotEnv loads KEY=VALUE pairs from path into the current process env.
-func LoadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
 }
 
 // EnvDefault returns a trimmed env value, or fallback when unset/blank.

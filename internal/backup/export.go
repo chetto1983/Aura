@@ -24,7 +24,6 @@ type Config struct {
 	AccessKey string
 	SecretKey string
 
-	EnvPath    string
 	DBPath     string
 	WikiPath   string
 	SkillsPath string
@@ -193,9 +192,6 @@ func writeFullRestoreArchive(w io.Writer, cfg Config) (int, error) {
 		n, err := addPath(tw, src, name)
 		total += n
 		return err
-	}
-	if err := addFile(cfg.EnvPath, "env/.env"); err != nil {
-		return total, err
 	}
 	if n, err := addDBSnapshot(tw, cfg.DBPath, "data/"+filepath.Base(cfg.DBPath)); err != nil {
 		return total, err

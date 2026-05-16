@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -19,9 +17,6 @@ func main() {
 	timeout := flag.Duration("timeout", 2*time.Minute, "backup upload timeout")
 	flag.Parse()
 
-	if err := loadDotEnv(auraconfig.EnvPathFromEnvironment()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: could not load env file: %v\n", err)
-	}
 	cfg, err := auraconfig.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: load config: %v\n", err)
@@ -34,7 +29,6 @@ func main() {
 		Bucket:     cfg.GarageS3Bucket,
 		AccessKey:  cfg.GarageS3AccessKey,
 		SecretKey:  cfg.GarageS3SecretKey,
-		EnvPath:    cfg.EnvPath,
 		DBPath:     cfg.DBPath,
 		WikiPath:   cfg.WikiPath,
 		SkillsPath: cfg.SkillsPath,
@@ -76,30 +70,4 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FAIL: invalid mode %q (want full, artifacts, or all)\n", *mode)
 		os.Exit(1)
 	}
-}
-
-func loadDotEnv(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-	return scanner.Err()
 }

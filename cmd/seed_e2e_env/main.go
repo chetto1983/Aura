@@ -1,20 +1,21 @@
 // Command seed_e2e_env mints a fresh bearer token for an existing
-// allowlisted user and patches the AURA_E2E_TOKEN + AURA_E2E_CHAT_ID
-// keys in .env so `npm run e2e` (Playwright) has live credentials.
+// allowlisted user and prints AURA_E2E_TOKEN + AURA_E2E_CHAT_ID to stdout
+// in shell-eval format. Pipe through `eval` (bash) or copy-paste into
+// PowerShell to populate the env vars Playwright reads.
 //
-// It does NOT alter any other key in .env. By default it refuses to run
-// if no allowed user exists yet (run the bot once via Telegram /start to
-// bootstrap). The optional -bootstrap-user path is for local smoke tests
-// only and marks that user as e2e_bootstrap so it cannot block the first
-// real Telegram owner from claiming the install.
+// It does NOT touch any file. By default it refuses to run if no allowed
+// user exists yet (run the bot once via Telegram /start to bootstrap).
+// The optional -bootstrap-user path is for local smoke tests only and
+// marks that user as e2e_bootstrap so it cannot block the first real
+// Telegram owner from claiming the install.
 //
 // Usage:
 //
-//	go run ./cmd/seed_e2e_env [-db ./aura.db] [-env .env] [-user <id>]
-//	go run ./cmd/seed_e2e_env [-db ./aura.db] [-env .env] -bootstrap-user <id>
+//	eval $(go run ./cmd/seed_e2e_env [-db ./aura.db] [-user <id>])
+//	go run ./cmd/seed_e2e_env [-db ./aura.db] -bootstrap-user <id>
 //
 // Without -user it picks the first row of allowed_users (typically the
-// owner). Without -db / -env it uses the project defaults.
+// owner). Without -db it uses the project default ./aura.db.
 package main
 
 import (
@@ -37,7 +38,6 @@ import (
 
 func main() {
 	dbPath := flag.String("db", "./aura.db", "path to the live SQLite database")
-	envPath := flag.String("env", ".env", "path to the .env file to patch")
 	userID := flag.String("user", "", "user id to issue the token for (default: first allowed_users row)")
 	bootstrapUserID := flag.String("bootstrap-user", "", "debug/E2E only: insert this user as first allowed user when allowlist is empty")
 	seedTurns := flag.Bool("seed-turns", false, "if true and the conversations table is empty, inject 3 synthetic turns so the Playwright drawer test has data")
@@ -139,18 +139,17 @@ func main() {
 		chatIDStr = strconv.FormatInt(chatID.Int64, 10)
 	}
 
-	if err := patchEnv(*envPath, map[string]string{
-		"AURA_E2E_TOKEN":   token,
-		"AURA_E2E_CHAT_ID": chatIDStr,
-	}); err != nil {
-		log.Fatalf("patch env: %v", err)
-	}
+	// Print shell-eval lines on stdout (consumable via `eval $(...)` in
+	// bash/zsh). Diagnostics go to stderr so they don't poison the eval.
+	fmt.Printf("export AURA_E2E_TOKEN=%s\n", token)
+	fmt.Printf("export AURA_E2E_CHAT_ID=%s\n", chatIDStr)
 
-	fmt.Printf("Wrote AURA_E2E_TOKEN (%d chars) and AURA_E2E_CHAT_ID=%q to %s\n",
-		len(token), chatIDStr, *envPath)
-	fmt.Printf("user_id: %s\n", resolvedUserID)
+	fmt.Fprintf(os.Stderr, "Minted AURA_E2E_TOKEN (%d chars) and AURA_E2E_CHAT_ID=%q\n",
+		len(token), chatIDStr)
+	fmt.Fprintf(os.Stderr, "user_id: %s\n", resolvedUserID)
+	fmt.Fprintln(os.Stderr, "PowerShell: $env:AURA_E2E_TOKEN = '"+token+"'; $env:AURA_E2E_CHAT_ID = '"+chatIDStr+"'")
 	if !chatID.Valid {
-		fmt.Println("note: no archived conversations yet — drawer-click test will skip until a turn is seeded")
+		fmt.Fprintln(os.Stderr, "note: no archived conversations yet — drawer-click test will skip until a turn is seeded")
 	}
 }
 
@@ -158,35 +157,3 @@ func guardLiveDBWriteForSeed(ctx context.Context, dbPath string, auraRunning db.
 	return db.RefuseLiveDockerDBWrite(ctx, dbPath, "seed_e2e_env", auraRunning)
 }
 
-// patchEnv updates only the listed keys in path. Lines outside the keys
-// are preserved byte-for-byte. Missing keys are appended at the end.
-func patchEnv(path string, kv map[string]string) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	lines := strings.Split(string(raw), "\n")
-	seen := make(map[string]bool, len(kv))
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		eq := strings.IndexByte(trimmed, '=')
-		if eq < 0 {
-			continue
-		}
-		key := strings.TrimSpace(trimmed[:eq])
-		if val, ok := kv[key]; ok {
-			lines[i] = key + "=" + val
-			seen[key] = true
-		}
-	}
-	for key, val := range kv {
-		if !seen[key] {
-			lines = append(lines, key+"="+val)
-		}
-	}
-	out := strings.Join(lines, "\n")
-	return os.WriteFile(path, []byte(out), 0o600)
-}

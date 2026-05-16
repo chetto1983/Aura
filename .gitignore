@@ -8,7 +8,6 @@
 # Environment / runtime data
 .env
 .env.*
-!.env.example
 /data/
 /garage/
 /qdrant/

@@ -166,8 +166,6 @@
   "settings.item.HTTP_PORT.hint": "Riavvia Aura dopo aver cambiato indirizzo o porta",
   "settings.item.AURA_HEADLESS.label": "Modalità headless/container",
   "settings.item.AURA_HEADLESS.hint": "Ha effetto al prossimo avvio del processo",
-  "settings.item.AURA_ENV_PATH.label": "Percorso file env",
-  "settings.item.AURA_ENV_PATH.hint": "Impostazione di avvio anticipato; modifica con attenzione e riavvia",
   "settings.item.DB_PATH.label": "Percorso database SQLite",
   "settings.item.DB_PATH.hint": "Impostazione di avvio anticipato; modifica con attenzione e riavvia",
   "settings.item.LOG_LEVEL.label": "Livello log",

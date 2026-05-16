@@ -1,35 +1,8 @@
 package debugcommon
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-func TestLoadDotEnv(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".env")
-	if err := os.WriteFile(path, []byte(`
-# comment
-AURA_DEBUGCOMMON_FOO = "bar baz"
-AURA_DEBUGCOMMON_SINGLE='quoted'
-ignored-line
-`), 0o644); err != nil {
-		t.Fatalf("write env file: %v", err)
-	}
-
-	t.Setenv("AURA_DEBUGCOMMON_FOO", "")
-	t.Setenv("AURA_DEBUGCOMMON_SINGLE", "")
-
-	if err := LoadDotEnv(path); err != nil {
-		t.Fatalf("LoadDotEnv: %v", err)
-	}
-	if got := os.Getenv("AURA_DEBUGCOMMON_FOO"); got != "bar baz" {
-		t.Fatalf("AURA_DEBUGCOMMON_FOO = %q, want %q", got, "bar baz")
-	}
-	if got := os.Getenv("AURA_DEBUGCOMMON_SINGLE"); got != "quoted" {
-		t.Fatalf("AURA_DEBUGCOMMON_SINGLE = %q, want %q", got, "quoted")
-	}
-}
 
 func TestEnvDefault(t *testing.T) {
 	t.Setenv("AURA_DEBUGCOMMON_DEFAULT", "  configured  ")

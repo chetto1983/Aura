@@ -29,11 +29,6 @@ type SetupConfig struct {
 	// for headless/container installs where Docker controls host exposure.
 	AllowRemoteBind bool
 
-	// DotEnvPath is used for backward-compatible .env migration only.
-	// Secrets are no longer written to .env by the wizard. Defaults to
-	// "./.env" when blank.
-	DotEnvPath string
-
 	// SecretsStore receives secret keys (Telegram token, LLM API keys, etc.).
 	// Required — wizard cannot proceed without it.
 	SecretsStore secrets.Store
@@ -59,9 +54,6 @@ func SetupRun(cfg SetupConfig) (telegramToken string, err error) {
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
-	}
-	if cfg.DotEnvPath == "" {
-		cfg.DotEnvPath = ".env"
 	}
 
 	listen := listenAddress(cfg.Listen, cfg.AllowRemoteBind)

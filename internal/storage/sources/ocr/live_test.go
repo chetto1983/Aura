@@ -10,12 +10,11 @@
 //     RenderMarkdown → write ocr.md/ocr.json → flip status to
 //     ocr_complete. Verifies the four-file layout (PDR §4) on disk.
 //
-// Reads MISTRAL_API_KEY from .env (no shell exposure). Prints summary
-// stats only — never the full OCR markdown — per PDR §9 logging rules.
+// Reads MISTRAL_API_KEY from process env. Prints summary stats only —
+// never the full OCR markdown — per PDR §9 logging rules.
 package ocr
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"os"
@@ -28,8 +27,6 @@ import (
 )
 
 func TestLiveOCR(t *testing.T) {
-	loadDotEnvForLive(t)
-
 	apiKey := os.Getenv("MISTRAL_API_KEY")
 	if apiKey == "" {
 		t.Skip("MISTRAL_API_KEY not set")
@@ -166,8 +163,6 @@ func countHeaders(pages []Page) int {
 // is the canonical end-to-end check that the slice 1+2+3 stack composes
 // correctly without any glue code.
 func TestLiveE2E(t *testing.T) {
-	loadDotEnvForLive(t)
-
 	apiKey := os.Getenv("MISTRAL_API_KEY")
 	if apiKey == "" {
 		t.Skip("MISTRAL_API_KEY not set")
@@ -304,34 +299,3 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// loadDotEnvForLive parses ../../.env (relative to internal/ocr/) into
-// process env. Does not log values; never returns the file content.
-func loadDotEnvForLive(t *testing.T) {
-	t.Helper()
-	for _, candidate := range []string{".env", "../.env", "../../.env"} {
-		f, err := os.Open(candidate)
-		if err != nil {
-			continue
-		}
-		defer f.Close()
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			k, v, ok := strings.Cut(line, "=")
-			if !ok {
-				continue
-			}
-			k = strings.TrimSpace(k)
-			v = strings.Trim(strings.TrimSpace(v), `"'`)
-			if k != "" && os.Getenv(k) == "" {
-				os.Setenv(k, v)
-			}
-		}
-		t.Logf(".env loaded from %s", candidate)
-		return
-	}
-	t.Logf(".env not found (tried .env, ../.env, ../../.env)")
-}

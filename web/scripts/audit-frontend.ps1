@@ -3,27 +3,11 @@ $ErrorActionPreference = "Stop"
 
 $WebRoot = Split-Path -Parent $PSScriptRoot
 $RepoRoot = Split-Path -Parent $WebRoot
-$EnvPath = Join-Path $RepoRoot ".env"
-
-function Read-DotEnv {
-  param([string]$Path)
-  $values = @{}
-  if (-not (Test-Path -LiteralPath $Path)) {
-    return $values
-  }
-  Get-Content -LiteralPath $Path | ForEach-Object {
-    if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
-      $values[$matches[1].Trim()] = $matches[2]
-    }
-  }
-  return $values
-}
 
 function Dashboard-Url {
-  param([hashtable]$EnvValues)
-  $listen = "127.0.0.1:8080"
-  if ($EnvValues.ContainsKey("HTTP_PORT") -and -not [string]::IsNullOrWhiteSpace($EnvValues["HTTP_PORT"])) {
-    $listen = $EnvValues["HTTP_PORT"]
+  $listen = $env:HTTP_PORT
+  if ([string]::IsNullOrWhiteSpace($listen)) {
+    $listen = "127.0.0.1:8080"
   }
   $port = ($listen -split ":")[-1]
   return "http://127.0.0.1:$port"
@@ -35,12 +19,11 @@ try {
   npm run lint
   npm run build
 
-  $envValues = Read-DotEnv $EnvPath
-  if (-not $envValues.ContainsKey("AURA_E2E_TOKEN") -or [string]::IsNullOrWhiteSpace($envValues["AURA_E2E_TOKEN"])) {
-    throw "AURA_E2E_TOKEN is not set in .env. Mint a dashboard token before running the frontend audit."
+  if ([string]::IsNullOrWhiteSpace($env:AURA_E2E_TOKEN)) {
+    throw "AURA_E2E_TOKEN is not set in the process environment. Run cmd/seed_e2e_env (eval its output) before running the frontend audit."
   }
 
-  $dashboardUrl = Dashboard-Url $envValues
+  $dashboardUrl = Dashboard-Url
   $uri = [Uri]$dashboardUrl
   $existing = Get-NetTCPConnection -LocalPort $uri.Port -ErrorAction SilentlyContinue |
     Where-Object { $_.State -eq "Listen" }
@@ -80,12 +63,7 @@ try {
     }
 
     $env:AURA_DASHBOARD_URL = $dashboardUrl
-    $env:AURA_E2E_TOKEN = $envValues["AURA_E2E_TOKEN"]
-    if ($envValues.ContainsKey("AURA_E2E_CHAT_ID") -and -not [string]::IsNullOrWhiteSpace($envValues["AURA_E2E_CHAT_ID"])) {
-      $env:AURA_E2E_CHAT_ID = $envValues["AURA_E2E_CHAT_ID"]
-    } else {
-      Remove-Item Env:AURA_E2E_CHAT_ID -ErrorAction SilentlyContinue
-    }
+    # AURA_E2E_TOKEN + AURA_E2E_CHAT_ID inherit from the caller's process env.
 
     npm run e2e:pages
   } finally {

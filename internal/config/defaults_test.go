@@ -33,7 +33,6 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 	for key, value := range map[string]string{
 		KeyHTTPPort:                "127.0.0.1:8080",
 		KeyHeadless:                "false",
-		KeyEnvPath:                 ".env",
 		KeyDBPath:                  "./aura.db",
 		KeyLogDir:                  "./logs",
 		KeyWikiPath:                "./wiki",
@@ -58,7 +57,7 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		t.Fatalf("ApplyBestDefaults: %v", err)
 	}
 	for _, key := range []string{
-		KeyHTTPPort, KeyHeadless, KeyEnvPath, KeyDBPath, KeyLogDir,
+		KeyHTTPPort, KeyHeadless, KeyDBPath, KeyLogDir,
 		KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir, KeyMCPServersPath, KeyPromptOverlayPath,
 		KeyWorkspaceRoot,
 		KeyWebSearchProvider, KeySearXNGBaseURL, KeyQdrantURL,
@@ -67,7 +66,6 @@ func TestApplyBestDefaultsMigratesContainerRows(t *testing.T) {
 		assertChanged(t, changes, key)
 	}
 	assertSetting(t, s, KeyHTTPPort, "0.0.0.0:8080")
-	assertSetting(t, s, KeyEnvPath, "/data/.env")
 	assertSetting(t, s, KeyDBPath, "/data/aura.db")
 	assertSetting(t, s, KeyWikiPath, "/workspace/wiki")
 	assertSetting(t, s, KeySkillsPath, "/workspace/skills")
@@ -156,7 +154,6 @@ func containerDefaultsConfig() *Config {
 	return &Config{
 		Headless:                true,
 		HTTPPort:                "0.0.0.0:8080",
-		EnvPath:                 "/data/.env",
 		DBPath:                  "/data/aura.db",
 		LogDir:                  "/data/logs",
 		WikiPath:                "/workspace/wiki",

@@ -9,8 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -67,85 +65,6 @@ func (s *stubSecrets) List(_ context.Context) ([]string, error) {
 		keys = append(keys, k)
 	}
 	return keys, nil
-}
-
-func TestEncodeDotEnvValue(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"", ""},
-		{"simple", "simple"},
-		{"with space", `"with space"`},
-		{"has#hash", `"has#hash"`},
-		{`has"quote`, `"has\"quote"`},
-		{`back\slash with space`, `"back\\slash with space"`},
-		{"line\nbreak", "\"line\nbreak\""},
-	}
-	for _, tt := range tests {
-		got := encodeDotEnvValue(tt.in)
-		if got != tt.want {
-			t.Errorf("encodeDotEnvValue(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
-func TestWriteDotEnvKeyAppendsWhenAbsent(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-
-	if err := writeDotEnvKey(path, "FOO", "bar"); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	data, _ := os.ReadFile(path)
-	if !strings.Contains(string(data), "FOO=bar\n") {
-		t.Errorf("expected FOO=bar, got: %s", data)
-	}
-}
-
-func TestWriteDotEnvKeyReplacesExistingPreservingOthers(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-	initial := "# Header comment\nFOO=old\nBAR=keepme\n# trailing\n"
-	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if err := writeDotEnvKey(path, "FOO", "new"); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got, _ := os.ReadFile(path)
-	gotStr := string(got)
-
-	if !strings.Contains(gotStr, "FOO=new") {
-		t.Errorf("FOO not updated: %s", gotStr)
-	}
-	if strings.Contains(gotStr, "FOO=old") {
-		t.Errorf("FOO=old still present: %s", gotStr)
-	}
-	if !strings.Contains(gotStr, "BAR=keepme") {
-		t.Errorf("BAR removed: %s", gotStr)
-	}
-	if !strings.Contains(gotStr, "# Header comment") {
-		t.Errorf("comment removed: %s", gotStr)
-	}
-	if !strings.Contains(gotStr, "# trailing") {
-		t.Errorf("trailing comment removed: %s", gotStr)
-	}
-}
-
-func TestWriteDotEnvKeyAtomicCreatesNewFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("setup: .env should not exist yet")
-	}
-	if err := writeDotEnvKey(path, "TELEGRAM_TOKEN", "123:ABC"); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("file not created: %v", err)
-	}
 }
 
 func TestSetupProbeProviderConnectFailure(t *testing.T) {
@@ -335,8 +254,6 @@ func TestSetupWizardSaveWritesSecretsToStore(t *testing.T) {
 
 	secretsStore := &stubSecrets{data: map[string]string{}}
 	settingsStore := &stubSettingsWriter{data: map[string]string{}}
-	dir := t.TempDir()
-	dotenvPath := filepath.Join(dir, ".env")
 
 	type result struct {
 		token string
@@ -347,7 +264,6 @@ func TestSetupWizardSaveWritesSecretsToStore(t *testing.T) {
 		tok, err := SetupRun(SetupConfig{
 			Listen:          addr,
 			AllowRemoteBind: true,
-			DotEnvPath:      dotenvPath,
 			SecretsStore:    secretsStore,
 			SettingsStore:   settingsStore,
 			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -400,14 +316,4 @@ func TestSetupWizardSaveWritesSecretsToStore(t *testing.T) {
 	checkSecret(secrets.KeyTelegramToken, "123:ABC")
 	checkSecret(secrets.KeyLLMAPIKey, "sk-key")
 	checkSecret(secrets.KeyEmbeddingAPIKey, "emb-key")
-
-	// .env must NOT contain the secret values.
-	if data, err := os.ReadFile(dotenvPath); err == nil {
-		content := string(data)
-		for _, secret := range []string{"123:ABC", "sk-key", "emb-key"} {
-			if strings.Contains(content, secret) {
-				t.Errorf(".env contains secret value %q: %s", secret, content)
-			}
-		}
-	}
 }

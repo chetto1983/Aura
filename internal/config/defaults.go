@@ -203,7 +203,6 @@ func migrationRules(cfg *Config) []defaultRule {
 	rules = append(rules,
 		containerRule(KeyHTTPPort, cfg.HTTPPort, "use container dashboard bind address", isLoopbackBind),
 		containerRule(KeyHeadless, "true", "keep container runtime headless", valueIs("false")),
-		containerRule(KeyEnvPath, cfg.EnvPath, "use mounted container env path", isLocalPathLike),
 		containerRule(KeyDBPath, cfg.DBPath, "use mounted container database path", isLocalPathLike),
 		containerRule(KeyLogDir, cfg.LogDir, "use mounted container log directory", isLocalPathLike),
 		containerRule(KeyWikiPath, cfg.WikiPath, "use mounted container wiki path", isLocalPathLike),
