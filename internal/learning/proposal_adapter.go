@@ -38,8 +38,8 @@ func (s *SQLProposalStore) CreateOperationalMemoryProposal(ctx context.Context, 
 		  (chat_id, fact, action, target_slug, similarity,
 		   source_turn_ids, category, related_slugs, provenance_json,
 		   status, kind, signature_hash, created_at)
-		VALUES (0, ?, 'new', '', 1.0, '[]', '', '[]', '{}', 'pending', 'operational_memory', ?, ?)`,
-		params.Summary, params.SignatureHash, now,
+		VALUES (0, ?, 'new', ?, 1.0, '[]', ?, '[]', '{}', 'pending', 'operational_memory', ?, ?)`,
+		params.Summary, params.ToolName, params.ErrorClass, params.SignatureHash, now,
 	)
 	if err != nil {
 		return false, fmt.Errorf("proposal adapter: insert: %w", err)

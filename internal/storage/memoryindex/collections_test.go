@@ -45,12 +45,16 @@ func TestKindBackCompat(t *testing.T) {
 	if KindProposal != string(CollectionProposal) {
 		t.Errorf("KindProposal %q != string(CollectionProposal) %q", KindProposal, string(CollectionProposal))
 	}
+	if KindOperational != string(CollectionOperational) {
+		t.Errorf("KindOperational %q != string(CollectionOperational) %q", KindOperational, string(CollectionOperational))
+	}
 }
 
-// TestScaffoldedCollections verifies that UserMemory and Operational
-// descriptors name themselves as scaffolded for Phase 7C/7D.
+// TestScaffoldedCollections verifies that UserMemory is still scaffolded and
+// that Operational is now wired (Phase-N US-N03 promoted it out of scaffold).
 func TestScaffoldedCollections(t *testing.T) {
-	for _, c := range []Collection{CollectionUserMemory, CollectionOperational} {
+	// CollectionUserMemory remains scaffolded until Phase 7C/7D.
+	for _, c := range []Collection{CollectionUserMemory} {
 		desc, ok := Registry[c]
 		if !ok {
 			t.Fatalf("Registry missing %q", c)
@@ -59,9 +63,14 @@ func TestScaffoldedCollections(t *testing.T) {
 		if !strings.Contains(lower, "scaffolded") {
 			t.Errorf("%q Description does not contain 'scaffolded': %q", c, desc.Description)
 		}
-		if !strings.Contains(desc.Description, "7C") && !strings.Contains(desc.Description, "7D") {
-			t.Errorf("%q Description does not reference Phase 7C/7D: %q", c, desc.Description)
-		}
+	}
+	// CollectionOperational is now wired: it must have a StorageBackend.
+	opDesc, ok := Registry[CollectionOperational]
+	if !ok {
+		t.Fatal("Registry missing CollectionOperational")
+	}
+	if opDesc.StorageBackend == "" {
+		t.Errorf("CollectionOperational.StorageBackend is empty — should be wired after Phase-N US-N03")
 	}
 }
 

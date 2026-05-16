@@ -186,6 +186,11 @@ type Deps struct {
 	// (Phase-6 / US-J06). Optional — when nil the endpoint returns an empty
 	// warnings array rather than 503. Admin-gated via SkillsAdmin.
 	ToolWarnings attempts.WarningsReader
+
+	// OperationalMemory backs WriteApprovedLesson for operational_memory
+	// proposals (Phase-N / US-N03). Optional — when nil, approval still
+	// flips the status but skips the compact_memory_documents write.
+	OperationalMemory *memoryindex.Store
 }
 
 // installTimeout caps how long a single skills install (npx skills add)

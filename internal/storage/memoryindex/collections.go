@@ -26,9 +26,10 @@ const (
 	// with its own table and retrieval path is deferred.
 	CollectionUserMemory Collection = "user_memory"
 
-	// CollectionOperational is scaffolded — wired in Phase 7C/7D.
-	// Today operational signals (tool_attempts, runs, audit_events) are NOT
-	// indexed in compact_memory_documents and not surfaced via search_memory.
+	// CollectionOperational stores validated operational lessons (repeated tool
+	// failures promoted via the Phase-N lesson-promotion pipeline). Rows are
+	// written by learning.WriteApprovedLesson when an operator approves an
+	// operational_memory proposal and surfaced via the recall_operational tool.
 	CollectionOperational Collection = "operational"
 )
 
@@ -92,11 +93,11 @@ var Registry = map[Collection]CollectionDescriptor{
 		// StorageBackend deliberately empty until Phase 7C defines the table.
 	},
 	CollectionOperational: {
-		Kind:        CollectionOperational,
-		Label:       "Operational",
-		Description: "scaffolded — wired in Phase 7C/7D. Operational signals (tool_attempts, runs, audit_events) are not yet indexed for retrieval.",
-		DefaultMode: RetrievalExact,
-		// StorageBackend deliberately empty until Phase 7C defines the table.
+		Kind:           CollectionOperational,
+		Label:          "Operational",
+		Description:    "Validated operational lessons (repeated tool failures) promoted via the Phase-N pipeline. Indexed in compact_memory_documents with Kind=operational.",
+		DefaultMode:    RetrievalHybrid,
+		StorageBackend: "compact_memory_documents",
 	},
 }
 

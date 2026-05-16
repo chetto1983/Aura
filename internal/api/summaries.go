@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation/summarizer"
+	"github.com/aura/aura/internal/learning"
 )
 
 type SkillProposalApplyRequest struct {
@@ -228,6 +229,23 @@ func skillProposalApplyRequest(p summarizer.SkillProposal) SkillProposalApplyReq
 }
 
 func applyApprovedSummary(ctx context.Context, deps Deps, proposal summarizer.ProposedUpdate) {
+	// Operational memory proposals are written to compact_memory_documents
+	// via learning.WriteApprovedLesson instead of the wiki AutoApplier.
+	if proposal.Kind == "operational_memory" {
+		if deps.OperationalMemory != nil {
+			lp := learning.Proposal{
+				Kind:          proposal.Kind,
+				Fact:          proposal.Fact,
+				SignatureHash: proposal.SignatureHash,
+				ToolName:      proposal.TargetSlug,
+				ErrorClass:    proposal.Category,
+			}
+			if err := learning.WriteApprovedLesson(ctx, deps.OperationalMemory, lp); err != nil {
+				deps.Logger.Warn("summaries approve: write operational lesson failed", "id", proposal.ID, "error", err)
+			}
+		}
+		return
+	}
 	// Apply via AutoApplier if a wiki writer is wired. The status flip
 	// happens first so concurrent approve/reject requests cannot both apply.
 	if !summarizer.IsWikiAction(proposal.Action) {
