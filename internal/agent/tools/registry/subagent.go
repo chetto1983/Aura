@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -16,8 +17,8 @@ const (
 )
 
 // SubagentNodeSpec is the LLM-facing spec for one child dispatch.
-// Mirrors swarm.NodeSpec (Phase 8 read-only subset) without importing
-// internal/swarm, which would create an import cycle via
+// Mirrors swarm.NodeSpec (Phase 8 subset) without importing internal/swarm,
+// which would create an import cycle via
 // internal/swarm → internal/agent → internal/agent/tools/registry.
 type SubagentNodeSpec struct {
 	Goal          string
@@ -25,6 +26,49 @@ type SubagentNodeSpec struct {
 	ToolAllowlist []string
 	BudgetSecs    int
 	ParentRunID   string
+	RiskTier      string // "read_only" | "write_proposal"
+}
+
+// subagentDirectWriteTools mirrors swarm.DirectWriteToolNames without
+// importing internal/swarm (import-cycle constraint).
+var subagentDirectWriteTools = []string{
+	"wiki_page",
+	"source",
+	"task",
+	"file",
+	"agent_note",
+}
+
+// writeProposalDefaultAllowlist is applied when a write_proposal node
+// provides no explicit tool_allowlist. Contains propose_patch + common
+// read-only tools.
+var writeProposalDefaultAllowlist = []string{
+	"propose_patch",
+	"web_search",
+	"web_fetch",
+	"search_memory",
+	"list_memory",
+	"read_memory",
+	"read_skill",
+}
+
+// enforceWriteProposalNodeAllowlist returns the effective allowlist for a
+// write_proposal node. An empty explicit list is replaced with
+// writeProposalDefaultAllowlist. A non-empty explicit list must contain
+// "propose_patch" and must not contain any direct-write tool name.
+func enforceWriteProposalNodeAllowlist(explicit []string) ([]string, error) {
+	if len(explicit) == 0 {
+		return writeProposalDefaultAllowlist, nil
+	}
+	for _, name := range explicit {
+		if slices.Contains(subagentDirectWriteTools, name) {
+			return nil, fmt.Errorf("write_proposal allowlist must not contain direct-write tool %q", name)
+		}
+	}
+	if !slices.Contains(explicit, "propose_patch") {
+		return nil, fmt.Errorf("write_proposal allowlist must contain %q", "propose_patch")
+	}
+	return explicit, nil
 }
 
 // SubagentResult is the collected output of a completed child run.
@@ -72,7 +116,9 @@ func NewSubagentDispatchTool(dispatcher subagentDispatcher, waiter subagentWaite
 func (t *SubagentDispatchTool) Name() string { return "subagent_dispatch" }
 
 func (t *SubagentDispatchTool) Description() string {
-	return `Spawn up to 3 read-only subagents in parallel and collect their results. Each child runs in isolation with its own context window, tool allowlist (subset of yours), and budget. Cannot perform write operations (wiki_page write, source store, task schedule etc. — all blocked). Returns concise summaries on collect. Use for: parallel web search across topics, multi-source synthesis, divergent reasoning paths.
+	return `Spawn up to 3 subagents in parallel (read_only or write_proposal tier) and collect their results. Each child runs in isolation with its own context window, tool allowlist, and budget. read_only children cannot write (wiki_page, source, task, file, agent_note — all blocked). Returns concise summaries on collect. Use for: parallel web search, multi-source synthesis, divergent reasoning paths.
+
+You can also dispatch write_proposal subagents. They can call propose_patch to suggest reviewer-gated changes (wiki, user_memory, operational) but CANNOT directly write to wiki, sources, scheduled tasks, files, or agent_note. Approval flows through the human reviewer.
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="spawn":   nodes (array, max 3, each with required 'goal')
@@ -112,13 +158,18 @@ func (t *SubagentDispatchTool) Parameters() map[string]any {
 						"tool_allowlist": map[string]any{
 							"type":        "array",
 							"items":       map[string]any{"type": "string"},
-							"description": "Optional subset of read-only tools available to this child.",
+							"description": "Optional subset of tools available to this child. For write_proposal tier, must include propose_patch and must not include direct-write tools.",
 						},
 						"budget_secs": map[string]any{
 							"type":        "integer",
 							"description": fmt.Sprintf("Max seconds for this child (default %d, max 300).", subagentDefaultBudget),
 							"minimum":     1,
 							"maximum":     300,
+						},
+						"risk_tier": map[string]any{
+							"type":        "string",
+							"enum":        []string{"read_only", "write_proposal"},
+							"description": "Risk tier: read_only (default) blocks all writes; write_proposal allows propose_patch only — all direct writes still blocked.",
 						},
 					},
 					"required": []string{"goal"},
@@ -162,6 +213,7 @@ type subagentNodeArg struct {
 	instruction   string
 	toolAllowlist []string
 	budgetSecs    int
+	riskTier      string
 }
 
 func parseSubagentNodes(args map[string]any) ([]subagentNodeArg, error) {
@@ -196,11 +248,27 @@ func parseSubagentNodes(args map[string]any) ([]subagentNodeArg, error) {
 		if v, ok := m["budget_secs"].(float64); ok && v >= 1 {
 			budgetSecs = int(v)
 		}
+		riskTier, _ := m["risk_tier"].(string)
+		riskTier = strings.TrimSpace(riskTier)
+		if riskTier == "" {
+			riskTier = "read_only"
+		}
+		if riskTier != "read_only" && riskTier != "write_proposal" {
+			return nil, fmt.Errorf("subagent_dispatch: nodes[%d].risk_tier %q not allowed (must be read_only or write_proposal)", i, riskTier)
+		}
+		if riskTier == "write_proposal" {
+			al, alErr := enforceWriteProposalNodeAllowlist(toolAllowlist)
+			if alErr != nil {
+				return nil, fmt.Errorf("subagent_dispatch: nodes[%d]: %w", i, alErr)
+			}
+			toolAllowlist = al
+		}
 		nodes = append(nodes, subagentNodeArg{
 			goal:          goal,
 			instruction:   strings.TrimSpace(instruction),
 			toolAllowlist: toolAllowlist,
 			budgetSecs:    budgetSecs,
+			riskTier:      riskTier,
 		})
 	}
 	return nodes, nil
@@ -251,6 +319,7 @@ func (t *SubagentDispatchTool) executeSpawn(ctx context.Context, args map[string
 				ToolAllowlist: n.toolAllowlist,
 				BudgetSecs:    n.budgetSecs,
 				ParentRunID:   parentRunID,
+				RiskTier:      n.riskTier,
 			}
 			runID, dispErr := t.dispatcher.Dispatch(ctx, spec, userID)
 			results[idx] = subagentSpawnResult{runID: runID, err: dispErr}

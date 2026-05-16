@@ -65,13 +65,17 @@ type subagentBridgeAdapter struct {
 }
 
 func (a *subagentBridgeAdapter) Dispatch(ctx context.Context, spec tools.SubagentNodeSpec, principalID string) (string, error) {
+	riskTier := spec.RiskTier
+	if riskTier == "" {
+		riskTier = "read_only"
+	}
 	nodeSpec := swarm.NodeSpec{
 		Goal:          spec.Goal,
 		Instruction:   spec.Instruction,
 		ToolAllowlist: spec.ToolAllowlist,
 		BudgetSecs:    spec.BudgetSecs,
 		ParentRunID:   spec.ParentRunID,
-		RiskTier:      "read_only",
+		RiskTier:      riskTier,
 		MaxIterations: 5,
 	}
 	if err := nodeSpec.Validate(); err != nil {

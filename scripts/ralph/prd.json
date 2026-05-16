@@ -62,7 +62,7 @@
         "Single atomic commit prefix: feat(tools): subagent_dispatch risk_tier=write_proposal support (US-S03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1470 'read-only fanout as a safe first slice, not the permanent architecture ceiling'. Phase-R US-R03 hard-coded RiskTier='read_only'. This story flips it to opt-in tiers."
     },
     {

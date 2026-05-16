@@ -11,14 +11,16 @@ import (
 type fakeSubagentDispatcher struct {
 	mu    sync.Mutex
 	calls int
+	specs []SubagentNodeSpec // captured for per-call assertions
 	errFn func(idx int) error
 }
 
-func (f *fakeSubagentDispatcher) Dispatch(_ context.Context, _ SubagentNodeSpec, _ string) (string, error) {
+func (f *fakeSubagentDispatcher) Dispatch(_ context.Context, spec SubagentNodeSpec, _ string) (string, error) {
 	f.mu.Lock()
 	f.calls++
 	idx := f.calls - 1
 	id := strings.Repeat("a", 8+idx) // distinct IDs: "aaaaaaaa", "aaaaaaaaa", ...
+	f.specs = append(f.specs, spec)
 	f.mu.Unlock()
 	if f.errFn != nil {
 		if err := f.errFn(idx); err != nil {
@@ -156,6 +158,120 @@ func TestSubagentDispatch_Collect1Child(t *testing.T) {
 	}
 	if !strings.Contains(result, "Tokens: 100") {
 		t.Errorf("result missing token count: %q", result)
+	}
+}
+
+// TestSubagentDispatch_SpawnMixedTier verifies that 2 nodes with different
+// risk tiers (read_only + write_proposal) are both dispatched successfully
+// and both run IDs are returned.
+func TestSubagentDispatch_SpawnMixedTier(t *testing.T) {
+	d := &fakeSubagentDispatcher{}
+	w := &fakeSubagentWaiter{}
+	tool := newSubagentTool(d, w)
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"action": "spawn",
+		"nodes": []any{
+			map[string]any{"goal": "read task", "risk_tier": "read_only"},
+			map[string]any{
+				"goal":           "propose update",
+				"risk_tier":      "write_proposal",
+				"tool_allowlist": []any{"propose_patch", "web_search"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(result), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 run IDs, got %d: %q", len(lines), result)
+	}
+	d.mu.Lock()
+	calls := d.calls
+	specs := d.specs
+	d.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("expected 2 dispatch calls, got %d", calls)
+	}
+	// verify RiskTier propagated per node
+	tiers := map[string]bool{}
+	for _, s := range specs {
+		tiers[s.RiskTier] = true
+	}
+	if !tiers["read_only"] || !tiers["write_proposal"] {
+		t.Errorf("expected both read_only and write_proposal tiers dispatched; got: %v", tiers)
+	}
+}
+
+// TestSubagentDispatch_SpawnWriteProposalForbiddenTool verifies that a
+// write_proposal node with an explicit forbidden tool (wiki_page) returns a
+// validation error before any dispatch is made.
+func TestSubagentDispatch_SpawnWriteProposalForbiddenTool(t *testing.T) {
+	d := &fakeSubagentDispatcher{}
+	w := &fakeSubagentWaiter{}
+	tool := newSubagentTool(d, w)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action": "spawn",
+		"nodes": []any{
+			map[string]any{
+				"goal":           "try to write",
+				"risk_tier":      "write_proposal",
+				"tool_allowlist": []any{"wiki_page"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error for write_proposal allowlist containing wiki_page, got nil")
+	}
+	if !strings.Contains(err.Error(), "wiki_page") {
+		t.Errorf("expected error to mention wiki_page, got: %v", err)
+	}
+	d.mu.Lock()
+	calls := d.calls
+	d.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("expected 0 dispatch calls (validation fails before dispatch), got %d", calls)
+	}
+}
+
+// TestSubagentDispatch_SpawnWriteProposalDefaultAllowlist verifies that a
+// write_proposal node with no explicit tool_allowlist is accepted: the server
+// applies a safe default allowlist containing propose_patch.
+func TestSubagentDispatch_SpawnWriteProposalDefaultAllowlist(t *testing.T) {
+	d := &fakeSubagentDispatcher{}
+	w := &fakeSubagentWaiter{}
+	tool := newSubagentTool(d, w)
+
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"action": "spawn",
+		"nodes": []any{
+			map[string]any{"goal": "propose something", "risk_tier": "write_proposal"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error with default write_proposal allowlist, got: %v", err)
+	}
+	d.mu.Lock()
+	calls := d.calls
+	specs := d.specs
+	d.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected 1 dispatch call, got %d", calls)
+	}
+	dispatched := specs[0]
+	hasPatch := false
+	for _, name := range dispatched.ToolAllowlist {
+		if name == "propose_patch" {
+			hasPatch = true
+		}
+	}
+	if !hasPatch {
+		t.Errorf("expected default allowlist to contain propose_patch; got: %v", dispatched.ToolAllowlist)
+	}
+	if dispatched.RiskTier != "write_proposal" {
+		t.Errorf("expected RiskTier=write_proposal, got %q", dispatched.RiskTier)
 	}
 }
 
