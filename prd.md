@@ -1395,6 +1395,8 @@ Gate:
 
 ### Phase 7 - Rebuild RAG On Typed Memory Layers
 
+**Phase 7A closed 2026-05-16 (compact archive hygiene — role=tool exclusion from compact_memory_documents). Phase 7B-F remain scaffolded.** US-K01..K04 shipped (commits 9d74809d, cfda6bee, 43504082, 7ebbf083, 770eed0a).
+
 Goal: retrieval stops being one broad memory soup.
 
 Steps:

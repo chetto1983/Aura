@@ -105,7 +105,7 @@
         "Single atomic commit prefix: docs(planning): Phase 7A closure + audit refresh (US-K05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ".planning/* is gitignored — use git add -f. Precedent: every prior Phase closure commit. Phase 7B (Typed Collection Registry) is the natural next subphase but stays scaffolded for now."
     }
   ]
