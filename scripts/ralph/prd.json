@@ -1,98 +1,95 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-N = masterplan deferral from Phase 6 (Tool Experience Loop): lesson promotion live + internal/learning wired end-to-end. Closes the loop tool_attempts -> aggregated lesson candidates -> proposed_updates (kind='operational_memory') -> operator approval -> operational memory write -> recall_operational LLM tool. The Phase 6 backbone (tool_attempts table, ToolObservation contract, Repo.Record, WarningsReader, briefer) is ALREADY shipped (commits 73ddea04..fa7d4559); Phase-N adds the missing aggregation + promotion + retrieval pieces. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.8 internal/learning (lines 751-802) — minimum loop is 'tool failure -> structured feedback -> retry in same run -> persist outcome -> retrieve similar lesson later -> promote only after validation'. prd.md §5.7 lines 691-693 layer movement experience_store -> operational/skills via validation. prd.md Phase 6 line 1394 'promote repeated lessons into memory, skills, or tool policy only after validation'. docs/phase07c-mem0-elysia-patterns-2026-05-16.md §1.1 Mem0 history table append-only audit log pattern.",
+  "description": "Aura Phase-O = autonomous user-memory promotion + wire KindUserMemory scaffold. Closes the loop conversation turns -> summarizer.Candidate (already extracted) -> NEW user-memory triage (preference|fact|person categories route to user_memory layer instead of wiki) -> proposed_updates kind='user_memory' -> operator approval -> compact_memory_documents kind=user_memory -> recall_user_memory LLM tool. The summarizer backbone (Candidate struct, applier, proposals) is ALREADY shipped at internal/conversation/summarizer/. Phase 7B US-L01 declared CollectionUserMemory as scaffolded — this phase wires it with a real writer, fulfilling the deferral. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.7 lines 712-725 'Write policy' — 'user profile memory requires explicit intent, validation, or a question when ambiguous; user memory writes require memory.user.write or a narrower capability grant'. prd.md §5.7 lines 680-685 user/project knowledge layers (user_profile_memory distinct from knowledge_wiki). docs/phase07c-mem0-elysia-patterns-2026-05-16.md §1.2 Mem0 V3 ADD-only pipeline (LLM extraction + dedup hash + payload metadata). Phase 6 lesson promotion pattern (Phase-N) is the structural template.",
   "userStories": [
     {
-      "id": "US-N01",
-      "title": "Add LessonCandidate + Repo.AggregateForPromotion in internal/agent/tools/attempts",
-      "description": "Extend the existing `internal/agent/tools/attempts/` package with a lesson-promotion aggregator. Pure types + storage query + tests; no caller integration in this story. (a) New file `internal/agent/tools/attempts/aggregator.go` with: type `LessonCandidate struct { ToolName, ToolKind, ErrorClass string; Reason string; AttemptCount int; FirstSeen, LastSeen time.Time; SampleAttemptIDs []string; SignatureHash string }`. SignatureHash = sha256(tool_name + tool_kind + error_class + reason)[:16]. (b) Extend `Repo` interface in `internal/agent/tools/attempts/repo.go:32-46` with new method: `AggregateForPromotion(ctx context.Context, minOccurrences int, sinceDays int) ([]LessonCandidate, error)`. Implementation queries tool_attempts table for outcome='recoverable_error' or 'blocked_error' rows newer than (now - sinceDays days), groups by (tool_name, tool_kind, class, reason), filters HAVING COUNT(*) >= minOccurrences, returns one LessonCandidate per group with first 5 attempt IDs as samples. (c) Implement `AggregateForPromotion` on `SQLiteRepo` in `internal/agent/tools/attempts/sqlite.go` using a single SELECT with GROUP BY HAVING. (d) NO consumer wiring: do not touch executor, loop, cron, api in this story. (e) Tests in `internal/agent/tools/attempts/aggregator_test.go`: 5 cases — empty store returns empty slice; below threshold returns empty; above threshold returns 1 LessonCandidate with AttemptCount>=3 and correct SignatureHash; multi-group fixture returns multiple candidates ordered by AttemptCount DESC; sinceDays filter excludes old rows.",
+      "id": "US-O01",
+      "title": "Add user-memory triage helper in summarizer + UserFactHandle generator",
+      "description": "Pure logic addition: decide which Candidate categories route to user_memory layer vs the existing wiki path. NO consumer wiring in this story. (a) New file `internal/conversation/summarizer/triage.go` with: type `TargetLayer string` const `TargetWiki TargetLayer = \"wiki\"` and `TargetUserMemory TargetLayer = \"user_memory\"`. Function `TriageCandidate(c Candidate) TargetLayer` returns TargetUserMemory when `c.Category` is one of `person`, `preference`, `fact`, `todo` (the personal/transient categories per §5.7 user_profile_memory definition); returns TargetWiki when category is `project` or empty (knowledge_wiki layer). (b) Function `UserFactHandle(c Candidate) string` returns a stable handle `user_memory:<sha256(category + normalized_fact)[:16]>` for idempotency. Normalized_fact = strings.ToLower(strings.TrimSpace(c.Fact)) collapsing internal whitespace to single space. (c) Tests `triage_test.go`: 7 cases — each of the 5 categories returns expected TargetLayer; empty category returns TargetWiki; identical fact (modulo case+whitespace) produces identical handle. (d) NO changes to applier.go, proposals.go, agent loop, cron, or memoryindex in this story.",
       "acceptanceCriteria": [
-        "internal/agent/tools/attempts/aggregator.go exists with LessonCandidate struct + 7 fields including SignatureHash",
-        "SignatureHash is sha256(tool_name + tool_kind + error_class + reason)[:16] hex",
-        "Repo interface adds AggregateForPromotion(ctx, minOccurrences int, sinceDays int) ([]LessonCandidate, error)",
-        "SQLiteRepo.AggregateForPromotion uses single SELECT GROUP BY with HAVING COUNT(*) >= ?",
-        "Filter sinceDays implemented via WHERE started_at >= datetime('now', '-N days')",
-        "SampleAttemptIDs contains first 5 (or fewer if less) attempt IDs per group",
-        "internal/agent/tools/attempts/aggregator_test.go covers empty/below-threshold/above-threshold/multi-group/sinceDays cases",
-        "No changes to internal/agent/executor.go, loop.go, internal/cron/, internal/api/ in this commit",
+        "internal/conversation/summarizer/triage.go exists with TargetLayer type + 2 consts (TargetWiki, TargetUserMemory)",
+        "TriageCandidate: person/preference/fact/todo -> TargetUserMemory; project/empty -> TargetWiki",
+        "UserFactHandle returns 'user_memory:<sha256(category + normalized_fact)[:16]>'",
+        "Normalization: ToLower + TrimSpace + collapse internal whitespace to single space",
+        "triage_test.go covers all 5 categories + empty + 2 identical-modulo-format facts produce same handle",
+        "No changes to applier.go, proposals.go, internal/agent/, internal/cron/, internal/storage/memoryindex/ in this commit",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(attempts): LessonCandidate + AggregateForPromotion query (US-N01)"
+        "Single atomic commit prefix: feat(summarizer): user-memory triage + UserFactHandle (US-O01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Sources: prd.md §5.8 lines 751-802 (internal/learning contract). Phase 6 backbone already shipped — extend the existing attempts package, NOT a new one. Pattern: similar to existing WarningsReader.Warnings (repo.go:60-62) — aggregation query without consumer side effects."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 681 'user_profile_memory: stable user facts, preferences, constraints, identity notes' (distinct from project_decision_memory at line 682 + knowledge_wiki at line 684). Phase-N US-N01 template (pure types + helper + tests, no consumers wired)."
     },
     {
-      "id": "US-N02",
-      "title": "Wire learning.PromoteLessons + cron task that writes operational_memory proposals",
-      "description": "Make the aggregator LIVE via a scheduled task that reads aggregated lesson candidates and creates review-gated proposals. (a) New file `internal/learning/promoter.go` with package `learning`. Function `PromoteLessons(ctx context.Context, repo attempts.Repo, proposalStore ProposalStore, minOccurrences int, sinceDays int) (promoted int, skipped int, err error)`. (b) `ProposalStore` interface (small abstraction in the same file): `CreateOperationalMemoryProposal(ctx context.Context, params CreateProposalParams) (created bool, err error)` where params include SignatureHash (for idempotency), Summary string, ToolName, ErrorClass, AttemptCount int, SampleAttemptIDs []string, FirstSeen, LastSeen time.Time. Implementation must skip-and-return-false if a proposed_updates row with the same signature_hash already exists. (c) Implementation: call repo.AggregateForPromotion(minOccurrences=3, sinceDays=7). For each LessonCandidate, build a summary text: 'Tool `<name>` repeated `<error_class>` failures (<count> times in last <days> days). Reason pattern: <reason>. Sample attempts: <ids>.' Then call proposalStore.CreateOperationalMemoryProposal with signature_hash. Return (promoted, skipped, nil). (d) Adapter `internal/learning/proposal_adapter.go` implementing ProposalStore on top of the existing proposed_updates SQLite table — locate via grep 'proposed_updates' in internal/conversation/summarizer/ or internal/db/migrations/. If the existing table has no kind column or no signature_hash column, add migration v14 with the minimal additive change (kind TEXT NOT NULL DEFAULT 'wiki', signature_hash TEXT NOT NULL DEFAULT ''). (e) Wire `learning.PromoteLessons` into cron as kind 'lesson_promotion' running daily at 02:00 local — locate the cron task registry pattern via `internal/cron/types.go:32` and existing wiki_maintenance wiring. (f) Tests in `internal/learning/promoter_test.go`: 4 cases — empty repo: promoted=0; 1 candidate above threshold: promoted=1; rerun same data: promoted=0, skipped=1 (idempotency via signature_hash); 3 candidates: promoted=3.",
+      "id": "US-O02",
+      "title": "Route user-memory candidates to proposed_updates with kind='user_memory'",
+      "description": "Make triage LIVE inside the existing summarizer applier path. (a) Locate the applier candidate-handling code in `internal/conversation/summarizer/applier.go` and `proposals.go`. The existing path treats ActionNew/ActionPatch as wiki write. (b) Add a branch BEFORE the wiki resolution: call `TriageCandidate(c)`. If result is TargetUserMemory, route to a new function `createUserMemoryProposal(ctx, store, c)` that inserts a proposed_updates row with kind='user_memory', handle=UserFactHandle(c), action=ActionNew (or ActionPatch if existing user_memory hit detected — see d below), summary=c.Fact, provenance source_turn_ids=c.SourceTurnIDs. (c) Idempotency: if proposed_updates already has a pending row with the same handle (UserFactHandle), skip (skipped++, no duplicate). (d) Existing-fact detection: call `memoryindex.Store.Search(Filter{Kinds: [string(CollectionUserMemory)], ...})` with the fact text as query, threshold 0.85. If hit found, set ActionPatch with TargetSlug=hit.Handle; otherwise ActionNew. (e) NO change to ActionNew/ActionPatch for wiki path — keep existing flow byte-identical. (f) Tests in `applier_test.go` (or `triage_routing_test.go`): 4 cases — Candidate category='preference' routes to proposed_updates kind='user_memory'; Candidate category='project' routes to existing wiki path; double-extract same preference produces 1 proposal not 2 (idempotency); preference matching an existing user_memory entry generates ActionPatch.",
       "acceptanceCriteria": [
-        "internal/learning/promoter.go exists with package learning + PromoteLessons function",
-        "ProposalStore interface declared with CreateOperationalMemoryProposal(ctx, params) (created bool, err error)",
-        "PromoteLessons returns (promoted, skipped, error) tuple",
-        "Summary text follows format 'Tool `%s` repeated `%s` failures (%d times in last %d days). Reason pattern: %s. Sample attempts: %v.'",
-        "Idempotency enforced via signature_hash — re-running with identical aggregator output returns skipped=N, promoted=0",
-        "internal/learning/proposal_adapter.go wires ProposalStore on top of proposed_updates table",
-        "proposed_updates table accepts kind='operational_memory' (either already supported OR migration v14 adds kind+signature_hash columns)",
-        "internal/learning/promoter_test.go covers empty/single/idempotency/multi cases",
-        "Cron task 'lesson_promotion' wired into the existing cron registry (mirror wiki_maintenance pattern)",
+        "applier.go branches on TriageCandidate before wiki resolution",
+        "createUserMemoryProposal inserts proposed_updates row with kind='user_memory', handle=UserFactHandle(c), source_turn_ids preserved",
+        "Idempotency: re-run with identical Candidate set produces skipped count, no duplicate proposals",
+        "Existing-fact detection via memoryindex.Store.Search filtered to CollectionUserMemory at threshold 0.85",
+        "Wiki path for ActionNew/ActionPatch on non-user-memory categories stays byte-identical",
+        "Tests in applier_test.go or triage_routing_test.go cover route/idempotency/existing-match cases",
+        "proposed_updates table accepts kind='user_memory' (verify via existing schema OR additive migration v15 if needed)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(learning): wire PromoteLessons + cron task -> proposed_updates (US-N02)"
+        "Single atomic commit prefix: feat(summarizer): route user-memory candidates to proposed_updates kind=user_memory (US-O02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Sources: prd.md §5.8 line 779 'promote only after validation'. Existing proposed_updates already gates wiki/user-memory proposals via review workflow — reuse for operational_memory. If migration v14 needed, mirror in currentSchemaSQL."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 714 'user profile memory requires explicit intent, validation, or a question when ambiguous' — the review-gated proposed_updates flow IS the validation. Phase-N US-N02 template (proposer + idempotency via handle). If migration v15 needed for kind column extension, mirror in currentSchemaSQL."
     },
     {
-      "id": "US-N03",
-      "title": "Approved operational_memory proposals write to compact_memory_documents kind=operational",
-      "description": "Close the layer movement experience_store -> operational_memory via validation. When an operator approves a proposed_updates row with kind='operational_memory', a new function in `internal/learning/writer.go` writes it as a compact_memory_documents row with kind='operational' (Phase 7B US-L01 CollectionOperational scaffold becomes finally wired). (a) New file `internal/learning/writer.go` with function `WriteApprovedLesson(ctx context.Context, store memoryindex.Store, proposal Proposal) error`. Builds a memoryindex.Document with Kind=memoryindex.KindOperational, Title='Lesson: <tool> <error_class>', Body=summary text, Handle='operational:<signature_hash>', Status='active', UpdatedAt=now, ContentHash from Phase 7C US-M02 ContentHash helper, EmbeddingModelID + IndexBuildID from current projection_state row of compact_memory_documents (via Phase 7C US-M03 freshness.Store). (b) Use memoryindex.Store.WriteOne(doc) — if no such method exists, add a small helper that uses INSERT ... ON CONFLICT(id) DO UPDATE on the single-row signature_hash-keyed ID. (c) Locate the existing applier path: `internal/conversation/summarizer/applier.go` (or sibling). Add a hook in the approval-transition code so when proposal.Kind == 'operational_memory' and status flips from 'pending' to 'approved', WriteApprovedLesson is invoked. (d) The compact_memory_documents row gets indexed via existing rebuild/sync flow — no separate FTS/Qdrant work needed. (e) NO new tables. (f) Tests in `internal/learning/writer_test.go`: 3 cases — approve operational_memory proposal: compact_memory_documents row created with kind='operational' and correct Handle; double-approve: idempotent (single row, no duplicate); approve non-operational kind: no-op (returns nil without write).",
+      "id": "US-O03",
+      "title": "Approved user_memory proposals write to compact_memory_documents kind=user_memory",
+      "description": "Close the layer movement Phase 7B US-L01 CollectionUserMemory scaffold -> wired. When an operator approves a proposed_updates row with kind='user_memory', a new function in `internal/learning/user_memory_writer.go` (or extension of writer.go from US-N03) writes it as a compact_memory_documents row with kind='user_memory'. (a) New function `WriteApprovedUserFact(ctx context.Context, store memoryindex.Store, proposal Proposal) error`. Builds a memoryindex.Document with Kind=string(memoryindex.CollectionUserMemory), Title=truncate(proposal.Summary, 80), Body=proposal.Summary, Handle=proposal.Handle (already 'user_memory:<sha>:'), Status='active', UpdatedAt=now, ContentHash + EmbeddingModelID + IndexBuildID per Phase 7C pattern (re-use US-M03 freshness wiring). Category=proposal source category (person/preference/fact/todo) stored in Tags. (b) Wire into the applier approval-transition path so when proposal.Kind == 'user_memory' and status flips pending -> approved, WriteApprovedUserFact is invoked. Mirror the US-N03 pattern verbatim. (c) Idempotency: ON CONFLICT(Handle) DO UPDATE Body=excluded.Body, UpdatedAt=excluded.UpdatedAt — so an ActionPatch approval updates the existing row instead of duplicating. (d) Tests `internal/learning/user_memory_writer_test.go` (or extend writer_test.go): 4 cases — approve user_memory proposal: compact_memory_documents row created with kind='user_memory'; double-approve: idempotent (single row); ActionPatch approval updates Body; approve non-user_memory kind: no-op. (e) Verify Phase 7B US-L01 CollectionUserMemory description gets updated in collections.go from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'.",
       "acceptanceCriteria": [
-        "internal/learning/writer.go with WriteApprovedLesson(ctx, store, proposal) error function",
-        "Function builds memoryindex.Document with Kind=KindOperational + Title + Body + Handle='operational:<signature_hash>' + Phase 7C freshness fields (ContentHash, EmbeddingModelID, IndexBuildID)",
-        "Wired into the applier path so approval transition triggers the write",
-        "Idempotency: double-approve does NOT create duplicate rows (ON CONFLICT or check-before-insert by Handle)",
-        "internal/learning/writer_test.go covers approve/double-approve/wrong-kind cases",
-        "Verified KindOperational scaffold from Phase 7B US-L01 (internal/storage/memoryindex/collections.go) is now wired with a real writer (no longer 'scaffolded — wired in Phase 7C/7D')",
+        "internal/learning/user_memory_writer.go (or extension of writer.go) with WriteApprovedUserFact(ctx, store, proposal) error",
+        "Function builds memoryindex.Document with Kind=user_memory + Title/Body/Handle + Phase 7C freshness fields (ContentHash, EmbeddingModelID, IndexBuildID)",
+        "Tags preserve source category (person/preference/fact/todo)",
+        "Wired into applier approval-transition path mirroring US-N03 hook pattern",
+        "Idempotency: double-approve does NOT duplicate; ActionPatch UPDATEs Body+UpdatedAt",
+        "user_memory_writer_test.go (or writer_test.go) covers approve/double/patch/wrong-kind cases",
+        "collections.go CollectionUserMemory description updated from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'",
         "No new SQLite tables or migrations",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(learning): WriteApprovedLesson -> compact_memory_documents kind=operational (US-N03)"
+        "Single atomic commit prefix: feat(learning): WriteApprovedUserFact -> compact_memory_documents kind=user_memory (US-O03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 707 'experience_store -> operational/skills via repeated-success validation'. Phase 7B US-L01 declared CollectionOperational as scaffolded — this story wires it. Phase 7C US-M02 provides ContentHash helper; US-M03 provides freshness.Store.Get for projection_state row read."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 705 'source_corpus -> knowledge_wiki via ingest or curated synthesis; conversation_archive -> user/project via validated consolidation or question flow'. Phase 7B US-L01 declared CollectionUserMemory scaffold — this story wires it. Phase-N US-N03 template (approval-triggered writer with freshness fields)."
     },
     {
-      "id": "US-N04",
-      "title": "Add recall_operational LLM tool + Phase 6 lesson promotion closure docs",
-      "description": "Make operational lessons retrievable by the agent + close the Phase 6 deferral. (a) New file `internal/agent/tools/registry/recall_operational.go` with `RecallOperationalTool` struct + Definition + Execute. Schema: { 'query': string optional, 'tool_name': string optional, 'error_class': string optional, 'limit': int default 5 max 20 }. Description copy: 'Surface Auras validated operational lessons (failed approaches, recurring tool errors, policy notes). Returns approved entries from operational memory only — pending proposals are NOT visible here. Filter by tool_name or error_class to narrow scope.' (b) Execute calls memoryindex.Store.Search with Filter{Kinds: []string{string(memoryindex.CollectionOperational)}, Status: 'active', ...} + LIMIT. Format output as markdown list, one line per hit, similar to memory_search.formatMemoryResults shape but with explicit handle 'operational:<sig>' prefix and the Phase 7C freshness annotation (indexed_at + degraded_read if applicable). (c) Register in `internal/agent/tools/registry/registry.go` alongside search_memory and the other tools. (d) Test `internal/agent/tools/registry/recall_operational_test.go`: 3 cases — empty store: returns 'no operational lessons yet'; populated: returns N hits ordered by recency; filtered by tool_name: only matching rows returned. (e) Closure docs: create `.planning/deep-refactor/Phase06_Tool_Experience_Loop/subphases/Phase06_lesson_promotion/` with progress.md (US-N01..N04 SHAs), plan.md (one-pager summary citing prd.md §5.8 + §5.7 layer movement), benchmark.md (actuals: 'AggregateForPromotion query latency <100ms on 10k row fixture'). (f) Update parent Phase06 progress.md with deferral close row. (g) Update prd.md §6.5 Phase 6 checklist row (around line 1189) from '✅ in-scope ... lesson promotion deferred' to '✅ closed (full scope) | 2026-05-16 | + US-N01..N04' AND remove the 'Lesson promotion' row from §7.2 Outstanding deferrals table (or mark it 'CLOSED 2026-05-16'). (h) Use git add -f for .planning/* paths.",
+      "id": "US-O04",
+      "title": "Add recall_user_memory LLM tool + Phase-O closure docs",
+      "description": "Make user-memory facts retrievable by the agent + close Phase-O. (a) New file `internal/agent/tools/registry/recall_user_memory.go` with `RecallUserMemoryTool` struct + Definition + Execute. Schema: { 'query': string optional, 'category': string optional (person|preference|fact|todo), 'limit': int default 5 max 20 }. Description copy: 'Surface validated user facts and preferences about the operator (name, location, interests, work context, habits, scheduled todos). Returns approved entries from user memory only — pending proposals are NOT visible here. Use category filter to narrow scope: person (identity), preference (likes/dislikes), fact (general claim), todo (scheduled item).' (b) Execute calls memoryindex.Store.Search with Filter{Kinds: []string{string(memoryindex.CollectionUserMemory)}, Status: 'active', ...} + tag filter if category provided + LIMIT. Format output as markdown list, one line per hit with handle 'user_memory:<sha>' prefix + Phase 7C freshness annotation. (c) Register in `internal/agent/tools/registry/registry.go` alongside recall_operational (US-N04) and search_memory. (d) Test `internal/agent/tools/registry/recall_user_memory_test.go`: 4 cases — empty store: 'no user facts yet'; populated: N hits ordered by recency; filtered by category='preference': only preference rows; filtered by tool_name absent (this is a different tool): N/A skip. (e) Closure docs: create `.planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/` with progress.md (US-O01..O04 SHAs), plan.md (one-pager citing prd.md §5.7 user_profile_memory + Phase-O scope), benchmark.md (actuals). (f) Update prd.md §6.5 Status Checklist (commit c50c9703 added the section): add a new row for Phase-O between 7F and 8 (or below 9 as a sub-phase) showing 'wired KindUserMemory'. (g) Update §7.2 deferrals table: 'Active write-policy (autonomous user/wiki writes, importance scorer, question gate)' Phase 9 row — mark partial completion (preference/fact/todo extraction live; remaining: explicit-intent question gate + memory.user.write capability check, deferred to Phase-Q). (h) Use git add -f for .planning/* paths.",
       "acceptanceCriteria": [
-        "internal/agent/tools/registry/recall_operational.go exists with RecallOperationalTool struct",
-        "Schema accepts query/tool_name/error_class as optional + limit (default 5, max 20)",
+        "internal/agent/tools/registry/recall_user_memory.go exists with RecallUserMemoryTool struct",
+        "Schema accepts query/category as optional + limit (default 5, max 20)",
         "Description explicitly notes 'approved entries only — pending proposals NOT visible'",
-        "Execute filters by Kind=CollectionOperational + Status='active'",
-        "Output includes Phase 7C freshness annotation (indexed_at, degraded_read where applicable) per memory_search format",
-        "Tool registered in registry.go alongside search_memory",
-        "recall_operational_test.go covers empty/populated/filtered cases",
-        ".planning/deep-refactor/Phase06_Tool_Experience_Loop/subphases/Phase06_lesson_promotion/{plan.md,progress.md,benchmark.md} created",
-        "prd.md §6.5 Phase 6 row updated to indicate lesson promotion deferral is closed",
-        "prd.md §7.2 'Lesson promotion' deferral row removed or marked CLOSED 2026-05-16",
+        "Execute filters by Kind=CollectionUserMemory + Status='active' + optional category tag",
+        "Output includes Phase 7C freshness annotation (indexed_at, degraded_read)",
+        "Tool registered in registry.go alongside recall_operational and search_memory",
+        "recall_user_memory_test.go covers empty/populated/filtered cases",
+        ".planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/{plan.md,progress.md,benchmark.md} created",
+        "prd.md §6.5 Status Checklist: Phase-O row added showing wired KindUserMemory",
+        "prd.md §7.2 Active write-policy deferral marked PARTIAL with explicit deferral note for question gate + capability check",
         "Used git add -f for .planning/* paths",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(tools,docs): recall_operational tool + Phase 6 lesson promotion closure (US-N04)"
+        "Single atomic commit prefix: feat(tools,docs): recall_user_memory tool + Phase-O closure (US-O04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Sources: prd.md §5.8 line 760 'lesson retrieval'. Closure pattern: Phase 7A US-K05 + Phase 7B US-L06 + Phase 7C US-M04 docs(planning) approach. Update prd.md §6.5 Status Checklist (commit c50c9703) to reflect new state."
+      "passes": false,
+      "notes": "Sources: prd.md §5.8 'lesson retrieval' parallels recall_operational; here recall_user_memory mirrors for user_profile_memory layer. Closure pattern Phase-N US-N04. Phase 9 partial: this slice covers extraction+routing+approval+retrieval, but NOT yet 'memory.user.write capability check' or 'question gate when ambiguous' — those remain deferred (next phase candidate)."
     }
   ]
 }
