@@ -574,14 +574,15 @@ func (a *App) wireBot(b *telegram.Bot) error {
 
 	// ---- Tool vector index: reconciler + mcpwatch goroutines ----------------
 	toolReaderConfig := tools.ToolVectorConfig{
-		Backend:      cfg.ToolSearchBackend,
-		TopK:         cfg.ToolSearchTopK,
-		QdrantURL:    cfg.QdrantURL,
-		QdrantAPIKey: cfg.QdrantAPIKey,
-		Collection:   tools.ToolSearchCollection,
-		EmbedBaseURL: cfg.EmbeddingBaseURL,
-		EmbedAPIKey:  cfg.EmbeddingAPIKey,
-		EmbedModel:   cfg.EmbeddingModel,
+		Backend:        cfg.ToolSearchBackend,
+		TopK:           cfg.ToolSearchTopK,
+		QdrantURL:      cfg.QdrantURL,
+		QdrantAPIKey:   cfg.QdrantAPIKey,
+		Collection:     tools.ToolSearchCollection,
+		EmbedBaseURL:   cfg.EmbeddingBaseURL,
+		EmbedAPIKey:    cfg.EmbeddingAPIKey,
+		EmbedModel:     cfg.EmbeddingModel,
+		EmbedOutputDim: cfg.EmbeddingOutputDim,
 	}
 	var reconciler *toolindex.Reconciler
 	if a.deps.QdrantClient != nil && a.deps.EmbedCache != nil && cfg.ToolSearchBackend != "fts" {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,6 +28,15 @@ type ToolVectorConfig struct {
 	EmbedBaseURL string
 	EmbedAPIKey  string
 	EmbedModel   string
+	// EmbedOutputDim activates Matryoshka (MRL) truncation client-side when
+	// > 0 and smaller than the model's native output dimension. The query
+	// vector is sliced to the first EmbedOutputDim components and
+	// re-normalized so cosine similarity stays equivalent to native-dim.
+	// Must equal the dimension declared on the Qdrant collection — Aura's
+	// production target is 256 (embeddinggemma-300m @ 256-d MRL).
+	// Live debug 2026-05-17 found query mismatch (`expected dim: 256, got 768`)
+	// because this field was missing and embed() was returning native 768-d.
+	EmbedOutputDim int
 }
 
 type ToolVectorHealth struct {
@@ -265,6 +275,34 @@ func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]floa
 	for i, vector := range vectors {
 		if len(vector) == 0 {
 			return nil, fmt.Errorf("embeddings missing vector at index %d", i)
+		}
+	}
+	// MRL truncation + renormalization. The Qdrant collection is created
+	// with EmbedOutputDim components (e.g. 256 for embeddinggemma-300m @
+	// 256-d MRL); if the embedding endpoint returns the model's native
+	// dimension (768), slice and renormalize so cosine similarity stays
+	// equivalent. Matches the writer-side behavior in
+	// internal/storage/search/embed_http.go.
+	if idx.cfg.EmbedOutputDim > 0 {
+		for i, vector := range vectors {
+			if len(vector) <= idx.cfg.EmbedOutputDim {
+				continue
+			}
+			truncated := vector[:idx.cfg.EmbedOutputDim]
+			var sumSquares float32
+			for _, v := range truncated {
+				sumSquares += v * v
+			}
+			if sumSquares > 0 {
+				inv := float32(1.0 / math.Sqrt(float64(sumSquares)))
+				renormed := make([]float32, idx.cfg.EmbedOutputDim)
+				for j, v := range truncated {
+					renormed[j] = v * inv
+				}
+				vectors[i] = renormed
+			} else {
+				vectors[i] = append([]float32(nil), truncated...)
+			}
 		}
 	}
 	return vectors, nil
