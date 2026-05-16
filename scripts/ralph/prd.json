@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(memoryindex): typed Collection enum + descriptor Registry (US-L01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Audit doc §A.1 + §G.1.1 are the canonical references for the 6 collection names and the 'why scaffolded' framing. Pattern: Phase-K US-K01 (pure policy + tests, no consumers wired) — repeat that discipline."
     },
     {
