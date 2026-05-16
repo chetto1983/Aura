@@ -46,7 +46,7 @@
         "Single atomic commit prefix: feat(memoryindex): wire ArchiveEligibility into Append + Rebuild (US-K02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Parity test is the GATE — without it, live and rebuild can drift. Audit (docs/phase07-current-rag-audit-2026-05-16.md section B) is the canonical reference for line numbers."
     },
     {
