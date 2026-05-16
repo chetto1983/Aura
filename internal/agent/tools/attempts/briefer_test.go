@@ -38,6 +38,10 @@ func (f *fakeRepo) CountOutcome(_ context.Context, _, toolName string, outcome t
 	return count, nil
 }
 
+func (f *fakeRepo) AggregateForPromotion(_ context.Context, _, _ int) ([]attempts.LessonCandidate, error) {
+	return nil, nil
+}
+
 // failAttempt builds a ToolAttempt with outcome derived from class, for test setup.
 func failAttempt(toolName, class string, endedAt time.Time) attempts.ToolAttempt {
 	return attempts.ToolAttempt{

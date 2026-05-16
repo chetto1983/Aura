@@ -183,3 +183,7 @@ func (alwaysErrRepo) Recent(_ context.Context, _, _ string, _ int) ([]attempts.T
 func (alwaysErrRepo) CountOutcome(_ context.Context, _, _ string, _ tools.Outcome) (int, error) {
 	return 0, errors.New("repo always fails")
 }
+
+func (alwaysErrRepo) AggregateForPromotion(_ context.Context, _, _ int) ([]attempts.LessonCandidate, error) {
+	return nil, errors.New("repo always fails")
+}

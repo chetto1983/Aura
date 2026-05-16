@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -185,6 +186,60 @@ ORDER BY n DESC`, offset)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("attempts: iterate warnings: %w", err)
+	}
+	return result, nil
+}
+
+// AggregateForPromotion returns grouped failure statistics for tool_attempts rows
+// with outcome in ('recoverable', 'blocked') newer than sinceDays days, filtered to
+// groups with at least minOccurrences occurrences, ordered by count DESC.
+func (r *SQLiteRepo) AggregateForPromotion(ctx context.Context, minOccurrences int, sinceDays int) ([]LessonCandidate, error) {
+	if r.db == nil {
+		return nil, ErrRepoUnavailable
+	}
+	offset := fmt.Sprintf("-%d days", sinceDays)
+	rows, err := r.db.QueryContext(ctx, `
+SELECT tool_name, tool_kind, class, reason,
+       COUNT(*) AS cnt,
+       MIN(started_at) AS first_seen,
+       MAX(started_at) AS last_seen,
+       GROUP_CONCAT(id) AS sample_ids
+FROM tool_attempts
+WHERE outcome IN ('recoverable', 'blocked')
+  AND started_at >= datetime('now', ?)
+GROUP BY tool_name, tool_kind, class, reason
+HAVING COUNT(*) >= ?
+ORDER BY COUNT(*) DESC`, offset, minOccurrences)
+	if err != nil {
+		return nil, fmt.Errorf("attempts: aggregate for promotion: %w", err)
+	}
+	defer rows.Close()
+
+	var result []LessonCandidate
+	for rows.Next() {
+		var lc LessonCandidate
+		var firstSeenStr, lastSeenStr string
+		var sampleIDsNS sql.NullString
+		if err := rows.Scan(
+			&lc.ToolName, &lc.ToolKind, &lc.ErrorClass, &lc.Reason,
+			&lc.AttemptCount, &firstSeenStr, &lastSeenStr, &sampleIDsNS,
+		); err != nil {
+			return nil, fmt.Errorf("attempts: scan aggregate: %w", err)
+		}
+		lc.FirstSeen, _ = time.Parse(time.RFC3339Nano, firstSeenStr)
+		lc.LastSeen, _ = time.Parse(time.RFC3339Nano, lastSeenStr)
+		lc.SignatureHash = LessonSignatureHash(lc.ToolName, lc.ToolKind, lc.ErrorClass, lc.Reason)
+		if sampleIDsNS.Valid && sampleIDsNS.String != "" {
+			ids := strings.Split(sampleIDsNS.String, ",")
+			if len(ids) > 5 {
+				ids = ids[:5]
+			}
+			lc.SampleAttemptIDs = ids
+		}
+		result = append(result, lc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("attempts: iterate aggregate: %w", err)
 	}
 	return result, nil
 }

@@ -22,7 +22,7 @@
         "Single atomic commit prefix: feat(attempts): LessonCandidate + AggregateForPromotion query (US-N01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.8 lines 751-802 (internal/learning contract). Phase 6 backbone already shipped — extend the existing attempts package, NOT a new one. Pattern: similar to existing WarningsReader.Warnings (repo.go:60-62) — aggregation query without consumer side effects."
     },
     {

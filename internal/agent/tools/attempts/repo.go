@@ -43,6 +43,12 @@ type Repo interface {
 	// that match the given outcome string (e.g. "recoverable", "blocked").
 	// Used by CheckBudget (US-J05) to enforce per-(tool,class) retry ceilings.
 	CountOutcome(ctx context.Context, runID, toolName string, outcome tools.Outcome) (int, error)
+
+	// AggregateForPromotion returns grouped failure statistics for tool_attempts
+	// rows with outcome in ('recoverable', 'blocked') newer than sinceDays days,
+	// filtered to groups with at least minOccurrences occurrences, ordered by
+	// count DESC. Used by the Phase-N lesson promotion pipeline (US-N01).
+	AggregateForPromotion(ctx context.Context, minOccurrences int, sinceDays int) ([]LessonCandidate, error)
 }
 
 // WarningRow is one aggregated failure row returned by WarningsReader.Warnings.
