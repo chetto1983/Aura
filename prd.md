@@ -1165,6 +1165,71 @@ If the answer is unclear, the module is not ready to move.
 
 ---
 
+## 6.5. Status Checklist
+
+Snapshot at **2026-05-16**. The inline closure notes inside each phase (§7) are the
+canonical evidence; this table is the at-a-glance overview. Three states:
+
+- ✅ **closed** — gate met, in production, commits on master
+- 🟡 **in-flight** — Ralph queue active or planning underway
+- ⬜ **open** — scaffolded only, not started
+
+### 7.1 Phase status
+
+| Phase | Status | Closed | Commits / Stories | Notes |
+| --- | --- | --- | --- | --- |
+| **1** — Stabilize the Map | ✅ | early 2026-05 | dir merge 49→22 | Validated by §4 module map being the live shape; no import cycles |
+| **1A** — Persist Run/Event Foundation | ✅ | early 2026-05 | `runs`, `run_events`, `run_outbox` tables in `internal/db/migrations` | mig v1-v3 |
+| **1B** — Identity + Capability Grants | ✅ | early 2026-05 | `principals`, `channel_accounts`, `actors`, `grants` tables | mig v6-v7; `internal/api/auth` + `internal/identity` wired |
+| **1C** — Question Gate | ✅ | 2026-05-16 | `chat_questions` mig v11 + `internal/storage/runs/questions.go` + Telegram resume wiring | commit `1584a8fa` |
+| **2** — Protect Telegram | ✅ | 2026-05-15 | record/replay fixture harness | `internal/channels/telegram/fixture` |
+| **3** — Move Channels Behind Chat | ✅ | 2026-05-15 (Telegram-streaming arc) | `internal/channels/{telegram,web,silent,cron}` + Hub adapter | post-Wave 3.0 chathub merge |
+| **4** — Collapse Agent Runtime | ✅ | 2026-05-15 (Runner-removal arc) | US-G01..G07 — `agent.Runner` deleted, `agent.Run` unico | |
+| **5** — Consolidate Tools | ✅ | 2026-05-15 | US-I01..I05 — commits `009639ae..28ae9324` | tools/registry consolidation |
+| **6** — Tool Experience Loop | ✅ in-scope | 2026-05-16 | US-J01..J06 — commits `73ddea04..fa7d4559` | `tool_attempts` table + ToolObservation contract + retry budgets. **Lesson promotion deferred** |
+| **7A** — Compact Archive Hygiene | ✅ | 2026-05-16 | US-K01..K05 — `9d74809d..3a777e36` | role=tool excluded from compact archive |
+| **7B** — Typed Collection Registry | ✅ | 2026-05-16 | US-L01..L06 — `1a6a609a..13b66d7e` | Collection enum + score components + follow-up handles + SourceID filter |
+| **7C** — Projection Freshness Registry | 🟡 in-flight | — | Phase-M queue: US-M01 shipped, US-M02..M04 queued | Ralph background; `projection_state` table + content_hash drift + degraded_read annotations |
+| **7D** — User/Operational Memory typed tiers | ⬜ | — | scaffolded enum in `collections.go` US-L01 | wire `KindUserMemory` + `KindOperational` as first-class writers (Mem0/Letta typed-tier pattern) |
+| **7E** — Source span/byte offsets | ⬜ | — | — | per audit `docs/phase07b-current-types-audit-2026-05-16.md §G.2.3` |
+| **7F** — Wiki frontmatter schema/prompt-version promotion | ⬜ | — | — | per audit `§G.2.4` |
+| **8** — Route Cron + Swarm through Hub (RunGraph) | ⬜ | — | — | policy-driven RunGraph, NodeSpec/EdgeSpec, team_collaboration. **Unlocks "Aura come Claude Code" capability #5 (subagent dispatch dinamico)** |
+| **9** — Memory and Source Discipline | ⬜ | — | — | wiki vs storage clarification, write-policy hardening, SQLite concurrency. **Unlocks "Aura come Claude Code" capability #1 (autonomous write-policy live)** |
+| **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
+
+### 7.2 Outstanding deferrals (lesson promotion + memory active loop)
+
+Three deferrals from closed phases that together implement what the 2026-05-16
+brainstorm called "automiglioramento + memoria industry-level". Each maps to a
+specific package or §5 contract:
+
+| Deferral | Source phase | Owning package (§5) | Maps to capability |
+| --- | --- | --- | --- |
+| **Lesson promotion** (`experience_store → operational_memory → skills`) | Phase 6 (§5.8 line 776-779) | `internal/learning` | End-of-turn reflection + telemetry-driven self-improvement |
+| **Active write-policy** (autonomous user/wiki writes, importance scorer, question gate) | Phase 9 (§5.7 lines 712-725) | `internal/memory` | Autonomous write-policy |
+| **`agent_note` scratchpad + pinned core block** | §5.7 line 678 (`agent_working_memory`) | `internal/memory` runtime continuity | TodoWrite cross-turn checklist |
+
+Together these three close gaps **1 (autonomous write)**, **2 (end-of-turn reflection)**,
+**3 (telemetry-driven improvement)**, and **4 (cross-turn checklist)** from the
+"Aura come Claude Code" brainstorm. Gap **5 (dynamic subagent dispatch)** is owned
+by Phase 8 (RunGraph). Gap **6 (self-coding)** is an explicit non-goal (§12).
+
+### 7.3 Logical next phase after Phase-M (Phase 7C) closes
+
+The high-leverage candidate is the **Phase 6 lesson-promotion deferral**, naming it
+**Phase-N** in the Ralph queue convention. Rationale:
+
+1. `tool_attempts` table + ToolObservation contract are already shipped (Phase 6 backbone)
+2. Combines two of the four open capability gaps (reflection + telemetry) into one slice
+3. Unlocks the §5.7 "promotion workflow": `experience_store → operational_memory → skills`
+4. Manageable size (5-7 atomic stories) because foundations exist
+5. Validates `internal/learning` as a real package before Phase 9 promotes write-policy further
+
+After Phase-N, the natural progression is Phase 9 (write-policy hardening) → Phase 8
+(RunGraph subagent dispatch) → Phase 7D-F (typed memory tiers + frontmatter promotion).
+
+---
+
 ## 7. Migration Strategy
 
 The refactor uses a strangler approach.
