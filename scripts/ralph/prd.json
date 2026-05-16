@@ -43,7 +43,7 @@
         "Single atomic commit prefix: feat(chat): wire ChannelSwarm + Router.WaitForRun (US-R02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1479 'child actor grants cannot exceed parent authority'. Master plan §3 D8 'swarm sub-task = InboundMessage{Channel:swarm, Mode:silent, ChannelData: {parent_run_id, assignment_id}}; Manager raccoglie via Router.WaitForRun(runID)'. Memory feedback_minipc_cpu_budget: WaitForRun poll interval >= 200ms (no busy loop)."
     },
     {

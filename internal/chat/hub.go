@@ -89,8 +89,9 @@ type Hub struct {
 	outbound     map[outboundKey][]OutboundAdapter
 	logger       *slog.Logger
 	cancels      sync.Map // RunID → context.CancelFunc; used by /stop
-	seqCounter   atomic.Int64
-	threadStatus sync.Map // ThreadID → RunStatus; updated after each dispatch
+	seqCounter    atomic.Int64
+	threadStatus  sync.Map // ThreadID → RunStatus; updated after each dispatch
+	completedRuns sync.Map // RunID → completedRunEntry; consumed by WaitForRun
 }
 
 // ThreadRunStatus returns the most recent run status for the given thread.
@@ -313,6 +314,13 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		}
 	}
 
+	// Store swarm run result for WaitForRun when dispatch returns (any path).
+	defer func() {
+		if msg.Channel == ChannelSwarm && run != nil {
+			h.storeCompletedRun(run)
+		}
+	}()
+
 	runCtx, cancel := context.WithCancel(ctx)
 	runCtx = identity.WithRunID(runCtx, run.ID)
 	if recorder, ok := h.lifecycle.(identity.AuthorizationDenialRecorder); ok {
@@ -331,6 +339,19 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		Payload: map[string]any{"principal_id": msg.PrincipalID, "thread_id": msg.ThreadID, "channel": string(msg.Channel)},
 	}); err != nil {
 		h.logger.Warn("chat: emit run_started failed", "run_id", runID, "err", err)
+	}
+
+	if msg.Channel == ChannelSwarm {
+		if authErr := h.authorizeSwarmDispatch(ctx, msg, actorID); authErr != nil {
+			now := time.Now().UTC()
+			run.CompletedAt = &now
+			run.Status = RunStatusFailed
+			run.LastError = "swarm_dispatch_denied"
+			_ = emit(OutboundEvent{Type: EventError, Payload: map[string]any{"error": "swarm_dispatch_denied"}})
+			_ = emit(OutboundEvent{Type: EventDone, Payload: map[string]any{"status": string(run.Status)}})
+			h.threadStatus.Store(run.ThreadID, run.Status)
+			return run, authErr
+		}
 	}
 
 	err := h.loop.Run(runCtx, run, msg, emit)
