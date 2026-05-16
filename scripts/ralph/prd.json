@@ -22,7 +22,7 @@
         "Single atomic commit prefix: feat(tools): propose_patch action-dispatch tool (US-S01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1471 'allows future write-capable workers only through proposal or workflow gates'. Re-use existing proposed_updates table from Phase-O/Phase-N flows. Phase-L oneOf schema template from action_error.go."
     },
     {

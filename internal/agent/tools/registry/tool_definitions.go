@@ -1,5 +1,25 @@
 package tools
 
+func (t *ProposePatchTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		VisibilityTier: VisibilityActiveTurn,
+		Examples: []ToolCallExample{
+			{
+				Description: "Propose a wiki page edit for operator review.",
+				Arguments: map[string]any{
+					"action":         "wiki",
+					"target_slug":    "home",
+					"body":           "# Home\nUpdated overview.",
+					"change_summary": "Added updated overview section.",
+				},
+			},
+		},
+	}
+}
+
 func (t *SearchMemoryTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		Name:          t.Name(),

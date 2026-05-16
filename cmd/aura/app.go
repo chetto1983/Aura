@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
-	"github.com/aura/aura/internal/agentnote"
-	"github.com/aura/aura/internal/learning"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
-	"github.com/aura/aura/internal/agent/tools/attempts"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
+	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
@@ -28,6 +27,7 @@ import (
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/identity"
+	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
 	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
@@ -530,6 +530,7 @@ func newApp(
 		return nil, fmt.Errorf("creating run store: %w", err)
 	}
 	deps.RunStore = runStore
+	deps.AttemptsRepo = attempts.NewSQLiteRepo(pool)
 
 	// ---- Budget tracker -----------------------------------------------------
 	deps.Budget = budget.NewTracker(budget.Config{
@@ -720,6 +721,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// RecallUserMemoryTool — surfaces approved user facts/preferences from Phase-O pipeline.
 	if tool := tools.NewRecallUserMemoryTool(a.deps.MemoryStore); tool != nil {
 		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
+	// ProposePatchTool — write_proposal subagent mutation gate (Phase-S US-S01).
+	// ALL writes are review-gated; proposals land in proposed_updates with status=pending.
+	if tool := tools.NewProposePatchTool(tools.NewSQLPatchProposalStore(a.deps.SchedDB.DB())); tool != nil {
 		a.deps.Tools.Register(tool)
 	}
 	// AgentNoteTool — per-conversation scratchpad for working memory (Phase-P, capability #4).
