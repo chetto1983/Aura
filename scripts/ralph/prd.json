@@ -126,7 +126,7 @@
         "Single atomic commit prefix: docs(planning): Phase 7B closure + audit refresh (US-L06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Pattern: Phase-K US-K05. Use `git add -f` for .planning/* (gitignored). DO NOT re-paste the research-doc content — cite docs/phase07b-*-2026-05-16.md by path."
     }
   ]

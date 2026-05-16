@@ -1397,6 +1397,8 @@ Gate:
 
 **Phase 7A closed 2026-05-16 (compact archive hygiene — role=tool exclusion from compact_memory_documents). Phase 7B-F remain scaffolded.** US-K01..K04 shipped (commits 9d74809d, cfda6bee, 43504082, 7ebbf083, 770eed0a).
 
+**Phase 7B closed 2026-05-16 (typed collection registry — typed enum + score components + follow-up handles + SourceID filter). Phase 7C-F remain scaffolded.** US-L01..L05 shipped (commits 1a6a609a, 92e446fb, ca6a86e3, bb0ed864, 508b32a1). Deferrals to 7C/7D: freshness registry (G.2.1), user/operational memory (G.2.2), span offsets (G.2.3), frontmatter promotion (G.2.4).
+
 Goal: retrieval stops being one broad memory soup.
 
 Steps:
