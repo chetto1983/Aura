@@ -45,7 +45,7 @@
         "Single atomic commit prefix: feat(tools): agent_note action-dispatch tool (US-P02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Phase-L oneOf schema pattern (commit 7ccdca33) is the template for action-dispatch tools — re-use ActionDispatchOneOf helper from internal/agent/tools/registry/action_error.go."
     },
     {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/learning"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -706,6 +707,21 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// RecallUserMemoryTool — surfaces approved user facts/preferences from Phase-O pipeline.
 	if tool := tools.NewRecallUserMemoryTool(a.deps.MemoryStore); tool != nil {
 		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
+	// AgentNoteTool — per-conversation scratchpad for working memory (Phase-P, capability #4).
+	// The conversationIDProvider reads from context; US-P03 will set the value via
+	// tools.WithConversationID before each tool dispatch in the agent loop.
+	if tool := tools.NewAgentNoteTool(
+		agentnote.NewStore(a.deps.SchedDB.DB()),
+		func(ctx context.Context) (string, error) {
+			id := tools.ConversationIDFromContext(ctx)
+			if id == "" {
+				return "", fmt.Errorf("agent_note: conversation ID not in context")
+			}
+			return id, nil
+		},
+	); tool != nil {
 		a.deps.Tools.Register(tool)
 	}
 

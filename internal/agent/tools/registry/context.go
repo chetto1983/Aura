@@ -11,6 +11,7 @@ import (
 // recipient) read it via UserIDFromContext; tools that don't simply
 // ignore it.
 type userIDKey struct{}
+type conversationIDKey struct{}
 type allowedToolNamesKey struct{}
 
 // WithUserID returns a context that carries the caller's Telegram user
@@ -28,6 +29,25 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 // call rather than guessing.
 func UserIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(userIDKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithConversationID returns a context carrying the current conversation ID
+// for tool dispatch. Set by the agent loop before each tool execution round;
+// read by AgentNoteTool via ConversationIDFromContext.
+func WithConversationID(ctx context.Context, conversationID string) context.Context {
+	if conversationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, conversationIDKey{}, conversationID)
+}
+
+// ConversationIDFromContext returns the conversation ID stored by WithConversationID.
+// Returns empty string when not set.
+func ConversationIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(conversationIDKey{}).(string); ok {
 		return v
 	}
 	return ""

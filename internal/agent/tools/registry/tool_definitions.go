@@ -61,6 +61,25 @@ func (t *RecallUserMemoryTool) Definition() ToolDefinition {
 	}
 }
 
+func (t *AgentNoteTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		IdempotentHint: false,
+		VisibilityTier: VisibilityActiveTurn,
+		Examples: []ToolCallExample{
+			{
+				Description: "Record a working plan for the current conversation.",
+				Arguments: map[string]any{
+					"action":  "set",
+					"content": "TODO:\n- verify X\n- summarize Y\n- report Z",
+				},
+			},
+		},
+	}
+}
+
 func (t *CreateDOCXTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		Name:        t.Name(),
