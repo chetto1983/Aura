@@ -63,7 +63,7 @@
         "Single atomic commit prefix: feat(learning): WriteApprovedUserFact -> compact_memory_documents kind=user_memory (US-O03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 705 'source_corpus -> knowledge_wiki via ingest or curated synthesis; conversation_archive -> user/project via validated consolidation or question flow'. Phase 7B US-L01 declared CollectionUserMemory scaffold — this story wires it. Phase-N US-N03 template (approval-triggered writer with freshness fields)."
     },
     {

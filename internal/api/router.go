@@ -191,6 +191,11 @@ type Deps struct {
 	// proposals (Phase-N / US-N03). Optional — when nil, approval still
 	// flips the status but skips the compact_memory_documents write.
 	OperationalMemory *memoryindex.Store
+
+	// UserMemory backs WriteApprovedUserFact for user_memory proposals
+	// (Phase-O / US-O03). Optional — when nil, approval still flips the
+	// status but skips the compact_memory_documents write.
+	UserMemory *memoryindex.Store
 }
 
 // installTimeout caps how long a single skills install (npx skills add)

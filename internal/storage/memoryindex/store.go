@@ -19,6 +19,7 @@ const (
 	KindSource      = string(CollectionSource)
 	KindArchive     = string(CollectionArchive)
 	KindProposal    = string(CollectionProposal)
+	KindUserMemory  = string(CollectionUserMemory)
 	KindOperational = string(CollectionOperational)
 )
 

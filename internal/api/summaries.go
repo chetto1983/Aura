@@ -246,6 +246,22 @@ func applyApprovedSummary(ctx context.Context, deps Deps, proposal summarizer.Pr
 		}
 		return
 	}
+	// User memory proposals are written to compact_memory_documents
+	// via learning.WriteApprovedUserFact (Phase-O / US-O03).
+	if proposal.Kind == "user_memory" {
+		if deps.UserMemory != nil {
+			lp := learning.Proposal{
+				Kind:          proposal.Kind,
+				Fact:          proposal.Fact,
+				SignatureHash: proposal.SignatureHash,
+				Category:      proposal.Category,
+			}
+			if err := learning.WriteApprovedUserFact(ctx, deps.UserMemory, lp); err != nil {
+				deps.Logger.Warn("summaries approve: write user fact failed", "id", proposal.ID, "error", err)
+			}
+		}
+		return
+	}
 	// Apply via AutoApplier if a wiki writer is wired. The status flip
 	// happens first so concurrent approve/reject requests cannot both apply.
 	if !summarizer.IsWikiAction(proposal.Action) {

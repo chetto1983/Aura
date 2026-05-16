@@ -20,10 +20,10 @@ const (
 	// summariser, stored in compact_memory_documents with Kind == KindProposal.
 	CollectionProposal Collection = "proposal"
 
-	// CollectionUserMemory is scaffolded — wired in Phase 7C/7D.
-	// Today user facts live inside CollectionArchive (raw turns) and
-	// CollectionProposal (pending summaries). A first-class user-memory layer
-	// with its own table and retrieval path is deferred.
+	// CollectionUserMemory is wired Phase-O via approved proposed_updates.
+	// User facts promoted through proposed_updates(kind='user_memory') are
+	// written to compact_memory_documents by learning.WriteApprovedUserFact
+	// and surfaced via the recall_user_memory tool.
 	CollectionUserMemory Collection = "user_memory"
 
 	// CollectionOperational stores validated operational lessons (repeated tool
@@ -86,11 +86,11 @@ var Registry = map[Collection]CollectionDescriptor{
 		StorageBackend: "proposed_updates",
 	},
 	CollectionUserMemory: {
-		Kind:        CollectionUserMemory,
-		Label:       "User Memory",
-		Description: "scaffolded — wired in Phase 7C/7D. User facts and preferences will get a first-class layer separate from archive/proposal.",
-		DefaultMode: RetrievalHybrid,
-		// StorageBackend deliberately empty until Phase 7C defines the table.
+		Kind:           CollectionUserMemory,
+		Label:          "User Memory",
+		Description:    "wired Phase-O via approved proposed_updates. Validated user facts and preferences stored in compact_memory_documents with Kind=user_memory.",
+		DefaultMode:    RetrievalHybrid,
+		StorageBackend: "compact_memory_documents",
 	},
 	CollectionOperational: {
 		Kind:           CollectionOperational,

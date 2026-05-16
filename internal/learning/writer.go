@@ -8,15 +8,17 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
-// Proposal is the subset of a proposed_updates row needed by WriteApprovedLesson.
+// Proposal is the subset of a proposed_updates row needed by the writer functions.
 // For operational_memory proposals: ToolName is stored in target_slug and
 // ErrorClass is stored in category by the SQLProposalStore adapter.
+// For user_memory proposals: Category holds the triage category (person/preference/fact/todo).
 type Proposal struct {
 	Kind          string
 	Fact          string
 	SignatureHash string
 	ToolName      string
 	ErrorClass    string
+	Category      string
 }
 
 // WriteApprovedLesson writes an approved operational_memory proposal to
