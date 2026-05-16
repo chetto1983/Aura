@@ -104,7 +104,7 @@
         "Single atomic commit prefix: feat(memoryindex): SourceID filter for chunk-to-parent expansion (US-L05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Audit §E.2 / §G.1.4 — the SourceID column is already populated at rebuild.go:156; only Filter exposure is missing. Audit explicitly calls out 'not currently exposed via Filter; only Kinds/ChatID are filterable, store.go:52-56' — that's the single fix."
     },
     {

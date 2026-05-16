@@ -290,6 +290,9 @@ type fakeCompactMemorySearch struct {
 func (f fakeCompactMemorySearch) Search(_ context.Context, _ string, filter memoryindex.Filter) ([]memoryindex.Document, error) {
 	var out []memoryindex.Document
 	for _, doc := range f.docs {
+		if filter.SourceID != "" && doc.SourceID != filter.SourceID {
+			continue
+		}
 		if len(filter.Kinds) > 0 {
 			match := false
 			for _, kind := range filter.Kinds {
@@ -418,6 +421,42 @@ func sameStringSetForTools(got, want []string) bool {
 		seen[value]--
 	}
 	return true
+}
+
+func TestSearchMemoryToolSourceIDFilter(t *testing.T) {
+	srcAlpha := memoryindex.Document{
+		ID:       "source:src_alpha#page=1",
+		Kind:     memoryindex.KindSource,
+		Title:    "alpha-doc.txt",
+		Body:     "alpha shared content",
+		Handle:   "source:src_alpha#page=1",
+		SourceID: "src_alpha",
+		Score:    1,
+	}
+	srcBeta := memoryindex.Document{
+		ID:       "source:src_beta#page=1",
+		Kind:     memoryindex.KindSource,
+		Title:    "beta-doc.txt",
+		Body:     "beta shared content",
+		Handle:   "source:src_beta#page=1",
+		SourceID: "src_beta",
+		Score:    1,
+	}
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{srcAlpha, srcBeta}})
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"query":     "shared content",
+		"scope":     "sources",
+		"source_id": "src_alpha",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "src_alpha") {
+		t.Fatalf("expected src_alpha in output:\n%s", out)
+	}
+	if strings.Contains(out, "src_beta") {
+		t.Fatalf("src_beta should be filtered out:\n%s", out)
+	}
 }
 
 func writeMemoryTestPage(t *testing.T, dir string, page *wiki.Page) {

@@ -131,6 +131,10 @@ func (t *SearchMemoryTool) Parameters() map[string]any {
 				"type":        "integer",
 				"description": "Restrict conversation-archive results to this chat.",
 			},
+			"source_id": map[string]any{
+				"type":        "string",
+				"description": "Optional: scope results to chunks of this source (use the src_xxx ID from an earlier hit to walk the same document).",
+			},
 		},
 		"required": []string{"query"},
 	}
@@ -150,6 +154,7 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	limit := intArg(args, "limit", searchMemoryDefaultLimit, 1, searchMemoryMaxLimit)
 	chatID := int64Arg(args, "chat_id")
+	sourceID := stringArg(args, "source_id")
 	searchCtx, cancel := t.searchContext(ctx)
 	defer cancel()
 
@@ -171,7 +176,7 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 		compactKinds = append(compactKinds, memoryindex.KindProposal)
 	}
 	if len(compactKinds) > 0 {
-		compactResults, compactWarnings := t.searchCompact(searchCtx, query, compactKinds, chatID, limit)
+		compactResults, compactWarnings := t.searchCompact(searchCtx, query, compactKinds, chatID, sourceID, limit)
 		results = append(results, compactResults...)
 		warnings = append(warnings, compactWarnings...)
 	}
@@ -272,14 +277,15 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 	return out, nil
 }
 
-func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kinds []string, chatID int64, limit int) ([]memoryResult, []string) {
+func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kinds []string, chatID int64, sourceID string, limit int) ([]memoryResult, []string) {
 	if t.compact == nil {
 		return nil, []string{"compact memory index unavailable"}
 	}
 	docs, err := t.compact.Search(ctx, query, memoryindex.Filter{
-		Kinds:  kinds,
-		ChatID: chatID,
-		Limit:  limit,
+		Kinds:    kinds,
+		ChatID:   chatID,
+		SourceID: sourceID,
+		Limit:    limit,
 	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {

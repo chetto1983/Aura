@@ -53,9 +53,10 @@ type Document struct {
 }
 
 type Filter struct {
-	Kinds  []string
-	ChatID int64
-	Limit  int
+	Kinds    []string
+	ChatID   int64
+	Limit    int
+	SourceID string
 }
 
 type VectorReport struct {
@@ -522,6 +523,10 @@ func filterWhere(filter Filter) (string, []any) {
 	if filter.ChatID > 0 {
 		clauses = append(clauses, "(d.kind <> ? OR d.chat_id = ?)")
 		args = append(args, KindArchive, filter.ChatID)
+	}
+	if filter.SourceID != "" {
+		clauses = append(clauses, "d.source_id = ?")
+		args = append(args, filter.SourceID)
 	}
 	if len(clauses) == 0 {
 		return "", args

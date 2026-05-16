@@ -430,6 +430,58 @@ func TestStorePurgeSourceRespectsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestStoreSourceIDFilter(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	now := time.Now().UTC()
+
+	// 2 sources × 3 pages each = 6 source docs with shared body keyword "shared"
+	for _, pair := range []struct{ srcID, page, extra string }{
+		{"src_alpha", "1", "unique alpha content"},
+		{"src_alpha", "2", "unique alpha content"},
+		{"src_alpha", "3", "unique alpha content"},
+		{"src_beta", "1", "unique beta content"},
+		{"src_beta", "2", "unique beta content"},
+		{"src_beta", "3", "unique beta content"},
+	} {
+		id := "source:" + pair.srcID + "#page=" + pair.page
+		if err := store.Upsert(ctx, Document{
+			ID:        id,
+			Kind:      KindSource,
+			Title:     pair.srcID,
+			Body:      "shared document content " + pair.extra,
+			Handle:    id,
+			SourceID:  pair.srcID,
+			UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("Upsert %s: %v", id, err)
+		}
+	}
+
+	// Filter by src_alpha: must return exactly 3 docs, all from src_alpha
+	alphaHits, err := store.Search(ctx, "shared document content", Filter{SourceID: "src_alpha", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search SourceID=src_alpha: %v", err)
+	}
+	if len(alphaHits) != 3 {
+		t.Fatalf("expected 3 hits for src_alpha, got %d: %#v", len(alphaHits), alphaHits)
+	}
+	for _, h := range alphaHits {
+		if h.SourceID != "src_alpha" {
+			t.Errorf("hit SourceID = %q, want src_alpha", h.SourceID)
+		}
+	}
+
+	// Empty SourceID is a no-op: should return all 6
+	allHits, err := store.Search(ctx, "shared document content", Filter{Limit: 10})
+	if err != nil {
+		t.Fatalf("Search empty SourceID: %v", err)
+	}
+	if len(allHits) != 6 {
+		t.Fatalf("expected 6 hits with no SourceID filter, got %d: %#v", len(allHits), allHits)
+	}
+}
+
 func sameStringSet(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
