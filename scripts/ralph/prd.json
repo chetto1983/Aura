@@ -23,7 +23,7 @@
         "Single atomic commit prefix: feat(agentnote): agent_notes table + Store API (US-P01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Pattern: Phase-M US-M01 template (pure types + storage + tests, no consumers). Verify next migration version via grep on registered slice — Phase 7C added v12 and v13; Phase-N may have added v14; this story registers v15 OR the next available."
     },
     {

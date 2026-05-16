@@ -30,6 +30,7 @@ var registered = []Migration{
 	{Version: 12, Name: "add_projection_state", Up: addProjectionState},
 	{Version: 13, Name: "add_compact_memory_freshness_columns", Up: addCompactMemoryFreshnessColumns},
 	{Version: 14, Name: "add_operational_memory_proposal_columns", Up: addOperationalMemoryProposalColumns},
+	{Version: 15, Name: "add_agent_notes", Up: addAgentNotes},
 }
 
 type columnDef struct {
@@ -467,6 +468,12 @@ CREATE TABLE IF NOT EXISTS projection_state (
   health_reason        TEXT NOT NULL DEFAULT '',
   version              INTEGER NOT NULL DEFAULT 1,
   updated_at           INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS agent_notes (
+  conversation_id TEXT PRIMARY KEY,
+  content         TEXT NOT NULL DEFAULT '',
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
 );
 `
 
@@ -1210,6 +1217,20 @@ func addOperationalMemoryProposalColumns(ctx context.Context, tx *sql.Tx) error 
 		{Name: "kind", SQL: "TEXT NOT NULL DEFAULT 'wiki'"},
 		{Name: "signature_hash", SQL: "TEXT NOT NULL DEFAULT ''"},
 	})
+}
+
+func addAgentNotes(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS agent_notes (
+  conversation_id TEXT PRIMARY KEY,
+  content         TEXT NOT NULL DEFAULT '',
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add agent_notes: %w", err)
+	}
+	return nil
 }
 
 func parseStoredTime(raw string) (time.Time, error) {
