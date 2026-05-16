@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(swarm): NodeSpec + HubBridge adapter (US-R01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1463 'defines each child as a bounded NodeSpec with goal, instruction, curated context, tool/capability grant, model/provider when relevant, budgets, output schema, artifact policy, risk tier, and allowed spawn depth'. This slice covers Goal/Instruction/ToolAllowlist/Budget/RiskTier subset (read_only only). Memory feedback_minipc_cpu_budget enforces BudgetSecs <= 300."
     },
     {

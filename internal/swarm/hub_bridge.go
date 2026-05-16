@@ -2,9 +2,11 @@ package swarm
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/chat"
+	"github.com/aura/aura/internal/identity"
 )
 
 // HubBridge implements AgentRunner by dispatching agent tasks through a
@@ -47,4 +49,39 @@ func (b *HubBridge) Run(ctx context.Context, task agent.Task) (agent.Result, err
 	}
 	text, _ := run.Metadata["final_text"].(string)
 	return agent.Result{Content: text}, err
+}
+
+// Dispatch is the NodeSpec-based one-way dispatch for the Phase 8 read-only
+// fanout slice. It validates the spec, builds a silent InboundMessage with
+// ChannelData carrying all NodeSpec fields, calls hub.ReceiveMessage, and
+// returns the child run ID immediately — it does NOT wait for completion
+// (collect is a separate step via Router.WaitForRun in US-R02).
+func (b *HubBridge) Dispatch(ctx context.Context, spec NodeSpec, principal identity.Principal) (string, error) {
+	if err := spec.Validate(); err != nil {
+		return "", err
+	}
+	msg := chat.InboundMessage{
+		Channel:     chat.ChannelSwarm,
+		PrincipalID: principal.ID,
+		Text:        spec.Goal,
+		Mode:        chat.DeliveryModeSilent,
+		ParentRunID: spec.ParentRunID,
+		ChannelData: map[string]any{
+			"parent_run_id":  spec.ParentRunID,
+			"assignment_id":  spec.AssignmentID,
+			"instruction":    spec.Instruction,
+			"tool_allowlist": spec.ToolAllowlist,
+			"max_iterations": spec.MaxIterations,
+			"max_tool_calls": spec.MaxToolCalls,
+			"budget_secs":    spec.BudgetSecs,
+		},
+	}
+	run, err := b.hub.ReceiveMessage(ctx, msg)
+	if err != nil {
+		return "", err
+	}
+	if run == nil {
+		return "", errors.New("swarm: hub returned nil run for dispatch")
+	}
+	return run.ID, nil
 }
