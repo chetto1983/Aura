@@ -2,6 +2,8 @@ package telegramadapter
 
 import (
 	"testing"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 // --- formatAskUserQuestion ---
@@ -149,6 +151,69 @@ func TestAskUserSelectedOptionIDs(t *testing.T) {
 	}
 	if got := askUserSelectedOptionIDs("free text", opts); len(got) != 0 {
 		t.Fatalf("free-text selected ids = %v, want none", got)
+	}
+}
+
+// --- prepareAskUserResumeInput ---
+
+func TestPrepareAskUserResumeInputUsesDurablePendingWithoutToolCall(t *testing.T) {
+	resume, ok := prepareAskUserResumeInput("1", nil, []string{"Aura", "Gamma"}, "clarification", true)
+	if !ok {
+		t.Fatal("prepareAskUserResumeInput returned ok=false, want durable pending resume")
+	}
+	if resume.HasPendingCall {
+		t.Fatal("HasPendingCall = true, want false for post-restart durable question")
+	}
+	if resume.Content != "Aura" {
+		t.Fatalf("Content = %q, want Aura", resume.Content)
+	}
+	if len(resume.SelectedOptionIDs) != 1 || resume.SelectedOptionIDs[0] != "1" {
+		t.Fatalf("SelectedOptionIDs = %v, want [1]", resume.SelectedOptionIDs)
+	}
+	if resume.Kind != "clarification" {
+		t.Fatalf("Kind = %q, want clarification", resume.Kind)
+	}
+}
+
+func TestPrepareAskUserResumeInputRejectsDurableOutOfRangeReply(t *testing.T) {
+	resume, ok := prepareAskUserResumeInput("3", nil, []string{"Aura", "Gamma"}, "clarification", true)
+	if !ok {
+		t.Fatal("prepareAskUserResumeInput returned ok=false, want durable pending resume")
+	}
+	if !resume.Rejected {
+		t.Fatal("Rejected = false, want true")
+	}
+	if !containsSubstring(resume.RejectMessage, "1..2") {
+		t.Fatalf("RejectMessage = %q, want range 1..2", resume.RejectMessage)
+	}
+}
+
+func TestPrepareAskUserResumeInputPrefersPendingToolCallOptions(t *testing.T) {
+	messages := []llm.Message{
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID:   "ask-1",
+			Name: "ask_user",
+			Arguments: map[string]any{
+				"kind":    "clarification",
+				"options": []any{"JSON", "CSV"},
+			},
+		}}},
+	}
+	resume, ok := prepareAskUserResumeInput("2", messages, []string{"Aura", "Gamma"}, "clarification", true)
+	if !ok {
+		t.Fatal("prepareAskUserResumeInput returned ok=false, want pending tool call resume")
+	}
+	if !resume.HasPendingCall {
+		t.Fatal("HasPendingCall = false, want true")
+	}
+	if resume.CallID != "ask-1" {
+		t.Fatalf("CallID = %q, want ask-1", resume.CallID)
+	}
+	if resume.Content != "CSV" {
+		t.Fatalf("Content = %q, want CSV", resume.Content)
+	}
+	if len(resume.SelectedOptionIDs) != 1 || resume.SelectedOptionIDs[0] != "2" {
+		t.Fatalf("SelectedOptionIDs = %v, want [2]", resume.SelectedOptionIDs)
 	}
 }
 

@@ -66,6 +66,7 @@ type LifecycleStore interface {
 }
 
 type questionLifecycleStore interface {
+	GetQuestion(ctx context.Context, id string) (runstore.Question, error)
 	RecordQuestionRequested(ctx context.Context, params runstore.RecordQuestionRequestedParams) (runstore.Question, error)
 	RecordQuestionAnswered(ctx context.Context, params runstore.RecordQuestionAnsweredParams) (runstore.Question, error)
 	LatestPendingQuestion(ctx context.Context, threadID, channel string) (runstore.Question, bool, error)
@@ -210,15 +211,29 @@ func (h *Hub) RecordQuestionAnswer(ctx context.Context, run *Run, msg InboundMes
 		return errors.New("chat: question answer run is required")
 	}
 	questionID := answer.QuestionID
+	var pending runstore.Question
 	if questionID == "" {
-		pending, ok, err := store.LatestPendingQuestion(ctx, msg.ThreadID, string(msg.Channel))
+		found, ok, err := store.LatestPendingQuestion(ctx, msg.ThreadID, string(msg.Channel))
 		if err != nil {
 			return err
 		}
 		if !ok {
 			return runstore.ErrQuestionNotFound
 		}
+		pending = found
 		questionID = pending.ID
+	} else {
+		found, err := store.GetQuestion(ctx, questionID)
+		if err != nil {
+			return err
+		}
+		pending = found
+		if pending.Channel != string(msg.Channel) {
+			return runstore.ErrQuestionChannelMismatch
+		}
+		if pending.Status != runstore.QuestionStatusWaiting {
+			return runstore.ErrQuestionNotWaiting
+		}
 	}
 	event, err := h.lifecycle.AppendEvent(ctx, runstore.AppendEventParams{
 		RunID:          run.ID,

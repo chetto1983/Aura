@@ -1,39 +1,74 @@
 # Phase01C Plan - Add the Question Gate
 
-Status: self-audited scaffold. Not verified.
+Status: closed E2E on 2026-05-16.
 
 ## Goal
 
 Support clarification and approval without making the agent ask instead of
 think.
 
-## Scope
+## Closed Slice
 
-- Durable `chat_questions` or equivalent question state linked to run events.
-- Events for question/approval requested and answered.
-- `QuestionGate` before risky tool execution and durable memory writes.
-- Narrow structured `request_input` action.
-- Channel replies routed back to the same question id.
+- SQLite `chat_questions` is the canonical pending/answered question state,
+  linked to `run_events` through the question event id.
+- `question_requested` records a durable waiting question with thread, channel,
+  kind, prompt, options, blocking metadata, producer metadata, and expiry /
+  fallback fields.
+- `question_answered` records a correlated answer event and closes the matching
+  question row.
+- The agent loop treats `ask_user` as exclusive: if a model batches `ask_user`
+  with other tools, only `ask_user` is retained/executed and the run pauses.
+- The composed prompt carries the clarification/approval protocol and a fixture
+  table covering ask and no-ask cases.
+- Telegram replies route through the same durable question id. If process-local
+  conversation state is gone after restart, the adapter falls back to the
+  durable pending `chat_questions` row and records the answer before resuming.
+- Late, duplicate, and wrong-channel answers are explicit errors and do not
+  append misleading `question_answered` events.
 
-## Non-Goals
+## Source Files
 
-- Do not add a broad always-loaded question tool.
-- Do not create a Telegram-only approval path.
-- Do not make clear instructions ask needless questions.
+- `D:/Aura/internal/db/migrations/migrations.go`
+- `D:/Aura/internal/db/migrations/migrations_test.go`
+- `D:/Aura/internal/storage/runs/questions.go`
+- `D:/Aura/internal/storage/runs/store_test.go`
+- `D:/Aura/internal/chat/types.go`
+- `D:/Aura/internal/chat/hub.go`
+- `D:/Aura/internal/chat/hub_test.go`
+- `D:/Aura/internal/agent/loop.go`
+- `D:/Aura/internal/agent/executor.go`
+- `D:/Aura/internal/agent/runtime.go`
+- `D:/Aura/internal/agent/pending_ask.go`
+- `D:/Aura/internal/agent/ask_user_test.go`
+- `D:/Aura/internal/agent/ask_user_promptfx_test.go`
+- `D:/Aura/internal/conversation/system_prompt.go`
+- `D:/Aura/internal/channels/telegram/ask_user_resume.go`
+- `D:/Aura/internal/channels/telegram/ask_user_resume_test.go`
+- `D:/Aura/internal/channels/telegram/invocation_builder.go`
+- `D:/Aura/internal/channels/web/chat_service.go`
+- `D:/Aura/internal/channels/web/chat_service_test.go`
+- `D:/Aura/internal/agent/tools/registry/registry.go`
+- `D:/Aura/internal/agent/tools/registry/registry_test.go`
 
 ## PRD Coverage
 
-| PRD Item | Plan Location | Benchmark Location | Source Evidence | Status |
-| --- | --- | --- | --- | --- |
-| Durable question state | this file | `benchmark.md` | `source.md` | planned |
-| Question and approval events | this file | `benchmark.md` | `source.md` | planned |
-| Gate before risky tools/memory | this file | `benchmark.md` | `source.md` | planned |
-| Structured request input | this file | `benchmark.md` | `source.md` | planned |
-| Resume same or correlated run | this file | `benchmark.md` | `source.md` | planned |
+| PRD Item | Implementation | Benchmark | Status |
+| --- | --- | --- | --- |
+| Durable question state | `chat_questions` migration plus `internal/storage/runs/questions.go` | migration/store/hub tests in `benchmark.md` | closed |
+| Question and approval events | `chat.Hub` persists `question_requested` and `question_answered` run events | hub tests assert event counts and causation id | closed |
+| Gate before risky tools/memory | `ask_user` protocol plus runtime exclusive pause prevents later batched tools from executing before approval/clarification | agent loop and prompt contract tests | closed for Phase01C primitive |
+| Structured request input | `ask_user(question, options, kind)` with bounded clarification/approval kinds | agent/tool/prompt tests | closed |
+| Resume same or correlated run | answer runs append `question_answered` with `causation_id=<question_id>` and Telegram durable-pending resume works after store reopen | hub restart test and Telegram resume helper test | closed |
+| Late/duplicate/wrong-channel states | store/hub reject non-waiting and channel-mismatched answers before event append | store and hub duplicate/wrong-channel tests | closed |
+| Live web pipe question persistence | `/api/chat` supplies `ThreadID=web:<user>` so Hub can persist `chat_questions` in production | live `cmd/probe_chat` ask_user probe plus SQL checks on `chat_questions`, `run_events`, and `runs` | closed after falsification fix |
+| ask_user sentinel observability | Registry treats `ErrAwaitingUserInput` as an expected pause, not a tool failure | registry log regression test and final production logs | closed after falsification fix |
 
-## Implementation Gates
+## Non-Goals Preserved
 
-- Clear instructions do not ask needless questions.
-- Missing required slots produce one scoped question.
-- Risky irreversible tool calls produce approval.
-- Question state survives process restart.
+- Do not create a Telegram-only approval path.
+- Do not store question state in cache.
+- Do not make `ask_user` the default way to avoid reasoning; the prompt
+  contract includes clear no-ask cases.
+- Do not run broad Phase 5/6 tool-risk policy redesign inside Phase01C. The
+  closed primitive is the durable question/answer gate and exclusive pause
+  behavior; later tool consolidation can add richer per-tool policy on top.

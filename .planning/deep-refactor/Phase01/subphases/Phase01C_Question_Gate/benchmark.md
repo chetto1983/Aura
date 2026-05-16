@@ -1,9 +1,36 @@
 # Phase01C Benchmark
 
-| Check | Command / Method | Threshold | Actual Result | Status |
+Status: passed after live falsification fix on 2026-05-16.
+
+| Check | Command / Method | Ground Truth / Threshold | Actual Result | Status |
 | --- | --- | --- | --- | --- |
-| Question migration tests | selected migration package | state tables and links present | not run | planned |
-| Agent/tool gate tests | selected agent/tools packages | scoped questions and approvals | not run | planned |
-| Channel reply routing tests | selected chat/channel tests | answer returns to question id | not run | planned |
-| Restart persistence test | repository/integration test | waiting state survives reopen | not run | planned |
-| Full compile/vet/test | `go build ./...`; `go vet ./...`; `go test ./...` | green | not run | planned |
+| Fresh schema supports canonical questions | `go test ./internal/db/migrations -run TestChatQuestionsTableIsUsable -count=1` | Fresh DB can insert a `question_requested` event and linked `chat_questions` row; queried status/kind match `waiting` / `approval` | `ok github.com/aura/aura/internal/db/migrations 1.097s` | passed |
+| Store lifecycle and explicit invalid states | `go test ./internal/storage/runs -run "TestQuestionLifecycleRecordsRequestAndAnswer|TestQuestionAnswerRejectsDuplicateAndWrongChannel" -count=1` | Request row starts waiting; answer row closes it; wrong-channel and duplicate answers return explicit errors | `ok github.com/aura/aura/internal/storage/runs 1.868s` | passed |
+| Hub event E2E and restart survival | `go test ./internal/chat -run "TestReceiveMessage_WithLifecycleStorePersistsQuestionState|TestRecordQuestionAnswerPersistsAnswerEventAndClosesPendingQuestion|TestQuestionStateSurvivesStoreReopenAndNewHub|TestRecordQuestionAnswerRejectsDuplicateWithoutAppendingEvent" -count=1` | Hub records `question_requested`; reopened store/new Hub sees pending state; answer appends exactly one `question_answered` with `causation_id=<question_id>`; duplicate answer appends no second event | `ok github.com/aura/aura/internal/chat 3.121s` | passed |
+| Agent ask gate and prompt contract | `go test ./internal/agent -run "TestRunLoopPausesOnAskUserSentinel|TestRunLoopAskUserExclusiveDiscardsOtherBatchedCalls|TestRunLoopAskUserExclusiveStateHasOnlyAskUserCall|TestPendingAskUserCall|TestAskUserPromptFxContractComplete|TestClarificationProtocol" -count=1` | `ask_user` pauses the loop, later batched calls are discarded, only the pending ask remains in state, pending call detection works, and the prompt contract covers ask/no-ask cases | `ok github.com/aura/aura/internal/agent 1.278s` | passed |
+| Telegram formatting, parsing, and durable-pending resume | `go test ./internal/channels/telegram -run "TestFormatAskUserQuestion|TestParseAskUserReply|TestAskUserSelectedOptionIDs|TestPrepareAskUserResumeInput" -count=1` | Telegram question rendering includes correct options; numeric/free-text answers parse; out-of-range answers reject; durable pending question can resume without an in-memory tool call | `ok github.com/aura/aura/internal/channels/telegram 1.054s` | passed |
+| Telegram package gate | `go test ./internal/telegram ./internal/channels/telegram ./internal/channels/telegram/fixture -count=1` | Telegram bot/channel tests pass, including adapter fixtures and ask_user resume helpers | `ok github.com/aura/aura/internal/telegram 7.614s`; `ok github.com/aura/aura/internal/channels/telegram 0.263s`; `ok github.com/aura/aura/internal/channels/telegram/fixture 1.348s` | passed |
+| Web chat question thread id | `go test ./internal/channels/web -count=1` | `/api/chat` messages carry a stable non-empty web thread id so question persistence is not rejected by the canonical store | `ok github.com/aura/aura/internal/channels/web 1.078s`; regression covered by `TestChatService_HappyPath` and `TestChatService_ThreadIDFallback` | passed |
+| ask_user log classification | `go test ./internal/agent/tools/registry -run TestRegistryExecuteAskUserSentinelIsNotWarn -count=1` | `ask_user` sentinel is logged as expected awaiting input, not as a warning/failure | `ok github.com/aura/aura/internal/agent/tools/registry 2.150s` | passed |
+| Phase01C package gate | `go test ./internal/db/migrations ./internal/storage/runs ./internal/chat ./internal/agent ./internal/agent/tools/registry ./internal/channels/telegram ./internal/channels/web -count=1` | All touched packages pass together, including the web pipe and registry sentinel-log regression | all seven packages `ok`; slowest `internal/agent/tools/registry 48.391s` | passed |
+| Compile gate | `go build ./...` | Repository compiles | exit 0 | passed |
+| Vet gate | `go vet ./...` | Repository vet passes | exit 0 | passed |
+| Full repository test gate | `go test ./... -count=1` | All packages pass after the live falsification repair | all packages `ok`; command exit 0 on final rerun | passed |
+| Containerized Phase01C package gate | `docker compose --profile test run --rm test go test ./internal/db/migrations ./internal/storage/runs ./internal/chat ./internal/agent ./internal/agent/tools/registry ./internal/channels/telegram ./internal/channels/web -count=1` | The same Phase01C package evidence passes inside the compose test image, including web thread id and registry sentinel logging | all seven packages `ok`; command exit 0 | passed |
+| Production container update | `docker compose build aura`; `docker compose up -d --no-deps aura`; `docker compose ps aura --format json` | Rebuilt `aura:local` from current source and restarted only `aura`; service reaches healthy state | image manifest `sha256:66c2024bd9dfc4b96ee64758d7d0a9091fcf1440f9db0f7ed3b14886c2f9b922`; `aura-aura-1` status `Up ... (healthy)` | passed |
+| Live web ask_user falsification probe | Temporary bearer token via existing DB-backed pipe; `go run ./cmd/probe_chat -url http://127.0.0.1:18080/api/chat -db .\data\aura.db -token <temp> -prompt <ask_user-only prompt> -json`; SQL ground truth before/after on `chat_questions`, `run_events`, and `runs` | A direct ask_user probe must not be accepted merely because the model responds. It must create a durable `chat_questions` row with non-empty `thread_id`, `status=waiting`, `kind=approval`; run must be `waiting_for_user`; `question_requested` must exist; token must be revoked | First probe confuted closure: `question_requested` existed but `chat_questions` stayed `0` because web `ThreadID` was empty (`runs: question thread id is required`). After fix: `QUESTIONS_BEFORE=1`, `QUESTIONS_AFTER=2`; latest row `a21b8513|b71e2677b9683e41|web:1148481707|web|approval|waiting|Phase01C live question gate final?|waiting_for_user`; events include `question_requested`; `TOKEN_REVOKED=1` | passed after fix |
+| Production container HTTP and log probe | `curl.exe -fsS http://127.0.0.1:18080/health`; `docker compose logs --since=2m aura` filtered for question-gate failures | `/health` reports alive; ask_user sentinel is not logged as a tool failure; no `persist lifecycle event failed` / `record question requested` errors for the final probe | `/health -> {"status":"alive"}`; final probe logs include `tool awaiting user input` and `agent: ask_user_pause` at info level; no question persistence failure | passed |
+
+## Closure Notes
+
+- The live external Telegram API was not used as a controlled benchmark fixture.
+  Phase01C Telegram proof is deterministic: Telegram adapter tests cover reply
+  rendering, parsing, selected option IDs, rejected replies, durable-pending
+  resume, and byte-parity fixtures. The running container also recorded recent
+  Telegram runs, but there is no scripted live Telegram chat fixture in this
+  slice.
+- A broader unrelated log warning remains outside Phase01C: tool-vector search
+  can warn on Qdrant vector dimension mismatch (`expected dim: 256, got 768`).
+  The Phase01C log probe now scopes to question-gate persistence and ask_user
+  sentinel logging.
+- No CI verification was run because this slice was not pushed.

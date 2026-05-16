@@ -301,6 +301,11 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 	elapsed := time.Since(start).Round(time.Millisecond)
 	if err != nil {
 		if r.logger != nil {
+			var awaitErr *ErrAwaitingUserInput
+			if errors.As(err, &awaitErr) {
+				r.logger.Info("tool awaiting user input", "tool", name, "elapsed", elapsed)
+				return "", err
+			}
 			// Log the error CLASS, not the raw message. Tool error strings
 			// often wrap LLM-controlled values (source IDs, hostnames, paths)
 			// and CLAUDE.md forbids logging those values. The LLM still sees

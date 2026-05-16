@@ -446,3 +446,52 @@
   `tool_calls=0`, and `tokens=8790`.
 - Phase01B parent blocker is closed. CI was not checked because this turn did
   not push.
+
+2026-05-16 - Phase01C durable question gate closed E2E
+
+- Closed Phase01C for the durable question primitive: `chat_questions` stores
+  waiting/answered state; `question_requested` and `question_answered` are
+  persisted as run events; `ask_user` pauses exclusively before later batched
+  tool calls; Telegram answer routing can resume from durable pending question
+  state after process-local memory is gone; duplicate and wrong-channel answers
+  are explicit errors.
+- Verification passed:
+  named migration/store/hub/agent/Telegram question benchmarks; Phase01C
+  package gate; `go build ./...`; `go vet ./...`; final
+  `go test ./... -count=1`; compose test-profile Phase01C package gate;
+  production `aura:local` rebuild/restart; container health `healthy`;
+  `/health={"status":"alive"}`; unauthenticated `/api/health=401`; and fresh
+  logs without warn/error/fatal/panic levels.
+- Closure evidence:
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md`.
+- CI was not checked because this turn did not push.
+
+2026-05-16 - Phase01C falsification repair: live web pipe question persistence
+
+- Re-tested Phase01C by attempting to falsify the actual question-gate
+  contract instead of accepting a generic chat response. The first live
+  `cmd/probe_chat` ask_user probe wrote `question_requested` but failed to
+  create `chat_questions` because `/api/chat` dispatched with an empty
+  `ThreadID`; this invalidated the prior web-pipe closure claim.
+- Fixed the gap: web chat now derives `ThreadID=web:<user>` before Hub
+  dispatch, and the registry logs `ErrAwaitingUserInput` as expected
+  awaiting-input instead of warning-level `tool failed`.
+- Verification passed:
+  `go test ./internal/channels/web -count=1`;
+  `go test ./internal/agent/tools/registry -run TestRegistryExecuteAskUserSentinelIsNotWarn -count=1`;
+  `go test ./internal/db/migrations ./internal/storage/runs ./internal/chat ./internal/agent ./internal/agent/tools/registry ./internal/channels/telegram ./internal/channels/web -count=1`;
+  `go test ./internal/telegram ./internal/channels/telegram ./internal/channels/telegram/fixture -count=1`;
+  `go build ./...`; `go vet ./...`; `go test ./... -count=1`;
+  `docker compose --profile test run --rm test go test ./internal/db/migrations ./internal/storage/runs ./internal/chat ./internal/agent ./internal/agent/tools/registry ./internal/channels/telegram ./internal/channels/web -count=1`;
+  `docker compose build aura`; `docker compose up -d --no-deps aura`;
+  `/health={"status":"alive"}`.
+- Final live web-pipe evidence: `chat_questions` incremented from 1 to 2;
+  latest row
+  `a21b8513|b71e2677b9683e41|web:1148481707|web|approval|waiting|Phase01C live question gate final?|waiting_for_user`;
+  events included `run_started`, `tool_start`, `tool_end`,
+  `question_requested`, `message_done`, `usage`, and `done`; temporary bearer
+  token was revoked.
+- Telegram was tested through deterministic package/fixture coverage and live
+  DB observation of recent Telegram runs. A scripted external Telegram chat
+  fixture is not present in this slice. Unrelated Qdrant tool-vector dimension
+  warnings remain outside Phase01C.

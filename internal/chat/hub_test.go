@@ -714,6 +714,155 @@ func TestRecordQuestionAnswerPersistsAnswerEventAndClosesPendingQuestion(t *test
 	}
 }
 
+func TestQuestionStateSurvivesStoreReopenAndNewHub(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	h := newPersistentHub(t, &recordingLoop{emits: []OutboundEvent{{
+		Type: EventQuestionRequested,
+		Payload: map[string]any{
+			"question": "Which project?",
+			"kind":     "clarification",
+			"options":  []string{"Aura", "Gamma"},
+		},
+	}}, finalStatus: RunStatusWaitingForUser}, store)
+
+	questionRun, err := h.ReceiveMessage(context.Background(), InboundMessage{
+		ID:          "restart-question-inbound",
+		Channel:     ChannelTelegram,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-restart",
+		Text:        "prepare the report",
+		Mode:        DeliveryModeDeferred,
+	})
+	if err != nil {
+		t.Fatalf("question ReceiveMessage: %v", err)
+	}
+
+	reopened, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore reopened: %v", err)
+	}
+	reopenedHub := newPersistentHub(t, &recordingLoop{}, reopened)
+	pending, ok, err := reopenedHub.PendingQuestion(context.Background(), "thread-restart", ChannelTelegram)
+	if err != nil {
+		t.Fatalf("PendingQuestion reopened: %v", err)
+	}
+	if !ok {
+		t.Fatal("pending question not visible after store reopen")
+	}
+	if pending.RunID != questionRun.ID || pending.Kind != "clarification" || !sameStrings(pending.Options, []string{"Aura", "Gamma"}) {
+		t.Fatalf("pending after reopen = %+v", pending)
+	}
+
+	storedQuestionRun, err := reopened.GetRun(context.Background(), questionRun.ID)
+	if err != nil {
+		t.Fatalf("GetRun question run after reopen: %v", err)
+	}
+	if storedQuestionRun.Status != string(RunStatusWaitingForUser) {
+		t.Fatalf("stored question run status = %s, want waiting_for_user", storedQuestionRun.Status)
+	}
+
+	answerRun, created, err := reopened.CreateOrGetRun(context.Background(), runstore.CreateRunParams{
+		ID:          "run-restart-answer",
+		ThreadID:    "thread-restart",
+		PrincipalID: "principal-1",
+		Channel:     string(ChannelTelegram),
+		Status:      string(RunStatusRunning),
+		StartedAt:   time.Date(2026, 5, 16, 9, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrGetRun answer: %v", err)
+	}
+	if !created {
+		t.Fatal("answer run created=false")
+	}
+	if err := reopenedHub.RecordQuestionAnswer(context.Background(), &Run{
+		ID:          answerRun.ID,
+		ThreadID:    answerRun.ThreadID,
+		PrincipalID: answerRun.PrincipalID,
+		Channel:     Channel(answerRun.Channel),
+		Status:      RunStatus(answerRun.Status),
+	}, InboundMessage{
+		ID:       "restart-answer-inbound",
+		Channel:  ChannelTelegram,
+		ThreadID: "thread-restart",
+	}, QuestionAnswer{
+		QuestionID:        pending.ID,
+		SelectedOptionIDs: []string{"1"},
+		FreeText:          "Aura",
+		AnsweredMessageID: "restart-answer-inbound",
+	}); err != nil {
+		t.Fatalf("RecordQuestionAnswer reopened: %v", err)
+	}
+
+	question, err := reopened.GetQuestion(context.Background(), pending.ID)
+	if err != nil {
+		t.Fatalf("GetQuestion after answer: %v", err)
+	}
+	if question.Status != runstore.QuestionStatusAnswered || question.AnswerRunID != answerRun.ID {
+		t.Fatalf("answered question = %+v", question)
+	}
+	assertChatScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND type = 'question_answered' AND causation_id = ?`, 1, answerRun.ID, pending.ID)
+}
+
+func TestRecordQuestionAnswerRejectsDuplicateWithoutAppendingEvent(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	h := newPersistentHub(t, &recordingLoop{emits: []OutboundEvent{{
+		Type: EventQuestionRequested,
+		Payload: map[string]any{
+			"question": "Approve this?",
+			"kind":     "approval",
+		},
+	}}, finalStatus: RunStatusWaitingForUser}, store)
+
+	if _, err := h.ReceiveMessage(context.Background(), InboundMessage{
+		ID:          "duplicate-question-inbound",
+		Channel:     ChannelTelegram,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-duplicate",
+		Text:        "delete this",
+		Mode:        DeliveryModeDeferred,
+	}); err != nil {
+		t.Fatalf("question ReceiveMessage: %v", err)
+	}
+	pending, ok, err := h.PendingQuestion(context.Background(), "thread-duplicate", ChannelTelegram)
+	if err != nil {
+		t.Fatalf("PendingQuestion: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected pending question")
+	}
+	answerRun, created, err := store.CreateOrGetRun(context.Background(), runstore.CreateRunParams{
+		ID:          "run-duplicate-answer",
+		ThreadID:    "thread-duplicate",
+		PrincipalID: "principal-1",
+		Channel:     string(ChannelTelegram),
+		Status:      string(RunStatusRunning),
+		StartedAt:   time.Date(2026, 5, 16, 9, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrGetRun answer: %v", err)
+	}
+	if !created {
+		t.Fatal("answer run created=false")
+	}
+	answer := &Run{
+		ID:          answerRun.ID,
+		ThreadID:    answerRun.ThreadID,
+		PrincipalID: answerRun.PrincipalID,
+		Channel:     Channel(answerRun.Channel),
+		Status:      RunStatus(answerRun.Status),
+	}
+	msg := InboundMessage{ID: "duplicate-answer-inbound", Channel: ChannelTelegram, ThreadID: "thread-duplicate"}
+	payload := QuestionAnswer{QuestionID: pending.ID, FreeText: "approve_once", AnsweredMessageID: msg.ID}
+	if err := h.RecordQuestionAnswer(context.Background(), answer, msg, payload); err != nil {
+		t.Fatalf("RecordQuestionAnswer first: %v", err)
+	}
+	if err := h.RecordQuestionAnswer(context.Background(), answer, InboundMessage{ID: "duplicate-answer-inbound-2", Channel: ChannelTelegram, ThreadID: "thread-duplicate"}, payload); !errors.Is(err, runstore.ErrQuestionNotWaiting) {
+		t.Fatalf("duplicate answer error = %v, want ErrQuestionNotWaiting", err)
+	}
+	assertChatScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND type = 'question_answered' AND causation_id = ?`, 1, answerRun.ID, pending.ID)
+}
+
 func TestReceiveMessage_WithLifecycleStoreRecordsAuthorizationDenial(t *testing.T) {
 	db, store := newLifecycleStore(t)
 	identityStore, err := identity.NewStore(db)

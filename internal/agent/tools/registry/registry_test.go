@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -205,6 +207,40 @@ func TestRegistryExecuteWithoutAuthorizerFailsClosed(t *testing.T) {
 	}
 	if tool.executed {
 		t.Fatal("tool executed without authorizer")
+	}
+}
+
+func TestRegistryExecuteAskUserSentinelIsNotWarn(t *testing.T) {
+	_, identityStore, actor := newRegistryIdentityEnv(t)
+	var logs bytes.Buffer
+	reg := NewRegistry(slog.New(slog.NewJSONHandler(&logs, nil)))
+	reg.Register(&AskUserTool{})
+
+	if _, err := identityStore.CreateGrant(context.Background(), identity.GrantParams{
+		ID:          "grant:test:ask-user",
+		SubjectType: identity.SubjectTypePrincipal,
+		SubjectID:   actor.PrincipalID,
+		Capability:  identity.CapabilityToolExecute,
+		Resource:    identity.ResourceRef{Type: "tool", ID: "ask_user"},
+	}); err != nil {
+		t.Fatalf("create tool grant: %v", err)
+	}
+
+	ctx := identity.WithActorID(identity.WithAuthorizer(context.Background(), identityStore), actor.ID)
+	_, err := reg.Execute(ctx, "ask_user", map[string]any{"question": "Confirm?"})
+	if err == nil {
+		t.Fatal("Execute ask_user returned nil error, want awaiting-user sentinel")
+	}
+	var awaitErr *ErrAwaitingUserInput
+	if !errors.As(err, &awaitErr) {
+		t.Fatalf("Execute error = %T %v, want ErrAwaitingUserInput", err, err)
+	}
+	got := logs.String()
+	if strings.Contains(got, `"level":"WARN"`) || strings.Contains(got, "tool failed") {
+		t.Fatalf("ask_user sentinel logged as failure:\n%s", got)
+	}
+	if !strings.Contains(got, "tool awaiting user input") {
+		t.Fatalf("ask_user sentinel log missing awaiting message:\n%s", got)
 	}
 }
 

@@ -12,13 +12,15 @@ import (
 // router under the run's ID, then returns a Run record with that ID so
 // ChatService can read the buffer back.
 type fakeHub struct {
-	router *Router
-	events []chat.OutboundEvent
-	runID  string
-	err    error
+	router  *Router
+	events  []chat.OutboundEvent
+	runID   string
+	err     error
+	lastMsg chat.InboundMessage
 }
 
 func (h *fakeHub) ReceiveMessage(ctx context.Context, msg chat.InboundMessage) (*chat.Run, error) {
+	h.lastMsg = msg
 	for _, ev := range h.events {
 		ev.RunID = h.runID
 		_ = h.router.Deliver(ctx, ev)
@@ -57,9 +59,30 @@ func TestChatService_HappyPath(t *testing.T) {
 	if reply.Tokens != 42 {
 		t.Fatalf("Tokens = %d", reply.Tokens)
 	}
+	if hub.lastMsg.ThreadID != "web:user-1" {
+		t.Fatalf("ThreadID = %q, want web:user-1", hub.lastMsg.ThreadID)
+	}
 	// Buffer should be dropped after Chat returns.
 	if _, ok := router.buffers["run-happy"]; ok {
 		t.Fatalf("router still holds buffer for completed run")
+	}
+}
+
+func TestChatService_ThreadIDFallback(t *testing.T) {
+	router := NewRouter()
+	hub := &fakeHub{
+		router: router,
+		runID:  "run-anon",
+		events: []chat.OutboundEvent{
+			{Type: chat.EventDone, Payload: map[string]any{"status": "completed"}},
+		},
+	}
+	svc := NewChatService(hub, router)
+	if _, err := svc.Chat(context.Background(), "  ", "hi"); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if hub.lastMsg.ThreadID != "web:anonymous" {
+		t.Fatalf("ThreadID = %q, want web:anonymous", hub.lastMsg.ThreadID)
 	}
 }
 

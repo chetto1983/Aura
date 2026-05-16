@@ -32,15 +32,17 @@ Historical and evidence-only files:
 - Old wave/context plans may contribute requirements and tests, but must be
   re-authored into the PRD phase folders before implementation.
 
-Current next implementation slice:
+Current closure slice:
 
-- `Phase01B closure verification` - closed on 2026-05-15 after the final
-  parent-level verifier for identity authority, denial evidence, fail-closed
-  runtime paths, DB-backed provider secrets, and live chat-marker execution.
+- `Phase01C Question Gate` - closed E2E on 2026-05-16 after live
+  falsification repair: durable `chat_questions`, question request/answer
+  events, exclusive ask_user pause, stable web pipe thread ids, restart-safe
+  Telegram answer routing, repo-wide Go gates, Telegram package/fixture tests,
+  compose test-profile verification, and production web-pipe DB probes.
 - Source folder:
-  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants`.
-- Do not bundle Phase 8 cron RunGraph redesign or full swarm topology redesign
-  into the Phase01B closure verifier.
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate`.
+- Do not bundle Phase 5/6 fine-grained tool approval policy or Phase 8
+  RunGraph/swarm redesign into the closed Phase01C primitive.
 
 Prepared next memory slice:
 
@@ -115,11 +117,13 @@ PhaseNN_Description/
 
 ## Next Operating Step
 
-Current canonical slice: Phase01B is closed for the prior identity/capability
-work after the provider-secret repair and live marker rerun. Select the next
+Current canonical slice: Phase01C is closed for the durable question gate work
+after repo-wide Go gates, Telegram adapter/resume verification, compose
+test-profile verification, production container update, and a live web-pipe
+falsification probe that proved `chat_questions` persistence. Select the next
 phase from the prepared phase folders before editing more code.
 
-Use `$aura-implementation-loop` for the Phase01B closure verifier after
-confirming its benchmark rows. Use `$aura-plan-builder` only when the selected
-phase or sub-phase is still a self-audited scaffold, missing source/plan/
-benchmark coverage, or needs promotion before implementation.
+Use `$aura-plan-builder` when the selected phase or sub-phase is still a
+self-audited scaffold, missing source/plan/benchmark coverage, or needs
+promotion before implementation. Use `$aura-implementation-loop` once a
+bounded slice is operationally ready.

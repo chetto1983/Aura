@@ -2,13 +2,13 @@
 
 Fresh Aura sessions must start here.
 
-Current state as of 2026-05-15:
+Current state as of 2026-05-16:
 
 - The old deep-refactor phase folders were intentionally deleted because they
   had become noisy. Clean planning scaffolds were recreated under
   `D:/Aura/.planning/deep-refactor/` from `D:/Aura/prd.md`.
 - Current git HEAD observed:
-  `7f3c4a37 docs(planning): Phase 5 closure + audit refresh (US-I06)`.
+  `92e446fb feat(memoryindex): tie KindSource/Archive/Proposal to Collection constants (US-L02)`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
@@ -204,9 +204,25 @@ Current state as of 2026-05-15:
 - Phase01B parent can now be treated as closed for the prior identity/capability
   slice. Do not reopen it unless a new regression is found; keep Phase 8
   RunGraph/swarm topology and Phase 7 memory work in their own phase folders.
+- Phase01C durable question gate is closed E2E on 2026-05-16 after a live
+  falsification repair. A first web pipe `ask_user` probe proved that "Aura
+  responds" was insufficient: `question_requested` was written, but
+  `chat_questions` did not persist because `/api/chat` sent an empty thread id.
+  The web chat service now derives `ThreadID=web:<user>`, and `ask_user`
+  sentinel logging is info-level awaiting-input instead of warning-level tool
+  failure. Final live pipe evidence: latest question row
+  `a21b8513|b71e2677b9683e41|web:1148481707|web|approval|waiting|...|waiting_for_user`.
+  Phase01C now has durable `chat_questions`, `question_requested` /
+  `question_answered` run events, ask_user exclusive pause, restart-safe
+  Telegram pending-question resume, explicit duplicate/wrong-channel answer
+  rejection, repo-wide Go gates, Telegram package/fixture tests, production
+  container health, and production DB probes recorded in
+  `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md`.
+  Fine-grained per-tool approval policy for every destructive tool remains a
+  later tool/runtime hardening layer over the closed question primitive.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
-  authority`; the latest observed HEAD is `7f3c4a37`.
+  authority`; the latest observed HEAD is `92e446fb`.
 
 Required first reads:
 
@@ -216,11 +232,13 @@ Required first reads:
 4. `D:/Aura/prd.md`
 5. `D:/Aura/.planning/deep-refactor/INDEX.md`
 6. `D:/Aura/.planning/deep-refactor/Phase01/subphase-summary.md`
-7. `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants/`
+7. `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/`
 8. `D:/Aura/internal/db/migrations/migrations.go`
-9. `D:/Aura/internal/db/migrations/migrations_test.go`
-10. `D:/Aura/internal/api/auth/store.go`
-11. `D:/Aura/internal/identity/store.go`
+9. `D:/Aura/internal/storage/runs/questions.go`
+10. `D:/Aura/internal/chat/hub.go`
+11. `D:/Aura/internal/channels/telegram/invocation_builder.go`
+12. `D:/Aura/internal/channels/web/chat_service.go`
+13. `D:/Aura/internal/agent/tools/registry/registry.go`
 
 Do not rely on chat history. Reconstruct the state from the files above before
 planning or editing. For new work, select the next phase folder from

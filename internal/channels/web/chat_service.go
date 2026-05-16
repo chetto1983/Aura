@@ -3,6 +3,7 @@ package webadapter
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/chat"
@@ -60,6 +61,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 	msg := chat.InboundMessage{
 		Channel:     chat.ChannelWeb,
 		PrincipalID: userID,
+		ThreadID:    webThreadID(userID),
 		Text:        message,
 		Mode:        chat.DeliveryModeDeferred,
 		CreatedAt:   time.Now().UTC(),
@@ -93,4 +95,12 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 		ToolCalls: res.ToolCalls,
 		Tokens:    res.TokensTotal,
 	}, nil
+}
+
+func webThreadID(userID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		userID = "anonymous"
+	}
+	return "web:" + userID
 }

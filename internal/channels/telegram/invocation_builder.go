@@ -101,12 +101,16 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// the inbound text as the tool_result instead of a new user message.
 	addedUserInput := false
 	if ib.hub != nil {
-		if status, ok := ib.hub.ThreadRunStatus(msg.ThreadID); ok && status == chat.RunStatusWaitingForUser {
-			if callID, options, kind, ok2 := agent.PendingAskUserCall(convCtx.Messages()); ok2 {
-				options = askUserDisplayOptions(options, kind)
-				content, rejected, rejectMsg := parseAskUserReply(userText, options)
-				if rejected {
-					if _, sendErr := c.Bot().Send(c.Recipient(), rejectMsg); sendErr != nil {
+		pending, hasDurablePending, pendingErr := ib.hub.PendingQuestion(ctx, msg.ThreadID, msg.Channel)
+		if pendingErr != nil {
+			b.Logger().Warn("ask_user: pending question lookup failed", "user_id", userID, "error", pendingErr)
+		}
+		status, hasThreadStatus := ib.hub.ThreadRunStatus(msg.ThreadID)
+		if hasDurablePending || (hasThreadStatus && status == chat.RunStatusWaitingForUser) {
+			resume, ok := prepareAskUserResumeInput(userText, convCtx.Messages(), pending.Options, pending.Kind, hasDurablePending)
+			if ok {
+				if resume.Rejected {
+					if _, sendErr := c.Bot().Send(c.Recipient(), resume.RejectMessage); sendErr != nil {
 						b.Logger().Warn("ask_user: failed to send reject message", "user_id", userID, "error", sendErr)
 					}
 					// Signal Hub to preserve WaitingForUser status on error.
@@ -114,21 +118,31 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 					session.Finish()
 					return agent.Invocation{}, fmt.Errorf("ask_user: out-of-range reply, question still pending")
 				}
-				if recordErr := ib.hub.RecordQuestionAnswer(ctx, run, msg, chat.QuestionAnswer{
-					SelectedOptionIDs: askUserSelectedOptionIDs(userText, options),
-					FreeText:          content,
-					AnsweredMessageID: msg.ID,
-				}); recordErr != nil {
-					b.Logger().Warn("ask_user: failed to record question answer",
-						"user_id", userID,
-						"tool_call_id", callID,
-						"error", recordErr)
+				if hasDurablePending {
+					if recordErr := ib.hub.RecordQuestionAnswer(ctx, run, msg, chat.QuestionAnswer{
+						QuestionID:        pending.ID,
+						SelectedOptionIDs: resume.SelectedOptionIDs,
+						FreeText:          resume.Content,
+						AnsweredMessageID: msg.ID,
+					}); recordErr != nil {
+						b.Logger().Warn("ask_user: failed to record question answer",
+							"user_id", userID,
+							"tool_call_id", resume.CallID,
+							"question_id", pending.ID,
+							"error", recordErr)
+					}
 				}
-				convCtx.AddToolResultMessage(callID, content)
+				if resume.HasPendingCall {
+					convCtx.AddToolResultMessage(resume.CallID, resume.Content)
+				} else {
+					convCtx.AddUserMessage("Answer to pending " + resume.Kind + " question: " + resume.Content)
+				}
 				addedUserInput = true
-				b.Logger().Info("ask_user: resume with tool_result",
+				b.Logger().Info("ask_user: resume with answer",
 					"user_id", userID,
-					"tool_call_id", callID,
+					"tool_call_id", resume.CallID,
+					"question_id", pending.ID,
+					"durable_pending", hasDurablePending,
 				)
 			}
 		}
@@ -391,6 +405,42 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 
 func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
 	return ib.b.ExecToolCalls(ctx, c, convCtx, userID, calls, toolsExposed, readSkills)
+}
+
+type askUserResumeInput struct {
+	CallID            string
+	Options           []string
+	Kind              string
+	HasPendingCall    bool
+	Content           string
+	SelectedOptionIDs []string
+	Rejected          bool
+	RejectMessage     string
+}
+
+func prepareAskUserResumeInput(userText string, messages []llm.Message, durableOptions []string, durableKind string, hasDurablePending bool) (askUserResumeInput, bool) {
+	callID, options, kind, hasPendingCall := agent.PendingAskUserCall(messages)
+	if !hasPendingCall && !hasDurablePending {
+		return askUserResumeInput{}, false
+	}
+	if len(options) == 0 && len(durableOptions) > 0 {
+		options = durableOptions
+	}
+	if kind == "" {
+		kind = durableKind
+	}
+	options = askUserDisplayOptions(options, kind)
+	content, rejected, rejectMsg := parseAskUserReply(userText, options)
+	return askUserResumeInput{
+		CallID:            callID,
+		Options:           options,
+		Kind:              kind,
+		HasPendingCall:    hasPendingCall,
+		Content:           content,
+		SelectedOptionIDs: askUserSelectedOptionIDs(userText, options),
+		Rejected:          rejected,
+		RejectMessage:     rejectMsg,
+	}, true
 }
 
 func (ib *InvocationBuilder) checkBudgetQuota(c tele.Context, userID string, estimatedTokens int) error {
