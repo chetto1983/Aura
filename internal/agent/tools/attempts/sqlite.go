@@ -153,6 +153,42 @@ func newAttemptID() string {
 	return "atm_" + hex.EncodeToString(buf[:])
 }
 
+// Warnings returns aggregated failure counts for the last `days` days,
+// grouped by (tool_name, tool_kind, class), ordered by count descending.
+// Only recoverable, blocked, and fatal outcomes are included.
+func (r *SQLiteRepo) Warnings(ctx context.Context, days int) ([]WarningRow, error) {
+	if r.db == nil {
+		return nil, ErrRepoUnavailable
+	}
+	offset := fmt.Sprintf("-%d days", days)
+	rows, err := r.db.QueryContext(ctx, `
+SELECT tool_name, tool_kind, class, COUNT(*) AS n, MAX(ended_at) AS last_seen
+FROM tool_attempts
+WHERE outcome IN ('recoverable','blocked','fatal')
+  AND ended_at >= datetime('now', ?)
+GROUP BY tool_name, tool_kind, class
+ORDER BY n DESC`, offset)
+	if err != nil {
+		return nil, fmt.Errorf("attempts: query warnings: %w", err)
+	}
+	defer rows.Close()
+
+	var result []WarningRow
+	for rows.Next() {
+		var wr WarningRow
+		var lastSeenStr string
+		if err := rows.Scan(&wr.ToolName, &wr.ToolKind, &wr.Class, &wr.N, &lastSeenStr); err != nil {
+			return nil, fmt.Errorf("attempts: scan warning: %w", err)
+		}
+		wr.LastSeen, _ = time.Parse(time.RFC3339Nano, lastSeenStr)
+		result = append(result, wr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("attempts: iterate warnings: %w", err)
+	}
+	return result, nil
+}
+
 // CanonicalArgsJSON marshals args with sorted keys for a stable SHA-256 hash
 // across LLM re-orderings. Values are consumed only for hashing and are never
 // stored in the DB — only the key names and the resulting hash are persisted.

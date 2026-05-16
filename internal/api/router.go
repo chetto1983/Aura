@@ -13,7 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aura/aura/internal/agent/tools/index"
+	toolindex "github.com/aura/aura/internal/agent/tools/index"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/backup"
 	"github.com/aura/aura/internal/config"
@@ -180,6 +181,11 @@ type Deps struct {
 	// nil, POST /chat responds 503. cmd/aura wires this via agent.RunTask
 	// sharing the live LLM client and tool registry.
 	Chat ChatService
+
+	// ToolWarnings aggregates tool failure counts for GET /tool-warnings
+	// (Phase-6 / US-J06). Optional — when nil the endpoint returns an empty
+	// warnings array rather than 503. Admin-gated via SkillsAdmin.
+	ToolWarnings attempts.WarningsReader
 }
 
 // installTimeout caps how long a single skills install (npx skills add)
@@ -309,6 +315,9 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /settings", handleSettingsUpdate(deps))
 	mux.HandleFunc("POST /settings/test", handleSettingsTest(deps))
 	mux.HandleFunc("POST /restart", handleRestart(deps))
+
+	// Phase-6 US-J06: operator tool-warning channel. Admin-gated.
+	mux.HandleFunc("GET /tool-warnings", handleToolWarnings(deps))
 
 	// Garage backup/artifact vault.
 	mux.HandleFunc("GET /backups", handleBackupList(deps))

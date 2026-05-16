@@ -137,7 +137,7 @@
         "Single atomic commit prefix: feat(api): GET /api/tool-warnings operator channel (US-J06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "MCP awareness: include tool_kind in the response so an operator can spot a single misbehaving MCP server. Read internal/api/skills.go for the admin-gate pattern Aura uses for admin-only endpoints."
     },
     {

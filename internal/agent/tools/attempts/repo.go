@@ -44,3 +44,19 @@ type Repo interface {
 	// Used by CheckBudget (US-J05) to enforce per-(tool,class) retry ceilings.
 	CountOutcome(ctx context.Context, runID, toolName string, outcome tools.Outcome) (int, error)
 }
+
+// WarningRow is one aggregated failure row returned by WarningsReader.Warnings.
+type WarningRow struct {
+	ToolName string
+	ToolKind string
+	Class    string
+	N        int
+	LastSeen time.Time
+}
+
+// WarningsReader queries aggregated tool failure counts from the tool_attempts
+// table. SQLiteRepo implements this interface. Optional in API Deps — when nil
+// GET /tool-warnings returns an empty array.
+type WarningsReader interface {
+	Warnings(ctx context.Context, days int) ([]WarningRow, error)
+}

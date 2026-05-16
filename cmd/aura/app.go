@@ -843,6 +843,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
 		Chat:  webChat,
+		// Phase-6 US-J06: operator tool-warning channel.
+		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile

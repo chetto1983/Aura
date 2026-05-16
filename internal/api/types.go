@@ -442,6 +442,20 @@ type MCPInvokeResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// ToolWarningItem is one aggregated failure row in GET /tool-warnings.
+type ToolWarningItem struct {
+	Kind     string `json:"kind"`
+	Tool     string `json:"tool"`
+	Class    string `json:"class"`
+	N        int    `json:"n"`
+	LastSeen string `json:"last_seen"`
+}
+
+// ToolWarningsResponse is the body of GET /tool-warnings.
+type ToolWarningsResponse struct {
+	Warnings []ToolWarningItem `json:"warnings"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`
