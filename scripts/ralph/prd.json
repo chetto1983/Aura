@@ -20,7 +20,7 @@
         "Single atomic commit prefix: feat(summarizer): user-memory triage + UserFactHandle (US-O01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 681 'user_profile_memory: stable user facts, preferences, constraints, identity notes' (distinct from project_decision_memory at line 682 + knowledge_wiki at line 684). Phase-N US-N01 template (pure types + helper + tests, no consumers wired)."
     },
     {
