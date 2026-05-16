@@ -47,6 +47,9 @@ type Document struct {
 	Tags           []string
 	UpdatedAt      time.Time
 	Score          float64
+	ScoreExact     float64
+	ScoreFTS       float64
+	ScoreVector    float64
 }
 
 type Filter struct {
@@ -579,11 +582,20 @@ func mergeDocumentsRRF(exact, fts, vector []Document, limit int) []Document {
 		limit = defaultSearchLimit
 	}
 	type entry struct {
-		doc   Document
-		score float64
+		doc         Document
+		score       float64
+		scoreExact  float64
+		scoreFTS    float64
+		scoreVector float64
 	}
 	byID := map[string]*entry{}
-	accumulate := func(group []Document, weight float64) {
+	type channel int
+	const (
+		chanExact  channel = 0
+		chanFTS    channel = 1
+		chanVector channel = 2
+	)
+	accumulate := func(group []Document, weight float64, ch channel) {
 		for rank, doc := range group {
 			if doc.ID == "" {
 				continue
@@ -591,22 +603,42 @@ func mergeDocumentsRRF(exact, fts, vector []Document, limit int) []Document {
 			contribution := weight / float64(rrfK+rank+1)
 			if existing, ok := byID[doc.ID]; ok {
 				existing.score += contribution
+				switch ch {
+				case chanExact:
+					existing.scoreExact += contribution
+				case chanFTS:
+					existing.scoreFTS += contribution
+				case chanVector:
+					existing.scoreVector += contribution
+				}
 				continue
 			}
 			// Copy the doc so later contributions cannot stomp on the
 			// metadata we keep here.
 			docCopy := doc
-			byID[doc.ID] = &entry{doc: docCopy, score: contribution}
+			e := &entry{doc: docCopy, score: contribution}
+			switch ch {
+			case chanExact:
+				e.scoreExact = contribution
+			case chanFTS:
+				e.scoreFTS = contribution
+			case chanVector:
+				e.scoreVector = contribution
+			}
+			byID[doc.ID] = e
 		}
 	}
-	accumulate(exact, rrfWeightExact)
-	accumulate(fts, rrfWeightFTS)
-	accumulate(vector, rrfWeightVector)
+	accumulate(exact, rrfWeightExact, chanExact)
+	accumulate(fts, rrfWeightFTS, chanFTS)
+	accumulate(vector, rrfWeightVector, chanVector)
 
 	out := make([]Document, 0, len(byID))
 	for _, e := range byID {
 		doc := e.doc
 		doc.Score = e.score
+		doc.ScoreExact = e.scoreExact
+		doc.ScoreFTS = e.scoreFTS
+		doc.ScoreVector = e.scoreVector
 		out = append(out, doc)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

@@ -61,7 +61,7 @@
         "Single atomic commit prefix: feat(memoryindex,search): preserve score components through RRF fusion (US-L03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Audit §D documents the exact lines where contributions are dropped (store.go:599, search.go:374). Academic research §G.1 (arXiv:2210.11934, 2508.01405, 2504.01733) is the literature justification — RRF stays default; components become observable."
     },
     {

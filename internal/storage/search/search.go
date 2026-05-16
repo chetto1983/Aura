@@ -86,18 +86,21 @@ func parseSearchPayloadTime(raw string) (time.Time, bool) {
 // previously the model had to follow up with list_files/read_file to map a
 // slug back to a .md path or read the page's relations.
 type Result struct {
-	Kind      string
-	Slug      string
-	Title     string
-	Content   string
-	Score     float32
-	UpdatedAt time.Time
-	FilePath  string
-	Category  string
-	Tags      []string
-	Related   []string
-	Sources   []string
-	SizeBytes int64
+	Kind        string
+	Slug        string
+	Title       string
+	Content     string
+	Score       float32
+	ScoreExact  float32
+	ScoreFTS    float32
+	ScoreVector float32
+	UpdatedAt   time.Time
+	FilePath    string
+	Category    string
+	Tags        []string
+	Related     []string
+	Sources     []string
+	SizeBytes   int64
 }
 
 // EmbeddingFunc is Aura's embedding provider boundary. Same signature as
@@ -345,8 +348,11 @@ func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 		topK = 5
 	}
 	type entry struct {
-		result Result
-		score  float32
+		result      Result
+		score       float32
+		scoreExact  float32
+		scoreFTS    float32
+		scoreVector float32
 	}
 	byKey := map[string]*entry{}
 	for groupIdx, group := range groups {
@@ -367,15 +373,35 @@ func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 			contribution := float32(weight / float64(rrfK+rank+1))
 			if existing, ok := byKey[key]; ok {
 				existing.score += contribution
+				switch groupIdx {
+				case 0:
+					existing.scoreExact += contribution
+				case 1:
+					existing.scoreFTS += contribution
+				case 2:
+					existing.scoreVector += contribution
+				}
 				continue
 			}
-			byKey[key] = &entry{result: result, score: contribution}
+			e := &entry{result: result, score: contribution}
+			switch groupIdx {
+			case 0:
+				e.scoreExact = contribution
+			case 1:
+				e.scoreFTS = contribution
+			case 2:
+				e.scoreVector = contribution
+			}
+			byKey[key] = e
 		}
 	}
 	out := make([]Result, 0, len(byKey))
 	for _, e := range byKey {
 		r := e.result
 		r.Score = e.score
+		r.ScoreExact = e.scoreExact
+		r.ScoreFTS = e.scoreFTS
+		r.ScoreVector = e.scoreVector
 		out = append(out, r)
 	}
 	sortHybridResultsByScore(out)
