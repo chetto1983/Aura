@@ -88,7 +88,7 @@
         "Single atomic commit prefix: docs(planning): Phase-Q closure + Phase 9 partial-close (US-Q04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: closure pattern Phase-N US-N04 + Phase-O US-O04. Phase 9 has 6 step items in prd.md lines 1513-1519 — Phase-O + Phase-Q together cover the 'write-policy' + 'validation' + 'capability' core. The remaining 'clarify memory vs storage / conversion fixtures / SQLite concurrency hardening' is doc + invariant work, suitable for a future polish phase."
     }
   ]
