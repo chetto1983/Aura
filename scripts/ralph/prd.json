@@ -1,133 +1,98 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-L = masterplan Phase 7B (Typed Collection Registry + Structured Retrieval Hits + Chunk-to-Parent Expansion). Lands the 4 MUST line items from PRD §7 identified by the 2026-05-16 audit triple (docs/phase07b-current-types-audit-2026-05-16.md §G.1, docs/phase07b-web-research-frameworks-2026-05-16.md §G.1-G.3, docs/phase07b-academic-research-2026-05-16.md §G.1-G.5). DEFERRED to 7C/7D per audit §G.2: projection freshness registry, user/operational memory wiring, source span/byte offsets, wiki frontmatter schema/version promotion. Pattern carried over from Phase-K: one story = one atomic commit on master; no migrations; tests must lock the contract. Reference docs in tree: docs/phase07b-current-types-audit-2026-05-16.md (canonical file:line citations for every claim), docs/phase07b-web-research-frameworks-2026-05-16.md (cross-framework ADOPT/AVOID), docs/phase07b-academic-research-2026-05-16.md (arXiv evidence for score-components + small-to-big).",
+  "description": "Aura Phase-M = masterplan Phase 7C (Projection Freshness Registry). Lands a per-collection freshness registry + per-doc content-hash drift detection + eager write-time invalidate + retrieval-time annotation so the agent can decide not to trust degraded results. Triggered by the 2026-05-16 brainstorm 'memoria industry-level' (Mem0 v3 ADD-only + Letta typed blocks + LlamaIndex DocstoreStrategy + Qdrant aliases + Weaviate auto-timestamps). 4 atomic stories, each one commit on master. Pattern carried over from Phase-K/L: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): docs/phase07c-current-state-audit-2026-05-16.md (file:line inventory of what Aura HAS), docs/phase07c-academic-research-2026-05-16.md (arXiv evidence + ADOPT/AVOID), docs/phase07c-web-research-frameworks-2026-05-16.md (Qdrant/Vespa/Weaviate/LlamaIndex/Letta/OpenAI/Anthropic comparison), docs/phase07c-mem0-elysia-patterns-2026-05-16.md (sintesi finale + decisione scope).",
   "userStories": [
     {
-      "id": "US-L01",
-      "title": "Add typed Collection enum + descriptor Registry (pure types, no consumers)",
-      "description": "Introduce a typed registry for memory collections in `internal/storage/memoryindex/`. (a) New file `internal/storage/memoryindex/collections.go` (keep it under 200 LOC). (b) Declare `type Collection string` and 6 constants — `CollectionWiki = \"wiki\"`, `CollectionSource = \"source\"`, `CollectionArchive = \"archive\"`, `CollectionProposal = \"proposal\"`, `CollectionUserMemory = \"user_memory\"`, `CollectionOperational = \"operational\"`. Values MUST match the existing `KindSource/KindArchive/KindProposal` strings declared at `internal/storage/memoryindex/store.go:16-20` (i.e. `string(CollectionSource) == KindSource`, etc.) so back-compat lands trivially in US-L02. (c) Declare `type RetrievalMode string` with constants `RetrievalExact = \"exact\"`, `RetrievalFTS = \"fts\"`, `RetrievalVector = \"vector\"`, `RetrievalHybrid = \"hybrid\"`. (d) Declare `type CollectionDescriptor struct { Kind Collection; Label string; Description string; DefaultMode RetrievalMode; ParentCollection Collection (empty for root); StorageBackend string }` — `StorageBackend` is a stable token like `compact_memory_documents`, `wiki_documents`, `proposed_updates` so future projection-freshness work has a join key. (e) Declare `var Registry = map[Collection]CollectionDescriptor{...}` populated with all 6 entries. Use realistic descriptions cribbed from the audit doc §A.1-A.4 — Wiki/Source/Archive/Proposal are concrete today; UserMemory/Operational are scaffolded for Phase 7C/7D (note this in their Description). (f) Helper `func Lookup(k Collection) (CollectionDescriptor, bool)`. (g) NO consumer changes: do not touch store.go, rebuild.go, search.go, memory_search.go in this story. (h) Table-driven test `collections_test.go` covers: every Collection constant resolves to a Registry entry; the 3 historical Kind strings match exactly (`KindSource == string(CollectionSource)` etc. — assert via existing constants); UserMemory/Operational descriptors have empty StorageBackend OR a clearly stub token, and their Description names them as 'scaffolded — wired in Phase 7C/7D'; Lookup returns ok=false on unknown.",
+      "id": "US-M01",
+      "title": "Add projection_state table + freshness.Store Go API (pure types + storage, no consumers wired)",
+      "description": "Introduce the canonical per-projection registry. ONE row per index unit (5 total: wiki_documents_fts5, aura_memory_v1 qdrant, compact_memory_documents, aura_memory_v1_compact qdrant, embedding_cache). Optimistic-concurrency update pattern (Letta-style). Pure types + storage + tests; no caller integration in this story. (a) New migration v12 `addProjectionState` in `internal/db/migrations/migrations.go` registered slice (line ~30) AND mirrored in `currentSchemaSQL` so fresh-DB bootstrap is consistent. Schema: `projection_id TEXT PRIMARY KEY, kind TEXT NOT NULL ('fts5'|'qdrant'|'sqlite'|'cache'), embedding_model_id TEXT NOT NULL DEFAULT '', embedding_dim INTEGER NOT NULL DEFAULT 0, index_build_id TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, last_full_rebuild_at INTEGER NOT NULL, last_incremental_at INTEGER, pending_count INTEGER NOT NULL DEFAULT 0, completed_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'fresh' (one of 'fresh'|'rebuilding'|'degraded'|'stale_swap'), health_reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL DEFAULT (unixepoch())`. (b) New package `internal/storage/freshness/` with `Store` struct + 5 methods: `Get(projectionID) (Row, bool, error)`, `Upsert(row Row) (Row, error)` (uses INSERT ... ON CONFLICT), `UpdateWithVersion(projectionID string, mutator func(*Row) error) (Row, error)` (optimistic concurrency: SELECT row + apply mutator + UPDATE WHERE version=old; if 0 rows affected return ErrVersionConflict), `BumpPending(projectionID string, delta int) error`, `List(ctx) ([]Row, error)`. (c) `Row` struct mirrors the schema (camelCase Go fields). `ErrVersionConflict = errors.New('freshness: version conflict')` exported. (d) No consumer wiring: do NOT touch memoryindex/rebuild.go, search/, memory_search.go, app.go in this story. (e) Tests in `internal/storage/freshness/store_test.go`: 4 cases — Upsert+Get roundtrip; UpdateWithVersion happy path increments version; UpdateWithVersion concurrent conflict returns ErrVersionConflict; List returns all rows.",
       "acceptanceCriteria": [
-        "internal/storage/memoryindex/collections.go exists and declares: Collection, RetrievalMode, CollectionDescriptor, Registry, Lookup",
-        "Six Collection constants declared with snake_case string values matching audit doc §A.1: wiki, source, archive, proposal, user_memory, operational",
-        "string(CollectionSource) == memoryindex.KindSource (and similarly for Archive, Proposal) — asserted in tests",
-        "Registry has exactly 6 entries; missing any one fails the test",
-        "UserMemory + Operational descriptors mark themselves as scaffolded for Phase 7C/7D in Description field",
-        "Lookup(unknown) returns (_, false); Lookup(known) returns (entry, true)",
-        "No changes to internal/storage/memoryindex/store.go, rebuild.go, search.go, memory_search.go in this commit",
+        "internal/db/migrations/migrations.go registers v12 with name 'add_projection_state'",
+        "currentSchemaSQL contains the projection_state table DDL identical to the migration",
+        "internal/storage/freshness/store.go exists with Store struct + 5 methods + Row struct + ErrVersionConflict",
+        "UpdateWithVersion uses 'UPDATE ... WHERE projection_id=? AND version=?' and returns ErrVersionConflict when RowsAffected()==0",
+        "Row.UpdatedAt is set to unixepoch() on every successful write",
+        "Row.Status defaults to 'fresh'; valid values are 'fresh'|'rebuilding'|'degraded'|'stale_swap'",
+        "internal/storage/freshness/store_test.go covers Upsert+Get, UpdateWithVersion happy path, version conflict, List",
+        "No changes to internal/storage/memoryindex/, internal/storage/search/, internal/agent/tools/registry/memory_search.go, cmd/aura/app.go in this commit",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(memoryindex): typed Collection enum + descriptor Registry (US-L01)"
+        "Single atomic commit prefix: feat(freshness): projection_state table + Store API with optimistic concurrency (US-M01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Audit doc §A.1 + §G.1.1 are the canonical references for the 6 collection names and the 'why scaffolded' framing. Pattern: Phase-K US-K01 (pure policy + tests, no consumers wired) — repeat that discipline."
+      "passes": false,
+      "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 2 (schema). Pattern: Letta version_id_col. 5 rows total = closed set, validated by docs/phase07c-current-state-audit-2026-05-16.md §F.3."
     },
     {
-      "id": "US-L02",
-      "title": "Tie KindSource/Archive/Proposal to Collection constants (back-compat alias, no behavior change)",
-      "description": "Wire the typed Registry from US-L01 into the existing 3 string constants without changing any public API. (a) `internal/storage/memoryindex/store.go:16-20` currently declares: `KindSource = \"source\"`, `KindArchive = \"archive\"`, `KindProposal = \"proposal\"`. Replace the literal strings with conversions from the typed Collection constants: `KindSource = string(CollectionSource)`, etc. The constants stay typed as untyped string (so `Filter.Kinds []string` and every caller is unaffected). (b) That's the entire production change. NO callers updated, NO new exports, NO method signatures changed. (c) New test `collections_back_compat_test.go` (or extend `collections_test.go`) asserts: `KindSource == string(CollectionSource)`, `KindArchive == string(CollectionArchive)`, `KindProposal == string(CollectionProposal)`. (d) Run the existing memoryindex + search + memory_search test suites — they must stay green with zero modifications. If any test breaks, STOP and escalate per Phase-K Stop Signals (it means the audit assumed-equality is wrong and the rename is unsafe).",
+      "id": "US-M02",
+      "title": "Stamp content_hash + embedding_model_id + index_build_id on compact_memory_documents",
+      "description": "Add the per-doc drift detection signal — LlamaIndex `DocstoreStrategy.UPSERTS` pattern as a native column on the source-of-truth table, mirrored into the Qdrant payload (Mem0 v3 pattern). NO new sidecar table. (a) New migration v13 `addCompactMemoryFreshnessColumns` adds 3 columns to `compact_memory_documents`: `content_hash TEXT NOT NULL DEFAULT ''`, `embedding_model_id TEXT NOT NULL DEFAULT ''`, `index_build_id TEXT NOT NULL DEFAULT ''`. (b) Mirror in `currentSchemaSQL`. (c) Extend `memoryindex.Document` struct in `internal/storage/memoryindex/store.go` with corresponding Go fields: `ContentHash string`, `EmbeddingModelID string`, `IndexBuildID string`. (d) `ReplaceKind` and `Append` writers in `internal/storage/memoryindex/rebuild.go` accept these fields and persist them. (e) `memoryindex.Store.Search` returns these fields on hits (SELECT updated to include new columns). (f) Update the compact Qdrant payload (`compactPayload` in `internal/storage/search/compact_qdrant.go:247-264` per audit doc) to include `content_hash`, `embedding_model_id`, `index_build_id` keys when populated (omit if empty string — back-compat). (g) NO writer in this story actually FILLS the fields with real values — that comes in US-M03. The schema accepts empty defaults safely. (h) Helper function `internal/storage/memoryindex/hash.go::ContentHash(role, body, embeddingModelID string) string` returns sha256 hex of `role + '\\n' + body + '\\n' + embeddingModelID` (matches Mem0 pattern: text + model). (i) Tests: existing tests still pass with empty defaults; new `TestDocumentRoundTripWithFreshnessColumns` writes a Document with all 3 new fields populated, reads back, asserts equality. New `hash_test.go` covers `ContentHash` (deterministic, role-sensitive, model-sensitive).",
       "acceptanceCriteria": [
-        "internal/storage/memoryindex/store.go lines 16-20: KindSource/Archive/Proposal are derived from CollectionSource/Archive/Proposal via string() conversion",
-        "No other production file changed in this commit",
-        "Back-compat test asserts the 3 equalities explicitly",
-        "Existing rebuild_test.go / store_test.go / memory_search_test.go pass with zero modifications",
+        "Migration v13 adds 3 columns (content_hash, embedding_model_id, index_build_id) with TEXT NOT NULL DEFAULT '' to compact_memory_documents",
+        "currentSchemaSQL contains the 3 new columns",
+        "memoryindex.Document has 3 new Go fields (ContentHash, EmbeddingModelID, IndexBuildID)",
+        "ReplaceKind + Append persist the 3 fields",
+        "memoryindex.Store.Search SELECT statement includes the 3 new columns",
+        "compactPayload in compact_qdrant.go writes content_hash/embedding_model_id/index_build_id keys (omit if empty)",
+        "internal/storage/memoryindex/hash.go ContentHash function with sha256(role + body + model)",
+        "Existing rebuild_test.go and store_test.go pass with empty defaults",
+        "New TestDocumentRoundTripWithFreshnessColumns and TestContentHash tests added",
+        "No actual writers populate the fields with non-empty values yet (deferred to US-M03)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(memoryindex): tie KindSource/Archive/Proposal to Collection constants (US-L02)"
+        "Single atomic commit prefix: feat(memoryindex): content_hash + embedding_model_id + index_build_id columns (US-M02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Smallest possible production change — its purpose is to PROVE the typed registry is consistent with current behavior. If anything breaks, it means the registry values diverged from the historical constants (US-L01 bug)."
+      "passes": false,
+      "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 1 (no separate docstore). Pattern: Mem0 v3 main.py hash in payload + LlamaIndex DocstoreStrategy.UPSERTS. Audit ref: docs/phase07c-current-state-audit-2026-05-16.md §A.3 + §A.5."
     },
     {
-      "id": "US-L03",
-      "title": "Preserve per-channel score components through RRF fusion (memoryindex + search)",
-      "description": "Today retrieval emits a single fused float; the per-channel rank contributions are accumulated inside `entry.score` then DROPPED at `internal/storage/memoryindex/store.go:599` and `internal/storage/search/search.go:374` (per audit §D). Phase 7B's PRD §7 deliverable 'structured retrieval hits with score components' requires preserving the breakdown end-to-end. (a) Extend `memoryindex.Document` struct (`store.go:32-50` area) with three new float64 fields: `ScoreExact`, `ScoreFTS`, `ScoreVector`. The existing `Score float64` stays as the fused RRF score (no rename — back-compat). (b) Extend `search.Result` struct (`search.go:88-101`) with the same three fields. (c) Modify `mergeDocumentsRRF` (`store.go:577-622`): preserve per-channel RRF contributions by accumulating into the new fields on the merged Document — the loop currently overwrites `entry.score`; change it to ALSO write to `entry.scoreExact/scoreFTS/scoreVector` (or whichever channel matched), then surface those onto the returned Document. (d) Modify `mergeHybridResults` (`search.go:343-386`): twin change for the wiki side. (e) NO formatter changes — `memory_search.go formatMemoryResults` still emits the same single-score line; US-L04 will surface the components. (f) Test in `memoryindex/store_test.go` (or new `score_components_test.go`): build a 3-doc fixture where doc1 matches exact only, doc2 matches FTS only, doc3 matches vector only; after `mergeDocumentsRRF`, assert each doc has its corresponding channel score non-zero and the other two zero, AND `Score` (fused) is non-zero for all three. Similar test on the search side for `mergeHybridResults`. (g) Existing tests must stay green — adding fields is additive.",
+      "id": "US-M03",
+      "title": "Wire eager invalidation hooks + populate freshness columns at write time",
+      "description": "Now make the registry LIVE. (a) On app boot (`cmd/aura/app.go` after migration ready, before reindex worker start): seed the 5 projection_state rows if missing — projection_ids: `wiki_documents_fts5`, `aura_memory_v1`, `compact_memory_documents`, `aura_memory_v1_compact`, `embedding_cache`. Initial row: kind set per target (fts5/qdrant/sqlite/cache), embedding_model_id read from settings (resolve to 'embeddinggemma-300m@256-mrl' if compact Qdrant active, '' for fts5), embedding_dim=256 for Qdrant rows / 0 for fts5+cache, index_build_id = new ULID, last_full_rebuild_at = unixepoch(), status='fresh'. Use freshness.Store.Upsert from US-M01. Idempotent: if row already exists, leave alone. (b) Populate freshness columns in `IndexingTurnAppender.Append` (`internal/storage/memoryindex/rebuild.go:308-324`): compute `content_hash = ContentHash(role, content, embedModel)`, write `embedding_model_id` and `index_build_id` from the current projection_state row of `compact_memory_documents` (via injected `freshness.Store`). Same for `Rebuild` (source/archive/proposal kinds). (c) Eager invalidation hooks: when a writer detects content_hash change OR when a hit Document has missing/stale embedding_model_id, call `freshness.Store.BumpPending(projectionID, 1)`. Implement for these write paths (per audit doc §C): `IndexingTurnAppender.Append` (turn write) AND `memoryindex.Store.ReplaceKind` (rebuild path). (d) New `freshness.Store.MarkRebuildComplete(projectionID, newBuildID, newModelID)` method bumps `completed_count`, resets `pending_count` to 0, updates `index_build_id`, sets `last_full_rebuild_at`. Called from `Rebuild` at completion. (e) Test in `internal/storage/memoryindex/rebuild_test.go`: TestAppendBumpsPendingOnHashMismatch — fixture with existing row hash A, append same id with new content (hash B), assert pending_count incremented by 1. TestRebuildResetsPendingAndUpdatesBuildID — pre-state pending=5, Rebuild called, post-state pending=0 + new build_id. (f) Test for app.go boot seeding in `cmd/aura/app_test.go` if exists OR in a new `app_init_test.go`: 5 projection_state rows exist after boot init. Wiki + Qdrant invalidation NOT wired in this slice (deferred).",
       "acceptanceCriteria": [
-        "memoryindex.Document has 3 new float64 fields: ScoreExact, ScoreFTS, ScoreVector",
-        "search.Result has 3 new float64 fields: ScoreExact, ScoreFTS, ScoreVector",
-        "mergeDocumentsRRF preserves per-channel contributions onto the returned Document instead of dropping them at the entry.score collapse",
-        "mergeHybridResults applies the same preservation on the wiki side",
-        "Existing Score (fused RRF) field stays present and identical in value for unchanged inputs",
-        "New test fixture: 3 docs each matching exactly one channel — assertions verify channel scores are populated correctly",
-        "memory_search.go formatMemoryResults UNCHANGED in this commit",
-        "All existing memoryindex/search/memory_search tests stay green",
+        "cmd/aura/app.go (boot path) seeds 5 projection_state rows idempotently after migration",
+        "IndexingTurnAppender.Append computes content_hash + persists embedding_model_id + index_build_id",
+        "Rebuild populates the same 3 columns on all upserted Documents",
+        "freshness.Store.BumpPending called on hash change from Append + ReplaceKind paths",
+        "freshness.Store.MarkRebuildComplete resets pending_count to 0 + updates index_build_id + last_full_rebuild_at",
+        "TestAppendBumpsPendingOnHashMismatch covers hash-A -> hash-B append, asserts pending++ on the relevant projection row",
+        "TestRebuildResetsPendingAndUpdatesBuildID covers pre-pending=5, post-Rebuild, pending=0 + new build_id",
+        "Boot seeding test asserts 5 rows present after app initialization",
+        "Existing memoryindex/rebuild tests remain green",
+        "slog.Debug emitted on pending bump (hot path; NOT Info)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(memoryindex,search): preserve score components through RRF fusion (US-L03)"
+        "Single atomic commit prefix: feat(memoryindex,freshness): eager write-time invalidate + populate freshness columns (US-M03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Audit §D documents the exact lines where contributions are dropped (store.go:599, search.go:374). Academic research §G.1 (arXiv:2210.11934, 2508.01405, 2504.01733) is the literature justification — RRF stays default; components become observable."
+      "passes": false,
+      "notes": "Sources: docs/phase07c-academic-research §Q3 + §Q4 (eager pattern for source-write). docs/phase07c-current-state-audit §C (write-path inventory). Wiki + Qdrant invalidation NOT wired here — slice tight; deferred to a future US-M-bis if needed."
     },
     {
-      "id": "US-L04",
-      "title": "Surface score components + follow-up handles per hit in memory_search formatter",
-      "description": "Make the LLM-visible retrieval output usable for both score-diagnostics AND chunk-to-parent navigation. (a) `internal/agent/tools/registry/memory_search.go formatMemoryResults` (`memory_search.go:384-451`): for each hit line, after the existing `score=X.XX` token, append `[exact=A.AA fts=B.BB vector=C.CC]` IF any of the three components is non-zero (skip the bracket entirely if all three are zero — keeps simple/historical-fixture output unchanged). Use 2-decimal precision. (b) Append a `follow_up=` token per hit naming the existing tool that would expand it. Mapping (use ONLY tool names that already exist in `internal/agent/tools/registry/`): source hit → `follow_up=read_source(source_id=<id>,mode=ocr)`; archive hit → if doc.Handle starts with `conversation:` then `follow_up=read_memory(handle=<handle>)` else `follow_up=search_memory(scope=archive,chat_id=<id>)`; wiki hit → `follow_up=[[<slug>]]` (the wiki-link syntax IS the expansion handle); proposal hit → `follow_up=read_memory(handle=proposal:<id>)`. If `read_memory` does not exist verbatim in the registry, use whichever tool name DOES exist (grep `internal/agent/tools/registry/*.go` for the canonical reader — likely `read_memory.go` or part of `memory_search.go`). DO NOT invent new tool names. (c) The `memoryResult` struct in memory_search.go (around line 217) needs to carry the 3 new score fields from US-L03 — extend it. (d) Test `memory_search_test.go`: fixture with 4 hits (1 source + 1 archive + 1 wiki + 1 proposal), each with at least one non-zero component score; assert formatter output contains the expected `[exact=… fts=… vector=…]` bracket AND the expected `follow_up=…` token for each kind. (e) Existing memory_search snapshot tests stay green for hits where ALL components are zero (the bracket is conditionally omitted).",
+      "id": "US-M04",
+      "title": "Surface freshness annotations on search_memory tool results",
+      "description": "Make the registry observable to the agent at retrieval time. The agent can then decide not to trust degraded results. (a) `internal/agent/tools/registry/memory_search.go formatMemoryResults` (line 384+): for each hit, append a `freshness=` token containing the most-relevant fields from the Document populated by US-M02 + the projection_state row. Format: `freshness=indexed_at=<RFC3339>,model=<short>,build=<short>` when fields are present (omit fields with empty defaults). `<short>` truncates to first 12 chars of the ULID/model name. Example: `freshness=indexed_at=2026-05-14T08:21:33Z,model=embeddinggemma,build=01HXY8K2QR`. (b) Plus when the hit's projection row status is NOT 'fresh', emit `degraded_read=true` as a separate token. Use the new helper `freshness.Store.Get(projectionID)` once per search (cache for hit batch). (c) Update `memoryResult` struct in memory_search.go to carry the new fields (IndexedAt, EmbeddingModelID, IndexBuildID, DegradedRead). (d) Wire end-to-end: search_memory tool reads compact_memory_documents → memoryResult gets the new fields from Document (already populated by US-M02). Cross-reference projection_state once per tool call. (e) NO change to schema or tool parameters; only output formatter shape grows. Add a brief description hint in the tool Description() that `freshness=` may appear on hits when populated. (f) Tests in `memory_search_test.go`: TestFreshnessTokenPresent — fixture with populated freshness columns + projection_state status='fresh' returns hit with freshness= and NO degraded_read. TestDegradedReadFlag — fixture with projection_state status='degraded' returns hit with degraded_read=true. TestEmptyFreshnessOmitted — fixture with empty defaults on freshness columns returns hit with NO freshness= token (back-compat). (g) Existing memory_search snapshot/golden tests must stay green with empty defaults.",
       "acceptanceCriteria": [
-        "formatMemoryResults emits `[exact=A.AA fts=B.BB vector=C.CC]` after the score token IF any component is non-zero",
-        "formatMemoryResults emits `follow_up=...` per hit using ONLY tool names that exist in internal/agent/tools/registry/",
-        "Mapping: source → read_source; archive → read_memory or search_memory (whichever exists); wiki → `[[slug]]`; proposal → existing reader tool",
-        "memoryResult struct carries ScoreExact/FTS/Vector fields threaded from Document",
-        "New test verifies bracket + follow_up emission for a 4-hit mixed-kind fixture",
-        "Hits with all-zero components produce historical-shape output (no bracket — back-compat)",
-        "Existing memory_search snapshot tests stay green",
-        "No new tool names invented; grep verifies every follow_up tool exists",
+        "formatMemoryResults emits freshness=indexed_at=...,model=...,build=... per hit when ANY of the 3 fields is non-empty",
+        "formatMemoryResults emits degraded_read=true when the projection_state row status is not 'fresh'",
+        "memoryResult struct carries IndexedAt, EmbeddingModelID, IndexBuildID, DegradedRead",
+        "Tool reads projection_state via freshness.Store.Get exactly once per search invocation (batched, not per-hit)",
+        "Tool Description() mentions the freshness= token semantics (one short line)",
+        "TestFreshnessTokenPresent + TestDegradedReadFlag + TestEmptyFreshnessOmitted all pass",
+        "Existing memory_search tests stay green with empty defaults (back-compat verified)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(tools): score components + follow-up handles in memory_search results (US-L04)"
+        "Single atomic commit prefix: feat(tools): freshness + degraded_read annotations on search_memory results (US-M04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Audit §C.1-C.2 enumerates the existing handle shapes. Web research §G ADOPT 3 specifies the small-to-big follow-up pattern. Academic research §G.3 (RAPTOR, HiChunk) is the literature backing. The CRITICAL discipline: do not invent tool names — use what's already registered."
-    },
-    {
-      "id": "US-L05",
-      "title": "SourceID filter + chunk-to-parent one-query expansion",
-      "description": "Add the missing primitive for chunk-to-parent navigation: 'give me all chunks of source X in one query'. (a) Extend `memoryindex.Filter` struct (`internal/storage/memoryindex/store.go:52-56`) with a new field: `SourceID string` (empty = no filter — back-compat). (b) Wire into `filterWhere` (`store.go:507-527`): when `Filter.SourceID != \"\"`, append a `AND d.source_id = ?` predicate (use the same column already populated for source-kind docs at `rebuild.go:156`). (c) Expose via the LLM-facing tool: `internal/agent/tools/registry/memory_search.go` Parameters schema gains an optional `source_id` string field; when set, the tool forwards it into `Filter.SourceID`. Description text: 'Optional: scope results to chunks of this source (use the src_xxx ID from an earlier hit to walk the same document)'. (d) Test in `internal/storage/memoryindex/store_test.go`: fixture with 2 sources × 3 pages each = 6 source docs; query with `Filter{SourceID: src_A.ID}` returns exactly the 3 docs of source A in page order; query with empty SourceID still returns all 6. (e) Tool-level test in `memory_search_test.go`: pass `source_id` arg, verify the resulting hits all share `SourceID == passed_id`. (f) NO changes to non-source Kind behavior — SourceID filter is a NO-OP for archive/proposal docs (they don't carry a source_id), so existing archive/proposal tests stay green.",
-      "acceptanceCriteria": [
-        "memoryindex.Filter.SourceID string field exists (default empty = no filter)",
-        "filterWhere applies `d.source_id = ?` predicate when Filter.SourceID is non-empty",
-        "memory_search tool accepts optional `source_id` string parameter and forwards to Filter.SourceID",
-        "memory_search tool description documents the chunk-to-parent expansion use case",
-        "Store-level test: 2 sources × 3 pages, filter returns exactly the 3 chunks of the named source",
-        "Tool-level test: passing source_id produces hits all sharing the same SourceID",
-        "Empty SourceID is a no-op (existing test suite stays green)",
-        "go build ./... green",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: feat(memoryindex): SourceID filter for chunk-to-parent expansion (US-L05)"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Audit §E.2 / §G.1.4 — the SourceID column is already populated at rebuild.go:156; only Filter exposure is missing. Audit explicitly calls out 'not currently exposed via Filter; only Kinds/ChatID are filterable, store.go:52-56' — that's the single fix."
-    },
-    {
-      "id": "US-L06",
-      "title": "Phase 7B closure docs + Phase07B subphase planning record",
-      "description": "Close Phase-L = Phase 7B (the 4 MUST items shipped in US-L01..L05). (a) Create the Phase07B subphase directory: `.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07B_Typed_Collection_Registry/` with three files: (1) `plan.md` — one-page summary stating the 4 deliverables shipped (typed registry, score components, follow-up handles, SourceID filter) + the deferrals to 7C/7D (freshness registry, user/operational wiring, span offsets, frontmatter promotion); (2) `progress.md` — Phase07A-style table with one row per US-L01..L05 commit SHA + the closure entry from this story; (3) `benchmark.md` — actuals table listing the audit's G.1 acceptance criteria (each row marked 'met' with file:line evidence). (b) Update parent `.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/progress.md` with a Phase07B CLOSED marker + 'Phase07C-F remain scaffolded'. (c) Update `prd.md §7` with a 'Phase 7B closed YYYY-MM-DD' marker citing the 5 commit SHAs. (d) NO Go code changes in this story. (e) Use `git add -f` for `.planning/*` per gitignore precedent. (f) Reference the 3 in-repo research docs (docs/phase07b-*-2026-05-16.md) as the canonical input — do NOT duplicate their content in plan.md; just cite them.",
-      "acceptanceCriteria": [
-        ".planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07B_Typed_Collection_Registry/{plan.md,progress.md,benchmark.md} all created",
-        "Phase07B plan.md summarizes the 4 MUST deliverables + names the 4 deferrals explicitly",
-        "Phase07B progress.md has 6 rows (US-L01..L06) with commit SHAs",
-        "Phase07B benchmark.md actuals match audit §G.1 acceptance criteria with file:line evidence",
-        "Parent Phase07 progress.md marked 'Phase07B closed; Phase07C-F scaffolded'",
-        "prd.md §7 has 'Phase 7B closed' line with all 5 SHAs",
-        "No Go code changes",
-        "Used `git add -f` for .planning/* paths",
-        "go build ./... green (sanity)",
-        "go vet ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: docs(planning): Phase 7B closure + audit refresh (US-L06)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Pattern: Phase-K US-K05. Use `git add -f` for .planning/* (gitignored). DO NOT re-paste the research-doc content — cite docs/phase07b-*-2026-05-16.md by path."
+      "passes": false,
+      "notes": "Sources: docs/phase07c-academic-research §Q5 9-field annotation (subset 4 fields adopted for Aura). Pattern: Anthropic file_id citation + Weaviate _additional.lastUpdateTimeUnix + Mem0 payload return. Audit ref: docs/phase07c-current-state-audit §E.3 (formatMemoryResults location)."
     }
   ]
 }
