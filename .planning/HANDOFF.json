@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-16T11:57:00+02:00",
+  "timestamp": "2026-05-16T12:40:00+02:00",
   "context": "deep-refactor",
   "phase": "PlanningState",
   "phase_name": "Planning State Sweep After Phase01C CI",
   "phase_dir": "D:/Aura/.planning/deep-refactor",
-  "status": "plans-refreshed-after-phase01c-ci",
+  "status": "phase07c-plan-repaired",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -249,7 +249,7 @@
     },
     {
       "decision": "Planning closure follows benchmark evidence, not scaffold status.",
-      "rationale": "This sweep updated stale plan/status files where progress and benchmark files already proved closure, and left Phase07C-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map open because they do not have closure evidence.",
+      "rationale": "This sweep updated stale plan/status files where progress and benchmark files already proved closure. A later Codex repair translated Phase-M evidence into the canonical Phase07C Projection Freshness Registry files, leaving Phase07D-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map open because they still do not have closure evidence.",
       "source": "D:/Aura/.planning/deep-refactor/INDEX.md"
     }
   ],
@@ -504,9 +504,9 @@
     "docs/phase07c-*-2026-05-16.md (pre-existing/untracked; preserve unless explicitly selected)"
   ],
   "last_known_git": {
-    "head": "ecb4cf3e fix(chat): close Phase01C question gate",
-    "status": "pushed to origin/master; CI run 25958870299 passed; dirty from current planning-state sweep plus unrelated user WIP/untracked files that must be preserved"
+    "head": "7d3b7ebc chore(cleanup): track 2 orphan-untracked files + remove build artifacts",
+    "status": "current local HEAD observed during Phase07C planning repair; dirty worktree includes Phase07 planning docs plus unrelated user WIP that must be preserved"
   },
-  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code. If continuing Phase07, start with Phase07C; Phase08 and Phase09 still require plan promotion.",
-  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E and CI-verified for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, production web-pipe falsification, and GitHub Actions run 25958870299. Phase07C-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map remain open/not green."
+  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code. If continuing Phase07, start with Phase07D; Phase08 and Phase09 still require plan promotion.",
+  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E and CI-verified for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, production web-pipe falsification, and GitHub Actions run 25958870299. Phase07C now has canonical self-audited planning files for Projection Freshness Registry based on current code/Phase-M evidence and targeted package tests. Phase07D-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map remain open/not green."
 }

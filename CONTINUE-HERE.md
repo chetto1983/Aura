@@ -2,6 +2,20 @@
 
 Fresh Aura sessions must start here.
 
+Latest planning repair as of 2026-05-16:
+
+- Current local git HEAD observed during the repair:
+  `7d3b7ebc chore(cleanup): track 2 orphan-untracked files + remove build artifacts`.
+- `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07C_Projection_Freshness_Registry/`
+  now exists as the canonical self-audited Phase07C planning folder, translated
+  from Phase-M/current-code evidence.
+- If continuing Phase 7, select Phase07D next and rebuild it from current code
+  plus `prd.md` before implementation.
+- Older notes below still record the Phase01C handoff context; prefer
+  `D:/Aura/.planning/deep-refactor/INDEX.md` and
+  `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/` for the
+  current Phase07 route.
+
 Current state as of 2026-05-16:
 
 - The old deep-refactor phase folders were intentionally deleted because they
@@ -227,7 +241,8 @@ Current state as of 2026-05-16:
   Phase 2 regression guards, and `go test -race -count=1 ./...`.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
-  authority`; the latest pushed HEAD is `ecb4cf3e`.
+  authority`; later local HEAD observed during the Phase07C planning repair is
+  `7d3b7ebc`.
 
 Required first reads:
 
@@ -236,14 +251,9 @@ Required first reads:
 3. `D:/Aura/AGENTS.md`
 4. `D:/Aura/prd.md`
 5. `D:/Aura/.planning/deep-refactor/INDEX.md`
-6. `D:/Aura/.planning/deep-refactor/Phase01/subphase-summary.md`
-7. `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/`
-8. `D:/Aura/internal/db/migrations/migrations.go`
-9. `D:/Aura/internal/storage/runs/questions.go`
-10. `D:/Aura/internal/chat/hub.go`
-11. `D:/Aura/internal/channels/telegram/invocation_builder.go`
-12. `D:/Aura/internal/channels/web/chat_service.go`
-13. `D:/Aura/internal/agent/tools/registry/registry.go`
+6. `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphase-summary.md`
+7. `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07C_Projection_Freshness_Registry/`
+8. `D:/Aura/.planning/deep-refactor/Phase01/subphase-summary.md` if reopening Phase01 evidence
 
 Do not rely on chat history. Reconstruct the state from the files above before
 planning or editing. For new work, select the next phase folder from
