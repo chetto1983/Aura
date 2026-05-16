@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// envVarToSecretKey maps legacy .env variable names to canonical secret key
+// envVarToSecretKey maps retired .env variable names to canonical secret key
 // constants. Unknown env-var names are silently skipped during migration.
 var envVarToSecretKey = map[string]string{
 	"TELEGRAM_TOKEN":       KeyTelegramToken,

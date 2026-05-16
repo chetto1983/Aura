@@ -505,7 +505,7 @@ func TestSettingsUpdate_HappyPath(t *testing.T) {
 		t.Errorf("LLM_API_KEY secret persisted = %q", got)
 	}
 	if _, err := store.Get(context.Background(), "LLM_API_KEY"); err != config.ErrNotFound {
-		t.Errorf("legacy LLM_API_KEY settings row should be absent, got %v", err)
+		t.Errorf("retired LLM_API_KEY settings row should be absent, got %v", err)
 	}
 	if got, _ := store.Get(context.Background(), "LLM_MODEL"); got != "gpt-4o" {
 		t.Errorf("LLM_MODEL persisted = %q", got)
@@ -624,7 +624,7 @@ func TestSettingsUpdate_AcceptsTelegramTokenOverride(t *testing.T) {
 		t.Errorf("TELEGRAM_TOKEN secret persisted = %q", got)
 	}
 	if _, err := store.Get(context.Background(), config.KeyTelegramToken); err != config.ErrNotFound {
-		t.Errorf("legacy TELEGRAM_TOKEN settings row should be absent, got %v", err)
+		t.Errorf("retired TELEGRAM_TOKEN settings row should be absent, got %v", err)
 	}
 }
 

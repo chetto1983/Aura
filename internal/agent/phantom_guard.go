@@ -8,7 +8,7 @@ import (
 // mentions a registered tool by name but didn't actually invoke it in
 // this turn — and triggers a forced retry.
 //
-// Failure mode it patches (observed 2026-05-12, Wave 2.7b E2E):
+// Failure mode it patches (observed in the live E2E probe on 2026-05-12):
 //
 //	Long conversation. Earlier turns called tools successfully. The
 //	current iteration returns a no-tool-call response whose content
@@ -71,7 +71,7 @@ type PhantomCorrector interface {
 //	                  When the model legitimately references a tool it already called,
 //	                  no phantom. When it references one it didn't, phantom.
 //
-// Wave 2.10.b live-debug fix (2026-05-13): the original detector
+// Live-debug fix (2026-05-13): the original detector
 // false-positived on didactic explanations — when the model explains how
 // it works ("Chiamo `wiki_page(action='append')`"), the tool name appears
 // in the prose but the model is not claiming to have executed anything.
@@ -218,8 +218,7 @@ func hasPerformativeNear(contentLower, needle string, window int) bool {
 
 // performativeVerbs is the bilingual past-tense first-person verb list
 // used by hasPerformativeNear. Kept narrow on purpose — we'd rather miss
-// a phantom than fire on a normal explanation. See the legacy
-// hasPerformativeClaim doc comment for the lifecycle reasoning.
+// a phantom than fire on a normal explanation.
 var performativeVerbs = []string{
 	// Italian past-tense first-person + auxiliary
 	"ho schedulato", "ho chiamato", "ho invocato", "ho eseguito",

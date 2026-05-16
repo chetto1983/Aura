@@ -86,7 +86,7 @@ func seedV302Rows(t *testing.T, db *sql.DB) {
 		`INSERT INTO proposed_updates (chat_id, fact, action, target_slug, similarity, source_turn_ids, status, created_at) VALUES (1001, 'Aura has migration tests', 'create', 'migration-tests', 0.75, '1', 'pending', '2026-01-02T03:04:05Z')`,
 		`INSERT INTO wiki_issues (kind, severity, slug, broken_link, message, status, created_at, resolved_at) VALUES ('broken_link', 'medium', 'migration-tests', 'missing-page', 'Missing wiki page', 'open', '2026-01-02T03:04:05Z', NULL)`,
 		`INSERT INTO embedding_cache (content_sha, model, embedding, created_at) VALUES ('sha-1', 'mistral-embed', x'010203', '2026-01-02T03:04:05Z')`,
-		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES ('migration-tests', 'Aura preserves searchable legacy wiki content', '{"slug":"migration-tests"}', 'Migration Tests')`,
+		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES ('migration-tests', 'Aura preserves searchable retired wiki content', '{"slug":"migration-tests"}', 'Migration Tests')`,
 		`INSERT INTO swarm_runs (id, goal, status, created_by, created_at, updated_at, completed_at, last_error) VALUES ('run-1', 'verify migrations', 'running', 'test', '2026-01-02T03:04:05Z', '2026-01-02T03:04:05Z', NULL, '')`,
 		`INSERT INTO swarm_tasks (id, run_id, parent_id, role, subject, prompt, tool_allowlist, status, depth, attempts, blocked_by, result, tool_calls, llm_calls, elapsed_ms, created_at, started_at, completed_at, last_error) VALUES ('task-1', 'run-1', '', 'tester', 'migration', 'verify upgrade', '[]', 'pending', 0, 0, '[]', '', 0, 0, 0, '2026-01-02T03:04:05Z', NULL, NULL, '')`,
 	}
@@ -394,9 +394,9 @@ CREATE TABLE conversations (
   content TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO conversations (user_id, role, content) VALUES (2002, 'user', 'legacy row');
+INSERT INTO conversations (user_id, role, content) VALUES (2002, 'user', 'retired row');
 `); err != nil {
-		t.Fatalf("create legacy conversations table: %v", err)
+		t.Fatalf("create retired conversations table: %v", err)
 	}
 
 	if err := Run(ctx, db); err != nil {

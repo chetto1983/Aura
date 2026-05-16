@@ -8,7 +8,7 @@ import (
 	"github.com/aura/aura/internal/llm"
 )
 
-// DevToolTool consolidates the legacy verb-tools (list_tools, read_tool,
+// DevToolTool consolidates the dev-tool verbs (list_tools, read_tool,
 // save_tool) into a single action-enum surface. The picobot pattern:
 // one tool with the action enum acting as the verb keeps related
 // functionality together so the LLM never has to guess which of three

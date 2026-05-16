@@ -8,7 +8,7 @@ import (
 	"github.com/aura/aura/internal/agent"
 )
 
-// InvocationBuilder is the dependency-injection seam between chathub and the
+// InvocationBuilder is the dependency-injection seam between chat Hub and the
 // concrete agent.Invocation that drives a single agent turn. The
 // production wiring (telegram/setup.go) installs a builder that closes over
 // the LLM client, tool registry, per-channel executor (the Telegram bot's
@@ -22,18 +22,18 @@ import (
 // available to the builder — it carries the channel-specific handles
 // (tele.Context, HTTP request id, scheduler task) the executor needs to
 // deliver output. Once the Invocation returns the builder MUST NOT install
-// its own OnEvent — the chathub AgentLoop overwrites it.
+// its own OnEvent; the chat AgentLoop overwrites it.
 type InvocationBuilder func(ctx context.Context, run *Run, msg InboundMessage) (agent.Invocation, error)
 
-// AgentLoopAdapter is the production chathub.AgentLoop implementation. It
+// AgentLoopAdapter is the production chat.AgentLoop implementation. It
 // wraps internal/agent.Run, translating the runtime's typed Event
-// callback stream into the chathub.OutboundEvent vocabulary the Hub fan-out
+// callback stream into the chat.OutboundEvent vocabulary the Hub fan-out
 // expects. Per PRD §11.2 streaming events, the adapter:
 //
 //   - emits EventMessageDelta for each non-empty assistant delta
 //   - emits EventToolStart / EventToolEnd with arg KEYS only — values
 //     never cross this boundary (CLAUDE.md value-leakage rule)
-//   - emits EventQuestionRequested opaquely (Slice 6 fills the schema)
+//   - emits EventQuestionRequested opaquely for channel adapters to render
 //   - emits EventMessageDone + EventUsage at the end of the run
 //   - skips no-op upstream events (tools_exposed, llm_start, stats) and
 //     keeps them on Run.Metadata for adapters that want to log them
@@ -49,18 +49,18 @@ type AgentLoopAdapter struct {
 // instead of panicking on the first Telegram message.
 func NewAgentLoopAdapter(build InvocationBuilder) (*AgentLoopAdapter, error) {
 	if build == nil {
-		return nil, errors.New("chathub: InvocationBuilder is required")
+		return nil, errors.New("chat: InvocationBuilder is required")
 	}
 	return &AgentLoopAdapter{build: build}, nil
 }
 
-// Run satisfies chathub.AgentLoop. Sequence per call:
+// Run satisfies chat.AgentLoop. Sequence per call:
 //  1. Builder produces an agent.Invocation. ChannelData carries any
 //     adapter-private handles the builder needs.
 //  2. We override Invocation.OnEvent with a translator that fans out into
-//     chathub.OutboundEvent via the supplied emit closure. A pre-existing
+//     chat.OutboundEvent via the supplied emit closure. A pre-existing
 //     OnEvent on the Invocation is preserved (called first), matching the
-//     agentruntime convention so telemetry attached by builders survives.
+//     agent runtime convention so telemetry attached by builders survives.
 //  3. We call agent.Run; on return we emit a MessageDone (with the
 //     final text) followed by an optional EventUsage carrying captured
 //     stats. Hub emits the terminal Done event after Run returns.
@@ -70,11 +70,11 @@ func NewAgentLoopAdapter(build InvocationBuilder) (*AgentLoopAdapter, error) {
 // them to RunStatusFailed / RunStatusCancelled in dispatch().
 func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage, emit EmitFn) error {
 	if a == nil || a.build == nil {
-		return errors.New("chathub: AgentLoopAdapter not wired")
+		return errors.New("chat: AgentLoopAdapter not wired")
 	}
 	inv, err := a.build(ctx, run, msg)
 	if err != nil {
-		return fmt.Errorf("chathub: build invocation: %w", err)
+		return fmt.Errorf("chat: build invocation: %w", err)
 	}
 
 	previousOnEvent := inv.OnEvent
@@ -107,8 +107,8 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 			}
 		case agent.EventLLMStart:
 			// Hub already emitted RunStarted; per-iteration LLM start is
-			// telemetry-only in v1. SSE adapters in Slice 4 can subscribe
-			// to a future EventMessageCreated frame if they want it.
+			// telemetry-only in v1. SSE adapters can subscribe to a future
+			// EventMessageCreated frame if they want it.
 		case agent.EventLLMDelta:
 			if event.Delta == "" {
 				return
@@ -144,9 +144,8 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 				Payload: payload,
 			})
 		case agent.EventQuestionRequested:
-			// Slice 6 will define the schema; today we pass the payload
-			// through opaquely so a forward-compatible adapter can choose
-			// to render it.
+			// Pass the payload through opaquely so a forward-compatible
+			// adapter can choose to render it.
 			payload := map[string]any{}
 			for k, v := range event.QuestionPayload {
 				payload[k] = v

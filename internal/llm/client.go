@@ -21,7 +21,7 @@ type Request struct {
 	// keep working unchanged.
 	//
 	// The wire format depends on the provider: OpenAI accepts the top-level
-	// `reasoning_effort` string; OpenRouter normalizes the legacy top-level
+	// `reasoning_effort` string; OpenRouter normalizes the older top-level
 	// flag and also accepts the nested `reasoning: {effort: "..."}` object.
 	// The openai.go transport emits BOTH so the request is portable.
 	ReasoningEffort string
@@ -96,7 +96,7 @@ type TokenUsage struct {
 // stream_options.include_usage. Providers that omit usage leave it zero, so
 // callers must tolerate that.
 type Token struct {
-	Content   string
+	Content string
 	// Reasoning is the chain-of-thought delta produced by reasoning-capable
 	// providers (DeepSeek V4 Flash, OpenAI o-series / gpt-5*, Anthropic
 	// thinking). It is NOT part of the final answer; UIs should render it

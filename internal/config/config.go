@@ -15,6 +15,7 @@ const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
 const DefaultAgentLoopMaxSteps = 100
+
 // Capability limits raised in Phase-F (2026-05-15): the agent caps LATENCY
 // and COST, not CAPABILITY. Per docs/aura-main-loop-limits-audit.md §3.5
 // "cap LATENCY and COST, not CAPABILITY".
@@ -44,9 +45,9 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	TelegramToken         string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
-	Allowlist             []string `envconfig:"TELEGRAM_ALLOWLIST"`
-	AllowlistConfigured   bool
+	TelegramToken       string   `envconfig:"TELEGRAM_TOKEN" required:"true"`
+	Allowlist           []string `envconfig:"TELEGRAM_ALLOWLIST"`
+	AllowlistConfigured bool
 	// MaxContextTokens is the LLM OUTPUT cap (passed as llm.Request.MaxTokens).
 	// The env var name is historical; see docs/aura-main-loop-limits-audit.md
 	// §3.1 for the misname analysis. Rename deferred to a future cleanup story.
@@ -76,7 +77,7 @@ type Config struct {
 	QdrantAPIKey          string  `envconfig:"QDRANT_API_KEY"`
 	MemorySearchTimeoutMS int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	// Phase 02 governance knobs. Defaults match the constants we shipped in
-	// agentloop/governance.go and tools/memory_search.go. Operators can
+	// agent loop governance and tools/memory_search.go. Operators can
 	// shrink MAX_TOOL_RESULT_CHARS to fit smaller context windows, raise
 	// the half-life for archive when running a project that wants slower
 	// memory aging, etc.
@@ -108,16 +109,16 @@ type Config struct {
 	// meaningful for MRL-trained models) trades a tiny MTEB delta for
 	// 3x-6x smaller Qdrant vectors and cosine compute. Aura targets 256
 	// in production.
-	EmbeddingOutputDim         int     `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
-	DBPath                     string  `envconfig:"DB_PATH" default:"./aura.db"`
-	HTTPPort                   string  `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
-	Timezone                   string  `envconfig:"AURA_TIMEZONE"`
-	Headless                   bool    `envconfig:"AURA_HEADLESS" default:"false"`
-	EnvPath                    string  `envconfig:"AURA_ENV_PATH" default:".env"`
-	DashboardTokenTTLHours     int     `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
-	PromptVersion              string  `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
-	SkillRoutingMode           string  `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
-	AgentLoopMaxSteps          int     `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"100"`
+	EmbeddingOutputDim     int    `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
+	DBPath                 string `envconfig:"DB_PATH" default:"./aura.db"`
+	HTTPPort               string `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
+	Timezone               string `envconfig:"AURA_TIMEZONE"`
+	Headless               bool   `envconfig:"AURA_HEADLESS" default:"false"`
+	EnvPath                string `envconfig:"AURA_ENV_PATH" default:".env"`
+	DashboardTokenTTLHours int    `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
+	PromptVersion          string `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
+	SkillRoutingMode       string `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
+	AgentLoopMaxSteps      int    `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"100"`
 	// ReasoningEffort drives the provider-side chain-of-thought field.
 	// Accepted values: "", "none", "minimal", "low", "medium", "high",
 	// "xhigh", "true"/"enabled". Empty means "do not emit any reasoning

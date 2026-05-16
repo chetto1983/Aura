@@ -20,8 +20,8 @@ import (
 )
 
 // InvocationBuilder constructs agent.Invocation values for the Telegram channel.
-// It is the channels/telegram counterpart of the former Bot.buildTelegramInvocation
-// method, extracted so internal/telegram/ remains a thin channel wrapper.
+// It keeps invocation construction beside the Telegram channel adapter so
+// internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
 	b        *tgtelegram.Bot
 	hub      *chat.Hub // set after hub creation; used for ask_user resume routing
@@ -34,8 +34,8 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 }
 
 // NewHub creates a chat.Hub wired with Telegram inbound/outbound adapters and
-// this bot's InvocationBuilder. It replaces the former bot.NewHub method so that
-// internal/telegram does not need to import internal/channels/telegram (cycle).
+// this bot's InvocationBuilder while avoiding an internal/telegram ->
+// internal/channels/telegram import cycle.
 func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStore) (*chat.Hub, error) {
 	ib := NewInvocationBuilder(b)
 	adapter, err := chat.NewAgentLoopAdapter(ib.Build)

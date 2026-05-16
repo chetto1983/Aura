@@ -318,7 +318,7 @@ func TestListFilesHidesSensitivePaths(t *testing.T) {
 }
 
 func TestReadFileOnDirectoryReturnsListingInsteadOfError(t *testing.T) {
-	// The legacy behaviour was to error with "is a directory" and prod the
+	// The previous behaviour was to error with "is a directory" and prod the
 	// model via a hint to call list_files. The conversation logs showed the
 	// model would then waste a turn translating that error into list_files,
 	// often with the wrong path. read_file now resolves the case itself:

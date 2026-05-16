@@ -7,7 +7,7 @@ import (
 	"github.com/aura/aura/internal/storage/sources/store"
 )
 
-// DocTool consolidates the legacy verb-tools (create_xlsx, create_docx,
+// DocTool consolidates the document verb tools (create_xlsx, create_docx,
 // create_pdf) into a single action-enum surface. Picobot pattern: one
 // tool, one action enum acting as the format. The shared block grammar
 // (heading/paragraph/bullet/table) already lives in files_blocks.go;

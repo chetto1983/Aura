@@ -16,10 +16,9 @@ import (
 	runstore "github.com/aura/aura/internal/storage/runs"
 )
 
-// AgentLoop is the single channel-neutral entry point into the agent
-// runtime. Production wiring binds this to a small adapter over
-// internal/agentruntime.Run (which already speaks the OnEvent callback
-// pattern). Tests inject a fake.
+// AgentLoop is the single channel-neutral entry point into the agent runtime.
+// Production wiring binds this to a small adapter over agent.Run, which already
+// speaks the OnEvent callback pattern. Tests inject a fake.
 //
 // The contract: Run reads the InboundMessage, executes one agent turn
 // (LLM calls + tool dispatch), emits OutboundEvents through the emit
@@ -31,7 +30,7 @@ type AgentLoop interface {
 	Run(ctx context.Context, run *Run, msg InboundMessage, emit EmitFn) error
 }
 
-// EmitFn is the per-event publish callback the Agent Loop uses to push
+// EmitFn is the per-event publish callback the agent runtime uses to push
 // OutboundEvents toward the outbound adapter selected for this run's
 // channel. Errors from emit are logged but do not abort the run — a
 // downed outbound (e.g. Telegram API momentarily unreachable) shouldn't
@@ -106,7 +105,7 @@ type Config struct {
 // RegisterInbound / RegisterOutbound before the first Receive call.
 func New(cfg Config) (*Hub, error) {
 	if cfg.Loop == nil {
-		return nil, errors.New("chathub: AgentLoop is required")
+		return nil, errors.New("chat: AgentLoop is required")
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -130,7 +129,7 @@ func (h *Hub) RegisterInbound(adapter InboundAdapter) {
 	}
 	ch := adapter.Channel()
 	if _, exists := h.inbound[ch]; exists {
-		h.logger.Warn("chathub: replacing inbound adapter", "channel", ch)
+		h.logger.Warn("chat: replacing inbound adapter", "channel", ch)
 	}
 	h.inbound[ch] = adapter
 }
@@ -155,11 +154,11 @@ func (h *Hub) RegisterOutbound(adapter OutboundAdapter) {
 func (h *Hub) Receive(ctx context.Context, inboundChannel Channel, raw any) (*Run, error) {
 	adapter, ok := h.inbound[inboundChannel]
 	if !ok {
-		return nil, fmt.Errorf("chathub: no inbound adapter for channel %q", inboundChannel)
+		return nil, fmt.Errorf("chat: no inbound adapter for channel %q", inboundChannel)
 	}
 	msg, err := adapter.Normalize(ctx, raw)
 	if err != nil {
-		return nil, fmt.Errorf("chathub: normalize %s: %w", inboundChannel, err)
+		return nil, fmt.Errorf("chat: normalize %s: %w", inboundChannel, err)
 	}
 	return h.dispatch(ctx, msg)
 }
@@ -203,7 +202,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 			Metadata:       lifecycleRunMetadata(msg),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("chathub: persist run: %w", err)
+			return nil, fmt.Errorf("chat: persist run: %w", err)
 		}
 		run = chatRunFromStored(stored)
 		if !created {
@@ -228,7 +227,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		Type:    EventRunStarted,
 		Payload: map[string]any{"principal_id": msg.PrincipalID, "thread_id": msg.ThreadID, "channel": string(msg.Channel)},
 	}); err != nil {
-		h.logger.Warn("chathub: emit run_started failed", "run_id", runID, "err", err)
+		h.logger.Warn("chat: emit run_started failed", "run_id", runID, "err", err)
 	}
 
 	err := h.loop.Run(runCtx, run, msg, emit)
@@ -313,7 +312,7 @@ func (h *Hub) makeEmit(ctx, persistCtx context.Context, run *Run, mode DeliveryM
 		if h.lifecycle != nil && isDurableRunEvent(ev.Type) {
 			if err := h.persistLifecycleEvent(persistCtx, run, ev); err != nil {
 				firstErr = err
-				h.logger.Error("chathub: persist lifecycle event failed",
+				h.logger.Error("chat: persist lifecycle event failed",
 					"run_id", run.ID, "channel", run.Channel,
 					"event", ev.Type, "err", err)
 			}
@@ -321,7 +320,7 @@ func (h *Hub) makeEmit(ctx, persistCtx context.Context, run *Run, mode DeliveryM
 		for _, a := range adapters {
 			if err := a.Deliver(ctx, ev); err != nil && firstErr == nil {
 				firstErr = err
-				h.logger.Warn("chathub: outbound deliver failed",
+				h.logger.Warn("chat: outbound deliver failed",
 					"run_id", run.ID, "channel", run.Channel, "mode", mode,
 					"event", ev.Type, "err", err)
 			}
@@ -335,7 +334,7 @@ func (h *Hub) persistLifecycleEvent(ctx context.Context, run *Run, ev OutboundEv
 	defer cancel()
 	_, err := h.lifecycle.AppendEvent(persistCtx, lifecycleEventParams(run, ev))
 	if err != nil {
-		return fmt.Errorf("chathub: append lifecycle event: %w", err)
+		return fmt.Errorf("chat: append lifecycle event: %w", err)
 	}
 	return nil
 }
@@ -531,8 +530,8 @@ func textPreview(text string) string {
 }
 
 // newRunID + newEventID generate short hex correlators (8 bytes = 16 hex
-// chars). Match the format already used by agentruntime.newRunID so logs
-// across the two layers correlate naturally.
+// chars). Match the agent runtime run_id format so logs across the two layers
+// correlate naturally.
 func newRunID() string {
 	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {

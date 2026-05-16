@@ -399,7 +399,7 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 			v = strings.TrimSpace(v)
 			// Secret-shaped keys route through the secrets store so the
 			// dashboard rotates the same row applySecretsToConfig reads at
-			// boot (Phase-H closure). Also delete any legacy settings-table
+			// boot (Phase-H closure). Also delete any retired settings-table
 			// row so the precedence collision documented in
 			// docs/settings-audit-2026-05-15.md cannot recur.
 			if secretKey, isSecret := routeToSecretsStore(k); isSecret {
@@ -418,7 +418,7 @@ func handleSettingsUpdate(deps Deps) http.HandlerFunc {
 						continue
 					}
 				}
-				// Clean legacy settings row so the old write target stops
+				// Clean retired settings row so the old write target stops
 				// shadowing future reads (best-effort: ignore "not found").
 				_ = deps.Settings.Delete(ctx, k)
 				applied = append(applied, k)

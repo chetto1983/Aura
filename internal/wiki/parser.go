@@ -35,7 +35,7 @@ func NewWriter(store *Store, llm llm.Client, logger *slog.Logger) *Writer {
 }
 
 // WriteFromLLMOutput parses LLM output, validates it, and writes it to the wiki.
-// It auto-detects MD (frontmatter+body) or legacy YAML format.
+// It auto-detects MD (frontmatter+body) or YAML compatibility format.
 // If validation fails, it retries the LLM with schema error feedback.
 func (w *Writer) WriteFromLLMOutput(ctx context.Context, rawOutput string, promptVersion string) (*Page, error) {
 	page, err := parseWikiOutput(rawOutput)
@@ -125,7 +125,7 @@ func (w *Writer) retryWithFeedback(ctx context.Context, originalOutput string, v
 	return nil, fmt.Errorf("schema validation failed after %d retries: %w", MaxWriteRetries, lastErr)
 }
 
-// parseWikiOutput auto-detects format: MD with frontmatter, or legacy YAML.
+// parseWikiOutput auto-detects format: MD with frontmatter, or YAML compatibility format.
 func parseWikiOutput(raw string) (*Page, error) {
 	// Try MD format first (starts with ---)
 	trimmed := strings.TrimSpace(raw)
@@ -135,7 +135,7 @@ func parseWikiOutput(raw string) (*Page, error) {
 		}
 	}
 
-	// Fall back to legacy YAML extraction
+	// Fall back to YAML compatibility extraction.
 	return parseYAMLOutput(raw)
 }
 
@@ -206,7 +206,7 @@ func findClosingDelimiter(s string) int {
 	return -1
 }
 
-// parseYAMLOutput extracts YAML from LLM output (legacy format).
+// parseYAMLOutput extracts YAML from LLM output for compatibility.
 func parseYAMLOutput(raw string) (*Page, error) {
 	content := raw
 

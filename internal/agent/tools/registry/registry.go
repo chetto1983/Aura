@@ -216,7 +216,7 @@ func (r *Registry) Definitions() []llm.ToolDefinition {
 
 // DefinitionFor returns the single LLM-facing definition for the named
 // tool, or false when the tool is not registered. Used as the resolver
-// for the agentloop's permissive tool pool (deferred-tools rollout):
+// for the agent loop's permissive tool pool (deferred-tools rollout):
 // the loop calls this when the model invokes a tool by name that isn't
 // yet in this turn's pool, then adds the returned def before dispatch.
 func (r *Registry) DefinitionFor(name string) (llm.ToolDefinition, bool) {

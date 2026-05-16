@@ -51,7 +51,7 @@ func NewChatService(hub HubReceiver, router *Router) *ChatService {
 }
 
 // Chat dispatches a single chat turn through the Hub and waits for the
-// terminal Result. Returns a ChatReply identical in shape to the legacy
+// terminal Result. Returns a ChatReply identical in shape to the public
 // api.ChatReply so the HTTP handler stays byte-identical.
 func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatReply, error) {
 	if s == nil || s.hub == nil || s.router == nil {

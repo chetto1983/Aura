@@ -114,16 +114,16 @@ type chatResponse struct {
 	Usage usageJSON `json:"usage"`
 }
 
-// usageJSON covers both the legacy OpenAI shape (prompt/completion/total
+// usageJSON covers both the older OpenAI shape (prompt/completion/total
 // only) and the reasoning-aware shape OpenAI introduced for o-series /
 // gpt-5* and that OpenRouter mirrors for reasoning-capable models.
 // completion_tokens_details.reasoning_tokens lets the caller separate
 // "tokens spent thinking" from "tokens shown to the user" so cost
 // attribution and prompt-budget heuristics can act on the breakdown.
 type usageJSON struct {
-	PromptTokens           int                       `json:"prompt_tokens"`
-	CompletionTokens       int                       `json:"completion_tokens"`
-	TotalTokens            int                       `json:"total_tokens"`
+	PromptTokens           int                         `json:"prompt_tokens"`
+	CompletionTokens       int                         `json:"completion_tokens"`
+	TotalTokens            int                         `json:"total_tokens"`
 	CompletionTokensDetail *completionTokensDetailJSON `json:"completion_tokens_details,omitempty"`
 }
 

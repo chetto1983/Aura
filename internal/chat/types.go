@@ -1,24 +1,22 @@
-// Package chathub is the channel-neutral entry point for every conversation
+// Package chat is the channel-neutral entry point for every conversation
 // that drives an agent turn in Aura. Telegram, the web dashboard, /api/chat,
 // scheduled heartbeat tasks and cron jobs all produce the same InboundMessage
-// and consume the same OutboundEvent stream. The Agent Loop (built on
-// internal/agentruntime) sees a uniform input and emits structured events;
-// the adapters translate those events into channel-specific outputs
-// (Telegram progressive edits, SSE frames, buffered JSON for /api/chat,
-// silent task updates for heartbeat/cron).
+// and consume the same OutboundEvent stream. The agent runtime sees a uniform
+// input and emits structured events; adapters translate those events into
+// channel-specific outputs (Telegram progressive edits, SSE frames, buffered
+// JSON for /api/chat, silent task updates for heartbeat/cron).
 //
-// Wave 3.0 Slice 0 — extraction of the runtime from internal/telegram.
-// See docs/wave-3-chathub-slice0.md for scope, decisions and the migration
-// path. Slice 0 ships ONLY the contracts + Hub plumbing; subsequent slices
-// (streaming, attachments, questions, threads, React UI) layer on top
+// Current contract:
+// The chat package keeps the contracts and Hub plumbing current while
+// streaming, attachments, questions, threads and UI adapters layer on top
 // without touching the agent-side core.
 //
 // Design rules locked in by PRD §20 (anti-overengineering):
 //   - max 5 types in this file
 //   - no factory pattern, no plugin system, no abstract base classes
-//   - adapters live under chathub/adapters/, not as generic interfaces
+//   - channel-specific adapters live outside this core package
 //   - channel-specific metadata travels via ChannelData (map[string]any) on
-//     InboundMessage; the Agent Loop MUST NOT read this field. Adapters that
+//     InboundMessage; the agent runtime MUST NOT read this field. Adapters that
 //     need state across inbound+outbound use Run.Metadata.
 package chat
 
@@ -63,11 +61,9 @@ const (
 	RunStatusFailed         RunStatus = "failed"
 )
 
-// EventType enumerates every event the Agent Loop can emit. Subset of
-// PRD §11.2 streaming events. Slice 0 ships the type constants; Slice 4
-// implements the streaming wire format on top. Adapters can ignore types
-// they don't care about (a buffered web outbound only needs Done/Error;
-// SSE needs Delta + ToolStart + ToolEnd).
+// EventType enumerates every event the agent runtime can emit. It is the
+// PRD §11.2 streaming event vocabulary shared by buffered and streaming
+// adapters.
 type EventType string
 
 const (
@@ -86,9 +82,9 @@ const (
 	EventCancelled         EventType = "cancelled"
 )
 
-// AttachmentRef is the chathub view of an uploaded file. Adapters resolve
+// AttachmentRef is the chat view of an uploaded file. Adapters resolve
 // channel-specific upload payloads (Telegram document, web multipart) into
-// this stable shape before InboundMessage reaches the Agent Loop. The
+// this stable shape before InboundMessage reaches the agent runtime. The
 // agent never sees the upload bytes — it sees a source_id and decides how
 // to read it via the source tool.
 type AttachmentRef struct {
@@ -101,8 +97,8 @@ type AttachmentRef struct {
 }
 
 // QuestionAnswer is the inbound payload when the user is replying to a
-// previously-emitted question_requested event. PRD §9.2 Question state
-// machine. Slice 0 ships the shape; full question UX lands in Slice 6.
+// previously-emitted question_requested event. It follows the PRD §9.2
+// question state machine shape.
 type QuestionAnswer struct {
 	QuestionID        string
 	SelectedOptionIDs []string
@@ -111,7 +107,7 @@ type QuestionAnswer struct {
 }
 
 // InboundMessage is the channel-neutral envelope produced by every
-// InboundAdapter. The Agent Loop is contract-bound to read ONLY the fields
+// InboundAdapter. The agent runtime is contract-bound to read ONLY the fields
 // declared here — channel-specific metadata travels in ChannelData and is
 // adapter-private.
 type InboundMessage struct {
@@ -135,13 +131,13 @@ type InboundMessage struct {
 
 	// ChannelData carries adapter-private state. Examples: telegram tele.Bot
 	// pointer + chat_id needed by the outbound adapter to send the reply;
-	// web request_id needed by the SSE adapter to flush frames. The Agent
-	// Loop MUST NOT read this map — assertions on its absence in
-	// agentruntime tests guard the invariant.
+	// web request_id needed by the SSE adapter to flush frames. The agent
+	// runtime MUST NOT read this map; assertions on its absence in
+	// agent runtime tests guard the invariant.
 	ChannelData map[string]any
 }
 
-// OutboundEvent is the channel-neutral envelope every Agent-Loop emit
+// OutboundEvent is the channel-neutral envelope every agent runtime emit
 // produces. Each adapter consumes the subset of types it can render: a
 // Telegram outbound batches deltas into progressive edits, a buffered
 // /api/chat outbound only acts on MessageDone, an SSE outbound flushes
@@ -162,11 +158,9 @@ type OutboundEvent struct {
 	CreatedAt time.Time
 }
 
-// Run is the in-memory record of a single agent turn. Persisted by the
-// adapter that owns the channel (telegram_outbound writes back to the
-// conversations table; web_outbound to chat_runs once Slice 3 ships).
-// Slice 0 keeps Run purely in-memory; the persistence layer arrives with
-// Slice 3.
+// Run is the in-memory record of a single agent turn. Durable run metadata is
+// persisted by the Hub lifecycle store, while adapters own delivery-specific
+// side effects.
 type Run struct {
 	ID          string
 	ThreadID    string

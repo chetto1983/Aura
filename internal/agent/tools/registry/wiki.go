@@ -18,26 +18,24 @@ import (
 // requires a coordinated update of wiki.promptVersionRe.
 const wikiPagePromptVersion = "v1"
 
-// WikiPageTool is the single dynamic mutation surface Aura uses for
-// her wiki. It replaces the legacy `write_wiki_page` (which only knew
-// full-body replace) with a four-action verb family in one tool —
-// inspired by picobot's memory tool layout but adapted to Aura's
-// structured-frontmatter, graph-aware wiki:
+// WikiPageTool is the single dynamic mutation surface Aura uses for her wiki.
+// It exposes a four-action verb family in one tool, inspired by picobot's
+// memory tool layout but adapted to Aura's structured-frontmatter, graph-aware
+// wiki:
 //
 //   - create  — fresh new page with full frontmatter + body
-//   - replace — overwrite an existing page's body (and optionally
-//     frontmatter fields); same shape as the legacy tool
+//   - replace — overwrite an existing page's body and optional frontmatter
+//     fields
 //   - edit    — surgical find/replace on an existing page's body
 //     (Anthropic Edit-tool style; the LLM doesn't have to round-trip
 //     the whole body for a small fix)
 //   - append  — add a new ## section at the bottom; when source_id
 //     is provided, auto-emits `^[src_xxx]` provenance markers
-//     (matches Wave 2.4 ingest merge semantics)
+//     (matches source-ingest merge semantics)
 //
-// Wave 2.1 backlink maintenance fires after every action that writes
-// a page, so any [[wiki-link]] introduced via this tool gets its
-// reverse-edge wired automatically. Wave 2.2 graph index refreshes
-// on the same path.
+// Backlink maintenance fires after every action that writes a page, so any
+// [[wiki-link]] introduced via this tool gets its reverse edge wired
+// automatically. Graph index refreshes on the same path.
 //
 // Conflict responses (D-03) flow through here unchanged: the wiki
 // Store returns a *wiki.ConflictError when expected_updated_at
@@ -328,8 +326,8 @@ func (t *WikiPageTool) doEdit(ctx context.Context, args map[string]any) (string,
 // When source_id is supplied, each non-empty non-heading line in the
 // new section gets a ^[src_xxx] marker appended (idempotent — won't
 // double-tag) and source_id is added to Sources if not already
-// present. Matches Wave 2.4 ingest merge semantics so chat-written
-// citations look identical to LLM-extracted ones.
+// present. Matches source-ingest merge semantics so chat-written citations
+// look identical to LLM-extracted ones.
 func (t *WikiPageTool) doAppend(ctx context.Context, args map[string]any) (string, error) {
 	slug := strings.TrimSpace(stringArg(args, "slug"))
 	heading := strings.TrimSpace(stringArg(args, "heading"))
@@ -372,9 +370,9 @@ func (t *WikiPageTool) doAppend(ctx context.Context, args map[string]any) (strin
 }
 
 // writeAndRespond is the shared tail of every action: validate, write
-// through the wiki Store (which fires Wave 2.1 backlinks + Wave 2.2
-// graph index refresh), submit the reindex job, and emit a structured
-// JSON result. ConflictError is translated into a successful
+// through the wiki Store (which updates backlinks and graph indexes), submit
+// the reindex job, and emit a structured JSON result. ConflictError is
+// translated into a successful
 // {"error":"conflict",...} result so the LLM retry path stays
 // deterministic.
 func (t *WikiPageTool) writeAndRespond(ctx context.Context, page *wiki.Page, expectedUpdatedAt string) (string, error) {
@@ -413,9 +411,9 @@ func (t *WikiPageTool) writeAndRespond(ctx context.Context, page *wiki.Page, exp
 // annotateLines walks a multi-line body and appends a provenance
 // marker to each non-empty, non-heading, non-blockquote line. Headings
 // (#-prefixed) and blockquote markers (>-prefixed) skip the appendix
-// so the rendered structure stays clean. Matches the per-line
-// behavior of Wave 2.5's ingest path so a chat-driven append produces
-// the same shape as a source-driven multi-page-touch update.
+// so the rendered structure stays clean. Matches source-ingest line annotation
+// so a chat-driven append produces the same shape as a source-driven
+// multi-page-touch update.
 func annotateLines(body, sourceID string) string {
 	if sourceID == "" {
 		return body

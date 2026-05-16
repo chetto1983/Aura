@@ -12,7 +12,7 @@ import (
 // Every other tool is discovered through one of two paths:
 //
 //  1. The model reads the catalog manifest in the system prompt and calls
-//     a tool by name directly. The agentloop's permissive-load path
+//     a tool by name directly. The agent loop's permissive-load path
 //     resolves the name via Registry.DefinitionFor and adds the schema
 //     to the pool for this turn.
 //
@@ -32,9 +32,9 @@ var AlwaysOnCore = []string{
 }
 
 // MakeToolsProvider returns the per-turn ToolsProvider closure consumed
-// by agentloop.Options.ToolsProvider. Post-rollout the closure is
+// by agent.Options.ToolsProvider. Post-rollout the closure is
 // stateless and trivial: it always returns the always-on set. Pool
-// growth happens inside agentloop.Run (see toolPool.AbsorbToolSearchResult
+// growth happens inside agent.Run (see toolPool.AbsorbToolSearchResult
 // and EnsureLoaded).
 //
 // The signature still takes function-typed dependencies so existing

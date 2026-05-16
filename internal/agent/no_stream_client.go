@@ -9,8 +9,7 @@ import (
 // noStreamClient adapts llm.Client.Send to the ChatClient interface.
 // Background agents (swarm workers, scheduler jobs, /api/chat pipe) use
 // llm.Client.Send rather than Stream: there is no Telegram message to
-// progressively edit. Streaming asymmetry is intentional — see the Runner
-// doc comment in internal/agent/runner.go.
+// progressively edit. Streaming asymmetry is intentional.
 type noStreamClient struct {
 	client          llm.Client
 	model           string

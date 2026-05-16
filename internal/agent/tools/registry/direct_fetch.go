@@ -253,7 +253,7 @@ func readBounded(r io.Reader, maxBytes int) ([]byte, bool, error) {
 
 // readabilityMinLength sets the floor for Readability's "this is an
 // article" verdict. Below this, we treat the page as not-an-article and
-// fall back to the legacy DOM walker so short pages (login walls, error
+// fall back to the basic DOM walker so short pages (login walls, error
 // pages, redirect stubs, single-line API JSON) still surface something
 // useful.
 const readabilityMinLength = 250
@@ -271,7 +271,7 @@ const readabilityMinLength = 250
 //	4. Links are extracted from the cleaned subtree only.
 //
 // Fallback: if Readability rejects the page (Length below threshold or
-// error), drop to the legacy DOM walker so we still return something
+// error), drop to the basic DOM walker so we still return something
 // for non-article pages (API JSON, error pages, redirect stubs).
 func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 	article, err := readability.FromReader(bytes.NewReader(body), base)
@@ -289,7 +289,7 @@ func parseHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 			}
 		}
 	}
-	return legacyHTMLFetchResult(body, base)
+	return basicHTMLFetchResult(body, base)
 }
 
 // extractArticleLinks pulls <a href> from the readability-cleaned HTML
@@ -322,11 +322,11 @@ func extractArticleLinks(htmlContent string, base *url.URL) []string {
 	return uniqueStrings(links)
 }
 
-// legacyHTMLFetchResult is the prior DOM walker, kept as a fallback for
+// basicHTMLFetchResult is the DOM walker kept as a fallback for
 // pages where Readability rejects the body (too short, not an article,
 // or parse error). Preserves the existing behaviour for non-article
 // pages so we never return a worse result than before the refactor.
-func legacyHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
+func basicHTMLFetchResult(body []byte, base *url.URL) webFetchResponse {
 	root, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return webFetchResponse{Title: base.String(), Content: collapseInline(string(body))}

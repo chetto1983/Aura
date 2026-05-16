@@ -21,7 +21,7 @@ const manifestDescLimit = 70
 //	Every registered tool is listed below by name + short description. Full
 //	input schemas are NOT loaded — call tool_search(query) to fetch them
 //	for the tools you want to invoke, OR call a tool directly by name and
-//	the agentloop will permissive-load its schema for this turn.
+//	the agent loop will permissive-load its schema for this turn.
 //
 //	- create_docx — Generate a Word document (.docx) from blocks
 //	- create_xlsx — Generate an Excel workbook (.xlsx) from rows
@@ -41,7 +41,7 @@ func RenderToolManifest(defs []llm.ToolDefinition) string {
 
 	var b strings.Builder
 	b.WriteString("## Tool Catalog\n")
-	b.WriteString("Every registered tool is listed below by name and short description. Full input schemas are NOT loaded in this turn's pool — call tool_search(query) to fetch them, OR invoke a tool directly by name (the agentloop will load its schema for this turn).\n\n")
+	b.WriteString("Every registered tool is listed below by name and short description. Full input schemas are NOT loaded in this turn's pool — call tool_search(query) to fetch them, OR invoke a tool directly by name (the agent loop will load its schema for this turn).\n\n")
 	for _, d := range sorted {
 		b.WriteString("- ")
 		b.WriteString(d.Name)
@@ -93,4 +93,3 @@ func ManifestTokenEstimate(manifest string) int {
 	}
 	return len(manifest) / 4
 }
-

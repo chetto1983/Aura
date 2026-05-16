@@ -995,3 +995,46 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - Capsule prepend uses `append([]llm.Message{...}, messagesForModel...)` — creates a new slice, never mutates state.Messages()
   - sort.Slice on briefEntry.lastSeen.After() gives newest-first ordering matching the repo.Recent contract
 ---
+
+## [2026-05-16 HH:MM] — US-J05 shipped as 0ceb7133
+- Added per-(tool,class) retry budget: CountOutcome to Repo interface, CheckBudget in budget.go, RetryBudgets/RetryBudgetRepo Options fields, and budget gate in the runLoop fresh-call dispatch section
+- Files touched: 8 (repo.go +CountOutcome interface, sqlite.go +CountOutcome impl, budget.go new, budget_test.go new 8 tests, loop.go +RetryBudgets/RetryBudgetRepo/budget-check-block, briefer_test.go +CountOutcome on fakeRepo, executor_test.go +CountOutcome on alwaysErrRepo, prd.json)
+- Validation: go build/vet/test all green (full suite 78+ packages)
+- LOC delta: +305/-10 net (2 new files + interface additions + loop wiring)
+- Learnings:
+  - tools := pool.Defs() in loop.go shadowed the 'tools' package alias; renamed to toolDefs to avoid the conflict — same pitfall as US-D03 (noted in D03 progress entry, still hit again)
+  - budget=0 convention: treat limit=max(budget,1) so budget=0 means "1 attempt allowed before refusing" (fail-open on first call, refuse after the first failure of that class)
+  - CheckBudget fails open on repo error (returns true, "") — storage hiccup must never silently block a legitimately needed tool call; budget is advisory, not a hard safety gate
+  - The refusal row is persisted as outcome=blocked so /api/tool-warnings (US-J06) and the briefer can surface it without special-casing
+---
+
+## [2026-05-16 14:30] — US-J06 shipped as fa7d4559
+- Added GET /api/tool-warnings operator endpoint: aggregates tool_attempts failures by (tool_name, tool_kind, class) for the last 7 days, admin-gated via SKILLS_ADMIN=true.
+- Files touched: 8 (repo.go, sqlite.go, router.go, tool_warnings.go, tool_warnings_test.go, types.go, app.go, prd.json)
+- Validation: go build/vet/test all green (70 packages)
+- LOC delta: +298
+- Learnings:
+  - WarningsReader is a separate interface from Repo to avoid adding Warnings() to the existing Repo interface (which would force fakeRepo in briefer_test.go to implement it).
+  - The package `internal/agent/tools/index` is named `toolindex` (not `index`) — importing without alias still gives you `toolindex.Xxx`.
+  - make([]T, 0, ...) is required (not nil slice) so JSON encodes as [] not null when no warnings exist.
+---
+
+## [2026-05-16 14:30] — US-J07 shipped as f4068eb1
+- Phase 6 closure docs: progress.md closure row + benchmark.md actuals + prd.md §6 closure note + audit §5 flipped from partial to met
+- Files touched: 5 (progress.md, benchmark.md, prd.md, docs/aura-main-loop-limits-audit.md, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (all cached — no code changes)
+- LOC delta: +17
+- Learnings:
+  - .planning/* is gitignored; `git add -f` required (established precedent)
+  - Unknown side-effect / reconcile-first benchmark row correctly marked "deferred (Phase-K)" per Alt-A scope decision
+---
+
+## [2026-05-16 00:00] — US-K01 shipped as 9d74809d
+- Added pure ArchiveEligibility(role, content string) (bool, string) to internal/storage/memoryindex/rebuild.go; Phase07A scope: tool→(false,"role_tool_excluded"), system→(false,"role_system_excluded"), user/assistant→(true,""); no consumers wired
+- Files touched: 2 (rebuild.go +14 LOC, rebuild_test.go +21 LOC) + prd.json
+- Validation: go build/vet/test all green (full suite 80+ packages)
+- LOC delta: +35 net (function + table-driven test)
+- Learnings:
+  - content param unused in Phase07A — named _ in signature to avoid lint complaint; keeps signature stable for future Phase07B content-based filtering
+  - No eligibility.go needed; function fits cleanly at bottom of rebuild.go before compactForIndex
+---

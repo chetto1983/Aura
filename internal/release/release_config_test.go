@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestGoReleaserDoesNotArchiveLegacyRuntimeBundle(t *testing.T) {
+func TestGoReleaserDoesNotArchiveRetiredRuntimeBundle(t *testing.T) {
 	root := repoRoot(t)
 	body, ok := readOptionalFile(t, filepath.Join(root, ".goreleaser.yml"))
 	if !ok {
@@ -18,16 +18,16 @@ func TestGoReleaserDoesNotArchiveLegacyRuntimeBundle(t *testing.T) {
 	requireNotContains(t, body, filepath.ToSlash(filepath.Join("runtime", "pyo"+"dide")))
 }
 
-func TestReleaseWorkflowDoesNotPrepareLegacyRuntimeBundle(t *testing.T) {
+func TestReleaseWorkflowDoesNotPrepareRetiredRuntimeBundle(t *testing.T) {
 	root := repoRoot(t)
 	body, ok := readOptionalFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	if !ok {
-		t.Skip("legacy desktop release workflow is not tracked in this branch")
+		t.Skip("retired desktop release workflow is not tracked in this branch")
 	}
 
 	requireContains(t, body, "workflow_dispatch:")
 	requireNotContains(t, body, "tags:")
-	requireContains(t, body, "Legacy desktop binary release")
+	requireContains(t, body, "Retired desktop binary release")
 	requireNotContains(t, body, "install-pyo"+"dide-bundle")
 	requireNotContains(t, body, "Pyo"+"dide runtime bundle")
 	requireNotContains(t, body, filepath.ToSlash(filepath.Join("runtime", "pyo"+"dide")))

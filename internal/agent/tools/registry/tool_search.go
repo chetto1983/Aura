@@ -14,7 +14,7 @@ import (
 // Pattern: the system prompt advertises a 1-line manifest of every
 // registered tool (name + short description). When the model knows what
 // it wants to do but is unsure which tool fits, it calls tool_search to
-// retrieve full schemas for the top-K matches. The agentloop then
+// retrieve full schemas for the top-K matches. The agent loop then
 // permissive-loads those tools into the per-turn pool so the next LLM
 // step can invoke them.
 //
@@ -38,7 +38,7 @@ func NewToolSearchTool(registry *Registry) *ToolSearchTool {
 func (t *ToolSearchTool) Name() string { return "tool_search" }
 
 func (t *ToolSearchTool) Description() string {
-	return "Search Aura's tool catalog by natural-language query and return the top matches with full input schemas. Use this when the system-prompt manifest lists a tool you'd like to call but you need the parameter shape, OR when you're unsure which tool fits the user's intent. Returns name, description, and input_schema for up to 10 candidates ranked by relevance. After calling tool_search, you can directly invoke any returned tool — the agentloop loads its schema into your tool pool for the rest of this turn."
+	return "Search Aura's tool catalog by natural-language query and return the top matches with full input schemas. Use this when the system-prompt manifest lists a tool you'd like to call but you need the parameter shape, OR when you're unsure which tool fits the user's intent. Returns name, description, and input_schema for up to 10 candidates ranked by relevance. After calling tool_search, you can directly invoke any returned tool — the agent loop loads its schema into your tool pool for the rest of this turn."
 }
 
 func (t *ToolSearchTool) Parameters() map[string]any {

@@ -58,7 +58,7 @@ type SlugResolver interface {
 
 // PageWriter is the mutation side for wiki pages.
 // The variadic expectedUpdatedAt enables optimistic concurrency (WIKI-02, D-02):
-//   - no variadic argument:        trust-caller (legacy callers preserved, D-05)
+//   - no variadic argument:        trust-caller (compat callers preserved, D-05)
 //   - expectedUpdatedAt[0] == "":  create-only-if-absent sentinel
 //   - expectedUpdatedAt[0] != "":  update-if-on-disk-updated_at-matches
 type PageWriter interface {
@@ -182,7 +182,7 @@ func (s *Store) pageFileExists(slug string) bool {
 }
 
 // ReadPage reads a wiki page by slug.
-// Tries .md first, falls back to legacy .yaml format.
+// Tries .md first, falls back to YAML compatibility format.
 func (s *Store) ReadPage(slug string) (*Page, error) {
 	slug = normalizeSlugInput(slug)
 	if slug == "" {
@@ -195,7 +195,7 @@ func (s *Store) ReadPage(slug string) (*Page, error) {
 		return ParseMD(data)
 	}
 
-	// Fall back to legacy .yaml
+	// Fall back to YAML compatibility format.
 	yamlPath := filepath.Join(s.dir, slug+".yaml")
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {

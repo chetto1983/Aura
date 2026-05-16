@@ -47,13 +47,13 @@ func (e *ValidationError) Error() string {
 }
 
 // ParseYAML parses raw YAML bytes into a Page.
-// Legacy path — used for backward-compatible reading of old .yaml files.
+// Compatibility path for reading old .yaml files.
 func ParseYAML(data []byte) (*Page, error) {
 	var page Page
 	if err := yaml.Unmarshal(data, &page); err != nil {
 		return nil, fmt.Errorf("YAML parse error: %w", err)
 	}
-	// Legacy .yaml files had a "content" field. Try to extract it as Body.
+	// Older .yaml files had a "content" field. Try to extract it as Body.
 	var raw map[string]interface{}
 	if err := yaml.Unmarshal(data, &raw); err == nil {
 		if content, ok := raw["content"].(string); ok && page.Body == "" {
@@ -112,7 +112,7 @@ func Validate(page *Page) error {
 	if page.PromptVersion == "" {
 		errs = append(errs, "prompt_version is required")
 	} else if !promptVersionRe.MatchString(page.PromptVersion) {
-		errs = append(errs, "prompt_version must match v{n}, ingest_v{n}, proposal_v{n}, or legacy summarizer_v{n}")
+		errs = append(errs, "prompt_version must match v{n}, ingest_v{n}, proposal_v{n}, or summarizer_v{n}")
 	}
 
 	if page.CreatedAt == "" {

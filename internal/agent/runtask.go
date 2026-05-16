@@ -11,9 +11,8 @@ import (
 )
 
 // RunTask executes one bounded agent turn using the supplied deps and task.
-// It is the stateless counterpart to Runner.Run: callers read limits fresh
-// from their config and pass them in deps, so there is no shared mutable
-// state and no Runner construction required.
+// It is the stateless background-task bridge: callers read limits fresh from
+// their config and pass them in deps, so there is no shared mutable state.
 func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	start := time.Now()
 
@@ -65,7 +64,7 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 			MaxToolResultChars:  task.MaxToolResultChars,
 			PhantomToolGuard:    deps.PhantomGuard,
 			Logger:              logger,
-			// Preserve Runner semantics: enforce budget via MaxToolCalls, not
+			// Preserve background-task semantics: enforce budget via MaxToolCalls, not
 			// sticky dedup. Background agents may intentionally call the same
 			// tool multiple times (multi-source research).
 			DisableInBatchDedup: true,
@@ -79,7 +78,7 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	rtResult, err := Run(ctx, inv)
 
 	content := rtResult.Text
-	// Preserve the Runner fallback message when the iteration budget is
+	// Preserve the background-task fallback message when the iteration budget is
 	// exhausted — callers expect "maximum iteration" in the reply.
 	if rtResult.Stats.MaxIterationsHit {
 		content = "Agent loop stopped after reaching the maximum iteration limit."

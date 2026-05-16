@@ -270,7 +270,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	config.ApplyToConfig(context.Background(), settingsStore, cfg)
 	cfg.DBPath = openedDBPath
 
-	// US-H03: migrate legacy .env secrets to SQLite (idempotent — no-op after
+	// US-H03: migrate retired .env secrets to SQLite (idempotent — no-op after
 	// the first post-upgrade boot), then overlay SQLite values on top of the
 	// env-loaded config. Precedence: SQLite secrets table > env var > empty.
 	secretsStore := secrets.NewSQLiteStore(pool)

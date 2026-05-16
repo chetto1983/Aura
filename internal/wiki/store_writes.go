@@ -35,7 +35,7 @@ func (e *ConflictError) Error() string {
 //
 // The optional variadic expectedUpdatedAt enables optimistic concurrency
 // (WIKI-02). Semantics (D-02):
-//   - no variadic argument:        trust-caller (legacy callers preserved, D-05)
+//   - no variadic argument:        trust-caller (compat callers preserved, D-05)
 //   - expectedUpdatedAt[0] == "":  create-only-if-absent (sentinel)
 //   - expectedUpdatedAt[0] != "":  update-if-on-disk-updated_at-matches
 //
@@ -106,7 +106,7 @@ func (s *Store) writePageLocked(ctx context.Context, slug string, page *Page, ex
 		}
 	}
 
-	// Remove legacy .yaml if it exists.
+	// Remove old .yaml if it exists.
 	yamlPath := filepath.Join(s.dir, slug+".yaml")
 	if _, err := os.Stat(yamlPath); err == nil {
 		os.Remove(yamlPath)

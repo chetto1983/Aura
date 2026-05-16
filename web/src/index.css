@@ -9,7 +9,7 @@
   /* Aura — logo-derived blue palette, light mode.
    * Logo: deep navy disc with electric cyan-blue arrow A.
    * Light mode keeps a clean off-white canvas with the same cyan-blue
-   * as the only saturated accent. Both `--brand*` (legacy hand-rolled
+   * as the only saturated accent. Both `--brand*` (hand-rolled
    * CSS) and `--primary*` (shadcn) are tied to the same hue family so
    * the page can never split into two color systems again.
    */

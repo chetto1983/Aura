@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// WebTool consolidates the legacy verb-tools (web_search, web_fetch) into
-// a single action-enum surface. Picobot pattern: one tool, one action
+// WebTool consolidates the web verbs (web_search, web_fetch) into a single
+// action-enum surface. Picobot pattern: one tool, one action
 // enum acting as the verb, so the LLM never has to pick between two
 // near-identical web entry points.
 //

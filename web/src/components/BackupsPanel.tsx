@@ -206,7 +206,7 @@ function BackupsSkeleton() {
 function groupByTimestamp(objects: BackupObject[]) {
   const groups = new Map<string, { timestamp: string; objects: BackupObject[]; bytes: number; newest: Date }>();
   for (const obj of objects) {
-    const timestamp = obj.timestamp || 'legacy';
+    const timestamp = obj.timestamp || 'untagged';
     const group = groups.get(timestamp) ?? { timestamp, objects: [], bytes: 0, newest: new Date(0) };
     group.objects.push(obj);
     group.bytes += obj.size_bytes;
@@ -218,7 +218,7 @@ function groupByTimestamp(objects: BackupObject[]) {
 }
 
 function formatTimestamp(timestamp: string): string {
-  if (!timestamp || timestamp === 'legacy') return timestamp || '';
+  if (!timestamp || timestamp === 'untagged') return timestamp || '';
   return `${timestamp.slice(0, 10)} ${timestamp.slice(11, 13)}:${timestamp.slice(13, 15)}:${timestamp.slice(15, 17)}`;
 }
 

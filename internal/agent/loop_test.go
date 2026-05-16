@@ -49,7 +49,7 @@ func TestRunLoopWarnsWhenMaxIterationsIsCapped(t *testing.T) {
 
 	got := logs.String()
 	for _, want := range []string{
-		"agentloop: max_iterations_capped",
+		"agent: max_iterations_capped",
 		"requested_max_iterations=500",
 		"effective_max_iterations=100",
 		"max_iterations_ceiling=100",

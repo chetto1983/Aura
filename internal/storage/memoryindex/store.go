@@ -572,7 +572,7 @@ const (
 //
 // The fused score overwrites Document.Score on the returned values so the
 // downstream recency-decay multiplier (memory_search.go:185) sees a value
-// that is comparable across backends. The legacy per-backend Score
+// that is comparable across backends. The previous per-backend Score
 // calibration in scanDocuments is therefore retained but ignored here.
 func mergeDocumentsRRF(exact, fts, vector []Document, limit int) []Document {
 	if limit <= 0 {

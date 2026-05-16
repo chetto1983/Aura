@@ -60,7 +60,7 @@ const (
 	KindWikiLint           IssueKind = "wiki_lint"
 	KindBrokenMemoryGraph  IssueKind = "broken_memory_graph"
 	KindRawLeak            IssueKind = "raw_leak"
-	KindLegacyYAML         IssueKind = "legacy_yaml"
+	KindYAMLCompatibility  IssueKind = "yaml_compatibility"
 	KindSuspiciousPage     IssueKind = "suspicious_page"
 	KindIndexMissing       IssueKind = "index_missing"
 	KindUnexpectedIndexDoc IssueKind = "unexpected_index_doc"
@@ -203,7 +203,7 @@ func scanWiki(ctx context.Context, store WikiRepository, files WikiFileLister) (
 		name := entry.Name
 		slug := strings.TrimSuffix(name, filepath.Ext(name))
 		if strings.HasSuffix(name, ".yaml") && !wiki.IsOperationalSlug(slug) {
-			issues = append(issues, Issue{Kind: KindLegacyYAML, Severity: "high", Ref: slug, Message: "legacy .yaml page must be migrated before memory closure"})
+			issues = append(issues, Issue{Kind: KindYAMLCompatibility, Severity: "high", Ref: slug, Message: ".yaml page must be migrated before memory closure"})
 		}
 		if strings.HasSuffix(name, ".md") && opaqueSourceSlugRe.MatchString(slug) {
 			issues = append(issues, Issue{Kind: KindSuspiciousPage, Severity: "medium", Ref: slug, Message: "opaque source slug should be renamed or quarantined before embedding"})

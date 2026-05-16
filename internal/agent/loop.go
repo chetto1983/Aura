@@ -1,6 +1,5 @@
-// loop.go runs one Telegram-style assistant turn: alternating LLM calls and
-// tool execution until the model produces a final answer or the per-turn
-// budget is exhausted. Merged from the former internal/agentloop package.
+// loop.go runs one assistant turn: alternating LLM calls and tool execution
+// until the model produces a final answer or the per-turn budget is exhausted.
 package agent
 
 import (
@@ -96,9 +95,8 @@ type Options struct {
 	// DisableInBatchDedup skips the DedupeToolCalls pre-pass so every call
 	// announced in a single LLM response enters the execution path, even
 	// when multiple calls share identical (name, arguments). Defaults to
-	// false (dedup ON). Background agents such as Runner set this to true to
-	// preserve the old Runner semantics: budget enforcement via MaxToolCalls,
-	// not dedup-then-budget.
+	// false (dedup ON). Background task bridges set this to true to enforce
+	// budget via MaxToolCalls, not dedup-then-budget.
 	DisableInBatchDedup bool
 	// MaxToolCalls caps the TOTAL number of fresh tool calls dispatched across
 	// all iterations of a single Run. Zero means unlimited.
@@ -235,7 +233,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		requestedMaxIterations := opts.MaxIterations
 		opts.MaxIterations = MaxIterationsCeiling
 		logger.Warn(
-			"agentloop: max_iterations_capped",
+			"agent: max_iterations_capped",
 			"requested_max_iterations", requestedMaxIterations,
 			"effective_max_iterations", opts.MaxIterations,
 			"max_iterations_ceiling", MaxIterationsCeiling,
@@ -260,7 +258,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		}
 	}
 	emitStats()
-	logger.Debug("agentloop: run start", "max_iterations", opts.MaxIterations, "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
+	logger.Debug("agent: run start", "max_iterations", opts.MaxIterations, "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 
 	var pool *toolPool
 
@@ -276,7 +274,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		if remaining <= 0 {
 			stats.MaxElapsedHit = true
 			stats.StopReason = "max_elapsed_hit"
-			logger.Warn("agentloop: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
+			logger.Warn("agent: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 			answer := finalAnswerOnBudget(lastToolResult)
 			state.AddAssistantMessage(answer)
 			emitStats()
@@ -297,7 +295,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
 				stats.StopReason = "before_llm"
-				logger.Info("agentloop: before_llm_stop", "iteration", iteration)
+				logger.Info("agent: before_llm_stop", "iteration", iteration)
 				iterCancel()
 				return loopResult{Text: message, Stats: stats}, nil
 			}
@@ -339,7 +337,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				content := interruptedAssistantContent(err, lastToolResult)
 				state.AddAssistantMessage(content)
 				emitStats()
-				logger.Warn("agentloop: complete_on_deadline",
+				logger.Warn("agent: complete_on_deadline",
 					"iteration", iteration,
 					"finalizing", finalizing,
 					"tool_calls_executed", globalToolCallsExecuted,
@@ -373,7 +371,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				opts.PhantomToolGuard.LooksPhantom(response, false, calledThisTurn) {
 				if corrector, ok := state.(PhantomCorrector); ok {
 					stats.PhantomToolDetections++
-					logger.Warn("agentloop: phantom_tool_detected",
+					logger.Warn("agent: phantom_tool_detected",
 						"iteration", iteration,
 						"detections_so_far", stats.PhantomToolDetections,
 						"retries_allowed", opts.PhantomToolGuard.RetriesAllowed(),
@@ -383,7 +381,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 					emitStats()
 					continue
 				}
-				logger.Warn("agentloop: phantom_tool_detected_uncorrectable",
+				logger.Warn("agent: phantom_tool_detected_uncorrectable",
 					"iteration", iteration,
 					"reason", "state_lacks_AddUserMessage",
 				)
@@ -401,7 +399,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			stats.PhantomToolDetections > 0 &&
 			stats.PhantomToolCorrected < stats.PhantomToolDetections {
 			stats.PhantomToolCorrected++
-			logger.Info("agentloop: phantom_tool_corrected",
+			logger.Info("agent: phantom_tool_corrected",
 				"iteration", iteration,
 				"corrected_total", stats.PhantomToolCorrected,
 			)
@@ -490,7 +488,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				budgetRefused := false
 				for outcome, budget := range opts.RetryBudgets {
 					if allowed, reason := attempts.CheckBudget(iterCtx, opts.RetryBudgetRepo, opts.BrieferRunID, call.Name, outcome, budget); !allowed {
-						logger.Debug("agentloop: retry_budget_exhausted",
+						logger.Debug("agent: retry_budget_exhausted",
 							"iteration", iteration,
 							"tool", call.Name,
 							"outcome", outcome.String(),
@@ -537,7 +535,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			for _, call := range freshCalls {
 				toolNames = append(toolNames, call.Name)
 			}
-			logger.Debug("agentloop: dispatch_tools",
+			logger.Debug("agent: dispatch_tools",
 				"iteration", iteration,
 				"tools", toolNames,
 				"duplicates", len(duplicateToolCalls),
@@ -573,7 +571,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 					if result, ok := execution.Results[call.ID]; ok {
 						loaded := pool.AbsorbToolSearchResult(result)
 						if loaded > 0 {
-							logger.Debug("agentloop: tool_search_absorbed", "iteration", iteration, "loaded", loaded)
+							logger.Debug("agent: tool_search_absorbed", "iteration", iteration, "loaded", loaded)
 						}
 					}
 				}
@@ -598,7 +596,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			if corrector, ok := state.(PhantomCorrector); ok {
 				corrector.AddUserMessage(toolBudgetFinalInstruction(opts.MaxToolCalls))
 			} else {
-				logger.Warn("agentloop: tool_budget_finalize_no_corrector",
+				logger.Warn("agent: tool_budget_finalize_no_corrector",
 					"iteration", iteration,
 					"max_tool_calls", opts.MaxToolCalls,
 					"reason", "state_lacks_AddUserMessage",
@@ -614,7 +612,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				opts.OnQuestionRequested(execution.AwaitingUserInput)
 			}
 			emitStats()
-			logger.Info("agentloop: ask_user_pause",
+			logger.Info("agent: ask_user_pause",
 				"iteration", iteration,
 				"kind", execution.AwaitingUserInput.Kind,
 				"options_count", len(execution.AwaitingUserInput.Options),
@@ -629,7 +627,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			return loopResult{Text: execution.FatalResult, Stats: stats}, nil
 		}
 		if opts.TerminalToolPolicy && execution.TerminalTool != "" && opts.AllowNoToolFinalization && opts.TerminalHandler != nil {
-			logger.Debug("agentloop: terminal_handler", "iteration", iteration, "tool", execution.TerminalTool)
+			logger.Debug("agent: terminal_handler", "iteration", iteration, "tool", execution.TerminalTool)
 			response, delivered, handled := opts.TerminalHandler(iterCtx, execution.TerminalTool, lastToolResult, &stats)
 			emitStats()
 			if handled {
@@ -641,7 +639,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 
 	stats.MaxIterationsHit = true
 	stats.StopReason = "max_iterations_hit"
-	logger.Warn("agentloop: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
+	logger.Warn("agent: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
 	if iterCancel != nil {
 		iterCancel()
 		iterCancel = nil

@@ -49,10 +49,10 @@ type Result struct {
 	Elapsed   time.Duration
 }
 
-// RunTaskDeps groups the wiring needed by RunTask. Unlike the former Runner,
-// limits are per-call parameters read fresh from the caller's config each
-// invocation, so dashboard live-tune of MaxIterations/Timeout/ToolTimeout
-// propagates to the next call without mutating shared state.
+// RunTaskDeps groups the wiring needed by RunTask. Limits are per-call
+// parameters read fresh from the caller's config each invocation, so dashboard
+// live-tune of MaxIterations/Timeout/ToolTimeout propagates to the next call
+// without mutating shared state.
 type RunTaskDeps struct {
 	LLM             llm.Client
 	Tools           *tools.Registry

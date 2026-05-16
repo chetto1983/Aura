@@ -36,9 +36,9 @@ import (
 // Wave 2.4 adds an optional Extractor that lets the pipeline expand a
 // single source into a multi-page graph patch: the source summary
 // itself + per-entity / per-concept wiki pages, all cross-linked.
-// When Extractor is nil the pipeline falls back to the original
-// single-page-summary behavior so legacy tests and deployments
-// without an LLM extractor configured keep working unchanged.
+// When Extractor is nil the pipeline falls back to the single-page summary
+// compatibility behavior so deployments without an LLM extractor configured
+// keep working unchanged.
 type Pipeline struct {
 	sources   source.Repository
 	wiki      wiki.Repository
@@ -158,7 +158,7 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	// page (entity/concept refs appear in its `related:` array and
 	// body) and drives per-entity / per-concept page upserts after
 	// the source summary is written. On extractor failure the pipeline
-	// degrades to the legacy single-page behavior — better one page
+	// degrades to the single-page compatibility behavior — better one page
 	// than no ingest at all.
 	body, _ := os.ReadFile(mdPath)
 	delta := p.extractGraphPatch(ctx, sourceID, string(body))

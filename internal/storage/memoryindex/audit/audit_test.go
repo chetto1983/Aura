@@ -70,7 +70,7 @@ func TestAuditWithDependenciesAcceptsRepositoryInterfaces(t *testing.T) {
 		WikiFiles: fakeWikiFiles{
 			{Name: "aura-memory.md"},
 			{Name: "source-4-5942613039617418204.md"},
-			{Name: "legacy.yaml"},
+			{Name: "compat.yaml"},
 		},
 		Index: fakeIndexDocs{
 			{ID: "aura-memory", Content: "Aura Memory\nClean page.", Metadata: `{"kind":"wiki_page"}`, Title: "Aura Memory"},
@@ -93,7 +93,7 @@ func TestAuditWithDependenciesAcceptsRepositoryInterfaces(t *testing.T) {
 		ref  string
 	}{
 		{KindSuspiciousPage, "source-4-5942613039617418204"},
-		{KindLegacyYAML, "legacy"},
+		{KindYAMLCompatibility, "compat"},
 		{KindUnexpectedIndexDoc, "raw:src_bad"},
 	} {
 		if !hasIssue(report, want.kind, want.ref) {

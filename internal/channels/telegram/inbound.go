@@ -1,10 +1,6 @@
-// Package telegramadapter wraps the chathub InboundAdapter / OutboundAdapter
-// pair for the Telegram channel. Wave 3.0 Step 3 — these are the
-// production-shape adapters that the bot wires through chat.Hub in a
-// later slice. They keep all tele.* coupling under
-// internal/chathub/adapters/telegram so the chathub core stays
-// channel-neutral (PRD §11.5: "adapters live under chathub/adapters/, not
-// as generic interfaces").
+// Package telegramadapter wraps the chat Hub InboundAdapter/OutboundAdapter
+// pair for the Telegram channel. It keeps all tele.* coupling under the
+// Telegram channel adapter so the chat core stays channel-neutral.
 package telegramadapter
 
 import (
@@ -47,13 +43,12 @@ func (Inbound) Channel() chat.Channel { return chat.ChannelTelegram }
 // might).
 //
 // ThreadID is derived from the Telegram chat ID. Telegram threads (forum
-// topics) are not yet wired through; when Wave 3.0 Slice 3 introduces the
-// multi-thread web UX we can extend this to incorporate ThreadID from
-// c.Message().ThreadID without breaking the contract.
+// topics) are not yet wired through; this can be extended to incorporate
+// ThreadID from c.Message().ThreadID without breaking the contract.
 //
 // Attachments today are best-effort — Telegram document handling lives in
 // the bot's documents.go pipeline and produces a source_id out of band.
-// When the bot transitions to dispatching uploads through chathub the
+// When the bot transitions to dispatching uploads through chat Hub the
 // adapter will populate Attachments with the resolved AttachmentRef list.
 func (a Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, error) {
 	c, ok := raw.(tele.Context)

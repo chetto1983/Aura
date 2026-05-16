@@ -699,11 +699,11 @@ func TestCompile_MultiPageTouchWritesEntitiesAndConcepts(t *testing.T) {
 }
 
 func TestCompile_NoExtractorFallsBackToSinglePage(t *testing.T) {
-	// When Extractor is nil, the legacy single-page-summary behavior
+	// When Extractor is nil, the single-page summary compatibility behavior
 	// must be preserved exactly so existing deployments without an LLM
 	// extractor configured keep working unchanged.
 	env := newTestPipeline(t) // no extractor in Config
-	src := putExtractComplete(t, env.sources, "legacy.txt", "Just a body, no extraction expected.")
+	src := putExtractComplete(t, env.sources, "compat.txt", "Just a body, no extraction expected.")
 
 	res, err := env.pipeline.Compile(context.Background(), src.ID)
 	if err != nil {

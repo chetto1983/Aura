@@ -10,10 +10,8 @@ import (
 )
 
 // streamingChatClient implements agent.ChatClient by routing every LLM call
-// through Outbound.ConsumeStream so the canonical channels/telegram path
-// owns progressive Telegram edits.  It replaces tgtelegram.NewHubChatClient
-// (legacy, lives in internal/telegram/entity_messages.go); the legacy version
-// stays in place until Phase 3 US-E02 deletes it.
+// through Outbound.ConsumeStream so the canonical channels/telegram path owns
+// progressive Telegram edits.
 type streamingChatClient struct {
 	llmc            llm.Client
 	model           string

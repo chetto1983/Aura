@@ -62,8 +62,8 @@ func limitToolContent(content string, maxChars int) string {
 }
 
 // runTaskToolDefs returns the subset of tool definitions from reg that appear
-// in the allowlist. Package-level counterpart to Runner.toolDefinitions so
-// RunTask can filter tools without constructing a Runner.
+// in the allowlist. RunTask uses it to filter tools without shared task runner
+// state.
 func runTaskToolDefs(reg *tools.Registry, allowlist []string) []llm.ToolDefinition {
 	if reg == nil || len(allowlist) == 0 {
 		return nil

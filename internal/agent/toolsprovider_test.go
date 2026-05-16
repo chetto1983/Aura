@@ -42,7 +42,7 @@ func TestAlwaysOnCore_ContainsToolSearch(t *testing.T) {
 func TestToolsProvider_ReturnsAlwaysOnSeed(t *testing.T) {
 	// Post-rollout: the closure returns exactly the always-on set,
 	// stateless and message-independent. Pool growth happens in
-	// agentloop.Run via permissive load and tool_search absorption,
+	// agent.Run via permissive load and tool_search absorption,
 	// not here.
 	provider := MakeToolsProvider(
 		AlwaysOnCore,

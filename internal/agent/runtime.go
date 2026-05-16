@@ -85,8 +85,8 @@ type Invocation struct {
 	Logger *slog.Logger
 }
 
-// InvocationResult is the result of a Run call. Named InvocationResult
-// to avoid shadowing agent.Result (the Runner's per-task result type).
+// InvocationResult is the result of a Run call. Named InvocationResult to
+// avoid shadowing agent.Result, the background-task result type.
 type InvocationResult struct {
 	Text                    string
 	Delivered               bool
@@ -207,7 +207,7 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	})
 
 	start := time.Now()
-	logger.Info("agentruntime: run start", "tools_exposed", len(toolsExposed))
+	logger.Info("agent: invocation start", "tools_exposed", len(toolsExposed))
 	result, err := runLoop(ctx, in.Client, in.Executor, in.State, opts)
 	out := InvocationResult{
 		Text:                    result.Text,
@@ -226,7 +226,7 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	if err != nil {
 		level = slog.LevelWarn
 	}
-	logger.Log(ctx, level, "agentruntime: run end",
+	logger.Log(ctx, level, "agent: invocation end",
 		"elapsed_ms", time.Since(start).Milliseconds(),
 		"llm_calls", result.Stats.LLMCalls,
 		"tool_calls", result.Stats.ToolCalls,

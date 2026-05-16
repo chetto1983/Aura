@@ -554,7 +554,7 @@ func dropLegacyConversationsWithoutChatID(ctx context.Context, tx *sql.Tx) error
 		return nil
 	}
 	if _, err := tx.ExecContext(ctx, `DROP TABLE conversations`); err != nil {
-		return fmt.Errorf("migrations: drop legacy conversations table: %w", err)
+		return fmt.Errorf("migrations: drop retired conversations table: %w", err)
 	}
 	return nil
 }
