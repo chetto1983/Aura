@@ -86,6 +86,27 @@ func TestIndexingArchiveRepositoryPurgesCompactArchiveRows(t *testing.T) {
 	}
 }
 
+func TestArchiveEligibility(t *testing.T) {
+	cases := []struct {
+		role    string
+		content string
+		want    bool
+		reason  string
+	}{
+		{"tool", "tool_schemas.json dump", false, "role_tool_excluded"},
+		{"system", "system prompt text", false, "role_system_excluded"},
+		{"user", "user message here", true, ""},
+		{"assistant", "assistant reply here", true, ""},
+	}
+	for _, tc := range cases {
+		got, reason := ArchiveEligibility(tc.role, tc.content)
+		if got != tc.want || reason != tc.reason {
+			t.Errorf("ArchiveEligibility(%q, ...) = (%v, %q), want (%v, %q)",
+				tc.role, got, reason, tc.want, tc.reason)
+		}
+	}
+}
+
 func openTestDBForMemoryIndex(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := auradb.Open(filepath.Join(t.TempDir(), "aura.db"))

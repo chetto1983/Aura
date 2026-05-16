@@ -24,7 +24,7 @@
         "Single atomic commit prefix: feat(memoryindex): ArchiveEligibility policy function (US-K01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Pattern: nanobot append_history() choke-point at D:/tmp/nanobot/nanobot/agent/memory.py:235-275. Single-seam, no caller changes yet."
     },
     {

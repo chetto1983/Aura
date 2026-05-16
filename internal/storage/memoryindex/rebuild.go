@@ -340,6 +340,20 @@ func (a *IndexingTurnAppender) persistedTurn(ctx context.Context, turn conversat
 	return turn
 }
 
+// ArchiveEligibility reports whether a conversation turn should be written to
+// compact_memory_documents. reason is a stable snake_case token, empty when eligible.
+// Phase07A scope: tool and system roles are excluded; user and assistant rows are eligible.
+func ArchiveEligibility(role, _ string) (eligible bool, reason string) {
+	switch role {
+	case "tool":
+		return false, "role_tool_excluded"
+	case "system":
+		return false, "role_system_excluded"
+	default:
+		return true, ""
+	}
+}
+
 func compactForIndex(value string, limit int) string {
 	value = strings.Join(strings.Fields(value), " ")
 	if limit > 0 && len(value) > limit {
