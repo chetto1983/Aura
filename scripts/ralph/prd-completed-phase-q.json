@@ -1,0 +1,95 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-Q = Phase 9 residual User Memory Write Guards. Phase-O wired KindUserMemory routing but left two gates open (deferred per US-O04): (1) memory.user.write capability check at the Authorize boundary before any user_memory write; (2) explicit-intent question gate when a Candidate is ambiguous (low score). Phase-Q closes both. The infrastructure exists: CapabilityMemoryUserWrite is declared at internal/identity/types.go:56; QuestionGate / chat_questions table shipped in Phase 1C (commit 1584a8fa); summarizer.Candidate.Score field carries the ambiguity signal. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N/O/P: additive code only, tests lock the contract. Reference docs in tree (canonical): prd.md §5.7 lines 712-725 'Write policy' — 'user profile memory requires explicit intent, validation, or a question when ambiguous; user memory writes require memory.user.write or a narrower capability grant'. prd.md §5.3 internal/identity (capability grants + Authorize boundary). prd.md Phase 1C lines 1248-1271 (Question Gate). This phase closes the remaining slice of capability #1 'autonomous write-policy' from the 2026-05-16 brainstorm.",
+  "userStories": [
+    {
+      "id": "US-Q01",
+      "title": "Wire memory.user.write capability check at WriteApprovedUserFact entry",
+      "description": "Add the Authorize() boundary call before writing a user_memory row. (a) Modify `internal/learning/user_memory_writer.go` (or wherever US-O03 placed WriteApprovedUserFact) to accept an additional parameter `actor identity.Actor` and a `authz identity.Authorizer` interface (small abstraction: `Authorize(ctx, actor, capability, resource) (Decision, error)`). (b) At the start of WriteApprovedUserFact, call `authz.Authorize(ctx, actor, identity.CapabilityMemoryUserWrite, identity.ResourceRef{Type:'user_memory', ID:proposal.Handle})`. If Decision != DecisionAllow, return `identity.ErrPermissionDenied` (a new sentinel error exported from internal/identity OR re-use existing one — locate via grep). Log the denial via slog.Warn with actor_id + capability + reason (NOT raw args — privacy invariant). (c) Caller chain update: the applier path that invokes WriteApprovedUserFact must thread the actor from the proposal owner (proposal.ActorID typically lives in the proposed_updates row). If the row lacks an actor_id column, add migration v16 to extend proposed_updates with actor_id TEXT NOT NULL DEFAULT '' (back-compat empty = system actor with full grant). (d) NO change to the existing WriteApprovedLesson (operational_memory) path — that's a Phase 6 scope and operates under system actor by design. (e) Tests in `internal/learning/user_memory_writer_test.go`: 4 new cases — owner actor with CapabilityMemoryUserWrite: write succeeds; dashboard token actor WITHOUT grant: returns ErrPermissionDenied + no write; nil actor (system call): allowed back-compat; missing capability check via a fake Authorizer returning DecisionDeny: deny+no-write.",
+      "acceptanceCriteria": [
+        "WriteApprovedUserFact signature includes actor + authz parameters (back-compat preserved via overload OR system-actor default helper)",
+        "Authorize called with CapabilityMemoryUserWrite + ResourceRef typed 'user_memory' + ID=proposal.Handle",
+        "Denial returns ErrPermissionDenied without performing the write",
+        "slog.Warn logs actor_id + capability + reason (NEVER raw fact body — privacy invariant)",
+        "proposed_updates table carries actor_id (existing column verified OR migration v16 adds it)",
+        "WriteApprovedLesson path (operational_memory) NOT modified — Phase 6 scope preserved",
+        "Tests cover owner-with-grant, dashboard-without-grant, system-call back-compat, deny-via-fake-authz",
+        "Existing user_memory_writer + applier tests stay green (system actor fallback)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(learning,identity): memory.user.write authorize gate on WriteApprovedUserFact (US-Q01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Sources: prd.md §5.7 line 715 'user memory writes require memory.user.write or a narrower capability grant'. Capability already declared (internal/identity/types.go:56). If proposed_updates needs actor_id column, add as additive migration v16 mirroring currentSchemaSQL."
+    },
+    {
+      "id": "US-Q02",
+      "title": "Add ambiguity question gate before creating user_memory proposal",
+      "description": "When summarizer triage decides user_memory but the Candidate is ambiguous (Score < threshold), instead of silently creating a proposed_updates row, emit an ask_user question via the Phase 1C QuestionGate infrastructure. The operator's reply approves/rejects the routing. (a) New file `internal/conversation/summarizer/question_gate.go` with: const `AmbiguityThreshold = 0.7` (subject to constant tweaking — comment that 0.7 was chosen as the empirical break point between LLM-confident and edge cases). Function `ShouldGateUserMemoryWrite(c Candidate) bool` returns true when `c.Category` triages to TargetUserMemory AND `c.Score < AmbiguityThreshold`. (b) Modify the createUserMemoryProposal flow from US-O02: if ShouldGateUserMemoryWrite returns true, instead of writing the proposed_updates row directly, emit a QuestionEvent via the hub (chat.EventQuestionRequested) with question='Vuoi che ricordi: %s? (categoria: %s, score: %.2f)' + options=['Sì, ricordalo','No, scarta','Sì ma con modifica']. Persist a row in chat_questions (Phase 1C table) with payload carrying the pending Candidate JSON. (c) On reply (Hub.RecordQuestionAnswer wired in commit 1584a8fa already calls back): if answer is 'Sì, ricordalo', proceed with createUserMemoryProposal verbatim. If 'No, scarta', no-op + log skipped. If 'Sì ma con modifica' or free-text answer with a non-trivial edit, replace Candidate.Fact with the user's text and proceed. (d) NO change to the wiki path or operational_memory path — gate is user_memory only. (e) Tests in `internal/conversation/summarizer/question_gate_test.go` and integration in `internal/learning/triage_routing_test.go`: 5 cases — Score≥0.7 routes direct (no gate); Score<0.7 emits chat_questions row + does NOT create proposed_updates; reply 'Sì, ricordalo' creates the proposal; reply 'No, scarta' skips; reply with free-text modification replaces Fact then creates proposal.",
+      "acceptanceCriteria": [
+        "internal/conversation/summarizer/question_gate.go with AmbiguityThreshold=0.7 + ShouldGateUserMemoryWrite",
+        "createUserMemoryProposal branches on ShouldGateUserMemoryWrite — emits question + persists chat_questions row instead of direct write",
+        "Question text: 'Vuoi che ricordi: %s? (categoria: %s, score: %.2f)' with 3 fixed options",
+        "On answer 'Sì, ricordalo': proceeds with proposal creation",
+        "On answer 'No, scarta': no-op + slog.Info skipped",
+        "On free-text answer != options: replaces Candidate.Fact with user's text + proceeds",
+        "Wiki path and operational_memory path NOT gated — only user_memory triage with low score",
+        "Tests cover 5 cases (above-threshold, below-threshold-emit-question, approve, reject, free-text-modify)",
+        "Existing Phase-O O02 tests stay green for Score≥0.7 fixtures",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(summarizer): ambiguity question gate before user_memory proposal (US-Q02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Sources: prd.md §5.7 line 714 'requires explicit intent, validation, or a question when ambiguous'. Phase 1C QuestionGate (chat_questions table) is the underlying primitive — commit 1584a8fa wired the answer callback via Hub.RecordQuestionAnswer. Threshold 0.7 is a starting heuristic — store as exported const for future tuning."
+    },
+    {
+      "id": "US-Q03",
+      "title": "Integration test: Authorize gate + question gate end-to-end",
+      "description": "Lock the full end-to-end flow with one integration test that exercises both Q01 and Q02 gates. (a) New file `internal/learning/write_guards_integration_test.go`. (b) Test scenario 'TestUserMemoryWriteGuardsEndToEnd': 1) seed identity store with 2 actors — owner (has CapabilityMemoryUserWrite) + dashboard_session (does NOT have it); 2) seed summarizer with 3 candidates — high-score preference (Score=0.9), low-score preference (Score=0.5), high-score project (Score=0.9, routes to wiki); 3) run applier with actor=owner; 4) assert: high-score preference creates proposed_updates kind='user_memory' DIRECTLY (no question); low-score preference creates chat_questions row + NO proposed_updates yet; project candidate creates a wiki proposal (existing path); 5) simulate user reply 'Sì, ricordalo' to the chat_questions row → triggers proposed_updates kind='user_memory' creation; 6) simulate approval of that proposed_updates row → calls WriteApprovedUserFact with actor=owner → succeeds + creates compact_memory_documents kind='user_memory'; 7) repeat the approval flow with actor=dashboard_session → returns ErrPermissionDenied + no compact_memory_documents row; 8) verify slog.Warn entries for the denial. (c) Test scenario 'TestUserMemoryQuestionGateRejection': low-score candidate, user replies 'No, scarta' → asserts no proposed_updates row, no compact_memory_documents row, audit log shows rejection. (d) Use existing test helpers from internal/identity/auth (for actor fixtures) and internal/db/migrations (for in-memory DB).",
+      "acceptanceCriteria": [
+        "internal/learning/write_guards_integration_test.go exists with 2 test scenarios",
+        "TestUserMemoryWriteGuardsEndToEnd covers Q01 + Q02 in a single 8-step assertion chain",
+        "TestUserMemoryQuestionGateRejection covers 'No, scarta' reply path",
+        "Integration test uses in-memory SQLite + identity fixtures (no Docker, no live LLM)",
+        "Test verifies ErrPermissionDenied for dashboard_session actor without grant",
+        "Test verifies slog.Warn entries for denial (via captured logger, NOT stderr scrape)",
+        "Test verifies free-text modify path: reply 'Mi chiamo Davide e amo il caffè' replaces Candidate.Fact then proceeds",
+        "Test runs in CI with go test ./... (no Aura container needed)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(learning): integration test for Authorize + question gates (US-Q03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Sources: prd.md §10.2 Boundary tests — capability checks must have integration coverage. Memory feedback_probe_must_verify_artifact_not_reply applies but this is a pure-Go integration test (no LLM), so the artifact is the SQLite row + the slog capture, not a user-facing reply."
+    },
+    {
+      "id": "US-Q04",
+      "title": "Phase-Q closure docs + Phase 9 partial-close update in prd.md",
+      "description": "Final closure for Phase-Q. (a) Create `.planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_write_guards/` with progress.md (US-Q01..Q04 SHAs + 1-line summary each), plan.md (one-pager citing §5.7 line 715 capability check + §5.7 line 714 question gate; threshold rationale), benchmark.md (actuals: Authorize boundary <1ms; question gate roundtrip ~LLM-RTT bound). (b) Update parent `.planning/deep-refactor/Phase09_Memory_Source_Discipline/progress.md` with Phase-Q close row + reference to Phase-O. (c) Update prd.md §6.5 Status Checklist (commit c50c9703): add a new row for Phase-Q showing 'user_memory write guards wired (Phase 9 partial close — capability check + question gate)'. (d) Update §7.2 Outstanding deferrals: 'Active write-policy' row — mark CLOSED 2026-05-16 (the deferral was the question-gate + capability-check tail; both now wired). (e) Update prd.md Phase 9 section closure note: add line **'Phase 9 partial-close 2026-05-16'** — preference/fact/person/todo extraction (Phase-O) + capability check + question gate (Phase-Q) shipped. Remaining Phase 9 scope: 'clarify memory vs storage docs, conversion fixtures for important source types, harden SQLite concurrency' — these are documentation + invariant hardening, deferred to a future closure pass. (f) Use git add -f for .planning/* paths. NO Go code changes.",
+      "acceptanceCriteria": [
+        ".planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_write_guards/{plan.md,progress.md,benchmark.md} created",
+        "Parent Phase09 progress.md has Phase-Q close row + reference to Phase-O",
+        "prd.md §6.5 Status Checklist: Phase-Q row added with appropriate status",
+        "prd.md §7.2 Outstanding deferrals: 'Active write-policy' row marked CLOSED 2026-05-16",
+        "prd.md Phase 9 section gets a 'Phase 9 partial-close 2026-05-16' note with explicit list of remaining scope",
+        "No Go code changes in this commit",
+        "Used git add -f for .planning/* paths",
+        "go build ./... green (sanity)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(planning): Phase-Q closure + Phase 9 partial-close (US-Q04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Sources: closure pattern Phase-N US-N04 + Phase-O US-O04. Phase 9 has 6 step items in prd.md lines 1513-1519 — Phase-O + Phase-Q together cover the 'write-policy' + 'validation' + 'capability' core. The remaining 'clarify memory vs storage / conversion fixtures / SQLite concurrency hardening' is doc + invariant work, suitable for a future polish phase."
+    }
+  ]
+}
