@@ -22,7 +22,7 @@
         "Single atomic commit prefix: feat(freshness): projection_state table + Store API with optimistic concurrency (US-M01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 2 (schema). Pattern: Letta version_id_col. 5 rows total = closed set, validated by docs/phase07c-current-state-audit-2026-05-16.md §F.3."
     },
     {
