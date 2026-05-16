@@ -75,6 +75,12 @@ type RunNowResult struct {
 	ToolAllowlist    []string
 }
 
+// LessonPromoter runs one lesson-promotion pass.
+// Satisfied by an adapter in cmd/aura that calls learning.PromoteLessons.
+type LessonPromoter interface {
+	Promote(ctx context.Context) (promoted, skipped int, err error)
+}
+
 // HandlerConfig wires a Handler's dispatch dependencies.
 type HandlerConfig struct {
 	Notifier    Notifier
@@ -86,6 +92,7 @@ type HandlerConfig struct {
 	Identity    identity.Delegator
 	Logger      *slog.Logger
 	Location    *time.Location
+	Promoter    LessonPromoter
 }
 
 // Handler dispatches cron tasks using injected deps.
@@ -101,6 +108,7 @@ type Handler struct {
 	identity identity.Delegator
 	logger   *slog.Logger
 	loc      *time.Location
+	promoter LessonPromoter
 }
 
 // NewHandler constructs a Handler from the supplied config.
@@ -123,6 +131,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		identity: cfg.Identity,
 		logger:   logger,
 		loc:      loc,
+		promoter: cfg.Promoter,
 	}
 }
 
@@ -134,6 +143,8 @@ func (h *Handler) Dispatch(ctx context.Context, task *Task) error {
 		return h.dispatchReminder(task)
 	case KindWikiMaintenance:
 		return h.dispatchWikiMaintenance(ctx)
+	case KindLessonPromotion:
+		return h.dispatchLessonPromotion(ctx)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
@@ -241,6 +252,18 @@ func (h *Handler) dispatchWikiMaintenance(ctx context.Context) error {
 	h.wiki.AppendLog(ctx, "nightly-maintenance", "")
 	h.logger.Info("nightly wiki maintenance complete",
 		"auto_fixed", fixed, "deferred", deferred)
+	return nil
+}
+
+func (h *Handler) dispatchLessonPromotion(ctx context.Context) error {
+	if h.promoter == nil {
+		return fmt.Errorf("lesson promotion: promoter unavailable")
+	}
+	promoted, skipped, err := h.promoter.Promote(ctx)
+	if err != nil {
+		return fmt.Errorf("lesson promotion: %w", err)
+	}
+	h.logger.Info("lesson promotion complete", "promoted", promoted, "skipped", skipped)
 	return nil
 }
 

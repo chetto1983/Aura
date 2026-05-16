@@ -570,8 +570,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 13 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 || first[11] != 12 || first[12] != 13 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11 12 13]", first)
+	if len(first) != 14 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 || first[11] != 12 || first[12] != 13 || first[13] != 14 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11 12 13 14]", first)
 	}
 }
 

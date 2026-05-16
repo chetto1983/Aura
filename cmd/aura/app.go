@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/learning"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agent/tools/attempts"
@@ -734,6 +735,10 @@ func (a *App) wireBot(b *telegram.Bot) error {
 
 	// ---- Cron scheduler -----------------------------------------------------
 	// Build a Handler from injected deps so cron no longer depends on *Bot directly.
+	lessonPromoter := &lessonPromoterAdapter{
+		attemptsRepo:  attempts.NewSQLiteRepo(a.deps.Pool),
+		proposalStore: learning.NewSQLProposalStore(a.deps.Pool),
+	}
 	cronHandler := cron.NewHandler(cron.HandlerConfig{
 		Notifier: b,
 		Wiki:     a.deps.Wiki,
@@ -743,6 +748,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Identity: a.deps.AuthDB,
 		Logger:   logger,
 		Location: loc,
+		Promoter: lessonPromoter,
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
 	if a.deps.TaskTool != nil {
@@ -788,6 +794,22 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Status:        cron.StatusActive,
 	}); err != nil {
 		logger.Warn("failed to bootstrap nightly maintenance task", "err", err)
+	}
+
+	// Bootstrap the daily lesson-promotion task (idempotent upsert).
+	lessonPromotionAt, err := cron.NextDailyRun("02:00", loc, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing lesson promotion run: %w", err)
+	}
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:          "daily-lesson-promotion",
+		Kind:          cron.KindLessonPromotion,
+		ScheduleKind:  cron.ScheduleDaily,
+		ScheduleDaily: "02:00",
+		NextRunAt:     lessonPromotionAt,
+		Status:        cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap daily lesson-promotion task", "err", err)
 	}
 
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------

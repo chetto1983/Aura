@@ -45,7 +45,7 @@
         "Single atomic commit prefix: feat(learning): wire PromoteLessons + cron task -> proposed_updates (US-N02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.8 line 779 'promote only after validation'. Existing proposed_updates already gates wiki/user-memory proposals via review workflow — reuse for operational_memory. If migration v14 needed, mirror in currentSchemaSQL."
     },
     {

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/learning"
 	auraskills "github.com/aura/aura/internal/skills"
 )
 
@@ -49,4 +51,14 @@ func newSkillsDeleterAdapter(d *auraskills.FSDeleter) api.SkillDeleter {
 
 func newSkillProposalApplierAdapter(p *auraskills.FSProposalApplier) api.SkillProposalApplier {
 	return skillProposalApplierAdapter{inner: p}
+}
+
+// lessonPromoterAdapter bridges learning.PromoteLessons to cron.LessonPromoter.
+type lessonPromoterAdapter struct {
+	attemptsRepo  *attempts.SQLiteRepo
+	proposalStore *learning.SQLProposalStore
+}
+
+func (a *lessonPromoterAdapter) Promote(ctx context.Context) (promoted, skipped int, err error) {
+	return learning.PromoteLessons(ctx, a.attemptsRepo, a.proposalStore, 3, 7)
 }

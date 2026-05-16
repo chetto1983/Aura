@@ -29,6 +29,7 @@ var registered = []Migration{
 	{Version: 11, Name: "add_chat_questions", Up: addChatQuestions},
 	{Version: 12, Name: "add_projection_state", Up: addProjectionState},
 	{Version: 13, Name: "add_compact_memory_freshness_columns", Up: addCompactMemoryFreshnessColumns},
+	{Version: 14, Name: "add_operational_memory_proposal_columns", Up: addOperationalMemoryProposalColumns},
 }
 
 type columnDef struct {
@@ -124,6 +125,8 @@ CREATE TABLE IF NOT EXISTS proposed_updates (
   related_slugs   TEXT NOT NULL DEFAULT '',
   provenance_json TEXT NOT NULL DEFAULT '{}',
   status          TEXT NOT NULL DEFAULT 'pending',
+  kind            TEXT NOT NULL DEFAULT 'wiki',
+  signature_hash  TEXT NOT NULL DEFAULT '',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1199,6 +1202,13 @@ func addCompactMemoryFreshnessColumns(ctx context.Context, tx *sql.Tx) error {
 		{Name: "content_hash", SQL: "TEXT NOT NULL DEFAULT ''"},
 		{Name: "embedding_model_id", SQL: "TEXT NOT NULL DEFAULT ''"},
 		{Name: "index_build_id", SQL: "TEXT NOT NULL DEFAULT ''"},
+	})
+}
+
+func addOperationalMemoryProposalColumns(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "proposed_updates", []columnDef{
+		{Name: "kind", SQL: "TEXT NOT NULL DEFAULT 'wiki'"},
+		{Name: "signature_hash", SQL: "TEXT NOT NULL DEFAULT ''"},
 	})
 }
 
