@@ -6,14 +6,17 @@ import (
 	"strings"
 )
 
+var canonicalApprovalOptions = []string{"approve_once", "approve_session", "approve_persist", "deny", "cancel"}
+
 // formatAskUserQuestion formats an ask_user question for Telegram delivery.
 // With options: numbered list + free-text hint.
-// Without options (approval or open-ended): plain text prompt.
-func formatAskUserQuestion(question string, options []string, _ string) string {
+// Approval requests get canonical choices when the model omits options.
+func formatAskUserQuestion(question string, options []string, kind string) string {
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return ""
 	}
+	options = askUserDisplayOptions(options, kind)
 	if len(options) == 0 {
 		return "❓ " + question + "\n\n(reply with text)"
 	}
@@ -47,6 +50,25 @@ func parseAskUserReply(reply string, options []string) (content string, rejected
 		return "", true, fmt.Sprintf("please reply with 1..%d or free text", len(options))
 	}
 	return options[n-1], false, ""
+}
+
+func askUserDisplayOptions(options []string, kind string) []string {
+	if len(options) == 0 && kind == "approval" {
+		return append([]string(nil), canonicalApprovalOptions...)
+	}
+	return append([]string(nil), options...)
+}
+
+func askUserSelectedOptionIDs(reply string, options []string) []string {
+	reply = strings.TrimSpace(reply)
+	if len(options) == 0 {
+		return nil
+	}
+	n, err := strconv.Atoi(reply)
+	if err != nil || n < 1 || n > len(options) {
+		return nil
+	}
+	return []string{strconv.Itoa(n)}
 }
 
 // extractStringSlice converts an any value (as stored in event payloads) to

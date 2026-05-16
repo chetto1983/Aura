@@ -75,6 +75,7 @@ const (
 	EventToolEnd           EventType = "tool_end"
 	EventAttachmentStatus  EventType = "attachment_status"
 	EventQuestionRequested EventType = "question_requested"
+	EventQuestionAnswered  EventType = "question_answered"
 	EventMessageDone       EventType = "message_done"
 	EventUsage             EventType = "usage"
 	EventDone              EventType = "done"

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,6 +63,19 @@ type OutboundAdapter interface {
 type LifecycleStore interface {
 	CreateOrGetRun(ctx context.Context, params runstore.CreateRunParams) (runstore.Run, bool, error)
 	AppendEvent(ctx context.Context, params runstore.AppendEventParams) (runstore.Event, error)
+}
+
+type questionLifecycleStore interface {
+	RecordQuestionRequested(ctx context.Context, params runstore.RecordQuestionRequestedParams) (runstore.Question, error)
+	RecordQuestionAnswered(ctx context.Context, params runstore.RecordQuestionAnsweredParams) (runstore.Question, error)
+	LatestPendingQuestion(ctx context.Context, threadID, channel string) (runstore.Question, bool, error)
+}
+
+type PendingQuestion struct {
+	ID      string
+	RunID   string
+	Kind    string
+	Options []string
 }
 
 // Hub is the central dispatcher. Boot wires every adapter once; Receive
@@ -168,6 +182,80 @@ func (h *Hub) Receive(ctx context.Context, inboundChannel Channel, raw any) (*Ru
 // scheduled-task path that produces synthetic messages directly).
 func (h *Hub) ReceiveMessage(ctx context.Context, msg InboundMessage) (*Run, error) {
 	return h.dispatch(ctx, msg)
+}
+
+func (h *Hub) PendingQuestion(ctx context.Context, threadID string, channel Channel) (PendingQuestion, bool, error) {
+	store, ok := h.lifecycle.(questionLifecycleStore)
+	if !ok {
+		return PendingQuestion{}, false, nil
+	}
+	question, ok, err := store.LatestPendingQuestion(ctx, threadID, string(channel))
+	if err != nil || !ok {
+		return PendingQuestion{}, ok, err
+	}
+	return PendingQuestion{
+		ID:      question.ID,
+		RunID:   question.RunID,
+		Kind:    question.Kind,
+		Options: decodeQuestionOptions(question.OptionsJSON),
+	}, true, nil
+}
+
+func (h *Hub) RecordQuestionAnswer(ctx context.Context, run *Run, msg InboundMessage, answer QuestionAnswer) error {
+	store, ok := h.lifecycle.(questionLifecycleStore)
+	if !ok {
+		return nil
+	}
+	if run == nil || run.ID == "" {
+		return errors.New("chat: question answer run is required")
+	}
+	questionID := answer.QuestionID
+	if questionID == "" {
+		pending, ok, err := store.LatestPendingQuestion(ctx, msg.ThreadID, string(msg.Channel))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return runstore.ErrQuestionNotFound
+		}
+		questionID = pending.ID
+	}
+	event, err := h.lifecycle.AppendEvent(ctx, runstore.AppendEventParams{
+		RunID:          run.ID,
+		Type:           string(EventQuestionAnswered),
+		ActorID:        run.ActorID,
+		CausationID:    questionID,
+		IdempotencyKey: questionAnswerIdempotencyKey(questionID, msg.ID),
+		Payload: map[string]any{
+			"question_id":           questionID,
+			"answered_message_id":   answer.AnsweredMessageID,
+			"selected_option_count": len(answer.SelectedOptionIDs),
+			"has_free_text":         answer.FreeText != "",
+			"redaction_level":       runstore.RedactionMetadata,
+		},
+		RedactionLevel: runstore.RedactionMetadata,
+		CreatedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		return fmt.Errorf("chat: append question answer event: %w", err)
+	}
+	_, err = store.RecordQuestionAnswered(ctx, runstore.RecordQuestionAnsweredParams{
+		ID:                questionID,
+		AnswerRunID:       run.ID,
+		AnswerEventID:     event.ID,
+		ThreadID:          msg.ThreadID,
+		Channel:           string(msg.Channel),
+		ActorID:           run.ActorID,
+		SelectedOptionIDs: answer.SelectedOptionIDs,
+		FreeText:          answer.FreeText,
+		AnsweredMessageID: answer.AnsweredMessageID,
+		AnsweredAt:        event.CreatedAt,
+		Metadata:          map[string]any{"answer_channel": string(msg.Channel)},
+	})
+	if err != nil {
+		return fmt.Errorf("chat: record question answer: %w", err)
+	}
+	return nil
 }
 
 func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
@@ -332,16 +420,21 @@ func (h *Hub) makeEmit(ctx, persistCtx context.Context, run *Run, mode DeliveryM
 func (h *Hub) persistLifecycleEvent(ctx context.Context, run *Run, ev OutboundEvent) error {
 	persistCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err := h.lifecycle.AppendEvent(persistCtx, lifecycleEventParams(run, ev))
+	event, err := h.lifecycle.AppendEvent(persistCtx, lifecycleEventParams(run, ev))
 	if err != nil {
 		return fmt.Errorf("chat: append lifecycle event: %w", err)
+	}
+	if ev.Type == EventQuestionRequested {
+		if err := h.recordQuestionRequested(persistCtx, run, ev, event); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func isDurableRunEvent(eventType EventType) bool {
 	switch eventType {
-	case EventRunStarted, EventToolStart, EventToolEnd, EventMessageDone, EventUsage, EventDone, EventError, EventCancelled:
+	case EventRunStarted, EventToolStart, EventToolEnd, EventQuestionRequested, EventQuestionAnswered, EventMessageDone, EventUsage, EventDone, EventError, EventCancelled:
 		return true
 	default:
 		return false
@@ -391,6 +484,9 @@ func lifecycleEventParams(run *Run, ev OutboundEvent) runstore.AppendEventParams
 		params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
 		params.LastError = "agent_loop_error"
 	case EventToolStart, EventToolEnd:
+	case EventQuestionRequested:
+		params.RunStatus = string(RunStatusWaitingForUser)
+	case EventQuestionAnswered:
 	case EventUsage:
 		params.Stats = durableStats(ev.Payload)
 	case EventMessageDone:
@@ -439,6 +535,17 @@ func lifecyclePayload(run *Run, ev OutboundEvent) map[string]any {
 		if ev.Payload["preview"] != nil {
 			payload["result_redaction"] = "preview_omitted"
 		}
+	case EventQuestionRequested:
+		payload["question_id"] = ev.ID
+		copyPayloadKeys(payload, ev.Payload, "kind", "tool", "tool_call_id", "why_blocking", "blocking_scope")
+		if question, _ := ev.Payload["question"].(string); question != "" {
+			payload["question_preview"] = textPreview(question)
+		}
+		if options := payloadStringSlice(ev.Payload["options"]); len(options) > 0 {
+			payload["options_count"] = len(options)
+		}
+	case EventQuestionAnswered:
+		copyPayloadKeys(payload, ev.Payload, "question_id", "answered_message_id", "selected_option_count", "has_free_text", "redaction_level")
 	case EventUsage:
 		for k, v := range durableStats(ev.Payload) {
 			payload[k] = v
@@ -456,12 +563,76 @@ func lifecyclePayload(run *Run, ev OutboundEvent) map[string]any {
 	return payload
 }
 
+func (h *Hub) recordQuestionRequested(ctx context.Context, run *Run, ev OutboundEvent, stored runstore.Event) error {
+	store, ok := h.lifecycle.(questionLifecycleStore)
+	if !ok {
+		return nil
+	}
+	question, _ := ev.Payload["question"].(string)
+	if strings.TrimSpace(question) == "" {
+		return nil
+	}
+	kind, _ := ev.Payload["kind"].(string)
+	tool, _ := ev.Payload["tool"].(string)
+	toolCallID, _ := ev.Payload["tool_call_id"].(string)
+	_, err := store.RecordQuestionRequested(ctx, runstore.RecordQuestionRequestedParams{
+		ID:           stored.ID,
+		RunID:        run.ID,
+		EventID:      stored.ID,
+		ThreadID:     run.ThreadID,
+		ActorID:      stored.ActorID,
+		Channel:      string(run.Channel),
+		Kind:         kind,
+		QuestionText: question,
+		Options:      payloadStringSlice(ev.Payload["options"]),
+		RequestedAt:  stored.CreatedAt,
+		Producer: map[string]any{
+			"tool":         tool,
+			"tool_call_id": toolCallID,
+		},
+		Metadata: map[string]any{"redaction_level": runstore.RedactionMetadata},
+	})
+	if err != nil {
+		return fmt.Errorf("chat: record question requested: %w", err)
+	}
+	return nil
+}
+
 func copyPayloadKeys(dst, src map[string]any, keys ...string) {
 	for _, key := range keys {
 		if value, ok := src[key]; ok {
 			dst[key] = value
 		}
 	}
+}
+
+func payloadStringSlice(v any) []string {
+	switch s := v.(type) {
+	case []string:
+		return append([]string(nil), s...)
+	case []any:
+		out := make([]string, 0, len(s))
+		for _, item := range s {
+			if str, ok := item.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func decodeQuestionOptions(raw string) []string {
+	var options []string
+	_ = json.Unmarshal([]byte(raw), &options)
+	return options
+}
+
+func questionAnswerIdempotencyKey(questionID, messageID string) string {
+	if messageID == "" {
+		return "question_answered:" + questionID
+	}
+	return "question_answered:" + questionID + ":" + messageID
 }
 
 func durableStats(payload map[string]any) map[string]any {

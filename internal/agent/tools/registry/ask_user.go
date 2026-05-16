@@ -9,9 +9,10 @@ import (
 // ErrAwaitingUserInput is the sentinel error returned by AskUserTool.Execute.
 // The agent loop detects it and pauses the run with Status=waiting_for_user.
 type ErrAwaitingUserInput struct {
-	Question string
-	Options  []string
-	Kind     string // "clarification" | "approval"
+	Question   string
+	Options    []string
+	Kind       string // "clarification" | "approval"
+	ToolCallID string
 }
 
 func (e *ErrAwaitingUserInput) Error() string {

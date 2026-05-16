@@ -552,9 +552,35 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 10 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10]", first)
+	if len(first) != 11 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11]", first)
 	}
+}
+
+func TestChatQuestionsTableIsUsable(t *testing.T) {
+	db := openTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := db.Exec(`
+INSERT INTO runs (id, channel, status, started_at, updated_at)
+VALUES ('run-question', 'telegram', 'waiting_for_user', '2026-05-16T08:00:00Z', '2026-05-16T08:00:00Z');
+INSERT INTO run_events (id, run_id, seq, type, payload_json, created_at)
+VALUES ('evt-question', 'run-question', 1, 'question_requested', '{}', '2026-05-16T08:00:00Z');
+INSERT INTO chat_questions (
+  id, run_id, event_id, thread_id, actor_id, channel, kind, status,
+  question_text, options_json, requested_at
+) VALUES (
+  'evt-question', 'run-question', 'evt-question', 'thread-1', 'actor-1',
+  'telegram', 'approval', 'waiting', 'Approve write?', '["approve_once","deny"]',
+  '2026-05-16T08:00:00Z'
+);
+`); err != nil {
+		t.Fatalf("insert chat question: %v", err)
+	}
+	assertScalar(t, db, `SELECT status FROM chat_questions WHERE id = 'evt-question'`, "waiting")
+	assertScalar(t, db, `SELECT kind FROM chat_questions WHERE thread_id = 'thread-1' AND channel = 'telegram'`, "approval")
 }
 
 func TestIdentityCapabilityTablesAreUsable(t *testing.T) {

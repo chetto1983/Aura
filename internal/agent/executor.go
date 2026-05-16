@@ -1,4 +1,4 @@
-﻿package agent
+package agent
 
 import (
 	"context"
@@ -85,6 +85,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 			raw, _, execErr := e.executeOneTool(ctx, call) // observation consumed by US-J03
 			var awaitErr *tools.ErrAwaitingUserInput
 			if errors.As(execErr, &awaitErr) {
+				awaitErr.ToolCallID = call.ID
 				outcomes[i] = toolOutcome{id: call.ID, awaitingUser: awaitErr}
 				return
 			}

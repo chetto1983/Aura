@@ -45,8 +45,10 @@ func TestFormatAskUserQuestion_ApprovalKindWithoutOptions(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty formatted string")
 	}
-	if !containsSubstring(got, "❓") {
-		t.Errorf("missing ❓ prefix: %s", got)
+	for _, want := range []string{"approve_once", "approve_session", "approve_persist", "deny", "cancel", "reply with number"} {
+		if !containsSubstring(got, want) {
+			t.Errorf("approval question missing %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -66,8 +68,8 @@ func TestFormatAskUserQuestion_MultiOption(t *testing.T) {
 func TestParseAskUserReply_NumericSelectsOption(t *testing.T) {
 	opts := []string{"JSON", "CSV", "Markdown"}
 	tests := []struct {
-		reply   string
-		want    string
+		reply string
+		want  string
 	}{
 		{"1", "JSON"},
 		{"2", "CSV"},
@@ -137,6 +139,16 @@ func TestParseAskUserReply_MultiOptionRoundTrip(t *testing.T) {
 		if content != want {
 			t.Errorf("numeric reply %q: got %q, want %q", reply, content, want)
 		}
+	}
+}
+
+func TestAskUserSelectedOptionIDs(t *testing.T) {
+	opts := []string{"alpha", "beta"}
+	if got := askUserSelectedOptionIDs("2", opts); len(got) != 1 || got[0] != "2" {
+		t.Fatalf("selected ids = %v, want [2]", got)
+	}
+	if got := askUserSelectedOptionIDs("free text", opts); len(got) != 0 {
+		t.Fatalf("free-text selected ids = %v, want none", got)
 	}
 }
 

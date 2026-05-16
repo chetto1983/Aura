@@ -184,6 +184,9 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 			"question": e.Question,
 			"kind":     e.Kind,
 		}
+		if e.ToolCallID != "" {
+			payload["tool_call_id"] = e.ToolCallID
+		}
 		if len(e.Options) > 0 {
 			payload["options"] = append([]string(nil), e.Options...)
 		}

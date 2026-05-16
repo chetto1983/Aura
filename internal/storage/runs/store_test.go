@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -229,6 +230,148 @@ func TestAppendEventDedupesEventIdempotencyKey(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Fatalf("events len = %d, want 1", len(events))
+	}
+}
+
+func TestQuestionLifecycleRecordsRequestAndAnswer(t *testing.T) {
+	_, store := openStore(t)
+	ctx := context.Background()
+	run := createRun(t, store, "run-question")
+	requestedAt := time.Date(2026, 5, 16, 8, 0, 0, 0, time.UTC)
+	event, err := store.AppendEvent(ctx, AppendEventParams{
+		ID:        "evt-question",
+		RunID:     run.ID,
+		Type:      "question_requested",
+		ActorID:   "actor-1",
+		CreatedAt: requestedAt,
+		Payload: map[string]any{
+			"question_id":      "evt-question",
+			"kind":             "approval",
+			"question_preview": "Approve durable memory write?",
+			"options_count":    5,
+		},
+		RunStatus: "waiting_for_user",
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent question_requested: %v", err)
+	}
+	question, err := store.RecordQuestionRequested(ctx, RecordQuestionRequestedParams{
+		ID:           event.ID,
+		RunID:        run.ID,
+		EventID:      event.ID,
+		ThreadID:     "thread-1",
+		ActorID:      "actor-1",
+		Channel:      "telegram",
+		Kind:         "approval",
+		QuestionText: "Approve durable memory write?",
+		Options:      []string{"approve_once", "deny", "cancel"},
+		RequestedAt:  requestedAt,
+		Producer:     map[string]any{"tool": "ask_user", "tool_call_id": "ask-1"},
+	})
+	if err != nil {
+		t.Fatalf("RecordQuestionRequested: %v", err)
+	}
+	if question.Status != QuestionStatusWaiting || question.Kind != "approval" {
+		t.Fatalf("question status/kind = %s/%s", question.Status, question.Kind)
+	}
+	pending, ok, err := store.LatestPendingQuestion(ctx, "thread-1", "telegram")
+	if err != nil {
+		t.Fatalf("LatestPendingQuestion: %v", err)
+	}
+	if !ok || pending.ID != event.ID {
+		t.Fatalf("pending = %+v ok=%v, want %s", pending, ok, event.ID)
+	}
+
+	answerRun := createRun(t, store, "run-answer")
+	answerEvent, err := store.AppendEvent(ctx, AppendEventParams{
+		ID:          "evt-answer",
+		RunID:       answerRun.ID,
+		Type:        "question_answered",
+		CausationID: question.ID,
+		Payload: map[string]any{
+			"question_id":           question.ID,
+			"selected_option_count": 1,
+			"has_free_text":         true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent question_answered: %v", err)
+	}
+	answered, err := store.RecordQuestionAnswered(ctx, RecordQuestionAnsweredParams{
+		ID:                question.ID,
+		AnswerRunID:       answerRun.ID,
+		AnswerEventID:     answerEvent.ID,
+		ThreadID:          "thread-1",
+		Channel:           "telegram",
+		ActorID:           "actor-1",
+		SelectedOptionIDs: []string{"1"},
+		FreeText:          "approve_once",
+		AnsweredMessageID: "tg-msg-2",
+		AnsweredAt:        answerEvent.CreatedAt,
+	})
+	if err != nil {
+		t.Fatalf("RecordQuestionAnswered: %v", err)
+	}
+	if answered.Status != QuestionStatusAnswered {
+		t.Fatalf("answered status = %q", answered.Status)
+	}
+	if answered.AnswerRunID != answerRun.ID || answered.AnswerEventID != answerEvent.ID {
+		t.Fatalf("answer linkage = %s/%s", answered.AnswerRunID, answered.AnswerEventID)
+	}
+	if answered.AnswerPreview != "approve_once" {
+		t.Fatalf("answer preview = %q", answered.AnswerPreview)
+	}
+	if _, ok, err := store.LatestPendingQuestion(ctx, "thread-1", "telegram"); err != nil || ok {
+		t.Fatalf("pending after answer ok=%v err=%v", ok, err)
+	}
+}
+
+func TestQuestionAnswerRejectsDuplicateAndWrongChannel(t *testing.T) {
+	_, store := openStore(t)
+	ctx := context.Background()
+	run := createRun(t, store, "run-question-2")
+	event, err := store.AppendEvent(ctx, AppendEventParams{ID: "evt-question-2", RunID: run.ID, Type: "question_requested"})
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	if _, err := store.RecordQuestionRequested(ctx, RecordQuestionRequestedParams{
+		ID:           event.ID,
+		RunID:        run.ID,
+		EventID:      event.ID,
+		ThreadID:     "thread-2",
+		Channel:      "telegram",
+		QuestionText: "Which project?",
+	}); err != nil {
+		t.Fatalf("RecordQuestionRequested: %v", err)
+	}
+	answerRun := createRun(t, store, "run-answer-2")
+	answerEvent, err := store.AppendEvent(ctx, AppendEventParams{ID: "evt-answer-2", RunID: answerRun.ID, Type: "question_answered"})
+	if err != nil {
+		t.Fatalf("AppendEvent answer: %v", err)
+	}
+	if _, err := store.RecordQuestionAnswered(ctx, RecordQuestionAnsweredParams{
+		ID:            event.ID,
+		AnswerRunID:   answerRun.ID,
+		AnswerEventID: answerEvent.ID,
+		Channel:       "web",
+	}); !errors.Is(err, ErrQuestionChannelMismatch) {
+		t.Fatalf("wrong-channel error = %v, want ErrQuestionChannelMismatch", err)
+	}
+	if _, err := store.RecordQuestionAnswered(ctx, RecordQuestionAnsweredParams{
+		ID:            event.ID,
+		AnswerRunID:   answerRun.ID,
+		AnswerEventID: answerEvent.ID,
+		Channel:       "telegram",
+	}); err != nil {
+		t.Fatalf("RecordQuestionAnswered first: %v", err)
+	}
+	if _, err := store.RecordQuestionAnswered(ctx, RecordQuestionAnsweredParams{
+		ID:            event.ID,
+		AnswerRunID:   answerRun.ID,
+		AnswerEventID: answerEvent.ID,
+		Channel:       "telegram",
+	}); !errors.Is(err, ErrQuestionNotWaiting) {
+		t.Fatalf("duplicate answer error = %v, want ErrQuestionNotWaiting", err)
 	}
 }
 

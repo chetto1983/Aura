@@ -102,7 +102,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	addedUserInput := false
 	if ib.hub != nil {
 		if status, ok := ib.hub.ThreadRunStatus(msg.ThreadID); ok && status == chat.RunStatusWaitingForUser {
-			if callID, options, _, ok2 := agent.PendingAskUserCall(convCtx.Messages()); ok2 {
+			if callID, options, kind, ok2 := agent.PendingAskUserCall(convCtx.Messages()); ok2 {
+				options = askUserDisplayOptions(options, kind)
 				content, rejected, rejectMsg := parseAskUserReply(userText, options)
 				if rejected {
 					if _, sendErr := c.Bot().Send(c.Recipient(), rejectMsg); sendErr != nil {
@@ -112,6 +113,16 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 					run.Status = chat.RunStatusWaitingForUser
 					session.Finish()
 					return agent.Invocation{}, fmt.Errorf("ask_user: out-of-range reply, question still pending")
+				}
+				if recordErr := ib.hub.RecordQuestionAnswer(ctx, run, msg, chat.QuestionAnswer{
+					SelectedOptionIDs: askUserSelectedOptionIDs(userText, options),
+					FreeText:          content,
+					AnsweredMessageID: msg.ID,
+				}); recordErr != nil {
+					b.Logger().Warn("ask_user: failed to record question answer",
+						"user_id", userID,
+						"tool_call_id", callID,
+						"error", recordErr)
 				}
 				convCtx.AddToolResultMessage(callID, content)
 				addedUserInput = true

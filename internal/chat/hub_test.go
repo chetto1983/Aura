@@ -570,6 +570,150 @@ func TestReceiveMessage_WithLifecycleStorePersistsRedactedToolUsageAndFinalEvent
 	assertNoStoredText(t, db, "secret delivery value")
 }
 
+func TestReceiveMessage_WithLifecycleStorePersistsQuestionState(t *testing.T) {
+	db, store := newLifecycleStore(t)
+	loop := &recordingLoop{
+		emits: []OutboundEvent{{
+			Type: EventQuestionRequested,
+			Payload: map[string]any{
+				"question":     "Approve durable memory write?",
+				"kind":         "approval",
+				"options":      []string{"approve_once", "deny", "cancel"},
+				"tool":         "ask_user",
+				"tool_call_id": "ask-1",
+			},
+		}},
+		finalStatus: RunStatusWaitingForUser,
+	}
+	h := newPersistentHub(t, loop, store)
+	ctx := identity.WithActorID(context.Background(), "actor:web:session:1")
+	run, err := h.ReceiveMessage(ctx, InboundMessage{
+		ID:          "question-inbound-id",
+		Channel:     ChannelWeb,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-question",
+		Text:        "secret prompt before question",
+		Mode:        DeliveryModeDeferred,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveMessage: %v", err)
+	}
+	if run.Status != RunStatusWaitingForUser {
+		t.Fatalf("run status = %s, want waiting_for_user", run.Status)
+	}
+	events, err := store.Events(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if got, want := eventTypes(events), []string{string(EventRunStarted), string(EventQuestionRequested), string(EventDone)}; !sameStrings(got, want) {
+		t.Fatalf("event types = %v, want %v", got, want)
+	}
+	pending, ok, err := store.LatestPendingQuestion(context.Background(), "thread-question", string(ChannelWeb))
+	if err != nil {
+		t.Fatalf("LatestPendingQuestion: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected pending question")
+	}
+	if pending.RunID != run.ID || pending.EventID != events[1].ID {
+		t.Fatalf("pending linkage = run:%s event:%s", pending.RunID, pending.EventID)
+	}
+	if pending.Kind != "approval" || pending.Status != runstore.QuestionStatusWaiting {
+		t.Fatalf("pending kind/status = %s/%s", pending.Kind, pending.Status)
+	}
+	assertChatScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND type = 'question_requested' AND actor_id = ?`, 1, run.ID, "actor:web:session:1")
+	assertNoStoredText(t, db, "secret prompt before question")
+}
+
+func TestRecordQuestionAnswerPersistsAnswerEventAndClosesPendingQuestion(t *testing.T) {
+	_, store := newLifecycleStore(t)
+	h := newPersistentHub(t, &recordingLoop{emits: []OutboundEvent{{
+		Type: EventQuestionRequested,
+		Payload: map[string]any{
+			"question": "Which project?",
+			"kind":     "clarification",
+			"options":  []string{"Aura", "Gamma"},
+		},
+	}}, finalStatus: RunStatusWaitingForUser}, store)
+
+	questionRun, err := h.ReceiveMessage(context.Background(), InboundMessage{
+		ID:          "question-inbound",
+		Channel:     ChannelTelegram,
+		PrincipalID: "principal-1",
+		ThreadID:    "thread-answer",
+		Text:        "need a report",
+		Mode:        DeliveryModeDeferred,
+	})
+	if err != nil {
+		t.Fatalf("question ReceiveMessage: %v", err)
+	}
+	pending, ok, err := h.PendingQuestion(context.Background(), "thread-answer", ChannelTelegram)
+	if err != nil {
+		t.Fatalf("PendingQuestion: %v", err)
+	}
+	if !ok || pending.RunID != questionRun.ID {
+		t.Fatalf("pending = %+v ok=%v", pending, ok)
+	}
+
+	storedAnswerRun, created, err := store.CreateOrGetRun(context.Background(), runstore.CreateRunParams{
+		ID:          "run-answer",
+		ThreadID:    "thread-answer",
+		PrincipalID: "principal-1",
+		Channel:     string(ChannelTelegram),
+		Status:      string(RunStatusRunning),
+		StartedAt:   time.Date(2026, 5, 16, 8, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrGetRun answer: %v", err)
+	}
+	if !created {
+		t.Fatal("answer run created=false")
+	}
+	answerRun := &Run{
+		ID:          storedAnswerRun.ID,
+		ThreadID:    storedAnswerRun.ThreadID,
+		PrincipalID: storedAnswerRun.PrincipalID,
+		Channel:     Channel(storedAnswerRun.Channel),
+		Status:      RunStatus(storedAnswerRun.Status),
+	}
+	if err := h.RecordQuestionAnswer(context.Background(), answerRun, InboundMessage{
+		ID:       "answer-inbound",
+		Channel:  ChannelTelegram,
+		ThreadID: "thread-answer",
+	}, QuestionAnswer{
+		SelectedOptionIDs: []string{"1"},
+		FreeText:          "Aura",
+		AnsweredMessageID: "answer-inbound",
+	}); err != nil {
+		t.Fatalf("RecordQuestionAnswer: %v", err)
+	}
+
+	question, err := store.GetQuestion(context.Background(), pending.ID)
+	if err != nil {
+		t.Fatalf("GetQuestion: %v", err)
+	}
+	if question.Status != runstore.QuestionStatusAnswered {
+		t.Fatalf("question status = %s, want answered", question.Status)
+	}
+	if question.AnswerRunID != answerRun.ID || question.AnswerEventID == "" {
+		t.Fatalf("answer linkage = run:%s event:%s", question.AnswerRunID, question.AnswerEventID)
+	}
+	answerEvents, err := store.Events(context.Background(), answerRun.ID)
+	if err != nil {
+		t.Fatalf("answer Events: %v", err)
+	}
+	found := false
+	for _, event := range answerEvents {
+		if event.Type == string(EventQuestionAnswered) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("question_answered event missing from answer run: %v", eventTypes(answerEvents))
+	}
+}
+
 func TestReceiveMessage_WithLifecycleStoreRecordsAuthorizationDenial(t *testing.T) {
 	db, store := newLifecycleStore(t)
 	identityStore, err := identity.NewStore(db)
