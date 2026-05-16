@@ -1,97 +1,93 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-R = Phase 8 first slice — Subagent Dispatch Primitive. Wires the bridge between the existing internal/swarm package and chat.Hub via ChannelSwarm so the agent can spawn read-only fanout subagents via an LLM tool. Closes capability gap #5 'RunGraph subagent dispatch dinamico' from the 2026-05-16 'Aura come Claude Code' brainstorm. Scope is intentionally minimal: read-only fanout only (no write-capable workers, no team_collaboration, no plan-execute, no critic-review — those are full Phase 8 deferrals). The existing backbone: ChannelSwarm declared at internal/chat/types.go:35; internal/swarm/{manager,store,types}.go shipped; chat.Run already carries parent_run_id via InboundMessage scaffolding. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N/O/P/Q: additive code only, tests lock the contract. Memory feedback_minipc_cpu_budget: max parallel children <= 3, no busy-loop polling. Reference docs in tree (canonical): prd.md §Phase 8 lines 1450-1494 (full RunGraph scope; this phase implements the read-only fanout first slice only). prd.md §5.4 channels/swarm (silent delivery + parent/child propagation). Master plan §3 D8 'first-class channel' decision: swarm sub-task = InboundMessage{Channel:swarm, Mode:silent}.",
+  "description": "Aura Phase-S = Phase 8 second slice — Write-capable Subagent Workers via propose_patch (Wave 3 Pack C deferred work, see master plan §3 D8 and prd.md §Phase 8 line 1471 'allows future write-capable workers only through proposal or workflow gates'). Phase-R wired read-only fanout subagents. Phase-S extends to write_proposal RiskTier: subagents can produce proposals (wiki/user_memory/operational) that land in proposed_updates for operator review. NEVER direct writes — proposals only. Pattern: re-use Phase-O proposed_updates table + Phase-Q Authorize gate + Phase-R HubBridge. 4 atomic stories, one commit each on master. Reference docs in tree (canonical): prd.md §Phase 8 lines 1470-1471 'read-only fanout as a safe first slice, not the permanent architecture ceiling; allows future write-capable workers only through proposal or workflow gates'. Master plan Wave 3 Pack C (deferred): 'propose_patch + sanitization + TTL'. prd.md §5.7 line 709 'proposal_queue -> durable layer only after approval or policy-backed acceptance'.",
   "userStories": [
     {
-      "id": "US-R01",
-      "title": "Add NodeSpec + SwarmHubBridge adapter (swarm.AgentTask -> chat.InboundMessage)",
-      "description": "Pure adapter + types + tests; no consumer wiring in this story. (a) New file `internal/swarm/nodespec.go` with type `NodeSpec struct { Goal string; Instruction string; ToolAllowlist []string; MaxIterations int; MaxToolCalls int; BudgetSecs int; OutputSchema string (optional JSON schema); RiskTier string (read_only | write_proposal — only read_only valid in this slice); ParentRunID string; AssignmentID string }`. Validation function `Validate() error` rejects empty Goal, RiskTier != 'read_only', MaxIterations > 10, BudgetSecs > 300 (mini-PC budget memory). (b) New file `internal/swarm/hub_bridge.go` with `HubBridge struct` + factory `NewHubBridge(hub chat.Hub) *HubBridge`. Method `Dispatch(ctx context.Context, spec NodeSpec, principal identity.Principal) (childRunID string, err error)` — translates NodeSpec to chat.InboundMessage{Channel: ChannelSwarm, Mode: DeliveryModeSilent, Text: Goal, ChannelData: {parent_run_id, assignment_id, instruction, tool_allowlist, budgets}, PrincipalID: principal.ID}. Calls hub.ReceiveMessage and returns the resulting Run.ID. Does NOT wait — that's collection step (see US-R03). (c) NO change to existing swarm.Manager flow — this is an alternative entrypoint that will be wired in next stories. (d) Tests in `internal/swarm/hub_bridge_test.go`: 5 cases — NodeSpec validation rejects empty Goal; rejects RiskTier=write_proposal in this slice; Dispatch builds correct InboundMessage with Channel=Swarm; Dispatch passes parent_run_id through; budget > 300 rejected.",
+      "id": "US-S01",
+      "title": "Add propose_patch LLM tool (action-dispatch: wiki / user_memory / operational targets)",
+      "description": "Pure tool registration + types; no consumer wiring beyond writing to proposed_updates. (a) New file `internal/agent/tools/registry/propose_patch.go` with `ProposePatchTool` struct + Definition + Execute. Schema uses ActionDispatchOneOf (Phase-L pattern): action enum [wiki, user_memory, operational]; wiki requires target_slug + body + change_summary; user_memory requires fact + category (preference|fact|todo|person) + change_summary; operational requires tool_name + error_class + lesson + change_summary. Description copy: 'Submit a structured patch proposal for operator review. Proposals land in proposed_updates with status=pending and are visible in the dashboard /proposals review queue. Use action=wiki to suggest a wiki page edit, action=user_memory to surface a candidate user fact, action=operational to record an operational lesson. ALL writes are review-gated — no direct mutations.' (b) Execute validates payload by action, then inserts a proposed_updates row with kind matching action, status='pending', signature_hash for idempotency (sha256(action + key fields)[:16]), provenance source_run_id + actor_id. (c) For subagents (RiskTier='write_proposal') this is the ONLY mutation tool exposed — all direct write tools (wiki_page, agent_note set, source store) are filtered out via tool_allowlist. (d) Register in `internal/agent/tools/registry/registry.go` alongside subagent_dispatch + recall_*. (e) Tests `internal/agent/tools/registry/propose_patch_test.go`: 6 cases — wiki proposal creates row with kind='wiki' + status='pending'; user_memory proposal creates row with kind='user_memory'; operational proposal creates row with kind='operational'; double-submit same signature_hash is idempotent (skipped); missing required field per action returns schema validation error; tool exposed under a write_proposal subagent allowlist but blocks direct file/source writes.",
       "acceptanceCriteria": [
-        "internal/swarm/nodespec.go exists with NodeSpec struct + Validate function",
-        "Validate rejects empty Goal, RiskTier != 'read_only', MaxIterations > 10, BudgetSecs > 300",
-        "internal/swarm/hub_bridge.go exists with HubBridge + Dispatch method",
-        "Dispatch returns chat.Hub.ReceiveMessage child run ID without waiting",
-        "InboundMessage carries Channel=ChannelSwarm, Mode=DeliveryModeSilent, ChannelData has parent_run_id+assignment_id+instruction+tool_allowlist+budgets",
-        "hub_bridge_test.go covers 5 cases (validate-empty, validate-write-tier, dispatch-shape, parent-propagation, budget-cap)",
-        "No changes to existing internal/swarm/manager.go, store.go, or executor wiring",
+        "internal/agent/tools/registry/propose_patch.go exists with ProposePatchTool struct + ActionDispatchOneOf schema for 3 actions",
+        "Description explicitly notes 'ALL writes are review-gated — no direct mutations'",
+        "Execute validates per-action required fields + inserts proposed_updates row with correct kind",
+        "signature_hash for idempotency: sha256(action + key fields)[:16]",
+        "Provenance fields (source_run_id, actor_id) populated from execution context",
+        "Tool registered in registry.go alongside subagent_dispatch + recall_*",
+        "propose_patch_test.go covers 6 cases (3 kinds, idempotency, validation, write-proposal-allowlist-blocks-direct-writes)",
+        "Existing proposed_updates tests stay green",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(swarm): NodeSpec + HubBridge adapter (US-R01)"
+        "Single atomic commit prefix: feat(tools): propose_patch action-dispatch tool (US-S01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Sources: prd.md §Phase 8 line 1463 'defines each child as a bounded NodeSpec with goal, instruction, curated context, tool/capability grant, model/provider when relevant, budgets, output schema, artifact policy, risk tier, and allowed spawn depth'. This slice covers Goal/Instruction/ToolAllowlist/Budget/RiskTier subset (read_only only). Memory feedback_minipc_cpu_budget enforces BudgetSecs <= 300."
+      "passes": false,
+      "notes": "Sources: prd.md §Phase 8 line 1471 'allows future write-capable workers only through proposal or workflow gates'. Re-use existing proposed_updates table from Phase-O/Phase-N flows. Phase-L oneOf schema template from action_error.go."
     },
     {
-      "id": "US-R02",
-      "title": "Wire ChannelSwarm in chat.Hub — silent run loop + result collection via Router.WaitForRun",
-      "description": "Make ChannelSwarm an actual live channel in the hub. (a) Locate the hub's dispatch path in `internal/chat/hub.go` (existing ReceiveMessage already routes by Channel). Add (or verify presence of) the swarm-specific handling: when Channel=ChannelSwarm, the agent loop runs with the ChannelData-provided tool_allowlist + max_iterations + budget; output goes to a silent buffer (no Telegram, no web SSE), available via a new method `Router.WaitForRun(ctx, runID) (chat.Result, error)` with a context-bounded poll loop (poll every 200ms, max wait = BudgetSecs from ChannelData). (b) Implement `Router.WaitForRun` in `internal/chat/hub.go` (or a sibling file) that blocks until the run reaches a terminal state (Done/Error/Cancelled) and returns a chat.Result containing the final assistant text + tool_calls_count + tokens_total + elapsed_ms. Use existing chat.EventDone subscription pattern. (c) Capability inheritance check: when ChannelSwarm receives a run, verify the principal's grants include CapabilityToolExecute + capability for each tool in tool_allowlist. Deny with chat.EventError on failure. Use the existing identity.Authorize boundary. (d) Tests in `internal/chat/hub_swarm_test.go`: 4 cases — ChannelSwarm dispatches the run + run completes silent; WaitForRun blocks until done; tool_allowlist outside parent grant is denied; budget exceeded triggers cancellation+terminal failed event.",
+      "id": "US-S02",
+      "title": "Extend NodeSpec.RiskTier='write_proposal' + tool allowlist enforcement",
+      "description": "Make write_proposal a valid RiskTier in Phase-R's NodeSpec.Validate. (a) Modify `internal/swarm/nodespec.go` (Phase-R US-R01) Validate function: accept RiskTier in {read_only, write_proposal}. When RiskTier='write_proposal', enforce that ToolAllowlist contains 'propose_patch' AND does NOT contain any direct-write tool (wiki_page, agent_note action=set|append|clear, source action=store, task action=schedule, file action=write|patch). Return descriptive error on violation. (b) Add helper `internal/swarm/tool_policy.go` with var `DirectWriteToolNames = []string{...}` (one source of truth) + function `EnforceWriteProposalAllowlist(allowlist []string) error`. (c) HubBridge.Dispatch (Phase-R US-R01) honors the new tier: passes tool_allowlist through ChannelData unchanged; the agent loop at hub layer applies the filter (verify Phase-R US-R02 hub.go has the tool_allowlist filter wired). (d) Tests in `internal/swarm/tool_policy_test.go`: 5 cases — read_only allows any tool name through; write_proposal with [propose_patch, web, search_memory] valid; write_proposal with [propose_patch, wiki_page] rejected (wiki_page is direct write); write_proposal with [web, search_memory] rejected (no propose_patch); empty allowlist rejected.",
       "acceptanceCriteria": [
-        "internal/chat/hub.go (or sibling) handles Channel=ChannelSwarm with silent delivery mode",
-        "Router.WaitForRun(ctx, runID) blocks until terminal state, returns chat.Result with reply+stats",
-        "WaitForRun respects context cancellation + BudgetSecs upper bound",
-        "Capability inheritance check via identity.Authorize before dispatch (CapabilityToolExecute + per-tool grants)",
-        "Denied dispatch emits chat.EventError; no agent loop started",
-        "hub_swarm_test.go covers dispatch+complete, wait-blocks-until-done, tool-allowlist-denied, budget-exceeded-cancellation",
-        "Existing chat.Hub tests stay green for non-swarm channels",
-        "No new SQLite tables (re-use runs/run_events from Phase 1A)",
+        "internal/swarm/nodespec.go Validate accepts RiskTier='write_proposal'",
+        "internal/swarm/tool_policy.go declares DirectWriteToolNames + EnforceWriteProposalAllowlist",
+        "DirectWriteToolNames includes wiki_page, source(action=store), task(action=schedule), file(action=write|patch), agent_note(action=set|append|clear) — verify against current tool registry list",
+        "Validate rejects write_proposal allowlists missing propose_patch OR containing any DirectWriteToolName",
+        "Tests cover 5 cases (read_only passthrough, valid write_proposal, missing propose_patch, contains-direct-write, empty allowlist)",
+        "Existing Phase-R NodeSpec tests stay green",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(chat): wire ChannelSwarm + Router.WaitForRun (US-R02)"
+        "Single atomic commit prefix: feat(swarm): RiskTier=write_proposal + tool allowlist policy (US-S02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Sources: prd.md §Phase 8 line 1479 'child actor grants cannot exceed parent authority'. Master plan §3 D8 'swarm sub-task = InboundMessage{Channel:swarm, Mode:silent, ChannelData: {parent_run_id, assignment_id}}; Manager raccoglie via Router.WaitForRun(runID)'. Memory feedback_minipc_cpu_budget: WaitForRun poll interval >= 200ms (no busy loop)."
+      "passes": false,
+      "notes": "Sources: prd.md §Phase 8 line 1470-1471. Phase-R US-R01 NodeSpec only allowed read_only. This story unlocks the new tier with strict allowlist policy. DirectWriteToolNames is single source of truth — duplicates would risk Phase-L action-dispatch confusion."
     },
     {
-      "id": "US-R03",
-      "title": "Add subagent_dispatch LLM tool (spawn + wait + collect with parallel fanout)",
-      "description": "Expose the subagent primitive to the LLM as an action-dispatch tool. (a) New file `internal/agent/tools/registry/subagent.go` with `SubagentDispatchTool` struct + Definition + Execute. Schema uses ActionDispatchOneOf (Phase-L pattern): actions are 'spawn' (parallel fanout: array of NodeSpec → returns array of child_run_ids) and 'collect' (array of child_run_ids → blocks until all done, returns aggregated results). Description copy: 'Spawn up to 3 read-only subagents in parallel and collect their results. Each child runs in isolation with its own context window, tool allowlist (subset of yours), and budget. Cannot perform write operations (wiki_page write, source store, task schedule etc. — all blocked). Returns concise summaries on collect. Use for: parallel web search across topics, multi-source synthesis, divergent reasoning paths.' Per-action required: spawn: nodes (array of {goal, instruction (opt), tool_allowlist (opt, defaults to read-only set), budget_secs (opt, default 60)}); collect: child_run_ids (array). (b) Spawn: validate len(nodes) <= 3 (mini-PC budget); for each node, create NodeSpec with RiskTier='read_only'; call HubBridge.Dispatch in parallel via errgroup; return the child_run_ids array as JSON. (c) Collect: for each child_run_id, call Router.WaitForRun (parallel via errgroup, each bounded by node's budget); aggregate results in a markdown structured output: '## Subagent <i>: <goal_summary>\\n\\n<reply_text>\\n\\nTokens: N | Tool calls: M | Elapsed: T ms\\n'. (d) Register in registry.go alongside agent_note, recall_user_memory, recall_operational. (e) Tests in `internal/agent/tools/registry/subagent_test.go`: 5 cases — spawn 1 node returns 1 child_run_id; spawn 3 nodes parallel; spawn 4 nodes rejected (cap 3); collect 1 child returns result; collect mixed (1 success + 1 timeout) returns partial with error annotation per failed slot.",
+      "id": "US-S03",
+      "title": "Extend subagent_dispatch tool: allow risk_tier param + propagate to NodeSpec",
+      "description": "Surface the write_proposal tier at the LLM tool level. (a) Modify `internal/agent/tools/registry/subagent.go` (Phase-R US-R03) Execute action=spawn: each node entry now accepts optional 'risk_tier' string field (default 'read_only'). When risk_tier='write_proposal', the agent allowlist is constrained to read-only tools + 'propose_patch' (filter direct-write tool names server-side, mirror Phase-S US-S02 policy). (b) Update tool Description: append a paragraph 'You can also dispatch write_proposal subagents. They can call propose_patch to suggest reviewer-gated changes (wiki, user_memory, operational) but CANNOT directly write to wiki, sources, scheduled tasks, files, or agent_note. Approval flows through the human reviewer.' (c) The spawn limit stays <=3 children total regardless of mix. (d) Tests `subagent_test.go` extend: 3 cases — spawn 2 nodes with mixed tiers (1 read_only + 1 write_proposal) succeeds; spawn write_proposal node with explicit forbidden tool (wiki_page) returns validation error; spawn write_proposal without explicit allowlist defaults to [propose_patch + read-only set] and is accepted.",
       "acceptanceCriteria": [
-        "internal/agent/tools/registry/subagent.go exists with SubagentDispatchTool",
-        "Schema uses ActionDispatchOneOf with actions [spawn, collect]",
-        "Description explicitly notes 'read-only subagents' + 'cap 3' + 'write operations blocked'",
-        "spawn validates len(nodes) <= 3 + RiskTier=read_only enforced via NodeSpec.Validate",
-        "spawn dispatches via HubBridge.Dispatch in parallel (errgroup)",
-        "collect blocks via Router.WaitForRun per child + aggregates markdown structured output",
-        "Mixed collect (1 ok + 1 timeout) returns partial result with per-slot error annotation",
-        "Tool registered in registry.go alongside agent_note + recall_operational + recall_user_memory",
-        "subagent_test.go covers 5 cases (1-node, 3-node, 4-node-rejected, collect-success, collect-mixed)",
+        "subagent.go Execute action=spawn accepts optional 'risk_tier' per node (default 'read_only')",
+        "write_proposal nodes get allowlist constrained to read-only tools + propose_patch (server-side filter)",
+        "Description updated with write_proposal paragraph explaining the constraints",
+        "Spawn limit <=3 children regardless of tier mix",
+        "Tests cover mixed-tier spawn, forbidden-tool-rejected, default-allowlist-for-write-proposal",
+        "Existing Phase-R subagent tests stay green for read_only fixtures",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(tools): subagent_dispatch parallel fanout tool (US-R03)"
+        "Single atomic commit prefix: feat(tools): subagent_dispatch risk_tier=write_proposal support (US-S03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Sources: prd.md §Phase 8 line 1470 'treats read-only fanout as a safe first slice, not the permanent architecture ceiling'. Memory feedback_minipc_cpu_budget: <=3 parallel children, no busy-loop polling. Phase-L oneOf action-dispatch pattern from action_error.go is the schema template."
+      "passes": false,
+      "notes": "Sources: prd.md §Phase 8 line 1470 'read-only fanout as a safe first slice, not the permanent architecture ceiling'. Phase-R US-R03 hard-coded RiskTier='read_only'. This story flips it to opt-in tiers."
     },
     {
-      "id": "US-R04",
-      "title": "Integration test (parent + 2 children read-only fanout) + Phase-R closure docs",
-      "description": "Lock the full end-to-end flow + close Phase-R. (a) New file `internal/swarm/parent_child_integration_test.go`. Test `TestParentSpawnsTwoReadOnlyChildrenAndCollectsResults`: 1) seed an actor with CapabilityToolExecute + CapabilityWebSearch (or similar read-only grants); 2) start a parent run on ChannelTelegram (or ChannelWeb) that calls subagent_dispatch action=spawn with 2 nodes: node A {goal: 'count to 3', instruction: 'reply with just numbers'}; node B {goal: 'say hello in 2 languages', instruction: 'no markdown'}; 3) assert spawn returns 2 child_run_ids; 4) assert run_events records 2 EventToolStart entries with subagent_dispatch name; 5) call subagent_dispatch action=collect with the 2 child_run_ids; 6) assert collect returns aggregated markdown containing both children outputs; 7) assert SQLite runs table has 3 rows (1 parent + 2 children) with correct parent_run_id linkage; 8) verify dashboard /api/health surface shows recent swarm activity. (b) Use in-memory hub + fake LLM that returns deterministic short replies (avoid real Anthropic/OpenRouter calls in CI). (c) Closure docs: create `.planning/deep-refactor/Phase08_Cron_Swarm_Hub/subphases/Phase08_subagent_dispatch_first_slice/{progress.md, plan.md, benchmark.md}`. Progress.md lists US-R01..R04 SHAs. Plan.md is a one-pager citing prd.md §Phase 8 + this is the read-only fanout SLICE (deferral remaining: write_proposal workers, team_collaboration, plan-execute, critic-review, hierarchical, hybrid DAG — all explicit non-goals for now). Benchmark.md actuals: 2 children parallel dispatch <100ms; 2 children completion under 30s on fake LLM. (d) Update prd.md §6.5 Status Checklist: add Phase-R row showing 'subagent dispatch primitive wired (Phase 8 read-only fanout — capability #5 closed)'. (e) Update §7.2 Outstanding deferrals: 'Subagent dispatch dinamico' row — mark CLOSED 2026-05-16 (read-only fanout). Add a new line noting 'Full Phase 8 (write-capable workers, team_collaboration, plan-execute, critic-review, hierarchical DAG) remains deferred'. (f) Update prd.md Phase 8 section: append closure note 'Phase 8 first-slice closed 2026-05-16 (read-only fanout subagent dispatch). Remaining scope deferred.' (g) Use git add -f for .planning/* paths.",
+      "id": "US-S04",
+      "title": "Integration test (parent + 2 write_proposal subagents) + TTL sweep + Phase-S closure docs",
+      "description": "Lock end-to-end + add the proposals TTL sweep + close Phase-S. (a) New file `internal/swarm/write_proposal_integration_test.go` with `TestParentSpawnsTwoWriteProposalSubagentsAndCollectsProposals`: 1) seed actor with grants for CapabilityToolExecute + CapabilityMemoryUserWrite; 2) parent run spawns 2 write_proposal subagents — node A {goal: 'propose a wiki page about test'}, node B {goal: 'surface user preference: I like coffee'}; 3) assert collect returns aggregated markdown referencing the proposed_updates handles; 4) assert proposed_updates table has 2 new rows with status='pending', kinds matching expected (wiki + user_memory); 5) attempt direct wiki_page call from within a write_proposal subagent → assert ErrPermissionDenied or schema-validation error visible in agent_events. (b) Add TTL sweep: new file `internal/learning/proposal_ttl.go` with function `SweepStaleProposals(ctx, store, maxAge time.Duration) (purged int, err error)` — deletes proposed_updates rows with status='pending' older than maxAge. Default 30 days. Wire as new cron task 'proposal_ttl_sweep' running daily at 03:00 local. (c) Tests for SweepStaleProposals: 3 cases — fresh pending row preserved; 31-day-old pending row purged; approved row never purged regardless of age. (d) Closure docs: create `.planning/deep-refactor/Phase08_Cron_Swarm_Hub/subphases/Phase08_write_proposal_workers/{progress.md, plan.md, benchmark.md}`. Progress.md lists US-S01..S04 SHAs. Plan.md cites prd.md §Phase 8 line 1471 + master plan Wave 3 Pack C. Benchmark.md: 2 write_proposal subagents complete <60s on fake LLM. (e) Update prd.md §6.5 Status Checklist: add Phase-S row showing 'write-capable workers via propose_patch wired (Phase 8 second slice)'. (f) Update prd.md Phase 8 section: append 'Phase 8 second slice closed 2026-05-16 (write_proposal workers via propose_patch + TTL sweep). Full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred.' (g) Use git add -f for .planning/* paths.",
       "acceptanceCriteria": [
-        "internal/swarm/parent_child_integration_test.go with TestParentSpawnsTwoReadOnlyChildrenAndCollectsResults",
-        "Test uses in-memory hub + fake LLM (no live network calls)",
-        "Test asserts 2 child_run_ids returned by spawn; aggregated markdown by collect",
-        "Test asserts runs table has parent + 2 children with parent_run_id linkage",
-        "Test asserts run_events has EventToolStart entries for subagent_dispatch tool name",
-        ".planning/deep-refactor/Phase08_Cron_Swarm_Hub/subphases/Phase08_subagent_dispatch_first_slice/{plan.md, progress.md, benchmark.md} created",
-        "prd.md §6.5 Status Checklist: Phase-R row added (read-only fanout — capability #5 closed)",
-        "prd.md §7.2 'Subagent dispatch dinamico' row marked CLOSED 2026-05-16 + note about remaining Phase 8 deferred scope",
-        "prd.md Phase 8 section gets closure note 'Phase 8 first-slice closed 2026-05-16'",
+        "internal/swarm/write_proposal_integration_test.go with TestParentSpawnsTwoWriteProposalSubagentsAndCollectsProposals",
+        "Test asserts 2 proposed_updates rows created with status='pending' + correct kinds",
+        "Test asserts direct wiki_page call from write_proposal subagent is BLOCKED",
+        "internal/learning/proposal_ttl.go with SweepStaleProposals(ctx, store, maxAge) (purged int, err error)",
+        "Cron task 'proposal_ttl_sweep' wired into registry running daily at 03:00",
+        "TTL tests cover fresh-preserved, 31-day-old-purged, approved-never-purged",
+        ".planning/deep-refactor/Phase08_Cron_Swarm_Hub/subphases/Phase08_write_proposal_workers/{plan.md, progress.md, benchmark.md} created",
+        "prd.md §6.5 Status Checklist: Phase-S row added (write-capable workers wired)",
+        "prd.md Phase 8 section: append 'Phase 8 second slice closed 2026-05-16' note",
         "Used git add -f for .planning/* paths",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(swarm,docs): subagent fanout integration test + Phase-R closure (US-R04)"
+        "Single atomic commit prefix: feat(swarm,learning,docs): write_proposal integration test + TTL sweep + Phase-S closure (US-S04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Sources: closure pattern Phase-N/O/P/Q. Phase 8 §Gate line 1477 'parent run ID propagation tested' is the test's load-bearing assertion. Phase 8 full closure is NOT in scope — explicit deferral note in §7.2 documents what remains."
+      "passes": false,
+      "notes": "Sources: prd.md §Phase 8 line 1471 'workflow or proposal gates'. Master plan Wave 3 Pack C deferred: 'propose_patch + sanitization + TTL'. TTL pattern mirrors Phase-N cron task wiring."
     }
   ]
 }
