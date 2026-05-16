@@ -67,7 +67,7 @@
         "Single atomic commit prefix: test(learning): integration test for Authorize + question gates (US-Q03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §10.2 Boundary tests — capability checks must have integration coverage. Memory feedback_probe_must_verify_artifact_not_reply applies but this is a pure-Go integration test (no LLM), so the artifact is the SQLite row + the slog capture, not a user-facing reply."
     },
     {
