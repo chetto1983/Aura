@@ -90,7 +90,7 @@
         "Single atomic commit prefix: feat(swarm,docs): subagent fanout integration test + Phase-R closure (US-R04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: closure pattern Phase-N/O/P/Q. Phase 8 §Gate line 1477 'parent run ID propagation tested' is the test's load-bearing assertion. Phase 8 full closure is NOT in scope — explicit deferral note in §7.2 documents what remains."
     }
   ]

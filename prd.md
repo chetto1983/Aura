@@ -1196,7 +1196,8 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **Phase-O** — User Memory Promotion (sub-phase of 9) | ✅ | 2026-05-16 | US-O01..O04 — `2642ce0b..`(US-O04) | wired KindUserMemory: triage → proposed_updates kind=user_memory → WriteApprovedUserFact → recall_user_memory tool |
 | **Phase-P** — Agent Note Scratchpad (capability #4) | ✅ | 2026-05-16 | US-P01..P04 — `79159b4a..`(US-P04) | agent_note scratchpad wired (capability #4 closed): SQLite table + Store API + action-dispatch tool + system-prompt injection + GC + web-path fix + probe |
 | **Phase-Q** — User Memory Write Guards (Phase 9 partial close) | ✅ | 2026-05-16 | US-Q01..Q04 — `c0189ac4..`(US-Q04) | user_memory write guards wired (Phase 9 partial close — capability check + question gate): memory.user.write Authorize gate at WriteApprovedUserFact + ambiguity question gate Score<0.7 + integration tests |
-| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 planning-ready | — | Phase08 plan verified 2026-05-16 | ready-for-discussion; implementation gated on open decisions + Phase08B lock. **Unlocks "Aura come Claude Code" capability #5 (subagent dispatch dinamico)** |
+| **Phase-R** — Subagent Dispatch Primitive (Phase 8 read-only fanout first slice) | ✅ | 2026-05-16 | US-R01..R04 — `b4124b54..`(US-R04) | subagent dispatch primitive wired (Phase 8 read-only fanout — capability #5 closed): NodeSpec + HubBridge.Dispatch + WaitForRun + subagent_dispatch LLM tool + E2E integration test |
+| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 first-slice closed | 2026-05-16 (Phase-R) | Phase08 first slice (Phase-R) closed 2026-05-16; full Phase 8 (write-capable workers, team_collaboration, plan-execute, critic-review, hierarchical DAG) remains deferred | **Capability #5 closed by Phase-R.** Full Phase 8 substrate (8B–8G) gated on open decisions. |
 | **9** — Memory and Source Discipline | 🟡 partial-close | 2026-05-16 (partial) | Phase-O + Phase-Q closed (write-policy + guards); remaining: clarify memory vs storage docs, conversion fixtures, SQLite concurrency hardening | **Phase 9 partial-close 2026-05-16** — capability #1 (autonomous write-policy) core wired; doc/invariant hardening deferred |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
 
@@ -1214,8 +1215,12 @@ specific package or §5 contract:
 
 Together these three close gaps **1 (autonomous write)**, **2 (end-of-turn reflection)**,
 **3 (telemetry-driven improvement)**, and **4 (cross-turn checklist)** from the
-"Aura come Claude Code" brainstorm. Gap **5 (dynamic subagent dispatch)** is owned
-by Phase 8 (RunGraph). Gap **6 (self-coding)** is an explicit non-goal (§12).
+"Aura come Claude Code" brainstorm. Gap **5 (dynamic subagent dispatch)** — **CLOSED
+2026-05-16** by Phase-R (US-R01..R04): read-only fanout subagent dispatch primitive
+wired (NodeSpec + HubBridge.Dispatch + WaitForRun + `subagent_dispatch` LLM tool).
+Full Phase 8 remaining scope (write-capable workers, team_collaboration, plan-execute,
+critic-review, hierarchical DAG) remains explicitly deferred. Gap **6 (self-coding)**
+is an explicit non-goal (§12).
 
 ### 7.3 Logical next phase after Phase-M (Phase 7C) closes
 
@@ -1656,6 +1661,13 @@ Gate:
 - autonomous E2E proof rejects manual-only `run_now` evidence and requires
   non-manual `fire_source` plus run/workflow/outbox or child-node SQL evidence,
 - no hidden alternate runtime.
+
+**Phase 8 first-slice closed 2026-05-16 (read-only fanout subagent dispatch).** Phase-R
+(US-R01..R04) wired the read-only fanout primitive: NodeSpec + HubBridge.Dispatch +
+WaitForRun + `subagent_dispatch` LLM tool. Capability #5 from the "Aura come Claude
+Code" brainstorm is now closed. Full Phase 8 remaining scope (8B durable substrate,
+8C swarm normalization, 8D–8E cron migration, 8F team collaboration, 8G autonomous
+E2E) remains explicitly deferred.
 
 ### Phase 9 - Memory and Source Discipline
 
