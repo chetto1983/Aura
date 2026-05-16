@@ -1,0 +1,98 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-M = masterplan Phase 7C (Projection Freshness Registry). Lands a per-collection freshness registry + per-doc content-hash drift detection + eager write-time invalidate + retrieval-time annotation so the agent can decide not to trust degraded results. Triggered by the 2026-05-16 brainstorm 'memoria industry-level' (Mem0 v3 ADD-only + Letta typed blocks + LlamaIndex DocstoreStrategy + Qdrant aliases + Weaviate auto-timestamps). 4 atomic stories, each one commit on master. Pattern carried over from Phase-K/L: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): docs/phase07c-current-state-audit-2026-05-16.md (file:line inventory of what Aura HAS), docs/phase07c-academic-research-2026-05-16.md (arXiv evidence + ADOPT/AVOID), docs/phase07c-web-research-frameworks-2026-05-16.md (Qdrant/Vespa/Weaviate/LlamaIndex/Letta/OpenAI/Anthropic comparison), docs/phase07c-mem0-elysia-patterns-2026-05-16.md (sintesi finale + decisione scope).",
+  "userStories": [
+    {
+      "id": "US-M01",
+      "title": "Add projection_state table + freshness.Store Go API (pure types + storage, no consumers wired)",
+      "description": "Introduce the canonical per-projection registry. ONE row per index unit (5 total: wiki_documents_fts5, aura_memory_v1 qdrant, compact_memory_documents, aura_memory_v1_compact qdrant, embedding_cache). Optimistic-concurrency update pattern (Letta-style). Pure types + storage + tests; no caller integration in this story. (a) New migration v12 `addProjectionState` in `internal/db/migrations/migrations.go` registered slice (line ~30) AND mirrored in `currentSchemaSQL` so fresh-DB bootstrap is consistent. Schema: `projection_id TEXT PRIMARY KEY, kind TEXT NOT NULL ('fts5'|'qdrant'|'sqlite'|'cache'), embedding_model_id TEXT NOT NULL DEFAULT '', embedding_dim INTEGER NOT NULL DEFAULT 0, index_build_id TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, last_full_rebuild_at INTEGER NOT NULL, last_incremental_at INTEGER, pending_count INTEGER NOT NULL DEFAULT 0, completed_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'fresh' (one of 'fresh'|'rebuilding'|'degraded'|'stale_swap'), health_reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL DEFAULT (unixepoch())`. (b) New package `internal/storage/freshness/` with `Store` struct + 5 methods: `Get(projectionID) (Row, bool, error)`, `Upsert(row Row) (Row, error)` (uses INSERT ... ON CONFLICT), `UpdateWithVersion(projectionID string, mutator func(*Row) error) (Row, error)` (optimistic concurrency: SELECT row + apply mutator + UPDATE WHERE version=old; if 0 rows affected return ErrVersionConflict), `BumpPending(projectionID string, delta int) error`, `List(ctx) ([]Row, error)`. (c) `Row` struct mirrors the schema (camelCase Go fields). `ErrVersionConflict = errors.New('freshness: version conflict')` exported. (d) No consumer wiring: do NOT touch memoryindex/rebuild.go, search/, memory_search.go, app.go in this story. (e) Tests in `internal/storage/freshness/store_test.go`: 4 cases — Upsert+Get roundtrip; UpdateWithVersion happy path increments version; UpdateWithVersion concurrent conflict returns ErrVersionConflict; List returns all rows.",
+      "acceptanceCriteria": [
+        "internal/db/migrations/migrations.go registers v12 with name 'add_projection_state'",
+        "currentSchemaSQL contains the projection_state table DDL identical to the migration",
+        "internal/storage/freshness/store.go exists with Store struct + 5 methods + Row struct + ErrVersionConflict",
+        "UpdateWithVersion uses 'UPDATE ... WHERE projection_id=? AND version=?' and returns ErrVersionConflict when RowsAffected()==0",
+        "Row.UpdatedAt is set to unixepoch() on every successful write",
+        "Row.Status defaults to 'fresh'; valid values are 'fresh'|'rebuilding'|'degraded'|'stale_swap'",
+        "internal/storage/freshness/store_test.go covers Upsert+Get, UpdateWithVersion happy path, version conflict, List",
+        "No changes to internal/storage/memoryindex/, internal/storage/search/, internal/agent/tools/registry/memory_search.go, cmd/aura/app.go in this commit",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(freshness): projection_state table + Store API with optimistic concurrency (US-M01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 2 (schema). Pattern: Letta version_id_col. 5 rows total = closed set, validated by docs/phase07c-current-state-audit-2026-05-16.md §F.3."
+    },
+    {
+      "id": "US-M02",
+      "title": "Stamp content_hash + embedding_model_id + index_build_id on compact_memory_documents",
+      "description": "Add the per-doc drift detection signal — LlamaIndex `DocstoreStrategy.UPSERTS` pattern as a native column on the source-of-truth table, mirrored into the Qdrant payload (Mem0 v3 pattern). NO new sidecar table. (a) New migration v13 `addCompactMemoryFreshnessColumns` adds 3 columns to `compact_memory_documents`: `content_hash TEXT NOT NULL DEFAULT ''`, `embedding_model_id TEXT NOT NULL DEFAULT ''`, `index_build_id TEXT NOT NULL DEFAULT ''`. (b) Mirror in `currentSchemaSQL`. (c) Extend `memoryindex.Document` struct in `internal/storage/memoryindex/store.go` with corresponding Go fields: `ContentHash string`, `EmbeddingModelID string`, `IndexBuildID string`. (d) `ReplaceKind` and `Append` writers in `internal/storage/memoryindex/rebuild.go` accept these fields and persist them. (e) `memoryindex.Store.Search` returns these fields on hits (SELECT updated to include new columns). (f) Update the compact Qdrant payload (`compactPayload` in `internal/storage/search/compact_qdrant.go:247-264` per audit doc) to include `content_hash`, `embedding_model_id`, `index_build_id` keys when populated (omit if empty string — back-compat). (g) NO writer in this story actually FILLS the fields with real values — that comes in US-M03. The schema accepts empty defaults safely. (h) Helper function `internal/storage/memoryindex/hash.go::ContentHash(role, body, embeddingModelID string) string` returns sha256 hex of `role + '\\n' + body + '\\n' + embeddingModelID` (matches Mem0 pattern: text + model). (i) Tests: existing tests still pass with empty defaults; new `TestDocumentRoundTripWithFreshnessColumns` writes a Document with all 3 new fields populated, reads back, asserts equality. New `hash_test.go` covers `ContentHash` (deterministic, role-sensitive, model-sensitive).",
+      "acceptanceCriteria": [
+        "Migration v13 adds 3 columns (content_hash, embedding_model_id, index_build_id) with TEXT NOT NULL DEFAULT '' to compact_memory_documents",
+        "currentSchemaSQL contains the 3 new columns",
+        "memoryindex.Document has 3 new Go fields (ContentHash, EmbeddingModelID, IndexBuildID)",
+        "ReplaceKind + Append persist the 3 fields",
+        "memoryindex.Store.Search SELECT statement includes the 3 new columns",
+        "compactPayload in compact_qdrant.go writes content_hash/embedding_model_id/index_build_id keys (omit if empty)",
+        "internal/storage/memoryindex/hash.go ContentHash function with sha256(role + body + model)",
+        "Existing rebuild_test.go and store_test.go pass with empty defaults",
+        "New TestDocumentRoundTripWithFreshnessColumns and TestContentHash tests added",
+        "No actual writers populate the fields with non-empty values yet (deferred to US-M03)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memoryindex): content_hash + embedding_model_id + index_build_id columns (US-M02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 1 (no separate docstore). Pattern: Mem0 v3 main.py hash in payload + LlamaIndex DocstoreStrategy.UPSERTS. Audit ref: docs/phase07c-current-state-audit-2026-05-16.md §A.3 + §A.5."
+    },
+    {
+      "id": "US-M03",
+      "title": "Wire eager invalidation hooks + populate freshness columns at write time",
+      "description": "Now make the registry LIVE. (a) On app boot (`cmd/aura/app.go` after migration ready, before reindex worker start): seed the 5 projection_state rows if missing — projection_ids: `wiki_documents_fts5`, `aura_memory_v1`, `compact_memory_documents`, `aura_memory_v1_compact`, `embedding_cache`. Initial row: kind set per target (fts5/qdrant/sqlite/cache), embedding_model_id read from settings (resolve to 'embeddinggemma-300m@256-mrl' if compact Qdrant active, '' for fts5), embedding_dim=256 for Qdrant rows / 0 for fts5+cache, index_build_id = new ULID, last_full_rebuild_at = unixepoch(), status='fresh'. Use freshness.Store.Upsert from US-M01. Idempotent: if row already exists, leave alone. (b) Populate freshness columns in `IndexingTurnAppender.Append` (`internal/storage/memoryindex/rebuild.go:308-324`): compute `content_hash = ContentHash(role, content, embedModel)`, write `embedding_model_id` and `index_build_id` from the current projection_state row of `compact_memory_documents` (via injected `freshness.Store`). Same for `Rebuild` (source/archive/proposal kinds). (c) Eager invalidation hooks: when a writer detects content_hash change OR when a hit Document has missing/stale embedding_model_id, call `freshness.Store.BumpPending(projectionID, 1)`. Implement for these write paths (per audit doc §C): `IndexingTurnAppender.Append` (turn write) AND `memoryindex.Store.ReplaceKind` (rebuild path). (d) New `freshness.Store.MarkRebuildComplete(projectionID, newBuildID, newModelID)` method bumps `completed_count`, resets `pending_count` to 0, updates `index_build_id`, sets `last_full_rebuild_at`. Called from `Rebuild` at completion. (e) Test in `internal/storage/memoryindex/rebuild_test.go`: TestAppendBumpsPendingOnHashMismatch — fixture with existing row hash A, append same id with new content (hash B), assert pending_count incremented by 1. TestRebuildResetsPendingAndUpdatesBuildID — pre-state pending=5, Rebuild called, post-state pending=0 + new build_id. (f) Test for app.go boot seeding in `cmd/aura/app_test.go` if exists OR in a new `app_init_test.go`: 5 projection_state rows exist after boot init. Wiki + Qdrant invalidation NOT wired in this slice (deferred).",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go (boot path) seeds 5 projection_state rows idempotently after migration",
+        "IndexingTurnAppender.Append computes content_hash + persists embedding_model_id + index_build_id",
+        "Rebuild populates the same 3 columns on all upserted Documents",
+        "freshness.Store.BumpPending called on hash change from Append + ReplaceKind paths",
+        "freshness.Store.MarkRebuildComplete resets pending_count to 0 + updates index_build_id + last_full_rebuild_at",
+        "TestAppendBumpsPendingOnHashMismatch covers hash-A -> hash-B append, asserts pending++ on the relevant projection row",
+        "TestRebuildResetsPendingAndUpdatesBuildID covers pre-pending=5, post-Rebuild, pending=0 + new build_id",
+        "Boot seeding test asserts 5 rows present after app initialization",
+        "Existing memoryindex/rebuild tests remain green",
+        "slog.Debug emitted on pending bump (hot path; NOT Info)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memoryindex,freshness): eager write-time invalidate + populate freshness columns (US-M03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Sources: docs/phase07c-academic-research §Q3 + §Q4 (eager pattern for source-write). docs/phase07c-current-state-audit §C (write-path inventory). Wiki + Qdrant invalidation NOT wired here — slice tight; deferred to a future US-M-bis if needed."
+    },
+    {
+      "id": "US-M04",
+      "title": "Surface freshness annotations on search_memory tool results",
+      "description": "Make the registry observable to the agent at retrieval time. The agent can then decide not to trust degraded results. (a) `internal/agent/tools/registry/memory_search.go formatMemoryResults` (line 384+): for each hit, append a `freshness=` token containing the most-relevant fields from the Document populated by US-M02 + the projection_state row. Format: `freshness=indexed_at=<RFC3339>,model=<short>,build=<short>` when fields are present (omit fields with empty defaults). `<short>` truncates to first 12 chars of the ULID/model name. Example: `freshness=indexed_at=2026-05-14T08:21:33Z,model=embeddinggemma,build=01HXY8K2QR`. (b) Plus when the hit's projection row status is NOT 'fresh', emit `degraded_read=true` as a separate token. Use the new helper `freshness.Store.Get(projectionID)` once per search (cache for hit batch). (c) Update `memoryResult` struct in memory_search.go to carry the new fields (IndexedAt, EmbeddingModelID, IndexBuildID, DegradedRead). (d) Wire end-to-end: search_memory tool reads compact_memory_documents → memoryResult gets the new fields from Document (already populated by US-M02). Cross-reference projection_state once per tool call. (e) NO change to schema or tool parameters; only output formatter shape grows. Add a brief description hint in the tool Description() that `freshness=` may appear on hits when populated. (f) Tests in `memory_search_test.go`: TestFreshnessTokenPresent — fixture with populated freshness columns + projection_state status='fresh' returns hit with freshness= and NO degraded_read. TestDegradedReadFlag — fixture with projection_state status='degraded' returns hit with degraded_read=true. TestEmptyFreshnessOmitted — fixture with empty defaults on freshness columns returns hit with NO freshness= token (back-compat). (g) Existing memory_search snapshot/golden tests must stay green with empty defaults.",
+      "acceptanceCriteria": [
+        "formatMemoryResults emits freshness=indexed_at=...,model=...,build=... per hit when ANY of the 3 fields is non-empty",
+        "formatMemoryResults emits degraded_read=true when the projection_state row status is not 'fresh'",
+        "memoryResult struct carries IndexedAt, EmbeddingModelID, IndexBuildID, DegradedRead",
+        "Tool reads projection_state via freshness.Store.Get exactly once per search invocation (batched, not per-hit)",
+        "Tool Description() mentions the freshness= token semantics (one short line)",
+        "TestFreshnessTokenPresent + TestDegradedReadFlag + TestEmptyFreshnessOmitted all pass",
+        "Existing memory_search tests stay green with empty defaults (back-compat verified)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(tools): freshness + degraded_read annotations on search_memory results (US-M04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Sources: docs/phase07c-academic-research §Q5 9-field annotation (subset 4 fields adopted for Aura). Pattern: Anthropic file_id citation + Weaviate _additional.lastUpdateTimeUnix + Mem0 payload return. Audit ref: docs/phase07c-current-state-audit §E.3 (formatMemoryResults location)."
+    }
+  ]
+}
