@@ -28,6 +28,7 @@ var registered = []Migration{
 	{Version: 10, Name: "add_tool_attempts", Up: addToolAttempts},
 	{Version: 11, Name: "add_chat_questions", Up: addChatQuestions},
 	{Version: 12, Name: "add_projection_state", Up: addProjectionState},
+	{Version: 13, Name: "add_compact_memory_freshness_columns", Up: addCompactMemoryFreshnessColumns},
 }
 
 type columnDef struct {
@@ -152,20 +153,23 @@ CREATE VIRTUAL TABLE IF NOT EXISTS wiki_documents
 USING fts5(id, content, metadata, title);
 
 CREATE TABLE IF NOT EXISTS compact_memory_documents (
-  id              TEXT PRIMARY KEY,
-  kind            TEXT NOT NULL,
-  title           TEXT NOT NULL DEFAULT '',
-  body            TEXT NOT NULL,
-  handle          TEXT NOT NULL DEFAULT '',
-  source_id       TEXT NOT NULL DEFAULT '',
-  page            INTEGER NOT NULL DEFAULT 0,
-  chat_id         INTEGER NOT NULL DEFAULT 0,
-  conversation_id INTEGER NOT NULL DEFAULT 0,
-  proposal_id     INTEGER NOT NULL DEFAULT 0,
-  status          TEXT NOT NULL DEFAULT '',
-  entities_json   TEXT NOT NULL DEFAULT '[]',
-  tags_json       TEXT NOT NULL DEFAULT '[]',
-  updated_at      TEXT NOT NULL
+  id                 TEXT PRIMARY KEY,
+  kind               TEXT NOT NULL,
+  title              TEXT NOT NULL DEFAULT '',
+  body               TEXT NOT NULL,
+  handle             TEXT NOT NULL DEFAULT '',
+  source_id          TEXT NOT NULL DEFAULT '',
+  page               INTEGER NOT NULL DEFAULT 0,
+  chat_id            INTEGER NOT NULL DEFAULT 0,
+  conversation_id    INTEGER NOT NULL DEFAULT 0,
+  proposal_id        INTEGER NOT NULL DEFAULT 0,
+  status             TEXT NOT NULL DEFAULT '',
+  entities_json      TEXT NOT NULL DEFAULT '[]',
+  tags_json          TEXT NOT NULL DEFAULT '[]',
+  updated_at         TEXT NOT NULL,
+  content_hash       TEXT NOT NULL DEFAULT '',
+  embedding_model_id TEXT NOT NULL DEFAULT '',
+  index_build_id     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_compact_memory_kind
   ON compact_memory_documents(kind, updated_at);
@@ -1188,6 +1192,14 @@ CREATE TABLE IF NOT EXISTS projection_state (
 		return fmt.Errorf("migrations: add projection_state: %w", err)
 	}
 	return nil
+}
+
+func addCompactMemoryFreshnessColumns(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "compact_memory_documents", []columnDef{
+		{Name: "content_hash", SQL: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "embedding_model_id", SQL: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "index_build_id", SQL: "TEXT NOT NULL DEFAULT ''"},
+	})
 }
 
 func parseStoredTime(raw string) (time.Time, error) {

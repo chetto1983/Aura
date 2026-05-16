@@ -245,7 +245,7 @@ func (i *CompactMemoryQdrantIndex) embedDocuments(ctx context.Context, texts []s
 }
 
 func compactPayload(doc memoryindex.Document, content string) map[string]string {
-	return map[string]string{
+	m := map[string]string{
 		"doc_id":          doc.ID,
 		"kind":            doc.Kind,
 		"title":           doc.Title,
@@ -262,6 +262,16 @@ func compactPayload(doc memoryindex.Document, content string) map[string]string 
 		"tags":            strings.Join(doc.Tags, " "),
 		"updated_at":      doc.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
 	}
+	if doc.ContentHash != "" {
+		m["content_hash"] = doc.ContentHash
+	}
+	if doc.EmbeddingModelID != "" {
+		m["embedding_model_id"] = doc.EmbeddingModelID
+	}
+	if doc.IndexBuildID != "" {
+		m["index_build_id"] = doc.IndexBuildID
+	}
+	return m
 }
 
 func compactDocumentContent(doc memoryindex.Document) string {
@@ -286,20 +296,23 @@ func compactDocumentFromPayload(payload map[string]string) memoryindex.Document 
 		body = payload["content"]
 	}
 	return memoryindex.Document{
-		ID:             payload["doc_id"],
-		Kind:           payload["kind"],
-		Title:          payload["title"],
-		Body:           body,
-		Handle:         payload["handle"],
-		SourceID:       payload["source_id"],
-		Page:           page,
-		ChatID:         chatID,
-		ConversationID: conversationID,
-		ProposalID:     proposalID,
-		Status:         payload["status"],
-		Entities:       strings.Fields(payload["entities"]),
-		Tags:           strings.Fields(payload["tags"]),
-		UpdatedAt:      updatedAt,
+		ID:               payload["doc_id"],
+		Kind:             payload["kind"],
+		Title:            payload["title"],
+		Body:             body,
+		Handle:           payload["handle"],
+		SourceID:         payload["source_id"],
+		Page:             page,
+		ChatID:           chatID,
+		ConversationID:   conversationID,
+		ProposalID:       proposalID,
+		Status:           payload["status"],
+		Entities:         strings.Fields(payload["entities"]),
+		Tags:             strings.Fields(payload["tags"]),
+		UpdatedAt:        updatedAt,
+		ContentHash:      payload["content_hash"],
+		EmbeddingModelID: payload["embedding_model_id"],
+		IndexBuildID:     payload["index_build_id"],
 	}
 }
 

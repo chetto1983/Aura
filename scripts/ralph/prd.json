@@ -46,7 +46,7 @@
         "Single atomic commit prefix: feat(memoryindex): content_hash + embedding_model_id + index_build_id columns (US-M02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: docs/phase07c-mem0-elysia-patterns §3 Decisione 1 (no separate docstore). Pattern: Mem0 v3 main.py hash in payload + LlamaIndex DocstoreStrategy.UPSERTS. Audit ref: docs/phase07c-current-state-audit-2026-05-16.md §A.3 + §A.5."
     },
     {

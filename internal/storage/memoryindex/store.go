@@ -32,24 +32,27 @@ USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities,
 `
 
 type Document struct {
-	ID             string
-	Kind           string
-	Title          string
-	Body           string
-	Handle         string
-	SourceID       string
-	Page           int
-	ChatID         int64
-	ConversationID int64
-	ProposalID     int64
-	Status         string
-	Entities       []string
-	Tags           []string
-	UpdatedAt      time.Time
-	Score          float64
-	ScoreExact     float64
-	ScoreFTS       float64
-	ScoreVector    float64
+	ID               string
+	Kind             string
+	Title            string
+	Body             string
+	Handle           string
+	SourceID         string
+	Page             int
+	ChatID           int64
+	ConversationID   int64
+	ProposalID       int64
+	Status           string
+	Entities         []string
+	Tags             []string
+	UpdatedAt        time.Time
+	ContentHash      string
+	EmbeddingModelID string
+	IndexBuildID     string
+	Score            float64
+	ScoreExact       float64
+	ScoreFTS         float64
+	ScoreVector      float64
 }
 
 type Filter struct {
@@ -172,8 +175,8 @@ func (s *Store) Upsert(ctx context.Context, doc Document) error {
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT OR REPLACE INTO compact_memory_documents
-  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 		doc.ID,
 		doc.Kind,
@@ -189,6 +192,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		entitiesJSON,
 		tagsJSON,
 		updatedAt,
+		doc.ContentHash,
+		doc.EmbeddingModelID,
+		doc.IndexBuildID,
 	); err != nil {
 		return fmt.Errorf("memoryindex: upsert document: %w", err)
 	}
@@ -257,11 +263,12 @@ func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) e
 		updatedAt := doc.UpdatedAt.UTC().Format(time.RFC3339Nano)
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO compact_memory_documents
-  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  (id, kind, title, body, handle, source_id, page, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 			doc.ID, doc.Kind, doc.Title, doc.Body, doc.Handle, doc.SourceID, doc.Page,
 			doc.ChatID, doc.ConversationID, doc.ProposalID, doc.Status, entitiesJSON, tagsJSON, updatedAt,
+			doc.ContentHash, doc.EmbeddingModelID, doc.IndexBuildID,
 		); err != nil {
 			return fmt.Errorf("memoryindex: insert document %s: %w", doc.ID, err)
 		}
@@ -446,7 +453,7 @@ func (s *Store) SyncVector(ctx context.Context) (VectorReport, error) {
 
 func (s *Store) allDocuments(ctx context.Context) ([]Document, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
 FROM compact_memory_documents d
 ORDER BY d.kind, d.updated_at DESC, d.id
 `)
@@ -472,7 +479,7 @@ func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, li
 	args = append(args, filterArgs...)
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
 FROM compact_memory_documents d
 WHERE (`+strings.Join(clauses, " OR ")+`)`+where+`
 ORDER BY length(d.id), d.id
@@ -494,7 +501,7 @@ func (s *Store) ftsSearch(ctx context.Context, query string, filter Filter, limi
 	args = append([]any{safeQuery}, args...)
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, f.rank
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id, f.rank
 FROM compact_memory_fts f
 JOIN compact_memory_documents d ON d.id = f.id
 WHERE compact_memory_fts MATCH ?`+where+`
@@ -540,13 +547,13 @@ func scanDocuments(rows *sql.Rows, fixedScore float64) ([]Document, error) {
 		var doc Document
 		var entitiesJSON, tagsJSON, updatedAt string
 		if fixedScore > 0 {
-			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt); err != nil {
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID); err != nil {
 				return nil, err
 			}
 			doc.Score = fixedScore
 		} else {
 			var rank float64
-			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &rank); err != nil {
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID, &rank); err != nil {
 				return nil, err
 			}
 			doc.Score = 0.35 + cappedRatio(-rank, 12)*0.50

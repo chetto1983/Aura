@@ -482,6 +482,55 @@ func TestStoreSourceIDFilter(t *testing.T) {
 	}
 }
 
+func TestDocumentRoundTripWithFreshnessColumns(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	now := time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC)
+
+	doc := Document{
+		ID:               "source:src_fresh#page=1",
+		Kind:             KindSource,
+		Title:            "fresh.pdf",
+		Body:             "Document with freshness metadata.",
+		Handle:           "source:src_fresh#page=1",
+		SourceID:         "src_fresh",
+		Page:             1,
+		ContentHash:      ContentHash("user", "Document with freshness metadata.", "embeddinggemma-300m"),
+		EmbeddingModelID: "embeddinggemma-300m",
+		IndexBuildID:     "build-id-abc123",
+		UpdatedAt:        now,
+	}
+
+	if err := store.Upsert(ctx, doc); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	hits, err := store.Search(ctx, "fresh", Filter{Limit: 5})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	var got *Document
+	for i := range hits {
+		if hits[i].ID == doc.ID {
+			got = &hits[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("document %q not found in search results: %#v", doc.ID, hits)
+	}
+	if got.ContentHash != doc.ContentHash {
+		t.Errorf("ContentHash: got %q, want %q", got.ContentHash, doc.ContentHash)
+	}
+	if got.EmbeddingModelID != doc.EmbeddingModelID {
+		t.Errorf("EmbeddingModelID: got %q, want %q", got.EmbeddingModelID, doc.EmbeddingModelID)
+	}
+	if got.IndexBuildID != doc.IndexBuildID {
+		t.Errorf("IndexBuildID: got %q, want %q", got.IndexBuildID, doc.IndexBuildID)
+	}
+}
+
 func sameStringSet(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
