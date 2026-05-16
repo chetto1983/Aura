@@ -47,6 +47,10 @@ func (t *WebTool) Definition() ToolDefinition {
 func (t *WebTool) Description() string {
 	return `Search the web or fetch a single URL.
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="search": query
+  • action="fetch":  url
+
 Actions (pick one via the "action" field):
 
   • search — query a SearXNG-backed web index. Returns ranked results
@@ -101,6 +105,10 @@ func (t *WebTool) Parameters() map[string]any {
 				"description": "fetch only: the URL to fetch. http and https only.",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "search", RequiredKeys: []string{"query"}},
+			{Name: "fetch", RequiredKeys: []string{"url"}},
+		}),
 	}
 }
 

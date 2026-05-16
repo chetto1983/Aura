@@ -54,6 +54,11 @@ func (t *DocTool) Description() string {
 	return `Generate a document (.xlsx / .docx / .pdf) from a structured spec and persist it as a source.
 Optionally deliver to the user's Telegram chat.
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="xlsx": filename, sheets
+  • action="docx": filename  (plus at least one of: title, blocks)
+  • action="pdf":  filename  (plus at least one of: title, blocks)
+
 Actions (pick one via the "action" field):
 
   • xlsx — Excel workbook. Required: filename, sheets (array of {name, rows}).
@@ -134,6 +139,11 @@ func (t *DocTool) Parameters() map[string]any {
 				},
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "xlsx", RequiredKeys: []string{"filename", "sheets"}},
+			{Name: "docx", RequiredKeys: []string{"filename"}},
+			{Name: "pdf", RequiredKeys: []string{"filename"}},
+		}),
 	}
 }
 

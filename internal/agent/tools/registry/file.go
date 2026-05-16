@@ -62,6 +62,13 @@ func (t *FileTool) Definition() ToolDefinition {
 func (t *FileTool) Description() string {
 	return `Read, write, list, search, or patch files inside Aura's workspace.
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="list":   (none — path is optional, defaults to workspace root)
+  • action="read":   path
+  • action="search": pattern
+  • action="write":  path, content
+  • action="patch":  path, old, new
+
 Actions (pick one via the "action" field):
 
   • list — enumerate entries under a directory. Optional: path
@@ -142,6 +149,13 @@ func (t *FileTool) Parameters() map[string]any {
 				"description": "patch only: replace every occurrence (default false; non-unique match errors otherwise).",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "list", RequiredKeys: nil},
+			{Name: "read", RequiredKeys: []string{"path"}},
+			{Name: "search", RequiredKeys: []string{"pattern"}},
+			{Name: "write", RequiredKeys: []string{"path", "content"}},
+			{Name: "patch", RequiredKeys: []string{"path", "old", "new"}},
+		}),
 	}
 }
 

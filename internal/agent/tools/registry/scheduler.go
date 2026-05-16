@@ -108,6 +108,12 @@ func (t *TaskTool) Definition() ToolDefinition {
 func (t *TaskTool) Description() string {
 	return `Manage scheduled tasks (reminders, recurring wiki maintenance, bounded agent jobs).
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="schedule": name, kind, AND exactly one of (in | at_local | at | daily | every_minutes)
+  • action="list":     (none — status filter is optional)
+  • action="cancel":   name
+  • action="run_now":  name
+
 Actions (pick one via the "action" field):
 
   • schedule — persist a one-shot or recurring task.
@@ -192,6 +198,12 @@ func (t *TaskTool) Parameters() map[string]any {
 				"description": "list only, optional: filter (active | done | cancelled | failed). Empty returns all.",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "schedule", RequiredKeys: []string{"name", "kind"}},
+			{Name: "list", RequiredKeys: nil},
+			{Name: "cancel", RequiredKeys: []string{"name"}},
+			{Name: "run_now", RequiredKeys: []string{"name"}},
+		}),
 	}
 }
 

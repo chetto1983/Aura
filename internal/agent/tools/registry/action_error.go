@@ -194,3 +194,49 @@ func sortedKeysOf(m map[string]any) []string {
 	sort.Strings(out)
 	return out
 }
+
+// ActionVariant declares the action-specific required keys for the
+// JSON Schema "oneOf" guidance block produced by ActionDispatchOneOf.
+// Name is the action value; RequiredKeys lists fields the model MUST
+// supply when picking this action (in addition to "action" itself,
+// which the helper prepends automatically).
+type ActionVariant struct {
+	Name         string
+	RequiredKeys []string
+}
+
+// ActionDispatchOneOf builds a JSON Schema `oneOf` block that the LLM
+// reads as: "if action == X, then required = [action, ...]". This is
+// the structural fix for action-enum tools (wiki_page, file, doc, task,
+// source, dev_tool, web): the top-level `required: [action]` alone tells
+// the model the OTHER fields are optional, and models confidently emit
+// tool_calls with missing params. The oneOf variants are the only
+// reliable channel that survives prose-vs-schema conflicts.
+//
+// Usage in a tool's Parameters() return map:
+//
+//	"oneOf": ActionDispatchOneOf([]ActionVariant{
+//	    {Name: "create", RequiredKeys: []string{"title", "body"}},
+//	    {Name: "edit",   RequiredKeys: []string{"slug", "old_text", "new_text", "expected_updated_at"}},
+//	    ...
+//	}),
+//
+// The helper guarantees:
+//   - every variant requires "action" first (positional clarity);
+//   - the action property is locked via `{"const": "<name>"}` so the
+//     model can't satisfy a wrong variant by accident.
+func ActionDispatchOneOf(variants []ActionVariant) []map[string]any {
+	out := make([]map[string]any, 0, len(variants))
+	for _, v := range variants {
+		req := make([]string, 0, len(v.RequiredKeys)+1)
+		req = append(req, "action")
+		req = append(req, v.RequiredKeys...)
+		out = append(out, map[string]any{
+			"properties": map[string]any{
+				"action": map[string]any{"const": v.Name},
+			},
+			"required": req,
+		})
+	}
+	return out
+}

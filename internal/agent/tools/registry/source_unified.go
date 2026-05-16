@@ -93,6 +93,14 @@ func (t *SourceTool) Description() string {
 	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX, CSV, JSON, MD).
 Lifecycle: stored → ocr_complete | extract_complete → ingested.
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="list":      (none)
+  • action="read":      source_id
+  • action="store":     kind, filename, content
+  • action="reprocess": source_id
+  • action="delete":    source_id
+  • action="lint":      (none)
+
 Actions (pick one via the "action" field):
 
   • list — enumerate stored sources. Optional: status filter
@@ -171,6 +179,14 @@ func (t *SourceTool) Parameters() map[string]any {
 				"description": "reprocess only, optional: which stages to re-run (default ['ingest']). 'ocr' requires KindPDF + OCR backend.",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "list", RequiredKeys: nil},
+			{Name: "read", RequiredKeys: []string{"source_id"}},
+			{Name: "store", RequiredKeys: []string{"kind", "filename", "content"}},
+			{Name: "reprocess", RequiredKeys: []string{"source_id"}},
+			{Name: "delete", RequiredKeys: []string{"source_id"}},
+			{Name: "lint", RequiredKeys: nil},
+		}),
 	}
 }
 

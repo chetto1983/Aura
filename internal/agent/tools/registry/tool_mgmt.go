@@ -50,6 +50,11 @@ func (t *DevToolTool) Definition() ToolDefinition {
 func (t *DevToolTool) Description() string {
 	return `Manage the Python script registry used by execute_code.
 
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="list": (none)
+  • action="read": name
+  • action="save": name, description, code
+
 Actions (pick one via the "action" field):
 
   • list — enumerate every registered script (name, description, params).
@@ -103,6 +108,11 @@ func (t *DevToolTool) Parameters() map[string]any {
 				"description": "save only, optional: when to reach for this script, e.g. 'user uploaded a CSV and wants statistics'.",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "list", RequiredKeys: nil},
+			{Name: "read", RequiredKeys: []string{"name"}},
+			{Name: "save", RequiredKeys: []string{"name", "description", "code"}},
+		}),
 	}
 }
 

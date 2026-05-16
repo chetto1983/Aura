@@ -71,7 +71,21 @@ func (t *WikiPageTool) Definition() ToolDefinition {
 func (t *WikiPageTool) Description() string {
 	return `Create, replace, edit, or append to a wiki page.
 
-Actions (pick one via the "action" field):
+REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
+  • action="create":  title, body
+  • action="replace": slug, body, expected_updated_at
+  • action="edit":    slug, old_text, new_text, expected_updated_at
+  • action="append":  slug, heading, body, expected_updated_at
+
+Common mistakes to avoid:
+  - DO NOT use "page" or "name" — the parameter is called "slug".
+  - DO NOT use "content" or "text" — the body parameter is called "body".
+  - For replace/edit/append you MUST first read the page (e.g. via file
+    action=read or search_memory) to get its current updated_at, then pass
+    that RFC3339 string as expected_updated_at. Skipping the read forces a
+    conflict retry.
+
+Action details:
 
   • create  — write a brand-new page from scratch. Required: title, body.
     Optional: category, tags, related, sources. Slug is derived from title.
@@ -171,6 +185,12 @@ func (t *WikiPageTool) Parameters() map[string]any {
 				"description": "append only, optional: when provided, each non-empty body line in the new section gets an ^[src_xxx] provenance marker appended, and source_id is added to Sources if not already there.",
 			},
 		},
+		"oneOf": ActionDispatchOneOf([]ActionVariant{
+			{Name: "create", RequiredKeys: []string{"title", "body"}},
+			{Name: "replace", RequiredKeys: []string{"slug", "body", "expected_updated_at"}},
+			{Name: "edit", RequiredKeys: []string{"slug", "old_text", "new_text", "expected_updated_at"}},
+			{Name: "append", RequiredKeys: []string{"slug", "heading", "body", "expected_updated_at"}},
+		}),
 	}
 }
 
@@ -202,8 +222,8 @@ var (
 		{Name: "edit", RequiredKeys: []string{"old_text", "new_text"}},
 		// replace = full body rewrite
 		{Name: "replace", RequiredKeys: []string{"body"}},
-		// append = content tacked onto an existing page
-		{Name: "append", RequiredKeys: []string{"content", "slug"}},
+		// append = new ## section on an existing page; heading is unique to this action
+		{Name: "append", RequiredKeys: []string{"slug", "heading", "body"}},
 		// create = brand-new page
 		{Name: "create", RequiredKeys: []string{"title", "body"}},
 	}
