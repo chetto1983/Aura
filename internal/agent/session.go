@@ -31,10 +31,25 @@ import (
 )
 
 type SessionStore struct {
-	gate      *concurrency.UserGate
-	active    sync.Map // used only when gate == nil (fallback for tests/no-gate mode)
-	context   sync.Map
-	snapshots sync.Map
+	gate        *concurrency.UserGate
+	active      sync.Map // used only when gate == nil (fallback for tests/no-gate mode)
+	context     sync.Map
+	snapshots   sync.Map
+	closeHookMu sync.Mutex
+	closeHooks  []func(userID string)
+}
+
+// OnClose registers a callback fired when Clear(userID) explicitly removes
+// a user's session context (e.g., GC of per-conversation state in SQLite).
+// Callbacks are invoked synchronously in registration order before the
+// session context is deleted. Safe to call after construction.
+func (s *SessionStore) OnClose(fn func(userID string)) {
+	if s == nil || fn == nil {
+		return
+	}
+	s.closeHookMu.Lock()
+	defer s.closeHookMu.Unlock()
+	s.closeHooks = append(s.closeHooks, fn)
 }
 
 type Snapshot struct {
@@ -123,6 +138,12 @@ func (s *SessionStore) Clear(userID string) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return
+	}
+	s.closeHookMu.Lock()
+	hooks := append([]func(string){}, s.closeHooks...)
+	s.closeHookMu.Unlock()
+	for _, fn := range hooks {
+		fn(userID)
 	}
 	s.context.Delete(userID)
 	s.snapshots.Delete(userID)

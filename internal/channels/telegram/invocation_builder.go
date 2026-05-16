@@ -10,6 +10,7 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -23,9 +24,10 @@ import (
 // It keeps invocation construction beside the Telegram channel adapter so
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
-	b        *tgtelegram.Bot
-	hub      *chat.Hub // set after hub creation; used for ask_user resume routing
-	outbound *Outbound // canonical streaming path used by streamingChatClient
+	b              *tgtelegram.Bot
+	hub            *chat.Hub       // set after hub creation; used for ask_user resume routing
+	outbound       *Outbound       // canonical streaming path used by streamingChatClient
+	agentNoteStore *agentnote.Store // nil when not configured; injected by NewHub
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -38,6 +40,7 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 // internal/channels/telegram import cycle.
 func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStore) (*chat.Hub, error) {
 	ib := NewInvocationBuilder(b)
+	ib.agentNoteStore = b.AgentNoteStore()
 	adapter, err := chat.NewAgentLoopAdapter(ib.Build)
 	if err != nil {
 		return nil, err
@@ -90,6 +93,15 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	toolManifest := tools.RenderToolManifest(toolReg.Definitions())
 	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, skillsBlock, toolManifest, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
+
+	// Inject agent working-memory note from the previous turn (if any).
+	// The conversationID for agent_note is the Telegram chat ID as a string.
+	if ib.agentNoteStore != nil && c.Chat() != nil {
+		convID := fmt.Sprintf("%d", c.Chat().ID)
+		if noteContent, exists, err := ib.agentNoteStore.Get(ctx, convID); err == nil && exists && noteContent != "" {
+			convCtx.SetAgentNote(noteContent)
+		}
+	}
 
 	b.Logger().Info("conversation started",
 		"user_id", userID,

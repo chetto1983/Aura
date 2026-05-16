@@ -67,7 +67,7 @@
         "Single atomic commit prefix: feat(agent,conversation): wire agent_note into prompt + GC (US-P03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 717 'scoped and garbage-collected with the conversation lifecycle'. Master plan §3 D13 prompt-cache discipline: place the agent_note BEFORE history (which mutates each turn). Cache prefix discipline preserved when note text changes within a conversation = cache miss only on the affected segment."
     },
     {

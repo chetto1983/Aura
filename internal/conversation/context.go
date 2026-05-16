@@ -20,6 +20,7 @@ type Context struct {
 	logger           *slog.Logger
 	totalTokensUsed  int
 	baseSystemPrompt string
+	agentNoteContent string
 	searchContext    string
 }
 
@@ -219,6 +220,14 @@ func (c *Context) SetSystemMessage(content string) {
 	c.rebuildSystemMessage()
 }
 
+// SetAgentNote injects the agent's working-memory note into the system message.
+// Content is placed between the base system prompt and the search context so
+// the cache prefix (base + note) is stable within a turn. Pass "" to remove.
+func (c *Context) SetAgentNote(content string) {
+	c.agentNoteContent = content
+	c.rebuildSystemMessage()
+}
+
 // SetSearchContext refreshes the dynamic search context appended to the system message.
 // Called on each message with new search results — replaces the previous search context.
 func (c *Context) SetSearchContext(content string) {
@@ -226,13 +235,18 @@ func (c *Context) SetSearchContext(content string) {
 	c.rebuildSystemMessage()
 }
 
-// rebuildSystemMessage combines baseSystemPrompt + searchContext into the actual system message.
+// rebuildSystemMessage combines baseSystemPrompt + agentNoteContent + searchContext into the actual system message.
 func (c *Context) rebuildSystemMessage() {
+	base := c.baseSystemPrompt
+	if c.agentNoteContent != "" {
+		base += "\n\n## Your current note (working memory)\n\n" + c.agentNoteContent + "\n"
+	}
+
 	var content string
-	if c.baseSystemPrompt != "" && c.searchContext != "" {
-		content = c.baseSystemPrompt + "\n\n" + c.searchContext
-	} else if c.baseSystemPrompt != "" {
-		content = c.baseSystemPrompt
+	if base != "" && c.searchContext != "" {
+		content = base + "\n\n" + c.searchContext
+	} else if base != "" {
+		content = base
 	} else if c.searchContext != "" {
 		content = c.searchContext
 	}

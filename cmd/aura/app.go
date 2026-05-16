@@ -375,6 +375,9 @@ func newApp(
 	// ---- Summaries store ----------------------------------------------------
 	deps.SummariesStore = summarizer.NewSummariesStore(schedStore.DB())
 
+	// ---- Agent note store ---------------------------------------------------
+	deps.AgentNoteStore = agentnote.NewStore(schedStore.DB())
+
 	// ---- Compact memory vector index ----------------------------------------
 	if embedFn != nil && strings.TrimSpace(cfg.QdrantURL) != "" {
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
@@ -557,6 +560,16 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	cfg := a.deps.Cfg
 	logger := a.deps.Logger
 	loc := a.deps.Loc
+
+	// ---- Agent note GC hook: clear per-conversation note when session is cleared ----
+	if a.deps.AgentNoteStore != nil {
+		noteStore := a.deps.AgentNoteStore
+		b.SessionStore().OnClose(func(userID string) {
+			if err := noteStore.Clear(context.Background(), userID); err != nil {
+				logger.Warn("agent_note GC failed on session close", "user_id", "redacted", "error", err)
+			}
+		})
+	}
 
 	// ---- Tool vector index: reconciler + mcpwatch goroutines ----------------
 	toolReaderConfig := tools.ToolVectorConfig{

@@ -95,3 +95,49 @@ func TestDefaultSystemPromptSlim(t *testing.T) {
 		t.Fatalf("system prompt grew back to %d bytes — keep it under 2 KB", size)
 	}
 }
+
+// TestContextSetAgentNoteInjectsSection verifies that SetAgentNote adds the
+// working-memory section to the system message when content is non-empty.
+func TestContextSetAgentNoteInjectsSection(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000})
+	ctx.SetSystemMessage("base prompt")
+	ctx.SetAgentNote("TODO: verify X, Y, Z")
+
+	msgs := ctx.Messages()
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatal("no system message")
+	}
+	content := msgs[0].Content
+	if !strings.Contains(content, "## Your current note (working memory)") {
+		t.Fatalf("system message missing note header:\n%s", content)
+	}
+	if !strings.Contains(content, "TODO: verify X, Y, Z") {
+		t.Fatalf("system message missing note content:\n%s", content)
+	}
+	// Note must appear BEFORE the search context area (base prompt comes first).
+	noteIdx := strings.Index(content, "## Your current note")
+	baseIdx := strings.Index(content, "base prompt")
+	if baseIdx < 0 || noteIdx < baseIdx {
+		t.Fatalf("note header appears before base prompt (wrong order): noteIdx=%d baseIdx=%d", noteIdx, baseIdx)
+	}
+}
+
+// TestContextSetAgentNoteEmptyInjectsNothing verifies that an empty note
+// does not add any extra section to the system message.
+func TestContextSetAgentNoteEmptyInjectsNothing(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000})
+	ctx.SetSystemMessage("base prompt")
+	ctx.SetAgentNote("") // empty — no injection
+
+	msgs := ctx.Messages()
+	if len(msgs) == 0 || msgs[0].Role != "system" {
+		t.Fatal("no system message")
+	}
+	content := msgs[0].Content
+	if strings.Contains(content, "working memory") {
+		t.Fatalf("system message should not contain note section when note is empty:\n%s", content)
+	}
+	if content != "base prompt" {
+		t.Fatalf("system message changed unexpectedly: %q", content)
+	}
+}

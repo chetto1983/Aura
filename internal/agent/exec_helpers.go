@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -50,7 +51,11 @@ func ExecuteToolCalls(
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
-			toolCtx := tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), runner.Names())
+			conversationID := userID
+			if chatID > 0 {
+				conversationID = fmt.Sprintf("%d", chatID)
+			}
+			toolCtx := tools.WithConversationID(tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), runner.Names()), conversationID)
 			args := ToolArgumentsForTool(tc.Name, tc.Arguments, chatID)
 			result, err := runner.Execute(toolCtx, tc.Name, args)
 			if err != nil {

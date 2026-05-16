@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/budget"
@@ -60,6 +61,7 @@ type botRuntime struct {
 	archiver            conversation.ClosingTurnAppender
 	archiveDB           conversation.ArchiveRepository
 	issues              cron.IssueRepository
+	agentNoteStore      *agentnote.Store
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.
@@ -131,6 +133,9 @@ type Deps struct {
 
 	// ---- Budget -------------------------------------------------------------
 	Budget budget.Runtime
+
+	// ---- Agent note ---------------------------------------------------------
+	AgentNoteStore *agentnote.Store
 }
 
 // NewBot creates a Bot from the given Deps. All non-Telegram operational deps
@@ -147,6 +152,7 @@ func NewBot(deps Deps) *Bot {
 		authDB:              deps.AuthDB,
 		compactMemoryHealth: deps.CompactVectorHealth,
 		budget:              deps.Budget,
+		agentNoteStore:      deps.AgentNoteStore,
 	}
 	return &Bot{
 		bot:    deps.Bot,

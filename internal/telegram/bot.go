@@ -12,6 +12,7 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
@@ -100,6 +101,14 @@ func (b *Bot) userGate() *concurrency.UserGate {
 // SetHub wires a chat.Hub into the bot after construction.
 func (b *Bot) SetHub(hub *chat.Hub) {
 	b.hub = hub
+}
+
+// AgentNoteStore returns the per-conversation note store (nil when not configured).
+func (b *Bot) AgentNoteStore() *agentnote.Store {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.agentNoteStore
 }
 
 // Config returns the bot's configuration.
