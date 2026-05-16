@@ -1,0 +1,112 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-K = masterplan Phase 7A (Compact Archive Hygiene) — the immediate trigger from the 2026-05-15 live debug: compact_memory_documents was returning raw tool errors / schema dumps / AGENT.md dumps / stdout snippets / assistant loop scaffolding (docs/aura-interactive-debug-report-2026-05-15.md). Three parallel audits converged on a single-line fix: internal/storage/memoryindex/rebuild.go:308-324 `IndexingTurnAppender.Append` writes every conversations row to compact_memory_documents without role/content filtering. Industry pattern: nanobot's `append_history()` choke-point (D:/tmp/nanobot/nanobot/agent/memory.py:235-275 + helpers.py:18-43) — one seam, one policy, applied to BOTH live-append and full-rebuild paths. Scope: ONLY role=tool exclusion (Phase07A plan §Stop Signals — schema-dependent distinctions defer to Phase07B/C). NO data deletion, NO migration, NO retrieval-surface rewrite. Each story = ONE atomic commit on master. Full spec in .planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07A_Compact_Archive_Hygiene/plan.md + audits in docs/phase07-*-2026-05-16.md.",
+  "userStories": [
+    {
+      "id": "US-K01",
+      "title": "Add ArchiveEligibility policy function in memoryindex",
+      "description": "Create a single pure function `ArchiveEligibility(role string, content string) (eligible bool, reason string)` in `internal/storage/memoryindex/rebuild.go` (or a new `eligibility.go` in the same package — pick whichever keeps the diff smaller). (a) Phase07A scope: role='tool' -> eligible=false, reason='role_tool_excluded'. role='system' -> eligible=false, reason='role_system_excluded' (verify current behavior — likely already non-archived). role='user' and role='assistant' -> eligible=true, reason='' (Phase07A keeps these eligible per the plan's 'Keep user rows and final assistant rows eligible unless a test proves they are unsafe' clause). (b) NO consumer wired in this story — pure policy + tests only. (c) Reason strings are stable closed-set tokens (snake_case) so future US-K02 can persist them. (d) Tests in `rebuild_test.go`: table-driven with 4 cases (tool excluded, system excluded, user eligible, assistant eligible); verify reason tokens; verify function is pure (no side effects).",
+      "acceptanceCriteria": [
+        "internal/storage/memoryindex/rebuild.go (or eligibility.go in same package) exports ArchiveEligibility function",
+        "Signature: ArchiveEligibility(role, content string) (eligible bool, reason string)",
+        "role='tool' returns (false, 'role_tool_excluded')",
+        "role='user' returns (true, '')",
+        "role='assistant' returns (true, '')",
+        "role='system' returns (false, 'role_system_excluded')",
+        "Reason tokens are stable snake_case closed-set",
+        "Pure function — no DB calls, no side effects",
+        "Table-driven test in rebuild_test.go covers all 4 role cases",
+        "No consumers wired in this story",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memoryindex): ArchiveEligibility policy function (US-K01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Pattern: nanobot append_history() choke-point at D:/tmp/nanobot/nanobot/agent/memory.py:235-275. Single-seam, no caller changes yet."
+    },
+    {
+      "id": "US-K02",
+      "title": "Wire ArchiveEligibility into IndexingTurnAppender.Append + Rebuild",
+      "description": "Apply US-K01 policy at BOTH ingress points of compact_memory_documents so live-append and full-rebuild produce the same compact-archive set. (a) IndexingTurnAppender.Append (internal/storage/memoryindex/rebuild.go:308-324 per audit docs/phase07-current-rag-audit-2026-05-16.md section B): consult ArchiveEligibility(role, content); if !eligible, return nil (do NOT write to compact_memory_documents but DO NOT block the caller — the conversations row is independent and already persisted upstream). (b) Rebuild function (find via grep `func.*Rebuild` in rebuild.go): same gate applied during full rebuild — iterate conversations, skip ineligible. (c) Parity test in rebuild_test.go: a fixture of 10 conversations rows (mix of user/assistant/tool/system); both Append and Rebuild produce the SAME compact_memory_documents set (assert via row count + ordered id list). (d) Logging: when an Append call is skipped, emit slog.Debug('compact_archive_skipped', 'role', role, 'reason', reason) — Debug not Info, this is a hot path. (e) conversations table writes are UNCHANGED — verify via archive_turns_test.go regression that role='tool' rows still appear in conversations after this commit.",
+      "acceptanceCriteria": [
+        "IndexingTurnAppender.Append calls ArchiveEligibility and skips ineligible rows",
+        "Skipped writes do NOT propagate errors to caller — the conversations row is preserved upstream",
+        "Rebuild function applies the same eligibility gate during full rebuild",
+        "Parity test in rebuild_test.go: 10-row fixture produces identical compact set from Append and Rebuild",
+        "slog.Debug emitted on skip with role + reason fields (NOT Info — hot path)",
+        "archive_turns_test.go regression confirms conversations still receives role=tool rows",
+        "Existing rebuild_test.go tests stay green or are updated for the new policy",
+        "No SQLite migration added",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memoryindex): wire ArchiveEligibility into Append + Rebuild (US-K02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Parity test is the GATE — without it, live and rebuild can drift. Audit (docs/phase07-current-rag-audit-2026-05-16.md section B) is the canonical reference for line numbers."
+    },
+    {
+      "id": "US-K03",
+      "title": "search_memory default-scope regression: tool-only rows must not surface",
+      "description": "Phase07A primary visible deliverable: when the LLM calls search_memory with default scope, raw tool-output archive rows must NOT appear in results. (a) Add a regression test in internal/agent/tools/registry/memory_search_test.go that: 1) writes 3 conversations rows (1 user, 1 assistant, 1 tool with content 'tool_schemas.json dump' — mimicking the 2026-05-15 incident); 2) triggers IndexingTurnAppender.Append for each (post-US-K02 the tool row is skipped); 3) calls search_memory with default scope and a query that would match 'tool_schemas.json'; 4) asserts the result set contains 0 rows. (b) If the test surfaces additional code paths that write to compact_memory_documents bypassing IndexingTurnAppender (e.g. direct compact_memory_documents inserts elsewhere), DOCUMENT but do not fix — that's a US-K04 or Phase07B follow-up. (c) Description/scope of memory_search.go tool: update inline doc comment ONLY if the test requires it (per Phase07A plan §Scope 'Update search_memory description/scope tests only as needed'). DO NOT rewrite the tool signature.",
+      "acceptanceCriteria": [
+        "New regression test in memory_search_test.go writes 3 mixed-role rows + asserts tool-content does NOT appear in default search_memory results",
+        "Test post-conditions match the 2026-05-15 live incident profile (tool_schemas.json-like content)",
+        "If new bypass paths discovered, listed in test comments and progress.md as follow-up — NOT fixed in this story",
+        "memory_search.go signature unchanged",
+        "memory_search.go inline doc updated only if required by the test",
+        "Existing memory_search_test.go tests stay green",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(tools): search_memory excludes tool-only archive rows (US-K03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "This is the test that PROVES the 2026-05-15 live incident is fixed. Without it, the regression can return silently."
+    },
+    {
+      "id": "US-K04",
+      "title": "conversations durability guard: raw tool rows persist after Phase-K",
+      "description": "Phase07A non-goal lock: conversations archive MUST stay lossless for debugging/audit/replay. (a) Add a test in internal/conversation/archive_turns_test.go that: 1) calls the archive append path with a role='tool' message; 2) asserts the row appears in the conversations SELECT; 3) asserts the row does NOT appear in compact_memory_documents (Phase07A invariant). (b) This is the dual gate to US-K03 — together they prove: 'raw tool output stays in archive, but never enters durable memory'. (c) NO new tables, no new migration. (d) If the test discovers conversations Append already strips tool rows (it shouldn't, per the audit), the test fails loud — escalate per Phase07A Stop Signals.",
+      "acceptanceCriteria": [
+        "New test in archive_turns_test.go: role=tool message round-trips to conversations table",
+        "Same test asserts compact_memory_documents has NO row for that message after Append",
+        "Test names the invariant clearly (e.g. TestArchiveTurns_ToolRowPersistsInConversationsButNotCompact)",
+        "Existing archive_turns_test.go tests stay green",
+        "No new SQLite tables or migrations",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(conversation): tool rows persist raw but skip compact (US-K04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Dual gate with US-K03. If conversations Append turns out to ALSO strip tool rows, escalate per plan §Stop Signals — that would mean Aura is already losing data in the archive."
+    },
+    {
+      "id": "US-K05",
+      "title": "Phase 7A closure docs + audit refresh",
+      "description": "Final closure for Phase-K (Phase 7A only — Phase 7B-F stay scaffolded). (a) Append closure row to .planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07A_Compact_Archive_Hygiene/progress.md with US-K01..K04 commit SHAs + one-line summary each. (b) Update .planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07A_Compact_Archive_Hygiene/benchmark.md actuals column. (c) Update parent .planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/progress.md with Phase07A close marker + reference to Phase07B as next subphase (NOT in scope yet). (d) Update prd.md §7 with 'Phase 7A closed YYYY-MM-DD (compact archive hygiene — role=tool exclusion). Phase 7B-F remain scaffolded.' (e) Update docs/aura-main-loop-limits-audit.md §5 if Phase 7 is referenced for retrieval observability gaps. (f) NO code changes. Use `git add -f` for .planning/* per established gitignore precedent.",
+      "acceptanceCriteria": [
+        "Phase07A progress.md has closure row with all 4 SHAs",
+        "Phase07A benchmark.md actuals reflect achieved state",
+        "Parent Phase07 progress.md notes Phase07A close + next subphase (Phase07B) is scaffolded but not in scope",
+        "prd.md §7 marked 'Phase 7A closed' with Phase 7B-F deferral note",
+        "docs/aura-main-loop-limits-audit.md §5 refreshed if it references retrieval observability",
+        "No Go code changes in this story",
+        "go build ./... green (sanity)",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: docs(planning): Phase 7A closure + audit refresh (US-K05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ".planning/* is gitignored — use git add -f. Precedent: every prior Phase closure commit. Phase 7B (Typed Collection Registry) is the natural next subphase but stays scaffolded for now."
+    }
+  ]
+}
