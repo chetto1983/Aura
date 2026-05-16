@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(swarm): RiskTier=write_proposal + tool allowlist policy (US-S02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1470-1471. Phase-R US-R01 NodeSpec only allowed read_only. This story unlocks the new tier with strict allowlist policy. DirectWriteToolNames is single source of truth — duplicates would risk Phase-L action-dispatch confusion."
     },
     {
