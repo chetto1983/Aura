@@ -255,6 +255,35 @@ func (s *SummariesStore) SetStatus(ctx context.Context, id int64, newStatus stri
 	return ProposedUpdate{}, ErrProposalConflict
 }
 
+// CreateUserMemoryProposal implements UserMemoryProposalWriter for SummariesStore.
+// It inserts a pending row with kind='user_memory' and signature_hash=p.Handle.
+// Returns (false, nil) without inserting when a pending row with the same handle exists.
+func (s *SummariesStore) CreateUserMemoryProposal(ctx context.Context, p UserMemoryProposalInput) (bool, error) {
+	var existing int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM proposed_updates WHERE signature_hash = ? AND status = 'pending'`,
+		p.Handle).Scan(&existing); err != nil {
+		return false, fmt.Errorf("user memory proposal: check existing: %w", err)
+	}
+	if existing > 0 {
+		return false, nil
+	}
+	ids, _ := json.Marshal(p.SourceTurnIDs)
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO proposed_updates
+		  (chat_id, fact, action, target_slug, similarity,
+		   source_turn_ids, category, related_slugs, provenance_json,
+		   status, kind, signature_hash, created_at)
+		VALUES (0, ?, ?, ?, 1.0, ?, ?, '[]', '{}', 'pending', 'user_memory', ?, ?)`,
+		p.Fact, p.Action, p.TargetHandle, string(ids), p.Category, p.Handle, now,
+	)
+	if err != nil {
+		return false, fmt.Errorf("user memory proposal: insert: %w", err)
+	}
+	return true, nil
+}
+
 type proposalScanner interface {
 	Scan(dest ...any) error
 }

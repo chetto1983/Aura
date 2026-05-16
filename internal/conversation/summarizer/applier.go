@@ -131,6 +131,84 @@ func uniqueNonEmpty(values []string) []string {
 	return out
 }
 
+// ---- User-memory routing ----
+
+// UserMemoryHit is a found user-memory entry returned by MemorySearcher.
+type UserMemoryHit struct {
+	Handle string
+}
+
+// MemorySearcher finds existing user-memory entries by text similarity.
+// Implementations filter to Kind='user_memory', Status='active'.
+type MemorySearcher interface {
+	SearchUserMemory(ctx context.Context, query string, limit int) ([]UserMemoryHit, error)
+}
+
+// UserMemoryProposalWriter is the write side for user-memory proposals.
+type UserMemoryProposalWriter interface {
+	// CreateUserMemoryProposal inserts a pending user_memory proposal.
+	// Returns (created=false, nil) if a pending row with the same handle already exists.
+	CreateUserMemoryProposal(ctx context.Context, p UserMemoryProposalInput) (bool, error)
+}
+
+// UserMemoryProposalInput holds the parameters for a user_memory proposal row.
+type UserMemoryProposalInput struct {
+	Handle        string  // idempotency key = UserFactHandle(Candidate)
+	Fact          string
+	Action        string  // "new" or "patch"
+	TargetHandle  string  // non-empty for patch: existing user_memory document handle
+	SourceTurnIDs []int64
+	Category      string
+}
+
+// RoutingApplier wraps a wiki Applier and intercepts candidates triaged to
+// TargetUserMemory, routing them to proposed_updates with kind='user_memory'.
+type RoutingApplier struct {
+	wiki      Applier
+	proposals UserMemoryProposalWriter
+	memory    MemorySearcher
+}
+
+// NewRoutingApplier constructs a RoutingApplier.
+func NewRoutingApplier(wiki Applier, proposals UserMemoryProposalWriter, memory MemorySearcher) *RoutingApplier {
+	return &RoutingApplier{wiki: wiki, proposals: proposals, memory: memory}
+}
+
+// Apply routes the decision: user-memory candidates go to proposed_updates with
+// kind='user_memory'; all other candidates use the underlying wiki applier.
+func (r *RoutingApplier) Apply(ctx context.Context, d Decision) error {
+	if TriageCandidate(d.Candidate) == TargetUserMemory {
+		return r.createUserMemoryProposal(ctx, d.Candidate)
+	}
+	return r.wiki.Apply(ctx, d)
+}
+
+func (r *RoutingApplier) createUserMemoryProposal(ctx context.Context, c Candidate) error {
+	handle := UserFactHandle(c)
+
+	hits, err := r.memory.SearchUserMemory(ctx, c.Fact, 1)
+	if err != nil {
+		return fmt.Errorf("routing applier: user memory search: %w", err)
+	}
+
+	action := string(ActionNew)
+	targetHandle := ""
+	if len(hits) > 0 {
+		action = string(ActionPatch)
+		targetHandle = hits[0].Handle
+	}
+
+	_, err = r.proposals.CreateUserMemoryProposal(ctx, UserMemoryProposalInput{
+		Handle:        handle,
+		Fact:          c.Fact,
+		Action:        action,
+		TargetHandle:  targetHandle,
+		SourceTurnIDs: c.SourceTurnIDs,
+		Category:      c.Category,
+	})
+	return err
+}
+
 func turnEvidenceRefs(ids []int64) []EvidenceRef {
 	if len(ids) == 0 {
 		return []EvidenceRef{}

@@ -41,7 +41,7 @@
         "Single atomic commit prefix: feat(summarizer): route user-memory candidates to proposed_updates kind=user_memory (US-O02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 714 'user profile memory requires explicit intent, validation, or a question when ambiguous' — the review-gated proposed_updates flow IS the validation. Phase-N US-N02 template (proposer + idempotency via handle). If migration v15 needed for kind column extension, mirror in currentSchemaSQL."
     },
     {

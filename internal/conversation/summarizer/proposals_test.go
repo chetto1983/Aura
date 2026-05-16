@@ -32,6 +32,7 @@ var (
 	_ ProposalGetter           = (*SummariesStore)(nil)
 	_ ProposalReviewRepository = (*SummariesStore)(nil)
 	_ ProposalRepository       = (*SummariesStore)(nil)
+	_ UserMemoryProposalWriter = (*SummariesStore)(nil)
 )
 
 func insertProposal(t *testing.T, db *sql.DB, status string) int64 {
