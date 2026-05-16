@@ -544,3 +544,47 @@ func TestSearchMemoryToolRanksFreshHitsAboveStaleOnesAtEqualRelevance(t *testing
 		t.Fatalf("fresh hit ranked below stale at equal relevance:\n%s", out)
 	}
 }
+
+func TestSearchMemoryTool_ToolRoleExcludedFromDefaultSearch(t *testing.T) {
+	// Regression for the 2026-05-15 live incident: search_memory was returning
+	// raw tool-output rows (tool_schemas.json dumps, AGENT.md content, stdout
+	// snippets) because IndexingTurnAppender.Append wrote every role to
+	// compact_memory_documents. US-K02 added the eligibility gate (role=tool →
+	// skip); this test proves the gate holds end-to-end through search_memory.
+	ctx := context.Background()
+
+	sched := newTestSchedStore(t)
+	archive, err := conversation.NewArchiveStore(sched.DB())
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	index := newTestMemoryIndex(t)
+	appender := memoryindex.NewIndexingTurnAppender(archive, index)
+
+	// 3-row fixture: only the tool row contains "tool_schemas.json".
+	// After US-K02 the tool row is excluded from compact_memory_documents,
+	// so it must not surface in search_memory results.
+	for _, turn := range []conversation.Turn{
+		{ChatID: 1, UserID: 1, TurnIndex: 1, Role: "user", Content: "What capabilities do you have?"},
+		{ChatID: 1, UserID: 1, TurnIndex: 2, Role: "assistant", Content: "I have many capabilities at my disposal."},
+		{ChatID: 1, UserID: 1, TurnIndex: 3, Role: "tool", Content: `tool_schemas.json dump: [{"name":"search_memory"}]`},
+	} {
+		if err := appender.Append(ctx, turn); err != nil {
+			t.Fatalf("Append role=%s: %v", turn.Role, err)
+		}
+	}
+
+	tool := NewSearchMemoryTool(nil, index)
+	out, err := tool.Execute(ctx, map[string]any{"query": "tool_schemas.json"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// The tool row is the only document that would match "tool_schemas.json";
+	// the eligibility gate must have excluded it, so 0 archive results expected.
+	if strings.Contains(out, "[archive]") {
+		t.Fatalf("search_memory surfaced archive rows for tool_schemas.json query (2026-05-15 incident regression):\n%s", out)
+	}
+	if strings.Contains(out, "memory hit(s)") {
+		t.Fatalf("expected 0 memory hits, but got results for tool_schemas.json:\n%s", out)
+	}
+}
