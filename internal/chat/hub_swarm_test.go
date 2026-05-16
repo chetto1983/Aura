@@ -127,14 +127,17 @@ func TestHubSwarm_WaitForRunBlocksUntilDone(t *testing.T) {
 	}
 }
 
-// TestHubSwarm_ToolAllowlistDenied verifies that a swarm dispatch is rejected
-// when the tool_allowlist includes a tool not covered by the caller's grants.
-func TestHubSwarm_ToolAllowlistDenied(t *testing.T) {
+// TestHubSwarm_GenericGrantCoversTools verifies that an actor holding the
+// generic CapabilityToolExecute grant is allowed to dispatch a swarm child
+// for any tool in the allowlist, even without per-tool granular grants.
+// Owner-style principals carry the generic grant (TelegramOwnerCapabilities)
+// — they should not be blocked by missing tool.execute.<name> rows.
+func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 	loop := &recordingLoop{}
 	h := newHub(t, loop)
 	h.RegisterOutbound(&fakeOutbound{channel: ChannelSwarm, mode: DeliveryModeSilent})
 
-	// Allow base tool.execute but NOT tool.execute.web_search.
+	// Allow generic tool.execute only — NO granular tool.execute.web_search.
 	authz := &swarmFakeAuthorizer{
 		allow: map[identity.Capability]bool{
 			identity.CapabilityToolExecute: true,
@@ -150,8 +153,39 @@ func TestHubSwarm_ToolAllowlistDenied(t *testing.T) {
 			"tool_allowlist": []string{"web_search"},
 		},
 	})
+	if err != nil {
+		t.Fatalf("expected dispatch to succeed with generic grant, got error: %v", err)
+	}
+
+	loop.mu.Lock()
+	calls := loop.calls
+	loop.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("agent loop was called %d times, want 1 (dispatch should proceed)", calls)
+	}
+}
+
+// TestHubSwarm_NoGenericGrantDenied verifies that an actor missing the generic
+// CapabilityToolExecute grant is denied — even with no allowlist. This is the
+// inverse of GenericGrantCoversTools and locks the no-grant deny path.
+func TestHubSwarm_NoGenericGrantDenied(t *testing.T) {
+	loop := &recordingLoop{}
+	h := newHub(t, loop)
+	h.RegisterOutbound(&fakeOutbound{channel: ChannelSwarm, mode: DeliveryModeSilent})
+
+	authz := &swarmFakeAuthorizer{allow: map[identity.Capability]bool{}}
+	ctx := identity.WithAuthorizer(context.Background(), authz)
+
+	_, err := h.ReceiveMessage(ctx, InboundMessage{
+		Channel:     ChannelSwarm,
+		Mode:        DeliveryModeSilent,
+		PrincipalID: "user-1",
+		ChannelData: map[string]any{
+			"tool_allowlist": []string{"web_search"},
+		},
+	})
 	if err == nil {
-		t.Fatal("expected error for denied dispatch, got nil")
+		t.Fatal("expected error when generic tool.execute grant is missing")
 	}
 
 	loop.mu.Lock()

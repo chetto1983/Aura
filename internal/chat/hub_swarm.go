@@ -105,9 +105,17 @@ func (h *Hub) authorizeSwarmDispatch(ctx context.Context, msg InboundMessage, ac
 	if err != nil {
 		return fmt.Errorf("chat: authorize swarm CapabilityToolExecute: %w", err)
 	}
-	if decision.Decision != identity.DecisionAllow {
+	genericAllowed := decision.Decision == identity.DecisionAllow
+	if !genericAllowed {
 		return fmt.Errorf("chat: swarm dispatch denied: missing %s capability", identity.CapabilityToolExecute)
 	}
+	// Per-tool granular check: only constrains delegated actors with restricted
+	// per-tool grants. Owner-style principals carry the generic CapabilityToolExecute
+	// (TelegramOwnerCapabilities at internal/identity/store.go:744), which already
+	// covers every tool — the loop below short-circuits via genericAllowed. The
+	// granular check is retained so a future Phase-8 delegated child actor with an
+	// EXPLICIT per-tool grant (e.g. only tool.execute.web) is still verified, but
+	// it does NOT block parents that hold the generic grant.
 	toolAllowlist, _ := msg.ChannelData["tool_allowlist"].([]string)
 	for _, toolName := range toolAllowlist {
 		cap := identity.ToolExecuteCapability(toolName)
@@ -118,9 +126,13 @@ func (h *Hub) authorizeSwarmDispatch(ctx context.Context, msg InboundMessage, ac
 		if err != nil {
 			return fmt.Errorf("chat: authorize swarm tool %q: %w", toolName, err)
 		}
-		if d.Decision != identity.DecisionAllow {
-			return fmt.Errorf("chat: swarm dispatch denied: missing %s capability", cap)
+		if d.Decision == identity.DecisionAllow {
+			continue
 		}
+		if genericAllowed {
+			continue
+		}
+		return fmt.Errorf("chat: swarm dispatch denied: missing %s capability", cap)
 	}
 	return nil
 }
