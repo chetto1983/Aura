@@ -194,6 +194,12 @@ func (e *Env) fetchWikiPage(slug string) (body string, missing bool, err error) 
 	return "title: " + page.Title + "\n" + page.BodyMD, false, nil
 }
 
+// sendChat sends a single message and returns the structured reply.
+func (e *Env) sendChat(prompt string) (ChatReply, error) {
+	chatURL := strings.TrimRight(e.APIBase, "/") + "/chat"
+	return sendChat(e.APIClient, chatURL, e.APIToken, prompt)
+}
+
 func sendChat(client *http.Client, baseURL, token, prompt string) (ChatReply, error) {
 	payload, _ := json.Marshal(map[string]string{"message": prompt})
 	req, err := http.NewRequest(http.MethodPost, baseURL, bytes.NewReader(payload))

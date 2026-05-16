@@ -714,6 +714,85 @@ func allCases(now time.Time) []Case {
 				}
 			},
 		},
+
+		// 10. agent-note-roundtrip — verifies the agent_note scratchpad tool
+		//     works end-to-end via the web API path (Phase-P, capability #4).
+		//
+		//     The probe sends three sequential turns:
+		//       Turn 1 (main prompt): set a note with three sentinels (X, Y, Z).
+		//       Turn 2 (inside Verify): action=get — agent echoes the note text.
+		//       Turn 3 (inside Verify): action=clear — note row is deleted.
+		//
+		//     Ground truth for each step is the agent_notes SQLite table, NOT the
+		//     reply text alone (CLAUDE.md probe discipline: verify the artifact).
+		{
+			Name:   "agent-note-roundtrip",
+			Prompt: "Usa lo strumento agent_note con action=set e content='TODO: verifica X, verifica Y, verifica Z'. Confermami quando hai salvato la nota.",
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+
+				// Turn 1 must have called agent_note.
+				if r.ToolCalls == 0 {
+					miss = append(miss, fmt.Sprintf("turn1: expected agent_note tool call, got 0 (reply: %s)", truncate(r.Reply, 200)))
+				}
+
+				// DB ground truth: note row exists for conversation_id='chat-cli'.
+				var noteContent string
+				dbErr := env.DB.QueryRow(
+					`SELECT content FROM agent_notes WHERE conversation_id = 'chat-cli'`,
+				).Scan(&noteContent)
+				if dbErr == sql.ErrNoRows {
+					miss = append(miss, "DB: agent_notes row missing after set (conversation_id='chat-cli')")
+				} else if dbErr != nil {
+					miss = append(miss, fmt.Sprintf("DB: agent_notes query error: %v", dbErr))
+				} else {
+					for _, kw := range []string{"verifica x", "verifica y", "verifica z"} {
+						if !strings.Contains(strings.ToLower(noteContent), kw) {
+							miss = append(miss, fmt.Sprintf("DB: note content missing %q (got: %q)", kw, truncate(noteContent, 200)))
+						}
+					}
+				}
+
+				// Turn 2: read note back via action=get.
+				r2, err2 := env.sendChat("Usa agent_note con action=get per leggere la tua nota attuale. Mostrami il contenuto completo.")
+				if err2 != nil {
+					miss = append(miss, fmt.Sprintf("turn2 sendChat: %v", err2))
+					return miss
+				}
+				if r2.ToolCalls == 0 {
+					miss = append(miss, fmt.Sprintf("turn2: expected agent_note get call, got 0 (reply: %s)", truncate(r2.Reply, 200)))
+				}
+				for _, kw := range []string{"verifica x", "verifica y", "verifica z"} {
+					if !strings.Contains(strings.ToLower(r2.Reply), kw) {
+						miss = append(miss, fmt.Sprintf("turn2 reply missing %q — note not persisted across turns (reply: %s)", kw, truncate(r2.Reply, 300)))
+					}
+				}
+
+				// Turn 3: explicit clear (simulates conversation-end GC).
+				r3, err3 := env.sendChat("Usa agent_note con action=clear per cancellare la nota. Confermami.")
+				if err3 != nil {
+					miss = append(miss, fmt.Sprintf("turn3 sendChat clear: %v", err3))
+					return miss
+				}
+				if r3.ToolCalls == 0 {
+					miss = append(miss, fmt.Sprintf("turn3: expected agent_note clear call, got 0 (reply: %s)", truncate(r3.Reply, 200)))
+				}
+
+				// DB ground truth after clear: row must be gone.
+				var count int
+				_ = env.DB.QueryRow(
+					`SELECT count(*) FROM agent_notes WHERE conversation_id = 'chat-cli'`,
+				).Scan(&count)
+				if count != 0 {
+					miss = append(miss, fmt.Sprintf("DB: agent_notes row still exists after clear (count=%d)", count))
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				// Belt-and-suspenders: remove any leftover note if the test failed mid-way.
+				_, _ = env.DB.Exec(`DELETE FROM agent_notes WHERE conversation_id = 'chat-cli'`)
+			},
+		},
 	}
 }
 

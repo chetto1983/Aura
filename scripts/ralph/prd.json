@@ -88,7 +88,7 @@
         "Single atomic commit prefix: feat(docs,probe): Phase-P closure + agent_note roundtrip probe (US-P04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: closure pattern Phase-N US-N04, Phase-O US-O04. Probe pattern: cmd/probe_chat existing cases (greeting-no-tools, wiki-page-create). The roundtrip across two conversations IS the proof that scoping + GC work end-to-end."
     }
   ]

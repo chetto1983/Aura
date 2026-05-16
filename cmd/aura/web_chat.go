@@ -366,6 +366,7 @@ func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (st
 	toolCtx = toolregistry.WithAllowedToolNames(toolCtx, e.allowlist)
 	if e.userID != "" {
 		toolCtx = toolregistry.WithUserID(toolCtx, e.userID)
+		toolCtx = toolregistry.WithConversationID(toolCtx, e.userID)
 	}
 	return e.tools.Execute(toolCtx, call.Name, call.Arguments)
 }

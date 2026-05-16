@@ -1194,6 +1194,7 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **7E** — Source span/byte offsets | ⬜ | — | — | per audit `docs/phase07b-current-types-audit-2026-05-16.md §G.2.3` |
 | **7F** — Wiki frontmatter schema/prompt-version promotion | ⬜ | — | — | per audit `§G.2.4` |
 | **Phase-O** — User Memory Promotion (sub-phase of 9) | ✅ | 2026-05-16 | US-O01..O04 — `2642ce0b..`(US-O04) | wired KindUserMemory: triage → proposed_updates kind=user_memory → WriteApprovedUserFact → recall_user_memory tool |
+| **Phase-P** — Agent Note Scratchpad (capability #4) | ✅ | 2026-05-16 | US-P01..P04 — `79159b4a..`(US-P04) | agent_note scratchpad wired (capability #4 closed): SQLite table + Store API + action-dispatch tool + system-prompt injection + GC + web-path fix + probe |
 | **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 planning-ready | — | Phase08 plan verified 2026-05-16 | ready-for-discussion; implementation gated on open decisions + Phase08B lock. **Unlocks "Aura come Claude Code" capability #5 (subagent dispatch dinamico)** |
 | **9** — Memory and Source Discipline | ⬜ | — | — | wiki vs storage clarification, write-policy hardening, SQLite concurrency. **Unlocks "Aura come Claude Code" capability #1 (autonomous write-policy live)** |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
@@ -1208,7 +1209,7 @@ specific package or §5 contract:
 | --- | --- | --- | --- |
 | ~~**Lesson promotion**~~ (`experience_store → operational_memory → skills`) | Phase 6 (§5.8 line 776-779) | `internal/learning` | End-of-turn reflection + telemetry-driven self-improvement — **CLOSED 2026-05-16** (US-N01..N04) |
 | ~~**Active write-policy**~~ **PARTIAL** (extraction+routing+approval+retrieval live via Phase-O; remaining: explicit-intent question gate + `memory.user.write` capability check, deferred to Phase-Q) | Phase 9 (§5.7 lines 712-725) | `internal/learning` + `internal/memory` | Autonomous write-policy |
-| **`agent_note` scratchpad + pinned core block** | §5.7 line 678 (`agent_working_memory`) | `internal/memory` runtime continuity | TodoWrite cross-turn checklist |
+| ~~**`agent_note` scratchpad + pinned core block**~~ | §5.7 line 678 (`agent_working_memory`) | `internal/memory` runtime continuity | TodoWrite cross-turn checklist — **CLOSED 2026-05-16** (US-P01..P04) |
 
 Together these three close gaps **1 (autonomous write)**, **2 (end-of-turn reflection)**,
 **3 (telemetry-driven improvement)**, and **4 (cross-turn checklist)** from the
