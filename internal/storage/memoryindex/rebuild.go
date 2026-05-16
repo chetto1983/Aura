@@ -3,6 +3,7 @@ package memoryindex
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -63,6 +64,10 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		}
 		docs := make([]Document, 0, len(turns))
 		for _, turn := range turns {
+			if eligible, reason := ArchiveEligibility(turn.Role, turn.Content); !eligible {
+				slog.Debug("compact_archive_skipped", "role", turn.Role, "reason", reason)
+				continue
+			}
 			if doc, ok := ArchiveDocument(turn); ok {
 				docs = append(docs, doc)
 			}
@@ -313,6 +318,10 @@ func (a *IndexingTurnAppender) Append(ctx context.Context, turn conversation.Tur
 		return err
 	}
 	if a.index != nil {
+		if eligible, reason := ArchiveEligibility(turn.Role, turn.Content); !eligible {
+			slog.Debug("compact_archive_skipped", "role", turn.Role, "reason", reason)
+			return nil
+		}
 		if turn.ID == 0 {
 			turn = a.persistedTurn(ctx, turn)
 		}

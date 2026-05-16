@@ -107,6 +107,78 @@ func TestArchiveEligibility(t *testing.T) {
 	}
 }
 
+func TestParityAppendAndRebuildProduceSameCompactSet(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDBForMemoryIndex(t)
+	archive, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	index, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	appender := NewIndexingTurnAppender(archive, index)
+
+	// 10-row fixture: 3 user, 3 assistant, 2 tool, 2 system (6 eligible)
+	fixture := []conversation.Turn{
+		{ChatID: 1, UserID: 1, TurnIndex: 1, Role: "user", Content: "user message one"},
+		{ChatID: 1, UserID: 1, TurnIndex: 2, Role: "assistant", Content: "assistant reply one"},
+		{ChatID: 1, UserID: 1, TurnIndex: 3, Role: "tool", Content: "tool_schemas.json dump"},
+		{ChatID: 1, UserID: 1, TurnIndex: 4, Role: "user", Content: "user message two"},
+		{ChatID: 1, UserID: 1, TurnIndex: 5, Role: "assistant", Content: "assistant reply two"},
+		{ChatID: 1, UserID: 1, TurnIndex: 6, Role: "tool", Content: "stdout snippet from code"},
+		{ChatID: 1, UserID: 1, TurnIndex: 7, Role: "user", Content: "user message three"},
+		{ChatID: 1, UserID: 1, TurnIndex: 8, Role: "assistant", Content: "assistant reply three"},
+		{ChatID: 1, UserID: 1, TurnIndex: 9, Role: "system", Content: "system prompt text"},
+		{ChatID: 1, UserID: 1, TurnIndex: 10, Role: "system", Content: "another system message"},
+	}
+	for _, turn := range fixture {
+		if err := appender.Append(ctx, turn); err != nil {
+			t.Fatalf("Append turn_index=%d: %v", turn.TurnIndex, err)
+		}
+	}
+
+	appendIDs := queryArchiveCompactIDs(t, db)
+	if len(appendIDs) != 6 {
+		t.Fatalf("Append path: want 6 compact docs (3 user + 3 assistant), got %d: %v", len(appendIDs), appendIDs)
+	}
+
+	// Full rebuild using the same turns from the archive (via ListAll)
+	if _, err := Rebuild(ctx, index, RebuildInput{Archive: archive, SkipVector: true}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	rebuildIDs := queryArchiveCompactIDs(t, db)
+	if len(rebuildIDs) != len(appendIDs) {
+		t.Fatalf("Rebuild path: want %d compact docs, got %d: %v", len(appendIDs), len(rebuildIDs), rebuildIDs)
+	}
+	for i := range appendIDs {
+		if appendIDs[i] != rebuildIDs[i] {
+			t.Fatalf("compact set diverged at index %d: Append=%q, Rebuild=%q", i, appendIDs[i], rebuildIDs[i])
+		}
+	}
+}
+
+func queryArchiveCompactIDs(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.QueryContext(context.Background(),
+		`SELECT id FROM compact_memory_documents WHERE kind = ? ORDER BY id`, KindArchive)
+	if err != nil {
+		t.Fatalf("query compact archive IDs: %v", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan id: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func openTestDBForMemoryIndex(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := auradb.Open(filepath.Join(t.TempDir(), "aura.db"))
