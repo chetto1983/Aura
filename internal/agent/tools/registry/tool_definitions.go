@@ -21,6 +21,26 @@ func (t *SearchMemoryTool) Definition() ToolDefinition {
 	}
 }
 
+func (t *RecallOperationalTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: VisibilityActiveTurn,
+		Examples: []ToolCallExample{
+			{
+				Description: "Find all known lessons about web_search failures.",
+				Arguments: map[string]any{
+					"tool_name": "web_search",
+					"limit":     5,
+				},
+			},
+		},
+	}
+}
+
 func (t *CreateDOCXTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		Name:        t.Name(),

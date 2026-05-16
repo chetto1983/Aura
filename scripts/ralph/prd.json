@@ -91,7 +91,7 @@
         "Single atomic commit prefix: feat(tools,docs): recall_operational tool + Phase 6 lesson promotion closure (US-N04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.8 line 760 'lesson retrieval'. Closure pattern: Phase 7A US-K05 + Phase 7B US-L06 + Phase 7C US-M04 docs(planning) approach. Update prd.md §6.5 Status Checklist (commit c50c9703) to reflect new state."
     }
   ]

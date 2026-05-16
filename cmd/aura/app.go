@@ -698,6 +698,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		tool.SetFreshnessStore(a.freshnessStore)
 		a.deps.Tools.Register(tool)
 	}
+	// RecallOperationalTool — surfaces approved operational lessons from Phase-N pipeline.
+	if tool := tools.NewRecallOperationalTool(a.deps.MemoryStore); tool != nil {
+		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
 
 	// ---- Wiki issues store + daily briefing tool ----------------------------
 	issues := cron.NewIssuesStore(a.deps.SchedDB.DB())

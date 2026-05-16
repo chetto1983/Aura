@@ -1186,14 +1186,14 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **3** — Move Channels Behind Chat | ✅ | 2026-05-15 (Telegram-streaming arc) | `internal/channels/{telegram,web,silent,cron}` + Hub adapter | post-Wave 3.0 chathub merge |
 | **4** — Collapse Agent Runtime | ✅ | 2026-05-15 (Runner-removal arc) | US-G01..G07 — `agent.Runner` deleted, `agent.Run` unico | |
 | **5** — Consolidate Tools | ✅ | 2026-05-15 | US-I01..I05 — commits `009639ae..28ae9324` | tools/registry consolidation |
-| **6** — Tool Experience Loop | ✅ in-scope | 2026-05-16 | US-J01..J06 — commits `73ddea04..fa7d4559` | `tool_attempts` table + ToolObservation contract + retry budgets. **Lesson promotion deferred** |
+| **6** — Tool Experience Loop | ✅ closed (full scope) | 2026-05-16 | US-J01..J06 — commits `73ddea04..fa7d4559`; US-N01..N04 — Phase-N lesson promotion | `tool_attempts` + ToolObservation + retry budgets + `internal/learning` PromoteLessons + WriteApprovedLesson + recall_operational tool |
 | **7A** — Compact Archive Hygiene | ✅ | 2026-05-16 | US-K01..K05 — `9d74809d..3a777e36` | role=tool excluded from compact archive |
 | **7B** — Typed Collection Registry | ✅ | 2026-05-16 | US-L01..L06 — `1a6a609a..13b66d7e` | Collection enum + score components + follow-up handles + SourceID filter |
 | **7C** — Projection Freshness Registry | 🟡 in-flight | — | Phase-M queue: US-M01 shipped, US-M02..M04 queued | Ralph background; `projection_state` table + content_hash drift + degraded_read annotations |
 | **7D** — User/Operational Memory typed tiers | ⬜ | — | scaffolded enum in `collections.go` US-L01 | wire `KindUserMemory` + `KindOperational` as first-class writers (Mem0/Letta typed-tier pattern) |
 | **7E** — Source span/byte offsets | ⬜ | — | — | per audit `docs/phase07b-current-types-audit-2026-05-16.md §G.2.3` |
 | **7F** — Wiki frontmatter schema/prompt-version promotion | ⬜ | — | — | per audit `§G.2.4` |
-| **8** — Route Cron + Swarm through Hub (RunGraph) | ⬜ | — | — | policy-driven RunGraph, NodeSpec/EdgeSpec, team_collaboration. **Unlocks "Aura come Claude Code" capability #5 (subagent dispatch dinamico)** |
+| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 planning-ready | — | Phase08 plan verified 2026-05-16 | ready-for-discussion; implementation gated on open decisions + Phase08B lock. **Unlocks "Aura come Claude Code" capability #5 (subagent dispatch dinamico)** |
 | **9** — Memory and Source Discipline | ⬜ | — | — | wiki vs storage clarification, write-policy hardening, SQLite concurrency. **Unlocks "Aura come Claude Code" capability #1 (autonomous write-policy live)** |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
 
@@ -1205,7 +1205,7 @@ specific package or §5 contract:
 
 | Deferral | Source phase | Owning package (§5) | Maps to capability |
 | --- | --- | --- | --- |
-| **Lesson promotion** (`experience_store → operational_memory → skills`) | Phase 6 (§5.8 line 776-779) | `internal/learning` | End-of-turn reflection + telemetry-driven self-improvement |
+| ~~**Lesson promotion**~~ (`experience_store → operational_memory → skills`) | Phase 6 (§5.8 line 776-779) | `internal/learning` | End-of-turn reflection + telemetry-driven self-improvement — **CLOSED 2026-05-16** (US-N01..N04) |
 | **Active write-policy** (autonomous user/wiki writes, importance scorer, question gate) | Phase 9 (§5.7 lines 712-725) | `internal/memory` | Autonomous write-policy |
 | **`agent_note` scratchpad + pinned core block** | §5.7 line 678 (`agent_working_memory`) | `internal/memory` runtime continuity | TodoWrite cross-turn checklist |
 
@@ -1512,20 +1512,59 @@ Gate:
 - Neo4j or another graph database is not required for Phase 7,
 - repeated bad filters/searches produce self-healing feedback.
 
-### Phase 8 - Route Cron and Swarm Through the Same Shape
+### Phase 8 - Autonomous Durable Work Runtime (Cron + Swarm RunGraph)
 
-Goal: background and child-agent work stop being special cases.
+Goal: Aura stops waiting for manual commands as the normal operating mode.
+Background work, scheduled work, child-agent work, maintenance, and future team
+collaboration enter one durable runtime that can plan, run, delegate, recover,
+and ask for human input only when policy requires it.
+
+Manual controls remain for bootstrap, debug, and explicit operator override.
+They are not the architecture and cannot be used as the only proof that Aura is
+autonomous.
+
+Planning status as of 2026-05-16: the Phase08 planning folder is
+`ready-for-discussion` after independent re-verification. It is not
+`ready-for-implementation` until the open decisions are accepted or deliberately
+changed and the first bounded implementation slice is locked. Phase07C remains
+owned by the Ralph loop in Claude Code; Phase08 consumes context capsule handles
+and does not implement retrieval freshness.
 
 Reference maps:
 
 - `docs/cron-background-run-reference-map.md`
 - `docs/agent-parallel-loop-2026-reference-map.md`
 - `docs/observability-audit-retention-reference-map.md`
+- `.planning/deep-refactor/Phase08_Cron_And_Swarm_RunGraph/{source.md,plan.md,benchmark.md,progress.md}`
+
+Operating contract:
+
+```text
+trigger or work intent
+  -> policy decision
+  -> durable ScheduleFire, RunGraph, or WorkflowStep
+  -> delegated Actor with bounded capabilities
+  -> normalized run/workflow/outbox execution
+  -> metadata-first trace and audit evidence
+  -> retry, reconcile, escalate, or complete
+```
+
+Autonomy means:
+
+- Aura can detect due or useful work without a user clicking `run_now`,
+- Aura materializes work before execution, using SQLite rows as ground truth,
+- Aura applies risk, budget, authority, and approval policy before delegation,
+- Aura can split work into child nodes or a team when topology justifies it,
+- Aura records enough trace evidence to resume, replay, debug, and improve,
+- Aura asks the user only for high-risk, ambiguous, permission-lacking, or
+  irreversible actions.
 
 Cron:
 
 - detects due schedules,
 - creates durable schedule-fire records with idempotency keys,
+- records schedule version, source/manual marker, delegated actor, grant
+  snapshot, delivery mode, run/workflow link, attempts, and terminal status,
 - submits each fire as a delegated `RunRequest` or workflow-backed step,
 - applies explicit missed-run, catch-up, overlap, retry, and cancellation policy,
 - routes reminder, agent job, wiki maintenance, source-watch, and silent jobs through the same contracts,
@@ -1537,7 +1576,7 @@ Swarm:
 - dispatches child work through the chat/hub or equivalent normalized run path,
 - models swarm as a policy-driven run graph, not a fixed worker list,
 - supports topology tiers over time: direct, read-only fanout, team collaboration, plan-execute, critic-review, artifact-build, repair-loop, hierarchical, and hybrid DAG execution,
-- defines each child as a bounded `NodeSpec` with goal, instruction, curated context, tool/capability grant, model/provider when relevant, budgets, output schema, artifact policy, risk tier, and allowed spawn depth,
+- defines each child as a bounded `NodeSpec` with goal, instruction, immutable curated context capsule reference, tool/capability grant snapshot, model/provider when relevant, budgets, output schema, artifact policy, risk tier, and allowed spawn depth,
 - defines graph `EdgeSpec` records for dependency, artifact consumption, aggregation, critic/review, reroute, and cancellation relationships,
 - models agent teams as lead-managed `RunGraph` instances with a shared task board and durable mailbox,
 - lets named teammates message each other directly when the topology requires debate, handoff, challenge, or coordination,
@@ -1549,11 +1588,53 @@ Swarm:
 - persists orchestration traces for spawn, delegate, task create/claim/complete, mailbox message, message/workspace update, tool call, return, aggregate, plan approval, stop, retry, cancellation, and budget events,
 - evaluates swarm by critical path, task quality, useful-agent utilization, protocol overhead, useful-message ratio, blocked-task latency, error amplification, cost, and trace debuggability rather than number of agents.
 
+Implementation order:
+
+- **8A Planning and decision lock**: source-backed plan, benchmark contract, PRD
+  coverage matrix, independent verifier; done as a discussion-ready plan on
+  2026-05-16.
+- **8B Durable work substrate**: additive storage/contracts for `RunGraph`,
+  nodes, edges, context capsule refs, task board, mailbox, plan approvals, and
+  metadata-first trace events; no production dispatch change.
+- **8C Swarm child runs through normalized runtime**: production swarm work
+  creates canonical child `runs` or workflow-backed steps and cannot complete
+  only inside `swarm.Manager`.
+- **8D ScheduleFire store and policy**: materialize due work before execution
+  with `scheduled_task_fires`, schedule version, idempotency, missed/coalesced
+  policy, overlap defaults, retry, and cancellation state.
+- **8E Cron execution migration**: move `agent_job`, `run_now`, reminders, wiki
+  maintenance, source-watch, and silent jobs behind fire/run/workflow/outbox
+  semantics while preserving current user-visible behavior until benchmarks pass.
+- **8F Team collaboration runtime**: named teammates, race-safe task claiming,
+  durable addressed mailbox, plan approval gates, budget limits, and team trace
+  events.
+- **8G Autonomous runtime E2E and observability**: prove non-manual due/policy
+  work, policy approvals, restart safety, trace replay, and background-job
+  observability from SQLite rows.
+
+Open decisions before implementation:
+
+- graph root identity: default to a canonical supervisor/root `runs` row for
+  autonomous or swarm graph work,
+- trace storage: default to `run_events` as the canonical metadata timeline,
+  with graph/task/mailbox tables for query shape,
+- cron fire storage: default to dedicated `scheduled_task_fires` beside
+  `scheduled_tasks`,
+- `NodeSpec.curated_context`: default to immutable capsule reference and
+  metadata, not inline source bytes or Phase07C retrieval-owned state,
+- first implementation slice: default to Phase08B durable work substrate,
+- `run_now` response: preserve synchronous semantics initially by waiting for
+  terminal fire/run state,
+- reminder migration: do not remove direct reminder delivery until
+  `run_outbox` delivery is wired and benchmarked,
+- approval policy: low risk may auto-approve; medium risk uses verifier/critic
+  policy; high risk and destructive/write actions use durable user approval.
+
 Gate:
 
 - parent run ID propagation tested,
 - child actor grants cannot exceed parent authority,
-- child context, tool grants, budgets, output schema, and artifact policy are persisted for every swarm node,
+- child context capsule reference, tool grants, budgets, output schema, and artifact policy are persisted for every swarm node,
 - run graph edges are visible enough to replay or debug aggregation,
 - team task board and mailbox are persisted, replayable, and visible in the run timeline,
 - task claiming is race-safe and tested under concurrent claim attempts,
@@ -1566,8 +1647,11 @@ Gate:
 - one-shot stale jobs have a tested grace/missed policy,
 - reminder delivery is produced through outbox,
 - scheduled agent jobs run as delegated actors with explicit capabilities,
+- source-watch, wiki maintenance, silent jobs, and generic background jobs route through the same fire/run/workflow contracts,
 - background jobs observable,
 - swarm traces expose critical-path latency, useful-agent utilization, protocol overhead, and error amplification,
+- autonomous E2E proof rejects manual-only `run_now` evidence and requires
+  non-manual `fire_source` plus run/workflow/outbox or child-node SQL evidence,
 - no hidden alternate runtime.
 
 ### Phase 9 - Memory and Source Discipline
