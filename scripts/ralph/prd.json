@@ -66,7 +66,7 @@
         "Single atomic commit prefix: feat(tools): subagent_dispatch parallel fanout tool (US-R03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §Phase 8 line 1470 'treats read-only fanout as a safe first slice, not the permanent architecture ceiling'. Memory feedback_minipc_cpu_budget: <=3 parallel children, no busy-loop polling. Phase-L oneOf action-dispatch pattern from action_error.go is the schema template."
     },
     {
