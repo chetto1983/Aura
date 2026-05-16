@@ -694,6 +694,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if tool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
 		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
 		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
+		tool.SetFreshnessStore(a.freshnessStore)
 		a.deps.Tools.Register(tool)
 	}
 

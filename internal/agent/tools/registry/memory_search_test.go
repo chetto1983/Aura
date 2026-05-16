@@ -9,11 +9,23 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/wiki"
 )
+
+// fakeFreshnessGetter satisfies the freshnessGetter interface for tests.
+type fakeFreshnessGetter struct {
+	row   freshness.Row
+	found bool
+	err   error
+}
+
+func (f fakeFreshnessGetter) Get(_ context.Context, _ string) (freshness.Row, bool, error) {
+	return f.row, f.found, f.err
+}
 
 func TestSearchMemoryTool_MetadataAndValidation(t *testing.T) {
 	if NewSearchMemoryTool(nil, nil) != nil {
@@ -752,5 +764,111 @@ func TestSearchMemoryTool_ZeroComponentsNoBracket(t *testing.T) {
 	}
 	if strings.Contains(out, "[exact=") {
 		t.Errorf("zero-component hit must not emit score bracket:\n%s", out)
+	}
+}
+
+// TestFreshnessTokenPresent verifies that formatMemoryResults emits a freshness=
+// token when EmbeddingModelID or IndexBuildID is non-empty, and does NOT emit
+// degraded_read=true when the projection status is 'fresh'.
+func TestFreshnessTokenPresent(t *testing.T) {
+	indexedAt := time.Date(2026, 5, 14, 8, 21, 33, 0, time.UTC)
+	doc := memoryindex.Document{
+		ID:               "archive:42",
+		Kind:             memoryindex.KindArchive,
+		Title:            "chat=10 turn=1",
+		Body:             "freshness token test content",
+		Handle:           "conversation:42",
+		ChatID:           10,
+		Score:            1,
+		UpdatedAt:        indexedAt,
+		EmbeddingModelID: "embeddinggemma-300m@256-mrl",
+		IndexBuildID:     "01HXYZ8K2QR5678",
+	}
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{doc}})
+	if tool == nil {
+		t.Fatal("expected non-nil tool")
+	}
+	tool.SetFreshnessStore(fakeFreshnessGetter{
+		row:   freshness.Row{ProjectionID: "compact_memory_documents", Status: "fresh"},
+		found: true,
+	})
+
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "freshness token", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(out, "freshness=indexed_at=2026-05-14T08:21:33Z") {
+		t.Errorf("expected indexed_at in freshness token:\n%s", out)
+	}
+	if !strings.Contains(out, "model=embeddingge") {
+		t.Errorf("expected model= (first 12 chars) in freshness token:\n%s", out)
+	}
+	if !strings.Contains(out, "build=01HXYZ8K2QR") {
+		t.Errorf("expected build= (first 12 chars) in freshness token:\n%s", out)
+	}
+	if strings.Contains(out, "degraded_read=true") {
+		t.Errorf("fresh projection must not emit degraded_read=true:\n%s", out)
+	}
+}
+
+// TestDegradedReadFlag verifies that formatMemoryResults emits degraded_read=true
+// when the projection_state row status is not 'fresh'.
+func TestDegradedReadFlag(t *testing.T) {
+	doc := memoryindex.Document{
+		ID:               "archive:99",
+		Kind:             memoryindex.KindArchive,
+		Title:            "chat=5 turn=2",
+		Body:             "degraded read test content",
+		Handle:           "conversation:99",
+		ChatID:           5,
+		Score:            1,
+		UpdatedAt:        time.Now(),
+		EmbeddingModelID: "embeddinggemma-300m",
+		IndexBuildID:     "01HXYZ000000",
+	}
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{doc}})
+	tool.SetFreshnessStore(fakeFreshnessGetter{
+		row:   freshness.Row{ProjectionID: "compact_memory_documents", Status: "degraded"},
+		found: true,
+	})
+
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "degraded read", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "degraded_read=true") {
+		t.Errorf("expected degraded_read=true for degraded projection:\n%s", out)
+	}
+	if !strings.Contains(out, "freshness=") {
+		t.Errorf("expected freshness= token alongside degraded_read:\n%s", out)
+	}
+}
+
+// TestEmptyFreshnessOmitted verifies backward compatibility: hits with empty
+// freshness columns (pre-US-M03 docs) must not emit the freshness= token.
+func TestEmptyFreshnessOmitted(t *testing.T) {
+	doc := memoryindex.Document{
+		ID:     "archive:77",
+		Kind:   memoryindex.KindArchive,
+		Title:  "chat=3 turn=1",
+		Body:   "old doc with no freshness columns",
+		Handle: "conversation:77",
+		ChatID: 3,
+		Score:  1,
+		// EmbeddingModelID, IndexBuildID intentionally empty (default)
+	}
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{doc}})
+	// freshnessStore nil — no projection state needed for empty-defaults case
+
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "old doc", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if strings.Contains(out, "freshness=") {
+		t.Errorf("back-compat: empty freshness columns must not emit freshness= token:\n%s", out)
+	}
+	if strings.Contains(out, "degraded_read=true") {
+		t.Errorf("back-compat: empty freshness columns must not emit degraded_read=true:\n%s", out)
 	}
 }

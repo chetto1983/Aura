@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/search"
 )
@@ -57,13 +58,30 @@ type compactMemorySearcher interface {
 	Search(ctx context.Context, query string, filter memoryindex.Filter) ([]memoryindex.Document, error)
 }
 
+// freshnessGetter reads projection_state for a given projection ID.
+// Satisfied by *freshness.Store; callers outside this package pass the concrete
+// type without naming the interface.
+type freshnessGetter interface {
+	Get(ctx context.Context, projectionID string) (freshness.Row, bool, error)
+}
+
+// compactMemoryProjectionID is the canonical projection ID for compact memory.
+const compactMemoryProjectionID = "compact_memory_documents"
+
 type SearchMemoryTool struct {
 	wiki                  search.Searcher
 	compact               compactMemorySearcher
+	freshnessStore        freshnessGetter
 	timeout               time.Duration
 	halfLifeWikiDays      float64
 	halfLifeArchiveDays   float64
 	now                   func() time.Time
+}
+
+// SetFreshnessStore injects a freshness getter so Execute can annotate
+// compact-memory hits with freshness= tokens and degraded_read=true.
+func (t *SearchMemoryTool) SetFreshnessStore(fs freshnessGetter) {
+	t.freshnessStore = fs
 }
 
 func NewSearchMemoryTool(wiki search.Searcher, compact compactMemorySearcher) *SearchMemoryTool {
@@ -105,7 +123,7 @@ func NewSearchMemoryToolConfigured(wiki search.Searcher, compact compactMemorySe
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
 
 func (t *SearchMemoryTool) Description() string {
-	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns a short markdown list, one line per hit, optionally with a snippet. Cite hits as [[slug]] for wiki and src_xxxx for sources when answering the user."
+	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns a short markdown list, one line per hit, optionally with a snippet. Cite hits as [[slug]] for wiki and src_xxxx for sources when answering the user. Compact memory hits may include a freshness=indexed_at/model/build annotation and degraded_read=true when the index is known to be stale."
 }
 
 func (t *SearchMemoryTool) Parameters() map[string]any {
@@ -177,6 +195,14 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	if len(compactKinds) > 0 {
 		compactResults, compactWarnings := t.searchCompact(searchCtx, query, compactKinds, chatID, sourceID, limit)
+		// Read projection_state exactly once per search invocation to check freshness.
+		if t.freshnessStore != nil && len(compactResults) > 0 {
+			if row, found, err := t.freshnessStore.Get(searchCtx, compactMemoryProjectionID); err == nil && found && row.Status != "fresh" {
+				for i := range compactResults {
+					compactResults[i].DegradedRead = true
+				}
+			}
+		}
 		results = append(results, compactResults...)
 		warnings = append(warnings, compactWarnings...)
 	}
@@ -212,23 +238,28 @@ func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, 
 }
 
 type memoryResult struct {
-	Kind        string
-	Identifier  string
-	Title       string
-	Role        string
-	Snippet     string
-	Page        int
-	Score       float64
-	ScoreExact  float64
-	ScoreFTS    float64
-	ScoreVector float64
-	UpdatedAt   time.Time
-	Handle      string
-	FilePath    string
-	Category    string
-	Tags        []string
-	Related     []string
-	SizeBytes   int64
+	Kind             string
+	Identifier       string
+	Title            string
+	Role             string
+	Snippet          string
+	Page             int
+	Score            float64
+	ScoreExact       float64
+	ScoreFTS         float64
+	ScoreVector      float64
+	UpdatedAt        time.Time
+	Handle           string
+	FilePath         string
+	Category         string
+	Tags             []string
+	Related          []string
+	SizeBytes        int64
+	// Freshness fields — compact memory only, populated when US-M03 columns are set.
+	IndexedAt        time.Time
+	EmbeddingModelID string
+	IndexBuildID     string
+	DegradedRead     bool
 }
 
 func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit int) ([]memoryResult, []string) {
@@ -297,18 +328,27 @@ func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kind
 	for _, doc := range docs {
 		snippet, _ := snippetAround(doc.Body, query, searchMemorySnippetLimit)
 		identifier := compactIdentifier(doc)
+		// Only set IndexedAt when freshness columns are populated (US-M03), so
+		// back-compat docs with empty defaults don't emit a spurious freshness token.
+		var indexedAt time.Time
+		if doc.EmbeddingModelID != "" || doc.IndexBuildID != "" {
+			indexedAt = doc.UpdatedAt
+		}
 		out = append(out, memoryResult{
-			Kind:        doc.Kind,
-			Identifier:  identifier,
-			Title:       doc.Title,
-			Snippet:     snippet,
-			Page:        doc.Page,
-			Score:       doc.Score,
-			ScoreExact:  doc.ScoreExact,
-			ScoreFTS:    doc.ScoreFTS,
-			ScoreVector: doc.ScoreVector,
-			UpdatedAt:   doc.UpdatedAt,
-			Handle:      doc.Handle,
+			Kind:             doc.Kind,
+			Identifier:       identifier,
+			Title:            doc.Title,
+			Snippet:          snippet,
+			Page:             doc.Page,
+			Score:            doc.Score,
+			ScoreExact:       doc.ScoreExact,
+			ScoreFTS:         doc.ScoreFTS,
+			ScoreVector:      doc.ScoreVector,
+			UpdatedAt:        doc.UpdatedAt,
+			Handle:           doc.Handle,
+			IndexedAt:        indexedAt,
+			EmbeddingModelID: doc.EmbeddingModelID,
+			IndexBuildID:     doc.IndexBuildID,
 		})
 	}
 	return out, nil
@@ -458,6 +498,34 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 				rel = rel[:5]
 			}
 			fmt.Fprintf(&sb, " related=[%s]", strings.Join(rel, ","))
+		}
+		// Freshness annotation: emitted when any freshness column is non-empty.
+		// Only compact-memory hits carry these; wiki hits always have zero values.
+		if r.EmbeddingModelID != "" || r.IndexBuildID != "" {
+			var parts []string
+			if !r.IndexedAt.IsZero() {
+				parts = append(parts, "indexed_at="+r.IndexedAt.UTC().Format(time.RFC3339))
+			}
+			if r.EmbeddingModelID != "" {
+				model := r.EmbeddingModelID
+				if len(model) > 12 {
+					model = model[:12]
+				}
+				parts = append(parts, "model="+model)
+			}
+			if r.IndexBuildID != "" {
+				build := r.IndexBuildID
+				if len(build) > 12 {
+					build = build[:12]
+				}
+				parts = append(parts, "build="+build)
+			}
+			if len(parts) > 0 {
+				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))
+			}
+		}
+		if r.DegradedRead {
+			fmt.Fprintf(&sb, " degraded_read=true")
 		}
 		if r.Snippet != "" {
 			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
