@@ -41,6 +41,26 @@ func (t *RecallOperationalTool) Definition() ToolDefinition {
 	}
 }
 
+func (t *RecallUserMemoryTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: VisibilityActiveTurn,
+		Examples: []ToolCallExample{
+			{
+				Description: "Find all preference facts about the operator.",
+				Arguments: map[string]any{
+					"category": "preference",
+					"limit":    5,
+				},
+			},
+		},
+	}
+}
+
 func (t *CreateDOCXTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		Name:        t.Name(),

@@ -29,6 +29,7 @@ func TestExamplesParameterEval(t *testing.T) {
 		&ToolSearchTool{},
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
+		&RecallUserMemoryTool{},
 		&WebTool{},
 		&WikiPageTool{},
 		&TaskTool{loc: time.Local},

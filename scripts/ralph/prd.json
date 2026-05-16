@@ -88,7 +88,7 @@
         "Single atomic commit prefix: feat(tools,docs): recall_user_memory tool + Phase-O closure (US-O04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.8 'lesson retrieval' parallels recall_operational; here recall_user_memory mirrors for user_profile_memory layer. Closure pattern Phase-N US-N04. Phase 9 partial: this slice covers extraction+routing+approval+retrieval, but NOT yet 'memory.user.write capability check' or 'question gate when ambiguous' — those remain deferred (next phase candidate)."
     }
   ]
