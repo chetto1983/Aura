@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	KindSource   = "source"
-	KindArchive  = "archive"
-	KindProposal = "proposal"
+	KindSource   = string(CollectionSource)
+	KindArchive  = string(CollectionArchive)
+	KindProposal = string(CollectionProposal)
 )
 
 // defaultSearchLimit caps memory-search results when the caller's Filter.Limit

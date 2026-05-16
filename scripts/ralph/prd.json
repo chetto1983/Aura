@@ -39,7 +39,7 @@
         "Single atomic commit prefix: feat(memoryindex): tie KindSource/Archive/Proposal to Collection constants (US-L02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest possible production change — its purpose is to PROVE the typed registry is consistent with current behavior. If anything breaks, it means the registry values diverged from the historical constants (US-L01 bug)."
     },
     {
