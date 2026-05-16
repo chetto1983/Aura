@@ -1,95 +1,95 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-O = autonomous user-memory promotion + wire KindUserMemory scaffold. Closes the loop conversation turns -> summarizer.Candidate (already extracted) -> NEW user-memory triage (preference|fact|person categories route to user_memory layer instead of wiki) -> proposed_updates kind='user_memory' -> operator approval -> compact_memory_documents kind=user_memory -> recall_user_memory LLM tool. The summarizer backbone (Candidate struct, applier, proposals) is ALREADY shipped at internal/conversation/summarizer/. Phase 7B US-L01 declared CollectionUserMemory as scaffolded — this phase wires it with a real writer, fulfilling the deferral. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.7 lines 712-725 'Write policy' — 'user profile memory requires explicit intent, validation, or a question when ambiguous; user memory writes require memory.user.write or a narrower capability grant'. prd.md §5.7 lines 680-685 user/project knowledge layers (user_profile_memory distinct from knowledge_wiki). docs/phase07c-mem0-elysia-patterns-2026-05-16.md §1.2 Mem0 V3 ADD-only pipeline (LLM extraction + dedup hash + payload metadata). Phase 6 lesson promotion pattern (Phase-N) is the structural template.",
+  "description": "Aura Phase-P = wire agent_note scratchpad (agent_working_memory layer per prd.md §5.7 line 678). The closest analogue to Claude Code's TodoWrite cross-turn list. Per-conversation only, garbage-collected with the conversation lifecycle (§5.7 line 717). Aura can write a small structured note (todo list, intermediate findings, plan) that survives across multiple LLM turns within the same conversation but does NOT leak to user/operational/wiki memory. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N/O: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.7 line 678 'agent_working_memory: agent_note scratchpad + pinned core block; per conversation'. prd.md §5.7 line 717 'agent working memory can be written by Aura during a run, but it is scoped and garbage-collected with the conversation lifecycle'. This phase closes capability gap #4 from the 2026-05-16 brainstorm 'TodoWrite cross-turn checklist'.",
   "userStories": [
     {
-      "id": "US-O01",
-      "title": "Add user-memory triage helper in summarizer + UserFactHandle generator",
-      "description": "Pure logic addition: decide which Candidate categories route to user_memory layer vs the existing wiki path. NO consumer wiring in this story. (a) New file `internal/conversation/summarizer/triage.go` with: type `TargetLayer string` const `TargetWiki TargetLayer = \"wiki\"` and `TargetUserMemory TargetLayer = \"user_memory\"`. Function `TriageCandidate(c Candidate) TargetLayer` returns TargetUserMemory when `c.Category` is one of `person`, `preference`, `fact`, `todo` (the personal/transient categories per §5.7 user_profile_memory definition); returns TargetWiki when category is `project` or empty (knowledge_wiki layer). (b) Function `UserFactHandle(c Candidate) string` returns a stable handle `user_memory:<sha256(category + normalized_fact)[:16]>` for idempotency. Normalized_fact = strings.ToLower(strings.TrimSpace(c.Fact)) collapsing internal whitespace to single space. (c) Tests `triage_test.go`: 7 cases — each of the 5 categories returns expected TargetLayer; empty category returns TargetWiki; identical fact (modulo case+whitespace) produces identical handle. (d) NO changes to applier.go, proposals.go, agent loop, cron, or memoryindex in this story.",
+      "id": "US-P01",
+      "title": "Add agent_notes SQLite table + agentnote.Store Go API",
+      "description": "Pure types + storage + tests; no caller integration in this story. (a) New migration v15 (or next available — verify with grep) `addAgentNotes` in `internal/db/migrations/migrations.go` registered slice AND mirrored in `currentSchemaSQL`. Schema: `conversation_id TEXT PRIMARY KEY, content TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT (unixepoch())`. (b) New package `internal/agentnote/` with `Store` struct + 4 methods: `Get(ctx, conversationID string) (content string, exists bool, err error)`, `Set(ctx, conversationID, content string) error` (uses INSERT ... ON CONFLICT DO UPDATE content=excluded.content, updated_at=excluded.updated_at), `Append(ctx, conversationID, line string) error` (read+modify+write under transaction; if note empty, content=line; else content=existing + '\\n' + line), `Clear(ctx, conversationID string) error` (delete row). (c) Tests in `internal/agentnote/store_test.go`: 5 cases — Get empty returns ('', false, nil); Set then Get returns content; Append on empty creates; Append on existing concatenates with newline; Clear deletes. (d) NO consumer wiring: do not touch agent loop, system_prompt, channels, api in this story.",
       "acceptanceCriteria": [
-        "internal/conversation/summarizer/triage.go exists with TargetLayer type + 2 consts (TargetWiki, TargetUserMemory)",
-        "TriageCandidate: person/preference/fact/todo -> TargetUserMemory; project/empty -> TargetWiki",
-        "UserFactHandle returns 'user_memory:<sha256(category + normalized_fact)[:16]>'",
-        "Normalization: ToLower + TrimSpace + collapse internal whitespace to single space",
-        "triage_test.go covers all 5 categories + empty + 2 identical-modulo-format facts produce same handle",
-        "No changes to applier.go, proposals.go, internal/agent/, internal/cron/, internal/storage/memoryindex/ in this commit",
+        "Migration v15 (or next) adds agent_notes table with 3 columns + currentSchemaSQL mirror",
+        "internal/agentnote/store.go exists with Store struct + Get/Set/Append/Clear methods",
+        "Set uses INSERT ... ON CONFLICT(conversation_id) DO UPDATE",
+        "Append uses BEGIN IMMEDIATE transaction to read+modify+write atomically",
+        "Append on empty content sets content=line (no leading newline)",
+        "Append on existing content sets content=existing + '\\n' + line",
+        "Clear deletes the row (verified by subsequent Get returns exists=false)",
+        "internal/agentnote/store_test.go covers all 5 cases",
+        "No changes to internal/agent/, internal/conversation/, internal/api/, internal/channels/ in this commit",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(summarizer): user-memory triage + UserFactHandle (US-O01)"
+        "Single atomic commit prefix: feat(agentnote): agent_notes table + Store API (US-P01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 681 'user_profile_memory: stable user facts, preferences, constraints, identity notes' (distinct from project_decision_memory at line 682 + knowledge_wiki at line 684). Phase-N US-N01 template (pure types + helper + tests, no consumers wired)."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Pattern: Phase-M US-M01 template (pure types + storage + tests, no consumers). Verify next migration version via grep on registered slice — Phase 7C added v12 and v13; Phase-N may have added v14; this story registers v15 OR the next available."
     },
     {
-      "id": "US-O02",
-      "title": "Route user-memory candidates to proposed_updates with kind='user_memory'",
-      "description": "Make triage LIVE inside the existing summarizer applier path. (a) Locate the applier candidate-handling code in `internal/conversation/summarizer/applier.go` and `proposals.go`. The existing path treats ActionNew/ActionPatch as wiki write. (b) Add a branch BEFORE the wiki resolution: call `TriageCandidate(c)`. If result is TargetUserMemory, route to a new function `createUserMemoryProposal(ctx, store, c)` that inserts a proposed_updates row with kind='user_memory', handle=UserFactHandle(c), action=ActionNew (or ActionPatch if existing user_memory hit detected — see d below), summary=c.Fact, provenance source_turn_ids=c.SourceTurnIDs. (c) Idempotency: if proposed_updates already has a pending row with the same handle (UserFactHandle), skip (skipped++, no duplicate). (d) Existing-fact detection: call `memoryindex.Store.Search(Filter{Kinds: [string(CollectionUserMemory)], ...})` with the fact text as query, threshold 0.85. If hit found, set ActionPatch with TargetSlug=hit.Handle; otherwise ActionNew. (e) NO change to ActionNew/ActionPatch for wiki path — keep existing flow byte-identical. (f) Tests in `applier_test.go` (or `triage_routing_test.go`): 4 cases — Candidate category='preference' routes to proposed_updates kind='user_memory'; Candidate category='project' routes to existing wiki path; double-extract same preference produces 1 proposal not 2 (idempotency); preference matching an existing user_memory entry generates ActionPatch.",
+      "id": "US-P02",
+      "title": "Add agent_note LLM tool (set / append / get / clear actions)",
+      "description": "Wire agent_note as an LLM-callable tool with action-dispatch schema (mirroring Phase-L oneOf pattern). (a) New file `internal/agent/tools/registry/agent_note.go` with `AgentNoteTool` struct + Definition + Execute. Schema uses ActionDispatchOneOf helper (Phase-L pattern from action_error.go): action enum [set|append|get|clear]; set requires content; append requires line; get and clear have no extra required params. Description copy: 'A per-conversation scratchpad for your own working memory (todo list, intermediate findings, plan). Use set to replace, append to add a new line, get to read, clear to delete. The note is scoped to the current conversation and garbage-collected at conversation end. NOT visible to the user; NOT promoted to wiki or user memory.' (b) The tool needs the current conversation_id at Execute time. Inject it via a constructor parameter `conversationIDProvider func(ctx context.Context) (string, error)` — the caller (agent loop) provides the resolver. (c) Execute calls agentnote.Store.{Get,Set,Append,Clear} as dispatched. Output format: action=set returns 'ok (N chars)'; action=append returns 'ok (note now N chars, M lines)'; action=get returns the full content as fenced markdown ('\\n```\\n<content>\\n```\\n'); action=clear returns 'cleared'. (d) Description includes 'REQUIRED PARAMETERS BY ACTION' header following Phase-L convention. (e) Register in `internal/agent/tools/registry/registry.go` alongside search_memory, recall_operational, recall_user_memory. (f) Tests `internal/agent/tools/registry/agent_note_test.go`: 6 cases — set creates note; append on empty creates; append on existing appends; get returns content; clear deletes; sequential set + append + get + clear roundtrip.",
       "acceptanceCriteria": [
-        "applier.go branches on TriageCandidate before wiki resolution",
-        "createUserMemoryProposal inserts proposed_updates row with kind='user_memory', handle=UserFactHandle(c), source_turn_ids preserved",
-        "Idempotency: re-run with identical Candidate set produces skipped count, no duplicate proposals",
-        "Existing-fact detection via memoryindex.Store.Search filtered to CollectionUserMemory at threshold 0.85",
-        "Wiki path for ActionNew/ActionPatch on non-user-memory categories stays byte-identical",
-        "Tests in applier_test.go or triage_routing_test.go cover route/idempotency/existing-match cases",
-        "proposed_updates table accepts kind='user_memory' (verify via existing schema OR additive migration v15 if needed)",
+        "internal/agent/tools/registry/agent_note.go exists with AgentNoteTool struct",
+        "Schema uses ActionDispatchOneOf (Phase-L action_error.go helper) with 4 actions: set/append/get/clear",
+        "Description has 'REQUIRED PARAMETERS BY ACTION' header (set: content; append: line; get/clear: none)",
+        "Description explicitly notes 'NOT visible to user; NOT promoted to wiki or user memory'",
+        "Tool registered in registry.go alongside recall_operational + recall_user_memory",
+        "Constructor takes conversationIDProvider func(ctx) (string, error) — injection point for the agent loop",
+        "agent_note_test.go covers all 6 cases including sequential roundtrip",
+        "Existing memory_search + recall tests stay green",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(summarizer): route user-memory candidates to proposed_updates kind=user_memory (US-O02)"
+        "Single atomic commit prefix: feat(tools): agent_note action-dispatch tool (US-P02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 714 'user profile memory requires explicit intent, validation, or a question when ambiguous' — the review-gated proposed_updates flow IS the validation. Phase-N US-N02 template (proposer + idempotency via handle). If migration v15 needed for kind column extension, mirror in currentSchemaSQL."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Phase-L oneOf schema pattern (commit 7ccdca33) is the template for action-dispatch tools — re-use ActionDispatchOneOf helper from internal/agent/tools/registry/action_error.go."
     },
     {
-      "id": "US-O03",
-      "title": "Approved user_memory proposals write to compact_memory_documents kind=user_memory",
-      "description": "Close the layer movement Phase 7B US-L01 CollectionUserMemory scaffold -> wired. When an operator approves a proposed_updates row with kind='user_memory', a new function in `internal/learning/user_memory_writer.go` (or extension of writer.go from US-N03) writes it as a compact_memory_documents row with kind='user_memory'. (a) New function `WriteApprovedUserFact(ctx context.Context, store memoryindex.Store, proposal Proposal) error`. Builds a memoryindex.Document with Kind=string(memoryindex.CollectionUserMemory), Title=truncate(proposal.Summary, 80), Body=proposal.Summary, Handle=proposal.Handle (already 'user_memory:<sha>:'), Status='active', UpdatedAt=now, ContentHash + EmbeddingModelID + IndexBuildID per Phase 7C pattern (re-use US-M03 freshness wiring). Category=proposal source category (person/preference/fact/todo) stored in Tags. (b) Wire into the applier approval-transition path so when proposal.Kind == 'user_memory' and status flips pending -> approved, WriteApprovedUserFact is invoked. Mirror the US-N03 pattern verbatim. (c) Idempotency: ON CONFLICT(Handle) DO UPDATE Body=excluded.Body, UpdatedAt=excluded.UpdatedAt — so an ActionPatch approval updates the existing row instead of duplicating. (d) Tests `internal/learning/user_memory_writer_test.go` (or extend writer_test.go): 4 cases — approve user_memory proposal: compact_memory_documents row created with kind='user_memory'; double-approve: idempotent (single row); ActionPatch approval updates Body; approve non-user_memory kind: no-op. (e) Verify Phase 7B US-L01 CollectionUserMemory description gets updated in collections.go from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'.",
+      "id": "US-P03",
+      "title": "Wire agent_note into agent loop + system prompt injection + GC on conversation end",
+      "description": "Make agent_note LIVE in the agent loop. (a) Locate the conversation-id resolver at runtime — verify via grep on `conversation_id` or `ConversationID` in internal/agent/ and internal/channels/. The hub or agent loop knows the current conversation context. Wire the AgentNoteTool constructor with a closure that reads it from the agent invocation context. (b) System prompt injection: in `internal/conversation/system_prompt.go` (or equivalent — locate via grep `prompt_modules` and `base,runtime`), add a new module 'agent_note' that reads agentnote.Store.Get(currentConvID) and injects content if non-empty. Format: '\\n\\n## Your current note (working memory)\\n\\n<content>\\n'. If empty or row missing, inject nothing (zero overhead). (c) GC on conversation end: locate the conversation-close path (likely in internal/conversation/ or a hub event handler — check chat.EventDone or similar). Add a hook that calls agentnote.Store.Clear(conversationID) when the conversation ends or thread is closed. (d) NO change to the agent loop iteration count or system prompt cache key (the note content goes BEFORE 'history' per the cache discipline §3 D13 from master plan — append-only relative to current run, but per-conversation persistent across runs). (e) Tests: `internal/conversation/system_prompt_test.go` extend with agent_note injection case (with content + without); integration test (place in existing chat_test.go or new file) that confirms set->next-run sees note in prompt->clear on done event. Existing tests stay green.",
       "acceptanceCriteria": [
-        "internal/learning/user_memory_writer.go (or extension of writer.go) with WriteApprovedUserFact(ctx, store, proposal) error",
-        "Function builds memoryindex.Document with Kind=user_memory + Title/Body/Handle + Phase 7C freshness fields (ContentHash, EmbeddingModelID, IndexBuildID)",
-        "Tags preserve source category (person/preference/fact/todo)",
-        "Wired into applier approval-transition path mirroring US-N03 hook pattern",
-        "Idempotency: double-approve does NOT duplicate; ActionPatch UPDATEs Body+UpdatedAt",
-        "user_memory_writer_test.go (or writer_test.go) covers approve/double/patch/wrong-kind cases",
-        "collections.go CollectionUserMemory description updated from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'",
-        "No new SQLite tables or migrations",
+        "conversationIDProvider wired from agent loop context to AgentNoteTool",
+        "System prompt module 'agent_note' added — injects content as '## Your current note (working memory)' section when non-empty",
+        "Empty/missing note injects nothing (zero token cost)",
+        "GC hook clears agent_notes row when conversation/thread closes",
+        "Prompt cache discipline preserved: note section position is stable (before history block)",
+        "system_prompt_test.go adds with-content + empty-content cases",
+        "Integration test: set -> next run sees note in prompt -> close event -> agentnote.Store.Get returns exists=false",
+        "Existing conversation + chat tests stay green",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(learning): WriteApprovedUserFact -> compact_memory_documents kind=user_memory (US-O03)"
+        "Single atomic commit prefix: feat(agent,conversation): wire agent_note into prompt + GC (US-P03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 705 'source_corpus -> knowledge_wiki via ingest or curated synthesis; conversation_archive -> user/project via validated consolidation or question flow'. Phase 7B US-L01 declared CollectionUserMemory scaffold — this story wires it. Phase-N US-N03 template (approval-triggered writer with freshness fields)."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 717 'scoped and garbage-collected with the conversation lifecycle'. Master plan §3 D13 prompt-cache discipline: place the agent_note BEFORE history (which mutates each turn). Cache prefix discipline preserved when note text changes within a conversation = cache miss only on the affected segment."
     },
     {
-      "id": "US-O04",
-      "title": "Add recall_user_memory LLM tool + Phase-O closure docs",
-      "description": "Make user-memory facts retrievable by the agent + close Phase-O. (a) New file `internal/agent/tools/registry/recall_user_memory.go` with `RecallUserMemoryTool` struct + Definition + Execute. Schema: { 'query': string optional, 'category': string optional (person|preference|fact|todo), 'limit': int default 5 max 20 }. Description copy: 'Surface validated user facts and preferences about the operator (name, location, interests, work context, habits, scheduled todos). Returns approved entries from user memory only — pending proposals are NOT visible here. Use category filter to narrow scope: person (identity), preference (likes/dislikes), fact (general claim), todo (scheduled item).' (b) Execute calls memoryindex.Store.Search with Filter{Kinds: []string{string(memoryindex.CollectionUserMemory)}, Status: 'active', ...} + tag filter if category provided + LIMIT. Format output as markdown list, one line per hit with handle 'user_memory:<sha>' prefix + Phase 7C freshness annotation. (c) Register in `internal/agent/tools/registry/registry.go` alongside recall_operational (US-N04) and search_memory. (d) Test `internal/agent/tools/registry/recall_user_memory_test.go`: 4 cases — empty store: 'no user facts yet'; populated: N hits ordered by recency; filtered by category='preference': only preference rows; filtered by tool_name absent (this is a different tool): N/A skip. (e) Closure docs: create `.planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/` with progress.md (US-O01..O04 SHAs), plan.md (one-pager citing prd.md §5.7 user_profile_memory + Phase-O scope), benchmark.md (actuals). (f) Update prd.md §6.5 Status Checklist (commit c50c9703 added the section): add a new row for Phase-O between 7F and 8 (or below 9 as a sub-phase) showing 'wired KindUserMemory'. (g) Update §7.2 deferrals table: 'Active write-policy (autonomous user/wiki writes, importance scorer, question gate)' Phase 9 row — mark partial completion (preference/fact/todo extraction live; remaining: explicit-intent question gate + memory.user.write capability check, deferred to Phase-Q). (h) Use git add -f for .planning/* paths.",
+      "id": "US-P04",
+      "title": "Phase-P closure docs + integration probe",
+      "description": "Final closure for Phase-P. (a) Create `.planning/deep-refactor/Phase01_Stabilize/subphases/Phase01_agent_note_scratchpad/` (or under the most relevant parent phase — Phase 1 stabilization OR a new Phase09 partial sub-dir, planner discretion). Files: progress.md (US-P01..P04 SHAs + one-line summary each), plan.md (one-pager citing §5.7 line 678 + §5.7 line 717 + Phase-L oneOf pattern), benchmark.md (actuals: 'set+get roundtrip < 5ms on cold SQLite; system_prompt injection adds < 200 tokens with 4KB note'). (b) Update prd.md §6.5 Status Checklist (commit c50c9703): add a new row for Phase-P showing 'agent_note scratchpad wired (capability #4 closed)'. (c) Update §7.2 Outstanding deferrals: remove or mark CLOSED the 'agent_note scratchpad + pinned core block' row. (d) Integration probe: add `cmd/probe_chat` case (or new dedicated probe) named 'agent-note-roundtrip' that: 1) sends a prompt asking Aura to set an agent_note 'TODO: verify X, Y, Z' 2) sends a second prompt 'cosa hai in nota?' 3) asserts the second reply mentions X, Y, Z 4) closes conversation explicitly OR waits for GC; on next conversation, sends 'cosa hai in nota?' and asserts the reply confirms note is empty/cleared. (e) Use git add -f for .planning/* paths.",
       "acceptanceCriteria": [
-        "internal/agent/tools/registry/recall_user_memory.go exists with RecallUserMemoryTool struct",
-        "Schema accepts query/category as optional + limit (default 5, max 20)",
-        "Description explicitly notes 'approved entries only — pending proposals NOT visible'",
-        "Execute filters by Kind=CollectionUserMemory + Status='active' + optional category tag",
-        "Output includes Phase 7C freshness annotation (indexed_at, degraded_read)",
-        "Tool registered in registry.go alongside recall_operational and search_memory",
-        "recall_user_memory_test.go covers empty/populated/filtered cases",
-        ".planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/{plan.md,progress.md,benchmark.md} created",
-        "prd.md §6.5 Status Checklist: Phase-O row added showing wired KindUserMemory",
-        "prd.md §7.2 Active write-policy deferral marked PARTIAL with explicit deferral note for question gate + capability check",
+        ".planning/deep-refactor/.../Phase01_agent_note_scratchpad/{plan.md,progress.md,benchmark.md} created (parent phase = planner discretion)",
+        "prd.md §6.5 Status Checklist: Phase-P row added showing agent_note wired (capability #4 closed)",
+        "prd.md §7.2 Outstanding deferrals: 'agent_note scratchpad' row removed OR marked CLOSED 2026-05-16",
+        "cmd/probe_chat 'agent-note-roundtrip' case added (or new probe binary) — set, recall, GC verify, fresh conv empty",
+        "Probe verifies: agent confirms note content X/Y/Z on second prompt within same conversation",
+        "Probe verifies: after conversation close + new conversation, agent reports note is empty",
         "Used git add -f for .planning/* paths",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(tools,docs): recall_user_memory tool + Phase-O closure (US-O04)"
+        "Single atomic commit prefix: feat(docs,probe): Phase-P closure + agent_note roundtrip probe (US-P04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Sources: prd.md §5.8 'lesson retrieval' parallels recall_operational; here recall_user_memory mirrors for user_profile_memory layer. Closure pattern Phase-N US-N04. Phase 9 partial: this slice covers extraction+routing+approval+retrieval, but NOT yet 'memory.user.write capability check' or 'question gate when ambiguous' — those remain deferred (next phase candidate)."
+      "passes": false,
+      "notes": "Sources: closure pattern Phase-N US-N04, Phase-O US-O04. Probe pattern: cmd/probe_chat existing cases (greeting-no-tools, wiki-page-create). The roundtrip across two conversations IS the proof that scoping + GC work end-to-end."
     }
   ]
 }

@@ -1,0 +1,95 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-O = autonomous user-memory promotion + wire KindUserMemory scaffold. Closes the loop conversation turns -> summarizer.Candidate (already extracted) -> NEW user-memory triage (preference|fact|person categories route to user_memory layer instead of wiki) -> proposed_updates kind='user_memory' -> operator approval -> compact_memory_documents kind=user_memory -> recall_user_memory LLM tool. The summarizer backbone (Candidate struct, applier, proposals) is ALREADY shipped at internal/conversation/summarizer/. Phase 7B US-L01 declared CollectionUserMemory as scaffolded — this phase wires it with a real writer, fulfilling the deferral. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.7 lines 712-725 'Write policy' — 'user profile memory requires explicit intent, validation, or a question when ambiguous; user memory writes require memory.user.write or a narrower capability grant'. prd.md §5.7 lines 680-685 user/project knowledge layers (user_profile_memory distinct from knowledge_wiki). docs/phase07c-mem0-elysia-patterns-2026-05-16.md §1.2 Mem0 V3 ADD-only pipeline (LLM extraction + dedup hash + payload metadata). Phase 6 lesson promotion pattern (Phase-N) is the structural template.",
+  "userStories": [
+    {
+      "id": "US-O01",
+      "title": "Add user-memory triage helper in summarizer + UserFactHandle generator",
+      "description": "Pure logic addition: decide which Candidate categories route to user_memory layer vs the existing wiki path. NO consumer wiring in this story. (a) New file `internal/conversation/summarizer/triage.go` with: type `TargetLayer string` const `TargetWiki TargetLayer = \"wiki\"` and `TargetUserMemory TargetLayer = \"user_memory\"`. Function `TriageCandidate(c Candidate) TargetLayer` returns TargetUserMemory when `c.Category` is one of `person`, `preference`, `fact`, `todo` (the personal/transient categories per §5.7 user_profile_memory definition); returns TargetWiki when category is `project` or empty (knowledge_wiki layer). (b) Function `UserFactHandle(c Candidate) string` returns a stable handle `user_memory:<sha256(category + normalized_fact)[:16]>` for idempotency. Normalized_fact = strings.ToLower(strings.TrimSpace(c.Fact)) collapsing internal whitespace to single space. (c) Tests `triage_test.go`: 7 cases — each of the 5 categories returns expected TargetLayer; empty category returns TargetWiki; identical fact (modulo case+whitespace) produces identical handle. (d) NO changes to applier.go, proposals.go, agent loop, cron, or memoryindex in this story.",
+      "acceptanceCriteria": [
+        "internal/conversation/summarizer/triage.go exists with TargetLayer type + 2 consts (TargetWiki, TargetUserMemory)",
+        "TriageCandidate: person/preference/fact/todo -> TargetUserMemory; project/empty -> TargetWiki",
+        "UserFactHandle returns 'user_memory:<sha256(category + normalized_fact)[:16]>'",
+        "Normalization: ToLower + TrimSpace + collapse internal whitespace to single space",
+        "triage_test.go covers all 5 categories + empty + 2 identical-modulo-format facts produce same handle",
+        "No changes to applier.go, proposals.go, internal/agent/, internal/cron/, internal/storage/memoryindex/ in this commit",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(summarizer): user-memory triage + UserFactHandle (US-O01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Sources: prd.md §5.7 line 681 'user_profile_memory: stable user facts, preferences, constraints, identity notes' (distinct from project_decision_memory at line 682 + knowledge_wiki at line 684). Phase-N US-N01 template (pure types + helper + tests, no consumers wired)."
+    },
+    {
+      "id": "US-O02",
+      "title": "Route user-memory candidates to proposed_updates with kind='user_memory'",
+      "description": "Make triage LIVE inside the existing summarizer applier path. (a) Locate the applier candidate-handling code in `internal/conversation/summarizer/applier.go` and `proposals.go`. The existing path treats ActionNew/ActionPatch as wiki write. (b) Add a branch BEFORE the wiki resolution: call `TriageCandidate(c)`. If result is TargetUserMemory, route to a new function `createUserMemoryProposal(ctx, store, c)` that inserts a proposed_updates row with kind='user_memory', handle=UserFactHandle(c), action=ActionNew (or ActionPatch if existing user_memory hit detected — see d below), summary=c.Fact, provenance source_turn_ids=c.SourceTurnIDs. (c) Idempotency: if proposed_updates already has a pending row with the same handle (UserFactHandle), skip (skipped++, no duplicate). (d) Existing-fact detection: call `memoryindex.Store.Search(Filter{Kinds: [string(CollectionUserMemory)], ...})` with the fact text as query, threshold 0.85. If hit found, set ActionPatch with TargetSlug=hit.Handle; otherwise ActionNew. (e) NO change to ActionNew/ActionPatch for wiki path — keep existing flow byte-identical. (f) Tests in `applier_test.go` (or `triage_routing_test.go`): 4 cases — Candidate category='preference' routes to proposed_updates kind='user_memory'; Candidate category='project' routes to existing wiki path; double-extract same preference produces 1 proposal not 2 (idempotency); preference matching an existing user_memory entry generates ActionPatch.",
+      "acceptanceCriteria": [
+        "applier.go branches on TriageCandidate before wiki resolution",
+        "createUserMemoryProposal inserts proposed_updates row with kind='user_memory', handle=UserFactHandle(c), source_turn_ids preserved",
+        "Idempotency: re-run with identical Candidate set produces skipped count, no duplicate proposals",
+        "Existing-fact detection via memoryindex.Store.Search filtered to CollectionUserMemory at threshold 0.85",
+        "Wiki path for ActionNew/ActionPatch on non-user-memory categories stays byte-identical",
+        "Tests in applier_test.go or triage_routing_test.go cover route/idempotency/existing-match cases",
+        "proposed_updates table accepts kind='user_memory' (verify via existing schema OR additive migration v15 if needed)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(summarizer): route user-memory candidates to proposed_updates kind=user_memory (US-O02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Sources: prd.md §5.7 line 714 'user profile memory requires explicit intent, validation, or a question when ambiguous' — the review-gated proposed_updates flow IS the validation. Phase-N US-N02 template (proposer + idempotency via handle). If migration v15 needed for kind column extension, mirror in currentSchemaSQL."
+    },
+    {
+      "id": "US-O03",
+      "title": "Approved user_memory proposals write to compact_memory_documents kind=user_memory",
+      "description": "Close the layer movement Phase 7B US-L01 CollectionUserMemory scaffold -> wired. When an operator approves a proposed_updates row with kind='user_memory', a new function in `internal/learning/user_memory_writer.go` (or extension of writer.go from US-N03) writes it as a compact_memory_documents row with kind='user_memory'. (a) New function `WriteApprovedUserFact(ctx context.Context, store memoryindex.Store, proposal Proposal) error`. Builds a memoryindex.Document with Kind=string(memoryindex.CollectionUserMemory), Title=truncate(proposal.Summary, 80), Body=proposal.Summary, Handle=proposal.Handle (already 'user_memory:<sha>:'), Status='active', UpdatedAt=now, ContentHash + EmbeddingModelID + IndexBuildID per Phase 7C pattern (re-use US-M03 freshness wiring). Category=proposal source category (person/preference/fact/todo) stored in Tags. (b) Wire into the applier approval-transition path so when proposal.Kind == 'user_memory' and status flips pending -> approved, WriteApprovedUserFact is invoked. Mirror the US-N03 pattern verbatim. (c) Idempotency: ON CONFLICT(Handle) DO UPDATE Body=excluded.Body, UpdatedAt=excluded.UpdatedAt — so an ActionPatch approval updates the existing row instead of duplicating. (d) Tests `internal/learning/user_memory_writer_test.go` (or extend writer_test.go): 4 cases — approve user_memory proposal: compact_memory_documents row created with kind='user_memory'; double-approve: idempotent (single row); ActionPatch approval updates Body; approve non-user_memory kind: no-op. (e) Verify Phase 7B US-L01 CollectionUserMemory description gets updated in collections.go from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'.",
+      "acceptanceCriteria": [
+        "internal/learning/user_memory_writer.go (or extension of writer.go) with WriteApprovedUserFact(ctx, store, proposal) error",
+        "Function builds memoryindex.Document with Kind=user_memory + Title/Body/Handle + Phase 7C freshness fields (ContentHash, EmbeddingModelID, IndexBuildID)",
+        "Tags preserve source category (person/preference/fact/todo)",
+        "Wired into applier approval-transition path mirroring US-N03 hook pattern",
+        "Idempotency: double-approve does NOT duplicate; ActionPatch UPDATEs Body+UpdatedAt",
+        "user_memory_writer_test.go (or writer_test.go) covers approve/double/patch/wrong-kind cases",
+        "collections.go CollectionUserMemory description updated from 'scaffolded — wired in Phase 7C/7D' to 'wired Phase-O via approved proposed_updates'",
+        "No new SQLite tables or migrations",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(learning): WriteApprovedUserFact -> compact_memory_documents kind=user_memory (US-O03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Sources: prd.md §5.7 line 705 'source_corpus -> knowledge_wiki via ingest or curated synthesis; conversation_archive -> user/project via validated consolidation or question flow'. Phase 7B US-L01 declared CollectionUserMemory scaffold — this story wires it. Phase-N US-N03 template (approval-triggered writer with freshness fields)."
+    },
+    {
+      "id": "US-O04",
+      "title": "Add recall_user_memory LLM tool + Phase-O closure docs",
+      "description": "Make user-memory facts retrievable by the agent + close Phase-O. (a) New file `internal/agent/tools/registry/recall_user_memory.go` with `RecallUserMemoryTool` struct + Definition + Execute. Schema: { 'query': string optional, 'category': string optional (person|preference|fact|todo), 'limit': int default 5 max 20 }. Description copy: 'Surface validated user facts and preferences about the operator (name, location, interests, work context, habits, scheduled todos). Returns approved entries from user memory only — pending proposals are NOT visible here. Use category filter to narrow scope: person (identity), preference (likes/dislikes), fact (general claim), todo (scheduled item).' (b) Execute calls memoryindex.Store.Search with Filter{Kinds: []string{string(memoryindex.CollectionUserMemory)}, Status: 'active', ...} + tag filter if category provided + LIMIT. Format output as markdown list, one line per hit with handle 'user_memory:<sha>' prefix + Phase 7C freshness annotation. (c) Register in `internal/agent/tools/registry/registry.go` alongside recall_operational (US-N04) and search_memory. (d) Test `internal/agent/tools/registry/recall_user_memory_test.go`: 4 cases — empty store: 'no user facts yet'; populated: N hits ordered by recency; filtered by category='preference': only preference rows; filtered by tool_name absent (this is a different tool): N/A skip. (e) Closure docs: create `.planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/` with progress.md (US-O01..O04 SHAs), plan.md (one-pager citing prd.md §5.7 user_profile_memory + Phase-O scope), benchmark.md (actuals). (f) Update prd.md §6.5 Status Checklist (commit c50c9703 added the section): add a new row for Phase-O between 7F and 8 (or below 9 as a sub-phase) showing 'wired KindUserMemory'. (g) Update §7.2 deferrals table: 'Active write-policy (autonomous user/wiki writes, importance scorer, question gate)' Phase 9 row — mark partial completion (preference/fact/todo extraction live; remaining: explicit-intent question gate + memory.user.write capability check, deferred to Phase-Q). (h) Use git add -f for .planning/* paths.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/recall_user_memory.go exists with RecallUserMemoryTool struct",
+        "Schema accepts query/category as optional + limit (default 5, max 20)",
+        "Description explicitly notes 'approved entries only — pending proposals NOT visible'",
+        "Execute filters by Kind=CollectionUserMemory + Status='active' + optional category tag",
+        "Output includes Phase 7C freshness annotation (indexed_at, degraded_read)",
+        "Tool registered in registry.go alongside recall_operational and search_memory",
+        "recall_user_memory_test.go covers empty/populated/filtered cases",
+        ".planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_promotion/{plan.md,progress.md,benchmark.md} created",
+        "prd.md §6.5 Status Checklist: Phase-O row added showing wired KindUserMemory",
+        "prd.md §7.2 Active write-policy deferral marked PARTIAL with explicit deferral note for question gate + capability check",
+        "Used git add -f for .planning/* paths",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(tools,docs): recall_user_memory tool + Phase-O closure (US-O04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Sources: prd.md §5.8 'lesson retrieval' parallels recall_operational; here recall_user_memory mirrors for user_profile_memory layer. Closure pattern Phase-N US-N04. Phase 9 partial: this slice covers extraction+routing+approval+retrieval, but NOT yet 'memory.user.write capability check' or 'question gate when ambiguous' — those remain deferred (next phase candidate)."
+    }
+  ]
+}
