@@ -228,10 +228,26 @@ func (o *Outbound) editMessage(
 }
 
 // sendRemainder sends parts[start:] as separate messages (overflow pages).
+// Each part is already length-bounded by tgtelegram.RenderForEntities (4096
+// UTF-16 cap). When entity send fails (entity parse error, not size), retry
+// the same length-bounded part as plain text — mirrors the fallback logic in
+// editMessage so a single bad entity range doesn't drop user-visible content.
 func (o *Outbound) sendRemainder(bot tele.API, recipient tele.Recipient, parts []tgtelegram.RenderedMessage, start int) {
-	for _, part := range parts[start:] {
-		if _, err := bot.Send(recipient, part.Text, part.Entities); err != nil {
-			o.logger.Warn("streaming remainder send failed", "error", err)
+	for i, part := range parts[start:] {
+		_, err := bot.Send(recipient, part.Text, part.Entities)
+		if err == nil {
+			continue
+		}
+		o.logger.Warn("streaming remainder send failed, falling back to plain text",
+			"error", err,
+			"part_index", start+i,
+			"part_text_len", len(part.Text),
+		)
+		if _, fbErr := bot.Send(recipient, part.Text); fbErr != nil {
+			o.logger.Warn("streaming remainder plain-text fallback failed",
+				"error", fbErr,
+				"part_index", start+i,
+			)
 			return
 		}
 	}
