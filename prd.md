@@ -1286,6 +1286,9 @@ Gate:
 - fixture covers simple reply, CoT, tool/entity table,
 - later adapter output can be byte-compared against the fixture.
 
+**Phase 2 closed 2026-05-15** — Telegram record/replay fixture protection is
+in place, including fallback entity-edit-to-plain-text behavior.
+
 ### Phase 3 - Move Channels Behind Chat
 
 Goal: make `chat` the normalized traffic layer.
@@ -1303,15 +1306,20 @@ Gate:
 - `/api/chat` shape unchanged,
 - default behavior conservative until soak.
 
+**Phase 3 closed for the Telegram-streaming arc 2026-05-15** — Telegram
+streaming routes through `channels/telegram.Outbound` with fixture byte parity.
+The later web `/api/chat` Hub migration closed during Phase01B/Phase01C repair
+work.
+
 ### Phase 4 - Collapse the Agent Runtime
 
 Goal: one loop, one runtime path.
 
 Current reality:
 
-- the duplicate `agent.Runner` body was reduced into an adapter,
-- the `agent.Runner` type still exists,
-- production references still exist.
+- the legacy `agent.Runner` type has been removed,
+- production references now call stateless `agent.RunTask`,
+- current source search finds no production `*agent.Runner` reference.
 
 Target:
 
@@ -1329,6 +1337,10 @@ Gate:
 - no production-only inferior path,
 - agent/chat/swarm/cron tests green,
 - loop behavior verified by tests, not comments.
+
+**Phase 4 closed for the Runner-removal arc 2026-05-15** — US-G01..US-G07
+shipped `RunTask`, removed `runner.go`/`runner_test.go`, and refreshed agent
+docs. Prompt snapshot/eval hardening remains a future selected slice if needed.
 
 ### Phase 5 - Consolidate Tools
 
@@ -1541,6 +1553,10 @@ Gate:
 - bootstrap env vars (DB_PATH, HTTP_PORT) still respected when set,
 - docker compose boots without `env_file:` and reaches the wizard.
 
+**Phase 10 closed 2026-05-15** — US-H01..US-H06 shipped SQLite-backed secrets,
+setup persistence to SQLite, one-shot `.env` import, bootstrap defaults, and
+compose/install cleanup with no `env_file:` directives.
+
 Non-goals: no encryption-at-rest in this phase (filesystem permissions +
 full-disk encryption documented in INSTALL.md); no new setup-UX invention
 (reuse the existing wizard, only redirect its persistence target).
@@ -1559,16 +1575,17 @@ derived queues or evidence. They are valid only after being checked against the
 canonical PRD/ADR/phase files. If a queue conflicts with the PRD, current
 handoff, or phase progress, update or re-author the queue before execution.
 
-Current execution state on 2026-05-15:
+Current execution state on 2026-05-16:
 
-- Phase01A is implemented and Go-verified locally.
-- Phase01B1 and Phase01B2 are implemented and verified locally.
-- Phase01B remains open for B3-B7 integration slices.
-- The next canonical implementation slice is Phase01B3: dashboard bearer actor
-  context. Do not bundle tool capability checks, cron delegation, swarm
-  delegation, or denial-event wiring into that slice.
-- Phase01C and Ralph question-gate queue work remain parked until the canonical
-  route explicitly selects them.
+- Phase01A, Phase01B, and Phase01C are closed for their implemented
+  foundation/identity/question-gate scopes.
+- Phase01C was pushed as `ecb4cf3e fix(chat): close Phase01C question gate`;
+  GitHub Actions CI run `25958870299` passed.
+- Phase02, Phase03 Telegram-streaming arc, Phase04 Runner-removal arc, Phase05,
+  Phase06 in-scope slice, Phase07A, Phase07B, and Phase10 have closure evidence
+  in their phase folders.
+- Phase07C-F, Phase08, and Phase09 remain planned/scaffolded. Select one and
+  promote its `source.md`, `plan.md`, and `benchmark.md` before implementation.
 
 ---
 

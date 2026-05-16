@@ -1,6 +1,7 @@
 # Phase10 Plan - Single Source of Truth Config
 
-Status: self-audited scaffold. Not verified.
+Status: closed 2026-05-15 for the SQLite/secrets source-of-truth config
+slice. US-H01..US-H06 shipped.
 
 ## Goal
 
@@ -37,18 +38,18 @@ configuration; first-run setup writes directly to SQLite.
 
 | PRD Item | Plan Location | Benchmark Location | Source Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Single source of truth for config | this file | `benchmark.md` | `source.md` | planned |
-| Secrets in SQLite | this file | `benchmark.md` | `source.md` | planned |
-| Setup wizard writes SQLite | this file | `benchmark.md` | `source.md` | planned |
-| Bootstrap meta-config hardcoded | this file | `benchmark.md` | `source.md` | planned |
-| Migration from `.env` to SQLite | this file | `benchmark.md` | `source.md` | planned |
-| Docker compose `env_file:` removed | this file | `benchmark.md` | `source.md` | planned |
+| Single source of truth for config | this file | `benchmark.md` | `source.md` | met |
+| Secrets in SQLite | this file | `benchmark.md` | `source.md` | met |
+| Setup wizard writes SQLite | this file | `benchmark.md` | `source.md` | met |
+| Bootstrap meta-config hardcoded | this file | `benchmark.md` | `source.md` | met |
+| Migration from `.env` to SQLite | this file | `benchmark.md` | `source.md` | met |
+| Docker compose `env_file:` removed | this file | `benchmark.md` | `source.md` | met |
 
 ## Implementation Gate
 
-Existing installs must boot cleanly post-upgrade without manual intervention:
-the migration helper imports `.env` values into SQLite on first run, then the
-operator can `rm .env` safely.
+Closed: existing installs have a one-shot `.env` import path, SQLite-backed
+secrets are live, setup writes SQLite, and `compose.yaml` has no `env_file:`
+directive.
 
 ## Story breakdown (Ralph queue candidates)
 

@@ -1,8 +1,8 @@
 # Phase06 Plan - Add the Tool Experience Loop
 
-Status: plan refresh 2026-05-15 after Phase-I close. Synthesises 3 parallel
-audits (current state, industry sources, scaffold scope) + limits-audit §5
-gap inventory. Ralph queue = Phase-J, 7 stories US-J01..J07.
+Status: closed 2026-05-16 for the Phase-J in-scope tool-experience slice.
+Durable workflow, idempotency, reconcile-first handling, and lesson promotion
+remain deferred to Phase-K.
 
 ## Goal
 
@@ -69,18 +69,18 @@ shipping cold pipes.
 
 | PRD Item | Story | Status |
 |---|---|---|
-| ToolObservation contract (ok/recoverable/blocked/fatal/cancelled) | US-J01 | in scope |
-| Tool Supervisor (retry, redaction, idempotency, budgets) | US-J03/J05 | in scope (partial — idempotency keys deferred) |
-| Recoverable error feedback injection same-run | US-J03 | in scope |
-| Caps by run/tool/error-kind + reason recording | US-J05 | in scope |
-| Persist tool attempts as learning events | US-J02 | in scope |
-| Retrieve validated lessons for similar future calls | US-J04 | in scope (pre-LLM briefer) |
+| ToolObservation contract (ok/recoverable/blocked/fatal/cancelled) | US-J01 | met |
+| Tool Supervisor (retry, redaction, idempotency, budgets) | US-J03/J05 | met for retry/redaction/budgets; idempotency keys deferred |
+| Recoverable error feedback injection same-run | US-J03 | met |
+| Caps by run/tool/error-kind + reason recording | US-J05 | met |
+| Persist tool attempts as learning events | US-J02 | met |
+| Retrieve validated lessons for similar future calls | US-J04 | met via pre-LLM briefer |
 | Durable workflow execution for side-effecting tools | Phase-K | deferred |
 | Idempotency keys for retryable side-effects | Phase-K | deferred |
 | Reconcile-first for side_effect_unknown | Phase-K | deferred |
 | Promote validated lessons to memory/skills/policy | Phase-K | deferred |
-| Secrets/raw args redacted in learning records | US-J02 | in scope |
-| Lessons versioned against tool schema/version | US-J02 | in scope (tool_schema_hash) |
+| Secrets/raw args redacted in learning records | US-J02 | met |
+| Lessons versioned against tool schema/version | US-J02 | met (tool_schema_hash) |
 | No auto prompt/code mutation without validation | (non-goal) | locked |
 
 ## Ralph queue (Phase-J)
@@ -154,7 +154,7 @@ shipping cold pipes.
 
 ## Implementation Gate
 
-No story is "done" without tests that exercise the actual loop path
+Closed. No story was accepted without tests that exercise the actual loop path
 (not mocks). The PRD §6 gates that fall within scope are:
 
 - ✓ a recoverable tool error can be corrected in the same run (US-J03)

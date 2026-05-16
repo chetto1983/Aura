@@ -4,9 +4,10 @@ This directory is the developer-facing execution map for the Aura deep
 refactor. The canonical product route remains `D:/Aura/prd.md`; this folder
 turns that route into bounded implementation units.
 
-Status: clean skeleton recreated on 2026-05-15 after the previous phase folders
-were intentionally deleted. The folders are self-audited planning scaffolds, not
-fresh-agent verified plans.
+Status: planning state refreshed on 2026-05-16 after Phase01C was pushed and
+GitHub Actions CI passed. The clean skeleton was recreated on 2026-05-15; some
+folders remain scaffolds, while the phase files now distinguish closed slices
+from not-run plans.
 
 ## Plan Authority
 
@@ -44,15 +45,25 @@ Current closure slice:
 - Do not bundle Phase 5/6 fine-grained tool approval policy or Phase 8
   RunGraph/swarm redesign into the closed Phase01C primitive.
 
-Prepared next memory slice:
+Closed or closable phase state captured in this sweep:
 
-- `Phase07A Compact Archive Hygiene` - planned after the user selected the
-  compact-memory/tool-output pollution as the next memory phase on 2026-05-15.
-- Source folder:
-  `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07A_Compact_Archive_Hygiene`.
-- This does not mark Phase01B complete. If the user explicitly continues memory
-  work before closing Phase01B, use the Phase07A files and record the Phase01B
-  verifier as still open.
+- Phase01A/Phase01B/Phase01C are closed for their implemented foundation,
+  identity/capability, and durable question-gate slices.
+- Phase02 is closed for Telegram fixture protection.
+- Phase03 is closed for the Telegram-streaming migration arc; the later web
+  `/api/chat` Hub migration was closed during Phase01B repair and Phase01C
+  falsification.
+- Phase04 is closed for the legacy `agent.Runner` removal / `RunTask` collapse
+  arc.
+- Phase05 and Phase06 are closed for their documented in-scope slices.
+- Phase07A and Phase07B are closed; Phase07C-F remain planned.
+- Phase10 is closed for the SQLite/secrets source-of-truth config slice.
+
+Still open / not green:
+
+- Phase07C-F, Phase08, and Phase09 remain planned or scaffolded.
+- `Phase01/subphases/Phase01_Stabilize_Map` remains an orientation scaffold,
+  not a separate verified implementation gate.
 
 ## Layout Contract
 
@@ -111,17 +122,18 @@ PhaseNN_Description/
 - `Phase06_Tool_Experience_Loop`
 - `Phase07_Rebuild_RAG_Typed_Memory`
   - `subphases/Phase07A_Compact_Archive_Hygiene`
+  - `subphases/Phase07B_Typed_Collection_Registry`
 - `Phase08_Cron_And_Swarm_RunGraph`
 - `Phase09_Memory_Source_Discipline`
 - `Phase10_Single_Source_Of_Truth_Config`
 
 ## Next Operating Step
 
-Current canonical slice: Phase01C is closed for the durable question gate work
-after repo-wide Go gates, Telegram adapter/resume verification, compose
-test-profile verification, production container update, and a live web-pipe
-falsification probe that proved `chat_questions` persistence. Select the next
-phase from the prepared phase folders before editing more code.
+Current canonical slice: none selected after the Phase01C CI closure. Select
+the next phase from the prepared phase folders before editing more code. If
+continuing memory/RAG work, Phase07C is the next open Phase07 sub-phase; if
+starting Phase08 or Phase09, first promote its self-audited scaffold into a
+source-backed plan and benchmark.
 
 Use `$aura-plan-builder` when the selected phase or sub-phase is still a
 self-audited scaffold, missing source/plan/benchmark coverage, or needs

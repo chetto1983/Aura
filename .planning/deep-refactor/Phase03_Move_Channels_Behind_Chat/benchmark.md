@@ -6,5 +6,5 @@
 | Channel tests | `go test ./internal/chat ./internal/channels/...` | green | green (5 packages: chat, channels/cron, channels/silent, channels/telegram, channels/telegram/fixture, channels/web) | met |
 | Telegram package tests | `go test ./internal/telegram/...` | green | green | met |
 | Agent + chat package tests | `go test ./internal/agent/... ./internal/chat/...` | green | green | met |
-| Full compile/vet/test | `go build ./...`; `go vet ./...`; `go test ./...` | green | blocked by unrelated user WIP at internal/api/auth/store.go (new Authorizer.Authorize method not yet implemented by fakes) — Phase 3 scope packages green | scope met / out-of-scope blocker |
-| Web API shape | not exercised | response shape unchanged | n/a — this arc did not touch /api/chat | not applicable |
+| Full compile/vet/test | `go build ./...`; `go vet ./...`; `go test ./...` | green | Later repo-wide gates and CI passed on current `master`; the original unrelated auth fake blocker is gone. Phase01C CI run `25958870299` passed `Go test + Phase 2 guards`. | met |
+| Web API shape | Phase01B/Phase01C later repair evidence | response shape unchanged while `/api/chat` routes through Hub | Phase01B web Hub live markers and Phase01C web question probe passed | met later |

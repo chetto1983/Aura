@@ -1,6 +1,7 @@
 # Phase01 Subphase Summary
 
-Status: Phase01A locally implemented, verifier-repaired, and fully Go-tested.
+Status: Phase01 parent is closed for the implemented foundation slices.
+Phase01A is locally implemented, verifier-repaired, and fully Go-tested.
 Phase01B1 is closed with local gates and subagent verification. Phase01B2
 allowlist backfill is implemented and Go-verified locally. Phase01B3 and
 Phase01B4 are container-verified. Phase01B5, Phase01B6, Phase01B7, and the
@@ -12,14 +13,15 @@ closed E2E after a live falsification repair: durable `chat_questions`,
 question request/answer events, ask_user exclusive pause, stable web pipe
 thread ids, restart-safe Telegram pending-question resume, repo-wide Go gates,
 Telegram package/fixture tests, compose test-profile verification, and
-production container DB/health probes all passed.
+production container DB/health probes all passed. Phase01C was pushed as
+`ecb4cf3e` and GitHub Actions CI run `25958870299` passed.
 
 | Subphase | Canonical Folder | Planning Status | Verifier Status | Next Action |
 | --- | --- | --- | --- | --- |
-| Phase 1 - Stabilize the Map | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map` | self-audited scaffold | not run | Verify package-map plan before more renames. |
-| Phase 1A - Persist the Run/Event Foundation | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation` | storage foundation plus `chat.Hub` lifecycle/tool/usage persistence implemented and fully Go-tested locally | Codex verifier repair passed; subagent verifier not run | Optional separate verifier, otherwise proceed to Phase01B planning promotion. |
+| Phase 1 - Stabilize the Map | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01_Stabilize_Map` | orientation scaffold only | not run as a separate implementation gate | Not blocking Phase01A/B/C closure; verify only if new package-map rename work is selected. |
+| Phase 1A - Persist the Run/Event Foundation | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01A_Run_Event_Foundation` | storage foundation plus `chat.Hub` lifecycle/tool/usage persistence implemented and fully Go-tested locally | Codex verifier repair passed; subagent verifier not run | Closed for Phase01A; no active blocker. |
 | Phase 1B - Establish Identity and Capability Grants | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01B_Identity_Capability_Grants` | Phase01B1 migration v7 plus `internal/identity` closed; Phase01B2 migration v8/auth backfill closed locally; Phase01B3 dashboard actor context container-verified; Phase01B4 tool capability checks container-verified; Phase01B5 Telegram identity parity locally verified and container-updated; Phase01B6 cron/swarm delegated actors locally verified and container-updated; Phase01B7 authorization denial run/audit events repo-verified and container-updated; fail-open authority paths removed and verified; parent closure verifier repaired Chat Hub actor persistence and the DB-backed provider secret path | goal verifier PASS 10/10 for B1; code-risk recheck PASS 9.5/10 with no B1 blockers; Phase01B2 full Go gates passed locally; Phase01B3/B4 repo and container gates passed; Phase01B5 auth/Telegram/full Go gates passed; Phase01B6 delegated actor SQL benchmarks plus full Go gates passed; Phase01B7 denial event SQL benchmarks plus full Go gates passed; fail-closed repair full repo gate passed; parent closure local/code, live auth-boundary, DB/secrets, and live chat-marker gates passed | Closed for Phase01B. Select the next bounded phase slice before editing more code. |
-| Phase 1C - Add the Question Gate | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate` | durable question gate closed E2E after falsification: `chat_questions`, `question_requested` / `question_answered`, exclusive ask_user pause, stable web pipe thread ids, restart-safe Telegram answer routing, and explicit late/duplicate/wrong-channel states | local repo gates, Telegram package/fixture tests, compose test-profile package gate, and production web-pipe DB probe passed | Closed for Phase01C. Select the next bounded phase slice before editing more code. |
+| Phase 1C - Add the Question Gate | `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate` | durable question gate closed E2E after falsification: `chat_questions`, `question_requested` / `question_answered`, exclusive ask_user pause, stable web pipe thread ids, restart-safe Telegram answer routing, and explicit late/duplicate/wrong-channel states | local repo gates, Telegram package/fixture tests, compose test-profile package gate, production web-pipe DB probe, and CI run `25958870299` passed | Closed for Phase01C. Select the next bounded phase slice before editing more code. |
 
 ## First Bounded Implementation Candidate
 

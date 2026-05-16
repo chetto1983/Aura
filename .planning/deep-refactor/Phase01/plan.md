@@ -1,8 +1,8 @@
 # Phase01 Plan - Stabilize the Foundation Map
 
-Status: Phase01 in progress. Phase01A is implemented and Go-verified locally.
-Phase01B1 and Phase01B2 are implemented and verified locally. Phase01B parent
-remains open for B3-B7. Phase01C remains scaffolded.
+Status: Phase01 implementation foundation is closed for Phase01A, Phase01B,
+and Phase01C. The package-map stabilization child remains an orientation
+scaffold only, not an active implementation gate.
 
 ## Goal
 
@@ -44,22 +44,23 @@ Phase01 owns:
 | --- | --- | --- |
 | First code slice | Phase01A | Durable run/events support later channel, identity, cron, and swarm work. |
 | Run store package | `internal/storage/runs` | Keeps canonical run persistence out of cache and channel packages. |
-| Verification status | self-audited | No verifier agent was run in this cleanup turn. |
+| Verification status | closed for implemented children | Phase01A verifier repair passed; Phase01B parent closure verifier passed; Phase01C falsification and CI passed. |
 
 ## PRD Coverage
 
 | PRD Item | Plan Location | Benchmark Location | Source Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Package map names reflect target architecture | `subphases/Phase01_Stabilize_Map/plan.md` | `subphases/Phase01_Stabilize_Map/benchmark.md` | `source.md` | scaffolded |
+| Package map names reflect target architecture | `subphases/Phase01_Stabilize_Map/plan.md` | `subphases/Phase01_Stabilize_Map/benchmark.md` | `source.md` | orientation scaffold; not an active blocker |
 | Durable run/event foundation | `subphases/Phase01A_Run_Event_Foundation/plan.md` | `subphases/Phase01A_Run_Event_Foundation/benchmark.md` | `source.md` | implemented and Go-verified locally |
-| Identity and grants | `subphases/Phase01B_Identity_Capability_Grants/plan.md` | `subphases/Phase01B_Identity_Capability_Grants/benchmark.md` | `source.md` | B1/B2 verified locally; B3-B7 open |
-| Question gate | `subphases/Phase01C_Question_Gate/plan.md` | `subphases/Phase01C_Question_Gate/benchmark.md` | `source.md` | scaffolded |
+| Identity and grants | `subphases/Phase01B_Identity_Capability_Grants/plan.md` | `subphases/Phase01B_Identity_Capability_Grants/benchmark.md` | `source.md` | closed for Phase01B |
+| Question gate | `subphases/Phase01C_Question_Gate/plan.md` | `subphases/Phase01C_Question_Gate/benchmark.md` | `source.md` | closed E2E with CI |
 
 ## Implementation Gates
 
 - Each child phase has `plan.md`, `source.md`, `benchmark.md`, and `progress.md`.
 - Parent summary names the first bounded implementation slice.
-- Fresh verifier pass required before claiming parent Phase01 complete.
+- No active Phase01 implementation blocker remains. New package-map rename work
+  must reopen `Phase01_Stabilize_Map` with a fresh source/benchmark first.
 
 ## Rollback / Deviation Rule
 

@@ -8,7 +8,7 @@ Current state as of 2026-05-16:
   had become noisy. Clean planning scaffolds were recreated under
   `D:/Aura/.planning/deep-refactor/` from `D:/Aura/prd.md`.
 - Current git HEAD observed:
-  `92e446fb feat(memoryindex): tie KindSource/Archive/Proposal to Collection constants (US-L02)`.
+  `ecb4cf3e fix(chat): close Phase01C question gate`.
 - `internal/cron` now uses `package cron`; P1-D1 is closed.
 - The active route is `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
@@ -220,9 +220,14 @@ Current state as of 2026-05-16:
   `D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md`.
   Fine-grained per-tool approval policy for every destructive tool remains a
   later tool/runtime hardening layer over the closed question primitive.
+- Phase01C was committed and pushed as
+  `ecb4cf3e fix(chat): close Phase01C question gate`. GitHub Actions CI run
+  `25958870299` passed for that commit: `Frontend build` and
+  `Go test + Phase 2 guards` both succeeded, including `go vet`, `go build`,
+  Phase 2 regression guards, and `go test -race -count=1 ./...`.
 - The Phase01A/Phase01B1 implementation work is present in commit
   `d5747eb2 feat(deep-refactor): Phase01 - run/event foundation + identity
-  authority`; the latest observed HEAD is `92e446fb`.
+  authority`; the latest pushed HEAD is `ecb4cf3e`.
 
 Required first reads:
 

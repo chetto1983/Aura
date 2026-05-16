@@ -495,3 +495,17 @@
   DB observation of recent Telegram runs. A scripted external Telegram chat
   fixture is not present in this slice. Unrelated Qdrant tool-vector dimension
   warnings remain outside Phase01C.
+
+2026-05-16 - Planning state sweep after Phase01C CI
+
+- Updated durable planning/resume state after `ecb4cf3e fix(chat): close
+  Phase01C question gate` was pushed to `origin/master`.
+- Verified and recorded GitHub Actions CI run `25958870299`: `Frontend build`
+  and `Go test + Phase 2 guards` passed for the pushed commit.
+- Closed the closable planning inconsistencies without changing production
+  code: Phase01 parent now reflects Phase01A/B/C closure; Phase02, Phase03
+  Telegram-streaming arc, Phase04 Runner-removal arc, Phase05, Phase06
+  in-scope slice, Phase07A, Phase07B, and Phase10 plans/benchmarks now match
+  their existing progress evidence.
+- Left open what is not proven: Phase07C-F, Phase08, Phase09, and the
+  orientation-only `Phase01_Stabilize_Map` scaffold.

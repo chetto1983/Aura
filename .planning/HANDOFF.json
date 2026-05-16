@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-16T10:45:00+02:00",
+  "timestamp": "2026-05-16T11:57:00+02:00",
   "context": "deep-refactor",
-  "phase": "Phase01C",
-  "phase_name": "Add the Question Gate",
-  "phase_dir": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate",
-  "status": "phase01c-question-gate-e2e-closed",
+  "phase": "PlanningState",
+  "phase_name": "Planning State Sweep After Phase01C CI",
+  "phase_dir": "D:/Aura/.planning/deep-refactor",
+  "status": "plans-refreshed-after-phase01c-ci",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -130,8 +130,14 @@
     {
       "id": "P1C-QUESTION-GATE",
       "name": "Close the durable question gate with restart-safe answer routing and live web-pipe persistence",
-      "status": "e2e_container_verified_after_falsification",
+      "status": "pushed_ci_verified_after_falsification",
       "evidence": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md"
+    },
+    {
+      "id": "PLAN-SWEEP-2026-05-16",
+      "name": "Refresh phase plans and close only slices with existing benchmark/progress evidence",
+      "status": "docs_updated_not_committed",
+      "evidence": "D:/Aura/.planning/deep-refactor/INDEX.md"
     }
   ],
   "remaining_tasks": [],
@@ -240,6 +246,11 @@
       "decision": "Phase01C question state is canonical SQLite run/event state, not channel-local memory.",
       "rationale": "The Hub records `question_requested` and `question_answered` events, `chat_questions` stores waiting/answered state, duplicate and wrong-channel answers are explicit errors, Telegram can resume from durable pending state after process-local conversation memory is gone, and live `/api/chat` now supplies `ThreadID=web:<user>` so the production pipe persists canonical questions instead of only emitting events.",
       "source": "D:/Aura/.planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md"
+    },
+    {
+      "decision": "Planning closure follows benchmark evidence, not scaffold status.",
+      "rationale": "This sweep updated stale plan/status files where progress and benchmark files already proved closure, and left Phase07C-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map open because they do not have closure evidence.",
+      "source": "D:/Aura/.planning/deep-refactor/INDEX.md"
     }
   ],
   "blockers": [],
@@ -481,34 +492,21 @@
     "GET /health -> 200 with body {\"status\":\"alive\"}",
     "Final Phase01C live web ask_user probe -> chat_questions incremented 1 to 2; latest row a21b8513|b71e2677b9683e41|web:1148481707|web|approval|waiting|Phase01C live question gate final?|waiting_for_user; token revoked",
     "docker compose restart aura after live probe; container returned healthy; GET /health -> {\"status\":\"alive\"}; startup logs since restart contained no warn/error/fatal/panic levels",
-    "Telegram live DB evidence: recent telegram runs present, including completed runs 707550c630d96e3f and 2baecce148072f8b; no scripted external Telegram chat fixture exists for this slice"
+    "Telegram live DB evidence: recent telegram runs present, including completed runs 707550c630d96e3f and 2baecce148072f8b; no scripted external Telegram chat fixture exists for this slice",
+    "git push origin master for ecb4cf3e succeeded",
+    "GitHub Actions CI run 25958870299 passed for ecb4cf3e: Frontend build and Go test + Phase 2 guards green"
   ],
   "uncommitted_files": [
-    "CONTINUE-HERE.md",
-    ".planning/HANDOFF.json",
-    ".planning/deep-refactor/.continue-here.md",
-    ".planning/deep-refactor/INDEX.md",
-    ".planning/deep-refactor/Phase01/subphase-summary.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/benchmark.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/plan.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/progress.md",
-    ".planning/deep-refactor/Phase01/subphases/Phase01C_Question_Gate/source.md",
-    "internal/channels/telegram/ask_user_resume_test.go",
-    "internal/channels/telegram/invocation_builder.go",
-    "internal/channels/web/chat_service.go",
-    "internal/channels/web/chat_service_test.go",
-    "internal/agent/tools/registry/registry.go",
-    "internal/agent/tools/registry/registry_test.go",
-    "internal/chat/hub.go",
-    "internal/chat/hub_test.go",
+    "Planning/resume docs updated by 2026-05-16 state sweep; not committed yet",
     "scripts/ralph/progress.txt (pre-existing/modified; preserve unless explicitly selected)",
-    "DAurascriptsralphprogress.txt (untracked/mangled-path progress artifact; preserve unless explicitly selected)",
-    "docs/Aura_Completo_7_Mermaid_INTEGRALE.md (pre-existing/untracked; preserve unless explicitly selected)"
+    "compose.yaml, docker/*, and docs/container.md (pre-existing/user WIP; preserve unless explicitly selected)",
+    "docs/Aura_Completo_7_Mermaid_INTEGRALE.md (pre-existing/untracked; preserve unless explicitly selected)",
+    "docs/phase07c-*-2026-05-16.md (pre-existing/untracked; preserve unless explicitly selected)"
   ],
   "last_known_git": {
-    "head": "92e446fb feat(memoryindex): tie KindSource/Archive/Proposal to Collection constants (US-L02)",
-    "status": "dirty after Phase01C closure code/docs plus pre-existing Ralph progress, one mangled-path progress artifact, and one unrelated untracked Markdown file"
+    "head": "ecb4cf3e fix(chat): close Phase01C question gate",
+    "status": "pushed to origin/master; CI run 25958870299 passed; dirty from current planning-state sweep plus unrelated user WIP/untracked files that must be preserved"
   },
-  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code.",
-  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, and a production web-pipe falsification probe that proves chat_questions persistence. CI must be checked after any future push."
+  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code. If continuing Phase07, start with Phase07C; Phase08 and Phase09 still require plan promotion.",
+  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E and CI-verified for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, production web-pipe falsification, and GitHub Actions run 25958870299. Phase07C-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map remain open/not green."
 }

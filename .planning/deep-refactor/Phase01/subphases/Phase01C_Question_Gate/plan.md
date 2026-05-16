@@ -1,6 +1,7 @@
 # Phase01C Plan - Add the Question Gate
 
-Status: closed E2E on 2026-05-16.
+Status: closed E2E on 2026-05-16 and CI-verified after push
+(`ecb4cf3e`, GitHub Actions run `25958870299`).
 
 ## Goal
 
@@ -62,6 +63,7 @@ think.
 | Late/duplicate/wrong-channel states | store/hub reject non-waiting and channel-mismatched answers before event append | store and hub duplicate/wrong-channel tests | closed |
 | Live web pipe question persistence | `/api/chat` supplies `ThreadID=web:<user>` so Hub can persist `chat_questions` in production | live `cmd/probe_chat` ask_user probe plus SQL checks on `chat_questions`, `run_events`, and `runs` | closed after falsification fix |
 | ask_user sentinel observability | Registry treats `ErrAwaitingUserInput` as an expected pause, not a tool failure | registry log regression test and final production logs | closed after falsification fix |
+| Pushed CI | commit `ecb4cf3e` on `origin/master` | GitHub Actions run `25958870299` | closed |
 
 ## Non-Goals Preserved
 

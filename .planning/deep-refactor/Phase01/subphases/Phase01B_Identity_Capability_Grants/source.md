@@ -1,10 +1,9 @@
 # Phase01B Source Audit
 
-Status: source-audited. Phase01B1-B7 have implementation evidence in
-`benchmark.md`. The 2026-05-15 parent closure verifier passed local and live
-auth-boundary evidence, repaired Chat Hub `actor_id` run/event persistence, and
-is blocked only on the live LLM provider credential required for the exact chat
-marker probe.
+Status: source-audited and closed for Phase01B. Phase01B1-B7, fail-closed
+authority repair, Chat Hub actor persistence, DB-backed provider secret repair,
+runtime `.env` removal, web Hub routing, stability, and RunTask run correlation
+all have implementation evidence in `benchmark.md`.
 
 ## Canonical Requirements
 

@@ -20,6 +20,7 @@ Status: passed after live falsification fix on 2026-05-16.
 | Production container update | `docker compose build aura`; `docker compose up -d --no-deps aura`; `docker compose ps aura --format json` | Rebuilt `aura:local` from current source and restarted only `aura`; service reaches healthy state | image manifest `sha256:66c2024bd9dfc4b96ee64758d7d0a9091fcf1440f9db0f7ed3b14886c2f9b922`; `aura-aura-1` status `Up ... (healthy)` | passed |
 | Live web ask_user falsification probe | Temporary bearer token via existing DB-backed pipe; `go run ./cmd/probe_chat -url http://127.0.0.1:18080/api/chat -db .\data\aura.db -token <temp> -prompt <ask_user-only prompt> -json`; SQL ground truth before/after on `chat_questions`, `run_events`, and `runs` | A direct ask_user probe must not be accepted merely because the model responds. It must create a durable `chat_questions` row with non-empty `thread_id`, `status=waiting`, `kind=approval`; run must be `waiting_for_user`; `question_requested` must exist; token must be revoked | First probe confuted closure: `question_requested` existed but `chat_questions` stayed `0` because web `ThreadID` was empty (`runs: question thread id is required`). After fix: `QUESTIONS_BEFORE=1`, `QUESTIONS_AFTER=2`; latest row `a21b8513|b71e2677b9683e41|web:1148481707|web|approval|waiting|Phase01C live question gate final?|waiting_for_user`; events include `question_requested`; `TOKEN_REVOKED=1` | passed after fix |
 | Production container HTTP and log probe | `curl.exe -fsS http://127.0.0.1:18080/health`; `docker compose logs --since=2m aura` filtered for question-gate failures | `/health` reports alive; ask_user sentinel is not logged as a tool failure; no `persist lifecycle event failed` / `record question requested` errors for the final probe | `/health -> {"status":"alive"}`; final probe logs include `tool awaiting user input` and `agent: ask_user_pause` at info level; no question persistence failure | passed |
+| Pushed CI | GitHub Actions run `25958870299` for commit `ecb4cf3e` | Pushed commit must pass repo CI before Phase01C is reported shipped | `Frontend build` passed; `Go test + Phase 2 guards` passed, including `go vet`, `go build`, Phase 2 regression guards, and `go test -race -count=1 ./...` | passed |
 
 ## Closure Notes
 
@@ -33,4 +34,5 @@ Status: passed after live falsification fix on 2026-05-16.
   can warn on Qdrant vector dimension mismatch (`expected dim: 256, got 768`).
   The Phase01C log probe now scopes to question-gate persistence and ask_user
   sentinel logging.
-- No CI verification was run because this slice was not pushed.
+- CI verification passed after push: GitHub Actions run `25958870299` on
+  commit `ecb4cf3e`.

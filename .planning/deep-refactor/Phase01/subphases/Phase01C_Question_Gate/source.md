@@ -1,6 +1,6 @@
 # Phase01C Source Audit
 
-Status: source-audited and closed on 2026-05-16.
+Status: source-audited, closed on 2026-05-16, and CI-verified after push.
 
 | Source | Decision Supported | Adopt | Reject / Avoid | Status |
 | --- | --- | --- | --- | --- |

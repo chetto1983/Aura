@@ -1,12 +1,9 @@
 # Phase01B Plan - Establish Identity and Capability Grants
 
-Status: Phase01B1 closed with local gates and subagent verification. Phase01B2
-allowlist backfill is implemented and Go-verified locally. Phase01B3 and
-Phase01B4 are container-verified. Phase01B5, Phase01B6, and Phase01B7 are
-locally verified and container-updated. The parent closure verifier has passed
-local and live auth-boundary gates, repaired Chat Hub actor persistence, and is
-blocked only on the live LLM marker probe until the configured provider
-credential returns a valid authenticated response.
+Status: closed for Phase01B. Phase01B1 closed with local gates and subagent
+verification; Phase01B2-B7, fail-closed authority repair, Chat Hub actor
+persistence, DB-backed provider secret repair, runtime `.env` removal, web Hub
+routing, stability, and RunTask run correlation are verified in `benchmark.md`.
 
 ## Goal
 

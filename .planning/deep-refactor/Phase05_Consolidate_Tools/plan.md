@@ -1,8 +1,8 @@
 # Phase05 Plan - Consolidate Tools
 
-Status: gap audit complete (2026-05-15). Industry pattern audit complete —
-adopting MCP standard hint shape rather than inventing a custom enum.
-Concrete remaining slices in "Ralph queue" section below.
+Status: closed 2026-05-15 for the Phase-I metadata, visibility, and eval
+slice. MCP-standard hint shape was adopted; US-I01..US-I06 shipped and all
+benchmark rows are met.
 
 ## Goal
 
@@ -77,11 +77,11 @@ deferred discovery, `AlwaysOnCore`). Phase-I closes the remaining metadata
 
 | PRD bullet | Status | Needed |
 |---|---|---|
-| Visibility tier per tool | MISSING | new ToolDefinition.VisibilityTier field + per-tool assignment |
-| Risk class per tool | MISSING (now MCP hints) | new MCP-standard hint fields (ReadOnlyHint, DestructiveHint, IdempotentHint, OpenWorldHint) |
-| Active-turn visibility never bypasses authorization | UNVERIFIED | test asserting visibility != execution authority |
-| Discovery top-k evals | MISSING | fixture (query → expected_top_k) + eval test |
-| Parameter accuracy evals | MISSING | per-tool example-vs-actual parameter test |
+| Visibility tier per tool | DONE | ToolDefinition.VisibilityTier plus per-tool assignment (US-I01/US-I02) |
+| Risk class per tool | DONE as MCP hints | MCP-standard hint fields (ReadOnlyHint, DestructiveHint, IdempotentHint, OpenWorldHint) |
+| Active-turn visibility never bypasses authorization | DONE | visibility/authz regression test (US-I03) |
+| Discovery top-k evals | DONE | top-k fixture/eval test (US-I04) |
+| Parameter accuracy evals | DONE | examples-vs-parameter schema eval (US-I05) |
 
 ## PRD Coverage (post-Phase-I)
 
@@ -89,12 +89,12 @@ deferred discovery, `AlwaysOnCore`). Phase-I closes the remaining metadata
 |---|---|---|---|---|
 | Deterministic tool list/order | this file | benchmark.md | registry.go | DONE |
 | Typed schemas and structured errors | this file | benchmark.md | definition.go + error.go | DONE |
-| Visibility/capability/risk class | this file | benchmark.md | (Phase-I US-I01..I02) | planned |
+| Visibility/capability/risk class | this file | benchmark.md | (Phase-I US-I01..I02) | met |
 | Deferred discovery | this file | benchmark.md | manifest.go + pool.go | DONE |
 | Secret-safe logging | this file | benchmark.md | memory invariant | DONE |
-| Discovery top-k evals | this file | benchmark.md | (Phase-I US-I04) | planned |
-| Parameter accuracy evals | this file | benchmark.md | (Phase-I US-I05) | planned |
-| Active-turn visibility doesn't bypass authz | this file | benchmark.md | (Phase-I US-I03) | planned |
+| Discovery top-k evals | this file | benchmark.md | (Phase-I US-I04) | met |
+| Parameter accuracy evals | this file | benchmark.md | (Phase-I US-I05) | met |
+| Active-turn visibility doesn't bypass authz | this file | benchmark.md | (Phase-I US-I03) | met |
 
 ## Ralph queue (Phase-I, 6 stories)
 
@@ -153,8 +153,7 @@ deferred discovery, `AlwaysOnCore`). Phase-I closes the remaining metadata
 
 ## Implementation Gate
 
-No metadata catalogue (US-I02) is complete until every tool in the registry
-has explicit values. The default fallback (all hints false / tier
-active_turn) is "fail closed" so unmigrated tools are still safe — but the
-catalogue audit must show every native tool with explicit, reviewed values.
-MCP-imported tools pass through whatever the MCP server declared.
+Closed: every native registered tool is catalogued, active-turn visibility does
+not bypass authorization, discovery and parameter evals pass, and benchmark.md
+records the actuals. Future tool policy work belongs to a new bounded slice,
+not to the closed Phase-I metadata pass.

@@ -1,0 +1,56 @@
+# Phase07 Source Audit
+
+Status: source-merged for parent planning. Phase07A and Phase07B have shipped;
+Phase07C-F remain planned and need fresh source mapping before implementation.
+
+| Source | Decision Supported | Adopt | Reject / Avoid | Status |
+| --- | --- | --- | --- | --- |
+| `D:/Aura/prd.md` lines 668-724 | Memory layer taxonomy and write policy | Conversation archive, experience store, operational memory, wiki, sources, projections, and cache are separate layers | One compact memory bucket for all text | read |
+| `D:/Aura/prd.md` lines 806-890 | RAG contract | `RecallRequest -> RetrievalPlan -> RetrievalHits -> cited context capsule`; schema-aware layers; hybrid FTS/vector; graph expansion; freshness | Unbounded context injection and stale vector-only answers | read |
+| `D:/Aura/prd.md` lines 1392-1427 | Phase 7 gates | Typed layers, citation handles, freshness, graph recall, golden evals | Tool failures in wiki or memory soup | read |
+| `D:/Aura/prd.md` lines 1488-1504 | Phase 9 boundary | Keep Phase 9 for source discipline and wiki artifact inspection | Moving write-governance cleanup into Phase07A | read |
+| `D:/Aura/.planning/aura-deep-refactor-decisions.json` ADR-031 | Local-first GraphRAG | Markdown wiki plus GraphIndex, FTS/Qdrant projections, community reports, cited capsules | Neo4j/Text2Cypher/core graph DB dependency | read |
+| `D:/Aura/docs/graphrag-local-first-reference-map.md` | GraphRAG source map | Weighted graph signals, community reports as projections, no full graph dump in prompt | Community reports as truth | read |
+| `D:/Aura/docs/aura-master-plan.md` lines 80-86, 150-153, 392-405 | Historical disposition | Mine old Wave 2 graph-memory and Context-Eng memory-tool ideas into Phase 7 | Execute old wave plans or stale paths directly | read as evidence |
+| `D:/tmp/llm_wiki/README.md` lines 64-70, 192-223 | Wiki/source/retrieval pattern | Raw sources -> wiki -> schema; token search plus optional vector plus graph expansion and budget control | Client-local app state as Aura truth | read |
+| `D:/tmp/llm_wiki/src/lib/graph-relevance.ts` | Graph scoring | Direct links, source overlap, common neighbors, type affinity | Raw adjacency dump as retrieval | read |
+| `D:/tmp/llm_wiki/src/lib/wiki-graph.ts` | Graph projection | Typed nodes, weighted edges, Louvain community projection | Community projection as canonical knowledge | read |
+| `D:/tmp/logseq/CODEBASE_OVERVIEW.md` lines 31, 72 | Queryable graph state | Separate document state from UI/runtime state; query graph through structured data | Blending graph truth with UI/chat state | read |
+| `D:/tmp/mem0/openclaw/skills/memory-triage/SKILL.md` | Memory write quality | Store self-contained durable facts; skip tool outputs, transient status, one-time commands | Broad assistant/user transcript extraction as Aura user memory | read |
+| `D:/tmp/mem0/openclaw/skills/memory-triage/recall-protocol.md` | Recall discipline | Rewrite queries and use category/time filters when structurally implied | Raw user message as the retrieval query | read |
+| `D:/tmp/nanobot/docs/memory.md` lines 11-24, 46-62 | Memory layer pattern | Live session, compressed history, durable files, slower consolidation | Archive summary as final curated memory | read |
+| `D:/tmp/nanobot/nanobot/agent/memory.py` | Consolidation guardrail | Cursored consolidation and no cursor advance on incomplete Dream | Raw archive fallback as curated memory | read |
+| `D:/Aura/internal/storage/memoryindex/rebuild.go` lines 59-74, 205-224, 308-323 | Current pollution point | Centralize archive compact-index eligibility in `ArchiveDocument` so live append and rebuild share policy | Filtering only at formatter/output layer | read |
+| `D:/Aura/internal/agent/tools/registry/memory_search.go` lines 107-123, 147-173, 476-498 | Current broad recall surface | Update descriptions/scopes toward typed layers; stop treating archive as default curated memory | `scope=all` silently mixing archive with wiki/source/proposals | read |
+| `D:/Aura/internal/agent/tools/registry/memory_search_test.go` lines 338-351 | Current test expectation | Change tests to prove typed default behavior when implementing Phase07A | Preserving all-scope archive inclusion as a permanent invariant | read |
+| `D:/Aura/internal/storage/memoryindex/rebuild_test.go` | Closest archive-index tests | Add role/tool-output exclusion tests while preserving raw `conversations` archive | Changing archive persistence when compact-index policy is enough | read |
+
+## Adopted Decisions
+
+- Phase07A was the first slice because it fixed the observed production-style
+  failure without schema migration or data deletion.
+- `conversations` remains the full archive and may contain tool rows. Compact
+  memory/retrieval eligibility is a separate policy.
+- Raw tool failures and raw tool outputs belong to trace/experience layers, not
+  curated memory, wiki, or default knowledge recall.
+- Runtime tool schemas and tool memory bootstrap are operational/config inputs.
+  They must be loaded deliberately, not rediscovered from compact archive rows.
+- GraphRAG work must stay local-first over Aura's Markdown wiki and rebuildable
+  projections.
+
+## Rejected Or Deferred Decisions
+
+- No direct execution of `.planning/wave*` plans.
+- No graph database, Text2Cypher, or full graph prompt dump in Phase 7.
+- No Mem0-style ADD-only hosted memory replacement.
+- No Nanobot raw archive fallback as Aura curated memory.
+- No Phase 9 write-governance rewrite inside Phase07A.
+
+## Missing Source Questions
+
+- Phase07B mapped the first collection registry, score components, follow-up
+  handles, and SourceID filtering. Before Phase07C, map task-level recall
+  surfaces and compatibility wrappers.
+- Before Phase07D, map reindex job ownership and projection watermarks.
+- Before Phase07E, map `internal/wiki/graph_index.go`,
+  `internal/wiki/store_writes.go`, and graph document projection tests.
