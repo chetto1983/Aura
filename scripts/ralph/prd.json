@@ -85,7 +85,7 @@
         "Single atomic commit prefix: test(conversation): tool rows persist raw but skip compact (US-K04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Dual gate with US-K03. If conversations Append turns out to ALSO strip tool rows, escalate per plan §Stop Signals — that would mean Aura is already losing data in the archive."
     },
     {

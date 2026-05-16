@@ -179,6 +179,51 @@ func queryArchiveCompactIDs(t *testing.T, db *sql.DB) []string {
 	return ids
 }
 
+// TestArchiveTurns_ToolRowPersistsInConversationsButNotCompact is the Phase07A dual gate:
+// tool rows MUST survive in the conversations archive for debugging/replay,
+// while compact_memory_documents MUST stay free of raw tool output.
+// This mirrors the 2026-05-15 live incident where tool_schemas.json dumps polluted memory search.
+func TestArchiveTurns_ToolRowPersistsInConversationsButNotCompact(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDBForMemoryIndex(t)
+	archive, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	index, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	appender := NewIndexingTurnAppender(archive, index)
+
+	// Mirrors the 2026-05-15 incident: tool row contains a raw tool_schemas.json dump.
+	if err := appender.Append(ctx, conversation.Turn{
+		ChatID:     77,
+		UserID:     1,
+		TurnIndex:  0,
+		Role:       "tool",
+		Content:    `tool_schemas.json dump: {"search_memory": {"description": "search compact memory"}}`,
+		ToolCallID: "call_incident_2026_05_15",
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// Gate 1: conversations table preserves the tool row (lossless archive for debug/replay).
+	listed, err := archive.ListByChat(ctx, 77, 10)
+	if err != nil {
+		t.Fatalf("ListByChat: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Role != "tool" {
+		t.Fatalf("conversations: want 1 tool row, got %+v", listed)
+	}
+
+	// Gate 2: compact_memory_documents does NOT receive the tool row (Phase07A invariant).
+	ids := queryArchiveCompactIDs(t, db)
+	if len(ids) != 0 {
+		t.Fatalf("compact_memory_documents: want 0 rows for tool turn, got %d: %v", len(ids), ids)
+	}
+}
+
 func openTestDBForMemoryIndex(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := auradb.Open(filepath.Join(t.TempDir(), "aura.db"))
