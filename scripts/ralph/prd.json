@@ -1,95 +1,95 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-P = wire agent_note scratchpad (agent_working_memory layer per prd.md §5.7 line 678). The closest analogue to Claude Code's TodoWrite cross-turn list. Per-conversation only, garbage-collected with the conversation lifecycle (§5.7 line 717). Aura can write a small structured note (todo list, intermediate findings, plan) that survives across multiple LLM turns within the same conversation but does NOT leak to user/operational/wiki memory. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N/O: additive migrations, tests lock the contract, single-seam writers. Reference docs in tree (canonical): prd.md §5.7 line 678 'agent_working_memory: agent_note scratchpad + pinned core block; per conversation'. prd.md §5.7 line 717 'agent working memory can be written by Aura during a run, but it is scoped and garbage-collected with the conversation lifecycle'. This phase closes capability gap #4 from the 2026-05-16 brainstorm 'TodoWrite cross-turn checklist'.",
+  "description": "Aura Phase-Q = Phase 9 residual User Memory Write Guards. Phase-O wired KindUserMemory routing but left two gates open (deferred per US-O04): (1) memory.user.write capability check at the Authorize boundary before any user_memory write; (2) explicit-intent question gate when a Candidate is ambiguous (low score). Phase-Q closes both. The infrastructure exists: CapabilityMemoryUserWrite is declared at internal/identity/types.go:56; QuestionGate / chat_questions table shipped in Phase 1C (commit 1584a8fa); summarizer.Candidate.Score field carries the ambiguity signal. 4 atomic stories, one commit each on master. Pattern carried over from Phase-K/L/M/N/O/P: additive code only, tests lock the contract. Reference docs in tree (canonical): prd.md §5.7 lines 712-725 'Write policy' — 'user profile memory requires explicit intent, validation, or a question when ambiguous; user memory writes require memory.user.write or a narrower capability grant'. prd.md §5.3 internal/identity (capability grants + Authorize boundary). prd.md Phase 1C lines 1248-1271 (Question Gate). This phase closes the remaining slice of capability #1 'autonomous write-policy' from the 2026-05-16 brainstorm.",
   "userStories": [
     {
-      "id": "US-P01",
-      "title": "Add agent_notes SQLite table + agentnote.Store Go API",
-      "description": "Pure types + storage + tests; no caller integration in this story. (a) New migration v15 (or next available — verify with grep) `addAgentNotes` in `internal/db/migrations/migrations.go` registered slice AND mirrored in `currentSchemaSQL`. Schema: `conversation_id TEXT PRIMARY KEY, content TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT (unixepoch())`. (b) New package `internal/agentnote/` with `Store` struct + 4 methods: `Get(ctx, conversationID string) (content string, exists bool, err error)`, `Set(ctx, conversationID, content string) error` (uses INSERT ... ON CONFLICT DO UPDATE content=excluded.content, updated_at=excluded.updated_at), `Append(ctx, conversationID, line string) error` (read+modify+write under transaction; if note empty, content=line; else content=existing + '\\n' + line), `Clear(ctx, conversationID string) error` (delete row). (c) Tests in `internal/agentnote/store_test.go`: 5 cases — Get empty returns ('', false, nil); Set then Get returns content; Append on empty creates; Append on existing concatenates with newline; Clear deletes. (d) NO consumer wiring: do not touch agent loop, system_prompt, channels, api in this story.",
+      "id": "US-Q01",
+      "title": "Wire memory.user.write capability check at WriteApprovedUserFact entry",
+      "description": "Add the Authorize() boundary call before writing a user_memory row. (a) Modify `internal/learning/user_memory_writer.go` (or wherever US-O03 placed WriteApprovedUserFact) to accept an additional parameter `actor identity.Actor` and a `authz identity.Authorizer` interface (small abstraction: `Authorize(ctx, actor, capability, resource) (Decision, error)`). (b) At the start of WriteApprovedUserFact, call `authz.Authorize(ctx, actor, identity.CapabilityMemoryUserWrite, identity.ResourceRef{Type:'user_memory', ID:proposal.Handle})`. If Decision != DecisionAllow, return `identity.ErrPermissionDenied` (a new sentinel error exported from internal/identity OR re-use existing one — locate via grep). Log the denial via slog.Warn with actor_id + capability + reason (NOT raw args — privacy invariant). (c) Caller chain update: the applier path that invokes WriteApprovedUserFact must thread the actor from the proposal owner (proposal.ActorID typically lives in the proposed_updates row). If the row lacks an actor_id column, add migration v16 to extend proposed_updates with actor_id TEXT NOT NULL DEFAULT '' (back-compat empty = system actor with full grant). (d) NO change to the existing WriteApprovedLesson (operational_memory) path — that's a Phase 6 scope and operates under system actor by design. (e) Tests in `internal/learning/user_memory_writer_test.go`: 4 new cases — owner actor with CapabilityMemoryUserWrite: write succeeds; dashboard token actor WITHOUT grant: returns ErrPermissionDenied + no write; nil actor (system call): allowed back-compat; missing capability check via a fake Authorizer returning DecisionDeny: deny+no-write.",
       "acceptanceCriteria": [
-        "Migration v15 (or next) adds agent_notes table with 3 columns + currentSchemaSQL mirror",
-        "internal/agentnote/store.go exists with Store struct + Get/Set/Append/Clear methods",
-        "Set uses INSERT ... ON CONFLICT(conversation_id) DO UPDATE",
-        "Append uses BEGIN IMMEDIATE transaction to read+modify+write atomically",
-        "Append on empty content sets content=line (no leading newline)",
-        "Append on existing content sets content=existing + '\\n' + line",
-        "Clear deletes the row (verified by subsequent Get returns exists=false)",
-        "internal/agentnote/store_test.go covers all 5 cases",
-        "No changes to internal/agent/, internal/conversation/, internal/api/, internal/channels/ in this commit",
+        "WriteApprovedUserFact signature includes actor + authz parameters (back-compat preserved via overload OR system-actor default helper)",
+        "Authorize called with CapabilityMemoryUserWrite + ResourceRef typed 'user_memory' + ID=proposal.Handle",
+        "Denial returns ErrPermissionDenied without performing the write",
+        "slog.Warn logs actor_id + capability + reason (NEVER raw fact body — privacy invariant)",
+        "proposed_updates table carries actor_id (existing column verified OR migration v16 adds it)",
+        "WriteApprovedLesson path (operational_memory) NOT modified — Phase 6 scope preserved",
+        "Tests cover owner-with-grant, dashboard-without-grant, system-call back-compat, deny-via-fake-authz",
+        "Existing user_memory_writer + applier tests stay green (system actor fallback)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(agentnote): agent_notes table + Store API (US-P01)"
+        "Single atomic commit prefix: feat(learning,identity): memory.user.write authorize gate on WriteApprovedUserFact (US-Q01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Pattern: Phase-M US-M01 template (pure types + storage + tests, no consumers). Verify next migration version via grep on registered slice — Phase 7C added v12 and v13; Phase-N may have added v14; this story registers v15 OR the next available."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 715 'user memory writes require memory.user.write or a narrower capability grant'. Capability already declared (internal/identity/types.go:56). If proposed_updates needs actor_id column, add as additive migration v16 mirroring currentSchemaSQL."
     },
     {
-      "id": "US-P02",
-      "title": "Add agent_note LLM tool (set / append / get / clear actions)",
-      "description": "Wire agent_note as an LLM-callable tool with action-dispatch schema (mirroring Phase-L oneOf pattern). (a) New file `internal/agent/tools/registry/agent_note.go` with `AgentNoteTool` struct + Definition + Execute. Schema uses ActionDispatchOneOf helper (Phase-L pattern from action_error.go): action enum [set|append|get|clear]; set requires content; append requires line; get and clear have no extra required params. Description copy: 'A per-conversation scratchpad for your own working memory (todo list, intermediate findings, plan). Use set to replace, append to add a new line, get to read, clear to delete. The note is scoped to the current conversation and garbage-collected at conversation end. NOT visible to the user; NOT promoted to wiki or user memory.' (b) The tool needs the current conversation_id at Execute time. Inject it via a constructor parameter `conversationIDProvider func(ctx context.Context) (string, error)` — the caller (agent loop) provides the resolver. (c) Execute calls agentnote.Store.{Get,Set,Append,Clear} as dispatched. Output format: action=set returns 'ok (N chars)'; action=append returns 'ok (note now N chars, M lines)'; action=get returns the full content as fenced markdown ('\\n```\\n<content>\\n```\\n'); action=clear returns 'cleared'. (d) Description includes 'REQUIRED PARAMETERS BY ACTION' header following Phase-L convention. (e) Register in `internal/agent/tools/registry/registry.go` alongside search_memory, recall_operational, recall_user_memory. (f) Tests `internal/agent/tools/registry/agent_note_test.go`: 6 cases — set creates note; append on empty creates; append on existing appends; get returns content; clear deletes; sequential set + append + get + clear roundtrip.",
+      "id": "US-Q02",
+      "title": "Add ambiguity question gate before creating user_memory proposal",
+      "description": "When summarizer triage decides user_memory but the Candidate is ambiguous (Score < threshold), instead of silently creating a proposed_updates row, emit an ask_user question via the Phase 1C QuestionGate infrastructure. The operator's reply approves/rejects the routing. (a) New file `internal/conversation/summarizer/question_gate.go` with: const `AmbiguityThreshold = 0.7` (subject to constant tweaking — comment that 0.7 was chosen as the empirical break point between LLM-confident and edge cases). Function `ShouldGateUserMemoryWrite(c Candidate) bool` returns true when `c.Category` triages to TargetUserMemory AND `c.Score < AmbiguityThreshold`. (b) Modify the createUserMemoryProposal flow from US-O02: if ShouldGateUserMemoryWrite returns true, instead of writing the proposed_updates row directly, emit a QuestionEvent via the hub (chat.EventQuestionRequested) with question='Vuoi che ricordi: %s? (categoria: %s, score: %.2f)' + options=['Sì, ricordalo','No, scarta','Sì ma con modifica']. Persist a row in chat_questions (Phase 1C table) with payload carrying the pending Candidate JSON. (c) On reply (Hub.RecordQuestionAnswer wired in commit 1584a8fa already calls back): if answer is 'Sì, ricordalo', proceed with createUserMemoryProposal verbatim. If 'No, scarta', no-op + log skipped. If 'Sì ma con modifica' or free-text answer with a non-trivial edit, replace Candidate.Fact with the user's text and proceed. (d) NO change to the wiki path or operational_memory path — gate is user_memory only. (e) Tests in `internal/conversation/summarizer/question_gate_test.go` and integration in `internal/learning/triage_routing_test.go`: 5 cases — Score≥0.7 routes direct (no gate); Score<0.7 emits chat_questions row + does NOT create proposed_updates; reply 'Sì, ricordalo' creates the proposal; reply 'No, scarta' skips; reply with free-text modification replaces Fact then creates proposal.",
       "acceptanceCriteria": [
-        "internal/agent/tools/registry/agent_note.go exists with AgentNoteTool struct",
-        "Schema uses ActionDispatchOneOf (Phase-L action_error.go helper) with 4 actions: set/append/get/clear",
-        "Description has 'REQUIRED PARAMETERS BY ACTION' header (set: content; append: line; get/clear: none)",
-        "Description explicitly notes 'NOT visible to user; NOT promoted to wiki or user memory'",
-        "Tool registered in registry.go alongside recall_operational + recall_user_memory",
-        "Constructor takes conversationIDProvider func(ctx) (string, error) — injection point for the agent loop",
-        "agent_note_test.go covers all 6 cases including sequential roundtrip",
-        "Existing memory_search + recall tests stay green",
+        "internal/conversation/summarizer/question_gate.go with AmbiguityThreshold=0.7 + ShouldGateUserMemoryWrite",
+        "createUserMemoryProposal branches on ShouldGateUserMemoryWrite — emits question + persists chat_questions row instead of direct write",
+        "Question text: 'Vuoi che ricordi: %s? (categoria: %s, score: %.2f)' with 3 fixed options",
+        "On answer 'Sì, ricordalo': proceeds with proposal creation",
+        "On answer 'No, scarta': no-op + slog.Info skipped",
+        "On free-text answer != options: replaces Candidate.Fact with user's text + proceeds",
+        "Wiki path and operational_memory path NOT gated — only user_memory triage with low score",
+        "Tests cover 5 cases (above-threshold, below-threshold-emit-question, approve, reject, free-text-modify)",
+        "Existing Phase-O O02 tests stay green for Score≥0.7 fixtures",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(tools): agent_note action-dispatch tool (US-P02)"
+        "Single atomic commit prefix: feat(summarizer): ambiguity question gate before user_memory proposal (US-Q02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 678 (agent_note scratchpad). Phase-L oneOf schema pattern (commit 7ccdca33) is the template for action-dispatch tools — re-use ActionDispatchOneOf helper from internal/agent/tools/registry/action_error.go."
+      "passes": false,
+      "notes": "Sources: prd.md §5.7 line 714 'requires explicit intent, validation, or a question when ambiguous'. Phase 1C QuestionGate (chat_questions table) is the underlying primitive — commit 1584a8fa wired the answer callback via Hub.RecordQuestionAnswer. Threshold 0.7 is a starting heuristic — store as exported const for future tuning."
     },
     {
-      "id": "US-P03",
-      "title": "Wire agent_note into agent loop + system prompt injection + GC on conversation end",
-      "description": "Make agent_note LIVE in the agent loop. (a) Locate the conversation-id resolver at runtime — verify via grep on `conversation_id` or `ConversationID` in internal/agent/ and internal/channels/. The hub or agent loop knows the current conversation context. Wire the AgentNoteTool constructor with a closure that reads it from the agent invocation context. (b) System prompt injection: in `internal/conversation/system_prompt.go` (or equivalent — locate via grep `prompt_modules` and `base,runtime`), add a new module 'agent_note' that reads agentnote.Store.Get(currentConvID) and injects content if non-empty. Format: '\\n\\n## Your current note (working memory)\\n\\n<content>\\n'. If empty or row missing, inject nothing (zero overhead). (c) GC on conversation end: locate the conversation-close path (likely in internal/conversation/ or a hub event handler — check chat.EventDone or similar). Add a hook that calls agentnote.Store.Clear(conversationID) when the conversation ends or thread is closed. (d) NO change to the agent loop iteration count or system prompt cache key (the note content goes BEFORE 'history' per the cache discipline §3 D13 from master plan — append-only relative to current run, but per-conversation persistent across runs). (e) Tests: `internal/conversation/system_prompt_test.go` extend with agent_note injection case (with content + without); integration test (place in existing chat_test.go or new file) that confirms set->next-run sees note in prompt->clear on done event. Existing tests stay green.",
+      "id": "US-Q03",
+      "title": "Integration test: Authorize gate + question gate end-to-end",
+      "description": "Lock the full end-to-end flow with one integration test that exercises both Q01 and Q02 gates. (a) New file `internal/learning/write_guards_integration_test.go`. (b) Test scenario 'TestUserMemoryWriteGuardsEndToEnd': 1) seed identity store with 2 actors — owner (has CapabilityMemoryUserWrite) + dashboard_session (does NOT have it); 2) seed summarizer with 3 candidates — high-score preference (Score=0.9), low-score preference (Score=0.5), high-score project (Score=0.9, routes to wiki); 3) run applier with actor=owner; 4) assert: high-score preference creates proposed_updates kind='user_memory' DIRECTLY (no question); low-score preference creates chat_questions row + NO proposed_updates yet; project candidate creates a wiki proposal (existing path); 5) simulate user reply 'Sì, ricordalo' to the chat_questions row → triggers proposed_updates kind='user_memory' creation; 6) simulate approval of that proposed_updates row → calls WriteApprovedUserFact with actor=owner → succeeds + creates compact_memory_documents kind='user_memory'; 7) repeat the approval flow with actor=dashboard_session → returns ErrPermissionDenied + no compact_memory_documents row; 8) verify slog.Warn entries for the denial. (c) Test scenario 'TestUserMemoryQuestionGateRejection': low-score candidate, user replies 'No, scarta' → asserts no proposed_updates row, no compact_memory_documents row, audit log shows rejection. (d) Use existing test helpers from internal/identity/auth (for actor fixtures) and internal/db/migrations (for in-memory DB).",
       "acceptanceCriteria": [
-        "conversationIDProvider wired from agent loop context to AgentNoteTool",
-        "System prompt module 'agent_note' added — injects content as '## Your current note (working memory)' section when non-empty",
-        "Empty/missing note injects nothing (zero token cost)",
-        "GC hook clears agent_notes row when conversation/thread closes",
-        "Prompt cache discipline preserved: note section position is stable (before history block)",
-        "system_prompt_test.go adds with-content + empty-content cases",
-        "Integration test: set -> next run sees note in prompt -> close event -> agentnote.Store.Get returns exists=false",
-        "Existing conversation + chat tests stay green",
+        "internal/learning/write_guards_integration_test.go exists with 2 test scenarios",
+        "TestUserMemoryWriteGuardsEndToEnd covers Q01 + Q02 in a single 8-step assertion chain",
+        "TestUserMemoryQuestionGateRejection covers 'No, scarta' reply path",
+        "Integration test uses in-memory SQLite + identity fixtures (no Docker, no live LLM)",
+        "Test verifies ErrPermissionDenied for dashboard_session actor without grant",
+        "Test verifies slog.Warn entries for denial (via captured logger, NOT stderr scrape)",
+        "Test verifies free-text modify path: reply 'Mi chiamo Davide e amo il caffè' replaces Candidate.Fact then proceeds",
+        "Test runs in CI with go test ./... (no Aura container needed)",
         "go build ./... green",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(agent,conversation): wire agent_note into prompt + GC (US-P03)"
+        "Single atomic commit prefix: test(learning): integration test for Authorize + question gates (US-Q03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Sources: prd.md §5.7 line 717 'scoped and garbage-collected with the conversation lifecycle'. Master plan §3 D13 prompt-cache discipline: place the agent_note BEFORE history (which mutates each turn). Cache prefix discipline preserved when note text changes within a conversation = cache miss only on the affected segment."
+      "passes": false,
+      "notes": "Sources: prd.md §10.2 Boundary tests — capability checks must have integration coverage. Memory feedback_probe_must_verify_artifact_not_reply applies but this is a pure-Go integration test (no LLM), so the artifact is the SQLite row + the slog capture, not a user-facing reply."
     },
     {
-      "id": "US-P04",
-      "title": "Phase-P closure docs + integration probe",
-      "description": "Final closure for Phase-P. (a) Create `.planning/deep-refactor/Phase01_Stabilize/subphases/Phase01_agent_note_scratchpad/` (or under the most relevant parent phase — Phase 1 stabilization OR a new Phase09 partial sub-dir, planner discretion). Files: progress.md (US-P01..P04 SHAs + one-line summary each), plan.md (one-pager citing §5.7 line 678 + §5.7 line 717 + Phase-L oneOf pattern), benchmark.md (actuals: 'set+get roundtrip < 5ms on cold SQLite; system_prompt injection adds < 200 tokens with 4KB note'). (b) Update prd.md §6.5 Status Checklist (commit c50c9703): add a new row for Phase-P showing 'agent_note scratchpad wired (capability #4 closed)'. (c) Update §7.2 Outstanding deferrals: remove or mark CLOSED the 'agent_note scratchpad + pinned core block' row. (d) Integration probe: add `cmd/probe_chat` case (or new dedicated probe) named 'agent-note-roundtrip' that: 1) sends a prompt asking Aura to set an agent_note 'TODO: verify X, Y, Z' 2) sends a second prompt 'cosa hai in nota?' 3) asserts the second reply mentions X, Y, Z 4) closes conversation explicitly OR waits for GC; on next conversation, sends 'cosa hai in nota?' and asserts the reply confirms note is empty/cleared. (e) Use git add -f for .planning/* paths.",
+      "id": "US-Q04",
+      "title": "Phase-Q closure docs + Phase 9 partial-close update in prd.md",
+      "description": "Final closure for Phase-Q. (a) Create `.planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_write_guards/` with progress.md (US-Q01..Q04 SHAs + 1-line summary each), plan.md (one-pager citing §5.7 line 715 capability check + §5.7 line 714 question gate; threshold rationale), benchmark.md (actuals: Authorize boundary <1ms; question gate roundtrip ~LLM-RTT bound). (b) Update parent `.planning/deep-refactor/Phase09_Memory_Source_Discipline/progress.md` with Phase-Q close row + reference to Phase-O. (c) Update prd.md §6.5 Status Checklist (commit c50c9703): add a new row for Phase-Q showing 'user_memory write guards wired (Phase 9 partial close — capability check + question gate)'. (d) Update §7.2 Outstanding deferrals: 'Active write-policy' row — mark CLOSED 2026-05-16 (the deferral was the question-gate + capability-check tail; both now wired). (e) Update prd.md Phase 9 section closure note: add line **'Phase 9 partial-close 2026-05-16'** — preference/fact/person/todo extraction (Phase-O) + capability check + question gate (Phase-Q) shipped. Remaining Phase 9 scope: 'clarify memory vs storage docs, conversion fixtures for important source types, harden SQLite concurrency' — these are documentation + invariant hardening, deferred to a future closure pass. (f) Use git add -f for .planning/* paths. NO Go code changes.",
       "acceptanceCriteria": [
-        ".planning/deep-refactor/.../Phase01_agent_note_scratchpad/{plan.md,progress.md,benchmark.md} created (parent phase = planner discretion)",
-        "prd.md §6.5 Status Checklist: Phase-P row added showing agent_note wired (capability #4 closed)",
-        "prd.md §7.2 Outstanding deferrals: 'agent_note scratchpad' row removed OR marked CLOSED 2026-05-16",
-        "cmd/probe_chat 'agent-note-roundtrip' case added (or new probe binary) — set, recall, GC verify, fresh conv empty",
-        "Probe verifies: agent confirms note content X/Y/Z on second prompt within same conversation",
-        "Probe verifies: after conversation close + new conversation, agent reports note is empty",
+        ".planning/deep-refactor/Phase09_Memory_Source_Discipline/subphases/Phase09_user_memory_write_guards/{plan.md,progress.md,benchmark.md} created",
+        "Parent Phase09 progress.md has Phase-Q close row + reference to Phase-O",
+        "prd.md §6.5 Status Checklist: Phase-Q row added with appropriate status",
+        "prd.md §7.2 Outstanding deferrals: 'Active write-policy' row marked CLOSED 2026-05-16",
+        "prd.md Phase 9 section gets a 'Phase 9 partial-close 2026-05-16' note with explicit list of remaining scope",
+        "No Go code changes in this commit",
         "Used git add -f for .planning/* paths",
-        "go build ./... green",
+        "go build ./... green (sanity)",
         "go vet ./... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(docs,probe): Phase-P closure + agent_note roundtrip probe (US-P04)"
+        "Single atomic commit prefix: docs(planning): Phase-Q closure + Phase 9 partial-close (US-Q04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Sources: closure pattern Phase-N US-N04, Phase-O US-O04. Probe pattern: cmd/probe_chat existing cases (greeting-no-tools, wiki-page-create). The roundtrip across two conversations IS the proof that scoping + GC work end-to-end."
+      "passes": false,
+      "notes": "Sources: closure pattern Phase-N US-N04 + Phase-O US-O04. Phase 9 has 6 step items in prd.md lines 1513-1519 — Phase-O + Phase-Q together cover the 'write-policy' + 'validation' + 'capability' core. The remaining 'clarify memory vs storage / conversion fixtures / SQLite concurrency hardening' is doc + invariant work, suitable for a future polish phase."
     }
   ]
 }
