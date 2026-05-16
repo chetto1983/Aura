@@ -12,7 +12,8 @@ import (
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
-	"github.com/aura/aura/internal/storage/sources/store"
+	"github.com/aura/aura/internal/storage/freshness"
+	source "github.com/aura/aura/internal/storage/sources/store"
 )
 
 const (
@@ -27,10 +28,13 @@ const (
 var sourcePageHeadingRE = regexp.MustCompile(`(?m)^## Page ([0-9]+)\s*$`)
 
 type RebuildInput struct {
-	Sources    source.Repository
-	Archive    conversation.TurnReader
-	Proposals  summarizer.ProposalLister
-	SkipVector bool
+	Sources          source.Repository
+	Archive          conversation.TurnReader
+	Proposals        summarizer.ProposalLister
+	SkipVector       bool
+	FreshnessStore   *freshness.Store // nil = skip freshness tracking
+	EmbeddingModelID string
+	IndexBuildID     string
 }
 
 type RebuildReport struct {
@@ -51,6 +55,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		if err != nil {
 			return report, err
 		}
+		stampFreshnessFields(docs, in.EmbeddingModelID, in.IndexBuildID)
 		if err := store.ReplaceKind(ctx, KindSource, docs); err != nil {
 			return report, err
 		}
@@ -72,6 +77,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 				docs = append(docs, doc)
 			}
 		}
+		stampFreshnessFields(docs, in.EmbeddingModelID, in.IndexBuildID)
 		if err := store.ReplaceKind(ctx, KindArchive, docs); err != nil {
 			return report, err
 		}
@@ -89,6 +95,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 				docs = append(docs, doc)
 			}
 		}
+		stampFreshnessFields(docs, in.EmbeddingModelID, in.IndexBuildID)
 		if err := store.ReplaceKind(ctx, KindProposal, docs); err != nil {
 			return report, err
 		}
@@ -107,7 +114,22 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		}
 		report.Vector = vectorReport
 	}
+	if in.FreshnessStore != nil && in.IndexBuildID != "" {
+		if err := in.FreshnessStore.MarkRebuildComplete(ctx, compactMemoryProjectionID, in.IndexBuildID, in.EmbeddingModelID); err != nil {
+			slog.Debug("memoryindex: freshness mark rebuild complete failed", "error", err)
+		}
+	}
 	return report, nil
+}
+
+// stampFreshnessFields sets ContentHash, EmbeddingModelID, and IndexBuildID on
+// each document using the given embedding model and build ID.
+func stampFreshnessFields(docs []Document, embeddingModelID, indexBuildID string) {
+	for i := range docs {
+		docs[i].ContentHash = ContentHash(docs[i].Kind, docs[i].Body, embeddingModelID)
+		docs[i].EmbeddingModelID = embeddingModelID
+		docs[i].IndexBuildID = indexBuildID
+	}
 }
 
 func sourceDocuments(store source.Repository) ([]Document, error) {
@@ -264,28 +286,49 @@ func ProposalDocument(proposal summarizer.ProposedUpdate) (Document, bool) {
 }
 
 type IndexingTurnAppender struct {
-	next  conversation.TurnAppender
-	index *Store
+	next             conversation.TurnAppender
+	index            *Store
+	freshnessStore   *freshness.Store // nil = skip freshness tracking
+	embeddingModelID string
 }
 
 func NewIndexingTurnAppender(next conversation.TurnAppender, index *Store) *IndexingTurnAppender {
 	return &IndexingTurnAppender{next: next, index: index}
 }
 
-type IndexingArchiveRepository struct {
-	conversation.ArchiveRepository
-	index *Store
+// WithFreshness wires freshness tracking onto the appender. Returns the appender
+// for chaining. Safe to call after construction and before first Append.
+func (a *IndexingTurnAppender) WithFreshness(fs *freshness.Store, embeddingModelID string) *IndexingTurnAppender {
+	a.freshnessStore = fs
+	a.embeddingModelID = embeddingModelID
+	return a
 }
 
-func NewIndexingArchiveRepository(next conversation.ArchiveRepository, index *Store) conversation.ArchiveRepository {
-	if next == nil || index == nil {
-		return next
-	}
+type IndexingArchiveRepository struct {
+	conversation.ArchiveRepository
+	index            *Store
+	freshnessStore   *freshness.Store
+	embeddingModelID string
+}
+
+func NewIndexingArchiveRepository(next conversation.ArchiveRepository, index *Store) *IndexingArchiveRepository {
 	return &IndexingArchiveRepository{ArchiveRepository: next, index: index}
 }
 
+// WithFreshness wires freshness tracking into the archive repository's append path.
+func (r *IndexingArchiveRepository) WithFreshness(fs *freshness.Store, embeddingModelID string) *IndexingArchiveRepository {
+	r.freshnessStore = fs
+	r.embeddingModelID = embeddingModelID
+	return r
+}
+
 func (r *IndexingArchiveRepository) Append(ctx context.Context, turn conversation.Turn) error {
-	appender := IndexingTurnAppender{next: r.ArchiveRepository, index: r.index}
+	appender := IndexingTurnAppender{
+		next:             r.ArchiveRepository,
+		index:            r.index,
+		freshnessStore:   r.freshnessStore,
+		embeddingModelID: r.embeddingModelID,
+	}
 	return appender.Append(ctx, turn)
 }
 
@@ -326,10 +369,44 @@ func (a *IndexingTurnAppender) Append(ctx context.Context, turn conversation.Tur
 			turn = a.persistedTurn(ctx, turn)
 		}
 		if doc, ok := ArchiveDocument(turn); ok {
+			if a.freshnessStore != nil {
+				a.stampAndBump(ctx, &doc)
+			}
 			_ = a.index.Upsert(ctx, doc)
 		}
 	}
 	return nil
+}
+
+// stampAndBump sets freshness columns on doc and calls BumpPending when the
+// content hash differs from what is already stored. Freshness tracking is
+// best-effort: errors are logged at Debug and do not fail the Append.
+// Uses doc.Kind as the "role" argument to ContentHash so hashes are consistent
+// with the Rebuild path (which also uses Kind).
+func (a *IndexingTurnAppender) stampAndBump(ctx context.Context, doc *Document) {
+	projRow, found, err := a.freshnessStore.Get(ctx, compactMemoryProjectionID)
+	if err != nil || !found {
+		return
+	}
+	newHash := ContentHash(doc.Kind, doc.Body, a.embeddingModelID)
+	doc.ContentHash = newHash
+	doc.EmbeddingModelID = a.embeddingModelID
+	doc.IndexBuildID = projRow.IndexBuildID
+
+	// Detect hash change against the currently-stored row.
+	var oldHash string
+	if a.index != nil && a.index.db != nil {
+		row := a.index.db.QueryRowContext(ctx,
+			`SELECT content_hash FROM compact_memory_documents WHERE id = ?`, doc.ID)
+		_ = row.Scan(&oldHash)
+	}
+	if oldHash != newHash {
+		if err := a.freshnessStore.BumpPending(ctx, compactMemoryProjectionID, 1); err != nil {
+			slog.Debug("memoryindex: freshness bump failed on append", "doc_id", doc.ID, "error", err)
+		} else {
+			slog.Debug("memoryindex: freshness pending bumped on hash change", "doc_id", doc.ID)
+		}
+	}
 }
 
 func (a *IndexingTurnAppender) persistedTurn(ctx context.Context, turn conversation.Turn) conversation.Turn {

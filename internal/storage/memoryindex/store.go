@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/aura/aura/internal/storage/freshness"
 )
 
 const (
@@ -89,6 +91,15 @@ type Store struct {
 	// sidecar from N parallel HTTP DELETEs that the mini-PC budget cannot
 	// absorb. Read paths (Search, Get, allDocuments) DO NOT take this lock.
 	writeMu sync.Mutex
+
+	// freshnessStore tracks per-projection drift. nil = freshness disabled.
+	freshnessStore *freshness.Store
+}
+
+// SetFreshnessStore injects a freshness.Store so that ReplaceKind can call
+// BumpPending when content hashes change. Safe to call before first write.
+func (s *Store) SetFreshnessStore(fs *freshness.Store) {
+	s.freshnessStore = fs
 }
 
 // acquireWithContext takes mu unless ctx fires first. Plain sync.Mutex.Lock
@@ -234,6 +245,13 @@ func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) e
 	if kind == "" {
 		return fmt.Errorf("memoryindex: kind required")
 	}
+
+	// Read existing hashes for drift detection (before delete).
+	var existingHashes map[string]string
+	if s.freshnessStore != nil {
+		existingHashes = s.readKindHashes(ctx, kind)
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("memoryindex: begin replace: %w", err)
@@ -245,6 +263,7 @@ func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) e
 	if _, err := tx.ExecContext(ctx, `DELETE FROM compact_memory_documents WHERE kind = ?`, kind); err != nil {
 		return fmt.Errorf("memoryindex: delete old documents kind: %w", err)
 	}
+	changedCount := 0
 	for _, doc := range docs {
 		doc.Kind = kind
 		doc.ID = strings.TrimSpace(doc.ID)
@@ -282,11 +301,49 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		); err != nil {
 			return fmt.Errorf("memoryindex: insert fts %s: %w", doc.ID, err)
 		}
+		// Count hash changes for freshness bump (only when tracking is enabled).
+		if existingHashes != nil && doc.ContentHash != "" {
+			if old, existed := existingHashes[doc.ID]; !existed || old != doc.ContentHash {
+				changedCount++
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("memoryindex: commit replace: %w", err)
 	}
+	if s.freshnessStore != nil && changedCount > 0 {
+		if err := s.freshnessStore.BumpPending(ctx, compactMemoryProjectionID, changedCount); err != nil && s.logger != nil {
+			s.logger.Warn("memoryindex: freshness bump failed", "kind", kind, "changed", changedCount, "error", err)
+		} else {
+			slog.Debug("memoryindex: freshness pending bumped", "kind", kind, "changed", changedCount)
+		}
+	}
 	return nil
+}
+
+const compactMemoryProjectionID = "compact_memory_documents"
+
+// readKindHashes returns {id -> content_hash} for all docs of the given kind.
+// Returns nil on error (freshness tracking is best-effort).
+func (s *Store) readKindHashes(ctx context.Context, kind string) map[string]string {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, content_hash FROM compact_memory_documents WHERE kind = ?`, kind)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	hashes := make(map[string]string)
+	for rows.Next() {
+		var id, hash string
+		if err := rows.Scan(&id, &hash); err != nil {
+			return nil
+		}
+		hashes[id] = hash
+	}
+	if rows.Err() != nil {
+		return nil
+	}
+	return hashes
 }
 
 func (s *Store) RebuildFTS(ctx context.Context) error {

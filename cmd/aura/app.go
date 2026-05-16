@@ -29,6 +29,7 @@ import (
 	"github.com/aura/aura/internal/mcp"
 	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/qdrant"
 	"github.com/aura/aura/internal/storage/reindex"
@@ -58,9 +59,10 @@ type App struct {
 	bgWg     sync.WaitGroup
 
 	// ---- Resources to clean up on Stop ----------------------------------------
-	archiver conversation.ClosingTurnAppender // nil until wireBot
-	sched    *cron.Scheduler                  // nil until wireBot
-	api      http.Handler                     // nil until wireBot
+	archiver       conversation.ClosingTurnAppender // nil until wireBot
+	sched          *cron.Scheduler                  // nil until wireBot
+	api            http.Handler                     // nil until wireBot
+	freshnessStore *freshness.Store                 // seeded by newApp
 }
 
 // startBg starts a background goroutine tracked by bgWg under bgCtx.
@@ -395,6 +397,21 @@ func newApp(
 	}
 	deps.MemoryStore = memoryStore
 
+	// ---- Freshness projection registry seed ---------------------------------
+	// Seeds 5 projection_state rows idempotently (skips rows that already exist).
+	freshnessStore := freshness.NewStore(pool)
+	embeddingModelID := cfg.EmbeddingModel
+	embeddingDim := cfg.EmbeddingOutputDim
+	if embeddingDim <= 0 {
+		embeddingDim = 256
+	}
+	if err := seedProjectionState(context.Background(), freshnessStore, embeddingModelID, embeddingDim); err != nil {
+		logger.Warn("freshness projection seed failed", "error", err)
+	}
+	if memoryStore != nil {
+		memoryStore.SetFreshnessStore(freshnessStore)
+	}
+
 	// ---- Source tool (needs memoryStore as delete purger) -------------------
 	if sourceTool := tools.NewSourceTool(sourceStore, sourceStore, sourceStore, sourceStore, deps.OCR, ingestPipeline, memoryStore); sourceTool != nil {
 		toolRegistry.Register(tools.WithCategory(sourceTool, tools.CategoryAutonomous))
@@ -520,7 +537,7 @@ func newApp(
 	// ---- Background context: owned by App (US-A13c) -------------------------
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 
-	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel}, nil
+	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel, freshnessStore: freshnessStore}, nil
 }
 
 // wireBot performs Phase C composition wiring after telegram.New() constructs
@@ -610,7 +627,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 			logger.Warn("conversation archive unavailable", "error", err)
 		} else {
 			if a.deps.MemoryStore != nil {
-				archiveDB = memoryindex.NewIndexingArchiveRepository(archiveStore, a.deps.MemoryStore)
+				indexingRepo := memoryindex.NewIndexingArchiveRepository(archiveStore, a.deps.MemoryStore)
+				if a.freshnessStore != nil {
+					indexingRepo.WithFreshness(a.freshnessStore, cfg.EmbeddingModel)
+				}
+				archiveDB = indexingRepo
 			} else {
 				archiveDB = archiveStore
 			}
@@ -625,12 +646,20 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// ---- Compact memory index rebuild ----------------------------------------
 	if a.deps.MemoryStore != nil {
 		rebuildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		report, err := memoryindex.Rebuild(rebuildCtx, a.deps.MemoryStore, memoryindex.RebuildInput{
+		rebuildInput := memoryindex.RebuildInput{
 			Sources:    a.deps.Sources,
 			Archive:    archiveDB,
 			Proposals:  a.deps.SummariesStore,
 			SkipVector: a.deps.CompactVector != nil,
-		})
+		}
+		if a.freshnessStore != nil {
+			rebuildInput.FreshnessStore = a.freshnessStore
+			rebuildInput.EmbeddingModelID = cfg.EmbeddingModel
+			if row, found, err := a.freshnessStore.Get(rebuildCtx, "compact_memory_documents"); err == nil && found {
+				rebuildInput.IndexBuildID = row.IndexBuildID
+			}
+		}
+		report, err := memoryindex.Rebuild(rebuildCtx, a.deps.MemoryStore, rebuildInput)
 		cancel()
 		if err != nil {
 			logger.Warn("compact memory index rebuild failed", "error", err)

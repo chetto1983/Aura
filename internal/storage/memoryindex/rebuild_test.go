@@ -10,6 +10,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/storage/freshness"
 )
 
 func TestIndexingTurnAppenderMirrorsPersistedArchiveID(t *testing.T) {
@@ -221,6 +222,134 @@ func TestArchiveTurns_ToolRowPersistsInConversationsButNotCompact(t *testing.T) 
 	ids := queryArchiveCompactIDs(t, db)
 	if len(ids) != 0 {
 		t.Fatalf("compact_memory_documents: want 0 rows for tool turn, got %d: %v", len(ids), ids)
+	}
+}
+
+// TestAppendBumpsPendingOnHashMismatch verifies that stampAndBump (the freshness
+// hook inside IndexingTurnAppender.Append) increments pending_count when the
+// document's content hash differs from the value already stored in
+// compact_memory_documents. We drive stampAndBump directly because the archive
+// store enforces a (chat_id, turn_index) unique constraint that prevents replaying
+// the same turn through the full Append path.
+func TestAppendBumpsPendingOnHashMismatch(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDBForMemoryIndex(t)
+
+	fs := freshness.NewStore(db)
+	_, err := fs.Upsert(ctx, freshness.Row{
+		ProjectionID:      compactMemoryProjectionID,
+		Kind:              "sqlite",
+		IndexBuildID:      "build-test-001",
+		SchemaVersion:     1,
+		LastFullRebuildAt: 1000,
+		Status:            "fresh",
+		PendingCount:      0,
+		Version:           1,
+	})
+	if err != nil {
+		t.Fatalf("Upsert projection: %v", err)
+	}
+
+	index, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	index.SetFreshnessStore(fs)
+
+	const embedModel = "embeddinggemma-300m@256-mrl"
+	const docID = "archive:test-hash-mismatch-001"
+
+	// Pre-insert the document with hash A (simulates a previously-indexed doc).
+	hashA := ContentHash(KindArchive, "original body content", embedModel)
+	preDoc := Document{
+		ID:          docID,
+		Kind:        KindArchive,
+		Body:        "original body content",
+		ContentHash: hashA,
+	}
+	if err := index.Upsert(ctx, preDoc); err != nil {
+		t.Fatalf("Upsert (hash A): %v", err)
+	}
+
+	// Verify pending is still 0 after the pre-insert (no appender involved yet).
+	row0, _, _ := fs.Get(ctx, compactMemoryProjectionID)
+	initialPending := row0.PendingCount
+
+	// Create an appender with freshness wired and call stampAndBump with the same
+	// doc ID but different content (hash B). stampAndBump reads hash A from DB,
+	// computes hash B, detects mismatch, and calls BumpPending.
+	appender := NewIndexingTurnAppender(nil, index).WithFreshness(fs, embedModel)
+	newDoc := Document{
+		ID:   docID,
+		Kind: KindArchive,
+		Body: "new content that produces hash B — different from A",
+	}
+	appender.stampAndBump(ctx, &newDoc)
+
+	afterRow, found, err := fs.Get(ctx, compactMemoryProjectionID)
+	if err != nil || !found {
+		t.Fatalf("Get projection after stampAndBump: err=%v found=%v", err, found)
+	}
+	if afterRow.PendingCount <= initialPending {
+		t.Fatalf("pending_count = %d after hash mismatch, want > %d", afterRow.PendingCount, initialPending)
+	}
+}
+
+func TestRebuildResetsPendingAndUpdatesBuildID(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDBForMemoryIndex(t)
+
+	fs := freshness.NewStore(db)
+	// Pre-seed with pending=5 to simulate accumulated drift.
+	_, err := fs.Upsert(ctx, freshness.Row{
+		ProjectionID:      compactMemoryProjectionID,
+		Kind:              "sqlite",
+		IndexBuildID:      "build-old-001",
+		SchemaVersion:     1,
+		LastFullRebuildAt: 1000,
+		PendingCount:      5,
+		Status:            "fresh",
+		Version:           1,
+	})
+	if err != nil {
+		t.Fatalf("Upsert initial projection: %v", err)
+	}
+
+	archive, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	index, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	index.SetFreshnessStore(fs)
+
+	const (
+		embedModel   = "embeddinggemma-300m@256-mrl"
+		newBuildID   = "build-new-after-rebuild"
+	)
+
+	_, err = Rebuild(ctx, index, RebuildInput{
+		Archive:          archive,
+		SkipVector:       true,
+		FreshnessStore:   fs,
+		EmbeddingModelID: embedModel,
+		IndexBuildID:     newBuildID,
+	})
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	row, found, err := fs.Get(ctx, compactMemoryProjectionID)
+	if err != nil || !found {
+		t.Fatalf("Get projection after Rebuild: err=%v found=%v", err, found)
+	}
+	if row.PendingCount != 0 {
+		t.Fatalf("pending_count = %d after Rebuild, want 0", row.PendingCount)
+	}
+	if row.IndexBuildID != newBuildID {
+		t.Fatalf("index_build_id = %q after Rebuild, want %q", row.IndexBuildID, newBuildID)
 	}
 }
 

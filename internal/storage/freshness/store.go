@@ -164,6 +164,29 @@ func (s *Store) BumpPending(ctx context.Context, projectionID string, delta int)
 	return nil
 }
 
+// MarkRebuildComplete resets pending_count to 0, bumps completed_count, updates
+// index_build_id and embedding_model_id, and records last_full_rebuild_at.
+// Called from memoryindex.Rebuild at completion.
+func (s *Store) MarkRebuildComplete(ctx context.Context, projectionID, newBuildID, newModelID string) error {
+	now := time.Now().Unix()
+	_, err := s.db.ExecContext(ctx, `
+UPDATE projection_state SET
+    pending_count        = 0,
+    completed_count      = completed_count + 1,
+    index_build_id       = ?,
+    embedding_model_id   = ?,
+    last_full_rebuild_at = ?,
+    updated_at           = ?,
+    version              = version + 1
+WHERE projection_id = ?`,
+		newBuildID, newModelID, now, now, projectionID,
+	)
+	if err != nil {
+		return fmt.Errorf("freshness: mark rebuild complete %q: %w", projectionID, err)
+	}
+	return nil
+}
+
 // List returns all projection_state rows ordered by projection_id.
 func (s *Store) List(ctx context.Context) ([]Row, error) {
 	rows, err := s.db.QueryContext(ctx, `

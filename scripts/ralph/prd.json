@@ -70,7 +70,7 @@
         "Single atomic commit prefix: feat(memoryindex,freshness): eager write-time invalidate + populate freshness columns (US-M03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: docs/phase07c-academic-research §Q3 + §Q4 (eager pattern for source-write). docs/phase07c-current-state-audit §C (write-path inventory). Wiki + Qdrant invalidation NOT wired here — slice tight; deferred to a future US-M-bis if needed."
     },
     {

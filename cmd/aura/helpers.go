@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/sandbox"
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/search"
 )
 
@@ -127,4 +131,50 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 		"workdir", cfg.WorkspaceRoot,
 		"detail", health.Detail)
 	return manager, health
+}
+
+// seedProjectionState inserts the 5 canonical projection_state rows if they do
+// not already exist. Idempotent: rows that already exist are left untouched.
+func seedProjectionState(ctx context.Context, fs *freshness.Store, embeddingModelID string, embeddingDim int) error {
+	type rowSpec struct {
+		id    string
+		kind  string
+		model string
+		dim   int
+	}
+	qdrantModel := embeddingModelID
+	qdrantDim := embeddingDim
+	specs := []rowSpec{
+		{"wiki_documents_fts5", "fts5", "", 0},
+		{"aura_memory_v1", "qdrant", qdrantModel, qdrantDim},
+		{"compact_memory_documents", "sqlite", "", 0},
+		{"aura_memory_v1_compact", "qdrant", qdrantModel, qdrantDim},
+		{"embedding_cache", "cache", "", 0},
+	}
+	buildID := uuid.NewString()
+	now := time.Now().Unix()
+	for _, spec := range specs {
+		_, found, err := fs.Get(ctx, spec.id)
+		if err != nil {
+			return err
+		}
+		if found {
+			continue
+		}
+		row := freshness.Row{
+			ProjectionID:      spec.id,
+			Kind:              spec.kind,
+			EmbeddingModelID:  spec.model,
+			EmbeddingDim:      spec.dim,
+			IndexBuildID:      buildID,
+			SchemaVersion:     1,
+			LastFullRebuildAt: now,
+			Status:            "fresh",
+			Version:           1,
+		}
+		if _, err := fs.Upsert(ctx, row); err != nil {
+			return err
+		}
+	}
+	return nil
 }
