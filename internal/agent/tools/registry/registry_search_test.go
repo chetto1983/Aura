@@ -95,3 +95,60 @@ func TestToolVectorIndex_ExportedType(t *testing.T) {
 	// Compile-time check: ToolVectorIndex is exported at package scope.
 	var _ *ToolVectorIndex = nil
 }
+
+// Action-dispatch tools (wiki_page, propose_patch, subagent_dispatch) carry a
+// long "REQUIRED PARAMETERS BY ACTION" prose in their description plus oneOf
+// schemas in parameters; the rendered embedding input used to exceed the
+// embedding model's 1024-token context and produced
+// `embed wiki_page: embeddings returned 400 Bad Request: input is larger
+// than the max context size` in toolindex reconcile errors (live debug
+// 2026-05-17). The renderer must cap the final text under maxEmbeddingTextChars.
+func TestSearchableToolEmbeddingText_TruncatesOversizeDescription(t *testing.T) {
+	huge := strings.Repeat("REQUIRED PARAMETERS BY ACTION. ", 500) // ~15 KB
+	def := ToolDefinition{
+		Name:        "wiki_page",
+		Description: huge,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action": map[string]any{"type": "string", "description": "verb"},
+			},
+		},
+	}
+	got := searchableToolEmbeddingText(def)
+	if len(got) > maxEmbeddingTextChars {
+		t.Fatalf("rendered text len=%d exceeds cap=%d", len(got), maxEmbeddingTextChars)
+	}
+	if !strings.HasPrefix(got, "wiki page: REQUIRED PARAMETERS BY ACTION.") {
+		t.Fatalf("prefix dropped after truncation: %q", got[:80])
+	}
+}
+
+func TestTruncateEmbeddingText_RuneBoundary(t *testing.T) {
+	// Multi-byte chars must not be sliced mid-rune.
+	text := strings.Repeat("è", 2000) // 2 bytes per è → 4000 bytes
+	got := truncateEmbeddingText(text, 100)
+	if len(got) > 100 {
+		t.Fatalf("byte len %d > 100", len(got))
+	}
+	// Should still be valid UTF-8 (would be empty string only if cut < 2).
+	if !strings.HasPrefix(text, got) {
+		t.Fatalf("truncated result is not a prefix of input")
+	}
+	// Verify rune boundary: every rune in got is a valid UTF-8 sequence.
+	for _, r := range got {
+		if r == '�' { // replacement char indicates invalid UTF-8
+			t.Fatalf("invalid UTF-8 after truncation")
+		}
+	}
+}
+
+func TestTruncateEmbeddingText_NoChangeWhenWithinBudget(t *testing.T) {
+	short := "hello world"
+	if got := truncateEmbeddingText(short, 100); got != short {
+		t.Fatalf("short string mutated: %q", got)
+	}
+	if got := truncateEmbeddingText(short, 0); got != short {
+		t.Fatalf("maxChars=0 should be a no-op, got %q", got)
+	}
+}

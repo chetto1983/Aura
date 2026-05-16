@@ -142,6 +142,17 @@ func searchTerms(query string) []string {
 //
 // Lex search (searchableToolText below) keeps a broader corpus — that path
 // is BM25-style and benefits from more tokens.
+// maxEmbeddingTextChars bounds the rendered embedding input so it fits within
+// the embedding model's context window. embeddinggemma-300m caps at 1024 tokens
+// and refuses ("input is larger than the max context size") above that. English
+// encodes at ~3.5–4 chars/token, so 3500 chars leaves a safety margin under
+// 1024 tokens regardless of language mix. Action-dispatch tools (wiki_page,
+// propose_patch, subagent_dispatch) used to blow past this because their
+// description carries the full "REQUIRED PARAMETERS BY ACTION" prose plus the
+// oneOf schema in parameters; this cap keeps embedding I/O healthy without
+// dropping the prose from the LLM-facing schema.
+const maxEmbeddingTextChars = 3500
+
 func searchableToolEmbeddingText(def ToolDefinition) string {
 	var b strings.Builder
 	b.WriteString(toolNameForEmbedding(def.Name))
@@ -176,7 +187,25 @@ func searchableToolEmbeddingText(def ToolDefinition) string {
 			}
 		}
 	}
-	return b.String()
+	return truncateEmbeddingText(b.String(), maxEmbeddingTextChars)
+}
+
+// truncateEmbeddingText slices text at a rune boundary at or before maxChars.
+// Returns text unchanged when within the budget. The cut is plain length-based
+// — we keep the prefix (tool name + description start) because that carries
+// the strongest semantic signal for retrieval; trailing parameter docs are
+// the most expendable.
+func truncateEmbeddingText(text string, maxChars int) string {
+	if maxChars <= 0 || len(text) <= maxChars {
+		return text
+	}
+	// Slice on a rune boundary at or before maxChars so we never produce
+	// invalid UTF-8 (some param descriptions contain multi-byte chars).
+	cut := maxChars
+	for cut > 0 && (text[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return text[:cut]
 }
 
 // toolNameForEmbedding renders a tool name in the form best suited for
