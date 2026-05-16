@@ -410,15 +410,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, reason Reason) Report {
 
 func (r *Reconciler) logReport(rep Report) {
 	level := slog.LevelInfo
-	if len(rep.Errors) > 0 {
-		level = slog.LevelWarn
-	}
-	r.cfg.Logger.Log(context.Background(), level, "toolindex reconcile",
+	attrs := []any{
 		"reason", string(rep.Reason),
 		"upserted", len(rep.Upserted),
 		"deleted", len(rep.Deleted),
 		"unchanged", rep.Unchanged,
 		"errors", len(rep.Errors),
 		"elapsed_ms", rep.ElapsedMs,
-	)
+	}
+	if len(rep.Errors) > 0 {
+		level = slog.LevelWarn
+		// Surface error detail in the same log line. Without this, operators
+		// see only the count and have no way to know WHICH tool failed or why.
+		attrs = append(attrs, "error_details", rep.Errors)
+	}
+	r.cfg.Logger.Log(context.Background(), level, "toolindex reconcile", attrs...)
 }
