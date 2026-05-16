@@ -83,7 +83,7 @@
         "Single atomic commit prefix: feat(tools): score components + follow-up handles in memory_search results (US-L04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Audit §C.1-C.2 enumerates the existing handle shapes. Web research §G ADOPT 3 specifies the small-to-big follow-up pattern. Academic research §G.3 (RAPTOR, HiChunk) is the literature backing. The CRITICAL discipline: do not invent tool names — use what's already registered."
     },
     {

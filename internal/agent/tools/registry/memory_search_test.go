@@ -588,3 +588,130 @@ func TestSearchMemoryTool_ToolRoleExcludedFromDefaultSearch(t *testing.T) {
 		t.Fatalf("expected 0 memory hits, but got results for tool_schemas.json:\n%s", out)
 	}
 }
+
+// TestSearchMemoryTool_ScoreComponentsAndFollowUp verifies that
+// formatMemoryResults emits [exact=… fts=… vector=…] when any component is
+// non-zero AND the correct follow_up= token for each collection kind.
+func TestSearchMemoryTool_ScoreComponentsAndFollowUp(t *testing.T) {
+	srcDoc := memoryindex.Document{
+		ID:          "src_aabb112233445566",
+		Kind:        memoryindex.KindSource,
+		Title:       "contract.txt",
+		Body:        "contract renewal text",
+		SourceID:    "src_aabb112233445566",
+		ScoreExact:  0.8,
+		ScoreFTS:    0,
+		ScoreVector: 0.3,
+		Score:       0.8,
+	}
+	archiveDoc := memoryindex.Document{
+		ID:          "archive:42",
+		Kind:        memoryindex.KindArchive,
+		Title:       "chat=10 turn=2",
+		Body:        "archive note about contract",
+		Handle:      "conversation:42",
+		ChatID:      10,
+		ScoreExact:  0,
+		ScoreFTS:    0.6,
+		ScoreVector: 0,
+		Score:       0.6,
+	}
+	proposalDoc := memoryindex.Document{
+		ID:          "proposal:7",
+		Kind:        memoryindex.KindProposal,
+		Title:       "target-page",
+		Body:        "proposal text about contract",
+		Handle:      "proposal:7",
+		ProposalID:  7,
+		ScoreExact:  0,
+		ScoreFTS:    0,
+		ScoreVector: 0.5,
+		Score:       0.5,
+	}
+	wikiHit := search.Result{
+		Kind:        "wiki_page",
+		Slug:        "contract-overview",
+		Title:       "Contract Overview",
+		Content:     "Overview of contract terms.",
+		Score:       0.9,
+		ScoreExact:  0.4,
+		ScoreFTS:    0,
+		ScoreVector: 0,
+	}
+
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{wikiHit},
+	}, fakeCompactMemorySearch{docs: []memoryindex.Document{srcDoc, archiveDoc, proposalDoc}})
+	if tool == nil {
+		t.Fatal("expected non-nil tool")
+	}
+
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"query": "contract",
+		"scope": "all",
+		"limit": float64(10),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// source: bracket with exact score + read_source follow_up
+	if !strings.Contains(out, "[exact=0.80") {
+		t.Errorf("source hit missing exact score bracket:\n%s", out)
+	}
+	if !strings.Contains(out, "follow_up=read_source(source_id=src_aabb112233445566,mode=ocr)") {
+		t.Errorf("source follow_up missing:\n%s", out)
+	}
+
+	// archive: bracket with fts score + search_memory follow_up
+	if !strings.Contains(out, "[archive]") {
+		t.Errorf("archive hit missing from output:\n%s", out)
+	}
+	if !strings.Contains(out, "fts=0.60") {
+		t.Errorf("archive hit missing fts score bracket:\n%s", out)
+	}
+	if !strings.Contains(out, "follow_up=search_memory(scope=archive)") {
+		t.Errorf("archive follow_up missing:\n%s", out)
+	}
+
+	// wiki: bracket with exact score + wiki-link follow_up
+	if !strings.Contains(out, "[wiki] [[contract-overview]]") {
+		t.Errorf("wiki hit missing from output:\n%s", out)
+	}
+	if !strings.Contains(out, "follow_up=[[contract-overview]]") {
+		t.Errorf("wiki follow_up missing:\n%s", out)
+	}
+
+	// proposal: bracket with vector score + search_memory follow_up
+	if !strings.Contains(out, "[proposal]") {
+		t.Errorf("proposal hit missing from output:\n%s", out)
+	}
+	if !strings.Contains(out, "vector=0.50") {
+		t.Errorf("proposal hit missing vector score bracket:\n%s", out)
+	}
+	if !strings.Contains(out, "follow_up=search_memory(scope=proposals)") {
+		t.Errorf("proposal follow_up missing:\n%s", out)
+	}
+}
+
+// TestSearchMemoryTool_ZeroComponentsNoBracket verifies that hits with all-zero
+// component scores produce historical-shape output (no score bracket).
+func TestSearchMemoryTool_ZeroComponentsNoBracket(t *testing.T) {
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{{
+		ID:     "archive:99",
+		Kind:   memoryindex.KindArchive,
+		Title:  "chat=1 turn=1",
+		Body:   "zero component scores",
+		Handle: "conversation:99",
+		Score:  0.5,
+		// ScoreExact, ScoreFTS, ScoreVector all zero (default)
+	}}})
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "test", "scope": "archive"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if strings.Contains(out, "[exact=") {
+		t.Errorf("zero-component hit must not emit score bracket:\n%s", out)
+	}
+}

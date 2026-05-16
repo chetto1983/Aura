@@ -207,20 +207,23 @@ func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, 
 }
 
 type memoryResult struct {
-	Kind       string
-	Identifier string
-	Title      string
-	Role       string
-	Snippet    string
-	Page       int
-	Score      float64
-	UpdatedAt  time.Time
-	Handle     string
-	FilePath   string
-	Category   string
-	Tags       []string
-	Related    []string
-	SizeBytes  int64
+	Kind        string
+	Identifier  string
+	Title       string
+	Role        string
+	Snippet     string
+	Page        int
+	Score       float64
+	ScoreExact  float64
+	ScoreFTS    float64
+	ScoreVector float64
+	UpdatedAt   time.Time
+	Handle      string
+	FilePath    string
+	Category    string
+	Tags        []string
+	Related     []string
+	SizeBytes   int64
 }
 
 func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit int) ([]memoryResult, []string) {
@@ -249,18 +252,21 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 			identifier = r.Slug
 		}
 		out = append(out, memoryResult{
-			Kind:       kind,
-			Identifier: identifier,
-			Title:      r.Title,
-			Snippet:    snippet,
-			Score:      float64(r.Score),
-			UpdatedAt:  r.UpdatedAt,
-			Handle:     identifier,
-			FilePath:   r.FilePath,
-			Category:   r.Category,
-			Tags:       r.Tags,
-			Related:    r.Related,
-			SizeBytes:  r.SizeBytes,
+			Kind:        kind,
+			Identifier:  identifier,
+			Title:       r.Title,
+			Snippet:     snippet,
+			Score:       float64(r.Score),
+			ScoreExact:  float64(r.ScoreExact),
+			ScoreFTS:    float64(r.ScoreFTS),
+			ScoreVector: float64(r.ScoreVector),
+			UpdatedAt:   r.UpdatedAt,
+			Handle:      identifier,
+			FilePath:    r.FilePath,
+			Category:    r.Category,
+			Tags:        r.Tags,
+			Related:     r.Related,
+			SizeBytes:   r.SizeBytes,
 		})
 	}
 	return out, nil
@@ -286,14 +292,17 @@ func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kind
 		snippet, _ := snippetAround(doc.Body, query, searchMemorySnippetLimit)
 		identifier := compactIdentifier(doc)
 		out = append(out, memoryResult{
-			Kind:       doc.Kind,
-			Identifier: identifier,
-			Title:      doc.Title,
-			Snippet:    snippet,
-			Page:       doc.Page,
-			Score:      doc.Score,
-			UpdatedAt:  doc.UpdatedAt,
-			Handle:     doc.Handle,
+			Kind:        doc.Kind,
+			Identifier:  identifier,
+			Title:       doc.Title,
+			Snippet:     snippet,
+			Page:        doc.Page,
+			Score:       doc.Score,
+			ScoreExact:  doc.ScoreExact,
+			ScoreFTS:    doc.ScoreFTS,
+			ScoreVector: doc.ScoreVector,
+			UpdatedAt:   doc.UpdatedAt,
+			Handle:      doc.Handle,
 		})
 	}
 	return out, nil
@@ -416,6 +425,12 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 			fmt.Fprintf(&sb, " (%s)", age)
 		}
 		fmt.Fprintf(&sb, " score=%.2f", r.Score)
+		if r.ScoreExact != 0 || r.ScoreFTS != 0 || r.ScoreVector != 0 {
+			fmt.Fprintf(&sb, " [exact=%.2f fts=%.2f vector=%.2f]", r.ScoreExact, r.ScoreFTS, r.ScoreVector)
+		}
+		if fu := followUpHandle(r); fu != "" {
+			fmt.Fprintf(&sb, " follow_up=%s", fu)
+		}
 		// Surface the on-disk file path so the model can read the page
 		// directly (read_file) without a second list_files round-trip
 		// (gap the model itself flagged in 2026-05-11 turn 2393).
@@ -599,4 +614,31 @@ func cleanWarnings(warnings []string) []string {
 
 func compactMemoryLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+// followUpHandle returns a tool invocation or wiki-link that the LLM can use
+// to expand a memory hit into its full content. Only tool names that exist in
+// the registry are used — no invented names.
+//
+// Mapping:
+//   - wiki / wiki_page / graph_node: [[slug]] (the identifier already is [[slug]])
+//   - graph_index: [[slug]] (identifier is bare slug for graph_index kind)
+//   - source: read_source(source_id=<id>,mode=ocr)
+//   - archive: search_memory(scope=archive) — read_memory does not exist in registry
+//   - proposal: search_memory(scope=proposals) — read_memory does not exist in registry
+func followUpHandle(r memoryResult) string {
+	switch r.Kind {
+	case "wiki", "wiki_page", "graph_node":
+		return r.Identifier
+	case "graph_index":
+		return "[[" + r.Identifier + "]]"
+	case memoryindex.KindSource:
+		return "read_source(source_id=" + r.Identifier + ",mode=ocr)"
+	case memoryindex.KindArchive:
+		return "search_memory(scope=archive)"
+	case memoryindex.KindProposal:
+		return "search_memory(scope=proposals)"
+	default:
+		return ""
+	}
 }
