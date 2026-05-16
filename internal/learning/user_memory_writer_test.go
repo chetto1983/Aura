@@ -2,11 +2,23 @@ package learning_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
+
+// fakeAuthz is a test-only Authorizer that returns a fixed decision.
+type fakeAuthz struct {
+	dec identity.Decision
+	err error
+}
+
+func (f fakeAuthz) Authorize(_ context.Context, _ identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
+	return identity.AuthorizationDecision{Decision: f.dec, Reason: "fake"}, f.err
+}
 
 func TestWriteApprovedUserFact_Approve(t *testing.T) {
 	store := openTestMemStore(t)
@@ -144,6 +156,114 @@ func TestWriteApprovedUserFact_WrongKind(t *testing.T) {
 	for _, d := range docs {
 		if d.Handle == handle {
 			t.Error("wrong-kind: unexpected user_memory row created for non-user_memory proposal")
+		}
+	}
+}
+
+// TestWriteApprovedUserFactAs_OwnerWithGrant: actor holding CapabilityMemoryUserWrite → write succeeds.
+func TestWriteApprovedUserFactAs_OwnerWithGrant(t *testing.T) {
+	store := openTestMemStore(t)
+	authz := fakeAuthz{dec: identity.DecisionAllow}
+	actor := identity.Actor{ID: "actor:owner:test01"}
+	p := learning.Proposal{
+		Kind:          "user_memory",
+		Fact:          "Owner prefers light mode.",
+		SignatureHash: "user_memory:owner0001",
+		Category:      "preference",
+	}
+	if err := learning.WriteApprovedUserFactAs(context.Background(), store, authz, actor, p); err != nil {
+		t.Fatalf("WriteApprovedUserFactAs with grant: %v", err)
+	}
+	docs, err := store.Search(context.Background(), p.SignatureHash, memoryindex.Filter{Kinds: []string{memoryindex.KindUserMemory}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	var found bool
+	for _, d := range docs {
+		if d.Handle == p.SignatureHash {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("owner-with-grant: document not written to store")
+	}
+}
+
+// TestWriteApprovedUserFactAs_DashboardWithoutGrant: actor without grant → ErrPermissionDenied + no write.
+func TestWriteApprovedUserFactAs_DashboardWithoutGrant(t *testing.T) {
+	store := openTestMemStore(t)
+	authz := fakeAuthz{dec: identity.DecisionDeny}
+	actor := identity.Actor{ID: "actor:dashboard:test02"}
+	p := learning.Proposal{
+		Kind:          "user_memory",
+		Fact:          "Dashboard user secret.",
+		SignatureHash: "user_memory:deny0002",
+		Category:      "preference",
+	}
+	err := learning.WriteApprovedUserFactAs(context.Background(), store, authz, actor, p)
+	if !errors.Is(err, identity.ErrPermissionDenied) {
+		t.Fatalf("expected ErrPermissionDenied, got %v", err)
+	}
+	docs, searchErr := store.Search(context.Background(), p.SignatureHash, memoryindex.Filter{})
+	if searchErr != nil {
+		t.Fatalf("Search: %v", searchErr)
+	}
+	for _, d := range docs {
+		if d.Handle == p.SignatureHash {
+			t.Error("dashboard-without-grant: document must NOT be written on denial")
+		}
+	}
+}
+
+// TestWriteApprovedUserFactAs_NilActorBackCompat: nil authz + zero actor → system-actor path, write allowed.
+func TestWriteApprovedUserFactAs_NilActorBackCompat(t *testing.T) {
+	store := openTestMemStore(t)
+	p := learning.Proposal{
+		Kind:          "user_memory",
+		Fact:          "System write back-compat.",
+		SignatureHash: "user_memory:system0003",
+		Category:      "fact",
+	}
+	if err := learning.WriteApprovedUserFactAs(context.Background(), store, nil, identity.Actor{}, p); err != nil {
+		t.Fatalf("WriteApprovedUserFactAs system-actor: %v", err)
+	}
+	docs, err := store.Search(context.Background(), p.SignatureHash, memoryindex.Filter{Kinds: []string{memoryindex.KindUserMemory}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	var found bool
+	for _, d := range docs {
+		if d.Handle == p.SignatureHash {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("system-actor back-compat: document not found in store")
+	}
+}
+
+// TestWriteApprovedUserFactAs_FakeAuthzDeny: fake authorizer explicitly returning DecisionDeny → ErrPermissionDenied + no write.
+func TestWriteApprovedUserFactAs_FakeAuthzDeny(t *testing.T) {
+	store := openTestMemStore(t)
+	authz := fakeAuthz{dec: identity.DecisionDeny}
+	actor := identity.Actor{ID: "actor:fake:deny0004"}
+	p := learning.Proposal{
+		Kind:          "user_memory",
+		Fact:          "Should be denied.",
+		SignatureHash: "user_memory:fakedeny0004",
+		Category:      "preference",
+	}
+	err := learning.WriteApprovedUserFactAs(context.Background(), store, authz, actor, p)
+	if !errors.Is(err, identity.ErrPermissionDenied) {
+		t.Fatalf("fake-deny: expected ErrPermissionDenied, got %v", err)
+	}
+	docs, searchErr := store.Search(context.Background(), p.SignatureHash, memoryindex.Filter{})
+	if searchErr != nil {
+		t.Fatalf("Search: %v", searchErr)
+	}
+	for _, d := range docs {
+		if d.Handle == p.SignatureHash {
+			t.Error("fake-deny: document must NOT be written on denial")
 		}
 	}
 }

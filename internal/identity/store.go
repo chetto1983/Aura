@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	ErrInvalidInput = errors.New("identity: invalid input")
-	ErrUnauthorized = errors.New("identity: unauthorized")
+	ErrInvalidInput    = errors.New("identity: invalid input")
+	ErrUnauthorized    = errors.New("identity: unauthorized")
+	ErrPermissionDenied = errors.New("identity: permission denied")
 )
 
 type Store struct {

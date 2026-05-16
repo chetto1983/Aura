@@ -31,6 +31,7 @@ var registered = []Migration{
 	{Version: 13, Name: "add_compact_memory_freshness_columns", Up: addCompactMemoryFreshnessColumns},
 	{Version: 14, Name: "add_operational_memory_proposal_columns", Up: addOperationalMemoryProposalColumns},
 	{Version: 15, Name: "add_agent_notes", Up: addAgentNotes},
+	{Version: 16, Name: "add_proposed_updates_actor_id", Up: addProposedUpdatesActorID},
 }
 
 type columnDef struct {
@@ -1231,6 +1232,12 @@ CREATE TABLE IF NOT EXISTS agent_notes (
 		return fmt.Errorf("migrations: add agent_notes: %w", err)
 	}
 	return nil
+}
+
+func addProposedUpdatesActorID(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "proposed_updates", []columnDef{
+		{Name: "actor_id", SQL: "TEXT NOT NULL DEFAULT ''"},
+	})
 }
 
 func parseStoredTime(raw string) (time.Time, error) {

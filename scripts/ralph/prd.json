@@ -22,7 +22,7 @@
         "Single atomic commit prefix: feat(learning,identity): memory.user.write authorize gate on WriteApprovedUserFact (US-Q01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 715 'user memory writes require memory.user.write or a narrower capability grant'. Capability already declared (internal/identity/types.go:56). If proposed_updates needs actor_id column, add as additive migration v16 mirroring currentSchemaSQL."
     },
     {
