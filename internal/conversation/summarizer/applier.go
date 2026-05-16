@@ -167,11 +167,20 @@ type RoutingApplier struct {
 	wiki      Applier
 	proposals UserMemoryProposalWriter
 	memory    MemorySearcher
+	questions QuestionEmitter // optional; nil disables the ambiguity gate
 }
 
 // NewRoutingApplier constructs a RoutingApplier.
 func NewRoutingApplier(wiki Applier, proposals UserMemoryProposalWriter, memory MemorySearcher) *RoutingApplier {
 	return &RoutingApplier{wiki: wiki, proposals: proposals, memory: memory}
+}
+
+// WithQuestionEmitter attaches an ambiguity gate emitter and returns the same
+// RoutingApplier for fluent construction. When set, candidates with
+// Score < AmbiguityThreshold emit a question instead of creating a proposal.
+func (r *RoutingApplier) WithQuestionEmitter(e QuestionEmitter) *RoutingApplier {
+	r.questions = e
+	return r
 }
 
 // Apply routes the decision: user-memory candidates go to proposed_updates with
@@ -184,29 +193,10 @@ func (r *RoutingApplier) Apply(ctx context.Context, d Decision) error {
 }
 
 func (r *RoutingApplier) createUserMemoryProposal(ctx context.Context, c Candidate) error {
-	handle := UserFactHandle(c)
-
-	hits, err := r.memory.SearchUserMemory(ctx, c.Fact, 1)
-	if err != nil {
-		return fmt.Errorf("routing applier: user memory search: %w", err)
+	if r.questions != nil && ShouldGateUserMemoryWrite(c) {
+		return r.questions.EmitUserMemoryQuestion(ctx, c)
 	}
-
-	action := string(ActionNew)
-	targetHandle := ""
-	if len(hits) > 0 {
-		action = string(ActionPatch)
-		targetHandle = hits[0].Handle
-	}
-
-	_, err = r.proposals.CreateUserMemoryProposal(ctx, UserMemoryProposalInput{
-		Handle:        handle,
-		Fact:          c.Fact,
-		Action:        action,
-		TargetHandle:  targetHandle,
-		SourceTurnIDs: c.SourceTurnIDs,
-		Category:      c.Category,
-	})
-	return err
+	return submitUserMemoryProposal(ctx, c, r.proposals, r.memory)
 }
 
 func turnEvidenceRefs(ids []int64) []EvidenceRef {

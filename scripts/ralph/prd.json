@@ -45,7 +45,7 @@
         "Single atomic commit prefix: feat(summarizer): ambiguity question gate before user_memory proposal (US-Q02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Sources: prd.md §5.7 line 714 'requires explicit intent, validation, or a question when ambiguous'. Phase 1C QuestionGate (chat_questions table) is the underlying primitive — commit 1584a8fa wired the answer callback via Hub.RecordQuestionAnswer. Threshold 0.7 is a starting heuristic — store as exported const for future tuning."
     },
     {
