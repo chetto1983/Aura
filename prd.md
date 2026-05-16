@@ -1391,6 +1391,8 @@ Gate:
 - retrieved lessons are versioned against tool schema/version,
 - no automatic prompt/code mutation happens without validation.
 
+**Phase 6 closed 2026-05-16 (in-scope slice — durable workflow + idempotency + reconcile-first + lesson promotion deferred to Phase-K)** — US-J01..J06 shipped (commits 73ddea04..fa7d4559).
+
 ### Phase 7 - Rebuild RAG On Typed Memory Layers
 
 Goal: retrieval stops being one broad memory soup.

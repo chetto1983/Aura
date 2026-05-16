@@ -256,8 +256,8 @@ PRD §5.1 says agent owns: loop, LLM calls, tool-call iteration, observation han
 | Loop | ✅ | `loop.go::runLoop` |
 | LLM calls | ✅ | `ChatClient` interface |
 | Tool-call iteration | ✅ | `loop.go` body |
-| Observation handling | 🟡 partial | `Stats` aggregation exists; no `ToolObservation` contract yet (Phase 6) |
-| In-run self-healing | 🟡 partial | Dedupe, max-calls fallback exist; learning loop not yet (Phase 6) |
+| Observation handling | ✅ met | `ToolObservation` contract + 5-bucket classifier (US-J01, 73ddea04); synchronous `Repo.Record` on every tool result (US-J03, 9db38fa9); operator aggregation endpoint (US-J06, fa7d4559) |
+| In-run self-healing | ✅ met | Pre-LLM tool-experience briefer injects failure capsule each turn (US-J04, dddb9125); per-(tool,class) retry budget enforced before re-dispatch (US-J05, 0ceb7133) |
 | Finalization | ✅ | `finalizeAnswerAfterBudget`, `TerminalHandler` |
 | Governance | ✅ | `governance.Apply` |
 | Context limits | 🟡 partial | MaxIterations + MaxElapsed + MaxToolCalls; missing token-window check |

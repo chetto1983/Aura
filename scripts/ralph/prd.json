@@ -156,7 +156,7 @@
         "Single atomic commit prefix: docs(planning): Phase 6 closure + audit refresh (US-J07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": ".planning/* is gitignored - use git add -f. Precedent: every prior Phase closure commit. Phase-K (durable workflow + idempotency + reconcile-first + lesson promotion) stays open for the next milestone."
     }
   ]
