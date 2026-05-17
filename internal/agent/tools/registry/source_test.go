@@ -354,6 +354,87 @@ func TestReadSourceTool_OCRMarkdownPath(t *testing.T) {
 	}
 }
 
+func TestReadSourceTool_ByteRange(t *testing.T) {
+	store := newTestSourceStore(t)
+	pdf, _, err := store.Put(context.Background(), source.PutInput{
+		Kind:     source.KindPDF,
+		Filename: "doc.pdf",
+		MimeType: "application/pdf",
+		Bytes:    []byte("%PDF-1.4 dummy"),
+	})
+	if err != nil {
+		t.Fatalf("put pdf: %v", err)
+	}
+	ocrBody := "# Source OCR: doc.pdf\n\n## Page 1\n\nAlpha exact span target.\n"
+	if err := os.WriteFile(store.Path(pdf.ID, "ocr.md"), []byte(ocrBody), 0o644); err != nil {
+		t.Fatalf("write ocr.md: %v", err)
+	}
+
+	start := strings.Index(ocrBody, "exact span")
+	end := start + len("exact span")
+	read := NewReadSourceTool(store)
+	out, err := read.Execute(context.Background(), map[string]any{
+		"source_id":  pdf.ID,
+		"mode":       "ocr",
+		"byte_start": float64(start),
+		"byte_end":   float64(end),
+	})
+	if err != nil {
+		t.Fatalf("read byte range: %v", err)
+	}
+	if out != "exact span" {
+		t.Fatalf("byte range output = %q, want exact span", out)
+	}
+
+	text, _, err := store.Put(context.Background(), source.PutInput{
+		Kind:     source.KindText,
+		Filename: "note.txt",
+		MimeType: "text/plain",
+		Bytes:    []byte("first line\nsecond line"),
+	})
+	if err != nil {
+		t.Fatalf("put text: %v", err)
+	}
+	out, err = read.Execute(context.Background(), map[string]any{
+		"source_id":  text.ID,
+		"byte_start": 6,
+		"byte_end":   10,
+	})
+	if err != nil {
+		t.Fatalf("read text byte range: %v", err)
+	}
+	if out != "line" {
+		t.Fatalf("text byte range output = %q, want line", out)
+	}
+}
+
+func TestReadSourceTool_InvalidByteRange(t *testing.T) {
+	store := newTestSourceStore(t)
+	src, _, err := store.Put(context.Background(), source.PutInput{
+		Kind:     source.KindText,
+		Filename: "note.txt",
+		MimeType: "text/plain",
+		Bytes:    []byte("short"),
+	})
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	read := NewReadSourceTool(store)
+
+	cases := []map[string]any{
+		{"source_id": src.ID, "byte_start": 1},
+		{"source_id": src.ID, "byte_start": -1, "byte_end": 2},
+		{"source_id": src.ID, "byte_start": 3, "byte_end": 3},
+		{"source_id": src.ID, "byte_start": 0, "byte_end": 99},
+		{"source_id": src.ID, "mode": "metadata", "byte_start": 0, "byte_end": 1},
+	}
+	for i, args := range cases {
+		if _, err := read.Execute(context.Background(), args); err == nil {
+			t.Fatalf("case %d expected error", i)
+		}
+	}
+}
+
 func TestListSourcesTool_FilterAndLimit(t *testing.T) {
 	store := newTestSourceStore(t)
 

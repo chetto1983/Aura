@@ -188,21 +188,27 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 			kind = "wiki_page"
 		}
 		updatedAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "updated_at"))
+		createdAt, _ := parseSearchPayloadTime(extractMetaField(metaJSON, "created_at"))
+		schemaVersion, _ := strconv.Atoi(strings.TrimSpace(extractMetaField(metaJSON, "schema_version")))
 		size, _ := strconv.ParseInt(extractMetaField(metaJSON, "size"), 10, 64)
 
 		results = append(results, Result{
-			Kind:      kind,
-			Slug:      slug,
-			Title:     title,
-			Content:   content,
-			Score:     float32(-rank),
-			UpdatedAt: updatedAt,
-			FilePath:  extractMetaField(metaJSON, "filepath"),
-			Category:  extractMetaField(metaJSON, "category"),
-			Tags:      splitCSVPayloadField(extractMetaField(metaJSON, "tags")),
-			Related:   splitCSVPayloadField(extractMetaField(metaJSON, "related")),
-			Sources:   splitCSVPayloadField(extractMetaField(metaJSON, "sources")),
-			SizeBytes: size,
+			Kind:          kind,
+			Slug:          slug,
+			Title:         title,
+			Content:       content,
+			Score:         float32(-rank),
+			UpdatedAt:     updatedAt,
+			CreatedAt:     createdAt,
+			SchemaVersion: schemaVersion,
+			PromptVersion: extractMetaField(metaJSON, "prompt_version"),
+			Unversioned:   parseSearchPayloadBool(extractMetaField(metaJSON, "unversioned")),
+			FilePath:      extractMetaField(metaJSON, "filepath"),
+			Category:      extractMetaField(metaJSON, "category"),
+			Tags:          splitCSVPayloadField(extractMetaField(metaJSON, "tags")),
+			Related:       splitCSVPayloadField(extractMetaField(metaJSON, "related")),
+			Sources:       splitCSVPayloadField(extractMetaField(metaJSON, "sources")),
+			SizeBytes:     size,
 		})
 	}
 

@@ -1189,10 +1189,10 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **6** — Tool Experience Loop | ✅ closed (full scope) | 2026-05-16 | US-J01..J06 — commits `73ddea04..fa7d4559`; US-N01..N04 — Phase-N lesson promotion | `tool_attempts` + ToolObservation + retry budgets + `internal/learning` PromoteLessons + WriteApprovedLesson + recall_operational tool |
 | **7A** — Compact Archive Hygiene | ✅ | 2026-05-16 | US-K01..K05 — `9d74809d..3a777e36` | role=tool excluded from compact archive |
 | **7B** — Typed Collection Registry | ✅ | 2026-05-16 | US-L01..L06 — `1a6a609a..13b66d7e` | Collection enum + score components + follow-up handles + SourceID filter |
-| **7C** — Projection Freshness Registry | 🟡 in-flight | — | Phase-M queue: US-M01 shipped, US-M02..M04 queued | Ralph background; `projection_state` table + content_hash drift + degraded_read annotations |
-| **7D** — User/Operational Memory typed tiers | ⬜ | — | scaffolded enum in `collections.go` US-L01 | wire `KindUserMemory` + `KindOperational` as first-class writers (Mem0/Letta typed-tier pattern) |
-| **7E** — Source span/byte offsets | ⬜ | — | — | per audit `docs/phase07b-current-types-audit-2026-05-16.md §G.2.3` |
-| **7F** — Wiki frontmatter schema/prompt-version promotion | ⬜ | — | — | per audit `§G.2.4` |
+| **7C** — Projection Freshness Registry | ✅ | 2026-05-17 | Phase-M evidence translated into Phase07C Aura files | compact-memory freshness registry closed/self-audited; broader wiki/source delete/rename invalidation remains future Phase 7 work |
+| **7D** — User/Operational Memory typed tiers | ✅ | 2026-05-17 | Phase07D mixed-tier local + live probe closure | `KindUserMemory` + `KindOperational` typed recall separated from broad/default memory search |
+| **7E** — Source span/byte offsets | ✅ | 2026-05-17 | Phase07E source-span local + live probe closure | compact source hits carry page/byte offsets; `source(action=read,...)` supports byte-range follow-up |
+| **7F** — Wiki frontmatter schema/prompt-version promotion | ✅ | 2026-05-17 | Phase07F wiki-frontmatter local + live probe closure | wiki search hits expose schema/prompt/created/unversioned/source trust metadata; single-page Qdrant reindex upsert/delete fixed |
 | **Phase-O** — User Memory Promotion (sub-phase of 9) | ✅ | 2026-05-16 | US-O01..O04 — `2642ce0b..`(US-O04) | wired KindUserMemory: triage → proposed_updates kind=user_memory → WriteApprovedUserFact → recall_user_memory tool |
 | **Phase-P** — Agent Note Scratchpad (capability #4) | ✅ | 2026-05-16 | US-P01..P04 — `79159b4a..`(US-P04) | agent_note scratchpad wired (capability #4 closed): SQLite table + Store API + action-dispatch tool + system-prompt injection + GC + web-path fix + probe |
 | **Phase-Q** — User Memory Write Guards (Phase 9 partial close) | ✅ | 2026-05-16 | US-Q01..Q04 — `c0189ac4..`(US-Q04) | user_memory write guards wired (Phase 9 partial close — capability check + question gate): memory.user.write Authorize gate at WriteApprovedUserFact + ambiguity question gate Score<0.7 + integration tests |
@@ -1238,7 +1238,8 @@ workers), and Phase-CLEANUP1/2 (audit-driven code health) all closed during the
 - 0 critical error/logging issues (tool-arg privacy enforced via `argKeys()` + slog sanitizer)
 - 1 concurrency MEDIUM fixed (gate.go OnOverflow WaitGroup); 2 LOWs deferred or declined
 
-Three candidate phases for the next cycle, ordered by leverage:
+Candidate phases for the next cycle after Phase07F closure, ordered by
+leverage:
 
 **Option A — Phase-T: Production Rollout + Hardening**
 Operational layer: docker-compose prod overlay, systemd/restart-on-fail wiring,
@@ -1247,22 +1248,22 @@ but no dashboard surfaces them), deployment runbook, backup verification cron,
 secret-rotation procedure. Memory says: "Next milestone — production rollout +
 simplification 2026-05-15". This is that milestone.
 
-**Option B — Phase 7C completion (US-M02..M04)**
-content_hash drift detection on `compact_memory_documents` (mig v13) + eager
-write-time invalidate hooks + retrieval-time degraded_read annotations. US-M01
-shipped (projection_state table); the remaining 3 stories close the freshness
-registry. Smaller scope (3 stories), tighter to existing code.
+**Option B — Phase 8 promotion/planning**
+Promote the next bounded RunGraph/swarm slice from the existing Phase08
+planning material: team collaboration, plan-execute, critic-review, or
+hierarchical/hybrid DAG work must be narrowed to one benchmarkable runtime
+slice before implementation.
 
-**Option C — Phase 7D: typed memory tiers**
-Wire `KindUserMemory` + `KindOperational` as first-class writers (Mem0/Letta
-typed-tier pattern) — the §5.7 ladder. Larger scope; requires retrieval-side
-changes to `search_memory` to differentiate tier rankings.
+**Option C — Phase 9 hardening**
+Clarify memory/source discipline after Phase07D-F exposed typed recall,
+source-span follow-up, and wiki trust metadata. Good candidates are memory vs
+storage documentation, conversion fixtures, SQLite concurrency hardening, and
+observability for missing `tool_attempts` rows from web-chat live probes.
 
-After whichever phase ships next, the natural progression is to close the
-remaining 7D-F backlog (typed tiers + frontmatter promotion) and the deferred
-full Phase 8 substrate (team_collaboration, plan-execute, critic-review,
-hierarchical DAG) — both gated on operational learnings from the production
-rollout.
+Phase07C-F are no longer the next cycle. Their closure evidence lives in the
+Phase07 parent files and subphase folders. Remaining Phase 7 work is broader
+GraphRAG and projection quality work: weighted graph retrieval, community
+reports, golden RAG evals, and complete wiki/source delete/rename invalidation.
 
 ---
 
@@ -1508,9 +1509,11 @@ Gate:
 
 ### Phase 7 - Rebuild RAG On Typed Memory Layers
 
-**Phase 7A closed 2026-05-16 (compact archive hygiene — role=tool exclusion from compact_memory_documents). Phase 7B-F remain scaffolded.** US-K01..K04 shipped (commits 9d74809d, cfda6bee, 43504082, 7ebbf083, 770eed0a).
+**Phase 7A closed 2026-05-16 (compact archive hygiene — role=tool exclusion from compact_memory_documents).** US-K01..K04 shipped (commits 9d74809d, cfda6bee, 43504082, 7ebbf083, 770eed0a).
 
-**Phase 7B closed 2026-05-16 (typed collection registry — typed enum + score components + follow-up handles + SourceID filter). Phase 7C-F remain scaffolded.** US-L01..L05 shipped (commits 1a6a609a, 92e446fb, ca6a86e3, bb0ed864, 508b32a1). Deferrals to 7C/7D: freshness registry (G.2.1), user/operational memory (G.2.2), span offsets (G.2.3), frontmatter promotion (G.2.4).
+**Phase 7B closed 2026-05-16 (typed collection registry — typed enum + score components + follow-up handles + SourceID filter).** US-L01..L05 shipped (commits 1a6a609a, 92e446fb, ca6a86e3, bb0ed864, 508b32a1).
+
+**Phase 7C-F closed 2026-05-17 for their bounded subphase scopes.** Phase07C translated Phase-M projection-freshness evidence into Aura phase files. Phase07D closed typed user/operational memory recall separation with local and live mixed-tier probes. Phase07E closed source page/byte-span preservation plus `source(action=read,...)` byte-range follow-up with local and live source-span probes. Phase07F closed wiki frontmatter schema/prompt-version promotion through SQLite, Qdrant, graph documents, and `search_memory(scope=wiki)`, and repaired Qdrant single-page wiki reindex upsert/delete behavior.
 
 Goal: retrieval stops being one broad memory soup.
 
@@ -1559,12 +1562,12 @@ Manual controls remain for bootstrap, debug, and explicit operator override.
 They are not the architecture and cannot be used as the only proof that Aura is
 autonomous.
 
-Planning status as of 2026-05-16: the Phase08 planning folder is
-`ready-for-discussion` after independent re-verification. It is not
-`ready-for-implementation` until the open decisions are accepted or deliberately
-changed and the first bounded implementation slice is locked. Phase07C remains
-owned by the Ralph loop in Claude Code; Phase08 consumes context capsule handles
-and does not implement retrieval freshness.
+Planning status as of 2026-05-17: Phase07C-F are closed for their bounded
+subphase scopes, so Phase08 can be promoted next from its planning material. It
+is not `ready-for-implementation` until the open decisions are accepted or
+deliberately changed and the first benchmarkable runtime slice is locked.
+Phase08 consumes context capsule handles and does not implement remaining
+GraphRAG freshness or projection-quality work.
 
 Reference maps:
 
@@ -1781,17 +1784,19 @@ derived queues or evidence. They are valid only after being checked against the
 canonical PRD/ADR/phase files. If a queue conflicts with the PRD, current
 handoff, or phase progress, update or re-author the queue before execution.
 
-Current execution state on 2026-05-16:
+Current execution state on 2026-05-17:
 
 - Phase01A, Phase01B, and Phase01C are closed for their implemented
   foundation/identity/question-gate scopes.
 - Phase01C was pushed as `ecb4cf3e fix(chat): close Phase01C question gate`;
   GitHub Actions CI run `25958870299` passed.
 - Phase02, Phase03 Telegram-streaming arc, Phase04 Runner-removal arc, Phase05,
-  Phase06 in-scope slice, Phase07A, Phase07B, and Phase10 have closure evidence
-  in their phase folders.
-- Phase07C-F, Phase08, and Phase09 remain planned/scaffolded. Select one and
-  promote its `source.md`, `plan.md`, and `benchmark.md` before implementation.
+  Phase06 in-scope slice, Phase07A-F, and Phase10 have closure evidence in
+  their phase folders.
+- Phase07C-F are closed for their bounded subphase scopes as of 2026-05-17.
+  Phase08, Phase09, production hardening, and remaining broad Phase 7 GraphRAG
+  work should be promoted with fresh `source.md`, `plan.md`, and `benchmark.md`
+  before implementation.
 
 ---
 

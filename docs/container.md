@@ -239,6 +239,15 @@ snapshot first, then archive that snapshot. Host-side debug commands that write
 `data/aura.db`, such as `debug_memory_closure -apply` and `seed_e2e_env`, refuse
 to run while the Compose `aura` service is up.
 
+To mint frontend E2E environment variables from the Compose database in
+PowerShell, stop Aura first so the host-side seed can write safely:
+
+```powershell
+docker compose stop aura
+Invoke-Expression (& go run ./cmd/seed_e2e_env -db ./data/aura.db -shell powershell)
+docker compose up -d aura
+```
+
 ## Notes
 
 - `compose.yaml` sets `AURA_HEADLESS=true`; desktop builds still keep the tray.

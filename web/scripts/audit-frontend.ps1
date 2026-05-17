@@ -20,7 +20,7 @@ try {
   npm run build
 
   if ([string]::IsNullOrWhiteSpace($env:AURA_E2E_TOKEN)) {
-    throw "AURA_E2E_TOKEN is not set in the process environment. Run cmd/seed_e2e_env (eval its output) before running the frontend audit."
+    throw "AURA_E2E_TOKEN is not set. From the repo root run: Invoke-Expression (& go run ./cmd/seed_e2e_env -shell powershell). Add -db ./data/aura.db for the Compose DB after stopping the aura container."
   }
 
   $dashboardUrl = Dashboard-Url

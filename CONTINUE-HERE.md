@@ -2,6 +2,47 @@
 
 Fresh Aura sessions must start here.
 
+Latest implementation repair as of 2026-05-17:
+
+- Current local git HEAD observed during the repair:
+  `930a6ca1 feat(api,web): surface tool_attempts in dashboard (US-T05)`.
+- `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/`
+  is now closed with wiki frontmatter trust metadata flowing through
+  `loadWikiDocuments`, graph node cards, SQLite/Qdrant result parsing, and
+  `search_memory(scope=wiki)`.
+- `qdrantRepository.ReindexWikiPage` now direct-upserts changed wiki page docs
+  so warm-cache collection reuse does not suppress live page metadata after a
+  dashboard/wiki write.
+- Verification passed: Phase07F targeted metadata/reindex tests,
+  `go test ./internal/wiki ./internal/storage/search ./internal/agent/tools/registry ./cmd/probe_chat -count=1`,
+  `go vet ./...`, `go build ./...`, `go test ./... -count=1`,
+  `docker compose build aura`, `docker compose up -d --no-deps aura`, and live
+  `phase07f-wiki-frontmatter-metadata` with `pass=true`, `tool_calls=2`,
+  `llm_calls=3`, exact marker/source and metadata reply.
+- Next roadmap action is Phase08 Cron And Swarm RunGraph or Phase09 Memory
+  Source Discipline. Promote the selected phase into source/plan/benchmark
+  before implementation.
+- Note: current web chat did not create fresh `tool_attempts` rows during the
+  Phase07F live probe. The Phase07F proof uses unprompted marker/source
+  retrieval plus API/Qdrant ground truth; run-observability should be audited in
+  a later slice.
+
+Previous implementation repair as of 2026-05-17:
+
+- Current local git HEAD observed during the repair:
+  `c76c9f69`.
+- `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07E_Source_Span_Byte_Offsets/`
+  is now closed with compact source span columns, source page byte offsets,
+  span-aware `search_memory` source output, production
+  `source(action=read,...)` byte-range reads, and a live/chat
+  `cmd/probe_chat` source-span probe.
+- Verification passed: Phase07E targeted package gate, `go vet ./...`,
+  `go build ./...`, `go test ./... -count=1`, and live Compose
+  `phase07e-source-span-read` with `pass=true`, `tool_calls=2`, `llm_calls=3`,
+  exact `SPAN=<target>` reply.
+- Historical note: this previously pointed to Phase07F. Phase07F is now
+  closed; use the latest section above and promote Phase08 or Phase09 next.
+
 Latest planning repair as of 2026-05-16:
 
 - Current local git HEAD observed during the repair:
@@ -9,8 +50,9 @@ Latest planning repair as of 2026-05-16:
 - `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07C_Projection_Freshness_Registry/`
   now exists as the canonical self-audited Phase07C planning folder, translated
   from Phase-M/current-code evidence.
-- If continuing Phase 7, select Phase07D next and rebuild it from current code
-  plus `prd.md` before implementation.
+- Historical note: this previously pointed to Phase07D. Phase07D and Phase07F
+  are now closed; use the latest section above and continue with Phase08 or
+  Phase09 planning.
 - Older notes below still record the Phase01C handoff context; prefer
   `D:/Aura/.planning/deep-refactor/INDEX.md` and
   `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/` for the
@@ -252,7 +294,7 @@ Required first reads:
 4. `D:/Aura/prd.md`
 5. `D:/Aura/.planning/deep-refactor/INDEX.md`
 6. `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphase-summary.md`
-7. `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07C_Projection_Freshness_Registry/`
+7. `D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/`
 8. `D:/Aura/.planning/deep-refactor/Phase01/subphase-summary.md` if reopening Phase01 evidence
 
 Do not rely on chat history. Reconstruct the state from the files above before

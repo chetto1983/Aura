@@ -1,8 +1,7 @@
 # Phase07 Source Audit
 
-Status: source-merged for parent planning. Phase07A, Phase07B, and Phase07C
-have shipped with local code evidence. Phase07D-F remain planned and need fresh
-source mapping before implementation.
+Status: source-merged for parent planning. Phase07A through Phase07F have
+shipped with local/live code evidence.
 
 | Source | Decision Supported | Adopt | Reject / Avoid | Status |
 | --- | --- | --- | --- | --- |
@@ -54,6 +53,12 @@ source mapping before implementation.
 - Retrieval output may surface freshness/degraded annotations; the annotation
   is user-visible context quality metadata, not proof that the underlying fact
   is true.
+- Wiki retrieval output may surface frontmatter trust metadata (`schema=`,
+  `prompt=`, `created=`, `unversioned=true`, `sources=[...]`) so the model can
+  distinguish trusted wiki hits without rereading raw frontmatter.
+- Single-page wiki reindexing must upsert the changed Qdrant page document
+  directly. The warm-cache full rebuild remains useful at startup but is not a
+  valid page-write reindex path.
 
 ## Rejected Or Deferred Decisions
 
@@ -66,13 +71,25 @@ source mapping before implementation.
   already own the document identity.
 - No Qdrant alias swap, embedding drift adapter, or wiki/source invalidation
   cascade in Phase07C; those need their own future slice.
+- No GraphRAG ranking/community report implementation in Phase07F; the metadata
+  foundation is closed, not the full graph retrieval system.
 
 ## Missing Source Questions
 
-- Phase07C mapped compact-memory projection freshness. Before Phase07D, map
-  typed user/operational writers and recall surfaces against the already
-  shipped `recall_user_memory` and `recall_operational` code.
-- Before a future wiki/source projection slice, map reindex job ownership,
-  delete/rename operations, and projection watermarks.
+- Phase07D now maps typed user/operational writers and recall surfaces against
+  the already shipped `recall_user_memory` and `recall_operational` code. A
+  disposable direct mixed-tier golden and live/chat `cmd/probe_chat` probe
+  passed on 2026-05-17.
+- Phase07E is closed in
+  `subphases/Phase07E_Source_Span_Byte_Offsets/`. Compact source rows now
+  persist `chunk_index`, `byte_start`, and `byte_end`; `search_memory` emits
+  span-aware `source(action=read,...)` follow-ups; the live chat probe verified
+  the cited span against authoritative source bytes.
+- Phase07F is closed in
+  `subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/`.
+  Wiki/search metadata now carries schema, prompt, created, unversioned, and
+  source trust signals, and changed wiki pages direct-upsert into Qdrant.
+- Before a future wiki/source projection slice, map delete/rename operations,
+  graph index invalidation, and projection watermarks.
 - Before a future GraphRAG slice, map `internal/wiki/graph_index.go`,
   `internal/wiki/store_writes.go`, and graph document projection tests.

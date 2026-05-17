@@ -64,30 +64,48 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 // readSourceMarkdown returns ocr.md when present, else falls back to the
 // stored original (text/url kinds) so the LLM can read non-PDF sources too.
 func readSourceMarkdown(store source.FileResolver, src *source.Source, maxBytes int) (string, error) {
+	return readSourceMarkdownRange(store, src, maxBytes, 0, 0, false)
+}
+
+func readSourceMarkdownRange(store source.FileResolver, src *source.Source, maxBytes int, byteStart, byteEnd int, hasRange bool) (string, error) {
+	raw, err := readSourceMarkdownBytes(store, src)
+	if err != nil {
+		return "", err
+	}
+	if hasRange {
+		raw, err = sliceSourceBytes(raw, byteStart, byteEnd)
+		if err != nil {
+			return "", err
+		}
+	}
+	return truncateForToolContext(string(raw), maxBytes), nil
+}
+
+func readSourceMarkdownBytes(store source.FileResolver, src *source.Source) ([]byte, error) {
 	mdPath := store.Path(src.ID, "ocr.md")
 	if mdPath == "" {
-		return "", fmt.Errorf("read_source: invalid path for %s", src.ID)
+		return nil, fmt.Errorf("read_source: invalid path for %s", src.ID)
 	}
 	raw, err := os.ReadFile(mdPath)
 	if err == nil {
-		return truncateForToolContext(string(raw), maxBytes), nil
+		return raw, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("read_source: %w", err)
+		return nil, fmt.Errorf("read_source: %w", err)
 	}
 
 	switch src.Kind {
 	case source.KindText:
-		return readOriginalContent(store, src.ID, "original.txt", maxBytes)
+		return readOriginalContentBytes(store, src.ID, "original.txt")
 	case source.KindURL:
-		return readOriginalContent(store, src.ID, "original.url", maxBytes)
+		return readOriginalContentBytes(store, src.ID, "original.url")
 	case source.KindSandboxArtifact:
 		if !isReadableSandboxArtifact(src) {
-			return "", fmt.Errorf("read_source: sandbox artifact %s is not text-readable (mime=%s)", src.ID, src.MimeType)
+			return nil, fmt.Errorf("read_source: sandbox artifact %s is not text-readable (mime=%s)", src.ID, src.MimeType)
 		}
-		return readOriginalContent(store, src.ID, source.OriginalFilenameForKind(src.Kind, src.Filename), maxBytes)
+		return readOriginalContentBytes(store, src.ID, source.OriginalFilenameForKind(src.Kind, src.Filename))
 	}
-	return "", fmt.Errorf("read_source: ocr.md not found for %s (status=%s); run ocr_source first", src.ID, src.Status)
+	return nil, fmt.Errorf("read_source: ocr.md not found for %s (status=%s); run ocr_source first", src.ID, src.Status)
 }
 
 func isReadableSandboxArtifact(src *source.Source) bool {
@@ -104,18 +122,39 @@ func isReadableSandboxArtifact(src *source.Source) bool {
 }
 
 func readOriginalContent(store source.FileResolver, id, name string, maxBytes int) (string, error) {
+	raw, err := readOriginalContentBytes(store, id, name)
+	if err != nil {
+		return "", err
+	}
+	return truncateForToolContext(string(raw), maxBytes), nil
+}
+
+func readOriginalContentBytes(store source.FileResolver, id, name string) ([]byte, error) {
 	path := store.Path(id, name)
 	if path == "" {
-		return "", fmt.Errorf("read_source: invalid path for %s", id)
+		return nil, fmt.Errorf("read_source: invalid path for %s", id)
 	}
 	// Cap the file read to maxSourceReadBytes — much larger than the visible
 	// truncation cap but still bounded, so a multi-GB sandbox_artifact can't
 	// OOM the bot when an LLM asks to read it.
 	raw, err := readBoundedFile(path, int64(maxSourceReadBytes))
 	if err != nil {
-		return "", fmt.Errorf("read_source: %w", err)
+		return nil, fmt.Errorf("read_source: %w", err)
 	}
-	return truncateForToolContext(string(raw), maxBytes), nil
+	return raw, nil
+}
+
+func sliceSourceBytes(raw []byte, start, end int) ([]byte, error) {
+	if start < 0 || end < 0 {
+		return nil, errors.New("read_source: byte range must be non-negative")
+	}
+	if start >= end {
+		return nil, errors.New("read_source: byte_start must be less than byte_end")
+	}
+	if end > len(raw) {
+		return nil, fmt.Errorf("read_source: byte range %d-%d exceeds artifact length %d", start, end, len(raw))
+	}
+	return raw[start:end], nil
 }
 
 func formatSourceMetadata(s *source.Source) string {

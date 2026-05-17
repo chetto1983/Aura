@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
@@ -157,10 +159,11 @@ func sourcePageDocuments(src *source.Source, body string) []Document {
 	}
 	pages := splitSourcePages(body)
 	if len(pages) == 0 {
-		pages = []sourcePage{{Number: 0, Body: body}}
+		start, end := trimSpaceByteRange(body)
+		pages = []sourcePage{{Number: 0, Body: body[start:end], ByteStart: start, ByteEnd: end}}
 	}
 	docs := make([]Document, 0, len(pages))
-	for _, page := range pages {
+	for i, page := range pages {
 		text := compactForIndex(page.Body, sourceSnippetLimit)
 		if text == "" {
 			continue
@@ -172,24 +175,29 @@ func sourcePageDocuments(src *source.Source, body string) []Document {
 			handle = id
 		}
 		docs = append(docs, Document{
-			ID:        id,
-			Kind:      KindSource,
-			Title:     src.Filename,
-			Body:      text,
-			Handle:    handle,
-			SourceID:  src.ID,
-			Page:      page.Number,
-			Status:    string(src.Status),
-			Tags:      []string{string(src.Kind), string(src.Status)},
-			UpdatedAt: src.CreatedAt,
+			ID:         id,
+			Kind:       KindSource,
+			Title:      src.Filename,
+			Body:       text,
+			Handle:     handle,
+			SourceID:   src.ID,
+			Page:       page.Number,
+			ChunkIndex: i,
+			ByteStart:  page.ByteStart,
+			ByteEnd:    page.ByteEnd,
+			Status:     string(src.Status),
+			Tags:       []string{string(src.Kind), string(src.Status)},
+			UpdatedAt:  src.CreatedAt,
 		})
 	}
 	return docs
 }
 
 type sourcePage struct {
-	Number int
-	Body   string
+	Number    int
+	Body      string
+	ByteStart int
+	ByteEnd   int
 }
 
 func splitSourcePages(body string) []sourcePage {
@@ -205,12 +213,41 @@ func splitSourcePages(body string) []sourcePage {
 			end = matches[i+1][0]
 		}
 		number, _ := strconv.Atoi(body[match[2]:match[3]])
+		trimStart, trimEnd := trimSpaceByteRange(body[match[1]:end])
 		out = append(out, sourcePage{
-			Number: number,
-			Body:   strings.TrimSpace(body[start:end]),
+			Number:    number,
+			Body:      body[start+trimStart : start+trimEnd],
+			ByteStart: start + trimStart,
+			ByteEnd:   start + trimEnd,
 		})
 	}
 	return out
+}
+
+func trimSpaceByteRange(value string) (int, int) {
+	start := 0
+	end := len(value)
+	for start < end {
+		r, size := utf8.DecodeRuneInString(value[start:end])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		if !unicode.IsSpace(r) {
+			break
+		}
+		start += size
+	}
+	for end > start {
+		r, size := utf8.DecodeLastRuneInString(value[start:end])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		if !unicode.IsSpace(r) {
+			break
+		}
+		end -= size
+	}
+	return start, end
 }
 
 func readSourceIndexBody(store source.Repository, src *source.Source) (string, error) {

@@ -69,13 +69,13 @@ type freshnessGetter interface {
 const compactMemoryProjectionID = "compact_memory_documents"
 
 type SearchMemoryTool struct {
-	wiki                  search.Searcher
-	compact               compactMemorySearcher
-	freshnessStore        freshnessGetter
-	timeout               time.Duration
-	halfLifeWikiDays      float64
-	halfLifeArchiveDays   float64
-	now                   func() time.Time
+	wiki                search.Searcher
+	compact             compactMemorySearcher
+	freshnessStore      freshnessGetter
+	timeout             time.Duration
+	halfLifeWikiDays    float64
+	halfLifeArchiveDays float64
+	now                 func() time.Time
 }
 
 // SetFreshnessStore injects a freshness getter so Execute can annotate
@@ -238,23 +238,31 @@ func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, 
 }
 
 type memoryResult struct {
-	Kind             string
-	Identifier       string
-	Title            string
-	Role             string
-	Snippet          string
-	Page             int
-	Score            float64
-	ScoreExact       float64
-	ScoreFTS         float64
-	ScoreVector      float64
-	UpdatedAt        time.Time
-	Handle           string
-	FilePath         string
-	Category         string
-	Tags             []string
-	Related          []string
-	SizeBytes        int64
+	Kind          string
+	Identifier    string
+	Title         string
+	Role          string
+	Snippet       string
+	Page          int
+	ChunkIndex    int
+	ByteStart     int
+	ByteEnd       int
+	Score         float64
+	ScoreExact    float64
+	ScoreFTS      float64
+	ScoreVector   float64
+	UpdatedAt     time.Time
+	CreatedAt     time.Time
+	SchemaVersion int
+	PromptVersion string
+	Unversioned   bool
+	Handle        string
+	FilePath      string
+	Category      string
+	Tags          []string
+	Related       []string
+	Sources       []string
+	SizeBytes     int64
 	// Freshness fields — compact memory only, populated when US-M03 columns are set.
 	IndexedAt        time.Time
 	EmbeddingModelID string
@@ -288,21 +296,26 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 			identifier = r.Slug
 		}
 		out = append(out, memoryResult{
-			Kind:        kind,
-			Identifier:  identifier,
-			Title:       r.Title,
-			Snippet:     snippet,
-			Score:       float64(r.Score),
-			ScoreExact:  float64(r.ScoreExact),
-			ScoreFTS:    float64(r.ScoreFTS),
-			ScoreVector: float64(r.ScoreVector),
-			UpdatedAt:   r.UpdatedAt,
-			Handle:      identifier,
-			FilePath:    r.FilePath,
-			Category:    r.Category,
-			Tags:        r.Tags,
-			Related:     r.Related,
-			SizeBytes:   r.SizeBytes,
+			Kind:          kind,
+			Identifier:    identifier,
+			Title:         r.Title,
+			Snippet:       snippet,
+			Score:         float64(r.Score),
+			ScoreExact:    float64(r.ScoreExact),
+			ScoreFTS:      float64(r.ScoreFTS),
+			ScoreVector:   float64(r.ScoreVector),
+			UpdatedAt:     r.UpdatedAt,
+			CreatedAt:     r.CreatedAt,
+			SchemaVersion: r.SchemaVersion,
+			PromptVersion: r.PromptVersion,
+			Unversioned:   r.Unversioned,
+			Handle:        identifier,
+			FilePath:      r.FilePath,
+			Category:      r.Category,
+			Tags:          r.Tags,
+			Related:       r.Related,
+			Sources:       r.Sources,
+			SizeBytes:     r.SizeBytes,
 		})
 	}
 	return out, nil
@@ -340,6 +353,9 @@ func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kind
 			Title:            doc.Title,
 			Snippet:          snippet,
 			Page:             doc.Page,
+			ChunkIndex:       doc.ChunkIndex,
+			ByteStart:        doc.ByteStart,
+			ByteEnd:          doc.ByteEnd,
 			Score:            doc.Score,
 			ScoreExact:       doc.ScoreExact,
 			ScoreFTS:         doc.ScoreFTS,
@@ -434,8 +450,8 @@ func clampUnit(v float64) float64 {
 //
 // Format (per hit):
 //
-//	- [kind] handle — title (age) score=0.92
-//	  snippet text from the page
+//   - [kind] handle — title (age) score=0.92
+//     snippet text from the page
 func formatMemoryResults(query string, results []memoryResult, warnings []string, now time.Time) string {
 	var sb strings.Builder
 	cleanedWarnings := cleanWarnings(warnings)
@@ -461,6 +477,12 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 		if r.Page > 0 {
 			fmt.Fprintf(&sb, " page=%d", r.Page)
 		}
+		if r.ByteEnd > r.ByteStart {
+			fmt.Fprintf(&sb, " span=bytes=%d-%d", r.ByteStart, r.ByteEnd)
+			if r.ChunkIndex > 0 {
+				fmt.Fprintf(&sb, " chunk=%d", r.ChunkIndex)
+			}
+		}
 		// Surface the handle when it is a richer follow-up token than the
 		// identifier alone (e.g. a source's page-targeted "source:src_xxx#page=2").
 		// This is what read_source / read_memory consume for precise re-reads.
@@ -473,6 +495,18 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 		fmt.Fprintf(&sb, " score=%.2f", r.Score)
 		if r.ScoreExact != 0 || r.ScoreFTS != 0 || r.ScoreVector != 0 {
 			fmt.Fprintf(&sb, " [exact=%.2f fts=%.2f vector=%.2f]", r.ScoreExact, r.ScoreFTS, r.ScoreVector)
+		}
+		if r.SchemaVersion > 0 {
+			fmt.Fprintf(&sb, " schema=%d", r.SchemaVersion)
+		}
+		if r.PromptVersion != "" {
+			fmt.Fprintf(&sb, " prompt=%s", r.PromptVersion)
+		}
+		if !r.CreatedAt.IsZero() {
+			fmt.Fprintf(&sb, " created=%s", r.CreatedAt.UTC().Format(time.RFC3339))
+		}
+		if r.Unversioned {
+			fmt.Fprintf(&sb, " unversioned=true")
 		}
 		if fu := followUpHandle(r); fu != "" {
 			fmt.Fprintf(&sb, " follow_up=%s", fu)
@@ -498,6 +532,13 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 				rel = rel[:5]
 			}
 			fmt.Fprintf(&sb, " related=[%s]", strings.Join(rel, ","))
+		}
+		if len(r.Sources) > 0 {
+			sources := r.Sources
+			if len(sources) > 5 {
+				sources = sources[:5]
+			}
+			fmt.Fprintf(&sb, " sources=[%s]", strings.Join(sources, ","))
 		}
 		// Freshness annotation: emitted when any freshness column is non-empty.
 		// Only compact-memory hits carry these; wiki hits always have zero values.
@@ -697,7 +738,7 @@ func compactMemoryLine(value string) string {
 // Mapping:
 //   - wiki / wiki_page / graph_node: [[slug]] (the identifier already is [[slug]])
 //   - graph_index: [[slug]] (identifier is bare slug for graph_index kind)
-//   - source: read_source(source_id=<id>,mode=ocr)
+//   - source: source(action=read,source_id=<id>,mode=ocr[,byte_start=<n>,byte_end=<n>])
 //   - archive: search_memory(scope=archive) — read_memory does not exist in registry
 //   - proposal: search_memory(scope=proposals) — read_memory does not exist in registry
 func followUpHandle(r memoryResult) string {
@@ -707,7 +748,10 @@ func followUpHandle(r memoryResult) string {
 	case "graph_index":
 		return "[[" + r.Identifier + "]]"
 	case memoryindex.KindSource:
-		return "read_source(source_id=" + r.Identifier + ",mode=ocr)"
+		if r.ByteEnd > r.ByteStart {
+			return fmt.Sprintf("source(action=read,source_id=%s,mode=ocr,byte_start=%d,byte_end=%d)", r.Identifier, r.ByteStart, r.ByteEnd)
+		}
+		return "source(action=read,source_id=" + r.Identifier + ",mode=ocr)"
 	case memoryindex.KindArchive:
 		return "search_memory(scope=archive)"
 	case memoryindex.KindProposal:

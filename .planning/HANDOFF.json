@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-16T12:40:00+02:00",
+  "timestamp": "2026-05-17T00:00:00+02:00",
   "context": "deep-refactor",
   "phase": "PlanningState",
   "phase_name": "Planning State Sweep After Phase01C CI",
   "phase_dir": "D:/Aura/.planning/deep-refactor",
-  "status": "phase07c-plan-repaired",
+  "status": "phase07f-closed",
   "completed_tasks": [
     {
       "id": "CLEAN-INDEX",
@@ -138,6 +138,30 @@
       "name": "Refresh phase plans and close only slices with existing benchmark/progress evidence",
       "status": "docs_updated_not_committed",
       "evidence": "D:/Aura/.planning/deep-refactor/INDEX.md"
+    },
+    {
+      "id": "P07D-MIXED-TIER-GOLDEN",
+      "name": "Harden Phase07D with disposable mixed-tier direct tool golden",
+      "status": "done",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07D_User_Operational_Memory_Typed_Tiers/benchmark.md"
+    },
+    {
+      "id": "P07D-LIVE-CHAT-GOLDEN",
+      "name": "Close Phase07D with live cmd/probe_chat mixed-tier typed recall",
+      "status": "closed_live_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07D_User_Operational_Memory_Typed_Tiers/benchmark.md"
+    },
+    {
+      "id": "P07E-SOURCE-SPAN-BYTE-OFFSETS",
+      "name": "Close Phase07E with compact source span byte offsets and live source(action=read) proof",
+      "status": "closed_live_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07E_Source_Span_Byte_Offsets/benchmark.md"
+    },
+    {
+      "id": "P07F-WIKI-FRONTMATTER-METADATA",
+      "name": "Close Phase07F with wiki frontmatter metadata promotion and live metadata retrieval proof",
+      "status": "closed_live_verified",
+      "evidence": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/benchmark.md"
     }
   ],
   "remaining_tasks": [],
@@ -249,8 +273,23 @@
     },
     {
       "decision": "Planning closure follows benchmark evidence, not scaffold status.",
-      "rationale": "This sweep updated stale plan/status files where progress and benchmark files already proved closure. A later Codex repair translated Phase-M evidence into the canonical Phase07C Projection Freshness Registry files, leaving Phase07D-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map open because they still do not have closure evidence.",
+      "rationale": "This sweep updated stale plan/status files where progress and benchmark files already proved closure. Later Codex repairs translated Phase-M evidence into the canonical Phase07C Projection Freshness Registry files, closed Phase07D with live typed recall evidence, closed Phase07E with live source-span byte-range evidence, and closed Phase07F with live wiki frontmatter metadata retrieval evidence, leaving Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map open because they still do not have closure evidence.",
       "source": "D:/Aura/.planning/deep-refactor/INDEX.md"
+    },
+    {
+      "decision": "Phase07D closes on typed recall tools plus live chat evidence.",
+      "rationale": "Package tests prove approved writers and active-only recall; disposable fixtures prove no cross-tier leakage; live cmd/probe_chat proves /api/chat can call recall_user_memory and recall_operational, cite only approved typed tokens, and record ok tool_attempts without falling back to broad search_memory.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07D_User_Operational_Memory_Typed_Tiers/benchmark.md"
+    },
+    {
+      "decision": "Phase07E closes on compact memory source span fields plus production source byte-range reads.",
+      "rationale": "Migration/schema, memoryindex, rebuild, search_memory, unified source tool, and live cmd/probe_chat evidence prove source-backed compact rows preserve UTF-8 byte spans and can retrieve the exact source slice through source(action=read,...).",
+      "source": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07E_Source_Span_Byte_Offsets/benchmark.md"
+    },
+    {
+      "decision": "Phase07F closes on wiki frontmatter trust metadata promotion plus single-page Qdrant reindex.",
+      "rationale": "Wiki docs, graph node cards, SQLite/Qdrant result parsing, and search_memory now carry schema, prompt, created, unversioned, and source trust signals. ReindexWikiPage direct-upserts changed wiki pages so warm-cache full rebuild reuse cannot suppress live metadata retrieval.",
+      "source": "D:/Aura/.planning/deep-refactor/Phase07_Rebuild_RAG_Typed_Memory/subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/benchmark.md"
     }
   ],
   "blockers": [],
@@ -494,7 +533,30 @@
     "docker compose restart aura after live probe; container returned healthy; GET /health -> {\"status\":\"alive\"}; startup logs since restart contained no warn/error/fatal/panic levels",
     "Telegram live DB evidence: recent telegram runs present, including completed runs 707550c630d96e3f and 2baecce148072f8b; no scripted external Telegram chat fixture exists for this slice",
     "git push origin master for ecb4cf3e succeeded",
-    "GitHub Actions CI run 25958870299 passed for ecb4cf3e: Frontend build and Go test + Phase 2 guards green"
+    "GitHub Actions CI run 25958870299 passed for ecb4cf3e: Frontend build and Go test + Phase 2 guards green",
+    "go test ./cmd/aura -run TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness -count=1",
+    "go test ./internal/agent/tools/registry -run \"Test(SearchMemoryTool(UsesOneCompactSearchForAllScope|RejectsTypedTierScopes)|RecallUserMemoryTool|RecallOperationalTool|ExamplesParameterEval)\" -count=1",
+    "go test ./cmd/aura ./internal/agent/tools/registry -count=1",
+    "go test ./internal/storage/memoryindex ./internal/learning ./internal/agent/tools/registry ./cmd/aura -run \"Test(CollectionConstants|KindBackCompat|ScaffoldedCollections|WriteApprovedLesson|WriteApprovedUserFact|RecallUserMemoryTool|RecallOperationalTool|ExamplesParameterEval|SearchMemoryTool(UsesOneCompactSearchForAllScope|RejectsTypedTierScopes)|RegisterMemoryRecallToolsWiresTypedTiersAndFreshness)\" -count=1",
+    "docker compose run --rm -v ${PWD}\\data:/data test go run ./cmd/probe_chat -case phase07d-mixed-tier-recall -url http://aura:8080/api/chat -api http://aura:8080/api -db /data/aura.db -token <seeded-token> -timeout 240 -json -> pass=true, tool_calls=2, llm_calls=2",
+    "go test ./cmd/probe_chat ./cmd/aura ./internal/agent/tools/registry -count=1",
+    "go test ./internal/storage/memoryindex ./internal/learning ./internal/agent/tools/registry ./cmd/aura ./cmd/probe_chat -run \"Test(CollectionConstants|KindBackCompat|ScaffoldedCollections|WriteApprovedLesson|WriteApprovedUserFact|RecallUserMemoryTool|RecallOperationalTool|ExamplesParameterEval|SearchMemoryTool(UsesOneCompactSearchForAllScope|RejectsTypedTierScopes)|RegisterMemoryRecallToolsWiresTypedTiersAndFreshness)\" -count=1",
+    "go test ./internal/db/migrations -run \"TestRunCreatesCurrentSchema|TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent\" -count=1",
+    "go test ./internal/storage/memoryindex -run \"Test(DocumentRoundTrip|StoreSourceIDFilter|SourcePageDocumentsPreserveByteSpans)\" -count=1",
+    "go test ./internal/agent/tools/registry -run \"Test(SearchMemoryTool.*Source|ReadSourceTool.*Byte|ReadSourceTool_Modes)\" -count=1",
+    "go test ./internal/db/migrations ./internal/storage/memoryindex ./internal/agent/tools/registry ./cmd/probe_chat -count=1",
+    "docker compose run --rm -v ${PWD}\\data:/data test go run ./cmd/probe_chat -case phase07e-source-span-read -url http://aura:8080/api/chat -api http://aura:8080/api -db /data/aura.db -token <seeded-token> -timeout 240 -json -> pass=true, tool_calls=2, llm_calls=3, exact SPAN target reply",
+    "go vet ./...",
+    "go build ./...",
+    "go test ./... -count=1",
+    "go test ./internal/storage/search ./internal/agent/tools/registry ./cmd/probe_chat -run \"Test(LoadWikiDocumentsPromotesFrontmatterMetadata|SQLiteSearchReturnsFrontmatterMetadata|QdrantSearcherSearchQueriesPointsAndMapsPayload|QdrantRepositoryReindexWikiPageUpsertsChangedPageAfterWarmCache|RebuildQdrantWikiDocumentsCreatesCollectionAndUpsertsDocs|SearchMemoryTool_WikiFrontmatterMetadata)\" -count=1",
+    "go test ./internal/wiki ./internal/storage/search ./internal/agent/tools/registry ./cmd/probe_chat -count=1",
+    "docker compose build aura",
+    "docker compose up -d --no-deps aura",
+    "go run ./cmd/probe_chat -case phase07f-wiki-frontmatter-metadata -url http://localhost:18080/api/chat -api http://localhost:18080/api -db .\\data\\aura.db -token <seeded-token> -timeout 240 -json -> pass=true, tool_calls=2, llm_calls=3, exact Phase07F marker/source metadata reply",
+    "go vet ./...",
+    "go build ./...",
+    "go test ./... -count=1"
   ],
   "uncommitted_files": [
     "Planning/resume docs updated by 2026-05-16 state sweep; not committed yet",
@@ -504,9 +566,9 @@
     "docs/phase07c-*-2026-05-16.md (pre-existing/untracked; preserve unless explicitly selected)"
   ],
   "last_known_git": {
-    "head": "7d3b7ebc chore(cleanup): track 2 orphan-untracked files + remove build artifacts",
-    "status": "current local HEAD observed during Phase07C planning repair; dirty worktree includes Phase07 planning docs plus unrelated user WIP that must be preserved"
+    "head": "930a6ca1",
+    "status": "current local HEAD observed after Phase07F closure; dirty worktree includes Phase07D/E/F implementation/planning plus unrelated user WIP that must be preserved"
   },
-  "next_action": "Select the next bounded phase slice from D:/Aura/.planning/deep-refactor/INDEX.md before editing more code. If continuing Phase07, start with Phase07D; Phase08 and Phase09 still require plan promotion.",
-  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E and CI-verified for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, production web-pipe falsification, and GitHub Actions run 25958870299. Phase07C now has canonical self-audited planning files for Projection Freshness Registry based on current code/Phase-M evidence and targeted package tests. Phase07D-F, Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map remain open/not green."
+  "next_action": "Promote Phase08 Cron And Swarm RunGraph or Phase09 Memory Source Discipline into a source-backed phase plan before implementation.",
+  "context_notes": "Do not bundle Phase 5/6 destructive-tool policy or Phase 8 cron RunGraph/swarm topology redesign into unrelated slices. Phase01A local implementation and verifier repair passed full Go validation. Phase01B1 is closed with local and subagent verification; Phase01B2 is implemented and locally Go-verified; Phase01B3 is container E2E verified; Phase01B4 is repo and container verified; Phase01B5, Phase01B6, Phase01B7, the fail-closed authority repair, parent actor-persistence repair, provider-secret repair, runtime .env removal, exact live markers, web chat legacy removal, web chat stability pass, and RunTask RunID propagation repair are verified, including race tests and container health/auth-boundary checks. Phase01C is closed E2E and CI-verified for the durable question primitive with repo, compose test-profile, Telegram adapter/resume/fixture tests, production web-pipe falsification, and GitHub Actions run 25958870299. Phase07C has canonical self-audited planning files for Projection Freshness Registry based on current code/Phase-M evidence and targeted package tests. Phase07D is closed with deterministic broad-scope exclusion, runtime recall/freshness wiring tests, a disposable mixed-tier no-leak direct tool golden, live cmd/probe_chat mixed-tier typed recall, and full Go gates. Phase07E is closed with compact source span columns, UTF-8 byte offsets, production source(action=read,...) byte-range retrieval, live cmd/probe_chat source-span proof, and full Go gates. Phase07F is closed with wiki frontmatter trust metadata in SQLite/Qdrant/search_memory, single-page Qdrant reindex repair, live cmd/probe_chat metadata proof, Docker rebuild/restart, go vet ./..., go build ./..., and go test ./... -count=1. Phase08, Phase09, and the orientation-only Phase01_Stabilize_Map remain open/not green. Current web chat did not create fresh tool_attempts rows during the Phase07F live probe; track that as a later run-observability audit, not a Phase07F metadata blocker."
 }

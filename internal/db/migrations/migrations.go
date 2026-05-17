@@ -32,6 +32,7 @@ var registered = []Migration{
 	{Version: 14, Name: "add_operational_memory_proposal_columns", Up: addOperationalMemoryProposalColumns},
 	{Version: 15, Name: "add_agent_notes", Up: addAgentNotes},
 	{Version: 16, Name: "add_proposed_updates_actor_id", Up: addProposedUpdatesActorID},
+	{Version: 17, Name: "add_compact_memory_source_span_columns", Up: addCompactMemorySourceSpanColumns},
 }
 
 type columnDef struct {
@@ -165,6 +166,9 @@ CREATE TABLE IF NOT EXISTS compact_memory_documents (
   handle             TEXT NOT NULL DEFAULT '',
   source_id          TEXT NOT NULL DEFAULT '',
   page               INTEGER NOT NULL DEFAULT 0,
+  chunk_index        INTEGER NOT NULL DEFAULT 0,
+  byte_start         INTEGER NOT NULL DEFAULT 0,
+  byte_end           INTEGER NOT NULL DEFAULT 0,
   chat_id            INTEGER NOT NULL DEFAULT 0,
   conversation_id    INTEGER NOT NULL DEFAULT 0,
   proposal_id        INTEGER NOT NULL DEFAULT 0,
@@ -1058,6 +1062,9 @@ CREATE TABLE IF NOT EXISTS compact_memory_documents (
   handle          TEXT NOT NULL DEFAULT '',
   source_id       TEXT NOT NULL DEFAULT '',
   page            INTEGER NOT NULL DEFAULT 0,
+  chunk_index     INTEGER NOT NULL DEFAULT 0,
+  byte_start      INTEGER NOT NULL DEFAULT 0,
+  byte_end        INTEGER NOT NULL DEFAULT 0,
   chat_id         INTEGER NOT NULL DEFAULT 0,
   conversation_id INTEGER NOT NULL DEFAULT 0,
   proposal_id     INTEGER NOT NULL DEFAULT 0,
@@ -1237,6 +1244,14 @@ CREATE TABLE IF NOT EXISTS agent_notes (
 func addProposedUpdatesActorID(ctx context.Context, tx *sql.Tx) error {
 	return addMissingColumns(ctx, tx, "proposed_updates", []columnDef{
 		{Name: "actor_id", SQL: "TEXT NOT NULL DEFAULT ''"},
+	})
+}
+
+func addCompactMemorySourceSpanColumns(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "compact_memory_documents", []columnDef{
+		{Name: "chunk_index", SQL: "INTEGER NOT NULL DEFAULT 0"},
+		{Name: "byte_start", SQL: "INTEGER NOT NULL DEFAULT 0"},
+		{Name: "byte_end", SQL: "INTEGER NOT NULL DEFAULT 0"},
 	})
 }
 

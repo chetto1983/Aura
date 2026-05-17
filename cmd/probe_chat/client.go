@@ -164,6 +164,46 @@ func (e *Env) deleteSource(id string) error {
 	return nil
 }
 
+// writeWikiFile writes a top-level wiki file through the dashboard file API so
+// the production reindex hook runs in the same path operators use.
+func (e *Env) writeWikiFile(path, content string) error {
+	body, _ := json.Marshal(map[string]string{
+		"content":  content,
+		"encoding": "utf-8",
+	})
+	url := strings.TrimRight(e.APIBase, "/") + "/files/wiki/file?path=" + path
+	req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("PUT %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return nil
+}
+
+// deleteWikiFile removes a top-level wiki file through the dashboard file API.
+func (e *Env) deleteWikiFile(path string) error {
+	url := strings.TrimRight(e.APIBase, "/") + "/files/wiki/file?path=" + path
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return nil
+}
+
 // fetchWikiPage reads a single wiki page through the dashboard API.
 // Returns (nil, true) when the API responds 404 (page genuinely missing)
 // so Verify functions can distinguish "missing" from transport errors.

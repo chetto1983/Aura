@@ -25,6 +25,10 @@ func allCases(now time.Time) []Case {
 	wikiTitle := "Probe Chat Page " + stamp
 
 	return []Case{
+		phase07DMixedTierRecallCase(stamp),
+		phase07ESourceSpanReadCase(stamp),
+		phase07FWikiFrontmatterMetadataCase(stamp),
+
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{
 			Name:   "greeting-no-tools",

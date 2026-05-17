@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/store"
+	"github.com/aura/aura/internal/wiki"
 )
 
 // fakeFreshnessGetter satisfies the freshnessGetter interface for tests.
@@ -129,6 +131,19 @@ func TestSearchMemoryTool_OCRSourcePageNumber(t *testing.T) {
 	if !strings.Contains(out, "handle=source:"+src.ID+"#page=2") {
 		t.Fatalf("expected page-stable source handle:\n%s", out)
 	}
+	start := strings.Index(ocrBody, "The cancellation clause requires thirty days notice.")
+	end := start + len("The cancellation clause requires thirty days notice.")
+	if start < 0 {
+		t.Fatal("test fixture missing page 2 body")
+	}
+	wantSpan := "span=bytes=" + strconv.Itoa(start) + "-" + strconv.Itoa(end)
+	if !strings.Contains(out, wantSpan) {
+		t.Fatalf("expected source byte span %q:\n%s", wantSpan, out)
+	}
+	wantFollowUp := "follow_up=source(action=read,source_id=" + src.ID + ",mode=ocr,byte_start=" + strconv.Itoa(start) + ",byte_end=" + strconv.Itoa(end) + ")"
+	if !strings.Contains(out, wantFollowUp) {
+		t.Fatalf("expected span-aware follow_up %q:\n%s", wantFollowUp, out)
+	}
 }
 
 func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
@@ -153,6 +168,44 @@ func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
 	}
 	if !strings.Contains(out, "[graph_node] [[alpha-contract]]") {
 		t.Fatalf("expected graph_node evidence:\n%s", out)
+	}
+}
+
+func TestSearchMemoryTool_WikiFrontmatterMetadata(t *testing.T) {
+	created := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{{
+			Kind:          "wiki_page",
+			Slug:          "phase07f-metadata",
+			Title:         "Phase07F Metadata",
+			Content:       "Phase07F metadata marker.",
+			Score:         0.9,
+			CreatedAt:     created,
+			SchemaVersion: wiki.CurrentSchemaVersion,
+			PromptVersion: "ingest_v2",
+			Unversioned:   true,
+			Sources:       []string{"src_phase07f", "https://example.test/ref"},
+		}},
+	}, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "phase07f metadata", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, want := range []string{
+		"[wiki] [[phase07f-metadata]]",
+		"schema=2",
+		"prompt=ingest_v2",
+		"created=2026-05-01T10:00:00Z",
+		"unversioned=true",
+		"sources=[src_phase07f,https://example.test/ref]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `"schema_version"`) || strings.Contains(out, "Evidence envelope") {
+		t.Fatalf("output should stay compact markdown, got:\n%s", out)
 	}
 }
 
@@ -360,6 +413,19 @@ func TestSearchMemoryToolUsesOneCompactSearchForAllScope(t *testing.T) {
 	}
 	if !sameStringSetForTools(compact.kinds, []string{memoryindex.KindSource, memoryindex.KindArchive, memoryindex.KindProposal}) {
 		t.Fatalf("compact kinds = %#v", compact.kinds)
+	}
+}
+
+func TestSearchMemoryToolRejectsTypedTierScopes(t *testing.T) {
+	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{})
+	for _, scope := range []string{memoryindex.KindUserMemory, memoryindex.KindOperational} {
+		_, err := tool.Execute(context.Background(), map[string]any{"query": "typed tier", "scope": scope})
+		if err == nil {
+			t.Fatalf("scope %q should require its task-level recall tool instead of search_memory", scope)
+		}
+		if !strings.Contains(err.Error(), "unsupported scope") {
+			t.Fatalf("scope %q err = %v, want unsupported scope", scope, err)
+		}
 	}
 }
 
@@ -672,11 +738,11 @@ func TestSearchMemoryTool_ScoreComponentsAndFollowUp(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	// source: bracket with exact score + read_source follow_up
+	// source: bracket with exact score + source read follow_up
 	if !strings.Contains(out, "[exact=0.80") {
 		t.Errorf("source hit missing exact score bracket:\n%s", out)
 	}
-	if !strings.Contains(out, "follow_up=read_source(source_id=src_aabb112233445566,mode=ocr)") {
+	if !strings.Contains(out, "follow_up=source(action=read,source_id=src_aabb112233445566,mode=ocr)") {
 		t.Errorf("source follow_up missing:\n%s", out)
 	}
 

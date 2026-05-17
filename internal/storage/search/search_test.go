@@ -174,6 +174,70 @@ func TestLoadWikiDocumentsBuildsGraphCards(t *testing.T) {
 	}
 }
 
+func TestLoadWikiDocumentsPromotesFrontmatterMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	created := "2026-05-01T10:00:00Z"
+	updated := "2026-05-02T11:30:00Z"
+
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Phase07F Metadata",
+		Body:          "Phase07F sentinel frontmatter body linked to [[graph-target]].",
+		Category:      "concept",
+		Tags:          []string{"rag", "frontmatter"},
+		Related:       []string{"graph-target"},
+		Sources:       []string{"src_phase07f", "https://example.test/ref"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "ingest_v2",
+		CreatedAt:     created,
+		UpdatedAt:     updated,
+		Unversioned:   true,
+	})
+
+	docs, _, err := loadWikiDocuments(tmpDir, logger)
+	if err != nil {
+		t.Fatalf("loadWikiDocuments: %v", err)
+	}
+
+	pageDoc := findDoc(t, docs, "phase07f-metadata")
+	for key, want := range map[string]string{
+		"schema_version": "2",
+		"prompt_version": "ingest_v2",
+		"created_at":     created,
+		"updated_at":     updated,
+		"sources":        "src_phase07f,https://example.test/ref",
+		"unversioned":    "true",
+	} {
+		if got := pageDoc.Metadata[key]; got != want {
+			t.Fatalf("wiki metadata %s = %q, want %q; meta=%v", key, got, want, pageDoc.Metadata)
+		}
+	}
+
+	graphDoc := findDoc(t, docs, "graph:node:phase07f-metadata")
+	for key, want := range map[string]string{
+		"schema_version": "2",
+		"prompt_version": "ingest_v2",
+		"created_at":     created,
+		"sources":        "src_phase07f,https://example.test/ref",
+		"unversioned":    "true",
+	} {
+		if got := graphDoc.Metadata[key]; got != want {
+			t.Fatalf("graph metadata %s = %q, want %q; meta=%v", key, got, want, graphDoc.Metadata)
+		}
+	}
+	for _, want := range []string{
+		"Schema version: 2",
+		"Prompt version: ingest_v2",
+		"Created: " + created,
+		"Unversioned: true",
+		"Sources: src_phase07f, https://example.test/ref",
+	} {
+		if !strings.Contains(graphDoc.Content, want) {
+			t.Fatalf("graph content missing %q:\n%s", want, graphDoc.Content)
+		}
+	}
+}
+
 func TestLoadWikiDocumentsSkipsOperationalDocs(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -257,6 +321,63 @@ func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
 	}
 	if !hasResult(results, "wiki_page", "s7-1200-plc") {
 		t.Fatalf("results = %#v, want s7-1200-plc hit", results)
+	}
+}
+
+func TestSQLiteSearchReturnsFrontmatterMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "aura.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	created := "2026-05-01T10:00:00Z"
+	updated := "2026-05-02T11:30:00Z"
+
+	writeTestMDPage(t, tmpDir, &wiki.Page{
+		Title:         "Phase07F SQLite Metadata",
+		Body:          "Unique phase07f sqlite metadata retrieval body.",
+		Category:      "concept",
+		Sources:       []string{"src_sqlite07f"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "proposal_v3",
+		CreatedAt:     created,
+		UpdatedAt:     updated,
+		Unversioned:   true,
+	})
+	if _, _, err := RebuildSQLiteWikiDocuments(context.Background(), tmpDir, dbPath, logger); err != nil {
+		t.Fatalf("RebuildSQLiteWikiDocuments: %v", err)
+	}
+
+	db, err := auradb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	sq, err := newSqliteSearcherWithDB(db, logger)
+	if err != nil {
+		t.Fatalf("newSqliteSearcherWithDB: %v", err)
+	}
+	results, err := sq.search(context.Background(), "phase07f sqlite metadata", 5)
+	if err != nil {
+		t.Fatalf("sqliteSearcher.search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	got := results[0]
+	if got.SchemaVersion != wiki.CurrentSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", got.SchemaVersion, wiki.CurrentSchemaVersion)
+	}
+	if got.PromptVersion != "proposal_v3" {
+		t.Fatalf("prompt version = %q", got.PromptVersion)
+	}
+	wantCreated, _ := time.Parse(time.RFC3339, created)
+	if !got.CreatedAt.Equal(wantCreated) {
+		t.Fatalf("created_at = %s, want %s", got.CreatedAt.Format(time.RFC3339), created)
+	}
+	if !got.Unversioned {
+		t.Fatal("unversioned metadata was not returned")
+	}
+	if !slices.Equal(got.Sources, []string{"src_sqlite07f"}) {
+		t.Fatalf("sources = %v", got.Sources)
 	}
 }
 
@@ -489,6 +610,17 @@ func hasDoc(docs []Document, id string) bool {
 		}
 	}
 	return false
+}
+
+func findDoc(t *testing.T, docs []Document, id string) Document {
+	t.Helper()
+	for _, doc := range docs {
+		if doc.ID == id {
+			return doc
+		}
+	}
+	t.Fatalf("document %q not found in %+v", id, docs)
+	return Document{}
 }
 
 func keywordEmbedding(_ context.Context, text string) ([]float32, error) {

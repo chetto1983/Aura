@@ -66,6 +66,15 @@ func parseSearchPayloadTime(raw string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+func parseSearchPayloadBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "t", "true", "yes", "y":
+		return true
+	default:
+		return false
+	}
+}
+
 // Result is one wiki hit returned by Search.
 //
 // UpdatedAt carries the page's frontmatter updated_at when the backend can
@@ -78,21 +87,25 @@ func parseSearchPayloadTime(raw string) (time.Time, bool) {
 // previously the model had to follow up with list_files/read_file to map a
 // slug back to a .md path or read the page's relations.
 type Result struct {
-	Kind        string
-	Slug        string
-	Title       string
-	Content     string
-	Score       float32
-	ScoreExact  float32
-	ScoreFTS    float32
-	ScoreVector float32
-	UpdatedAt   time.Time
-	FilePath    string
-	Category    string
-	Tags        []string
-	Related     []string
-	Sources     []string
-	SizeBytes   int64
+	Kind          string
+	Slug          string
+	Title         string
+	Content       string
+	Score         float32
+	ScoreExact    float32
+	ScoreFTS      float32
+	ScoreVector   float32
+	UpdatedAt     time.Time
+	CreatedAt     time.Time
+	SchemaVersion int
+	PromptVersion string
+	Unversioned   bool
+	FilePath      string
+	Category      string
+	Tags          []string
+	Related       []string
+	Sources       []string
+	SizeBytes     int64
 }
 
 // EmbeddingFunc is Aura's embedding provider boundary. Same signature as
@@ -216,6 +229,43 @@ func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []Do
 	return fmt.Errorf("rebuilding wiki_documents: repair retry exhausted")
 }
 
+type wikiFileInfo struct {
+	name string
+	ext  string
+}
+
+func loadWikiPageDocument(wikiDir, slug string, logger *slog.Logger) (Document, bool, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return Document{}, false, fmt.Errorf("wiki slug is required")
+	}
+	if wiki.IsOperationalSlug(slug) {
+		return Document{}, false, nil
+	}
+	for _, fi := range []wikiFileInfo{
+		{name: slug + ".md", ext: ".md"},
+		{name: slug + ".yaml", ext: ".yaml"},
+	} {
+		filePath := filepath.Join(wikiDir, fi.name)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return Document{}, false, fmt.Errorf("reading wiki page %s: %w", slug, err)
+		}
+		page, err := parseIndexedWikiPage(slug, fi.ext, data)
+		if err != nil {
+			return Document{}, false, fmt.Errorf("parsing wiki page %s: %w", slug, err)
+		}
+		return wikiDocumentFromPage(slug, fi, filePath, page), true, nil
+	}
+	return Document{}, false, nil
+}
+
 func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -225,11 +275,7 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		return nil, 0, fmt.Errorf("reading wiki directory: %w", err)
 	}
 
-	type fileInfo struct {
-		name string
-		ext  string
-	}
-	slugFiles := make(map[string]fileInfo)
+	slugFiles := make(map[string]wikiFileInfo)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -251,7 +297,7 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		if existing, ok := slugFiles[slug]; ok && existing.ext == ".md" {
 			continue
 		}
-		slugFiles[slug] = fileInfo{name: name, ext: ext}
+		slugFiles[slug] = wikiFileInfo{name: name, ext: ext}
 	}
 
 	pages := make(map[string]indexedWikiPage, len(slugFiles))
@@ -275,7 +321,7 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		// list_files/read_file to find the on-disk file. The model itself
 		// flagged this gap on 2026-05-11 turn 2393: "so cosa c'è scritto in
 		// [[davide]] ma non so che file .md corrisponde". Including filepath,
-		// updated_at, category, tags, related, and sources collapses that
+		// wiki frontmatter trust metadata, category, tags, related, and sources collapses that
 		// detour into the same retrieval call.
 		stat, _ := os.Stat(filePath)
 		var sizeStr string
@@ -283,22 +329,28 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 			sizeStr = strconv.FormatInt(stat.Size(), 10)
 		}
 		meta := map[string]string{
-			"slug":      slug,
-			"title":     title,
-			"kind":      "wiki_page",
-			"filepath":  filepath.ToSlash(fi.name),
-			"size":      sizeStr,
-			"category":  strings.TrimSpace(page.Category),
-			"tags":      strings.Join(page.Tags, ","),
-			"related":   strings.Join(page.Related, ","),
-			"sources":   strings.Join(page.Sources, ","),
+			"slug":           slug,
+			"title":          title,
+			"kind":           "wiki_page",
+			"filepath":       filepath.ToSlash(fi.name),
+			"size":           sizeStr,
+			"category":       strings.TrimSpace(page.Category),
+			"tags":           strings.Join(page.Tags, ","),
+			"related":        strings.Join(page.Related, ","),
+			"sources":        strings.Join(page.Sources, ","),
+			"schema_version": strconv.Itoa(page.SchemaVersion),
+			"prompt_version": strings.TrimSpace(page.PromptVersion),
+			"created_at":     strings.TrimSpace(page.Created),
+		}
+		if page.Unversioned {
+			meta["unversioned"] = "true"
 		}
 		if updated := strings.TrimSpace(page.Updated); updated != "" {
 			meta["updated_at"] = updated
 		}
 		// Empty values stripped so the payload stays compact in Qdrant.
 		for k, v := range meta {
-			if v == "" {
+			if v == "" || (k == "schema_version" && v == "0") {
 				delete(meta, k)
 			}
 		}
@@ -310,6 +362,45 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 	}
 	docs = append(docs, buildGraphDocuments(pages)...)
 	return docs, len(pages), nil
+}
+
+func wikiDocumentFromPage(slug string, fi wikiFileInfo, filePath string, page indexedWikiPage) Document {
+	title, content := page.Title, page.Title+"\n"+page.Body
+	stat, _ := os.Stat(filePath)
+	var sizeStr string
+	if stat != nil {
+		sizeStr = strconv.FormatInt(stat.Size(), 10)
+	}
+	meta := map[string]string{
+		"slug":           slug,
+		"title":          title,
+		"kind":           "wiki_page",
+		"filepath":       filepath.ToSlash(fi.name),
+		"size":           sizeStr,
+		"category":       strings.TrimSpace(page.Category),
+		"tags":           strings.Join(page.Tags, ","),
+		"related":        strings.Join(page.Related, ","),
+		"sources":        strings.Join(page.Sources, ","),
+		"schema_version": strconv.Itoa(page.SchemaVersion),
+		"prompt_version": strings.TrimSpace(page.PromptVersion),
+		"created_at":     strings.TrimSpace(page.Created),
+	}
+	if page.Unversioned {
+		meta["unversioned"] = "true"
+	}
+	if updated := strings.TrimSpace(page.Updated); updated != "" {
+		meta["updated_at"] = updated
+	}
+	for k, v := range meta {
+		if v == "" || (k == "schema_version" && v == "0") {
+			delete(meta, k)
+		}
+	}
+	return Document{
+		ID:       slug,
+		Content:  content,
+		Metadata: meta,
+	}
 }
 
 // rrfMergeConstants for search.Result fusion. Mirrors the constants in

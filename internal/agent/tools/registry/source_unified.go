@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/ocr"
 	"github.com/aura/aura/internal/storage/sources/store"
 )
@@ -109,9 +109,10 @@ Actions (pick one via the "action" field):
     markdown), limit (default 20, max 100).
 
   • read — fetch the extracted markdown of one source. Required: source_id.
-    Optional: max_bytes (default 4000, max 8000). Returns ocr.md for PDFs
-    (OCR via Mistral Document AI), extract.md for other kinds, or the
-    original text body for KindText/URL.
+    Optional: mode (metadata | ocr | excerpt), byte_start/byte_end, and
+    max_bytes (legacy hint). Returns ocr.md for PDFs (OCR via Mistral
+    Document AI), extract.md for other kinds, or the original text body for
+    KindText/URL.
 
   • store — persist new text or a URL as an immutable source. Required:
     kind (text | url), filename, content. PDFs are stored automatically
@@ -164,6 +165,19 @@ func (t *SourceTool) Parameters() map[string]any {
 			"max_bytes": map[string]any{
 				"type":        "integer",
 				"description": "read only, optional: max bytes to return (default 4000, max 8000).",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"metadata", "ocr", "excerpt"},
+				"description": "read only, optional: metadata, ocr, or excerpt.",
+			},
+			"byte_start": map[string]any{
+				"type":        "integer",
+				"description": "read only, optional: zero-based byte start in the source text artifact.",
+			},
+			"byte_end": map[string]any{
+				"type":        "integer",
+				"description": "read only, optional: exclusive byte end in the source text artifact.",
 			},
 			"filename": map[string]any{
 				"type":        "string",

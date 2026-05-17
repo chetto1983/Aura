@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/aura/aura/internal/wiki"
@@ -11,15 +12,19 @@ import (
 const graphNodeBodyLimit = 700
 
 type indexedWikiPage struct {
-	Slug     string
-	Title    string
-	Body     string
-	Category string
-	Tags     []string
-	Related  []string
-	Sources  []string
-	Outbound []string
-	Updated  string
+	Slug          string
+	Title         string
+	Body          string
+	Category      string
+	Tags          []string
+	Related       []string
+	Sources       []string
+	Outbound      []string
+	Updated       string
+	Created       string
+	SchemaVersion int
+	PromptVersion string
+	Unversioned   bool
 }
 
 func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error) {
@@ -38,15 +43,19 @@ func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error
 	}
 	outbound := mergeSlugs(wiki.ExtractWikiLinks(page.Body), page.Related)
 	return indexedWikiPage{
-		Slug:     slug,
-		Title:    page.Title,
-		Body:     page.Body,
-		Category: page.Category,
-		Tags:     cleanGraphValues(page.Tags),
-		Related:  cleanGraphValues(page.Related),
-		Sources:  cleanGraphValues(page.Sources),
-		Outbound: outbound,
-		Updated:  page.UpdatedAt,
+		Slug:          slug,
+		Title:         page.Title,
+		Body:          page.Body,
+		Category:      page.Category,
+		Tags:          cleanGraphValues(page.Tags),
+		Related:       cleanGraphValues(page.Related),
+		Sources:       cleanGraphValues(page.Sources),
+		Outbound:      outbound,
+		Updated:       page.UpdatedAt,
+		Created:       page.CreatedAt,
+		SchemaVersion: page.SchemaVersion,
+		PromptVersion: strings.TrimSpace(page.PromptVersion),
+		Unversioned:   page.Unversioned,
 	}, nil
 }
 
@@ -83,14 +92,11 @@ func buildGraphDocuments(pages map[string]indexedWikiPage) []Document {
 		page := pages[slug]
 		inbound := mergeSlugs(backlinks[slug], nil)
 		content := graphNodeCard(page, inbound)
+		meta := graphNodeMetadata(page)
 		docs = append(docs, Document{
-			ID:      "graph:node:" + slug,
-			Content: content,
-			Metadata: map[string]string{
-				"kind":  "graph_node",
-				"slug":  slug,
-				"title": page.Title,
-			},
+			ID:       "graph:node:" + slug,
+			Content:  content,
+			Metadata: meta,
 		})
 	}
 
@@ -135,11 +141,44 @@ func graphNodeCard(page indexedWikiPage, backlinks []string) string {
 	writeGraphList(&sb, "Sources", page.Sources)
 	writeGraphList(&sb, "Outbound links", page.Outbound)
 	writeGraphList(&sb, "Backlinks", backlinks)
+	if page.SchemaVersion > 0 {
+		fmt.Fprintf(&sb, "Schema version: %d\n", page.SchemaVersion)
+	}
+	writeGraphLine(&sb, "Prompt version", page.PromptVersion)
+	writeGraphLine(&sb, "Created", page.Created)
 	writeGraphLine(&sb, "Updated", page.Updated)
+	if page.Unversioned {
+		sb.WriteString("Unversioned: true\n")
+	}
 	if summary := truncateExcerpt(page.Body, graphNodeBodyLimit); summary != "" {
 		fmt.Fprintf(&sb, "Summary: %s\n", summary)
 	}
 	return sb.String()
+}
+
+func graphNodeMetadata(page indexedWikiPage) map[string]string {
+	meta := map[string]string{
+		"kind":           "graph_node",
+		"slug":           page.Slug,
+		"title":          page.Title,
+		"category":       strings.TrimSpace(page.Category),
+		"tags":           strings.Join(page.Tags, ","),
+		"related":        strings.Join(page.Related, ","),
+		"sources":        strings.Join(page.Sources, ","),
+		"schema_version": strconv.Itoa(page.SchemaVersion),
+		"prompt_version": strings.TrimSpace(page.PromptVersion),
+		"created_at":     strings.TrimSpace(page.Created),
+		"updated_at":     strings.TrimSpace(page.Updated),
+	}
+	if page.Unversioned {
+		meta["unversioned"] = "true"
+	}
+	for k, v := range meta {
+		if v == "" || v == "0" && k == "schema_version" {
+			delete(meta, k)
+		}
+	}
+	return meta
 }
 
 func graphIndexCard(category string, pages []indexedWikiPage) string {

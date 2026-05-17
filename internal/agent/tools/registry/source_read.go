@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/aura/aura/internal/storage/sources/store"
 )
@@ -21,7 +23,7 @@ func NewReadSourceTool(store source.Repository) *ReadSourceTool {
 func (t *ReadSourceTool) Name() string { return "read_source" }
 
 func (t *ReadSourceTool) Description() string {
-	return "Read source metadata or extracted markdown by source ID. Modes: metadata, ocr (full ocr.md, capped at 8000 chars), excerpt (first ~4000 chars)."
+	return "Read source metadata or extracted markdown by source ID. Modes: metadata, ocr (full ocr.md, capped at 8000 chars), excerpt (first ~4000 chars). Optional byte_start/byte_end return an exact text-artifact span."
 }
 
 func (t *ReadSourceTool) Parameters() map[string]any {
@@ -36,6 +38,14 @@ func (t *ReadSourceTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "metadata, ocr, or excerpt. Defaults to excerpt.",
 				"enum":        []string{"metadata", "ocr", "excerpt"},
+			},
+			"byte_start": map[string]any{
+				"type":        "integer",
+				"description": "Optional zero-based byte start in the source text artifact.",
+			},
+			"byte_end": map[string]any{
+				"type":        "integer",
+				"description": "Optional exclusive byte end in the source text artifact.",
 			},
 		},
 		"required": []string{"source_id"},
@@ -54,6 +64,17 @@ func (t *ReadSourceTool) Execute(ctx context.Context, args map[string]any) (stri
 	if mode == "" {
 		mode = "excerpt"
 	}
+	byteStart, hasStart, err := optionalIntParam(args, "byte_start")
+	if err != nil {
+		return "", err
+	}
+	byteEnd, hasEnd, err := optionalIntParam(args, "byte_end")
+	if err != nil {
+		return "", err
+	}
+	if hasStart != hasEnd {
+		return "", errors.New("read_source: byte_start and byte_end must be provided together")
+	}
 
 	src, err := t.store.Get(id)
 	if err != nil {
@@ -65,12 +86,31 @@ func (t *ReadSourceTool) Execute(ctx context.Context, args map[string]any) (stri
 
 	switch mode {
 	case "metadata":
+		if hasStart {
+			return "", errors.New("read_source: byte ranges are not supported for metadata mode")
+		}
 		return formatSourceMetadata(src), nil
 	case "ocr":
-		return readSourceMarkdown(t.store, src, maxSourceToolChars)
+		return readSourceMarkdownRange(t.store, src, maxSourceToolChars, byteStart, byteEnd, hasStart)
 	case "excerpt":
-		return readSourceMarkdown(t.store, src, excerptDefaultBytes)
+		return readSourceMarkdownRange(t.store, src, excerptDefaultBytes, byteStart, byteEnd, hasStart)
 	default:
 		return "", fmt.Errorf("read_source: unsupported mode %q", mode)
 	}
+}
+
+func optionalIntParam(args map[string]any, key string) (int, bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return 0, false, nil
+	}
+	value := strings.TrimSpace(fmt.Sprint(raw))
+	if value == "" {
+		return 0, false, fmt.Errorf("%s must be an integer", key)
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s must be an integer", key)
+	}
+	return n, true, nil
 }

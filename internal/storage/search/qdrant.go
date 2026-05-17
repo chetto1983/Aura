@@ -34,8 +34,8 @@ type QdrantConfig struct {
 const PagesIndexedUnknown = -1
 
 type QdrantRebuildReport struct {
-	Collection   string `json:"collection"`
-	DocsIndexed  int    `json:"docs_indexed"`
+	Collection  string `json:"collection"`
+	DocsIndexed int    `json:"docs_indexed"`
 	// PagesIndexed is the number of wiki pages enumerated on disk during the
 	// rebuild. The value PagesIndexedUnknown (-1) means the disk enumeration
 	// failed during a warm-cache hit; callers should not interpret it as zero.
@@ -166,8 +166,18 @@ func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
 }
 
 func (r *qdrantRepository) ReindexWikiPage(ctx context.Context, slug string) error {
-	_ = slug
-	return r.IndexWikiPages(ctx)
+	slug = strings.TrimSpace(slug)
+	doc, found, err := loadWikiPageDocument(r.wikiDir, slug, r.logger)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return r.client.Delete(ctx, r.collectionQdrant, []string{
+			qdrantPointID(slug),
+			qdrantPointID("graph:node:" + slug),
+		})
+	}
+	return r.Index(ctx, doc.ID, doc.Content, doc.Metadata)
 }
 
 // RebuildQdrantWikiDocuments recreates the configured collection from Aura's
@@ -356,20 +366,26 @@ func (s *qdrantSearcher) Search(ctx context.Context, query string, topK int) ([]
 			slug = strings.TrimSpace(payload["doc_id"])
 		}
 		updatedAt, _ := parseSearchPayloadTime(payload["updated_at"])
+		createdAt, _ := parseSearchPayloadTime(payload["created_at"])
+		schemaVersion, _ := strconv.Atoi(strings.TrimSpace(payload["schema_version"]))
 		size, _ := strconv.ParseInt(strings.TrimSpace(payload["size"]), 10, 64)
 		results = append(results, Result{
-			Kind:      kind,
-			Slug:      slug,
-			Title:     payload["title"],
-			Content:   payload["content"],
-			Score:     point.Score,
-			UpdatedAt: updatedAt,
-			FilePath:  strings.TrimSpace(payload["filepath"]),
-			Category:  strings.TrimSpace(payload["category"]),
-			Tags:      splitCSVPayloadField(payload["tags"]),
-			Related:   splitCSVPayloadField(payload["related"]),
-			Sources:   splitCSVPayloadField(payload["sources"]),
-			SizeBytes: size,
+			Kind:          kind,
+			Slug:          slug,
+			Title:         payload["title"],
+			Content:       payload["content"],
+			Score:         point.Score,
+			UpdatedAt:     updatedAt,
+			CreatedAt:     createdAt,
+			SchemaVersion: schemaVersion,
+			PromptVersion: strings.TrimSpace(payload["prompt_version"]),
+			Unversioned:   parseSearchPayloadBool(payload["unversioned"]),
+			FilePath:      strings.TrimSpace(payload["filepath"]),
+			Category:      strings.TrimSpace(payload["category"]),
+			Tags:          splitCSVPayloadField(payload["tags"]),
+			Related:       splitCSVPayloadField(payload["related"]),
+			Sources:       splitCSVPayloadField(payload["sources"]),
+			SizeBytes:     size,
 		})
 	}
 	return results, nil

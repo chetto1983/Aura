@@ -1,7 +1,7 @@
 // Command seed_e2e_env mints a fresh bearer token for an existing
 // allowlisted user and prints AURA_E2E_TOKEN + AURA_E2E_CHAT_ID to stdout
-// in shell-eval format. Pipe through `eval` (bash) or copy-paste into
-// PowerShell to populate the env vars Playwright reads.
+// in shell-eval format. Pipe through `eval` (bash) or `Invoke-Expression`
+// (PowerShell) to populate the env vars Playwright reads.
 //
 // It does NOT touch any file. By default it refuses to run if no allowed
 // user exists yet (run the bot once via Telegram /start to bootstrap).
@@ -12,10 +12,11 @@
 // Usage:
 //
 //	eval $(go run ./cmd/seed_e2e_env [-db ./aura.db] [-user <id>])
+//	Invoke-Expression (& go run ./cmd/seed_e2e_env [-db ./aura.db] [-user <id>] -shell powershell)
 //	go run ./cmd/seed_e2e_env [-db ./aura.db] -bootstrap-user <id>
 //
-// Without -user it picks the first row of allowed_users (typically the
-// owner). Without -db it uses the project default ./aura.db.
+// Without -user it picks the first non-e2e_bootstrap row of allowed_users
+// (typically the owner). Without -db it uses the project default ./aura.db.
 package main
 
 import (
@@ -23,6 +24,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -34,14 +36,19 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/identity"
 )
 
 func main() {
 	dbPath := flag.String("db", "./aura.db", "path to the live SQLite database")
-	userID := flag.String("user", "", "user id to issue the token for (default: first allowed_users row)")
+	userID := flag.String("user", "", "user id to issue the token for (default: first non-e2e_bootstrap allowed_users row)")
 	bootstrapUserID := flag.String("bootstrap-user", "", "debug/E2E only: insert this user as first allowed user when allowlist is empty")
 	seedTurns := flag.Bool("seed-turns", false, "if true and the conversations table is empty, inject 3 synthetic turns so the Playwright drawer test has data")
+	shell := flag.String("shell", "sh", "stdout shell syntax: sh or powershell")
 	flag.Parse()
+	if _, err := envShellKind(*shell); err != nil {
+		log.Fatalf("output env: %v", err)
+	}
 
 	if _, err := os.Stat(*dbPath); err != nil {
 		log.Fatalf("database not found at %s: %v", *dbPath, err)
@@ -80,14 +87,40 @@ func main() {
 
 	// Resolve the target user.
 	resolvedUserID := *userID
+	resolvedSource := ""
 	if resolvedUserID == "" {
-		row := db.QueryRowContext(ctx,
-			`SELECT user_id FROM allowed_users ORDER BY created_at ASC LIMIT 1`)
-		if err := row.Scan(&resolvedUserID); err != nil {
+		var err error
+		resolvedUserID, resolvedSource, err = resolveDefaultSeedUser(ctx, db)
+		if err != nil {
 			if err == sql.ErrNoRows {
-				log.Fatalf("allowed_users is empty — bootstrap a user first by running the bot and sending /start from Telegram")
+				log.Fatalf("no real allowed_users row found - bootstrap a Telegram owner first with /start or pass -user for an explicitly allowlisted real user")
 			}
-			log.Fatalf("lookup first allowed user: %v", err)
+			log.Fatalf("lookup default allowed user: %v", err)
+		}
+	} else {
+		var err error
+		resolvedSource, err = lookupAllowedUserSource(ctx, db, resolvedUserID)
+		if err != nil && err != sql.ErrNoRows {
+			log.Fatalf("lookup allowed user source: %v", err)
+		}
+	}
+
+	if resolvedSource == auth.SourceE2EBootstrap {
+		log.Printf("warn: selected user %s has source=%s; token may not pass api.chat capability checks", resolvedUserID, resolvedSource)
+	} else if resolvedSource != "" {
+		if _, err := authStore.EnsureTelegramAllowlistedIdentity(ctx, resolvedUserID, resolvedSource); err != nil {
+			log.Fatalf("ensure dashboard identity for %s: %v", resolvedUserID, err)
+		}
+		decision, err := authStore.Authorize(ctx, identity.AuthorizeParams{
+			ActorID:    identity.TelegramSessionActorID(resolvedUserID),
+			Capability: identity.CapabilityAPIChat,
+			Resource:   identity.ResourceRef{Type: "api", ID: "chat"},
+		})
+		if err != nil {
+			log.Fatalf("verify api.chat grant for %s: %v", resolvedUserID, err)
+		}
+		if decision.Decision != identity.DecisionAllow {
+			log.Fatalf("selected user %s cannot use /api/chat: %s (%s)", resolvedUserID, decision.Decision, decision.Reason)
 		}
 	}
 
@@ -131,7 +164,7 @@ func main() {
 			}
 		}
 		chatID = sql.NullInt64{Int64: uid, Valid: true}
-		fmt.Printf("Seeded %d synthetic turns under chat_id=%d\n", len(fixtures), uid)
+		fmt.Fprintf(os.Stderr, "Seeded %d synthetic turns under chat_id=%d\n", len(fixtures), uid)
 	}
 
 	chatIDStr := ""
@@ -139,15 +172,16 @@ func main() {
 		chatIDStr = strconv.FormatInt(chatID.Int64, 10)
 	}
 
-	// Print shell-eval lines on stdout (consumable via `eval $(...)` in
-	// bash/zsh). Diagnostics go to stderr so they don't poison the eval.
-	fmt.Printf("export AURA_E2E_TOKEN=%s\n", token)
-	fmt.Printf("export AURA_E2E_CHAT_ID=%s\n", chatIDStr)
+	// Print only shell-eval lines on stdout. Diagnostics go to stderr so
+	// they don't poison eval/Invoke-Expression.
+	if err := printEnv(os.Stdout, *shell, token, chatIDStr); err != nil {
+		log.Fatalf("output env: %v", err)
+	}
 
 	fmt.Fprintf(os.Stderr, "Minted AURA_E2E_TOKEN (%d chars) and AURA_E2E_CHAT_ID=%q\n",
 		len(token), chatIDStr)
 	fmt.Fprintf(os.Stderr, "user_id: %s\n", resolvedUserID)
-	fmt.Fprintln(os.Stderr, "PowerShell: $env:AURA_E2E_TOKEN = '"+token+"'; $env:AURA_E2E_CHAT_ID = '"+chatIDStr+"'")
+	fmt.Fprintf(os.Stderr, "shell: %s\n", strings.TrimSpace(*shell))
 	if !chatID.Valid {
 		fmt.Fprintln(os.Stderr, "note: no archived conversations yet — drawer-click test will skip until a turn is seeded")
 	}
@@ -157,3 +191,69 @@ func guardLiveDBWriteForSeed(ctx context.Context, dbPath string, auraRunning db.
 	return db.RefuseLiveDockerDBWrite(ctx, dbPath, "seed_e2e_env", auraRunning)
 }
 
+func resolveDefaultSeedUser(ctx context.Context, db *sql.DB) (userID string, source string, err error) {
+	if db == nil {
+		return "", "", fmt.Errorf("database is required")
+	}
+	err = db.QueryRowContext(ctx, `
+SELECT user_id, source
+FROM allowed_users
+WHERE source <> ?
+ORDER BY created_at ASC
+LIMIT 1
+`, auth.SourceE2EBootstrap).Scan(&userID, &source)
+	if err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(userID), strings.TrimSpace(source), nil
+}
+
+func lookupAllowedUserSource(ctx context.Context, db *sql.DB, userID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database is required")
+	}
+	var source string
+	err := db.QueryRowContext(ctx, `
+SELECT source
+FROM allowed_users
+WHERE user_id = ?
+`, strings.TrimSpace(userID)).Scan(&source)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(source), nil
+}
+
+func printEnv(w io.Writer, shell, token, chatID string) error {
+	if w == nil {
+		return fmt.Errorf("writer is required")
+	}
+	kind, err := envShellKind(shell)
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case "sh":
+		fmt.Fprintf(w, "export AURA_E2E_TOKEN=%s\n", token)
+		fmt.Fprintf(w, "export AURA_E2E_CHAT_ID=%s\n", chatID)
+	case "powershell":
+		fmt.Fprintf(w, "$env:AURA_E2E_TOKEN = '%s'\n", powerShellSingleQuote(token))
+		fmt.Fprintf(w, "$env:AURA_E2E_CHAT_ID = '%s'\n", powerShellSingleQuote(chatID))
+	}
+	return nil
+}
+
+func envShellKind(shell string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(shell)) {
+	case "", "sh", "bash", "zsh":
+		return "sh", nil
+	case "powershell", "pwsh", "ps":
+		return "powershell", nil
+	default:
+		return "", fmt.Errorf("unsupported shell %q (want sh or powershell)", shell)
+	}
+}
+
+func powerShellSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}

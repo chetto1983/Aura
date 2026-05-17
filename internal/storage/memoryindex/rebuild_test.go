@@ -11,6 +11,7 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/storage/freshness"
+	source "github.com/aura/aura/internal/storage/sources/store"
 )
 
 func TestIndexingTurnAppenderMirrorsPersistedArchiveID(t *testing.T) {
@@ -84,6 +85,41 @@ func TestIndexingArchiveRepositoryPurgesCompactArchiveRows(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].ChatID != 99 {
 		t.Fatalf("hits = %#v", hits)
+	}
+}
+
+func TestSourcePageDocumentsPreserveByteSpans(t *testing.T) {
+	src := &source.Source{
+		ID:       "src_span_01234567",
+		Kind:     source.KindPDF,
+		Filename: "span.pdf",
+		Status:   source.StatusOCRComplete,
+	}
+	body := "# Source OCR: span.pdf\n\nSource ID: src_span_01234567\n\n## Page 1\n\n  Alpha cafe marker.\n\n## Page 2\n\n\tBeta marker finale.  \n"
+
+	docs := sourcePageDocuments(src, body)
+	if len(docs) != 2 {
+		t.Fatalf("docs = %#v, want 2", docs)
+	}
+	for i, doc := range docs {
+		if doc.SourceID != src.ID {
+			t.Fatalf("doc[%d].SourceID = %q, want %q", i, doc.SourceID, src.ID)
+		}
+		if doc.ChunkIndex != i {
+			t.Fatalf("doc[%d].ChunkIndex = %d, want %d", i, doc.ChunkIndex, i)
+		}
+		if doc.ByteStart <= 0 || doc.ByteEnd <= doc.ByteStart {
+			t.Fatalf("doc[%d] invalid span: %#v", i, doc)
+		}
+		if got := body[doc.ByteStart:doc.ByteEnd]; got != doc.Body {
+			t.Fatalf("doc[%d] body/span mismatch:\nspan=%q\nbody=%q", i, got, doc.Body)
+		}
+	}
+	if docs[0].Page != 1 || docs[0].Body != "Alpha cafe marker." {
+		t.Fatalf("page 1 doc = %#v", docs[0])
+	}
+	if docs[1].Page != 2 || docs[1].Body != "Beta marker finale." {
+		t.Fatalf("page 2 doc = %#v", docs[1])
 	}
 }
 

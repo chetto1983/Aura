@@ -1,8 +1,8 @@
 # Phase07 Plan - Rebuild RAG On Typed Memory Layers
 
-Status: parent plan with Phase07A, Phase07B, and Phase07C closed by local code
-evidence. Phase07D-F remain planned/scaffolded and need fresh source mapping
-before implementation.
+Status: parent plan with Phase07A through Phase07F closed by local/live code
+evidence. Remaining Phase 7 work is future GraphRAG ranking/evals and
+op-aware projection invalidation beyond the closed typed-memory foundation.
 
 ## Goal
 
@@ -65,9 +65,9 @@ results and intermediate loop scaffolding as durable memory.
 | Phase07A - Compact Archive Hygiene | Raw tool output and intermediate loop noise remain in `conversations` but do not enter compact memory or default recall. | `internal/storage/memoryindex/rebuild.go`, `internal/agent/tools/registry/memory_search.go`, closest tests | `subphases/Phase07A_Compact_Archive_Hygiene/benchmark.md` | closed |
 | Phase07B - Typed Collection Registry | Add layer metadata, citation handles, filterable fields, score components, follow-up handles, and SourceID filtering. | `internal/storage/memoryindex`, `internal/storage/search`, `internal/agent/tools/registry/memory_search.go` | `subphases/Phase07B_Typed_Collection_Registry/benchmark.md` | closed |
 | Phase07C - Projection Freshness Registry | Add durable projection state, per-document freshness columns, write-time pending/rebuild accounting, and retrieval-time freshness/degraded annotations. | `internal/storage/freshness`, `internal/storage/memoryindex`, `internal/storage/search`, `internal/agent/tools/registry/memory_search.go`, `cmd/aura` boot seeding | `subphases/Phase07C_Projection_Freshness_Registry/benchmark.md` | closed, self-audited |
-| Phase07D - User/Operational Memory Typed Tiers | Wire `user_memory` and `operational` collection writers and recall surfaces as first-class typed memory tiers. | `internal/learning`, `internal/storage/memoryindex`, `internal/agent/tools/registry` | parent `benchmark.md` | planned |
-| Phase07E - Source Span And Byte Offsets | Preserve source/page/span or stable artifact offsets on retrieved source hits and follow-up reads. | `internal/source`, `internal/storage/memoryindex`, `internal/agent/tools/registry` | parent `benchmark.md` | planned |
-| Phase07F - Wiki Frontmatter Schema And Prompt-Version Promotion | Promote wiki schema/control metadata and prompt-version handling so wiki GraphRAG can trust page type, sources, and freshness. | `internal/wiki`, wiki schema docs, retrieval fixtures | parent `benchmark.md` | planned |
+| Phase07D - User/Operational Memory Typed Tiers | Wire `user_memory` and `operational` collection writers and recall surfaces as first-class typed memory tiers. | `internal/learning`, `internal/storage/memoryindex`, `internal/agent/tools/registry`, `cmd/aura/app.go`, `cmd/probe_chat` | `subphases/Phase07D_User_Operational_Memory_Typed_Tiers/benchmark.md` | closed |
+| Phase07E - Source Span And Byte Offsets | Preserve source/page/span or stable artifact offsets on retrieved source hits and follow-up reads. | `internal/db/migrations`, `internal/storage/memoryindex`, `internal/agent/tools/registry`, `cmd/probe_chat` | `subphases/Phase07E_Source_Span_Byte_Offsets/benchmark.md` | closed with local and live verification |
+| Phase07F - Wiki Frontmatter Schema And Prompt-Version Promotion | Promote wiki schema/control metadata and prompt-version handling so wiki GraphRAG can trust page type, sources, and freshness. | `internal/storage/search`, `internal/agent/tools/registry/memory_search.go`, `cmd/probe_chat` | `subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion/benchmark.md` | closed with local and live verification |
 
 ## Phase Boundary
 
@@ -95,11 +95,12 @@ results and intermediate loop scaffolding as durable memory.
 
 | PRD Item | Plan Location | Benchmark Location | Source Evidence | Status |
 | --- | --- | --- | --- | --- |
-| Typed memory layers | this file and Phase07B | `benchmark.md` | `source.md` | partially met by Phase07B; user/operational wiring deferred |
+| Typed memory layers | this file, Phase07B, and Phase07D | `benchmark.md` plus Phase07D benchmark | `source.md` plus Phase07D source | met for current wiki/source/user/operational layer registry and typed recall slices; source-offset work met by Phase07E; wiki trust metadata met by Phase07F; graph ranking remains future work |
 | Conversation archive separated from curated memory | Phase07A | `subphases/Phase07A_Compact_Archive_Hygiene/benchmark.md` | `source.md` | met |
 | Hybrid retrieval and RRF | Phase07B plus future golden eval slice | `benchmark.md` | `source.md` | partially met for score components; intent-split and golden retrieval evals remain planned |
 | Projection freshness | Phase07C | `subphases/Phase07C_Projection_Freshness_Registry/benchmark.md` | `source.md` and Phase07C `source.md` | met for compact memory projection; wiki/source/Qdrant op-aware invalidation deferred |
-| GraphIndex typed edges | future Phase07 graph slice | `benchmark.md` | `source.md` | planned |
+| Source/page/span citations | Phase07E | `subphases/Phase07E_Source_Span_Byte_Offsets/benchmark.md` | Phase07E `source.md` | met for compact source rows and `source(action=read,...)` byte spans |
+| GraphIndex typed edges | future Phase07 graph slice | `benchmark.md` | `source.md` | metadata foundation met by Phase07F; graph ranking/path queries planned |
 | Community reports as projections | future Phase07 graph slice | `benchmark.md` | `source.md` | planned |
 | Golden RAG evals | future Phase07 eval slice | `benchmark.md` | `source.md` | planned |
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,10 +21,12 @@ func TestRebuildQdrantWikiDocumentsCreatesCollectionAndUpsertsDocs(t *testing.T)
 		Title:         "Alpha Contract",
 		Body:          "Core contract notes.",
 		Category:      "project",
+		Sources:       []string{"src_qdrant_phase07f"},
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+		Unversioned:   true,
 	})
 	writeTestMDPage(t, wikiDir, &wiki.Page{
 		Title:         "Beta Review",
@@ -112,6 +115,13 @@ func TestRebuildQdrantWikiDocumentsCreatesCollectionAndUpsertsDocs(t *testing.T)
 		if point.Payload["doc_id"] == "" || point.Payload["kind"] == "" || point.Payload["content"] == "" {
 			t.Fatalf("missing payload fields: %+v", point.Payload)
 		}
+		if point.Payload["doc_id"] == "alpha-contract" {
+			for _, key := range []string{"schema_version", "prompt_version", "created_at", "updated_at", "sources", "unversioned"} {
+				if point.Payload[key] == "" {
+					t.Fatalf("alpha payload missing %s: %+v", key, point.Payload)
+				}
+			}
+		}
 	}
 }
 
@@ -188,6 +198,147 @@ func TestRebuildQdrantWikiDocumentsWarmCacheHit(t *testing.T) {
 	}
 	if report.DocsIndexed != 42 {
 		t.Fatalf("report.DocsIndexed = %d, want 42 (live points count)", report.DocsIndexed)
+	}
+}
+
+func TestQdrantRepositoryReindexWikiPageUpsertsChangedPageAfterWarmCache(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Phase07F Live Contract",
+		Body:          "Initial body.",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-17T10:00:00Z",
+		UpdatedAt:     "2026-05-17T10:00:00Z",
+	})
+
+	var sawCollectionInfo, sawDelete, sawCreate bool
+	var pointsBody struct {
+		Points []struct {
+			ID      string            `json:"id"`
+			Vector  []float32         `json:"vector"`
+			Payload map[string]string `json:"payload"`
+		} `json:"points"`
+	}
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("api-key") != "secret" {
+			t.Fatalf("missing api-key header")
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			sawCollectionInfo = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":42,"indexed_vectors_count":42}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			if err := json.NewDecoder(r.Body).Decode(&pointsBody); err != nil {
+				t.Fatalf("decode points body: %v", err)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+	repo, err := NewQdrantRepository(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		APIKey:     "secret",
+	}, countingEmbed, wikiDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepository: %v", err)
+	}
+	if err := repo.IndexWikiPages(context.Background()); err != nil {
+		t.Fatalf("IndexWikiPages warm cache: %v", err)
+	}
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Phase07F Live Contract",
+		Body:          "Updated Phase07F metadata marker.",
+		Sources:       []string{"src_phase07f_live"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-17T10:00:00Z",
+		UpdatedAt:     "2026-05-17T11:00:00Z",
+		Unversioned:   true,
+	})
+	if err := repo.ReindexWikiPage(context.Background(), "phase07f-live-contract"); err != nil {
+		t.Fatalf("ReindexWikiPage: %v", err)
+	}
+
+	if !sawCollectionInfo {
+		t.Fatal("warm-cache collection info was not checked")
+	}
+	if sawDelete {
+		t.Fatal("ReindexWikiPage deleted the whole collection")
+	}
+	if sawCreate {
+		t.Fatal("ReindexWikiPage recreated the warm collection")
+	}
+	if embedCalls != 1 {
+		t.Fatalf("embed calls = %d, want exactly one single-page reindex embed", embedCalls)
+	}
+	if len(pointsBody.Points) != 1 {
+		t.Fatalf("upsert points = %d, want 1", len(pointsBody.Points))
+	}
+	payload := pointsBody.Points[0].Payload
+	if payload["doc_id"] != "phase07f-live-contract" || payload["kind"] != "wiki_page" {
+		t.Fatalf("payload identity = %+v", payload)
+	}
+	for _, key := range []string{"schema_version", "prompt_version", "created_at", "updated_at", "sources", "unversioned"} {
+		if payload[key] == "" {
+			t.Fatalf("payload missing %s: %+v", key, payload)
+		}
+	}
+	if !strings.Contains(payload["content"], "Updated Phase07F metadata marker.") {
+		t.Fatalf("payload content did not use updated page: %q", payload["content"])
+	}
+}
+
+func TestQdrantRepositoryReindexWikiPageDeletesMissingPagePoints(t *testing.T) {
+	wikiDir := t.TempDir()
+	var deleteBody struct {
+		Points []string `json:"points"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/aura_memory_v1/points/delete" {
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+		if r.URL.Query().Get("wait") != "true" {
+			t.Fatalf("wait query = %q, want true", r.URL.RawQuery)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&deleteBody); err != nil {
+			t.Fatalf("decode delete body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	repo, err := NewQdrantRepository(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+	}, keywordEmbedding, wikiDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepository: %v", err)
+	}
+	if err := repo.ReindexWikiPage(context.Background(), "deleted-page"); err != nil {
+		t.Fatalf("ReindexWikiPage: %v", err)
+	}
+	want := []string{qdrantPointID("deleted-page"), qdrantPointID("graph:node:deleted-page")}
+	if !slices.Equal(deleteBody.Points, want) {
+		t.Fatalf("delete points = %v, want %v", deleteBody.Points, want)
 	}
 }
 
@@ -443,7 +594,13 @@ func TestQdrantSearcherSearchQueriesPointsAndMapsPayload(t *testing.T) {
 						"slug": "alpha-contract",
 						"title": "Alpha Contract",
 						"kind": "wiki_page",
-						"content": "Alpha body"
+						"content": "Alpha body",
+						"schema_version": "2",
+						"prompt_version": "ingest_v2",
+						"created_at": "2026-05-01T10:00:00Z",
+						"updated_at": "2026-05-02T11:30:00Z",
+						"sources": "src_qdrant_phase07f,https://example.test/ref",
+						"unversioned": "true"
 					}
 				}]
 			}
@@ -472,6 +629,16 @@ func TestQdrantSearcherSearchQueriesPointsAndMapsPayload(t *testing.T) {
 	got := results[0]
 	if got.Kind != "wiki_page" || got.Slug != "alpha-contract" || got.Title != "Alpha Contract" || got.Content != "Alpha body" || got.Score != 0.87 {
 		t.Fatalf("mapped result = %+v", got)
+	}
+	if got.SchemaVersion != wiki.CurrentSchemaVersion || got.PromptVersion != "ingest_v2" || !got.Unversioned {
+		t.Fatalf("mapped frontmatter metadata = %+v", got)
+	}
+	wantCreated, _ := time.Parse(time.RFC3339, "2026-05-01T10:00:00Z")
+	if !got.CreatedAt.Equal(wantCreated) {
+		t.Fatalf("created_at = %s, want %s", got.CreatedAt.Format(time.RFC3339), wantCreated.Format(time.RFC3339))
+	}
+	if !slices.Equal(got.Sources, []string{"src_qdrant_phase07f", "https://example.test/ref"}) {
+		t.Fatalf("sources = %v", got.Sources)
 	}
 }
 

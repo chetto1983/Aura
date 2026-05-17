@@ -77,6 +77,7 @@ func main() {
 	defer db.Close()
 	env := &Env{
 		DB:        db,
+		DBPath:    *dbPath,
 		APIBase:   *apiBase,
 		APIToken:  *token,
 		APIClient: client,

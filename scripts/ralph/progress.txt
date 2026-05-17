@@ -1440,3 +1440,108 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - write_proposal integration test uses same multiChannelLoop pattern as Phase-R test (parent_child_integration_test.go); child goal text drives fake propose_patch insertion via proposalInserter helper
   - NodeSpec.Validate rejects wiki_page in write_proposal allowlist at dispatch time, before hub.ReceiveMessage is called; assertion E in test verifies the error message mentions "wiki_page"
 ---
+
+## [2026-05-17 --:--] — US-CL01 shipped as 2acbdcd6
+- Moved 12 budget-cap/dedup helpers (IsRetryableToolResult, duplicateToolResult, maxCallsToolResult, budgetCapToolResult, toolBudgetFinalInstruction, interruptedAssistantContent, DuplicateOrMaxCallsPolicy, finalAnswerOnBudget, argKeysFromCall, toolResultPreview, MaxToolResultPreviewChars, findAskUserCall) from loop.go into new loop_dedup.go; removed `sort` import from loop.go.
+- Files touched: 3 (internal/agent/loop_dedup.go new, internal/agent/loop.go -99 LOC, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite, 80+ packages)
+- LOC delta: loop.go 801→702 (-99); loop_dedup.go new at 113 LOC
+- Learnings:
+  - SkillNameFromReadFileArgs is NOT in the audit Slice 6 list — left in loop.go despite sitting between DuplicateOrMaxCallsPolicy and finalAnswerOnBudget in the source file; must grep explicitly, not rely on contiguous line ranges
+  - After moving argKeysFromCall the `sort` import is unused in loop.go — must remove it (compiler error otherwise)
+---
+
+## [2026-05-17 11:20] -- US-CL02 shipped as ef370329
+- Created internal/chat/testhelpers/fixtures.go with RecordingLoop, FakeInbound, FakeOutbound, BlockingLoopFn; rewrote hub_test.go and hub_swarm_test.go as package chat_test to consume them
+- Files touched: 4 (new testhelpers/fixtures.go + hub_test.go + hub_swarm_test.go + prd.json)
+- Validation: go build/vet/test all green (full suite, 70+ packages)
+- LOC delta: net +18 (fixture package added, test files trimmed of local defs)
+- Learnings:
+  - Internal test package (package chat) CANNOT import a sub-package that imports chat — it's an import cycle. Solution: switch hub_test.go/hub_swarm_test.go to package chat_test (external test package) which has a different import path and avoids the cycle.
+  - agentloop_test.go stays as package chat (internal) — fine because it does not import testhelpers.
+  - Both hub_test.go and hub_swarm_test.go as package chat_test in the same dir share outboundFn/newHub helpers across files.
+---
+
+## [2026-05-17 12:00] — US-CL03 shipped as 909af147
+- Created internal/identity/store_helpers.go with private *Store getter/validator methods (validateActorChannelAccount, validateGrantSubject, getPrincipal, getChannelAccount, getActor, getGrant) and all receiverless helpers (actorInheritsPrincipalGrants, rowsAffected, validateResolvedActor, Telegram*ID/Capabilities builders, uniqueCapabilities, stableID, nullString/Time, cleanResource, defaultJSON, parseTime, mustID)
+- Files touched: 3 (store_helpers.go new 364 LOC, store.go -354 LOC, prd.json)
+- Validation: go build/vet/test all green (full suite, 80+ packages)
+- LOC delta: store.go 876→521 (-355); store_helpers.go new at 364 LOC
+- Learnings:
+  - "receiverless functions" in the story description was imprecise; the real criterion was "anything below the CRUD/auth core" — including private *Store getter methods (getPrincipal, getChannelAccount, getActor, getGrant) which have receivers but are query helpers, not primary business logic
+  - Both store.go and store_helpers.go are package identity, so unexported identifiers (validateActorChannelAccount etc.) remain visible to each other without any changes to call sites
+  - Unused imports (crypto/rand, crypto/sha256, encoding/hex, encoding/json) must be removed from store.go after the move; only used by functions that moved
+---
+
+## [2026-05-17 --:--] — US-T01 shipped as c76c9f69
+- Created compose.prod.yaml overlay (locks aura to 127.0.0.1:8080, enforces restart: unless-stopped on all sidecars, adds 60s healthchecks) and docs/RUNBOOK.md stub
+- Files touched: 3 (compose.prod.yaml NEW, docs/RUNBOOK.md NEW, scripts/ralph/prd.json pass flip)
+- Validation: docker compose config exit 0; go build/vet/test all green (full suite)
+- LOC delta: +96 net
+- Learnings:
+  - `go test ./...` first run showed FAIL for migrations (cached stale result from previous WIP state); running -count=1 cleared it — always use -count=1 for the final gate
+  - compose overlay `ports:` key REPLACES the base list entirely; setting `127.0.0.1:8080:8080` drops the `${AURA_HOST_BIND:-0.0.0.0}:${AURA_HOST_PORT:-18080}:8080` variable binding completely
+---
+
+## [2026-05-17 21:06] — US-T01 shipped as c76c9f69
+- Created compose.prod.yaml overlay: locks aura dashboard to 127.0.0.1:8080 (SSH tunnel only), enforces restart: unless-stopped on all 6 long-running services, adds 60s healthchecks to searxng/garage/qdrant/aura-llama-embed/aura-markitdown; created docs/RUNBOOK.md stub with prod overlay usage note (full runbook ships in US-T06)
+- Files touched: 3 (compose.prod.yaml new, docs/RUNBOOK.md new, scripts/ralph/prd.json)
+- Validation: docker compose config exit 0; go build/vet/test all green
+- LOC delta: +97 net (2 new files)
+- Learnings:
+  - compose.prod.yaml was already pre-created by a prior session and committed at c76c9f69 before this Ralph iter ran; iter found the story done, logged and exited
+  - Docker Compose overlay appends to ports lists rather than replacing; the overlay adds 127.0.0.1:8080:8080 alongside the base 0.0.0.0:18080:8080; RUNBOOK should note operators must set AURA_HOST_BIND/PORT in shell or use ssh tunnel only
+---
+
+## [2026-05-17 21:19] — US-T02 shipped as 0432b742
+- Added internal/release package (Version/Commit/BuildDate vars) wired via -ldflags in Dockerfile; --version flag + /api/health fields + boot log all use injected values.
+- Files touched: 9 (internal/release/version.go new, internal/release/version_test.go new, Dockerfile, cmd/aura/main.go, cmd/aura/app_wire.go, internal/api/health.go, internal/api/router.go, internal/api/types.go, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (clean cache)
+- LOC delta: +51 net
+- Learnings:
+  - .dockerignore default-deny (**) means .git is excluded from build context; SHA must be passed as --build-arg GIT_COMMIT=0432b742 at docker build time
+  - Stale test cache can cause spurious migration-count failures; always run go clean -testcache before final gate
+---
+
+## [2026-05-17 --:--] — US-T03 shipped as cf1b75d5
+- Added VerifyBackup(ctx, backupPath, expectMinRows) in internal/dbrecovery/verify.go; daily cron task at 04:00 snapshots live DB to tmp, runs integrity_check + row count assertions, notifies owners on failure via cron.Handler.NotifyOwners
+- Files touched: 7 (verify.go NEW, verify_test.go NEW, backup_verify.go NEW, dispatch.go +5 lines, types.go +1 line, app_wire.go +59 lines, prd.json)
+- Validation: go build/vet/test all green (full suite, 80+ packages)
+- LOC delta: +256 net (3 new files)
+- Learnings:
+  - t.TempDir() cleanup fails on Windows if SQLite WAL/SHM files are still locked; fix by registering t.Cleanup(db.Close + os.Remove WAL/SHM) immediately after openMigratedDB (LIFO ensures it runs before TempDir removal)
+  - The `settings` table has NOT NULL updated_at — seeds must include it; see seedRecoverableRows in recovery_test.go for the canonical pattern
+  - US-T02 was already committed (0432b742) when this iter started; prd.json state detection via git log --oneline is the right sanity check before each iter
+---
+
+## [2026-05-17 --:--] — US-T04 shipped as b39d7a85
+- Added GET /api/maintenance/authz endpoint (SQLiteAuthzReader) returning denial_rate_24h, top_denied_capabilities, recent_denials; wired into existing router Deps; React AuthzTab with 3 stacked sections in MaintenancePanel.
+- Files touched: 8 (maintenance_authz.go NEW, maintenance_authz_test.go NEW, router.go, types.go, app_wire.go, web/src/types/api.ts, web/src/api.ts, web/src/components/MaintenancePanel.tsx, prd.json)
+- Validation: go build/vet/test all green; npm build green (3.04s)
+- LOC delta: +~300 net
+- Learnings:
+  - authz_decisions has FK actor_id → actors(id) and FK is enforced in test DB; seed helpers must INSERT OR IGNORE into principals + actors before inserting authz_decisions rows
+  - Deps struct lives in router.go, not types.go — grep for ToolWarnings to find the right file fast
+  - INSERT OR IGNORE pattern for parent rows handles parallel test isolation without tx-level conflicts
+---
+
+## [2026-05-17 --:--] — US-T05 shipped as 930a6ca1
+- Added GET /maintenance/tool-attempts endpoint + React "Tool Attempts" tab with per-tool outcome bar + sortable budget table
+- Files touched: 8 (internal/api/maintenance_attempts.go NEW, maintenance_tool_attempts_test.go NEW, types.go, router.go, app_wire.go, web/src/types/api.ts, web/src/api.ts, web/src/components/MaintenancePanel.tsx) + dist/ rebuild
+- Validation: go build/vet/test all green, npm --prefix web run build green, 3 new tests pass
+- Learnings:
+  - FK on tool_attempts.run_id → runs.id: test helper must insert a runs row first (mirrors authz ensureActorExists pattern)
+  - idx_tool_attempts_tool_outcome covers both per_tool and retry_budget queries (ended_at filter uses that index)
+  - Static dailyToolBudget=100 is simple and correct — no per-tool budget config exists in codebase
+---
+
+## [2026-05-17 HH:MM] — US-T06 shipped as 6e26575b
+- Created complete production runbook in docs/RUNBOOK.md: 8 sections (Production Overlay, Cold Install, Upgrade, Rollback, SQLite Restore Drill, Telegram Token Rotation, Mistral Key Rotation, llama-embed Rebuild) + Appendix with 5 failure modes
+- Files touched: 2 (docs/RUNBOOK.md expanded from 23-line stub to 285 lines, scripts/ralph/prd.json passes:true)
+- Validation: go build/vet/test all green (all cached — docs-only story)
+- LOC delta: +498/-8 (docs only)
+- Learnings:
+  - Settings catalog in internal/api/settings.go registers TELEGRAM_TOKEN, LLM_API_KEY, and MISTRAL_API_KEY as IsSecret=true with dashboard UI — key rotation can be done via dashboard Settings page, not just raw SQLite
+  - docker compose run --rm aura-secrets is idempotent (ensure_secret guards existing files); safe to re-run any time for permission fix
+  - AURA_SQLITE_JOURNAL_MODE=DELETE in compose.yaml is intentional (Docker Desktop cross-filesystem bind mount cannot use WAL shared memory) — documented this in the SQLite locked failure mode
+---

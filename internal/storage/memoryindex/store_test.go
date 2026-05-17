@@ -495,6 +495,9 @@ func TestDocumentRoundTripWithFreshnessColumns(t *testing.T) {
 		Handle:           "source:src_fresh#page=1",
 		SourceID:         "src_fresh",
 		Page:             1,
+		ChunkIndex:       4,
+		ByteStart:        128,
+		ByteEnd:          196,
 		ContentHash:      ContentHash("user", "Document with freshness metadata.", "embeddinggemma-300m"),
 		EmbeddingModelID: "embeddinggemma-300m",
 		IndexBuildID:     "build-id-abc123",
@@ -522,6 +525,10 @@ func TestDocumentRoundTripWithFreshnessColumns(t *testing.T) {
 	}
 	if got.ContentHash != doc.ContentHash {
 		t.Errorf("ContentHash: got %q, want %q", got.ContentHash, doc.ContentHash)
+	}
+	if got.ChunkIndex != doc.ChunkIndex || got.ByteStart != doc.ByteStart || got.ByteEnd != doc.ByteEnd {
+		t.Errorf("span fields: got chunk=%d bytes=%d-%d, want chunk=%d bytes=%d-%d",
+			got.ChunkIndex, got.ByteStart, got.ByteEnd, doc.ChunkIndex, doc.ByteStart, doc.ByteEnd)
 	}
 	if got.EmbeddingModelID != doc.EmbeddingModelID {
 		t.Errorf("EmbeddingModelID: got %q, want %q", got.EmbeddingModelID, doc.EmbeddingModelID)

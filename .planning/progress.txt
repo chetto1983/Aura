@@ -509,3 +509,109 @@
   their existing progress evidence.
 - Left open what is not proven: Phase07C-F, Phase08, Phase09, and the
   orientation-only `Phase01_Stabilize_Map` scaffold.
+
+2026-05-17 - Phase07D local closure hardening
+
+- Selected `Phase07D_User_Operational_Memory_Typed_Tiers` from the durable
+  deep-refactor index as the next Phase 7 roadmap slice.
+- Added deterministic coverage for typed-tier recall boundaries:
+  `search_memory(scope=all)` still queries only source/archive/proposal compact
+  kinds, and `scope=user_memory` / `scope=operational` are rejected in favor of
+  the task-level recall tools.
+- Extracted memory recall registration in `cmd/aura/app_wire.go` and added a
+  disposable SQLite runtime wiring test proving `search_memory`,
+  `recall_operational`, and `recall_user_memory` register after compact memory
+  and receive shared compact projection freshness.
+- Verification passed: Phase07D baseline command, targeted registry/app tests,
+  `go vet ./...`, `go build ./...`, and `go test ./... -count=1`.
+- Phase07D remains a locally hardened closure candidate, not independently
+  verified or closed. Remaining evidence: fresh verifier and full
+  `cmd/probe_chat` mixed-tier golden fixture.
+
+2026-05-17 - Phase07D disposable mixed-tier golden
+
+- Strengthened `cmd/aura/app_wire_test.go` into a disposable mixed-tier direct
+  tool golden: approved and pending user/operational rows plus
+  source/archive/proposal trap rows share the same query token.
+- Verified that `recall_user_memory` returns only approved user-memory rows,
+  `recall_operational` returns only approved operational rows, and broad
+  `search_memory(scope=all)` excludes typed user/operational memory while
+  still returning ordinary source/archive/proposal compact hits.
+- Verification passed:
+  `go test ./cmd/aura -run TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness -count=1`;
+  `go test ./internal/agent/tools/registry -run "Test(SearchMemoryTool(UsesOneCompactSearchForAllScope|RejectsTypedTierScopes)|RecallUserMemoryTool|RecallOperationalTool|ExamplesParameterEval)" -count=1`;
+  `go test ./cmd/aura ./internal/agent/tools/registry -count=1`;
+  `go test ./internal/storage/memoryindex ./internal/learning ./internal/agent/tools/registry ./cmd/aura -run "Test(CollectionConstants|KindBackCompat|ScaffoldedCollections|WriteApprovedLesson|WriteApprovedUserFact|RecallUserMemoryTool|RecallOperationalTool|ExamplesParameterEval|SearchMemoryTool(UsesOneCompactSearchForAllScope|RejectsTypedTierScopes)|RegisterMemoryRecallToolsWiresTypedTiersAndFreshness)" -count=1`.
+- No live user data was mutated. Full live/chat `cmd/probe_chat` reply capture
+  and independent verification remain open before Phase07D can be called
+  closed.
+
+2026-05-17 - Phase07D closed with live chat golden
+
+- Added `cmd/probe_chat` case `phase07d-mixed-tier-recall`. The case seeds
+  temporary compact-memory rows for approved/pending user memory,
+  approved/pending operational memory, and source/archive/proposal traps,
+  sends a live `/api/chat` request, verifies approved tokens in the assistant
+  reply, verifies no wrong-tier token leaks, checks `tool_attempts` for
+  `recall_user_memory` and `recall_operational`, and cleans up fixture rows.
+- Live Compose probe passed:
+  `docker compose run --rm -v ${PWD}\data:/data test go run ./cmd/probe_chat -case phase07d-mixed-tier-recall -url http://aura:8080/api/chat -api http://aura:8080/api -db /data/aura.db -token <seeded-token> -timeout 240 -json`
+  returned `pass=true`, `tool_calls=2`, `llm_calls=2`, and no mismatches.
+- Closure verification passed:
+  `go test ./cmd/probe_chat ./cmd/aura ./internal/agent/tools/registry -count=1`;
+  combined Phase07D gate with `./cmd/probe_chat`;
+  `go vet ./...`;
+  `go build ./...`;
+  `go test ./... -count=1`.
+- Phase07D is now closed for user/operational typed tiers. Next Phase 7 slice:
+  promote Phase07E Source Span And Byte Offsets before implementation.
+
+2026-05-17 - Phase07E closed with live source-span golden
+
+- Added compact source span fields (`chunk_index`, `byte_start`, `byte_end`),
+  rebuild-time source page byte offsets, span-aware `search_memory` output, and
+  production `source(action=read,...)` byte-range reads.
+- Added `cmd/probe_chat` case `phase07e-source-span-read`. The case uploads a
+  disposable source, seeds a compact source span row, sends a live `/api/chat`
+  request, verifies exact span-only assistant output, checks `tool_attempts` for
+  `search_memory` and `source`, and cleans up the fixture.
+- Verification passed:
+  `go test ./internal/db/migrations ./internal/storage/memoryindex ./internal/agent/tools/registry ./cmd/probe_chat -count=1`;
+  `go vet ./...`;
+  `go build ./...`;
+  `go test ./... -count=1`;
+  live Compose `phase07e-source-span-read` returned `pass=true`,
+  `tool_calls=2`, `llm_calls=3`, exact `SPAN=<target>` reply.
+- Phase07E is now closed for source span/byte offsets. Next Phase 7 slice:
+  promote Phase07F Wiki Frontmatter Schema And Prompt-Version Promotion before
+  implementation.
+
+2026-05-17 - Phase07F closed with live wiki metadata golden
+
+- Promoted wiki frontmatter trust metadata (`schema_version`,
+  `prompt_version`, `created_at`, `unversioned`, `sources`) through wiki search
+  docs, graph node cards, SQLite/Qdrant result parsing, and
+  `search_memory(scope=wiki)`.
+- Fixed the live reindex blocker: `ReindexWikiPage` now direct-upserts the
+  changed page into Qdrant instead of calling the warm-cache full rebuild path
+  that skips writes when a collection already has points.
+- Added `cmd/probe_chat` case `phase07f-wiki-frontmatter-metadata`. The case
+  writes a disposable wiki page through the dashboard API, verifies `/api/chat`
+  returns the unprompted marker/source plus metadata tokens through
+  `search_memory(scope=wiki)`, and cleans up the page.
+- Verification passed:
+  targeted Phase07F metadata/reindex tests;
+  `go test ./internal/wiki ./internal/storage/search ./internal/agent/tools/registry ./cmd/probe_chat -count=1`;
+  `go vet ./...`;
+  `go build ./...`;
+  `go test ./... -count=1`;
+  `docker compose build aura`;
+  `docker compose up -d --no-deps aura`;
+  live `phase07f-wiki-frontmatter-metadata` returned `pass=true`,
+  `tool_calls=2`, `llm_calls=3`, exact marker/source and metadata reply.
+- Note: current web chat did not create fresh `tool_attempts` rows during this
+  probe, so the closure proof uses unprompted marker/source retrieval plus
+  API/Qdrant ground truth. Track the `tool_attempts` gap in a later
+  run-observability slice.
+- Phase07F is now closed. Next roadmap slice: promote Phase08 or Phase09 before
+  implementation.

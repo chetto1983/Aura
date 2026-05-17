@@ -5,10 +5,10 @@ refactor. The canonical product route remains `D:/Aura/prd.md`; this folder
 turns that route into bounded implementation units.
 
 Status: planning state refreshed on 2026-05-16 after Phase01C was pushed and
-GitHub Actions CI passed, then repaired to include the current Phase07C
-Projection Freshness Registry evidence. The clean skeleton was recreated on
-2026-05-15; some folders remain scaffolds, while the phase files now
-distinguish closed slices from not-run plans.
+GitHub Actions CI passed, then repaired through Phase07F closure on
+2026-05-17. The clean skeleton was recreated on 2026-05-15; some folders remain
+scaffolds, while the phase files now distinguish closed slices from not-run
+plans.
 
 ## Plan Authority
 
@@ -57,13 +57,15 @@ Closed or closable phase state captured in this sweep:
 - Phase04 is closed for the legacy `agent.Runner` removal / `RunTask` collapse
   arc.
 - Phase05 and Phase06 are closed for their documented in-scope slices.
-- Phase07A, Phase07B, and Phase07C are closed for their implemented compact
-  archive, typed collection, and projection freshness slices.
+- Phase07A, Phase07B, Phase07C, Phase07D, Phase07E, and Phase07F are closed for their
+  implemented compact archive, typed collection, projection freshness,
+  user/operational typed recall, source span byte-offset, and wiki
+  frontmatter metadata promotion slices.
 - Phase10 is closed for the SQLite/secrets source-of-truth config slice.
 
 Still open / not green:
 
-- Phase07D-F, Phase08, and Phase09 remain planned or scaffolded.
+- Phase08 and Phase09 remain planned or scaffolded.
 - `Phase01/subphases/Phase01_Stabilize_Map` remains an orientation scaffold,
   not a separate verified implementation gate.
 
@@ -126,17 +128,20 @@ PhaseNN_Description/
   - `subphases/Phase07A_Compact_Archive_Hygiene`
   - `subphases/Phase07B_Typed_Collection_Registry`
   - `subphases/Phase07C_Projection_Freshness_Registry`
+  - `subphases/Phase07D_User_Operational_Memory_Typed_Tiers`
+  - `subphases/Phase07E_Source_Span_Byte_Offsets`
+  - `subphases/Phase07F_Wiki_Frontmatter_Schema_And_Prompt_Version_Promotion`
 - `Phase08_Cron_And_Swarm_RunGraph`
 - `Phase09_Memory_Source_Discipline`
 - `Phase10_Single_Source_Of_Truth_Config`
 
 ## Next Operating Step
 
-Current canonical slice: none selected after the Phase07C planning repair.
-Select the next phase from the prepared phase folders before editing more code.
-If continuing memory/RAG work, Phase07D is the next open Phase07 sub-phase; if
-starting Phase08 or Phase09, first promote its self-audited scaffold into a
-source-backed plan and benchmark.
+Current canonical next slice: promote Phase08 or Phase09 before implementation.
+Phase07D, Phase07E, and Phase07F are closed with deterministic tests, live/chat
+`cmd/probe_chat` probes, and full repo gates. Before starting Phase08 or
+Phase09, promote its self-audited scaffold into a source-backed plan and
+benchmark.
 
 Use `$aura-plan-builder` when the selected phase or sub-phase is still a
 self-audited scaffold, missing source/plan/benchmark coverage, or needs

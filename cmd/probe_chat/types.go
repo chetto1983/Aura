@@ -27,6 +27,7 @@ type Case struct {
 // Env bundles everything a Verify function needs to consult ground truth.
 type Env struct {
 	DB        *sql.DB
+	DBPath    string
 	APIBase   string // e.g. http://localhost:18080/api
 	APIToken  string
 	APIClient *http.Client
