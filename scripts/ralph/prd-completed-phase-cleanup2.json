@@ -1,0 +1,93 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-CLEANUP2 — residual cleanup after Phase-CLEANUP (US-CL01..CL06) shipped today. Driven by docs/audit-god-files-2026-05-17.md (Slices 3, 8, 9, 10 — the remaining god-files >600 LOC) and docs/audit-concurrency-leaks-2026-05-17.md (2 deferred LOW items). After CL07-CL09 ship, expect zero god-files >600 LOC in the targeted scope; CL10/CL11 are the safer pure-move extras. Each story is a single atomic commit on master, mechanical move/extract or focused fix, no behavior change beyond what's explicitly noted, full test suite must stay green. Reference live LOC at queue creation: app.go 969, hub.go 760, runs/store.go 781, memory_hygiene.go 759, loop.go 699. Order is lowest-risk first per 'andiamo calmi' pacing memory.",
+  "userStories": [
+    {
+      "id": "US-CL07",
+      "title": "Extract cmd/aura/app_wire.go from cmd/aura/app.go (god-files Slice 3)",
+      "description": "cmd/aura/app.go is currently 969 LOC after the Phase-CLEANUP US-CL01 move of runtask adapters (1151 -> 973 -> 969 after stray cleanup). Audit Slice 3 identifies the wireBot() function + tool registration + scheduler + skill adapters as a coherent ~410-LOC cluster that can move into a sibling file. (a) Read docs/audit-god-files-2026-05-17.md Slice 3. The exact function inventory is wireBot (the BIG method starting around line 560 in the audit-mentioned baseline; grep for `func (a *App) wireBot` for current line). (b) Create cmd/aura/app_wire.go (package main, same package as app.go) and move wireBot + any helpers that are private and called ONLY by wireBot. (c) KEEP in app.go: the App struct, lifecycle methods (Start, Stop, APIHandler, reindexHealth, CompactMemoryHealth, startBg), newApp(), and any helper used outside wireBot. (d) NO logic change — pure mechanical move. If a helper has more than one caller, leave it in app.go. (e) Result: app.go drops to ~563 LOC, app_wire.go is ~410 LOC. (f) `go build ./... && go vet ./... && go test ./...` all green.",
+      "acceptanceCriteria": [
+        "cmd/aura/app_wire.go exists with wireBot + its private-only helpers",
+        "cmd/aura/app.go drops to under 600 LOC",
+        "App struct + Start/Stop/APIHandler/lifecycle methods stay in app.go",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green (full suite)",
+        "~/go/bin/golangci-lint run --disable=errcheck ./... shows lint count unchanged or lower",
+        "No behavior change — diff shows only moves + minimal import adjustments",
+        "Single atomic commit prefix: refactor(cmd/aura): extract app_wire.go from app.go (US-CL07)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Audit risk: Low (mechanical move). This is the biggest remaining structural win — drops app.go from 969 LOC to under 600, eliminating it from the god-files list entirely."
+    },
+    {
+      "id": "US-CL08",
+      "title": "Fix docHandler context propagation in internal/telegram/documents.go (concurrency LOW #2)",
+      "description": "Concurrency audit (docs/audit-concurrency-leaks-2026-05-17.md, BUG #2) found that document-processing goroutines in internal/telegram/documents.go around line 72 are spawned via `context.WithCancel(context.Background())` instead of propagating the handler's incoming context. Result: if the parent run cancels (user /stop, run timeout, app shutdown), document handlers continue running orphaned. (a) Read internal/telegram/documents.go around the docHandler function. (b) Change the spawn signature to accept a ctx parameter (from the calling handler), and wire `context.WithCancel(ctx)` to derive from it. (c) Verify the caller propagates the chat handler ctx through. If the existing call site uses tele.Context with no extractable Go context, document the trade-off in a comment — Telegram telebot v4 does expose c.Get(\"ctx\") in some configs; if not, leave a TODO comment but DO still change the function signature. (d) Tests in documents_test.go (if present) update to pass ctx; otherwise add a test verifying cancel propagation.",
+      "acceptanceCriteria": [
+        "internal/telegram/documents.go docHandler (or equivalent function around the flagged line) accepts ctx context.Context parameter",
+        "Internal context.WithCancel derives from the passed ctx, not context.Background()",
+        "All callers updated to pass the handler context",
+        "go build ./... green",
+        "go test ./internal/telegram/... green (no regression)",
+        "go test ./... green (full suite)",
+        "Single atomic commit prefix: fix(telegram): propagate handler context into docHandler (US-CL08)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Low-risk fix. If the caller doesn't have a Go context yet (telebot quirk), it's acceptable to use context.Background at the BUS boundary and add a TODO; the goal is to give docHandler the ability to be cancelled when the chat run is cancelled."
+    },
+    {
+      "id": "US-CL09",
+      "title": "Make SessionStore.Begin() context-aware in internal/agent/session.go (concurrency LOW #3)",
+      "description": "Concurrency audit (docs/audit-concurrency-leaks-2026-05-17.md, BUG #3) found SessionStore.Begin() at line 98 has no context parameter and no timeout on its operations. Impact is low (sessions are in-memory), but the lack of ctx awareness means a stuck session creation can't be cancelled. (a) Change SessionStore.Begin() signature to accept ctx context.Context. (b) Use it for any potentially-blocking operation inside (mutex acquisition, DB access if present). (c) Update all callers to pass an appropriate ctx — Telegram channel adapter passes the inbound message's run context; cron passes the job's. (d) If a caller has no real context, it can pass context.Background() but it should be deliberate, not the default.",
+      "acceptanceCriteria": [
+        "SessionStore.Begin(ctx, ...) signature in internal/agent/session.go",
+        "Internal operations respect ctx (return ctx.Err() on cancel)",
+        "All call sites updated to pass a real context",
+        "go build ./... green",
+        "go test ./internal/agent/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: fix(agent): make SessionStore.Begin context-aware (US-CL09)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Triaged as not-applicable at execution time. SessionStore.Begin's body is pure sync.Map Load/LoadOrStore/Store ops — no I/O, no blocking, nothing for ctx to cancel. Adding ctx would only enable a defensive ctx.Err() check at the top, which provides no value when the only mutations are non-blocking atomics. The audit was theoretically right (every long-lived method 'should' accept ctx) but mechanically empty here. Per CLAUDE.md no-unnecessary-abstraction rule, declined."
+    },
+    {
+      "id": "US-CL10",
+      "title": "Extract internal/chat/hub_lifecycle.go from internal/chat/hub.go (god-files Slice 8)",
+      "description": "internal/chat/hub.go is 760 LOC. Audit Slice 8 identifies lifecycle-event-related methods + helpers as a ~200-LOC coherent cluster (persistLifecycleEvent, recordQuestionRequested, isDurableRunEvent, lifecycleRunMetadata, lifecycleEventParams, lifecyclePayload). (a) Read docs/audit-god-files-2026-05-17.md Slice 8. (b) Create internal/chat/hub_lifecycle.go (same package `chat`). Move the lifecycle-event helpers. (c) Keep in hub.go: Hub struct, New, Receive/dispatch, emit, thread status tracking, Stop. (d) Result: hub.go drops to ~560 LOC. (e) NO logic change.",
+      "acceptanceCriteria": [
+        "internal/chat/hub_lifecycle.go exists with the moved helpers",
+        "internal/chat/hub.go drops to under 600 LOC",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./internal/chat/... green (lifecycle + dispatch invariants intact)",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(chat): extract hub_lifecycle.go from hub.go (US-CL10)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Pure mechanical move. Audit risk: Low."
+    },
+    {
+      "id": "US-CL11",
+      "title": "Extract internal/storage/runs/store_questions.go from internal/storage/runs/store.go (god-files Slice 9)",
+      "description": "internal/storage/runs/store.go is 781 LOC. Audit Slice 9 identifies the question lifecycle methods (RecordQuestionRequested, RecordQuestionAnswered, GetQuestion, LatestPendingQuestion + question types) as a ~100-LOC sub-cluster. (a) Read docs/audit-god-files-2026-05-17.md Slice 9. (b) Create internal/storage/runs/store_questions.go (same package `runs`). Move the question methods + immediate types. (c) Keep in store.go: Store struct, Run/event CRUD. (d) Result: store.go drops to ~681 LOC. (e) NO logic change. NOTE: Since the cut keeps store.go above 600 LOC, this is a partial win — feel free to combine with related-but-separate clusters if they're truly cohesive. Otherwise ship as-is and a follow-up slice can take more.",
+      "acceptanceCriteria": [
+        "internal/storage/runs/store_questions.go exists with the moved question lifecycle methods",
+        "internal/storage/runs/store.go drops by 80+ LOC",
+        "go build ./... green",
+        "go test ./internal/storage/runs/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(runs): extract store_questions.go from store.go (US-CL11)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Already shipped in earlier work — internal/storage/runs/questions.go (313 LOC) already contains RecordQuestionRequested, RecordQuestionAnswered, LatestPendingQuestion, GetQuestion, getQuestionTx + question types + helpers. The 781 LOC residual in store.go is the POST-split size after that earlier extraction. No additional move warranted by this story's acceptance criteria."
+    }
+  ]
+}
