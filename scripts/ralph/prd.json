@@ -57,7 +57,7 @@
         "Single atomic commit prefix: refactor(identity): extract store_helpers.go from store.go (US-CL03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Identity package is auth-critical — extra care. Pure receiverless helpers first; auth methods stay for Slice 5."
     },
     {
