@@ -739,7 +739,7 @@ func exactCandidates(query string) []string {
 
 func escapeFTS5Query(query string) string {
 	fields := strings.FieldsFunc(query, func(r rune) bool {
-		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
 	})
 	if len(fields) == 0 {
 		return ""

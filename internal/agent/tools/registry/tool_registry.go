@@ -156,8 +156,8 @@ func (r *ToolRegistry) regenerateIndex() error {
 		b.WriteString("_No tools registered yet. The LLM will create tools as they become useful._\n")
 	} else {
 		for _, t := range tools {
-			b.WriteString(fmt.Sprintf("- **%s** — %s  \n  params: %s | created: %s\n\n",
-				t.Name, t.Description, t.Params, t.Created))
+			fmt.Fprintf(&b, "- **%s** — %s  \n  params: %s | created: %s\n\n",
+				t.Name, t.Description, t.Params, t.Created)
 		}
 	}
 

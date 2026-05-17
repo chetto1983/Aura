@@ -355,7 +355,7 @@ func (c *Context) Summarize(ctx context.Context) error {
 	var sb strings.Builder
 	sb.WriteString("Summarize the following conversation concisely, preserving key facts and decisions:\n\n")
 	for _, m := range olderMessages {
-		sb.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
+		fmt.Fprintf(&sb, "%s: %s\n", m.Role, m.Content)
 	}
 
 	priorSummary := ""

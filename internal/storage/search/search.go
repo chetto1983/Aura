@@ -443,13 +443,13 @@ func FormatResults(results []Result) string {
 		kind := resultKind(r)
 		label := resultLabel(r)
 		if kind == "wiki_page" {
-			sb.WriteString(fmt.Sprintf("- %s %s\n", label, r.Title))
+			fmt.Fprintf(&sb, "- %s %s\n", label, r.Title)
 		} else {
-			sb.WriteString(fmt.Sprintf("- [%s] %s %s\n", kind, label, r.Title))
+			fmt.Fprintf(&sb, "- [%s] %s %s\n", kind, label, r.Title)
 		}
 		excerpt := truncateExcerpt(r.Content, 200)
 		if excerpt != "" {
-			sb.WriteString(fmt.Sprintf("  %s\n", excerpt))
+			fmt.Fprintf(&sb, "  %s\n", excerpt)
 		}
 	}
 	return sb.String()

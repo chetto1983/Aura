@@ -128,7 +128,7 @@ func TestContentHash_FormatIsLowercaseHex(t *testing.T) {
 		t.Fatalf("expected 64-char hex, got %d", len(h))
 	}
 	for _, c := range h {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Fatalf("non-lowercase-hex char %q in %s", c, h)
 		}
 	}

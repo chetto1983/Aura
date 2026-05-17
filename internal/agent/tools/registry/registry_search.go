@@ -104,7 +104,7 @@ func (r *Registry) Search(query string, limit int, excluded ...string) []ToolSea
 
 func searchTerms(query string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && !(r >= 'à' && r <= 'ÿ')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && (r < 'à' || r > 'ÿ')
 	})
 	out := make([]string, 0, len(fields))
 	seen := make(map[string]bool, len(fields))

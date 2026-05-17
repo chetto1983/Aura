@@ -109,7 +109,7 @@
         "Single atomic commit prefix: style(lint): apply staticcheck QF1001/QF1012/QF1002/ST1023 fixes (US-CL06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Pure style polish. The actual logic is identical pre- and post-. Easiest story in the queue, parked at the end so the bigger structural moves land first."
     }
   ]

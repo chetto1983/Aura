@@ -31,7 +31,7 @@ func TestRenderToolManifest_SortsAlphabeticallyForCacheStability(t *testing.T) {
 	if posDocx < 0 || posMail < 0 || posWeb < 0 {
 		t.Fatalf("missing tool in manifest:\n%s", got)
 	}
-	if !(posDocx < posMail && posMail < posWeb) {
+	if posDocx >= posMail || posMail >= posWeb {
 		t.Fatalf("not alphabetical: docx=%d mail=%d web=%d\n%s", posDocx, posMail, posWeb, got)
 	}
 }

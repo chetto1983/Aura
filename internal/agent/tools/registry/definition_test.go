@@ -102,7 +102,7 @@ func TestToolDefinition_VisibilityActiveTurnPreservedWhenExplicit(t *testing.T) 
 // string, untyped string literals would satisfy the cases and the compiler
 // would not catch typos. This compile-time assertion documents the invariant.
 func TestVisibilityTierIsTyped(t *testing.T) {
-	var tier VisibilityTier = VisibilityActiveTurn
+	tier := VisibilityActiveTurn
 	switch tier {
 	case VisibilityAlwaysOn, VisibilityActiveTurn, VisibilityDeferred:
 		// OK — exhaustive match over the typed constants.

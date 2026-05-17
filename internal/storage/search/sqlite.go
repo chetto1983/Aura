@@ -214,7 +214,7 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 // apostrophes must not be passed through as query syntax.
 func escapeFTS5Query(query string) string {
 	fields := strings.FieldsFunc(query, func(r rune) bool {
-		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
 	})
 	if len(fields) == 0 {
 		return ""

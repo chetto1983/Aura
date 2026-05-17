@@ -132,7 +132,7 @@ func TestRenderMarkdownEmitsHeaderAndFooter(t *testing.T) {
 	hPos := strings.Index(got, "*Header:*")
 	bPos := strings.Index(got, "body content")
 	fPos := strings.Index(got, "*Footer:*")
-	if !(hPos > 0 && hPos < bPos && bPos < fPos) {
+	if hPos <= 0 || hPos >= bPos || bPos >= fPos {
 		t.Errorf("ordering wrong: h=%d b=%d f=%d", hPos, bPos, fPos)
 	}
 }

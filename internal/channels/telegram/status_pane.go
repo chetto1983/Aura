@@ -317,7 +317,7 @@ func (p *statusPane) composeLocked() (string, tele.Entities) {
 		hist = hist[len(hist)-statusMaxHistory:]
 	}
 	if skipped > 0 {
-		sb.WriteString(fmt.Sprintf("… %d round precedenti\n", skipped))
+		fmt.Fprintf(&sb, "… %d round precedenti\n", skipped)
 	}
 	// Render newest-first so the user sees the latest round at the top
 	// of the history block.

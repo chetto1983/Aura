@@ -155,12 +155,12 @@ func applyConfiguredDatabaseArgs(status *DatabaseSetupStatus, args []string) {
 		status.Provider = "sqlite"
 		return
 	}
-	switch {
-	case args[0] == "--postgresql" || args[0] == "--postgres":
+	switch args[0] {
+	case "--postgresql", "--postgres":
 		status.Provider = "postgresql"
-	case args[0] == "--mysql":
+	case "--mysql":
 		status.Provider = "mysql"
-	case args[0] == "--sqlserver":
+	case "--sqlserver":
 		status.Provider = "sqlserver"
 	default:
 		status.Provider = "sqlite"
