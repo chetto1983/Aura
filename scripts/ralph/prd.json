@@ -110,7 +110,7 @@
         "Single atomic commit prefix: docs(runbook): production deployment + operational procedures (US-T06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Pure doc story. Easiest in the queue, parked at the end so the operational features (T01-T05) ship first and the runbook references them as it's written. Don't include speculative procedures; only document what is concretely implemented today."
     }
   ]
