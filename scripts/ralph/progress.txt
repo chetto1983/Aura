@@ -1545,3 +1545,13 @@ refactor(telegram): drop AURA_USE_HUB flag + delete legacy conversation/streamin
   - docker compose run --rm aura-secrets is idempotent (ensure_secret guards existing files); safe to re-run any time for permission fix
   - AURA_SQLITE_JOURNAL_MODE=DELETE in compose.yaml is intentional (Docker Desktop cross-filesystem bind mount cannot use WAL shared memory) — documented this in the SQLite locked failure mode
 ---
+
+## [2026-05-17 22:30] — US-Z01 shipped as 8cae43b9
+- Added Store.EmbeddingModelID config field; Upsert now auto-computes ContentHash + fills EmbeddingModelID when caller omits them
+- Files touched: 3 (store.go, store_test.go, prd.json)
+- Validation: go build green, go vet green, go test ./internal/db/migrations/... ./internal/storage/memoryindex/... green, all 50 packages green
+- LOC delta: +65
+- Learnings:
+  - Migration v13 + Document struct fields were already present from prior dev work; only the Store.EmbeddingModelID field and Upsert auto-fill were missing
+  - The test role arg was "user" not doc.Kind in TestDocumentRoundTripWithFreshnessColumns — kept as-is (caller-set hash, not auto-computed); new test covers auto-compute path
+---
