@@ -30,3 +30,14 @@ func AppendUnique(values []string, additions ...string) []string {
 	}
 	return values
 }
+
+// NormalizeBaseURL trims surrounding whitespace and any trailing slash from a
+// REST endpoint base URL. Callers append their own paths beginning with "/"
+// (e.g. "/v1/embeddings"), so a base ending in "/" produced "//v1/embeddings"
+// which some servers reject. Empty input returns "".
+//
+// This is a pure string operation; net/http normalization rules don't apply
+// here. Callers that need full URL parsing should use net/url.Parse, not this.
+func NormalizeBaseURL(rawURL string) string {
+	return strings.TrimRight(strings.TrimSpace(rawURL), "/")
+}

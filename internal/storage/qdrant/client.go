@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 const defaultQdrantBatchSize = 64
@@ -35,7 +37,7 @@ type httpClient struct {
 // NewClient creates a new Qdrant Client from the given Config.
 // Returns an error if cfg.BaseURL is empty after trimming.
 func NewClient(cfg Config) (Client, error) {
-	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	base := stringx.NormalizeBaseURL(cfg.BaseURL)
 	if base == "" {
 		return nil, fmt.Errorf("qdrant: BaseURL is required")
 	}

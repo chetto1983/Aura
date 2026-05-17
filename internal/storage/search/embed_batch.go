@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 type openAICompatBatchEmbedder struct {
@@ -26,7 +28,7 @@ type openAICompatBatchEmbedder struct {
 // are returned raw; the indexing code downstream may apply its own
 // normalization if needed.
 func NewOpenAICompatBatchEmbeddingFunction(baseURL, apiKey, model string, outputDim int, client *http.Client) BatchEmbeddingFunction {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = stringx.NormalizeBaseURL(baseURL)
 	model = strings.TrimSpace(model)
 	if baseURL == "" || apiKey == "" || model == "" {
 		return nil

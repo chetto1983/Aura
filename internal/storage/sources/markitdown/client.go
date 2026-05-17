@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/stringx"
 )
 
 const (
@@ -63,7 +64,7 @@ func New(cfg Config) *Client {
 		maxBytes = DefaultMaxBytes
 	}
 	return &Client{
-		baseURL:  strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		baseURL:  stringx.NormalizeBaseURL(cfg.BaseURL),
 		timeout:  timeout,
 		maxBytes: maxBytes,
 	}

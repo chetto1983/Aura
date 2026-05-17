@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/storage/qdrant"
+	"github.com/aura/aura/internal/stringx"
 )
 
 // QdrantConfig describes Aura's external vector index.
@@ -302,7 +303,7 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 // newQdrantClientFromConfig creates a qdrant.Client from QdrantConfig and returns
 // the client, collection name, and any construction error.
 func newQdrantClientFromConfig(cfg QdrantConfig) (qdrant.Client, string, error) {
-	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	base := stringx.NormalizeBaseURL(cfg.BaseURL)
 	if base == "" {
 		return nil, "", fmt.Errorf("QDRANT_URL is required")
 	}

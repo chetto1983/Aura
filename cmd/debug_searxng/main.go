@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 type searxngResponse struct {
@@ -66,7 +68,7 @@ func main() {
 }
 
 func search(ctx context.Context, baseURL, query string) (searxngResponse, time.Duration, error) {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = stringx.NormalizeBaseURL(baseURL)
 	if baseURL == "" {
 		return searxngResponse{}, 0, fmt.Errorf("base URL is required")
 	}

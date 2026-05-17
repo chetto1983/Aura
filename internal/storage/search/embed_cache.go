@@ -16,6 +16,7 @@ import (
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/stringx"
 )
 
 const embedCacheBatchSize = 8
@@ -24,7 +25,7 @@ const embedCacheBatchSize = 8
 // embedding vectors. Model alone is not enough: OpenAI-compatible endpoints can
 // expose the same model name with different dimensions or semantics.
 func EmbedCacheNamespace(baseURL, model string) string {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = stringx.NormalizeBaseURL(baseURL)
 	model = strings.TrimSpace(model)
 	if baseURL == "" {
 		return model

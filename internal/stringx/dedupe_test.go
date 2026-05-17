@@ -52,3 +52,23 @@ func TestAppendUnique_NilValuesIsOK(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"  ", ""},
+		{"http://example.com", "http://example.com"},
+		{"http://example.com/", "http://example.com"},
+		{"http://example.com///", "http://example.com"},
+		{"  http://example.com/v1/  ", "http://example.com/v1"},
+		{"http://example.com/v1/embeddings/", "http://example.com/v1/embeddings"},
+		{"\thttp://qdrant:6333\n", "http://qdrant:6333"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeBaseURL(tc.in); got != tc.want {
+			t.Errorf("NormalizeBaseURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

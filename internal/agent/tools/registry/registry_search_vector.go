@@ -17,6 +17,7 @@ import (
 
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/qdrant"
+	"github.com/aura/aura/internal/stringx"
 )
 
 type ToolVectorConfig struct {
@@ -226,7 +227,7 @@ func (idx *ToolVectorIndex) Health() ToolVectorHealth {
 }
 
 func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]float32, error) {
-	baseURL := strings.TrimRight(strings.TrimSpace(idx.cfg.EmbedBaseURL), "/")
+	baseURL := stringx.NormalizeBaseURL(idx.cfg.EmbedBaseURL)
 	body := map[string]any{
 		"model": idx.cfg.EmbedModel,
 		"input": texts,

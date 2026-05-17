@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 const maxSearXNGResponseBytes = 2 << 20
@@ -23,7 +25,7 @@ type SearXNGSearchTool struct {
 // NewSearXNGSearchTool creates a SearXNG-backed web_search tool.
 func NewSearXNGSearchTool(baseURL string) *SearXNGSearchTool {
 	return &SearXNGSearchTool{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		baseURL: stringx.NormalizeBaseURL(baseURL),
 		client:  &http.Client{Timeout: 20 * time.Second},
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 const (
@@ -70,7 +72,7 @@ func New(cfg Config) *Client {
 	}
 	return &Client{
 		apiKey:        cfg.APIKey,
-		baseURL:       strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+		baseURL:       stringx.NormalizeBaseURL(cfg.BaseURL),
 		model:         model,
 		tableFormat:   strings.TrimSpace(cfg.TableFormat),
 		extractHeader: cfg.ExtractHeader,

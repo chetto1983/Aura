@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/stringx"
 )
 
 // NewOpenAICompatEmbeddingFunction is the single-vector counterpart of
@@ -31,7 +33,7 @@ import (
 // such as embeddinggemma-300m; applying it to Mistral-embed (non-MRL)
 // would throw away signal without preserving rank.
 func NewOpenAICompatEmbeddingFunction(baseURL, apiKey, model string, outputDim int, normalize bool, client *http.Client) EmbeddingFunc {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURL = stringx.NormalizeBaseURL(baseURL)
 	model = strings.TrimSpace(model)
 	if baseURL == "" || apiKey == "" || model == "" {
 		return nil
