@@ -17,10 +17,11 @@ import (
 // final no-tool-call answer on the second. The first response always has tool
 // calls so the adapter sees a Tool lifecycle pair.
 type scriptedChatClient struct {
-	mu       sync.Mutex
-	calls    int
-	contentA string
-	contentB string
+	mu             sync.Mutex
+	calls          int
+	contentA       string
+	contentB       string
+	deliveredFinal bool
 }
 
 func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.ToolDefinition) (agent.ChatResponse, error) {
@@ -44,6 +45,7 @@ func (c *scriptedChatClient) Chat(_ context.Context, _ []llm.Message, _ []llm.To
 			Content: c.contentB,
 			Usage:   llm.TokenUsage{PromptTokens: 12, CompletionTokens: 7, TotalTokens: 19},
 		},
+		Delivered: c.deliveredFinal,
 	}, nil
 }
 
@@ -226,6 +228,56 @@ func TestAgentLoopAdapter_BuilderError_Propagates(t *testing.T) {
 	err := adapter.Run(context.Background(), run, msg, func(OutboundEvent) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "builder broke") {
 		t.Fatalf("expected propagated builder error, got %v", err)
+	}
+}
+
+func TestAgentLoopAdapter_DeliveredFinalKeepsLifecyclePreview(t *testing.T) {
+	chat := &scriptedChatClient{
+		contentA:       "thinking",
+		contentB:       "streamed final answer",
+		deliveredFinal: true,
+	}
+	state := &stubState{}
+	builder := InvocationBuilder(func(_ context.Context, _ *Run, _ InboundMessage) (agent.Invocation, error) {
+		return agent.Invocation{
+			Client:   chat,
+			Executor: scriptedExecutor{},
+			State:    state,
+			Tools:    []llm.ToolDefinition{{Name: "search_memory", Description: "test"}},
+			Options: agent.Options{
+				MaxIterations:           2,
+				AllowNoToolFinalization: true,
+			},
+		}, nil
+	})
+	adapter, err := NewAgentLoopAdapter(builder)
+	if err != nil {
+		t.Fatalf("NewAgentLoopAdapter: %v", err)
+	}
+
+	run := &Run{ID: "run-telegram", Channel: ChannelTelegram, Status: RunStatusRunning, Metadata: map[string]any{}}
+	msg := InboundMessage{Channel: ChannelTelegram, PrincipalID: "p1", Text: "hi", Mode: DeliveryModeStreaming}
+	var done OutboundEvent
+	if err := adapter.Run(context.Background(), run, msg, func(ev OutboundEvent) error {
+		if ev.Type == EventMessageDone {
+			done = ev
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if done.Content != "streamed final answer" {
+		t.Fatalf("MessageDone.Content = %q, want streamed final answer", done.Content)
+	}
+	if delivered, _ := done.Payload["delivered"].(bool); !delivered {
+		t.Fatalf("MessageDone.delivered = %v, want true", done.Payload["delivered"])
+	}
+	if run.Metadata["final_text"] != "streamed final answer" {
+		t.Fatalf("Run.Metadata.final_text = %v", run.Metadata["final_text"])
+	}
+	if run.Metadata["delivered"] != true {
+		t.Fatalf("Run.Metadata.delivered = %v, want true", run.Metadata["delivered"])
 	}
 }
 

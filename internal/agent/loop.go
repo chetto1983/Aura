@@ -57,7 +57,6 @@ type ExecutionSummary struct {
 	AwaitingUserInput *tools.ErrAwaitingUserInput
 }
 
-
 type TerminalHandler func(ctx context.Context, terminalTool, lastToolResult string, stats *Stats) (text string, delivered bool, handled bool)
 
 type ToolCallState struct {
@@ -380,7 +379,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			emitStats()
 			iterCancel()
 			if resp.Delivered {
-				return loopResult{Delivered: true, Stats: stats}, nil
+				return loopResult{Text: response, Delivered: true, Stats: stats}, nil
 			}
 			return loopResult{Text: response, Stats: stats}, nil
 		}
@@ -679,7 +678,6 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	return text, true
 }
 
-
 func SkillNameFromReadFileArgs(args map[string]any) string {
 	value, ok := args["path"]
 	if !ok {
@@ -699,4 +697,3 @@ func SkillNameFromReadFileArgs(args map[string]any) string {
 	}
 	return name
 }
-

@@ -108,6 +108,53 @@ func TestArchiveEligibility(t *testing.T) {
 	}
 }
 
+func TestArchiveTurnEligibilityExcludesAssistantToolCalls(t *testing.T) {
+	cases := []struct {
+		name   string
+		turn   conversation.Turn
+		want   bool
+		reason string
+	}{
+		{
+			name: "assistant tool call row excluded",
+			turn: conversation.Turn{
+				Role:      "assistant",
+				Content:   "I will check memory first.",
+				ToolCalls: `[{"id":"call_1","function":{"name":"search_memory"}}]`,
+			},
+			want:   false,
+			reason: "assistant_tool_calls_excluded",
+		},
+		{
+			name: "assistant final row with tool count remains eligible",
+			turn: conversation.Turn{
+				Role:           "assistant",
+				Content:        "Here is the final answer after checking memory.",
+				ToolCallsCount: 1,
+			},
+			want: true,
+		},
+		{
+			name: "tool row still excluded",
+			turn: conversation.Turn{
+				Role:       "tool",
+				Content:    "tool_schemas.json dump",
+				ToolCallID: "call_1",
+			},
+			want:   false,
+			reason: "role_tool_excluded",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, reason := ArchiveTurnEligibility(tc.turn)
+			if got != tc.want || reason != tc.reason {
+				t.Fatalf("ArchiveTurnEligibility() = (%v, %q), want (%v, %q)", got, reason, tc.want, tc.reason)
+			}
+		})
+	}
+}
+
 func TestParityAppendAndRebuildProduceSameCompactSet(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDBForMemoryIndex(t)
@@ -121,7 +168,8 @@ func TestParityAppendAndRebuildProduceSameCompactSet(t *testing.T) {
 	}
 	appender := NewIndexingTurnAppender(archive, index)
 
-	// 10-row fixture: 3 user, 3 assistant, 2 tool, 2 system (6 eligible)
+	// 11-row fixture: 3 user, 3 final assistant, 1 assistant tool-call row,
+	// 2 tool, 2 system (6 eligible)
 	fixture := []conversation.Turn{
 		{ChatID: 1, UserID: 1, TurnIndex: 1, Role: "user", Content: "user message one"},
 		{ChatID: 1, UserID: 1, TurnIndex: 2, Role: "assistant", Content: "assistant reply one"},
@@ -133,6 +181,7 @@ func TestParityAppendAndRebuildProduceSameCompactSet(t *testing.T) {
 		{ChatID: 1, UserID: 1, TurnIndex: 8, Role: "assistant", Content: "assistant reply three"},
 		{ChatID: 1, UserID: 1, TurnIndex: 9, Role: "system", Content: "system prompt text"},
 		{ChatID: 1, UserID: 1, TurnIndex: 10, Role: "system", Content: "another system message"},
+		{ChatID: 1, UserID: 1, TurnIndex: 11, Role: "assistant", Content: "checking tool_schemas.json", ToolCalls: `[{"id":"call_1","function":{"name":"search_memory"}}]`},
 	}
 	for _, turn := range fixture {
 		if err := appender.Append(ctx, turn); err != nil {
@@ -178,6 +227,43 @@ func queryArchiveCompactIDs(t *testing.T, db *sql.DB) []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+func TestRebuildIndexesAllArchiveTurns(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDBForMemoryIndex(t)
+	archive, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	index, err := NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	const total = 520
+	for i := 0; i < total; i++ {
+		if err := archive.Append(ctx, conversation.Turn{
+			ChatID:    7,
+			UserID:    1,
+			TurnIndex: int64(i + 1),
+			Role:      "user",
+			Content:   "full rebuild should index this archive turn",
+		}); err != nil {
+			t.Fatalf("Append turn %d: %v", i+1, err)
+		}
+	}
+
+	report, err := Rebuild(ctx, index, RebuildInput{Archive: archive, SkipVector: true})
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	if report.ArchiveIndexed != total {
+		t.Fatalf("ArchiveIndexed = %d, want %d", report.ArchiveIndexed, total)
+	}
+	if got := len(queryArchiveCompactIDs(t, db)); got != total {
+		t.Fatalf("compact archive rows = %d, want %d", got, total)
+	}
 }
 
 // TestArchiveTurns_ToolRowPersistsInConversationsButNotCompact is the Phase07A dual gate:
@@ -326,8 +412,8 @@ func TestRebuildResetsPendingAndUpdatesBuildID(t *testing.T) {
 	index.SetFreshnessStore(fs)
 
 	const (
-		embedModel   = "embeddinggemma-300m@256-mrl"
-		newBuildID   = "build-new-after-rebuild"
+		embedModel = "embeddinggemma-300m@256-mrl"
+		newBuildID = "build-new-after-rebuild"
 	)
 
 	_, err = Rebuild(ctx, index, RebuildInput{

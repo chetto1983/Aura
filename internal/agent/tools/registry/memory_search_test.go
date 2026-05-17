@@ -576,13 +576,14 @@ func TestSearchMemoryTool_ToolRoleExcludedFromDefaultSearch(t *testing.T) {
 	index := newTestMemoryIndex(t)
 	appender := memoryindex.NewIndexingTurnAppender(archive, index)
 
-	// 3-row fixture: only the tool row contains "tool_schemas.json".
-	// After US-K02 the tool row is excluded from compact_memory_documents,
-	// so it must not surface in search_memory results.
+	// 4-row fixture: the raw tool row and assistant tool-call row contain
+	// "tool_schemas.json". Both are excluded from compact_memory_documents,
+	// so neither can surface in search_memory results.
 	for _, turn := range []conversation.Turn{
 		{ChatID: 1, UserID: 1, TurnIndex: 1, Role: "user", Content: "What capabilities do you have?"},
 		{ChatID: 1, UserID: 1, TurnIndex: 2, Role: "assistant", Content: "I have many capabilities at my disposal."},
 		{ChatID: 1, UserID: 1, TurnIndex: 3, Role: "tool", Content: `tool_schemas.json dump: [{"name":"search_memory"}]`},
+		{ChatID: 1, UserID: 1, TurnIndex: 4, Role: "assistant", Content: "checking tool_schemas.json", ToolCalls: `[{"id":"call_1","function":{"name":"search_memory"}}]`},
 	} {
 		if err := appender.Append(ctx, turn); err != nil {
 			t.Fatalf("Append role=%s: %v", turn.Role, err)

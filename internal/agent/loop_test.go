@@ -428,6 +428,27 @@ func TestRunLoopOnLLMStartFiresOncePerIteration(t *testing.T) {
 	}
 }
 
+func TestRunLoopDeliveredResponseStillReturnsTextForLifecycle(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "streamed answer"}, Delivered: true},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 1})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if !result.Delivered {
+		t.Fatal("Delivered = false, want true")
+	}
+	if result.Text != "streamed answer" {
+		t.Fatalf("Text = %q, want streamed answer", result.Text)
+	}
+}
+
 func TestRunLoopOnLLMDeltaFiresOncePerLLMCallWithFullContent(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{

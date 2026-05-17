@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	sourceIndexReadLimit  = 12000
-	archiveIndexScanLimit = 500
+	sourceIndexReadLimit = 12000
+	// Zero asks the archive reader for a full scan. Rebuild must refresh the
+	// whole compact archive; bounded dashboard reads still pass positive limits.
+	archiveIndexScanLimit = 0
 	proposalIndexLimit    = 500
 	sourceSnippetLimit    = 2400
 	archiveSnippetLimit   = 1600
@@ -69,7 +71,7 @@ func Rebuild(ctx context.Context, store *Store, in RebuildInput) (RebuildReport,
 		}
 		docs := make([]Document, 0, len(turns))
 		for _, turn := range turns {
-			if eligible, reason := ArchiveEligibility(turn.Role, turn.Content); !eligible {
+			if eligible, reason := ArchiveTurnEligibility(turn); !eligible {
 				slog.Debug("compact_archive_skipped", "role", turn.Role, "reason", reason)
 				continue
 			}
@@ -361,7 +363,7 @@ func (a *IndexingTurnAppender) Append(ctx context.Context, turn conversation.Tur
 		return err
 	}
 	if a.index != nil {
-		if eligible, reason := ArchiveEligibility(turn.Role, turn.Content); !eligible {
+		if eligible, reason := ArchiveTurnEligibility(turn); !eligible {
 			slog.Debug("compact_archive_skipped", "role", turn.Role, "reason", reason)
 			return nil
 		}
@@ -426,9 +428,24 @@ func (a *IndexingTurnAppender) persistedTurn(ctx context.Context, turn conversat
 	return turn
 }
 
-// ArchiveEligibility reports whether a conversation turn should be written to
+// ArchiveTurnEligibility reports whether a persisted conversation turn should
+// be written to compact_memory_documents. reason is a stable snake_case token,
+// empty when eligible. The raw conversations table remains lossless; this gate
+// only protects retrieval-facing compact archive rows.
+func ArchiveTurnEligibility(turn conversation.Turn) (eligible bool, reason string) {
+	if eligible, reason := ArchiveEligibility(turn.Role, turn.Content); !eligible {
+		return eligible, reason
+	}
+	if turn.Role == "assistant" && strings.TrimSpace(turn.ToolCalls) != "" {
+		return false, "assistant_tool_calls_excluded"
+	}
+	return true, ""
+}
+
+// ArchiveEligibility reports whether a role/content pair should be written to
 // compact_memory_documents. reason is a stable snake_case token, empty when eligible.
-// Phase07A scope: tool and system roles are excluded; user and assistant rows are eligible.
+// Assistant tool-call rows require ArchiveTurnEligibility because the tool-call
+// JSON lives outside content.
 func ArchiveEligibility(role, _ string) (eligible bool, reason string) {
 	switch role {
 	case "tool":

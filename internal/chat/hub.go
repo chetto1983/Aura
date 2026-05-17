@@ -83,12 +83,12 @@ type PendingQuestion struct {
 // is called by inbound entry points (Telegram update handler, /api/chat
 // handler, scheduler tick) with the channel-specific raw payload.
 type Hub struct {
-	loop         AgentLoop
-	lifecycle    LifecycleStore
-	inbound      map[Channel]InboundAdapter
-	outbound     map[outboundKey][]OutboundAdapter
-	logger       *slog.Logger
-	cancels      sync.Map // RunID → context.CancelFunc; used by /stop
+	loop          AgentLoop
+	lifecycle     LifecycleStore
+	inbound       map[Channel]InboundAdapter
+	outbound      map[outboundKey][]OutboundAdapter
+	logger        *slog.Logger
+	cancels       sync.Map // RunID → context.CancelFunc; used by /stop
 	seqCounter    atomic.Int64
 	threadStatus  sync.Map // ThreadID → RunStatus; updated after each dispatch
 	completedRuns sync.Map // RunID → completedRunEntry; consumed by WaitForRun
@@ -356,9 +356,9 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 
 	err := h.loop.Run(runCtx, run, msg, emit)
 	now := time.Now().UTC()
-	run.CompletedAt = &now
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
+			run.CompletedAt = &now
 			run.Status = RunStatusCancelled
 			_ = emit(OutboundEvent{Type: EventCancelled, Payload: map[string]any{"reason": "context canceled"}})
 		} else if run.Status == RunStatusWaitingForUser {
@@ -366,6 +366,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 			// out-of-range reply — the question is still pending, not a real failure).
 			// Suppress EventError; the caller already sent a reject message.
 		} else {
+			run.CompletedAt = &now
 			run.Status = RunStatusFailed
 			run.LastError = err.Error()
 			_ = emit(OutboundEvent{Type: EventError, Payload: map[string]any{"error": err.Error()}})
@@ -378,6 +379,7 @@ func (h *Hub) dispatch(ctx context.Context, msg InboundMessage) (*Run, error) {
 		return run, err
 	}
 	if run.Status == RunStatusRunning {
+		run.CompletedAt = &now
 		run.Status = RunStatusCompleted
 	}
 	_ = emit(OutboundEvent{Type: EventDone, Payload: map[string]any{"status": string(run.Status)}})
@@ -529,7 +531,9 @@ func lifecycleEventParams(run *Run, ev OutboundEvent) runstore.AppendEventParams
 		params.FinalTextPreview = textPreview(ev.Content)
 	case EventDone:
 		params.RunStatus = string(run.Status)
-		params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+		if run.Status != RunStatusWaitingForUser {
+			params.CompletedAt = firstTime(run.CompletedAt, &ev.CreatedAt)
+		}
 		if run.Status == RunStatusCancelled {
 			params.CancelledAt = firstTime(run.CompletedAt, &ev.CreatedAt)
 			params.LastError = "context_canceled"
