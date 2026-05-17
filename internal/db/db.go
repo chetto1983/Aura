@@ -17,7 +17,7 @@ import (
 const sqliteJournalModeEnv = "AURA_SQLITE_JOURNAL_MODE"
 
 var fixedPragmas = []string{
-	"busy_timeout=5000",
+	"busy_timeout=10000",
 	"foreign_keys=ON",
 	"synchronous=NORMAL",
 	"cache_size=-20000",

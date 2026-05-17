@@ -72,8 +72,8 @@ func TestOpenFreshDatabaseSetsBusyTimeout(t *testing.T) {
 	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil {
 		t.Fatalf("query busy_timeout: %v", err)
 	}
-	if timeout != 5000 {
-		t.Fatalf("busy_timeout = %d, want 5000", timeout)
+	if timeout != 10000 {
+		t.Fatalf("busy_timeout = %d, want 10000", timeout)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestOpenAppliesConnectionPragmasToNewPooledConnections(t *testing.T) {
 		if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
 			t.Fatalf("%s connection query busy_timeout: %v", name, err)
 		}
-		if busyTimeout != 5000 {
-			t.Fatalf("%s connection busy_timeout = %d, want 5000", name, busyTimeout)
+		if busyTimeout != 10000 {
+			t.Fatalf("%s connection busy_timeout = %d, want 10000", name, busyTimeout)
 		}
 	}
 }

@@ -28,12 +28,13 @@ import "time"
 type TaskKind string
 
 const (
-	KindReminder        TaskKind = "reminder"
-	KindWikiMaintenance TaskKind = "wiki_maintenance"
-	KindAgentJob        TaskKind = "agent_job"
+	KindReminder         TaskKind = "reminder"
+	KindWikiMaintenance  TaskKind = "wiki_maintenance"
+	KindAgentJob         TaskKind = "agent_job"
 	KindLessonPromotion  TaskKind = "lesson_promotion"
 	KindProposalTTLSweep TaskKind = "proposal_ttl_sweep"
 	KindBackupVerify     TaskKind = "backup_verify"
+	KindWALCheckpoint    TaskKind = "wal_checkpoint"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.

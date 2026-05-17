@@ -89,7 +89,7 @@
         "Single atomic commit prefix: feat(db): SQLite concurrency hardening — PRAGMA bundle + WAL checkpoint cron + busy retry helper (US-Z05 / Phase 9)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Don't introduce a new sql.DB pool — extend the existing auradb.Open. The cron schedule path should match Phase-T's US-T03 pattern (Scheduler callback, NOT a separate goroutine)."
     },
     {

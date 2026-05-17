@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"time"
@@ -262,6 +263,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Promoter:        lessonPromoter,
 		ProposalSweeper: proposalSweeper,
 		BackupVerifier:  &backupVerifyAdapter{dbPath: cfg.DBPath},
+		WALCheckpointer: &walCheckpointAdapter{db: a.deps.Pool},
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
 	if a.deps.TaskTool != nil {
@@ -355,6 +357,19 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Status:        cron.StatusActive,
 	}); err != nil {
 		logger.Warn("failed to bootstrap daily backup-verify task", "err", err)
+	}
+
+	// Bootstrap the WAL checkpoint task — every 6 hours to keep the WAL file
+	// from growing unbounded (PRAGMA wal_checkpoint(TRUNCATE)).
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:                 "wal-checkpoint",
+		Kind:                 cron.KindWALCheckpoint,
+		ScheduleKind:         cron.ScheduleEvery,
+		ScheduleEveryMinutes: 360,
+		NextRunAt:            time.Now().UTC().Add(6 * time.Hour),
+		Status:               cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap wal-checkpoint task", "err", err)
 	}
 
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------
@@ -484,6 +499,19 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 // DB into a temp file, verifying it with dbrecovery.VerifyBackup, then cleaning up.
 type backupVerifyAdapter struct {
 	dbPath string
+}
+
+// walCheckpointAdapter implements cron.WALCheckpointer by running
+// PRAGMA wal_checkpoint(TRUNCATE) on the live database pool.
+type walCheckpointAdapter struct {
+	db *sql.DB
+}
+
+func (a *walCheckpointAdapter) Checkpoint(ctx context.Context) error {
+	return auradb.RetryOnBusy(ctx, func() error {
+		_, err := a.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+		return err
+	})
 }
 
 func (a *backupVerifyAdapter) Verify(ctx context.Context) (cron.BackupVerifyResult, error) {
