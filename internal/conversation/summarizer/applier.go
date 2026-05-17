@@ -199,16 +199,3 @@ func (r *RoutingApplier) createUserMemoryProposal(ctx context.Context, c Candida
 	return submitUserMemoryProposal(ctx, c, r.proposals, r.memory)
 }
 
-func turnEvidenceRefs(ids []int64) []EvidenceRef {
-	if len(ids) == 0 {
-		return []EvidenceRef{}
-	}
-	out := make([]EvidenceRef, 0, len(ids))
-	for _, id := range ids {
-		if id <= 0 {
-			continue
-		}
-		out = append(out, EvidenceRef{Kind: "archive", ID: fmt.Sprintf("conversation:%d", id)})
-	}
-	return out
-}

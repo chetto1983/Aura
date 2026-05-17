@@ -289,26 +289,6 @@ func percentile(values []int64, p float64) int64 {
 	return sorted[idx]
 }
 
-func overlapRatio(a, b []queryResultLite) float64 {
-	if len(a) == 0 || len(b) == 0 {
-		return 0
-	}
-	seen := make(map[string]struct{}, len(a))
-	for _, result := range a {
-		seen[result.Kind+"\x00"+result.Slug] = struct{}{}
-	}
-	var overlap int
-	for _, result := range b {
-		if _, ok := seen[result.Kind+"\x00"+result.Slug]; ok {
-			overlap++
-		}
-	}
-	if len(a) < len(b) {
-		return float64(overlap) / float64(len(a))
-	}
-	return float64(overlap) / float64(len(b))
-}
-
 func queryRecommendation(report queryReport) string {
 	if !report.Qdrant.OK {
 		return "check_qdrant"

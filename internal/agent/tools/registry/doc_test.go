@@ -54,15 +54,6 @@ func (d *docTestStore) Update(id string, fn func(*source.Source) error) (*source
 
 func (d *docTestStore) Delete(_ context.Context, _ string) error { return nil }
 
-type docTestSender struct {
-	calls int
-}
-
-func (d *docTestSender) SendDocumentToUser(_, _ string, _ []byte, _ string) error {
-	d.calls++
-	return nil
-}
-
 func TestDocTool_Schema(t *testing.T) {
 	tool := NewDocTool(&docTestStore{}, nil)
 	if tool.Name() != "doc" {

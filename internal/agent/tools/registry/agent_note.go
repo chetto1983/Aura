@@ -130,10 +130,8 @@ func (t *AgentNoteTool) Execute(ctx context.Context, args map[string]any) (strin
 		if err != nil {
 			return "ok (appended)", nil
 		}
-		lineCount := 1
-		if current == "" {
-			lineCount = 0
-		} else {
+		lineCount := 0
+		if current != "" {
 			lineCount = strings.Count(current, "\n") + 1
 		}
 		return fmt.Sprintf("ok (note now %d chars, %d lines)", len(current), lineCount), nil

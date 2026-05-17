@@ -243,7 +243,6 @@ func TestReceive_ContextCanceled_RunStatusCancelled(t *testing.T) {
 
 func TestStop_BestEffortAndIdempotent(t *testing.T) {
 	// Loop that blocks until ctx is done, so Stop can interrupt it.
-	type blockingLoop struct{}
 	bl := blockingLoopFn(func(ctx context.Context, run *Run, _ InboundMessage, _ EmitFn) error {
 		<-ctx.Done()
 		return ctx.Err()

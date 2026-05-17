@@ -503,19 +503,6 @@ func isHiddenFileEntry(name string) bool {
 	return strings.HasPrefix(name, ".")
 }
 
-// jsonContentTypeForFileContent is used by tests to assert that text bodies
-// round-trip as UTF-8 not as base64. Pure helper, no I/O.
-func jsonContentTypeForFileContent(data []byte) string {
-	if utf8.Valid(data) {
-		return "utf-8"
-	}
-	return "base64"
-}
-
-// fileMaxBytesForTests exposes the cap to package tests without making the
-// constant exported. Same justification as jsonContentTypeForFileContent.
-func fileMaxBytesForTests() int64 { return fileMaxBytes }
-
 // no-op import shadow to keep the JSON import even when handlers are
 // edge-cased; removing this drops the dependency cleanly.
 var _ = json.Unmarshal

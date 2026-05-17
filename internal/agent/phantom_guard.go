@@ -243,18 +243,6 @@ var performativeVerbs = []string{
 	"just scheduled", "just called", "just ran",
 }
 
-// hasPerformativeClaim is kept for backward-compatibility with any
-// caller still using the global-presence check. New code uses
-// hasPerformativeNear instead.
-func hasPerformativeClaim(contentLower string) bool {
-	for _, verb := range performativeVerbs {
-		if strings.Contains(contentLower, verb) {
-			return true
-		}
-	}
-	return false
-}
-
 // CorrectionText returns the user-side message injected when phantom
 // is detected. Bilingual default unless the caller overrides via
 // PhantomToolGuard.CorrectionMessage.

@@ -91,10 +91,6 @@ func ActionRequiredError(toolName string, validActions []string, supplied map[st
 // the closest match.
 func UnknownActionError(toolName, suppliedAction string, validActions []string, supplied map[string]any) error {
 	closest := closestActionMatch(suppliedAction, validActions)
-	keysStr := strings.Join(sortedKeysOf(supplied), ", ")
-	if keysStr == "" {
-		keysStr = "none"
-	}
 	hint := ""
 	if closest != "" {
 		example := map[string]any{"action": closest}

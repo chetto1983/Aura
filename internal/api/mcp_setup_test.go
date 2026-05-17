@@ -86,9 +86,9 @@ func TestMCPMailSetupStatusReportsConnectedAlias(t *testing.T) {
 		{Name: "imap_search_messages"},
 		{Name: "imap_get_message"},
 	})
-	router := newInvokeRouter(t, "mail", state, srv)
+	_ = newInvokeRouter(t, "mail", state, srv)
 	// Recreate with runtime config while reusing the fake connected client.
-	router = NewRouter(Deps{
+	router := NewRouter(Deps{
 		RuntimeConfig: &config.Config{MCPServersPath: mcpPath, RuntimeWorkspacePath: dir},
 		MCP:           []mcp.ConnectedClient{routerMCPClient(t, "mail", srv.URL)},
 	})

@@ -482,5 +482,3 @@ func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, mo
 	}
 	return called, lastToolResult, toolResults, fmt.Errorf("max tool iterations reached")
 }
-
-func ptrBool(b bool) *bool { return &b }

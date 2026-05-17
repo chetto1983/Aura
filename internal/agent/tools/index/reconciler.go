@@ -86,8 +86,7 @@ var DefaultPointIDNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("aura-tool-
 type Reconciler struct {
 	cfg Config
 
-	mu       sync.Mutex
-	inFlight bool
+	mu sync.Mutex
 
 	notify chan Reason
 }

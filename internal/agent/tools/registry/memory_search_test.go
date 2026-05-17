@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/store"
-	"github.com/aura/aura/internal/wiki"
 )
 
 // fakeFreshnessGetter satisfies the freshnessGetter interface for tests.
@@ -471,18 +469,6 @@ func TestSearchMemoryToolSourceIDFilter(t *testing.T) {
 	}
 }
 
-func writeMemoryTestPage(t *testing.T, dir string, page *wiki.Page) {
-	t.Helper()
-	data, err := wiki.MarshalMD(page)
-	if err != nil {
-		t.Fatalf("MarshalMD: %v", err)
-	}
-	path := filepath.Join(dir, wiki.Slug(page.Title)+".md")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-}
-
 func newTestMemoryIndex(t *testing.T) *memoryindex.Store {
 	t.Helper()
 	sched := newTestSchedStore(t)
@@ -491,28 +477,6 @@ func newTestMemoryIndex(t *testing.T) *memoryindex.Store {
 		t.Fatalf("NewStore: %v", err)
 	}
 	return store
-}
-
-func memoryKeywordEmbedding(_ context.Context, text string) ([]float32, error) {
-	lower := strings.ToLower(text)
-	keywords := []string{"backlinks", "beta", "project", "contract"}
-	vec := make([]float32, len(keywords)+1)
-	for i, keyword := range keywords {
-		if strings.Contains(lower, keyword) {
-			vec[i] = 1
-		}
-	}
-	empty := true
-	for _, v := range vec {
-		if v != 0 {
-			empty = false
-			break
-		}
-	}
-	if empty {
-		vec[len(vec)-1] = 1
-	}
-	return vec, nil
 }
 
 // Envelope helpers were removed when search_memory dropped the JSON

@@ -431,10 +431,6 @@ func newApp(
 	if timeoutSec <= 0 {
 		timeoutSec = config.DefaultAuraBotTimeoutSec
 	}
-	maxIterations := cfg.AuraBotMaxIterations
-	if maxIterations <= 0 {
-		maxIterations = 5
-	}
 
 	var swarmRunner swarm.AgentRunner
 	if deps.LLM != nil {
