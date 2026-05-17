@@ -11,9 +11,7 @@ import (
 
 func initialMessages(task Task) ([]llm.Message, error) {
 	if len(task.Messages) > 0 {
-		cp := make([]llm.Message, len(task.Messages))
-		copy(cp, task.Messages)
-		return cp, nil
+		return llm.CloneMessages(task.Messages), nil
 	}
 	prompt := strings.TrimSpace(task.Prompt)
 	if prompt == "" {

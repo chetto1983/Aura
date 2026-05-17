@@ -200,7 +200,7 @@ func (s *webChatSessions) begin(runID, userID, system, message string) *webAgent
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.gcLocked()
-	messages := cloneMessages(s.sessions[userID])
+	messages := llm.CloneMessages(s.sessions[userID])
 	messages = setSystemMessage(messages, system)
 	messages = append(messages, llm.Message{Role: "user", Content: message})
 	state := &webAgentState{messages: messages}
@@ -252,7 +252,7 @@ var _ agent.State = (*webAgentState)(nil)
 var _ agent.PhantomCorrector = (*webAgentState)(nil)
 
 func (s *webAgentState) Messages() []llm.Message {
-	return cloneMessages(s.messages)
+	return llm.CloneMessages(s.messages)
 }
 
 func (s *webAgentState) TrackTokens(llm.TokenUsage) {}
@@ -442,16 +442,10 @@ func setSystemMessage(messages []llm.Message, system string) []llm.Message {
 
 func trimWebMessages(messages []llm.Message) []llm.Message {
 	if len(messages) <= webChatMaxMessages {
-		return cloneMessages(messages)
+		return llm.CloneMessages(messages)
 	}
 	drop := len(messages) - webChatMaxMessages
-	return cloneMessages(messages[drop:])
-}
-
-func cloneMessages(messages []llm.Message) []llm.Message {
-	out := make([]llm.Message, len(messages))
-	copy(out, messages)
-	return out
+	return llm.CloneMessages(messages[drop:])
 }
 
 func cloneToolArgs(args map[string]any) map[string]any {

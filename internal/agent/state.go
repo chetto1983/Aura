@@ -17,15 +17,11 @@ var _ State = (*agentState)(nil)
 var _ PhantomCorrector = (*agentState)(nil)
 
 func newAgentState(initial []llm.Message) *agentState {
-	msgs := make([]llm.Message, len(initial))
-	copy(msgs, initial)
-	return &agentState{messages: msgs}
+	return &agentState{messages: llm.CloneMessages(initial)}
 }
 
 func (s *agentState) Messages() []llm.Message {
-	out := make([]llm.Message, len(s.messages))
-	copy(out, s.messages)
-	return out
+	return llm.CloneMessages(s.messages)
 }
 
 // TrackTokens is a no-op: loop Stats accumulates token counts directly,

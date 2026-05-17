@@ -461,7 +461,5 @@ func (c *Context) MessagesSince(fromIndex int) []llm.Message {
 	if fromIndex >= len(c.messages) || fromIndex < 0 {
 		return nil
 	}
-	out := make([]llm.Message, len(c.messages)-fromIndex)
-	copy(out, c.messages[fromIndex:])
-	return out
+	return llm.CloneMessages(c.messages[fromIndex:])
 }
