@@ -33,6 +33,7 @@ const (
 	KindAgentJob        TaskKind = "agent_job"
 	KindLessonPromotion  TaskKind = "lesson_promotion"
 	KindProposalTTLSweep TaskKind = "proposal_ttl_sweep"
+	KindBackupVerify     TaskKind = "backup_verify"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.

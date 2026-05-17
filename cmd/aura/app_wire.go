@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
@@ -24,6 +25,8 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
+	auradb "github.com/aura/aura/internal/db"
+	"github.com/aura/aura/internal/dbrecovery"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
 	secretspkg "github.com/aura/aura/internal/secrets"
@@ -258,6 +261,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Location:        loc,
 		Promoter:        lessonPromoter,
 		ProposalSweeper: proposalSweeper,
+		BackupVerifier:  &backupVerifyAdapter{dbPath: cfg.DBPath},
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
 	if a.deps.TaskTool != nil {
@@ -335,6 +339,22 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Status:        cron.StatusActive,
 	}); err != nil {
 		logger.Warn("failed to bootstrap proposal TTL sweep task", "err", err)
+	}
+
+	// Bootstrap the daily backup-verify task (idempotent upsert).
+	backupVerifyAt, err := cron.NextDailyRun("04:00", loc, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing backup verify run: %w", err)
+	}
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:          "daily-backup-verify",
+		Kind:          cron.KindBackupVerify,
+		ScheduleKind:  cron.ScheduleDaily,
+		ScheduleDaily: "04:00",
+		NextRunAt:     backupVerifyAt,
+		Status:        cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap daily backup-verify task", "err", err)
 	}
 
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------
@@ -454,4 +474,43 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 		tool.SetFreshnessStore(a.freshnessStore)
 		a.deps.Tools.Register(tool)
 	}
+}
+
+// backupVerifyAdapter implements cron.BackupVerifier by snapshotting the live
+// DB into a temp file, verifying it with dbrecovery.VerifyBackup, then cleaning up.
+type backupVerifyAdapter struct {
+	dbPath string
+}
+
+func (a *backupVerifyAdapter) Verify(ctx context.Context) (cron.BackupVerifyResult, error) {
+	tmp, err := os.CreateTemp("", "aura-backup-verify-*.db")
+	if err != nil {
+		return cron.BackupVerifyResult{}, fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer func() {
+		_ = os.Remove(tmpPath)
+		_ = os.Remove(tmpPath + "-wal")
+		_ = os.Remove(tmpPath + "-shm")
+	}()
+
+	if err := auradb.Snapshot(ctx, a.dbPath, tmpPath); err != nil {
+		return cron.BackupVerifyResult{}, fmt.Errorf("snapshot: %w", err)
+	}
+
+	minRows := map[string]int{
+		"principals":      0,
+		"actors":          0,
+		"conversations":   0,
+		"scheduled_tasks": 1,
+	}
+	report, err := dbrecovery.VerifyBackup(ctx, tmpPath, minRows)
+	if err != nil {
+		return cron.BackupVerifyResult{}, err
+	}
+	return cron.BackupVerifyResult{
+		IntegrityStatus: report.IntegrityStatus,
+		RowCounts:       report.RowCounts,
+	}, nil
 }

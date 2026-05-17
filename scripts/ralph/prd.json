@@ -58,7 +58,7 @@
         "Single atomic commit prefix: feat(dbrecovery): daily backup-verify cron with integrity check (US-T03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Re-use existing alert channel; DON'T introduce a new direct-to-Telegram path. The scheduler accepts function callbacks; wire VerifyBackup as one. Backup path comes from cfg.BackupPath (or wherever debug_backup reads from)."
     },
     {

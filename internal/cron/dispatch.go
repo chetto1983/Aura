@@ -100,6 +100,7 @@ type HandlerConfig struct {
 	Location        *time.Location
 	Promoter        LessonPromoter
 	ProposalSweeper ProposalTTLSweeper
+	BackupVerifier  BackupVerifier
 }
 
 // Handler dispatches cron tasks using injected deps.
@@ -117,6 +118,7 @@ type Handler struct {
 	loc             *time.Location
 	promoter        LessonPromoter
 	proposalSweeper ProposalTTLSweeper
+	backupVerifier  BackupVerifier
 }
 
 // NewHandler constructs a Handler from the supplied config.
@@ -141,6 +143,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		loc:             loc,
 		promoter:        cfg.Promoter,
 		proposalSweeper: cfg.ProposalSweeper,
+		backupVerifier:  cfg.BackupVerifier,
 	}
 }
 
@@ -156,6 +159,8 @@ func (h *Handler) Dispatch(ctx context.Context, task *Task) error {
 		return h.dispatchLessonPromotion(ctx)
 	case KindProposalTTLSweep:
 		return h.dispatchProposalTTLSweep(ctx)
+	case KindBackupVerify:
+		return h.dispatchBackupVerify(ctx)
 	default:
 		return fmt.Errorf("dispatchTask: unknown kind %q", task.Kind)
 	}
