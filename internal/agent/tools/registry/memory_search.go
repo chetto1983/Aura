@@ -195,7 +195,11 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 	if len(compactKinds) > 0 {
 		compactResults, compactWarnings := t.searchCompact(searchCtx, query, compactKinds, chatID, sourceID, limit)
-		// Read projection_state exactly once per search invocation to check freshness.
+		// Belt-and-suspenders: when the compact searcher is not a *memoryindex.Store
+		// (e.g. a test fake or a future adapter), doc.DegradedRead may be unset.
+		// Fall back to the tool's own freshnessStore lookup so degraded_read=true is
+		// still surfaced to the LLM. When the Store has already annotated DegradedRead,
+		// this write is a no-op (true || true = true).
 		if t.freshnessStore != nil && len(compactResults) > 0 {
 			if row, found, err := t.freshnessStore.Get(searchCtx, compactMemoryProjectionID); err == nil && found && row.Status != "fresh" {
 				for i := range compactResults {
@@ -365,6 +369,7 @@ func (t *SearchMemoryTool) searchCompact(ctx context.Context, query string, kind
 			IndexedAt:        indexedAt,
 			EmbeddingModelID: doc.EmbeddingModelID,
 			IndexBuildID:     doc.IndexBuildID,
+			DegradedRead:     doc.DegradedRead,
 		})
 	}
 	return out, nil
@@ -540,9 +545,9 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 			}
 			fmt.Fprintf(&sb, " sources=[%s]", strings.Join(sources, ","))
 		}
-		// Freshness annotation: emitted when any freshness column is non-empty.
-		// Only compact-memory hits carry these; wiki hits always have zero values.
-		if r.EmbeddingModelID != "" || r.IndexBuildID != "" {
+		// Freshness annotation: emitted when any freshness column is non-empty or
+		// the hit is marked degraded. Only compact-memory hits carry these fields.
+		{
 			var parts []string
 			if !r.IndexedAt.IsZero() {
 				parts = append(parts, "indexed_at="+r.IndexedAt.UTC().Format(time.RFC3339))
@@ -560,6 +565,9 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 					build = build[:12]
 				}
 				parts = append(parts, "build="+build)
+			}
+			if r.DegradedRead {
+				parts = append(parts, "stale")
 			}
 			if len(parts) > 0 {
 				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))

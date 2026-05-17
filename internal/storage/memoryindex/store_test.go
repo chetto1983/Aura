@@ -13,6 +13,7 @@ import (
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/storage/freshness"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -583,6 +584,104 @@ func TestUpsertAutoComputesFreshnessColumns(t *testing.T) {
 	// index_build_id is empty when no rebuild context stamps it — expected for incremental writes
 	if gotBuildID != "" {
 		t.Errorf("index_build_id: got %q, want empty for incremental write", gotBuildID)
+	}
+}
+
+// TestStoreSearchAnnotatesStaleness verifies that Store.Search stamps
+// StalenessSeconds and DegradedRead on returned documents when a freshness.Store
+// is injected and the projection is stale (US-Z03 / 7C US-M04).
+func TestStoreSearchAnnotatesStaleness(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	freshnessStore := freshness.NewStore(store.db)
+	store.SetFreshnessStore(freshnessStore)
+	store.SetStaleThresholdSecs(3600) // 1-hour threshold
+
+	doc := Document{
+		ID:        "archive:staleness-test",
+		Kind:      KindArchive,
+		Title:     "staleness annotation test",
+		Body:      "Staleness annotation evidence body for US-Z03.",
+		Handle:    "conversation:staleness",
+		ChatID:    99,
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := store.Upsert(ctx, doc); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	// Case 1: projection rebuilt 2 hours ago → stale.
+	staleAt := time.Now().Add(-2 * time.Hour).Unix()
+	if _, err := freshnessStore.Upsert(ctx, freshness.Row{
+		ProjectionID:      compactMemoryProjectionID,
+		Kind:              "compact",
+		LastFullRebuildAt: staleAt,
+		PendingCount:      0,
+		Status:            "fresh",
+	}); err != nil {
+		t.Fatalf("Upsert freshness stale: %v", err)
+	}
+	hits, err := store.Search(ctx, "staleness annotation", Filter{Limit: 5})
+	if err != nil {
+		t.Fatalf("Search stale: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("no hits for stale case")
+	}
+	t.Logf("stale case: StalenessSeconds=%d DegradedRead=%v", hits[0].StalenessSeconds, hits[0].DegradedRead)
+	if !hits[0].DegradedRead {
+		t.Errorf("DegradedRead = false, want true (2h stale, threshold=1h)")
+	}
+	if hits[0].StalenessSeconds < 3600 {
+		t.Errorf("StalenessSeconds = %d, want >= 3600 for 2h-old projection", hits[0].StalenessSeconds)
+	}
+
+	// Case 2: projection rebuilt just now, no pending → fresh.
+	if _, err := freshnessStore.Upsert(ctx, freshness.Row{
+		ProjectionID:      compactMemoryProjectionID,
+		Kind:              "compact",
+		LastFullRebuildAt: time.Now().Unix(),
+		PendingCount:      0,
+		Status:            "fresh",
+	}); err != nil {
+		t.Fatalf("Upsert freshness fresh: %v", err)
+	}
+	hits, err = store.Search(ctx, "staleness annotation", Filter{Limit: 5})
+	if err != nil {
+		t.Fatalf("Search fresh: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("no hits for fresh case")
+	}
+	t.Logf("fresh case: StalenessSeconds=%d DegradedRead=%v", hits[0].StalenessSeconds, hits[0].DegradedRead)
+	if hits[0].DegradedRead {
+		t.Errorf("DegradedRead = true, want false (freshly rebuilt, no pending)")
+	}
+	if hits[0].StalenessSeconds > 60 {
+		t.Errorf("StalenessSeconds = %d, want < 60 for just-rebuilt projection", hits[0].StalenessSeconds)
+	}
+
+	// Case 3: fresh rebuild but pending items → degraded.
+	if _, err := freshnessStore.Upsert(ctx, freshness.Row{
+		ProjectionID:      compactMemoryProjectionID,
+		Kind:              "compact",
+		LastFullRebuildAt: time.Now().Unix(),
+		PendingCount:      3, // pending writes since last rebuild
+		Status:            "fresh",
+	}); err != nil {
+		t.Fatalf("Upsert freshness pending: %v", err)
+	}
+	hits, err = store.Search(ctx, "staleness annotation", Filter{Limit: 5})
+	if err != nil {
+		t.Fatalf("Search pending: %v", err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("no hits for pending case")
+	}
+	t.Logf("pending case: StalenessSeconds=%d DegradedRead=%v", hits[0].StalenessSeconds, hits[0].DegradedRead)
+	if !hits[0].DegradedRead {
+		t.Errorf("DegradedRead = false, want true (pending_count=3)")
 	}
 }
 

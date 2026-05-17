@@ -55,7 +55,7 @@
         "Single atomic commit prefix: feat(memory_search): surface degraded_read + staleness on retrieval hits (US-Z03 / 7C US-M04)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Cap the staleness annotation to relevant doc kinds — wiki freshness matters less than archive freshness. The threshold is intentionally generous (1h default); operator can tune via cfg."
     },
     {

@@ -406,6 +406,9 @@ func newApp(
 	}
 	if memoryStore != nil {
 		memoryStore.SetFreshnessStore(freshnessStore)
+		if t := int64(cfg.MemorySearchStaleThresholdSecs); t > 0 {
+			memoryStore.SetStaleThresholdSecs(t)
+		}
 	}
 
 	// ---- Source tool (needs memoryStore as delete purger) -------------------

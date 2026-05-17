@@ -60,6 +60,11 @@ type Document struct {
 	ScoreExact       float64
 	ScoreFTS         float64
 	ScoreVector      float64
+	// Freshness annotations computed at retrieval time by Store.Search.
+	// StalenessSeconds is elapsed seconds since the projection was last rebuilt.
+	// DegradedRead is true when pending_count > 0 or staleness exceeds threshold.
+	StalenessSeconds int64
+	DegradedRead     bool
 }
 
 type Filter struct {
@@ -100,6 +105,10 @@ type Store struct {
 	// freshnessStore tracks per-projection drift. nil = freshness disabled.
 	freshnessStore *freshness.Store
 
+	// staleThresholdSecs is the elapsed-seconds cutoff beyond which a projection
+	// is considered stale. 0 falls back to 3600 (1 hour).
+	staleThresholdSecs int64
+
 	// EmbeddingModelID is the model used by this writer. When Upsert is called
 	// with an empty doc.ContentHash or doc.EmbeddingModelID, these are
 	// auto-populated from this field so callers don't need to stamp them
@@ -111,6 +120,14 @@ type Store struct {
 // BumpPending when content hashes change. Safe to call before first write.
 func (s *Store) SetFreshnessStore(fs *freshness.Store) {
 	s.freshnessStore = fs
+}
+
+// SetStaleThresholdSecs sets the elapsed-seconds cutoff beyond which a projection
+// is considered stale. n <= 0 is ignored; 3600 is the package default.
+func (s *Store) SetStaleThresholdSecs(n int64) {
+	if n > 0 {
+		s.staleThresholdSecs = n
+	}
 }
 
 // acquireWithContext takes mu unless ctx fires first. Plain sync.Mutex.Lock
@@ -427,7 +444,46 @@ func (s *Store) Search(ctx context.Context, query string, filter Filter) ([]Docu
 			vector = vectorResults
 		}
 	}
-	return mergeDocumentsRRF(exact, fts, vector, limit), nil
+	docs := mergeDocumentsRRF(exact, fts, vector, limit)
+	if s.freshnessStore != nil && len(docs) > 0 {
+		s.annotateStaleness(ctx, docs)
+	}
+	return docs, nil
+}
+
+// annotateStaleness does a single freshness lookup for compactMemoryProjectionID
+// and stamps StalenessSeconds + DegradedRead on every document in docs.
+// It is best-effort: errors are silently ignored so Search always returns docs.
+func (s *Store) annotateStaleness(ctx context.Context, docs []Document) {
+	row, found, err := s.freshnessStore.Get(ctx, compactMemoryProjectionID)
+	if err != nil || !found {
+		return
+	}
+	lastIndexedAt := row.LastFullRebuildAt
+	if row.LastIncrementalAt != nil && *row.LastIncrementalAt > lastIndexedAt {
+		lastIndexedAt = *row.LastIncrementalAt
+	}
+	nowUnix := s.now().Unix()
+	var stalenessSeconds int64
+	if lastIndexedAt > 0 {
+		diff := nowUnix - lastIndexedAt
+		if diff < 0 {
+			diff = 0
+		}
+		stalenessSeconds = diff
+	} else {
+		// Never indexed → treat as maximally stale.
+		stalenessSeconds = nowUnix
+	}
+	threshold := s.staleThresholdSecs
+	if threshold <= 0 {
+		threshold = 3600
+	}
+	degraded := row.PendingCount > 0 || stalenessSeconds > threshold
+	for i := range docs {
+		docs[i].StalenessSeconds = stalenessSeconds
+		docs[i].DegradedRead = degraded
+	}
 }
 
 func (s *Store) PurgeArchiveByChat(ctx context.Context, chatID int64) error {

@@ -73,7 +73,8 @@ type Config struct {
 	QdrantURL             string  `envconfig:"QDRANT_URL"`
 	QdrantCollection      string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
 	QdrantAPIKey          string  `envconfig:"QDRANT_API_KEY"`
-	MemorySearchTimeoutMS int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
+	MemorySearchTimeoutMS         int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
+	MemorySearchStaleThresholdSecs int     `envconfig:"MEMORY_SEARCH_STALE_THRESHOLD_SECS" default:"3600"`
 	// Phase 02 governance knobs. Defaults match the constants we shipped in
 	// agent loop governance and tools/memory_search.go. Operators can
 	// shrink MAX_TOOL_RESULT_CHARS to fit smaller context windows, raise
@@ -237,6 +238,7 @@ func Load() (*Config, error) {
 	cfg.QdrantCollection = getEnv("QDRANT_COLLECTION", DefaultQdrantCollection)
 	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
+	cfg.MemorySearchStaleThresholdSecs = getEnvInt("MEMORY_SEARCH_STALE_THRESHOLD_SECS", 3600)
 	cfg.ToolSearchBackend = NormalizeToolSearchBackend(getEnv("TOOL_SEARCH_BACKEND", DefaultToolSearchBackend))
 	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 50, DefaultToolSearchTopK)
 
