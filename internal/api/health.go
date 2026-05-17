@@ -48,6 +48,8 @@ func handleHealth(deps Deps) http.HandlerFunc {
 		// Process rollup
 		rollup.Process.Version = deps.Version
 		rollup.Process.GitRevision = gitRevision()
+		rollup.Process.Commit = deps.Commit
+		rollup.Process.BuildDate = deps.BuildDate
 		if !deps.StartedAt.IsZero() {
 			started := deps.StartedAt.UTC()
 			rollup.Process.StartedAt = started

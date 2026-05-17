@@ -38,7 +38,7 @@
         "Single atomic commit prefix: feat(release): inject git SHA + build date at link time (US-T02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "ldflags pattern is well-known — example: -ldflags=\"-X 'pkg.Version=$(VERSION)'\". Watch for Windows-vs-Linux path quirks; the GoReleaser config (if it exists in scripts/) probably already does this for releases."
     },
     {

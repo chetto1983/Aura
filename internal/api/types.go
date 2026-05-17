@@ -81,9 +81,12 @@ type EmbedCacheHealth struct {
 // can show (version + git rev + uptime). All fields are best-effort —
 // GitRevision is populated from runtime/debug.ReadBuildInfo when the
 // binary was built inside a git tree, otherwise empty.
+// Commit and BuildDate are injected at link time via -ldflags (US-T02).
 type ProcessHealth struct {
 	Version       string    `json:"version"`
 	GitRevision   string    `json:"git_revision,omitempty"`
+	Commit        string    `json:"commit,omitempty"`
+	BuildDate     string    `json:"build_date,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
 	UptimeSeconds int64     `json:"uptime_seconds"`
 }

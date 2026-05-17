@@ -18,8 +18,10 @@ import (
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
 	cronadapter "github.com/aura/aura/internal/channels/cron"
+	"github.com/aura/aura/internal/release"
 	silentadapter "github.com/aura/aura/internal/channels/silent"
 	"github.com/aura/aura/internal/chat"
+	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/learning"
@@ -181,23 +183,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		}
 	}
 
-	// SearchMemoryTool — registered after memory rebuild so the index is populated.
-	if tool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
-		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
-		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
-	}
-	// RecallOperationalTool — surfaces approved operational lessons from Phase-N pipeline.
-	if tool := tools.NewRecallOperationalTool(a.deps.MemoryStore); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
-	}
-	// RecallUserMemoryTool — surfaces approved user facts/preferences from Phase-O pipeline.
-	if tool := tools.NewRecallUserMemoryTool(a.deps.MemoryStore); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
-	}
+	// Memory recall tools are registered after memory rebuild so the index is populated.
+	a.registerMemoryRecallTools(cfg)
 	// ProposePatchTool — write_proposal subagent mutation gate (Phase-S US-S01).
 	// ALL writes are review-gated; proposals land in proposed_updates with status=pending.
 	if tool := tools.NewProposePatchTool(tools.NewSQLPatchProposalStore(a.deps.SchedDB.DB())); tool != nil {
@@ -384,8 +371,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Location:    loc,
 		// Surface reindex worker health via /api/health (US-A13c: moved from bot).
 		ReindexHealth: a.reindexHealth,
-		// Keep in sync with cmd/aura/main.go's auraVersion.
-		Version:   "3.0",
+		Version:   release.Version,
+		Commit:    release.Commit,
+		BuildDate: release.BuildDate,
 		StartedAt: time.Now().UTC(),
 		Logger:    logger,
 		// Skills + MCP dashboard panels.
@@ -443,4 +431,27 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		reconciler.Notify(toolindex.ReasonBoot)
 	}
 	return nil
+}
+
+func (a *App) registerMemoryRecallTools(cfg *config.Config) {
+	if a == nil || a.deps.Tools == nil {
+		return
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	if tool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
+		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
+		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
+		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
+	if tool := tools.NewRecallOperationalTool(a.deps.MemoryStore); tool != nil {
+		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
+	if tool := tools.NewRecallUserMemoryTool(a.deps.MemoryStore); tool != nil {
+		tool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(tool)
+	}
 }

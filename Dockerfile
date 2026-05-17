@@ -6,7 +6,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/aura ./cmd/aura
+ARG GIT_COMMIT=dev
+ARG BUILD_DATE=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+    -ldflags "-X github.com/aura/aura/internal/release.Commit=${GIT_COMMIT} \
+              -X github.com/aura/aura/internal/release.BuildDate=${BUILD_DATE}" \
+    -o /out/aura ./cmd/aura
 
 FROM node:22-bookworm-slim AS mcp-node
 

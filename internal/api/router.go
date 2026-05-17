@@ -70,9 +70,11 @@ type Deps struct {
 
 	// Slice 10e: process metadata for /health. Version is the human label
 	// (e.g. "3.0"); StartedAt is captured at bot startup so /health can
-	// report uptime. Both are optional — empty/zero values just elide the
-	// fields from the JSON response.
+	// report uptime. Commit and BuildDate are injected at link time (US-T02).
+	// All are optional — empty/zero values just elide the fields from JSON.
 	Version   string
+	Commit    string
+	BuildDate string
 	StartedAt time.Time
 
 	// Slice 11b: skills + MCP read surfaces. Both optional — when nil,

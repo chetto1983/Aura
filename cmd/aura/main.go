@@ -26,17 +26,13 @@ import (
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/logging"
+	"github.com/aura/aura/internal/release"
 	"github.com/aura/aura/internal/secrets"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
 )
 
-var (
-	auraVersion = "3.0"
-	commit      = "dev"
-	date        = "unknown"
-)
 
 const restartDelayEnv = "AURA_RESTART_DELAY_MS"
 const restartCooldown = 30 * time.Second
@@ -86,10 +82,10 @@ func handleCLIArgs(args []string, out io.Writer) bool {
 	}
 	switch strings.TrimSpace(args[0]) {
 	case "-h", "--help", "help":
-		fmt.Fprintf(out, "Aura %s\n\nUsage:\n  aura\n\nEnvironment:\n  AURA_HEADLESS=true       run without desktop tray\n  HTTP_PORT=0.0.0.0:8080  dashboard listen address\n", auraVersion)
+		fmt.Fprintf(out, "Aura %s\n\nUsage:\n  aura\n\nEnvironment:\n  AURA_HEADLESS=true       run without desktop tray\n  HTTP_PORT=0.0.0.0:8080  dashboard listen address\n", release.Version)
 		return true
 	case "-v", "--version", "version":
-		fmt.Fprintf(out, "Aura %s (%s, %s)\n", auraVersion, commit, date)
+		fmt.Fprintf(out, "Aura %s (commit=%s built=%s)\n", release.Version, release.Commit, release.BuildDate)
 		return true
 	default:
 		return false
@@ -148,7 +144,7 @@ func runWithTray(logger *slog.Logger, cleanupLog func(), cfg *config.Config) {
 	if err := tray.Run(tray.Options{
 		Title:        "Aura",
 		Tooltip:      "Aura - starting on " + cfg.HTTPPort,
-		Version:      auraVersion,
+		Version:      release.Version,
 		DashboardURL: "http://" + dashboardHost(cfg.HTTPPort),
 	}); err != nil {
 		logger.Warn("tray exited with error", "error", err)
@@ -310,7 +306,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	// Start health/observability HTTP server
 	healthServer := api.NewHealthServer(api.HealthServerConfig{
 		Addr:    cfg.HTTPPort,
-		Version: auraVersion,
+		Version: release.Version,
 	}, logger)
 
 	// Register component health providers
@@ -399,7 +395,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 
 	healthServer.Start()
 
-	logger.Info("aura starting", "version", auraVersion, "commit", commit, "date", date)
+	logger.Info("aura starting", "version", release.Version, "commit", release.Commit, "build_date", release.BuildDate)
 
 	go app.Start(bot)
 
