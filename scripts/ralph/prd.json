@@ -71,7 +71,7 @@
         "Single atomic commit prefix: docs(prd): mark 7D/7E/7F closed with evidence pointers (US-Z04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Pure admin commit — the work is already done, just paperwork. Look at the §6.5 table rows for 7D/7E/7F and flip ⬜ → ✅."
     },
     {

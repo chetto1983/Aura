@@ -1190,9 +1190,9 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **7A** — Compact Archive Hygiene | ✅ | 2026-05-16 | US-K01..K05 — `9d74809d..3a777e36` | role=tool excluded from compact archive |
 | **7B** — Typed Collection Registry | ✅ | 2026-05-16 | US-L01..L06 — `1a6a609a..13b66d7e` | Collection enum + score components + follow-up handles + SourceID filter |
 | **7C** — Projection Freshness Registry | ✅ | 2026-05-17 | Phase-M evidence translated into Phase07C Aura files | compact-memory freshness registry closed/self-audited; broader wiki/source delete/rename invalidation remains future Phase 7 work |
-| **7D** — User/Operational Memory typed tiers | ✅ | 2026-05-17 | Phase07D mixed-tier local + live probe closure | `KindUserMemory` + `KindOperational` typed recall separated from broad/default memory search |
-| **7E** — Source span/byte offsets | ✅ | 2026-05-17 | Phase07E source-span local + live probe closure | compact source hits carry page/byte offsets; `source(action=read,...)` supports byte-range follow-up |
-| **7F** — Wiki frontmatter schema/prompt-version promotion | ✅ | 2026-05-17 | Phase07F wiki-frontmatter local + live probe closure | wiki search hits expose schema/prompt/created/unversioned/source trust metadata; single-page Qdrant reindex upsert/delete fixed |
+| **7D** — User/Operational Memory typed tiers | ✅ | 2026-05-17 | Phase-N + Phase-O wiring: `internal/learning/user_memory_writer.go`, `internal/learning/writer.go`, `internal/agent/tools/registry/recall_user_memory.go`, `recall_operational.go`, probe `cmd/probe_chat/phase07d.go` | `KindUserMemory` + `KindOperational` typed recall separated from broad/default memory search |
+| **7E** — Source span/byte offsets | ✅ | 2026-05-17 | `ByteStart`/`ByteEnd` on `memoryindex.Document` (`internal/storage/memoryindex/store.go`); memory_search formatting in `internal/agent/tools/registry/memory_search.go`; probe `cmd/probe_chat/phase07e.go` | compact source hits carry page/byte offsets; `source(action=read,...)` supports byte-range follow-up |
+| **7F** — Wiki frontmatter schema/prompt-version promotion | ✅ | 2026-05-17 | `wikiPagePromptVersion = "v1"` constant in `internal/agent/tools/registry/wiki.go` stamps every wiki page write; probe `cmd/probe_chat/phase07f.go` | wiki search hits expose schema/prompt/created/unversioned/source trust metadata; single-page Qdrant reindex upsert/delete fixed |
 | **Phase-O** — User Memory Promotion (sub-phase of 9) | ✅ | 2026-05-16 | US-O01..O04 — `2642ce0b..`(US-O04) | wired KindUserMemory: triage → proposed_updates kind=user_memory → WriteApprovedUserFact → recall_user_memory tool |
 | **Phase-P** — Agent Note Scratchpad (capability #4) | ✅ | 2026-05-16 | US-P01..P04 — `79159b4a..`(US-P04) | agent_note scratchpad wired (capability #4 closed): SQLite table + Store API + action-dispatch tool + system-prompt injection + GC + web-path fix + probe |
 | **Phase-Q** — User Memory Write Guards (Phase 9 partial close) | ✅ | 2026-05-16 | US-Q01..Q04 — `c0189ac4..`(US-Q04) | user_memory write guards wired (Phase 9 partial close — capability check + question gate): memory.user.write Authorize gate at WriteApprovedUserFact + ambiguity question gate Score<0.7 + integration tests |
@@ -1264,6 +1264,11 @@ Phase07C-F are no longer the next cycle. Their closure evidence lives in the
 Phase07 parent files and subphase folders. Remaining Phase 7 work is broader
 GraphRAG and projection quality work: weighted graph retrieval, community
 reports, golden RAG evals, and complete wiki/source delete/rename invalidation.
+
+**After Phase-Z closes (2026-05-17):** the next milestone is the plugin-layout pivot
+(**Phase-U**, option 2 per user decision 2026-05-17) — decouple Aura's personal
+personality into plugin-shaped artifacts so the substrate can host multiple
+domain personas. See §7.4 for the full roadmap sequence.
 
 ### 7.4 Strategic roadmap after Phase-Z (2026-05-17 evening)
 
