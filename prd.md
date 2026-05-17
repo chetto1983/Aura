@@ -1299,11 +1299,29 @@ Davide's own use across multiple domains before opening externally.
 | Phase | Scope | Sessions | Trigger |
 | --- | --- | --- | --- |
 | **Phase-Z** (running) | Close PRD bounded: 7C completion + 7D/E/F admin + Phase 9 hardening | ~3h Ralph | 2026-05-17 |
-| **Phase-MM** | Multimodal core: audio IN (Whisper), image IN (vision API), audio OUT (TTS), image OUT (generation) | ~4 | After Phase-Z |
+| **Phase-FIX** | UX error messages: graceful finalize on ALL budget paths (not just MaxToolCalls), diagnostic LLM-error messages, wire `internal/llm/retry.go` to every `client.Chat()` for 429/transient, surface MaxIterations hit with context (last tool + suggestion) | ~1 | After Phase-Z |
+| **Phase-MM** | Multimodal core: audio IN (Whisper), image IN (vision API), audio OUT (TTS), image OUT (generation) | ~4 | After Phase-FIX |
 | **Phase-U** | Plugin layout: plugin manifest format + loader + extract Davide's personality as a plugin + 1 sample plugin for a different domain (validation) | ~4-6 | After Phase-MM |
 | **Phase 8** | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload (market research or similar). Designed bottom-up from the workload | ~6-12 | When user names the concrete workload |
 
-Total: ~15-22 sessions of disciplined work to reach the state where Aura is
+**Why Phase-FIX before Phase-MM:** Two generic fallback strings surface on
+budget/error paths today — `"I reached the per-turn budget without a usable
+result."` (3 origin paths: MaxElapsed, empty LLM response, MaxIterations) and
+`"Sorry, I couldn't process your message. Please try again."` (any
+non-deadline error from `client.Chat()` including rate limits and transient
+network blips). Both hide diagnostic context and skip the graceful-finalize
+LLM round that already exists for the MaxToolCalls path. ROI is higher than
+new features because the user sees these strings often enough to feel the
+difference immediately after the fix. Bounded scope (4 stories), 1 session.
+
+Phase-FIX stories (when queued):
+
+- **US-FIX01** — extend `finalizeAnswerAfterBudget` to fire on MaxIterations + MaxElapsed + empty-LLM-response paths, not just MaxToolCalls
+- **US-FIX02** — replace `"Sorry, I couldn't process..."` with diagnostic message including error class (rate-limited / network / model / auth) + retry hint
+- **US-FIX03** — wire `internal/llm/retry.go` to every `client.Chat()` invocation in `internal/agent/loop.go` for 429/transient with jitter exponential backoff
+- **US-FIX04** — when MaxIterations hits, surface context in the user-visible message: `"hit per-turn cap (N). Last tool: <tool_name>. Try a more specific request."`
+
+Total: ~16-23 sessions of disciplined work to reach the state where Aura is
 a **multimodal multi-agent platform specialized via plugins** — capable of
 becoming a marketing research tool, legal assistant, devops helper, etc.,
 depending on the plugin installed. Stays single-user until proven in
