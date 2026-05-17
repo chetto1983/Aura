@@ -24,13 +24,21 @@ ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c923882
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl dnsutils file git htop iproute2 \
-      iputils-ping jq less lsof nano net-tools netcat-openbsd nmap \
+      iputils-ping jq less libcap2-bin lsof nano net-tools netcat-openbsd nmap \
       openssh-client procps python3 python3-pip python3-venv ripgrep socat \
       sqlite3 strace tcpdump traceroute tzdata unzip vim wget xz-utils yq zip \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
-    && chown -R aura:aura /data /wiki /skills /app
+    && chown -R aura:aura /data /wiki /skills /app \
+    # Grant raw-socket + admin capabilities to nmap and tcpdump so the non-root
+    # `aura` user can do SYN scans, OS detection, and packet capture without
+    # sudo. compose.yaml grants NET_RAW + NET_ADMIN to the container; setcap
+    # makes those caps inheritable by the binary's effective set even for a
+    # uid 10001 process. Without this the LLM's `nmap -O` fails with
+    # "requires root privileges" — verified on 2026-05-17 against live LAN.
+    && setcap cap_net_raw,cap_net_admin+eip /usr/bin/nmap \
+    && setcap cap_net_raw,cap_net_admin+eip /usr/bin/tcpdump
 
 # Python packages baked into the image so execute_code has the same library
 # surface the old Pyodide bundle provided. Without these, the LLM naturally

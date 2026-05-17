@@ -110,7 +110,7 @@ func (t *ExecuteCodeTool) Description() string {
 		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
 		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under the AURA_OUT_DIR environment variable (a per-call directory, e.g. import os; out=os.environ['AURA_OUT_DIR']); Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. The internal tool-call manifest is control data and is not persisted as a user artifact. " +
-		"Use timeout to override the per-call limit (1-300s, default server 120s)."
+		"Use timeout to override the per-call limit (1-600s, default server 300s)."
 }
 
 func (t *ExecuteCodeTool) Parameters() map[string]any {
@@ -123,9 +123,9 @@ func (t *ExecuteCodeTool) Parameters() map[string]any {
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Per-call timeout in seconds (1-300). Defaults to the server timeout (120s). Lower for quick checks, higher for long computations.",
+				"description": "Per-call timeout in seconds (1-600). Defaults to the server timeout (300s). Lower for quick checks, higher for long computations or deep network scans.",
 				"minimum":     1,
-				"maximum":     300,
+				"maximum":     600,
 			},
 			"tools_allowed": map[string]any{
 				"type":        "array",
@@ -151,7 +151,7 @@ func (t *ExecuteCodeTool) Execute(ctx context.Context, args map[string]any) (str
 		return "", fmt.Errorf("code is required and must be a string")
 	}
 
-	timeoutSec := intArg(args, "timeout", 0, 0, 300)
+	timeoutSec := intArg(args, "timeout", 0, 0, 600)
 	if timeoutSec > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
@@ -232,7 +232,7 @@ var blockedInternalToolCalls = map[string]bool{
 
 // perInternalToolCallTimeout caps each call inside the manifest loop. A single
 // misbehaving tool that ignores ctx would otherwise hang the remaining calls
-// indefinitely — the outer execute_code timeout (1-300s) catches it eventually
+// indefinitely — the outer execute_code timeout (1-600s) catches it eventually
 // but blocks the manifest from making forward progress.
 const perInternalToolCallTimeout = 30 * time.Second
 
@@ -385,7 +385,8 @@ func (t *ExecuteShellTool) Description() string {
 		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics; the runtime image is expected to include common file, JSON, SQLite, Python, Node, DNS, network, tracing, SSH, and build utilities. " +
 		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
-		"Use timeout to override the per-call limit (1-300s, default server 120s)."
+		"Use timeout to override the per-call limit (1-600s, default server 300s). Deep network scans (nmap -sV --script default on /24) typically need 300-500s; give them headroom. " +
+		"Network: the container has cap_net_raw+cap_net_admin on nmap and tcpdump, but the runtime is non-root (uid 10001). For nmap -O (OS detection), -sS (SYN scan), or any raw-socket scan, ALWAYS pass --privileged — without it nmap rejects with \"requires root privileges\" even though the capabilities are present. Example: `nmap --privileged -O -F target`."
 }
 
 func (t *ExecuteShellTool) Parameters() map[string]any {
@@ -398,9 +399,9 @@ func (t *ExecuteShellTool) Parameters() map[string]any {
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Per-call timeout in seconds (1-300). Defaults to the server timeout (120s).",
+				"description": "Per-call timeout in seconds (1-600). Defaults to the server timeout (300s). Raise for deep network scans, large pkg installs, or long-running diagnostics.",
 				"minimum":     1,
-				"maximum":     300,
+				"maximum":     600,
 			},
 		},
 		"required": []string{"command"},
@@ -413,7 +414,7 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 		return "", fmt.Errorf("command is required and must be a string")
 	}
 
-	timeoutSec := intArg(args, "timeout", 0, 0, 300)
+	timeoutSec := intArg(args, "timeout", 0, 0, 600)
 	if timeoutSec > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)

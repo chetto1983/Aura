@@ -81,8 +81,24 @@ services:
       AURA_TRACE_RETENTION_DAYS: "30"
       AURA_WORKSPACE_TOOLS: "${AURA_WORKSPACE_TOOLS:-enabled}"
       AURA_WORKSPACE_ROOT: "/workspace"
+      # 5-minute sandbox timeout (was 120s). Lets execute_shell finish deep
+      # nmap scans (`-sV --script default` on /24 is ~3-5min) without dying
+      # mid-way. The per-call LLM-requested timeout still caps at 600s in
+      # internal/agent/tools/registry/exec.go.
+      SANDBOX_TIMEOUT_SEC: "${SANDBOX_TIMEOUT_SEC:-300}"
     ports:
-      - "127.0.0.1:${AURA_HOST_PORT:-18080}:8080"
+      # Bind to all interfaces so the dashboard is reachable from the LAN
+      # (phone, other PCs on the same network). Override via AURA_HOST_BIND
+      # in .env to lock back to 127.0.0.1 if needed.
+      - "${AURA_HOST_BIND:-0.0.0.0}:${AURA_HOST_PORT:-18080}:8080"
+    # NET_RAW + NET_ADMIN enable raw sockets for ICMP/SYN scans and
+    # interface-level operations. Without these, nmap as the non-root `aura`
+    # user (uid 10001) silently downgrades to TCP connect scans and rejects
+    # `-O` (OS fingerprinting). The /usr/bin/nmap binary inherits these via
+    # the file capabilities set in Dockerfile (`setcap cap_net_raw,cap_net_admin+eip`).
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     volumes:
       - ./runtime-workspace:/workspace
       - ./data:/data
