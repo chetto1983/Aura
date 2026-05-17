@@ -19,7 +19,7 @@
         "Single atomic commit prefix: feat(deploy): compose.prod.yaml overlay for production hardening (US-T01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Pure infra story — no Go code changes required. The overlay is additive (does NOT modify compose.yaml). Don't include garage/searxng deletion; those stay in dev."
     },
     {
