@@ -1,116 +1,93 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-CLEANUP — backlog from the 2026-05-17 audit pass-2 + golangci-lint sweep. NOT a feature phase: pure code-health work driven by docs/audit-god-files-2026-05-17.md, docs/audit-duplication-2026-05-17.md, and the live golangci-lint report. Each story is a single atomic commit on master, mechanical move/extract with no behavior change, passing go build/vet/test + verified by `~/go/bin/golangci-lint run ./...` going DOWN or staying flat. Today already shipped 10 cleanup commits (3118d098..23111324); these 6 stories close out the open backlog. Order is lowest-risk first per 'andiamo calmi' pacing memory. Cross-refs: docs/audit-god-files-2026-05-17.md Slice 4-5-6 (identity/store split + loop dedup), docs/audit-duplication-2026-05-17.md Cluster 5 Pattern B + Cluster 7.",
+  "description": "Aura Phase-CLEANUP2 — residual cleanup after Phase-CLEANUP (US-CL01..CL06) shipped today. Driven by docs/audit-god-files-2026-05-17.md (Slices 3, 8, 9, 10 — the remaining god-files >600 LOC) and docs/audit-concurrency-leaks-2026-05-17.md (2 deferred LOW items). After CL07-CL09 ship, expect zero god-files >600 LOC in the targeted scope; CL10/CL11 are the safer pure-move extras. Each story is a single atomic commit on master, mechanical move/extract or focused fix, no behavior change beyond what's explicitly noted, full test suite must stay green. Reference live LOC at queue creation: app.go 969, hub.go 760, runs/store.go 781, memory_hygiene.go 759, loop.go 699. Order is lowest-risk first per 'andiamo calmi' pacing memory.",
   "userStories": [
     {
-      "id": "US-CL01",
-      "title": "Extract internal/agent/loop_dedup.go from loop.go (god-files Slice 6)",
-      "description": "internal/agent/loop.go is currently 801 LOC after the AppendUnique cleanup. Audit Slice 6 identifies a coherent dedup+budget sub-cluster (~150 LOC) that can move into a sibling file without crossing tight coupling. (a) Read docs/audit-god-files-2026-05-17.md Slice 6 for the exact function inventory: IsRetryableToolResult, toolBudgetFinalInstruction, budgetCapToolResult, finalAnswerOnBudget, DuplicateOrMaxCallsPolicy, tool result formatting, argKeysFromCall, interruptedAssistantContent, findAskUserCall. Confirm each exists in loop.go (line numbers shifted from audit by recent changes — grep, don't trust line numbers). (b) Create internal/agent/loop_dedup.go (same package `agent`, no new exports) and move the identified functions verbatim. Keep the original receivers + signatures. (c) Remove from loop.go. (d) `go build ./... && go vet ./... && go test ./internal/agent/...` must stay green. (e) Result: loop.go drops to ~650 LOC, loop_dedup.go is ~150 LOC. (f) NO logic change — pure mechanical move. If a function references a helper that didn't get moved, leave it in loop.go. If you find yourself rewriting a function body, STOP and put it back.",
+      "id": "US-CL07",
+      "title": "Extract cmd/aura/app_wire.go from cmd/aura/app.go (god-files Slice 3)",
+      "description": "cmd/aura/app.go is currently 969 LOC after the Phase-CLEANUP US-CL01 move of runtask adapters (1151 -> 973 -> 969 after stray cleanup). Audit Slice 3 identifies the wireBot() function + tool registration + scheduler + skill adapters as a coherent ~410-LOC cluster that can move into a sibling file. (a) Read docs/audit-god-files-2026-05-17.md Slice 3. The exact function inventory is wireBot (the BIG method starting around line 560 in the audit-mentioned baseline; grep for `func (a *App) wireBot` for current line). (b) Create cmd/aura/app_wire.go (package main, same package as app.go) and move wireBot + any helpers that are private and called ONLY by wireBot. (c) KEEP in app.go: the App struct, lifecycle methods (Start, Stop, APIHandler, reindexHealth, CompactMemoryHealth, startBg), newApp(), and any helper used outside wireBot. (d) NO logic change — pure mechanical move. If a helper has more than one caller, leave it in app.go. (e) Result: app.go drops to ~563 LOC, app_wire.go is ~410 LOC. (f) `go build ./... && go vet ./... && go test ./...` all green.",
       "acceptanceCriteria": [
-        "internal/agent/loop_dedup.go exists with the moved functions",
-        "internal/agent/loop.go drops by 100+ LOC",
-        "Both files compile in package agent (no import-cycle, no missing helpers)",
+        "cmd/aura/app_wire.go exists with wireBot + its private-only helpers",
+        "cmd/aura/app.go drops to under 600 LOC",
+        "App struct + Start/Stop/APIHandler/lifecycle methods stay in app.go",
         "go build ./... green",
         "go vet ./... green",
-        "go test ./internal/agent/... green",
         "go test ./... green (full suite)",
+        "~/go/bin/golangci-lint run --disable=errcheck ./... shows lint count unchanged or lower",
         "No behavior change — diff shows only moves + minimal import adjustments",
-        "Single atomic commit prefix: refactor(agent): extract loop_dedup.go from loop.go (US-CL01)"
+        "Single atomic commit prefix: refactor(cmd/aura): extract app_wire.go from app.go (US-CL07)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Per CLAUDE.md god-class rule: file >600 LOC must be refactored. After this slice loop.go is still ~650 — well under threshold. Mechanical move only."
+      "notes": "Audit risk: Low (mechanical move). This is the biggest remaining structural win — drops app.go from 969 LOC to under 600, eliminating it from the god-files list entirely."
     },
     {
-      "id": "US-CL02",
-      "title": "Test-fixture consolidation: move chat hub mocks into a shared testhelpers package",
-      "description": "Duplication audit Cluster 7 identified 4 reusable test fixtures defined in internal/chat/hub_test.go that should live in a shared package so future channel tests (web, swarm) can reuse them. (a) Create internal/chat/testhelpers/fixtures.go (new sub-package under chat). (b) Move from internal/chat/hub_test.go: `recordingLoop` (the agent.AgentLoop fake that counts calls), `fakeInbound` (InboundAdapter fake), `fakeOutbound` (OutboundAdapter fake), and the `blockingLoopFn` function-adapter helper. Export them with capitalized names: `RecordingLoop`, `FakeInbound`, `FakeOutbound`, `BlockingLoopFn`. Update internal/chat/hub_test.go + hub_swarm_test.go to import from the new package and use the exported names. (c) Constructor helpers `NewRecordingLoop()`, `NewFakeInbound(channel chat.Channel, ...)`, `NewFakeOutbound(...)` if the original types had non-trivial init; otherwise direct struct literals are fine. (d) DO NOT move `fakeHub` from internal/channels/web/chat_service_test.go — different semantics, single user, leave alone. (e) Cross-package: testhelpers imports internal/chat for the InboundAdapter/OutboundAdapter/AgentLoop interface types — no cycle because testhelpers is a sub-package consumed only by tests. (f) Full suite must stay green.",
+      "id": "US-CL08",
+      "title": "Fix docHandler context propagation in internal/telegram/documents.go (concurrency LOW #2)",
+      "description": "Concurrency audit (docs/audit-concurrency-leaks-2026-05-17.md, BUG #2) found that document-processing goroutines in internal/telegram/documents.go around line 72 are spawned via `context.WithCancel(context.Background())` instead of propagating the handler's incoming context. Result: if the parent run cancels (user /stop, run timeout, app shutdown), document handlers continue running orphaned. (a) Read internal/telegram/documents.go around the docHandler function. (b) Change the spawn signature to accept a ctx parameter (from the calling handler), and wire `context.WithCancel(ctx)` to derive from it. (c) Verify the caller propagates the chat handler ctx through. If the existing call site uses tele.Context with no extractable Go context, document the trade-off in a comment — Telegram telebot v4 does expose c.Get(\"ctx\") in some configs; if not, leave a TODO comment but DO still change the function signature. (d) Tests in documents_test.go (if present) update to pass ctx; otherwise add a test verifying cancel propagation.",
       "acceptanceCriteria": [
-        "internal/chat/testhelpers/fixtures.go exists with RecordingLoop, FakeInbound, FakeOutbound, BlockingLoopFn exported",
-        "internal/chat/hub_test.go and internal/chat/hub_swarm_test.go import from testhelpers (no local recordingLoop/fakeInbound/fakeOutbound defs left)",
-        "internal/channels/web/chat_service_test.go fakeHub UNCHANGED (different semantics)",
+        "internal/telegram/documents.go docHandler (or equivalent function around the flagged line) accepts ctx context.Context parameter",
+        "Internal context.WithCancel derives from the passed ctx, not context.Background()",
+        "All callers updated to pass the handler context",
         "go build ./... green",
-        "go vet ./... green",
-        "go test ./internal/chat/... green",
-        "go test ./... green",
-        "No behavior change — tests cover same invariants",
-        "Single atomic commit prefix: refactor(chat): extract test fixtures into testhelpers package (US-CL02)"
+        "go test ./internal/telegram/... green (no regression)",
+        "go test ./... green (full suite)",
+        "Single atomic commit prefix: fix(telegram): propagate handler context into docHandler (US-CL08)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "LOW risk — test-only code. Sets pattern for future channel test reuse."
+      "passes": false,
+      "notes": "Low-risk fix. If the caller doesn't have a Go context yet (telebot quirk), it's acceptable to use context.Background at the BUS boundary and add a TODO; the goal is to give docHandler the ability to be cancelled when the chat run is cancelled."
     },
     {
-      "id": "US-CL03",
-      "title": "Split internal/identity/store.go: extract store_helpers.go (god-files Slice 4)",
-      "description": "internal/identity/store.go is 875 LOC. Audit Slice 4 identifies a coherent validation+ID-builder cluster (~340 LOC) that should move out first. (a) Read docs/audit-god-files-2026-05-17.md Slice 4. The target functions are validation (isValidPrincipalKind, validateGrant), ID builders, parse helpers — anything that doesn't touch the *Store receiver. (b) Create internal/identity/store_helpers.go (same package `identity`). Move pure helpers — receiverless functions and constants used only as building blocks. (c) Keep the Store type, CRUD methods (CreatePrincipal, GetPrincipal, ListGrants...), and the Authorize method in store.go for THIS slice. The auth-method split is a separate Slice 5 (US-CL04). (d) Result: store.go drops to ~535 LOC, store_helpers.go is ~340 LOC. (e) NO logic change — mechanical move. Watch for unexported helpers that two files now share — both files are in package identity so visibility stays the same.",
+      "id": "US-CL09",
+      "title": "Make SessionStore.Begin() context-aware in internal/agent/session.go (concurrency LOW #3)",
+      "description": "Concurrency audit (docs/audit-concurrency-leaks-2026-05-17.md, BUG #3) found SessionStore.Begin() at line 98 has no context parameter and no timeout on its operations. Impact is low (sessions are in-memory), but the lack of ctx awareness means a stuck session creation can't be cancelled. (a) Change SessionStore.Begin() signature to accept ctx context.Context. (b) Use it for any potentially-blocking operation inside (mutex acquisition, DB access if present). (c) Update all callers to pass an appropriate ctx — Telegram channel adapter passes the inbound message's run context; cron passes the job's. (d) If a caller has no real context, it can pass context.Background() but it should be deliberate, not the default.",
       "acceptanceCriteria": [
-        "internal/identity/store_helpers.go exists with the moved validation + ID builder helpers",
-        "internal/identity/store.go drops by 200+ LOC (target ~535)",
-        "Store type, CRUD methods, and Authorize stay in store.go (Authorize split is US-CL04, not this story)",
+        "SessionStore.Begin(ctx, ...) signature in internal/agent/session.go",
+        "Internal operations respect ctx (return ctx.Err() on cancel)",
+        "All call sites updated to pass a real context",
         "go build ./... green",
-        "go vet ./... green",
-        "go test ./internal/identity/... green",
+        "go test ./internal/agent/... green",
         "go test ./... green",
-        "No behavior change — diff shows moves + minimal adjustments",
-        "Single atomic commit prefix: refactor(identity): extract store_helpers.go from store.go (US-CL03)"
+        "Single atomic commit prefix: fix(agent): make SessionStore.Begin context-aware (US-CL09)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Identity package is auth-critical — extra care. Pure receiverless helpers first; auth methods stay for Slice 5."
+      "passes": false,
+      "notes": "Low-risk. Sessions are in-memory; impact is mostly architectural cleanliness."
     },
     {
-      "id": "US-CL04",
-      "title": "Split internal/identity/store.go: extract store_auth.go (god-files Slice 5)",
-      "description": "After US-CL03 reduces store.go to ~535 LOC, this slice extracts the authorization methods cluster (~290 LOC) into a third file. (a) Identify auth-shaped methods on *Store: DelegateActor, BackfillTelegramAllowlistedUser, RevokeGrant, Authorize, recordDecision, hasActiveGrant + any grant-lifecycle helper. (b) Create internal/identity/store_auth.go (same package). Move those methods + their immediate private helpers. (c) Keep in store.go: the Store struct definition, NewStore/Open constructors, basic CRUD (CreatePrincipal, GetPrincipal, etc.). (d) Result: store.go drops to ~245 LOC (target). (e) NO logic change. If a test was named store_test.go and only exercises the methods being moved, optionally split into store_auth_test.go alongside — but this is optional and tests can stay in one file. (f) DEPENDENCY: this story REQUIRES US-CL03 to be passes:true first because both edit store.go.",
+      "id": "US-CL10",
+      "title": "Extract internal/chat/hub_lifecycle.go from internal/chat/hub.go (god-files Slice 8)",
+      "description": "internal/chat/hub.go is 760 LOC. Audit Slice 8 identifies lifecycle-event-related methods + helpers as a ~200-LOC coherent cluster (persistLifecycleEvent, recordQuestionRequested, isDurableRunEvent, lifecycleRunMetadata, lifecycleEventParams, lifecyclePayload). (a) Read docs/audit-god-files-2026-05-17.md Slice 8. (b) Create internal/chat/hub_lifecycle.go (same package `chat`). Move the lifecycle-event helpers. (c) Keep in hub.go: Hub struct, New, Receive/dispatch, emit, thread status tracking, Stop. (d) Result: hub.go drops to ~560 LOC. (e) NO logic change.",
       "acceptanceCriteria": [
-        "internal/identity/store_auth.go exists with DelegateActor, BackfillTelegramAllowlistedUser, RevokeGrant, Authorize, recordDecision, hasActiveGrant (+ helpers)",
-        "internal/identity/store.go drops to under 300 LOC",
+        "internal/chat/hub_lifecycle.go exists with the moved helpers",
+        "internal/chat/hub.go drops to under 600 LOC",
         "go build ./... green",
         "go vet ./... green",
-        "go test ./internal/identity/... green (auth invariants verified — denial paths, capability checks)",
+        "go test ./internal/chat/... green (lifecycle + dispatch invariants intact)",
         "go test ./... green",
-        "Single atomic commit prefix: refactor(identity): extract store_auth.go from store.go (US-CL04)"
+        "Single atomic commit prefix: refactor(chat): extract hub_lifecycle.go from hub.go (US-CL10)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "DEPENDS ON US-CL03. Auth-critical code; run identity tests including the Authorize+capability suite before commit."
+      "passes": false,
+      "notes": "Pure mechanical move. Audit risk: Low."
     },
     {
-      "id": "US-CL05",
-      "title": "Extract httputil.NewHTTPClient — collapse 13 inline HTTP client constructions",
-      "description": "Duplication audit Cluster 5 Pattern B: 14 inline `&http.Client{Timeout: t}` sites with varying timeouts. (a) Create internal/httputil/client.go with `func NewHTTPClient(timeout, fallback time.Duration) *http.Client { if timeout <= 0 { timeout = fallback }; return &http.Client{Timeout: timeout} }`. Doc comment explains the fallback semantics: caller-supplied timeout overrides; zero/negative means use fallback. (b) Migrate the sites: internal/agent/tools/registry/direct_fetch.go (30s), registry_search_vector.go (30s), searxng.go (20s); internal/install/download.go (30 min); internal/mcp/client.go (60s); internal/skills/catalog.go; internal/storage/qdrant/client.go (variable, 30s fallback); internal/storage/search/embed_batch.go (2 min), embed_http.go (2 min); internal/storage/sources/ocr/client.go (variable, 5 min fallback); cmd/chat/main.go (10 min), cmd/probe_chat/main.go (variable), cmd/probe_doc/main.go (30s). (c) Each site replaces `&http.Client{Timeout: x}` with `httputil.NewHTTPClient(x, defaultForThisSite)` using THE EXACT existing fallback for that site (grep the surrounding `if timeout <= 0` block — don't invent fallbacks). (d) DO NOT MIGRATE internal/llm/openai.go — it intentionally uses no timeout for streaming. Leave it with a comment noting the deliberate choice. (e) Add internal/httputil/client_test.go covering: explicit timeout passes through, zero uses fallback, negative uses fallback. (f) golangci-lint run baseline 10 issues; after this slice should be 10 or lower.",
+      "id": "US-CL11",
+      "title": "Extract internal/storage/runs/store_questions.go from internal/storage/runs/store.go (god-files Slice 9)",
+      "description": "internal/storage/runs/store.go is 781 LOC. Audit Slice 9 identifies the question lifecycle methods (RecordQuestionRequested, RecordQuestionAnswered, GetQuestion, LatestPendingQuestion + question types) as a ~100-LOC sub-cluster. (a) Read docs/audit-god-files-2026-05-17.md Slice 9. (b) Create internal/storage/runs/store_questions.go (same package `runs`). Move the question methods + immediate types. (c) Keep in store.go: Store struct, Run/event CRUD. (d) Result: store.go drops to ~681 LOC. (e) NO logic change. NOTE: Since the cut keeps store.go above 600 LOC, this is a partial win — feel free to combine with related-but-separate clusters if they're truly cohesive. Otherwise ship as-is and a follow-up slice can take more.",
       "acceptanceCriteria": [
-        "internal/httputil/client.go exists with NewHTTPClient(timeout, fallback time.Duration) *http.Client",
-        "internal/httputil/client_test.go covers explicit/zero/negative timeout paths",
-        "13 of 14 listed call sites migrated (internal/llm/openai.go intentionally left with an inline comment explaining the no-timeout choice)",
+        "internal/storage/runs/store_questions.go exists with the moved question lifecycle methods",
+        "internal/storage/runs/store.go drops by 80+ LOC",
         "go build ./... green",
-        "go vet ./... green",
+        "go test ./internal/storage/runs/... green",
         "go test ./... green",
-        "~/go/bin/golangci-lint run ./... shows 10 issues or fewer (not more)",
-        "Single atomic commit prefix: refactor(httputil): extract NewHTTPClient, migrate sites with caller-vs-fallback semantics (US-CL05)"
+        "Single atomic commit prefix: refactor(runs): extract store_questions.go from store.go (US-CL11)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Story scope revised at execution time: 14 inline &http.Client{} constructions enumerated, but only 4 had real caller-supplied-timeout-vs-fallback semantics (qdrant, ocr, embed_batch, embed_http). The other 10 were hardcoded singletons where `NewHTTPClient(20s, 20s)` reads worse than `&http.Client{Timeout: 20*time.Second}`. Per CLAUDE.md no-unnecessary-abstraction rule, those stay inline. internal/agent/tools/registry/direct_fetch.go also excluded — has custom Transport + CheckRedirect, helper signature doesn't fit."
-    },
-    {
-      "id": "US-CL06",
-      "title": "Apply staticcheck QF1001/QF1012/QF1002/ST1023 modernizations",
-      "description": "After today's dead-code purge golangci-lint is down to 10 issues: 8 staticcheck modernizations + 2 govet hits in web/node_modules (third-party, untouchable). The 8 are pure style polish: QF1001 De Morgan rewrites, QF1012 'sb.WriteString(fmt.Sprintf(...))' -> 'fmt.Fprintf(&sb, ...)', QF1002 tagged switch, ST1023 omit-inferable-type. (a) Run `~/go/bin/golangci-lint run --disable=errcheck ./...` and apply each linter-suggested fix verbatim. (b) Known sites: internal/agent/tools/index/hash_test.go:131 (QF1001), internal/agent/tools/registry/definition_test.go:105 (ST1023), internal/agent/tools/registry/manifest_test.go:34 (QF1001), internal/agent/tools/registry/registry_search.go:107 (QF1001), internal/agent/tools/registry/tool_registry.go:159 (QF1012), internal/api/mcp_database_setup.go:158 (QF1002), internal/conversation/context.go:358 (QF1012), internal/storage/search/search.go:454 (QF1012). (c) Each change is mechanical and the linter even provides the autofix. After: golangci-lint should drop to 2 issues (only the web/node_modules govet hits — third-party, untouchable).",
-      "acceptanceCriteria": [
-        "All 8 staticcheck QF1001/QF1012/ST1023/QF1002 hits resolved in-place",
-        "`~/go/bin/golangci-lint run --disable=errcheck ./...` reports 2 govet issues or fewer (the web/node_modules ones)",
-        "go build ./... green",
-        "go vet ./... green",
-        "go test ./... green",
-        "No behavior change — fmt.Fprintf and De Morgan rewrites preserve identical semantics",
-        "Single atomic commit prefix: style(lint): apply staticcheck QF1001/QF1012/QF1002/ST1023 fixes (US-CL06)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Pure style polish. The actual logic is identical pre- and post-. Easiest story in the queue, parked at the end so the bigger structural moves land first."
+      "passes": false,
+      "notes": "Audit risk: Low. May not drop store.go all the way under 600 LOC — that's OK, this is one step of a multi-step file."
     }
   ]
 }

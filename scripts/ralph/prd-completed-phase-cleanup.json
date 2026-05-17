@@ -1,0 +1,116 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-CLEANUP — backlog from the 2026-05-17 audit pass-2 + golangci-lint sweep. NOT a feature phase: pure code-health work driven by docs/audit-god-files-2026-05-17.md, docs/audit-duplication-2026-05-17.md, and the live golangci-lint report. Each story is a single atomic commit on master, mechanical move/extract with no behavior change, passing go build/vet/test + verified by `~/go/bin/golangci-lint run ./...` going DOWN or staying flat. Today already shipped 10 cleanup commits (3118d098..23111324); these 6 stories close out the open backlog. Order is lowest-risk first per 'andiamo calmi' pacing memory. Cross-refs: docs/audit-god-files-2026-05-17.md Slice 4-5-6 (identity/store split + loop dedup), docs/audit-duplication-2026-05-17.md Cluster 5 Pattern B + Cluster 7.",
+  "userStories": [
+    {
+      "id": "US-CL01",
+      "title": "Extract internal/agent/loop_dedup.go from loop.go (god-files Slice 6)",
+      "description": "internal/agent/loop.go is currently 801 LOC after the AppendUnique cleanup. Audit Slice 6 identifies a coherent dedup+budget sub-cluster (~150 LOC) that can move into a sibling file without crossing tight coupling. (a) Read docs/audit-god-files-2026-05-17.md Slice 6 for the exact function inventory: IsRetryableToolResult, toolBudgetFinalInstruction, budgetCapToolResult, finalAnswerOnBudget, DuplicateOrMaxCallsPolicy, tool result formatting, argKeysFromCall, interruptedAssistantContent, findAskUserCall. Confirm each exists in loop.go (line numbers shifted from audit by recent changes — grep, don't trust line numbers). (b) Create internal/agent/loop_dedup.go (same package `agent`, no new exports) and move the identified functions verbatim. Keep the original receivers + signatures. (c) Remove from loop.go. (d) `go build ./... && go vet ./... && go test ./internal/agent/...` must stay green. (e) Result: loop.go drops to ~650 LOC, loop_dedup.go is ~150 LOC. (f) NO logic change — pure mechanical move. If a function references a helper that didn't get moved, leave it in loop.go. If you find yourself rewriting a function body, STOP and put it back.",
+      "acceptanceCriteria": [
+        "internal/agent/loop_dedup.go exists with the moved functions",
+        "internal/agent/loop.go drops by 100+ LOC",
+        "Both files compile in package agent (no import-cycle, no missing helpers)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./internal/agent/... green",
+        "go test ./... green (full suite)",
+        "No behavior change — diff shows only moves + minimal import adjustments",
+        "Single atomic commit prefix: refactor(agent): extract loop_dedup.go from loop.go (US-CL01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Per CLAUDE.md god-class rule: file >600 LOC must be refactored. After this slice loop.go is still ~650 — well under threshold. Mechanical move only."
+    },
+    {
+      "id": "US-CL02",
+      "title": "Test-fixture consolidation: move chat hub mocks into a shared testhelpers package",
+      "description": "Duplication audit Cluster 7 identified 4 reusable test fixtures defined in internal/chat/hub_test.go that should live in a shared package so future channel tests (web, swarm) can reuse them. (a) Create internal/chat/testhelpers/fixtures.go (new sub-package under chat). (b) Move from internal/chat/hub_test.go: `recordingLoop` (the agent.AgentLoop fake that counts calls), `fakeInbound` (InboundAdapter fake), `fakeOutbound` (OutboundAdapter fake), and the `blockingLoopFn` function-adapter helper. Export them with capitalized names: `RecordingLoop`, `FakeInbound`, `FakeOutbound`, `BlockingLoopFn`. Update internal/chat/hub_test.go + hub_swarm_test.go to import from the new package and use the exported names. (c) Constructor helpers `NewRecordingLoop()`, `NewFakeInbound(channel chat.Channel, ...)`, `NewFakeOutbound(...)` if the original types had non-trivial init; otherwise direct struct literals are fine. (d) DO NOT move `fakeHub` from internal/channels/web/chat_service_test.go — different semantics, single user, leave alone. (e) Cross-package: testhelpers imports internal/chat for the InboundAdapter/OutboundAdapter/AgentLoop interface types — no cycle because testhelpers is a sub-package consumed only by tests. (f) Full suite must stay green.",
+      "acceptanceCriteria": [
+        "internal/chat/testhelpers/fixtures.go exists with RecordingLoop, FakeInbound, FakeOutbound, BlockingLoopFn exported",
+        "internal/chat/hub_test.go and internal/chat/hub_swarm_test.go import from testhelpers (no local recordingLoop/fakeInbound/fakeOutbound defs left)",
+        "internal/channels/web/chat_service_test.go fakeHub UNCHANGED (different semantics)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./internal/chat/... green",
+        "go test ./... green",
+        "No behavior change — tests cover same invariants",
+        "Single atomic commit prefix: refactor(chat): extract test fixtures into testhelpers package (US-CL02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "LOW risk — test-only code. Sets pattern for future channel test reuse."
+    },
+    {
+      "id": "US-CL03",
+      "title": "Split internal/identity/store.go: extract store_helpers.go (god-files Slice 4)",
+      "description": "internal/identity/store.go is 875 LOC. Audit Slice 4 identifies a coherent validation+ID-builder cluster (~340 LOC) that should move out first. (a) Read docs/audit-god-files-2026-05-17.md Slice 4. The target functions are validation (isValidPrincipalKind, validateGrant), ID builders, parse helpers — anything that doesn't touch the *Store receiver. (b) Create internal/identity/store_helpers.go (same package `identity`). Move pure helpers — receiverless functions and constants used only as building blocks. (c) Keep the Store type, CRUD methods (CreatePrincipal, GetPrincipal, ListGrants...), and the Authorize method in store.go for THIS slice. The auth-method split is a separate Slice 5 (US-CL04). (d) Result: store.go drops to ~535 LOC, store_helpers.go is ~340 LOC. (e) NO logic change — mechanical move. Watch for unexported helpers that two files now share — both files are in package identity so visibility stays the same.",
+      "acceptanceCriteria": [
+        "internal/identity/store_helpers.go exists with the moved validation + ID builder helpers",
+        "internal/identity/store.go drops by 200+ LOC (target ~535)",
+        "Store type, CRUD methods, and Authorize stay in store.go (Authorize split is US-CL04, not this story)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./internal/identity/... green",
+        "go test ./... green",
+        "No behavior change — diff shows moves + minimal adjustments",
+        "Single atomic commit prefix: refactor(identity): extract store_helpers.go from store.go (US-CL03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Identity package is auth-critical — extra care. Pure receiverless helpers first; auth methods stay for Slice 5."
+    },
+    {
+      "id": "US-CL04",
+      "title": "Split internal/identity/store.go: extract store_auth.go (god-files Slice 5)",
+      "description": "After US-CL03 reduces store.go to ~535 LOC, this slice extracts the authorization methods cluster (~290 LOC) into a third file. (a) Identify auth-shaped methods on *Store: DelegateActor, BackfillTelegramAllowlistedUser, RevokeGrant, Authorize, recordDecision, hasActiveGrant + any grant-lifecycle helper. (b) Create internal/identity/store_auth.go (same package). Move those methods + their immediate private helpers. (c) Keep in store.go: the Store struct definition, NewStore/Open constructors, basic CRUD (CreatePrincipal, GetPrincipal, etc.). (d) Result: store.go drops to ~245 LOC (target). (e) NO logic change. If a test was named store_test.go and only exercises the methods being moved, optionally split into store_auth_test.go alongside — but this is optional and tests can stay in one file. (f) DEPENDENCY: this story REQUIRES US-CL03 to be passes:true first because both edit store.go.",
+      "acceptanceCriteria": [
+        "internal/identity/store_auth.go exists with DelegateActor, BackfillTelegramAllowlistedUser, RevokeGrant, Authorize, recordDecision, hasActiveGrant (+ helpers)",
+        "internal/identity/store.go drops to under 300 LOC",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./internal/identity/... green (auth invariants verified — denial paths, capability checks)",
+        "go test ./... green",
+        "Single atomic commit prefix: refactor(identity): extract store_auth.go from store.go (US-CL04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "DEPENDS ON US-CL03. Auth-critical code; run identity tests including the Authorize+capability suite before commit."
+    },
+    {
+      "id": "US-CL05",
+      "title": "Extract httputil.NewHTTPClient — collapse 13 inline HTTP client constructions",
+      "description": "Duplication audit Cluster 5 Pattern B: 14 inline `&http.Client{Timeout: t}` sites with varying timeouts. (a) Create internal/httputil/client.go with `func NewHTTPClient(timeout, fallback time.Duration) *http.Client { if timeout <= 0 { timeout = fallback }; return &http.Client{Timeout: timeout} }`. Doc comment explains the fallback semantics: caller-supplied timeout overrides; zero/negative means use fallback. (b) Migrate the sites: internal/agent/tools/registry/direct_fetch.go (30s), registry_search_vector.go (30s), searxng.go (20s); internal/install/download.go (30 min); internal/mcp/client.go (60s); internal/skills/catalog.go; internal/storage/qdrant/client.go (variable, 30s fallback); internal/storage/search/embed_batch.go (2 min), embed_http.go (2 min); internal/storage/sources/ocr/client.go (variable, 5 min fallback); cmd/chat/main.go (10 min), cmd/probe_chat/main.go (variable), cmd/probe_doc/main.go (30s). (c) Each site replaces `&http.Client{Timeout: x}` with `httputil.NewHTTPClient(x, defaultForThisSite)` using THE EXACT existing fallback for that site (grep the surrounding `if timeout <= 0` block — don't invent fallbacks). (d) DO NOT MIGRATE internal/llm/openai.go — it intentionally uses no timeout for streaming. Leave it with a comment noting the deliberate choice. (e) Add internal/httputil/client_test.go covering: explicit timeout passes through, zero uses fallback, negative uses fallback. (f) golangci-lint run baseline 10 issues; after this slice should be 10 or lower.",
+      "acceptanceCriteria": [
+        "internal/httputil/client.go exists with NewHTTPClient(timeout, fallback time.Duration) *http.Client",
+        "internal/httputil/client_test.go covers explicit/zero/negative timeout paths",
+        "13 of 14 listed call sites migrated (internal/llm/openai.go intentionally left with an inline comment explaining the no-timeout choice)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "~/go/bin/golangci-lint run ./... shows 10 issues or fewer (not more)",
+        "Single atomic commit prefix: refactor(httputil): extract NewHTTPClient, migrate sites with caller-vs-fallback semantics (US-CL05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Story scope revised at execution time: 14 inline &http.Client{} constructions enumerated, but only 4 had real caller-supplied-timeout-vs-fallback semantics (qdrant, ocr, embed_batch, embed_http). The other 10 were hardcoded singletons where `NewHTTPClient(20s, 20s)` reads worse than `&http.Client{Timeout: 20*time.Second}`. Per CLAUDE.md no-unnecessary-abstraction rule, those stay inline. internal/agent/tools/registry/direct_fetch.go also excluded — has custom Transport + CheckRedirect, helper signature doesn't fit."
+    },
+    {
+      "id": "US-CL06",
+      "title": "Apply staticcheck QF1001/QF1012/QF1002/ST1023 modernizations",
+      "description": "After today's dead-code purge golangci-lint is down to 10 issues: 8 staticcheck modernizations + 2 govet hits in web/node_modules (third-party, untouchable). The 8 are pure style polish: QF1001 De Morgan rewrites, QF1012 'sb.WriteString(fmt.Sprintf(...))' -> 'fmt.Fprintf(&sb, ...)', QF1002 tagged switch, ST1023 omit-inferable-type. (a) Run `~/go/bin/golangci-lint run --disable=errcheck ./...` and apply each linter-suggested fix verbatim. (b) Known sites: internal/agent/tools/index/hash_test.go:131 (QF1001), internal/agent/tools/registry/definition_test.go:105 (ST1023), internal/agent/tools/registry/manifest_test.go:34 (QF1001), internal/agent/tools/registry/registry_search.go:107 (QF1001), internal/agent/tools/registry/tool_registry.go:159 (QF1012), internal/api/mcp_database_setup.go:158 (QF1002), internal/conversation/context.go:358 (QF1012), internal/storage/search/search.go:454 (QF1012). (c) Each change is mechanical and the linter even provides the autofix. After: golangci-lint should drop to 2 issues (only the web/node_modules govet hits — third-party, untouchable).",
+      "acceptanceCriteria": [
+        "All 8 staticcheck QF1001/QF1012/ST1023/QF1002 hits resolved in-place",
+        "`~/go/bin/golangci-lint run --disable=errcheck ./...` reports 2 govet issues or fewer (the web/node_modules ones)",
+        "go build ./... green",
+        "go vet ./... green",
+        "go test ./... green",
+        "No behavior change — fmt.Fprintf and De Morgan rewrites preserve identical semantics",
+        "Single atomic commit prefix: style(lint): apply staticcheck QF1001/QF1012/QF1002/ST1023 fixes (US-CL06)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Pure style polish. The actual logic is identical pre- and post-. Easiest story in the queue, parked at the end so the bigger structural moves land first."
+    }
+  ]
+}
