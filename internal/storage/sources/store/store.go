@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aura/aura/internal/storage/freshness"
 )
 
 const (
@@ -33,10 +35,11 @@ var idPattern = regexp.MustCompile(`^src_[a-f0-9]{16}$`)
 // Atomic-write + per-key mutex pattern is borrowed from internal/wiki/store.go;
 // the regex-based ID validation keeps source IDs filename-safe.
 type Store struct {
-	rawDir string
-	mu     sync.Map // id -> *sync.Mutex
-	logger *slog.Logger
-	now    func() time.Time
+	rawDir         string
+	mu             sync.Map // id -> *sync.Mutex
+	logger         *slog.Logger
+	now            func() time.Time
+	freshnessStore *freshness.Store
 }
 
 // Reader is the metadata read side of the source inbox.
@@ -81,6 +84,13 @@ func NewStore(wikiDir string, logger *slog.Logger) (*Store, error) {
 		logger: logger,
 		now:    func() time.Time { return time.Now().UTC() },
 	}, nil
+}
+
+// SetFreshnessStore wires an optional freshness.Store so Put bumps
+// compact_memory_sources pending_count after every new (non-duplicate) write.
+// Nil-safe: passing nil disables the hook.
+func (s *Store) SetFreshnessStore(fs *freshness.Store) {
+	s.freshnessStore = fs
 }
 
 func (s *Store) idMutex(id string) *sync.Mutex {
@@ -144,6 +154,11 @@ func (s *Store) Put(ctx context.Context, in PutInput) (src *Source, dup bool, er
 	}
 	if err := s.writeMetadataLocked(sourceDir, rec); err != nil {
 		return nil, false, err
+	}
+	if s.freshnessStore != nil {
+		if bErr := s.freshnessStore.BumpPending(ctx, "compact_memory_sources", 1); bErr != nil {
+			s.logger.Warn("source: freshness bump failed", "id", rec.ID, "error", bErr)
+		}
 	}
 	return rec, false, nil
 }

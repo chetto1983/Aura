@@ -37,7 +37,7 @@
         "Single atomic commit prefix: feat(freshness): eager write-time invalidate hooks (US-Z02 / 7C US-M03)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Each hook is nil-safe: if freshnessStore is nil (tests without freshness), the bump is skipped. Don't add a new mandatory dep — guard every call."
     },
     {

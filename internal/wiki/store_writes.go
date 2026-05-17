@@ -11,8 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/reindex"
 )
+
+// SetFreshnessStore wires an optional freshness.Store so WritePage bumps
+// compact_memory_wiki pending_count after every successful page write.
+// Nil-safe: passing nil disables the hook.
+func (s *Store) SetFreshnessStore(fs *freshness.Store) {
+	s.freshnessStore = fs
+}
 
 // ConflictError is returned by WritePage when the on-disk updated_at does
 // not match the caller-supplied expectedUpdatedAt, OR when expectedUpdatedAt
@@ -122,6 +130,12 @@ func (s *Store) writePageLocked(ctx context.Context, slug string, page *Page, ex
 	// Atomic temp+rename.
 	if err := writeAtomic(s.dir, slug, path, data); err != nil {
 		return nil, err
+	}
+
+	if s.freshnessStore != nil {
+		if bErr := s.freshnessStore.BumpPending(ctx, "compact_memory_wiki", 1); bErr != nil {
+			s.logger.Warn("wiki: freshness bump failed", "slug", slug, "error", bErr)
+		}
 	}
 
 	s.logger.Info("wiki page written", "slug", slug, "path", path)

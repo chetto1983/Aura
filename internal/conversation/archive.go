@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/aura/aura/internal/storage/freshness"
 )
 
 // ErrDuplicateTurn is returned by Append when a turn with the same
@@ -339,10 +341,11 @@ func scanTurn(r turnScanner) (Turn, error) {
 // drain goroutine so hot conversation paths are non-blocking. Turns that
 // arrive when the buffer is full are dropped and logged.
 type BufferedAppender struct {
-	store  TurnAppender
-	ch     chan Turn
-	logger *slog.Logger
-	wg     sync.WaitGroup
+	store          TurnAppender
+	ch             chan Turn
+	logger         *slog.Logger
+	wg             sync.WaitGroup
+	freshnessStore *freshness.Store
 }
 
 // NewBufferedAppender starts the drain goroutine. bufSize should be 100 for
@@ -370,6 +373,13 @@ func (a *BufferedAppender) Append(_ context.Context, t Turn) error {
 	return nil
 }
 
+// SetFreshnessStore wires an optional freshness.Store so the drain goroutine
+// bumps compact_memory_archive pending_count after every successful append.
+// Nil-safe: passing nil disables the hook without side effects.
+func (a *BufferedAppender) SetFreshnessStore(fs *freshness.Store) {
+	a.freshnessStore = fs
+}
+
 // Close signals the drain goroutine to flush remaining turns and waits for it
 // to finish. ctx is reserved for future timeout support.
 func (a *BufferedAppender) Close(_ context.Context) error {
@@ -385,6 +395,10 @@ func (a *BufferedAppender) drain() {
 			if !errors.Is(err, ErrDuplicateTurn) {
 				a.logger.Error("archive drain: append failed",
 					"chat_id", t.ChatID, "turn_index", t.TurnIndex, "role", t.Role, "error", err)
+			}
+		} else if a.freshnessStore != nil {
+			if bErr := a.freshnessStore.BumpPending(context.Background(), "compact_memory_archive", 1); bErr != nil {
+				a.logger.Warn("archive drain: freshness bump failed", "error", bErr)
 			}
 		}
 	}

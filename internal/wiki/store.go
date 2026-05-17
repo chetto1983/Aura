@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/reindex"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -31,6 +32,7 @@ type Store struct {
 	gitCommitFunc func(ctx context.Context, filename, action string) error
 
 	reindexSubmitter reindex.Submitter // optional; set via SetReindexSubmitter (Phase 2 INDEX-01)
+	freshnessStore   *freshness.Store  // optional; set via SetFreshnessStore
 
 	// graphIndex is the in-memory adjacency layer over the wiki graph
 	// (Wave 2 — GRAPH-02). Populated from disk at NewStore boot time
