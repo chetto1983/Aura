@@ -185,6 +185,31 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// Send the initial placeholder so the user knows the message was received.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
+	// Native "typing…" indicator. Telegram client expires sendChatAction
+	// after ~5s, so we refresh every 4s for the full duration of the turn.
+	// Goroutine stops when EventFinal fires OR the run context is cancelled
+	// (budget exceeded, hard timeout, etc.). The 15-min backstop is a
+	// defensive ceiling — typing should never outlive a turn by that much.
+	typingCtx, cancelTyping := context.WithCancel(ctx)
+	go func() {
+		defer cancelTyping()
+		_ = c.Notify(tele.Typing) // fire once immediately
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		backstop := time.NewTimer(15 * time.Minute)
+		defer backstop.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-backstop.C:
+				return
+			case <-ticker.C:
+				_ = c.Notify(tele.Typing)
+			}
+		}
+	}()
+
 	// statusPane renders in-flight tool calls into the same placeholder
 	// during the tool-loop phase. Once Outbound starts streaming content
 	// it calls pane.EnterContentMode() and the pane stops issuing its own
@@ -342,8 +367,10 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				currentStats = baseStats.From(event.Stats)
 				b.StoreOrchestrationSnapshot(userID, currentStats)
 			case agent.EventFinal:
-				// Stop the status pane before we touch the placeholder
-				// so it doesn't race the final edit/delete below.
+				// Stop the native typing indicator and the status pane
+				// before we touch the placeholder so neither races the
+				// final edit/delete below.
+				cancelTyping()
 				pane.Finalize()
 
 				finalStats := baseStats.From(event.Stats)
