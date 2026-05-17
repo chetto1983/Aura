@@ -99,6 +99,7 @@ func New(deps Deps) (*Bot, error) {
 		Allowlist:  b.isAllowlisted,
 		Logger:     logger,
 		AfterOCR:   deps.Ingest.AfterOCR,
+		Parent:     deps.ParentCtx,
 	})
 
 	b.registerHandlers()

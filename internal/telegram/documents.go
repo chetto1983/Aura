@@ -46,6 +46,11 @@ type docHandlerConfig struct {
 	AfterOCR   AfterOCRHook
 	Allowlist  func(userID string) bool
 	Logger     *slog.Logger
+	// Parent is the optional parent context. When non-nil the docHandler's
+	// internal context derives from it so shutdown of the parent (e.g. App
+	// bgCtx) automatically cancels in-flight OCR workers. Nil falls back to
+	// context.Background() — Stop() still works either way.
+	Parent context.Context
 }
 
 type docHandler struct {
@@ -69,7 +74,11 @@ func newDocHandler(cfg docHandlerConfig) *docHandler {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	parent := cfg.Parent
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	return &docHandler{
 		bot:        cfg.Bot,
 		sources:    cfg.Sources,

@@ -529,6 +529,10 @@ func newApp(
 
 	// ---- Background context: owned by App (US-A13c) -------------------------
 	bgCtx, bgCancel := context.WithCancel(context.Background())
+	// telegram.New() and its per-Bot workers (docHandler OCR pipeline, future
+	// long-lived consumers) derive their internal context from bgCtx so App
+	// shutdown propagates without needing a separate Stop() round-trip.
+	deps.ParentCtx = bgCtx
 
 	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel, freshnessStore: freshnessStore}, nil
 }

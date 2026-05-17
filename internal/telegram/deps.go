@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"time"
@@ -141,6 +142,14 @@ type Deps struct {
 
 	// ---- Tool experience loop ----------------------------------------------
 	AttemptsRepo attempts.Repo
+
+	// ---- Lifecycle ----------------------------------------------------------
+	// ParentCtx is the App's background context. Long-lived per-Bot workers
+	// (e.g. docHandler OCR pipeline) derive their internal context from it so
+	// App shutdown propagates without a separate Stop() round-trip. Nil falls
+	// back to context.Background() and the worker's own Stop() is the only
+	// cancel path.
+	ParentCtx context.Context
 }
 
 // NewBot creates a Bot from the given Deps. All non-Telegram operational deps

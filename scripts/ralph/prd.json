@@ -36,7 +36,7 @@
         "Single atomic commit prefix: fix(telegram): propagate handler context into docHandler (US-CL08)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Low-risk fix. If the caller doesn't have a Go context yet (telebot quirk), it's acceptable to use context.Background at the BUS boundary and add a TODO; the goal is to give docHandler the ability to be cancelled when the chat run is cancelled."
     },
     {
