@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -26,7 +25,6 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
 	secretspkg "github.com/aura/aura/internal/secrets"
@@ -971,181 +969,5 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	return nil
 }
 
-// ---- import-cycle adapters --------------------------------------------------
-
-// swarmRunnerAdapter bridges agent.RunTask to swarm.AgentRunner.
-type swarmRunnerAdapter struct {
-	getDeps func() agent.RunTaskDeps
-}
-
-func (a *swarmRunnerAdapter) Run(ctx context.Context, task agent.Task) (agent.Result, error) {
-	deps := a.getDeps()
-	deps.RunID = identity.RunIDFromContext(ctx)
-	return agent.RunTask(ctx, deps, task)
-}
-
-// newSwarmDepsGetter returns a lazy RunTaskDeps builder for swarmRunnerAdapter.
-// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
-// live-tune of MaxIterations/Timeout propagates to the next RunTask without
-// mutating shared state.
-func newSwarmDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
-	return func() agent.RunTaskDeps {
-		timeoutSec := cfg.AuraBotTimeoutSec
-		if timeoutSec <= 0 {
-			timeoutSec = config.DefaultAuraBotTimeoutSec
-		}
-		maxIterations := cfg.AuraBotMaxIterations
-		if maxIterations <= 0 {
-			maxIterations = 100
-		}
-		return agent.RunTaskDeps{
-			LLM:             deps.LLM,
-			Tools:           deps.Tools,
-			Model:           cfg.LLMModel,
-			ReasoningEffort: cfg.ReasoningEffort,
-			PhantomGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: deps.Tools.Names,
-			},
-			Logger:        deps.Logger,
-			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
-			MaxIterations: maxIterations,
-			Timeout:       time.Duration(timeoutSec) * time.Second,
-			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
-		}
-	}
-}
-
-// agentJobRunnerAdapter bridges agent.RunTask to cron.JobRunner.
-type agentJobRunnerAdapter struct {
-	getDeps func() agent.RunTaskDeps
-}
-
-func (a *agentJobRunnerAdapter) RunJob(ctx context.Context, req cron.JobRequest) (cron.JobResult, error) {
-	if a.getDeps == nil {
-		return cron.JobResult{}, fmt.Errorf("agent runner unavailable")
-	}
-	deps := a.getDeps()
-	deps.RunID = req.RunID
-	if deps.RunID == "" {
-		deps.RunID = identity.RunIDFromContext(ctx)
-	}
-	result, err := agent.RunTask(ctx, deps, agent.Task{
-		SystemPrompt:  req.SystemPrompt,
-		Prompt:        req.Prompt,
-		ToolAllowlist: req.ToolAllowlist,
-		UserID:        req.UserID,
-		Temperature:   req.Temperature,
-	})
-	if err != nil {
-		return cron.JobResult{}, err
-	}
-	return cron.JobResult{
-		Content:          result.Content,
-		LLMCalls:         result.LLMCalls,
-		ToolCalls:        result.ToolCalls,
-		TokensPrompt:     result.Tokens.PromptTokens,
-		TokensCompletion: result.Tokens.CompletionTokens,
-		TokensTotal:      result.Tokens.TotalTokens,
-		Elapsed:          result.Elapsed,
-	}, nil
-}
-
-// newAgentJobDepsGetter returns a lazy RunTaskDeps builder for agentJobRunnerAdapter.
-// Returning nil when LLM is unconfigured disables scheduled agent job execution.
-// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
-// live-tune of MaxIterations/Timeout propagates to the next RunTask without
-// mutating shared state.
-func newAgentJobDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
-	if deps.LLM == nil {
-		return nil
-	}
-	return func() agent.RunTaskDeps {
-		timeoutSec := cfg.AuraBotTimeoutSec
-		if timeoutSec <= 0 {
-			timeoutSec = config.DefaultAuraBotTimeoutSec
-		}
-		maxIterations := cfg.AuraBotMaxIterations
-		if maxIterations <= 0 {
-			maxIterations = 100
-		}
-		return agent.RunTaskDeps{
-			LLM:             deps.LLM,
-			Tools:           deps.Tools,
-			Model:           cfg.LLMModel,
-			ReasoningEffort: cfg.ReasoningEffort,
-			PhantomGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: deps.Tools.Names,
-			},
-			Logger:        deps.Logger,
-			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
-			MaxIterations: maxIterations,
-			Timeout:       time.Duration(timeoutSec) * time.Second,
-			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
-		}
-	}
-}
-
-// newWebChatDepsGetter returns a lazy RunTaskDeps builder for the Hub-backed web chat service.
-// Returning nil when LLM is unconfigured disables the /api/chat endpoint.
-// The closure reads cfg.AuraBot* fields fresh on every call so dashboard
-// live-tune of MaxIterations/Timeout propagates to the next RunTask without
-// mutating shared state.
-func newWebChatDepsGetter(cfg *config.Config, deps *telegram.Deps) func() agent.RunTaskDeps {
-	if deps.LLM == nil {
-		return nil
-	}
-	return func() agent.RunTaskDeps {
-		timeoutSec := cfg.AuraBotTimeoutSec
-		if timeoutSec <= 0 {
-			timeoutSec = config.DefaultAuraBotTimeoutSec
-		}
-		maxIterations := cfg.AuraBotMaxIterations
-		if maxIterations <= 0 {
-			maxIterations = 100
-		}
-		return agent.RunTaskDeps{
-			LLM:             deps.LLM,
-			Tools:           deps.Tools,
-			Model:           cfg.LLMModel,
-			ReasoningEffort: cfg.ReasoningEffort,
-			PhantomGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: deps.Tools.Names,
-			},
-			Logger:        deps.Logger,
-			AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
-			MaxIterations: maxIterations,
-			Timeout:       time.Duration(timeoutSec) * time.Second,
-			ToolTimeout:   time.Duration(timeoutSec) * time.Second,
-		}
-	}
-}
-
-// scheduledTaskRunnerAdapter bridges cron.Handler.RunNow to tools.ScheduledTaskRunner.
-type scheduledTaskRunnerAdapter struct {
-	h *cron.Handler
-}
-
-func (a *scheduledTaskRunnerAdapter) RunTaskNow(ctx context.Context, name string) (tools.RunTaskNowResult, error) {
-	res, err := a.h.RunNow(ctx, name)
-	if err != nil {
-		return tools.RunTaskNowResult{}, err
-	}
-	return tools.RunTaskNowResult{
-		OK:               res.OK,
-		Name:             res.Name,
-		Kind:             res.Kind,
-		Status:           res.Status,
-		Summary:          res.Summary,
-		LastError:        res.LastError,
-		LLMCalls:         res.LLMCalls,
-		ToolCalls:        res.ToolCalls,
-		TokensPrompt:     res.TokensPrompt,
-		TokensCompletion: res.TokensCompletion,
-		TokensTotal:      res.TokensTotal,
-		ElapsedMS:        res.ElapsedMS,
-		Notified:         res.Notified,
-		Skipped:          res.Skipped,
-		WakeSignature:    res.WakeSignature,
-		ToolAllowlist:    res.ToolAllowlist,
-	}, nil
-}
+// import-cycle adapters live in cmd/aura/adapters.go to keep this file focused
+// on App lifecycle + wiring. Add new bridges there.
