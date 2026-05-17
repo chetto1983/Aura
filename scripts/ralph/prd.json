@@ -105,7 +105,7 @@
         "Single atomic commit prefix: docs(memory-vs-storage): clarify the two-layer model (US-Z06 / Phase 9)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Be concrete: every internal/ subdir gets a label. Avoid hand-wavy 'it depends' classifications — if it stores something durable, it's storage."
     },
     {
