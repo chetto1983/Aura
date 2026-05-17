@@ -445,6 +445,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
 		// US-T04: authz decisions observability.
 		AuthzDecisions: api.NewSQLiteAuthzReader(a.deps.Pool),
+		// US-T05: tool attempt observability.
+		ToolAttemptsStats: api.NewSQLiteToolAttemptsReader(a.deps.Pool),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile

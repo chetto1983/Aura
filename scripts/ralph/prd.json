@@ -94,7 +94,7 @@
         "Single atomic commit prefix: feat(api,web): surface tool_attempts in dashboard (US-T05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Mirrors US-T04 structurally — pattern is the same handler-then-tab. The retry-budget data lives in internal/learning if there's already an exported aggregator; if not, query attempts directly with GROUP BY tool_name + class."
     },
     {

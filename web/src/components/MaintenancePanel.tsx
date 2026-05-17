@@ -7,7 +7,7 @@ import { ErrorCard } from '@/components/common/ErrorCard';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
-import type { WikiIssue, AuthzResponse } from '@/types/api';
+import type { WikiIssue, AuthzResponse, ToolAttemptsResponse, ToolOutcomeCounts } from '@/types/api';
 
 const SEVERITY_ORDER = ['high', 'medium', 'low'] as const;
 
@@ -28,7 +28,7 @@ type StatusFilter = 'open' | 'resolved' | 'all';
 
 export function MaintenancePanel() {
   const { t } = useLocale();
-  const [activeTab, setActiveTab] = useState<'issues' | 'authz'>('issues');
+  const [activeTab, setActiveTab] = useState<'issues' | 'authz' | 'tool-attempts'>('issues');
 
   return (
     <div className="p-6 space-y-4">
@@ -37,16 +37,20 @@ export function MaintenancePanel() {
         <p className="text-xs text-muted-foreground mt-0.5">{t('maintenance.subtitle')}</p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'issues' | 'authz')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'issues' | 'authz' | 'tool-attempts')}>
         <TabsList>
           <TabsTrigger value="issues">Issues</TabsTrigger>
           <TabsTrigger value="authz">Authz</TabsTrigger>
+          <TabsTrigger value="tool-attempts">Tool Attempts</TabsTrigger>
         </TabsList>
         <TabsContent value="issues">
           <IssuesTab t={t} />
         </TabsContent>
         <TabsContent value="authz">
           <AuthzTab />
+        </TabsContent>
+        <TabsContent value="tool-attempts">
+          <ToolAttemptsTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -220,6 +224,133 @@ function AuthzTab() {
             ))}
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+// --- Tool Attempts tab ---
+
+const OUTCOME_COLORS: Record<keyof ToolOutcomeCounts, string> = {
+  ok: 'bg-emerald-500',
+  recoverable: 'bg-amber-400',
+  blocked: 'bg-orange-500',
+  fatal: 'bg-rose-500',
+  cancelled: 'bg-slate-400',
+};
+
+function OutcomeBar({ counts }: { counts: ToolOutcomeCounts }) {
+  const total = counts.ok + counts.recoverable + counts.blocked + counts.fatal + counts.cancelled;
+  if (total === 0) return <div className="h-2 rounded-full bg-muted" />;
+  const pct = (n: number) => `${((n / total) * 100).toFixed(0)}%`;
+  return (
+    <div className="flex h-2 rounded-full overflow-hidden gap-px">
+      {counts.ok > 0 && <div className={`${OUTCOME_COLORS.ok}`} style={{ width: pct(counts.ok) }} title={`ok: ${counts.ok}`} />}
+      {counts.recoverable > 0 && <div className={`${OUTCOME_COLORS.recoverable}`} style={{ width: pct(counts.recoverable) }} title={`recoverable: ${counts.recoverable}`} />}
+      {counts.blocked > 0 && <div className={`${OUTCOME_COLORS.blocked}`} style={{ width: pct(counts.blocked) }} title={`blocked: ${counts.blocked}`} />}
+      {counts.fatal > 0 && <div className={`${OUTCOME_COLORS.fatal}`} style={{ width: pct(counts.fatal) }} title={`fatal: ${counts.fatal}`} />}
+      {counts.cancelled > 0 && <div className={`${OUTCOME_COLORS.cancelled}`} style={{ width: pct(counts.cancelled) }} title={`cancelled: ${counts.cancelled}`} />}
+    </div>
+  );
+}
+
+type SortKey = 'tool_name' | 'attempts_today' | 'percent';
+
+function ToolAttemptsTab() {
+  const { data, error, loading, refetch } = useApi<ToolAttemptsResponse>(() => api.maintenanceToolAttempts());
+  const [sortKey, setSortKey] = useState<SortKey>('attempts_today');
+  const [sortAsc, setSortAsc] = useState(false);
+
+  if (loading && !data) return <PanelSkeleton />;
+  if (error && !data) return <ErrorCard error={error} title="Tool Attempts error" onRetry={refetch} />;
+
+  const stats = data ?? { per_tool: {}, retry_budget_consumption: [] };
+
+  const perToolRows = Object.entries(stats.per_tool).map(([name, counts]) => ({ name, counts }));
+  const sorted = [...stats.retry_budget_consumption].sort((a, b) => {
+    const mult = sortAsc ? 1 : -1;
+    if (sortKey === 'tool_name') return mult * a.tool_name.localeCompare(b.tool_name);
+    if (sortKey === 'attempts_today') return mult * (a.attempts_today - b.attempts_today);
+    return mult * (a.percent - b.percent);
+  });
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortAsc((v) => !v);
+    else { setSortKey(key); setSortAsc(false); }
+  };
+
+  const sortIcon = (key: SortKey) => sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : '';
+
+  return (
+    <div className="mt-4 space-y-6">
+      {/* Section 1: Per-tool outcome breakdown */}
+      <section className="rounded-xl border bg-card p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          Per-Tool Outcome Breakdown (24h)
+        </h2>
+        {perToolRows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No tool attempts in the last 24 hours.</p>
+        ) : (
+          <div className="space-y-3">
+            {perToolRows.map(({ name, counts }) => {
+              const total = counts.ok + counts.recoverable + counts.blocked + counts.fatal + counts.cancelled;
+              return (
+                <div key={name} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs">{name}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {counts.ok}ok / {counts.recoverable}rec / {counts.blocked}blk / {counts.fatal}fatal — {total} total
+                    </span>
+                  </div>
+                  <OutcomeBar counts={counts} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Section 2: Retry budget consumption (sortable) */}
+      <section className="rounded-xl border bg-card p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          Retry Budget Consumption (24h)
+        </h2>
+        {sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No attempts recorded.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground border-b">
+                <th className="pb-2 font-medium cursor-pointer select-none" onClick={() => toggleSort('tool_name')}>Tool{sortIcon('tool_name')}</th>
+                <th className="pb-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort('attempts_today')}>Attempts{sortIcon('attempts_today')}</th>
+                <th className="pb-2 font-medium text-right">Budget</th>
+                <th className="pb-2 font-medium text-right cursor-pointer select-none" onClick={() => toggleSort('percent')}>%{sortIcon('percent')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row) => (
+                <tr key={row.tool_name} className="border-b last:border-0">
+                  <td className="py-2 font-mono text-xs">{row.tool_name}</td>
+                  <td className="py-2 text-right tabular-nums">{row.attempts_today}</td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">{row.budget}</td>
+                  <td className={`py-2 text-right tabular-nums font-semibold ${row.percent >= 80 ? 'text-rose-500' : row.percent >= 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                    {row.percent.toFixed(1)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Legend */}
+      <section className="rounded-xl border bg-card p-4 flex flex-wrap gap-3">
+        {(Object.entries(OUTCOME_COLORS) as [keyof ToolOutcomeCounts, string][]).map(([key, cls]) => (
+          <span key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`inline-block w-3 h-3 rounded-sm ${cls}`} />
+            {key}
+          </span>
+        ))}
       </section>
     </div>
   );

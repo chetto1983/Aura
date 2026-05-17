@@ -480,6 +480,29 @@ type RecentDenial struct {
 	CreatedAt  string `json:"created_at"`
 }
 
+// ToolAttemptsResponse is the body of GET /maintenance/tool-attempts.
+type ToolAttemptsResponse struct {
+	PerTool                map[string]ToolOutcomeCounts `json:"per_tool"`
+	RetryBudgetConsumption []ToolBudgetRow              `json:"retry_budget_consumption"`
+}
+
+// ToolOutcomeCounts holds the 5-bucket outcome split for one tool over 24h.
+type ToolOutcomeCounts struct {
+	OK          int `json:"ok"`
+	Recoverable int `json:"recoverable"`
+	Blocked     int `json:"blocked"`
+	Fatal       int `json:"fatal"`
+	Cancelled   int `json:"cancelled"`
+}
+
+// ToolBudgetRow is one tool's daily attempt budget summary.
+type ToolBudgetRow struct {
+	ToolName      string  `json:"tool_name"`
+	AttemptsToday int     `json:"attempts_today"`
+	Budget        int     `json:"budget"`
+	Percent       float64 `json:"percent"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`

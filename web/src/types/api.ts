@@ -392,6 +392,28 @@ export interface WikiIssue {
   resolved_at?: string;
 }
 
+// Tool attempts observability (US-T05).
+
+export interface ToolOutcomeCounts {
+  ok: number;
+  recoverable: number;
+  blocked: number;
+  fatal: number;
+  cancelled: number;
+}
+
+export interface ToolBudgetRow {
+  tool_name: string;
+  attempts_today: number;
+  budget: number;
+  percent: number;
+}
+
+export interface ToolAttemptsResponse {
+  per_tool: Record<string, ToolOutcomeCounts>;
+  retry_budget_consumption: ToolBudgetRow[];
+}
+
 // Authz decisions observability (US-T04).
 
 export interface CapabilityCount {

@@ -193,6 +193,10 @@ type Deps struct {
 	// nil the endpoint returns zero-value stats instead of 503.
 	AuthzDecisions AuthzDecisionsReader
 
+	// ToolAttemptsStats backs GET /maintenance/tool-attempts (US-T05). Optional — when
+	// nil the endpoint returns zero-value stats instead of 503.
+	ToolAttemptsStats ToolAttemptsReader
+
 	// OperationalMemory backs WriteApprovedLesson for operational_memory
 	// proposals (Phase-N / US-N03). Optional — when nil, approval still
 	// flips the status but skips the compact_memory_documents write.
@@ -328,6 +332,9 @@ func NewRouter(deps Deps) http.Handler {
 
 	// US-T04: authz decisions observability.
 	mux.HandleFunc("GET /maintenance/authz", handleMaintenanceAuthz(deps))
+
+	// US-T05: tool attempt observability.
+	mux.HandleFunc("GET /maintenance/tool-attempts", handleMaintenanceToolAttempts(deps))
 
 	// Slice 14d: runtime settings page.
 	mux.HandleFunc("GET /settings", handleSettingsList(deps))

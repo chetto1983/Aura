@@ -36,6 +36,7 @@ import type {
   SummaryBatchResponse,
   WikiIssue,
   AuthzResponse,
+  ToolAttemptsResponse,
   SettingItem,
   SettingsUpdateResponse,
   RestartResponse,
@@ -332,6 +333,8 @@ export const api = {
     post<WikiIssue>(`/maintenance/issues/${id}/resolve`),
   maintenanceAuthz: () =>
     get<AuthzResponse>('/maintenance/authz'),
+  maintenanceToolAttempts: () =>
+    get<ToolAttemptsResponse>('/maintenance/tool-attempts'),
 
   // ---- conversation cleanup (slice 14) ----
   conversationStats: () =>
