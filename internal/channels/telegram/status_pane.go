@@ -85,6 +85,14 @@ type statusPane struct {
 	// write to the placeholder. Nil = no-op (slice 1 default for tests
 	// that exercise state only).
 	editFn func(text string, ents tele.Entities) error
+
+	// cotProvider lets Outbound inject a thunk returning the current
+	// reasoning buffer. The pane reads it each flush and renders
+	// "🧠 _reasoning_" above the status block so a reasoning LLM's
+	// pre-tool thought is visible to the user (previously this was
+	// Outbound's job, but Outbound's first reasoning flush used to
+	// fire EnterContentMode prematurely — see the fix doc).
+	cotProvider func() string
 }
 
 func newStatusPane(now func() time.Time, editFn func(string, tele.Entities) error) *statusPane {
@@ -99,10 +107,17 @@ func newStatusPane(now func() time.Time, editFn func(string, tele.Entities) erro
 }
 
 // OnToolStart records a tool dispatch and triggers a throttled flush.
+//
+// State must accumulate even after contentMode flips so footer counts stay
+// accurate — the contentMode early-return USED to live here too, but that
+// caused silent data loss when reasoning fired EnterContentMode before the
+// first OnToolStart. Edit suppression lives in flushLocked instead, which
+// is the right place because it's the side effect (writing to Telegram)
+// that needs gating, not the state machine.
 func (p *statusPane) OnToolStart(callID, name string, argKeys []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.finalized || p.contentMode {
+	if p.finalized {
 		return
 	}
 	p.activeRound = append(p.activeRound, toolEntry{
@@ -213,6 +228,28 @@ func (p *statusPane) MarkEdited() {
 	p.lastEdit = p.now()
 }
 
+// SetCoTProvider lets Outbound inject a thunk that returns the current
+// reasoning buffer. The pane calls it under its own mutex each flush, so
+// the provider must be safe to read concurrently with Outbound's writes
+// to the underlying buffer — Outbound satisfies this via an atomic.Value
+// snapshot. Pass nil at turn end to sever the pointer.
+func (p *statusPane) SetCoTProvider(provider func() string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cotProvider = provider
+}
+
+// Refresh re-composes and edits the placeholder if the body has changed.
+// Called by Outbound whenever it updates external state (e.g. reasoning
+// snapshot) that the pane reads but doesn't own. No-op in contentMode or
+// after Finalize. Throttle + identical-body guard apply as for any other
+// trigger.
+func (p *statusPane) Refresh() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.flushLocked()
+}
+
 // --- internal ---
 
 func (p *statusPane) roundComplete() bool {
@@ -275,41 +312,67 @@ func (p *statusPane) flushLocked() {
 	p.lastBody = text
 }
 
-// composeLocked builds the full body (header + blockquote with round
-// history + active per-call lines). Caller must hold p.mu.
+// composeLocked builds the full body: optional CoT prefix (italic) + status
+// header + blockquote with active per-call lines and round history. Caller
+// must hold p.mu.
 //
-// Layout (collapsed view shows only the line right after the header):
+// Three shapes depending on state:
 //
-//	🛠 Sto lavorando…
-//	▸ 3 strumenti in corso · web_search · search_memory · execute_shell
-//	🟡 web_search (args: query)
-//	🟡 search_memory (args: query, top_k)
-//	🟡 execute_shell (args: command)
+//   - CoT only, no tools yet: "🧠 reasoning" (italic span)
+//   - Tools only, no CoT:     "🛠 Sto lavorando…\n[blockquote …]"
+//   - Both:                   "🧠 reasoning\n\n🛠 Sto lavorando…\n[blockquote …]"
+//
+// Returns empty when nothing to render.
 func (p *statusPane) composeLocked() (string, tele.Entities) {
-	if len(p.activeRound) == 0 && len(p.roundHistory) == 0 {
+	cot := ""
+	if p.cotProvider != nil {
+		cot = strings.TrimSpace(p.cotProvider())
+	}
+	hasTools := len(p.activeRound) > 0 || len(p.roundHistory) > 0
+	if cot == "" && !hasTools {
 		return "", nil
 	}
+
 	var sb strings.Builder
+	var ents tele.Entities
+
+	// CoT italic prefix: "🧠 " (literal) + italic-span(cot)
+	if cot != "" {
+		sb.WriteString("🧠 ")
+		italicStart := tgmd.UTF16Len(sb.String())
+		sb.WriteString(cot)
+		italicEnd := tgmd.UTF16Len(sb.String())
+		ents = append(ents, tele.MessageEntity{
+			Type:   tele.EntityItalic,
+			Offset: italicStart,
+			Length: italicEnd - italicStart,
+		})
+	}
+
+	if !hasTools {
+		return sb.String(), ents
+	}
+
+	if cot != "" {
+		sb.WriteString("\n\n")
+	}
 	sb.WriteString(statusHeader)
 	sb.WriteString("\n")
 
 	bqStart := tgmd.UTF16Len(sb.String())
 
-	// Line 1 inside blockquote = collapsed summary (the one Telegram shows
-	// when the blockquote is collapsed).
+	// Line 1 inside blockquote = collapsed summary (Telegram shows this
+	// alone when the user hasn't expanded the blockquote).
 	sb.WriteString(statusCollapseArrow)
 	sb.WriteString(" ")
 	sb.WriteString(p.summaryLineLocked())
 	sb.WriteString("\n")
 
-	// Active per-call lines.
 	for _, e := range p.activeRound {
 		sb.WriteString(renderActiveLine(e))
 		sb.WriteString("\n")
 	}
 
-	// History footer lines (most recent first inside the blockquote,
-	// oldest collapsed into "… N round precedenti" when over cap).
 	hist := p.roundHistory
 	skipped := 0
 	if len(hist) > statusMaxHistory {
@@ -319,9 +382,7 @@ func (p *statusPane) composeLocked() (string, tele.Entities) {
 	if skipped > 0 {
 		fmt.Fprintf(&sb, "… %d round precedenti\n", skipped)
 	}
-	// Render newest-first so the user sees the latest round at the top
-	// of the history block.
-	base := len(p.roundHistory) - len(hist) + 1 // round number of hist[0]
+	base := len(p.roundHistory) - len(hist) + 1
 	for i := len(hist) - 1; i >= 0; i-- {
 		sb.WriteString(renderHistoryLine(base+i, hist[i]))
 		sb.WriteString("\n")
@@ -329,14 +390,11 @@ func (p *statusPane) composeLocked() (string, tele.Entities) {
 
 	body := strings.TrimRight(sb.String(), "\n")
 	bqEnd := tgmd.UTF16Len(body)
-
-	ents := tele.Entities{
-		{
-			Type:   tele.EntityEBlockquote,
-			Offset: bqStart,
-			Length: bqEnd - bqStart,
-		},
-	}
+	ents = append(ents, tele.MessageEntity{
+		Type:   tele.EntityEBlockquote,
+		Offset: bqStart,
+		Length: bqEnd - bqStart,
+	})
 	return body, ents
 }
 

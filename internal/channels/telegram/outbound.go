@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aura/aura/internal/chat"
@@ -25,6 +26,13 @@ type streamStatus interface {
 	EnterContentMode()
 	FooterMarkdown() string
 	MarkEdited()
+	// SetCoTProvider lets Outbound publish a snapshot of the current
+	// reasoning buffer so the pane can render "🧠 _cot_" above the status
+	// block. Called once at ConsumeStream entry and cleared on exit.
+	SetCoTProvider(func() string)
+	// Refresh redraws the pane after Outbound mutated external state
+	// (cotSnapshot). Pane handles throttle and identical-body guarding.
+	Refresh()
 }
 
 // streaming constants – mirror the values in internal/telegram/streaming.go
@@ -110,9 +118,32 @@ func (o *Outbound) ConsumeStream(
 	var lastEdit time.Time
 	var resp llm.Response
 
+	// cotSnapshot publishes the latest reasoning text to the pane without
+	// sharing cotBuf (which is single-goroutine but not safe to read from
+	// the pane's mutex-protected flushLocked). Initialised to "" so the
+	// pane's Load() never panics on the first call.
+	var cotSnapshot atomic.Value
+	cotSnapshot.Store("")
+	if pane != nil {
+		pane.SetCoTProvider(func() string {
+			s, _ := cotSnapshot.Load().(string)
+			return s
+		})
+		defer pane.SetCoTProvider(nil)
+	}
+
+	// readyToFlush gates Outbound's edits. With a pane attached, reasoning
+	// flows through the pane (it reads cotSnapshot), so Outbound only acts
+	// on actual narrative content — preventing the reasoning-hijacks-pane
+	// race documented in docs/telegram-tool-ui-fix-2026-05-17.md. With no
+	// pane (fixture / future channels) the legacy "reasoning OR content"
+	// trigger stays to preserve byte-parity snapshots.
 	readyToFlush := func() bool {
 		if sb.Len() >= streamingMinThreshold {
 			return true
+		}
+		if pane != nil {
+			return false
 		}
 		if sb.Len() == 0 && cotBuf.Len() >= streamingReasoningMinThreshold {
 			return true
@@ -194,7 +225,14 @@ func (o *Outbound) ConsumeStream(
 		}
 		if tok.Reasoning != "" {
 			cotBuf.WriteString(tok.Reasoning)
-			flush()
+			cotSnapshot.Store(cotBuf.String())
+			if pane != nil {
+				// Pane mode: nudge the pane so reasoning shows in the
+				// placeholder even before the first tool dispatches.
+				// Pane's own throttle handles coalescing.
+				pane.Refresh()
+			}
+			flush() // no-pane path still flushes here (byte-parity)
 		}
 		if tok.Content != "" {
 			sb.WriteString(tok.Content)
