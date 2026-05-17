@@ -64,32 +64,42 @@ func main() {
 	rootCtx, cancel := context.WithTimeout(context.Background(), f.timeout)
 	defer cancel()
 
-	// 1) Discover the existing Chrome via CDP.
+	// 1) Discover the existing Chrome via CDP. chromedp.NewRemoteAllocator
+	// rewrites http://host:port into the ws:// scheme via the /json/version
+	// endpoint — keep the rewrite ON (omit NoModifyURL).
 	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(rootCtx, f.cdpURL)
 	defer cancelAlloc()
 
-	// 2) Open a CDP context that will pick a target inside that browser.
-	ctx, cancelCtx := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
-	defer cancelCtx()
+	// 2) Open a browser context. NoFirstRun avoids opening an extra tab.
+	ctx, _ := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	// IMPORTANT: do not defer cancelCtx — cancel would close the active tab
+	// we attach to, leaving Chrome with zero tabs and shutting the browser
+	// down. The OS reclaims everything on process exit anyway.
+	if err := chromedp.Run(ctx); err != nil {
+		exit("init cdp context: %v", err)
+	}
 
-	// Find the Telegram tab and attach to it.
+	// Find the Telegram tab.
 	tabID, tabURL, err := findTelegramTab(ctx, f.tabURLLike)
 	if err != nil {
 		exit("find telegram tab: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "attaching to telegram tab: id=%s url=%s\n", tabID, tabURL)
 
-	// Create a new context targeting the discovered tab.
-	tabCtx, cancelTab := chromedp.NewContext(ctx, chromedp.WithTargetID(target.ID(tabID)))
-	defer cancelTab()
+	// Attach to the existing tab. Again — no defer cancel; closing the
+	// child context closes the tab.
+	tabCtx, _ := chromedp.NewContext(ctx, chromedp.WithTargetID(target.ID(tabID)))
 
-	// 3) Sanity-check the page is web.telegram.org.
+	// 3) Sanity-check by waiting for the composer specifically (it's the
+	// thing we actually need). #main-content doesn't exist in the "A"
+	// client; .messages-container exists even on the chat-list view, so
+	// neither is a reliable readiness signal. The composer is.
 	if err := chromedp.Run(tabCtx,
-		chromedp.WaitVisible(`#main-content, .messages-container`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#editable-message-text`, chromedp.ByQuery),
 	); err != nil {
-		exit("wait for telegram chat UI: %v", err)
+		exit("wait for composer (open a chat with the bot first): %v", err)
 	}
-	fmt.Fprintf(os.Stderr, "telegram chat UI ready\n")
+	fmt.Fprintf(os.Stderr, "telegram chat UI ready (composer visible)\n")
 
 	// 4) Send the prompt.
 	if err := sendPrompt(tabCtx, f.prompt); err != nil {
@@ -109,9 +119,14 @@ func main() {
 	}
 
 	// 6) Assertions.
+	//
+	// IMPORTANT: Telegram renders emojis as <img> elements, so .innerText
+	// strips them entirely (🛠 and 🧠 don't appear in the captured text).
+	// Assert on the Italian copy text instead, which is what the user
+	// actually reads.
 	pass := true
-	if !anyContains(bodies, "🛠 Sto lavorando") {
-		fmt.Fprintf(os.Stderr, "\nFAIL: status header '🛠 Sto lavorando…' never appeared\n")
+	if !anyContains(bodies, "Sto lavorando") {
+		fmt.Fprintf(os.Stderr, "\nFAIL: status header 'Sto lavorando…' never appeared (pane never rendered)\n")
 		pass = false
 	}
 	if f.expectTool != "" && !anyContains(bodies, f.expectTool) {
@@ -120,9 +135,16 @@ func main() {
 	}
 	if len(bodies) > 0 {
 		last := bodies[len(bodies)-1]
-		if strings.Contains(last, "🛠") || strings.Contains(last, "🧠") {
-			fmt.Fprintf(os.Stderr, "\nFAIL: final body still carries chrome: %s\n", oneline(last, 200))
-			pass = false
+		// "chrome" = the pane/CoT text. Once Aura streams the final answer,
+		// none of these should remain.
+		chromeMarkers := []string{"Sto lavorando", "strumento usato", "strumenti usati", "round 1 (", "in corso"}
+		for _, m := range chromeMarkers {
+			if strings.Contains(last, m) {
+				fmt.Fprintf(os.Stderr, "\nFAIL: final body still carries chrome marker %q: %s\n",
+					m, oneline(last, 240))
+				pass = false
+				break
+			}
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "\nFAIL: no bodies captured — message never appeared?\n")
@@ -209,11 +231,19 @@ func sendPrompt(ctx context.Context, prompt string) error {
 // contain the status chrome anymore (= final answer landed), OR the global
 // timeout fires.
 func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose bool) ([]string, error) {
-	const bubbleSel = `.messages-container .Message:not(.own):last-of-type .text-content, ` +
-		`.bubbles .Message:not(.own):last-of-type .text-content, ` +
-		`.chat-content .message:not(.own):last-of-type .text-content, ` +
-		`.messages-container .message-list-item:not(.own):last-of-type, ` +
-		`.bubble:not(.own):last-of-type`
+	// web.telegram.org/a/ ("A" client) — verified 2026-05-17:
+	//   #MiddleColumn .MessageList .Message  (30 entries in the live chat)
+	//   .Message .text-content                (inner text container)
+	// We grab the LAST :not(.own) message in the list — Aura's reply lands
+	// there as a fresh node and is progressively edited in place. If the
+	// .own class name changes after a Telegram redesign, update here.
+	const bubbleScript = `(() => {
+		const msgs = document.querySelectorAll('#MiddleColumn .MessageList .Message:not(.own)');
+		if (msgs.length === 0) return '';
+		const last = msgs[msgs.length - 1];
+		const text = last.querySelector('.text-content');
+		return (text ? text.innerText : last.innerText) || '';
+	})()`
 
 	deadline := time.Now().Add(total)
 	ticker := time.NewTicker(every)
@@ -232,7 +262,7 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 		}
 
 		var body string
-		err := chromedp.Run(ctx, chromedp.Text(bubbleSel, &body, chromedp.ByQuery, chromedp.NodeVisible))
+		err := chromedp.Run(ctx, chromedp.Evaluate(bubbleScript, &body))
 		if err != nil {
 			// Bubble not present yet; keep waiting.
 			continue
@@ -255,8 +285,14 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 			stableSince = time.Now()
 		}
 		// Terminate early once we've seen a stable, chrome-free body.
+		// Same emoji-stripping concern as the assertion block — use text
+		// markers rather than the wrench/brain emojis.
 		if time.Since(stableSince) >= stableFor {
-			if !strings.Contains(body, "🛠") && !strings.Contains(body, "🧠") {
+			hasChrome := strings.Contains(body, "Sto lavorando") ||
+				strings.Contains(body, "in corso") ||
+				strings.Contains(body, "strumento usato") ||
+				strings.Contains(body, "strumenti usati")
+			if !hasChrome {
 				return bodies, nil
 			}
 		}
