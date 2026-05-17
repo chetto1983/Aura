@@ -40,7 +40,6 @@
     "react-i18next": "^17.0.6",
     "react-markdown": "8.0.7",
     "react-router-dom": "^7.0.0",
-    "react-select": "^5.10.2",
     "react-timezone-select": "^3.3.3",
     "remark-gfm": "3.0.1",
     "shadcn": "^4.4.0",
@@ -64,11 +63,9 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "postcss": "^8.5.10",
-    "rollup-plugin-visualizer": "5.12.0",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10",
-    "vite-plugin-svgr": "^5.2.0"
+    "vite": "^8.0.10"
   }
 }
