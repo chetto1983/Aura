@@ -33,6 +33,11 @@ type streamStatus interface {
 	// Refresh redraws the pane after Outbound mutated external state
 	// (cotSnapshot). Pane handles throttle and identical-body guarding.
 	Refresh()
+	// ResetForNewRound clears contentMode so the pane regains placeholder
+	// ownership for a fresh LLM round (multi-round tool loops set
+	// contentMode in round N; without reset, rounds N+1+ would have
+	// reasoning hidden from the user). Called at ConsumeStream entry.
+	ResetForNewRound()
 }
 
 // streaming constants – mirror the values in internal/telegram/streaming.go
@@ -125,6 +130,10 @@ func (o *Outbound) ConsumeStream(
 	var cotSnapshot atomic.Value
 	cotSnapshot.Store("")
 	if pane != nil {
+		// Clear contentMode from any prior round in this turn so reasoning
+		// emitted at the top of the new round actually reaches the user
+		// via the pane (would otherwise be locked out by sticky state).
+		pane.ResetForNewRound()
 		pane.SetCoTProvider(func() string {
 			s, _ := cotSnapshot.Load().(string)
 			return s

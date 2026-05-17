@@ -178,6 +178,28 @@ func (p *statusPane) EnterContentMode() {
 	}
 }
 
+// ResetForNewRound clears contentMode so the pane can render reasoning+tool
+// progress for a fresh LLM round. Called by Outbound at the top of each
+// ConsumeStream — a turn can span many rounds, and contentMode set during
+// round N would otherwise lock the pane out of rounds N+1, N+2, …, hiding
+// reasoning the user wants to see ("CoT a volte si perde sulle conversazioni
+// lunghe" — reported 2026-05-17).
+//
+// roundHistory and turnStartedAt are NOT reset — they're turn-scoped, not
+// round-scoped. Finalize remains the only sticky kill-switch.
+func (p *statusPane) ResetForNewRound() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.finalized {
+		return
+	}
+	p.contentMode = false
+	// Drop lastBody so the next compose definitely fires an edit (the
+	// pre-round placeholder may already match the new body's prefix by
+	// coincidence).
+	p.lastBody = ""
+}
+
 // Finalize is called from EventFinal. Any still-running entries get marked as
 // failed("(no end signal)") so footer counts are accurate.
 func (p *statusPane) Finalize() {

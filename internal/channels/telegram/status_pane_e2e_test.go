@@ -295,6 +295,163 @@ func TestStatusPane_E2E_ReasoningBeforeToolDoesNotHijackPlaceholder(t *testing.T
 	}
 }
 
+// REGRESSION ("CoT a volte si perde sulle conversazioni lunghe", reported 2026-05-17):
+// When round 1 emits content >= 30 chars + tool calls, Outbound calls
+// EnterContentMode and the pane sets contentMode=true. Before the
+// ResetForNewRound fix, that state persisted for the rest of the turn —
+// round 2's reasoning would call pane.Refresh() but flushLocked early-
+// returned on contentMode, so the user saw round-1 content frozen on
+// screen during round-2's reasoning streaming.
+//
+// After the fix: every ConsumeStream entry calls pane.ResetForNewRound(),
+// so round 2's reasoning IS visible to the user via the pane.
+func TestStatusPane_E2E_MultiRoundContentDoesNotHideLaterReasoning(t *testing.T) {
+	calls, srv := newFakeBotServer(t)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatalf("tele.NewBot: %v", err)
+	}
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123},
+		Chat:   &tele.Chat{ID: 123},
+		Text:   "test",
+	}})
+	placeholder := &tele.Message{ID: 1, Chat: &tele.Chat{ID: 123}}
+
+	clk := newFakeClock(time.Unix(1_700_000_000, 0))
+	pane := newStatusPane(clk.now, func(text string, ents tele.Entities) error {
+		_, e := tb.Edit(placeholder, text, ents)
+		return e
+	})
+	out := NewOutbound(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// --- Round 1: reasoning + content (>=30 chars) + tool calls.
+	// The content forces Outbound to call EnterContentMode, which BEFORE
+	// the fix would lock the pane out forever.
+	round1 := []llm.Token{
+		{Reasoning: "Cerco subito in memoria"},
+		{Content: "Sto cercando informazioni rilevanti nella memoria, attendi..."},
+		{Done: true, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "search_memory"}}},
+	}
+	ch1 := make(chan llm.Token, len(round1))
+	for _, t := range round1 {
+		ch1 <- t
+	}
+	close(ch1)
+	clk.advance(editThrottle)
+	resp1, _, err := out.ConsumeStream(ctx, ch1, "123", placeholder, pane)
+	if err != nil {
+		t.Fatalf("round 1: %v", err)
+	}
+	if !resp1.HasToolCalls {
+		t.Fatalf("round 1 should have tool calls")
+	}
+
+	// Agent loop forwards tool events.
+	clk.advance(editThrottle)
+	pane.OnToolStart("c1", "search_memory", []string{"query"})
+	clk.advance(editThrottle)
+	pane.OnToolEnd("c1", true, 500*time.Millisecond, "")
+
+	// --- Round 2: reasoning ONLY (long enough to matter to the user),
+	// followed by tool calls again. The user is supposed to see the new
+	// reasoning during this round.
+	round2 := []llm.Token{
+		{Reasoning: "Adesso analizzo i risultati della ricerca per capire cosa rispondere"},
+		{Reasoning: " — sembra ci sia una pagina rilevante, vediamo se serve fetcharla"},
+		{Done: true, ToolCalls: []llm.ToolCall{{ID: "c2", Name: "web_fetch"}}},
+	}
+	ch2 := make(chan llm.Token, len(round2))
+	for _, t := range round2 {
+		ch2 <- t
+	}
+	close(ch2)
+	clk.advance(editThrottle)
+	resp2, _, err := out.ConsumeStream(ctx, ch2, "123", placeholder, pane)
+	if err != nil {
+		t.Fatalf("round 2: %v", err)
+	}
+	if !resp2.HasToolCalls {
+		t.Fatalf("round 2 should have tool calls")
+	}
+	clk.advance(editThrottle)
+	pane.OnToolStart("c2", "web_fetch", []string{"url"})
+	clk.advance(editThrottle)
+	pane.OnToolEnd("c2", true, 800*time.Millisecond, "")
+
+	// --- Round 3: final clean answer.
+	round3 := []llm.Token{
+		{Content: "Risposta finale all'utente, il fetch ha rivelato che la pagina contiene la spiegazione richiesta."},
+		{Done: true},
+	}
+	ch3 := make(chan llm.Token, len(round3))
+	for _, t := range round3 {
+		ch3 <- t
+	}
+	close(ch3)
+	clk.advance(editThrottle)
+	_, _, err = out.ConsumeStream(ctx, ch3, "123", placeholder, pane)
+	if err != nil {
+		t.Fatalf("round 3: %v", err)
+	}
+
+	editCalls := filterCalls(calls.snapshot(), "editMessageText")
+	if len(editCalls) < 4 {
+		t.Fatalf("expected ≥4 edits across 3 rounds, got %d:\n%s",
+			len(editCalls), formatCalls(editCalls))
+	}
+
+	// THE KEY ASSERTION: round 2's reasoning must appear in at least one
+	// edit. Pre-fix, this was invisible because pane was locked into
+	// contentMode after round 1's content flush.
+	round2ReasoningSeen := false
+	for _, ed := range editCalls {
+		if strings.Contains(ed.text, "Adesso analizzo i risultati") {
+			round2ReasoningSeen = true
+			break
+		}
+	}
+	if !round2ReasoningSeen {
+		t.Fatalf("round 2 reasoning was lost (THE bug — contentMode sticky across rounds):\n%s",
+			formatCalls(editCalls))
+	}
+
+	// The tool name from round 2 should also surface.
+	round2ToolSeen := false
+	for _, ed := range editCalls {
+		if strings.Contains(ed.text, "web_fetch") {
+			round2ToolSeen = true
+			break
+		}
+	}
+	if !round2ToolSeen {
+		t.Fatalf("round 2 tool name 'web_fetch' never appeared:\n%s", formatCalls(editCalls))
+	}
+
+	// Footer should report BOTH rounds worth of tools in the final
+	// streaming edit.
+	footerSeen := false
+	for _, ed := range editCalls {
+		if strings.Contains(ed.text, "2 strumenti usati") && strings.Contains(ed.text, "2 round") {
+			footerSeen = true
+			break
+		}
+	}
+	if !footerSeen {
+		t.Fatalf("footer never reported 2 strumenti usati in 2 round:\n%s", formatCalls(editCalls))
+	}
+
+	// Final edit is clean.
+	last := editCalls[len(editCalls)-1].text
+	for _, chrome := range []string{"Sto lavorando", "strumento usato", "strumenti usati", "in corso"} {
+		if strings.Contains(last, chrome) {
+			t.Fatalf("final edit still carries %q:\n%s", chrome, last)
+		}
+	}
+}
+
 // E2E: a tool-only LLM turn (no content emitted) must NOT call EnterContentMode
 // — the pane retains ownership of the placeholder so the user sees the tool
 // status, not a silent ⏳.
