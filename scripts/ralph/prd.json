@@ -74,7 +74,7 @@
         "Single atomic commit prefix: refactor(identity): extract store_auth.go from store.go (US-CL04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-CL03. Auth-critical code; run identity tests including the Authorize+capability suite before commit."
     },
     {
