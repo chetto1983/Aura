@@ -36,7 +36,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -101,16 +100,32 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "telegram chat UI ready (composer visible)\n")
 
-	// 4) Send the prompt.
+	// 4) Snapshot current incoming message IDs so we can identify the NEW
+	// bubble Aura sends. Without this we'd race against the previous
+	// bot reply that's still on screen.
+	baselineIDs, err := snapshotIncomingIDs(tabCtx)
+	if err != nil {
+		exit("snapshot baseline message ids: %v", err)
+	}
+	fmt.Fprintf(os.Stderr, "baseline incoming messages: %d\n", len(baselineIDs))
+
+	// 5) Send the prompt.
 	if err := sendPrompt(tabCtx, f.prompt); err != nil {
 		exit("send prompt: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "prompt sent: %q\n", f.prompt)
 
-	// 5) Poll the latest incoming message bubble; record unique bodies.
-	bodies, err := pollIncomingBubble(tabCtx, f.pollEvery, f.timeout, f.verbose)
+	// 6) Wait until a NEW incoming message appears (Aura's reply bubble).
+	newMsgID, err := waitForNewIncomingMessage(tabCtx, baselineIDs, 30*time.Second)
 	if err != nil {
-		exit("poll incoming bubble: %v", err)
+		exit("wait for new incoming bubble: %v", err)
+	}
+	fmt.Fprintf(os.Stderr, "tracking new bubble: %s\n", newMsgID)
+
+	// 7) Poll THAT specific bubble (by ID) for progressive edits.
+	bodies, err := pollMessageByID(tabCtx, newMsgID, f.pollEvery, f.timeout, f.verbose)
+	if err != nil {
+		exit("poll new bubble: %v", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "\n=== captured %d unique bodies ===\n", len(bodies))
@@ -223,27 +238,95 @@ func sendPrompt(ctx context.Context, prompt string) error {
 	return nil
 }
 
-// pollIncomingBubble repeatedly reads the text content of the last incoming
-// message bubble in the chat. Returns the deduplicated sequence of bodies
-// observed (Aura's progressive edits show as DOM updates).
-//
-// Stops when EITHER the body is stable for ~3s AND its content doesn't
-// contain the status chrome anymore (= final answer landed), OR the global
-// timeout fires.
-func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose bool) ([]string, error) {
-	// web.telegram.org/a/ ("A" client) — verified 2026-05-17:
-	//   #MiddleColumn .MessageList .Message  (30 entries in the live chat)
-	//   .Message .text-content                (inner text container)
-	// We grab the LAST :not(.own) message in the list — Aura's reply lands
-	// there as a fresh node and is progressively edited in place. If the
-	// .own class name changes after a Telegram redesign, update here.
-	const bubbleScript = `(() => {
+// snapshotIncomingIDs returns the set of DOM IDs ("message-NNNN") of all
+// non-own messages currently visible. Used as a baseline to detect when
+// Aura's new reply bubble first appears.
+func snapshotIncomingIDs(ctx context.Context) (map[string]bool, error) {
+	const js = `(() => {
 		const msgs = document.querySelectorAll('#MiddleColumn .MessageList .Message:not(.own)');
-		if (msgs.length === 0) return '';
-		const last = msgs[msgs.length - 1];
-		const text = last.querySelector('.text-content');
-		return (text ? text.innerText : last.innerText) || '';
+		return Array.from(msgs).map(el => el.id || '').filter(s => s !== '');
 	})()`
+	var ids []string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &ids)); err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set, nil
+}
+
+// waitForNewIncomingMessage polls until an incoming message ID appears that
+// wasn't in `baseline`, returning that ID. The first such ID is Aura's
+// reply to the prompt we just sent.
+func waitForNewIncomingMessage(ctx context.Context, baseline map[string]bool, maxWait time.Duration) (string, error) {
+	deadline := time.Now().Add(maxWait)
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	lastCount := len(baseline)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-tick.C:
+		}
+		ids, err := snapshotIncomingIDs(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  [wait] snapshot err: %v\n", err)
+			continue
+		}
+		if len(ids) != lastCount {
+			fmt.Fprintf(os.Stderr, "  [wait] incoming count: %d → %d\n", lastCount, len(ids))
+			lastCount = len(ids)
+		}
+		// Find any NEW id; prefer the highest (numerically) since Telegram
+		// assigns monotonically increasing message IDs.
+		var newest string
+		var newestN int
+		for id := range ids {
+			if baseline[id] {
+				continue
+			}
+			n := messageNumeric(id)
+			if newest == "" || n > newestN {
+				newest = id
+				newestN = n
+			}
+		}
+		if newest != "" {
+			return newest, nil
+		}
+	}
+	return "", fmt.Errorf("no new incoming message after %v (baseline=%d, still=%d)",
+		maxWait, len(baseline), lastCount)
+}
+
+func messageNumeric(id string) int {
+	// "message-12345" → 12345; non-numeric tail returns 0.
+	if i := strings.LastIndex(id, "-"); i >= 0 {
+		n := 0
+		for _, r := range id[i+1:] {
+			if r < '0' || r > '9' {
+				return 0
+			}
+			n = n*10 + int(r-'0')
+		}
+		return n
+	}
+	return 0
+}
+
+// pollMessageByID watches one specific bubble (matched by DOM id) and
+// records its progressive text edits.
+func pollMessageByID(ctx context.Context, msgID string, every, total time.Duration, verbose bool) ([]string, error) {
+	jsTpl := `(() => {
+		const el = document.getElementById(%q);
+		if (!el) return '';
+		const text = el.querySelector('.text-content');
+		return (text ? text.innerText : el.innerText) || '';
+	})()`
+	js := fmt.Sprintf(jsTpl, msgID)
 
 	deadline := time.Now().Add(total)
 	ticker := time.NewTicker(every)
@@ -252,7 +335,7 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 	var bodies []string
 	var last string
 	var stableSince time.Time
-	const stableFor = 3 * time.Second
+	const stableFor = 4 * time.Second
 
 	for time.Now().Before(deadline) {
 		select {
@@ -260,11 +343,8 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 			return bodies, ctx.Err()
 		case <-ticker.C:
 		}
-
 		var body string
-		err := chromedp.Run(ctx, chromedp.Evaluate(bubbleScript, &body))
-		if err != nil {
-			// Bubble not present yet; keep waiting.
+		if err := chromedp.Run(ctx, chromedp.Evaluate(js, &body)); err != nil {
 			continue
 		}
 		body = strings.TrimSpace(body)
@@ -273,20 +353,16 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 		}
 		if body != last {
 			if verbose {
-				fmt.Fprintf(os.Stderr, "  edit: %s\n", oneline(body, 160))
+				fmt.Fprintf(os.Stderr, "  edit: %s\n", oneline(body, 200))
 			}
 			bodies = append(bodies, body)
 			last = body
 			stableSince = time.Time{}
 			continue
 		}
-		// Body unchanged.
 		if stableSince.IsZero() {
 			stableSince = time.Now()
 		}
-		// Terminate early once we've seen a stable, chrome-free body.
-		// Same emoji-stripping concern as the assertion block — use text
-		// markers rather than the wrench/brain emojis.
 		if time.Since(stableSince) >= stableFor {
 			hasChrome := strings.Contains(body, "Sto lavorando") ||
 				strings.Contains(body, "in corso") ||
@@ -298,7 +374,7 @@ func pollIncomingBubble(ctx context.Context, every, total time.Duration, verbose
 		}
 	}
 	if len(bodies) == 0 {
-		return nil, errors.New("timed out waiting for any incoming message body")
+		return nil, fmt.Errorf("timed out waiting for body of %s", msgID)
 	}
 	return bodies, nil
 }
