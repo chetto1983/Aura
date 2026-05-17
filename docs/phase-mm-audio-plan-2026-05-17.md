@@ -11,8 +11,8 @@
 
 | Path | Choice | Rationale |
 |------|--------|-----------|
-| **Audio IN** | whisper.cpp local, base.en model, CPU threads=4 | Matches Aura's "all-local where possible" pattern; latency-bound (30s memo ~5-8s on base model). No API cost. Mirrors llama.cpp sidecar pattern. |
-| **Audio OUT** | Piper local, native .ogg output, operator-toggled | Fast synthesis (2-3s for 30s transcript), acceptable quality for casual use, no cloud cost. Falls back gracefully if disabled. |
+| **Audio IN** | whisper.cpp local, [`litus-ai/whisper-small-ita`](https://huggingface.co/litus-ai/whisper-small-ita) Italian-finetuned, CPU threads=4 | Italian operator (Davide); finetuned model handles "ho fatto il caffè" / "ricordami di chiamare il commercialista" better than multi-lingual base. Whisper.cpp loads GGUF-converted weights. ~5-10s per 30s on 4 CPU threads. No API cost. |
+| **Audio OUT** | Piper local, [`kirys79/piper_italiano`](https://huggingface.co/kirys79/piper_italiano), native .ogg output, operator-toggled | Italian voice for an Italian operator (no point in en_US-amy reading "ti ho ricordato la riunione" with American accent). Piper supports ONNX models; piper_italiano ships ready-to-use. Fast synthesis (2-3s for 30s), no cloud cost. |
 | **Transcription trigger** | INLINE only (default) | Transcribe immediately upon Telegram voice message; result feeds directly into agent turn as text. No separate ingestion pipeline needed initially. |
 | **TTS trigger** | Optional per-reply toggle | Operator sets audio_enable_tts=true in dashboard; LLM never auto-triggers to avoid every turn producing voice. Explicit opt-in. |
 
@@ -53,13 +53,14 @@ Pattern mirrors documents.go for audio. Handler registered with b.bot.Handle(tel
 
 | Criterion | whisper.cpp (Local) | Groq Whisper API | OpenAI Whisper API |
 |-----------|---------------------|------------------|-------------------|
-| **Latency (30s audio)** | 5-8s (base.en on 4 CPU threads) | 2-3s + network | 3-5s + network |
-| **Memory footprint** | 300MB (base.en quantized) | Negligible | Negligible |
+| **Latency (30s audio)** | 5-10s (whisper-small-ita on 4 CPU threads) | 2-3s + network | 3-5s + network |
+| **Memory footprint** | ~480MB (whisper-small-ita quantized) | Negligible | Negligible |
 | **Mini-PC budget fit** | ✅ 4 threads max, acceptable | ⚠️ Network OK, breaks local pattern | ⚠️ Same |
+| **Italian quality** | ⭐ finetuned on Italian corpus | ⚠️ multi-lingual (Whisper-large generic) | ⚠️ multi-lingual |
 | **Cost** | 0 | 0.001 per 30s | 0.0015 per 30s |
 | **Aura alignment** | ⭐ Self-hosted | Cloud lock-in | Cloud lock-in |
 
-**Recommendation: whisper.cpp local (base.en model)** — Self-hosted, mini-PC latency fits, mirrors llama.cpp sidecar pattern. Wire WHISPER_API_KEY_GROQ env var as optional fallback; default path always local.
+**Recommendation: whisper.cpp local with [`litus-ai/whisper-small-ita`](https://huggingface.co/litus-ai/whisper-small-ita)** — Italian-finetuned, self-hosted, mini-PC latency fits, mirrors llama.cpp sidecar pattern. Wire WHISPER_API_KEY_GROQ env var as optional fallback; default path always local Italian model.
 
 **Implementation:** internal/llm/whisper/client.go
 
@@ -68,7 +69,8 @@ Client struct with localCmd (whisper.cpp sidecar) and optional apiKey for Groq f
 **Config wiring** (internal/config/config.go):
 - WhisperBackend string (default "local")
 - WhisperAPIKey string (env: WHISPER_API_KEY_GROQ)
-- WhisperModel string (default "base.en")
+- WhisperModel string (default "whisper-small-ita")
+- WhisperLanguage string (default "it")
 - WhisperCPUThreads int (default 4)
 
 ---
@@ -117,7 +119,7 @@ PiperClient struct with cmd (piper sidecar), voice config. Synthesize() pipes te
 
 File: internal/agent/tools/registry/audio_transcribe.go
 
-Tool loads stored audio source, reads bytes, calls whisper client, writes transcript. Parameters: source_id (required), language (optional, "en" default). Returns: "Transcribed src_abc · 120s · 850 words". Use case: operator uploads podcast clip, LLM calls this to fill transcript on demand.
+Tool loads stored audio source, reads bytes, calls whisper client, writes transcript. Parameters: source_id (required), language (optional, "it" default for the Italian-finetuned whisper-small-ita model). Returns: "Transcribed src_abc · 120s · 850 words". Use case: operator uploads podcast clip, LLM calls this to fill transcript on demand.
 
 ### 6b. synthesize_speech Tool (NEW, Callable by LLM — but GATED)
 
@@ -141,7 +143,7 @@ Existing store_source(kind="text") covers "save transcript as text source". LLM 
 1. Handler registered: b.bot.Handle(tele.OnVoice, b.voice.onVoiceMessage)
 2. Voice message triggers progress: "🎙️ Got it — transcribing..."
 3. Source stored: src_<sha16>/original.ogg (Telegram native format)
-4. Whisper.cpp invoked: 30s memo transcribes in <10s (4 threads, base.en)
+4. Whisper.cpp invoked: 30s memo transcribes in <10s (4 threads, whisper-small-ita)
 5. Transcript written: src_<sha16>/transcript.txt contains expected keywords
 6. Status updated: source.StatusTranscribeComplete (new constant)
 7. Progress edits to: "✅ Done · src_abc · 30s · ready for ingest"
@@ -161,7 +163,7 @@ Existing store_source(kind="text") covers "save transcript as text source". LLM 
 **Goal:** Whisper.cpp subprocess runs alongside Aura, transcribes via local CPU.
 
 **Acceptance Criteria:**
-1. Config: WHISPER_MODEL=base.en, WHISPER_CPU_THREADS=4, WHISPER_BACKEND=local
+1. Config: WHISPER_MODEL=whisper-small-ita, WHISPER_LANGUAGE=it, WHISPER_CPU_THREADS=4, WHISPER_BACKEND=local
 2. Sidecar spawned on startup or per-request (CLI invocation simpler)
 3. Latency <10s for 30s audio on mini-PC (4 shared cores)
 4. Fallback: if WHISPER_API_KEY_GROQ set and local fails, transparently use Groq API
@@ -233,13 +235,13 @@ Existing store_source(kind="text") covers "save transcript as text source". LLM 
 
 ## 8. Open Questions for Davide (Operator)
 
-1. **Whisper model size:** base.en (30MB, 5-8s per 30s) or medium.en (1.4GB, 2-3s)? Recommend starting with base.en, measure latency.
+1. **Whisper model size:** `litus-ai/whisper-small-ita` (~480MB, 5-10s per 30s) is the recommended default for Italian. If latency is too high, fallback options: `whisper-medium-ita` (when available, faster but ~1.5GB) or Groq API. Measure on real mini-PC first.
 
 2. **Voice message frequency & storage:** Expect daily or occasional? 1 min of OGG ≈ 30KB; 10 voice memos = 300KB/week. Keep on local SSD, no Garage backup needed.
 
-3. **TTS voice preference:** Piper default is "en_US-amy-low" (female, friendly). Acceptable or prefer different voice from Piper's 8 voices?
+3. **TTS voice preference:** Default is [`kirys79/piper_italiano`](https://huggingface.co/kirys79/piper_italiano) (Italian male, conversational). If Piper Italian repo offers multiple voices, pick one explicitly via PIPER_VOICE env var. Other Italian Piper variants on HuggingFace are alternatives.
 
-4. **Transcription language:** Assume English (en) for now? Or need auto-detect for Italian/German?
+4. **Transcription language:** Default `WHISPER_LANGUAGE=it` for the Italian-finetuned model. If multilingual content arrives (English video transcripts, etc.), the model still works but quality drops. Auto-detect can be added later if needed.
 
 5. **transcribe_audio tool:** Should LLM be able to call on demand? Recommend: enable by default (read-only, safe).
 

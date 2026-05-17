@@ -29,7 +29,7 @@ in parallel.
 | ID | Title | Files | Estimate |
 | --- | --- | --- | --- |
 | US-MM-AUDIO01 | Voice message ingestion: Telegram voice → source store with KindAudio + handler mirroring `documents.go` | `internal/telegram/voice_handler.go` (new), `setup.go` wiring | 4-5h |
-| US-MM-AUDIO02 | whisper.cpp sidecar + `transcribe_audio` tool (default base.en CPU, optional Groq API fallback) | `internal/storage/sources/whisper/` (new), `internal/agent/tools/registry/transcribe_audio.go` (new) | 4-5h |
+| US-MM-AUDIO02 | whisper.cpp sidecar + `transcribe_audio` tool (default `litus-ai/whisper-small-ita` CPU, optional Groq API fallback) | `internal/storage/sources/whisper/` (new), `internal/agent/tools/registry/transcribe_audio.go` (new) | 4-5h |
 | US-MM-IMAGE01 | Photo upload: Telegram photo → source store with KindImage + inline vision pass via multipart message to LLM | `internal/telegram/photos.go` (new), `invocation_builder.go` wiring | 4-5h |
 | US-MM-IMAGE02 | `generate_image` tool (Replicate Flux.1-schnell default, capability-gated) | `internal/storage/sources/replicate/` (new), `internal/agent/tools/registry/generate_image.go` (new) | 3-4h |
 
@@ -46,8 +46,8 @@ prd.md §7.4 estimate of ~4 sessions for Phase-MM.
 ## Decisions locked-in by the planning
 
 **Default models (operator can override via env vars):**
-- Audio IN: whisper.cpp base.en CPU (5-8s/30s, $0)
-- Audio OUT: Piper en_US-amy-low (2-3s/30s, $0)
+- Audio IN: **Italian-tuned Whisper** — [`litus-ai/whisper-small-ita`](https://huggingface.co/litus-ai/whisper-small-ita) via whisper.cpp CPU. Italian-finetuned small.it model; ~5-10s per 30s voice memo on 4 CPU threads, $0
+- Audio OUT: **Italian Piper voice** — [`kirys79/piper_italiano`](https://huggingface.co/kirys79/piper_italiano), 2-3s/30s, $0
 - Image IN: anthropic/claude-sonnet-4-6 via OpenRouter ($0.003/img, 2-3s)
 - Image OUT: Replicate Flux.1-schnell ($0.003/img, 4-6s)
 
@@ -77,10 +77,10 @@ Three new LLM-callable tools:
 ## Open questions surfaced (defer to operator before Wave 1 kickoff)
 
 From audio plan:
-1. Whisper model: base.en (5-8s) vs medium.en (2-3s, ~2GB RAM)?
+1. Whisper model size: `litus-ai/whisper-small-ita` (~480MB, 5-10s) is the default for Italian operator. Larger Italian variants if latency insufficient. Measure on real mini-PC first.
 2. Voice message frequency expected? Affects SSD storage retention policy
-3. Piper voice preference (default amy-low)
-4. Transcription language (en-only vs auto-detect)?
+3. Piper Italian voice: `kirys79/piper_italiano` default. Other Italian Piper variants on HuggingFace as fallback if user prefers different timbre.
+4. Transcription language: `WHISPER_LANGUAGE=it` default for the Italian-finetuned model. Auto-detect for occasional non-Italian content is a later concern.
 
 From image plan:
 1. Vision model: Sonnet 4.6 (best quality) vs Sonnet 4.6 Haiku-tier (cheaper, lower quality)?

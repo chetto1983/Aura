@@ -208,7 +208,7 @@ flowchart TB
   end
 
   subgraph WSP["Whisper sidecar"]
-    WHISP[whisper.cpp base.en<br/>CPU 4 threads<br/>NEW MM-AUDIO02]
+    WHISP[whisper.cpp whisper-small-ita<br/>Italian finetuned · CPU 4 threads<br/>NEW MM-AUDIO02]
   end
 
   subgraph LLM2["LLM (Phase-MM enabled)"]
@@ -216,7 +216,7 @@ flowchart TB
   end
 
   subgraph TTSOUT["Audio OUT (operator-toggle)"]
-    PIPER[Piper TTS<br/>en_US-amy-low<br/>NEW MM-AUDIO03]
+    PIPER[Piper TTS<br/>piper_italiano<br/>NEW MM-AUDIO03]
     OGG[ffmpeg → .ogg/opus]
   end
 
@@ -244,8 +244,8 @@ flowchart TB
 
 **Red = substrate Wave 1 stories.** Defaults locked in by planning:
 
-- Audio IN: whisper.cpp base.en CPU local (~5-8s/30s, $0)
-- Audio OUT: Piper TTS local (operator-toggled OFF by default, never auto-triggered)
+- Audio IN: whisper.cpp local [`litus-ai/whisper-small-ita`](https://huggingface.co/litus-ai/whisper-small-ita), Italian-finetuned, CPU 4 threads (~5-10s/30s, $0)
+- Audio OUT: Piper local [`kirys79/piper_italiano`](https://huggingface.co/kirys79/piper_italiano), Italian voice (operator-toggled OFF by default, never auto-triggered)
 - Image IN: Anthropic Sonnet 4.6 vision via OpenRouter ($0.003/img)
 - Image OUT: Replicate Flux.1-schnell ($0.003/img)
 
