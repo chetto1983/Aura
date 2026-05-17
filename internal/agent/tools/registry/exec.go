@@ -382,7 +382,12 @@ func (t *ExecuteShellTool) Definition() ToolDefinition {
 func (t *ExecuteShellTool) Description() string {
 	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
 		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, DNS/network checks, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
-		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics; the runtime image is expected to include common file, JSON, SQLite, Python, Node, DNS, network, tracing, SSH, and build utilities. " +
+		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics. The runtime image ships a full developer CLI: " +
+		"text/data (rg/jq/yq/sqlite3/bat/fd/fzf/sed/awk), git+gh (GitHub CLI for PRs/issues/releases), HTTP (curl/wget/httpie's `http`), " +
+		"network (nmap/tcpdump/traceroute/mtr/dig/whois/nc/socat — see note below on --privileged), " +
+		"docs (pandoc for md↔docx↔html↔pdf), media (ffmpeg for audio/video, imagemagick 6 — use `convert`/`identify`/`mogrify`, NOT `magick` which is v7-only), " +
+		"runtimes (python3 with `pip install <pkg>` working out-of-the-box for user installs into /data/.local — incl. preinstalled numpy/pandas/openpyxl/requests/bs4/lxml/pillow/matplotlib — and node22 with `npm install -g <pkg>` working into /data/.npm-global, both pre-wired onto PATH; also build-essential/gcc/make), " +
+		"file/disk (rsync, tree, ncdu, file, less, xz/zip/unzip), and system (ssh/scp, strace, lsof, htop, procps, iproute2). " +
 		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
 		"Use timeout to override the per-call limit (1-600s, default server 300s). Deep network scans (nmap -sV --script default on /24) typically need 300-500s; give them headroom. " +

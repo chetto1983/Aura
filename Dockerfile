@@ -23,11 +23,27 @@ ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c923882
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates curl dnsutils file git htop iproute2 \
-      iputils-ping jq less libcap2-bin lsof nano net-tools netcat-openbsd nmap \
-      openssh-client procps python3 python3-pip python3-venv ripgrep socat \
-      sqlite3 strace tcpdump traceroute tzdata unzip vim wget xz-utils yq zip \
+      bat build-essential ca-certificates curl dnsutils fd-find ffmpeg file \
+      fzf git gnupg htop httpie imagemagick iproute2 iputils-ping jq less \
+      libcap2-bin lsof mtr-tiny nano ncdu net-tools netcat-openbsd nmap \
+      openssh-client pandoc procps python3 python3-pip python3-venv ripgrep \
+      rsync socat sqlite3 strace tcpdump traceroute tree tzdata unzip vim \
+      wget whois xz-utils yq zip \
+    # GitHub CLI (gh) lives in its own apt repo — pull keyring, register source,
+    # install in one layer so the keyring doesn't leak into the final image
+    # without being used.
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/* \
+    # Debian renames bat→batcat and fd-find→fdfind to avoid binary collisions
+    # with other packages; restore the canonical names the LLM expects.
+    && ln -sf /usr/bin/batcat /usr/local/bin/bat \
+    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app \
@@ -79,11 +95,16 @@ ENV AURA_HEADLESS=true \
     DB_PATH=/data/aura.db \
     LOG_DIR=/data/logs \
     HOME=/data \
-    PATH=/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    # /data/.npm-global/bin first so `npm install -g foo` puts foo on PATH
+    # without root. /data/.local/bin keeps pip --user installs reachable.
+    PATH=/data/.npm-global/bin:/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PIP_CACHE_DIR=/data/.pip \
     PIP_USER=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     NPM_CONFIG_CACHE=/data/.npm \
+    # Redirect npm's global prefix into /data so `npm install -g <pkg>` works
+    # for the non-root aura user without touching /usr/local (root-owned).
+    NPM_CONFIG_PREFIX=/data/.npm-global \
     WIKI_PATH=/wiki \
     SKILLS_PATH=/skills \
     SKILLS_INSTALL_PROJECT_DIR=/skills \
