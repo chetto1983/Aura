@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/testutil"
 )
 
 func newIssuesStore(t *testing.T) *cron.IssuesStore {
 	t.Helper()
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	return cron.NewIssuesStore(db)
 }
 
@@ -186,7 +188,7 @@ func TestIssuesStore_List_AllStatuses(t *testing.T) {
 
 // TestIssuesStore_Enqueue_ClosedDB covers the Enqueue DB error path.
 func TestIssuesStore_Enqueue_ClosedDB(t *testing.T) {
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := cron.NewIssuesStore(db)
 	db.Close()
 
@@ -200,7 +202,7 @@ func TestIssuesStore_Enqueue_ClosedDB(t *testing.T) {
 
 // TestIssuesStore_List_ClosedDB covers the List query error path.
 func TestIssuesStore_List_ClosedDB(t *testing.T) {
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := cron.NewIssuesStore(db)
 	db.Close()
 
@@ -212,7 +214,7 @@ func TestIssuesStore_List_ClosedDB(t *testing.T) {
 
 // TestIssuesStore_Resolve_ClosedDB covers the Resolve DB exec error path.
 func TestIssuesStore_Resolve_ClosedDB(t *testing.T) {
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	store := cron.NewIssuesStore(db)
 	db.Close()
 

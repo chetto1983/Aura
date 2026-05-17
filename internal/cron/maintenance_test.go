@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/testutil"
 	"github.com/aura/aura/internal/wiki"
 )
 
@@ -195,7 +197,7 @@ func TestMaintenanceJob_RepairFails_Enqueues(t *testing.T) {
 		slugs:     []string{"missing-sluf"}, // distance 1 → single candidate
 		repairErr: errors.New("repair failure"),
 	}
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	issuesStore := cron.NewIssuesStore(db)
 
 	job := cron.NewMaintenanceJob(w, nil).
@@ -231,7 +233,7 @@ func TestMaintenanceJob_NoCandidates_Enqueues(t *testing.T) {
 		},
 		slugs: []string{"aaa", "bbb"}, // all far from "zzzzz"
 	}
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	issuesStore := cron.NewIssuesStore(db)
 
 	job := cron.NewMaintenanceJob(w, nil).
@@ -279,7 +281,7 @@ func TestMaintenanceJob_PreservesLintIssueKindAndSeverity(t *testing.T) {
 		},
 		slugs: []string{"old-page"},
 	}
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	issuesStore := cron.NewIssuesStore(db)
 
 	job := cron.NewMaintenanceJob(w, nil).
@@ -375,7 +377,7 @@ func TestMaintenanceJob_WithIssuesStore_EnqueueFailure(t *testing.T) {
 		},
 		slugs: []string{}, // no candidates → deferred
 	}
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	issuesStore := cron.NewIssuesStore(db)
 	db.Close() // close DB so Enqueue fails
 

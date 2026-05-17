@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/cron"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/testutil"
 )
 
 type fakeIssueRepository struct {
@@ -84,7 +86,7 @@ func TestMaintenanceHandlersAcceptIssueRepositoryInterface(t *testing.T) {
 
 func newIssuesTestStore(t *testing.T) *cron.IssuesStore {
 	t.Helper()
-	db := cron.NewTestDB(t)
+	db := testutil.OpenTestDB(t, migrations.Run)
 	return cron.NewIssuesStore(db)
 }
 
