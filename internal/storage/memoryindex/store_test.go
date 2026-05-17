@@ -538,6 +538,54 @@ func TestDocumentRoundTripWithFreshnessColumns(t *testing.T) {
 	}
 }
 
+// TestUpsertAutoComputesFreshnessColumns verifies that Store.Upsert auto-fills
+// content_hash and embedding_model_id from the store's EmbeddingModelID config
+// when the caller does not stamp them on the document. This is the incremental-
+// write path (not the rebuild path which uses stampFreshnessFields).
+func TestUpsertAutoComputesFreshnessColumns(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	store.EmbeddingModelID = "embeddinggemma-300m-test"
+
+	doc := Document{
+		ID:        "source:src_auto#page=1",
+		Kind:      KindSource,
+		Title:     "auto-hash.pdf",
+		Body:      "Auto freshness body for hash test.",
+		Handle:    "source:src_auto#page=1",
+		SourceID:  "src_auto",
+		Page:      1,
+		UpdatedAt: time.Now().UTC(),
+		// ContentHash, EmbeddingModelID, IndexBuildID intentionally left empty
+	}
+
+	if err := store.Upsert(ctx, doc); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	var gotHash, gotModelID, gotBuildID string
+	if err := store.db.QueryRowContext(ctx,
+		`SELECT content_hash, embedding_model_id, index_build_id FROM compact_memory_documents WHERE id = ?`,
+		doc.ID,
+	).Scan(&gotHash, &gotModelID, &gotBuildID); err != nil {
+		t.Fatalf("scan freshness columns: %v", err)
+	}
+
+	wantHash := ContentHash(doc.Kind, doc.Body, "embeddinggemma-300m-test")
+	t.Logf("content_hash=%q embedding_model_id=%q index_build_id=%q", gotHash, gotModelID, gotBuildID)
+
+	if gotHash != wantHash {
+		t.Errorf("content_hash: got %q, want %q", gotHash, wantHash)
+	}
+	if gotModelID != "embeddinggemma-300m-test" {
+		t.Errorf("embedding_model_id: got %q, want embeddinggemma-300m-test", gotModelID)
+	}
+	// index_build_id is empty when no rebuild context stamps it — expected for incremental writes
+	if gotBuildID != "" {
+		t.Errorf("index_build_id: got %q, want empty for incremental write", gotBuildID)
+	}
+}
+
 func sameStringSet(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

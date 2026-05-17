@@ -18,7 +18,7 @@
         "Single atomic commit prefix: feat(memoryindex): content_hash drift columns for projection freshness (US-Z01 / 7C US-M02)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Mig v13 is additive only — existing rows get NULL columns, which the read path tolerates. The SHA-256 input is the canonical body (post-trim, lowercase) so cosmetic edits don't churn the hash."
     },
     {

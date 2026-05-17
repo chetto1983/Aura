@@ -99,6 +99,12 @@ type Store struct {
 
 	// freshnessStore tracks per-projection drift. nil = freshness disabled.
 	freshnessStore *freshness.Store
+
+	// EmbeddingModelID is the model used by this writer. When Upsert is called
+	// with an empty doc.ContentHash or doc.EmbeddingModelID, these are
+	// auto-populated from this field so callers don't need to stamp them
+	// manually on every incremental write.
+	EmbeddingModelID string
 }
 
 // SetFreshnessStore injects a freshness.Store so that ReplaceKind can call
@@ -175,6 +181,16 @@ func (s *Store) Upsert(ctx context.Context, doc Document) error {
 	}
 	if doc.UpdatedAt.IsZero() {
 		doc.UpdatedAt = s.now()
+	}
+	// Auto-fill freshness fields when the caller hasn't stamped them.
+	// EmbeddingModelID is drawn from the store's writer config.
+	// ContentHash encodes kind + body + model so hash comparisons detect both
+	// textual drift and model changes without caller involvement.
+	if doc.EmbeddingModelID == "" {
+		doc.EmbeddingModelID = s.EmbeddingModelID
+	}
+	if doc.ContentHash == "" {
+		doc.ContentHash = ContentHash(doc.Kind, doc.Body, doc.EmbeddingModelID)
 	}
 	entitiesJSON := stringListJSON(doc.Entities)
 	tagsJSON := stringListJSON(doc.Tags)
