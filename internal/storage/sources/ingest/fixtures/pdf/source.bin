@@ -1,0 +1,4 @@
+%PDF-1.4 sample-fixture for ingest pipeline tests — do not parse as real PDF
+This file is a minimal stand-in used by fixtures_test.go. The ingest pipeline
+reads ocr.md (pre-computed) rather than the raw bytes, so this content is only
+used to derive the source ID via SHA-256 and to satisfy the non-empty guard.

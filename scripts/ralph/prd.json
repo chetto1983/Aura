@@ -122,7 +122,7 @@
         "Single atomic commit prefix: test(ingest): conversion fixtures for PDF/DOCX/XLSX/PPTX/MD source types (US-Z07 / Phase 9)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Use small fixtures — checked into git. The PDF can be a 1-page render of a simple .docx. The XLSX can be 3 rows × 2 sheets. Goal is structural coverage, not load test."
     }
   ]

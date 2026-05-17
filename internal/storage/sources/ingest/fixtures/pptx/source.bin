@@ -1,0 +1,4 @@
+PK fake-pptx-fixture for ingest pipeline tests — do not parse as real PPTX
+This file is a minimal stand-in used by fixtures_test.go. The ingest pipeline
+reads extract.md (pre-computed) rather than the raw bytes, so this content is
+only used to derive the source ID via SHA-256 and satisfy the non-empty guard.
