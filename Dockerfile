@@ -22,7 +22,11 @@ ARG MAIL_MCP_VERSION=0.4.5
 ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c92388249bf
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl file git jq procps python3 python3-pip python3-venv ripgrep sqlite3 tzdata unzip wget xz-utils zip \
+    && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl dnsutils file git htop iproute2 \
+      iputils-ping jq less lsof nano net-tools netcat-openbsd nmap \
+      openssh-client procps python3 python3-pip python3-venv ripgrep socat \
+      sqlite3 strace tcpdump traceroute tzdata unzip vim wget xz-utils yq zip \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
@@ -34,7 +38,7 @@ RUN apt-get update \
 RUN pip3 install --no-cache-dir --break-system-packages \
       requests beautifulsoup4 lxml pillow \
       numpy pandas pyarrow python-calamine openpyxl xlrd \
-      pyyaml python-dateutil pytz regex
+      pyyaml python-dateutil pytz regex python-docx matplotlib
 
 RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/releases/download/v${MAIL_MCP_VERSION}/mail-mcp-x86_64-unknown-linux-gnu.tar.xz" \
     && echo "${MAIL_MCP_SHA256}  /tmp/mail-mcp.tar.xz" | sha256sum -c - \

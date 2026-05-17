@@ -223,11 +223,11 @@ const internalToolCallManifestName = "aura_tool_calls.json"
 // CLAUDE.md's "tools the LLM trusted in the active turn" allowlist sits on
 // top of this — both must permit the call for it to run.
 var blockedInternalToolCalls = map[string]bool{
-	"execute_code":             true,
-	"execute_shell":            true,
-	"request_dashboard_token":  true,
-	"delete_source":            true,
-	"forget_memory":            true,
+	"execute_code":            true,
+	"execute_shell":           true,
+	"request_dashboard_token": true,
+	"delete_source":           true,
+	"forget_memory":           true,
 }
 
 // perInternalToolCallTimeout caps each call inside the manifest loop. A single
@@ -381,7 +381,8 @@ func (t *ExecuteShellTool) Definition() ToolDefinition {
 
 func (t *ExecuteShellTool) Description() string {
 	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
-		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
+		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, DNS/network checks, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
+		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics; the runtime image is expected to include common file, JSON, SQLite, Python, Node, DNS, network, tracing, SSH, and build utilities. " +
 		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
 		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
 		"Use timeout to override the per-call limit (1-300s, default server 120s)."

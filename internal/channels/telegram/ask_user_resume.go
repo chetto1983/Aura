@@ -4,9 +4,20 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	tgtelegram "github.com/aura/aura/internal/telegram"
+	tele "gopkg.in/telebot.v4"
 )
 
 var canonicalApprovalOptions = []string{"approve_once", "approve_session", "approve_persist", "deny", "cancel"}
+
+var approvalButtonLabels = map[string]string{
+	"approve_once":    "Approve once",
+	"approve_session": "Approve session",
+	"approve_persist": "Approve persist",
+	"deny":            "Deny",
+	"cancel":          "Cancel",
+}
 
 // formatAskUserQuestion formats an ask_user question for Telegram delivery.
 // With options: numbered list + free-text hint.
@@ -25,7 +36,7 @@ func formatAskUserQuestion(question string, options []string, kind string) strin
 	for i, opt := range options {
 		fmt.Fprintf(&sb, "\n\n%d. %s", i+1, opt)
 	}
-	sb.WriteString("\n\n(reply with number, or text for free input)")
+	sb.WriteString("\n\n(tap a button, reply with number, or text for free input)")
 	return sb.String()
 }
 
@@ -57,6 +68,46 @@ func askUserDisplayOptions(options []string, kind string) []string {
 		return append([]string(nil), canonicalApprovalOptions...)
 	}
 	return append([]string(nil), options...)
+}
+
+func askUserQuestionMarkup(options []string, kind string) *tele.ReplyMarkup {
+	options = askUserDisplayOptions(options, kind)
+	if len(options) == 0 {
+		return nil
+	}
+	markup := &tele.ReplyMarkup{}
+	rows := make([]tele.Row, 0, len(options))
+	for i, opt := range options {
+		selection := strconv.Itoa(i + 1)
+		rows = append(rows, markup.Row(markup.Data(askUserButtonLabel(selection, opt), tgtelegram.AskUserCallbackUnique, selection)))
+	}
+	markup.Inline(rows...)
+	return markup
+}
+
+func askUserButtonLabel(selection string, option string) string {
+	option = strings.TrimSpace(option)
+	if label, ok := approvalButtonLabels[option]; ok {
+		option = label
+	}
+	if option == "" {
+		return selection
+	}
+	return truncateAskUserButtonLabel(selection + ". " + option)
+}
+
+func truncateAskUserButtonLabel(label string) string {
+	const maxRunes = 48
+	runes := []rune(strings.TrimSpace(label))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	const suffix = "..."
+	keep := maxRunes - len([]rune(suffix))
+	if keep <= 0 {
+		return string(runes[:maxRunes])
+	}
+	return strings.TrimSpace(string(runes[:keep])) + suffix
 }
 
 func askUserSelectedOptionIDs(reply string, options []string) []string {

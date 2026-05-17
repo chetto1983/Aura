@@ -2,17 +2,22 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/testutil"
 )
 
 type allowTelegramToolAuthorizer struct{}
@@ -202,6 +207,76 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCallsRecordsAttemptForHubRunID(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	const runID = "telegram-run-tool-attempt"
+	seedTelegramToolRun(t, db, runID)
+
+	reg := tools.NewRegistry(nil)
+	probe := &countingTelegramTool{name: "context_probe", result: "ok"}
+	reg.Register(probe)
+	b := &Bot{
+		cfg:    &config.Config{},
+		rt:     &botRuntime{tools: reg, attemptsRepo: attempts.NewSQLiteRepo(db)},
+		logger: slog.Default(),
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+	ctx := identity.WithRunID(authorizedTelegramToolContext("1148481707"), runID)
+
+	summary := b.executeToolCalls(ctx, nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "probe-1", Name: "context_probe", Arguments: map[string]any{"needle": "value"}}},
+		[]string{"context_probe"},
+		nil,
+	)
+
+	if summary.Results["probe-1"] != "ok" {
+		t.Fatalf("summary = %+v, want recorded tool result", summary)
+	}
+	var outcome, argKeys string
+	err := db.QueryRowContext(context.Background(),
+		`SELECT outcome, arg_keys_json FROM tool_attempts WHERE run_id = ? AND tool_name = ?`,
+		runID, "context_probe").Scan(&outcome, &argKeys)
+	if err != nil {
+		t.Fatalf("tool_attempts row missing: %v", err)
+	}
+	if outcome != "ok" {
+		t.Fatalf("outcome = %q, want ok", outcome)
+	}
+	if !strings.Contains(argKeys, "needle") {
+		t.Fatalf("arg_keys_json = %q, want model key only", argKeys)
+	}
+}
+
+func TestExecuteToolCallsPropagatesAskUserPause(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&tools.AskUserTool{})
+	b := &Bot{
+		cfg:    &config.Config{},
+		rt:     &botRuntime{tools: reg},
+		logger: slog.Default(),
+	}
+	convCtx := conversation.NewContext(conversation.Config{})
+
+	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
+		[]llm.ToolCall{{ID: "ask-1", Name: "ask_user", Arguments: map[string]any{
+			"question": "Continue?",
+			"kind":     "approval",
+		}}},
+		[]string{"ask_user"},
+		nil,
+	)
+
+	if summary.AwaitingUserInput == nil {
+		t.Fatalf("AwaitingUserInput is nil, summary = %+v", summary)
+	}
+	if summary.AwaitingUserInput.ToolCallID != "ask-1" {
+		t.Fatalf("ToolCallID = %q, want ask-1", summary.AwaitingUserInput.ToolCallID)
+	}
+	if len(convCtx.Messages()) != 0 {
+		t.Fatalf("convCtx messages len = %d, want no tool_result while waiting", len(convCtx.Messages()))
+	}
+}
+
 func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	reg := tools.NewRegistry(nil)
 	reg.Register(&errorTelegramTool{name: "execute_shell"})
@@ -219,6 +294,19 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	}
 	if got := convCtx.Messages()[len(convCtx.Messages())-1].Content; !strings.HasPrefix(got, "Error: ") {
 		t.Fatalf("tool result = %q, want plain Error: prefix for model recovery", got)
+	}
+}
+
+func seedTelegramToolRun(t *testing.T, db *sql.DB, runID string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO runs (id, channel, status, started_at, updated_at) VALUES (?, 'telegram', 'running', ?, ?)`,
+		runID,
+		time.Now().UTC().Format(time.RFC3339Nano),
+		time.Now().UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		t.Fatalf("seedTelegramToolRun: %v", err)
 	}
 }
 

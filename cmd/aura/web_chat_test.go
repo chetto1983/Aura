@@ -106,6 +106,47 @@ WHERE actor_id = ? AND type IN ('run_started', 'message_done', 'usage', 'done')
 `, 4, actorID)
 }
 
+func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := toolregistry.NewRegistry(logger)
+	registry.Register(&webChatContextProbeTool{})
+	svc, err := newHubBackedWebChatService(
+		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4},
+		&telegram.Deps{
+			LLM:      &fakeToolCallingLLM{},
+			Pool:     db,
+			RunStore: runStore,
+			Tools:    registry,
+			Logger:   logger,
+		},
+		logger,
+	)
+	if err != nil {
+		t.Fatalf("newHubBackedWebChatService: %v", err)
+	}
+	ctx := identity.WithActorID(
+		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
+		identity.TelegramSessionActorID("alice"),
+	)
+	if _, err := svc.Chat(ctx, "alice", "call the probe"); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	assertWebChatScalar(t, db, `
+SELECT COUNT(*)
+FROM tool_attempts ta
+JOIN runs r ON r.id = ta.run_id
+WHERE r.channel = 'web' AND ta.tool_name = 'context_probe' AND ta.outcome = 'ok'
+`, 1)
+}
+
 type webChatAllowAuthorizer struct{}
 
 func (webChatAllowAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {

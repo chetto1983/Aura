@@ -278,6 +278,32 @@ func TestOnMessageIgnoresUnauthorizedText(t *testing.T) {
 	}
 }
 
+func TestAskUserCallbackReplyText(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want string
+		ok   bool
+	}{
+		{name: "numeric", data: "2", want: "2", ok: true},
+		{name: "trimmed", data: " 3 ", want: "3", ok: true},
+		{name: "zero", data: "0", ok: false},
+		{name: "negative", data: "-1", ok: false},
+		{name: "free text", data: "approve", ok: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := askUserCallbackReplyText(tc.data)
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if got != tc.want {
+				t.Fatalf("reply = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTelegramHubContextCarriesActorAndAuthority(t *testing.T) {
 	store := newTelegramTestAuthStore(t)
 	b := &Bot{rt: &botRuntime{authDB: store}}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api"
 	webadapter "github.com/aura/aura/internal/channels/web"
@@ -93,7 +94,11 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 	}
 	userID := strings.TrimSpace(msg.PrincipalID)
 	system := conversation.RenderSystemPrompt(time.Now(), time.Local)
-	state := b.sessions.begin(run.ID, userID, system, msg.Text)
+	runID := ""
+	if run != nil {
+		runID = run.ID
+	}
+	state := b.sessions.begin(runID, userID, system, msg.Text)
 	allowlist := cleanWebToolList(nil)
 	var toolDefs []llm.ToolDefinition
 	if deps.Tools != nil {
@@ -119,6 +124,8 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 			logger:                logger,
 			allowlist:             allowlist,
 			userID:                userID,
+			runID:                 runID,
+			attemptsRepo:          deps.AttemptsRepo,
 			maxChars:              b.maxToolResultChars(),
 			toolTimeout:           toolTimeout,
 			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
@@ -272,6 +279,8 @@ type webToolExecutor struct {
 	logger                *slog.Logger
 	allowlist             []string
 	userID                string
+	runID                 string
+	attemptsRepo          attempts.Repo
 	maxChars              int
 	toolTimeout           time.Duration
 	terminalPolicyEnabled bool
@@ -295,26 +304,48 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 		callCopy.Arguments = cloneToolArgs(call.Arguments)
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			raw, err := e.executeOne(ctx, call)
+			startedAt := time.Now()
+			raw, executedArgs, class, err := e.executeOne(ctx, call)
 			var awaitErr *toolregistry.ErrAwaitingUserInput
 			if errors.As(err, &awaitErr) {
+				awaitErr.ToolCallID = call.ID
+				agent.RecordToolAttempt(ctx, e.logger, e.attemptsRepo, agent.ToolAttemptRecordInput{
+					RunID:     e.runID,
+					ToolName:  call.Name,
+					Arguments: executedArgs,
+					StartedAt: startedAt,
+					Elapsed:   time.Since(startedAt),
+					Class:     "cancelled",
+				})
 				outcomes[i] = outcome{id: call.ID, awaiting: awaitErr}
 				return
 			}
 			content := raw
 			if err != nil {
+				if class == "" {
+					class = toolregistry.ClassifyToolError(err)
+				}
 				content = toolregistry.FormatToolError(err)
 				if e.logger != nil {
 					e.logger.Warn("web chat tool call failed", "tool", call.Name, "error", err)
 				}
 			}
+			agent.RecordToolAttempt(ctx, e.logger, e.attemptsRepo, agent.ToolAttemptRecordInput{
+				RunID:     e.runID,
+				ToolName:  call.Name,
+				Arguments: executedArgs,
+				StartedAt: startedAt,
+				Elapsed:   time.Since(startedAt),
+				Class:     class,
+				Err:       err,
+			})
 			wrapped := agent.WrapUntrustedToolResult(call.Name, content)
 			outcomes[i] = outcome{
 				id:        call.ID,
 				tool:      call.Name,
 				content:   limitToolContent(wrapped, e.maxChars),
 				readSkill: agent.SkillNameFromReadFileArgs(call.Arguments),
-				terminal:  terminalToolName(call.Name, err == nil && e.terminalPolicyEnabled),
+				terminal:  terminalToolName(call.Name, class == "" && err == nil && e.terminalPolicyEnabled),
 			}
 		}(i, callCopy)
 	}
@@ -350,12 +381,13 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 	return summary
 }
 
-func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (string, error) {
+func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (string, map[string]any, string, error) {
+	args := call.Arguments
 	if len(e.allowlist) == 0 || !slices.Contains(e.allowlist, strings.ToLower(call.Name)) {
-		return toolregistry.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), nil
+		return toolregistry.FormatFatalToolError(fmt.Errorf("tool %q is not allowed for this agent", call.Name)), args, "permission", nil
 	}
 	if e.tools == nil {
-		return toolregistry.FormatFatalToolError(errors.New("tool registry unavailable")), nil
+		return toolregistry.FormatFatalToolError(errors.New("tool registry unavailable")), args, "error", nil
 	}
 	toolCtx := ctx
 	var cancel context.CancelFunc
@@ -368,7 +400,11 @@ func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (st
 		toolCtx = toolregistry.WithUserID(toolCtx, e.userID)
 		toolCtx = toolregistry.WithConversationID(toolCtx, e.userID)
 	}
-	return e.tools.Execute(toolCtx, call.Name, call.Arguments)
+	out, err := e.tools.Execute(toolCtx, call.Name, args)
+	if err != nil {
+		return out, args, toolregistry.ClassifyToolError(err), err
+	}
+	return out, args, "", nil
 }
 
 func cleanWebToolList(values []string) []string {

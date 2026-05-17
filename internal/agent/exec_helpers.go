@@ -2,12 +2,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
@@ -18,6 +21,23 @@ import (
 type ToolRunner interface {
 	Names() []string
 	Execute(ctx context.Context, name string, args map[string]any) (string, error)
+}
+
+type executeToolCallsConfig struct {
+	runID        string
+	attemptsRepo attempts.Repo
+}
+
+// ExecuteToolCallsOption configures channel-neutral tool execution helpers.
+type ExecuteToolCallsOption func(*executeToolCallsConfig)
+
+// WithToolAttemptRecording enables tool_attempts persistence for custom
+// channel executors that do not use the default agentExecutor.
+func WithToolAttemptRecording(runID string, repo attempts.Repo) ExecuteToolCallsOption {
+	return func(cfg *executeToolCallsConfig) {
+		cfg.runID = runID
+		cfg.attemptsRepo = repo
+	}
 }
 
 // ExecuteToolCalls fans out calls concurrently, appends tool results to convCtx
@@ -32,9 +52,16 @@ func ExecuteToolCalls(
 	calls []llm.ToolCall,
 	terminalPolicyEnabled bool,
 	logger *slog.Logger,
+	options ...ExecuteToolCallsOption,
 ) ToolExecutionSummary {
 	if len(calls) == 0 {
 		return ToolExecutionSummary{}
+	}
+	cfg := executeToolCallsConfig{}
+	for _, option := range options {
+		if option != nil {
+			option(&cfg)
+		}
 	}
 
 	type outcome struct {
@@ -43,6 +70,7 @@ func ExecuteToolCalls(
 		content       string
 		readSkillName string
 		terminalTool  string
+		awaitingUser  *tools.ErrAwaitingUserInput
 	}
 	results := make([]outcome, len(calls))
 
@@ -51,6 +79,7 @@ func ExecuteToolCalls(
 		wg.Add(1)
 		go func(i int, tc llm.ToolCall) {
 			defer wg.Done()
+			startedAt := time.Now()
 			conversationID := userID
 			if chatID > 0 {
 				conversationID = fmt.Sprintf("%d", chatID)
@@ -58,12 +87,37 @@ func ExecuteToolCalls(
 			toolCtx := tools.WithConversationID(tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), runner.Names()), conversationID)
 			args := ToolArgumentsForTool(tc.Name, tc.Arguments, chatID)
 			result, err := runner.Execute(toolCtx, tc.Name, args)
+			class := ""
+			var awaitErr *tools.ErrAwaitingUserInput
+			if errors.As(err, &awaitErr) {
+				awaitErr.ToolCallID = tc.ID
+				RecordToolAttempt(ctx, logger, cfg.attemptsRepo, ToolAttemptRecordInput{
+					RunID:     cfg.runID,
+					ToolName:  tc.Name,
+					Arguments: args,
+					StartedAt: startedAt,
+					Elapsed:   time.Since(startedAt),
+					Class:     "cancelled",
+				})
+				results[i] = outcome{id: tc.ID, tool: tc.Name, awaitingUser: awaitErr}
+				return
+			}
 			if err != nil {
+				class = tools.ClassifyToolError(err)
 				result = tools.FormatToolError(err)
 				if logger != nil {
 					logger.Warn("tool call failed", "user_id", userID, "tool", tc.Name, "error", err)
 				}
 			}
+			RecordToolAttempt(ctx, logger, cfg.attemptsRepo, ToolAttemptRecordInput{
+				RunID:     cfg.runID,
+				ToolName:  tc.Name,
+				Arguments: args,
+				StartedAt: startedAt,
+				Elapsed:   time.Since(startedAt),
+				Class:     class,
+				Err:       err,
+			})
 			readSkillName := ""
 			if err == nil && tc.Name == "read_file" {
 				readSkillName = SkillNameFromReadFileArgs(tc.Arguments)
@@ -85,6 +139,10 @@ func ExecuteToolCalls(
 
 	summary := ToolExecutionSummary{Results: make(map[string]string, len(results))}
 	for _, r := range results {
+		if r.awaitingUser != nil {
+			summary.AwaitingUserInput = r.awaitingUser
+			continue
+		}
 		wrapped := WrapUntrustedToolResult(r.tool, r.content)
 		convCtx.AddToolResultMessage(r.id, wrapped)
 		summary.LastResult = r.content

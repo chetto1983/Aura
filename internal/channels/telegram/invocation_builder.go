@@ -25,8 +25,8 @@ import (
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
 	b              *tgtelegram.Bot
-	hub            *chat.Hub       // set after hub creation; used for ask_user resume routing
-	outbound       *Outbound       // canonical streaming path used by streamingChatClient
+	hub            *chat.Hub        // set after hub creation; used for ask_user resume routing
+	outbound       *Outbound        // canonical streaming path used by streamingChatClient
 	agentNoteStore *agentnote.Store // nil when not configured; injected by NewHub
 }
 
@@ -239,11 +239,12 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				addActiveTools(execution.DiscoveredTools)
 			}
 			return agent.ExecutionSummary{
-				LastResult:     execution.LastResult,
-				FatalResult:    execution.FatalResult,
-				ReadSkillNames: execution.ReadSkillNames,
-				TerminalTool:   execution.TerminalTool,
-				Results:        execution.Results,
+				LastResult:        execution.LastResult,
+				FatalResult:       execution.FatalResult,
+				ReadSkillNames:    execution.ReadSkillNames,
+				TerminalTool:      execution.TerminalTool,
+				Results:           execution.Results,
+				AwaitingUserInput: execution.AwaitingUserInput,
 			}
 		}),
 		State:                   convCtx,
@@ -302,7 +303,11 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				kind, _ := event.QuestionPayload["kind"].(string)
 				formatted := formatAskUserQuestion(question, options, kind)
 				if formatted != "" {
-					if _, sendErr := c.Bot().Send(c.Recipient(), formatted); sendErr != nil {
+					sendOpts := []any{}
+					if markup := askUserQuestionMarkup(options, kind); markup != nil {
+						sendOpts = append(sendOpts, markup)
+					}
+					if _, sendErr := c.Bot().Send(c.Recipient(), formatted, sendOpts...); sendErr != nil {
 						b.Logger().Warn("ask_user: failed to send question to user",
 							"user_id", userID, "error", sendErr)
 					}

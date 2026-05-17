@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/chat"
+	tgtelegram "github.com/aura/aura/internal/telegram"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -65,12 +67,21 @@ func (a Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, err
 	if m := c.Message(); m != nil {
 		msgID = strconv.Itoa(m.ID)
 	}
+	text := c.Text()
+	if cb := c.Callback(); cb != nil && cb.Unique == tgtelegram.AskUserCallbackUnique {
+		if cb.ID != "" {
+			msgID = cb.ID
+		}
+		if data := strings.TrimSpace(c.Data()); data != "" {
+			text = data
+		}
+	}
 	return chat.InboundMessage{
 		ID:          msgID,
 		Channel:     chat.ChannelTelegram,
 		PrincipalID: strconv.FormatInt(sender.ID, 10),
 		ThreadID:    threadID,
-		Text:        c.Text(),
+		Text:        text,
 		Locale:      sender.LanguageCode,
 		Mode:        chat.DeliveryModeStreaming,
 		CreatedAt:   time.Now().UTC(),

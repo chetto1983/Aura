@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/chat"
+	tgtelegram "github.com/aura/aura/internal/telegram"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -61,5 +62,36 @@ func TestInbound_NormalizeRejectsNonTeleContext(t *testing.T) {
 	a := New()
 	if _, err := a.Normalize(context.Background(), "not a context"); err == nil {
 		t.Fatal("expected error for non-tele.Context payload")
+	}
+}
+
+func TestInbound_NormalizeAskUserCallbackAsTextReply(t *testing.T) {
+	tb, err := tele.NewBot(tele.Settings{Token: "t", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := tele.NewContext(tb, tele.Update{Callback: &tele.Callback{
+		ID:     "cb-123",
+		Unique: tgtelegram.AskUserCallbackUnique,
+		Data:   "2",
+		Sender: &tele.User{ID: 1234, LanguageCode: "it"},
+		Message: &tele.Message{
+			ID:   42,
+			Chat: &tele.Chat{ID: 9876},
+		},
+	}})
+
+	msg, err := New().Normalize(context.Background(), ctx)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if msg.Text != "2" {
+		t.Fatalf("Text = %q, want callback data 2", msg.Text)
+	}
+	if msg.ID != "cb-123" {
+		t.Fatalf("ID = %q, want callback id", msg.ID)
+	}
+	if msg.ThreadID != "9876" {
+		t.Fatalf("ThreadID = %q, want callback message chat id", msg.ThreadID)
 	}
 }

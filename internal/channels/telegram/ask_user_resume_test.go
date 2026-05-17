@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
+	tgtelegram "github.com/aura/aura/internal/telegram"
 )
 
 // --- formatAskUserQuestion ---
@@ -13,7 +14,7 @@ func TestFormatAskUserQuestion_WithOptions(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty formatted string")
 	}
-	for _, want := range []string{"❓", "Which file should I update?", "1.", "main.go", "2.", "config.go", "3.", "other", "reply with number"} {
+	for _, want := range []string{"❓", "Which file should I update?", "1.", "main.go", "2.", "config.go", "3.", "other", "tap a button", "reply with number"} {
 		if !containsSubstring(got, want) {
 			t.Errorf("formatted question missing %q:\n%s", want, got)
 		}
@@ -62,6 +63,43 @@ func TestFormatAskUserQuestion_MultiOption(t *testing.T) {
 		if !containsSubstring(got, numStr+". "+opt) {
 			t.Errorf("missing %q in formatted question:\n%s", numStr+". "+opt, got)
 		}
+	}
+}
+
+func TestAskUserQuestionMarkup_WithOptions(t *testing.T) {
+	markup := askUserQuestionMarkup([]string{"main.go", "config.go"}, "clarification")
+	if markup == nil {
+		t.Fatal("markup = nil, want inline keyboard")
+	}
+	if got := len(markup.InlineKeyboard); got != 2 {
+		t.Fatalf("rows = %d, want 2", got)
+	}
+	first := markup.InlineKeyboard[0][0]
+	if first.Unique != tgtelegram.AskUserCallbackUnique {
+		t.Fatalf("first.Unique = %q, want %q", first.Unique, tgtelegram.AskUserCallbackUnique)
+	}
+	if first.Data != "1" {
+		t.Fatalf("first.Data = %q, want 1", first.Data)
+	}
+	if first.Text != "1. main.go" {
+		t.Fatalf("first.Text = %q, want numbered option", first.Text)
+	}
+}
+
+func TestAskUserQuestionMarkup_ApprovalKindUsesCanonicalButtons(t *testing.T) {
+	markup := askUserQuestionMarkup(nil, "approval")
+	if markup == nil {
+		t.Fatal("markup = nil, want approval inline keyboard")
+	}
+	if got := len(markup.InlineKeyboard); got != len(canonicalApprovalOptions) {
+		t.Fatalf("rows = %d, want %d", got, len(canonicalApprovalOptions))
+	}
+	first := markup.InlineKeyboard[0][0]
+	if first.Text != "1. Approve once" {
+		t.Fatalf("first.Text = %q, want friendly approval label", first.Text)
+	}
+	if first.Data != "1" {
+		t.Fatalf("first.Data = %q, want 1", first.Data)
 	}
 }
 

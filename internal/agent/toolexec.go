@@ -1,15 +1,18 @@
 package agent
 
+import tools "github.com/aura/aura/internal/agent/tools/registry"
+
 // ToolExecutionSummary holds the outcome of executing a batch of tool calls.
 // Channel-neutral: the DiscoveredTools field lets callers expand the active
 // tool set without knowing which channel produced the summary.
 type ToolExecutionSummary struct {
-	LastResult      string
-	FatalResult     string
-	ReadSkillNames  []string
-	TerminalTool    string
-	DiscoveredTools []string
-	Results         map[string]string
+	LastResult        string
+	FatalResult       string
+	ReadSkillNames    []string
+	TerminalTool      string
+	DiscoveredTools   []string
+	Results           map[string]string
+	AwaitingUserInput *tools.ErrAwaitingUserInput
 }
 
 // ToolArgumentsForTool injects channel-specific context into tool arguments.

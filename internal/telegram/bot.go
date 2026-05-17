@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/budget"
@@ -153,6 +154,14 @@ func (b *Bot) ToolRegistry() *tools.Registry {
 		return nil
 	}
 	return b.rt.tools
+}
+
+// ToolAttemptsRepo returns the tool observation repository used by chat turns.
+func (b *Bot) ToolAttemptsRepo() attempts.Repo {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.attemptsRepo
 }
 
 // ArchiveRepository returns the conversation archive repository (nil when not configured).

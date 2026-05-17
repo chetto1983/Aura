@@ -6,6 +6,7 @@ import (
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 
 	tele "gopkg.in/telebot.v4"
@@ -19,7 +20,8 @@ func ChatIDFromTeleContext(c tele.Context) int64 {
 }
 
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
-	return agent.ExecuteToolCalls(ctx, b.ToolRegistry(), convCtx, userID, ChatIDFromTeleContext(c), calls, b.terminalToolPolicyEnabled(), b.logger)
+	return agent.ExecuteToolCalls(ctx, b.ToolRegistry(), convCtx, userID, ChatIDFromTeleContext(c), calls, b.terminalToolPolicyEnabled(), b.logger,
+		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), b.ToolAttemptsRepo()))
 }
 
 // ExecToolCalls is the exported entry point for channels/telegram.InvocationBuilder.
