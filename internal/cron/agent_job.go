@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/agent/tools/sets"
+	"github.com/aura/aura/internal/stringx"
 )
 
 const (
@@ -21,7 +22,7 @@ func buildAgentJobAllowedTools() []string {
 	if err != nil {
 		return append([]string(nil), DefaultAgentJobTools...)
 	}
-	return appendUniqueStrings(append([]string(nil), DefaultAgentJobTools...), skillTools...)
+	return stringx.AppendUnique(append([]string(nil), DefaultAgentJobTools...), skillTools...)
 }
 
 type AgentJobPayload struct {
@@ -122,7 +123,7 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 		if err != nil {
 			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
 		}
-		base = appendUniqueStrings(base, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
+		base = stringx.AppendUnique(base, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
 	}
 
 	if len(requestedTools) == 0 {
@@ -134,7 +135,7 @@ func ResolveAgentJobTools(enabledToolsets []string, requestedTools []string, for
 		if err != nil {
 			return nil, fmt.Errorf("agent_job skills toolset: %w", err)
 		}
-		filtered = appendUniqueStrings(filtered, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
+		filtered = stringx.AppendUnique(filtered, toolsets.FilterAllowed(skillTools, AgentJobAllowedTools)...)
 	}
 	if len(filtered) == 0 {
 		if len(enabledToolsets) > 0 {
@@ -160,22 +161,6 @@ func (p AgentJobPayload) JSON() (string, error) {
 func mustMarshalPayload(p AgentJobPayload) string {
 	data, _ := json.Marshal(p)
 	return string(data)
-}
-
-func appendUniqueStrings(out []string, values ...string) []string {
-	seen := make(map[string]bool, len(out)+len(values))
-	for _, value := range out {
-		seen[value] = true
-	}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	return out
 }
 
 func fallbackAgentJobTools(values []string) []string {

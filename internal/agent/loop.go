@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/stringx"
 )
 
 type ChatClient interface {
@@ -420,7 +420,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			case "file":
 				if action, _ := call.Arguments["action"].(string); action == "read" {
 					if skill := SkillNameFromReadFileArgs(call.Arguments); skill != "" {
-						stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, skill)
+						stats.ReadSkills = stringx.AppendUnique(stats.ReadSkills, skill)
 						stats.SkillsRead = true
 					}
 				}
@@ -557,7 +557,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				}
 			}
 			lastToolResult = execution.LastResult
-			stats.ReadSkills = appendUniqueStrings(stats.ReadSkills, execution.ReadSkillNames...)
+			stats.ReadSkills = stringx.AppendUnique(stats.ReadSkills, execution.ReadSkillNames...)
 			stats.SkillsRead = stats.SkillsRead || len(stats.ReadSkills) > 0
 			if execution.TerminalTool != "" {
 				stats.TerminalTool = execution.TerminalTool
@@ -789,19 +789,6 @@ func toolResultPreview(result string) string {
 
 // MaxToolResultPreviewChars caps the preview string emitted on OnToolEnd.
 const MaxToolResultPreviewChars = 200
-
-func appendUniqueStrings(values []string, additions ...string) []string {
-	for _, addition := range additions {
-		addition = strings.TrimSpace(addition)
-		if addition == "" {
-			continue
-		}
-		if !slices.Contains(values, addition) {
-			values = append(values, addition)
-		}
-	}
-	return values
-}
 
 // findAskUserCall returns the index of the first ask_user call in calls, or -1.
 func findAskUserCall(calls []llm.ToolCall) int {

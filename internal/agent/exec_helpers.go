@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +12,7 @@ import (
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/stringx"
 )
 
 // ToolRunner abstracts tool dispatch for ExecuteToolCalls.
@@ -148,22 +147,11 @@ func ExecuteToolCalls(
 		summary.LastResult = r.content
 		summary.Results[r.id] = r.content
 		if r.readSkillName != "" {
-			summary.ReadSkillNames = toolExecAppendUnique(summary.ReadSkillNames, r.readSkillName)
+			summary.ReadSkillNames = stringx.AppendUnique(summary.ReadSkillNames, r.readSkillName)
 		}
 		if summary.TerminalTool == "" && r.terminalTool != "" {
 			summary.TerminalTool = r.terminalTool
 		}
 	}
 	return summary
-}
-
-func toolExecAppendUnique(values []string, additions ...string) []string {
-	for _, addition := range additions {
-		addition = strings.TrimSpace(addition)
-		if addition == "" || slices.Contains(values, addition) {
-			continue
-		}
-		values = append(values, addition)
-	}
-	return values
 }

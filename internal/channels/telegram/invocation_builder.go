@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/stringx"
 	tgtelegram "github.com/aura/aura/internal/telegram"
 
 	tele "gopkg.in/telebot.v4"
@@ -228,7 +229,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	addActiveTools := func(names []string) {
 		toolMu.Lock()
 		defer toolMu.Unlock()
-		activeToolNames = appendUniqueStrings(activeToolNames, names...)
+		activeToolNames = stringx.AppendUnique(activeToolNames, names...)
 	}
 
 	inv := agent.Invocation{
@@ -498,23 +499,3 @@ func (ib *InvocationBuilder) terminalToolPolicyEnabled() bool {
 	return ib.b.TerminalToolPolicyEnabled()
 }
 
-// appendUniqueStrings appends additions to values, skipping blanks and duplicates.
-func appendUniqueStrings(values []string, additions ...string) []string {
-	for _, addition := range additions {
-		addition = strings.TrimSpace(addition)
-		if addition == "" {
-			continue
-		}
-		found := false
-		for _, v := range values {
-			if v == addition {
-				found = true
-				break
-			}
-		}
-		if !found {
-			values = append(values, addition)
-		}
-	}
-	return values
-}
