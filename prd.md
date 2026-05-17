@@ -1167,7 +1167,7 @@ If the answer is unclear, the module is not ready to move.
 
 ## 6.5. Status Checklist
 
-Snapshot at **2026-05-16**. The inline closure notes inside each phase (§7) are the
+Snapshot at **2026-05-17**. The inline closure notes inside each phase (§7) are the
 canonical evidence; this table is the at-a-glance overview. Three states:
 
 - ✅ **closed** — gate met, in production, commits on master
@@ -1201,6 +1201,8 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 second-slice closed | 2026-05-16 (Phase-S) | Phase08 first slice (Phase-R) + second slice (Phase-S) closed 2026-05-16; full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred | **Capability #5 extended by Phase-S.** write_proposal workers via propose_patch wired. Full Phase 8 substrate (8B–8G) gated on open decisions. |
 | **9** — Memory and Source Discipline | 🟡 partial-close | 2026-05-16 (partial) | Phase-O + Phase-Q closed (write-policy + guards); remaining: clarify memory vs storage docs, conversion fixtures, SQLite concurrency hardening | **Phase 9 partial-close 2026-05-16** — capability #1 (autonomous write-policy) core wired; doc/invariant hardening deferred |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
+| **Phase-CLEANUP** — Audit-driven cleanup sweep (US-CL01..CL06) | ✅ | 2026-05-17 | US-CL01..CL06 — 25 commits incl. `9e010638..dab004c3` | `stringx.AppendUnique`+`NormalizeBaseURL`+`llm.CloneMessages`+`httputil.NewHTTPClient`; cmd/aura adapters extracted; identity/store split (875→233); chat testhelpers; staticcheck modernizations. 80→2 lint issues (last 2 in `web/node_modules`). |
+| **Phase-CLEANUP2** — God-files final + concurrency LOW (US-CL07..CL11) | ✅ | 2026-05-17 | US-CL07..CL11 — `ff436463..e484b21e` | `cmd/aura/app_wire.go` extracted (app.go 969→537, last in-scope god-file); `internal/chat/hub_lifecycle.go` extracted (760→456); docHandler derives ctx from App.bgCtx; SessionStore.Begin declined (pure sync.Map); runs/questions.go already shipped. 11 round-1..4 audit reports persisted in `docs/audit-*-2026-05-17.md`. |
 
 ### 7.2 Outstanding deferrals (lesson promotion + memory active loop)
 
@@ -1223,19 +1225,44 @@ Full Phase 8 remaining scope (write-capable workers, team_collaboration, plan-ex
 critic-review, hierarchical DAG) remains explicitly deferred. Gap **6 (self-coding)**
 is an explicit non-goal (§12).
 
-### 7.3 Logical next phase after Phase-M (Phase 7C) closes
+### 7.3 Logical next phase after Phase-CLEANUP2 (2026-05-17)
 
-The high-leverage candidate is the **Phase 6 lesson-promotion deferral**, naming it
-**Phase-N** in the Ralph queue convention. Rationale:
+Phase-N (lesson promotion), Phase-O (user memory promotion), Phase-P (agent_note),
+Phase-Q (write guards), Phase-R (subagent read-only fanout), Phase-S (write-capable
+workers), and Phase-CLEANUP1/2 (audit-driven code health) all closed during the
+2026-05-16..17 cycle. Today's session left the codebase with:
 
-1. `tool_attempts` table + ToolObservation contract are already shipped (Phase 6 backbone)
-2. Combines two of the four open capability gaps (reflection + telemetry) into one slice
-3. Unlocks the §5.7 "promotion workflow": `experience_store → operational_memory → skills`
-4. Manageable size (5-7 atomic stories) because foundations exist
-5. Validates `internal/learning` as a real package before Phase 9 promotes write-policy further
+- 0 god-files >600 LOC in the targeted scope (app.go 537, hub.go 456, store.go 233, loop.go 699 with loop_dedup split)
+- 2 lint issues (both in `web/node_modules`, third-party — not actionable)
+- 0 confirmed security findings (docs/audit-security-2026-05-17.md)
+- 0 critical error/logging issues (tool-arg privacy enforced via `argKeys()` + slog sanitizer)
+- 1 concurrency MEDIUM fixed (gate.go OnOverflow WaitGroup); 2 LOWs deferred or declined
 
-After Phase-N, the natural progression is Phase 9 (write-policy hardening) → Phase 8
-(RunGraph subagent dispatch) → Phase 7D-F (typed memory tiers + frontmatter promotion).
+Three candidate phases for the next cycle, ordered by leverage:
+
+**Option A — Phase-T: Production Rollout + Hardening**
+Operational layer: docker-compose prod overlay, systemd/restart-on-fail wiring,
+observability dashboards (the `authz_decisions` and `tool_attempts` tables exist
+but no dashboard surfaces them), deployment runbook, backup verification cron,
+secret-rotation procedure. Memory says: "Next milestone — production rollout +
+simplification 2026-05-15". This is that milestone.
+
+**Option B — Phase 7C completion (US-M02..M04)**
+content_hash drift detection on `compact_memory_documents` (mig v13) + eager
+write-time invalidate hooks + retrieval-time degraded_read annotations. US-M01
+shipped (projection_state table); the remaining 3 stories close the freshness
+registry. Smaller scope (3 stories), tighter to existing code.
+
+**Option C — Phase 7D: typed memory tiers**
+Wire `KindUserMemory` + `KindOperational` as first-class writers (Mem0/Letta
+typed-tier pattern) — the §5.7 ladder. Larger scope; requires retrieval-side
+changes to `search_memory` to differentiate tier rankings.
+
+After whichever phase ships next, the natural progression is to close the
+remaining 7D-F backlog (typed tiers + frontmatter promotion) and the deferred
+full Phase 8 substrate (team_collaboration, plan-execute, critic-review,
+hierarchical DAG) — both gated on operational learnings from the production
+rollout.
 
 ---
 
