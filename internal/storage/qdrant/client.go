@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/httputil"
 	"github.com/aura/aura/internal/stringx"
 )
 
@@ -41,14 +42,10 @@ func NewClient(cfg Config) (Client, error) {
 	if base == "" {
 		return nil, fmt.Errorf("qdrant: BaseURL is required")
 	}
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
 	return &httpClient{
 		baseURL: base,
 		apiKey:  cfg.APIKey,
-		http:    &http.Client{Timeout: timeout},
+		http:    httputil.NewHTTPClient(cfg.Timeout, 30*time.Second),
 	}, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/httputil"
 	"github.com/aura/aura/internal/stringx"
 )
 
@@ -60,11 +61,7 @@ type Client struct {
 func New(cfg Config) *Client {
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
-		timeout := cfg.Timeout
-		if timeout <= 0 {
-			timeout = defaultTimeout
-		}
-		httpClient = &http.Client{Timeout: timeout}
+		httpClient = httputil.NewHTTPClient(cfg.Timeout, defaultTimeout)
 	}
 	model := cfg.Model
 	if model == "" {

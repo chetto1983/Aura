@@ -89,11 +89,11 @@
         "go vet ./... green",
         "go test ./... green",
         "~/go/bin/golangci-lint run ./... shows 10 issues or fewer (not more)",
-        "Single atomic commit prefix: refactor(httputil): extract NewHTTPClient, collapse 13 inline client constructions (US-CL05)"
+        "Single atomic commit prefix: refactor(httputil): extract NewHTTPClient, migrate sites with caller-vs-fallback semantics (US-CL05)"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Medium risk — different fallback timeouts per site. Sample current behavior with grep + read each fallback BEFORE migrating. internal/llm/openai.go must NOT be migrated."
+      "passes": true,
+      "notes": "Story scope revised at execution time: 14 inline &http.Client{} constructions enumerated, but only 4 had real caller-supplied-timeout-vs-fallback semantics (qdrant, ocr, embed_batch, embed_http). The other 10 were hardcoded singletons where `NewHTTPClient(20s, 20s)` reads worse than `&http.Client{Timeout: 20*time.Second}`. Per CLAUDE.md no-unnecessary-abstraction rule, those stay inline. internal/agent/tools/registry/direct_fetch.go also excluded — has custom Transport + CheckRedirect, helper signature doesn't fit."
     },
     {
       "id": "US-CL06",

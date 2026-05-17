@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/httputil"
 	"github.com/aura/aura/internal/stringx"
 )
 
@@ -39,7 +40,7 @@ func NewOpenAICompatEmbeddingFunction(baseURL, apiKey, model string, outputDim i
 		return nil
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 2 * time.Minute}
+		client = httputil.NewHTTPClient(0, 2*time.Minute)
 	}
 	e := &openAICompatEmbedder{baseURL: baseURL, apiKey: apiKey, model: model, http: client, outputDim: outputDim, normalize: normalize}
 	return e.Embed

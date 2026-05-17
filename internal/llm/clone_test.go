@@ -32,6 +32,9 @@ func TestCloneMessages_FreshHeader(t *testing.T) {
 	}
 	// Appending to got must not extend src.
 	got = append(got, Message{Role: "system", Content: "c"})
+	if len(got) != 3 {
+		t.Fatalf("got not extended after append: len=%d", len(got))
+	}
 	if len(src) != 2 {
 		t.Fatalf("src extended after append to clone: len=%d", len(src))
 	}
