@@ -17,6 +17,16 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// streamStatus is the minimal contract Outbound needs from statusPane. An
+// interface (instead of *statusPane) lets the fixture package — which can't
+// see unexported types — pass `nil` and exercise the streaming path with no
+// tool-call status pane attached.
+type streamStatus interface {
+	EnterContentMode()
+	FooterMarkdown() string
+	MarkEdited()
+}
+
 // streaming constants – mirror the values in internal/telegram/streaming.go
 // so the ported logic behaves identically.
 const (
@@ -92,6 +102,7 @@ func (o *Outbound) ConsumeStream(
 	ch <-chan llm.Token,
 	userID string,
 	placeholder *tele.Message,
+	pane streamStatus,
 ) (llm.Response, bool, error) {
 	var sb strings.Builder
 	var cotBuf strings.Builder
@@ -109,11 +120,30 @@ func (o *Outbound) ConsumeStream(
 		return false
 	}
 
+	// withFooter prepends the statusPane footer (if any) so the user can
+	// still see "🛠 N strumenti usati in K round · Ts" above the streamed
+	// answer. The footer is recomputed each call so elapsed stays live.
+	withFooter := func(body string) string {
+		if pane == nil {
+			return body
+		}
+		footer := pane.FooterMarkdown()
+		if footer == "" {
+			return body
+		}
+		return footer + "\n\n" + body
+	}
+
 	flush := func() {
 		if !readyToFlush() {
 			return
 		}
-		raw := composeStreamingMessage(cotBuf.String(), sb.String())
+		// First content flush hands ownership of the placeholder to
+		// Outbound — pane stops emitting its own edits from here on.
+		if msg == nil && pane != nil {
+			pane.EnterContentMode()
+		}
+		raw := withFooter(composeStreamingMessage(cotBuf.String(), sb.String()))
 		parts := tgtelegram.RenderForEntities(raw)
 		if len(parts) == 0 {
 			return
@@ -140,6 +170,9 @@ func (o *Outbound) ConsumeStream(
 				msg = sent
 			}
 			lastEdit = time.Now()
+			if pane != nil {
+				pane.MarkEdited()
+			}
 			return
 		}
 		if time.Since(lastEdit) < streamingEditThrottle {
@@ -150,6 +183,9 @@ func (o *Outbound) ConsumeStream(
 			return
 		}
 		lastEdit = time.Now()
+		if pane != nil {
+			pane.MarkEdited()
+		}
 	}
 
 	for tok := range ch {
@@ -172,7 +208,8 @@ func (o *Outbound) ConsumeStream(
 				Usage:        tok.Usage,
 				Reasoning:    strings.TrimSpace(cotBuf.String()),
 			}
-			// Final edit: drop the CoT prefix so the user sees a clean answer.
+			// Final edit: drop both the CoT prefix AND the statusPane
+			// footer so the user sees only the clean answer.
 			if msg != nil && !resp.HasToolCalls {
 				raw := strings.TrimSpace(sb.String())
 				if raw == "" {
@@ -184,6 +221,9 @@ func (o *Outbound) ConsumeStream(
 				}
 				if _, err := o.editMessage(c.Bot(), msg, parts[0], raw); err != nil {
 					o.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
+				}
+				if pane != nil {
+					pane.MarkEdited()
 				}
 				o.sendRemainder(c.Bot(), c.Recipient(), parts, 1)
 			}

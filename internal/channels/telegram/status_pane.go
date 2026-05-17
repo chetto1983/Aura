@@ -185,12 +185,24 @@ func (p *statusPane) Finalize() {
 	p.finalized = true
 }
 
-// Footer returns the Layout D demoted footer (used by Outbound once content
-// streaming starts). Empty when no tools have run.
-func (p *statusPane) Footer() (string, tele.Entities) {
+// FooterMarkdown returns the Layout D demoted footer as a CommonMark string
+// (wrapped in `_..._` italics), suitable for embedding in the body that
+// Outbound passes to tgtelegram.RenderForEntities. Empty when no tools have
+// run yet.
+//
+// Why a markdown string and not (text, entities): once content streaming
+// starts, Outbound composes a single body of "footer + \n\n + content" and
+// runs the whole thing through the MarkdownV2 parser. Using markdown here
+// keeps the rendering path uniform with composeStreamingMessage's CoT
+// handling.
+func (p *statusPane) FooterMarkdown() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.composeFooterLocked()
+	text := p.composeFooterTextLocked()
+	if text == "" {
+		return ""
+	}
+	return "_" + text + "_"
 }
 
 // MarkEdited resets the throttle clock. Outbound calls this after its own
@@ -328,27 +340,24 @@ func (p *statusPane) composeLocked() (string, tele.Entities) {
 	return body, ents
 }
 
-// composeFooterLocked builds the Layout D one-line italic footer.
-// Returns empty when the turn used no tools.
-func (p *statusPane) composeFooterLocked() (string, tele.Entities) {
+// composeFooterTextLocked builds the bare text of the Layout D footer (no
+// italic markers — wrap with `_..._` for markdown embedding). Empty when the
+// turn used no tools.
+func (p *statusPane) composeFooterTextLocked() string {
 	totalRounds := len(p.roundHistory)
 	var totalTools int
 	for _, r := range p.roundHistory {
 		totalTools += len(r.entries)
 	}
 	if totalTools == 0 {
-		return "", nil
+		return ""
 	}
 	elapsed := p.now().Sub(p.turnStartedAt)
-	text := fmt.Sprintf("🛠 %s in %s · %.1fs",
+	return fmt.Sprintf("🛠 %s in %s · %.1fs",
 		pluralIT(totalTools, "strumento usato", "strumenti usati"),
 		pluralIT(totalRounds, "round", "round"),
 		elapsed.Seconds(),
 	)
-	ents := tele.Entities{
-		{Type: tele.EntityItalic, Offset: 0, Length: tgmd.UTF16Len(text)},
-	}
-	return text, ents
 }
 
 // summaryLineLocked is the single line inside the blockquote that Telegram

@@ -20,6 +20,7 @@ type streamingChatClient struct {
 	teleCtx         tele.Context
 	userID          string
 	placeholder     *tele.Message
+	pane            streamStatus // optional: when set, Outbound calls EnterContentMode at first content flush
 }
 
 func newStreamingChatClient(
@@ -30,6 +31,7 @@ func newStreamingChatClient(
 	teleCtx tele.Context,
 	userID string,
 	placeholder *tele.Message,
+	pane streamStatus,
 ) agent.ChatClient {
 	return &streamingChatClient{
 		llmc:            llmc,
@@ -39,6 +41,7 @@ func newStreamingChatClient(
 		teleCtx:         teleCtx,
 		userID:          userID,
 		placeholder:     placeholder,
+		pane:            pane,
 	}
 }
 
@@ -55,7 +58,7 @@ func (c *streamingChatClient) Chat(ctx context.Context, messages []llm.Message, 
 	if err != nil {
 		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
 	}
-	resp, delivered, err := c.outbound.ConsumeStream(c.teleCtx, ch, c.userID, c.placeholder)
+	resp, delivered, err := c.outbound.ConsumeStream(c.teleCtx, ch, c.userID, c.placeholder, c.pane)
 	if err != nil {
 		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
 	}

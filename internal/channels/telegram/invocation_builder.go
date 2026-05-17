@@ -185,11 +185,27 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// Send the initial placeholder so the user knows the message was received.
 	placeholder, _ := c.Bot().Send(c.Recipient(), "⏳")
 
+	// statusPane renders in-flight tool calls into the same placeholder
+	// during the tool-loop phase. Once Outbound starts streaming content
+	// it calls pane.EnterContentMode() and the pane stops issuing its own
+	// edits — see internal/channels/telegram/outbound.go::flush().
+	pane := newStatusPane(time.Now, func(text string, ents tele.Entities) error {
+		if placeholder == nil {
+			return nil
+		}
+		_, err := c.Bot().Edit(placeholder, text, ents)
+		if err != nil {
+			b.Logger().Debug("status pane edit failed",
+				"user_id", userID, "error", err)
+		}
+		return err
+	})
+
 	// Route streaming through the canonical channels/telegram.Outbound.
 	if ib.outbound == nil {
 		ib.outbound = NewOutbound(b.Logger())
 	}
-	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder)
+	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder, pane)
 
 	maxIterations := ib.maxToolLoopIterations()
 	// No hardcoded per-tool caps — DuplicatePolicy alone protects against
@@ -297,6 +313,15 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		},
 		OnEvent: func(event agent.Event) {
 			switch event.Type {
+			case agent.EventToolStart:
+				pane.OnToolStart(event.ToolCallID, event.ToolName, event.ToolArgKeys)
+			case agent.EventToolEnd:
+				pane.OnToolEnd(
+					event.ToolCallID,
+					event.ToolSuccess,
+					time.Duration(event.ToolElapsedMs)*time.Millisecond,
+					event.ToolResultPreview,
+				)
 			case agent.EventQuestionRequested:
 				// ask_user fired: render the question as a Telegram message.
 				question, _ := event.QuestionPayload["question"].(string)
@@ -317,6 +342,10 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				currentStats = baseStats.From(event.Stats)
 				b.StoreOrchestrationSnapshot(userID, currentStats)
 			case agent.EventFinal:
+				// Stop the status pane before we touch the placeholder
+				// so it doesn't race the final edit/delete below.
+				pane.Finalize()
+
 				finalStats := baseStats.From(event.Stats)
 				currentStats = finalStats
 

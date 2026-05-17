@@ -123,7 +123,10 @@ func captureBytes(t *testing.T, tokens []llm.Token, placeholder *tele.Message, o
 	close(ch)
 
 	out := telegramadapter.NewOutbound(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	resp, delivered, err := out.ConsumeStream(ctx, ch, "123", placeholder)
+	// nil status pane preserves byte-parity with US-301/US-401 snapshots:
+	// the fixture intentionally exercises the no-status-pane path so the
+	// recorded Bot API calls match the original implementation exactly.
+	resp, delivered, err := out.ConsumeStream(ctx, ch, "123", placeholder, nil)
 	if err != nil {
 		t.Fatalf("fixture.Capture: ConsumeStream: %v", err)
 	}

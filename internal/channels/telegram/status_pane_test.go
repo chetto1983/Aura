@@ -179,13 +179,10 @@ func TestStatusPane_LayoutD_ContentModeFooter(t *testing.T) {
 	clk.t = time.Unix(1_700_000_000, 0).Add(2800 * time.Millisecond)
 	p.EnterContentMode()
 
-	footerText, footerEnts := p.Footer()
-	wantFooter := "🛠 4 strumenti usati in 2 round · 2.8s"
-	if footerText != wantFooter {
-		t.Fatalf("Footer text = %q, want %q", footerText, wantFooter)
-	}
-	if len(footerEnts) != 1 || footerEnts[0].Type != tele.EntityItalic {
-		t.Fatalf("footer entity = %+v, want single italic", footerEnts)
+	footer := p.FooterMarkdown()
+	wantFooter := "_🛠 4 strumenti usati in 2 round · 2.8s_"
+	if footer != wantFooter {
+		t.Fatalf("FooterMarkdown = %q, want %q", footer, wantFooter)
 	}
 	// EnterContentMode must suppress further edits.
 	editsBefore := len(sink.calls)
@@ -319,9 +316,9 @@ func TestStatusPane_NoToolsNoEdit(t *testing.T) {
 	if len(sink.calls) != 0 {
 		t.Fatalf("pane edited without any events: %d", len(sink.calls))
 	}
-	footer, _ := p.Footer()
+	footer := p.FooterMarkdown()
 	if footer != "" {
-		t.Fatalf("Footer with zero tools = %q, want empty", footer)
+		t.Fatalf("FooterMarkdown with zero tools = %q, want empty", footer)
 	}
 }
 
@@ -337,7 +334,7 @@ func TestStatusPane_FinalizeMarksOrphansFailed(t *testing.T) {
 
 	// Footer should now report 1 tool + 1 round (the orphan was archived).
 	clk.advance(time.Second)
-	footer, _ := p.Footer()
+	footer := p.FooterMarkdown()
 	if !strings.Contains(footer, "1 strumento usato in 1 round") {
 		t.Fatalf("Finalize did not archive orphan: footer=%q", footer)
 	}
