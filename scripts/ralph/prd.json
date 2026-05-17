@@ -1,117 +1,129 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-T — Production rollout + hardening. After Phase-CLEANUP1+2 closed the code-health backlog (25 commits 2026-05-17), the codebase is clean enough to invest in operational discipline. This phase wires the operational layer the system has been missing: docker-compose prod overlay, version-baked-from-git, automated backup verification, observability dashboards over the already-existing authz_decisions and tool_attempts tables, and a runbook that lets the operator (Davide) rebuild from cold within 30 minutes after a disaster. Pattern source: memory `project_next_milestone_production_simplify_2026-05-15` 'dopo US-A19: prod completa + semplificazione con pattern 2026'. Order is highest-reliability-leverage first. Each story is a single atomic commit on master.",
+  "description": "Aura Phase-Z — Close remaining bounded PRD items before strategic pivot to plugin-shaped layout (option 2). Phase-T just closed (production rollout); now finish the prd.md backlog. Real remaining bounded scope: (a) Phase 7C completion = 3 stories (content_hash drift detection + write-time invalidate + degraded_read annotations — foundation US-M01 already shipped); (b) PRD admin: mark 7D/7E/7F as ✅ closed since their wiring already exists (KindUserMemory/KindOperational writers via Phase-N/O, ByteStart/End via Phase 7E work, schema_version/prompt_version via wiki page tool); (c) Phase 9 hardening = 3 stories (SQLite concurrency hardening, memory-vs-storage docs, source-conversion fixtures). Phase 8 full substrate (team_collab, plan-execute, critic-review, hierarchical DAG) is explicitly DE-SCOPED per user decision 2026-05-17 — first two slices (Phase-R + Phase-S) suffice for Aura's actual use as single-user second-brain; deferred items can be reopened when a concrete use-case requires them. Each story is a single atomic commit on master, scope-minimal. After this phase closes, the next milestone is the plugin-layout pivot (keep personal, but decouple personality from core).",
   "userStories": [
     {
-      "id": "US-T01",
-      "title": "Add compose.prod.yaml overlay with restart, healthcheck thresholds, no debug ports",
-      "description": "Create a docker-compose production overlay that the operator can use via `docker compose -f compose.yaml -f compose.prod.yaml up -d`. The overlay tightens the dev defaults without forking the base file. (a) Add `compose.prod.yaml` to repo root. (b) For the `aura` service: set `restart: unless-stopped`, narrow `ports:` to ONLY `127.0.0.1:8080` (no 18080 dashboard exposure on LAN in prod — operator uses ssh tunnel); add `AURA_HEADLESS=true` env. (c) For supporting sidecars (qdrant, garage, searxng, llama-embed, markitdown): `restart: unless-stopped`, healthcheck intervals tightened (30s → 60s once-warm), no host-port exposure where not required. (d) Add a `--profile prod-only` gate on debug-bin sidecars that don't run in prod. (e) Document the overlay in docs/RUNBOOK.md (US-T06 will expand this). (f) Verify with `docker compose -f compose.yaml -f compose.prod.yaml config` that the merged file is valid (no exec — the config command just validates).",
+      "id": "US-Z01",
+      "title": "Phase 7C / US-M02 — content_hash + embedding_model_id + index_build_id columns on compact_memory_documents",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 229: add migration v13 to internal/db/migrations adding three columns to compact_memory_documents — content_hash TEXT, embedding_model_id TEXT, index_build_id TEXT. (a) Write the migration (additive, no existing-row backfill required; new writes populate the columns from now on). (b) In internal/storage/memoryindex/store.go Upsert: compute SHA-256 of canonical body before insert, set content_hash; the embedding_model_id comes from the writer's config (Phase-M Store.EmbeddingModelID), index_build_id from a generated UUID per rebuild. (c) Pattern source: LlamaIndex content-hash + Mem0 payload-hash. (d) Test: migration runs idempotent; Upsert populates the three columns; pre-migration rows have NULLs (safe — readers tolerate). (e) Cross-check with US-M01 freshness.Store — the index_build_id should match the freshness row's IndexBuildID for the same projection.",
       "acceptanceCriteria": [
-        "compose.prod.yaml exists in repo root",
-        "aura service has restart: unless-stopped and AURA_HEADLESS=true in the overlay",
-        "Dashboard port 18080 is removed from the LAN exposure in the overlay (bound to 127.0.0.1 only)",
-        "All sidecars (qdrant, garage, searxng, llama-embed, markitdown) have restart: unless-stopped in the overlay",
-        "docker compose -f compose.yaml -f compose.prod.yaml config validates (exit 0) without changes pushing to actual containers",
-        "RUNBOOK.md (or a new docs/deploy-prod.md) gets a 1-paragraph note pointing to the overlay (full runbook ships in US-T06)",
+        "Migration v13 exists in internal/db/migrations/ adding content_hash, embedding_model_id, index_build_id to compact_memory_documents",
+        "memoryindex.Store.Upsert computes SHA-256 content_hash + populates embedding_model_id from config + index_build_id from rebuild context",
+        "memoryindex.Store.Upsert test asserts the three columns are populated post-write",
+        "Pre-migration rows can be read without crash (NULL handling)",
         "go build ./... green",
+        "go test ./internal/db/migrations/... ./internal/storage/memoryindex/... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(deploy): compose.prod.yaml overlay for production hardening (US-T01)"
+        "Single atomic commit prefix: feat(memoryindex): content_hash drift columns for projection freshness (US-Z01 / 7C US-M02)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Pure infra story — no Go code changes required. The overlay is additive (does NOT modify compose.yaml). Don't include garage/searxng deletion; those stay in dev."
+      "passes": false,
+      "notes": "Mig v13 is additive only — existing rows get NULL columns, which the read path tolerates. The SHA-256 input is the canonical body (post-trim, lowercase) so cosmetic edits don't churn the hash."
     },
     {
-      "id": "US-T02",
-      "title": "Bake git SHA + tag into version, surface via --version and /api/health",
-      "description": "Aura currently logs `version=3.0 commit=dev date=unknown` because the binary doesn't get build-time injected values. (a) Add internal/release/version.go variables Version, Commit, BuildDate as `var ... = \"dev\"` defaults. (b) Update the build path (Dockerfile + go build invocations in scripts) to use `-ldflags \"-X github.com/aura/aura/internal/release.Commit=$(git rev-parse --short HEAD) -X ...Date=$(date -u +%FT%TZ)\"`. (c) Add a `--version` flag handler in cmd/aura/main.go that prints SHA + date + go runtime version and exits 0 BEFORE any setup. (d) Update /api/health JSON response to include `version`, `commit`, `build_date` fields. (e) The aura:local Docker tag stays — but the build args inject SHA. (f) Update the boot-time slog Info to use real values not 'dev'/'unknown'. (g) Verify locally: build, run `./aura --version`, see SHA.",
+      "id": "US-Z02",
+      "title": "Phase 7C / US-M03 — eager write-time invalidate hooks bump freshness pending_count",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 230: add invalidate hooks that fire when a source/conversation/wiki write happens, so the freshness.Store.pending_count for the relevant projection (CollectionSource, CollectionArchive, CollectionWiki) bumps immediately. (a) In internal/conversation/archive.go BufferedAppender.Append: after successful insert, call freshness.Store.BumpPending(ctx, 'compact_memory_archive', 1) — IF the store has a freshnessStore (nil-safe). (b) In internal/storage/sources/store/store.go Put: same pattern for 'compact_memory_sources'. (c) In internal/wiki/store.go Save: same pattern for 'compact_memory_wiki'. (d) Each hook is best-effort (log.Warn on freshness error, don't fail the write). (e) Test each path: write a row, assert freshness pending_count incremented.",
       "acceptanceCriteria": [
-        "internal/release/version.go exists with Version, Commit, BuildDate package vars (string)",
-        "Dockerfile build step passes -ldflags injecting Commit + BuildDate",
-        "cmd/aura/main.go handles --version flag (prints + exits 0 before setup)",
-        "/api/health JSON returns version, commit, build_date keys",
-        "Boot-time slog 'aura starting' line uses the injected Commit instead of 'dev'",
+        "conversation.BufferedAppender.Append bumps freshness pending_count for compact_memory_archive after success",
+        "sources.Store.Put bumps freshness pending_count for compact_memory_sources after success",
+        "wiki.Store.Save bumps freshness pending_count for compact_memory_wiki after success",
+        "Each hook is best-effort — freshness errors logged but don't fail the write",
+        "Tests cover all 3 hooks with assert-pending-count-incremented",
         "go build ./... green",
-        "go test ./internal/release/... green (add a basic version-vars-defined test)",
+        "go test ./internal/conversation/... ./internal/storage/sources/store/... ./internal/wiki/... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(release): inject git SHA + build date at link time (US-T02)"
+        "Single atomic commit prefix: feat(freshness): eager write-time invalidate hooks (US-Z02 / 7C US-M03)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "ldflags pattern is well-known — example: -ldflags=\"-X 'pkg.Version=$(VERSION)'\". Watch for Windows-vs-Linux path quirks; the GoReleaser config (if it exists in scripts/) probably already does this for releases."
+      "passes": false,
+      "notes": "Each hook is nil-safe: if freshnessStore is nil (tests without freshness), the bump is skipped. Don't add a new mandatory dep — guard every call."
     },
     {
-      "id": "US-T03",
-      "title": "Backup-verify cron: daily SQLite restore-into-tmp + integrity check + alert",
-      "description": "Aura has a debug_backup harness (cmd/debug_backup) but no scheduled verification. Without verification, backups silently rot. (a) Add internal/dbrecovery/verify.go with a function VerifyBackup(ctx, backupPath, expectMinRows map[string]int) that: copies the backup into a tmpfile, opens it, runs PRAGMA integrity_check, asserts row counts on `principals`, `actors`, `conversations`, `scheduled_tasks` are >= the expected minimums. (b) Add a scheduled_task entry (via the existing cron.Scheduler) that runs daily at 04:00 local (the existing system clock — re-use cfg.Timezone). (c) On failure: send a Telegram alert via the existing alert path (whatever the cron channel uses to send operator messages). (d) On success: emit slog Info with row counts + integrity_check OK. (e) Add a TEST that creates a known-good DB, calls VerifyBackup, asserts pass; and a known-bad DB (truncated), asserts fail.",
+      "id": "US-Z03",
+      "title": "Phase 7C / US-M04 — retrieval-time freshness annotation on memory_search hits",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 231: surface index_build_id + embedding_model_id + staleness_seconds + degraded_read on every memory_search hit. (a) In internal/storage/memoryindex/store.go Document struct: already has ContentHash + EmbeddingModelID + IndexBuildID per US-Z01. Add a derived StalenessSeconds int64 + DegradedRead bool field (not in DB, computed at read time). (b) In Store.Search: after Document scan, look up freshness row for the doc's projection_id; compute staleness_seconds = now - last_indexed_at; degraded_read = (pending_count > 0 OR staleness_seconds > threshold). Threshold from cfg (default 1h). (c) In internal/agent/tools/registry/memory_search.go: surface staleness in the formatted output ('freshness=stale' annotation per hit) and in the JSON result. (d) Pattern source: Anthropic file_id + Mem0 payload return. (e) Test: seed two docs (one fresh, one stale), assert annotations correct.",
       "acceptanceCriteria": [
-        "internal/dbrecovery/verify.go exists with VerifyBackup(ctx, backupPath, expectMinRows) function",
-        "VerifyBackup runs PRAGMA integrity_check + asserts table row counts",
-        "Cron schedule wired to run daily (via existing internal/cron.Scheduler, not a separate goroutine)",
-        "Failure path emits a Telegram message via the existing cron alert channel (not a new direct send)",
-        "Success path emits slog Info with verification report",
-        "internal/dbrecovery/verify_test.go covers happy path + truncated DB failure",
+        "memoryindex.Document has StalenessSeconds int64 + DegradedRead bool fields",
+        "memoryindex.Store.Search populates both fields from freshness.Store lookup",
+        "memory_search tool surfaces 'freshness=stale' / 'degraded_read=true' in the LLM-facing output when relevant",
+        "Threshold cfg-driven (memorySearchStaleThresholdSecs, default 3600)",
+        "Test seeds fresh + stale docs, asserts annotations",
         "go build ./... green",
-        "go test ./internal/dbrecovery/... green",
         "go test ./... green",
-        "Single atomic commit prefix: feat(dbrecovery): daily backup-verify cron with integrity check (US-T03)"
+        "Single atomic commit prefix: feat(memory_search): surface degraded_read + staleness on retrieval hits (US-Z03 / 7C US-M04)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Re-use existing alert channel; DON'T introduce a new direct-to-Telegram path. The scheduler accepts function callbacks; wire VerifyBackup as one. Backup path comes from cfg.BackupPath (or wherever debug_backup reads from)."
+      "passes": false,
+      "notes": "Cap the staleness annotation to relevant doc kinds — wiki freshness matters less than archive freshness. The threshold is intentionally generous (1h default); operator can tune via cfg."
     },
     {
-      "id": "US-T04",
-      "title": "Surface authz_decisions in dashboard: denial rate + recent denied actors",
-      "description": "The authz_decisions table exists and is written by every Authorize call, but nothing surfaces the data. Operators can't see which capabilities are being denied or why. (a) Add /api/maintenance/authz endpoint handler. Returns JSON: denial_rate_24h (float 0-1), top_denied_capabilities (list of {capability, count} sorted desc, 24h window), recent_denials (last 50, with actor_id + capability + reason + created_at — actor_id may be Telegram username or actor UUID). (b) Wire the handler in internal/api/maintenance.go (or wherever the existing maintenance handlers live). (c) Add a basic table panel in the dashboard React (web/src/...) — a new tab under Maintenance called 'Authz' with the 3 sections. (d) Add a handler test that seeds 10 authz_decisions rows + asserts the JSON shape + counts. (e) The dashboard component is keep-it-simple: 3 stacked sections, no charts, no realtime updates.",
+      "id": "US-Z04",
+      "title": "PRD §6.5 admin: mark 7D / 7E / 7F as ✅ closed with evidence pointers",
+      "description": "Phase 7D, 7E, 7F are scaffolded as ⬜ open in prd.md §6.5 but their wiring is ALREADY in the codebase (verified 2026-05-17): (a) 7D — KindUserMemory writer in internal/learning/user_memory_writer.go, KindOperational writer in internal/learning/writer.go, recall tools in agent/tools/registry/recall_*.go, probe test in cmd/probe_chat/phase07d.go. Phase-N + Phase-O work delivered this. (b) 7E — ByteStart/ByteEnd on Document struct + memory_search formatting + cmd/probe_chat/phase07e.go probe. (c) 7F — schema_version + prompt_version (wikiPagePromptVersion = 'v1') stamped on every wiki.Page write in agent/tools/registry/wiki.go. (d) Update prd.md §6.5 to ✅ for each row with the evidence pointers. (e) Also update §7.3 with the new logical-next-phase guidance (after this Phase-Z closes, the plugin-layout pivot begins).",
       "acceptanceCriteria": [
-        "/api/maintenance/authz endpoint returns JSON with denial_rate_24h, top_denied_capabilities, recent_denials keys",
-        "Handler wired into existing API router (NOT a new router)",
-        "Dashboard React adds an 'Authz' tab under Maintenance with 3 sections rendering the JSON",
-        "internal/api/maintenance_authz_test.go covers the shape with seeded test data",
-        "go build ./... green",
-        "go test ./internal/api/... green",
-        "npm --prefix web run build green",
-        "Single atomic commit prefix: feat(api,web): surface authz_decisions in dashboard (US-T04)"
+        "prd.md §6.5 row 7D: status ✅ with closure date 2026-05-17 + commit/file evidence (Phase-N + Phase-O wiring)",
+        "prd.md §6.5 row 7E: status ✅ with closure date + evidence (ByteStart/End + probe)",
+        "prd.md §6.5 row 7F: status ✅ with closure date + evidence (wikiPagePromptVersion stamp)",
+        "prd.md §7.3 updated: after Phase-Z closes, next milestone is plugin-layout pivot (option 2 per user 2026-05-17)",
+        "No Go code changes — pure docs",
+        "Single atomic commit prefix: docs(prd): mark 7D/7E/7F closed with evidence pointers (US-Z04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Re-use existing maintenance.go patterns; check the existing /api/maintenance/* endpoints for the right handler shape. The dashboard side just needs a new tab — don't redesign the layout."
+      "passes": false,
+      "notes": "Pure admin commit — the work is already done, just paperwork. Look at the §6.5 table rows for 7D/7E/7F and flip ⬜ → ✅."
     },
     {
-      "id": "US-T05",
-      "title": "Surface tool_attempts in dashboard: per-tool failure class + retry budget",
-      "description": "internal/agent/tools/attempts/ writes every tool dispatch + outcome, but the data isn't visible. (a) Add /api/maintenance/tool-attempts endpoint returning JSON: per_tool (map of tool_name -> {ok, recoverable, blocked, fatal, cancelled} counts over 24h), retry_budget_consumption (list of {tool_name, attempts_today, budget, percent}). (b) Wire the handler. (c) Dashboard React: new 'Tool Attempts' tab under Maintenance — sortable table by tool_name, with a small bar visualization of the 5-bucket outcome split. (d) Handler test seeds attempts rows + asserts JSON shape. (e) Performance: the query MUST use an index; if a table scan would be needed, add the index in the same commit.",
+      "id": "US-Z05",
+      "title": "Phase 9 — SQLite concurrency hardening",
+      "description": "Per prd.md Phase 9 line 1718 'harden SQLite concurrency'. (a) Audit all sql.Open / auradb.Open call sites for PRAGMA setup. Current state: most callers set busy_timeout but coverage isn't uniform. (b) Centralize the PRAGMA bundle in internal/db.Open so every caller automatically gets: PRAGMA journal_mode=WAL, PRAGMA synchronous=NORMAL, PRAGMA busy_timeout=10000 (was 5000 — bumped for cron + agent concurrency), PRAGMA foreign_keys=ON, PRAGMA temp_store=MEMORY. (c) Add a WAL checkpoint cron (PRAGMA wal_checkpoint(TRUNCATE) every 6h) so the WAL file doesn't grow unbounded — wire via existing internal/cron.Scheduler. (d) Document SQLITE_BUSY handling: any handler that catches it should retry-with-jitter up to N times before failing the request — add a helper internal/db.RetryOnBusy(ctx, fn) wrapping the canonical pattern. (e) Tests: concurrent write benchmark that exceeds the old busy_timeout, asserts the new value handles it.",
       "acceptanceCriteria": [
-        "/api/maintenance/tool-attempts endpoint returns JSON with per_tool + retry_budget_consumption",
-        "Handler uses index lookup (no full table scan for 24h window)",
-        "Dashboard React adds 'Tool Attempts' tab under Maintenance",
-        "internal/api/maintenance_tool_attempts_test.go covers shape + counts",
+        "internal/db.Open sets the canonical PRAGMA bundle (WAL, busy_timeout=10000, synchronous=NORMAL, foreign_keys=ON, temp_store=MEMORY)",
+        "WAL checkpoint cron registered (PRAGMA wal_checkpoint(TRUNCATE) every 6h)",
+        "internal/db.RetryOnBusy(ctx, fn) helper exported + at least one critical-path caller migrated to it",
+        "Concurrent-write benchmark in internal/db/concurrency_test.go covers the new threshold",
         "go build ./... green",
+        "go test ./internal/db/... green",
         "go test ./... green",
-        "npm --prefix web run build green",
-        "Single atomic commit prefix: feat(api,web): surface tool_attempts in dashboard (US-T05)"
+        "Single atomic commit prefix: feat(db): SQLite concurrency hardening — PRAGMA bundle + WAL checkpoint cron + busy retry helper (US-Z05 / Phase 9)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Mirrors US-T04 structurally — pattern is the same handler-then-tab. The retry-budget data lives in internal/learning if there's already an exported aggregator; if not, query attempts directly with GROUP BY tool_name + class."
+      "passes": false,
+      "notes": "Don't introduce a new sql.DB pool — extend the existing auradb.Open. The cron schedule path should match Phase-T's US-T03 pattern (Scheduler callback, NOT a separate goroutine)."
     },
     {
-      "id": "US-T06",
-      "title": "Production runbook: cold install, upgrade, restore, secret rotation",
-      "description": "Document the operational procedures Davide needs after the binary ships. This is the 'lose your SSD, rebuild in 30 minutes' doc. (a) Create docs/RUNBOOK.md with sections: Cold Install (steps from bare Linux box to running Aura including secret-bootstrap), Upgrade (image rebuild + zero-downtime swap via docker compose up -d), Rollback (the previous tag, the seconds it takes), SQLite Restore Drill (steps for a real backup restore from garage/local), Telegram Token Rotation (the exact bot-talk-to-BotFather sequence + cfg update + restart), Mistral API Key Rotation (env update + restart), llama-embed Rebuild (Wave 2.10 install-bootstrap entry point). (b) Each section is concrete — copy-pasteable commands, not abstract narrative. (c) Cross-reference docs/audit-* artifacts where relevant. (d) Add a 'Common Failure Modes' appendix: container restart loop, SQLite locked, Qdrant collection missing, Mistral 429 — each with diagnosis + fix.",
+      "id": "US-Z06",
+      "title": "Phase 9 — docs: clarify memory vs storage",
+      "description": "Per prd.md Phase 9 line 1714 'clarify memory versus storage'. The terms are used inconsistently across the codebase. (a) Create docs/MEMORY-VS-STORAGE.md explaining: 'memory' = what the agent reads back at retrieval time (compact_memory_documents, freshness-tracked, kind-typed). 'storage' = durable artifacts on disk (wiki/*.md files, source raw bytes, garage blobs). Memory is REBUILDABLE; storage is NOT. (b) For each internal/ subdirectory, classify which layer it belongs to (a table at the top of the doc). (c) Cross-reference the §5.7 prd.md section. (d) Add a 'cardinal rule' section: anyone adding a new long-term data store should declare 'storage or memory?' and follow the implications (storage needs backup/migration; memory needs a rebuild path).",
       "acceptanceCriteria": [
-        "docs/RUNBOOK.md exists with all 7 sections (Cold Install, Upgrade, Rollback, Restore, Token Rotation, Key Rotation, llama-embed Rebuild)",
-        "Each section has concrete copy-pasteable commands (no abstract prose)",
-        "Common Failure Modes appendix covers ≥4 documented failures with diagnosis + fix",
-        "Cross-references to docs/audit-*-2026-05-17.md where relevant",
-        "No code changes required",
-        "Single atomic commit prefix: docs(runbook): production deployment + operational procedures (US-T06)"
+        "docs/MEMORY-VS-STORAGE.md exists with the two-layer model",
+        "Table mapping each internal/ subdir to memory or storage",
+        "Cross-reference to prd.md §5.7",
+        "Cardinal-rule section for future contributors",
+        "No code changes — pure docs",
+        "Single atomic commit prefix: docs(memory-vs-storage): clarify the two-layer model (US-Z06 / Phase 9)"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Pure doc story. Easiest in the queue, parked at the end so the operational features (T01-T05) ship first and the runbook references them as it's written. Don't include speculative procedures; only document what is concretely implemented today."
+      "passes": false,
+      "notes": "Be concrete: every internal/ subdir gets a label. Avoid hand-wavy 'it depends' classifications — if it stores something durable, it's storage."
+    },
+    {
+      "id": "US-Z07",
+      "title": "Phase 9 — source conversion fixtures",
+      "description": "Per prd.md Phase 9 line 1717 'add conversion fixtures for important source types'. (a) Add internal/storage/sources/ingest/fixtures/ directory with one canonical fixture per supported source type: PDF (text, mixed-image-text, table-heavy), DOCX (with TOC), XLSX (multi-sheet), PPTX, MD, plain text. (b) Each fixture: source bytes (small, < 100KB), expected ocr.md / markitdown output, expected wiki page after ingest. (c) Test internal/storage/sources/ingest/fixtures_test.go that round-trips each fixture: ingest the bytes, assert the output matches the golden (with mojibake check + structural check). (d) Per memory feedback_inspect_artifact_visually_not_just_pass_status: each assertion includes a print of the body (or at least the first 200 chars) so regressions are humanly visible in test output.",
+      "acceptanceCriteria": [
+        "internal/storage/sources/ingest/fixtures/ exists with ≥5 canonical source types (PDF, DOCX, XLSX, PPTX, MD)",
+        "Each fixture has source bytes + expected ocr.md/markitdown output + expected wiki page",
+        "fixtures_test.go round-trips each fixture, asserts golden match + prints first 200 chars",
+        "go build ./... green",
+        "go test ./internal/storage/sources/ingest/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(ingest): conversion fixtures for PDF/DOCX/XLSX/PPTX/MD source types (US-Z07 / Phase 9)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Use small fixtures — checked into git. The PDF can be a 1-page render of a simple .docx. The XLSX can be 3 rows × 2 sheets. Goal is structural coverage, not load test."
     }
   ]
 }

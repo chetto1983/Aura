@@ -1,0 +1,117 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-T — Production rollout + hardening. After Phase-CLEANUP1+2 closed the code-health backlog (25 commits 2026-05-17), the codebase is clean enough to invest in operational discipline. This phase wires the operational layer the system has been missing: docker-compose prod overlay, version-baked-from-git, automated backup verification, observability dashboards over the already-existing authz_decisions and tool_attempts tables, and a runbook that lets the operator (Davide) rebuild from cold within 30 minutes after a disaster. Pattern source: memory `project_next_milestone_production_simplify_2026-05-15` 'dopo US-A19: prod completa + semplificazione con pattern 2026'. Order is highest-reliability-leverage first. Each story is a single atomic commit on master.",
+  "userStories": [
+    {
+      "id": "US-T01",
+      "title": "Add compose.prod.yaml overlay with restart, healthcheck thresholds, no debug ports",
+      "description": "Create a docker-compose production overlay that the operator can use via `docker compose -f compose.yaml -f compose.prod.yaml up -d`. The overlay tightens the dev defaults without forking the base file. (a) Add `compose.prod.yaml` to repo root. (b) For the `aura` service: set `restart: unless-stopped`, narrow `ports:` to ONLY `127.0.0.1:8080` (no 18080 dashboard exposure on LAN in prod — operator uses ssh tunnel); add `AURA_HEADLESS=true` env. (c) For supporting sidecars (qdrant, garage, searxng, llama-embed, markitdown): `restart: unless-stopped`, healthcheck intervals tightened (30s → 60s once-warm), no host-port exposure where not required. (d) Add a `--profile prod-only` gate on debug-bin sidecars that don't run in prod. (e) Document the overlay in docs/RUNBOOK.md (US-T06 will expand this). (f) Verify with `docker compose -f compose.yaml -f compose.prod.yaml config` that the merged file is valid (no exec — the config command just validates).",
+      "acceptanceCriteria": [
+        "compose.prod.yaml exists in repo root",
+        "aura service has restart: unless-stopped and AURA_HEADLESS=true in the overlay",
+        "Dashboard port 18080 is removed from the LAN exposure in the overlay (bound to 127.0.0.1 only)",
+        "All sidecars (qdrant, garage, searxng, llama-embed, markitdown) have restart: unless-stopped in the overlay",
+        "docker compose -f compose.yaml -f compose.prod.yaml config validates (exit 0) without changes pushing to actual containers",
+        "RUNBOOK.md (or a new docs/deploy-prod.md) gets a 1-paragraph note pointing to the overlay (full runbook ships in US-T06)",
+        "go build ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(deploy): compose.prod.yaml overlay for production hardening (US-T01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Pure infra story — no Go code changes required. The overlay is additive (does NOT modify compose.yaml). Don't include garage/searxng deletion; those stay in dev."
+    },
+    {
+      "id": "US-T02",
+      "title": "Bake git SHA + tag into version, surface via --version and /api/health",
+      "description": "Aura currently logs `version=3.0 commit=dev date=unknown` because the binary doesn't get build-time injected values. (a) Add internal/release/version.go variables Version, Commit, BuildDate as `var ... = \"dev\"` defaults. (b) Update the build path (Dockerfile + go build invocations in scripts) to use `-ldflags \"-X github.com/aura/aura/internal/release.Commit=$(git rev-parse --short HEAD) -X ...Date=$(date -u +%FT%TZ)\"`. (c) Add a `--version` flag handler in cmd/aura/main.go that prints SHA + date + go runtime version and exits 0 BEFORE any setup. (d) Update /api/health JSON response to include `version`, `commit`, `build_date` fields. (e) The aura:local Docker tag stays — but the build args inject SHA. (f) Update the boot-time slog Info to use real values not 'dev'/'unknown'. (g) Verify locally: build, run `./aura --version`, see SHA.",
+      "acceptanceCriteria": [
+        "internal/release/version.go exists with Version, Commit, BuildDate package vars (string)",
+        "Dockerfile build step passes -ldflags injecting Commit + BuildDate",
+        "cmd/aura/main.go handles --version flag (prints + exits 0 before setup)",
+        "/api/health JSON returns version, commit, build_date keys",
+        "Boot-time slog 'aura starting' line uses the injected Commit instead of 'dev'",
+        "go build ./... green",
+        "go test ./internal/release/... green (add a basic version-vars-defined test)",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(release): inject git SHA + build date at link time (US-T02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "ldflags pattern is well-known — example: -ldflags=\"-X 'pkg.Version=$(VERSION)'\". Watch for Windows-vs-Linux path quirks; the GoReleaser config (if it exists in scripts/) probably already does this for releases."
+    },
+    {
+      "id": "US-T03",
+      "title": "Backup-verify cron: daily SQLite restore-into-tmp + integrity check + alert",
+      "description": "Aura has a debug_backup harness (cmd/debug_backup) but no scheduled verification. Without verification, backups silently rot. (a) Add internal/dbrecovery/verify.go with a function VerifyBackup(ctx, backupPath, expectMinRows map[string]int) that: copies the backup into a tmpfile, opens it, runs PRAGMA integrity_check, asserts row counts on `principals`, `actors`, `conversations`, `scheduled_tasks` are >= the expected minimums. (b) Add a scheduled_task entry (via the existing cron.Scheduler) that runs daily at 04:00 local (the existing system clock — re-use cfg.Timezone). (c) On failure: send a Telegram alert via the existing alert path (whatever the cron channel uses to send operator messages). (d) On success: emit slog Info with row counts + integrity_check OK. (e) Add a TEST that creates a known-good DB, calls VerifyBackup, asserts pass; and a known-bad DB (truncated), asserts fail.",
+      "acceptanceCriteria": [
+        "internal/dbrecovery/verify.go exists with VerifyBackup(ctx, backupPath, expectMinRows) function",
+        "VerifyBackup runs PRAGMA integrity_check + asserts table row counts",
+        "Cron schedule wired to run daily (via existing internal/cron.Scheduler, not a separate goroutine)",
+        "Failure path emits a Telegram message via the existing cron alert channel (not a new direct send)",
+        "Success path emits slog Info with verification report",
+        "internal/dbrecovery/verify_test.go covers happy path + truncated DB failure",
+        "go build ./... green",
+        "go test ./internal/dbrecovery/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(dbrecovery): daily backup-verify cron with integrity check (US-T03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Re-use existing alert channel; DON'T introduce a new direct-to-Telegram path. The scheduler accepts function callbacks; wire VerifyBackup as one. Backup path comes from cfg.BackupPath (or wherever debug_backup reads from)."
+    },
+    {
+      "id": "US-T04",
+      "title": "Surface authz_decisions in dashboard: denial rate + recent denied actors",
+      "description": "The authz_decisions table exists and is written by every Authorize call, but nothing surfaces the data. Operators can't see which capabilities are being denied or why. (a) Add /api/maintenance/authz endpoint handler. Returns JSON: denial_rate_24h (float 0-1), top_denied_capabilities (list of {capability, count} sorted desc, 24h window), recent_denials (last 50, with actor_id + capability + reason + created_at — actor_id may be Telegram username or actor UUID). (b) Wire the handler in internal/api/maintenance.go (or wherever the existing maintenance handlers live). (c) Add a basic table panel in the dashboard React (web/src/...) — a new tab under Maintenance called 'Authz' with the 3 sections. (d) Add a handler test that seeds 10 authz_decisions rows + asserts the JSON shape + counts. (e) The dashboard component is keep-it-simple: 3 stacked sections, no charts, no realtime updates.",
+      "acceptanceCriteria": [
+        "/api/maintenance/authz endpoint returns JSON with denial_rate_24h, top_denied_capabilities, recent_denials keys",
+        "Handler wired into existing API router (NOT a new router)",
+        "Dashboard React adds an 'Authz' tab under Maintenance with 3 sections rendering the JSON",
+        "internal/api/maintenance_authz_test.go covers the shape with seeded test data",
+        "go build ./... green",
+        "go test ./internal/api/... green",
+        "npm --prefix web run build green",
+        "Single atomic commit prefix: feat(api,web): surface authz_decisions in dashboard (US-T04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Re-use existing maintenance.go patterns; check the existing /api/maintenance/* endpoints for the right handler shape. The dashboard side just needs a new tab — don't redesign the layout."
+    },
+    {
+      "id": "US-T05",
+      "title": "Surface tool_attempts in dashboard: per-tool failure class + retry budget",
+      "description": "internal/agent/tools/attempts/ writes every tool dispatch + outcome, but the data isn't visible. (a) Add /api/maintenance/tool-attempts endpoint returning JSON: per_tool (map of tool_name -> {ok, recoverable, blocked, fatal, cancelled} counts over 24h), retry_budget_consumption (list of {tool_name, attempts_today, budget, percent}). (b) Wire the handler. (c) Dashboard React: new 'Tool Attempts' tab under Maintenance — sortable table by tool_name, with a small bar visualization of the 5-bucket outcome split. (d) Handler test seeds attempts rows + asserts JSON shape. (e) Performance: the query MUST use an index; if a table scan would be needed, add the index in the same commit.",
+      "acceptanceCriteria": [
+        "/api/maintenance/tool-attempts endpoint returns JSON with per_tool + retry_budget_consumption",
+        "Handler uses index lookup (no full table scan for 24h window)",
+        "Dashboard React adds 'Tool Attempts' tab under Maintenance",
+        "internal/api/maintenance_tool_attempts_test.go covers shape + counts",
+        "go build ./... green",
+        "go test ./... green",
+        "npm --prefix web run build green",
+        "Single atomic commit prefix: feat(api,web): surface tool_attempts in dashboard (US-T05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Mirrors US-T04 structurally — pattern is the same handler-then-tab. The retry-budget data lives in internal/learning if there's already an exported aggregator; if not, query attempts directly with GROUP BY tool_name + class."
+    },
+    {
+      "id": "US-T06",
+      "title": "Production runbook: cold install, upgrade, restore, secret rotation",
+      "description": "Document the operational procedures Davide needs after the binary ships. This is the 'lose your SSD, rebuild in 30 minutes' doc. (a) Create docs/RUNBOOK.md with sections: Cold Install (steps from bare Linux box to running Aura including secret-bootstrap), Upgrade (image rebuild + zero-downtime swap via docker compose up -d), Rollback (the previous tag, the seconds it takes), SQLite Restore Drill (steps for a real backup restore from garage/local), Telegram Token Rotation (the exact bot-talk-to-BotFather sequence + cfg update + restart), Mistral API Key Rotation (env update + restart), llama-embed Rebuild (Wave 2.10 install-bootstrap entry point). (b) Each section is concrete — copy-pasteable commands, not abstract narrative. (c) Cross-reference docs/audit-* artifacts where relevant. (d) Add a 'Common Failure Modes' appendix: container restart loop, SQLite locked, Qdrant collection missing, Mistral 429 — each with diagnosis + fix.",
+      "acceptanceCriteria": [
+        "docs/RUNBOOK.md exists with all 7 sections (Cold Install, Upgrade, Rollback, Restore, Token Rotation, Key Rotation, llama-embed Rebuild)",
+        "Each section has concrete copy-pasteable commands (no abstract prose)",
+        "Common Failure Modes appendix covers ≥4 documented failures with diagnosis + fix",
+        "Cross-references to docs/audit-*-2026-05-17.md where relevant",
+        "No code changes required",
+        "Single atomic commit prefix: docs(runbook): production deployment + operational procedures (US-T06)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Pure doc story. Easiest in the queue, parked at the end so the operational features (T01-T05) ship first and the runbook references them as it's written. Don't include speculative procedures; only document what is concretely implemented today."
+    }
+  ]
+}
