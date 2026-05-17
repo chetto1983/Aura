@@ -38,7 +38,7 @@
         "Single atomic commit prefix: refactor(chat): extract test fixtures into testhelpers package (US-CL02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "LOW risk — test-only code. Sets pattern for future channel test reuse."
     },
     {

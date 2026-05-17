@@ -1,4 +1,4 @@
-package chat
+package chat_test
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/chat"
+	"github.com/aura/aura/internal/chat/testhelpers"
 	"github.com/aura/aura/internal/identity"
 )
 
@@ -26,26 +28,26 @@ func (a *swarmFakeAuthorizer) Authorize(_ context.Context, params identity.Autho
 // TestHubSwarm_DispatchAndComplete verifies ChannelSwarm dispatches a run and
 // the run completes silently with RunStatusCompleted.
 func TestHubSwarm_DispatchAndComplete(t *testing.T) {
-	loop := &recordingLoop{}
+	loop := &testhelpers.RecordingLoop{}
 	h := newHub(t, loop)
-	h.RegisterOutbound(&fakeOutbound{channel: ChannelSwarm, mode: DeliveryModeSilent})
+	h.RegisterOutbound(&testhelpers.FakeOutbound{Ch: chat.ChannelSwarm, Md: chat.DeliveryModeSilent})
 
-	run, err := h.ReceiveMessage(context.Background(), InboundMessage{
-		Channel:     ChannelSwarm,
-		Mode:        DeliveryModeSilent,
+	run, err := h.ReceiveMessage(context.Background(), chat.InboundMessage{
+		Channel:     chat.ChannelSwarm,
+		Mode:        chat.DeliveryModeSilent,
 		PrincipalID: "user-1",
 		Text:        "search for X",
 	})
 	if err != nil {
 		t.Fatalf("ReceiveMessage: %v", err)
 	}
-	if run.Status != RunStatusCompleted {
+	if run.Status != chat.RunStatusCompleted {
 		t.Fatalf("run.Status = %s, want completed", run.Status)
 	}
 
-	loop.mu.Lock()
-	calls := loop.calls
-	loop.mu.Unlock()
+	loop.Mu.Lock()
+	calls := loop.Calls
+	loop.Mu.Unlock()
 	if calls != 1 {
 		t.Fatalf("loop called %d times, want 1", calls)
 	}
@@ -57,7 +59,7 @@ func TestHubSwarm_WaitForRunBlocksUntilDone(t *testing.T) {
 	loopReady := make(chan struct{})
 	loopProceed := make(chan struct{})
 
-	loop := blockingLoopFn(func(ctx context.Context, run *Run, _ InboundMessage, _ EmitFn) error {
+	loop := testhelpers.BlockingLoopFn(func(ctx context.Context, run *chat.Run, _ chat.InboundMessage, _ chat.EmitFn) error {
 		run.Metadata["final_text"] = "search results"
 		close(loopReady)
 		select {
@@ -71,8 +73,8 @@ func TestHubSwarm_WaitForRunBlocksUntilDone(t *testing.T) {
 	h := newHub(t, loop)
 
 	var capturedRunID atomic.Value
-	out := outboundFn(ChannelSwarm, DeliveryModeSilent, func(ev OutboundEvent) error {
-		if ev.Type == EventRunStarted {
+	out := outboundFn(chat.ChannelSwarm, chat.DeliveryModeSilent, func(ev chat.OutboundEvent) error {
+		if ev.Type == chat.EventRunStarted {
 			capturedRunID.Store(ev.RunID)
 		}
 		return nil
@@ -81,9 +83,9 @@ func TestHubSwarm_WaitForRunBlocksUntilDone(t *testing.T) {
 
 	dispatchDone := make(chan error, 1)
 	go func() {
-		_, err := h.ReceiveMessage(context.Background(), InboundMessage{
-			Channel:     ChannelSwarm,
-			Mode:        DeliveryModeSilent,
+		_, err := h.ReceiveMessage(context.Background(), chat.InboundMessage{
+			Channel:     chat.ChannelSwarm,
+			Mode:        chat.DeliveryModeSilent,
 			PrincipalID: "user-1",
 			Text:        "search task",
 		})
@@ -133,9 +135,9 @@ func TestHubSwarm_WaitForRunBlocksUntilDone(t *testing.T) {
 // Owner-style principals carry the generic grant (TelegramOwnerCapabilities)
 // — they should not be blocked by missing tool.execute.<name> rows.
 func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
-	loop := &recordingLoop{}
+	loop := &testhelpers.RecordingLoop{}
 	h := newHub(t, loop)
-	h.RegisterOutbound(&fakeOutbound{channel: ChannelSwarm, mode: DeliveryModeSilent})
+	h.RegisterOutbound(&testhelpers.FakeOutbound{Ch: chat.ChannelSwarm, Md: chat.DeliveryModeSilent})
 
 	// Allow generic tool.execute only — NO granular tool.execute.web_search.
 	authz := &swarmFakeAuthorizer{
@@ -145,9 +147,9 @@ func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 	}
 	ctx := identity.WithAuthorizer(context.Background(), authz)
 
-	_, err := h.ReceiveMessage(ctx, InboundMessage{
-		Channel:     ChannelSwarm,
-		Mode:        DeliveryModeSilent,
+	_, err := h.ReceiveMessage(ctx, chat.InboundMessage{
+		Channel:     chat.ChannelSwarm,
+		Mode:        chat.DeliveryModeSilent,
 		PrincipalID: "user-1",
 		ChannelData: map[string]any{
 			"tool_allowlist": []string{"web_search"},
@@ -157,9 +159,9 @@ func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 		t.Fatalf("expected dispatch to succeed with generic grant, got error: %v", err)
 	}
 
-	loop.mu.Lock()
-	calls := loop.calls
-	loop.mu.Unlock()
+	loop.Mu.Lock()
+	calls := loop.Calls
+	loop.Mu.Unlock()
 	if calls != 1 {
 		t.Fatalf("agent loop was called %d times, want 1 (dispatch should proceed)", calls)
 	}
@@ -169,16 +171,16 @@ func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 // CapabilityToolExecute grant is denied — even with no allowlist. This is the
 // inverse of GenericGrantCoversTools and locks the no-grant deny path.
 func TestHubSwarm_NoGenericGrantDenied(t *testing.T) {
-	loop := &recordingLoop{}
+	loop := &testhelpers.RecordingLoop{}
 	h := newHub(t, loop)
-	h.RegisterOutbound(&fakeOutbound{channel: ChannelSwarm, mode: DeliveryModeSilent})
+	h.RegisterOutbound(&testhelpers.FakeOutbound{Ch: chat.ChannelSwarm, Md: chat.DeliveryModeSilent})
 
 	authz := &swarmFakeAuthorizer{allow: map[identity.Capability]bool{}}
 	ctx := identity.WithAuthorizer(context.Background(), authz)
 
-	_, err := h.ReceiveMessage(ctx, InboundMessage{
-		Channel:     ChannelSwarm,
-		Mode:        DeliveryModeSilent,
+	_, err := h.ReceiveMessage(ctx, chat.InboundMessage{
+		Channel:     chat.ChannelSwarm,
+		Mode:        chat.DeliveryModeSilent,
 		PrincipalID: "user-1",
 		ChannelData: map[string]any{
 			"tool_allowlist": []string{"web_search"},
@@ -188,9 +190,9 @@ func TestHubSwarm_NoGenericGrantDenied(t *testing.T) {
 		t.Fatal("expected error when generic tool.execute grant is missing")
 	}
 
-	loop.mu.Lock()
-	calls := loop.calls
-	loop.mu.Unlock()
+	loop.Mu.Lock()
+	calls := loop.Calls
+	loop.Mu.Unlock()
 	if calls != 0 {
 		t.Fatalf("agent loop was called %d times, want 0 (auth denied before loop)", calls)
 	}
@@ -199,7 +201,7 @@ func TestHubSwarm_NoGenericGrantDenied(t *testing.T) {
 // TestHubSwarm_BudgetExceededCancellation verifies that WaitForRun cancels the
 // in-flight run when its context expires and returns context.DeadlineExceeded.
 func TestHubSwarm_BudgetExceededCancellation(t *testing.T) {
-	loop := blockingLoopFn(func(ctx context.Context, _ *Run, _ InboundMessage, _ EmitFn) error {
+	loop := testhelpers.BlockingLoopFn(func(ctx context.Context, _ *chat.Run, _ chat.InboundMessage, _ chat.EmitFn) error {
 		<-ctx.Done()
 		return ctx.Err()
 	})
@@ -207,8 +209,8 @@ func TestHubSwarm_BudgetExceededCancellation(t *testing.T) {
 	h := newHub(t, loop)
 
 	var capturedRunID atomic.Value
-	out := outboundFn(ChannelSwarm, DeliveryModeSilent, func(ev OutboundEvent) error {
-		if ev.Type == EventRunStarted {
+	out := outboundFn(chat.ChannelSwarm, chat.DeliveryModeSilent, func(ev chat.OutboundEvent) error {
+		if ev.Type == chat.EventRunStarted {
 			capturedRunID.Store(ev.RunID)
 		}
 		return nil
@@ -216,9 +218,9 @@ func TestHubSwarm_BudgetExceededCancellation(t *testing.T) {
 	h.RegisterOutbound(out)
 
 	go func() {
-		_, _ = h.ReceiveMessage(context.Background(), InboundMessage{
-			Channel:     ChannelSwarm,
-			Mode:        DeliveryModeSilent,
+		_, _ = h.ReceiveMessage(context.Background(), chat.InboundMessage{
+			Channel:     chat.ChannelSwarm,
+			Mode:        chat.DeliveryModeSilent,
 			PrincipalID: "user-1",
 			Text:        "blocking task",
 		})
