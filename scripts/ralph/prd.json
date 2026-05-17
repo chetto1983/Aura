@@ -86,8 +86,8 @@
         "Single atomic commit prefix: refactor(runs): extract store_questions.go from store.go (US-CL11)"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Audit risk: Low. May not drop store.go all the way under 600 LOC — that's OK, this is one step of a multi-step file."
+      "passes": true,
+      "notes": "Already shipped in earlier work — internal/storage/runs/questions.go (313 LOC) already contains RecordQuestionRequested, RecordQuestionAnswered, LatestPendingQuestion, GetQuestion, getQuestionTx + question types + helpers. The 781 LOC residual in store.go is the POST-split size after that earlier extraction. No additional move warranted by this story's acceptance criteria."
     }
   ]
 }
