@@ -292,8 +292,12 @@ func (g *UserGate) dropOldestAndNotify(actor *userActor, userID string) {
 	default:
 		// Inbox was empty (should not happen if we just detected it was full).
 	}
-	// Call OnOverflow in a separate goroutine per Pitfall 4.
+	// Call OnOverflow in a separate goroutine per Pitfall 4. Track it on
+	// g.wg so Close() waits for the callback to return — otherwise a slow
+	// overflow handler can outlive the Gate and leak on shutdown.
 	if g.config.OnOverflow != nil {
-		go g.config.OnOverflow(userID)
+		g.wg.Go(func() {
+			g.config.OnOverflow(userID)
+		})
 	}
 }
