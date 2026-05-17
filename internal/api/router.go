@@ -189,6 +189,10 @@ type Deps struct {
 	// warnings array rather than 503. Admin-gated via SkillsAdmin.
 	ToolWarnings attempts.WarningsReader
 
+	// AuthzDecisions backs GET /maintenance/authz (US-T04). Optional — when
+	// nil the endpoint returns zero-value stats instead of 503.
+	AuthzDecisions AuthzDecisionsReader
+
 	// OperationalMemory backs WriteApprovedLesson for operational_memory
 	// proposals (Phase-N / US-N03). Optional — when nil, approval still
 	// flips the status but skips the compact_memory_documents write.
@@ -321,6 +325,9 @@ func NewRouter(deps Deps) http.Handler {
 	// Slice 12l.1: wiki maintenance issue queue.
 	mux.HandleFunc("GET /maintenance/issues", handleMaintenanceList(deps))
 	mux.HandleFunc("POST /maintenance/issues/{id}/resolve", handleMaintenanceResolve(deps))
+
+	// US-T04: authz decisions observability.
+	mux.HandleFunc("GET /maintenance/authz", handleMaintenanceAuthz(deps))
 
 	// Slice 14d: runtime settings page.
 	mux.HandleFunc("GET /settings", handleSettingsList(deps))

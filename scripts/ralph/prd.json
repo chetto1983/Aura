@@ -76,7 +76,7 @@
         "Single atomic commit prefix: feat(api,web): surface authz_decisions in dashboard (US-T04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Re-use existing maintenance.go patterns; check the existing /api/maintenance/* endpoints for the right handler shape. The dashboard side just needs a new tab — don't redesign the layout."
     },
     {

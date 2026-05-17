@@ -459,6 +459,27 @@ type ToolWarningsResponse struct {
 	Warnings []ToolWarningItem `json:"warnings"`
 }
 
+// AuthzResponse is the body of GET /maintenance/authz.
+type AuthzResponse struct {
+	DenialRate24h         float64          `json:"denial_rate_24h"`
+	TopDeniedCapabilities []CapabilityCount `json:"top_denied_capabilities"`
+	RecentDenials         []RecentDenial    `json:"recent_denials"`
+}
+
+// CapabilityCount is one entry in the top-denied list.
+type CapabilityCount struct {
+	Capability string `json:"capability"`
+	Count      int    `json:"count"`
+}
+
+// RecentDenial is one denied authz event.
+type RecentDenial struct {
+	ActorID    string `json:"actor_id"`
+	Capability string `json:"capability"`
+	Reason     string `json:"reason"`
+	CreatedAt  string `json:"created_at"`
+}
+
 // ErrorResponse is the JSON body for any non-2xx response.
 type ErrorResponse struct {
 	Error string `json:"error"`

@@ -392,6 +392,26 @@ export interface WikiIssue {
   resolved_at?: string;
 }
 
+// Authz decisions observability (US-T04).
+
+export interface CapabilityCount {
+  capability: string;
+  count: number;
+}
+
+export interface RecentDenial {
+  actor_id: string;
+  capability: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface AuthzResponse {
+  denial_rate_24h: number;
+  top_denied_capabilities: CapabilityCount[];
+  recent_denials: RecentDenial[];
+}
+
 // Proposed updates review queue.
 
 export interface ProposedUpdate {

@@ -35,6 +35,7 @@ import type {
   ProposedUpdate,
   SummaryBatchResponse,
   WikiIssue,
+  AuthzResponse,
   SettingItem,
   SettingsUpdateResponse,
   RestartResponse,
@@ -329,6 +330,8 @@ export const api = {
     get<WikiIssue[]>('/maintenance/issues' + qs({ status, severity })),
   resolveIssue: (id: number) =>
     post<WikiIssue>(`/maintenance/issues/${id}/resolve`),
+  maintenanceAuthz: () =>
+    get<AuthzResponse>('/maintenance/authz'),
 
   // ---- conversation cleanup (slice 14) ----
   conversationStats: () =>

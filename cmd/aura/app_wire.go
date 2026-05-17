@@ -443,6 +443,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Chat:  webChat,
 		// Phase-6 US-J06: operator tool-warning channel.
 		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
+		// US-T04: authz decisions observability.
+		AuthzDecisions: api.NewSQLiteAuthzReader(a.deps.Pool),
 	})
 
 	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
