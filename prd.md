@@ -1265,6 +1265,55 @@ Phase07 parent files and subphase folders. Remaining Phase 7 work is broader
 GraphRAG and projection quality work: weighted graph retrieval, community
 reports, golden RAG evals, and complete wiki/source delete/rename invalidation.
 
+### 7.4 Strategic roadmap after Phase-Z (2026-05-17 evening)
+
+After Phase-Z closes the bounded PRD backlog (7C completion + 7D/E/F admin +
+Phase 9 hardening), the next milestones are derived from two strategic
+decisions taken 2026-05-17:
+
+**Decision 1 — Phase 8 full substrate DE-SCOPED with re-open condition.**
+Phase-R (read-only fanout) + Phase-S (write_proposal) are sufficient for
+Aura's actual use as a single-user second-brain. The remaining Phase 8 scope
+(team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) is
+explicitly de-scoped until a **concrete recurring workload** requires it.
+Candidate use case: market research (decompose competitor research → parallel
+search → aggregate → critic review → publish). Phase 8 substrate is then
+designed *on top of that workload* rather than abstractly.
+
+**Decision 2 — Plugin-shaped layout, no marketplace.**
+Aura's substrate is genuinely domain-agnostic (capability gates, tool
+registry, MCP, subagent_dispatch, propose_patch, memory layers, channels,
+audit trail). What's "personal" is just 4 overlay files (SOUL/AGENT/USER/
+TOOLS.md), wiki content, MCP wiring, and tool curation. Phase-U decouples
+those into plugin-shaped artifacts so different "personalities" can coexist.
+**Single-author scope is preserved** — stress-test the platform with
+Davide's own use across multiple domains before opening externally.
+
+**Roadmap sequence:**
+
+| Phase | Scope | Sessions | Trigger |
+| --- | --- | --- | --- |
+| **Phase-Z** (running) | Close PRD bounded: 7C completion + 7D/E/F admin + Phase 9 hardening | ~3h Ralph | 2026-05-17 |
+| **Phase-MM** | Multimodal core: audio IN (Whisper), image IN (vision API), audio OUT (TTS), image OUT (generation) | ~4 | After Phase-Z |
+| **Phase-U** | Plugin layout: plugin manifest format + loader + extract Davide's personality as a plugin + 1 sample plugin for a different domain (validation) | ~4-6 | After Phase-MM |
+| **Phase 8** | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload (market research or similar). Designed bottom-up from the workload | ~6-12 | When user names the concrete workload |
+
+Total: ~15-22 sessions of disciplined work to reach the state where Aura is
+a **multimodal multi-agent platform specialized via plugins** — capable of
+becoming a marketing research tool, legal assistant, devops helper, etc.,
+depending on the plugin installed. Stays single-user until proven in
+Davide's own daily use.
+
+**Multimodal goes in core, not plugins.** Channel adapters and source
+ingestion are substrate; plugins specialize *which model* (Whisper local vs
+API, Claude vision vs LLaVA local) but not *whether the system sees audio*.
+
+**ROI order for Phase-MM:** Audio IN (highest — voice memo → text via
+Whisper local, no API cost) → Image IN (vision via OpenRouter already
+wired) → Audio OUT (TTS for hands-free) → Image OUT (generation tool) →
+Video IN (ffmpeg + Whisper + frame sampling, complex pipeline) → Video OUT
+(skip, rare use, heavy cost).
+
 ---
 
 ## 7. Migration Strategy
