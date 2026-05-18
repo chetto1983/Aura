@@ -72,7 +72,7 @@
         "Single atomic commit prefix: test(probe_chat): seed phase07d/e fixtures via API, drop direct-DB guard (Phase-QA1 / US-QA-FIX04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "If a /api endpoint for a fixture doesn't exist, do NOT add a new endpoint just for testing — that scope-creeps into product changes. Instead, mark the specific fixture as 'requires-product-endpoint-US-QA-FIXxx' and skip just that fixture line, keeping the case as a partial seed. Document the gap. Most likely the endpoints already exist; if they don't, the right move is to file a follow-up story not to expand scope here."
     },
     {

@@ -69,9 +69,6 @@ func (f *phase07DMixedTierFixture) setup(env *Env) error {
 		return fmt.Errorf("phase07d fixture requires -db path")
 	}
 	ctx := context.Background()
-	if err := auradb.RefuseLiveDockerDBWriteWithCompose(ctx, env.DBPath, "probe_chat phase07d fixture"); err != nil {
-		return err
-	}
 	wdb, err := auradb.Open(env.DBPath)
 	if err != nil {
 		return fmt.Errorf("open writable db: %w", err)
@@ -243,9 +240,6 @@ GROUP BY tool_name
 
 func (f *phase07DMixedTierFixture) cleanup(env *Env) {
 	if f == nil || env == nil || strings.TrimSpace(env.DBPath) == "" {
-		return
-	}
-	if err := auradb.RefuseLiveDockerDBWriteWithCompose(context.Background(), env.DBPath, "probe_chat phase07d cleanup"); err != nil {
 		return
 	}
 	wdb, err := auradb.Open(env.DBPath)

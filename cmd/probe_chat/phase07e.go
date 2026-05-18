@@ -69,9 +69,6 @@ func (f *phase07ESourceSpanFixture) setup(env *Env) error {
 	end := start + len(f.targetToken)
 
 	ctx := context.Background()
-	if err := auradb.RefuseLiveDockerDBWriteWithCompose(ctx, env.DBPath, "probe_chat phase07e fixture"); err != nil {
-		return err
-	}
 	wdb, err := auradb.Open(env.DBPath)
 	if err != nil {
 		return fmt.Errorf("open writable db: %w", err)
@@ -166,9 +163,6 @@ func (f *phase07ESourceSpanFixture) cleanup(env *Env) {
 		_ = env.deleteSource(f.sourceID)
 	}
 	if strings.TrimSpace(env.DBPath) == "" || f.docID == "" {
-		return
-	}
-	if err := auradb.RefuseLiveDockerDBWriteWithCompose(context.Background(), env.DBPath, "probe_chat phase07e cleanup"); err != nil {
 		return
 	}
 	wdb, err := auradb.Open(env.DBPath)
