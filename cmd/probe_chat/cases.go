@@ -1214,6 +1214,56 @@ func allCases(now time.Time) []Case {
 				return miss
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV08 — MaxElapsed graceful wrap-up E2E.
+		// Sends a 2-step search_memory prompt that completes well under 30s and verifies
+		// the agent loop completes gracefully without hitting ugly deadline-exceeded fallback
+		// strings. This probe tests the BAR (graceful completion before the cap), NOT the
+		// FLOOR (what happens AT the cap). The cap-hit case requires a slow-LLM harness —
+		// deferred to Phase-QA3. Companion to failure-max-iterations (US-QA-COV07).
+		// Ground truth: runs table shows status='completed' AND r.ElapsedMs < 60000.
+		{
+			Name:     "failure-max-elapsed-wrap",
+			Category: "failure-modes-budget",
+			Prompt: "Per favore esegui questi due passi e riportami entrambi i risultati: " +
+				"1) usa search_memory query='probe-elapsed-alpha'; " +
+				"2) poi usa search_memory query='probe-elapsed-beta'. " +
+				"Riporta i risultati di entrambe le ricerche.",
+			Setup: func(_ *Env) error {
+				maxElapsedBefore = time.Now()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				for _, ugly := range []string{
+					"I reached the per-turn budget",
+					"Sorry, I couldn't process",
+					"sorry, i couldn't process",
+				} {
+					if strings.Contains(r.Reply, ugly) {
+						miss = append(miss, fmt.Sprintf("reply contains budget-exhaustion fallback string %q — loop did not complete cleanly", ugly))
+					}
+				}
+				// ElapsedMs guard: a 2-step search_memory task should resolve well under 1 min.
+				if r.ElapsedMs >= 60_000 {
+					miss = append(miss, fmt.Sprintf("elapsed_ms = %d, want < 60000 (task should not approach MaxElapsed threshold)", r.ElapsedMs))
+				}
+				// Ground truth: runs table must show a completed row for this web turn.
+				runStatus, found, err := env.runStatusSince(maxElapsedBefore)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("runs table query: %v", err))
+				} else if !found {
+					miss = append(miss, fmt.Sprintf("DB ground truth: no runs row found since %s (channel=web)", maxElapsedBefore.Format(time.RFC3339)))
+				} else {
+					fmt.Fprintf(os.Stderr, "[case=failure-max-elapsed-wrap] reply_len=%d elapsed_ms=%d runs.status=%s\n",
+						len(strings.TrimSpace(r.Reply)), r.ElapsedMs, runStatus)
+					if runStatus != "completed" {
+						miss = append(miss, fmt.Sprintf("DB ground truth: runs.status = %q, want 'completed' (agent loop errored or hit deadline)", runStatus))
+					}
+				}
+				return miss
+			},
+		},
 	}
 }
 
@@ -1240,7 +1290,8 @@ var (
 	capDenyAcctID      string
 	capDenyBefore      time.Time
 
-	maxIterBefore time.Time
+	maxIterBefore    time.Time
+	maxElapsedBefore time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from

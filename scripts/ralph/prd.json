@@ -138,7 +138,7 @@
         "Single atomic commit prefix: test(qa): probe MaxElapsed graceful wrap-up E2E (Phase-QA2 / US-QA-COV08)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "We can't easily force a real 5-min MaxElapsed without slowing the LLM. Document this in the test comment: 'this probe tests the BAR (graceful completion before the cap), not the FLOOR (what happens AT the cap). The cap-hit case requires a slow-LLM harness — deferred to Phase-QA3.'"
     },
     {
