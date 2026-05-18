@@ -855,7 +855,7 @@ func TestScheduler_FailedDispatch_PersistsErrorAndLogsWarn(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	var logBuf strings.Builder
+	var logBuf syncStringBuilder
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	dispatcher := func(_ context.Context, _ *Task) error {
@@ -921,6 +921,27 @@ func TestScheduler_FailedDispatch_PersistsErrorAndLogsWarn(t *testing.T) {
 }
 
 // helpers
+
+// syncStringBuilder is a strings.Builder protected by a mutex. Required for
+// tests that capture slog output: slog writes from a logger goroutine while
+// the test goroutine reads .String() — a race detector flags it (US-QA-FIX16
+// race fix, surfaced by GitHub Actions CI).
+type syncStringBuilder struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncStringBuilder) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncStringBuilder) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func mustUpsert(t *testing.T, store *Store, task *Task) {
 	t.Helper()
