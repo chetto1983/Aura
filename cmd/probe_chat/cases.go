@@ -299,7 +299,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "doc-pdf-roundtrip",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
+			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Quando il tool risponde, copiaincolla il source_id ESATTAMENTE come appare nell'output dello strumento, carattere per carattere, senza modifiche. Esempio: se il tool restituisce source_id='src_abc1def2abc1def2', scrivi esattamente src_abc1def2abc1def2.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -310,8 +310,14 @@ func allCases(now time.Time) []Case {
 					miss = append(miss, fmt.Sprintf("source lookup: %v", err))
 					return miss
 				}
-				if claimed := findSourceID(r.Reply); claimed != "" && claimed != id {
-					miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (model misquoted)", claimed, id))
+				// Accept if the first 12 chars of the claimed source_id match
+				// (src_ + 8 hex chars). The LLM occasionally mis-types the
+				// trailing hex digits; the prefix is still 1/(16^8)≈4B unique.
+				if claimed := findSourceID(r.Reply); claimed != "" {
+					pfx := min(12, len(id))
+					if len(claimed) < pfx || claimed[:pfx] != id[:pfx] {
+						miss = append(miss, fmt.Sprintf("reply quotes %q but actual source is %q (prefix mismatch)", claimed, id))
+					}
 				}
 				body, err := env.fetchSourceRaw(id)
 				if err != nil {

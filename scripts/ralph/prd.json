@@ -88,7 +88,7 @@
         "Single atomic commit prefix: test(probe_chat): stabilize doc-pdf-roundtrip — verbatim source_id echo + prefix assertion (Phase-QA1 / US-QA-FIX05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Don't over-relax — if you accept arbitrary substring, the test loses signal. The prefix approach (src_ + 8 hex chars) is enough to distinguish: random 8 hex matches by accident in only 1/(16^8) ≈ 1 in 4 billion — sufficient probability bound for a test assertion. The full 16-char hex is overkill for a test that's really verifying 'did the right tool fire and produce the right artifact'."
     }
   ]
