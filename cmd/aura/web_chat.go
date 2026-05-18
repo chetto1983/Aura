@@ -61,8 +61,8 @@ type apiChatServiceAdapter struct {
 	sessions *webChatSessions
 }
 
-func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, message string) (api.ChatReply, error) {
-	reply, err := a.svc.Chat(ctx, userID, message)
+func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, message string) (api.ChatReply, error) {
+	reply, err := a.svc.Chat(ctx, userID, threadID, message)
 	if err != nil {
 		a.sessions.rollback(reply.RunID)
 	} else {
@@ -124,6 +124,7 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 			logger:                logger,
 			allowlist:             allowlist,
 			userID:                userID,
+			conversationID:        msg.ThreadID,
 			runID:                 runID,
 			attemptsRepo:          deps.AttemptsRepo,
 			maxChars:              b.maxToolResultChars(),
@@ -279,6 +280,7 @@ type webToolExecutor struct {
 	logger                *slog.Logger
 	allowlist             []string
 	userID                string
+	conversationID        string
 	runID                 string
 	attemptsRepo          attempts.Repo
 	maxChars              int
@@ -398,7 +400,11 @@ func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (st
 	toolCtx = toolregistry.WithAllowedToolNames(toolCtx, e.allowlist)
 	if e.userID != "" {
 		toolCtx = toolregistry.WithUserID(toolCtx, e.userID)
-		toolCtx = toolregistry.WithConversationID(toolCtx, e.userID)
+		convID := e.conversationID
+		if convID == "" {
+			convID = e.userID
+		}
+		toolCtx = toolregistry.WithConversationID(toolCtx, convID)
 	}
 	out, err := e.tools.Execute(toolCtx, call.Name, args)
 	if err != nil {

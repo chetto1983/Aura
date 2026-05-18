@@ -46,7 +46,7 @@ func TestChatService_HappyPath(t *testing.T) {
 	if svc == nil {
 		t.Fatal("NewChatService nil")
 	}
-	reply, err := svc.Chat(context.Background(), "user-1", "hi")
+	reply, err := svc.Chat(context.Background(), "user-1", "default", "hi")
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -59,8 +59,8 @@ func TestChatService_HappyPath(t *testing.T) {
 	if reply.Tokens != 42 {
 		t.Fatalf("Tokens = %d", reply.Tokens)
 	}
-	if hub.lastMsg.ThreadID != "web:user-1" {
-		t.Fatalf("ThreadID = %q, want web:user-1", hub.lastMsg.ThreadID)
+	if hub.lastMsg.ThreadID != "web:user-1:default" {
+		t.Fatalf("ThreadID = %q, want web:user-1:default", hub.lastMsg.ThreadID)
 	}
 	// Buffer should be dropped after Chat returns.
 	if _, ok := router.buffers["run-happy"]; ok {
@@ -78,11 +78,11 @@ func TestChatService_ThreadIDFallback(t *testing.T) {
 		},
 	}
 	svc := NewChatService(hub, router)
-	if _, err := svc.Chat(context.Background(), "  ", "hi"); err != nil {
+	if _, err := svc.Chat(context.Background(), "  ", "default", "hi"); err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if hub.lastMsg.ThreadID != "web:anonymous" {
-		t.Fatalf("ThreadID = %q, want web:anonymous", hub.lastMsg.ThreadID)
+	if hub.lastMsg.ThreadID != "web:anonymous:default" {
+		t.Fatalf("ThreadID = %q, want web:anonymous:default", hub.lastMsg.ThreadID)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestChatService_PropagatesRunError(t *testing.T) {
 		},
 	}
 	svc := NewChatService(hub, router)
-	reply, err := svc.Chat(context.Background(), "u", "m")
+	reply, err := svc.Chat(context.Background(), "u", "default", "m")
 	if err == nil {
 		t.Fatal("expected error")
 	}

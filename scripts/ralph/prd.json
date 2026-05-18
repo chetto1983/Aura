@@ -54,7 +54,7 @@
         "Single atomic commit prefix: fix(api): decouple conversation_id from user_id in /api/chat (Phase-QA1 / US-QA-FIX03 / US-QA21)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Don't go further than per-thread namespacing — full per-conversation isolation (option iii) would require API breaking changes. Option (ii) preserves backward compat: requests without thread_id continue to behave as today. The `web:` prefix in conversation_id is intentional — makes it grep-able for 'all web-channel notes' vs other channels (telegram, cron) which use different formats."
     },
     {

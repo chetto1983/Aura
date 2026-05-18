@@ -54,14 +54,14 @@ func NewChatService(hub HubReceiver, router *Router) *ChatService {
 // Chat dispatches a single chat turn through the Hub and waits for the
 // terminal Result. Returns a ChatReply identical in shape to the public
 // api.ChatReply so the HTTP handler stays byte-identical.
-func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatReply, error) {
+func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error) {
 	if s == nil || s.hub == nil || s.router == nil {
 		return ChatReply{}, errors.New("webadapter: hub unavailable")
 	}
 	msg := chat.InboundMessage{
 		Channel:     chat.ChannelWeb,
 		PrincipalID: userID,
-		ThreadID:    webThreadID(userID),
+		ThreadID:    webThreadID(userID, threadID),
 		Text:        message,
 		Mode:        chat.DeliveryModeDeferred,
 		CreatedAt:   time.Now().UTC(),
@@ -97,10 +97,13 @@ func (s *ChatService) Chat(ctx context.Context, userID, message string) (ChatRep
 	}, nil
 }
 
-func webThreadID(userID string) string {
+func webThreadID(userID, threadID string) string {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		userID = "anonymous"
 	}
-	return "web:" + userID
+	if threadID == "" {
+		threadID = "default"
+	}
+	return "web:" + userID + ":" + threadID
 }

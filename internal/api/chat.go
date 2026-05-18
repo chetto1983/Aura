@@ -26,7 +26,7 @@ func actorIDFromRequest(r *http.Request) string {
 // streaming, no Telegram coupling. cmd/aura wires this via agent.RunTask
 // so the chat pipe shares the live LLM client + tool registry the bot uses.
 type ChatService interface {
-	Chat(ctx context.Context, userID, message string) (ChatReply, error)
+	Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error)
 }
 
 // ChatReply is the JSON shape the endpoint returns. Stats fields mirror the
@@ -39,9 +39,13 @@ type ChatReply struct {
 	Tokens    int    `json:"tokens"`
 }
 
-type chatRequest struct {
+// ChatRequest is the POST /chat request body.
+type ChatRequest struct {
 	UserID  string `json:"user_id"`
 	Message string `json:"message"`
+	// ThreadID scopes the agent_note scratchpad to a named conversation thread.
+	// Omitting it is equivalent to "default".
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 // handleChat is the POST /chat handler. The agent runs synchronously and the
@@ -53,7 +57,7 @@ func handleChat(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusServiceUnavailable, "chat service is not configured")
 			return
 		}
-		var req chatRequest
+		var req ChatRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 			return
@@ -62,6 +66,10 @@ func handleChat(deps Deps) http.HandlerFunc {
 		if message == "" {
 			writeError(w, deps.Logger, http.StatusBadRequest, "message is required")
 			return
+		}
+		threadID := strings.TrimSpace(req.ThreadID)
+		if threadID == "" {
+			threadID = "default"
 		}
 		authUserID := userIDFromRequest(r)
 		chatCtx := r.Context()
@@ -91,7 +99,7 @@ func handleChat(deps Deps) http.HandlerFunc {
 		if userID == "" {
 			userID = "chat-cli"
 		}
-		reply, err := deps.Chat.Chat(chatCtx, userID, message)
+		reply, err := deps.Chat.Chat(chatCtx, userID, threadID, message)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				writeError(w, deps.Logger, http.StatusRequestTimeout, "client cancelled the chat request")

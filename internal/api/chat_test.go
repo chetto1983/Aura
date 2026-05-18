@@ -19,15 +19,17 @@ import (
 type recordingChatService struct {
 	calls             int
 	userID            string
+	threadID          string
 	actorID           string
 	identityActorID   string
 	authorizerPresent bool
 	message           string
 }
 
-func (s *recordingChatService) Chat(ctx context.Context, userID, message string) (ChatReply, error) {
+func (s *recordingChatService) Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error) {
 	s.calls++
 	s.userID = userID
+	s.threadID = threadID
 	s.actorID = auth.ActorIDFromContext(ctx)
 	s.identityActorID = identity.ActorIDFromContext(ctx)
 	_, s.authorizerPresent = identity.AuthorizerFromContext(ctx)
@@ -192,6 +194,39 @@ func (e *chatAuthEnv) doChat(t *testing.T, token, body string) *httptest.Respons
 	rr := httptest.NewRecorder()
 	e.router.ServeHTTP(rr, req)
 	return rr
+}
+
+// TestChatThreadIDScoping verifies that thread_id from the request body is
+// forwarded to ChatService as a distinct parameter, producing distinct
+// conversation scopes (web:<userID>:<threadID>) for different thread values.
+func TestChatThreadIDScoping(t *testing.T) {
+	env := newChatAuthEnv(t, "alice")
+
+	rr := env.doChat(t, env.token, `{"message":"hello","thread_id":"a"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("thread_id=a: status %d, body=%s", rr.Code, rr.Body)
+	}
+	if env.chat.threadID != "a" {
+		t.Fatalf("thread_id=a: threadID = %q, want a", env.chat.threadID)
+	}
+
+	rr = env.doChat(t, env.token, `{"message":"hello","thread_id":"b"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("thread_id=b: status %d, body=%s", rr.Code, rr.Body)
+	}
+	if env.chat.threadID != "b" {
+		t.Fatalf("thread_id=b: threadID = %q, want b", env.chat.threadID)
+	}
+	// The two thread IDs are distinct, so they map to distinct conversation_ids
+	// (web:alice:a vs web:alice:b) in the agent_note scratchpad.
+
+	rr = env.doChat(t, env.token, `{"message":"hello"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("no thread_id: status %d, body=%s", rr.Code, rr.Body)
+	}
+	if env.chat.threadID != "default" {
+		t.Fatalf("no thread_id: threadID = %q, want default", env.chat.threadID)
+	}
 }
 
 func assertChatScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {

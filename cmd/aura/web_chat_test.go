@@ -87,7 +87,7 @@ func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 		t.Fatal("newHubBackedWebChatService returned nil")
 	}
 	actorID := identity.TelegramSessionActorID("alice")
-	reply, err := svc.Chat(identity.WithActorID(context.Background(), actorID), "alice", "hello")
+	reply, err := svc.Chat(identity.WithActorID(context.Background(), actorID), "alice", "default", "hello")
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
 		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
 		identity.TelegramSessionActorID("alice"),
 	)
-	if _, err := svc.Chat(ctx, "alice", "call the probe"); err != nil {
+	if _, err := svc.Chat(ctx, "alice", "default", "call the probe"); err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
 	assertWebChatScalar(t, db, `
