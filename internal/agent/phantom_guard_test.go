@@ -1,6 +1,13 @@
 package agent
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"testing"
+
+	"github.com/aura/aura/internal/llm"
+)
 
 // toolsFn returns a ToolNamesFn that yields a fixed slice — handy for tests.
 func toolsFn(names ...string) func() []string {
@@ -258,4 +265,72 @@ func containsStr(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestRunLoopPhantomToolGuardDetectsAndCorrects verifies the full phantom →
+// correction → clean final reply flow inside runLoop.
+// Acceptance: US-QA-FIX15 (Phase-QA3 / US-QA17).
+func TestRunLoopPhantomToolGuardDetectsAndCorrects(t *testing.T) {
+	// budgetLoopState implements PhantomCorrector (AddUserMessage), required
+	// for the correction-injection path in the loop.
+	state := newBudgetLoopState()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	// Round 1: phantom reply — "task" mentioned with Italian past-tense
+	//          performative, no HasToolCalls. Guard fires, correction injected.
+	// Round 2: correction round — model actually invokes task tool.
+	//          PhantomToolCorrected increments (HasToolCalls=true after detection).
+	// Round 3: final clean reply — original phantom text absent.
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "Ho schedulato il task reminder-phantom-zzz per le 17 di domani."}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "call-task", Name: "task", Arguments: map[string]any{"action": "list"}},
+		}}},
+		{Response: llm.Response{Content: "Ecco i task: nessuno con nome 'reminder-phantom-zzz' risulta pianificato."}},
+	}}
+
+	guard := &PhantomToolGuard{
+		ToolNamesFn: toolsFn("task", "wiki_page", "search_memory"),
+		MaxRetries:  1,
+	}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "[]")
+		return ExecutionSummary{LastResult: "[]"}
+	}), state, Options{
+		MaxIterations:    5,
+		Logger:           logger,
+		PhantomToolGuard: guard,
+	})
+	if err != nil {
+		t.Fatalf("runLoop error: %v", err)
+	}
+
+	// Final reply must not contain the original phantom claim.
+	if containsStr(result.Text, "schedulato il task reminder-phantom-zzz") {
+		t.Fatalf("final reply still contains phantom claim: %q", result.Text)
+	}
+
+	// Phantom detection fired at least once.
+	if result.Stats.PhantomToolDetections == 0 {
+		t.Fatalf("PhantomToolDetections = 0, want >= 1")
+	}
+	// Correction round triggered a real tool call (PhantomToolCorrected counts
+	// iterations where HasToolCalls=true occurred after detection).
+	if result.Stats.PhantomToolCorrected == 0 {
+		t.Fatalf("PhantomToolCorrected = 0, want >= 1")
+	}
+
+	// Log shows the correction round fired — this is the "stderr preview" of
+	// the correction happening.
+	if !containsStr(logs.String(), "phantom_tool_detected") {
+		t.Fatalf("expected 'phantom_tool_detected' in logs; got: %s", logs.String())
+	}
+
+	// Correction text was injected as a user-side message into the conversation.
+	if !state.sawUserMessage("[system]") {
+		t.Fatalf("correction user-message not injected; messages = %+v", state.messages)
+	}
 }

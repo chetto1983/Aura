@@ -151,7 +151,7 @@
         "Single atomic commit prefix: test(qa): phantom tool edit cleanup (Phase-QA3 / US-QA-FIX15)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "phantom_guard_test.go has existing patterns. The hard part is reliably triggering phantom — use a prompt similar to phantom-trap-nonexistent-task."
     },
     {
