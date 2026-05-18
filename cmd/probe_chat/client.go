@@ -277,6 +277,31 @@ func (e *Env) cancelTask(name string) error {
 	return nil
 }
 
+// fetchSandboxEnabled calls /api/health and returns whether the sandbox is enabled.
+func (e *Env) fetchSandboxEnabled() (bool, error) {
+	healthURL := strings.TrimRight(e.APIBase, "/") + "/health"
+	req, _ := http.NewRequest(http.MethodGet, healthURL, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("GET %s: %w", healthURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var h struct {
+		Sandbox struct {
+			Enabled bool `json:"enabled"`
+		} `json:"sandbox"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+		return false, fmt.Errorf("decode health response: %w", err)
+	}
+	return h.Sandbox.Enabled, nil
+}
+
 func (e *Env) fetchUserID() (string, error) {
 	url := strings.TrimRight(e.APIBase, "/") + "/auth/whoami"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)

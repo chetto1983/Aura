@@ -67,6 +67,7 @@ var validSmokeCategories = []string{
 	"tools-agent-note",
 	"tools-files",
 	"tools-memory",
+	"tools-sandbox",
 	"tools-scheduler",
 	"tools-source",
 	"tools-web",

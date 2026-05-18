@@ -18,7 +18,7 @@
         "Single atomic commit prefix: test(qa): probe execute_code E2E (Phase-QA2 / US-QA-COV01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Check internal/agent/tools/registry/exec.go for actual tool name + args. If `tool_attempts` schema doesn't include action labels, query by `tool_name='execute_code'` instead. If sandbox is disabled in current container env, mark case with Setup returning SKIP error and document this as US-QA-COV01-INFRA."
     },
     {

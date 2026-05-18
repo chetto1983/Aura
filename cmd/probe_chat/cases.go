@@ -824,6 +824,50 @@ func allCases(now time.Time) []Case {
 				}
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV01 — execute_code sandbox E2E.
+		// Asks Aura to compute the sum of the first 10 Fibonacci numbers
+		// (answer: 143) via the Python sandbox. Skips gracefully when
+		// sandbox.enabled=false (infra-skip US-QA-COV01-INFRA).
+		// Ground truth: tool_attempts DB row, not the reply text.
+		{
+			Name:     "tool-execute-code",
+			Category: "tools-sandbox",
+			Prompt:   "Usa lo strumento execute_code per calcolare la somma dei primi 10 numeri di Fibonacci. Rispondi con il risultato numerico.",
+			Setup: func(env *Env) error {
+				enabled, err := env.fetchSandboxEnabled()
+				if err != nil {
+					return fmt.Errorf("health check failed: %w", err)
+				}
+				if !enabled {
+					return fmt.Errorf("sandbox disabled (sandbox.enabled=false in /api/health) — infra-skip US-QA-COV01-INFRA")
+				}
+				execCodeBefore = time.Now()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected >= 1 tool call (execute_code), got 0")
+				}
+				if !strings.Contains(r.Reply, "143") {
+					miss = append(miss, fmt.Sprintf("reply missing expected Fibonacci sum '143' (got: %q)", truncate(r.Reply, 200)))
+				}
+				// Ground truth: DB must have a successful tool_attempts row for execute_code.
+				counts, err := env.toolAttemptsSince(execCodeBefore, "execute_code")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
+					return miss
+				}
+				count := counts["execute_code"]
+				fmt.Fprintf(os.Stderr, "[case=tool-execute-code] tool_attempts execute_code since %s: count=%d\n",
+					execCodeBefore.Format(time.RFC3339), count)
+				if count == 0 {
+					miss = append(miss, "DB ground truth: no successful tool_attempts row for execute_code since probe start")
+				}
+				return miss
+			},
+		},
 	}
 }
 
@@ -832,8 +876,9 @@ func allCases(now time.Time) []Case {
 // Setup and reads it back in Verify. Module-level scope is fine because
 // runAll processes cases sequentially (loop in runAll, no parallelism).
 var (
-	htmlProbeID string
-	zipProbeID  string
+	htmlProbeID    string
+	zipProbeID     string
+	execCodeBefore time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from
