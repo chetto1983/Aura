@@ -193,7 +193,7 @@
         "Single atomic commit prefix: test(qa): telegram 429 rate-limit channel coverage (Phase-QA3 / US-QA-FIX18)"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "If you can prove FIX11 fully covers this (because RetryClient is channel-agnostic), document it and ship a doc-only commit."
     },
     {

@@ -264,6 +264,61 @@ func TestRetry_429_RetrySuccess_NoFallback(t *testing.T) {
 	}
 }
 
+// TestRetry_429_Stream_RetrySuccess_NoFallback verifies that a 429 rate-limit
+// error on the Stream path is classified as TRANSIENT, retried, and on eventual
+// success the streamed content is the real LLM reply — never the "Sorry, I
+// couldn't process" fallback emitted at internal/agent/loop.go:336.
+// This guards the Telegram channel path where the agent loop calls
+// retry.Stream() for progressive-edit streaming.
+func TestRetry_429_Stream_RetrySuccess_NoFallback(t *testing.T) {
+	const fallback = "Sorry, I couldn't process your message. Please try again."
+	const want = "streamed reply after rate limit"
+
+	calls := 0
+	mock := &mockClient{
+		streamFn: func(ctx context.Context, req Request) (<-chan Token, error) {
+			calls++
+			if calls < 3 {
+				return nil, &APIError{StatusCode: 429, Body: "rate limit exceeded"}
+			}
+			ch := make(chan Token, 2)
+			ch <- Token{Content: want}
+			ch <- Token{Done: true}
+			close(ch)
+			return ch, nil
+		},
+	}
+
+	retry := NewRetryClient(mock, RetryConfig{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   10 * time.Millisecond,
+	})
+
+	ch, err := retry.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("expected success after retrying 429 on Stream, got: %v", err)
+	}
+	var result string
+	for tok := range ch {
+		if tok.Done {
+			break
+		}
+		result += tok.Content
+	}
+	if result == fallback {
+		t.Errorf("streamed content is the fallback error string — 429 Stream retry did not succeed transparently")
+	}
+	if result != want {
+		t.Errorf("Content = %q, want %q", result, want)
+	}
+	if calls != 3 {
+		t.Errorf("calls = %d, want 3 (two 429s then success)", calls)
+	}
+}
+
 // TestRetry_BackwardsCompat_DefaultConfig verifies NewRetryClient works with
 // DefaultRetryConfig and that the content temperatures are populated.
 func TestRetry_BackwardsCompat_DefaultConfig(t *testing.T) {
