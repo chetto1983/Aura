@@ -221,6 +221,49 @@ func TestRetry_PermanentNoRetry(t *testing.T) {
 	}
 }
 
+// TestRetry_429_RetrySuccess_NoFallback verifies that a 429 rate-limit error is
+// classified as TRANSIENT, retried, and on eventual success the response content
+// is the real LLM reply — never the "Sorry, I couldn't process" fallback
+// emitted at internal/agent/loop.go:336. This guards the /api/chat (web) channel
+// path where noStreamClient.Chat delegates to Send().
+func TestRetry_429_RetrySuccess_NoFallback(t *testing.T) {
+	const fallback = "Sorry, I couldn't process your message. Please try again."
+	const want = "llm reply after rate limit"
+
+	calls := 0
+	mock := &mockClient{
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			calls++
+			if calls < 3 {
+				return Response{}, &APIError{StatusCode: 429, Body: "rate limit exceeded"}
+			}
+			return Response{Content: want}, nil
+		},
+	}
+
+	retry := NewRetryClient(mock, RetryConfig{
+		MaxRetries: 5,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   10 * time.Millisecond,
+	})
+
+	resp, err := retry.Send(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("expected success after retrying 429, got: %v", err)
+	}
+	if resp.Content == fallback {
+		t.Errorf("response is the fallback error string — 429 retry did not succeed transparently")
+	}
+	if resp.Content != want {
+		t.Errorf("Content = %q, want %q", resp.Content, want)
+	}
+	if calls != 3 {
+		t.Errorf("calls = %d, want 3 (two 429s then success)", calls)
+	}
+}
+
 // TestRetry_BackwardsCompat_DefaultConfig verifies NewRetryClient works with
 // DefaultRetryConfig and that the content temperatures are populated.
 func TestRetry_BackwardsCompat_DefaultConfig(t *testing.T) {

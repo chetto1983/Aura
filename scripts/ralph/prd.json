@@ -94,7 +94,7 @@
         "Single atomic commit prefix: test(qa): 429 retry path coverage on web channel (Phase-QA3 / US-QA-FIX11)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Mock LLM is easier than real 429. Look at existing retry_test.go for mock patterns."
     },
     {
