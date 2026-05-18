@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -292,6 +293,22 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 			if len(execution.DiscoveredTools) > 0 {
 				addActiveTools(execution.DiscoveredTools)
 			}
+			// Hot-reload system prompt when the file tool writes to an overlay
+			// file so the NEXT LLM iteration in this conversation sees the
+			// updated rules without waiting for a new conversation.
+			if overlayWriteInCalls(calls) {
+				newOverlay := conversation.LoadPromptOverlay(cfg.PromptOverlayPath)
+				if ib.memoryStore != nil {
+					if docs, fetchErr := ib.memoryStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
+						if block := memoryindex.OperationalLessonsBlock(docs, 5120); block != "" {
+							newOverlay += "\n\n" + block
+						}
+					}
+				}
+				newPromptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), newOverlay, skillsBlock, toolManifest, time.Now())
+				convCtx.SetSystemMessage(newPromptPlan.Content)
+				b.Logger().Debug("overlay: hot-reloaded after file tool write to overlay file")
+			}
 			return agent.ExecutionSummary{
 				LastResult:        execution.LastResult,
 				FatalResult:       execution.FatalResult,
@@ -565,5 +582,25 @@ func (ib *InvocationBuilder) maxToolLoopIterations() int {
 
 func (ib *InvocationBuilder) terminalToolPolicyEnabled() bool {
 	return ib.b.TerminalToolPolicyEnabled()
+}
+
+// overlayWriteInCalls reports whether any of the given tool calls wrote to an
+// overlay file (file tool, action write or patch, overlay-file basename). When
+// true the executor reloads the system prompt before the next LLM iteration.
+func overlayWriteInCalls(calls []llm.ToolCall) bool {
+	for _, call := range calls {
+		if call.Name != "file" {
+			continue
+		}
+		action, _ := call.Arguments["action"].(string)
+		if action != "write" && action != "patch" {
+			continue
+		}
+		pathVal, _ := call.Arguments["path"].(string)
+		if conversation.IsOverlayFileName(filepath.Base(pathVal)) {
+			return true
+		}
+	}
+	return false
 }
 

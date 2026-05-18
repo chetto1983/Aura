@@ -66,7 +66,7 @@
         "Single atomic commit prefix: feat(overlay): hot-reload prompt overlay after in-conversation patch (Phase-OP / US-OP04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Agent loop is internal/agent/loop.go. Overlays loaded in hub or in createContext. Reload only when overlay file actually changed (flag-based, not unconditional)."
     },
     {

@@ -128,6 +128,21 @@ func TestEnsurePromptOverlayDefaultsDoesNotOverwrite(t *testing.T) {
 	}
 }
 
+func TestIsOverlayFileName(t *testing.T) {
+	watched := []string{"SOUL.md", "USER.md", "TOOLS.md", "OPS.md", "AGENT.md"}
+	for _, name := range watched {
+		if !IsOverlayFileName(name) {
+			t.Errorf("expected %s to be an overlay watched file", name)
+		}
+	}
+	notWatched := []string{"RANDOM.md", "tools.md", "agent.md", "AGENTS.md", ""}
+	for _, name := range notWatched {
+		if IsOverlayFileName(name) {
+			t.Errorf("expected %s to NOT be an overlay watched file", name)
+		}
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

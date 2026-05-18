@@ -15,6 +15,26 @@ import (
 // also excluded because it contains repository development instructions.
 var overlayFiles = []string{"SOUL.md", "USER.md", "TOOLS.md"}
 
+// overlayWatchedFiles is the set of overlay basenames that, when written by
+// the file tool, trigger a mid-conversation system-prompt hot-reload. Includes
+// AGENT.md and OPS.md even though they are not in overlayFiles: writes to
+// either can still affect context (AGENT.md is file-tool readable; OPS.md is a
+// planned sibling overlay).
+var overlayWatchedFiles = map[string]struct{}{
+	"SOUL.md":  {},
+	"USER.md":  {},
+	"TOOLS.md": {},
+	"OPS.md":   {},
+	"AGENT.md": {},
+}
+
+// IsOverlayFileName reports whether name (basename only, no directory) is one
+// of the operator overlay files whose writes should trigger a prompt reload.
+func IsOverlayFileName(name string) bool {
+	_, ok := overlayWatchedFiles[name]
+	return ok
+}
+
 var defaultPromptOverlayFiles = map[string]string{
 	"SOUL.md": `# Soul
 
