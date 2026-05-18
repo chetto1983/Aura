@@ -50,7 +50,7 @@
         "Single atomic commit prefix: feat(overlay): inject top-10 operational lessons in system prompt (Phase-OP / US-OP03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Prompt overlay loading happens at internal/chat/hub.go or wherever agent loop pulls SOUL/AGENT/USER/TOOLS.md. PROMPT_OVERLAY_PATH env var."
     },
     {

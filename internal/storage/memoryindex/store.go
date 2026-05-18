@@ -601,6 +601,30 @@ ORDER BY d.kind, d.updated_at DESC, d.id
 	return scanDocuments(rows, 1)
 }
 
+// FetchRecentOperational returns the N most recently updated kind=operational
+// documents, ordered by updated_at DESC. Used by the system-prompt overlay to
+// inject top-N lessons at conversation start (US-OP03). limit <= 0 defaults to 10.
+func (s *Store) FetchRecentOperational(ctx context.Context, limit int) ([]Document, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("memoryindex: store unavailable")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id
+FROM compact_memory_documents
+WHERE kind = ?
+ORDER BY updated_at DESC
+LIMIT ?
+`, KindOperational, limit)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: fetch recent operational: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 1)
+}
+
 func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, limit int) ([]Document, error) {
 	values := exactCandidates(query)
 	if len(values) == 0 {

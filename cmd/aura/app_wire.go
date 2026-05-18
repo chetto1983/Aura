@@ -53,6 +53,12 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		})
 	}
 
+	// Wire compact memory store so InvocationBuilder can query top-N operational
+	// lessons for system prompt injection at conversation start (US-OP03).
+	if a.deps.MemoryStore != nil {
+		b.SetMemoryStore(a.deps.MemoryStore)
+	}
+
 	// ---- Tool vector index: reconciler + mcpwatch goroutines ----------------
 	toolReaderConfig := tools.ToolVectorConfig{
 		Backend:        cfg.ToolSearchBackend,

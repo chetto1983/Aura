@@ -65,6 +65,7 @@ type botRuntime struct {
 	issues              cron.IssueRepository
 	agentNoteStore      *agentnote.Store
 	attemptsRepo        attempts.Repo
+	memoryStore         *memoryindex.Store
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.

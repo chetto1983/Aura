@@ -338,6 +338,23 @@ func (b *Bot) SetIssues(is cron.IssueRepository) {
 	}
 }
 
+// SetMemoryStore wires the compact memory store (wired by wireBot).
+// Used by the Telegram InvocationBuilder to inject top-N operational lessons
+// into the system prompt overlay at conversation start (US-OP03).
+func (b *Bot) SetMemoryStore(s *memoryindex.Store) {
+	if b.rt != nil {
+		b.rt.memoryStore = s
+	}
+}
+
+// MemoryStore returns the compact memory store (nil when not configured).
+func (b *Bot) MemoryStore() *memoryindex.Store {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.memoryStore
+}
+
 // ArchiveAppender returns the turn appender for use by channels/telegram.InvocationBuilder.
 func (b *Bot) ArchiveAppender() conversation.TurnAppender {
 	return b.archiveAppenderForTurn()

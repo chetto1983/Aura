@@ -15,6 +15,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/stringx"
 	tgtelegram "github.com/aura/aura/internal/telegram"
 
@@ -26,9 +27,10 @@ import (
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
 	b              *tgtelegram.Bot
-	hub            *chat.Hub        // set after hub creation; used for ask_user resume routing
-	outbound       *Outbound        // canonical streaming path used by streamingChatClient
-	agentNoteStore *agentnote.Store // nil when not configured; injected by NewHub
+	hub            *chat.Hub           // set after hub creation; used for ask_user resume routing
+	outbound       *Outbound           // canonical streaming path used by streamingChatClient
+	agentNoteStore *agentnote.Store    // nil when not configured; injected by NewHub
+	memoryStore    *memoryindex.Store  // nil when compact memory unavailable; injected by NewHub
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -42,6 +44,7 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStore) (*chat.Hub, error) {
 	ib := NewInvocationBuilder(b)
 	ib.agentNoteStore = b.AgentNoteStore()
+	ib.memoryStore = b.MemoryStore()
 	adapter, err := chat.NewAgentLoopAdapter(ib.Build)
 	if err != nil {
 		return nil, err
@@ -80,6 +83,15 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	userText := msg.Text
 
 	overlay := conversation.LoadPromptOverlay(cfg.PromptOverlayPath)
+	if ib.memoryStore != nil {
+		if docs, fetchErr := ib.memoryStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
+			if block := memoryindex.OperationalLessonsBlock(docs, 5120); block != "" {
+				overlay += "\n\n" + block
+			}
+		} else {
+			b.Logger().Warn("ops overlay: failed to fetch operational lessons", "error", fetchErr)
+		}
+	}
 	var skillsBlock string
 	if loader := b.SkillsLoader(); loader != nil {
 		loadedSkills, err := loader.LoadAll()
