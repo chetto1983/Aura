@@ -33,7 +33,7 @@
         "Single atomic commit prefix: feat(tokenjuice): classify algorithm with score-based rule matching (Phase-TJ / US-TJ02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Algorithm spec is the source of truth. The fallback rule unlocks E2E testing in US-TJ03 even before vendoring all 10 rules. Use Go's regexp/RE2 (NOT regexp/syntax with lookbehind) — all openhuman rules are RE2-compatible per spec."
     },
     {

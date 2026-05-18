@@ -1,0 +1,20 @@
+{
+  "id": "generic/fallback",
+  "family": "generic",
+  "description": "Catch-all rule: applies head/tail compaction when no specific rule matches.",
+  "match": {},
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "summarize": {
+    "head": 8,
+    "tail": 8
+  },
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 12,
+    "tail": 20
+  }
+}
