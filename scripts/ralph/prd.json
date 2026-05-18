@@ -1,90 +1,230 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-QA1.5 — close the 3 Mistral findings discovered during Phase-QA2 + 2 probe-quality refinements from the closure verdict. The Mistral bugs (filed in docs/qa-bug-log.md 2026-05-18T18:42): (a) backend `secretKeyMappings` in internal/api/settings.go:21-28 doesn't include MISTRAL_API_KEY — save falls through to settings table (plaintext, mixed with non-secret config) instead of secrets store; (b) /api/settings serializer returns active_value='' for is_secret items not in mapping — UI can't tell they're configured; (c) frontend SettingsPanel.tsx:287-298 derives badge purely from item.source — 'SALVATO' shows even when active_value is empty. The probe refinements from qa-verdict.md Phase-QA2 closure: (d) tool-execute-code asserted Fibonacci sum = 143 but LLM computed 88 (both valid definitions — accept either); (e) tool-subagent-dispatch needs INFRA-SKIP detection because web API can't satisfy 'manca contesto Telegram'. Each story: ONE atomic commit on master per memory feedback_master_direct_workflow + feedback_one_module_per_slice. After Phase-QA1.5 closes: optional Phase-QA3 (failure-injection harness for the 9 STATIC-INSUFFICIENT P0 cells still deferred).",
+  "description": "Phase-QA1.5+QA3 combined — close ALL remaining Q&A items so Aura is fully tested. 5 QA1.5 stories (3 Mistral fixes + 2 probe refinements from QA2 verdict) + 9 QA3 stories (one per STATIC-INSUFFICIENT P0 cell from qa-triage.md that QA2 deferred). After this queue closes: Aura has E2E coverage for all 19 P0 surface cells originally identified in Phase 2 audit. The QA3 stories are skeletal (rely on Ralph's investigation per fresh-context principle); some are unit-test-shaped where failure-injection harness is impractical, some are integration with docker stop/restart of sidecars. Each story = single atomic commit on master per feedback_one_module_per_slice.",
   "userStories": [
     {
       "id": "US-QA-FIX06",
       "title": "Backend: add MISTRAL_API_KEY to secretKeyMappings + migrate plaintext row to secrets store",
-      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Bug 1): internal/api/settings.go:21-28 declares a map from settings-table keys (UPPER_SNAKE) to secrets-store keys (lowercase). It's missing MISTRAL_API_KEY. When a user saves MISTRAL_API_KEY via dashboard, the save endpoint routes through this map; missing entry falls through to plaintext settings-table write. Ground truth confirmed: SELECT value FROM settings WHERE key='MISTRAL_API_KEY' returned a 32-char Mistral key in plaintext. (a) Add `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey` to the map. (b) Verify the `secrets.KeyMistralAPIKey` constant exists at internal/secrets/keys.go (or wherever the others live); if missing, define it as `mistral_api_key` lowercase matching the table column. (c) Write a one-shot migration in internal/db/migrations/ that: read settings where key='MISTRAL_API_KEY' and value != ''; if present, INSERT or UPDATE secrets with key='mistral_api_key' value=<settings.value>; then UPDATE settings SET value='' WHERE key='MISTRAL_API_KEY'. Migration must be idempotent (run multiple times = no-op after first). (d) Verify post-migration: SELECT FROM secrets WHERE key='mistral_api_key' returns the row; SELECT FROM settings WHERE key='MISTRAL_API_KEY' has empty value. (e) Restart-test: docker compose restart aura; check `OCR backend not configured` warning no longer appears in logs.",
+      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Bug 1): internal/api/settings.go:21-28 declares secretKeyMappings (UPPER_SNAKE settings keys to lowercase secrets-store keys). Missing MISTRAL_API_KEY entry. When user saves Mistral key via dashboard, the save endpoint falls through to plaintext settings-table write instead of secrets store. Ground truth: SELECT value FROM settings WHERE key='MISTRAL_API_KEY' returned 32-char Mistral key in plaintext. (a) Add `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey` to the map. (b) Verify secrets.KeyMistralAPIKey constant exists (check internal/secrets/keys.go); if missing define as 'mistral_api_key'. (c) Write idempotent migration in internal/db/migrations/ that moves any existing plaintext from settings to secrets, then clears the settings row. (d) Restart-test: post-restart 'OCR backend not configured' warning gone from logs.",
       "acceptanceCriteria": [
-        "internal/api/settings.go:21-28 secretKeyMappings includes `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey`",
-        "internal/secrets package exports KeyMistralAPIKey constant (lowercase 'mistral_api_key')",
-        "Migration in internal/db/migrations/ migrates existing plaintext Mistral value from settings to secrets table (idempotent)",
-        "Unit test exercises the migration: pre-state with settings row, post-state with secrets row + empty settings row",
-        "go build ./... + go vet ./... + go test ./... green",
-        "Live container check: docker exec aura-aura-1 sqlite3 /data/aura.db 'SELECT key FROM secrets' includes mistral_api_key",
-        "Live: docker compose logs aura --tail 50 contains no 'OCR backend not configured' after Mistral-key save+restart",
+        "internal/api/settings.go secretKeyMappings includes KeyMistralAPIKey",
+        "internal/secrets exports KeyMistralAPIKey constant",
+        "Migration in internal/db/migrations/ is idempotent (re-run = no-op)",
+        "Unit test for migration: pre-state plaintext in settings → post-state in secrets table",
+        "go build/vet/test green",
+        "docker exec aura-aura-1 sqlite3 /data/aura.db 'SELECT key FROM secrets' includes mistral_api_key",
         "Single atomic commit prefix: fix(api): route MISTRAL_API_KEY through secrets store + migrate plaintext (Phase-QA1.5 / US-QA-FIX06)"
       ],
       "priority": 1,
       "passes": false,
-      "notes": "Check internal/secrets/keys.go for the existing constants pattern (KeyTelegramToken, KeyLLMAPIKey, etc.) — match that style for KeyMistralAPIKey. The migration order in db/migrations/ uses numeric prefix (e.g., v13, v14); use the next available number. Skip the migration if Aura already loads Mistral from settings table (applier.go:226 currently does this) — but the security goal is to STOP storing the key in settings."
+      "notes": "Match existing constants pattern in internal/secrets/keys.go. Migration: next available numeric prefix in internal/db/migrations/."
     },
     {
       "id": "US-QA-FIX07",
-      "title": "Frontend: SettingsPanel badge logic for is_secret + empty active_value",
-      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Bug 3): web/src/components/SettingsPanel.tsx:287-298 derives the source-badge label purely from item.source. For an is_secret item with source='db' but active_value='' (the state Bug 1+2 above produce), the badge shows 'SALVATO' (saved) even though the value isn't really persisted. (a) Modify the switch case for 'db': add `if (item.is_secret && !item.active_value) return ...unset...` branch BEFORE returning 'saved'. (b) Verify the i18n strings settings.badge.unset / settings.badge.saved render correctly in both locales (en.json, it.json — already exist). (c) Write a Vitest unit test that mocks an item with is_secret=true, source='db', active_value='' and asserts the rendered badge is 'unset', not 'saved'. (d) Manual verification: after US-QA-FIX06 lands AND mistral key migrated to secrets, dashboard shows correct badge: SALVATO if key truly set, NON IMPOSTATO if empty. Build the web bundle: npm --prefix web run build.",
+      "title": "Frontend: SettingsPanel badge correctly handles is_secret with empty active_value",
+      "description": "Per docs/qa-bug-log.md Bug 3: web/src/components/SettingsPanel.tsx:287-298 derives badge purely from item.source. For is_secret with source='db' but active_value='' the badge shows 'SALVATO' even though value isn't really persisted. (a) Modify 'db' case: add `if (item.is_secret && !item.active_value) return ...unset...` before returning 'saved'. (b) Vitest unit test for the new branch. (c) npm --prefix web run build green.",
       "acceptanceCriteria": [
-        "web/src/components/SettingsPanel.tsx switch case 'db' has an `is_secret && !active_value` short-circuit returning the unset badge",
-        "Vitest unit test in web/src/components/__tests__/SettingsPanel.test.tsx covers the is_secret + empty active_value case",
-        "npm --prefix web run build green",
-        "npm --prefix web test green (existing tests + new one)",
-        "Manual smoke (orchestrator): open http://localhost:18080/settings, MISTRAL_API_KEY badge correctly reflects its real state",
-        "Single atomic commit prefix: fix(web): settings badge correctly handles is_secret with empty active_value (Phase-QA1.5 / US-QA-FIX07)"
+        "SettingsPanel.tsx 'db' case has is_secret + empty active_value short-circuit",
+        "Vitest unit test for the new branch",
+        "npm --prefix web build green",
+        "Single atomic commit prefix: fix(web): settings badge handles is_secret empty active_value (Phase-QA1.5 / US-QA-FIX07)"
       ],
       "priority": 2,
       "passes": false,
-      "notes": "Don't touch the t() i18n keys — both 'salvato' and 'non impostato' already exist. The fix is purely in the discriminator logic. Test pattern: render <SettingsPanel /> with mocked /api/settings response, query for the badge element by data-testid or label text."
+      "notes": "i18n keys settings.badge.unset and settings.badge.saved already exist in en/it. Fix is purely in discriminator logic."
     },
     {
       "id": "US-QA-FIX08",
-      "title": "Surface restart_required hint in SettingsPanel for keys with no hot-reload",
-      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Runtime quirk): after the user saves MISTRAL_API_KEY (or any setting whose applier doesn't hot-reload), Aura's in-memory config is stale until `docker compose restart aura`. /api/settings already exposes per-item `restart_required: true|false` boolean — it's currently unused in the frontend. (a) Mark MISTRAL_API_KEY (and any other secret/setting that the applier reads only at boot) with restart_required=true in the settings catalog backend (internal/api/settings.go around the catalog definition; look for the items list). Audit: which keys does applier.go read at boot only? Add restart_required=true for those. Conservative starter list: MISTRAL_API_KEY, LLM_BASE_URL, EMBEDDING_BASE_URL (boot-time-only), AURA_AGENT_LOOP_MAX_STEPS, AURABOT_ENABLED. (b) Frontend: in SettingsPanel.tsx, when an item has restart_required=true AND has been edited (dirty=true) OR was recently saved, render a small hint badge or tooltip: 'Riavvia il container per applicare' (it) / 'Restart the container to apply' (en). Add i18n key settings.hint.restartRequired. (c) Don't auto-restart — just hint. The user retains control.",
+      "title": "Surface restart_required hint in SettingsPanel for boot-time-only keys",
+      "description": "Per docs/qa-bug-log.md Runtime quirk: Aura doesn't hot-reload MISTRAL_API_KEY (or similar boot-time-only settings). /api/settings already exposes restart_required boolean but UI ignores it. (a) Mark boot-time-only keys with restart_required=true in settings catalog (audit internal/config/applier.go for which fields read only at startup). Conservative starter: MISTRAL_API_KEY, LLM_BASE_URL, EMBEDDING_BASE_URL. (b) Frontend: when item.restart_required && (dirty || recently saved), render hint 'Riavvia container per applicare' / 'Restart to apply'. Add i18n key settings.hint.restartRequired. (c) Don't auto-restart — just hint.",
       "acceptanceCriteria": [
-        "Settings catalog (internal/api/settings.go) marks restart_required=true for: MISTRAL_API_KEY, LLM_BASE_URL, EMBEDDING_BASE_URL (verify by reading applier.go for which fields read at boot only)",
+        "Settings catalog marks restart_required=true for at least MISTRAL_API_KEY",
         "/api/settings response shows restart_required: true for those items",
-        "web/src/components/SettingsPanel.tsx renders a 'restart required' hint when item.restart_required && (dirty || recently saved)",
-        "i18n keys settings.hint.restartRequired added to en.json + it.json",
-        "Vitest unit test covers the hint rendering path",
-        "go build/vet/test green; npm --prefix web build green",
-        "Single atomic commit prefix: feat(settings): surface restart-required hint for boot-time-only keys (Phase-QA1.5 / US-QA-FIX08)"
+        "Frontend renders hint when item.restart_required && (dirty or recently-saved)",
+        "i18n keys added en/it",
+        "go build/test green; npm --prefix web build green",
+        "Single atomic commit prefix: feat(settings): restart-required hint for boot-time-only keys (Phase-QA1.5 / US-QA-FIX08)"
       ],
       "priority": 3,
       "passes": false,
-      "notes": "Don't be too aggressive flagging restart_required — only the keys that genuinely need restart. Check applier.go to see which fields are read inside hot-reload loops vs at boot. Be conservative: false negatives (no hint shown when restart actually needed) are worse than false positives (hint shown unnecessarily)."
+      "notes": "Be conservative; only flag keys actually read at boot only. Check applier.go for hot-reload patterns."
     },
     {
       "id": "US-QA-FIX09",
-      "title": "Probe refinement: tool-execute-code accepts both Fibonacci definitions (88 or 143)",
-      "description": "Per docs/qa-verdict.md Phase-QA2 closure: tool-execute-code probe expected 143 (sum starting 1,1,2,3,5,8,13,21,34,55) but LLM computed 88 (sum starting 0,1,1,2,3,5,8,13,21,34) — both valid Fibonacci definitions. The tool DID fire correctly (tool_calls=1, DB row present), the math IS right per one valid definition. The probe assertion is wrong. (a) Modify cmd/probe_chat/cases.go tool-execute-code Verify to accept reply containing EITHER '143' OR '88'. (b) Update the Prompt to be unambiguous about which definition to use, OR keep the ambiguity but document in the comment that the case accepts both. RECOMMENDED: tighten the prompt to specify 'Fibonacci classico (F1=1, F2=1, ..., F10=55)' so the model converges on 143, AND keep the dual-accept assertion as safety net. (c) Re-run the case 3x to confirm pass rate ≥ 4/5 (4/5 = within flake threshold). (d) Update qa-bug-log.md entry for COV01 from AMBIGUOUS-DEFINITION to FIXED.",
+      "title": "Probe refinement: tool-execute-code accepts both Fibonacci definitions",
+      "description": "Per qa-verdict.md Phase-QA2 closure: tool-execute-code expected 143 but LLM computed 88 (both valid). Modify cmd/probe_chat/cases.go tool-execute-code Verify to accept reply containing either '143' or '88'. Tighten Prompt to specify F1=1,F2=1 convention as preference. Update docs/qa-bug-log.md COV01 entry status to fixed.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go tool-execute-code Prompt clarifies the Fibonacci sequence start (F1=1, F2=1)",
-        "Verify accepts reply containing either '143' or '88' (defensive — both are valid)",
+        "Verify accepts reply with either '143' or '88'",
+        "Prompt clarifies Fibonacci F1=1 F2=1 convention",
+        "5-rerun: ≥4/5 pass",
+        "qa-bug-log.md COV01 status updated to fixed in <SHA>",
         "go build/vet/test green",
-        "5-rerun verification: 4+ of 5 reruns return pass:true (record results in docs/qa-bug-log.md update)",
-        "docs/qa-bug-log.md COV01 entry status updated to fixed in <SHA>",
         "Single atomic commit prefix: test(qa): tool-execute-code accept both Fibonacci definitions (Phase-QA1.5 / US-QA-FIX09)"
       ],
       "priority": 4,
       "passes": false,
-      "notes": "The dual-accept approach is statistically fine: 88 and 143 are both unique enough that any other number would be a real bug. If you want stricter: assert that reply contains a 2-3 digit number AND that tool_attempts shows execute_code fired — pure ground-truth, no LLM-arithmetic dependence."
+      "notes": "Dual-accept is statistically fine (88 vs 143 collision probability ~0)."
     },
     {
       "id": "US-QA-FIX10",
-      "title": "Probe refinement: tool-subagent-dispatch graceful INFRA-SKIP when web API lacks Telegram context",
-      "description": "Per docs/qa-verdict.md Phase-QA2 closure: tool-subagent-dispatch fails because subagent_dispatch tool returns 'manca il contesto Telegram necessario' when called via /api/chat (web context). The tool IS registered and DOES fire (tool_calls=1), but the tool's own error path detects missing Telegram bot handle. The probe should detect this scenario and SKIP gracefully (mark as INFRA-SKIP, not FAIL). (a) Modify cmd/probe_chat/cases.go tool-subagent-dispatch Verify: if reply contains 'manca il contesto Telegram' OR 'requires Telegram session' OR 'no telegram context' (or whatever the actual error string is — check internal/agent/tools/subagent.go for the exact text), classify the result as INFRA-SKIP and return empty miss list (pass:true). Print a stderr line: '[case=tool-subagent-dispatch] INFRA-SKIP: subagent_dispatch requires Telegram context, web API cannot satisfy'. (b) Verify: re-run the case via probe_chat -case=tool-subagent-dispatch -json — should pass:true now (graceful skip recognized as expected behavior). (c) Update docs/qa-bug-log.md COV03 entry: status to fixed in <SHA>.",
+      "title": "Probe refinement: tool-subagent-dispatch graceful INFRA-SKIP for web-context",
+      "description": "Per qa-verdict.md: subagent_dispatch fails because requires Telegram context but probe runs via web /api/chat. Probe should detect 'manca contesto Telegram' error string and SKIP gracefully. Read internal/agent/tools/swarm/subagent.go (or wherever the error is emitted) for exact substring. Modify Verify to return empty miss list (pass:true) when this specific error appears, with stderr line marking INFRA-SKIP.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go tool-subagent-dispatch Verify detects the Telegram-context-missing error and returns empty miss list",
-        "Stderr line emitted with 'INFRA-SKIP' marker for visibility",
-        "Live probe pass:true: `go run ./cmd/probe_chat -case=tool-subagent-dispatch -json` returns pass=true",
-        "docs/qa-bug-log.md COV03 entry status updated to fixed in <SHA>",
+        "Verify detects Telegram-context-missing error and returns empty miss list",
+        "Stderr line emits INFRA-SKIP marker",
+        "Live probe pass:true",
+        "qa-bug-log.md COV03 status updated to fixed in <SHA>",
         "go build/vet/test green",
-        "Single atomic commit prefix: test(qa): tool-subagent-dispatch graceful INFRA-SKIP for web-context invocation (Phase-QA1.5 / US-QA-FIX10)"
+        "Single atomic commit prefix: test(qa): tool-subagent-dispatch graceful INFRA-SKIP (Phase-QA1.5 / US-QA-FIX10)"
       ],
       "priority": 5,
       "passes": false,
-      "notes": "Read internal/agent/tools/subagent.go (or internal/agent/tools/swarm/subagent.go) for the EXACT error text the tool emits when Telegram context is missing. Match on the canonical substring. Don't make this loose — only skip on the specific Telegram-context error, not on generic tool failures (those should still FAIL loud)."
+      "notes": "Match canonical substring from subagent.go source. Don't make loose — only skip on the specific Telegram-context error, not on generic tool failures."
+    },
+    {
+      "id": "US-QA-FIX11",
+      "title": "Phase-QA3: probe — LLM 429 rate-limit retry path (web channel, US-QA13)",
+      "description": "Verify the LLM RetryClient handles 429 rate-limit gracefully on the web /api/chat path. Two acceptable approaches: (A) Unit test in internal/llm/retry_test.go that injects a mock 429 response and asserts jittered exponential retry then success on retry. (B) Probe case in cmd/probe_chat/cases.go that floods /api/chat with N concurrent requests and asserts the user-visible reply is NEVER 'Sorry, I couldn't process' — the retry succeeds invisibly. Pick whichever is simpler given existing test infra. Story acceptance is: SOMEWHERE in repo there's a test that proves the 429 → retry → success path covers the web user case.",
+      "acceptanceCriteria": [
+        "New or extended test in internal/llm/retry_test.go OR cmd/probe_chat/cases.go covering 429 retry success path on web channel",
+        "Test asserts no 'Sorry, I couldn't process' user-visible string under retry",
+        "go build/vet/test green",
+        "If probe-style: live pass:true via -case=...",
+        "Single atomic commit prefix: test(qa): 429 retry path coverage on web channel (Phase-QA3 / US-QA-FIX11)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Mock LLM is easier than real 429. Look at existing retry_test.go for mock patterns."
+    },
+    {
+      "id": "US-QA-FIX12",
+      "title": "Phase-QA3: probe — empty LLM response graceful recovery (web channel, US-QA14)",
+      "description": "Verify the agent loop handles an empty LLM response gracefully — produces a finalAnswerOnBudget message based on last tool result, NOT crash or empty user reply. Either (A) unit test in internal/agent/loop_test.go with stub LLM returning empty response, or (B) probe with adversarial prompt the model has historically returned empty for. Acceptance: somewhere there's a test that proves empty-LLM → graceful recovery → non-empty user reply.",
+      "acceptanceCriteria": [
+        "Test in internal/agent/loop_test.go (or probe case) covers empty LLM response → graceful recovery",
+        "Asserts r.Reply is non-empty and does NOT contain ugly fallback string",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): empty LLM response graceful recovery (Phase-QA3 / US-QA-FIX12)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Look at loop_test.go for existing stub LLM mock patterns. The path is at loop.go:354-356 — finalAnswerOnBudget(lastToolResult) when resp.Content is empty."
+    },
+    {
+      "id": "US-QA-FIX13",
+      "title": "Phase-QA3: probe — qdrant outage graceful degradation (web channel, US-QA15)",
+      "description": "Verify search_memory degrades gracefully when qdrant is unreachable. Either (A) unit test for the qdrant client error path that asserts fallback to FTS5 SQLite search, or (B) integration test that docker stop qdrant; runs probe with search_memory; asserts non-empty user reply; restart qdrant. Pick (A) if simpler, but (B) is more realistic. Acceptance: somewhere there's a test that proves qdrant-down → search_memory falls back → user gets a usable response.",
+      "acceptanceCriteria": [
+        "Test in internal/storage/qdrant or cmd/probe_chat covers qdrant-down fallback to FTS5",
+        "Asserts user-visible reply is coherent (non-empty, no internal error leaked)",
+        "go build/vet/test green",
+        "If integration: docker stop/restart of qdrant container is reversed by test cleanup",
+        "Single atomic commit prefix: test(qa): qdrant outage graceful degradation (Phase-QA3 / US-QA-FIX13)"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Prefer unit-test approach to avoid disturbing the running container. Check internal/storage/qdrant/client.go for the unreachable-error path and how it's signaled to the memory_search tool."
+    },
+    {
+      "id": "US-QA-FIX14",
+      "title": "Phase-QA3: probe — embedding sidecar down graceful degradation (US-QA16)",
+      "description": "Similar to QA-FIX13 but for the embedding sidecar (aura-llama-embed). When embedding endpoint returns connection-refused, tool_search + search_memory must NOT crash; should return empty results with a clear-error log. Either unit test on the embedding HTTP client with mocked refused connection, or integration that docker stop aura-llama-embed; probe; restart. Acceptance: test exists, asserts graceful degradation.",
+      "acceptanceCriteria": [
+        "Test in internal/storage/search/embed_http or similar covers embedding-down path",
+        "Asserts no panic, user reply coherent, error logged",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): embedding sidecar down graceful degradation (Phase-QA3 / US-QA-FIX14)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "embed_http.go has the connection logic. Mock the http.Client to return connection-refused."
+    },
+    {
+      "id": "US-QA-FIX15",
+      "title": "Phase-QA3: probe — phantom tool detection edit cleanup (telegram, US-QA17)",
+      "description": "phantom_guard fires when model claims to have called a tool without calling it (per memory `feedback_phantom_guard_requires_proximity`). On Telegram, the phantom text is streamed via progressive edits BEFORE detection — the correction round produces the corrected reply which should fully replace the phantom edit. Verify this cleanup. Extend the existing `phantom-trap-nonexistent-task` probe OR add a new case that triggers phantom detection and asserts the final reply does NOT contain the phantom text. Test phantom_guard_test.go directly is fine too.",
+      "acceptanceCriteria": [
+        "Test in internal/agent/phantom_guard_test.go or cmd/probe_chat covers phantom → correction → final reply lacks phantom text",
+        "Stderr preview shows correction round happened",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): phantom tool edit cleanup (Phase-QA3 / US-QA-FIX15)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "phantom_guard_test.go has existing patterns. The hard part is reliably triggering phantom — use a prompt similar to phantom-trap-nonexistent-task."
+    },
+    {
+      "id": "US-QA-FIX16",
+      "title": "Phase-QA3: probe — cron silent failure visibility (US-QA19)",
+      "description": "Cron channel uses silent outbound adapter (no user notification on failure). Verify that a cron-scheduled task that hits MaxIterations or MaxElapsed logs an error AND records the run failure in the runs table — operators can discover failures via log/runs monitoring. Either unit test in internal/channels/cron/dispatcher_test.go that asserts run_events row on failure, or integration test that triggers a cron job that's designed to hit MaxIterations.",
+      "acceptanceCriteria": [
+        "Test in internal/channels/cron covers silent-failure → run_events row created with status=error",
+        "Asserts log line at WARN+ level for the failure",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): cron silent failure visibility (Phase-QA3 / US-QA-FIX16)"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "dispatcher_test.go already has cron infrastructure. Add a failure-injection variant."
+    },
+    {
+      "id": "US-QA-FIX17",
+      "title": "Phase-QA3: probe — swarm authz failure escalation (US-QA20)",
+      "description": "When a swarm parent dispatches to a child with insufficient capability grants, the child run should fail with capability deny and the parent should be NOTIFIED (not silently succeed). Verify this escalation path. Extend internal/swarm/parent_child_integration_test.go or write a probe via cmd/probe_chat that triggers swarm + capability deny on child.",
+      "acceptanceCriteria": [
+        "Test covers swarm parent → child authz fail → parent receives error notification",
+        "Asserts authz_decisions deny row exists for the child actor",
+        "Asserts parent run final state shows error, not 'completed'",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): swarm child authz failure escalation (Phase-QA3 / US-QA-FIX17)"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "parent_child_integration_test.go has the test infrastructure. Add a deny-grants variant for the child."
+    },
+    {
+      "id": "US-QA-FIX18",
+      "title": "Phase-QA3: probe — telegram 429 (similar to FIX11 but channel-specific, US-QA09)",
+      "description": "Verify telegram-channel-specific user-visible behavior under LLM 429 rate-limit. Mostly subsumed by FIX11 (retry path is shared in RetryClient), but channel-layer behavior may differ: progressive edit updates might race with retry. Either reuse the FIX11 test by parameterizing channel, OR add a small telegram-specific assertion (e.g., the progressive-edit pane doesn't show 'Sorry, I couldn't process' mid-flight). If FIX11 fully covers it, this story is a one-line note in commit message saying so.",
+      "acceptanceCriteria": [
+        "Test coverage exists (extending FIX11 or new) that asserts telegram channel under 429 doesn't expose user-visible fallback string",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): telegram 429 rate-limit channel coverage (Phase-QA3 / US-QA-FIX18)"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "If you can prove FIX11 fully covers this (because RetryClient is channel-agnostic), document it and ship a doc-only commit."
+    },
+    {
+      "id": "US-QA-FIX19",
+      "title": "Phase-QA3: probe — telegram empty LLM response (US-QA12, similar to FIX12)",
+      "description": "Same pattern as FIX12 but channel-specific verification for telegram. Most logic is shared via finalAnswerOnBudget. Either parameterize FIX12 test by channel or add small telegram-channel-specific assertion. If FIX12 fully covers it (because the finalize path is channel-agnostic), this story is a one-line note + doc-only commit.",
+      "acceptanceCriteria": [
+        "Test coverage exists that asserts telegram channel under empty LLM produces non-empty graceful reply",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): telegram empty LLM response channel coverage (Phase-QA3 / US-QA-FIX19)"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Similar reduction-to-FIX12 possible. Document if so."
+    },
+    {
+      "id": "US-QA-FIX20",
+      "title": "Phase-QA3 closure: full baseline rerun + qa-verdict.md FINAL update + lint check",
+      "description": "After all FIX06..FIX19 stories ship, run the full probe_chat baseline + lint baseline. Update docs/qa-verdict.md with new section 'Phase-QA1.5+QA3 closure 2026-05-18' summarizing: pre/post pass-rate, lint count comparison, ALL Phase-QA3 9 P0 cells closure (with brief note for each). Mark final STATUS: GO (or HOLD if any P0 still open). Commit verdict + new baseline JSON.",
+      "acceptanceCriteria": [
+        ".planning/qa/postqa3-baseline.json exists with full suite output",
+        ".planning/qa/lint-postqa3.json exists with lint count (must be <= 59)",
+        "docs/qa-verdict.md has 'Phase-QA1.5+QA3 closure' section with pre/post counts",
+        "All 9 deferred P0 cells (US-QA09/12/13/14/15/16/17/19/20) referenced as fixed in <SHA>",
+        "Final STATUS: GO (only if 0 P0 open and lint count stable)",
+        "go build/vet/test green",
+        "Single atomic commit prefix: docs(qa): Phase-QA1.5+QA3 final closure — 100% P0 coverage (Phase-QA3 / US-QA-FIX20)"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Closure story bundles the run + verdict. If any prior story BLOCKed and was escalated rather than fixed, document in the closure that 100% wasn't actually reached and re-classify."
     }
   ]
 }
