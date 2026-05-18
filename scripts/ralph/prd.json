@@ -1,177 +1,90 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-QA2 — close 10 of the remaining 19 P0 backlog items from docs/qa-triage.md by authoring new probe_chat cases in cmd/probe_chat/cases.go. Phase-QA1 fixed test infrastructure (5 stories landed: lint cleanup, -smoke flag, conversation_id decouple, phase07d/e API seeding, doc-pdf flake fix). Phase-QA2 EXPANDS coverage: 7 missing tool E2E probes (5 sandbox-exec + swarm, 2 external-API: ocr_source, ingest_source) and 3 channel-failure E2E probes (web capability deny promotion, MaxIterations finalize, MaxElapsed wrap-up). Skipped from triage (deferred to Phase-QA3 with infra build): 429 rate-limit (US-QA09/13), empty LLM response (US-QA12/14), sidecar outage (US-QA15/16), phantom tool edit cleanup (US-QA17), cron silent failure (US-QA19), swarm authz fail (US-QA20) — all require failure-injection harness probe_chat alone cannot reach (per skill TESTABILITY gate). Each story: ONE atomic commit on master, new probe case in cmd/probe_chat/cases.go (or extension of swarm test infra where needed), assertion ≥1 ground-truth (not r.Reply), stderr preview line (rule 2), category set, Cleanup idempotent. Token: .planning/qa/token.txt valid until 2026-05-25. After Phase-QA2 closes: full baseline rerun + verdict in docs/qa-verdict.md.",
+  "description": "Phase-QA1.5 — close the 3 Mistral findings discovered during Phase-QA2 + 2 probe-quality refinements from the closure verdict. The Mistral bugs (filed in docs/qa-bug-log.md 2026-05-18T18:42): (a) backend `secretKeyMappings` in internal/api/settings.go:21-28 doesn't include MISTRAL_API_KEY — save falls through to settings table (plaintext, mixed with non-secret config) instead of secrets store; (b) /api/settings serializer returns active_value='' for is_secret items not in mapping — UI can't tell they're configured; (c) frontend SettingsPanel.tsx:287-298 derives badge purely from item.source — 'SALVATO' shows even when active_value is empty. The probe refinements from qa-verdict.md Phase-QA2 closure: (d) tool-execute-code asserted Fibonacci sum = 143 but LLM computed 88 (both valid definitions — accept either); (e) tool-subagent-dispatch needs INFRA-SKIP detection because web API can't satisfy 'manca contesto Telegram'. Each story: ONE atomic commit on master per memory feedback_master_direct_workflow + feedback_one_module_per_slice. After Phase-QA1.5 closes: optional Phase-QA3 (failure-injection harness for the 9 STATIC-INSUFFICIENT P0 cells still deferred).",
   "userStories": [
     {
-      "id": "US-QA-COV01",
-      "title": "Probe: execute_code tool E2E (sandbox-exec, US-QA02 from triage)",
-      "description": "Add probe_chat case `tool-execute-code` that asks Aura to run a simple Python computation via execute_code and verifies the result. Adversarial sub-case: send malformed code, assert tool returns recoverable error (NOT crash). (a) Add Case in cmd/probe_chat/cases.go with Name=`tool-execute-code`, Category=`tools-sandbox`. (b) Prompt: 'Usa lo strumento execute_code per calcolare la somma dei primi 10 numeri di Fibonacci. Rispondi con il risultato numerico e cita il source_id.' (c) Verify: r.ToolCalls >= 1, reply contains '143' (sum of first 10 Fibonacci = 143). Ground truth: query env.DB to confirm a `tool_attempts` row exists for execute_code in the last 2 min. Stderr preview line showing the captured tool_attempts row. (d) Cleanup: scoped by time window, no destructive DELETE. (e) Capability gate: AURA_SANDBOX_RUNTIME must be set in container env — verify on /api/health JSON `sandbox.enabled=true` before declaring failure.",
+      "id": "US-QA-FIX06",
+      "title": "Backend: add MISTRAL_API_KEY to secretKeyMappings + migrate plaintext row to secrets store",
+      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Bug 1): internal/api/settings.go:21-28 declares a map from settings-table keys (UPPER_SNAKE) to secrets-store keys (lowercase). It's missing MISTRAL_API_KEY. When a user saves MISTRAL_API_KEY via dashboard, the save endpoint routes through this map; missing entry falls through to plaintext settings-table write. Ground truth confirmed: SELECT value FROM settings WHERE key='MISTRAL_API_KEY' returned a 32-char Mistral key in plaintext. (a) Add `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey` to the map. (b) Verify the `secrets.KeyMistralAPIKey` constant exists at internal/secrets/keys.go (or wherever the others live); if missing, define it as `mistral_api_key` lowercase matching the table column. (c) Write a one-shot migration in internal/db/migrations/ that: read settings where key='MISTRAL_API_KEY' and value != ''; if present, INSERT or UPDATE secrets with key='mistral_api_key' value=<settings.value>; then UPDATE settings SET value='' WHERE key='MISTRAL_API_KEY'. Migration must be idempotent (run multiple times = no-op after first). (d) Verify post-migration: SELECT FROM secrets WHERE key='mistral_api_key' returns the row; SELECT FROM settings WHERE key='MISTRAL_API_KEY' has empty value. (e) Restart-test: docker compose restart aura; check `OCR backend not configured` warning no longer appears in logs.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-execute-code` with Category=`tools-sandbox`",
-        "Verify includes ≥1 non-r.Reply assertion (env.DB query on tool_attempts table for execute_code action)",
-        "Stderr preview line prints the captured tool_attempts row",
-        "Reply assertion: contains '143' (or equivalent Fibonacci sum)",
-        "Cleanup is idempotent",
-        "go vet ./... + go build ./... green",
-        "Live probe verifies PASS: `go run ./cmd/probe_chat -case=tool-execute-code -json` (from D:/Aura with AURA_CHAT_TOKEN set) returns pass:true",
-        "Single atomic commit prefix: test(qa): probe execute_code E2E (Phase-QA2 / US-QA-COV01)"
+        "internal/api/settings.go:21-28 secretKeyMappings includes `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey`",
+        "internal/secrets package exports KeyMistralAPIKey constant (lowercase 'mistral_api_key')",
+        "Migration in internal/db/migrations/ migrates existing plaintext Mistral value from settings to secrets table (idempotent)",
+        "Unit test exercises the migration: pre-state with settings row, post-state with secrets row + empty settings row",
+        "go build ./... + go vet ./... + go test ./... green",
+        "Live container check: docker exec aura-aura-1 sqlite3 /data/aura.db 'SELECT key FROM secrets' includes mistral_api_key",
+        "Live: docker compose logs aura --tail 50 contains no 'OCR backend not configured' after Mistral-key save+restart",
+        "Single atomic commit prefix: fix(api): route MISTRAL_API_KEY through secrets store + migrate plaintext (Phase-QA1.5 / US-QA-FIX06)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Check internal/agent/tools/registry/exec.go for actual tool name + args. If `tool_attempts` schema doesn't include action labels, query by `tool_name='execute_code'` instead. If sandbox is disabled in current container env, mark case with Setup returning SKIP error and document this as US-QA-COV01-INFRA."
+      "passes": false,
+      "notes": "Check internal/secrets/keys.go for the existing constants pattern (KeyTelegramToken, KeyLLMAPIKey, etc.) — match that style for KeyMistralAPIKey. The migration order in db/migrations/ uses numeric prefix (e.g., v13, v14); use the next available number. Skip the migration if Aura already loads Mistral from settings table (applier.go:226 currently does this) — but the security goal is to STOP storing the key in settings."
     },
     {
-      "id": "US-QA-COV02",
-      "title": "Probe: execute_shell tool E2E (sandbox-exec, US-QA03 from triage)",
-      "description": "Add probe_chat case `tool-execute-shell` that asks Aura to run a deterministic shell command and verifies output. Adversarial: prompt with shell-metacharacters to confirm sandbox isolation. (a) Add Case Name=`tool-execute-shell`, Category=`tools-sandbox`. (b) Prompt: 'Usa execute_shell per eseguire `echo PROBE_SHELL_OK_<stamp>`. Mostrami l\\'output letterale.' (c) Verify: ToolCalls ≥1, reply contains `PROBE_SHELL_OK_<stamp>`. Ground truth: env.DB tool_attempts row for execute_shell within last 2 min. Stderr preview. (d) Cleanup idempotent.",
+      "id": "US-QA-FIX07",
+      "title": "Frontend: SettingsPanel badge logic for is_secret + empty active_value",
+      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Bug 3): web/src/components/SettingsPanel.tsx:287-298 derives the source-badge label purely from item.source. For an is_secret item with source='db' but active_value='' (the state Bug 1+2 above produce), the badge shows 'SALVATO' (saved) even though the value isn't really persisted. (a) Modify the switch case for 'db': add `if (item.is_secret && !item.active_value) return ...unset...` branch BEFORE returning 'saved'. (b) Verify the i18n strings settings.badge.unset / settings.badge.saved render correctly in both locales (en.json, it.json — already exist). (c) Write a Vitest unit test that mocks an item with is_secret=true, source='db', active_value='' and asserts the rendered badge is 'unset', not 'saved'. (d) Manual verification: after US-QA-FIX06 lands AND mistral key migrated to secrets, dashboard shows correct badge: SALVATO if key truly set, NON IMPOSTATO if empty. Build the web bundle: npm --prefix web run build.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-execute-shell` with Category=`tools-sandbox`",
-        "Verify includes ≥1 non-r.Reply ground-truth assertion (env.DB tool_attempts for execute_shell)",
-        "Stderr preview line",
-        "Reply contains the stamped marker",
-        "go vet + build + test green",
-        "Live probe PASS: `go run ./cmd/probe_chat -case=tool-execute-shell -json` returns pass:true",
-        "Single atomic commit prefix: test(qa): probe execute_shell E2E (Phase-QA2 / US-QA-COV02)"
+        "web/src/components/SettingsPanel.tsx switch case 'db' has an `is_secret && !active_value` short-circuit returning the unset badge",
+        "Vitest unit test in web/src/components/__tests__/SettingsPanel.test.tsx covers the is_secret + empty active_value case",
+        "npm --prefix web run build green",
+        "npm --prefix web test green (existing tests + new one)",
+        "Manual smoke (orchestrator): open http://localhost:18080/settings, MISTRAL_API_KEY badge correctly reflects its real state",
+        "Single atomic commit prefix: fix(web): settings badge correctly handles is_secret with empty active_value (Phase-QA1.5 / US-QA-FIX07)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Use a deterministic command that doesn't depend on container environment. `echo` is universally available. Avoid commands that touch filesystem outside /workspace."
+      "passes": false,
+      "notes": "Don't touch the t() i18n keys — both 'salvato' and 'non impostato' already exist. The fix is purely in the discriminator logic. Test pattern: render <SettingsPanel /> with mocked /api/settings response, query for the badge element by data-testid or label text."
     },
     {
-      "id": "US-QA-COV03",
-      "title": "Probe: subagent_dispatch tool E2E (US-QA04 from triage)",
-      "description": "Add probe_chat case `tool-subagent-dispatch` that asks Aura to delegate a simple computation to a subagent and verify result returned. (a) Case Name=`tool-subagent-dispatch`, Category=`tools-swarm`. (b) Prompt: 'Delegata a un subagent il calcolo: quante lettere ha la parola \\'Aura\\'? Rispondi con il numero (4) citando che lo hai delegato.' (c) Verify: ToolCalls ≥1 (subagent_dispatch fired), reply contains '4'. Ground truth: env.DB tool_attempts row for subagent_dispatch in last 2 min. (d) Cleanup idempotent.",
+      "id": "US-QA-FIX08",
+      "title": "Surface restart_required hint in SettingsPanel for keys with no hot-reload",
+      "description": "Per docs/qa-bug-log.md (2026-05-18T18:42 Runtime quirk): after the user saves MISTRAL_API_KEY (or any setting whose applier doesn't hot-reload), Aura's in-memory config is stale until `docker compose restart aura`. /api/settings already exposes per-item `restart_required: true|false` boolean — it's currently unused in the frontend. (a) Mark MISTRAL_API_KEY (and any other secret/setting that the applier reads only at boot) with restart_required=true in the settings catalog backend (internal/api/settings.go around the catalog definition; look for the items list). Audit: which keys does applier.go read at boot only? Add restart_required=true for those. Conservative starter list: MISTRAL_API_KEY, LLM_BASE_URL, EMBEDDING_BASE_URL (boot-time-only), AURA_AGENT_LOOP_MAX_STEPS, AURABOT_ENABLED. (b) Frontend: in SettingsPanel.tsx, when an item has restart_required=true AND has been edited (dirty=true) OR was recently saved, render a small hint badge or tooltip: 'Riavvia il container per applicare' (it) / 'Restart the container to apply' (en). Add i18n key settings.hint.restartRequired. (c) Don't auto-restart — just hint. The user retains control.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-subagent-dispatch` with Category=`tools-swarm`",
-        "Verify includes ≥1 ground-truth assertion (tool_attempts query)",
-        "Stderr preview line",
-        "Reply contains '4'",
-        "go vet/build/test green",
-        "Live PASS: `go run ./cmd/probe_chat -case=tool-subagent-dispatch -json` pass:true",
-        "Single atomic commit prefix: test(qa): probe subagent_dispatch E2E (Phase-QA2 / US-QA-COV03)"
+        "Settings catalog (internal/api/settings.go) marks restart_required=true for: MISTRAL_API_KEY, LLM_BASE_URL, EMBEDDING_BASE_URL (verify by reading applier.go for which fields read at boot only)",
+        "/api/settings response shows restart_required: true for those items",
+        "web/src/components/SettingsPanel.tsx renders a 'restart required' hint when item.restart_required && (dirty || recently saved)",
+        "i18n keys settings.hint.restartRequired added to en.json + it.json",
+        "Vitest unit test covers the hint rendering path",
+        "go build/vet/test green; npm --prefix web build green",
+        "Single atomic commit prefix: feat(settings): surface restart-required hint for boot-time-only keys (Phase-QA1.5 / US-QA-FIX08)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "If AURABOT_ENABLED=false in current container, the swarm tools won't be registered → ToolCalls=0 expected → test should fail loud. If swarm IS enabled but subagent times out, log it and mark FLAKE-CANDIDATE in bug log instead of stalling."
+      "passes": false,
+      "notes": "Don't be too aggressive flagging restart_required — only the keys that genuinely need restart. Check applier.go to see which fields are read inside hot-reload loops vs at boot. Be conservative: false negatives (no hint shown when restart actually needed) are worse than false positives (hint shown unnecessarily)."
     },
     {
-      "id": "US-QA-COV04",
-      "title": "Probe: ocr_source tool E2E (external-API mistral, US-QA07 from triage)",
-      "description": "Add probe_chat case `tool-ocr-source` that uploads a small PDF, asks Aura to OCR it, and verifies extracted text appears. (a) Case Name=`tool-ocr-source`, Category=`tools-source`. (b) Setup: upload a tiny PDF (use existing testdata fixture if available, e.g., cmd/probe_chat/testdata/markitdown/sample.pdf, OR create a 1-page PDF in setup). Capture the returned source_id. (c) Prompt: 'Usa ocr_source sul source_id <ID>. Mostrami una riga di testo trovata.' (d) Verify: ToolCalls ≥1, reply contains substring expected from the PDF. Ground truth: env.fetchSourceRaw to get the ocr.md sidecar — must contain extracted text. (e) Cleanup: scoped by source_id.",
+      "id": "US-QA-FIX09",
+      "title": "Probe refinement: tool-execute-code accepts both Fibonacci definitions (88 or 143)",
+      "description": "Per docs/qa-verdict.md Phase-QA2 closure: tool-execute-code probe expected 143 (sum starting 1,1,2,3,5,8,13,21,34,55) but LLM computed 88 (sum starting 0,1,1,2,3,5,8,13,21,34) — both valid Fibonacci definitions. The tool DID fire correctly (tool_calls=1, DB row present), the math IS right per one valid definition. The probe assertion is wrong. (a) Modify cmd/probe_chat/cases.go tool-execute-code Verify to accept reply containing EITHER '143' OR '88'. (b) Update the Prompt to be unambiguous about which definition to use, OR keep the ambiguity but document in the comment that the case accepts both. RECOMMENDED: tighten the prompt to specify 'Fibonacci classico (F1=1, F2=1, ..., F10=55)' so the model converges on 143, AND keep the dual-accept assertion as safety net. (c) Re-run the case 3x to confirm pass rate ≥ 4/5 (4/5 = within flake threshold). (d) Update qa-bug-log.md entry for COV01 from AMBIGUOUS-DEFINITION to FIXED.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-ocr-source` with Category=`tools-source`",
-        "Setup uploads PDF via /api/sources/upload (NOT direct DB write per US-QA-FIX04 lesson)",
-        "Verify includes ≥1 ground-truth assertion (fetch ocr.md sidecar and assert text)",
-        "Stderr preview line shows first 200 chars of extracted text",
-        "Cleanup deletes the uploaded source by ID",
-        "go vet/build/test green",
-        "Live PASS: probe returns pass:true",
-        "Single atomic commit prefix: test(qa): probe ocr_source E2E (Phase-QA2 / US-QA-COV04)"
+        "cmd/probe_chat/cases.go tool-execute-code Prompt clarifies the Fibonacci sequence start (F1=1, F2=1)",
+        "Verify accepts reply containing either '143' or '88' (defensive — both are valid)",
+        "go build/vet/test green",
+        "5-rerun verification: 4+ of 5 reruns return pass:true (record results in docs/qa-bug-log.md update)",
+        "docs/qa-bug-log.md COV01 entry status updated to fixed in <SHA>",
+        "Single atomic commit prefix: test(qa): tool-execute-code accept both Fibonacci definitions (Phase-QA1.5 / US-QA-FIX09)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "MISTRAL_API_KEY may not be set in current Aura env → ocr_source returns capability-disabled error → test should fail with a clear miss message. If MISTRAL_API_KEY IS set but Mistral API is down/slow, classify the failure as FLAKE-CANDIDATE not real bug."
+      "passes": false,
+      "notes": "The dual-accept approach is statistically fine: 88 and 143 are both unique enough that any other number would be a real bug. If you want stricter: assert that reply contains a 2-3 digit number AND that tool_attempts shows execute_code fired — pure ground-truth, no LLM-arithmetic dependence."
     },
     {
-      "id": "US-QA-COV05",
-      "title": "Probe: ingest_source tool E2E (composite ingest pipeline, US-QA08 from triage)",
-      "description": "Add probe_chat case `tool-ingest-source` that uploads a source, asks Aura to ingest it (which creates a wiki page via the multi-LLM pipeline), and verifies the wiki page appears. (a) Case Name=`tool-ingest-source`, Category=`tools-source`. (b) Setup: upload a small markdown file via /api/sources/upload. (c) Prompt: 'Usa ingest_source sul source_id <ID> per creare una pagina wiki. Conferma con lo slug della pagina creata.' (d) Verify: ToolCalls ≥1, reply mentions a wiki slug. Ground truth: env.fetchWikiPage on the claimed slug — must return 200 with body containing the original source text. (e) Cleanup: delete uploaded source.",
+      "id": "US-QA-FIX10",
+      "title": "Probe refinement: tool-subagent-dispatch graceful INFRA-SKIP when web API lacks Telegram context",
+      "description": "Per docs/qa-verdict.md Phase-QA2 closure: tool-subagent-dispatch fails because subagent_dispatch tool returns 'manca il contesto Telegram necessario' when called via /api/chat (web context). The tool IS registered and DOES fire (tool_calls=1), but the tool's own error path detects missing Telegram bot handle. The probe should detect this scenario and SKIP gracefully (mark as INFRA-SKIP, not FAIL). (a) Modify cmd/probe_chat/cases.go tool-subagent-dispatch Verify: if reply contains 'manca il contesto Telegram' OR 'requires Telegram session' OR 'no telegram context' (or whatever the actual error string is — check internal/agent/tools/subagent.go for the exact text), classify the result as INFRA-SKIP and return empty miss list (pass:true). Print a stderr line: '[case=tool-subagent-dispatch] INFRA-SKIP: subagent_dispatch requires Telegram context, web API cannot satisfy'. (b) Verify: re-run the case via probe_chat -case=tool-subagent-dispatch -json — should pass:true now (graceful skip recognized as expected behavior). (c) Update docs/qa-bug-log.md COV03 entry: status to fixed in <SHA>.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-ingest-source` with Category=`tools-source`",
-        "Setup uploads MD source via /api/sources/upload",
-        "Verify includes ≥1 ground-truth assertion (fetch wiki page by claimed slug)",
-        "Stderr preview line",
-        "Cleanup deletes uploaded source",
-        "go vet/build/test green",
-        "Live PASS",
-        "Single atomic commit prefix: test(qa): probe ingest_source E2E (Phase-QA2 / US-QA-COV05)"
+        "cmd/probe_chat/cases.go tool-subagent-dispatch Verify detects the Telegram-context-missing error and returns empty miss list",
+        "Stderr line emitted with 'INFRA-SKIP' marker for visibility",
+        "Live probe pass:true: `go run ./cmd/probe_chat -case=tool-subagent-dispatch -json` returns pass=true",
+        "docs/qa-bug-log.md COV03 entry status updated to fixed in <SHA>",
+        "go build/vet/test green",
+        "Single atomic commit prefix: test(qa): tool-subagent-dispatch graceful INFRA-SKIP for web-context invocation (Phase-QA1.5 / US-QA-FIX10)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "ingest_source uses Aura's LLM client multiple times (extract metadata, generate summary, ingest body). High variance — allow 60s timeout per probe and accept any wiki page that has the source text as body content."
-    },
-    {
-      "id": "US-QA-COV06",
-      "title": "Probe: web capability deny E2E (US-QA18 from triage — promote from unit to E2E)",
-      "description": "Currently web capability deny has only unit coverage at internal/api/chat_test.go:102 (TestChatBearerMissingGrantDenied). This story promotes to live E2E: mint a temporary token with a restricted user that LACKS api.chat capability, send a chat request, assert HTTP 403 + authz_decisions row. (a) Case Name=`web-capability-deny`, Category=`channels-web`. (b) Setup: insert a temp api_tokens row for a fake user_id with no capability grants (or use an existing user that's known to lack api.chat — check internal/identity/ docs). Or: use the existing token but mock a deny by some other means. Simpler approach: write the case to use the EXISTING token but craft a prompt that the agent will refuse via capability check (e.g., ask to call a tool that requires a capability the bearer lacks — like swarm.spawn if AURABOT_ENABLED=false). (c) Prompt: a request that requires a capability not available. (d) Verify: assert a capability-deny related response (look for keywords like 'permission', 'not authorized', or assert the specific tool call did NOT fire). Ground truth: env.DB authz_decisions has a `deny` row for the right capability in the last 2 min. (e) Cleanup: revoke temp token if minted.",
-      "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `web-capability-deny` with Category=`channels-web`",
-        "Setup (if minting temp token): scoped to time-window cleanup, no destructive DELETE",
-        "Verify includes ≥1 ground-truth assertion (env.DB authz_decisions deny row)",
-        "Stderr preview line shows the deny event",
-        "go vet/build/test green",
-        "Live PASS",
-        "Single atomic commit prefix: test(qa): probe web capability deny E2E (Phase-QA2 / US-QA-COV06)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Pragmatic approach: don't mint a separate token — use the existing bearer and target a capability known to be ungranted. Read internal/identity/ to find an existing un-granted capability, or check capability_grants table for what THIS user_id has. The probe doesn't have to test ALL deny paths — just one concrete deny."
-    },
-    {
-      "id": "US-QA-COV07",
-      "title": "Probe: MaxIterations finalize E2E (US-QA11 from triage)",
-      "description": "Currently MaxIterations hit is unit-tested but no probe verifies the user-visible UX when the loop caps. This story crafts a probe that forces high iteration count via a deliberately-recursive task. (a) Case Name=`failure-max-iterations`, Category=`failure-modes-budget`. (b) Prompt that forces multiple tool calls: 'Per favore: 1) cerca search_memory query=\"test1\". 2) Poi search_memory query=\"test2\". 3) Poi search_memory query=\"test3\". 4) Continua con altre 8 query simili (test4..test11). Riporta ogni risultato.' This intentionally requests 11+ tool calls. With AURA_AGENT_LOOP_MAX_STEPS=50 (compose default), this won't hit the cap, but the case can assert reasonable behavior (LLM dedup, finalize cleanly). Alternative pragmatic approach: just assert that ANY long-chain prompt produces a final reply WITHOUT the 'Sorry, I couldn't process' fallback string. (c) Verify: r.Reply does NOT contain 'I reached the per-turn budget' or 'Sorry, I couldn't process'; r.LLMCalls > 3 (multi-iter); ground truth: env.DB runs table has a row with status='completed' (not 'error') for this run. (d) Cleanup: none needed.",
-      "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `failure-max-iterations` with Category=`failure-modes-budget`",
-        "Verify asserts BOTH: reply doesn't contain ugly fallback strings, AND runs table shows completed (not error)",
-        "Stderr preview prints final reply length + run status",
-        "go vet/build/test green",
-        "Live PASS",
-        "Single atomic commit prefix: test(qa): probe MaxIterations finalize E2E (Phase-QA2 / US-QA-COV07)"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "This is a 'graceful degradation' probe — it doesn't necessarily HIT MaxIterations but it tests that the loop handles multi-step prompts without ugly errors. If you want to actually hit the cap, lower the prompt's needed steps below 50 but use prompts that the model is likely to redundantly retry."
-    },
-    {
-      "id": "US-QA-COV08",
-      "title": "Probe: MaxElapsed graceful wrap-up E2E (US-QA10 from triage)",
-      "description": "Per docs/qa-failure-modes.md, MaxElapsed fires when per-turn wall clock exceeds 5min. The wrap-up reply uses finalAnswerOnBudget(lastToolResult) OR interruptedAssistantContent. STATIC-INSUFFICIENT in Phase 1 because no test confirms the user-visible string. Craft a probe that doesn't actually hit MaxElapsed (would take 5min!) but asserts the BEHAVIOR pattern: a prompt that requires multiple slow-ish steps, then verify the final reply is coherent + the runs table shows a completed (not deadline-exceeded) row. (a) Case Name=`failure-max-elapsed-wrap`, Category=`failure-modes-budget`. (b) Prompt: a normal multi-tool task that should complete in <30s. (c) Verify: reply isn't the fallback string; runs.duration_ms is set; r.ElapsedMs < 60000 (passed under 1min). This is essentially a 'happy path' assertion that proves the NON-FAILURE side of the failure mode. Companion to US-QA-COV07.",
-      "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `failure-max-elapsed-wrap` with Category=`failure-modes-budget`",
-        "Verify includes ≥1 ground-truth assertion (runs table completed status)",
-        "Stderr preview line",
-        "Reply doesn't contain ugly fallback strings",
-        "go vet/build/test green",
-        "Live PASS",
-        "Single atomic commit prefix: test(qa): probe MaxElapsed graceful wrap-up E2E (Phase-QA2 / US-QA-COV08)"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "We can't easily force a real 5-min MaxElapsed without slowing the LLM. Document this in the test comment: 'this probe tests the BAR (graceful completion before the cap), not the FLOOR (what happens AT the cap). The cap-hit case requires a slow-LLM harness — deferred to Phase-QA3.'"
-    },
-    {
-      "id": "US-QA-COV09",
-      "title": "Probe: swarm read_swarm_result E2E (US-QA05/06 from triage)",
-      "description": "spawn_aurabot + list_swarm_tasks + read_swarm_result are 3 swarm read tools with zero E2E. Build ONE composite probe that exercises the full lifecycle: ask Aura to spawn a subagent with a simple task, then list tasks, then read the result. (a) Case Name=`tool-swarm-lifecycle`, Category=`tools-swarm`. (b) Prompt: 'Usa spawn_aurabot per delegare a un subagent il task \"Conta le vocali nella parola Aurabot\". Poi controlla i task con list_swarm_tasks e leggi il risultato con read_swarm_result. Rispondi con il numero finale.' (c) Verify: ToolCalls ≥3 (spawn, list, read), reply contains '4' (a, u, a, o = 4 vocali in 'Aurabot'). Ground truth: env.DB swarm_tasks table has a row with status='completed' in last 2 min. (d) Cleanup: idempotent, no destructive deletes.",
-      "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go has new Case `tool-swarm-lifecycle` with Category=`tools-swarm`",
-        "Verify includes ≥1 ground-truth assertion (env.DB swarm_tasks query)",
-        "Stderr preview shows the captured swarm_task row",
-        "Reply contains '4'",
-        "go vet/build/test green",
-        "Live PASS (if AURABOT_ENABLED=true)",
-        "Single atomic commit prefix: test(qa): probe swarm lifecycle E2E (Phase-QA2 / US-QA-COV09)"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "If AURABOT_ENABLED=false, the test should detect this at Setup time and skip gracefully OR fail loud with a clear infra-skip miss message. Don't conflate 'capability disabled' with 'probe failure'. Verify by checking /api/health JSON for swarm enable status if available; otherwise document in the case comment."
-    },
-    {
-      "id": "US-QA-COV10",
-      "title": "Phase-QA2 closure: baseline rerun + verdict update",
-      "description": "After the previous 9 stories ship, run the full probe_chat suite + update docs/qa-verdict.md with new pass-rate + lint-baseline comparison + list remaining 9 P0 still STATIC-INSUFFICIENT. (a) Re-run baseline: `go run ./cmd/probe_chat -json > .planning/qa/postqa2-baseline.json 2> .planning/qa/postqa2-preview.log` (from D:/Aura, AURA_CHAT_TOKEN set). (b) Compute pass/fail counts. (c) Update docs/qa-verdict.md: new section '## Phase-QA2 closure 2026-05-18' with counts, lint count (regen via golangci-lint), and explicit list of the 9 deferred STATIC-INSUFFICIENT P0 items needing Phase-QA3 failure-injection harness (US-QA09 telegram 429, US-QA12 telegram empty LLM, US-QA13 web 429, US-QA14 web empty LLM, US-QA15 telegram qdrant outage, US-QA16 telegram embedding down, US-QA17 telegram phantom edit cleanup, US-QA19 cron silent failure, US-QA20 swarm authz fail escalate). (d) Update STATUS to GO if pass rate ≥ 95%. (e) Commit verdict update.",
-      "acceptanceCriteria": [
-        ".planning/qa/postqa2-baseline.json exists with full suite output",
-        "docs/qa-verdict.md has new '## Phase-QA2 closure' section with pre/post counts and deferred-9 list",
-        "lint count comparison vs Phase-QA1 baseline (57 — must not increase)",
-        "go vet/build/test green (no regression from new probes)",
-        "Single atomic commit prefix: docs(qa): Phase-QA2 closure — coverage expansion (10 stories) + verdict update"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "If any of the 9 prior probe cases (US-QA-COV01..09) failed in the baseline rerun, classify each per skill rule (4/4 real, 2/4 FLAKE, etc) and append to qa-bug-log.md. Don't bundle bug-log entries into the verdict commit — those are separate commits. This story is JUST the closure doc."
+      "passes": false,
+      "notes": "Read internal/agent/tools/subagent.go (or internal/agent/tools/swarm/subagent.go) for the EXACT error text the tool emits when Telegram context is missing. Match on the canonical substring. Don't make this loose — only skip on the specific Telegram-context error, not on generic tool failures (those should still FAIL loud)."
     }
   ]
 }
