@@ -223,7 +223,7 @@
         "Single atomic commit prefix: docs(qa): Phase-QA1.5+QA3 final closure — 100% P0 coverage (Phase-QA3 / US-QA-FIX20)"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Closure story bundles the run + verdict. If any prior story BLOCKed and was escalated rather than fixed, document in the closure that 100% wasn't actually reached and re-classify."
     }
   ]
