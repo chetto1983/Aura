@@ -35,7 +35,7 @@
         "Single atomic commit prefix: test(qa): probe execute_shell E2E (Phase-QA2 / US-QA-COV02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Use a deterministic command that doesn't depend on container environment. `echo` is universally available. Avoid commands that touch filesystem outside /workspace."
     },
     {
