@@ -225,3 +225,22 @@ case 'db':
 **Root cause**: Ambiguous Fibonacci definition in probe prompt. LLM computed `88` (F0=0 convention) while probe expected `143` (F1=1,F2=1 convention). Both are correct computations; the probe assertion was too strict.
 **Fix**: `cmd/probe_chat/cases.go` — (1) Prompt now specifies F1=1, F2=1 convention explicitly with the sequence `1,1,2,3,5,8,13,21,34,55`; (2) Verify now accepts reply containing either `'143'` or `'88'`.
 **Status**: fixed in commit tagged Phase-QA1.5 / US-QA-FIX09. 5-rerun: ≥4/5 pass expected.
+
+---
+
+## US-QA12 — telegram empty LLM response — COVERED BY FIX12 (Phase-QA3 / US-QA-FIX19)
+
+**Analysis**: The `finalAnswerOnBudget` path at `internal/agent/loop.go:356` fires when `resp.Response.Content == ""`. This code lives inside `runLoop()`, which is called identically by all channels:
+- Telegram: `internal/chat/hub.go:353` → `h.loop.Run()` → `agent.Run()` → `runLoop()`
+- Web: `/api/chat` → `hub.ReceiveMessage()` → `h.loop.Run()` → `agent.Run()` → `runLoop()`
+
+The path is channel-agnostic: no channel-specific logic exists between `runLoop()` entry and the `finalAnswerOnBudget` call. The Telegram streaming layer (progressive edits, pane updates) operates above `runLoop()` via the `emit` callback and does not affect whether `finalAnswerOnBudget` fires.
+
+**Coverage**: `TestRunLoopEmptyLLMResponseFallsBackToLastToolResult` in `internal/agent/loop_test.go` (shipped as Phase-QA3 / US-QA-FIX12) asserts:
+1. `result.Text` is non-empty (graceful recovery, not crash)
+2. `result.Text` does not contain `"Sorry, I couldn't process"` (no ugly fallback)
+3. `result.Text` equals the last tool result (correct `finalAnswerOnBudget` content)
+
+This test exercises `runLoop()` directly; it covers the Telegram code path without parameterization because the finalize path has no channel branches.
+
+**Status**: US-QA12 covered by FIX12 commit (Phase-QA3 / US-QA-FIX19 documents this closure).
