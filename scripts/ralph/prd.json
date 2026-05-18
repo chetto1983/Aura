@@ -17,7 +17,7 @@
         "Single atomic commit prefix: feat(tokenjuice): package skeleton + types + builtin dir (Phase-TJ / US-TJ01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/tokenjuice-algorithm-spec.md §1 Data structures + docs/tokenjuice-aura-integration-plan.md §Package layout BEFORE coding. No rule loading yet — LoadBuiltinRules returns []*CompiledRule{} (empty) for now."
     },
     {
