@@ -31,7 +31,7 @@
         "Single atomic commit prefix: fix(web): settings badge handles is_secret empty active_value (Phase-QA1.5 / US-QA-FIX07)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "i18n keys settings.badge.unset and settings.badge.saved already exist in en/it. Fix is purely in discriminator logic."
     },
     {
