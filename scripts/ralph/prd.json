@@ -79,7 +79,7 @@
         "Single atomic commit prefix: test(qa): tool-subagent-dispatch graceful INFRA-SKIP (Phase-QA1.5 / US-QA-FIX10)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Match canonical substring from subagent.go source. Don't make loose — only skip on the specific Telegram-context error, not on generic tool failures."
     },
     {
