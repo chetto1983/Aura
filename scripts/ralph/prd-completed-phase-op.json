@@ -1,0 +1,89 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-OP — Aura learns from her own mistakes without user-in-the-loop. Discovered live 2026-05-18T19:22-19:36 in Telegram convo (chat_id=1148481707): user explicitly asked 'Ma come te lo segni?' and Aura answered 'Non posso scrivere direttamente — la policy dice propose_patch action=operational' which goes to review queue, user mobile can't approve, loop blocked. Aura ammette che propose_patch in review e' 'cafonata' ma il fix in TOOLS.md non basta perche' la policy e' hard-coded, non in prompt. Plus 3 distinct tool-call errors in 10 min (list_files path outside root, propose_patch missing change_summary, file missing action) prove she doesn't retain mistake-recovery cross-turn. Five stories make her loop-autonomous: skip review for operational self-talk, persist+retrieve operational lessons, inject top-10 in system prompt overlay, reload overlay mid-conversation, infer missing file action. After Phase-OP: Aura impara veramente, daily-use Telegram funziona senza PC approval. Each story = single atomic commit on master per memory feedback_one_module_per_slice.",
+  "userStories": [
+    {
+      "id": "US-OP01",
+      "title": "propose_patch action=operational auto-accepts — skip review queue",
+      "description": "Currently propose_patch action=operational writes to proposed_updates with status=pending. User must approve via dashboard before the lesson lands anywhere retrievable. Aura is mobile-blocked. Fix: kind=operational auto-accepts (writes directly to the operational store, skipping review). Keep kind=user_memory unchanged (still requires human review). (a) Find the propose_patch handler in internal/api/ or internal/learning/ (search for 'proposed_updates' table writes). (b) Branch on kind: operational -> write directly to compact_memory_documents kind=operational AND/OR data/operational_lessons.md. user_memory -> keep status=pending review flow. (c) Migration: existing rows in proposed_updates with kind=operational and status=pending -> auto-accept them. (d) Tests: insert operational proposal -> assert status=accepted immediately + a row appears in compact_memory_documents kind=operational. user_memory proposal -> status=pending unchanged.",
+      "acceptanceCriteria": [
+        "propose_patch handler routes kind=operational to auto-accept path (no review)",
+        "kind=user_memory still hits the pending/approval queue",
+        "Migration auto-accepts existing pending operational proposals",
+        "Unit test asserts kind=operational -> status=accepted + compact_memory row",
+        "go build/vet/test green",
+        "Single atomic commit prefix: feat(propose_patch): auto-accept operational lessons (Phase-OP / US-OP01)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Look at internal/learning/writer.go and internal/api/proposed_updates*.go. The kind enum likely lives in internal/learning/kind.go or similar."
+    },
+    {
+      "id": "US-OP02",
+      "title": "Operational lessons retrieval — file + accepted proposals both surface via recall_operational",
+      "description": "Aura created data/operational_lessons.md as a workaround. That file is NOT indexed in compact_memory_documents, so recall_operational tool can't find it. Need a unified pipeline: ANY operational lesson (file tool or auto-accepted propose_patch) lands in compact_memory_documents kind=operational where recall_operational already searches. (a) Add a scheduled task or filesystem watcher that re-ingests data/operational_lessons.md when modified (pattern: same as wiki rebuild reconciler in Wave 2.10.b commit 2367f502). (b) Verify US-OP01 auto-accept path also ingests into compact_memory_documents. (c) Test recall_operational with a fresh lesson written via either path — should return it within 1 minute.",
+      "acceptanceCriteria": [
+        "data/operational_lessons.md changes trigger re-ingest into compact_memory_documents kind=operational",
+        "propose_patch action=operational (after US-OP01) ALSO writes to compact_memory_documents",
+        "recall_operational tool surfaces lessons from BOTH sources",
+        "Test: write lesson via file, recall_operational finds it within 60s",
+        "Test: propose_patch operational, recall_operational finds it immediately",
+        "go build/vet/test green",
+        "Single atomic commit prefix: feat(operational): unify file + propose_patch projection (Phase-OP / US-OP02)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Check internal/storage/memoryindex/ for the ingest pattern. The reconciler from Wave 2.10.b (commit 2367f502) is the reference."
+    },
+    {
+      "id": "US-OP03",
+      "title": "Top-N operational lessons injected in system prompt overlay each conversation",
+      "description": "Even with US-OP02 (recall_operational finds lessons), Aura must REMEMBER to call it. Better: inject top-10 most recent operational lessons in system prompt overlay so Aura sees them every turn without explicit tool call. (a) New prompt overlay OPS.md (sibling of SOUL/AGENT/USER/TOOLS.md) OR extend AGENT.md with 'Operational lessons' section. (b) At conversation start (hub.Receive boundary), prompt assembler queries compact_memory_documents kind=operational ORDER BY updated_at DESC LIMIT 10. (c) Cap at 5 KB total. (d) Test: seed 11 lessons, assert top 10 in system prompt sorted by recency.",
+      "acceptanceCriteria": [
+        "OPS.md or AGENT.md section with auto-injected top-N operational lessons",
+        "Injection at conversation start (hub.Receive), not per-turn",
+        "Capped at 5 KB total",
+        "Test: 11 lessons seeded -> top 10 in prompt",
+        "Test: 0 lessons -> empty section, no error",
+        "go build/vet/test green",
+        "Single atomic commit prefix: feat(overlay): inject top-10 operational lessons in system prompt (Phase-OP / US-OP03)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Prompt overlay loading happens at internal/chat/hub.go or wherever agent loop pulls SOUL/AGENT/USER/TOOLS.md. PROMPT_OVERLAY_PATH env var."
+    },
+    {
+      "id": "US-OP04",
+      "title": "Mid-conversation prompt overlay reload after file tool patches overlay files",
+      "description": "Aura at 19:34:30 patched TOOLS.md to remove review-queue policy. At 19:35:00 she used propose_patch action=operational anyway because the new policy was invisible (system prompt cached from conversation start). Fix: when file tool patches an overlay file (SOUL.md, AGENT.md, USER.md, TOOLS.md, OPS.md), trigger reload so the next turn in the SAME conversation sees the updated overlay. (a) Detect overlay-file writes in the file tool Execute path. (b) Signal the agent loop to re-read overlays before the next LLM call. (c) Test: 2-turn probe — turn 1 patches TOOLS.md to say 'never use foo tool', turn 2 asks 'use foo tool' -> assistant refuses citing the new rule.",
+      "acceptanceCriteria": [
+        "file tool detects writes to overlay files (SOUL/AGENT/USER/TOOLS/OPS.md)",
+        "Agent loop reloads overlays before next LLM call when overlay file changed",
+        "2-turn probe_chat case demonstrates the reload works",
+        "Existing single-turn flows unchanged (no perf regression)",
+        "go build/vet/test green",
+        "Single atomic commit prefix: feat(overlay): hot-reload prompt overlay after in-conversation patch (Phase-OP / US-OP04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Agent loop is internal/agent/loop.go. Overlays loaded in hub or in createContext. Reload only when overlay file actually changed (flag-based, not unconditional)."
+    },
+    {
+      "id": "US-OP05",
+      "title": "file tool action inference — recover from missing action without burning a turn",
+      "description": "At 19:36:06 Aura called file({content:..., path:...}) without action. Tool returned a clear error 'looks like you meant write'. Aura recovered in 1 retry but burned a tool call. The error message already KNOWS the right inference — automate it. (a) In internal/agent/tools/registry/file.go, if action is missing, infer from arg shape: content+path -> write, only path -> read, pattern -> search, old+new+path -> patch. (b) Debug log: 'file: action inferred as X from arg shape'. (c) Ambiguous combinations still fail with clearer message. (d) Test: each inference case via unit test on Execute path.",
+      "acceptanceCriteria": [
+        "file tool infers action from arg shape when omitted",
+        "Debug log emitted when inference fires",
+        "Ambiguous arg combinations still fail with clear message (no silent wrong-action)",
+        "Unit tests cover each inference case (write, read, search, patch)",
+        "go build/vet/test green",
+        "Single atomic commit prefix: feat(file): action inference from arg shape (Phase-OP / US-OP05)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "internal/agent/tools/registry/file.go Execute function. Action dispatch happens early."
+    }
+  ]
+}
