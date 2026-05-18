@@ -63,7 +63,7 @@
         "Single atomic commit prefix: test(qa): tool-execute-code accept both Fibonacci definitions (Phase-QA1.5 / US-QA-FIX09)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Dual-accept is statistically fine (88 vs 143 collision probability ~0)."
     },
     {

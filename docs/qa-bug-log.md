@@ -128,3 +128,92 @@ Apply the same substitution to the turn-2/turn-3 lookups further down in the sam
 - Full rerun `go run ./cmd/probe_chat` at `2026-05-18T15:11:34` -> **21/21 PASS**.
 - Post-run `PRAGMA integrity_check` -> `ok`; probe reminder rows are `cancelled`; no `probe-agent-note-*` rows remain.
 **Status**: Baseline accepted. Output exceeds requested threshold (21/21 vs expected >=20/21; pre-fix was 18/21/19/21 depending invalid probe noise).
+
+---
+
+## 2026-05-18T18:42 — MISTRAL_API_KEY save flow — discovered during Phase-QA2 — 3 bugs
+
+**Discovery context**: During Phase-QA2 iter 4 (US-QA-COV04 ocr_source probe), user observed dashboard shows `MISTRAL_API_KEY` badge `SALVATO` after typing the key, but Aura runtime logged `source reprocess: stage 'ocr' requires OCR backend (not configured)`. Investigation surfaced 3 distinct bugs + 1 runtime quirk.
+
+### Bug 1 — Backend `secretKeyMappings` incomplete
+
+**Location**: `internal/api/settings.go:21-28`
+**Symptom**: `MISTRAL_API_KEY` is NOT in the `secretKeyMappings` map (which routes is_secret keys to the secrets store). Save endpoint receives the value, doesn't find a secrets-store route, falls through to writing the plaintext into the `settings` table.
+**Ground truth**:
+
+```sql
+-- DB state after user saved Mistral key via dashboard:
+SELECT key, length(value), value FROM settings WHERE key='MISTRAL_API_KEY';
+-- → MISTRAL_API_KEY | 32 | DqYY95chS6o3vJTiXoQQP79b6JJKGPWO  (32-char plaintext!)
+
+SELECT key FROM secrets;
+-- → telegram_token, llm_api_key, embedding_api_key  (NO mistral_api_key)
+```
+
+**Severity**: P1 (security — Mistral key in plaintext in settings table, mixed with non-secret config)
+**Fix**: add `config.KeyMistralAPIKey: secrets.KeyMistralAPIKey` to the map. Add a one-shot migration that moves any existing plaintext Mistral key from settings to secrets store and zeros the settings row.
+
+### Bug 2 — `/api/settings` serializer skip for non-mapped secrets
+
+**Location**: same file, the serializer that produces `active_value`
+**Symptom**: For secret items in `secretKeyMappings`, `/api/settings` returns `active_value="(configured)"` (12-char placeholder, hides real value). For `is_secret=true` items NOT in the map (only MISTRAL today), returns `active_value=""` — looks identical to "not set".
+**Ground truth**:
+
+```
+LLM_API_KEY        active_value='(configured)' source=db   ← mapped, shown configured
+EMBEDDING_API_KEY  active_value='(configured)' source=db   ← mapped, shown configured
+MISTRAL_API_KEY    active_value=''             source=db   ← NOT mapped, shown empty even though value=32-char
+QDRANT_API_KEY     active_value=''             source=default ← genuinely never touched
+```
+
+**Severity**: P2 (UI confusion — once Bug 1 is fixed, this disappears since MISTRAL will be in mapping)
+**Fix**: same as Bug 1 (root cause shared). If we want defense-in-depth: serializer should mask `is_secret=true` + value-present items regardless of mapping presence.
+
+### Bug 3 — Frontend badge derived only from `source`
+
+**Location**: `web/src/components/SettingsPanel.tsx:287-298`
+**Symptom**: The `sourceBadge` switch is:
+
+```typescript
+switch (item.source) {
+  case 'db':     return 'SALVATO'
+  case 'env':    return '.env'
+  default:       return 'NON IMPOSTATO'
+}
+```
+
+For a secret with `source=db` but `active_value=""` (matching Bug 2 state), badge shows "SALVATO" even though the value isn't actually there. User-misleading.
+
+**Severity**: P1 (UX trompe-l'oeil — exactly the silent regression class Q&A pipeline is for)
+**Fix**: special-case is_secret items:
+
+```typescript
+case 'db':
+  if (item.is_secret && !item.active_value) {
+    return ...unset...
+  }
+  return ...saved...
+```
+
+### Runtime quirk — Aura doesn't hot-reload MISTRAL_API_KEY after save
+
+**Symptom**: After user saves a setting via dashboard, Aura's in-memory config doesn't pick it up. The applier reads the settings table at boot only; subsequent dashboard writes don't trigger a re-apply.
+**Workaround**: `docker compose restart aura` after saving Mistral key. Verified 2026-05-18T18:42 — restart cleared the `OCR backend not configured` log.
+**Severity**: P2 (operational paper-cut — UI should either auto-restart relevant component OR show a "restart required" hint based on `restart_required` field in /api/settings, which is already in the response but unused)
+**Fix**: either (a) settings applier subscribes to settings-table changes and re-applies live, or (b) UI renders the `restart_required` hint that already exists in the JSON.
+
+### Recommended Phase-QA1.5 stories (queue after Phase-QA2 closes)
+
+- US-QA-FIX06: add KeyMistralAPIKey to secretKeyMappings + migrate plaintext row to secrets store
+- US-QA-FIX07: frontend SettingsPanel.tsx badge logic — is_secret + active_value combined
+- US-QA-FIX08: surface `restart_required: true` for keys whose applier doesn't hot-reload (UX hint)
+
+**Status**: filed for Phase-QA1.5. Phase-QA2 (Ralph in flight) does NOT touch prd.json to avoid mid-run queue extension.
+
+---
+
+## US-QA-COV01 — tool-execute-code — FIXED (Phase-QA1.5 / US-QA-FIX09)
+
+**Root cause**: Ambiguous Fibonacci definition in probe prompt. LLM computed `88` (F0=0 convention) while probe expected `143` (F1=1,F2=1 convention). Both are correct computations; the probe assertion was too strict.
+**Fix**: `cmd/probe_chat/cases.go` — (1) Prompt now specifies F1=1, F2=1 convention explicitly with the sequence `1,1,2,3,5,8,13,21,34,55`; (2) Verify now accepts reply containing either `'143'` or `'88'`.
+**Status**: fixed in commit tagged Phase-QA1.5 / US-QA-FIX09. 5-rerun: ≥4/5 pass expected.

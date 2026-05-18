@@ -828,13 +828,14 @@ func allCases(now time.Time) []Case {
 
 		// Phase-QA2 / US-QA-COV01 — execute_code sandbox E2E.
 		// Asks Aura to compute the sum of the first 10 Fibonacci numbers
-		// (answer: 143) via the Python sandbox. Skips gracefully when
+		// (answer: 143 with F1=1,F2=1 or 88 with F0=0,F1=1 — both valid).
+		// Prompt specifies F1=1,F2=1 as preferred convention. Skips gracefully when
 		// sandbox.enabled=false (infra-skip US-QA-COV01-INFRA).
 		// Ground truth: tool_attempts DB row, not the reply text.
 		{
 			Name:     "tool-execute-code",
 			Category: "tools-sandbox",
-			Prompt:   "Usa lo strumento execute_code per calcolare la somma dei primi 10 numeri di Fibonacci. Rispondi con il risultato numerico.",
+			Prompt:   "Usa lo strumento execute_code per calcolare la somma dei primi 10 numeri di Fibonacci usando la convenzione F1=1, F2=1 (sequenza: 1,1,2,3,5,8,13,21,34,55). Rispondi con il risultato numerico.",
 			Setup: func(env *Env) error {
 				enabled, err := env.fetchSandboxEnabled()
 				if err != nil {
@@ -851,8 +852,8 @@ func allCases(now time.Time) []Case {
 				if r.ToolCalls == 0 {
 					miss = append(miss, "expected >= 1 tool call (execute_code), got 0")
 				}
-				if !strings.Contains(r.Reply, "143") {
-					miss = append(miss, fmt.Sprintf("reply missing expected Fibonacci sum '143' (got: %q)", truncate(r.Reply, 200)))
+				if !strings.Contains(r.Reply, "143") && !strings.Contains(r.Reply, "88") {
+					miss = append(miss, fmt.Sprintf("reply missing expected Fibonacci sum ('143' with F1=1,F2=1 or '88' with F0=0) (got: %q)", truncate(r.Reply, 200)))
 				}
 				// Ground truth: DB must have a successful tool_attempts row for execute_code.
 				counts, err := env.toolAttemptsSince(execCodeBefore, "execute_code")
