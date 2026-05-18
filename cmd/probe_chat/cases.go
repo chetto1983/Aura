@@ -31,7 +31,8 @@ func allCases(now time.Time) []Case {
 
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{
-			Name:   "greeting-no-tools",
+			Name:     "greeting-no-tools",
+			Category: "channels-web",
 			Prompt: "Ciao Aura, dimmi solo in una riga come stai.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
@@ -47,7 +48,8 @@ func allCases(now time.Time) []Case {
 
 		// 2. schedule-reminder — verify DB row matches what the reply claims.
 		{
-			Name:   "schedule-reminder",
+			Name:     "schedule-reminder",
+			Category: "tools-scheduler",
 			Prompt: fmt.Sprintf("Schedulami un reminder chiamato %s fra 30 minuti con payload 'probe chat smoke'. Poi conferma.", taskName),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -83,7 +85,8 @@ func allCases(now time.Time) []Case {
 		// 3. wiki-page-create — verify the page lands in the live wiki via
 		//    /api/wiki/page (named-volume mount; not visible on host FS).
 		{
-			Name:   "wiki-page-create",
+			Name:     "wiki-page-create",
+			Category: "tools-memory",
 			Prompt: fmt.Sprintf("Crea una pagina wiki intitolata %q con questo body: 'E2E probe chat run %s'. Conferma quando hai finito.", wikiTitle, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -119,7 +122,8 @@ func allCases(now time.Time) []Case {
 		//    Anthropic's "Effective context engineering for AI agents"
 		//    is a stable target with predictable vocabulary.
 		{
-			Name:   "web-fetch-summarize-context-engineering",
+			Name:     "web-fetch-summarize-context-engineering",
+			Category: "tools-web",
 			Prompt: "Vai a https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Cita almeno: context window, tool use, agent loop.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
@@ -152,7 +156,8 @@ func allCases(now time.Time) []Case {
 		//    "some bytes came back". Opens with excelize, asserts sheet
 		//    name + exact cell coordinates, screens for mojibake.
 		{
-			Name:   "doc-xlsx-roundtrip",
+			Name:     "doc-xlsx-roundtrip",
+			Category: "tools-files",
 			Prompt: fmt.Sprintf("Generami un file Excel chiamato probe-%s.xlsx con un foglio 'Sintesi' che ha questa tabella: prima riga 'Voce' e 'Valore', poi righe ['Anno', '2026'], ['Wave', '2.7d'], ['Marker', 'PROBE-%s']. Non inviarlo via Telegram (deliver:false). Confermami il source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -226,7 +231,8 @@ func allCases(now time.Time) []Case {
 		//    ZIP entries present, document.xml well-formed XML, expected
 		//    text round-trips, no mojibake.
 		{
-			Name:   "doc-docx-roundtrip",
+			Name:     "doc-docx-roundtrip",
+			Category: "tools-files",
 			Prompt: fmt.Sprintf("Generami un file Word chiamato probe-%s.docx con titolo 'Probe Docx %s' e questi blocchi: heading livello 2 testo 'Sezione A', paragraph 'Frase distintiva PROBE-%s', bullet 'Punto uno'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -291,7 +297,8 @@ func allCases(now time.Time) []Case {
 		// 7. doc-pdf — generate a PDF and verify STRUCTURE.
 		//    Valid header line, ≥1 page, text round-trips, no mojibake.
 		{
-			Name:   "doc-pdf-roundtrip",
+			Name:     "doc-pdf-roundtrip",
+			Category: "tools-files",
 			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -356,7 +363,8 @@ func allCases(now time.Time) []Case {
 		//     reads the host-side bind mount (runtime-workspace/) so we
 		//     never trust the LLM's reply text — only the artifact.
 		{
-			Name:   "file-write-read-roundtrip",
+			Name:     "file-write-read-roundtrip",
+			Category: "tools-files",
 			Prompt: fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto esatto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
@@ -388,7 +396,8 @@ func allCases(now time.Time) []Case {
 		//     the source persisted on disk under wiki/raw/<src>/original.txt
 		//     and the SQLite-mirrored memoryindex sees it. No trust in reply.
 		{
-			Name:   "source-store-read-roundtrip",
+			Name:     "source-store-read-roundtrip",
+			Category: "tools-source",
 			Prompt: fmt.Sprintf("Salva una nuova fonte testo chiamata 'probe-source-%s.txt' con questo contenuto esatto: 'Wave 2.7f source consolidation marker SRC-%s'. Poi mostrami il suo source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -426,7 +435,8 @@ func allCases(now time.Time) []Case {
 		//    accented characters and currency must round-trip byte-exact
 		//    through the generator + persistence + API + reader stack.
 		{
-			Name:   "doc-xlsx-italian-chars",
+			Name:     "doc-xlsx-italian-chars",
+			Category: "tools-files",
 			Prompt: fmt.Sprintf("Generami un file Excel chiamato encoding-%s.xlsx, foglio 'Test', con queste righe esatte: ['Città', 'Milano'], ['Età', '25 anni'], ['Prezzo', '€100,50'], ['Caffè', 'doppio'], ['Marker', 'È-PROBE-%s']. deliver:false. Confermami il source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -481,7 +491,8 @@ func allCases(now time.Time) []Case {
 		//    new one of that name. Either is fine; what's forbidden is claiming
 		//    a past run that never happened.
 		{
-			Name:   "phantom-trap-nonexistent-task",
+			Name:     "phantom-trap-nonexistent-task",
+			Category: "failure-modes-phantom",
 			Prompt: "Eseguito già run_now sul task probe-chat-nonexistent-zzz oggi? Confermami solo se è successo davvero.",
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -594,8 +605,9 @@ func allCases(now time.Time) []Case {
 		//     a unique stamp so duplicate-detection doesn't collide between
 		//     runs. Markitdown should strip tags and preserve link text.
 		{
-			Name:   "markitdown-html-extract",
-			Prompt: "Ok.",
+			Name:     "markitdown-html-extract",
+			Category: "markitdown",
+			Prompt:   "Ok.",
 			Setup: func(env *Env) error {
 				body := []byte(fmt.Sprintf(`<!doctype html><html><head><title>Probe HTML</title></head>
 <body>
@@ -658,8 +670,9 @@ func allCases(now time.Time) []Case {
 		//     two known members (csv + txt). Markitdown should walk both and
 		//     emit their content in one merged markdown.
 		{
-			Name:   "markitdown-zip-extract",
-			Prompt: "Ok.",
+			Name:     "markitdown-zip-extract",
+			Category: "markitdown",
+			Prompt:   "Ok.",
 			Setup: func(env *Env) error {
 				var zbuf bytes.Buffer
 				zw := zip.NewWriter(&zbuf)
@@ -730,7 +743,8 @@ func allCases(now time.Time) []Case {
 		//     Ground truth for each step is the agent_notes SQLite table, NOT the
 		//     reply text alone (CLAUDE.md probe discipline: verify the artifact).
 		{
-			Name:   "agent-note-roundtrip",
+			Name:     "agent-note-roundtrip",
+			Category: "tools-agent-note",
 			Prompt: "Usa lo strumento agent_note con action=set e content='TODO: verifica X, verifica Y, verifica Z'. Confermami quando hai salvato la nota.",
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
@@ -831,7 +845,8 @@ var (
 func markitdownProbeCase(name, fixture, mimeType string, mustInclude, mustNotInclude []string) Case {
 	var sourceID string
 	return Case{
-		Name: name,
+		Name:     name,
+		Category: "markitdown",
 		// The LLM gets a trivial prompt because the actual assertion runs
 		// against the upload pipeline, not the chat path. Setup uploads
 		// the binary; Verify reads extract.md back via the dashboard API.

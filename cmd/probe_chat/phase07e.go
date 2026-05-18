@@ -23,7 +23,8 @@ func phase07ESourceSpanReadCase(stamp string) Case {
 	fixture.content = fmt.Sprintf("%s\nlookup key: %s\n%s is the exact byte span\n%s\n", fixture.prefixToken, fixture.query, fixture.targetToken, fixture.suffixToken)
 
 	return Case{
-		Name: "phase07e-source-span-read",
+		Name:     "phase07e-source-span-read",
+		Category: "tools-source",
 		Prompt: fmt.Sprintf(
 			"Phase07E live golden. Usa prima search_memory con scope=sources e query %q. Poi usa il follow_up source(action=read,...) del risultato per leggere solo lo span. Rispondi esattamente con SPAN=%s e non citare altri token PHASE07E.",
 			fixture.query,

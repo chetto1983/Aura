@@ -21,7 +21,8 @@ func phase07FWikiFrontmatterMetadataCase(stamp string) Case {
 	fixture.slug = wiki.Slug(fixture.title)
 
 	return Case{
-		Name: "phase07f-wiki-frontmatter-metadata",
+		Name:     "phase07f-wiki-frontmatter-metadata",
+		Category: "tools-memory",
 		Prompt: fmt.Sprintf(
 			"Phase07F live golden. Usa search_memory con scope=wiki e query %q. Rispondi con il marker trovato nella pagina e includi i token metadata schema=2, prompt=v1, created=%s, unversioned=true e sources=[...]. Non inventare se search_memory non restituisce la pagina.",
 			fixture.query,

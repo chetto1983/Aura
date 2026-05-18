@@ -17,11 +17,12 @@ type ChatReply struct {
 // Case is one E2E assertion: a prompt to send and a Verify closure
 // that returns one entry per assertion violation. Empty slice = PASS.
 type Case struct {
-	Name    string
-	Prompt  string
-	Setup   func(env *Env) error                     // optional: prep state before sending
-	Verify  func(reply ChatReply, env *Env) []string // required
-	Cleanup func(env *Env)                           // optional: tear down leftover state
+	Name     string
+	Category string // smoke tier: tools-files, tools-memory, tools-source, tools-web, tools-scheduler, tools-agent-note, channels-web, channels-telegram, failure-modes-phantom, failure-modes-budget, markitdown
+	Prompt   string
+	Setup    func(env *Env) error                     // optional: prep state before sending
+	Verify   func(reply ChatReply, env *Env) []string // required
+	Cleanup  func(env *Env)                           // optional: tear down leftover state
 }
 
 // Env bundles everything a Verify function needs to consult ground truth.

@@ -35,7 +35,7 @@
         "Single atomic commit prefix: feat(probe_chat): -smoke=<category> flag for SMOKE TIER re-runs (Phase-QA1 / US-QA-FIX02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Don't over-categorize — 8-12 categories is the right grain for a 21-case suite. Use the case prefix/keyword as the primary signal (e.g., all markitdown-*, all doc-*). Verify by running -smoke=markitdown against the live /api/chat — AURA_CHAT_TOKEN should be loadable from `.planning/qa/token.txt` if set during Phase-QA1 token bootstrap."
     },
     {

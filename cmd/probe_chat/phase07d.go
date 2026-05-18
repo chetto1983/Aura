@@ -34,7 +34,8 @@ func phase07DMixedTierRecallCase(stamp string) Case {
 	}
 
 	return Case{
-		Name: "phase07d-mixed-tier-recall",
+		Name:     "phase07d-mixed-tier-recall",
+		Category: "tools-memory",
 		Prompt: fmt.Sprintf(
 			"Phase07D live golden. Usa prima lo strumento recall_user_memory con query %q, poi usa recall_operational con la stessa query. Non usare search_memory. Rispondi citando esattamente questi due token e nessun altro token PHASE07D_LIVE: USER=%s OPERATIONAL=%s.",
 			fixture.query,
