@@ -98,6 +98,11 @@ func JournalMode(ctx context.Context, db *sql.DB) (string, error) {
 // Snapshot writes a transactionally consistent copy of sourcePath to destPath.
 // It is intended for backups of live databases; callers should archive the
 // snapshot rather than copying aura.db, aura.db-wal, and aura.db-shm directly.
+//
+// When called against a live database that is already opened by Aura's main
+// pool, prefer SnapshotFromPool which reuses the existing connection and
+// avoids the dual-pool SQLITE_CANTOPEN (error 14) that occurs in DELETE-mode
+// when two independent sql.DB pools contend on the rollback journal lock.
 func Snapshot(ctx context.Context, sourcePath, destPath string) error {
 	if strings.TrimSpace(sourcePath) == "" {
 		return errors.New("source path is required")
@@ -130,7 +135,40 @@ func Snapshot(ctx context.Context, sourcePath, destPath string) error {
 		_ = removeSQLiteFiles(destPath)
 		return fmt.Errorf("close snapshot source: %w", err)
 	}
+	return verifySnapshotAt(ctx, destPath)
+}
 
+// SnapshotFromPool writes a transactionally consistent copy of the database
+// backing src into destPath, reusing src's existing connection instead of
+// opening a second pool. This is the safe path for live backups while Aura
+// is running: opening a second sql.DB pool on the same file fails with
+// SQLITE_CANTOPEN (error 14) in DELETE-mode rollback-journal contention.
+//
+// src is not closed by this function — caller retains ownership.
+func SnapshotFromPool(ctx context.Context, src *sql.DB, destPath string) error {
+	if src == nil {
+		return errors.New("source db pool is required")
+	}
+	if strings.TrimSpace(destPath) == "" {
+		return errors.New("destination path is required")
+	}
+	destPath = filepath.Clean(destPath)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create snapshot directory: %w", err)
+	}
+	if err := removeSQLiteFiles(destPath); err != nil {
+		return err
+	}
+	if _, err := src.ExecContext(ctx, "VACUUM INTO "+quoteSQLiteString(destPath)); err != nil {
+		_ = removeSQLiteFiles(destPath)
+		return fmt.Errorf("sqlite snapshot: %w", err)
+	}
+	return verifySnapshotAt(ctx, destPath)
+}
+
+// verifySnapshotAt opens destPath read-only and runs an integrity check.
+// Used by both Snapshot and SnapshotFromPool after the VACUUM INTO step.
+func verifySnapshotAt(ctx context.Context, destPath string) error {
 	snapshot, err := OpenReadOnly(destPath)
 	if err != nil {
 		_ = removeSQLiteFiles(destPath)

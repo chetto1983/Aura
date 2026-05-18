@@ -262,7 +262,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Location:        loc,
 		Promoter:        lessonPromoter,
 		ProposalSweeper: proposalSweeper,
-		BackupVerifier:  &backupVerifyAdapter{dbPath: cfg.DBPath},
+		BackupVerifier:  &backupVerifyAdapter{db: a.deps.Pool},
 		WALCheckpointer: &walCheckpointAdapter{db: a.deps.Pool},
 	})
 	// Wire run_now action now that the handler (not *Bot) implements RunNow.
@@ -497,8 +497,12 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 
 // backupVerifyAdapter implements cron.BackupVerifier by snapshotting the live
 // DB into a temp file, verifying it with dbrecovery.VerifyBackup, then cleaning up.
+// Uses the shared sql.DB pool (not the dbPath) so the VACUUM INTO runs through
+// the pool's existing connection — opening a second sql.DB on the same file
+// triggers SQLITE_CANTOPEN (error 14) in DELETE-mode contention with the
+// rollback journal. See live debug 2026-05-18.
 type backupVerifyAdapter struct {
-	dbPath string
+	db *sql.DB
 }
 
 // walCheckpointAdapter implements cron.WALCheckpointer by running
@@ -527,7 +531,7 @@ func (a *backupVerifyAdapter) Verify(ctx context.Context) (cron.BackupVerifyResu
 		_ = os.Remove(tmpPath + "-shm")
 	}()
 
-	if err := auradb.Snapshot(ctx, a.dbPath, tmpPath); err != nil {
+	if err := auradb.SnapshotFromPool(ctx, a.db, tmpPath); err != nil {
 		return cron.BackupVerifyResult{}, fmt.Errorf("snapshot: %w", err)
 	}
 
