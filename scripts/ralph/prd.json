@@ -155,7 +155,7 @@
         "Single atomic commit prefix: test(qa): probe swarm lifecycle E2E (Phase-QA2 / US-QA-COV09)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "If AURABOT_ENABLED=false, the test should detect this at Setup time and skip gracefully OR fail loud with a clear infra-skip miss message. Don't conflate 'capability disabled' with 'probe failure'. Verify by checking /api/health JSON for swarm enable status if available; otherwise document in the case comment."
     },
     {
