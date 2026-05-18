@@ -30,6 +30,119 @@ func (l *multiChannelLoop) Run(ctx context.Context, run *chat.Run, msg chat.Inbo
 	return l.parentFn(ctx, run, msg, emit)
 }
 
+// TestSwarmChildAuthzFailEscalates verifies the Phase-QA3 / US-QA-FIX17 path:
+// when a swarm parent dispatches a child whose actor lacks CapabilityToolExecute,
+// the authz check fires before loop.Run, the child run status is failed, an
+// authz_decisions deny row is written, and the parent receives the error so its
+// own run also transitions to failed (not silently completed).
+func TestSwarmChildAuthzFailEscalates(t *testing.T) {
+	ctx := context.Background()
+
+	// 1 — SQLite DB with full migrations (identity + runs + authz_decisions tables).
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("runstore.NewStore: %v", err)
+	}
+
+	// 2 — Identity store backed by same DB.
+	identityStore, err := identity.NewStore(db)
+	if err != nil {
+		t.Fatalf("identity.NewStore: %v", err)
+	}
+
+	// 3 — Create restricted principal + actor WITHOUT CapabilityToolExecute.
+	//     Actor must exist in the DB so Authorize records to authz_decisions
+	//     (unknown_actor path skips the DB write).
+	const restrictedActorID = "actor:restricted-child-qa17"
+	const restrictedPrincipalID = "principal:restricted-child-qa17"
+
+	if _, _, err := identityStore.CreateOrResolvePrincipal(ctx, identity.PrincipalParams{
+		ID:          restrictedPrincipalID,
+		Kind:        identity.PrincipalKindHuman,
+		DisplayName: "Restricted Child QA17",
+		Status:      identity.PrincipalStatusActive,
+	}); err != nil {
+		t.Fatalf("CreateOrResolvePrincipal: %v", err)
+	}
+	if _, _, err := identityStore.CreateOrResolveActor(ctx, identity.ActorParams{
+		ID:          restrictedActorID,
+		PrincipalID: restrictedPrincipalID,
+		ActorType:   identity.ActorTypeSwarm,
+	}); err != nil {
+		t.Fatalf("CreateOrResolveActor: %v", err)
+	}
+	// Intentionally: no capability grant created → Authorize returns missing_grant.
+
+	// 4 — Multi-channel loop: childFn must not be called (authz blocks before loop.Run).
+	loop := &multiChannelLoop{
+		childFn: func(_ context.Context, _ *chat.Run, _ chat.InboundMessage, _ chat.EmitFn) error {
+			t.Error("childFn must not run: authz should block before loop.Run")
+			return nil
+		},
+	}
+
+	// 5 — Hub with lifecycle store + swarm outbound adapter.
+	hub, err := chat.New(chat.Config{Loop: loop, LifecycleStore: store})
+	if err != nil {
+		t.Fatalf("chat.New: %v", err)
+	}
+	hub.RegisterOutbound(silentadapter.NewSwarm(silentadapter.Config{}))
+
+	bridge := NewHubBridge(hub, "")
+
+	// 6 — Parent fn: dispatch a child with the restricted actor in context and the
+	//     identity store as authorizer. Propagate the dispatch error so the parent
+	//     run transitions to RunStatusFailed (not silently completed).
+	loop.parentFn = func(parentCtx context.Context, run *chat.Run, _ chat.InboundMessage, _ chat.EmitFn) error {
+		childCtx := identity.WithActorID(parentCtx, restrictedActorID)
+		childCtx = identity.WithAuthorizer(childCtx, identityStore)
+
+		spec := NodeSpec{
+			Goal:          "restricted task attempt",
+			RiskTier:      "read_only",
+			MaxIterations: 1,
+			BudgetSecs:    10,
+			ParentRunID:   run.ID,
+		}
+		_, dispErr := bridge.Dispatch(childCtx, spec, identity.Principal{ID: restrictedPrincipalID})
+		return dispErr // escalate to parent → RunStatusFailed
+	}
+
+	// 7 — Dispatch parent on ChannelWeb (no swarm authz check on this path).
+	parentRun, parentErr := hub.ReceiveMessage(ctx, chat.InboundMessage{
+		Channel:     chat.ChannelWeb,
+		PrincipalID: "user-authz-escalation-qa17",
+		Text:        "attempt restricted child dispatch",
+		Mode:        chat.DeliveryModeSilent,
+	})
+
+	// ── Assertion A: parent error is non-nil (authz denial escalated) ─────────
+	if parentErr == nil {
+		t.Error("expected parent ReceiveMessage to return authz error, got nil")
+	}
+
+	// ── Assertion B: parent run status is NOT completed ───────────────────────
+	if parentRun == nil {
+		t.Fatal("parentRun is nil")
+	}
+	if parentRun.Status == chat.RunStatusCompleted {
+		t.Errorf("parent run.Status = %s, want non-completed (authz error not escalated)", parentRun.Status)
+	}
+
+	// ── Assertion C: authz_decisions has ≥1 deny row for the restricted actor ──
+	var denyCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM authz_decisions WHERE actor_id = ? AND decision = 'deny'`,
+		restrictedActorID,
+	).Scan(&denyCount); err != nil {
+		t.Fatalf("count authz_decisions deny rows: %v", err)
+	}
+	if denyCount == 0 {
+		t.Errorf("authz_decisions: expected ≥1 deny row for actor %q, got 0", restrictedActorID)
+	}
+}
+
 // TestParentSpawnsTwoReadOnlyChildrenAndCollectsResults is the Phase-R
 // end-to-end integration test. It uses an in-memory hub backed by an in-process
 // SQLite lifecycle store and a fake LLM (multiChannelLoop) that returns

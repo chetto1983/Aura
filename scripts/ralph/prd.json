@@ -180,7 +180,7 @@
         "Single atomic commit prefix: test(qa): swarm child authz failure escalation (Phase-QA3 / US-QA-FIX17)"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "parent_child_integration_test.go has the test infrastructure. Add a deny-grants variant for the child."
     },
     {
