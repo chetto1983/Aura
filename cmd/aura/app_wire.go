@@ -30,6 +30,7 @@ import (
 	"github.com/aura/aura/internal/dbrecovery"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/opsfile"
 	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
@@ -201,6 +202,43 @@ func (a *App) wireBot(b *telegram.Bot) error {
 			logger.Warn("operational proposals migration failed", "error", migrErr)
 		} else if n > 0 {
 			logger.Info("operational proposals migrated", "promoted", n)
+		}
+	}
+
+	// ---- Operational lessons file watcher (US-OP02) ----------------------------
+	// Watches <WorkspaceRoot>/data/operational_lessons.md and re-ingests it into
+	// compact_memory_documents kind=operational on every write. Complements the
+	// propose_patch auto-accept path so recall_operational surfaces lessons from
+	// BOTH sources.
+	if a.deps.MemoryStore != nil && cfg.WorkspaceRoot != "" {
+		opsAbsPath := opsfile.AbsPath(cfg.WorkspaceRoot)
+		// Boot ingest: surface any lessons already in the file before the first turn.
+		if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
+			logger.Warn("opsfile boot ingest failed", "error", ingestErr)
+		} else if n > 0 {
+			logger.Info("operational lessons file ingested at boot", "count", n, "path", opsAbsPath)
+		}
+		// File watcher: re-ingest whenever Aura writes to the file via the file tool.
+		opsWatcher, werr := mcp.New(mcp.Config{
+			Path:     opsAbsPath,
+			Debounce: 500 * time.Millisecond,
+			Callback: func() {
+				if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
+					logger.Warn("opsfile re-ingest failed", "error", ingestErr)
+				} else if n > 0 {
+					logger.Info("operational lessons re-ingested", "count", n)
+				}
+			},
+			Logger: logger.With("component", "opsfile-watcher"),
+		})
+		if werr != nil {
+			logger.Warn("opsfile watcher unavailable", "error", werr)
+		} else {
+			a.startBg(func(ctx context.Context) {
+				if rerr := opsWatcher.Run(ctx); rerr != nil {
+					logger.Warn("opsfile watcher exited with error", "error", rerr)
+				}
+			})
 		}
 	}
 	// AgentNoteTool — per-conversation scratchpad for working memory (Phase-P, capability #4).

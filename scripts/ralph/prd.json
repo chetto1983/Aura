@@ -33,7 +33,7 @@
         "Single atomic commit prefix: feat(operational): unify file + propose_patch projection (Phase-OP / US-OP02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Check internal/storage/memoryindex/ for the ingest pattern. The reconciler from Wave 2.10.b (commit 2367f502) is the reference."
     },
     {
