@@ -123,7 +123,7 @@
         "Single atomic commit prefix: test(qa): qdrant outage graceful degradation (Phase-QA3 / US-QA-FIX13)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Prefer unit-test approach to avoid disturbing the running container. Check internal/storage/qdrant/client.go for the unreachable-error path and how it's signaled to the memory_search tool."
     },
     {

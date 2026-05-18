@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -901,5 +902,48 @@ func TestEmptyFreshnessOmitted(t *testing.T) {
 	}
 	if strings.Contains(out, "degraded_read=true") {
 		t.Errorf("back-compat: empty freshness columns must not emit degraded_read=true:\n%s", out)
+	}
+}
+
+// errorMemoryWikiSearch simulates a wiki searcher backed by an unreachable Qdrant
+// instance. IsIndexed returns true (the collection was successfully built before
+// the outage) so searchWiki proceeds to the Search call and observes the error.
+type errorMemoryWikiSearch struct {
+	err error
+}
+
+func (f errorMemoryWikiSearch) IsIndexed() bool { return true }
+
+func (f errorMemoryWikiSearch) Search(_ context.Context, _ string, _ int) ([]search.Result, error) {
+	return nil, f.err
+}
+
+// TestSearchMemoryTool_QdrantDownGracefulDegradation verifies that when the
+// Qdrant vector store is unreachable (simulated as a connection-refused error
+// from the wiki searcher), search_memory:
+//   - does NOT return an error to the caller (graceful degradation)
+//   - returns a non-empty, coherent response (no panic, no Go stack trace)
+//   - surfaces the failure as a warning ("wiki search failed")
+//   - emits the "No memory found" sentinel so the LLM knows the result set is empty
+func TestSearchMemoryTool_QdrantDownGracefulDegradation(t *testing.T) {
+	connRefused := fmt.Errorf("Post \"http://127.0.0.1:6333/collections/aura_memory_v1/points/query\": dial tcp 127.0.0.1:6333: connect: connection refused")
+	tool := NewSearchMemoryTool(errorMemoryWikiSearch{err: connRefused}, nil)
+
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "venice trip planning", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute() must not return error on qdrant-down; got: %v", err)
+	}
+	if out == "" {
+		t.Fatal("Execute() returned empty string on qdrant-down; want coherent degraded response")
+	}
+	if !strings.Contains(out, "No memory found") {
+		t.Fatalf("expected graceful no-results sentinel in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "wiki search failed") {
+		t.Fatalf("expected 'wiki search failed' warning in output, got:\n%s", out)
+	}
+	// Ensure no Go panic / stack trace leaked to user-visible output.
+	if strings.Contains(out, "goroutine") || strings.Contains(out, "runtime/debug") {
+		t.Fatalf("panic/stack trace must not appear in user-visible output:\n%s", out)
 	}
 }

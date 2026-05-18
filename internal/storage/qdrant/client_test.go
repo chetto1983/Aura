@@ -276,6 +276,45 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+func TestSearch_ConnectionRefused(t *testing.T) {
+	// Start a server then immediately close it so the address is now unreachable.
+	// Any subsequent call to that URL should receive a connection-refused error.
+	srv := httptest.NewServer(nil)
+	addr := srv.URL
+	srv.Close()
+
+	client, err := NewClient(Config{BaseURL: addr, Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err = client.Search(ctx, "aura_memory_v1", []float32{0.1, 0.2, 0.3}, 5, true)
+	if err == nil {
+		t.Fatal("Search() on closed server: expected error, got nil")
+	}
+	// Must not panic — the error is a network-layer failure (connection refused or EOF),
+	// not an Aura application error. Any non-nil error satisfies graceful degradation.
+}
+
+func TestHealth_ConnectionRefused(t *testing.T) {
+	srv := httptest.NewServer(nil)
+	addr := srv.URL
+	srv.Close()
+
+	client, err := NewClient(Config{BaseURL: addr, Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := client.Health(ctx); err == nil {
+		t.Fatal("Health() on closed server: expected error, got nil")
+	}
+}
+
 // containsStr is a simple substring check helper.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
