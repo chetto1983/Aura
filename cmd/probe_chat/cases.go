@@ -1162,6 +1162,58 @@ func allCases(now time.Time) []Case {
 				capDenyTokenHash = ""
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV07 — MaxIterations graceful finalize E2E.
+		// Sends a multi-step prompt requiring 3+ sequential search_memory calls to
+		// verify the agent loop handles multi-iter prompts cleanly without hitting
+		// ugly budget-exhaustion fallback strings.
+		// NOTE: this probe tests the BAR (graceful completion before the cap), NOT
+		// the FLOOR (what happens AT the cap). The cap-hit case requires a
+		// slow-LLM harness — deferred to Phase-QA3.
+		// Ground truth: runs table shows status='completed'; never r.Reply alone.
+		{
+			Name:     "failure-max-iterations",
+			Category: "failure-modes-budget",
+			Prompt: "Per favore esegui questi tre passi in sequenza e riporta ogni risultato separatamente: " +
+				"1) usa search_memory query='probe-iter-alpha'; " +
+				"2) poi usa search_memory query='probe-iter-beta'; " +
+				"3) poi usa search_memory query='probe-iter-gamma'. " +
+				"Riporta tutti e tre i risultati.",
+			Setup: func(_ *Env) error {
+				maxIterBefore = time.Now()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				reply := r.Reply
+				for _, ugly := range []string{
+					"I reached the per-turn budget",
+					"Sorry, I couldn't process",
+					"sorry, i couldn't process",
+				} {
+					if strings.Contains(reply, ugly) {
+						miss = append(miss, fmt.Sprintf("reply contains budget-exhaustion fallback string %q — loop did not complete cleanly", ugly))
+					}
+				}
+				if r.LLMCalls < 2 {
+					miss = append(miss, fmt.Sprintf("LLMCalls = %d, want >= 2 (multi-step prompt should trigger at least one tool round)", r.LLMCalls))
+				}
+				// Ground truth: runs table must show a completed row for this web turn.
+				runStatus, found, err := env.runStatusSince(maxIterBefore)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("runs table query: %v", err))
+				} else if !found {
+					miss = append(miss, fmt.Sprintf("DB ground truth: no runs row found since %s (channel=web)", maxIterBefore.Format(time.RFC3339)))
+				} else {
+					fmt.Fprintf(os.Stderr, "[case=failure-max-iterations] reply_len=%d runs.status=%s\n",
+						len(strings.TrimSpace(r.Reply)), runStatus)
+					if runStatus != "completed" {
+						miss = append(miss, fmt.Sprintf("DB ground truth: runs.status = %q, want 'completed' (agent loop errored)", runStatus))
+					}
+				}
+				return miss
+			},
+		},
 	}
 }
 
@@ -1187,6 +1239,8 @@ var (
 	capDenyPrincipalID string
 	capDenyAcctID      string
 	capDenyBefore      time.Time
+
+	maxIterBefore time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from

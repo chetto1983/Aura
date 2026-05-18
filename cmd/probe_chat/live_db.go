@@ -285,6 +285,43 @@ func nonEmptyStrings(values []string) []string {
 	return out
 }
 
+// runStatusSince queries the most recent web-channel run started after `since`
+// and returns its status string. Used by failure-mode probes that need to verify
+// the agent loop completed cleanly without hitting an error state.
+func (e *Env) runStatusSince(since time.Time) (status string, found bool, err error) {
+	sinceStr := since.UTC().Format(time.RFC3339Nano)
+	if e.dockerDBReady() {
+		var rows []struct {
+			Status string `json:"status"`
+		}
+		query := `SELECT status FROM runs WHERE started_at >= ` + sqliteQuote(sinceStr) +
+			` AND channel = 'web' ORDER BY started_at DESC LIMIT 1;`
+		raw, err := e.dockerSQLite(true, true, query)
+		if err != nil {
+			return "", false, err
+		}
+		if len(raw) == 0 {
+			raw = []byte("[]")
+		}
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			return "", false, fmt.Errorf("decode docker runs: %w", err)
+		}
+		if len(rows) == 0 {
+			return "", false, nil
+		}
+		return rows[0].Status, true, nil
+	}
+	var s string
+	err = e.DB.QueryRow(
+		`SELECT status FROM runs WHERE started_at >= ? AND channel = 'web' ORDER BY started_at DESC LIMIT 1`,
+		sinceStr,
+	).Scan(&s)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	return s, err == nil, err
+}
+
 // hashBearerToken returns the lowercase hex SHA-256 of token, matching auth.hashToken.
 func hashBearerToken(token string) string {
 	sum := sha256.Sum256([]byte(token))

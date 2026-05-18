@@ -121,7 +121,7 @@
         "Single atomic commit prefix: test(qa): probe MaxIterations finalize E2E (Phase-QA2 / US-QA-COV07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "This is a 'graceful degradation' probe — it doesn't necessarily HIT MaxIterations but it tests that the loop handles multi-step prompts without ugly errors. If you want to actually hit the cap, lower the prompt's needed steps below 50 but use prompts that the model is likely to redundantly retry."
     },
     {
