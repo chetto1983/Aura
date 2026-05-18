@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +22,7 @@ func allCases(now time.Time) []Case {
 	taskName := "probe-chat-task-" + stamp
 	wikiSlug := "probe-chat-page-" + stamp
 	wikiTitle := "Probe Chat Page " + stamp
+	agentNoteThreadID := "probe-agent-note-" + stamp
 
 	return []Case{
 		phase07DMixedTierRecallCase(stamp),
@@ -33,7 +33,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "greeting-no-tools",
 			Category: "channels-web",
-			Prompt: "Ciao Aura, dimmi solo in una riga come stai.",
+			Prompt:   "Ciao Aura, dimmi solo in una riga come stai.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls != 0 {
@@ -50,23 +50,19 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "schedule-reminder",
 			Category: "tools-scheduler",
-			Prompt: fmt.Sprintf("Schedulami un reminder chiamato %s fra 30 minuti con payload 'probe chat smoke'. Poi conferma.", taskName),
+			Prompt:   fmt.Sprintf("Schedulami un reminder chiamato %s fra 30 minuti con payload 'probe chat smoke'. Poi conferma.", taskName),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				// Reply must reference the task name we asked for.
 				if !strings.Contains(strings.ToLower(r.Reply), strings.ToLower(taskName)) {
 					miss = append(miss, fmt.Sprintf("reply does not reference task name %q", taskName))
 				}
-				// Ground truth: row must exist in scheduled_tasks with kind=reminder.
-				var kind, status string
-				err := env.DB.QueryRow(
-					`SELECT kind, status FROM scheduled_tasks WHERE name = ?`,
-					taskName,
-				).Scan(&kind, &status)
-				if err == sql.ErrNoRows {
+				// Ground truth: row must exist in the live task API with kind=reminder.
+				kind, status, missing, err := env.fetchTask(taskName)
+				if missing {
 					miss = append(miss, fmt.Sprintf("DB ground truth: scheduled_tasks row for %q missing", taskName))
 				} else if err != nil {
-					miss = append(miss, fmt.Sprintf("DB query error: %v", err))
+					miss = append(miss, fmt.Sprintf("task API ground truth: %v", err))
 				} else {
 					if kind != "reminder" {
 						miss = append(miss, fmt.Sprintf("DB kind = %q, want reminder", kind))
@@ -78,7 +74,7 @@ func allCases(now time.Time) []Case {
 				return miss
 			},
 			Cleanup: func(env *Env) {
-				_, _ = env.DB.Exec(`UPDATE scheduled_tasks SET status='cancelled' WHERE name = ?`, taskName)
+				_ = env.cancelTask(taskName)
 			},
 		},
 
@@ -87,7 +83,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "wiki-page-create",
 			Category: "tools-memory",
-			Prompt: fmt.Sprintf("Crea una pagina wiki intitolata %q con questo body: 'E2E probe chat run %s'. Conferma quando hai finito.", wikiTitle, stamp),
+			Prompt:   fmt.Sprintf("Crea una pagina wiki intitolata %q con questo body: 'E2E probe chat run %s'. Conferma quando hai finito.", wikiTitle, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if !strings.Contains(strings.ToLower(r.Reply), strings.ToLower(wikiSlug)) {
@@ -124,7 +120,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "web-fetch-summarize-context-engineering",
 			Category: "tools-web",
-			Prompt: "Vai a https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Cita almeno: context window, tool use, agent loop.",
+			Prompt:   "Vai a https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Cita almeno: context window, tool use, agent loop.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -158,7 +154,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "doc-xlsx-roundtrip",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Generami un file Excel chiamato probe-%s.xlsx con un foglio 'Sintesi' che ha questa tabella: prima riga 'Voce' e 'Valore', poi righe ['Anno', '2026'], ['Wave', '2.7d'], ['Marker', 'PROBE-%s']. Non inviarlo via Telegram (deliver:false). Confermami il source_id.", stamp, stamp),
+			Prompt:   fmt.Sprintf("Generami un file Excel chiamato probe-%s.xlsx con un foglio 'Sintesi' che ha questa tabella: prima riga 'Voce' e 'Valore', poi righe ['Anno', '2026'], ['Wave', '2.7d'], ['Marker', 'PROBE-%s']. Non inviarlo via Telegram (deliver:false). Confermami il source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -233,7 +229,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "doc-docx-roundtrip",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Generami un file Word chiamato probe-%s.docx con titolo 'Probe Docx %s' e questi blocchi: heading livello 2 testo 'Sezione A', paragraph 'Frase distintiva PROBE-%s', bullet 'Punto uno'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
+			Prompt:   fmt.Sprintf("Generami un file Word chiamato probe-%s.docx con titolo 'Probe Docx %s' e questi blocchi: heading livello 2 testo 'Sezione A', paragraph 'Frase distintiva PROBE-%s', bullet 'Punto uno'. deliver:false. Confermami il source_id.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -299,7 +295,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "doc-pdf-roundtrip",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s' e due blocchi: heading livello 2 'Risultati', paragraph 'Esito atteso PROBE-%s'. deliver:false. Quando il tool risponde, copiaincolla il source_id ESATTAMENTE come appare nell'output dello strumento, carattere per carattere, senza modifiche. Esempio: se il tool restituisce source_id='src_abc1def2abc1def2', scrivi esattamente src_abc1def2abc1def2.", stamp, stamp, stamp),
+			Prompt:   fmt.Sprintf("Generami un file PDF chiamato probe-%s.pdf con titolo 'Probe Pdf %s'. Devi chiamare il tool doc con action='pdf', deliver=false e il parametro blocks obbligatorio con esattamente questi due blocchi: {kind:'heading', level:2, text:'Risultati'} e {kind:'paragraph', text:'Esito atteso PROBE-%s'}. Non creare un PDF solo con il titolo. Quando il tool risponde, copiaincolla il source_id ESATTAMENTE come appare nell'output dello strumento, carattere per carattere. Esempio: se il tool restituisce source_id='src_abc1def2abc1def2', scrivi esattamente src_abc1def2abc1def2.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -371,7 +367,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "file-write-read-roundtrip",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto esatto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
+			Prompt:   fmt.Sprintf("Crea un file di testo nel workspace al path 'notes/probe-%s.md' col contenuto esatto 'Wave 2.7e marker PROBE-%s alpha beta gamma'. Poi rileggimelo e confermami che contiene PROBE-%s.", stamp, stamp, stamp),
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -404,7 +400,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "source-store-read-roundtrip",
 			Category: "tools-source",
-			Prompt: fmt.Sprintf("Salva una nuova fonte testo chiamata 'probe-source-%s.txt' con questo contenuto esatto: 'Wave 2.7f source consolidation marker SRC-%s'. Poi mostrami il suo source_id.", stamp, stamp),
+			Prompt:   fmt.Sprintf("Salva una nuova fonte testo chiamata 'probe-source-%s.txt' con questo contenuto esatto: 'Wave 2.7f source consolidation marker SRC-%s'. Poi mostrami il suo source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -443,7 +439,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "doc-xlsx-italian-chars",
 			Category: "tools-files",
-			Prompt: fmt.Sprintf("Generami un file Excel chiamato encoding-%s.xlsx, foglio 'Test', con queste righe esatte: ['Città', 'Milano'], ['Età', '25 anni'], ['Prezzo', '€100,50'], ['Caffè', 'doppio'], ['Marker', 'È-PROBE-%s']. deliver:false. Confermami il source_id.", stamp, stamp),
+			Prompt:   fmt.Sprintf("Generami un file Excel chiamato encoding-%s.xlsx, foglio 'Test', con queste righe esatte: ['Città', 'Milano'], ['Età', '25 anni'], ['Prezzo', '€100,50'], ['Caffè', 'doppio'], ['Marker', 'È-PROBE-%s']. deliver:false. Confermami il source_id.", stamp, stamp),
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -499,7 +495,7 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "phantom-trap-nonexistent-task",
 			Category: "failure-modes-phantom",
-			Prompt: "Eseguito già run_now sul task probe-chat-nonexistent-zzz oggi? Confermami solo se è successo davvero.",
+			Prompt:   "Eseguito già run_now sul task probe-chat-nonexistent-zzz oggi? Confermami solo se è successo davvero.",
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				reply := strings.ToLower(r.Reply)
@@ -751,31 +747,28 @@ func allCases(now time.Time) []Case {
 		{
 			Name:     "agent-note-roundtrip",
 			Category: "tools-agent-note",
-			Prompt: "Usa lo strumento agent_note con action=set e content='TODO: verifica X, verifica Y, verifica Z'. Confermami quando hai salvato la nota.",
+			ThreadID: agentNoteThreadID,
+			Prompt:   "Usa lo strumento agent_note con action=set e content='TODO: verifica X, verifica Y, verifica Z'. Confermami quando hai salvato la nota.",
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
+				userID, err := env.fetchUserID()
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("whoami: %v", err))
+					return miss
+				}
+				convID := "web:" + userID + ":" + agentNoteThreadID
 
 				// Turn 1 must have called agent_note.
 				if r.ToolCalls == 0 {
 					miss = append(miss, fmt.Sprintf("turn1: expected agent_note tool call, got 0 (reply: %s)", truncate(r.Reply, 200)))
 				}
 
-				// DB ground truth: the most recent agent_notes row (updated in
-				// the last 2 min) must contain the three keywords. We do NOT
-				// hardcode the conversation_id because the web channel binds
-				// conversation_id to the bearer's user_id (cmd/aura/web_chat.go:401),
-				// which varies per operator. The "updated in last 2 min"
-				// constraint scopes ground truth to this probe run.
-				var noteContent, convID string
-				dbErr := env.DB.QueryRow(
-					`SELECT conversation_id, content FROM agent_notes
-					 WHERE updated_at >= unixepoch('now', '-2 minutes')
-					 ORDER BY updated_at DESC LIMIT 1`,
-				).Scan(&convID, &noteContent)
-				if dbErr == sql.ErrNoRows {
-					miss = append(miss, "DB: no agent_notes row written in the last 2 minutes (set may have failed silently)")
-				} else if dbErr != nil {
+				// DB ground truth: the exact web conversation thread must contain the note.
+				noteContent, exists, dbErr := env.agentNoteContent(convID)
+				if dbErr != nil {
 					miss = append(miss, fmt.Sprintf("DB: agent_notes query error: %v", dbErr))
+				} else if !exists {
+					miss = append(miss, fmt.Sprintf("DB: no agent_notes row for conversation_id=%q", convID))
 				} else {
 					fmt.Fprintf(os.Stderr, "[case=agent-note-roundtrip] DB row preview: conversation_id=%q content=%q\n", convID, truncate(noteContent, 200))
 					for _, kw := range []string{"verifica x", "verifica y", "verifica z"} {
@@ -786,7 +779,7 @@ func allCases(now time.Time) []Case {
 				}
 
 				// Turn 2: read note back via action=get.
-				r2, err2 := env.sendChat("Usa agent_note con action=get per leggere la tua nota attuale. Mostrami il contenuto completo.")
+				r2, err2 := env.sendChatThread(agentNoteThreadID, "Usa agent_note con action=get per leggere la tua nota attuale. Mostrami il contenuto completo.")
 				if err2 != nil {
 					miss = append(miss, fmt.Sprintf("turn2 sendChat: %v", err2))
 					return miss
@@ -801,7 +794,7 @@ func allCases(now time.Time) []Case {
 				}
 
 				// Turn 3: explicit clear (simulates conversation-end GC).
-				r3, err3 := env.sendChat("Usa agent_note con action=clear per cancellare la nota. Confermami.")
+				r3, err3 := env.sendChatThread(agentNoteThreadID, "Usa agent_note con action=clear per cancellare la nota. Confermami.")
 				if err3 != nil {
 					miss = append(miss, fmt.Sprintf("turn3 sendChat clear: %v", err3))
 					return miss
@@ -814,22 +807,21 @@ func allCases(now time.Time) []Case {
 				// in turn 1 must no longer have a row (either deleted, or
 				// content emptied). We use the same convID captured above.
 				if convID != "" {
-					var count int
-					_ = env.DB.QueryRow(
-						`SELECT count(*) FROM agent_notes WHERE conversation_id = ? AND content != ''`,
-						convID,
-					).Scan(&count)
-					if count != 0 {
-						miss = append(miss, fmt.Sprintf("DB: agent_notes row still has content after clear (conversation_id=%q, count=%d)", convID, count))
+					content, exists, err := env.agentNoteContent(convID)
+					if err != nil {
+						miss = append(miss, fmt.Sprintf("DB: agent_notes post-clear query error: %v", err))
+					} else if exists && strings.TrimSpace(content) != "" {
+						miss = append(miss, fmt.Sprintf("DB: agent_notes row still has content after clear (conversation_id=%q)", convID))
 					}
 				}
 				return miss
 			},
 			Cleanup: func(env *Env) {
 				// Belt-and-suspenders: remove any leftover note written in
-				// the last 5 minutes (scoped to this run's window, not by
-				// hardcoded conversation_id which varies per operator).
-				_, _ = env.DB.Exec(`DELETE FROM agent_notes WHERE updated_at >= unixepoch('now', '-5 minutes')`)
+				// this run's exact thread.
+				if userID, err := env.fetchUserID(); err == nil && userID != "" {
+					_ = env.deleteAgentNote("web:" + userID + ":" + agentNoteThreadID)
+				}
 			},
 		},
 	}

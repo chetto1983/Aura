@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
@@ -69,17 +67,8 @@ func (f *phase07ESourceSpanFixture) setup(env *Env) error {
 	end := start + len(f.targetToken)
 
 	ctx := context.Background()
-	wdb, err := auradb.Open(env.DBPath)
-	if err != nil {
-		return fmt.Errorf("open writable db: %w", err)
-	}
-	defer wdb.Close()
-	store, err := memoryindex.NewStore(wdb)
-	if err != nil {
-		return fmt.Errorf("memoryindex store: %w", err)
-	}
 	f.startedAt = time.Now().UTC().Add(-2 * time.Second)
-	if err := store.Upsert(ctx, memoryindex.Document{
+	if err := env.upsertCompactMemoryDocument(ctx, memoryindex.Document{
 		ID:               f.docID,
 		Kind:             memoryindex.KindSource,
 		Title:            f.filename,
@@ -117,7 +106,7 @@ func (f *phase07ESourceSpanFixture) verify(r ChatReply, env *Env) []string {
 		miss = append(miss, "DB unavailable for tool_attempts ground truth")
 		return miss
 	}
-	counts, err := phase07EToolAttemptsSince(env.DB, f.startedAt)
+	counts, err := env.toolAttemptsSince(f.startedAt, "search_memory", "source")
 	if err != nil {
 		miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
 		return miss
@@ -130,31 +119,6 @@ func (f *phase07ESourceSpanFixture) verify(r ChatReply, env *Env) []string {
 	return miss
 }
 
-func phase07EToolAttemptsSince(db *sql.DB, since time.Time) (map[string]int, error) {
-	rows, err := db.Query(`
-SELECT tool_name, COUNT(*)
-FROM tool_attempts
-WHERE started_at >= ?
-  AND outcome = 'ok'
-  AND tool_name IN ('search_memory', 'source')
-GROUP BY tool_name
-`, since.UTC().Format(time.RFC3339Nano))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var toolName string
-		var count int
-		if err := rows.Scan(&toolName, &count); err != nil {
-			return nil, err
-		}
-		out[toolName] = count
-	}
-	return out, rows.Err()
-}
-
 func (f *phase07ESourceSpanFixture) cleanup(env *Env) {
 	if f == nil || env == nil {
 		return
@@ -165,11 +129,5 @@ func (f *phase07ESourceSpanFixture) cleanup(env *Env) {
 	if strings.TrimSpace(env.DBPath) == "" || f.docID == "" {
 		return
 	}
-	wdb, err := auradb.Open(env.DBPath)
-	if err != nil {
-		return
-	}
-	defer wdb.Close()
-	_, _ = wdb.Exec(`DELETE FROM compact_memory_fts WHERE id = ?`, f.docID)
-	_, _ = wdb.Exec(`DELETE FROM compact_memory_documents WHERE id = ?`, f.docID)
+	_ = env.deleteCompactMemoryDocuments(context.Background(), []string{f.docID})
 }

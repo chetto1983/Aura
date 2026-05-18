@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
@@ -69,16 +67,6 @@ func (f *phase07DMixedTierFixture) setup(env *Env) error {
 		return fmt.Errorf("phase07d fixture requires -db path")
 	}
 	ctx := context.Background()
-	wdb, err := auradb.Open(env.DBPath)
-	if err != nil {
-		return fmt.Errorf("open writable db: %w", err)
-	}
-	defer wdb.Close()
-
-	store, err := memoryindex.NewStore(wdb)
-	if err != nil {
-		return fmt.Errorf("memoryindex store: %w", err)
-	}
 	f.startedAt = time.Now().UTC().Add(-2 * time.Second)
 	updatedAt := time.Now().UTC()
 	docs := []memoryindex.Document{
@@ -165,7 +153,7 @@ func (f *phase07DMixedTierFixture) setup(env *Env) error {
 		},
 	}
 	for _, doc := range docs {
-		if err := store.Upsert(ctx, doc); err != nil {
+		if err := env.upsertCompactMemoryDocument(ctx, doc); err != nil {
 			return fmt.Errorf("upsert %s: %w", doc.ID, err)
 		}
 	}
@@ -197,7 +185,7 @@ func (f *phase07DMixedTierFixture) verify(r ChatReply, env *Env) []string {
 		miss = append(miss, "DB unavailable for tool_attempts ground truth")
 		return miss
 	}
-	counts, err := phase07DToolAttemptsSince(env.DB, f.startedAt)
+	counts, err := env.toolAttemptsSince(f.startedAt, "recall_user_memory", "recall_operational", "search_memory")
 	if err != nil {
 		miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
 		return miss
@@ -213,42 +201,9 @@ func (f *phase07DMixedTierFixture) verify(r ChatReply, env *Env) []string {
 	return miss
 }
 
-func phase07DToolAttemptsSince(db *sql.DB, since time.Time) (map[string]int, error) {
-	rows, err := db.Query(`
-SELECT tool_name, COUNT(*)
-FROM tool_attempts
-WHERE started_at >= ?
-  AND outcome = 'ok'
-  AND tool_name IN ('recall_user_memory', 'recall_operational', 'search_memory')
-GROUP BY tool_name
-`, since.UTC().Format(time.RFC3339Nano))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var toolName string
-		var count int
-		if err := rows.Scan(&toolName, &count); err != nil {
-			return nil, err
-		}
-		out[toolName] = count
-	}
-	return out, rows.Err()
-}
-
 func (f *phase07DMixedTierFixture) cleanup(env *Env) {
 	if f == nil || env == nil || strings.TrimSpace(env.DBPath) == "" {
 		return
 	}
-	wdb, err := auradb.Open(env.DBPath)
-	if err != nil {
-		return
-	}
-	defer wdb.Close()
-	for _, id := range f.docIDs {
-		_, _ = wdb.Exec(`DELETE FROM compact_memory_fts WHERE id = ?`, id)
-		_, _ = wdb.Exec(`DELETE FROM compact_memory_documents WHERE id = ?`, id)
-	}
+	_ = env.deleteCompactMemoryDocuments(context.Background(), f.docIDs)
 }

@@ -22,7 +22,7 @@ func runAll(client *http.Client, baseURL, token string, env *Env, cases []Case) 
 				continue
 			}
 		}
-		reply, err := sendChat(client, baseURL, token, c.Prompt)
+		reply, err := sendChatWithThread(client, baseURL, token, c.Prompt, c.ThreadID)
 		if err != nil {
 			out = append(out, Result{
 				Name:         c.Name,

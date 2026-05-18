@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -104,7 +103,7 @@ func (f *phase07FWikiFrontmatterFixture) verify(r ChatReply, env *Env) []string 
 		miss = append(miss, "DB unavailable for tool_attempts ground truth")
 		return miss
 	}
-	counts, err := phase07FToolAttemptsSince(env.DB, f.startedAt)
+	counts, err := env.toolAttemptsSince(f.startedAt, "search_memory")
 	if err != nil {
 		miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
 		return miss
@@ -122,31 +121,6 @@ func (f *phase07FWikiFrontmatterFixture) verify(r ChatReply, env *Env) []string 
 func compactPhase07FReply(reply string) string {
 	replacer := strings.NewReplacer(" ", "", "\n", "", "\t", "", "**", "", "`", "")
 	return replacer.Replace(strings.ToLower(reply))
-}
-
-func phase07FToolAttemptsSince(db *sql.DB, since time.Time) (map[string]int, error) {
-	rows, err := db.Query(`
-SELECT tool_name, COUNT(*)
-FROM tool_attempts
-WHERE started_at >= ?
-  AND outcome = 'ok'
-  AND tool_name = 'search_memory'
-GROUP BY tool_name
-`, since.UTC().Format(time.RFC3339Nano))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var toolName string
-		var count int
-		if err := rows.Scan(&toolName, &count); err != nil {
-			return nil, err
-		}
-		out[toolName] = count
-	}
-	return out, rows.Err()
 }
 
 func (f *phase07FWikiFrontmatterFixture) cleanup(env *Env) {

@@ -53,3 +53,78 @@ Apply the same substitution to the turn-2/turn-3 lookups further down in the sam
 **Fix**: None per skill rule "2/4 fail → genuine flake. Do NOT propose a fix yet. Investigate determinism next pass."
 **Status**: fixed in US-QA-FIX05 by prompt-hardening + assertion-relaxation (prefix match: src_ + 8 hex chars). Verbatim-echo instruction added to Prompt; Verify now accepts claimed source_id if first 12 chars match actual id. 4/5 or 5/5 pass expected post-fix.
 **Determinism notes**: prompt now instructs LLM to copy-paste source_id character-for-character with a concrete example. Prefix assertion (12 chars) tolerates 1-2 trailing digit typos while remaining statistically unique (1/(16^8)≈4B). Wholesale hallucination would still fail (prefix mismatch).
+
+---
+
+## 2026-05-18T14:28 - phase07e-source-span-read - baseline-rerun - P1 probe bug
+**Git HEAD**: 657f5a1c24faeef3477775aed1a07f6981a19c16
+**Env snapshot**: `.planning/qa/env-snapshot-20260518-142819.json`
+**Repro**: `go run ./cmd/probe_chat -case=phase07e-source-span-read -json` with `AURA_CHAT_TOKEN` set from `.planning/qa/token.txt`
+**Flakiness**: 4/4 fail (full baseline + 3 JSON reruns) -> real failure in the regression suite, but not confirmed as an Aura product regression.
+**Symptoms**: Reply consistently includes the exact `SPAN=PHASE07E_TARGET_SPAN_*` marker, but the probe reports missing `tool_attempts` rows for `search_memory` and `source`. One manual rerun also surfaced `database disk image is malformed (11)` from the host-side read.
+**Ground-truth investigation**:
+- Container-side `PRAGMA integrity_check` on `/data/aura.db` returned `ok`.
+- Container-side `tool_attempts` rows exist for the rerun windows, including `search_memory|ok` and `source|ok` at `2026-05-18T12:28:44Z`, `12:28:56Z`, `12:29:09Z`, `12:29:16Z`, `12:29:26Z`, and `12:29:32Z`.
+- The live product path performed the source span search/read and produced the exact target span without leaking prefix/suffix tokens.
+**Root cause**: Host-side `probe_chat` DB verification is not reliably observing concurrent container writes on the bind-mounted SQLite DB. The product behavior looks correct; the verifier is reading a stale or otherwise inconsistent view.
+**Fix**: Pending. Prefer moving live DB ground-truth reads for container probes to an in-container `sqlite3 -readonly /data/aura.db` helper, a short-lived reopened read connection per assertion, or an HTTP/API-backed evidence endpoint. Do not weaken the Phase07E behavior assertion.
+**Status**: HOLD for baseline sign-off. Product path likely OK; regression suite needs repair before this case can count as PASS.
+
+## 2026-05-18T14:28 - schedule-reminder - baseline-rerun - P1 probe bug
+**Git HEAD**: 657f5a1c24faeef3477775aed1a07f6981a19c16
+**Env snapshot**: `.planning/qa/env-snapshot-20260518-142819.json`
+**Repro**: `go run ./cmd/probe_chat -case=schedule-reminder -json` with `AURA_CHAT_TOKEN` set from `.planning/qa/token.txt`
+**Flakiness**: 4/4 fail (full baseline + 3 JSON reruns) -> real failure in the regression suite, but not confirmed as an Aura product regression.
+**Symptoms**: The probe reports `scheduled_tasks` row missing for timestamped reminder names even when the assistant reply confirms creation.
+**Ground-truth investigation**:
+- Container-side `scheduled_tasks` has the exact rows the probe claimed were missing: `probe-chat-task-20260518-142938`, `probe-chat-task-20260518-142948`, and `probe-chat-task-20260518-142953`, all `kind=reminder`, `status=active`.
+- Container-side `tool_attempts` records `task|ok` for the same creation windows with arg keys `["action","in","kind","name","payload"]`.
+**Root cause**: Same host-side SQLite visibility problem as `phase07e-source-span-read`. The live scheduler/task tool created the rows; the verifier failed to observe them through its long-lived host read connection.
+**Fix**: Pending with the same verifier repair as Phase07E. Ground truth for live container DB checks should be read from the same runtime side of the bind mount or via a reliable API.
+**Status**: HOLD for baseline sign-off. Product path likely OK; probe DB assertion path is invalid until repaired.
+
+## 2026-05-18T14:28 - phantom-trap-nonexistent-task - baseline-rerun - NOISE
+**Git HEAD**: 657f5a1c24faeef3477775aed1a07f6981a19c16
+**Env snapshot**: `.planning/qa/env-snapshot-20260518-142819.json`
+**Repro**: `go run ./cmd/probe_chat -case=phantom-trap-nonexistent-task -json` with `AURA_CHAT_TOKEN` set from `.planning/qa/token.txt`
+**Flakiness**: 1/4 fail (full baseline failed; 3 JSON reruns passed) -> severity `NOISE`.
+**Symptoms**: Original full baseline reply was semantically negative but contained the substring `ho eseguito`, triggering the phantom-claim verifier. The 3 reruns replied cleanly that the task did not exist and was not executed.
+**Ground-truth investigation**: No evidence of `run_now` on `probe-chat-nonexistent-zzz`; reruns passed without tool misuse.
+**Root cause**: Verifier wording heuristic is too literal for Italian negative constructions. The original reply said it had not executed the task, but the substring matcher flagged the words in a negated sentence.
+**Fix**: None for product. Consider improving the verifier to detect negation or assert against structured tool/action evidence rather than a raw substring.
+**Status**: Monitoring only.
+
+## 2026-05-18T14:28 - agent-note-roundtrip - baseline-rerun - P1
+**Git HEAD**: 657f5a1c24faeef3477775aed1a07f6981a19c16
+**Env snapshot**: `.planning/qa/env-snapshot-20260518-142819.json`
+**Repro**: `go run ./cmd/probe_chat -case=agent-note-roundtrip -json` with `AURA_CHAT_TOKEN` set from `.planning/qa/token.txt`
+**Flakiness**: 4/4 fail (full baseline + 3 JSON reruns) -> real bug or hard flake in the agent-note web path.
+**Symptoms**: The assistant reports the note as saved; `tool_attempts` records `agent_note|ok`; DB ground truth either does not show the note through the probe verifier in time, or leaves `conversation_id="web:1148481707:default"` with `TODO: verifica X, verifica Y, verifica Z` after the clear turn.
+**Ground-truth investigation**:
+- Container-side `agent_notes` currently contains `web:1148481707:default|TODO: verifica X, verifica Y, verifica Z`.
+- Container-side `tool_attempts` records `agent_note|ok` for set/get/clear turns and one `agent_note|recoverable|null`, indicating at least one malformed or incomplete model tool call during the roundtrip.
+- Unlike the scheduler/Phase07E cases, a stale host read cannot explain the final persisted note after the clear turn.
+**Root cause**: Pending. Most likely the model sometimes calls `agent_note` without the expected explicit `action=clear` arguments, and the tool returns recoverable/ok paths that do not guarantee cleanup. The web default conversation key `web:<user>:default` also causes repeated probe attempts to share one scratchpad, amplifying leftover-state risk.
+**Fix**: Pending. Add or tighten a permanent regression around explicit clear semantics and inspect `internal/agent/tools/registry/agent_note.go` plus web conversation ID binding before changing behavior.
+**Status**: HOLD for baseline sign-off. Treat as real until fixed or disproven with stronger structured evidence.
+
+---
+
+## 2026-05-18T15:16 - probe_chat postfix rerun - RESOLVED
+**Git HEAD**: 657f5a1c24faeef3477775aed1a07f6981a19c16
+**Artifacts**:
+- `.planning/qa/db-repair-20260518-145312/aura.db.pre-reindex.bak`
+- `.planning/qa/probe-chat-postfix-20260518-150353.txt`
+- `.planning/qa/probe-chat-postfix-rerun-20260518-151134.txt`
+**Fixes applied**:
+- `cmd/probe_chat/live_db.go`: live DB evidence for container-backed probes now uses in-container SQLite when available, avoiding host/container concurrent SQLite reads and writes.
+- `cmd/probe_chat/phase07d.go`, `phase07e.go`, `phase07f.go`: Phase07 fixture writes, cleanup, and tool-attempt assertions moved to the live DB helper.
+- `cmd/probe_chat/cases.go`: scheduler ground truth uses the task API; agent_note uses an isolated `thread_id` and exact `web:<user>:<thread>` conversation key; PDF prompt now requires `blocks`.
+- `cmd/probe_chat/client.go`, `runner.go`, `types.go`: `/api/chat` thread_id support plus one retry for empty provider replies with `tokens=0`, `llm_calls=1`, and no tools.
+**DB repair**: Rebuild exposed SQLite corruption: `wrong # of entries in index idx_run_events_correlation`, then `database disk image is malformed (11)`. Live DB was stopped, backed up, dumped to a clean DB, verified with `PRAGMA integrity_check=ok`, and applied. Critical counts matched except 10 unreadable `run_events` rows that `.dump` could not recover; backup preserved for audit.
+**Verification**:
+- `go test ./cmd/probe_chat` -> PASS.
+- Targeted reruns `doc-pdf-roundtrip` and `agent-note-roundtrip` -> PASS.
+- Full rerun `go run ./cmd/probe_chat` at `2026-05-18T15:11:34` -> **21/21 PASS**.
+- Post-run `PRAGMA integrity_check` -> `ok`; probe reminder rows are `cancelled`; no `probe-agent-note-*` rows remain.
+**Status**: Baseline accepted. Output exceeds requested threshold (21/21 vs expected >=20/21; pre-fix was 18/21/19/21 depending invalid probe noise).

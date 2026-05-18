@@ -20,6 +20,7 @@ type Case struct {
 	Name     string
 	Category string // smoke tier: tools-files, tools-memory, tools-source, tools-web, tools-scheduler, tools-agent-note, channels-web, channels-telegram, failure-modes-phantom, failure-modes-budget, markitdown
 	Prompt   string
+	ThreadID string                                   // optional web /api/chat thread_id; empty = default thread
 	Setup    func(env *Env) error                     // optional: prep state before sending
 	Verify   func(reply ChatReply, env *Env) []string // required
 	Cleanup  func(env *Env)                           // optional: tear down leftover state

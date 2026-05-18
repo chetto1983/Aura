@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -234,14 +235,106 @@ func (e *Env) fetchWikiPage(slug string) (body string, missing bool, err error) 
 	return "title: " + page.Title + "\n" + page.BodyMD, false, nil
 }
 
+func (e *Env) fetchTask(name string) (kind, status string, missing bool, err error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/tasks/" + url.PathEscape(name)
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", "", false, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", "", true, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", "", false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var task struct {
+		Kind   string `json:"kind"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+		return "", "", false, fmt.Errorf("decode task: %w", err)
+	}
+	return task.Kind, task.Status, false, nil
+}
+
+func (e *Env) cancelTask(name string) error {
+	url := strings.TrimRight(e.APIBase, "/") + "/tasks/" + url.PathEscape(name) + "/cancel"
+	req, _ := http.NewRequest(http.MethodPost, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusConflict {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return nil
+}
+
+func (e *Env) fetchUserID() (string, error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/auth/whoami"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var who struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&who); err != nil {
+		return "", fmt.Errorf("decode whoami: %w", err)
+	}
+	return strings.TrimSpace(who.UserID), nil
+}
+
 // sendChat sends a single message and returns the structured reply.
 func (e *Env) sendChat(prompt string) (ChatReply, error) {
+	return e.sendChatThread("", prompt)
+}
+
+func (e *Env) sendChatThread(threadID, prompt string) (ChatReply, error) {
 	chatURL := strings.TrimRight(e.APIBase, "/") + "/chat"
-	return sendChat(e.APIClient, chatURL, e.APIToken, prompt)
+	return sendChatWithThread(e.APIClient, chatURL, e.APIToken, prompt, threadID)
 }
 
 func sendChat(client *http.Client, baseURL, token, prompt string) (ChatReply, error) {
-	payload, _ := json.Marshal(map[string]string{"message": prompt})
+	return sendChatWithThread(client, baseURL, token, prompt, "")
+}
+
+func sendChatWithThread(client *http.Client, baseURL, token, prompt, threadID string) (ChatReply, error) {
+	var reply ChatReply
+	for attempt := 0; attempt < 2; attempt++ {
+		got, err := sendChatOnce(client, baseURL, token, prompt, threadID)
+		if err != nil {
+			return ChatReply{}, err
+		}
+		reply = got
+		if !isEmptyProviderReply(reply) {
+			return reply, nil
+		}
+		fmt.Printf("[probe_chat] retrying empty provider reply for prompt %q\n", truncate(prompt, 80))
+	}
+	return reply, nil
+}
+
+func sendChatOnce(client *http.Client, baseURL, token, prompt, threadID string) (ChatReply, error) {
+	payloadMap := map[string]string{"message": prompt}
+	if strings.TrimSpace(threadID) != "" {
+		payloadMap["thread_id"] = strings.TrimSpace(threadID)
+	}
+	payload, _ := json.Marshal(payloadMap)
 	req, err := http.NewRequest(http.MethodPost, baseURL, bytes.NewReader(payload))
 	if err != nil {
 		return ChatReply{}, fmt.Errorf("build request: %w", err)
@@ -265,4 +358,12 @@ func sendChat(client *http.Client, baseURL, token, prompt string) (ChatReply, er
 		return ChatReply{}, fmt.Errorf("decode reply: %w (raw: %s)", err, truncate(string(body), 400))
 	}
 	return reply, nil
+}
+
+func isEmptyProviderReply(reply ChatReply) bool {
+	if reply.ToolCalls != 0 || reply.Tokens != 0 || reply.LLMCalls != 1 {
+		return false
+	}
+	text := strings.TrimSpace(reply.Reply)
+	return text == "" || text == "I reached the per-turn budget without a usable result."
 }
