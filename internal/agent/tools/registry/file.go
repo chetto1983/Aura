@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/aura/aura/internal/workspace"
@@ -188,8 +189,57 @@ func (t *FileTool) Execute(ctx context.Context, args map[string]any) (string, er
 	case "patch":
 		return t.patch.Execute(ctx, args)
 	case "":
+		inferred, score, ambiguous := fileInferAction(args)
+		if !ambiguous && score > 0 {
+			slog.Default().Debug("file: action inferred from arg shape", "action", inferred)
+			switch inferred {
+			case "write":
+				return t.write.Execute(ctx, args)
+			case "read":
+				return t.read.Execute(ctx, args)
+			case "search":
+				return t.search.Execute(ctx, args)
+			case "patch":
+				return t.patch.Execute(ctx, args)
+			}
+		}
 		return "", ActionRequiredError("file", fileValidActions, args, fileActionHints, "list")
 	default:
 		return "", UnknownActionError("file", action, fileValidActions, args)
 	}
+}
+
+// fileInferAction infers the intended action from arg shape when the caller
+// omitted the "action" field. Returns score>0 and ambiguous=false for a
+// confident single-winner inference; returns ambiguous=true when args are
+// contradictory (e.g. "old" without "new"); returns score=0 when no
+// recognisable args are present.
+//
+// Priority order (most-specific first):
+//
+//	patch  — old+new both present  (score 2)
+//	write  — content present        (score 1, path is optional)
+//	search — pattern present        (score 1)
+//	read   — path present only      (score 1)
+func fileInferAction(args map[string]any) (action string, score int, ambiguous bool) {
+	has := func(k string) bool { _, ok := args[k]; return ok }
+	hasOld, hasNew := has("old"), has("new")
+
+	// partial patch (exactly one of old/new): unambiguously wrong, let caller error
+	if hasOld != hasNew {
+		return "", 0, true
+	}
+	if hasOld && hasNew {
+		return "patch", 2, false
+	}
+	if has("content") {
+		return "write", 1, false
+	}
+	if has("pattern") {
+		return "search", 1, false
+	}
+	if has("path") {
+		return "read", 1, false
+	}
+	return "", 0, false
 }

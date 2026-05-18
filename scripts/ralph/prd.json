@@ -82,7 +82,7 @@
         "Single atomic commit prefix: feat(file): action inference from arg shape (Phase-OP / US-OP05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "internal/agent/tools/registry/file.go Execute function. Action dispatch happens early."
     }
   ]
