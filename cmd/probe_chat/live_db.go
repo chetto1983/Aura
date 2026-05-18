@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -281,4 +283,138 @@ func nonEmptyStrings(values []string) []string {
 		}
 	}
 	return out
+}
+
+// hashBearerToken returns the lowercase hex SHA-256 of token, matching auth.hashToken.
+func hashBearerToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// authzDecisionsSince queries authz_decisions for deny rows for actorID since the
+// given time. Returns the row count and a preview string of the first matched row.
+func (e *Env) authzDecisionsSince(since time.Time, actorID string) (count int, preview string, err error) {
+	sinceStr := since.UTC().Format(time.RFC3339)
+	if e.dockerDBReady() {
+		var rows []struct {
+			Decision   string `json:"decision"`
+			Capability string `json:"capability"`
+			Reason     string `json:"reason"`
+			CreatedAt  string `json:"created_at"`
+		}
+		query := `SELECT decision, capability, reason, created_at FROM authz_decisions WHERE actor_id = ` +
+			sqliteQuote(actorID) +
+			` AND decision = 'deny' AND created_at >= ` + sqliteQuote(sinceStr) + ` LIMIT 5;`
+		raw, err := e.dockerSQLite(true, true, query)
+		if err != nil {
+			return 0, "", err
+		}
+		if len(raw) == 0 {
+			raw = []byte("[]")
+		}
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			return 0, "", fmt.Errorf("decode docker authz_decisions: %w", err)
+		}
+		if len(rows) == 0 {
+			return 0, "", nil
+		}
+		r := rows[0]
+		return len(rows), fmt.Sprintf("decision=%s capability=%s reason=%s created_at=%s", r.Decision, r.Capability, r.Reason, r.CreatedAt), nil
+	}
+	sqlRows, queryErr := e.DB.Query(
+		`SELECT decision, capability, reason, created_at FROM authz_decisions WHERE actor_id = ? AND decision = 'deny' AND created_at >= ? LIMIT 5`,
+		actorID, sinceStr,
+	)
+	if queryErr != nil {
+		return 0, "", queryErr
+	}
+	defer sqlRows.Close()
+	var n int
+	var firstRow string
+	for sqlRows.Next() {
+		var decision, capability, reason, createdAt string
+		if scanErr := sqlRows.Scan(&decision, &capability, &reason, &createdAt); scanErr != nil {
+			return 0, "", scanErr
+		}
+		if n == 0 {
+			firstRow = fmt.Sprintf("decision=%s capability=%s reason=%s created_at=%s", decision, capability, reason, createdAt)
+		}
+		n++
+	}
+	return n, firstRow, sqlRows.Err()
+}
+
+// seedCapabilityDenyIdentity inserts a minimal identity set (principal, channel_account,
+// actor, allowed_users, api_tokens) with NO capability_grants, so a request with the
+// issued token will be denied api.chat by identity.Store.Authorize and the deny row
+// will be recorded in authz_decisions.
+func (e *Env) seedCapabilityDenyIdentity(principalID, acctID, actorID, userID, tokenHash, now, expiresAt string) error {
+	if !e.dockerDBReady() {
+		return fmt.Errorf("web-capability-deny requires Docker Compose (AURA_PROBE_DB_DOCKER must not be 0 and docker must be running)")
+	}
+	sqlText := strings.Join([]string{
+		"BEGIN IMMEDIATE;",
+		`INSERT OR IGNORE INTO principals (id, kind, display_name, status, created_at, metadata_json) VALUES (` +
+			strings.Join([]string{
+				sqliteQuote(principalID),
+				sqliteQuote("user"),
+				sqliteQuote("Probe Deny User"),
+				sqliteQuote("active"),
+				sqliteQuote(now),
+				sqliteQuote("{}"),
+			}, ", ") + ");",
+		`INSERT OR IGNORE INTO channel_accounts (id, principal_id, provider, external_id, created_at, metadata_json) VALUES (` +
+			strings.Join([]string{
+				sqliteQuote(acctID),
+				sqliteQuote(principalID),
+				sqliteQuote("telegram"),
+				sqliteQuote(userID),
+				sqliteQuote(now),
+				sqliteQuote("{}"),
+			}, ", ") + ");",
+		`INSERT OR IGNORE INTO actors (id, principal_id, actor_type, channel_account_id, created_at) VALUES (` +
+			strings.Join([]string{
+				sqliteQuote(actorID),
+				sqliteQuote(principalID),
+				sqliteQuote("session"),
+				sqliteQuote(acctID),
+				sqliteQuote(now),
+			}, ", ") + ");",
+		`INSERT OR IGNORE INTO allowed_users (user_id, source, created_at) VALUES (` +
+			strings.Join([]string{
+				sqliteQuote(userID),
+				sqliteQuote("e2e_bootstrap"),
+				sqliteQuote(now),
+			}, ", ") + ");",
+		`INSERT OR IGNORE INTO api_tokens (token_hash, user_id, issued_at, expires_at) VALUES (` +
+			strings.Join([]string{
+				sqliteQuote(tokenHash),
+				sqliteQuote(userID),
+				sqliteQuote(now),
+				sqliteQuote(expiresAt),
+			}, ", ") + ");",
+		"COMMIT;",
+	}, "\n")
+	_, err := e.dockerSQLite(false, false, sqlText)
+	return err
+}
+
+// cleanupCapabilityDenyIdentity removes all rows seeded by seedCapabilityDenyIdentity
+// in FK-safe order (authz_decisions → api_tokens → actors → channel_accounts →
+// principals → allowed_users).
+func (e *Env) cleanupCapabilityDenyIdentity(actorID, tokenHash, userID, principalID, acctID string) {
+	if !e.dockerDBReady() {
+		return
+	}
+	sqlText := strings.Join([]string{
+		"BEGIN IMMEDIATE;",
+		"DELETE FROM authz_decisions WHERE actor_id = " + sqliteQuote(actorID) + ";",
+		"DELETE FROM api_tokens WHERE token_hash = " + sqliteQuote(tokenHash) + ";",
+		"DELETE FROM actors WHERE id = " + sqliteQuote(actorID) + ";",
+		"DELETE FROM channel_accounts WHERE id = " + sqliteQuote(acctID) + ";",
+		"DELETE FROM principals WHERE id = " + sqliteQuote(principalID) + ";",
+		"DELETE FROM allowed_users WHERE user_id = " + sqliteQuote(userID) + ";",
+		"COMMIT;",
+	}, "\n")
+	_, _ = e.dockerSQLite(false, false, sqlText)
 }

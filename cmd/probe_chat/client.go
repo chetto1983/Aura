@@ -385,6 +385,28 @@ func sendChatOnce(client *http.Client, baseURL, token, prompt, threadID string) 
 	return reply, nil
 }
 
+// sendChatDenyCheck posts to /api/chat with an arbitrary bearer token and
+// returns whether the server responded with HTTP 403. Used by the
+// web-capability-deny probe to verify that an actor without api.chat grants
+// is refused before the agent loop runs.
+func (e *Env) sendChatDenyCheck(token, message string) (forbidden bool, body string, err error) {
+	chatURL := strings.TrimRight(e.APIBase, "/") + "/chat"
+	payload, _ := json.Marshal(map[string]string{"message": message})
+	req, reqErr := http.NewRequest(http.MethodPost, chatURL, bytes.NewReader(payload))
+	if reqErr != nil {
+		return false, "", fmt.Errorf("build request: %w", reqErr)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, respErr := e.APIClient.Do(req)
+	if respErr != nil {
+		return false, "", fmt.Errorf("POST %s: %w", chatURL, respErr)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode == http.StatusForbidden, string(raw), nil
+}
+
 func isEmptyProviderReply(reply ChatReply) bool {
 	if reply.ToolCalls != 0 || reply.Tokens != 0 || reply.LLMCalls != 1 {
 		return false

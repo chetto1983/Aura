@@ -105,7 +105,7 @@
         "Single atomic commit prefix: test(qa): probe web capability deny E2E (Phase-QA2 / US-QA-COV06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Pragmatic approach: don't mint a separate token — use the existing bearer and target a capability known to be ungranted. Read internal/identity/ to find an existing un-granted capability, or check capability_grants table for what THIS user_id has. The probe doesn't have to test ALL deny paths — just one concrete deny."
     },
     {

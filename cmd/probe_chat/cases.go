@@ -1100,6 +1100,68 @@ func allCases(now time.Time) []Case {
 				}
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV06 — web-capability-deny: verifies that an actor
+		// seeded WITHOUT api.chat capability_grants receives HTTP 403 from /api/chat
+		// and that the deny decision is recorded in authz_decisions.
+		// Ground truth: HTTP status code + authz_decisions DB row. Never r.Reply.
+		// Requires Docker Compose (dockerDBReady); infra-skips otherwise.
+		{
+			Name:     "web-capability-deny",
+			Category: "channels-web",
+			Prompt:   "Ok.",
+			Setup: func(env *Env) error {
+				if !env.dockerDBReady() {
+					return fmt.Errorf("web-capability-deny requires Docker Compose (AURA_PROBE_DB_DOCKER must not be 0) — infra-skip US-QA-COV06-INFRA")
+				}
+				now := time.Now().UTC()
+				capDenyBefore = now
+				ts := now.Format("20060102150405")
+				capDenyUserID = "99900" + ts
+				capDenyPrincipalID = "probe-deny-principal-" + ts
+				capDenyAcctID = "probe-deny-acct-" + ts
+				capDenyActorID = "actor:telegram:session:" + capDenyUserID
+				capDenyToken = "probe-deny-token-" + ts
+				capDenyTokenHash = hashBearerToken(capDenyToken)
+				nowStr := now.Format(time.RFC3339Nano)
+				expiresAt := now.Add(10 * time.Minute).Format(time.RFC3339Nano)
+				return env.seedCapabilityDenyIdentity(capDenyPrincipalID, capDenyAcctID, capDenyActorID, capDenyUserID, capDenyTokenHash, nowStr, expiresAt)
+			},
+			Verify: func(_ ChatReply, env *Env) []string {
+				var miss []string
+				// HTTP ground truth: the deny token must receive 403.
+				forbidden, body, err := env.sendChatDenyCheck(capDenyToken, "test")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("sendChatDenyCheck: %v", err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=web-capability-deny] HTTP response body preview: %s\n", truncate(body, 200))
+				if !forbidden {
+					miss = append(miss, fmt.Sprintf("expected HTTP 403 for deny token, got non-403 (body: %s)", truncate(body, 200)))
+					return miss
+				}
+				// DB ground truth: authz_decisions must contain a deny row for this actor.
+				count, preview, err := env.authzDecisionsSince(capDenyBefore, capDenyActorID)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("authzDecisionsSince: %v", err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=web-capability-deny] authz_decisions deny count=%d preview=%q\n", count, preview)
+				if count == 0 {
+					miss = append(miss, fmt.Sprintf("DB ground truth: no deny row in authz_decisions for actor_id=%q since %s", capDenyActorID, capDenyBefore.Format(time.RFC3339)))
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				env.cleanupCapabilityDenyIdentity(capDenyActorID, capDenyTokenHash, capDenyUserID, capDenyPrincipalID, capDenyAcctID)
+				capDenyUserID = ""
+				capDenyPrincipalID = ""
+				capDenyAcctID = ""
+				capDenyActorID = ""
+				capDenyToken = ""
+				capDenyTokenHash = ""
+			},
+		},
 	}
 }
 
@@ -1117,6 +1179,14 @@ var (
 	ocrProbeBefore         time.Time
 	ingestProbeID          string
 	ingestExpectedSlug     string
+
+	capDenyUserID      string
+	capDenyActorID     string
+	capDenyToken       string
+	capDenyTokenHash   string
+	capDenyPrincipalID string
+	capDenyAcctID      string
+	capDenyBefore      time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from
