@@ -17,7 +17,7 @@
         "Single atomic commit prefix: chore(lint): delete 2 unused funcs in registry/source.go (Phase-QA1 / US-QA-FIX01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest, lowest-risk story — opens Phase-QA1 cleanly. If either 'unused' function turns out to be used reflectively (rare in Go but possible via init() side-effects), leave it and document the false positive in the commit message + add a `//nolint:unused` comment with rationale instead of deleting."
     },
     {

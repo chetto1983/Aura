@@ -1,7 +1,7 @@
 // Package tools — source.go holds the shared helpers used by every source-*
 // tool: byte caps, the bounded file reader, the formatters for metadata /
-// list / lint output, and readSourceMarkdown which falls back from ocr.md to
-// the stored original. Each LLM tool lives in its own file:
+// list / lint output, and the source markdown reader that falls back from
+// ocr.md to the stored original. Each LLM tool lives in its own file:
 //
 //   - source_store.go  — store_source
 //   - source_ocr.go    — ocr_source
@@ -61,12 +61,6 @@ func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
 	return body, nil
 }
 
-// readSourceMarkdown returns ocr.md when present, else falls back to the
-// stored original (text/url kinds) so the LLM can read non-PDF sources too.
-func readSourceMarkdown(store source.FileResolver, src *source.Source, maxBytes int) (string, error) {
-	return readSourceMarkdownRange(store, src, maxBytes, 0, 0, false)
-}
-
 func readSourceMarkdownRange(store source.FileResolver, src *source.Source, maxBytes int, byteStart, byteEnd int, hasRange bool) (string, error) {
 	raw, err := readSourceMarkdownBytes(store, src)
 	if err != nil {
@@ -119,14 +113,6 @@ func isReadableSandboxArtifact(src *source.Source) bool {
 	default:
 		return false
 	}
-}
-
-func readOriginalContent(store source.FileResolver, id, name string, maxBytes int) (string, error) {
-	raw, err := readOriginalContentBytes(store, id, name)
-	if err != nil {
-		return "", err
-	}
-	return truncateForToolContext(string(raw), maxBytes), nil
 }
 
 func readOriginalContentBytes(store source.FileResolver, id, name string) ([]byte, error) {
