@@ -137,7 +137,7 @@
         "Single atomic commit prefix: test(qa): embedding sidecar down graceful degradation (Phase-QA3 / US-QA-FIX14)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "embed_http.go has the connection logic. Mock the http.Client to return connection-refused."
     },
     {
