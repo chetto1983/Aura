@@ -88,7 +88,7 @@
         "Single atomic commit prefix: test(qa): probe ingest_source E2E (Phase-QA2 / US-QA-COV05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "ingest_source uses Aura's LLM client multiple times (extract metadata, generate summary, ingest body). High variance — allow 60s timeout per probe and accept any wiki page that has the source text as body content."
     },
     {

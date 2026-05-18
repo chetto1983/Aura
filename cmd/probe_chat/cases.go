@@ -952,6 +952,83 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
+		// Phase-QA2 / US-QA-COV05 — ingest_source composite pipeline E2E.
+		// Uploads a small markdown source (→extract_complete), asks Aura to call
+		// ingest_source on it, then verifies the generated wiki summary page exists
+		// at the expected deterministic slug via the API.
+		// Ground truth: fetchWikiPage returns 200 + body contains the source ID.
+		{
+			Name:     "tool-ingest-source",
+			Category: "tools-source",
+			Setup: func(env *Env) error {
+				content := []byte(fmt.Sprintf(
+					"# Probe Ingest Source %s\n\nSentinel: INGEST-PROBE-%s\n",
+					stamp, stamp,
+				))
+				id, status, err := env.uploadSourceFile(
+					"probe-ingest-"+stamp+".md",
+					"text/markdown",
+					content,
+				)
+				if err != nil {
+					return fmt.Errorf("upload ingest probe source: %w", err)
+				}
+				if status != "extract_complete" {
+					return fmt.Errorf("upload status = %s, want extract_complete (markitdown may be down)", status)
+				}
+				ingestProbeID = id
+				// Slug is deterministic: wiki.Slug("Source: probe-ingest-{stamp}")
+				// = "source-probe-ingest-{stamp}". The colon is stripped (not in a-z/0-9/-),
+				// spaces become dashes, all remaining chars are ASCII alpha/digit/dash.
+				ingestExpectedSlug = "source-probe-ingest-" + stamp
+				return nil
+			},
+			PromptFn: func() string {
+				return "Usa ingest_source sul source_id " + ingestProbeID +
+					" per creare una pagina wiki. Conferma con lo slug della pagina creata."
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected >= 1 tool call (ingest_source), got 0")
+				}
+				// Ground truth: the wiki page must exist at the expected slug and
+				// must contain the source ID in its body (the ingest pipeline writes
+				// "Source ID: `src_xxx`" into the metadata block — not just the LLM reply).
+				body, missing, err := env.fetchWikiPage(ingestExpectedSlug)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("wiki page fetch %q: %v", ingestExpectedSlug, err))
+					return miss
+				}
+				if missing {
+					miss = append(miss, fmt.Sprintf("wiki page %q not found (404) — ingest_source did not create the page or slug derivation changed", ingestExpectedSlug))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=tool-ingest-source] wiki page %q preview: %s\n",
+					ingestExpectedSlug, truncate(body, 200))
+				if !strings.Contains(body, ingestProbeID) {
+					miss = append(miss, fmt.Sprintf("wiki page %q does not contain source ID %q (expected in ingest metadata block)", ingestExpectedSlug, ingestProbeID))
+				}
+				// Reply must mention a slug or wiki-link so the LLM communicated the outcome.
+				replyLower := strings.ToLower(r.Reply)
+				slugHinted := strings.Contains(replyLower, ingestExpectedSlug) ||
+					strings.Contains(r.Reply, "[[") ||
+					strings.Contains(replyLower, "source-probe-ingest")
+				if !slugHinted {
+					miss = append(miss, fmt.Sprintf("reply does not mention the wiki slug %q (reply: %s)", ingestExpectedSlug, truncate(r.Reply, 200)))
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				if ingestProbeID != "" {
+					_ = env.deleteSource(ingestProbeID)
+					ingestProbeID = ""
+				}
+				// Wiki page is timestamped so runs don't collide; cleanup omitted
+				// per same policy as wiki-page-create case.
+			},
+		},
+
 		// Phase-QA2 / US-QA-COV04 — ocr_source external-API E2E (Mistral OCR).
 		// Uploads a synthetic one-page PDF with a known probe stamp, asks Aura
 		// to OCR it via ocr_source, then verifies the extracted text appears in
@@ -1038,6 +1115,8 @@ var (
 	subagentDispatchBefore time.Time
 	ocrProbeID             string
 	ocrProbeBefore         time.Time
+	ingestProbeID          string
+	ingestExpectedSlug     string
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from
