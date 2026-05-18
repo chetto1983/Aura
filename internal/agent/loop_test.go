@@ -596,6 +596,31 @@ func TestRunLoopOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 	}
 }
 
+func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "x"}}}}},
+		{Response: llm.Response{Content: ""}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "tool found something useful")
+		return ExecutionSummary{LastResult: "tool found something useful"}
+	}), state, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if strings.TrimSpace(result.Text) == "" {
+		t.Fatalf("result.Text is empty — expected graceful fallback to last tool result, got empty")
+	}
+	if strings.Contains(result.Text, "Sorry, I couldn't process") {
+		t.Fatalf("result.Text contains ugly fallback string: %q", result.Text)
+	}
+	if result.Text != "tool found something useful" {
+		t.Fatalf("result.Text = %q, want last tool result", result.Text)
+	}
+}
+
 func TestRunLoopOnToolStartSkippedForDedupedCalls(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
