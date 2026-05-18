@@ -70,7 +70,7 @@
         "Single atomic commit prefix: test(qa): probe ocr_source E2E (Phase-QA2 / US-QA-COV04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "MISTRAL_API_KEY may not be set in current Aura env → ocr_source returns capability-disabled error → test should fail with a clear miss message. If MISTRAL_API_KEY IS set but Mistral API is down/slow, classify the failure as FLAKE-CANDIDATE not real bug."
     },
     {

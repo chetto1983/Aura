@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/files"
 	"github.com/aura/aura/internal/probe/docinspect"
 )
 
@@ -950,6 +951,78 @@ func allCases(now time.Time) []Case {
 				return miss
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV04 — ocr_source external-API E2E (Mistral OCR).
+		// Uploads a synthetic one-page PDF with a known probe stamp, asks Aura
+		// to OCR it via ocr_source, then verifies the extracted text appears in
+		// the ocr.md sidecar fetched from the API (ground truth, not reply text).
+		//
+		// INFRA NOTE: requires MISTRAL_API_KEY set in the container. If OCR is
+		// disabled, the tool call fires and returns an error; the probe FAILS with
+		// a clear miss message naming the missing capability — it does NOT skip,
+		// because the story explicitly wants a loud failure to surface the gap.
+		{
+			Name:     "tool-ocr-source",
+			Category: "tools-source",
+			Setup: func(env *Env) error {
+				// Build a minimal one-page PDF with a known probe stamp so we can
+				// assert that Mistral OCR returned the correct text content.
+				ocrStamp := "PROBE-OCR-" + stamp
+				spec := files.PDFSpec{
+					Title: "OCR Probe Sample",
+					Blocks: []files.PDFBlock{
+						{Kind: "paragraph", Text: ocrStamp},
+						{Kind: "paragraph", Text: "Second paragraph AURA-OCR-TEST"},
+					},
+				}
+				pdfBytes, _, err := files.BuildPDF(spec)
+				if err != nil {
+					return fmt.Errorf("build probe pdf: %w", err)
+				}
+				id, _, err := env.uploadSourceFile("probe-ocr-"+stamp+".pdf", "application/pdf", pdfBytes)
+				if err != nil {
+					return fmt.Errorf("upload probe pdf: %w", err)
+				}
+				ocrProbeID = id
+				ocrProbeBefore = time.Now()
+				return nil
+			},
+			// PromptFn is evaluated after Setup, so ocrProbeID is already set.
+			PromptFn: func() string {
+				return "Usa ocr_source sul source_id " + ocrProbeID + ". Mostrami una riga di testo trovata."
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected >= 1 tool call (ocr_source), got 0 — check if MISTRAL_API_KEY is set and ocr_source tool is registered")
+				}
+				// Ground truth: fetch the ocr.md sidecar via the sources markdown
+				// API. For PDFs, /api/sources/{id}/markdown returns ocr.md content.
+				md, err := env.fetchSourceMarkdown(ocrProbeID)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("fetch ocr.md for %s: %v — check if MISTRAL_API_KEY is set in container env", ocrProbeID, err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=tool-ocr-source] ocr.md preview (first 200 chars): %s\n", truncate(md, 200))
+				if len(strings.TrimSpace(md)) < 10 {
+					miss = append(miss, fmt.Sprintf("ocr.md for %s is empty or too short (%d chars) — Mistral OCR may be disabled or returned no content", ocrProbeID, len(md)))
+					return miss
+				}
+				// The PDF contains "PROBE-OCR-{stamp}"; after OCR it should appear
+				// in ocr.md. Mistral typically preserves text content faithfully.
+				ocrStamp := "PROBE-OCR-" + stamp
+				if !strings.Contains(md, ocrStamp) {
+					miss = append(miss, fmt.Sprintf("ocr.md does not contain expected probe stamp %q (got: %q)", ocrStamp, truncate(md, 300)))
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				if ocrProbeID != "" {
+					_ = env.deleteSource(ocrProbeID)
+					ocrProbeID = ""
+				}
+			},
+		},
 	}
 }
 
@@ -963,6 +1036,8 @@ var (
 	execCodeBefore         time.Time
 	execShellBefore        time.Time
 	subagentDispatchBefore time.Time
+	ocrProbeID             string
+	ocrProbeBefore         time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from

@@ -22,11 +22,15 @@ func runAll(client *http.Client, baseURL, token string, env *Env, cases []Case) 
 				continue
 			}
 		}
-		reply, err := sendChatWithThread(client, baseURL, token, c.Prompt, c.ThreadID)
+		prompt := c.Prompt
+		if c.PromptFn != nil {
+			prompt = c.PromptFn()
+		}
+		reply, err := sendChatWithThread(client, baseURL, token, prompt, c.ThreadID)
 		if err != nil {
 			out = append(out, Result{
 				Name:         c.Name,
-				Prompt:       c.Prompt,
+				Prompt:       prompt,
 				TransportErr: err.Error(),
 			})
 			if c.Cleanup != nil {
@@ -37,7 +41,7 @@ func runAll(client *http.Client, baseURL, token string, env *Env, cases []Case) 
 		mismatches := c.Verify(reply, env)
 		out = append(out, Result{
 			Name:       c.Name,
-			Prompt:     c.Prompt,
+			Prompt:     prompt,
 			Reply:      reply.Reply,
 			ToolCalls:  reply.ToolCalls,
 			LLMCalls:   reply.LLMCalls,
