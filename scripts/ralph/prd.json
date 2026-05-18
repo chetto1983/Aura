@@ -52,7 +52,7 @@
         "Single atomic commit prefix: test(qa): probe subagent_dispatch E2E (Phase-QA2 / US-QA-COV03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "If AURABOT_ENABLED=false in current container, the swarm tools won't be registered → ToolCalls=0 expected → test should fail loud. If swarm IS enabled but subagent times out, log it and mark FLAKE-CANDIDATE in bug log instead of stalling."
     },
     {

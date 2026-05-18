@@ -913,6 +913,43 @@ func allCases(now time.Time) []Case {
 				return miss
 			},
 		},
+
+		// Phase-QA2 / US-QA-COV03 — subagent_dispatch E2E (swarm delegation).
+		// Asks Aura to delegate a simple letter-count task to a subagent via
+		// subagent_dispatch and verifies the correct answer (4) is returned.
+		// Fails loud when AURABOT_ENABLED=false (tool not registered → ToolCalls=0).
+		// Ground truth: tool_attempts DB row for subagent_dispatch, not reply text alone.
+		{
+			Name:     "tool-subagent-dispatch",
+			Category: "tools-swarm",
+			Prompt:   "Usa lo strumento subagent_dispatch per delegare il seguente calcolo a un subagent: quante lettere ha la parola 'Aura'? Raccogli la risposta e rispondimi con il numero (4) citando che lo hai delegato a un subagent.",
+			Setup: func(_ *Env) error {
+				subagentDispatchBefore = time.Now()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected >= 1 tool call (subagent_dispatch), got 0 — check AURABOT_ENABLED=true in container env")
+				}
+				if !strings.Contains(r.Reply, "4") {
+					miss = append(miss, fmt.Sprintf("reply missing expected letter count '4' (got: %q)", truncate(r.Reply, 200)))
+				}
+				// Ground truth: DB must have a successful tool_attempts row for subagent_dispatch.
+				counts, err := env.toolAttemptsSince(subagentDispatchBefore, "subagent_dispatch")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
+					return miss
+				}
+				count := counts["subagent_dispatch"]
+				fmt.Fprintf(os.Stderr, "[case=tool-subagent-dispatch] tool_attempts subagent_dispatch since %s: count=%d\n",
+					subagentDispatchBefore.Format(time.RFC3339), count)
+				if count == 0 {
+					miss = append(miss, "DB ground truth: no successful tool_attempts row for subagent_dispatch since probe start")
+				}
+				return miss
+			},
+		},
 	}
 }
 
@@ -921,10 +958,11 @@ func allCases(now time.Time) []Case {
 // Setup and reads it back in Verify. Module-level scope is fine because
 // runAll processes cases sequentially (loop in runAll, no parallelism).
 var (
-	htmlProbeID     string
-	zipProbeID      string
-	execCodeBefore  time.Time
-	execShellBefore time.Time
+	htmlProbeID            string
+	zipProbeID             string
+	execCodeBefore         time.Time
+	execShellBefore        time.Time
+	subagentDispatchBefore time.Time
 )
 
 // markitdownProbeCase builds a Case that uploads a fixture file from
