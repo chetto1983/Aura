@@ -104,7 +104,7 @@ type SettingsTestRequest struct {
 var settingsCatalog = []SettingItem{
 	{Key: config.KeyTimezone, Group: "runtime", Kind: "text", Label: "Scheduler timezone", Hint: "IANA name like Europe/Rome"},
 
-	{Key: config.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)"},
+	{Key: config.KeyLLMBaseURL, Group: "provider", Kind: "url", Label: "LLM base URL", Hint: "OpenAI-compatible endpoint (e.g. https://api.openai.com/v1)", RestartRequired: true},
 	{Key: config.KeyLLMModel, Group: "provider", Kind: "text", Label: "LLM model", Hint: "Model name as the provider expects it"},
 	{Key: config.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
 	{Key: config.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
@@ -136,12 +136,12 @@ var settingsCatalog = []SettingItem{
 	{Key: config.KeyQdrantCollection, Value: "aura_memory_v1", Group: "storage", Kind: "text", Label: "Qdrant collection"},
 	{Key: config.KeyQdrantAPIKey, Group: "storage", Kind: "text", IsSecret: true, Label: "Qdrant API key"},
 
-	{Key: config.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL"},
+	{Key: config.KeyEmbeddingBaseURL, Group: "embeddings", Kind: "url", Label: "Embeddings base URL", RestartRequired: true},
 	{Key: config.KeyEmbeddingModel, Group: "embeddings", Kind: "text", Label: "Embeddings model"},
 	{Key: config.KeyEmbeddingAPIKey, Group: "embeddings", Kind: "text", IsSecret: true, Label: "Embeddings API key"},
 	{Key: config.KeyEmbeddingOutputDim, Group: "embeddings", Kind: "int", Min: floatPtr(0), Max: floatPtr(768), Label: "Embeddings output dim (MRL)", Hint: "0 = native dim. For embeddinggemma-300m, 256 is Aura's locked production target (MRL truncation client-side: slice + L2 renorm). Changing this requires reindexing all Qdrant collections."},
 
-	{Key: config.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key"},
+	{Key: config.KeyMistralAPIKey, Group: "ocr", Kind: "text", IsSecret: true, Label: "Mistral OCR API key", RestartRequired: true},
 }
 
 func floatPtr(v float64) *float64 { return &v }
@@ -190,7 +190,12 @@ func handleSettingsList(deps Deps) http.HandlerFunc {
 			if it.Value == "" && activeValue != "" {
 				it.Value = activeValue
 			}
-			it.RestartRequired = activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)
+			// Dynamic: running value differs from what's saved.
+			// Static: boot-time-only key (meta.RestartRequired) that now has a value
+			// but the process started without one (activeValue == ""). This covers the
+			// first-time-save path for secrets where cfg field was empty at boot.
+			it.RestartRequired = (activeValue != "" && normalizeSettingValue(it.Value) != normalizeSettingValue(activeValue)) ||
+				(meta.RestartRequired && it.Value != "" && activeValue == "")
 			it.ActiveValue = activeValue
 			redactSecretSetting(&it)
 			items = append(items, it)

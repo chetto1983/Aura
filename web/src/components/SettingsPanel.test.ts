@@ -41,4 +41,15 @@ describe('computeSourceBadge', () => {
     const badge = computeSourceBadge({ ...base, source: 'env' as const, is_secret: false, active_value: '' }, false, t);
     expect(badge.label).toBe('settings.badge.env');
   });
+
+  it('returns "restart" badge when restart_required is true (not dirty)', () => {
+    const badge = computeSourceBadge({ ...base, restart_required: true, source: 'db', active_value: 'old' }, false, t);
+    expect(badge.label).toBe('settings.badge.restart');
+  });
+
+  it('returns "edited" badge (not restart) when both dirty and restart_required', () => {
+    // dirty takes priority over restart_required in computeSourceBadge
+    const badge = computeSourceBadge({ ...base, restart_required: true, source: 'db', active_value: 'old' }, true, t);
+    expect(badge.label).toBe('settings.badge.edited');
+  });
 });

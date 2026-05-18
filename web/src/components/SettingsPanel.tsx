@@ -315,6 +315,7 @@ function SettingRow({
   const activeHint = item.restart_required
     ? t('settings.source.activeHint', { value: item.active_value || t('settings.source.emptyValue') })
     : '';
+  const restartHint = item.restart_required && dirty ? t('settings.hint.restartRequired') : '';
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr_auto] gap-x-5 gap-y-1.5 md:items-center px-5 py-3.5">
       <label className="min-w-0" htmlFor={item.key}>
@@ -328,6 +329,7 @@ function SettingRow({
         {hint && <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">{hint}</div>}
         {sourceHint && <div className="text-[12px] text-muted-foreground/80 mt-1 leading-snug">{sourceHint}</div>}
         {activeHint && <div className="text-[12px] text-orange-600 dark:text-orange-300 mt-1 leading-snug">{activeHint}</div>}
+        {restartHint && <div className="text-[12px] text-orange-600 dark:text-orange-300 mt-1 leading-snug">{restartHint}</div>}
       </label>
       <div className="flex gap-1.5 min-w-0 items-center">
         <Control

@@ -137,6 +137,7 @@
   "settings.hint.storage": "Target Garage S3 opzionale per backup manuali.",
   "settings.hint.embeddings": "Opzionale. Alimenta la ricerca wiki. Il tier gratuito Mistral è sufficiente per uso personale.",
   "settings.hint.ocr": "Opzionale. Permette al bot di elaborare PDF inviati via Telegram.",
+  "settings.hint.restartRequired": "Riavvia il container per applicare questa modifica.",
   "settings.hint.budget": "Limiti di spesa e dimensionamento conversazioni. I valori predefiniti sono conservativi.",
   "settings.hint.aurabot": "Agenti paralleli in background. Salva le modifiche qui, poi riavvia Aura; non serve modificare .env.",
   "settings.hint.agent": "Versione prompt, limiti del loop e accesso ai file workspace.",

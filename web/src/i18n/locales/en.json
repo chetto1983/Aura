@@ -137,6 +137,7 @@
   "settings.hint.storage": "Optional Garage S3 export target for manual backups.",
   "settings.hint.embeddings": "Optional. Powers wiki search. Mistral free tier is enough for personal use.",
   "settings.hint.ocr": "Optional. Lets the bot ingest PDFs you send through Telegram.",
+  "settings.hint.restartRequired": "Restart container to apply this change.",
   "settings.hint.budget": "Spend caps and conversation sizing. Defaults are conservative.",
   "settings.hint.aurabot": "Parallel background agents. Save overrides here, then restart Aura; no .env edit needed.",
   "settings.hint.agent": "Prompt versioning, loop limits, and workspace tool access.",
