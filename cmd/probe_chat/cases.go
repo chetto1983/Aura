@@ -740,16 +740,24 @@ func allCases(now time.Time) []Case {
 					miss = append(miss, fmt.Sprintf("turn1: expected agent_note tool call, got 0 (reply: %s)", truncate(r.Reply, 200)))
 				}
 
-				// DB ground truth: note row exists for conversation_id='chat-cli'.
-				var noteContent string
+				// DB ground truth: the most recent agent_notes row (updated in
+				// the last 2 min) must contain the three keywords. We do NOT
+				// hardcode the conversation_id because the web channel binds
+				// conversation_id to the bearer's user_id (cmd/aura/web_chat.go:401),
+				// which varies per operator. The "updated in last 2 min"
+				// constraint scopes ground truth to this probe run.
+				var noteContent, convID string
 				dbErr := env.DB.QueryRow(
-					`SELECT content FROM agent_notes WHERE conversation_id = 'chat-cli'`,
-				).Scan(&noteContent)
+					`SELECT conversation_id, content FROM agent_notes
+					 WHERE updated_at >= unixepoch('now', '-2 minutes')
+					 ORDER BY updated_at DESC LIMIT 1`,
+				).Scan(&convID, &noteContent)
 				if dbErr == sql.ErrNoRows {
-					miss = append(miss, "DB: agent_notes row missing after set (conversation_id='chat-cli')")
+					miss = append(miss, "DB: no agent_notes row written in the last 2 minutes (set may have failed silently)")
 				} else if dbErr != nil {
 					miss = append(miss, fmt.Sprintf("DB: agent_notes query error: %v", dbErr))
 				} else {
+					fmt.Fprintf(os.Stderr, "[case=agent-note-roundtrip] DB row preview: conversation_id=%q content=%q\n", convID, truncate(noteContent, 200))
 					for _, kw := range []string{"verifica x", "verifica y", "verifica z"} {
 						if !strings.Contains(strings.ToLower(noteContent), kw) {
 							miss = append(miss, fmt.Sprintf("DB: note content missing %q (got: %q)", kw, truncate(noteContent, 200)))
@@ -782,19 +790,26 @@ func allCases(now time.Time) []Case {
 					miss = append(miss, fmt.Sprintf("turn3: expected agent_note clear call, got 0 (reply: %s)", truncate(r3.Reply, 200)))
 				}
 
-				// DB ground truth after clear: row must be gone.
-				var count int
-				_ = env.DB.QueryRow(
-					`SELECT count(*) FROM agent_notes WHERE conversation_id = 'chat-cli'`,
-				).Scan(&count)
-				if count != 0 {
-					miss = append(miss, fmt.Sprintf("DB: agent_notes row still exists after clear (count=%d)", count))
+				// DB ground truth after clear: the conversation we wrote to
+				// in turn 1 must no longer have a row (either deleted, or
+				// content emptied). We use the same convID captured above.
+				if convID != "" {
+					var count int
+					_ = env.DB.QueryRow(
+						`SELECT count(*) FROM agent_notes WHERE conversation_id = ? AND content != ''`,
+						convID,
+					).Scan(&count)
+					if count != 0 {
+						miss = append(miss, fmt.Sprintf("DB: agent_notes row still has content after clear (conversation_id=%q, count=%d)", convID, count))
+					}
 				}
 				return miss
 			},
 			Cleanup: func(env *Env) {
-				// Belt-and-suspenders: remove any leftover note if the test failed mid-way.
-				_, _ = env.DB.Exec(`DELETE FROM agent_notes WHERE conversation_id = 'chat-cli'`)
+				// Belt-and-suspenders: remove any leftover note written in
+				// the last 5 minutes (scoped to this run's window, not by
+				// hardcoded conversation_id which varies per operator).
+				_, _ = env.DB.Exec(`DELETE FROM agent_notes WHERE updated_at >= unixepoch('now', '-5 minutes')`)
 			},
 		},
 	}
