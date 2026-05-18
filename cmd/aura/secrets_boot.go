@@ -26,4 +26,5 @@ func applySecretsToConfig(ctx context.Context, store secrets.Store, cfg *config.
 	override(secrets.KeyGarageS3AccessKey, &cfg.GarageS3AccessKey)
 	override(secrets.KeyGarageS3SecretKey, &cfg.GarageS3SecretKey)
 	override(secrets.KeyQdrantAPIKey, &cfg.QdrantAPIKey)
+	override(secrets.KeyMistralAPIKey, &cfg.MistralAPIKey)
 }

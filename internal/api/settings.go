@@ -16,8 +16,6 @@ import (
 // written to the settings table) to its canonical secrets-table key (lowercase)
 // when the boot loader expects the value from the secrets table. The keys that
 // applySecretsToConfig (cmd/aura/secrets_boot.go) overrides are listed here.
-// MistralAPIKey is IsSecret=true for UI redaction only and stays single-table
-// in settings.
 var secretRouteForCatalogKey = map[string]string{
 	config.KeyTelegramToken:     secrets.KeyTelegramToken,
 	config.KeyLLMAPIKey:         secrets.KeyLLMAPIKey,
@@ -25,6 +23,7 @@ var secretRouteForCatalogKey = map[string]string{
 	config.KeyGarageS3AccessKey: secrets.KeyGarageS3AccessKey,
 	config.KeyGarageS3SecretKey: secrets.KeyGarageS3SecretKey,
 	config.KeyQdrantAPIKey:      secrets.KeyQdrantAPIKey,
+	config.KeyMistralAPIKey:     secrets.KeyMistralAPIKey,
 }
 
 // routeToSecretsStore reports whether a dashboard catalog key should read/write

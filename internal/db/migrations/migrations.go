@@ -33,6 +33,7 @@ var registered = []Migration{
 	{Version: 15, Name: "add_agent_notes", Up: addAgentNotes},
 	{Version: 16, Name: "add_proposed_updates_actor_id", Up: addProposedUpdatesActorID},
 	{Version: 17, Name: "add_compact_memory_source_span_columns", Up: addCompactMemorySourceSpanColumns},
+	{Version: 18, Name: "migrate_mistral_api_key_to_secrets", Up: migrateMistralAPIKeyToSecrets},
 }
 
 type columnDef struct {
@@ -1253,6 +1254,28 @@ func addCompactMemorySourceSpanColumns(ctx context.Context, tx *sql.Tx) error {
 		{Name: "byte_start", SQL: "INTEGER NOT NULL DEFAULT 0"},
 		{Name: "byte_end", SQL: "INTEGER NOT NULL DEFAULT 0"},
 	})
+}
+
+func migrateMistralAPIKeyToSecrets(ctx context.Context, tx *sql.Tx) error {
+	var plaintext string
+	err := tx.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'MISTRAL_API_KEY'`,
+	).Scan(&plaintext)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("migrations: read mistral setting: %w", err)
+	}
+	if plaintext != "" {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO secrets (key, value, updated_at) VALUES (?, ?, ?)`,
+			"mistral_api_key", plaintext, time.Now().UTC().Format(time.RFC3339Nano),
+		); err != nil {
+			return fmt.Errorf("migrations: insert mistral secret: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = 'MISTRAL_API_KEY'`); err != nil {
+		return fmt.Errorf("migrations: clear mistral setting: %w", err)
+	}
+	return nil
 }
 
 func parseStoredTime(raw string) (time.Time, error) {

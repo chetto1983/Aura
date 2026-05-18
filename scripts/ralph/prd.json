@@ -17,7 +17,7 @@
         "Single atomic commit prefix: fix(api): route MISTRAL_API_KEY through secrets store + migrate plaintext (Phase-QA1.5 / US-QA-FIX06)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Match existing constants pattern in internal/secrets/keys.go. Migration: next available numeric prefix in internal/db/migrations/."
     },
     {

@@ -574,8 +574,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 17 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 || first[11] != 12 || first[12] != 13 || first[13] != 14 || first[14] != 15 || first[15] != 16 || first[16] != 17 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17]", first)
+	if len(first) != 18 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 || first[11] != 12 || first[12] != 13 || first[13] != 14 || first[14] != 15 || first[15] != 16 || first[16] != 17 || first[17] != 18 {
+		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18]", first)
 	}
 }
 
@@ -1118,4 +1118,64 @@ func TestValidateRegisteredRejectsInvalidLists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMigrateMistralAPIKeyToSecrets(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	// Minimal schema: settings + secrets tables (no full migration run needed).
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS secrets (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`); err != nil {
+		t.Fatalf("create minimal schema: %v", err)
+	}
+
+	// Pre-state: plaintext MISTRAL_API_KEY in settings.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES ('MISTRAL_API_KEY', 'sk-testmistral', '2026-05-18T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed MISTRAL_API_KEY: %v", err)
+	}
+
+	// Run migration directly.
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	if err := migrateMistralAPIKeyToSecrets(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("migrateMistralAPIKeyToSecrets: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Post-state: secrets has mistral_api_key, settings does not.
+	assertScalar(t, db, `SELECT value FROM secrets WHERE key = 'mistral_api_key'`, "sk-testmistral")
+	assertScalar(t, db, `SELECT COUNT(*) FROM settings WHERE key = 'MISTRAL_API_KEY'`, 0)
+
+	// Idempotency: re-running must be a no-op (INSERT OR IGNORE + DELETE = safe).
+	tx2, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx (rerun): %v", err)
+	}
+	if err := migrateMistralAPIKeyToSecrets(ctx, tx2); err != nil {
+		_ = tx2.Rollback()
+		t.Fatalf("migrateMistralAPIKeyToSecrets (rerun): %v", err)
+	}
+	if err := tx2.Commit(); err != nil {
+		t.Fatalf("Commit (rerun): %v", err)
+	}
+	assertScalar(t, db, `SELECT value FROM secrets WHERE key = 'mistral_api_key'`, "sk-testmistral")
+	assertScalar(t, db, `SELECT COUNT(*) FROM settings WHERE key = 'MISTRAL_API_KEY'`, 0)
 }

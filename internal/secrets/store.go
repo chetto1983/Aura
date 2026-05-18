@@ -21,6 +21,7 @@ const (
 	KeyGarageS3AccessKey = "garage_s3_access_key"
 	KeyGarageS3SecretKey = "garage_s3_secret_key"
 	KeyQdrantAPIKey      = "qdrant_api_key"
+	KeyMistralAPIKey     = "mistral_api_key"
 )
 
 // ErrSecretNotFound is returned by Get when the requested key does not exist
